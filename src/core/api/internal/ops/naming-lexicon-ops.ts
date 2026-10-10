@@ -344,6 +344,18 @@ interface ReviewDraft {
   draft: NamingLexiconValueDraft | NamingLexiconTypeDraft;
 }
 
+/** One language's distinct review drafts, and each draft key's position among them. */
+interface ReviewDraftLanguageGroup {
+  drafts: NamingLexiconDraftName[];
+  index: Map<string, number>;
+}
+
+/** Where one review draft's verdict sits: its language's answer, at position `at`. */
+interface ReviewDraftVerdictSlot {
+  language: string;
+  at: number;
+}
+
 /**
  * Term-alignment reads — concept searches and head-word embeddings — share one
  * fate per request: the first failure is one notice and stops the later reads,
@@ -683,69 +695,9 @@ export class NamingLexiconOps {
     context: AnswerContext,
   ): Promise<{ review: NamingReviewResult; notices: string[] }> {
     const drafts = diff.judged.flatMap(reviewDrafts);
-    const groups = new Map<string, { drafts: NamingLexiconDraftName[]; index: Map<string, number> }>();
-    const slot: { language: string; at: number }[] = [];
-    for (const d of drafts) {
-      const group = groups.get(d.language) ?? { drafts: [], index: new Map<string, number>() };
-      groups.set(d.language, group);
-      const key = reviewDraftKey(d);
-      let at = group.index.get(key);
-      if (at === undefined) {
-        at = group.drafts.push(d.draft) - 1;
-        group.index.set(key, at);
-      }
-      slot.push({ language: d.language, at });
-    }
-
-    const notices: string[] = [];
-    const verdicts = new Map<string, NamingLexiconNameVerdict[]>();
-    for (const [language, group] of groups) {
-      const answer = await this.answer(reader, { ...collectionRef(req), language, names: group.drafts }, context);
-      verdicts.set(language, answer.names);
-      notices.push(...(answer.notices ?? []));
-    }
-
-    const findings: NamingReviewFinding[] = [];
-    const notes: NamingReviewNote[] = [];
-    let conforming = 0;
-    let novel = 0;
-    drafts.forEach((d, i) => {
-      const judged = verdicts.get(slot[i].language)?.[slot[i].at];
-      if (judged === undefined) return;
-      const { name: _name, evidence: _evidence, language: _language, genericName, ...verdict } = judged;
-      // A borderline alternative (bd tea-rags-mcp-89k7k.1.17) keeps the draft a finding: the same one every run.
-      if (verdict.verdict === "CONFORMS" && verdict.alternatives === undefined && verdict.borderline === undefined) {
-        conforming++;
-        // A generic name that conforms is information, not a finding (bd tea-rags-mcp-bjfa0).
-        if (genericName !== undefined) {
-          notes.push({
-            relPath: d.relPath,
-            line: d.line,
-            name: d.draft.name,
-            kind: d.kind,
-            ...(d.type !== undefined ? { type: d.type } : {}),
-            genericName,
-          });
-        }
-        return;
-      }
-      if (genericName === undefined && isNovelVerdict(verdict)) {
-        novel++;
-        return;
-      }
-      findings.push({
-        relPath: d.relPath,
-        line: d.line,
-        name: d.draft.name,
-        kind: d.kind,
-        ...(d.type !== undefined ? { type: d.type } : {}),
-        ...verdict,
-        ...(genericName !== undefined ? { genericName } : {}),
-      });
-    });
-    // Total order: findings[i] names one declaration every run (bd tea-rags-mcp-89k7k.1.17).
-    findings.sort((a, b) => a.relPath.localeCompare(b.relPath) || a.line - b.line || compareDeclarationName(a, b));
-    notes.sort((a, b) => a.relPath.localeCompare(b.relPath) || a.line - b.line || compareDeclarationName(a, b));
+    const { groups, slot } = groupReviewDraftsByLanguage(drafts);
+    const { verdicts, notices } = await this.answerReviewDraftGroups(reader, req, groups, context);
+    const { findings, notes, conforming, novel } = classifyReviewDraftVerdicts(drafts, slot, verdicts);
 
     return {
       review: {
@@ -765,6 +717,23 @@ export class NamingLexiconOps {
       },
       notices,
     };
+  }
+
+  /** One {@link answer} per language group, each verdict list keyed by its language, the notices in group order. */
+  private async answerReviewDraftGroups(
+    reader: IdentifierReader,
+    req: NamingLexiconRequest,
+    groups: ReadonlyMap<string, ReviewDraftLanguageGroup>,
+    context: AnswerContext,
+  ): Promise<{ verdicts: Map<string, NamingLexiconNameVerdict[]>; notices: string[] }> {
+    const notices: string[] = [];
+    const verdicts = new Map<string, NamingLexiconNameVerdict[]>();
+    for (const [language, group] of groups) {
+      const answer = await this.answer(reader, { ...collectionRef(req), language, names: group.drafts }, context);
+      verdicts.set(language, answer.names);
+      notices.push(...(answer.notices ?? []));
+    }
+    return { verdicts, notices };
   }
 
   private async answer(
@@ -1194,15 +1163,7 @@ export class NamingLexiconOps {
     // A barrel re-exporting the draft's file is the same declaration, not a clash (bd
     // tea-rags-mcp-89k7k.15); an unreadable file graph leaves every collision standing.
     const twins = await (alignment.reexportTwins ??= readReexportTwins(graphDb));
-    // Every searched draft's concept search starts here, bounded; the loop below
-    // consumes each in draft order, so the verdicts do not move.
-    if (alignment.failure === undefined) {
-      for (const draft of drafts) {
-        const draftLanguage = this.languageOfPath(draft.path) ?? language;
-        const rows = await this.typeNameRows(graphDb, this.typeNamespaceLanguages(draftLanguage), alignment);
-        if (rows.length > 0) void this.conceptSearch(req, draft, draftLanguage, alignment);
-      }
-    }
+    await this.startTypeDraftConceptSearches(graphDb, req, drafts, language, alignment);
     for (const draft of drafts) {
       const population = typeDraftPopulation(draft);
       const draftLanguage = this.languageOfPath(draft.path) ?? language;
@@ -1219,23 +1180,13 @@ export class NamingLexiconOps {
       evidenceByKey.set(key, shared);
       // The draft's own declaration never votes for itself — nor counts in `evidence.n` (bd tea-rags-mcp-xsxkr).
       const evidence = typeDraftEvidence(shared, draft);
-      let conceptNames: string[] = [];
-      let byMeaning: MeaningAlignment = {};
-      // The concept search first: only head candidates its code holds are embedded — on the
-      // self-index that cut the batch from ~65 words per draft to a handful.
-      try {
-        if (rows.length > 0 && alignment.failure === undefined) {
-          conceptNames = await this.conceptTypeNames(req, draft, draftLanguage, evidence.rows, alignment);
-          byMeaning = await this.alignByMeaning(graphDb, req, draft, evidence, conceptNames, {
-            language: draftLanguage,
-            alignment,
-            evidenceKey: key,
-          });
-        }
-      } catch (error) {
-        if (error instanceof InputValidationError) throw error;
-        alignment.failure = errorMessage(error);
-      }
+      const { conceptNames, byMeaning } = await this.alignTypeDraft(graphDb, req, draft, {
+        language: draftLanguage,
+        rows,
+        evidence,
+        evidenceKey: key,
+        alignment,
+      });
       const verdict = judgeTypeDraft({
         name: draft.name,
         path: draft.path,
@@ -1256,6 +1207,64 @@ export class NamingLexiconOps {
       notices.push(`type-name alignment skipped: ${alignment.failure}`);
     }
     return verdicts;
+  }
+
+  /**
+   * Every searched draft's concept search starts here, bounded; the loop of
+   * {@link judgeTypeDrafts} consumes each in draft order, so the verdicts do not move.
+   */
+  private async startTypeDraftConceptSearches(
+    graphDb: IdentifierReader,
+    req: NamingLexiconRequest,
+    drafts: readonly NamingLexiconTypeDraft[],
+    language: string | undefined,
+    alignment: TypeAlignmentState,
+  ): Promise<void> {
+    if (alignment.failure === undefined) {
+      for (const draft of drafts) {
+        const draftLanguage = this.languageOfPath(draft.path) ?? language;
+        const rows = await this.typeNameRows(graphDb, this.typeNamespaceLanguages(draftLanguage), alignment);
+        if (rows.length > 0) void this.conceptSearch(req, draft, draftLanguage, alignment);
+      }
+    }
+  }
+
+  /**
+   * One type draft's concept names and meaning alignment. A failed search is
+   * recorded on `alignment` (stopping further searches) and leaves both empty;
+   * an input error propagates.
+   */
+  private async alignTypeDraft(
+    graphDb: IdentifierReader,
+    req: NamingLexiconRequest,
+    draft: NamingLexiconTypeDraft,
+    context: {
+      language: string | undefined;
+      rows: readonly TypeNameRow[];
+      evidence: TypeNameEvidence;
+      evidenceKey: string;
+      alignment: TypeAlignmentState;
+    },
+  ): Promise<{ conceptNames: string[]; byMeaning: MeaningAlignment }> {
+    const { language: draftLanguage, rows, evidence, evidenceKey: key, alignment } = context;
+    let conceptNames: string[] = [];
+    let byMeaning: MeaningAlignment = {};
+    // The concept search first: only head candidates its code holds are embedded — on the
+    // self-index that cut the batch from ~65 words per draft to a handful.
+    try {
+      if (rows.length > 0 && alignment.failure === undefined) {
+        conceptNames = await this.conceptTypeNames(req, draft, draftLanguage, evidence.rows, alignment);
+        byMeaning = await this.alignByMeaning(graphDb, req, draft, evidence, conceptNames, {
+          language: draftLanguage,
+          alignment,
+          evidenceKey: key,
+        });
+      }
+    } catch (error) {
+      if (error instanceof InputValidationError) throw error;
+      alignment.failure = errorMessage(error);
+    }
+    return { conceptNames, byMeaning };
   }
 
   /**
@@ -1911,15 +1920,7 @@ async function judgeDrafts(
   ]);
   const prior = projectShapePrior(sample, ctx.casingFor, ctx.rowCasing);
   const taken = new Set(collisions);
-  const holders = new Map<string, string[]>();
-  if (ctx.collisionHolders) {
-    // Independent lookups, bounded; the map is filled in name order.
-    const lookup = ctx.collisionHolders;
-    const slots = new Semaphore(NAMING_LEXICON_READ_CONCURRENCY);
-    const takenNames = draftNames.filter((name) => taken.has(name));
-    const results = await Promise.all(takenNames.map(async (name) => withSlot(slots, async () => lookup(name))));
-    takenNames.forEach((name, i) => holders.set(name, results[i]));
-  }
+  const holders = await readDraftCollisionHolders(ctx, draftNames, taken);
   // Untyped methods are judged by the project's method vocabulary (spec 2026-09-28 naming coverage, §D4).
   const untypedMethods = drafts.filter(isUntypedMethodDraft);
   const untypedMethod =
@@ -1932,39 +1933,10 @@ async function judgeDrafts(
           taken,
           ctx.methodHeadWords,
         );
-  const overridden = new Map<NamingLexiconValueDraft, string[]>();
-  for (const draft of drafts) {
-    if (draft.kind !== "return" || draft.owner === undefined) continue;
-    const declarations = await inheritedDeclarations(graphDb, draft.owner, draft.name);
-    if (declarations.length > 0) overridden.set(draft, declarations);
-  }
+  const overridden = await readReturnDraftOverrides(graphDb, drafts);
+  const reads: DraftNameEvidenceReads = { homonyms, generic, prior, overridden, untypedMethod };
 
-  const judgedVerdicts = drafts.map((draft) => {
-    const kind = draft.kind ?? "local";
-    return judgeDraftName({
-      name: draft.name,
-      kind,
-      typeName: draft.type,
-      casing: ctx.casingFor(kind),
-      nonConceptTypes: ctx.nonConceptTypes,
-      callee: draft.callee,
-      typeMultiplicity: draft.typeMultiplicity,
-      ...(draft.ownerKind !== undefined ? { ownerKind: draft.ownerKind } : {}),
-      byTypeRows:
-        draft.type === undefined
-          ? undefined
-          : byTypeRowsFor(draft.type, draft.typeMultiplicity ?? "one", ctx.typeRows, draft.ownerKind),
-      byCalleeRows: draft.callee ? byCalleeRowsFor(draft.callee, ctx.calleeRows) : undefined,
-      conceptTerms: ctx.conceptTerms,
-      projectShapePrior: prior.shapes,
-      projectReturnVerbs: prior.returnVerbs,
-      nameRows: sum(homonyms.filter((r) => r.name === draft.name)),
-      nameIsGeneric: generic.has(draft.name),
-      ...((overridden.get(draft) ?? []).length > 0 ? { overrides: overridden.get(draft)?.[0] } : {}),
-      ...(untypedMethod && isUntypedMethodDraft(draft) ? { untypedMethod: untypedMethod(draft.name) } : {}),
-      ...(draft.fileLocal !== undefined ? { fileLocal: draft.fileLocal } : {}),
-    });
-  });
+  const judgedVerdicts = drafts.map((draft) => judgeDraftByConvention(draft, ctx, reads));
   const family = await typeFamilyRows(
     graphDb,
     drafts.flatMap((draft, i) =>
@@ -1973,33 +1945,123 @@ async function judgeDrafts(
     ctx.pathPrefixes,
   );
 
-  return drafts.map((draft, i) => {
-    const ancestorDeclarations = overridden.get(draft) ?? [];
-    const nameRows = homonyms.filter((r) => r.name === draft.name);
-    const verdict =
-      draft.type === undefined ? judgedVerdicts[i] : withFamilyAnalogues(judgedVerdicts[i], family(draft.type));
-    const example =
-      (verdict.verdict === "MISFIT" ? verdict.holder : undefined) ??
-      [...ctx.typeRows, ...ctx.calleeRows].find((r) => r.name === draft.name)?.exampleOwner;
-    const genericName = generic.get(draft.name);
-    // The ancestors' declarations lead: the symbols the draft actually collides with by design.
-    const collided = unique([...ancestorDeclarations, ...(holders.get(draft.name) ?? [])]).slice(
-      0,
-      MAX_COLLISION_EXAMPLES,
-    );
-    return {
-      name: draft.name,
-      ...verdict,
-      evidence: {
-        n: sum(nameRows),
-        ...(example !== undefined ? { example } : {}),
-        boundTypes: new Set(nameRows.flatMap((r) => (r.typeName === null ? [] : [r.typeName]))).size,
-        collision: taken.has(draft.name) || ancestorDeclarations.length > 0,
-        ...(collided.length > 0 ? { collisions: collided } : {}),
-      },
-      ...(genericName ? { genericName: { typeCount: genericName.typeCount, n: genericName.n } } : {}),
-    };
+  return drafts.map((draft, i) =>
+    draftVerdictWithEvidence(draft, judgedVerdicts[i], family, ctx, { ...reads, taken, holders }),
+  );
+}
+
+/** What {@link judgeDrafts} read once for every draft: the per-draft judgements look each draft up in it. */
+interface DraftNameEvidenceReads {
+  homonyms: Awaited<ReturnType<IdentifierReader["identifierNameTypes"]>>;
+  generic: Map<string, JudgedGenericName>;
+  prior: ReturnType<typeof projectShapePrior>;
+  /** Each `return` draft's ancestors' declarations of its name; absent → overrides nothing. */
+  overridden: Map<NamingLexiconValueDraft, string[]>;
+  untypedMethod: Awaited<ReturnType<typeof readUntypedMethodEvidence>> | undefined;
+}
+
+/** The symbols each taken draft name collides with, looked up only when the context can; filled in name order. */
+async function readDraftCollisionHolders(
+  ctx: DraftJudgementContext,
+  draftNames: readonly string[],
+  taken: ReadonlySet<string>,
+): Promise<Map<string, string[]>> {
+  const holders = new Map<string, string[]>();
+  if (ctx.collisionHolders) {
+    // Independent lookups, bounded; the map is filled in name order.
+    const lookup = ctx.collisionHolders;
+    const slots = new Semaphore(NAMING_LEXICON_READ_CONCURRENCY);
+    const takenNames = draftNames.filter((name) => taken.has(name));
+    const results = await Promise.all(takenNames.map(async (name) => withSlot(slots, async () => lookup(name))));
+    takenNames.forEach((name, i) => holders.set(name, results[i]));
+  }
+  return holders;
+}
+
+/** The ancestors' declarations each owned `return` draft overrides, read in draft order; drafts overriding nothing are absent. */
+async function readReturnDraftOverrides(
+  graphDb: IdentifierReader,
+  drafts: readonly NamingLexiconValueDraft[],
+): Promise<Map<NamingLexiconValueDraft, string[]>> {
+  const overridden = new Map<NamingLexiconValueDraft, string[]>();
+  for (const draft of drafts) {
+    if (draft.kind !== "return" || draft.owner === undefined) continue;
+    const declarations = await inheritedDeclarations(graphDb, draft.owner, draft.name);
+    if (declarations.length > 0) overridden.set(draft, declarations);
+  }
+  return overridden;
+}
+
+/** One value draft judged by {@link judgeDraftName} against the project's conventions and the shared reads. */
+function judgeDraftByConvention(
+  draft: NamingLexiconValueDraft,
+  ctx: DraftJudgementContext,
+  reads: DraftNameEvidenceReads,
+): ReturnType<typeof judgeDraftName> {
+  const { homonyms, generic, prior, overridden, untypedMethod } = reads;
+  const kind = draft.kind ?? "local";
+  return judgeDraftName({
+    name: draft.name,
+    kind,
+    typeName: draft.type,
+    casing: ctx.casingFor(kind),
+    nonConceptTypes: ctx.nonConceptTypes,
+    callee: draft.callee,
+    typeMultiplicity: draft.typeMultiplicity,
+    ...(draft.ownerKind !== undefined ? { ownerKind: draft.ownerKind } : {}),
+    byTypeRows:
+      draft.type === undefined
+        ? undefined
+        : byTypeRowsFor(draft.type, draft.typeMultiplicity ?? "one", ctx.typeRows, draft.ownerKind),
+    byCalleeRows: draft.callee ? byCalleeRowsFor(draft.callee, ctx.calleeRows) : undefined,
+    conceptTerms: ctx.conceptTerms,
+    projectShapePrior: prior.shapes,
+    projectReturnVerbs: prior.returnVerbs,
+    nameRows: sum(homonyms.filter((r) => r.name === draft.name)),
+    nameIsGeneric: generic.has(draft.name),
+    ...((overridden.get(draft) ?? []).length > 0 ? { overrides: overridden.get(draft)?.[0] } : {}),
+    ...(untypedMethod && isUntypedMethodDraft(draft) ? { untypedMethod: untypedMethod(draft.name) } : {}),
+    ...(draft.fileLocal !== undefined ? { fileLocal: draft.fileLocal } : {}),
   });
+}
+
+/**
+ * One draft's answer: its convention verdict (with its type family's analogues
+ * when typed) and the evidence behind it — homonym count, an example owner,
+ * and the symbols it collides with.
+ */
+function draftVerdictWithEvidence(
+  draft: NamingLexiconValueDraft,
+  judged: ReturnType<typeof judgeDraftName>,
+  family: Awaited<ReturnType<typeof typeFamilyRows>>,
+  ctx: DraftJudgementContext,
+  reads: DraftNameEvidenceReads & { taken: ReadonlySet<string>; holders: ReadonlyMap<string, string[]> },
+): NamingLexiconNameVerdict {
+  const { homonyms, generic, overridden, taken, holders } = reads;
+  const ancestorDeclarations = overridden.get(draft) ?? [];
+  const nameRows = homonyms.filter((r) => r.name === draft.name);
+  const verdict = draft.type === undefined ? judged : withFamilyAnalogues(judged, family(draft.type));
+  const example =
+    (verdict.verdict === "MISFIT" ? verdict.holder : undefined) ??
+    [...ctx.typeRows, ...ctx.calleeRows].find((r) => r.name === draft.name)?.exampleOwner;
+  const genericName = generic.get(draft.name);
+  // The ancestors' declarations lead: the symbols the draft actually collides with by design.
+  const collided = unique([...ancestorDeclarations, ...(holders.get(draft.name) ?? [])]).slice(
+    0,
+    MAX_COLLISION_EXAMPLES,
+  );
+  return {
+    name: draft.name,
+    ...verdict,
+    evidence: {
+      n: sum(nameRows),
+      ...(example !== undefined ? { example } : {}),
+      boundTypes: new Set(nameRows.flatMap((r) => (r.typeName === null ? [] : [r.typeName]))).size,
+      collision: taken.has(draft.name) || ancestorDeclarations.length > 0,
+      ...(collided.length > 0 ? { collisions: collided } : {}),
+    },
+    ...(genericName ? { genericName: { typeCount: genericName.typeCount, n: genericName.n } } : {}),
+  };
 }
 
 /** The most relatives one NO_CONVENTION type is compared with: a wide sibling set is a vocabulary, not a family. */
@@ -2390,6 +2452,11 @@ function inRanges(line: number, ranges: readonly AddedLineRange[]): boolean {
  * draft with its first supertype as `extends`.
  */
 function reviewDrafts(file: DiffFile): ReviewDraft[] {
+  return [...valueReviewDrafts(file), ...untypedCallableReviewDrafts(file), ...typeReviewDrafts(file)];
+}
+
+/** The drafts of one file's added value rows, each with its callable owner's kind on a `return` row. */
+function valueReviewDrafts(file: DiffFile): ReviewDraft[] {
   const { relPath, ranges, declarations } = file;
   const { language } = declarations;
   const drafts: ReviewDraft[] = [];
@@ -2427,6 +2494,14 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
       draft,
     });
   }
+  return drafts;
+}
+
+/** The `return` drafts of one file's untyped callables: each names its member owner when it has one. */
+function untypedCallableReviewDrafts(file: DiffFile): ReviewDraft[] {
+  const { relPath, declarations } = file;
+  const { language } = declarations;
+  const drafts: ReviewDraft[] = [];
   for (const callable of untypedCallables(file)) {
     const owner = callable.symbolIds.map(memberOwner).find((id) => id !== undefined);
     drafts.push({
@@ -2437,6 +2512,18 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
       draft: { name: callable.name, kind: "return", ...(owner !== undefined ? { owner } : {}) },
     });
   }
+  return drafts;
+}
+
+/**
+ * The `kind: "type"` drafts of one file's added own type and constant
+ * declarations (a re-opening declares nothing), each marked whether it is the
+ * file's primary declaration.
+ */
+function typeReviewDrafts(file: DiffFile): ReviewDraft[] {
+  const { relPath, ranges, declarations } = file;
+  const { language } = declarations;
+  const drafts: ReviewDraft[] = [];
   // The changed file is out of the evidence: only the review sees which declaration is its primary (friction F4).
   const declared = declarations.types
     .filter((fact) => !fact.reopens)
@@ -2479,6 +2566,85 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
 function reviewDraftKey(d: ReviewDraft): string {
   const { path: _path, concept: _concept, ...draft } = d.draft;
   return `${directoryOf(d.relPath)}\u0000${JSON.stringify(draft)}`;
+}
+
+/**
+ * The review drafts grouped per language, identical drafts ({@link reviewDraftKey})
+ * judged once: `slot[i]` names where `drafts[i]`'s verdict will sit.
+ */
+function groupReviewDraftsByLanguage(drafts: readonly ReviewDraft[]): {
+  groups: Map<string, ReviewDraftLanguageGroup>;
+  slot: ReviewDraftVerdictSlot[];
+} {
+  const groups = new Map<string, ReviewDraftLanguageGroup>();
+  const slot: ReviewDraftVerdictSlot[] = [];
+  for (const d of drafts) {
+    const group = groups.get(d.language) ?? { drafts: [], index: new Map<string, number>() };
+    groups.set(d.language, group);
+    const key = reviewDraftKey(d);
+    let at = group.index.get(key);
+    if (at === undefined) {
+      at = group.drafts.push(d.draft) - 1;
+      group.index.set(key, at);
+    }
+    slot.push({ language: d.language, at });
+  }
+  return { groups, slot };
+}
+
+/**
+ * Each review draft's verdict fanned back out to its declaration: a clean
+ * CONFORMS counts as conforming (a generic one is a note), an unremarkable novel
+ * name counts as novel, everything else is a finding — findings and notes in
+ * total order.
+ */
+function classifyReviewDraftVerdicts(
+  drafts: readonly ReviewDraft[],
+  slot: readonly ReviewDraftVerdictSlot[],
+  verdicts: ReadonlyMap<string, NamingLexiconNameVerdict[]>,
+): { findings: NamingReviewFinding[]; notes: NamingReviewNote[]; conforming: number; novel: number } {
+  const findings: NamingReviewFinding[] = [];
+  const notes: NamingReviewNote[] = [];
+  let conforming = 0;
+  let novel = 0;
+  drafts.forEach((d, i) => {
+    const judged = verdicts.get(slot[i].language)?.[slot[i].at];
+    if (judged === undefined) return;
+    const { name: _name, evidence: _evidence, language: _language, genericName, ...verdict } = judged;
+    // A borderline alternative (bd tea-rags-mcp-89k7k.1.17) keeps the draft a finding: the same one every run.
+    if (verdict.verdict === "CONFORMS" && verdict.alternatives === undefined && verdict.borderline === undefined) {
+      conforming++;
+      // A generic name that conforms is information, not a finding (bd tea-rags-mcp-bjfa0).
+      if (genericName !== undefined) {
+        notes.push({
+          relPath: d.relPath,
+          line: d.line,
+          name: d.draft.name,
+          kind: d.kind,
+          ...(d.type !== undefined ? { type: d.type } : {}),
+          genericName,
+        });
+      }
+      return;
+    }
+    if (genericName === undefined && isNovelVerdict(verdict)) {
+      novel++;
+      return;
+    }
+    findings.push({
+      relPath: d.relPath,
+      line: d.line,
+      name: d.draft.name,
+      kind: d.kind,
+      ...(d.type !== undefined ? { type: d.type } : {}),
+      ...verdict,
+      ...(genericName !== undefined ? { genericName } : {}),
+    });
+  });
+  // Total order: findings[i] names one declaration every run (bd tea-rags-mcp-89k7k.1.17).
+  findings.sort((a, b) => a.relPath.localeCompare(b.relPath) || a.line - b.line || compareDeclarationName(a, b));
+  notes.sort((a, b) => a.relPath.localeCompare(b.relPath) || a.line - b.line || compareDeclarationName(a, b));
+  return { findings, notes, conforming, novel };
 }
 
 /**
