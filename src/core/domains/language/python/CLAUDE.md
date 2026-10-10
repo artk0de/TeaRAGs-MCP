@@ -258,12 +258,12 @@
   to DECLARE the class as a unique top-level symbol — exact-symbolId `lookup`,
   the same gate `moduleMemberOutcome` uses. The caller never imports
   `Datatable`, only the module that holds it. `receiverModuleText` moved to
-  `strategies/shared.ts` so both readers ask it the same way. A third arm asks
-  `resolveExportedName` when that file RE-EXPORTS the class instead of declaring
-  it (django's `sql.DeleteQuery(model)`, a star-importing `sql/__init__.py`) and
-  hands the type on as a PLACED class key, because the caller binds neither the
-  class nor its module and a bare name would be re-placed from the caller's
-  imports (bd tea-rags-mcp-m99j1.1.58).
+  `strategies/python-receiver-binding.ts` so both readers ask it the same way. A
+  third arm asks `resolveExportedName` when that file RE-EXPORTS the class
+  instead of declaring it (django's `sql.DeleteQuery(model)`, a star-importing
+  `sql/__init__.py`) and hands the type on as a PLACED class key, because the
+  caller binds neither the class nor its module and a bare name would be
+  re-placed from the caller's imports (bd tea-rags-mcp-m99j1.1.58).
 - **`-> Self` is recorded as a MARKER and substituted by the reader, through one
   helper.** The annotation facet resolves `Self` against the enclosing class
   everywhere except a RETURN, where it emits the literal name `Self`
