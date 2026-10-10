@@ -19,6 +19,7 @@
 
 import type { SymbolDefinitionKind } from "../../contracts/types/codegraph-symbols.js";
 import type {
+  CodegraphIdentifierStore,
   RelPath,
   TypeDeclarationReplaceEntry,
   TypeDeclarationRow,
@@ -90,7 +91,10 @@ function typeDeclarationFileFingerprint(rows: readonly (readonly unknown[])[]): 
     .join("\n");
 }
 
-export class DuckDbTypeNameStore {
+export class DuckDbTypeNameStore implements Pick<
+  CodegraphIdentifierStore,
+  "replaceTypeDeclarationsBulk" | "readTypeNameRows"
+> {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   async replaceTypeDeclarationsBulk(entries: readonly TypeDeclarationReplaceEntry[]): Promise<void> {

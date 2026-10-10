@@ -30,7 +30,12 @@
  * comparison: `src/core/domains/trajectory/codegraph/CLAUDE.md`.
  */
 
-import type { CodegraphSignalDrift, RelPath, SymbolId } from "../../contracts/types/codegraph.js";
+import type {
+  CodegraphGraphAnalyticsStore,
+  CodegraphSignalDrift,
+  RelPath,
+  SymbolId,
+} from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
 /**
@@ -149,7 +154,10 @@ const FILE_MAY_HAVE_POINTS = `(EXISTS (
  */
 const PAGE_RANK_EPSILON = "1e-12";
 
-export class DuckDbSignalDriftStore {
+export class DuckDbSignalDriftStore implements Pick<
+  CodegraphGraphAnalyticsStore,
+  "diffSymbolSignals" | "refreshSymbolSignalsPrev"
+> {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   /**

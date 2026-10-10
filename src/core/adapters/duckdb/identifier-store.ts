@@ -52,6 +52,7 @@ import type {
 } from "../../contracts/types/codegraph-storage.js";
 import type { CallableSymbolKind } from "../../contracts/types/codegraph-symbols.js";
 import type {
+  CodegraphIdentifierStore,
   IdentifierDeclarationKind,
   IdentifierTypeMultiplicity,
   IdentifierTypeSource,
@@ -451,7 +452,10 @@ export function resolvedIdentifiersCte(scope: SqlPredicate): SqlPredicate {
   };
 }
 
-export class DuckDbIdentifierStore {
+export class DuckDbIdentifierStore implements Omit<
+  CodegraphIdentifierStore,
+  "replaceTypeDeclarationsBulk" | "readTypeNameRows"
+> {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   async replaceIdentifiersBulk(entries: readonly IdentifierReplaceEntry[]): Promise<void> {

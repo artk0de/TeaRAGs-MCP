@@ -53,6 +53,7 @@
  */
 
 import type {
+  CodegraphOntologyReportStore,
   IdentifierDeclarationKind,
   IdentifierTypeMultiplicity,
   IdentifierTypeSource,
@@ -331,7 +332,7 @@ interface TypeGroupSelection {
   score: string;
 }
 
-export class DuckDbOntologyReportStore {
+export class DuckDbOntologyReportStore implements CodegraphOntologyReportStore {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   /** Phase 1: the totals and every generic-name candidate of the scope, with its types. */

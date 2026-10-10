@@ -24,6 +24,7 @@
 import {
   fileScopedSymbolKey,
   parseFileScopedSymbolKey,
+  type CodegraphGraphAnalyticsStore,
   type CycleEntry,
   type CycleScope,
   type FileDependencyGraph,
@@ -178,7 +179,10 @@ function methodVertex(relPath: unknown, symbolId: unknown): string {
   return fileScopedSymbolKey({ relPath: String(relPath), symbolId: String(symbolId) });
 }
 
-export class DuckDbGraphAnalyticsStore {
+export class DuckDbGraphAnalyticsStore implements Omit<
+  CodegraphGraphAnalyticsStore,
+  "diffSymbolSignals" | "refreshSymbolSignalsPrev" | "computeAndPersistCyclesAndSignals"
+> {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   async findCycles(scope: CycleScope, pathPattern?: string): Promise<CycleEntry[]> {
