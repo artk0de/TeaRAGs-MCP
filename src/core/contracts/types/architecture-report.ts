@@ -1027,6 +1027,29 @@ export interface StableDependenciesReportSummary {
 /** Why a module's boundary is not judged by the leaking-abstraction detector. */
 export type FacadeModuleExclusionReason = "facade-not-adopted" | "too-few-importers" | "language-enforced";
 
+/**
+ * A CHILD of an active module — the first path segment under the module on a
+ * deep import's target — that the module's external importers reach directly
+ * so far above the module's background deep-import rate that it is a measured
+ * second surface, not a leak (bd tea-rags-mcp-r8hme.52.16). Internal-reach
+ * edges into it are not violations; they are counted in
+ * `excludedModules.deFactoSurfaceEdges`.
+ */
+export interface FacadeDeFactoSurface {
+  moduleDir: string;
+  /** First path segment under `moduleDir`: a directory or a file name. */
+  child: string;
+  /** d(S): distinct external importers with a deep edge into the child. */
+  directImporterCount: number;
+  /**
+   * q: the module's deep-import rate with the child's own and every other
+   * surface's exclusive importers left out, Jeffreys-smoothed (+½ / +1).
+   */
+  backgroundRate: number;
+  /** P(X ≥ d), X ~ Bin(external importers, q); rejected by Benjamini–Hochberg over every child. */
+  pValue: number;
+}
+
 /** One module and its facade adoption. */
 export interface FacadeModuleSummary {
   moduleDir: string;
@@ -1082,7 +1105,14 @@ export interface LeakingAbstractionReportSummary {
      * consumers, not modules — unlike the three keys above.
      */
     intraParentConsumers: number;
+    /**
+     * Internal-reach edges into a measured de-facto surface child (see
+     * `deFactoSurfaces`), not reported as violations. Counts edges.
+     */
+    deFactoSurfaceEdges: number;
   };
+  /** Children measured as de-facto second surfaces of their module, lowest p first; capped at `limit`. */
+  deFactoSurfaces: FacadeDeFactoSurface[];
   /** Human-readable meaning of each module exclusion. */
   exclusionReasons: Record<FacadeModuleExclusionReason, string>;
   /** The modules whose boundary is judged, by path; capped at `limit`. */

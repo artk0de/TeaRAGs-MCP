@@ -963,6 +963,7 @@ function summariseLeaks(
     moduleCount: summary.moduleCount,
     activeModuleCount: summary.activeModuleCount,
     excludedModules: { ...summary.excludedModules },
+    deFactoSurfaces: summary.deFactoSurfaces.slice(0, limit).map((s) => ({ ...s })),
     exclusionReasons: { ...FACADE_MODULE_EXCLUSION_REASONS },
     activeModules: report.modules
       .filter((m) => m.status === "active")
