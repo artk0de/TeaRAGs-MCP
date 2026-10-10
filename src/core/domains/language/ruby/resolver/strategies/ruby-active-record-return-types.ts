@@ -12,10 +12,10 @@
  * (bd tea-rags-mcp-uetqq) with the gate and the vocabulary unchanged.
  */
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext } from "../../../../contracts/types/codegraph.js";
-import type { RubyTypeRef } from "../../../../contracts/types/language.js";
-import { ACTIVE_RECORD_QUERY_INTERFACE, catalogueFor } from "../dsl/index.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
+import type { CallContext } from "../../../../../contracts/types/codegraph.js";
+import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import { ACTIVE_RECORD_QUERY_INTERFACE, catalogueFor } from "../../dsl/index.js";
 
 /**
  * Whether `className`'s transitive ancestry (walking `ctx.classAncestors`,

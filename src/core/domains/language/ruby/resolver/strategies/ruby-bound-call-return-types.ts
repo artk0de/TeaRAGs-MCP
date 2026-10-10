@@ -14,15 +14,15 @@
  * qualification and the two binding forms are unchanged.
  */
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import {
   isInsideModifierCondition,
   type CallContext,
   type CallRef,
   type CallResultBinding,
-} from "../../../../contracts/types/codegraph.js";
-import type { RubyTypeRef } from "../../../../contracts/types/language.js";
-import { rubyReceiverForm } from "../type-ref.js";
+} from "../../../../../contracts/types/codegraph.js";
+import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import { rubyReceiverForm } from "../../type-ref.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
 import { selfMemberReturnType } from "./ruby-return-facts.js";
 

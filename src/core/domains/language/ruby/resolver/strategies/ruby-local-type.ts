@@ -1,6 +1,6 @@
 import { resolveLocalBinding } from "../../../../../contracts/types/codegraph.js";
 import { LocalBindingSymbolResolutionStrategy, type ReceiverTypingPorts } from "../../../kernel/index.js";
-import { createRubyTypeMemberLookup } from "../ruby-type-member-lookup.js";
+import { createRubyTypeMemberLookup } from "./ruby-type-member-lookup.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**

@@ -47,28 +47,28 @@
  * - `ruby-bound-call-return-types.ts` — the `localCallBindings` channel.
  */
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import {
   resolveLocalBinding,
   type CallContext,
   type CallRef,
   type CallResultBinding,
-} from "../../../../contracts/types/codegraph.js";
-import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+} from "../../../../../contracts/types/codegraph.js";
+import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import {
   CHAIN_MAX_HOPS_DEFAULT,
   propagateReceiverType,
   stripCallArgs,
   type ReceiverTypePorts,
-} from "../../kernel/index.js";
-import { catalogueFor } from "../dsl/index.js";
+} from "../../../kernel/index.js";
+import { catalogueFor } from "../../dsl/index.js";
 import { boundCallReturnTypeVia, isProjectDeclaredConstant } from "./ruby-bound-call-return-types.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
 import { declaredReturnType } from "./ruby-return-facts.js";
 import { nullaryReceiverType } from "./ruby-unbound-receiver-types.js";
 
 export { isOwnAssignmentRightHandSide } from "./ruby-bound-call-return-types.js";
-export { CHAIN_MAX_HOPS_DEFAULT } from "../../kernel/index.js";
+export { CHAIN_MAX_HOPS_DEFAULT } from "../../../kernel/index.js";
 export {
   CONTAINER_BLOCK_ITERATION_METHODS,
   CONTAINER_ELEMENT_RETURNING_METHODS,

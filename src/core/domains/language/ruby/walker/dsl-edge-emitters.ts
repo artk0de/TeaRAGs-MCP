@@ -18,7 +18,7 @@ import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { CallRef } from "../../../../contracts/types/codegraph.js";
 import { RUBY_DSL, type RubyDslEmits } from "../dsl/index.js";
 import { associationModelConstant, camelizeModelName } from "./association-types.js";
-import { readScopeResolution } from "./shared/ast-utils.js";
+import { readScopeResolution } from "./shared/index.js";
 
 /**
  * Whether a DSL macro name is a callback registration (duzy). A

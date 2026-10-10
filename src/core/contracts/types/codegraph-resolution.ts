@@ -636,7 +636,7 @@ export interface CallContext {
    * annotated Ruby code. Undefined for languages without ivar annotations and
    * for Ruby files not covered by a type source.
    *
-   * Read it through `ivarTypeName` (`ruby/resolver/type-propagation.ts`), never
+   * Read it through `ivarTypeName` (`ruby/resolver/strategies/type-propagation.ts`), never
    * inline: that helper is the single authority ordering this map ahead of the
    * inference-based {@link CallContext.classFieldTypes}. See
    * {@link FileExtraction.ivarTypes} for why the map is empty today.

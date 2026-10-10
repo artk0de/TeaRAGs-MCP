@@ -28,12 +28,12 @@ import type { AmbiguousResolveMode, CallContext, CallRef } from "../../../../../
 import { receiverIsAssignedLocal, type ExactChainAnswerProbe } from "../../../kernel/index.js";
 import { isExternalQualifiedMember } from "../../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../super-receiver-sentinel.js";
-import { typeOfReceiver } from "../type-propagation.js";
 import { receiverLooksLikeArRelationChain } from "./ruby-ar-relation-guard.js";
 import { resolveConventionReceiverTarget } from "./ruby-convention-receiver.js";
 import { ivarFieldOwnsReceiver, resolveIvarFieldTarget } from "./ruby-ivar-field.js";
 import { resolveBoundCallTarget } from "./ruby-return-type-binding.js";
 import { receiverChainTailIsExternal, receiverIsIndexAccess, resolveConstant } from "./shared.js";
+import { typeOfReceiver } from "./type-propagation.js";
 
 /**
  * Default of the assigned-local gate when `CODEGRAPH_RB_ASSIGNED_LOCAL_GATE` is

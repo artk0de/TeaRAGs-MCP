@@ -54,8 +54,8 @@ import {
 } from "../../kernel/index.js";
 import { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
 import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
-import { lookupRubySymbolsByShortName, rubyMemberLookupRole } from "./short-name-lookup.js";
 import {
+  lookupRubySymbolsByShortName,
   resolveConstant,
   RubyArRelationGuardSymbolResolutionStrategy,
   RubyBareCallSymbolResolutionStrategy,
@@ -68,6 +68,7 @@ import {
   RubyExplicitRequireSymbolResolutionStrategy,
   RubyIvarFieldSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
+  rubyMemberLookupRole,
   RubyReceiverSetDropSymbolResolutionStrategy,
   RubyReturnTypeBindingSymbolResolutionStrategy,
   RubySchemaColumnSymbolResolutionStrategy,

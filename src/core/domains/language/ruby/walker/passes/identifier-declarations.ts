@@ -23,7 +23,7 @@ import {
   type IdentifierSyntacticType,
 } from "../../../kernel/index.js";
 import { rubyCallShape } from "../call-collection.js";
-import { typeConstantName } from "../shared/ast-utils.js";
+import { typeConstantName } from "../shared/index.js";
 
 /** Parameter forms whose declared name is the `name` field; a bare `identifier` is its own name. */
 const NAMED_PARAMETER_TYPES = new Set([

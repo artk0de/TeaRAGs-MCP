@@ -43,8 +43,7 @@ import type {
   CallRef,
   SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
-import { enclosingTypeOf, resolveSelfDispatchHookTarget } from "./strategies/index.js";
-import { typeOfReceiver } from "./type-propagation.js";
+import { enclosingTypeOf, resolveSelfDispatchHookTarget, typeOfReceiver } from "./strategies/index.js";
 
 /**
  * Refine a resolved call target: when it points at a self-dispatch template node

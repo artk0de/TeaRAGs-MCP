@@ -32,7 +32,7 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { inferReturnTypeName, type ReturnInferencePorts } from "../../kernel/index.js";
 import type { RubyDslCatalogue } from "../dsl/index.js";
-import { rubyBodyTailExpression } from "./shared/body-tail.js";
+import { rubyBodyTailExpression } from "./shared/index.js";
 import { constInstanceType, isOrAssignment, singletonNewInstanceType } from "./type-sources/ast-inference.js";
 
 /**

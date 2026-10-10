@@ -1,7 +1,7 @@
 import { UnionDispatchResolver, type UnionDispatchPorts } from "../../../kernel/index.js";
-import { createRubyTypeMemberLookup } from "../ruby-type-member-lookup.js";
-import { typeOfReceiver } from "../type-propagation.js";
+import { createRubyTypeMemberLookup } from "./ruby-type-member-lookup.js";
 import { CONE_MAX_DEFAULT, isRubyPath, type ResolverConfig } from "./shared.js";
+import { typeOfReceiver } from "./type-propagation.js";
 
 /**
  * Ruby's union-receiver cone fan-out (bd tea-rags-mcp Task 1.7) — the kernel

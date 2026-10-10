@@ -4,15 +4,18 @@ import { catalogueFor, FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../../
 import {
   CONTAINER_BLOCK_ITERATION_METHODS,
   CONTAINER_ELEMENT_RETURNING_METHODS,
-} from "../../resolver/type-propagation.js";
-import { lexicalScopeFqName, readScopeResolution, typeConstantName, walk } from "../shared/ast-utils.js";
-import type { RubyExtractInput } from "../shared/extract-input.js";
+  lexicalScopeFqName,
+  readScopeResolution,
+  typeConstantName,
+  walk,
+  type RubyExtractInput,
+} from "../shared/index.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 import { collectYardParamTypes, YARD_CONST } from "./yard.js";
 
 /**
- * Re-export of {@link CONTAINER_BLOCK_ITERATION_METHODS} from the type-propagation
- * engine — the single source of truth for block-iterator methods shared by
+ * Re-export of {@link CONTAINER_BLOCK_ITERATION_METHODS} from the `walker/shared/`
+ * container vocabulary — the single source of truth for block-iterator methods shared by
  * `rubyAstInferenceTypeSource` (walk-time block-param inference) and
  * `collectLocalBindingsForChunk`. Kept as a named export so callers that already
  * import `RUBY_BLOCK_ITERATOR_METHODS` from this module don't need a mechanical

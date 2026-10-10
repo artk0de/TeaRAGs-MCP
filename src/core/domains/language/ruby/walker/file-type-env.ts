@@ -26,7 +26,7 @@
 import type { RubyDslCatalogue } from "../dsl/index.js";
 import { collectRubyAssociationTypes } from "./association-types.js";
 import { collectRubyIvarFieldTypes, localTypeTrackingEnabled } from "./local-bindings.js";
-import type { RubyExtractInput } from "./shared/extract-input.js";
+import type { RubyExtractInput } from "./shared/index.js";
 import { RUBY_TYPE_SOURCE_ORDER, RubyTypeFactStore } from "./type-fact-store.js";
 import { INLINE_TYPE_SOURCES } from "./type-sources/index.js";
 

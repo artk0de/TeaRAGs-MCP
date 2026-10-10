@@ -25,9 +25,9 @@
  * unchanged; only their address moved.
  */
 
-import type { CallContext } from "../../../../contracts/types/codegraph.js";
-import type { RubyTypeRef } from "../../../../contracts/types/language.js";
-import { MemberReturnTypeResolver, type MemberReturnTypePorts } from "../../kernel/index.js";
+import type { CallContext } from "../../../../../contracts/types/codegraph.js";
+import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import { MemberReturnTypeResolver, type MemberReturnTypePorts } from "../../../kernel/index.js";
 import { linearizeAncestors } from "./ancestor-linearization.js";
 import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 

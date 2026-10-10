@@ -73,9 +73,7 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import { inferReturnTypeName, type ReturnInferencePorts } from "../../../kernel/index.js";
 import { catalogueFor, type RubyDslCatalogue } from "../../dsl/index.js";
-import { readScopeResolution } from "../shared/ast-utils.js";
-import { rubyBodyTailExpression } from "../shared/body-tail.js";
-import type { RubyExtractInput } from "../shared/extract-input.js";
+import { readScopeResolution, rubyBodyTailExpression, type RubyExtractInput } from "../shared/index.js";
 import { constInstanceType } from "./ast-inference.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 

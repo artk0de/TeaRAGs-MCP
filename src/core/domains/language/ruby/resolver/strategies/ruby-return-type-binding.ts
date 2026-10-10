@@ -6,8 +6,8 @@ import type {
   SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { boundCallReturnType, isOwnAssignmentRightHandSide } from "../type-propagation.js";
 import { resolveTypeMethod, type ResolverConfig } from "./shared.js";
+import { boundCallReturnType, isOwnAssignmentRightHandSide } from "./type-propagation.js";
 
 /**
  * The single precise target the `returnTypeBinding` pass emits for `call`, or

@@ -8,9 +8,9 @@ import {
   ConventionReceiverSymbolResolutionStrategy,
   type ConventionReceiverTypingPorts,
 } from "../../../kernel/index.js";
-import { createRubyTypeMemberLookup } from "../ruby-type-member-lookup.js";
-import { conventionReceiverType, typeOfReceiver } from "../type-propagation.js";
+import { createRubyTypeMemberLookup } from "./ruby-type-member-lookup.js";
 import type { ResolverConfig } from "./shared.js";
+import { conventionReceiverType, typeOfReceiver } from "./type-propagation.js";
 
 /**
  * Ruby's convention typing. The guess is `conventionReceiverType` — the

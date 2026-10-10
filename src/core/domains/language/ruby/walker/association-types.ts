@@ -13,7 +13,7 @@
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { RUBY_DSL, singularizeAssociation } from "../dsl/index.js";
-import { readScopeResolution } from "./shared/ast-utils.js";
+import { readScopeResolution } from "./shared/index.js";
 import { YARD_CONST } from "./type-sources/yard.js";
 
 /**

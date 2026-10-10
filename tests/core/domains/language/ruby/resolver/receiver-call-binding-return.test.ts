@@ -28,7 +28,7 @@ import {
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../../../src/core/contracts/types/language.js";
 import { RubyReturnTypeBindingSymbolResolutionStrategy } from "../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
-import { boundCallReturnType } from "../../../../../../src/core/domains/language/ruby/resolver/type-propagation.js";
+import { boundCallReturnType } from "../../../../../../src/core/domains/language/ruby/resolver/strategies/type-propagation.js";
 import { extractFromRubyFile } from "../../../../../../src/core/domains/language/ruby/walker/walker.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 

@@ -20,9 +20,9 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import { ZEITWERK_PREFIX } from "../../zeitwerk-import-marker.js";
-import { linearizeAncestors } from "../ancestor-linearization.js";
-import { isRubyPath, lookupRubySymbolsByShortName } from "../short-name-lookup.js";
-import { isConventionalConstantPath, resolveZeitwerkConstant } from "../zeitwerk.js";
+import { linearizeAncestors } from "./ancestor-linearization.js";
+import { isRubyPath, lookupRubySymbolsByShortName } from "./short-name-lookup.js";
+import { isConventionalConstantPath, resolveZeitwerkConstant } from "./zeitwerk.js";
 
 /**
  * `ResolverConfig` / `CONE_MAX_DEFAULT` live in the kernel
@@ -48,7 +48,7 @@ export const DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT = 0.5;
  * sources reach through `resolver/type-propagation.ts` can use it without a
  * path back into the walker — see there.
  */
-export { isRubyPath, lookupRubySymbolsByShortName } from "../short-name-lookup.js";
+export { isRubyPath, lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 
 /**
  * True when a call receiver's OUTERMOST operation is an element reference

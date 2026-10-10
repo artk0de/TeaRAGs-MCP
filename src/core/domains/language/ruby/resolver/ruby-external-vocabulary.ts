@@ -4,12 +4,13 @@ import { catalogueFor, isCoreAmbiguousMember, isExternalQualifiedMember } from "
 import { SUPER_RECEIVER_SENTINEL } from "../super-receiver-sentinel.js";
 import {
   collectAncestorChain,
+  ivarTypeName,
   receiverChainTailIsExternal,
   receiverIsIndexAccess,
   resolveConstant,
   RUBY_RUNTIME_HOOKS,
+  typeOfReceiver,
 } from "./strategies/index.js";
-import { ivarTypeName, typeOfReceiver } from "./type-propagation.js";
 
 /**
  * Ruby implementation of `ExternalVocabulary`, bridging the `dsl/` framework

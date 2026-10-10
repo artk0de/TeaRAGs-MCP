@@ -9,9 +9,9 @@
  * both fall back to a file-only target on the type's own file when no ancestor
  * declares the member — exactly what the typed-receiver strategies answer today.
  */
-import type { AmbiguousResolveMode } from "../../../../contracts/types/codegraph.js";
-import { createTypeMemberLookup, type TypeMemberLookup } from "../../kernel/index.js";
-import { resolveTypeInstanceMethod, resolveTypeStaticMethod } from "./strategies/index.js";
+import type { AmbiguousResolveMode } from "../../../../../contracts/types/codegraph.js";
+import { createTypeMemberLookup, type TypeMemberLookup } from "../../../kernel/index.js";
+import { resolveTypeInstanceMethod, resolveTypeStaticMethod } from "./shared.js";
 
 export function createRubyTypeMemberLookup(mode: AmbiguousResolveMode): TypeMemberLookup {
   return createTypeMemberLookup((type, member, ctx) =>

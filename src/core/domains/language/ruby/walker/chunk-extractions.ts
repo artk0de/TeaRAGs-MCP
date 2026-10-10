@@ -29,7 +29,7 @@ import {
 import { collectRubyMethodSignatures } from "./method-signatures.js";
 import { attachModifierConditionSpans, collectRubyGuardedAssignments } from "./modifier-conditions.js";
 import type { KnownTargetCallSite } from "./param-arg-types.js";
-import type { RubyExtractInput } from "./shared/extract-input.js";
+import type { RubyExtractInput } from "./shared/index.js";
 
 export interface RubyChunkPassOutput {
   /** One record per entry of `input.chunks`, in the same order. */

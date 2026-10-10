@@ -23,13 +23,13 @@
  * `CallContext` for the same reason — a `CallContext` satisfies it by structure.
  */
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import {
   AncestorLinearizerCache,
   createAncestorLinearizer,
   type AncestorLinearizationPolicy,
   type AncestorLinearizerCacheContext,
-} from "../../kernel/index.js";
+} from "../../../kernel/index.js";
 
 /**
  * The hierarchy facts a linearization needs — the three walker-recorded maps,

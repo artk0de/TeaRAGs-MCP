@@ -21,7 +21,7 @@
  *     decided once.
  *
  * Pure data; equality is the contracts-level `typeRefEquals`, so the
- * cycle-sensitive `ruby/resolver/type-propagation.ts` can import it freely.
+ * cycle-sensitive `ruby/resolver/strategies/type-propagation.ts` can import it freely.
  */
 import { typeRefEquals } from "../../../contracts/type-ref-equals.js";
 import type { TypeRef } from "../../../contracts/types/language.js";
