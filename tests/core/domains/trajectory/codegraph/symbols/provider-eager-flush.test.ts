@@ -285,7 +285,9 @@ describe("CodegraphEnrichmentProvider — Task 2 eager batched node flush (cross
     // The colliding key resolves to the sorted-drain last writer regardless of
     // accept order (e_epsilon > b_beta), proving the merge is order-independent.
     expect(a.runGlobalSnapshot.runReturnTypes.build).toBe("Gadget");
-    expect(a.runGlobalSnapshot.runAncestors.Shared).toEqual(["BaseE"]);
+    // A reopened Ruby class's ancestry is the union of its reopenings, merged in
+    // relPath order (89k7k.35.30) — no longer the last writer's list alone.
+    expect(a.runGlobalSnapshot.runAncestors.Shared).toEqual(["BaseB", "BaseE"]);
     // And the persisted cg_symbols match too (order-independent node write).
     expect(a.rows).toEqual(b.rows);
   });
