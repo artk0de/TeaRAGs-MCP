@@ -34,8 +34,8 @@ import {
   type CallContext,
   type DerivedLocalBindingKind,
   type LocalBinding,
-} from "../../../../contracts/types/codegraph.js";
-import type { TypeRef } from "../../../../contracts/types/language.js";
+} from "../../../../../contracts/types/codegraph.js";
+import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   callArgumentText,
   propagateReceiverType,
@@ -46,9 +46,9 @@ import {
   typeRefUnionOf,
   type NominalTypeRef,
   type ReceiverTypePorts,
-} from "../../kernel/index.js";
-import { isPythonGeneratorContextManager } from "../generator-context-manager-marker.js";
-import { pythonContainerElementKey } from "../walker/passes/python-container-element-facts.js";
+} from "../../../kernel/index.js";
+import { isPythonGeneratorContextManager } from "../../generator-context-manager-marker.js";
+import { pythonContainerElementKey } from "../../walker/passes/python-container-element-facts.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   pythonCallBindingType,

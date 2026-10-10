@@ -6,9 +6,9 @@ import {
   type ReceiverTypingPorts,
   type TypeMemberLookup,
 } from "../../../kernel/index.js";
-import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
-import { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { createPythonReceiverTypePorts } from "../python-receiver-type-ports.js";
+import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
+import { PythonImportFileMapper } from "./python-import-file-mapper.js";
+import { createPythonReceiverTypePorts } from "./python-receiver-type-ports.js";
 import {
   resolvePythonMemberOnType,
   resolvePythonMemberOnTypeThroughMro,

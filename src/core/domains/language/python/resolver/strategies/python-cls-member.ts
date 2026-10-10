@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
+import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import {
   pythonEnclosingClass,
   resolvePythonInheritedMember,

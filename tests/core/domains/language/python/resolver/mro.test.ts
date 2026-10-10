@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { linearizeC3 } from "../../../../../../src/core/domains/language/python/resolver/mro.js";
+import { linearizeC3 } from "../../../../../../src/core/domains/language/python/resolver/strategies/mro.js";
 
 function hierarchy(edges: Record<string, readonly string[]>): (key: string) => readonly string[] {
   return (key) => edges[key] ?? [];

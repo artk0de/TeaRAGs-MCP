@@ -21,7 +21,7 @@
   `CODEGRAPH_LANGUAGES` extension and `SymbolDefinition` carries no `language`
   field, so the raw lookup answers with any file that spells the name: polar's
   `range(...)` resolved to `Paginator.tsx#range`. The wrapper in
-  `resolver/short-name-lookup.ts` (re-exported by
+  `resolver/strategies/short-name-lookup.ts` (re-exported by
   `resolver/strategies/shared.ts`) keeps `.py` candidates only, and the
   extension list is the literal in `vocabulary/source-extensions.ts` because
   `language` is a leaf domain that may not import the registry from
@@ -616,8 +616,8 @@
 - **A framework's answer is placed by the MODULE that declares its class, never
   by the short name.** The vocabulary spells `django.db.models.options.Options`,
   `…manager.Manager`, `…query.QuerySet`; `resolveTypeRefFile` /
-  `pythonTypeRefClassKey` (`resolver/python-type-addressing.ts`) place that
-  spelling the way an ABSOLUTE import of the module would, through
+  `pythonTypeRefClassKey` (`resolver/strategies/python-type-addressing.ts`)
+  place that spelling the way an ABSOLUTE import of the module would, through
   `PythonImportFileMapper#mapImportToFile` — a project file only where the
   corpus IS the framework, external everywhere else — and keep the spelling
   intact through the chain fold, the MRO member walk and the member-return
@@ -634,8 +634,8 @@
   qualifies a name only when its vocabulary entry says `nameUniqueToFramework`;
   `objects` never does.
 - **Python run-global class addresses come from the leaf
-  `resolver/python-class-key.ts` (`pythonClassKey`, `parsePythonClassKey`).**
-  `python-import-file-mapper.ts` spells class keys and
+  `resolver/strategies/python-class-key.ts` (`pythonClassKey`,
+  `parsePythonClassKey`).** `python-import-file-mapper.ts` spells class keys and
   `python-type-addressing.ts` imports the mapper, so the spelling had to live
   where both reach it without closing an import cycle (the resolver import-graph
   guard fails on one). `python-type-addressing.ts` re-exports both names; new
@@ -931,36 +931,37 @@
   comprehension targets), `contextEnter` (`with X as name`) and `tupleElement`
   (a flat `a, b = <expr>`) — each with `type: ""`, the value's text in
   `sourceExpression` and the position in `tupleIndex`;
-  `pythonDerivedBindingType` (`resolver/python-iteration-types.ts`) folds the
-  value at resolve time, and `isDerivedLocalBinding` (`contracts`) is the
-  discriminator. A consumer that reads `.type` off a binding without asking it
-  sees an empty string, not "unknown". On the SAME line a typed binding outranks
-  a derived one. A fold to a multi-arm UNION leaves `pythonDerivedBindingType`
-  under the union-annotated binding's rules (`pythonPlacedReceiverUnion`, bd
-  tea-rags-mcp-m99j1.1.68): an unplaceable arm untypes it, a library / builtin
-  arm makes it evidence — a fact to `pythonDerivedBindingIsFact`, hidden from
-  the classifier bindings. Placement happens only there; a fold NESTED in
-  another reads `pythonDerivedBindingFold`, the raw arms. That placement reads
-  from the CALLER's file, so a union nested in ANOTHER file's container or tuple
-  return (`-> list[A | B]`, arms spelled relative to that file) is placed
-  earlier, by `pythonPlacedReturnFact` at the return read, where the declaring
-  file is known (bd tea-rags-mcp-m99j1.1.70); an arm it cannot place kills the
-  whole fact, as a top-level union's does. A single NOMINAL element there is
-  placed by the same read (bd tea-rags-mcp-m99j1.1.75) but never killed: one the
-  declaring file cannot place keeps its spelling for the caller's fold.
-  `assignedValue` (bd tea-rags-mcp-m99j1.1.91) is a plain
-  `name = <attribute read | name>` in a def, scoped by `scopeEndLine` to the
-  def's next binding of the name and never written for a name the def annotates.
-  It is the one TRANSPARENT kind: `pythonLocalBindingInForce` reads past it
-  unless its fold names a project class or a library type, so it can only add a
-  type — which is how the assigned-local fan gate's lost edges come back as
-  exact ones (the gate is opt-in, default OFF, bd o9mk8; epic qg12x).
-  `contextEnter` is `__enter__`'s return through the member-return MRO walk and
-  nothing when no project class declares one — the constructed instance is never
-  the answer. A `@contextlib.contextmanager` / `asynccontextmanager` generator
-  (decorator qualified through the file's imports) is the one exception: its
-  annotated `Iterator[T]`-family return is recorded as the library manager class
-  carrying `T` (`generator-context-manager-marker.ts`), and it enters as `T` (bd
+  `pythonDerivedBindingType` (`resolver/strategies/python-iteration-types.ts`)
+  folds the value at resolve time, and `isDerivedLocalBinding` (`contracts`) is
+  the discriminator. A consumer that reads `.type` off a binding without asking
+  it sees an empty string, not "unknown". On the SAME line a typed binding
+  outranks a derived one. A fold to a multi-arm UNION leaves
+  `pythonDerivedBindingType` under the union-annotated binding's rules
+  (`pythonPlacedReceiverUnion`, bd tea-rags-mcp-m99j1.1.68): an unplaceable arm
+  untypes it, a library / builtin arm makes it evidence — a fact to
+  `pythonDerivedBindingIsFact`, hidden from the classifier bindings. Placement
+  happens only there; a fold NESTED in another reads `pythonDerivedBindingFold`,
+  the raw arms. That placement reads from the CALLER's file, so a union nested
+  in ANOTHER file's container or tuple return (`-> list[A | B]`, arms spelled
+  relative to that file) is placed earlier, by `pythonPlacedReturnFact` at the
+  return read, where the declaring file is known (bd tea-rags-mcp-m99j1.1.70);
+  an arm it cannot place kills the whole fact, as a top-level union's does. A
+  single NOMINAL element there is placed by the same read (bd
+  tea-rags-mcp-m99j1.1.75) but never killed: one the declaring file cannot place
+  keeps its spelling for the caller's fold. `assignedValue` (bd
+  tea-rags-mcp-m99j1.1.91) is a plain `name = <attribute read | name>` in a def,
+  scoped by `scopeEndLine` to the def's next binding of the name and never
+  written for a name the def annotates. It is the one TRANSPARENT kind:
+  `pythonLocalBindingInForce` reads past it unless its fold names a project
+  class or a library type, so it can only add a type — which is how the
+  assigned-local fan gate's lost edges come back as exact ones (the gate is
+  opt-in, default OFF, bd o9mk8; epic qg12x). `contextEnter` is `__enter__`'s
+  return through the member-return MRO walk and nothing when no project class
+  declares one — the constructed instance is never the answer. A
+  `@contextlib.contextmanager` / `asynccontextmanager` generator (decorator
+  qualified through the file's imports) is the one exception: its annotated
+  `Iterator[T]`-family return is recorded as the library manager class carrying
+  `T` (`generator-context-manager-marker.ts`), and it enters as `T` (bd
   tea-rags-mcp-m99j1.1.87); an unannotated one stays untyped. `except E as e`
   needs no derived kind: it is a plain instance binding scoped to the handler; a
   tuple `except (A, B)` and starred targets record nothing. This is a DIFFERENT

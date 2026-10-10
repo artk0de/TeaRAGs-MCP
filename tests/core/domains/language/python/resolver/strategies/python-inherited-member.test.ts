@@ -24,8 +24,8 @@ import type {
   LocalBinding,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import type { AncestorLinearizer } from "../../../../../../../src/core/domains/language/kernel/ancestor-walk.js";
-import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
-import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
+import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-ancestor-policy.js";
+import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
 import { PythonImportedNameSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-imported-name.js";
 import { PythonLocalBindingSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-local-binding.js";
 import { PythonSelfMemberSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-self-member.js";

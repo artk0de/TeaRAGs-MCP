@@ -22,7 +22,7 @@ import type {
   AncestorLinearizer,
   LinearizedAncestors,
 } from "../../../../../../../src/core/domains/language/kernel/ancestor-walk.js";
-import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
+import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
 import {
   findPythonImportBinding,
   parsePythonClassKey,

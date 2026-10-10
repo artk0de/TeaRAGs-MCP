@@ -64,10 +64,10 @@ import {
   createPythonSymbolResolutionChain,
   PythonImportFileMapper,
 } from "../src/core/domains/language/python/resolver/index.js";
-import { PythonAncestorLinearizerCache } from "../src/core/domains/language/python/resolver/python-ancestor-policy.js";
 import { createPythonDispatchComponents } from "../src/core/domains/language/python/resolver/python-dispatch-components.js";
-import { PythonExternalVocabulary } from "../src/core/domains/language/python/resolver/python-external-vocabulary.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
+import { PythonAncestorLinearizerCache } from "../src/core/domains/language/python/resolver/strategies/python-ancestor-policy.js";
+import { PythonExternalVocabulary } from "../src/core/domains/language/python/resolver/strategies/python-external-vocabulary.js";
 import { pythonEnclosingClass } from "../src/core/domains/language/python/resolver/strategies/shared.js";
 import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view.js";
 import {

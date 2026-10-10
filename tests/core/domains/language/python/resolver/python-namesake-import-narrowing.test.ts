@@ -21,8 +21,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext, ImportRef, ModuleReexport } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
-import { createPythonCallBindingPorts } from "../../../../../../src/core/domains/language/python/resolver/python-receiver-type-ports.js";
+import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
+import { createPythonCallBindingPorts } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-receiver-type-ports.js";
 import {
   pythonCallBindingType,
   pythonImportBoundFile,

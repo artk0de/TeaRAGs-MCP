@@ -32,9 +32,9 @@
  */
 import type { AmbiguousResolveMode, CallContext, CallRef } from "../../../../contracts/types/codegraph.js";
 import type { ReceiverTypingPorts } from "../../kernel/index.js";
-import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
-import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { parsePythonClassKey, pythonTypeRefClassKey } from "./python-type-addressing.js";
+import type { PythonAncestorLinearizerCache } from "./strategies/python-ancestor-policy.js";
+import type { PythonImportFileMapper } from "./strategies/python-import-file-mapper.js";
+import { parsePythonClassKey, pythonTypeRefClassKey } from "./strategies/python-type-addressing.js";
 import { resolvePythonInheritedMember } from "./strategies/shared.js";
 
 /** The dunder methods through which a Python class answers attribute lookup itself. */

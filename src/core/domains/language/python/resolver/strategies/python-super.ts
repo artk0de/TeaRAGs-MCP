@@ -7,7 +7,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
+import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import {
   lookupPythonSymbolsByShortName,
   pythonEnclosingClass,

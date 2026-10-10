@@ -22,7 +22,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext, ModuleReexport } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
+import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function tableWith(files: Record<string, readonly string[]>): InMemoryGlobalSymbolTable {

@@ -1,6 +1,6 @@
-import type { CallContext, RelPath, SymbolResolutionTarget } from "../../../../contracts/types/codegraph.js";
+import type { CallContext, RelPath, SymbolResolutionTarget } from "../../../../../contracts/types/codegraph.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { lookupPythonSymbolsByShortName } from "./strategies/shared.js";
+import { lookupPythonSymbolsByShortName } from "./shared.js";
 
 /**
  * A dotted spelling as ANOTHER file's module scope sees it — that file's own

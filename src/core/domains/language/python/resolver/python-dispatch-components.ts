@@ -16,11 +16,11 @@ import {
   type PythonChainAnswerProbe,
 } from "./dispatch/index.js";
 import type { createPythonUnionDispatchPorts } from "./dispatch/python-union-ports.js";
-import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
-import { PythonCallableParamTargets } from "./python-callable-param-targets.js";
-import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { createPythonTypeMemberLookup } from "./python-type-member-lookup.js";
 import { PythonConeTypeLocator, type ResolverConfig } from "./strategies/index.js";
+import type { PythonAncestorLinearizerCache } from "./strategies/python-ancestor-policy.js";
+import { PythonCallableParamTargets } from "./strategies/python-callable-param-targets.js";
+import type { PythonImportFileMapper } from "./strategies/python-import-file-mapper.js";
 
 export interface PythonDispatchComponentDeps {
   cfg: ResolverConfig;

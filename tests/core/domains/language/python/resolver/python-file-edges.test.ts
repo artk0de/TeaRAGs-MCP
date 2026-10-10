@@ -17,9 +17,9 @@ import type {
   SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { PythonCallResolver } from "../../../../../../src/core/domains/language/python/resolver/index.js";
-import { PythonExternalVocabulary } from "../../../../../../src/core/domains/language/python/resolver/python-external-vocabulary.js";
-import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { resolveTypeFile } from "../../../../../../src/core/domains/language/python/resolver/strategies/index.js";
+import { PythonExternalVocabulary } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-external-vocabulary.js";
+import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const sym = (name: string, relPath: string): SymbolDefinition => ({

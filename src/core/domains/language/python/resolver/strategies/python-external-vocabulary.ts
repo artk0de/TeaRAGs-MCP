@@ -14,20 +14,20 @@
  * symbol-table query (`hasFile` / `hasFilesUnder`, bd q9u85). The vocabulary is
  * consulted once per unresolved call on corpora with 80k of them.
  */
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import { resolveLocalBindingType } from "../../../../contracts/types/codegraph-local-binding.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
+import { resolveLocalBindingType } from "../../../../../contracts/types/codegraph-local-binding.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   isDerivedLocalBinding,
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
-} from "../../../../contracts/types/codegraph.js";
-import type { ExternalVocabulary } from "../../../../contracts/types/language.js";
-import type { ReceiverTypePorts } from "../../kernel/index.js";
-import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
-import { PYTHON_CORE_MEMBERS } from "../vocabulary/core-members.js";
-import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
+} from "../../../../../contracts/types/codegraph.js";
+import type { ExternalVocabulary } from "../../../../../contracts/types/language.js";
+import type { ReceiverTypePorts } from "../../../kernel/index.js";
+import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
+import { PYTHON_CORE_MEMBERS } from "../../vocabulary/core-members.js";
+import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { PythonExternalDefinitionProbe } from "./python-external-definition-probe.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";

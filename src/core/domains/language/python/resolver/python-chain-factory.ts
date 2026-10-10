@@ -28,9 +28,6 @@
  */
 
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
-import { PythonCallableParamTargets } from "./python-callable-param-targets.js";
-import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   PythonChainTypeSymbolResolutionStrategy,
   PythonClsMemberSymbolResolutionStrategy,
@@ -43,7 +40,10 @@ import {
   PythonSuperSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
+import { PythonAncestorLinearizerCache } from "./strategies/python-ancestor-policy.js";
+import { PythonCallableParamTargets } from "./strategies/python-callable-param-targets.js";
 import { PythonCallableParamSymbolResolutionStrategy } from "./strategies/python-callable-param.js";
+import { PythonImportFileMapper } from "./strategies/python-import-file-mapper.js";
 
 /**
  * The production chain, in production order.

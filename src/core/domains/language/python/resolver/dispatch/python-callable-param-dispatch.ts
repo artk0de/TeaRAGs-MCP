@@ -1,7 +1,7 @@
 import type { CallContext, CallRef, DispatchFanoutOutcome } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import { resolveNarrowedFanout } from "../../../kernel/index.js";
-import type { PythonCallableParamTargets } from "../python-callable-param-targets.js";
+import type { PythonCallableParamTargets } from "../strategies/python-callable-param-targets.js";
 
 /**
  * The fan half of the P2 callable-value flow (bd tea-rags-mcp-m99j1.1.19):

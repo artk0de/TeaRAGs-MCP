@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { mapPythonImportToFile } from "../../../../../../src/core/domains/language/python/resolver/python-path-mapper.js";
 import { PythonCallResolver } from "../../../../../../src/core/domains/language/python/resolver/python-resolver.js";
+import { mapPythonImportToFile } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-path-mapper.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 describe("mapPythonImportToFile", () => {

@@ -8,15 +8,15 @@
  * leaf `python-type-addressing.js` and the kernel, never `strategies/shared.ts`.
  */
 
-import { createIdentifierRecord, identifierEntry } from "../../../../contracts/identifier-record.js";
+import { createIdentifierRecord, identifierEntry } from "../../../../../contracts/identifier-record.js";
 import {
   isDerivedLocalBinding,
   type CallContext,
   type DerivedLocalBindingKind,
   type LocalBinding,
   type SymbolDefinition,
-} from "../../../../contracts/types/codegraph.js";
-import type { TypeRef } from "../../../../contracts/types/language.js";
+} from "../../../../../contracts/types/codegraph.js";
+import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   MemberReturnTypeResolver,
   propagateReceiverType,
@@ -25,10 +25,10 @@ import {
   type MemberReturnTypePorts,
   type NominalTypeRef,
   type ReceiverTypePorts,
-} from "../../kernel/index.js";
-import { isPythonFrameworkAnswerClass, pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
-import { PYTHON_SELF_RETURN } from "../walker/passes/python-type-annotation.js";
-import { pythonMemberReturnKey, pythonModuleReturnKey } from "../walker/passes/python-type-channels.js";
+} from "../../../kernel/index.js";
+import { isPythonFrameworkAnswerClass, pythonVocabularyFor } from "../../vocabulary/frameworks/index.js";
+import { PYTHON_SELF_RETURN } from "../../walker/passes/python-type-annotation.js";
+import { pythonMemberReturnKey, pythonModuleReturnKey } from "../../walker/passes/python-type-channels.js";
 import { placePythonClassSpelling } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {

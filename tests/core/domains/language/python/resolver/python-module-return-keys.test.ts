@@ -17,9 +17,9 @@ import {
   type ImportRef,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../../src/core/contracts/types/language.js";
-import { PythonAncestorLinearizerCache } from "../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
-import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
-import { createPythonCallBindingPorts } from "../../../../../../src/core/domains/language/python/resolver/python-receiver-type-ports.js";
+import { PythonAncestorLinearizerCache } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-ancestor-policy.js";
+import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
+import { createPythonCallBindingPorts } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-receiver-type-ports.js";
 import { pythonCallBindingType } from "../../../../../../src/core/domains/language/python/resolver/strategies/shared.js";
 import { pythonModuleReturnKey } from "../../../../../../src/core/domains/language/python/walker/passes/python-type-channels.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";

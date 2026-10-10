@@ -1,8 +1,8 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
-import { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
+import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   pythonEnclosingClass,
   pythonInheritedAttributeType,

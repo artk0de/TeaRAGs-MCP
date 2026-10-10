@@ -11,8 +11,8 @@ import type {
   SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import { TableDispatchResolver, type TableDispatchPorts } from "../../../kernel/index.js";
-import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { resolvePythonModuleScopeSpelling } from "../python-module-scope-spelling.js";
+import type { PythonImportFileMapper } from "../strategies/python-import-file-mapper.js";
+import { resolvePythonModuleScopeSpelling } from "../strategies/python-module-scope-spelling.js";
 import { pythonImportBoundFile } from "../strategies/shared.js";
 
 /** The production chain's answer for one call — `PythonChainAnswerProbe#resolve`. */

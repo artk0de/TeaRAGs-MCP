@@ -25,8 +25,8 @@ import type {
   GlobalSymbolTable,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { PythonLanguage } from "../../../../../../src/core/domains/language/python/index.js";
-import { PythonAncestorLinearizerCache } from "../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
-import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
+import { PythonAncestorLinearizerCache } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-ancestor-policy.js";
+import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
 import { PythonSelfFieldSymbolResolutionStrategy } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-self-field.js";
 import {
   paramTypesOfChunk,

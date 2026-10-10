@@ -29,7 +29,7 @@ import {
 } from "../../../kernel/index.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import { pythonModuleValueKey } from "../../walker/passes/python-type-channels.js";
-import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   findPythonImportBinding,
   lastSegment,
@@ -42,8 +42,8 @@ import {
   pythonTypeRefClassKey,
   resolveTypeRefFile,
   type PythonImportBinding,
-} from "../python-type-addressing.js";
-import { lookupPythonSymbolsByShortName } from "../short-name-lookup.js";
+} from "./python-type-addressing.js";
+import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
 
 /**
  * Moved out of this hub to resolver-root leaves (bd tea-rags-mcp-m99j1.1.29) and
@@ -67,7 +67,7 @@ export {
   resolveTypeFile,
   resolveTypeRefFile,
   type PythonImportBinding,
-} from "../python-type-addressing.js";
+} from "./python-type-addressing.js";
 export {
   pythonBareCallReturnType,
   pythonCallBindingType,
@@ -76,7 +76,7 @@ export {
   pythonModuleReturnType,
   pythonSubstituteSelfReturn,
   type PythonMemberAccess,
-} from "../python-member-return-types.js";
+} from "./python-member-return-types.js";
 
 /**
  * The language-filtered short-name lookup, re-exported so
@@ -86,7 +86,7 @@ export {
  * `PythonImportFileMapper` type foremost — can use it without closing an
  * import cycle (bd tea-rags-mcp-0qaht.35); see there.
  */
-export { lookupPythonSymbols, lookupPythonSymbolsByShortName, PYTHON_SYMBOL_KIND_ROLES } from "../short-name-lookup.js";
+export { lookupPythonSymbols, lookupPythonSymbolsByShortName, PYTHON_SYMBOL_KIND_ROLES } from "./short-name-lookup.js";
 
 /**
  * Was `receiver` assigned, at or above `atLine`, from a call whose CALLEE the

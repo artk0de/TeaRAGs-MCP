@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { PythonExternalVocabulary } from "../../../../../../src/core/domains/language/python/resolver/python-external-vocabulary.js";
+import { PythonExternalVocabulary } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-external-vocabulary.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const vocab = new PythonExternalVocabulary();

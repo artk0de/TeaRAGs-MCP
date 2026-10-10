@@ -17,10 +17,10 @@
  * keeps working.
  */
 
-import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
-import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../../kernel/index.js";
-import { capability } from "../capability.js";
-import { isPythonSourcePath } from "../vocabulary/source-extensions.js";
+import type { CallContext, SymbolDefinition } from "../../../../../contracts/types/codegraph.js";
+import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../../../kernel/index.js";
+import { capability } from "../../capability.js";
+import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
 
 /**
  * Short-name lookup restricted to PYTHON candidates — the ONLY short-name entry

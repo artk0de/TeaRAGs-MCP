@@ -4,8 +4,8 @@ import type {
   CallRef,
   RelPath,
   SymbolDefinition,
-} from "../../../../contracts/types/codegraph.js";
-import { RunScopedMemo } from "../../kernel/index.js";
+} from "../../../../../contracts/types/codegraph.js";
+import { RunScopedMemo } from "../../../kernel/index.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { resolvePythonModuleScopeSpelling } from "./python-module-scope-spelling.js";
 

@@ -34,12 +34,12 @@
 
 import { posix } from "node:path";
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext, GlobalSymbolTable, RelPath } from "../../../../contracts/types/codegraph.js";
-import type { ImportFileMapper, ImportFileTarget } from "../../../../contracts/types/language.js";
-import { RunScopedMemo } from "../../kernel/index.js";
-import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
-import { pythonModuleValueKey } from "../walker/passes/python-type-channels.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
+import type { CallContext, GlobalSymbolTable, RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { ImportFileMapper, ImportFileTarget } from "../../../../../contracts/types/language.js";
+import { RunScopedMemo } from "../../../kernel/index.js";
+import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
+import { pythonModuleValueKey } from "../../walker/passes/python-type-channels.js";
 import { pythonClassKey } from "./python-class-key.js";
 import { lookupPythonSymbolsByShortName } from "./short-name-lookup.js";
 

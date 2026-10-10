@@ -19,10 +19,10 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../../src/core/contracts/types/language.js";
-import { PythonExternalVocabulary } from "../../../../../../src/core/domains/language/python/resolver/python-external-vocabulary.js";
-import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
-import { createPythonReceiverTypePorts } from "../../../../../../src/core/domains/language/python/resolver/python-receiver-type-ports.js";
 import { PythonCallResolver } from "../../../../../../src/core/domains/language/python/resolver/python-resolver.js";
+import { PythonExternalVocabulary } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-external-vocabulary.js";
+import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
+import { createPythonReceiverTypePorts } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-receiver-type-ports.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function tableWith(files: Record<string, readonly string[]>): InMemoryGlobalSymbolTable {

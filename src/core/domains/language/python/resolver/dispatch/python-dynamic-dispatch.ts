@@ -1,6 +1,6 @@
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import { DynamicDispatchResolver, EnclosingClassPrivateAccess } from "../../../kernel/index.js";
-import { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import { PythonImportFileMapper } from "../strategies/python-import-file-mapper.js";
 import { lookupPythonSymbolsByShortName } from "../strategies/shared.js";
 import type { PythonChainAnswerProbe } from "./python-chain-probe.js";
 import { PYTHON_ASSIGNED_LOCAL_GATE_DEFAULT, pythonDynamicFanoutSuppressed } from "./python-dispatch-gates.js";

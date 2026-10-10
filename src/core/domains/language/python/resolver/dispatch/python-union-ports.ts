@@ -25,9 +25,12 @@
 import { nearestCallResultBinding } from "../../../../../contracts/types/codegraph.js";
 import { propagateReceiverType, typeRefReceiverForm, type UnionDispatchPorts } from "../../../kernel/index.js";
 import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
-import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
-import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { createPythonCallBindingPorts, createPythonReceiverTypePorts } from "../python-receiver-type-ports.js";
+import type { PythonAncestorLinearizerCache } from "../strategies/python-ancestor-policy.js";
+import type { PythonImportFileMapper } from "../strategies/python-import-file-mapper.js";
+import {
+  createPythonCallBindingPorts,
+  createPythonReceiverTypePorts,
+} from "../strategies/python-receiver-type-ports.js";
 import { pythonCallBindingType } from "../strategies/shared.js";
 
 /**

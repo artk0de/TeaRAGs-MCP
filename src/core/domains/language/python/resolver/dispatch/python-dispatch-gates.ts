@@ -7,7 +7,7 @@ import {
 import { receiverIsAssignedLocal, type ExactChainAnswerProbe } from "../../../kernel/index.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import { PYTHON_TYPESHED_MEMBERS } from "../../vocabulary/typeshed-members.js";
-import { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import { PythonImportFileMapper } from "../strategies/python-import-file-mapper.js";
 import {
   findPythonImportBinding,
   lookupPythonSymbolsByShortName,
