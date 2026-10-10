@@ -97,6 +97,9 @@ const CHUNK_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<ChunkExtraction> 
   callResultBindings: (base, pass) => mergeLocalBindings(base, pass),
   // A set of names (bd tea-rags-mcp-m99j1.1.57): union, base order first.
   assignedLocals: (base, pass) => [...new Set([...(base ?? []), ...pass])],
+  // Name → exact-construction binding lines (bd tea-rags-mcp-0qaht.66): union
+  // of KEYS, the base's lines kept on a shared name.
+  constructedLocals: (base, pass) => ({ ...pass, ...base }),
   // Scalars: the base's answer stands; a pass may only FILL one the walker left
   // absent. `??` and not a truthiness test — `acceptsBlock: false` is a proven
   // non-yielder, not a missing value.

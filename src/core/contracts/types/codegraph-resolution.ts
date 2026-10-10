@@ -23,7 +23,7 @@ import type {
 } from "./codegraph-extraction.js";
 import type { GraphEdges } from "./codegraph-graph.js";
 import type { HierarchyView } from "./codegraph-hierarchy.js";
-import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
+import type { CallResultBinding, ConstructedLocalLines, LocalBinding } from "./codegraph-local-binding.js";
 import type { SelfDispatchArgTemplate } from "./codegraph-pass1.js";
 import type { GlobalSymbolTable, RelPath, SymbolId, SymbolKindRoles } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
@@ -472,6 +472,13 @@ export interface CallContext {
    * Per-chunk like `callResultBindings`, never merged run-global.
    */
   assignedLocals?: readonly string[];
+  /**
+   * Per-chunk exact-construction lines of `localBindings`, propagated from
+   * `ChunkExtraction.constructedLocals` (bd tea-rags-mcp-0qaht.66). The CHA
+   * cone reads it: a receiver whose resolved binding is listed has its bound
+   * type as its runtime class and is never fanned to overriding subtypes.
+   */
+  constructedLocals?: ConstructedLocalLines;
   /**
    * Run-global `functionName → declaredReturnTypeName` map propagated from
    * `FileExtraction.functionReturnTypes` (merged across all pass-1 files so

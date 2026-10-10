@@ -317,7 +317,11 @@
   extended by a project class through any nominal kind but `implements`,
   DECLINES the cone: the library's own member is the target, and fanning to the
   override claimed every plain `Map#get` for `TreeContentHashes#get` (bd
-  tea-rags-mcp-0qaht.64). Why: a 1-wide override cone is a `single` fan that
+  tea-rags-mcp-0qaht.64). A receiver whose resolved binding the chunk lists in
+  `constructedLocals` (an exact `X.new` / `new X()`, the name's ONLY binding in
+  its scope — the walker proves both) emits one `exact` edge to `T`'s nearest
+  definer instead of the fan; a declared or annotated type never qualifies (bd
+  tea-rags-mcp-0qaht.66). Why: a 1-wide override cone is a `single` fan that
   REPLACES the chain's answer, so without the receiver's own target the exact
   edge never reached the graph.
 - **A framework vocabulary is gated by the project's DECLARED dependencies, and
