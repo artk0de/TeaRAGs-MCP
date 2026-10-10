@@ -32,7 +32,11 @@ import type {
 import type { ChunkSetBumpScopes } from "../../contracts/types/rechunk.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
-import type { PayloadSignalDescriptor, SignalFloors } from "../../contracts/types/trajectory.js";
+import type {
+  PayloadSignalDescriptor,
+  PayloadSignalTreeRecompute,
+  SignalFloors,
+} from "../../contracts/types/trajectory.js";
 import { OrderByFieldResolver } from "../../domains/explore/rank-module.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
@@ -58,6 +62,7 @@ import {
   GIT_FILTER_PRESETS,
   gitDerivedSignals,
   gitFilters,
+  gitLineCountFormulas,
   gitPayloadSignalDescriptors,
   gitStatsAccumulators,
   type GitProviderConfig,
@@ -206,6 +211,20 @@ export function fullRegistryPayloadSignalDescriptors(): PayloadSignalDescriptor[
     ...CODEGRAPH_SYMBOLS_FILE_SIGNALS,
     ...CODEGRAPH_SYMBOLS_CHUNK_SIGNALS,
   ];
+}
+
+/**
+ * Every payload signal's tree dependence and every `line-count` formula of
+ * THIS BUILD (bd tea-rags-mcp-39xca.20) — what the working-tree overlay applies
+ * to a delta row. Full registry for the reason above: a delta row inherits
+ * whatever its base INDEX carries, whichever trajectories this process
+ * registers. Only git declares `line-count` signals.
+ *
+ * `tests/core/api/internal/payload-signal-tree-dependence.test.ts` fails when
+ * this disagrees with a composition registering every trajectory.
+ */
+export function fullRegistryPayloadSignalTreeRecompute(): PayloadSignalTreeRecompute {
+  return { descriptors: fullRegistryPayloadSignalDescriptors(), lineCountFormulas: gitLineCountFormulas };
 }
 
 /**

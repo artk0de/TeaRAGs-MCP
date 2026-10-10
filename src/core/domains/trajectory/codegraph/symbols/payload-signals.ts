@@ -27,12 +27,14 @@ import type { PayloadSignalDescriptor } from "../../../../contracts/types/trajec
 export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
   {
     key: "codegraph.file.fanIn",
+    treeDependence: "tree-graph",
     type: "number",
     description: "Number of files importing this file",
     stats: { labels: { p25: "isolated", p50: "typical", p75: "popular", p95: "hub" }, dedupeByFile: true },
   },
   {
     key: "codegraph.file.fanOut",
+    treeDependence: "tree-graph",
     type: "number",
     description: "Number of files this file imports",
     stats: { labels: { p25: "minimal", p50: "typical", p75: "heavy", p95: "exhaustive" }, dedupeByFile: true },
@@ -44,6 +46,7 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
     // declares `connectionCount` as support; score path dampens
     // contribution to ranking and label path clamps the overlay tier.
     key: "codegraph.file.instability",
+    treeDependence: "tree-graph",
     type: "number",
     description: "Martin instability = fanOut / (fanIn + fanOut), in [0,1]",
     stats: {
@@ -93,6 +96,7 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
     // declared in percentilesToCompute because the instability clamp
     // references "p10" but the labels map doesn't include it.
     key: "codegraph.file.connectionCount",
+    treeDependence: "tree-graph",
     type: "number",
     description: "Total file-graph edges = fanIn + fanOut (support signal for instability confidence)",
     stats: {
@@ -103,11 +107,13 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
   },
   {
     key: "codegraph.file.isHub",
+    treeDependence: "tree-graph",
     type: "boolean",
     description: "True when fanIn exceeds the collection p95 (computed at rerank time)",
   },
   {
     key: "codegraph.file.isLeaf",
+    treeDependence: "tree-graph",
     type: "boolean",
     description: "True when fanOut == 0 and fanIn > 0",
   },
@@ -119,6 +125,7 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
     // each imported by 20 has transitiveImpact ≈ 60+, far higher than
     // its direct fanIn of 3.
     key: "codegraph.file.transitiveImpact",
+    treeDependence: "tree-graph",
     type: "number",
     description: "Distinct files transitively importing this file (reverse BFS, depth-capped)",
     stats: { labels: { p50: "local", p75: "regional", p95: "systemic" }, dedupeByFile: true },
@@ -135,6 +142,7 @@ export const CODEGRAPH_SYMBOLS_CHUNK_SIGNALS: PayloadSignalDescriptor[] = [
     // ~1 in total, so fan-out targets no longer inflate into fake hubs. May
     // be FRACTIONAL (e.g. 1.25); exact edges keep integer counts.
     key: "codegraph.chunk.fanIn",
+    treeDependence: "tree-graph",
     type: "number",
     description:
       "Confidence-weighted sum of call sites invoking this symbol (exact edge = 1, dynamic fan-out edge = its dispatch confidence)",
@@ -147,6 +155,7 @@ export const CODEGRAPH_SYMBOLS_CHUNK_SIGNALS: PayloadSignalDescriptor[] = [
     // Confidence-weighted like chunk.fanIn: a whole m-way fan-out counts as
     // ONE outgoing call (m edges × 1/m), not m. May be fractional.
     key: "codegraph.chunk.fanOut",
+    treeDependence: "tree-graph",
     type: "number",
     description: "Confidence-weighted sum of outgoing calls from this symbol (a dynamic fan-out counts as one call)",
     stats: {
@@ -160,6 +169,7 @@ export const CODEGRAPH_SYMBOLS_CHUNK_SIGNALS: PayloadSignalDescriptor[] = [
     // by many high-rank methods inherits weight even when its direct
     // fanIn is modest. damping = 0.85, eps = 1e-6, max 50 iters.
     key: "codegraph.chunk.pageRank",
+    treeDependence: "tree-graph",
     type: "number",
     description: "PageRank score over the method call graph (damping 0.85, normalized to [0,1])",
     stats: {

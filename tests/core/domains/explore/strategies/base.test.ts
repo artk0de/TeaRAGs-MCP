@@ -235,8 +235,8 @@ describe("BaseExploreStrategy", () => {
 
     it("strips content when metaOnly is true, keeps metadata from payloadSignals", async () => {
       const payloadSignals: PayloadSignalDescriptor[] = [
-        { key: "relativePath", type: "string", description: "File path" },
-        { key: "name", type: "string", description: "Symbol name" },
+        { key: "relativePath", type: "string", treeDependence: "history-only", description: "File path" },
+        { key: "name", type: "string", treeDependence: "history-only", description: "Symbol name" },
       ];
       const results = [
         { id: "1", score: 0.9, payload: { relativePath: "src/a.ts", name: "myFn", content: "code content" } },
@@ -253,7 +253,7 @@ describe("BaseExploreStrategy", () => {
 
     it("returns score in metaOnly output", async () => {
       const payloadSignals: PayloadSignalDescriptor[] = [
-        { key: "relativePath", type: "string", description: "File path" },
+        { key: "relativePath", type: "string", treeDependence: "history-only", description: "File path" },
       ];
       const results = [{ id: "1", score: 0.75, payload: { relativePath: "src/x.ts", content: "stuff" } }];
       const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), payloadSignals, EMPTY_KEYS, results);

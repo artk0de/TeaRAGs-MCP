@@ -34,6 +34,13 @@
  *   rows that asked keep what they inherit, the result counts them
  *   (`gitPendingRows`), and the computation runs on to persist for the next
  *   request.
+ * - Every payload signal declares its `treeDependence` (bd
+ *   tea-rags-mcp-39xca.20), applied generically: an INHERITED block (git or
+ *   codegraph) takes each `line-count` signal over the tree's lines — the file's
+ *   last row, or the row's own span — by its owning trajectory's formula;
+ *   `history-only` values stay the base's; `tree-content` blame values stay the
+ *   base's too, knowingly stale until the edit is committed and reindexed (no
+ *   per-request blame); `tree-graph` values come from the tree graph below.
  * - A file a COMMIT on either side of `indexedCommit...HEAD` touched (asked
  *   once per request) has a history at HEAD its base points do not describe —
  *   commits since the index (live G1 — a just-committed file ranked 196 days
@@ -58,6 +65,7 @@
  *   resolves (`domains/trajectory/codegraph/CLAUDE.md`).
  */
 
+import { toPhysicalPayloadKey } from "../../../contracts/signal-utils.js";
 import type {
   ChunkGraphSignals,
   FileGraphMetrics,
@@ -65,6 +73,7 @@ import type {
   PersistedSymbolLineRanges,
 } from "../../../contracts/types/codegraph.js";
 import type { ChunkSignalOverlay } from "../../../contracts/types/provider.js";
+import type { PayloadSignalLineCountFormula, PayloadSignalTreeRecompute } from "../../../contracts/types/trajectory.js";
 import {
   WORKING_TREE_SEARCH_GRAPH_WAIT_MS,
   type WorkingTreeDeltaRow,
@@ -85,7 +94,6 @@ import {
   settleCodegraphChunkSignals,
   type CodegraphStoredChunk,
 } from "../../../domains/trajectory/codegraph/symbols/chunk-signal-settlement.js";
-import { gitFileSignalsAtLineCount } from "../../../domains/trajectory/git/index.js";
 import type { WorkingTreeGraphFileOpener } from "./working-tree-graph-read.js";
 
 /** Tree-graph signal reads kept per process — one per recent (graph, file set). */
@@ -109,6 +117,32 @@ export interface WorkingTreeDeltaSignalSourceDeps {
    * they inherit.
    */
   gitSignals?: WorkingTreeGitSignalSource;
+  /**
+   * Every payload signal's tree dependence and the owning trajectories'
+   * `line-count` formulas (bd tea-rags-mcp-39xca.20). An inherited block takes
+   * each of its `line-count` signals over the tree's lines; every other policy
+   * is served by where the block comes from (base point, tree graph, chunker).
+   */
+  signalTreeRecompute: PayloadSignalTreeRecompute;
+}
+
+/** One `line-count` signal, addressed inside its payload block. */
+interface LineCountSignal {
+  field: string;
+  formula: PayloadSignalLineCountFormula;
+}
+
+/**
+ * The `line-count` signals by the PHYSICAL path of the block they sit in
+ * (`git.chunk`, `codegraph.symbols.file`) — what an inherited block is
+ * recomputed with. Flat keys have no block and cannot be inherited by block.
+ */
+type LineCountSignalsByBlock = ReadonlyMap<string, readonly LineCountSignal[]>;
+
+/** Line counts an inherited block's `line-count` signals are taken between. */
+interface BlockLineCounts {
+  base: number | undefined;
+  tree: number | undefined;
 }
 
 /** The touched files' base payload by path, and whether the base index carries git at all. */
@@ -127,6 +161,8 @@ interface BaseFilePayload {
   gitFile?: PayloadBlock;
   codegraphFile?: PayloadBlock;
   bySymbol: Map<string, Record<string, unknown>>;
+  /** The last line the base points reach — the base file's line count as ingest computed it. */
+  maxEndLine?: number;
 }
 
 /** What the tree graph says about the delta's files. */
@@ -139,6 +175,7 @@ interface TreeGraphSignals {
 export function createWorkingTreeDeltaSignalSource(
   deps: WorkingTreeDeltaSignalSourceDeps,
 ): WorkingTreeDeltaSignalSource {
+  const lineCountSignals = lineCountSignalsByBlock(deps.signalTreeRecompute);
   const treeSignalCache = new Map<string, Promise<TreeGraphSignals>>();
   const graphWideCache = new Map<string, Promise<GraphWideSignals>>();
   /**
@@ -233,7 +270,14 @@ export function createWorkingTreeDeltaSignalSource(
 
       const lineCounts = treeLineCounts(request.rows);
       const rows = request.rows.map((row) =>
-        enrichRow(row, base.byFile, tree, historyOf(pathOf(row.payload)), onDemandGit ?? new Map(), lineCounts),
+        enrichRow(row, {
+          base: base.byFile,
+          tree,
+          history: historyOf(pathOf(row.payload)),
+          onDemandGit: onDemandGit ?? new Map(),
+          lineCounts,
+          lineCountSignals,
+        }),
       );
       return {
         rows,
@@ -451,7 +495,8 @@ async function settleWithin<T>(answer: Promise<T>, waitMs: number | undefined): 
 function addBasePoint(file: BaseFilePayload, payload: Record<string, unknown>): void {
   file.gitFile ??= blockAt(payload, ["git", "file"]);
   file.codegraphFile ??= blockAt(payload, ["codegraph", "symbols", "file"]);
-  const { symbolId } = payload;
+  const { symbolId, endLine } = payload;
+  if (typeof endLine === "number") file.maxEndLine = Math.max(file.maxEndLine ?? 0, endLine);
   if (typeof symbolId === "string" && symbolId !== "" && !file.bySymbol.has(symbolId)) {
     file.bySymbol.set(symbolId, payload);
   }
@@ -541,36 +586,48 @@ function treeFileLines(rows: readonly WorkingTreeDeltaRow[]): Map<string, number
   return lines;
 }
 
-function enrichRow(
-  row: WorkingTreeDeltaRow,
-  base: ReadonlyMap<string, BaseFilePayload>,
-  tree: TreeGraphSignals | undefined,
-  history: GitHistory,
-  onDemandGit: ReadonlyMap<string, WorkingTreeGitSignals>,
-  lineCounts: ReadonlyMap<string, number>,
-): WorkingTreeDeltaRow {
+/** What one row is enriched from — the request's reads, shared by its rows. */
+interface DeltaRowSources {
+  base: ReadonlyMap<string, BaseFilePayload>;
+  tree: TreeGraphSignals | undefined;
+  history: GitHistory;
+  onDemandGit: ReadonlyMap<string, WorkingTreeGitSignals>;
+  lineCounts: ReadonlyMap<string, number>;
+  lineCountSignals: LineCountSignalsByBlock;
+}
+
+function enrichRow(row: WorkingTreeDeltaRow, sources: DeltaRowSources): WorkingTreeDeltaRow {
+  const { base, tree, history, onDemandGit, lineCounts } = sources;
   const path = pathOf(row.payload);
   const file = base.get(path);
   const basePoint = file ? basePointOf(file, row.payload.symbolId) : undefined;
   const payload: Record<string, unknown> = { ...row.payload };
+  // An INHERITED block keeps the base's values and takes each of its
+  // `line-count` signals over the tree's lines (bd tea-rags-mcp-39xca.20) — a
+  // block computed on demand or read from the tree graph already is.
+  const inherit = (blockPath: string, block: PayloadBlock | undefined, lines: BlockLineCounts) =>
+    block && inheritedAtTreeLines(sources.lineCountSignals.get(blockPath), block, lines);
+  const fileLines = (from: BaseFilePayload | undefined): BlockLineCounts => ({
+    base: from?.maxEndLine,
+    tree: lineCounts.get(path),
+  });
+  const chunkLines = (from: Record<string, unknown> | undefined): BlockLineCounts => ({
+    base: from ? spanOf(from) : undefined,
+    tree: spanOf(row.payload),
+  });
 
   // git follows the file's HISTORY path — its own, or the old path of a move.
   // A base point answers first, unless a commit since the index moved that
-  // history; what none answers was computed on demand.
+  // history; what none answers was computed on demand. A path no commit touched
+  // has no file block, only the walk's zero chunk blocks — what ingest writes
+  // for an untracked file (live round-3 D4).
   const historyFile = history.moved ? undefined : base.get(history.path);
   const onDemand = onDemandGit.get(history.path);
-  // A path no commit touched has no file block, only the walk's zero chunk
-  // blocks — what ingest writes for an untracked file (live round-3 D4). An
-  // inherited block keeps the base's history and takes the tree file's line
-  // count, which a reindex of the tree computes `relativeChurn` over.
-  const lineCount = lineCounts.get(path);
-  const inheritedFile =
-    historyFile?.gitFile && lineCount !== undefined
-      ? gitFileSignalsAtLineCount(historyFile.gitFile, lineCount)
-      : historyFile?.gitFile;
-  const gitFile = inheritedFile ?? onDemand?.file;
+  const gitFile = inherit("git.file", historyFile?.gitFile, fileLines(historyFile)) ?? onDemand?.file;
   const historyPoint = historyFile?.gitFile ? basePointOf(historyFile, row.payload.symbolId) : undefined;
-  const gitChunk = historyPoint ? blockAt(historyPoint, ["git", "chunk"]) : onDemand?.chunks.get(String(row.id));
+  const gitChunk = historyPoint
+    ? inherit("git.chunk", blockAt(historyPoint, ["git", "chunk"]), chunkLines(historyPoint))
+    : onDemand?.chunks.get(String(row.id));
   if (gitFile || gitChunk) {
     payload.git = { ...(gitFile ? { file: gitFile } : {}), ...(gitChunk ? { chunk: gitChunk } : {}) };
   }
@@ -582,10 +639,61 @@ function enrichRow(
       symbols: { file: { ...file?.codegraphFile, ...treeFile }, ...(chunk ? { chunk } : {}) },
     };
   } else if (file?.codegraphFile) {
-    const cgChunk = basePoint ? blockAt(basePoint, ["codegraph", "symbols", "chunk"]) : undefined;
-    payload.codegraph = { symbols: { file: file.codegraphFile, ...(cgChunk ? { chunk: cgChunk } : {}) } };
+    const cgFile = inherit("codegraph.symbols.file", file.codegraphFile, fileLines(file));
+    const cgChunk = basePoint
+      ? inherit("codegraph.symbols.chunk", blockAt(basePoint, ["codegraph", "symbols", "chunk"]), chunkLines(basePoint))
+      : undefined;
+    payload.codegraph = { symbols: { file: cgFile, ...(cgChunk ? { chunk: cgChunk } : {}) } };
   }
   return { id: row.id, payload };
+}
+
+/**
+ * Index the `line-count` signals by the physical path of their block. A
+ * descriptor without its formula is the registry's failure to report
+ * (`TrajectoryRegistry#getPayloadSignalTreeRecompute` throws on it); here it
+ * is skipped, never guessed.
+ */
+function lineCountSignalsByBlock(recompute: PayloadSignalTreeRecompute): LineCountSignalsByBlock {
+  const byBlock = new Map<string, LineCountSignal[]>();
+  for (const descriptor of recompute.descriptors) {
+    if (descriptor.treeDependence !== "line-count") continue;
+    const formula = recompute.lineCountFormulas.get(descriptor.key);
+    const segments = toPhysicalPayloadKey(descriptor.key).split(".");
+    const field = segments.pop();
+    if (!formula || field === undefined || segments.length === 0) continue;
+    const blockPath = segments.join(".");
+    byBlock.set(blockPath, [...(byBlock.get(blockPath) ?? []), { field, formula }]);
+  }
+  return byBlock;
+}
+
+/**
+ * `block` with each of its `line-count` signals recomputed over the tree's
+ * lines by the owning trajectory's formula. No tree line count, or a formula
+ * the inputs do not determine, keeps the inherited value.
+ */
+function inheritedAtTreeLines(
+  signals: readonly LineCountSignal[] | undefined,
+  block: PayloadBlock,
+  lines: BlockLineCounts,
+): PayloadBlock {
+  const treeLineCount = lines.tree;
+  if (!signals || treeLineCount === undefined) return block;
+  let recomputed: PayloadBlock | undefined;
+  for (const { field, formula } of signals) {
+    const value = formula({ block, baseLineCount: lines.base, treeLineCount });
+    if (value === undefined || value === block[field]) continue;
+    recomputed ??= { ...block };
+    recomputed[field] = value;
+  }
+  return recomputed ?? block;
+}
+
+/** The lines a point's `startLine..endLine` spans, inclusive — as ingest counts a chunk. */
+function spanOf(payload: Record<string, unknown>): number | undefined {
+  const { startLine, endLine } = payload;
+  return typeof startLine === "number" && typeof endLine === "number" ? endLine - startLine + 1 : undefined;
 }
 
 /**

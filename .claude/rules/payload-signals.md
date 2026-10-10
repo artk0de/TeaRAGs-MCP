@@ -19,8 +19,8 @@ Every signal explicit object — NO computed patterns, NO `.map()`, NO spread.
 ```typescript
 // CORRECT — explicit flat list
 export const myPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
-  { key: "provider.file.commitCount", type: "number", description: "Total commits modifying this file", stats: { percentiles: [25, 50, 75, 95] } },
-  { key: "provider.chunk.commitCount", type: "number", description: "Commits touching this specific chunk", stats: { percentiles: [95] } },
+  { key: "provider.file.commitCount", type: "number", treeDependence: "history-only", description: "Total commits modifying this file", stats: { percentiles: [25, 50, 75, 95] } },
+  { key: "provider.chunk.commitCount", type: "number", treeDependence: "history-only", description: "Commits touching this specific chunk", stats: { percentiles: [95] } },
 ];
 
 // WRONG — never do this
@@ -51,7 +51,14 @@ without the declaration vanishes from them silently.
    `Record<OptionalOverlayKey<…>, true>`, so the compiler demands it)
 2. **Add computation** in provider's `computeFileSignals()` or
    `computeChunkSignals()`
-3. **Add descriptor** to payload signal descriptors array
+3. **Add descriptor** to payload signal descriptors array, with its REQUIRED
+   `treeDependence` (`history-only` / `line-count` / `tree-content` /
+   `tree-graph`, `PayloadSignalTreeDependence`): how a dirty or linked working
+   tree's row gets the value. `line-count` needs a formula in the trajectory's
+   `lineCountFormulas` (the registry throws without one). Decide it against what
+   a REINDEX of the dirty tree writes — the parity harness
+   `working-tree-git-parity.test.ts` is the oracle: `git.chunk.relativeChurn` is
+   `history-only` because the chunk walk counts over HEAD-carried rows
 4. **Add `stats` field** if numeric and consumed by derived signals or adaptive
    bounds
 5. **Add/update filter** in provider's `filters.ts` if signal user-filterable

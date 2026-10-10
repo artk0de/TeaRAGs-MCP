@@ -20,7 +20,13 @@ import { StatsCache } from "../../../../../src/core/infra/stats-cache.js";
 const COLLECTION = "code_test";
 
 function signal(stats: PayloadSignalDescriptor["stats"]): PayloadSignalDescriptor {
-  return { key: "git.file.bugFixRate", type: "number", description: "bug-fix share", stats };
+  return {
+    key: "git.file.bugFixRate",
+    type: "number",
+    treeDependence: "history-only",
+    description: "bug-fix share",
+    stats,
+  };
 }
 
 const PER_FILE = signal({ labels: { p50: "concerning" }, dedupeByFile: true });

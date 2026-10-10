@@ -33,6 +33,7 @@ import {
   createWorkingTreeGitSignalStore,
   enrichmentAlgorithmVersions,
   ExploreFacade,
+  fullRegistryPayloadSignalTreeRecompute,
   GraphFacade,
   IndexHistoryAnchorResolver,
   IngestFacade,
@@ -1716,6 +1717,10 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
     // from the tree graph. The pool is late-bound like the cache's runtime.
     deltaSignals: createWorkingTreeDeltaSignalSource({
       graphFiles: () => codegraphContext()?.pool,
+      // bd tea-rags-mcp-39xca.20: each payload signal's tree dependence and the
+      // owning trajectories' line-count formulas — this build's full registry,
+      // since a delta row inherits whatever its base index carries.
+      signalTreeRecompute: fullRegistryPayloadSignalTreeRecompute(),
       // D12: what no base point answers — `git.file` of a file the base never
       // chunked, `git.chunk` of a symbol it never held — comes from the git
       // trajectory's own computation, configured as ingest's; absent when git

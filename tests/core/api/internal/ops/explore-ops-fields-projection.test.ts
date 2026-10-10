@@ -129,7 +129,14 @@ function makeOps() {
       findByPath: vi.fn().mockReturnValue(null),
       list: vi.fn().mockReturnValue([]),
     } as any,
-    payloadSignals: [{ key: "git.file.commitCount", type: "number", description: "commits touching the file" }],
+    payloadSignals: [
+      {
+        key: "git.file.commitCount",
+        type: "number",
+        treeDependence: "history-only",
+        description: "commits touching the file",
+      },
+    ],
     essentialKeys: [],
   });
 }

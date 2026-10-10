@@ -22,6 +22,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   // ── File-level signals ──
   {
     key: "git.file.commitCount",
+    treeDependence: "history-only",
     type: "number",
     description: "Total commits modifying this file",
     stats: {
@@ -38,6 +39,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.file.ageDays",
+    treeDependence: "history-only",
     type: "number",
     description:
       "Days since last modification (stored stamp, frozen at enrichment — age reads derive from lastModifiedAt at query time)",
@@ -46,6 +48,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.file.lastModifiedAt",
+    treeDependence: "history-only",
     type: "timestamp",
     description:
       "Unix seconds of the file's last commit; the source age/recency/overlay ageDays derive from at query time (percentiles feed the now-relative floor and label bands)",
@@ -61,16 +64,19 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.file.recentDominantAuthor",
+    treeDependence: "history-only",
     type: "string",
     description: "Author with most commits to this file",
   },
   {
     key: "git.file.recentAuthors",
+    treeDependence: "history-only",
     type: "string[]",
     description: "All contributing authors",
   },
   {
     key: "git.file.recentDominantAuthorPct",
+    treeDependence: "history-only",
     type: "number",
     description: "Percentage of commits by dominant author",
     stats: {
@@ -86,18 +92,23 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.file.fileChurnCount",
+    treeDependence: "history-only",
     type: "number",
     description: "Total lines churned (added + deleted) — absolute change volume",
     stats: { labels: { p25: "minimal", p50: "moderate", p75: "significant", p95: "massive" }, dedupeByFile: true },
   },
   {
+    // The denominator is the tree file's line count (ingest's last row), so a
+    // dirty tree's row recomputes it — `gitLineCountFormulas`.
     key: "git.file.relativeChurn",
+    treeDependence: "line-count",
     type: "number",
     description: "Churn relative to file size (linesAdded + linesDeleted) / currentLines",
     stats: { labels: { p75: "normal", p95: "high" }, dedupeByFile: true },
   },
   {
     key: "git.file.recencyWeightedFreq",
+    treeDependence: "history-only",
     type: "number",
     description: "Recency-weighted commit frequency",
     // Filter preset references p50 of file-scope recencyWeightedFreq; labels
@@ -106,18 +117,21 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.file.changeDensity",
+    treeDependence: "history-only",
     type: "number",
     description: "Commits per month",
     stats: { labels: { p50: "calm", p75: "active", p95: "intense" }, dedupeByFile: true },
   },
   {
     key: "git.file.churnVolatility",
+    treeDependence: "history-only",
     type: "number",
     description: "Standard deviation of commit intervals in days",
     stats: { labels: { p75: "stable", p95: "erratic" }, dedupeByFile: true },
   },
   {
     key: "git.file.bugFixRate",
+    treeDependence: "history-only",
     type: "number",
     description: "Percentage of bug-fix commits (0-100)",
     stats: {
@@ -164,6 +178,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.file.recentContributorCount",
+    treeDependence: "history-only",
     type: "number",
     description: "Number of distinct contributors",
     // One contributor is `solo`, never `team` — a tie at 1 takes the lower name.
@@ -171,20 +186,27 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.file.taskIds",
+    treeDependence: "history-only",
     type: "string[]",
     description: "Task/ticket IDs extracted from commit messages",
     essential: true,
   },
 
   // ── File-level line-based ownership (from git blame HEAD) ──
+  // `tree-content` (bd tea-rags-mcp-39xca.20): ownership of the LIVE lines, which
+  // uncommitted edits change. A dirty tree's row inherits the base's blame — what
+  // a reindex writes too, since ingest blames HEAD — and it stays stale against
+  // the working lines until the edit is committed: no per-request blame.
   {
     key: "git.file.blameDominantAuthor",
+    treeDependence: "tree-content",
     type: "string",
     description: "Author owning the largest share of live lines (from git blame HEAD)",
     essential: true,
   },
   {
     key: "git.file.blameDominantAuthorPct",
+    treeDependence: "tree-content",
     type: "number",
     description: "Percentage of live lines owned by blameDominantAuthor (0-100)",
     // Ties at 100 on any single-author repository, and 100% ownership IS a deep
@@ -194,11 +216,13 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.file.blameAuthors",
+    treeDependence: "tree-content",
     type: "string[]",
     description: "Top-N contributors to live lines, sorted by share desc",
   },
   {
     key: "git.file.blameContributorCount",
+    treeDependence: "tree-content",
     type: "number",
     description: "Distinct authors of live lines",
     // One author is `solo`. Measured: ties at 1 on rust/go/swift sent it to
@@ -214,12 +238,14 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   // ── Chunk-level signals ──
   {
     key: "git.chunk.churnRatio",
+    treeDependence: "history-only",
     type: "number",
     description: "Chunk's share of file churn (0-1)",
     stats: { labels: { p75: "normal", p95: "concentrated" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
   },
   {
     key: "git.chunk.commitCount",
+    treeDependence: "history-only",
     type: "number",
     description: "Commits touching this specific chunk",
     stats: {
@@ -236,6 +262,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.chunk.ageDays",
+    treeDependence: "history-only",
     type: "number",
     description:
       "Days since last modification to this chunk (stored stamp, frozen at enrichment — age reads derive from lastModifiedAt at query time)",
@@ -247,6 +274,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.chunk.lastModifiedAt",
+    treeDependence: "history-only",
     type: "timestamp",
     description:
       "Unix seconds of the last commit touching this chunk; the source age/recency/overlay ageDays derive from at query time (percentiles feed the now-relative floor and label bands)",
@@ -261,12 +289,14 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.chunk.recentContributorCount",
+    treeDependence: "history-only",
     type: "number",
     description: "Distinct contributors to this chunk",
     stats: { labels: { p50: "solo", p95: "crowd" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES, bandTieBreak: "lower" },
   },
   {
     key: "git.chunk.bugFixRate",
+    treeDependence: "history-only",
     type: "number",
     description: "Bug-fix rate for this chunk (0-100)",
     stats: {
@@ -302,45 +332,58 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     },
   },
   {
+    // `history-only`, unlike the file's (bd tea-rags-mcp-39xca.20): the chunk
+    // walk counts a dirty chunk over the HEAD rows its working rows carry onto
+    // (`carryDirtyChunkMapOntoHead`), so an uncommitted edit that grows a method
+    // leaves the denominator where the base's is — the parity harness
+    // (`working-tree-git-parity.test.ts`) pins the inherited value.
     key: "git.chunk.relativeChurn",
+    treeDependence: "history-only",
     type: "number",
     description: "Churn relative to chunk size",
     stats: { labels: { p75: "normal", p95: "high" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
   },
   {
     key: "git.chunk.recencyWeightedFreq",
+    treeDependence: "history-only",
     type: "number",
     description: "Chunk-level recency-weighted commit frequency",
     stats: { labels: { p75: "normal", p95: "burst" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
   },
   {
     key: "git.chunk.changeDensity",
+    treeDependence: "history-only",
     type: "number",
     description: "Chunk-level change density (commits per month)",
     stats: { labels: { p75: "active", p95: "intense" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
   },
   {
     key: "git.chunk.churnVolatility",
+    treeDependence: "history-only",
     type: "number",
     description: "Standard deviation of commit intervals for this chunk (days)",
     stats: { labels: { p75: "stable", p95: "erratic" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
   },
   {
     key: "git.chunk.taskIds",
+    treeDependence: "history-only",
     type: "string[]",
     description: "Task/ticket IDs extracted from commit messages touching this chunk",
     essential: true,
   },
 
   // ── Chunk-level line-based ownership (blame lines inside chunk range) ──
+  // `tree-content`, inherited stale on a dirty tree — see the file-level block.
   {
     key: "git.chunk.blameDominantAuthor",
+    treeDependence: "tree-content",
     type: "string",
     description: "Author owning the largest share of live lines inside the chunk's range",
     essential: true,
   },
   {
     key: "git.chunk.blameDominantAuthorPct",
+    treeDependence: "tree-content",
     type: "number",
     description: "Percentage of chunk's live lines owned by blameDominantAuthor (0-100)",
     stats: {
@@ -351,11 +394,13 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
   {
     key: "git.chunk.blameAuthors",
+    treeDependence: "tree-content",
     type: "string[]",
     description: "Top-N contributors to the chunk's live lines, sorted by share desc",
   },
   {
     key: "git.chunk.blameContributorCount",
+    treeDependence: "tree-content",
     type: "number",
     description: "Distinct authors of the chunk's live lines",
     stats: {

@@ -61,7 +61,6 @@ import {
 } from "./file-lifetime.js";
 import { buildFileSignalsForPaths, buildWindowedFileSignalsForPaths } from "./file-reader.js";
 import type { SquashOptions } from "./metrics.js";
-import { computeRelativeChurn } from "./metrics/extractors.js";
 import { assembleFileSignals } from "./metrics/file-assembler.js";
 import { createPathspecNumstatReads, type PathspecNumstatReads } from "./pathspec-numstat-reads.js";
 import { carryWorkingRowsOntoHead, zeroOverlaysOfUncommittedRows } from "./working-rows.js";
@@ -245,20 +244,6 @@ interface OnDemandCallGitState {
 function lazyHead(adapter: VcsGitAdapter, known?: string): () => Promise<string> {
   let pending: Promise<string> | undefined;
   return async () => (pending ??= known === undefined ? adapter.getHead() : Promise.resolve(known));
-}
-
-/**
- * `git.file` with its `relativeChurn` taken over `lineCount` rows — the one
- * value of the block that depends on the file's current length rather than
- * its history (`assembleFileSignals` divides the history's churned lines by
- * the line count it is handed). A reindex of a tree whose file grew or shrank
- * recomputes exactly this, over the same history. A block without the churn
- * counts is returned as it is.
- */
-export function gitFileSignalsAtLineCount(file: Record<string, unknown>, lineCount: number): Record<string, unknown> {
-  const { linesAdded, linesDeleted } = file;
-  if (typeof linesAdded !== "number" || typeof linesDeleted !== "number") return file;
-  return { ...file, relativeChurn: computeRelativeChurn(linesAdded, linesDeleted, lineCount) };
 }
 
 /**

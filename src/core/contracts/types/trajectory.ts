@@ -364,6 +364,56 @@ export interface PayloadSignalDescriptor {
    * everything else on it describes that chunk, not the file. Default: chunk.
    */
   level?: SignalLevel;
+  /**
+   * What the value depends on beyond the indexed commit — and so how a row of
+   * a working tree that differs from it (a dirty or linked tree) gets it
+   * (bd tea-rags-mcp-39xca.20). REQUIRED: a new signal cannot compile without
+   * deciding it, so it never inherits a stale base value by accident. The
+   * overlay applies it generically; see {@link PayloadSignalTreeDependence}.
+   */
+  treeDependence: PayloadSignalTreeDependence;
+}
+
+/**
+ * How a payload signal depends on the working tree (bd tea-rags-mcp-39xca.20).
+ *
+ * - `history-only` — a function of commit history alone. An uncommitted edit
+ *   has no history of its own, so a tree row inherits the base point's value.
+ * - `line-count` — commit history over the CURRENT line count of the file or
+ *   chunk. A tree row inherits the history and the owning trajectory's
+ *   {@link PayloadSignalLineCountFormula} recomputes the value over the tree's
+ *   line count.
+ * - `tree-content` — a function of the tree file's content. Chunker-produced
+ *   values come fresh with the tree row; an enrichment-produced one (blame over
+ *   the live-line set) is inherited and knowingly stale until the edit is
+ *   committed and reindexed.
+ * - `tree-graph` — read from the tree's code graph when it is built, else
+ *   inherited from the base point.
+ */
+export type PayloadSignalTreeDependence = "history-only" | "line-count" | "tree-content" | "tree-graph";
+
+/** What a `line-count` signal is recomputed from, for one inherited payload block. */
+export interface PayloadSignalLineCountInput {
+  /** The inherited block the signal's key sits in (e.g. the base point's `git.chunk`). */
+  readonly block: Readonly<Record<string, unknown>>;
+  /** Lines the inherited value was computed over; `undefined` when the base does not tell. */
+  readonly baseLineCount: number | undefined;
+  /** Lines the tree's file (file block) or row (chunk block) spans. */
+  readonly treeLineCount: number;
+}
+
+/**
+ * The owning trajectory's formula for one `line-count` signal: its value over
+ * `treeLineCount`, from the inherited block. `undefined` → the inputs do not
+ * determine it, and the inherited value stands.
+ */
+export type PayloadSignalLineCountFormula = (input: PayloadSignalLineCountInput) => number | undefined;
+
+/** Everything the working-tree overlay needs to apply each signal's tree dependence. */
+export interface PayloadSignalTreeRecompute {
+  readonly descriptors: readonly PayloadSignalDescriptor[];
+  /** The `line-count` formulas, by descriptor key — one per `line-count` descriptor. */
+  readonly lineCountFormulas: ReadonlyMap<string, PayloadSignalLineCountFormula>;
 }
 
 /**
@@ -569,6 +619,12 @@ export interface Trajectory {
   // Collection-stats (ISP) — optional: accumulators the trajectory contributes
   // to computeCollectionStats. Reads payload fields only this trajectory owns.
   readonly statsAccumulators?: StatsAccumulatorDescriptor[];
+  /**
+   * The formula of each of this trajectory's `line-count` payload signals, by
+   * key — the trajectory owns its arithmetic; the working-tree overlay only
+   * applies it. Required whenever a payload signal declares `line-count`.
+   */
+  readonly lineCountFormulas?: ReadonlyMap<string, PayloadSignalLineCountFormula>;
   // Ingest-side (ISP) — optional: not all trajectories have ingest enrichment
   readonly enrichment?: EnrichmentProvider;
 }

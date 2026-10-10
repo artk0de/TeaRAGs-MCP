@@ -16,7 +16,13 @@ import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
 import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
-import type { PayloadKeyOwner, PayloadSignalDescriptor, Trajectory } from "../../contracts/types/trajectory.js";
+import type {
+  PayloadKeyOwner,
+  PayloadSignalDescriptor,
+  PayloadSignalLineCountFormula,
+  PayloadSignalTreeRecompute,
+  Trajectory,
+} from "../../contracts/types/trajectory.js";
 import { ConfigValueInvalidError } from "../../infra/errors.js";
 
 export class TrajectoryRegistry {
@@ -75,6 +81,34 @@ export class TrajectoryRegistry {
       signals.push(...trajectory.payloadSignals);
     }
     return signals;
+  }
+
+  /**
+   * Every payload signal with its tree dependence, and each `line-count`
+   * signal's formula from the trajectory that declares it (bd
+   * tea-rags-mcp-39xca.20) — what the working-tree overlay applies. A
+   * `line-count` signal whose trajectory supplies no formula throws: the
+   * overlay would otherwise inherit it stale without a trace.
+   */
+  getPayloadSignalTreeRecompute(): PayloadSignalTreeRecompute {
+    const descriptors: PayloadSignalDescriptor[] = [];
+    const lineCountFormulas = new Map<string, PayloadSignalLineCountFormula>();
+    for (const trajectory of this.trajectories.values()) {
+      for (const signal of trajectory.payloadSignals) {
+        descriptors.push(signal);
+        if (signal.treeDependence !== "line-count") continue;
+        const formula = trajectory.lineCountFormulas?.get(signal.key);
+        if (!formula) {
+          throw new ConfigValueInvalidError(
+            "payloadSignal.treeDependence",
+            signal.key,
+            `a line-count formula from trajectory "${trajectory.key}" for every line-count signal it declares`,
+          );
+        }
+        lineCountFormulas.set(signal.key, formula);
+      }
+    }
+    return { descriptors, lineCountFormulas };
   }
 
   /**
