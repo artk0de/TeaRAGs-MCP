@@ -17,6 +17,7 @@ import Parser from "tree-sitter";
 import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
+import { resolvePackageFile } from "../../../../__helpers__/package-files.js";
 import type { AstNode } from "../../../../../../src/core/contracts/types/ast.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
@@ -196,9 +197,10 @@ describe("Python walker — type and constant declarations", () => {
       // while the census reader answers on extraction-bearing node types alone.
       const bearing = new Set(new PythonLanguage().walker.extractionBearingNodeTypes);
       const grammarTypes = (
-        JSON.parse(
-          readFileSync(join(HERE, "../../../../../../node_modules/tree-sitter-python/src/node-types.json"), "utf8"),
-        ) as { type: string; named: boolean }[]
+        JSON.parse(readFileSync(resolvePackageFile("tree-sitter-python", "src/node-types.json"), "utf8")) as {
+          type: string;
+          named: boolean;
+        }[]
       )
         .filter((t) => t.named)
         .map((t) => t.type);

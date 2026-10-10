@@ -17,10 +17,11 @@ import { dirname, join, resolve, sep } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { findStagedNulBytes, isNulGuardedPath } from "../../scripts/lib/nul-bytes.js";
+import { resolvePackageBin } from "../core/__helpers__/package-files.js";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const ENTRY = join(ROOT, "scripts/check-staged-nul-bytes.ts");
-const TSX = join(ROOT, "node_modules/.bin/tsx");
+const TSX = resolvePackageBin("tsx", "tsx");
 const TMP_BASE = realpathSync(tmpdir());
 const NUL = String.fromCharCode(0);
 
