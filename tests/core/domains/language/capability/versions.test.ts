@@ -484,6 +484,9 @@ describe("seeded support versions", () => {
       // class a project class extends keeps the chain's answer, so an index
       // built by walker 12 (shipped in v1.47.0) holds the 1-wide fan to the
       // one project override.
+      // swift 8: bd tea-rags-mcp-0qaht.30 — a backtick-quoted declared name is
+      // published unquoted, so an index built by walker 7 (shipped in v1.47.0)
+      // lacks the identifier-declaration rows for `default`-style names.
       const WALKER_BUMPED = new Map([
         ["typescript", 13],
         ["javascript", 4],
@@ -492,7 +495,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 7],
+        ["swift", 8],
         ["bash", 2],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
