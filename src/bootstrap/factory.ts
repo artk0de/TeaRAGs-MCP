@@ -789,18 +789,7 @@ export function wireCodegraph(
   const { codegraph } = zodConfig;
   if (!codegraph?.enabled) return undefined;
 
-  // Per-collection DuckDB layout: `<rootDir>/codegraph/<collection>.duckdb`.
-  // The legacy `CODEGRAPH_DB_PATH` env var, when it points at a
-  // directory, is honoured as the rootDir override; pointing at a
-  // single file is no longer meaningful under per-collection routing
-  // and is treated as the parent directory's leaf override. Default
-  // is `paths.appData` so existing installs find their data in the
-  // same place.
-  const rootDir = codegraph.dbPath
-    ? codegraph.dbPath.endsWith(".duckdb")
-      ? dirname(codegraph.dbPath)
-      : codegraph.dbPath
-    : config.paths.appData;
+  const rootDir = resolveCodegraphRootDir(codegraph, config.paths.appData);
 
   // The daemon is the default (and only) write path — base functionality for
   // cross-process single-writer lock safety, not opt-in. The pool is always
@@ -837,6 +826,156 @@ export function wireCodegraph(
   // map to thread (the legacy adapter that consumed one was removed by
   // tea-rags-mcp-jh40).
 
+  const spawnCodegraphDaemon = createCodegraphDaemonSpawner({
+    codegraph,
+    zodConfig,
+    rootDir,
+    daemonStorageDir,
+    resolveDaemonTarget,
+  });
+
+  const pool = createCodegraphGraphDbPool({
+    codegraph,
+    rootDir,
+    daemonPaths,
+    resolveDaemonTarget,
+    daemonStorageDir,
+    spawnCodegraphDaemon,
+  });
+
+  // Lazy spawn-on-demand: the daemon process is started when a write OR a read
+  // is acquired, not at wire time — so `wireCodegraph` stays side-effect-free
+  // (the unit test exercises only the wire step and never spawns). The
+  // subsequent `DaemonGraphDbClient.init()` retries the socket connect with
+  // bounded backoff, absorbing the detached-spawn → connect race. BOTH
+  // `acquireWrite` and `acquireReader` must ensure the daemon because in daemon
+  // mode the `DaemonGraphDbClient` is the sole accessor for reads too — a query
+  // issued before any write would otherwise fail to connect, and
+  // GraphFacade.withReadHandle would silently return empty.
+  //
+  // Checked on EVERY acquire, not once per process (bd tea-rags-mcp-f924y). The
+  // daemon idle-exits after 30s and another session's build handshake can drain
+  // it, so the daemon this process spawned first is routinely gone by a later
+  // acquire. A once-per-process flag turned that into a connect against a socket
+  // that no longer existed — 5s of retries, then an unreachable-daemon failure —
+  // for every collection the pool had not cached yet. `ensureCodegraphDaemon` is
+  // alive-checked first and single-flighted across processes by DaemonLock, so
+  // while a daemon runs this is a pid-file probe.
+  const ensure = (): void => {
+    spawnCodegraphDaemon();
+  };
+  installLazyCodegraphDaemonSpawn(pool, ensure);
+
+  const temporal = resolveTemporalCochangeConfig(zodConfig);
+  // bd tea-rags-mcp-3gz4f — ONE buffer per app context, minted beside the
+  // temporal config it drains under: the git provider absorbs per-symbol
+  // commit sets into it during the walk, the temporal completion hook drains
+  // it at every collection completion. Carried on `CodegraphDeps` so both
+  // `wireComposition` call sites hand the same instance to GitTrajectory
+  // (createIngestFacade re-runs wireComposition per registry env; the buffer
+  // outlives those re-runs). Main-thread only — never part of the worker's
+  // serializableConfig.
+  const temporalSymbolCommits = temporal ? new InMemoryTemporalSymbolCommitBuffer() : undefined;
+
+  const { codegraphWorkerConfig, workerDescriptor } = buildCodegraphWorkerDescriptor({
+    codegraph,
+    rootDir,
+    daemonPaths,
+    ambiguousMode,
+    temporal,
+  });
+
+  const deps: CodegraphDeps = {
+    pool,
+    composer: symbolIdComposer,
+    collectSymbols,
+    // Threaded to composition roots so NATIVE language providers (ruby, …) build
+    // their resolver with the configured mode.
+    ambiguousResolveMode: ambiguousMode,
+    // Codegraph-layer exclusion (user-supplied patterns; generated + test
+    // files are excluded unconditionally). The shape mirrors
+    // `CodegraphExclusionOptions`; the provider builds the actual `Ignore`
+    // instance at construction time.
+    exclusion: { customPatterns: codegraph.customExcludePatterns ?? [] },
+    workerDescriptor,
+    ...(temporal ? { temporal } : {}),
+    ...(temporalSymbolCommits ? { temporalSymbolCommits } : {}),
+  };
+  const graphFacade = new GraphFacade({
+    pool,
+    collectionRegistry,
+    resolveActiveCollection,
+    ...(readImportSpecifiers ? { readImportSpecifiers } : {}),
+    ...(readFileCommitCounts ? { readFileCommitCounts } : {}),
+    ...(readFileMaintenanceSignals ? { readFileMaintenanceSignals } : {}),
+    ...(readIndexedFileImports ? { readIndexedFileImports } : {}),
+    ...(readDeclaredTestDependencies ? { readDeclaredTestDependencies } : {}),
+    ...(workingTreeOverlay ? { workingTreeOverlay } : {}),
+    ...(indexExists ? { indexExists } : {}),
+  });
+
+  // Keep-alive guard for the index run — see `createIndexRunDaemonGuard`. The
+  // build handshake goes through THIS pool's `acquireWrite`, the one pool that
+  // wires the respawn hook, so a stale daemon is replaced at run start instead
+  // of being refused by the first worker-thread pool that meets it.
+  const indexRunDaemonGuard = createIndexRunDaemonGuard({
+    ensure,
+    socketPath: daemonPaths.socketPath,
+    verifyDaemonBuild: async (physicalCollectionName) => pool.acquireWrite(physicalCollectionName),
+  });
+
+  // The tree build reuses the worker's provider config verbatim, minus what
+  // its private clone must not carry (daemon socket, rootDir, temporal).
+  const workingTreeGraphRuntime: WorkingTreeGraphCodegraphRuntime = {
+    pool,
+    providerConfig: {
+      languageModulePath: codegraphWorkerConfig.languageModulePath,
+      migrationsModulePath: codegraphWorkerConfig.migrationsModulePath,
+      customExcludePatterns: codegraphWorkerConfig.customExcludePatterns,
+      ambiguousResolveMode: codegraphWorkerConfig.ambiguousResolveMode,
+      dbMemoryLimit: codegraphWorkerConfig.dbMemoryLimit,
+      dbThreads: codegraphWorkerConfig.dbThreads,
+    },
+  };
+
+  return { deps, graphFacade, pool, indexRunDaemonGuard, workingTreeGraphRuntime };
+}
+
+/** The codegraph section of the resolved config, once `wireCodegraph` has seen it enabled. */
+type CodegraphZodConfig = NonNullable<ReturnType<typeof getZodConfig>["codegraph"]>;
+
+/** Which daemon a spawn check or connect addresses — re-resolved at every call (bd tea-rags-mcp-llrja). */
+type ResolveCodegraphDaemonTarget = () => ReturnType<typeof resolveDaemonClientTarget>;
+
+/** Where the per-collection DuckDB files live: the codegraph `dbPath` override, else app data. */
+function resolveCodegraphRootDir(codegraph: CodegraphZodConfig, appData: string): string {
+  // Per-collection DuckDB layout: `<rootDir>/codegraph/<collection>.duckdb`.
+  // The legacy `CODEGRAPH_DB_PATH` env var, when it points at a
+  // directory, is honoured as the rootDir override; pointing at a
+  // single file is no longer meaningful under per-collection routing
+  // and is treated as the parent directory's leaf override. Default
+  // is `paths.appData` so existing installs find their data in the
+  // same place.
+  return codegraph.dbPath
+    ? codegraph.dbPath.endsWith(".duckdb")
+      ? dirname(codegraph.dbPath)
+      : codegraph.dbPath
+    : appData;
+}
+
+/**
+ * Build the one function that spawns the codegraph daemon with this config's
+ * spawn settings — shared by the lazy first-use `ensure` and the pool's
+ * stale-build respawn.
+ */
+function createCodegraphDaemonSpawner(deps: {
+  codegraph: CodegraphZodConfig;
+  zodConfig: ReturnType<typeof getZodConfig>;
+  rootDir: string;
+  daemonStorageDir: string;
+  resolveDaemonTarget: ResolveCodegraphDaemonTarget;
+}): () => void {
+  const { codegraph, zodConfig, rootDir, daemonStorageDir, resolveDaemonTarget } = deps;
   // The ONE place the daemon's spawn settings are built. Both spawn paths — the
   // lazy first-use `ensure` below and the pool's stale-build
   // `daemonRestart.respawn` — go through it, so a field added to the spawn
@@ -863,7 +1002,19 @@ export function wireCodegraph(
       debug: zodConfig.core.debug,
     });
   };
+  return spawnCodegraphDaemon;
+}
 
+/** Construct the process's codegraph `GraphDbClientPool`, routed through the daemon. */
+function createCodegraphGraphDbPool(deps: {
+  codegraph: CodegraphZodConfig;
+  rootDir: string;
+  daemonPaths: CodegraphDaemonPaths;
+  resolveDaemonTarget: ResolveCodegraphDaemonTarget;
+  daemonStorageDir: string;
+  spawnCodegraphDaemon: () => void;
+}): GraphDbClientPool {
+  const { codegraph, rootDir, daemonPaths, resolveDaemonTarget, daemonStorageDir, spawnCodegraphDaemon } = deps;
   const pool = new GraphDbClientPool({
     rootDir,
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
@@ -928,28 +1079,14 @@ export function wireCodegraph(
       }
     },
   });
+  return pool;
+}
 
-  // Lazy spawn-on-demand: the daemon process is started when a write OR a read
-  // is acquired, not at wire time — so `wireCodegraph` stays side-effect-free
-  // (the unit test exercises only the wire step and never spawns). The
-  // subsequent `DaemonGraphDbClient.init()` retries the socket connect with
-  // bounded backoff, absorbing the detached-spawn → connect race. BOTH
-  // `acquireWrite` and `acquireReader` must ensure the daemon because in daemon
-  // mode the `DaemonGraphDbClient` is the sole accessor for reads too — a query
-  // issued before any write would otherwise fail to connect, and
-  // GraphFacade.withReadHandle would silently return empty.
-  //
-  // Checked on EVERY acquire, not once per process (bd tea-rags-mcp-f924y). The
-  // daemon idle-exits after 30s and another session's build handshake can drain
-  // it, so the daemon this process spawned first is routinely gone by a later
-  // acquire. A once-per-process flag turned that into a connect against a socket
-  // that no longer existed — 5s of retries, then an unreachable-daemon failure —
-  // for every collection the pool had not cached yet. `ensureCodegraphDaemon` is
-  // alive-checked first and single-flighted across processes by DaemonLock, so
-  // while a daemon runs this is a pid-file probe.
-  const ensure = (): void => {
-    spawnCodegraphDaemon();
-  };
+/**
+ * Wrap the pool's daemon-touching acquires so each one ensures the daemon is
+ * running first — the lazy spawn-on-demand `wireCodegraph` documents.
+ */
+function installLazyCodegraphDaemonSpawn(pool: GraphDbClientPool, ensure: () => void): void {
   const originalAcquireWrite = pool.acquireWrite.bind(pool);
   pool.acquireWrite = async (physicalCollectionName: PhysicalCollectionName) => {
     ensure();
@@ -970,23 +1107,15 @@ export function wireCodegraph(
     if (pool.hasDatabase(physicalCollectionName)) ensure();
     return originalExportSnapshot(physicalCollectionName, targetPath);
   };
+}
 
-  // Codegraph worker-pool descriptor (tea-rags-mcp-dz7f). `collection-affinity`
-  // dispatch — streamFileBatch → finalizeSignals → deferred buildChunkSignals
-  // share the per-collection symbolTable on the worker's cached provider, so
-  // all calls for one collection must pin to the same thread. The
-  // serializableConfig carries ONLY plain data (paths + flags); the worker
-  // rebuilds the GraphDbClientPool + LanguageFactory in-thread via
-  // `createCodegraphEnrichmentProvider`. `collectionName` is bound per-call by
-  // the executor's affinity routing — left undefined here (provider built
-  // before any collection is pinned). The daemon socket is always set: the
-  // worker connects to the SAME multi-client daemon that owns the RW lock.
-  // Temporal co-change build (bd tea-rags-mcp-x4rpp): reads the SAME history the
-  // git trajectory walks — its window, adapter and timeout — so the two share one
-  // persisted discovery snapshot instead of evicting each other's. Its session
-  // rule is NOT shared: co-change bursts use a window derived from the history
-  // (bd tea-rags-mcp-3vg0x). Git history off ⇒ no build; the trajectory still
-  // registers, empty.
+// Temporal co-change build (bd tea-rags-mcp-x4rpp): reads the SAME history the
+// git trajectory walks — its window, adapter and timeout — so the two share one
+// persisted discovery snapshot instead of evicting each other's. Its session
+// rule is NOT shared: co-change bursts use a window derived from the history
+// (bd tea-rags-mcp-3vg0x). Git history off ⇒ no build; the trajectory still
+// registers, empty.
+function resolveTemporalCochangeConfig(zodConfig: ReturnType<typeof getZodConfig>): TemporalCochangeConfig | undefined {
   const { trajectoryGit } = zodConfig;
   const temporal: TemporalCochangeConfig | undefined = trajectoryGit?.enabled
     ? {
@@ -995,16 +1124,27 @@ export function wireCodegraph(
         gitTimeoutMs: trajectoryGit.chunkTimeoutMs,
       }
     : undefined;
-  // bd tea-rags-mcp-3gz4f — ONE buffer per app context, minted beside the
-  // temporal config it drains under: the git provider absorbs per-symbol
-  // commit sets into it during the walk, the temporal completion hook drains
-  // it at every collection completion. Carried on `CodegraphDeps` so both
-  // `wireComposition` call sites hand the same instance to GitTrajectory
-  // (createIngestFacade re-runs wireComposition per registry env; the buffer
-  // outlives those re-runs). Main-thread only — never part of the worker's
-  // serializableConfig.
-  const temporalSymbolCommits = temporal ? new InMemoryTemporalSymbolCommitBuffer() : undefined;
+  return temporal;
+}
 
+// Codegraph worker-pool descriptor (tea-rags-mcp-dz7f). `collection-affinity`
+// dispatch — streamFileBatch → finalizeSignals → deferred buildChunkSignals
+// share the per-collection symbolTable on the worker's cached provider, so
+// all calls for one collection must pin to the same thread. The
+// serializableConfig carries ONLY plain data (paths + flags); the worker
+// rebuilds the GraphDbClientPool + LanguageFactory in-thread via
+// `createCodegraphEnrichmentProvider`. `collectionName` is bound per-call by
+// the executor's affinity routing — left undefined here (provider built
+// before any collection is pinned). The daemon socket is always set: the
+// worker connects to the SAME multi-client daemon that owns the RW lock.
+function buildCodegraphWorkerDescriptor(deps: {
+  codegraph: CodegraphZodConfig;
+  rootDir: string;
+  daemonPaths: CodegraphDaemonPaths;
+  ambiguousMode: CodegraphZodConfig["ambiguousResolveMode"];
+  temporal: TemporalCochangeConfig | undefined;
+}): { codegraphWorkerConfig: CodegraphWorkerConfig; workerDescriptor: WorkerEnrichmentDescriptor } {
+  const { codegraph, rootDir, daemonPaths, ambiguousMode, temporal } = deps;
   const codegraphWorkerConfig: CodegraphWorkerConfig = {
     languageModulePath: LANGUAGE_MODULE_PATH,
     migrationsModulePath: DATABASE_MIGRATIONS_MODULE_URL,
@@ -1032,61 +1172,7 @@ export function wireCodegraph(
     languageAffinity: { partitionByExtension: CODEGRAPH_LANGUAGE_BY_EXTENSION },
     serializableConfig: codegraphWorkerConfig,
   };
-
-  const deps: CodegraphDeps = {
-    pool,
-    composer: symbolIdComposer,
-    collectSymbols,
-    // Threaded to composition roots so NATIVE language providers (ruby, …) build
-    // their resolver with the configured mode.
-    ambiguousResolveMode: ambiguousMode,
-    // Codegraph-layer exclusion (user-supplied patterns; generated + test
-    // files are excluded unconditionally). The shape mirrors
-    // `CodegraphExclusionOptions`; the provider builds the actual `Ignore`
-    // instance at construction time.
-    exclusion: { customPatterns: codegraph.customExcludePatterns ?? [] },
-    workerDescriptor,
-    ...(temporal ? { temporal } : {}),
-    ...(temporalSymbolCommits ? { temporalSymbolCommits } : {}),
-  };
-  const graphFacade = new GraphFacade({
-    pool,
-    collectionRegistry,
-    resolveActiveCollection,
-    ...(readImportSpecifiers ? { readImportSpecifiers } : {}),
-    ...(readFileCommitCounts ? { readFileCommitCounts } : {}),
-    ...(readFileMaintenanceSignals ? { readFileMaintenanceSignals } : {}),
-    ...(readIndexedFileImports ? { readIndexedFileImports } : {}),
-    ...(readDeclaredTestDependencies ? { readDeclaredTestDependencies } : {}),
-    ...(workingTreeOverlay ? { workingTreeOverlay } : {}),
-    ...(indexExists ? { indexExists } : {}),
-  });
-
-  // Keep-alive guard for the index run — see `createIndexRunDaemonGuard`. The
-  // build handshake goes through THIS pool's `acquireWrite`, the one pool that
-  // wires the respawn hook, so a stale daemon is replaced at run start instead
-  // of being refused by the first worker-thread pool that meets it.
-  const indexRunDaemonGuard = createIndexRunDaemonGuard({
-    ensure,
-    socketPath: daemonPaths.socketPath,
-    verifyDaemonBuild: async (physicalCollectionName) => pool.acquireWrite(physicalCollectionName),
-  });
-
-  // The tree build reuses the worker's provider config verbatim, minus what
-  // its private clone must not carry (daemon socket, rootDir, temporal).
-  const workingTreeGraphRuntime: WorkingTreeGraphCodegraphRuntime = {
-    pool,
-    providerConfig: {
-      languageModulePath: codegraphWorkerConfig.languageModulePath,
-      migrationsModulePath: codegraphWorkerConfig.migrationsModulePath,
-      customExcludePatterns: codegraphWorkerConfig.customExcludePatterns,
-      ambiguousResolveMode: codegraphWorkerConfig.ambiguousResolveMode,
-      dbMemoryLimit: codegraphWorkerConfig.dbMemoryLimit,
-      dbThreads: codegraphWorkerConfig.dbThreads,
-    },
-  };
-
-  return { deps, graphFacade, pool, indexRunDaemonGuard, workingTreeGraphRuntime };
+  return { codegraphWorkerConfig, workerDescriptor };
 }
 
 /**
@@ -1283,6 +1369,232 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
       binding: { embeddings: infra.embeddings, modelGuard: infra.modelGuard },
     },
   });
+  // The working tree's delta read path (bd tea-rags-mcp-xi2r9): stores, chunk
+  // layer, warm queue, watcher, tree-graph cache and the one overlay every read
+  // surface shares. `projectIngestFactory` and `codegraphContext` are built
+  // further down and only read at request (or sweep) time, so the section takes
+  // them late-bound.
+  const {
+    workingTreeWriter,
+    workingTreeChunkLayer,
+    workingTreeDeltaWarmer,
+    workingTreeWatcher,
+    workingTreeGraphCache,
+    workingTreeOverlay,
+    stopWorkingTreeChunkSweep,
+    stopWorkingTreeGitSignalSweep,
+    stopWorkingTreeBasePointSweep,
+  } = createWorkingTreeSection({
+    config,
+    zodConfig,
+    options,
+    infra,
+    collectionRegistry,
+    resolveActiveCollection,
+    collectionEmbeddings,
+    projectIngestFactory: () => projectIngestFactory,
+    codegraphContext: () => codegraphContext,
+  });
+  // The query clock of an index (bd tea-rags-mcp-zwu7m): its stamped
+  // TRAJECTORY_GIT_ANCHOR mode and indexed commit, one resolver per process so
+  // the commit time is read once per (collection, indexedCommit).
+  const historyAnchor = new IndexHistoryAnchorResolver({ collectionRegistry });
+  // One existence check for every read tool that resolves a tree (live round-3 D3).
+  const indexExists = async (collectionName: string): Promise<boolean> => infra.qdrant.collectionExists(collectionName);
+  // The language factory is composed after the codegraph context (which the
+  // composition consumes), so the manifest readers are looked up at call time
+  // (bd tea-rags-mcp-89k7k.35.3).
+  const manifestLanguages: { factory?: LanguageFactoryDescriptor } = {};
+  const readTreeDeclaredTestDependencies = (root: string): ReadonlySet<string> =>
+    readDeclaredTestDependencies(root, collectTestDependencyManifestSources(manifestLanguages.factory));
+  const codegraphContext = wireCodegraph(
+    config,
+    zodConfig,
+    collectionRegistry,
+    resolveActiveCollection,
+    async (collectionName, relPaths) => readPayloadImportSpecifiers(infra.qdrant, collectionName, relPaths),
+    async (collectionName) => readPayloadFileCommitCounts(infra.qdrant, collectionName),
+    workingTreeOverlay,
+    indexExists,
+    async (collectionName) => readPayloadFileMaintenanceSignals(infra.qdrant, collectionName),
+    async (collectionName) => readPayloadIndexedFileImports(infra.qdrant, collectionName),
+    readTreeDeclaredTestDependencies,
+  );
+  // Swept with the chunk store's schedule (first after 2 min, then every 6 h,
+  // unref'd, throttled across processes by a stamp) — here,
+  // after `codegraphContext` exists: snapshot retention compares against the
+  // live base graph.
+  const stopWorkingTreeGraphSweep = scheduleWorkingTreeGraphSweep(workingTreeGraphCache);
+  const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
+  manifestLanguages.factory = composition.languageFactory;
+
+  const { tracePathOps, ontologyReportOps } = createCodegraphOpsSection({
+    codegraphContext,
+    infra,
+    composition,
+    collectionRegistry,
+    resolveActiveCollection,
+    workingTreeOverlay,
+    indexExists,
+    historyAnchor,
+  });
+
+  const statsCache = new StatsCache(config.paths.snapshots);
+
+  const registryWatchStop = collectionRegistry.startWatching();
+
+  const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
+  const driftReporter = createIndexDriftReporter({
+    config,
+    zodConfig,
+    ambientEnvRole,
+    collectionRegistry,
+    statsCache,
+    composition,
+  });
+
+  const { ingest, projectIngestFactory, projectRegistryOps, worktreeOps } = createIngestSection({
+    config,
+    zodConfig,
+    ambientEnvRole,
+    infra,
+    collectionRegistry,
+    collectionEmbeddings,
+    statsCache,
+    composition,
+    driftReporter,
+    codegraphContext,
+  });
+  const { explore, namingLexiconOps, reviewFacade } = createExploreSection({
+    zodConfig,
+    infra,
+    collectionRegistry,
+    resolveActiveCollection,
+    collectionEmbeddings,
+    statsCache,
+    composition,
+    essentialTrajectoryFields,
+    driftReporter,
+    codegraphContext,
+    projectIngestFactory,
+    workingTreeOverlay,
+    historyAnchor,
+    indexExists,
+    readTreeDeclaredTestDependencies,
+  });
+  // App-layer ops (bd tea-rags-mcp-0qaht.12): composed by the api composition
+  // root and injected as ready handlers — createApp's own fallback exists only
+  // for callers that hand bare AppDeps handles.
+  const appOps = composeAppOps({
+    qdrant: infra.qdrant,
+    embeddings: infra.embeddings,
+    quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
+    turboQuant: zodConfig.qdrantTune.turboQuant,
+    modelGuard: infra.modelGuard,
+    codegraphPool: codegraphContext?.pool,
+  });
+  const app = createApp({
+    qdrant: infra.qdrant,
+    embeddings: infra.embeddings,
+    ingest,
+    ingestForPath: (path) => projectIngestFactory.forPath(path),
+    workingTreeIndexOf: async (path) => explore.workingTreeIndexOf(path),
+    explore,
+    reranker: composition.reranker,
+    driftReporter,
+    projectRegistryOps,
+    collectionOps: appOps.collection,
+    documentOps: appOps.document,
+    quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
+    turboQuant: zodConfig.qdrantTune.turboQuant,
+    modelGuard: infra.modelGuard,
+    graphFacade: codegraphContext?.graphFacade,
+    tracePathOps,
+    namingLexiconOps,
+    reviewFacade,
+    ontologyReportOps,
+    codegraphPool: codegraphContext?.pool,
+    registeredProviderKeys: new Set(composition.registry.getRegisteredKeys()),
+  });
+
+  const cleanup = createAppContextCleanup({
+    infra,
+    codegraphContext,
+    registryWatchStop,
+    workingTreeWriter,
+    workingTreeChunkLayer,
+    workingTreeDeltaWarmer,
+    workingTreeWatcher,
+    workingTreeGraphCache,
+    stopWorkingTreeChunkSweep,
+    stopWorkingTreeGitSignalSweep,
+    stopWorkingTreeBasePointSweep,
+    stopWorkingTreeGraphSweep,
+  });
+
+  return {
+    app,
+    worktreeOps,
+    schemaBuilder: composition.schemaBuilder,
+    healthProbes: {
+      checkQdrant: async () => infra.qdrant.checkHealth(),
+      checkEmbedding: async () => infra.embeddings.checkHealth(),
+      qdrantUrl: infra.qdrant.url,
+      embeddingProvider: infra.embeddings.getProviderName(),
+      ...(infra.embeddings.getBaseUrl ? { embeddingUrl: infra.embeddings.getBaseUrl() } : {}),
+    },
+    embeddedRelease: infra.embeddedRelease,
+    cleanup,
+  };
+}
+
+type ResolveActiveCollection = (name: string) => Promise<PhysicalCollectionName>;
+
+/** What `createWorkingTreeSection` builds the working tree's delta read path from. */
+interface WorkingTreeSectionDeps {
+  config: AppConfig;
+  zodConfig: ReturnType<typeof getZodConfig>;
+  options: AppContextOptions | undefined;
+  infra: InfraContext;
+  collectionRegistry: CollectionRegistry;
+  resolveActiveCollection: ResolveActiveCollection;
+  collectionEmbeddings: RegistryCollectionEmbeddingsResolver;
+  /** Late-bound: built after this section, read only at request time. */
+  projectIngestFactory: () => ProjectIngestFactory;
+  /** Late-bound: wired after this section, read only at request (or sweep) time. */
+  codegraphContext: () => CodegraphContext | undefined;
+}
+
+/** The working tree's delta read path, and the handles cleanup releases. */
+interface WorkingTreeSection {
+  workingTreeWriter: ReturnType<typeof createWorkingTreeFileWriter>;
+  workingTreeChunkLayer: ReturnType<typeof createWorkingTreeChunkLayer>;
+  workingTreeDeltaWarmer: WorkingTreeDeltaWarmer;
+  workingTreeWatcher: WorkingTreeWatcher | undefined;
+  workingTreeGraphCache: WorkingTreeGraphCache;
+  workingTreeOverlay: WorkingTreeOverlay;
+  stopWorkingTreeChunkSweep: ReturnType<typeof scheduleWorkingTreeChunkSweep>;
+  stopWorkingTreeGitSignalSweep: ReturnType<typeof scheduleWorkingTreeGitSignalSweep>;
+  stopWorkingTreeBasePointSweep: ReturnType<typeof scheduleWorkingTreeBasePointSweep>;
+}
+
+/**
+ * Build the working tree's delta read path: the persistent stores and their
+ * sweeps, the chunk layer and its warm queue, the watcher, the tree-graph cache
+ * and the one `WorkingTreeOverlay` every read surface shares.
+ */
+function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSection {
+  const {
+    config,
+    zodConfig,
+    options,
+    infra,
+    collectionRegistry,
+    resolveActiveCollection,
+    collectionEmbeddings,
+    projectIngestFactory,
+    codegraphContext,
+  } = deps;
   // Delta files chunked the way ingest stores them (bd tea-rags-mcp-xi2r9.3):
   // the production `ChunkerPool` (its worker and the language module path it
   // injects are the ones `BaseIndexingPipeline#createChunkerPool` forks), sized
@@ -1358,7 +1670,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   const workingTreeGraphCache = new WorkingTreeGraphCache({
     rootDir: join(config.paths.appData, "working-tree"),
     writer: workingTreeWriter,
-    codegraph: (): WorkingTreeGraphCodegraphRuntime | undefined => codegraphContext?.workingTreeGraphRuntime,
+    codegraph: (): WorkingTreeGraphCodegraphRuntime | undefined => codegraphContext()?.workingTreeGraphRuntime,
     resolveActiveCollection,
     builder: new WorkingTreeGraphProcessBuilder(),
     budget: {
@@ -1377,10 +1689,6 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     }
     return resolved;
   };
-  // The query clock of an index (bd tea-rags-mcp-zwu7m): its stamped
-  // TRAJECTORY_GIT_ANCHOR mode and indexed commit, one resolver per process so
-  // the commit time is read once per (collection, indexedCommit).
-  const historyAnchor = new IndexHistoryAnchorResolver({ collectionRegistry });
   // One overlay per process (bd tea-rags-mcp-xi2r9): its delta reader caches per
   // tree, and every read surface — explore, graph, trace_path — shares it.
   const workingTreeOverlay = new WorkingTreeOverlay({
@@ -1397,7 +1705,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
       // over the server's (`ProjectIngestFactory#forPath`, built below and only
       // read at request time), with the size its embedding model derives.
       resolveChunkerConfig: async (tree) =>
-        projectIngestFactory
+        projectIngestFactory()
           .forPath(tree.baseIndex.root ?? tree.root)
           .resolveChunkerConfig(tree.baseIndex.collectionName),
     },
@@ -1407,7 +1715,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // WTO-6/7: delta rows inherit git from the base points and take codegraph
     // from the tree graph. The pool is late-bound like the cache's runtime.
     deltaSignals: createWorkingTreeDeltaSignalSource({
-      graphFiles: () => codegraphContext?.pool,
+      graphFiles: () => codegraphContext()?.pool,
       // D12: what no base point answers — `git.file` of a file the base never
       // chunked, `git.chunk` of a symbol it never held — comes from the git
       // trajectory's own computation, configured as ingest's; absent when git
@@ -1423,7 +1731,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
               // Round-4 P1: each index's own config — its project's registry env
               // replayed over the server's, as an index run of it resolves
               // (`ProjectIngestFactory#envForPath`, built below, read at request time).
-              configFor: (indexRoot) => workingTreeGitSignalConfigFor(projectIngestFactory.envForPath(indexRoot)),
+              configFor: (indexRoot) => workingTreeGitSignalConfigFor(projectIngestFactory().envForPath(indexRoot)),
             }),
           }
         : {}),
@@ -1445,35 +1753,50 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
       store: workingTreeChunkStore,
     }),
   });
-  // One existence check for every read tool that resolves a tree (live round-3 D3).
-  const indexExists = async (collectionName: string): Promise<boolean> => infra.qdrant.collectionExists(collectionName);
-  // The language factory is composed after the codegraph context (which the
-  // composition consumes), so the manifest readers are looked up at call time
-  // (bd tea-rags-mcp-89k7k.35.3).
-  const manifestLanguages: { factory?: LanguageFactoryDescriptor } = {};
-  const readTreeDeclaredTestDependencies = (root: string): ReadonlySet<string> =>
-    readDeclaredTestDependencies(root, collectTestDependencyManifestSources(manifestLanguages.factory));
-  const codegraphContext = wireCodegraph(
-    config,
-    zodConfig,
+  return {
+    workingTreeWriter,
+    workingTreeChunkLayer,
+    workingTreeDeltaWarmer,
+    workingTreeWatcher,
+    workingTreeGraphCache,
+    workingTreeOverlay,
+    stopWorkingTreeChunkSweep,
+    stopWorkingTreeGitSignalSweep,
+    stopWorkingTreeBasePointSweep,
+  };
+}
+
+/** The codegraph-backed read ops that need the explore reranker, not the explore facade. */
+interface CodegraphOpsSection {
+  tracePathOps: TracePathOps | undefined;
+  ontologyReportOps: OntologyReportOps | undefined;
+}
+
+/**
+ * Build the codegraph read ops that exist only when codegraph is wired:
+ * `trace_path` and `get_ontology_report`. Absent ops leave their App methods on
+ * the empty-result fallback.
+ */
+function createCodegraphOpsSection(deps: {
+  codegraphContext: CodegraphContext | undefined;
+  infra: InfraContext;
+  composition: CompositionContext;
+  collectionRegistry: CollectionRegistry;
+  resolveActiveCollection: ResolveActiveCollection;
+  workingTreeOverlay: WorkingTreeOverlay;
+  indexExists: (collectionName: string) => Promise<boolean>;
+  historyAnchor: IndexHistoryAnchorResolver;
+}): CodegraphOpsSection {
+  const {
+    codegraphContext,
+    infra,
+    composition,
     collectionRegistry,
     resolveActiveCollection,
-    async (collectionName, relPaths) => readPayloadImportSpecifiers(infra.qdrant, collectionName, relPaths),
-    async (collectionName) => readPayloadFileCommitCounts(infra.qdrant, collectionName),
     workingTreeOverlay,
     indexExists,
-    async (collectionName) => readPayloadFileMaintenanceSignals(infra.qdrant, collectionName),
-    async (collectionName) => readPayloadIndexedFileImports(infra.qdrant, collectionName),
-    readTreeDeclaredTestDependencies,
-  );
-  // Swept with the chunk store's schedule (first after 2 min, then every 6 h,
-  // unref'd, throttled across processes by a stamp) — here,
-  // after `codegraphContext` exists: snapshot retention compares against the
-  // live base graph.
-  const stopWorkingTreeGraphSweep = scheduleWorkingTreeGraphSweep(workingTreeGraphCache);
-  const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
-  manifestLanguages.factory = composition.languageFactory;
-
+    historyAnchor,
+  } = deps;
   // TracePathOps bridges the codegraph adjacency (DuckDB pool) and the explore
   // reranker. It is built here — not inside wireCodegraph — because `reranker`
   // only exists after wireComposition runs (which itself consumes the codegraph
@@ -1508,12 +1831,23 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         indexExists,
       })
     : undefined;
+  return { tracePathOps, ontologyReportOps };
+}
 
-  const statsCache = new StatsCache(config.paths.snapshots);
-
-  const registryWatchStop = collectionRegistry.startWatching();
-
-  const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
+/**
+ * Build the one process-scoped `IndexDriftReporter` over every drift axis —
+ * payload keys, stats contract, language and trajectory versions, indexing env,
+ * commit.
+ */
+function createIndexDriftReporter(deps: {
+  config: AppConfig;
+  zodConfig: ReturnType<typeof getZodConfig>;
+  ambientEnvRole: AmbientEnvRole;
+  collectionRegistry: CollectionRegistry;
+  statsCache: StatsCache;
+  composition: CompositionContext;
+}): IndexDriftReporter {
+  const { config, zodConfig, ambientEnvRole, collectionRegistry, statsCache, composition } = deps;
   // Attribution first, key list derived from it — the two must describe the
   // same set, or the drift hint would recommend a recompute for a key that
   // recompute never populates. `navigation` is written by the chunker, so it
@@ -1593,6 +1927,46 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     (collectionName) => collectionRegistry.get(collectionName)?.name ?? undefined,
     createPathCollectionResolver(collectionRegistry),
   );
+  return driftReporter;
+}
+
+/** The ingest side of the app: the process slice, the per-project factory, and the registry/worktree ops. */
+interface IngestSection {
+  ingest: IngestFacade;
+  projectIngestFactory: ProjectIngestFactory;
+  projectRegistryOps: ProjectRegistryOps;
+  worktreeOps: WorktreeOps;
+}
+
+/**
+ * Build the ingest side: the process-scoped enrichment executor and footprint
+ * factory, the server's own ingest slice, the per-project ingest factory over
+ * it, and the project registry and worktree ops.
+ */
+function createIngestSection(deps: {
+  config: AppConfig;
+  zodConfig: ReturnType<typeof getZodConfig>;
+  ambientEnvRole: AmbientEnvRole;
+  infra: InfraContext;
+  collectionRegistry: CollectionRegistry;
+  collectionEmbeddings: RegistryCollectionEmbeddingsResolver;
+  statsCache: StatsCache;
+  composition: CompositionContext;
+  driftReporter: IndexDriftReporter;
+  codegraphContext: CodegraphContext | undefined;
+}): IngestSection {
+  const {
+    config,
+    zodConfig,
+    ambientEnvRole,
+    infra,
+    collectionRegistry,
+    collectionEmbeddings,
+    statsCache,
+    composition,
+    driftReporter,
+    codegraphContext,
+  } = deps;
 
   // Phase 2 of unified-enrichment-worker-pool plan. Production runs through
   // the worker-pool executor unconditionally so heavy trajectory work (git
@@ -1693,6 +2067,54 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     dataDir: config.paths.appData,
   });
   const worktreeOps = new WorktreeOps(worktreeProvisioner);
+  return { ingest, projectIngestFactory, projectRegistryOps, worktreeOps };
+}
+
+/** The explore side of the app: the facade and the codegraph ops that run through it. */
+interface ExploreSection {
+  explore: ExploreFacade;
+  namingLexiconOps: NamingLexiconOps | undefined;
+  reviewFacade: ReviewFacade | undefined;
+}
+
+/**
+ * Build the explore facade, then the naming lexicon and the diff-scoped review
+ * that run their concept step through it (both only when codegraph is wired).
+ */
+function createExploreSection(deps: {
+  zodConfig: ReturnType<typeof getZodConfig>;
+  infra: InfraContext;
+  collectionRegistry: CollectionRegistry;
+  resolveActiveCollection: ResolveActiveCollection;
+  collectionEmbeddings: RegistryCollectionEmbeddingsResolver;
+  statsCache: StatsCache;
+  composition: CompositionContext;
+  essentialTrajectoryFields: ReturnType<CompositionContext["registry"]["getEssentialPayloadKeys"]>;
+  driftReporter: IndexDriftReporter;
+  codegraphContext: CodegraphContext | undefined;
+  projectIngestFactory: ProjectIngestFactory;
+  workingTreeOverlay: WorkingTreeOverlay;
+  historyAnchor: IndexHistoryAnchorResolver;
+  indexExists: (collectionName: string) => Promise<boolean>;
+  readTreeDeclaredTestDependencies: (root: string) => ReadonlySet<string>;
+}): ExploreSection {
+  const {
+    zodConfig,
+    infra,
+    collectionRegistry,
+    resolveActiveCollection,
+    collectionEmbeddings,
+    statsCache,
+    composition,
+    essentialTrajectoryFields,
+    driftReporter,
+    codegraphContext,
+    projectIngestFactory,
+    workingTreeOverlay,
+    historyAnchor,
+    indexExists,
+    readTreeDeclaredTestDependencies,
+  } = deps;
   const explore = new ExploreFacade({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -1790,41 +2212,38 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
           }),
         })
       : undefined;
-  // App-layer ops (bd tea-rags-mcp-0qaht.12): composed by the api composition
-  // root and injected as ready handlers — createApp's own fallback exists only
-  // for callers that hand bare AppDeps handles.
-  const appOps = composeAppOps({
-    qdrant: infra.qdrant,
-    embeddings: infra.embeddings,
-    quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
-    turboQuant: zodConfig.qdrantTune.turboQuant,
-    modelGuard: infra.modelGuard,
-    codegraphPool: codegraphContext?.pool,
-  });
-  const app = createApp({
-    qdrant: infra.qdrant,
-    embeddings: infra.embeddings,
-    ingest,
-    ingestForPath: (path) => projectIngestFactory.forPath(path),
-    workingTreeIndexOf: async (path) => explore.workingTreeIndexOf(path),
-    explore,
-    reranker: composition.reranker,
-    driftReporter,
-    projectRegistryOps,
-    collectionOps: appOps.collection,
-    documentOps: appOps.document,
-    quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
-    turboQuant: zodConfig.qdrantTune.turboQuant,
-    modelGuard: infra.modelGuard,
-    graphFacade: codegraphContext?.graphFacade,
-    tracePathOps,
-    namingLexiconOps,
-    reviewFacade,
-    ontologyReportOps,
-    codegraphPool: codegraphContext?.pool,
-    registeredProviderKeys: new Set(composition.registry.getRegisteredKeys()),
-  });
+  return { explore, namingLexiconOps, reviewFacade };
+}
 
+/** Build `AppContext#cleanup`: the idempotent, best-effort release of every process-held resource. */
+function createAppContextCleanup(deps: {
+  infra: InfraContext;
+  codegraphContext: CodegraphContext | undefined;
+  registryWatchStop: () => void;
+  workingTreeWriter: ReturnType<typeof createWorkingTreeFileWriter>;
+  workingTreeChunkLayer: ReturnType<typeof createWorkingTreeChunkLayer>;
+  workingTreeDeltaWarmer: WorkingTreeDeltaWarmer;
+  workingTreeWatcher: WorkingTreeWatcher | undefined;
+  workingTreeGraphCache: WorkingTreeGraphCache;
+  stopWorkingTreeChunkSweep: ReturnType<typeof scheduleWorkingTreeChunkSweep>;
+  stopWorkingTreeGitSignalSweep: ReturnType<typeof scheduleWorkingTreeGitSignalSweep>;
+  stopWorkingTreeBasePointSweep: ReturnType<typeof scheduleWorkingTreeBasePointSweep>;
+  stopWorkingTreeGraphSweep: ReturnType<typeof scheduleWorkingTreeGraphSweep>;
+}): () => Promise<void> {
+  const {
+    infra,
+    codegraphContext,
+    registryWatchStop,
+    workingTreeWriter,
+    workingTreeChunkLayer,
+    workingTreeDeltaWarmer,
+    workingTreeWatcher,
+    workingTreeGraphCache,
+    stopWorkingTreeChunkSweep,
+    stopWorkingTreeGitSignalSweep,
+    stopWorkingTreeBasePointSweep,
+    stopWorkingTreeGraphSweep,
+  } = deps;
   // Idempotent: under stdio both the signal listeners and the stdin-close
   // shutdown reach it (bd tea-rags-mcp-e6cpu); resources release once, and
   // every caller gets the one release. The releases run synchronously on the
@@ -1877,21 +2296,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
       void codegraphContext.pool.closeAll().catch(() => undefined);
     }
   };
-
-  return {
-    app,
-    worktreeOps,
-    schemaBuilder: composition.schemaBuilder,
-    healthProbes: {
-      checkQdrant: async () => infra.qdrant.checkHealth(),
-      checkEmbedding: async () => infra.embeddings.checkHealth(),
-      qdrantUrl: infra.qdrant.url,
-      embeddingProvider: infra.embeddings.getProviderName(),
-      ...(infra.embeddings.getBaseUrl ? { embeddingUrl: infra.embeddings.getBaseUrl() } : {}),
-    },
-    embeddedRelease: infra.embeddedRelease,
-    cleanup,
-  };
+  return cleanup;
 }
 
 export function loadPrompts(config: AppConfig): PromptsConfig | null {
