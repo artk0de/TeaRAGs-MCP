@@ -17,32 +17,35 @@ import { join } from "node:path";
 
 import { createIdentifierRecord, identifierEntry } from "../../../../contracts/identifier-record.js";
 import { formatResolveRate } from "../../../../contracts/resolve-rate.js";
-import type {
-  CallableArgSource,
-  ClassFieldParamLink,
-  CodegraphPass1FileAggregates,
-  DispatchTableDef,
-  FileExtraction,
-  FileResolveStatsEntry,
-  GlobalSymbolTable,
-  HierarchyView,
-  InheritanceEdgeRow,
-  KnownTargetCallArgs,
-  KnownTargetCalleeLocator,
-  ModuleReexport,
-  Pass1AggregateReadScope,
-  RelPath,
-  ResolveRunScope,
-  ResolveRunStatsRow,
-  RubyExtendedHookMixin,
-  SelfDispatchArgTemplate,
-  StructuralContractDecl,
-  SymbolDefinition,
-  TypeDeclarationFact,
+import {
+  rubyInstantiationSiteKey,
+  type CallableArgSource,
+  type ClassFieldParamLink,
+  type CodegraphPass1FileAggregates,
+  type DispatchTableDef,
+  type FileExtraction,
+  type FileResolveStatsEntry,
+  type GlobalSymbolTable,
+  type HierarchyView,
+  type InheritanceEdgeRow,
+  type KnownTargetCallArgs,
+  type KnownTargetCalleeLocator,
+  type ModuleReexport,
+  type Pass1AggregateReadScope,
+  type RelPath,
+  type ResolveRunScope,
+  type ResolveRunStatsRow,
+  type RubyExtendedHookMixin,
+  type RubyInstantiationSite,
+  type SelfDispatchArgTemplate,
+  type StructuralContractDecl,
+  type SymbolDefinition,
+  type TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import type {
   DeclaredDependenciesByLanguage,
   DependencyManifestSource,
+  InstantiationSiteResolver,
   KnownTargetCalleeLocatorFactory,
   RubyTypeRef,
   SchemaColumnAccessorSource,
@@ -426,6 +429,13 @@ export class CodegraphRunState {
      * them.
      */
     private readonly knownTargetCalleeLocators: ReadonlyMap<string, KnownTargetCalleeLocatorFactory> = new Map(),
+    /**
+     * Instantiation-site resolvers of the registered languages, by language (bd
+     * tea-rags-mcp-0qaht.65), collected the same way. The barrier asks one about
+     * each of its language's sites; a language with none enters its sites into
+     * the RTA set as written.
+     */
+    private readonly instantiationSiteResolvers: ReadonlyMap<string, InstantiationSiteResolver> = new Map(),
   ) {}
 
   /**
@@ -643,9 +653,23 @@ export class CodegraphRunState {
   /**
    * Per-run union of `FileExtraction.instantiatedTypes` (bd tea-rags-mcp-pffv),
    * so `ConeDispatchResolver` can RTA-prune a CHA cone regardless of which file
-   * does the `Klass.new`. Lifecycle as `returnTypes`.
+   * does the `Klass.new`. Lifecycle as `returnTypes`. From `seal` on it also
+   * holds every {@link rubyInstantiationSites} entry, resolved — rebuilt at each
+   * seal from {@link directInstantiatedTypes} so a stale resolution never lingers.
    */
   readonly instantiatedTypes = new Set<string>();
+
+  /** The walkers' own `instantiatedTypes`, before any site is resolved into the set. */
+  private readonly directInstantiatedTypes = new Set<string>();
+
+  /**
+   * Per-run union of `FileExtraction.rubyInstantiationSites` (bd
+   * tea-rags-mcp-0qaht.65), keyed by language and site identity. UNRESOLVED:
+   * which class a site names depends on what the whole run declares, so `seal`
+   * resolves every entry — walked and hydrated alike — into
+   * {@link instantiatedTypes}. Lifecycle as `instantiatedTypes`.
+   */
+  readonly rubyInstantiationSites = new Map<string, { language: string; site: RubyInstantiationSite }>();
 
   /**
    * Per-run union of `FileExtraction.extendedHookMixins` (bd
@@ -1118,11 +1142,16 @@ export class CodegraphRunState {
     // builds it. Nothing to displace — a walked file's own row is skipped, so a
     // hydrated instantiation is another file's live one.
     instantiatedTypes: (slice) => {
-      for (const type of slice.instantiatedTypes ?? []) this.instantiatedTypes.add(type);
+      this.addDirectInstantiatedTypes(slice.instantiatedTypes);
     },
     // Ruby extended-hook mixins (bd 89k7k.35.31): the same union `absorb` builds.
     extendedHookMixins: (slice) => {
       this.mergeExtendedHookMixins(slice.extendedHookMixins);
+    },
+    // Ruby instantiation sites (bd 0qaht.65): the same union `absorb` builds;
+    // the seal resolves them after hydration, over walked and hydrated alike.
+    rubyInstantiationSites: (slice) => {
+      this.addInstantiationSites(slice.language, slice.rubyInstantiationSites);
     },
     // Ruby `self.table_name` overrides (bd tea-rags-mcp-39xca.9). The schema-column
     // pre-pass reads this map at the barrier, and `seal` runs this hydration before
@@ -1615,6 +1644,9 @@ export class CodegraphRunState {
     if (loadPersistedPass1Aggregates !== undefined) {
       await this.hydratePersistedPass1Aggregates(loadPersistedPass1Aggregates);
     }
+    // Instantiation sites (bd tea-rags-mcp-0qaht.65): only here are the walked
+    // and hydrated sites AND the declared set (symbol table + ancestry) whole.
+    await this.resolveInstantiationSites(resolveSymbolTable);
     // Structural conformance (bd tea-rags-mcp-39xca.14): derived from the
     // hydrated contracts and the nominal rows, so it runs after hydration and
     // before the views are built — the cone reads it through `getDescendants`.
@@ -1697,6 +1729,51 @@ export class CodegraphRunState {
         inheritTypedFields(this.typedClassFields, inherited),
       );
       this.overlayDerivedClassKeyedFieldTypes(inherited);
+    }
+  }
+
+  /** Union a walker's (or a slice's) resolved instantiations into the direct set and the RTA set. */
+  private addDirectInstantiatedTypes(types: readonly string[] | undefined): void {
+    for (const type of types ?? []) {
+      this.directInstantiatedTypes.add(type);
+      this.instantiatedTypes.add(type);
+    }
+  }
+
+  /** Union one file's unresolved instantiation sites, deduped by language and site identity. */
+  private addInstantiationSites(language: string, sites: readonly RubyInstantiationSite[] | undefined): void {
+    for (const site of sites ?? []) {
+      const key = `${language}\u0000${rubyInstantiationSiteKey(site)}`;
+      if (!this.rubyInstantiationSites.has(key)) this.rubyInstantiationSites.set(key, { language, site });
+    }
+  }
+
+  /** Drop every instantiation fact: the RTA set, its direct half and the unresolved sites. */
+  private clearInstantiations(): void {
+    this.instantiatedTypes.clear();
+    this.directInstantiatedTypes.clear();
+    this.rubyInstantiationSites.clear();
+  }
+
+  /**
+   * Rebuild the RTA set as the direct instantiations plus every site resolved by
+   * its language's resolver against the run's existence oracle — the same one
+   * the service-entry derivation reads: the symbol table declares it, or some
+   * family's ancestry keys it (bd tea-rags-mcp-0qaht.65). Rebuilt rather than
+   * added to, so a site an earlier seal resolved differently never lingers, and
+   * a full and an incremental run derive one set. A language with no resolver
+   * enters its sites as written; no site ⇒ no symbol-table acquire.
+   */
+  private async resolveInstantiationSites(resolveSymbolTable: () => Promise<GlobalSymbolTable>): Promise<void> {
+    this.instantiatedTypes.clear();
+    for (const type of this.directInstantiatedTypes) this.instantiatedTypes.add(type);
+    if (this.rubyInstantiationSites.size === 0) return;
+    const symbolTable = await resolveSymbolTable();
+    const isDeclared = (typeName: string): boolean =>
+      symbolTable.lookup(typeName).length > 0 || this.ancestorsByFamily.hasInAnyFamily(typeName);
+    for (const { language, site } of this.rubyInstantiationSites.values()) {
+      const resolve = this.instantiationSiteResolvers.get(language);
+      this.instantiatedTypes.add(resolve === undefined ? site.name : resolve(site, isDeclared));
     }
   }
 
@@ -1820,7 +1897,7 @@ export class CodegraphRunState {
       this.schemaSnapshots = createIdentifierRecord();
       this.schemaSnapshotsLoaded = false;
       this.returnTypesByFamily = new LanguageFamilyRecord();
-      this.instantiatedTypes.clear();
+      this.clearInstantiations();
       this.extendedHookMixins = createIdentifierRecord();
       this.ivarTypes = createIdentifierRecord();
       this.classFieldTypesByClassKey = createIdentifierRecord();
@@ -2014,7 +2091,7 @@ export class CodegraphRunState {
     this.schemaSnapshots = createIdentifierRecord();
     this.schemaSnapshotsLoaded = false;
     this.returnTypesByFamily = new LanguageFamilyRecord();
-    this.instantiatedTypes.clear();
+    this.clearInstantiations();
     this.extendedHookMixins = createIdentifierRecord();
     this.ivarTypes = createIdentifierRecord();
     this.classFieldTypesByClassKey = createIdentifierRecord();
@@ -2064,7 +2141,7 @@ export class CodegraphRunState {
     this.schemaSnapshots = createIdentifierRecord();
     this.schemaSnapshotsLoaded = false;
     this.returnTypesByFamily = new LanguageFamilyRecord();
-    this.instantiatedTypes.clear();
+    this.clearInstantiations();
     this.extendedHookMixins = createIdentifierRecord();
     this.ivarTypes = createIdentifierRecord();
     this.classFieldTypesByClassKey = createIdentifierRecord();
@@ -2256,11 +2333,9 @@ export class CodegraphRunState {
     }
     // Program-wide instantiation set for the cone resolver's RTA pruning (bd
     // tea-rags-mcp-pffv), regardless of which file instantiates the type.
-    if (extraction.instantiatedTypes) {
-      for (const t of extraction.instantiatedTypes) {
-        this.instantiatedTypes.add(t);
-      }
-    }
+    this.addDirectInstantiatedTypes(extraction.instantiatedTypes);
+    // Ruby's sites stay unresolved until `seal` (bd tea-rags-mcp-0qaht.65).
+    this.addInstantiationSites(extraction.language, extraction.rubyInstantiationSites);
     this.mergeExtendedHookMixins(extraction.extendedHookMixins);
     // Dispatch tables run-global by table name + defining relPath (bd
     // tea-rags-mcp-n0zj). Re-walking a file replaces its own def for that name, so

@@ -48,9 +48,19 @@ describe("Ruby walker — a constant scoped by a value is no known type", () => 
   });
 
   // The RTA set over-approximates what is constructed: dropping the instantiation would prune dispatch edges.
-  it("keeps the instantiation a value-scoped `.new` makes, in lexical scope, for dispatch pruning", () => {
+  // bd 0qaht.65: recorded as an ordinary unanchored lexical site; the barrier resolves it.
+  it("keeps the instantiation a value-scoped `.new` makes, as a lexical site, for dispatch pruning", () => {
     const r = extract(["class Transfer", "  def build(c)", "    described_class::Price.new(c)", "  end", "end"]);
-    expect(r.instantiatedTypes).toEqual(["Transfer::Price"]);
+    expect(r.rubyInstantiationSites).toEqual([{ name: "Price", nesting: ["Transfer"], rootAnchored: false }]);
+  });
+
+  it("resolves the value-scoped site at the barrier like any unanchored constant", () => {
+    const [site] = extract(["class Transfer", "  def build(c)", "    described_class::Price.new(c)", "  end", "end"])
+      .rubyInstantiationSites ?? [{ name: "", nesting: [], rootAnchored: false }];
+    const resolve = new RubyLanguage().instantiationSiteResolver;
+    expect(resolve?.(site, (fq) => fq === "Transfer::Price" || fq === "Price")).toBe("Transfer::Price");
+    expect(resolve?.(site, (fq) => fq === "Price")).toBe("Price");
+    expect(resolve?.(site, () => false)).toBe("Price");
   });
 
   it("still types a constant path of constants, root-anchored or not", () => {

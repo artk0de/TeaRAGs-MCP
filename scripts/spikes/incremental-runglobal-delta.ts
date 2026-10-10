@@ -86,6 +86,7 @@ import type {
 } from "../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import {
+  collectInstantiationSiteResolvers,
   collectSchemaColumnSources,
   collectStructuralConformanceDerivers,
 } from "../../src/core/domains/trajectory/codegraph/exclusion.js";
@@ -153,6 +154,9 @@ function newRunState(factory: LanguageFactory): CodegraphRunState {
     collectSchemaColumnSources(factory),
     collectDependencyManifestSources(factory),
     collectStructuralConformanceDerivers(factory),
+    undefined,
+    new Map(),
+    collectInstantiationSiteResolvers(factory),
   );
 }
 

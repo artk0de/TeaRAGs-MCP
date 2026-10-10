@@ -11,9 +11,9 @@ import type { FileExtraction } from "../../../../../../src/core/contracts/types/
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { RubyCallResolver } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -133,11 +133,15 @@ describe("CodegraphEnrichmentProvider — CHA cone dispatch end-to-end (bd tea-r
     }
   });
 
-  it("RTA recall (pffv Task 5): namespaced Zoo::Cat + top-level Dog both kept when keys are lexical-fq", async () => {
+  it("RTA recall (pffv Task 5, bd 0qaht.65): namespaced Zoo::Cat + top-level Dog both kept", async () => {
     // Fixture: Animal base, Zoo::Cat (namespaced) + Dog (top-level) both extend Animal#speak.
-    // instantiatedTypes carries lexical-fq keys ["Zoo::Cat", "Dog"] — what
-    // collectRubyInstantiatedTypes emits after the scope-aware fix. Pre-fix it would
-    // emit ["Cat", "Dog"], causing Zoo::Cat#speak to be dropped (key mismatch).
+    // The factory inside `module Zoo; class Factory` writes `Cat.new` and
+    // `Dog.new`; the walker records them as unresolved sites and the barrier's
+    // Ruby constant lookup resolves them against the declared classes: Cat →
+    // Zoo::Cat (declared under the nesting), Dog → the top-level Dog (no
+    // Zoo::Factory::Dog / Zoo::Dog). A bare "Cat" key would drop Zoo::Cat#speak,
+    // and the pre-0qaht.65 lexical pre-qualification "Zoo::Factory::Dog" would
+    // drop Dog#speak.
     const zooCat: FileExtraction = {
       relPath: "app/zoo/cat.rb",
       language: "ruby",
@@ -153,13 +157,16 @@ describe("CodegraphEnrichmentProvider — CHA cone dispatch end-to-end (bd tea-r
     await sink.write(rubyClass("Animal", "speak"));
     await sink.write(zooCat);
     await sink.write(rubyClass("Dog", "speak", "Animal"));
-    // File A: scope-aware parser emits lexical-fq keys — Zoo::Cat (not bare Cat).
+    // File A: the walker's unresolved instantiation sites.
     await sink.write({
       relPath: "app/zoo/factory.rb",
       language: "ruby",
       imports: [],
       fileScope: ["Zoo::Factory"],
-      instantiatedTypes: ["Zoo::Cat", "Dog"],
+      rubyInstantiationSites: [
+        { name: "Cat", nesting: ["Zoo::Factory", "Zoo"], rootAnchored: false },
+        { name: "Dog", nesting: ["Zoo::Factory", "Zoo"], rootAnchored: false },
+      ],
       chunks: [{ symbolId: "Zoo::Factory#build", scope: ["Zoo::Factory"], calls: [] }],
     });
     // Dispatch site: Animal-typed receiver → cone = [Zoo::Cat, Dog]; RTA prune

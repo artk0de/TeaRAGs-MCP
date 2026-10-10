@@ -63,6 +63,7 @@ import { isDebug } from "../../../../infra/runtime.js";
 import type { CodegraphCollectionCompletionHook } from "../collection-completion-hook.js";
 import {
   buildCodegraphExclusionFilter,
+  collectInstantiationSiteResolvers,
   collectKnownTargetCalleeLocators,
   collectSchemaColumnSources,
   collectStructuralConformanceDerivers,
@@ -317,6 +318,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       collectStructuralConformanceDerivers(deps.languageFactory),
       collectTypeDeclarationReaders(deps.languageFactory),
       collectKnownTargetCalleeLocators(deps.languageFactory),
+      collectInstantiationSiteResolvers(deps.languageFactory),
     );
     this.identifierFinderVocabulary = collectIdentifierFinderVocabulary(deps.languageFactory);
     this.resolutionRunner = new CallEdgeResolutionRunner(deps.languageFactory, this.runState);

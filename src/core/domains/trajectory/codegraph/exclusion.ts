@@ -23,6 +23,7 @@
 import ignore from "ignore";
 
 import type {
+  InstantiationSiteResolver,
   KnownTargetCalleeLocatorFactory,
   LanguageFactoryDescriptor,
   SchemaColumnAccessorSource,
@@ -150,6 +151,25 @@ export function collectKnownTargetCalleeLocators(
     if (locator !== undefined) locators.set(lang, locator);
   }
   return locators;
+}
+
+/**
+ * Every registered language's instantiation-site resolver
+ * (`LanguageProvider.instantiationSiteResolver`), keyed by language (bd
+ * tea-rags-mcp-0qaht.65). The barrier resolves each of its language's sites
+ * against the run's declared set; the engine knows THAT a language's constants
+ * need a lookup, never the lookup rule. Omitting the factory yields none.
+ */
+export function collectInstantiationSiteResolvers(
+  languageFactory?: LanguageFactoryDescriptor,
+): Map<string, InstantiationSiteResolver> {
+  const resolvers = new Map<string, InstantiationSiteResolver>();
+  if (!languageFactory) return resolvers;
+  for (const lang of languageFactory.supported()) {
+    const resolver = languageFactory.create(lang).instantiationSiteResolver;
+    if (resolver !== undefined) resolvers.set(lang, resolver);
+  }
+  return resolvers;
 }
 
 export function collectSchemaColumnSources(

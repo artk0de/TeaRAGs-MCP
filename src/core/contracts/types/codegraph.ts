@@ -36,7 +36,7 @@
  */
 
 export * from "./codegraph-dispatch.js";
-export type * from "./codegraph-extraction.js";
+export * from "./codegraph-extraction.js";
 export type * from "./codegraph-graph.js";
 export * from "./codegraph-hierarchy.js";
 export * from "./codegraph-local-binding.js";

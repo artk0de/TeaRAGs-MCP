@@ -101,6 +101,7 @@ import {
 } from "../src/core/domains/language/python/resolver/index.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import {
+  collectInstantiationSiteResolvers,
   collectKnownTargetCalleeLocators,
   collectSchemaColumnSources,
   collectStructuralConformanceDerivers,
@@ -482,6 +483,7 @@ function newProductionRunState(root: string, factory: LanguageFactory): Codegrap
     collectStructuralConformanceDerivers(factory),
     undefined,
     collectKnownTargetCalleeLocators(factory),
+    collectInstantiationSiteResolvers(factory),
   );
   state.bindProjectRoot(root);
   state.loadDeclaredDependencies(root);

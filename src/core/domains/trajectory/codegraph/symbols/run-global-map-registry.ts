@@ -111,6 +111,10 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   // Ruby extended-hook mixins (bd 89k7k.35.31): the `extend M` an instance
   // lookup drops sits in another file than M's `self.extended` hook. Appended last.
   extendedHookMixins: { policy: "hydrate", sliceField: "extendedHookMixins" },
+  // Ruby instantiation sites (bd 0qaht.65): persisted UNRESOLVED and resolved at
+  // every seal, because a declaration in another file moves the class a site
+  // names. Appended last.
+  rubyInstantiationSites: { policy: "hydrate", sliceField: "rubyInstantiationSites" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",
