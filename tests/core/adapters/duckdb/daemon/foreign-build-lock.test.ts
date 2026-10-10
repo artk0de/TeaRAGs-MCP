@@ -29,7 +29,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { getBuildFingerprint } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
@@ -63,6 +63,7 @@ const children: ChildProcess[] = [];
 const cleanups: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const cleanup of cleanups.splice(0)) await cleanup().catch(() => undefined);
   for (const child of children.splice(0)) if (child.exitCode === null) child.kill("SIGKILL");
   if (root) rmSync(root, { recursive: true, force: true });
@@ -224,9 +225,62 @@ describe("a foreign-build daemon holding the collection file (hw27k)", () => {
     expect(held.message).toContain(foreign.paths.buildDir);
     expect(isDaemonPidAlive(foreign.pid)).toBe(true);
 
-    const again = Date.now();
+    // The unreachable verdict is remembered for this holder (bd
+    // tea-rags-mcp-89k7k.35.27): later opens neither wait the window nor try
+    // its socket again — each such try cost a ~1.5 s connect bound.
+    const connects = vi.spyOn(DaemonGraphDbClient.prototype, "init");
+    for (let op = 0; op < 2; op++) {
+      const again = Date.now();
+      const later = await pool.acquire(COLLECTION).catch((e: unknown) => e);
+      expect(Date.now() - again).toBeLessThan(500);
+      expect(later).toBeInstanceOf(CodegraphDatabaseHeldByForeignDaemonError);
+      expect((later as CodegraphDatabaseHeldByForeignDaemonError).holderPid).toBe(foreign.pid);
+      expect((later as CodegraphDatabaseHeldByForeignDaemonError).message).toContain(foreign.paths.buildDir);
+    }
+    expect(connects).not.toHaveBeenCalled();
+  }, 30_000);
+
+  it("drops a remembered unreachable verdict once its holder exits, and the open proceeds", async () => {
+    makeRoot();
+    const foreign = await spawnForeignDaemon();
+    const client = await foreignOpensCollection(foreign.paths);
+    await client.close();
+    await waitFor(() => readRefs(foreign.paths) === 0);
+    rmSync(foreign.paths.socketPath, { force: true });
+
+    const pool = makeLoserPool(1_500);
     await expect(pool.acquire(COLLECTION)).rejects.toBeInstanceOf(CodegraphDatabaseHeldByForeignDaemonError);
-    expect(Date.now() - again).toBeLessThan(5_000);
+
+    foreign.child.kill("SIGKILL");
+    await waitFor(() => foreign.child.exitCode !== null || foreign.child.signalCode !== null);
+
+    const handle = await pool.acquire(COLLECTION);
+    expect(await handle.graphDb.listFileContentHashes()).toEqual([]);
+  }, 30_000);
+
+  it("a new holder after the remembered one exits is settled afresh, not failed with the old verdict", async () => {
+    makeRoot();
+    const first = await spawnForeignDaemon();
+    const firstClient = await foreignOpensCollection(first.paths);
+    await firstClient.close();
+    await waitFor(() => readRefs(first.paths) === 0);
+    rmSync(first.paths.socketPath, { force: true });
+
+    const pool = makeLoserPool(1_500);
+    await expect(pool.acquire(COLLECTION)).rejects.toBeInstanceOf(CodegraphDatabaseHeldByForeignDaemonError);
+
+    first.child.kill("SIGKILL");
+    await waitFor(() => first.child.exitCode !== null || first.child.signalCode !== null);
+    // Another daemon of that build takes the file, with a client connected.
+    const second = await spawnForeignDaemon();
+    const secondClient = await foreignOpensCollection(second.paths);
+    cleanups.push(async () => secondClient.close());
+
+    const err = await pool.acquire(COLLECTION).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(CodegraphDatabaseHeldByForeignDaemonError);
+    expect((err as CodegraphDatabaseHeldByForeignDaemonError).holderPid).toBe(second.pid);
+    expect(isDaemonPidAlive(second.pid)).toBe(true);
   }, 30_000);
 
   it("a holder that is no registered daemon fails the open with the lock error once the window runs out", async () => {
