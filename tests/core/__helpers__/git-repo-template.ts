@@ -99,6 +99,15 @@ export interface GitRepoTemplateOptions {
   prefix?: string;
   /** environment of the index refresh — the GIT_* identity a recipe commits under */
   env?: NodeJS.ProcessEnv;
+  /**
+   * `false` skips the per-copy `git update-index --refresh` (default `true`, bd
+   * tea-rags-mcp-0qaht.63). The stat cache is only a cache: porcelain git
+   * (`diff`, `status`) re-hashes an entry whose stat moved and answers exactly
+   * as on a refreshed index, so a suite that reads the copy only through
+   * porcelain saves one spawn per test. Plumbing that trusts the cache
+   * (`diff-index`, `diff-files`) needs the refresh — keep the default there.
+   */
+  refreshIndex?: boolean;
 }
 
 /**
@@ -143,7 +152,9 @@ export function copyGitRepoTemplate<Meta>(
   for (const file of absolutePathFiles(checkouts)) {
     writeFileSync(file, readFileSync(file, "utf8").split(template.root).join(realRoot));
   }
-  for (const checkout of checkouts) refreshIndex(checkout, options.env ?? process.env);
+  if (options.refreshIndex !== false) {
+    for (const checkout of checkouts) refreshIndex(checkout, options.env ?? process.env);
+  }
 
   return { root, meta: template.meta as Meta };
 }

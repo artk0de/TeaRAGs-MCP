@@ -74,6 +74,16 @@ function resolveGitDirs(repoPath: string): ResolvedGitDirs | null {
 }
 
 /** Resolve `refs/heads/<x>` to a sha via loose ref file, then packed-refs. */
+/**
+ * The per-worktree gitdir of the checkout rooted AT `repoPath` (its `.git`
+ * directory, or the dir a linked worktree's `.git` file names) — where that
+ * checkout's `HEAD` and `index` live. Null when `repoPath` holds no readable
+ * `.git` (a subdirectory, not a repository): ask git instead.
+ */
+export function readRepoGitDir(repoPath: string): string | null {
+  return resolveGitDirs(repoPath)?.gitdir ?? null;
+}
+
 function resolveRef(ref: string, commondir: string): string {
   const loose = readTextIfExists(join(commondir, ref))?.trim();
   if (loose !== undefined && loose.length > 0) return loose;

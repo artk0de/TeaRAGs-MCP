@@ -77,7 +77,8 @@ describe("ReviewChangesOps — sections run together", () => {
           git(built, "add", "-A");
           git(built, "commit", "-q", "-m", "init");
         },
-        { prefix: "review-changes-concurrency-" },
+        // Porcelain reads only — no per-copy index refresh spawn (bd tea-rags-mcp-0qaht.63).
+        { prefix: "review-changes-concurrency-", refreshIndex: false },
       ).root,
     );
     repo = join(dir, "repo");
