@@ -73,12 +73,14 @@ export async function carryWorkingRowsOntoHead(
   adapter: VcsGitAdapter,
   files: readonly WorkingRowsOfFile[],
   blobReader?: BlobBatchReader,
+  /** The HEAD commit, when the caller already holds it; absent → resolved here. */
+  headCommit?: string,
 ): Promise<WorkingRowsAtHead> {
   const chunkMap = new Map<string, ChunkLookupEntry[]>();
   const uncommittedRows = new Map<string, ChunkLookupEntry[]>();
   const wanted = files.filter((file) => file.chunks.length > 0);
   if (wanted.length === 0) return { chunkMap, uncommittedRows };
-  const head = await adapter.getHead();
+  const head = headCommit ?? (await adapter.getHead());
   const reader = blobReader ?? adapter.createBlobBatchReader();
   const carry = async (file: WorkingRowsOfFile): Promise<void> => {
     const headContent = await reader.read(head, file.relPath);

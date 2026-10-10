@@ -18,6 +18,7 @@ import type {
 import { BULK_LOG_STALL_FLOOR_MS, execFileAsync, execFileForPathspec, TREE_LISTING_STALL_MS } from "./exec.js";
 import {
   COMMIT_PATH_CHANGES_HEADER,
+  parseAddOrDeleteShas,
   parseBlameOutput,
   parseCommitFileNumstat,
   parseCommitPathChanges,
@@ -207,12 +208,14 @@ export async function readCommitPathChanges(repoRoot: string, timeoutMs?: number
  * moved a named path in from an unnamed one prints a plain add, and one that
  * moved it out prints a plain delete — neither row carries `previousPath`, and
  * a caller following renames (`sliceCommitsFollowingRenames`) never learns the
- * predecessor. `--diff-filter=AD` lists exactly those commits; they are re-read
+ * predecessor. The log's own `--summary` lines name exactly those commits
+ * (`create mode` / `delete mode`, `parseAddOrDeleteShas` — the set a
+ * `--diff-filter=AD` log prints, without its spawn); they are re-read
  * without the pathspec (`--no-walk`, one spawn) and their rows touching a named
  * path on either side replace the pathspec-limited ones. Commits that only
  * modified a named path keep their pathspec rows. Log order is preserved.
  *
- * `since` present bounds both logs with `--since` and walks them with
+ * `since` present bounds the log with `--since` and walks them with
  * `--full-history`: the pathspec-limited form of a repo-wide `git log --since
  * --numstat` (the run-scoped discovery an index run reads), whose commits a
  * pathspec log would otherwise simplify away wherever a merge is TREESAME to
@@ -227,23 +230,16 @@ export async function readCommitFileNumstatForPaths(
   if (paths.length === 0) return [];
   const effectiveTimeoutMs = timeoutMs ?? 30000;
   const window = since ? [`--since=${since.toISOString()}`, "--full-history"] : [];
-  const entries = parseCommitFileNumstat(
-    await execFileForPathspec(
-      repoRoot,
-      ["log", "HEAD", ...window, "--numstat", NUMSTAT_LOG_FORMAT_WITH_COMMITTER, "--", ...paths],
-      effectiveTimeoutMs,
-    ),
+  // `--summary` prints a `create mode` / `delete mode` line for every path the
+  // pathspec names that a commit added or deleted — the `--diff-filter=AD` set,
+  // without a log of its own (bd tea-rags-mcp-89k7k.35.22).
+  const stdout = await execFileForPathspec(
+    repoRoot,
+    ["log", "HEAD", ...window, "--numstat", "--summary", NUMSTAT_LOG_FORMAT_WITH_COMMITTER, "--", ...paths],
+    effectiveTimeoutMs,
   );
-  const addOrDelete = (
-    await execFileForPathspec(
-      repoRoot,
-      ["log", "HEAD", ...window, "--diff-filter=AD", "--format=%H", "--", ...paths],
-      effectiveTimeoutMs,
-    )
-  )
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  const entries = parseCommitFileNumstat(stdout);
+  const addOrDelete = parseAddOrDeleteShas(stdout);
   if (addOrDelete.length === 0) return entries;
 
   const named = new Set(paths);
