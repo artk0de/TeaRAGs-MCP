@@ -34,6 +34,7 @@ import type {
   RelPath,
   ResolveRunScope,
   ResolveRunStatsRow,
+  RubyExtendedHookMixin,
   SelfDispatchArgTemplate,
   StructuralContractDecl,
   SymbolDefinition,
@@ -624,6 +625,16 @@ export class CodegraphRunState {
   readonly instantiatedTypes = new Set<string>();
 
   /**
+   * Per-run union of `FileExtraction.extendedHookMixins` (bd
+   * tea-rags-mcp-89k7k.35.31): module FQ → what its `self.extended` hook
+   * includes / prepends into the extender. Cross-file by construction — the
+   * `extend M` an instance lookup drops sits in another file than M's hook.
+   * A module reopened across files contributes every file's injections, each
+   * once. Lifecycle as `instantiatedTypes`.
+   */
+  extendedHookMixins: Record<string, readonly RubyExtendedHookMixin[]> = createIdentifierRecord();
+
+  /**
    * Per-run aggregation of `FileExtraction.ivarTypes` (`fqClassName → "@ivar" →
    * typeName`) for the precise `@ivar.method()` path. Last-write-wins on a
    * duplicate class key. Stays empty while no type source emits `kind:"ivar"`
@@ -1071,6 +1082,10 @@ export class CodegraphRunState {
     instantiatedTypes: (slice) => {
       for (const type of slice.instantiatedTypes ?? []) this.instantiatedTypes.add(type);
     },
+    // Ruby extended-hook mixins (bd 89k7k.35.31): the same union `absorb` builds.
+    extendedHookMixins: (slice) => {
+      this.mergeExtendedHookMixins(slice.extendedHookMixins);
+    },
     // Ruby `self.table_name` overrides (bd tea-rags-mcp-39xca.9). The schema-column
     // pre-pass reads this map at the barrier, and `seal` runs this hydration before
     // that read. An override missing from the map does more than silence its own
@@ -1227,6 +1242,23 @@ export class CodegraphRunState {
    * keeps four maps alive, and a flag cleared there would send pass-2 to the
    * per-file fallback while the run-global map still held facts.
    */
+  /**
+   * Fold one file's extended-hook mixins into the run-global union (bd
+   * tea-rags-mcp-89k7k.35.31) — shared by `absorb` and the seal's hydration so
+   * a full and an incremental run build the same map. A reopened module keeps
+   * every file's injections, an identical injection counted once.
+   */
+  private mergeExtendedHookMixins(
+    source: Readonly<Record<string, readonly RubyExtendedHookMixin[]>> | undefined,
+  ): void {
+    if (source === undefined) return;
+    for (const [moduleFq, mixins] of Object.entries(source)) {
+      const known = identifierEntry(this.extendedHookMixins, moduleFq) ?? [];
+      const fresh = mixins.filter((m) => !known.some((k) => k.kind === m.kind && k.module === m.module));
+      if (fresh.length > 0) this.extendedHookMixins[moduleFq] = [...known, ...fresh];
+    }
+  }
+
   private clearContributed(names: readonly RunGlobalMapName[] = RUN_GLOBAL_MAP_NAMES): void {
     for (const name of names) this.contributedRunGlobals[name] = false;
   }
@@ -1687,6 +1719,7 @@ export class CodegraphRunState {
       this.schemaSnapshotsLoaded = false;
       this.returnTypesByFamily = new LanguageFamilyRecord();
       this.instantiatedTypes.clear();
+      this.extendedHookMixins = createIdentifierRecord();
       this.ivarTypes = createIdentifierRecord();
       this.classFieldTypesByClassKey = createIdentifierRecord();
       this.classFieldCallResults = createIdentifierRecord();
@@ -1880,6 +1913,7 @@ export class CodegraphRunState {
     this.schemaSnapshotsLoaded = false;
     this.returnTypesByFamily = new LanguageFamilyRecord();
     this.instantiatedTypes.clear();
+    this.extendedHookMixins = createIdentifierRecord();
     this.ivarTypes = createIdentifierRecord();
     this.classFieldTypesByClassKey = createIdentifierRecord();
     this.classFieldCallResults = createIdentifierRecord();
@@ -1929,6 +1963,7 @@ export class CodegraphRunState {
     this.schemaSnapshotsLoaded = false;
     this.returnTypesByFamily = new LanguageFamilyRecord();
     this.instantiatedTypes.clear();
+    this.extendedHookMixins = createIdentifierRecord();
     this.ivarTypes = createIdentifierRecord();
     this.classFieldTypesByClassKey = createIdentifierRecord();
     this.classFieldCallResults = createIdentifierRecord();
@@ -2115,6 +2150,7 @@ export class CodegraphRunState {
         this.instantiatedTypes.add(t);
       }
     }
+    this.mergeExtendedHookMixins(extraction.extendedHookMixins);
     // Dispatch tables run-global by table name + defining relPath (bd
     // tea-rags-mcp-n0zj). Re-walking a file replaces its own def for that name, so
     // an incremental reindex stays idempotent.

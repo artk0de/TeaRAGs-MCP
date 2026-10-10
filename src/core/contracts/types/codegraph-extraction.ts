@@ -197,6 +197,17 @@ export interface FileExtraction {
    */
   classPrependedAncestors?: Record<string, readonly string[]>;
   /**
+   * Ruby `def self.extended(base)` hooks that mix modules into `base` (bd
+   * tea-rags-mcp-89k7k.35.31): `module FQ → the base.include / base.prepend
+   * calls its hook makes`, in source order. `extend M` puts M on the singleton
+   * class only, but Ruby then runs `M.extended(klass)`, so what the hook
+   * includes lands on the INSTANCE ancestry — the resolver substitutes it where
+   * an instance lookup drops the singleton-only M. Each module is canonicalized
+   * against the hook module's lexical nesting when this file declares it, and
+   * kept as written otherwise. Plain Record for NDJSON round-trip.
+   */
+  extendedHookMixins?: Record<string, readonly RubyExtendedHookMixin[]>;
+  /**
    * Optional `functionName → declaredReturnTypeName` map for languages with
    * static return-type declarations (Go). Lets a resolver bind a variable
    * assigned from a function call (`x := New()`) to that function's DECLARED
@@ -431,6 +442,15 @@ export interface FileExtraction {
  * count once. What is callable is each walker's reading of its own syntax,
  * documented on the code that takes the census.
  */
+/**
+ * One `base.include(X)` / `base.prepend(X)` a Ruby module's `self.extended`
+ * hook makes on the object that extends it (bd tea-rags-mcp-89k7k.35.31).
+ */
+export interface RubyExtendedHookMixin {
+  readonly kind: "include" | "prepend";
+  readonly module: string;
+}
+
 export interface TypeMemberCensus {
   /** The {@link TypeDeclarationFact.typeId} of the declaration counted. */
   readonly typeId: string;

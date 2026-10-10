@@ -69,11 +69,24 @@
   `domains/language/CLAUDE.md` bullet), and Ruby's order reads
   `classPrependedAncestors` and `classExtends` beside `classAncestors`, so
   `RubyAncestorHierarchy` must keep carrying them as cache companions — a
-  hierarchy that drops one serves a stale linearization. Ruby's MEMBER walk is
-  NOT the kernel's: `resolveInstanceMethodInClassChain` (`strategies/shared.ts`)
-  carries the prepend pre-pass, the schema-column preference and the file-only
-  fallback ordering, none of which are neutral, and it stays here. Change the
-  order here; change the walk in the kernel and re-run
+  hierarchy that drops one serves a stale linearization. The flat
+  `classAncestors` list still conflates `extend` with `include`; an INSTANCE
+  lookup (`side = "instance"`: a `#` caller per `callerAncestrySide`, a receiver
+  typed as an instance) filters out the modules the class only `extend`s, read
+  off `ctx.hierarchy`'s kind-precise rows (`singletonOnlyMixinsOf`), so that
+  side's cache also takes the hierarchy as a companion. Class-side and
+  form-unknown callers stay `"unscoped"` and keep the flat list (bd
+  tea-rags-mcp-89k7k.35.31). A dropped module is not simply gone: Ruby runs its
+  `self.extended(base)` hook, so the instance side puts what that hook
+  `base.include`s at the module's position and what it `base.prepend`s among the
+  class's prepends (`rubyDirectAncestors` / `rubyDirectPrepends`, fed by the
+  walker's run-global `extendedHookMixins` channel). An INSTANCE-side prepend
+  read goes through `rubyDirectPrepends`, never `classPrependedAncestors`
+  directly, or it loses the hook's prepends. Ruby's MEMBER walk is NOT the
+  kernel's: `resolveInstanceMethodInClassChain` (`strategies/shared.ts`) carries
+  the prepend pre-pass, the schema-column preference and the file-only fallback
+  ordering, none of which are neutral, and it stays here. Change the order here;
+  change the walk in the kernel and re-run
   `scripts/spikes/ruby-resolver-parity.ts --before-root <pre-seam checkout>`.
 - **The external-member suppression set is `ACTIVE_RECORD_INSTANCE_BUILTINS` in
   `dsl/rails-runtime.ts` — not `dsl/core-members.ts`.** Membership means "the

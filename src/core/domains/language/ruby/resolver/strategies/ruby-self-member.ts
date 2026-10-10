@@ -1,7 +1,7 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveInstanceMethodInClassChain, type ResolverConfig } from "./shared.js";
+import { callerAncestrySide, resolveInstanceMethodInClassChain, type ResolverConfig } from "./shared.js";
 
 /**
  * Explicit `self.<member>` (bd tea-rags-mcp-kh9vo). The walker emits these with
@@ -35,7 +35,18 @@ export class RubySelfMemberSymbolResolutionStrategy implements SymbolResolutionS
     // FQ key matches `collectRubyClassAncestors` output: nested classes become
     // `Outer::Inner` via scope-stack join with `::` (parity with the super walk).
     const enclosingClass = ctx.callerScope.join("::");
-    const target = resolveInstanceMethodInClassChain(enclosingClass, call.member, ctx, this.cfg.mode, new Set());
+    // Inside an instance method `self` is an instance, so a module the class only
+    // `extend`s is off its ancestry — neither the answer nor the file-only
+    // fallback (bd tea-rags-mcp-89k7k.35.31).
+    const target = resolveInstanceMethodInClassChain(
+      enclosingClass,
+      call.member,
+      ctx,
+      this.cfg.mode,
+      new Set(),
+      undefined,
+      callerAncestrySide(ctx),
+    );
     // `self` is terminal: a miss is a DROP, not a fall-through (bd kh9vo, same
     // family as the super-keyword guard bd jsa0/lttd).
     return target ? resolved(target) : DROP;

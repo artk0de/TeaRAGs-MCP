@@ -28,7 +28,7 @@
 import type { CallContext } from "../../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import { MemberReturnTypeResolver, type MemberReturnTypePorts } from "../../../kernel/index.js";
-import { linearizeAncestors } from "./ancestor-linearization.js";
+import { callerAncestrySide, linearizeAncestors } from "./ancestor-linearization.js";
 import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 
 /**
@@ -119,7 +119,12 @@ export function flatReturnFactMayOverrideKnownReceiver(member: string, ctx: Call
 export const RUBY_DECLARED_RETURN_FACT_PORTS: MemberReturnTypePorts = {
   declaredReturnType: (owner, member, ctx) =>
     declaredReturnTypeOn(owner.name, member, ctx, owner.form === "class") ?? null,
-  ancestorsOf: (owner, ctx) => linearizeAncestors(owner.name, ctx).filter((ancestor) => ancestor !== owner.name),
+  // An instance receiver reads its instance ancestry: a module the owner only
+  // `extend`s declares class-side facts (bd tea-rags-mcp-89k7k.35.31).
+  ancestorsOf: (owner, ctx) =>
+    linearizeAncestors(owner.name, ctx, owner.form === "instance" ? "instance" : "unscoped").filter(
+      (ancestor) => ancestor !== owner.name,
+    ),
   ancestorReturnType: (ancestor, owner, member, ctx) =>
     declaredReturnTypeOn(ancestor, member, ctx, owner.form === "class") ?? null,
 };
@@ -176,7 +181,7 @@ const RUBY_DECLARED_RETURN_FACTS = new MemberReturnTypeResolver(RUBY_DECLARED_RE
 export function selfMemberReturnType(member: string, ctx: CallContext): RubyTypeRef | undefined {
   if (ctx.callerScope.length === 0) return undefined;
   const classSelf = callerBindsClassSelf(ctx);
-  for (const owner of linearizeAncestors(ctx.callerScope.join("::"), ctx)) {
+  for (const owner of linearizeAncestors(ctx.callerScope.join("::"), ctx, callerAncestrySide(ctx))) {
     const declared = declaredReturnTypeOn(owner, member, ctx, classSelf);
     if (declared !== undefined) return declared;
   }

@@ -40,10 +40,12 @@ import type { AstNode } from "../../../../contracts/types/ast.js";
 import type {
   FileExtraction,
   InheritanceEdgeDecl,
+  RubyExtendedHookMixin,
   TypeDeclarationFact,
   TypeMemberCensus,
 } from "../../../../contracts/types/codegraph.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
+import { canonicalizeHookMixin, extendedHookMixinsOfBody } from "./extended-hook-mixins.js";
 import { attachedBlockOf, lexicalScopeFqName, readScopeResolution } from "./shared/index.js";
 import { CONSTANT_ASSIGNMENT_NODE_TYPES, symbolKindOf } from "./symbol-kind.js";
 import { rubyBodyMemberCounts, valueClassMemberNames } from "./type-member-census.js";
@@ -193,6 +195,8 @@ export interface RubyClassDeclarations {
   superclasses: Map<string, string>;
   compact: Set<string>;
   schemaTables: Map<string, string>;
+  /** module FQ → its `self.extended` hook's include / prepend injections (bd 89k7k.35.31). */
+  extendedHookMixins: Map<string, RubyExtendedHookMixin[]>;
   typeDeclarations: TypeDeclarationFact[];
   /** One entry per class / module body and per constant bound to `Struct.new` / `Data.define`. */
   typeMemberCensus: TypeMemberCensus[];
@@ -277,6 +281,10 @@ export function collectRubyClassAncestors(
   // (A, A::B) are NOT open lexical scopes, so a raw ancestor must NOT be
   // prefix-walked through them (bd lawlq.3.7). Consumed by canonicalizeAncestorFq.
   const compactOut = new Set<string>();
+  /** Every class / module FQ this file opens — what a hook's mixin canonicalizes against. */
+  const declaredOut = new Set<string>();
+  /** module FQ → its `self.extended` hook's injections, modules as written (bd 89k7k.35.31). */
+  const rawHookMixins = new Map<string, RubyExtendedHookMixin[]>();
   // `constantScope` is false below a method body or a `class << self`, where an
   // assignment does not declare a constant of the enclosing namespace.
   const walkScope = (node: AstNode, scope: string[], constantScope: boolean): void => {
@@ -290,6 +298,7 @@ export function collectRubyClassAncestors(
       const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
       const fq = scope.length === 0 ? localName : `${scope.join("::")}::${localName}`;
       if (nameNode.type === "scope_resolution") compactOut.add(fq); // compact `class A::B::C`
+      declaredOut.add(fq);
       const ancestors: string[] = [];
       const prepended: string[] = [];
       // The type-declaration fact's supertypes: superclass, then include /
@@ -344,6 +353,10 @@ export function collectRubyClassAncestors(
       }
       if (ancestors.length > 0) out.set(fq, ancestors);
       if (prepended.length > 0) prependedOut.set(fq, prepended);
+      // `def self.extended(base)` is a direct body statement; a reopening adds
+      // its own hook's injections to the same module (bd 89k7k.35.31).
+      const hookMixins = extendedHookMixinsOfBody(body ? body.children : node.children);
+      if (hookMixins.length > 0) rawHookMixins.set(fq, [...(rawHookMixins.get(fq) ?? []), ...hookMixins]);
       // `self.table_name = "companies"` — the explicit ORM table override
       // (bd tea-rags-mcp-8l5fo). Collected on THIS traversal (which already
       // owns the namespace stack that yields `fq`) rather than in a second walk,
@@ -370,12 +383,25 @@ export function collectRubyClassAncestors(
     for (const child of node.children) walkScope(child, scope, childConstantScope);
   };
   walkScope(root, [], true);
+  // Canonicalized only now: a hook may name a module the file declares BELOW it.
+  const extendedHookMixins = new Map<string, RubyExtendedHookMixin[]>();
+  for (const [moduleFq, mixins] of rawHookMixins) {
+    const compact = compactOut.has(moduleFq);
+    extendedHookMixins.set(
+      moduleFq,
+      mixins.map(({ kind, module }) => ({
+        kind,
+        module: canonicalizeHookMixin(module, moduleFq, declaredOut, compact),
+      })),
+    );
+  }
   return {
     ancestors: out,
     prepended: prependedOut,
     superclasses: superclassOut,
     compact: compactOut,
     schemaTables: schemaTablesOut,
+    extendedHookMixins,
     typeDeclarations,
     typeMemberCensus,
   };
@@ -454,9 +480,15 @@ export function attachRubyClassHierarchyChannels(
     superclasses: superclassMap,
     compact: compactClassSet,
     schemaTables: schemaTableMap,
+    extendedHookMixins: hookMixinMap,
     typeDeclarations,
     typeMemberCensus,
   } = declarations;
+  if (hookMixinMap.size > 0) {
+    const hookMixinRecord: Record<string, readonly RubyExtendedHookMixin[]> = createIdentifierRecord();
+    for (const [k, v] of hookMixinMap) hookMixinRecord[k] = v;
+    out.extendedHookMixins = hookMixinRecord;
+  }
   if (ancestorMap.size > 0) {
     const ancestorRecord: Record<string, readonly string[]> = createIdentifierRecord();
     for (const [k, v] of ancestorMap) ancestorRecord[k] = v;
