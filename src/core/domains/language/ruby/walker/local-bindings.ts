@@ -8,6 +8,7 @@ import {
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { RUBY_SELF_COPY_METHODS } from "../self-copy-methods.js";
+import { collectMethodLocalBindings } from "./bare-call-detection.js";
 import { inferRubyMemberReturnType, type RubyMemberReturnOwner } from "./body-return.js";
 import { forEachClassScope, readScopeResolution, walk } from "./shared/index.js";
 import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
@@ -401,6 +402,7 @@ export function collectRubyCallResultBindingsForChunk(
   catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): Record<string, CallResultBinding[]> {
   const out: Record<string, CallResultBinding[]> = createIdentifierRecord();
+  const methodLocals = new Map<number, ReadonlySet<string>>();
   walk(root, (node) => {
     if (node.type !== "assignment") return;
     const line = node.startPosition.row + 1;
@@ -408,9 +410,12 @@ export function collectRubyCallResultBindingsForChunk(
     const lhs = node.childForFieldName("left");
     const rhs = node.childForFieldName("right");
     if (lhs?.type !== "identifier" || !rhs) return;
-    // A paren-less `copy = dup` parses as an identifier, not a call (bd m99j1.1.91).
-    if (rhs.type === "identifier" && RUBY_SELF_COPY_METHODS.has(rhs.text)) {
-      (out[lhs.text] ??= []).push({ line, endLine: node.endPosition.row + 1, callee: rhs.text });
+    // A paren-less `copy = dup` / `result = collection_items` parses as an
+    // identifier, not a call (bd m99j1.1.91, 89k7k.35.29).
+    if (rhs.type === "identifier") {
+      if (RUBY_SELF_COPY_METHODS.has(rhs.text) || isNullarySelfCall(rhs, methodLocals)) {
+        (out[lhs.text] ??= []).push({ line, endLine: node.endPosition.row + 1, callee: rhs.text });
+      }
       return;
     }
     if (rhs.type !== "call" && rhs.type !== "method_call") return;
@@ -420,6 +425,33 @@ export function collectRubyCallResultBindingsForChunk(
     (out[lhs.text] ??= []).push({ line, endLine: node.endPosition.row + 1, callee: links.join(".") });
   });
   return out;
+}
+
+/**
+ * Whether a paren-less identifier on an assignment's right-hand side is a
+ * NULLARY SELF-CALL (`result = collection_items`), not a local read (bd
+ * tea-rags-mcp-89k7k.35.29). Ruby decides that lexically: a name the enclosing
+ * `def` never binds — no parameter, no assignment target anywhere in its body
+ * ({@link collectMethodLocalBindings}, the set the bare-call emitter reads) —
+ * can only be a method call. Outside a `def` nothing is recorded: a class body
+ * or a script reads its names under rules this set does not model.
+ *
+ * `methodLocals` memoises the set per enclosing `def` (keyed by its start
+ * offset) across one chunk's walk.
+ */
+function isNullarySelfCall(rhs: AstNode, methodLocals: Map<number, ReadonlySet<string>>): boolean {
+  let scope = rhs.parent;
+  while (scope !== null && scope.type !== "method" && scope.type !== "singleton_method") {
+    if (scope.type === "class" || scope.type === "module" || scope.type === "singleton_class") return false;
+    scope = scope.parent;
+  }
+  if (scope === null) return false;
+  let locals = methodLocals.get(scope.startIndex);
+  if (locals === undefined) {
+    locals = collectMethodLocalBindings(scope);
+    methodLocals.set(scope.startIndex, locals);
+  }
+  return !locals.has(rhs.text);
 }
 
 /** The argument-free links of a call chain rooted at a name, or `null`. */

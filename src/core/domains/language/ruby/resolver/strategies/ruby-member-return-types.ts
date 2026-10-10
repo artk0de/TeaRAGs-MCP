@@ -25,8 +25,12 @@ import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import { MemberReturnTypeResolver } from "../../../kernel/index.js";
 import { rubyNonNilArms, rubyTypeRefEquals } from "../../type-ref.js";
 import { CONTAINER_ELEMENT_RETURNING_METHODS } from "../../walker/shared/index.js";
-import { activeRecordQueryReturn } from "./ruby-active-record-return-types.js";
-import { flatReturnFactMayOverrideKnownReceiver, RUBY_DECLARED_RETURN_FACT_PORTS } from "./ruby-return-facts.js";
+import { activeRecordQueryReturn, activeRecordRelationModel } from "./ruby-active-record-return-types.js";
+import {
+  declaredReturnType,
+  flatReturnFactMayOverrideKnownReceiver,
+  RUBY_DECLARED_RETURN_FACT_PORTS,
+} from "./ruby-return-facts.js";
 
 export { CONTAINER_BLOCK_ITERATION_METHODS, CONTAINER_ELEMENT_RETURNING_METHODS } from "../../walker/shared/index.js";
 
@@ -97,8 +101,16 @@ const RUBY_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
 export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): RubyTypeRef | undefined {
   // Container form: element-returning methods unwrap to the element type (Task 1.6).
   // Non-element methods (size, count, map, …) → undefined (Array/Enumerable = external).
+  // An AR RELATION delegates every other member to its model's class (bd
+  // tea-rags-mcp-89k7k.35.29): a scope declared there keeps the relation, a
+  // class method answers its declared fact, a query method its vocabulary. No
+  // flat by-name fallback — that map carries no owner, and the delegation
+  // reaches class-level members only.
   if (recv.form === "container") {
-    return CONTAINER_ELEMENT_RETURNING_METHODS.has(member) ? recv.element : undefined;
+    if (CONTAINER_ELEMENT_RETURNING_METHODS.has(member)) return recv.element;
+    const model = activeRecordRelationModel(recv, ctx);
+    if (model === undefined) return undefined;
+    return declaredReturnType(model, member, ctx) ?? activeRecordQueryReturn(model, member, ctx);
   }
 
   // Union / nil receiver: the agreement fold (bd tea-rags-mcp-27q0z).

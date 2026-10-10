@@ -125,14 +125,20 @@
   `typeOfReceiver` folds it for a local with no walker binding
   (`CODEGRAPH_RB_CALL_RESULT_BINDINGS`, default on) and keeps only an answer
   naming a project-declared class (`belongs_to :status` derives a phantom
-  `Statu`), and `boundCallReturnType` reads the receiver it names, answering
-  over that class when the chain types it nominally. Two positional rules guard
-  the self-referential write: a call inside a modifier condition reads the
-  binding ABOVE the statement (`conditionSpan`, the kernel bullet on
-  `localBindings`), and the right-hand side of `x = x.m` keeps a self-typed
-  reading only when it resolves to a member that type declares
-  (`isOwnAssignmentRightHandSide`). An untyped receiver still reads the flat map
-  — restricting it lost correct huginn rows.
+  `Statu`; a module-only constant is never an instance) or an AR RELATION over
+  one — the positioned channel alone also records a paren-less nullary self-call
+  (`result = collection_items`), so `localCallBindings` stays silent there. A
+  relation-typed local's member is pinned on the model's CLASS
+  (`resolveBoundCallTarget`, scopes and `def self.`), and `returnTypeOf` threads
+  a relation through declared class facts and the AR query vocabulary, never the
+  flat map (bd tea-rags-mcp-89k7k.35.29). And `boundCallReturnType` reads the
+  receiver it names, answering over that class when the chain types it
+  nominally. Two positional rules guard the self-referential write: a call
+  inside a modifier condition reads the binding ABOVE the statement
+  (`conditionSpan`, the kernel bullet on `localBindings`), and the right-hand
+  side of `x = x.m` keeps a self-typed reading only when it resolves to a member
+  that type declares (`isOwnAssignmentRightHandSide`). An untyped receiver still
+  reads the flat map — restricting it lost correct huginn rows.
 - **The dynamic fan's assigned-local decline needs Ruby's producer.**
   `collectMethodAssignedLocals` publishes `assignedLocals` on every chunk inside
   a def (assignments, `||=` / op-assign, multiple assignment, `rescue => e`;

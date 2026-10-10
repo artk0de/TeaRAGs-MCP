@@ -41,6 +41,23 @@ function ancestryReaches(
   return false;
 }
 
+/**
+ * The model a RELATION ranges over — `container(Model)` whose element is an
+ * instance of a class descending from an AR model base — or `undefined` for any
+ * other ref (bd tea-rags-mcp-89k7k.35.29).
+ *
+ * A relation is not an opaque collection: Rails delegates every member it does
+ * not define itself to the model's CLASS (`scoping { klass.public_send(…) }`), so
+ * a scope or `def self.` on the model is callable on it and answers over the
+ * model again. A container over anything else (a plain `Array<Foo>`, a gem
+ * class) delegates nothing and stays the opaque collection it always was.
+ */
+export function activeRecordRelationModel(ref: RubyTypeRef | undefined, ctx: CallContext): string | undefined {
+  if (ref?.form !== "container" || ref.element.form !== "instance") return undefined;
+  const model = ref.element.name;
+  return ancestryReaches(model, ACTIVE_RECORD_QUERY_INTERFACE.modelBaseClasses, ctx) ? model : undefined;
+}
+
 /** `find_by_<attr>` / `find_by_<attr>!` — a dynamic finder (requires an attr suffix). */
 function isDynamicFinder(member: string): boolean {
   const prefix = ACTIVE_RECORD_QUERY_INTERFACE.dynamicFinderPrefix;

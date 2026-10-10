@@ -6,8 +6,8 @@ import type {
   SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveTypeMethod, type ResolverConfig } from "./shared.js";
-import { boundCallReturnType, isOwnAssignmentRightHandSide } from "./type-propagation.js";
+import { resolveTypeMethod, resolveTypeStaticMethod, type ResolverConfig } from "./shared.js";
+import { boundCallReturnType, callResultRelationModel, isOwnAssignmentRightHandSide } from "./type-propagation.js";
 
 /**
  * The single precise target the `returnTypeBinding` pass emits for `call`, or
@@ -25,6 +25,15 @@ export function resolveBoundCallTarget(
   mode: AmbiguousResolveMode,
 ): SymbolResolutionTarget | null {
   if (!call.receiver) return null;
+  // A local holding an AR relation (bd tea-rags-mcp-89k7k.35.29): Rails sends
+  // the member to the model's class, so a scope / class method declared there is
+  // the exact target — never the flat map's namesake. Pinned answers only; any
+  // other member reads exactly as before.
+  const relationModel = callResultRelationModel(call, ctx);
+  if (relationModel !== undefined) {
+    const onModel = resolveTypeStaticMethod(relationModel, call.member, ctx, mode);
+    if (onModel?.targetSymbolId) return onModel;
+  }
   const returnType = boundCallReturnType(call.receiver, ctx, call);
   // Container / union results are not threaded here — a member call on a relation
   // is the cone resolver's business, not a single-target binding.
