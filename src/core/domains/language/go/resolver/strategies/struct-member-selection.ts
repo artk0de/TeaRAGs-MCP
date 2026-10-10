@@ -22,9 +22,13 @@
  * index, and a Python `Engine` must not answer for a Go one.
  */
 
-import type { CallContext, SymbolDefinition, SymbolResolutionTarget } from "../../../../contracts/types/codegraph.js";
-import type { SymbolIdComposer } from "../../../../contracts/types/language.js";
-import { goDeclaredFieldType, goEmbeddedFieldTypes, goStructClassKey } from "../struct-fields.js";
+import type {
+  CallContext,
+  SymbolDefinition,
+  SymbolResolutionTarget,
+} from "../../../../../contracts/types/codegraph.js";
+import type { SymbolIdComposer } from "../../../../../contracts/types/language.js";
+import { goDeclaredFieldType, goEmbeddedFieldTypes, goStructClassKey } from "../../struct-fields.js";
 import { goPackageDirOf, type GoProjectType } from "./go-project-type.js";
 import { lookupGoSymbols } from "./go-symbol-lookup.js";
 

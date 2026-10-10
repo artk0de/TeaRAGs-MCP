@@ -11,10 +11,12 @@ import {
   DocChunkGrouper,
   isTestChunk,
   isTestExampleChunk,
+  memberOwnerOf,
+  splitFragmentBase,
+  splitFragmentOwnRows,
   type MemberVisibilityLookup,
   type ScrollChunk,
 } from "./chunk-grouping/index.js";
-import { memberOwnerOf, splitFragmentBase, splitFragmentOwnRows } from "./split-fragment.js";
 
 /**
  * A `parentType` naming a member CONTAINER — class, module or struct, whatever

@@ -17,9 +17,9 @@
  * same reason as Python's and Ruby's helpers: it is all a definition carries.
  */
 
-import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
-import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../../kernel/index.js";
-import { capability } from "../capability.js";
+import type { CallContext, SymbolDefinition } from "../../../../../contracts/types/codegraph.js";
+import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../../../kernel/index.js";
+import { capability } from "../../capability.js";
 
 const GO_SOURCE_EXTENSION = ".go";
 

@@ -25,8 +25,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { readManifestFiles } from "../../../../infra/dependency-manifests.js";
-import { GO_MODULE_MANIFEST_FILE, GO_MODULE_WALK_IGNORED_DIRS, parseGoModulePath } from "../manifest.js";
+import { readManifestFiles } from "../../../../../infra/dependency-manifests.js";
+import { GO_MODULE_MANIFEST_FILE, GO_MODULE_WALK_IGNORED_DIRS, parseGoModulePath } from "../../manifest.js";
 
 interface GoModuleRoot {
   readonly modulePath: string;

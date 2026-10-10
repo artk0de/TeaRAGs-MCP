@@ -12,11 +12,11 @@ import type {
   GlobalSymbolTable,
   SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
 import {
   goBuildContextForHost,
   goFileBuildsByDefault,
-} from "../../../../../../src/core/domains/language/go/resolver/go-build-constraints.js";
-import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
+} from "../../../../../../src/core/domains/language/go/resolver/strategies/go-build-constraints.js";
 import { extractFromGoFile } from "../../../../../../src/core/domains/language/go/walker/walker.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { buildPass1Aggregates } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/pass1-aggregates.js";
