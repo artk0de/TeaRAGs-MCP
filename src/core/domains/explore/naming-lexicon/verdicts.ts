@@ -1447,6 +1447,7 @@ function familyNonMemberRole(
   role: ExpectedTypeRole | undefined = draftRole(draft, evidence),
 ): string | undefined {
   if (role === undefined || role.evidence === "inheritance") return undefined;
+  if (namesDeclaredContract(draft, evidence, role)) return role.role;
   const supertypes = knownDraftSupertypes(draft, evidence);
   const symbolKind = knownDraftKind(draft, evidence);
   const member = isRoleFamilyMember(role, {
@@ -1454,6 +1455,26 @@ function familyNonMemberRole(
     ...(symbolKind !== undefined ? { symbolKind } : {}),
   });
   return member ? undefined : role.role;
+}
+
+/**
+ * Whether the draft's head noun is the head noun of a supertype it is KNOWN to
+ * declare — its `extends`, or an existing declaration's own supertypes — and
+ * not the role's word (bd tea-rags-mcp-0qaht.49). Such a name already names the
+ * contract it implements: `RubyExactPassAnswerProbe implements
+ * ExactChainAnswerProbe` is a probe, whatever suffix its directory's other
+ * files share. The declared contract outranks the sibling-file majority, even
+ * where that family's own supertype cannot decide membership.
+ */
+function namesDeclaredContract(draft: TypeDraftPlacement, evidence: TypeNameEvidence, role: ExpectedTypeRole): boolean {
+  if (evidence.population !== "type") return false;
+  const { head } = evidence.parseName(draft.name);
+  if (head === undefined || head === role.role) return false;
+  const declared = [
+    ...(draft.extends !== undefined ? [draft.extends] : []),
+    ...ownDeclarations(draft, evidence).flatMap((row) => row.ancestors),
+  ];
+  return declared.some((supertype) => evidence.parseName(supertype).head === head);
 }
 
 /** The draft's expected role when it is a dispersed family's kind: never carried in names. */
