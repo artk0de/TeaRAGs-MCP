@@ -47,8 +47,8 @@
 
 import { posix } from "node:path";
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
+import type { CallContext, SymbolDefinition } from "../../../../../contracts/types/codegraph.js";
 
 /** The GOOS / GOARCH a build is for. */
 export interface GoBuildContext {

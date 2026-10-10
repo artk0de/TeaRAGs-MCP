@@ -8,7 +8,7 @@ import { parseGoModulePath } from "../../../../../../src/core/domains/language/g
 import {
   GoModuleMap,
   GoModuleMapCache,
-} from "../../../../../../src/core/domains/language/go/resolver/go-module-map.js";
+} from "../../../../../../src/core/domains/language/go/resolver/strategies/go-module-map.js";
 
 /**
  * bd tea-rags-mcp-e6xx — Go imports name MODULE paths

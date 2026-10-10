@@ -6,7 +6,7 @@
 
 import type { SearchResult } from "../../../api/public/dto/explore.js";
 import { TEST_SCOPE_PARENT_TYPE } from "../../../contracts/types/chunker.js";
-import { splitFragmentBase } from "../split-fragment.js";
+import { splitFragmentBase } from "./split-fragment.js";
 import type { MemberVisibilityLookup, ScrollChunk } from "./types.js";
 
 /** Sort chunks by startLine ascending. */

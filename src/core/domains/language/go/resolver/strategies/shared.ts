@@ -30,11 +30,11 @@ import {
 } from "../../import-binding.js";
 import { goLocalAt } from "../../local-scope.js";
 import { goFunctionReturnTypesKey, splitGoRecordedTypeName } from "../../type-name.js";
-import { preferGoDefaultBuild } from "../go-build-constraints.js";
-import type { GoModuleMap, GoModuleMapCache } from "../go-module-map.js";
-import { goPackageDirOf, type GoProjectType } from "../go-project-type.js";
-import { lookupGoSymbols, lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
-import { selectGoMember } from "../struct-member-selection.js";
+import { preferGoDefaultBuild } from "./go-build-constraints.js";
+import type { GoModuleMap, GoModuleMapCache } from "./go-module-map.js";
+import { goPackageDirOf, type GoProjectType } from "./go-project-type.js";
+import { lookupGoSymbols, lookupGoSymbolsByShortName } from "./go-symbol-lookup.js";
+import { selectGoMember } from "./struct-member-selection.js";
 
 export interface ResolverConfig {
   composer: SymbolIdComposer;

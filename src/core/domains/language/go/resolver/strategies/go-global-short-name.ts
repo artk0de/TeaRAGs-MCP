@@ -2,9 +2,9 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { goLocalAt } from "../../local-scope.js";
-import { preferGoDefaultBuild } from "../go-build-constraints.js";
-import { goPackageDirOf } from "../go-project-type.js";
-import { lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
+import { preferGoDefaultBuild } from "./go-build-constraints.js";
+import { goPackageDirOf } from "./go-project-type.js";
+import { lookupGoSymbolsByShortName } from "./go-symbol-lookup.js";
 import { goBareNamePackageDirs, type ResolverConfig } from "./shared.js";
 
 /**

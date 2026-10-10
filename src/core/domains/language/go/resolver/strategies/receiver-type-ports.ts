@@ -31,12 +31,12 @@
  * frozen, so the fold allocates nothing per call site.
  */
 
-import type { CallContext } from "../../../../contracts/types/codegraph.js";
-import type { TypeRef } from "../../../../contracts/types/language.js";
-import { CHAIN_MAX_HOPS_DEFAULT, splitReceiverHops, type ReceiverTypePorts } from "../../kernel/index.js";
-import { goLocalAt } from "../local-scope.js";
+import type { CallContext } from "../../../../../contracts/types/codegraph.js";
+import type { TypeRef } from "../../../../../contracts/types/language.js";
+import { CHAIN_MAX_HOPS_DEFAULT, splitReceiverHops, type ReceiverTypePorts } from "../../../kernel/index.js";
+import { goLocalAt } from "../../local-scope.js";
 import { goProjectTypeOfRefName, goProjectTypeRef } from "./go-project-type.js";
-import { goCallResultType, type ResolverConfig } from "./strategies/shared.js";
+import { goCallResultType, type ResolverConfig } from "./shared.js";
 import { selectGoMember } from "./struct-member-selection.js";
 
 const GO_IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_]*$/u;
