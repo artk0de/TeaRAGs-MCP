@@ -12,7 +12,7 @@ import type { GraphDbClient } from "../../../../contracts/types/codegraph-storag
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import { readFileContentHash, readFileContentHashSync } from "../../../../infra/file-content-hash.js";
 import { WorkingTreeGraphIncompleteError } from "../../errors.js";
-import type { CodegraphEnrichmentProvider } from "../symbols/provider.js";
+import type { CodegraphEnrichmentProvider } from "../symbols/index.js";
 
 /** One opened clone a tree build writes: the provider over it and its client. */
 export interface TreeGraphClone {
