@@ -41,6 +41,11 @@
  * - Misses are computed one batch at a time per source: a request that waited
  *   re-reads the cache first, so concurrent requests over one delta spawn its
  *   git work once, and the spawns stay within the trajectory's own budgets.
+ * - The repo-wide reads a computation needs that depend on nothing but
+ *   (toplevel, HEAD) — the lifetime walk a window-less path is stamped from,
+ *   and the HEAD commit time of `anchor: head` — are read once per HEAD
+ *   (`OnDemandHeadGitReadMemo`), never skipped: an untracked file at a deleted
+ *   path inherits that path's stamps in ingest too.
  * - Never rejects: a failed read answers nothing, the next request retries.
  */
 
@@ -64,6 +69,7 @@ import { enrichmentSkipReason } from "../../../domains/ingest/index.js";
 import {
   buildOnDemandGitSignals,
   gitEnrichmentScope,
+  OnDemandHeadGitReadMemo,
   type OnDemandGitSignalOptions,
   type OnDemandGitSignalTarget,
   type SquashOptions,
@@ -136,6 +142,8 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
     (indexRoot === undefined ? undefined : deps.configFor?.(indexRoot)) ?? deps;
   const records = new Map<string, WorkingTreeGitSignalRecord>();
   const histories = new Map<string, Promise<PathCommitsSince | undefined>>();
+  // The repo-wide reads a computation needs that depend only on (toplevel, HEAD).
+  const headReads = new OnDemandHeadGitReadMemo(HISTORY_CACHE_SIZE);
   let computing: Promise<unknown> = Promise.resolve();
 
   /** Which commits on either side of the stamp touched which paths — one `git log` per (toplevel, stamp, HEAD). */
@@ -252,7 +260,7 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
     pending: readonly PendingTarget[],
     answered: Map<string, WorkingTreeGitSignals & { chunks: Map<string, Record<string, unknown>> }>,
   ): Promise<void> => {
-    const computed = await computeSignals(config, toplevel, pending);
+    const computed = await computeSignals(config, toplevel, pending, headReads);
     const enrichedAt = new Date(now()).toISOString();
     const touched = new Map<string, WorkingTreeGitSignalRecord>();
     pending.forEach((entry, index) => {
@@ -434,6 +442,7 @@ async function computeSignals(
   config: WorkingTreeGitSignalConfig,
   toplevel: string,
   pending: readonly PendingTarget[],
+  headReads: OnDemandHeadGitReadMemo,
 ): ReturnType<typeof buildOnDemandGitSignals> {
   const adapter = await VcsAdapterFactory.create(config.vcsAdapter, toplevel);
   const targets: OnDemandGitSignalTarget[] = pending.map((entry, index) => {
@@ -452,8 +461,16 @@ async function computeSignals(
   // HEAD off disk, read right before the call (a queued turn may run after HEAD
   // moved): the computation then spawns no `rev-parse` of its own.
   const head = readRepoGitState(toplevel)?.commit;
+  // The same HEAD keys the repo-wide reads: the lifetime walk and the HEAD
+  // commit time are read once per (toplevel, HEAD), not once per computation.
+  // An unreadable anchor is not handed in, so the computation reads it again.
+  const historyAnchorSec =
+    head && config.anchor === "head" ? await headReads.historyAnchorSec(adapter, head, config.timeoutMs) : undefined;
   return buildOnDemandGitSignals(adapter, targets, {
-    ...(head ? { head } : {}),
+    ...(head
+      ? { head, fileLifetimeStamps: async () => headReads.fileLifetimeStamps(adapter, head, config.timeoutMs) }
+      : {}),
+    ...(historyAnchorSec !== undefined ? { historyAnchorSec } : {}),
     timeoutMs: config.timeoutMs,
     chunk: config.chunk,
     ...(config.file ? { file: config.file } : {}),
