@@ -134,7 +134,7 @@ export class ForeignBuildDaemonLockArbiter {
   }
 
   /**
-   * Drain an idle holder the way `GraphDbClientPool#drainStaleDaemon` drains a
+   * Drain an idle holder the way `DaemonBuildHandshakeConnector#drainStaleDaemon` drains a
    * stale one: request the shutdown, close our socket, poll its lifecycle
    * files for the exit. A refusal (a write in flight) and a failed exit keep it
    * `held`; a socket that does not accept is `unreachable` — the file stays

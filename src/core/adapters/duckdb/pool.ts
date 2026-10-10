@@ -28,90 +28,34 @@
  * tea-rags-mcp-hw27k).
  */
 
-import { existsSync, mkdirSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { mkdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 import type { CollectionGraphHandle, GraphDbClientPoolPort } from "../../contracts/types/codegraph-pool.js";
-import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
+import type { CallResolver, GlobalSymbolTable } from "../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { DatabaseMigrationApplier } from "../../contracts/types/migration.js";
 import { isDebug } from "../../infra/runtime.js";
 import { DuckDbGraphClient } from "./client.js";
 import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.js";
-import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./daemon/build-fingerprint.js";
-import type { DaemonCapabilityVerdict, DaemonGraphDbClient } from "./daemon/client.js";
+import { CodegraphPathLeases } from "./codegraph-path-leases.js";
+import { CollectionIdleEvictionTracker, type GraphDbClientPoolIdleEviction } from "./collection-idle-eviction.js";
+import type { CollectionInitHook, SymbolTableFactory } from "./collection-init-hook.js";
+import {
+  DaemonBuildHandshakeConnector,
+  type CodegraphDaemonRestartWiring,
+} from "./daemon/build-handshake-connector.js";
+import { DaemonCollectionClientCache } from "./daemon/collection-client-cache.js";
 import type { DaemonDatabaseFileReplacer, DaemonDatabaseReplacement } from "./daemon/database-file-replacer.js";
-import type { ForeignBuildDaemonLockArbiter, ForeignBuildLockSettlement } from "./daemon/foreign-build-lock-arbiter.js";
-import {
-  daemonPathsForKeyDir,
-  DEFAULT_EXIT_TIMEOUT_MS,
-  getBuildKey,
-  getLegacyDaemonPaths,
-  isDaemonPidAlive,
-  readDaemonPid,
-  unlinkDaemonFiles,
-  waitForDaemonExit,
-  type CodegraphDaemonClientTarget,
-} from "./daemon/lifecycle.js";
-import {
-  CodegraphClientBuildTreeGoneError,
-  CodegraphClientStaleBuildError,
-  CodegraphDaemonBuildSkewError,
-  CodegraphDaemonBuildUnavailableError,
-  CodegraphDaemonDrainRefusedError,
-  CodegraphDaemonExitTimeoutError,
-  CodegraphDaemonStaleBuildError,
-  CodegraphDaemonUnreachableError,
-  CodegraphDatabaseHeldByForeignDaemonError,
-  CodegraphDatabaseMissingError,
-  DuckDbCloseFailedError,
-  DuckDbOpenFailedError,
-  isDaemonDrainRefusal,
-} from "./errors.js";
+import type { ForeignBuildDaemonLockArbiter } from "./daemon/foreign-build-lock-arbiter.js";
+import type { CodegraphDaemonClientTarget } from "./daemon/lifecycle.js";
+import { CodegraphDatabaseMissingError, DuckDbCloseFailedError, DuckDbOpenFailedError } from "./errors.js";
+import { LockContendedOpenRetry, type LockContendedOpenRetryWindow } from "./lock-contended-open-retry.js";
+import { ReadOnlyGraphFileReaders } from "./read-only-graph-file-readers.js";
 import { purgeStaleSpills } from "./spill-files.js";
 import type { CodegraphCompactionPolicy } from "./storage-compaction.js";
 
-/**
- * Drain-respawn attempts before `CodegraphDaemonStaleBuildError`: enough to lose
- * a spawn race to another MCP process, few enough that a respawn hook launching a
- * stale binary fails fast (bd tea-rags-mcp-ryoqn) — see `connectWithBuildHandshake`.
- */
-const DEFAULT_MAX_RESTART_ATTEMPTS = 3;
-
-/** Base delay between restart attempts; jittered per attempt. */
-const DEFAULT_RESTART_DELAY_MS = 250;
-
-/** Delay between `openRetry` attempts when the option leaves it unset. */
-const DEFAULT_OPEN_RETRY_INTERVAL_MS = 1_000;
-
-/**
- * A respawn-capable pool replaces a daemon from another build, or one that does
- * not advertise every op this client requires (bd tea-rags-mcp-39xca.4).
- */
-function needsDaemonReplacement(verdict: DaemonCapabilityVerdict): boolean {
-  return verdict.buildMismatch || verdict.missingRequiredOps.length > 0;
-}
-
-/** Debug-line reason a handshake did not settle. */
-function describeDaemonSkew(verdict: DaemonCapabilityVerdict, clientFingerprint: string): string {
-  const builds = `(daemon=${verdict.daemonFingerprint ?? "unknown"}, client=${clientFingerprint})`;
-  const missing =
-    verdict.missingRequiredOps.length > 0 ? `lacks required ops ${verdict.missingRequiredOps.join(", ")} ` : "";
-  return verdict.buildMismatch ? `build mismatch ${missing}${builds}` : `${missing}${builds}`;
-}
-
-/**
- * Initialiser hook the pool calls once per newly-opened collection client, so
- * the codegraph domain can hydrate the symbol table — the pool does not import
- * the in-memory symbol-table implementation.
- */
-export type CollectionInitHook = (args: {
-  collectionName: PhysicalCollectionName;
-  graphDb: GraphDbClient;
-  symbolTable: GlobalSymbolTable;
-}) => Promise<void>;
-
-export type SymbolTableFactory = () => GlobalSymbolTable;
+export type { CollectionInitHook, GraphDbClientPoolIdleEviction, SymbolTableFactory };
 
 export interface GraphDbClientPoolOptions {
   /** Root directory; per-collection files go in `<rootDir>/codegraph/`. */
@@ -204,12 +148,7 @@ export interface GraphDbClientPoolOptions {
    * collections, so a loser's open waits out the winner's idle eviction
    * (nlls) instead of failing the op. Without it the open fails immediately.
    */
-  openRetry?: {
-    /** Give up (rethrowing the last `DuckDbOpenFailedError`) after this long. */
-    maxMs: number;
-    /** Delay between open attempts (default 1s). */
-    intervalMs?: number;
-  };
+  openRetry?: LockContendedOpenRetryWindow;
   /**
    * Settles an open that lost the file lock to ANOTHER build's codegraph
    * daemon (bd tea-rags-mcp-hw27k) — the daemon wires it beside `openRetry`.
@@ -227,43 +166,9 @@ export interface GraphDbClientPoolOptions {
    * connection retried up to `maxRestartAttempts`. A pre-fingerprint peer
    * proceeds unchanged, and so does — read-only — a daemon of the build on disk
    * that this process predates (bd tea-rags-mcp-1wr7p). Without `respawn` the pool never
-   * drains — see `connectWithBuildHandshake`.
+   * drains — see `DaemonBuildHandshakeConnector#connectWithBuildHandshake`.
    */
-  daemonRestart?: {
-    /** Cold-spawn hook — wired to `ensureCodegraphDaemon` by the bootstrap factory. */
-    respawn?: () => void;
-    /** Override the module-captured loaded fingerprint (tests). */
-    buildFingerprint?: string;
-    /**
-     * Override the reader of the build fingerprint on disk NOW (tests) — what a
-     * daemon respawned from this process's build tree would report. Defaults to
-     * `readOnDiskBuildFingerprint`.
-     */
-    readOnDiskBuildFingerprint?: () => string | undefined;
-    /** Bound on the wait for the stale daemon's exit (default 10s). */
-    exitTimeoutMs?: number;
-    /** Lifecycle-file poll interval while waiting for the exit. */
-    pollIntervalMs?: number;
-    /**
-     * Drain-respawn attempts before the typed error (default 3, floor 1). Kept
-     * small on purpose: it widens the window for losing a spawn race, it is not
-     * a wait-until-healthy loop.
-     */
-    maxRestartAttempts?: number;
-    /** Base delay between restart attempts; jittered (default 250ms). */
-    restartDelayMs?: number;
-  };
-}
-
-/**
- * Per-collection idle-eviction tuning (bd tea-rags-mcp-nlls). `pollMs` mirrors
- * the daemon idle watcher's 5s cadence by default.
- */
-export interface GraphDbClientPoolIdleEviction {
-  /** Evict a collection's cached client after this long with no op. */
-  idleMs: number;
-  /** How often the eviction pass runs. */
-  pollMs?: number;
+  daemonRestart?: CodegraphDaemonRestartWiring;
 }
 
 /**
@@ -284,23 +189,6 @@ interface PoolEntry {
   retired: boolean;
 }
 
-/**
- * Cached daemon-mode entry: the raw `DaemonGraphDbClient` (whose real `close`
- * the pool calls in `closeAll`) plus a stable no-op-close wrapper handed to
- * callers. Caching the wrapper keeps handle identity stable across acquires.
- */
-interface DaemonClientEntry {
-  client: DaemonGraphDbClient;
-  wrapped: GraphDbClient;
-  /**
-   * ONE in-memory symbol table per collection, shared by every acquire: pass-2
-   * resolves cross-file calls against it, so a table per acquire loses every
-   * other file's symbols and collapses method-edge resolution. Mirrors
-   * `PoolEntry.symbolTable`.
-   */
-  symbolTable: GlobalSymbolTable;
-}
-
 export type { CollectionGraphHandle };
 
 export class GraphDbClientPool implements GraphDbClientPoolPort {
@@ -317,59 +205,42 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
    * the same file).
    */
   private readonly inflight = new Map<string, Promise<PoolEntry>>();
-  /**
-   * Path leases held by in-process replacers (bd tea-rags-mcp-r4veq), one
-   * settle-on-release promise per collection. `acquire` waits out a lease
-   * before it hands out or opens a client; no lease costs one `Map.get`.
-   */
-  private readonly pathLeases = new Map<PhysicalCollectionName, Promise<void>>();
-  /**
-   * Daemon mode only: ONE `DaemonGraphDbClient` (one socket) per (collection,
-   * process); the client multiplexes requests by id. Closed in `closeAll` so the
-   * daemon's per-connection refcount drops and its idle watcher can release the
-   * RW lock.
-   */
-  private readonly daemonClients = new Map<string, DaemonClientEntry>();
-  /** In-flight daemon-client init so concurrent first-callers share one socket. */
-  private readonly daemonInflight = new Map<string, Promise<DaemonClientEntry>>();
-  /**
-   * Idle-eviction clock: the last time an op for the collection started or
-   * completed (bd tea-rags-mcp-nlls). Only maintained when `idleEviction` is
-   * wired.
-   */
-  private readonly lastUsedByCollection = new Map<PhysicalCollectionName, number>();
-  /**
-   * Ops currently running against a cached client, so eviction NEVER closes a
-   * connection mid-op. `runCollectionOp` owns the refcount; `acquire` alone
-   * (the daemon handshake's open-and-drop) is not an in-flight op.
-   */
-  private readonly opsInFlightByCollection = new Map<PhysicalCollectionName, number>();
-  private idleEvictionTimer: NodeJS.Timeout | undefined;
-  /**
-   * Collections whose open already waited out a whole `openRetry` window
-   * against a foreign-build daemon, with that holder's verdict — the holder as
-   * named in the error, and why it stays up (bd tea-rags-mcp-hw27k). A verdict
-   * no connect can change (`unreachable`, `exitTimeout`) fails later opens at
-   * once (bd tea-rags-mcp-89k7k.35.27). Re-checked against the lock's pid on
-   * every open and dropped when that pid exited or changed; cleared by the
-   * collection's next successful open.
-   */
-  private readonly foreignHeldCollections = new Map<
-    PhysicalCollectionName,
-    Extract<ForeignBuildLockSettlement, { kind: "held" }>
-  >();
-  /** Open {@link acquireFileReader} handles per file path — see {@link isFileReaderOpen}. */
-  private readonly openFileReaders = new Map<string, number>();
+  /** Path leases of in-process replacers — what `acquire` waits out and a pin re-checks. */
+  private readonly pathLeases = new CodegraphPathLeases();
+  /** Daemon mode only: the one cached `DaemonGraphDbClient` per collection. */
+  private readonly daemonClients: DaemonCollectionClientCache;
+  /** Only when `idleEviction` is wired (bd tea-rags-mcp-nlls). */
+  private readonly idleEviction: CollectionIdleEvictionTracker | undefined;
+  /** Retries an open that lost the file lock; remembers foreign-build holders. */
+  private readonly lockContendedOpen: LockContendedOpenRetry;
+  /** READ_ONLY file handles, counted per path. */
+  private readonly fileReaders: ReadOnlyGraphFileReaders;
 
   constructor(private readonly options: GraphDbClientPoolOptions) {
     this.dbFiles = new CodegraphDbFiles(options.rootDir);
+    this.daemonClients = new DaemonCollectionClientCache(
+      options,
+      new DaemonBuildHandshakeConnector(options.daemonRestart, options.daemonStorageDir),
+    );
+    this.idleEviction = options.idleEviction
+      ? new CollectionIdleEvictionTracker(options.idleEviction, {
+          cachedCollections: () => [...this.clients.keys()],
+          release: async (physicalCollectionName) => this.release(physicalCollectionName),
+        })
+      : undefined;
+    this.lockContendedOpen = new LockContendedOpenRetry({
+      openRetry: options.openRetry,
+      foreignBuildLockArbiter: options.foreignBuildLockArbiter,
+      pathFor: (physicalCollectionName) => this.pathFor(physicalCollectionName),
+    });
+    this.fileReaders = new ReadOnlyGraphFileReaders(options.symbolTableFactory);
     mkdirSync(this.codegraphDir, { recursive: true });
     // Reclaim crashed runs' spills per ENTRY, never the whole directory (bd
     // tea-rags-mcp-v6gxr): pools are built mid-flight by unpinned enrichment
     // workers, the daemon and concurrent CLI runs, and `purgeStaleSpills` keeps
     // whatever a live pid owns. Also recreates the dir for `SET temp_directory`.
     purgeStaleSpills(this.spillDir);
-    if (options.idleEviction) this.scheduleIdleEviction(options.idleEviction);
+    this.idleEviction?.start();
   }
 
   private get codegraphDir(): string {
@@ -481,18 +352,12 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
   }
 
   private async acquireEntry(physicalCollectionName: PhysicalCollectionName): Promise<PoolEntry> {
-    // Looped: a lease that settles may be followed by the next replacer's.
-    for (
-      let lease = this.pathLeases.get(physicalCollectionName);
-      lease;
-      lease = this.pathLeases.get(physicalCollectionName)
-    ) {
-      await lease;
-    }
+    // Guarded so an unleased acquire stays free of an extra microtask turn.
+    if (this.pathLeases.isHeld(physicalCollectionName)) await this.pathLeases.waitForRelease(physicalCollectionName);
     // The idle-eviction clock starts here even for acquires that bypass
     // `runCollectionOp` (the daemon handshake's open-and-drop), so an opened
     // collection nobody ever ops against still becomes evictable.
-    if (this.options.idleEviction) this.lastUsedByCollection.set(physicalCollectionName, Date.now());
+    this.idleEviction?.stampUse(physicalCollectionName);
     const cached = this.clients.get(physicalCollectionName);
     if (cached && this.holdsOpenedDatabaseFile(physicalCollectionName, cached)) return cached;
     const inflight = this.inflight.get(physicalCollectionName);
@@ -579,343 +444,7 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
    * `finally` close must not tear it down under other in-flight callers.
    */
   private async acquireDaemonHandle(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
-    const entry = await this.acquireDaemonClient(physicalCollectionName);
-    return { graphDb: entry.wrapped, symbolTable: entry.symbolTable };
-  }
-
-  /**
-   * Lazily create + init the single cached `DaemonGraphDbClient` for a
-   * collection (plus its stable no-op-close wrapper). Concurrent first-callers
-   * share one init pass via `daemonInflight`.
-   */
-  private async acquireDaemonClient(physicalCollectionName: PhysicalCollectionName): Promise<DaemonClientEntry> {
-    const cached = this.daemonClients.get(physicalCollectionName);
-    if (cached?.client.isConnected()) return cached;
-    if (cached) {
-      // A cached client routinely outlives its daemon (30s idle exit). Drop it
-      // and cold-spawn: `respawn` is single-flighted and alive-checked, so it is
-      // a no-op when a daemon is in fact running.
-      this.daemonClients.delete(physicalCollectionName);
-      this.options.daemonRestart?.respawn?.();
-    }
-    const inflight = this.daemonInflight.get(physicalCollectionName);
-    if (inflight) return inflight;
-
-    const target = this.options.daemonClientTarget?.();
-    const socketPath = target?.paths.socketPath ?? this.options.daemonSocketPath;
-    /* v8 ignore next -- acquireDaemonClient is only reached in daemon mode */
-    if (!socketPath) throw new Error("acquireDaemonClient called without a daemon address");
-    // Nothing can be spawned from a tree that is gone, and nothing else names
-    // the build that replaced it: waiting out the connect window on a socket no
-    // one will create only delays the same answer (bd tea-rags-mcp-llrja).
-    if (target?.addressing === "build-tree-gone" && !existsSync(socketPath)) {
-      throw new CodegraphClientBuildTreeGoneError({ socketPath, loadedFingerprint: target.loadedFingerprint });
-    }
-
-    const promise = (async (): Promise<DaemonClientEntry> => {
-      // One-time legacy migration (bd tea-rags-mcp-42hno): a keyed client
-      // meeting a legacy-layout daemon drains it, then clears the layout. Runs
-      // inside the shared inflight pass, so concurrent first-callers race it
-      // once.
-      if (this.options.daemonStorageDir) await this.migrateLegacyDaemon(physicalCollectionName);
-      const client = await this.connectWithBuildHandshake(socketPath, physicalCollectionName);
-      const wrapped = wrapNoopClose(client);
-      // Hydrate like `openCollection`, so resolution sees symbols from files not
-      // re-walked this run. Non-fatal: the table starts empty and the next ingest
-      // pass repopulates it.
-      const symbolTable = this.options.symbolTableFactory();
-      if (this.options.initHook) {
-        try {
-          await this.options.initHook({ collectionName: physicalCollectionName, graphDb: wrapped, symbolTable });
-        } catch (err) {
-          process.stderr.write(
-            `[tea-rags] codegraph daemon init-hook failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
-          );
-        }
-      }
-      const entry: DaemonClientEntry = { client, wrapped, symbolTable };
-      this.daemonClients.set(physicalCollectionName, entry);
-      return entry;
-    })().finally(() => {
-      this.daemonInflight.delete(physicalCollectionName);
-    });
-    this.daemonInflight.set(physicalCollectionName, promise);
-    return promise;
-  }
-
-  /**
-   * Migrate a LEGACY (pre-keying, 42hno) daemon layout out of the base
-   * storage dir. The five lifecycle files sitting DIRECTLY in
-   * `daemonStorageDir` belong to the one shared daemon the pre-keying builds
-   * all ran; a keyed client must get them out of the way so no later spawn
-   * ever considers them. A live legacy daemon is drained through the EXISTING
-   * flow (`drainStaleDaemon`) — the zgcmo drain-refusal guard protects any
-   * in-flight writer, and a refusal propagates as the typed retryable error.
-   * A dead (or unreadable) legacy pid's files are unlinked directly. Idempotent
-   * and effectively free once the layout is gone: two `existsSync` calls.
-   */
-  private async migrateLegacyDaemon(physicalCollectionName: PhysicalCollectionName): Promise<void> {
-    const dir = this.options.daemonStorageDir;
-    /* v8 ignore next 2 -- the only caller checks the option first */
-    if (!dir) return;
-    const legacy = getLegacyDaemonPaths(dir);
-    if (!existsSync(legacy.pidFile) && !existsSync(legacy.socketPath)) return;
-    const pid = readDaemonPid(legacy);
-    if (pid !== undefined && isDaemonPidAlive(pid)) {
-      if (isDebug()) {
-        process.stderr.write(
-          `[tea-rags] codegraph: legacy (un-keyed) daemon layout found in ${dir} — draining it before ` +
-            "connecting to this build's keyed daemon (bd tea-rags-mcp-42hno)\n",
-        );
-      }
-      // A short connect bound: this daemon predates keying, and if it stopped
-      // accepting between the pid probe and now, waiting out the full spawn
-      // window buys nothing — the caller treats an unreachable socket as a
-      // failure, which is the honest answer.
-      const { DaemonGraphDbClient } = await import("./daemon/client.js");
-      const client = new DaemonGraphDbClient(legacy.socketPath, physicalCollectionName, { connectTimeoutMs: 1_500 });
-      await client.init();
-      await this.drainStaleDaemon(client, legacy.socketPath);
-    }
-    // A drained daemon unlinks its own files in cleanup; the direct unlink
-    // covers the dead-pid arm and is idempotent belt-and-braces otherwise.
-    unlinkDaemonFiles(legacy);
-    if (isDebug()) {
-      process.stderr.write(`[tea-rags] codegraph: legacy daemon layout in ${dir} removed\n`);
-    }
-  }
-
-  /**
-   * Connect and run the build + capability handshake (bd tea-rags-mcp-ji56r,
-   * 39xca.4). A daemon of this build serving every required op, or a
-   * pre-fingerprint peer, is returned as is. A daemon of the build on disk that
-   * THIS process predates is never drained (bd tea-rags-mcp-1wr7p): a
-   * READ-ONLY client is returned when it serves every required op, else
-   * `CodegraphClientStaleBuildError`. Otherwise a respawn-capable pool drains,
-   * respawns and reconnects up to `maxRestartAttempts`, then throws
-   * `CodegraphDaemonBuildSkewError` (its own build still short of an op) or
-   * `CodegraphDaemonStaleBuildError`.
-   *
-   * The bound is small on purpose (bd tea-rags-mcp-ryoqn): each attempt drains a
-   * daemon every process on the machine shares, so looping until healthy would
-   * thrash them and could livelock two sessions; `CodegraphDaemonExitTimeoutError`
-   * from the drain is never retried.
-   */
-  private async connectWithBuildHandshake(
-    socketPath: string,
-    physicalCollectionName: PhysicalCollectionName,
-  ): Promise<DaemonGraphDbClient> {
-    // Dynamic so direct/test mode never loads the node:net socket code.
-    const { DaemonGraphDbClient, assessDaemonCapability, isClientStale, isDaemonRefusedWithoutRespawn } =
-      await import("./daemon/client.js");
-    const restart = this.options.daemonRestart;
-    const localFingerprint = restart?.buildFingerprint ?? getBuildFingerprint();
-    const readOnDisk = restart?.readOnDiskBuildFingerprint ?? readOnDiskBuildFingerprint;
-
-    // The respawn hook doubles as crash recovery (bd tea-rags-mcp-8l8d3): a
-    // daemon killed by a native abort cannot report it, so the client respawns
-    // and replays in-flight requests. Pools without the hook reject them instead.
-    // The on-disk reader goes along so a refused replay names the stale side
-    // the way this handshake does (bd tea-rags-mcp-1wr7p).
-    const clientOptions = { onConnectionLost: restart?.respawn, readOnDiskBuildFingerprint: readOnDisk };
-    const first = new DaemonGraphDbClient(socketPath, physicalCollectionName, clientOptions);
-    try {
-      await first.init();
-    } catch (err) {
-      // Build-keyed sockets (bd tea-rags-mcp-42hno): the connect window still
-      // absorbs the spawn→listen race (a worker's first connect races the
-      // fire-and-forget `beginRun` spawn), so only a socket that NEVER
-      // appeared within it is an OWN-KEY MISS. In a pool that cannot spawn
-      // that is the provisioning contract failing, not a wedged daemon —
-      // surface the retryable typed error instead of the pre-keying behavior,
-      // where a hookless pool silently shared whatever build was running.
-      if (!restart?.respawn && !existsSync(socketPath) && err instanceof CodegraphDaemonUnreachableError) {
-        throw new CodegraphDaemonBuildUnavailableError({ socketPath, buildKey: getBuildKey() }, err);
-      }
-      throw err;
-    }
-    const verdict = assessDaemonCapability(await first.handshake(localFingerprint), localFingerprint);
-    // Same build serving every required op, or a legacy pre-fingerprint peer.
-    if (!needsDaemonReplacement(verdict)) return first;
-    // Asked BEFORE the respawn question: a pool without the hook must name the
-    // stale side correctly too when it refuses.
-    const onDisk = readOnDisk();
-    if (onDisk !== undefined && isClientStale(verdict, onDisk)) {
-      return this.settleWithStaleClient(first, verdict, { socketPath, clientFingerprint: localFingerprint, onDisk });
-    }
-
-    // No respawn hook (worker-thread pools rebuilt from serializable config):
-    // never drain — the daemon is shared machine-wide and this pool could not
-    // bring one back. Proceed only against a daemon advertising every required
-    // op; refuse one lacking an op, or too old to say (bd tea-rags-mcp-39xca.4).
-    const respawn = restart?.respawn;
-    if (!respawn) {
-      if (isDaemonRefusedWithoutRespawn(verdict)) {
-        await first.close();
-        throw new CodegraphDaemonBuildSkewError({
-          socketPath,
-          missingOps: verdict.missingRequiredOps,
-          clientFingerprint: localFingerprint,
-          daemonFingerprint: verdict.daemonFingerprint,
-        });
-      }
-      if (isDebug()) {
-        process.stderr.write(
-          `[tea-rags] codegraph daemon ${describeDaemonSkew(verdict, localFingerprint)} — no respawn hook wired, ` +
-            `proceeding with the running daemon (it advertises every required op)\n`,
-        );
-      }
-      return first;
-    }
-
-    if (isDebug()) {
-      process.stderr.write(
-        `[tea-rags] codegraph daemon ${describeDaemonSkew(verdict, localFingerprint)} — draining stale daemon ` +
-          `and respawning from this build\n`,
-      );
-    }
-    const maxAttempts = Math.max(1, restart?.maxRestartAttempts ?? DEFAULT_MAX_RESTART_ATTEMPTS);
-    const baseDelayMs = restart?.restartDelayMs ?? DEFAULT_RESTART_DELAY_MS;
-    // Post-restart observations only — the pre-restart fingerprint is a
-    // mismatch by definition, so including it would make every wedged daemon
-    // look like a race.
-    const observedDaemonFingerprints: string[] = [];
-    let stale = first;
-    let lastVerdict = verdict;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      // Linear backoff with full jitter, so two sessions retrying in lockstep
-      // decorrelate instead of trading the daemon back and forth.
-      if (attempt > 1) {
-        const waitMs = baseDelayMs * (attempt - 1) + Math.random() * baseDelayMs;
-        await new Promise((resolve) => setTimeout(resolve, waitMs));
-      }
-      // Re-drain each round: our respawn no-ops while another session's daemon
-      // is alive, so without this the next attempt would observe the same
-      // foreign build it just saw.
-      await this.drainStaleDaemon(stale, socketPath);
-      respawn();
-
-      // Reconnect (init retries the connect while the fresh daemon boots) and
-      // re-verify build and capabilities.
-      const next = new DaemonGraphDbClient(socketPath, physicalCollectionName, clientOptions);
-      await next.init();
-      const nextVerdict = assessDaemonCapability(await next.handshake(localFingerprint), localFingerprint);
-      if (!needsDaemonReplacement(nextVerdict)) return next;
-      // The respawn launched the on-disk build and this process predates it:
-      // from here the daemon is the up-to-date peer, and another drain would
-      // take it down for every session already on it (bd tea-rags-mcp-1wr7p).
-      const nextOnDisk = readOnDisk();
-      if (nextOnDisk !== undefined && isClientStale(nextVerdict, nextOnDisk)) {
-        return this.settleWithStaleClient(next, nextVerdict, {
-          socketPath,
-          clientFingerprint: localFingerprint,
-          onDisk: nextOnDisk,
-        });
-      }
-      if (nextVerdict.daemonFingerprint !== undefined) observedDaemonFingerprints.push(nextVerdict.daemonFingerprint);
-      lastVerdict = nextVerdict;
-      stale = next;
-    }
-
-    await stale.close();
-    if (!lastVerdict.buildMismatch) {
-      // Our own build came back every time, still without a required op — the
-      // respawn hook launches a daemon whose op table is short, not a stale one.
-      throw new CodegraphDaemonBuildSkewError({
-        socketPath,
-        missingOps: lastVerdict.missingRequiredOps,
-        clientFingerprint: localFingerprint,
-        daemonFingerprint: lastVerdict.daemonFingerprint,
-      });
-    }
-    throw new CodegraphDaemonStaleBuildError(
-      socketPath,
-      localFingerprint,
-      /* v8 ignore next -- buildMismatch implies the daemon reported a fingerprint */
-      lastVerdict.daemonFingerprint ?? "unknown",
-      observedDaemonFingerprints,
-    );
-  }
-
-  /**
-   * Settle a handshake whose stale side is THIS process (bd tea-rags-mcp-1wr7p):
-   * never drain, never respawn. Proceed against the daemon when it serves every
-   * op this client requires — the same bar a pool without a respawn hook
-   * applies — else close and fail fast with `CodegraphClientStaleBuildError`.
-   * Reloading this process is the only remedy; tea-rags does not restart it.
-   * `builds.onDisk` is what `isClientStale` matched the daemon's fingerprint
-   * against, so it names the daemon's build too.
-   *
-   * Proceeding is READ-ONLY (`DaemonGraphDbClient#restrictToReads`): the
-   * capability check matches op names, so a write whose payload shape moved
-   * under an unchanged name would land unnoticed. The graph reads the query
-   * tools issue keep working; every write throws the same typed error.
-   */
-  private async settleWithStaleClient(
-    client: DaemonGraphDbClient,
-    verdict: DaemonCapabilityVerdict,
-    builds: { socketPath: string; clientFingerprint: string; onDisk: string },
-  ): Promise<DaemonGraphDbClient> {
-    const { isDaemonRefusedWithoutRespawn } = await import("./daemon/client.js");
-    if (isDaemonRefusedWithoutRespawn(verdict)) {
-      await client.close();
-      throw new CodegraphClientStaleBuildError({
-        socketPath: builds.socketPath,
-        clientFingerprint: builds.clientFingerprint,
-        daemonFingerprint: builds.onDisk,
-        missingOps: verdict.missingRequiredOps,
-      });
-    }
-    client.restrictToReads({ clientFingerprint: builds.clientFingerprint, daemonFingerprint: builds.onDisk });
-    if (isDebug()) {
-      process.stderr.write(
-        `[tea-rags] codegraph daemon ${describeDaemonSkew(verdict, builds.clientFingerprint)} — this process predates ` +
-          "the build on disk the daemon runs; proceeding read-only without a restart (it advertises every required " +
-          "op). Reconnect the MCP server to load the current build\n",
-      );
-    }
-    return client;
-  }
-
-  /**
-   * Gracefully retire a stale daemon: request the drain (acked, then the
-   * daemon reuses its idle-watcher teardown), close our socket so the daemon's
-   * `server.close` is not held open by us, and poll the lifecycle files until
-   * the old process is gone. Times out with a typed error — never cold-spawns
-   * on top of a daemon that still holds the socket + RW lock.
-   */
-  private async drainStaleDaemon(client: DaemonGraphDbClient, socketPath: string): Promise<void> {
-    // The lifecycle files live in the directory owning the socket — the key
-    // dir for a keyed daemon, the base dir for the legacy layout the one-time
-    // migration drains. NEVER re-keyed: `getDaemonPaths` would nest this
-    // build's key UNDER it (bd tea-rags-mcp-42hno).
-    const paths = daemonPathsForKeyDir(dirname(socketPath));
-    const stalePid = readDaemonPid(paths);
-    let refusal: Error | undefined;
-    try {
-      await client.requestShutdown();
-    } catch (err) {
-      // The daemon refused because another connection's writes are in flight
-      // (bd tea-rags-mcp-zgcmo): settle the drain with the typed refusal
-      // instead of waiting out an exit that will never start — the daemon
-      // stays up on purpose. Any OTHER shutdown failure (an old daemon that
-      // answers the op as unknown, a lost socket) keeps the historical
-      // swallow-and-poll path, whose timeout names the wedge.
-      if (isDaemonDrainRefusal(err)) refusal = err;
-    }
-    await client.close();
-    if (refusal) {
-      throw new CodegraphDaemonDrainRefusedError({ socketPath }, refusal);
-    }
-    const restart = this.options.daemonRestart;
-    const exited = await waitForDaemonExit(paths, stalePid, {
-      timeoutMs: restart?.exitTimeoutMs,
-      pollIntervalMs: restart?.pollIntervalMs,
-    });
-    if (!exited) {
-      throw new CodegraphDaemonExitTimeoutError(socketPath, restart?.exitTimeoutMs ?? DEFAULT_EXIT_TIMEOUT_MS);
-    }
+    return this.daemonClients.acquireHandle(physicalCollectionName);
   }
 
   /**
@@ -940,18 +469,7 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
    * @throws DuckDbOpenFailedError when the file cannot be opened.
    */
   async acquireFileReader(dbPath: string): Promise<CollectionGraphHandle> {
-    const graphDb = new TrackedFileReaderClient(dbPath, () => {
-      this.releaseFileReader(dbPath);
-    });
-    try {
-      await graphDb.init();
-    } catch (err) {
-      await graphDb.close().catch(() => undefined);
-      throw new DuckDbOpenFailedError(dbPath, err instanceof Error ? err : undefined);
-    }
-    this.openFileReaders.set(dbPath, (this.openFileReaders.get(dbPath) ?? 0) + 1);
-    graphDb.markCounted();
-    return { graphDb, symbolTable: this.options.symbolTableFactory() };
+    return this.fileReaders.acquire(dbPath);
   }
 
   /**
@@ -961,13 +479,7 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
    * a reader in another server is covered by the cache's grace, not by this.
    */
   isFileReaderOpen(dbPath: string): boolean {
-    return (this.openFileReaders.get(dbPath) ?? 0) > 0;
-  }
-
-  private releaseFileReader(dbPath: string): void {
-    const count = (this.openFileReaders.get(dbPath) ?? 0) - 1;
-    if (count > 0) this.openFileReaders.set(dbPath, count);
-    else this.openFileReaders.delete(dbPath);
+    return this.fileReaders.isOpen(dbPath);
   }
 
   /**
@@ -1033,71 +545,15 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
     }
   }
 
+  /**
+   * Open the collection, retrying an open that lost the file lock — bounded by
+   * `openRetry`, foreign-build holders settled by `foreignBuildLockArbiter`
+   * (`LockContendedOpenRetry`, bd tea-rags-mcp-42hno, hw27k).
+   */
   private async openCollection(physicalCollectionName: PhysicalCollectionName): Promise<PoolEntry> {
-    // Bounded open retry (bd tea-rags-mcp-42hno): two build-keyed daemons
-    // serve the same on-disk collections, so a loser's first open loses the
-    // DuckDB RW lock to the winner's still-cached client. The wait is bounded
-    // BY DESIGN — nlls evicts the idle holder — so retrying until then turns
-    // a shared-collection collision from a failed op into a delay. A holder
-    // that is another build's daemon is settled by `foreignBuildLockArbiter`
-    // instead of merely waited for (bd tea-rags-mcp-hw27k).
-    const retry = this.options.openRetry;
-    const deadline = retry ? Date.now() + retry.maxMs : 0;
-    for (;;) {
-      try {
-        const entry = await this.openCollectionOnce(physicalCollectionName);
-        this.foreignHeldCollections.delete(physicalCollectionName);
-        return entry;
-      } catch (err) {
-        const intervalMs = retry?.intervalMs ?? DEFAULT_OPEN_RETRY_INTERVAL_MS;
-        // Only a held lock clears by waiting (bd tea-rags-mcp-zgg62): a file
-        // that is not a database fails identically on every attempt, and
-        // waiting the whole window turned it into a ~75 s stall per read.
-        if (!(err instanceof DuckDbOpenFailedError) || !err.lockContention) throw err;
-        const windowSpent = !retry || Date.now() + intervalMs > deadline;
-        const arbiter = this.options.foreignBuildLockArbiter;
-        let verdict = this.foreignHeldCollections.get(physicalCollectionName);
-        // A verdict belongs to one holder: the lock now held by another pid, or
-        // by none alive, is settled afresh (bd tea-rags-mcp-89k7k.35.27).
-        if (verdict && !arbiter?.isStillHeldBy(err, verdict.holder)) {
-          this.foreignHeldCollections.delete(physicalCollectionName);
-          verdict = undefined;
-        }
-        // Nothing a connect could change: settling again would only retry a
-        // socket that did not accept, or a drain that did not end in an exit.
-        if (verdict && (verdict.reason === "unreachable" || verdict.reason === "exitTimeout")) {
-          throw new CodegraphDatabaseHeldByForeignDaemonError(err.dbPath, verdict.holder, err);
-        }
-        const settlement = await arbiter?.settle(err, physicalCollectionName);
-        // Retried at once, within the window only: a foreign session respawning
-        // its daemon and re-taking the file each time must not spin this loop.
-        if (settlement?.kind === "drained" && !windowSpent) continue;
-        if (arbiter && settlement?.kind === "held") {
-          // One window per holder, not one per op (bd tea-rags-mcp-hw27k): the
-          // op that already waited it out recorded the holder's verdict, whose
-          // fingerprint spares a second describe connect.
-          if (windowSpent || verdict) {
-            const holder = verdict
-              ? {
-                  ...settlement.holder,
-                  buildFingerprint: settlement.holder.buildFingerprint ?? verdict.holder.buildFingerprint,
-                }
-              : await arbiter.describe(settlement.holder, physicalCollectionName);
-            this.foreignHeldCollections.set(physicalCollectionName, { ...settlement, holder });
-            throw new CodegraphDatabaseHeldByForeignDaemonError(err.dbPath, holder, err);
-          }
-        } else if (windowSpent) {
-          throw err;
-        }
-        if (isDebug()) {
-          process.stderr.write(
-            `[tea-rags] codegraph pool: open of ${this.pathFor(physicalCollectionName)} failed (lock held) — ` +
-              `retrying until ${new Date(deadline).toISOString()} (bd tea-rags-mcp-42hno)\n`,
-          );
-        }
-        await new Promise<void>((r) => setTimeout(r, intervalMs));
-      }
-    }
+    return this.lockContendedOpen.open(physicalCollectionName, async () =>
+      this.openCollectionOnce(physicalCollectionName),
+    );
   }
 
   /** ONE open attempt for `openCollection` — no retry, no cache check. */
@@ -1165,13 +621,7 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
     physicalCollectionName: PhysicalCollectionName,
     op: (handle: CollectionGraphHandle) => Promise<T>,
   ): Promise<T> {
-    if (this.options.idleEviction) {
-      this.lastUsedByCollection.set(physicalCollectionName, Date.now());
-      this.opsInFlightByCollection.set(
-        physicalCollectionName,
-        (this.opsInFlightByCollection.get(physicalCollectionName) ?? 0) + 1,
-      );
-    }
+    this.idleEviction?.beginOp(physicalCollectionName);
     try {
       const entry = await this.pinClient(physicalCollectionName);
       try {
@@ -1180,12 +630,7 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
         unpinClient(entry);
       }
     } finally {
-      if (this.options.idleEviction) {
-        this.lastUsedByCollection.set(physicalCollectionName, Date.now());
-        const remaining = (this.opsInFlightByCollection.get(physicalCollectionName) ?? 1) - 1;
-        if (remaining <= 0) this.opsInFlightByCollection.delete(physicalCollectionName);
-        else this.opsInFlightByCollection.set(physicalCollectionName, remaining);
-      }
+      this.idleEviction?.endOp(physicalCollectionName);
     }
   }
 
@@ -1198,45 +643,11 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
   private async pinClient(collectionName: PhysicalCollectionName): Promise<PoolEntry> {
     for (;;) {
       const entry = await this.acquireEntry(collectionName);
-      if (!entry.retired && !this.pathLeases.has(collectionName)) {
+      if (!entry.retired && !this.pathLeases.isHeld(collectionName)) {
         entry.pinnedOps += 1;
         return entry;
       }
     }
-  }
-
-  /**
-   * Hold the path leases of `collectionNames` while `replace` runs (bd
-   * tea-rags-mcp-r4veq). Leases are taken in sorted order, so two replacers
-   * sharing paths (a clone A→B racing one B→A) cannot deadlock, and always
-   * released, even when `replace` throws.
-   */
-  private async withPathLeases<T>(collectionNames: PhysicalCollectionName[], replace: () => Promise<T>): Promise<T> {
-    const releases: (() => void)[] = [];
-    try {
-      for (const collectionName of [...new Set(collectionNames)].sort()) {
-        releases.push(await this.takePathLease(collectionName));
-      }
-      return await replace();
-    } finally {
-      for (const release of releases.reverse()) release();
-    }
-  }
-
-  /** Wait for the current holder of the path's lease, if any, then take it. */
-  private async takePathLease(collectionName: PhysicalCollectionName): Promise<() => void> {
-    for (let held = this.pathLeases.get(collectionName); held; held = this.pathLeases.get(collectionName)) {
-      await held;
-    }
-    let settle!: () => void;
-    const lease = new Promise<void>((resolve) => {
-      settle = resolve;
-    });
-    this.pathLeases.set(collectionName, lease);
-    return () => {
-      if (this.pathLeases.get(collectionName) === lease) this.pathLeases.delete(collectionName);
-      settle();
-    };
   }
 
   /**
@@ -1266,7 +677,7 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
   ): Promise<void> {
     entry.retired = true;
     this.clients.delete(collectionName);
-    this.lastUsedByCollection.delete(collectionName);
+    this.idleEviction?.forget(collectionName);
     if (entry.pinnedOps > 0) {
       await new Promise<void>((resolve) => {
         entry.drainWaiters.push(resolve);
@@ -1280,38 +691,6 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
       }
     } finally {
       this.options.onCollectionClientClosed?.(collectionName);
-    }
-  }
-
-  /** Start the eviction poller (`unref()`'d — never keeps the process alive). */
-  private scheduleIdleEviction(eviction: GraphDbClientPoolIdleEviction): void {
-    this.idleEvictionTimer = setInterval(() => {
-      void this.evictIdleCollectionClients().catch(() => undefined);
-    }, eviction.pollMs ?? 5_000);
-    this.idleEvictionTimer.unref();
-  }
-
-  /**
-   * Close and drop every cached client whose collection has been idle past
-   * `idleMs` with no op in flight. Eviction goes through `release`, so the
-   * `onCollectionClientClosed` parity hook fires (the daemon's memory governor
-   * takes the entry with it) and the next acquire lazily re-opens.
-   */
-  private async evictIdleCollectionClients(): Promise<void> {
-    const eviction = this.options.idleEviction;
-    if (!eviction) return;
-    const now = Date.now();
-    for (const physicalCollectionName of [...this.clients.keys()]) {
-      if ((this.opsInFlightByCollection.get(physicalCollectionName) ?? 0) > 0) continue;
-      const lastUsed = this.lastUsedByCollection.get(physicalCollectionName);
-      if (lastUsed === undefined || now - lastUsed < eviction.idleMs) continue;
-      const idleSeconds = Math.round((now - lastUsed) / 1000);
-      const evicted = await this.release(physicalCollectionName);
-      if (evicted) {
-        process.stderr.write(
-          `[tea-rags] codegraph pool: evicted idle pool entry for ${physicalCollectionName} after ${idleSeconds}s idle\n`,
-        );
-      }
     }
   }
 
@@ -1352,7 +731,7 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
     sourcePhysicalCollectionName: PhysicalCollectionName,
     targetPhysicalCollectionName: PhysicalCollectionName,
   ): Promise<void> {
-    await this.withPathLeases([sourcePhysicalCollectionName, targetPhysicalCollectionName], async () => {
+    await this.pathLeases.withLeases([sourcePhysicalCollectionName, targetPhysicalCollectionName], async () => {
       await this.retireForReplacement(sourcePhysicalCollectionName, "swallow");
       await this.retireForReplacement(targetPhysicalCollectionName, "throw");
       const replaced = await this.replaceInDaemon(async (daemon) =>
@@ -1405,7 +784,7 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
    * Returns true when a cached entry was evicted; disk cleanup runs regardless.
    */
   async removeCollection(physicalCollectionName: PhysicalCollectionName): Promise<boolean> {
-    return this.withPathLeases([physicalCollectionName], async () => {
+    return this.pathLeases.withLeases([physicalCollectionName], async () => {
       const evicted = await this.retireForReplacement(physicalCollectionName, "throw");
       const replaced = await this.replaceInDaemon(async (daemon) => daemon.removeDatabase(physicalCollectionName));
       if (replaced?.handledBy === "daemon") return evicted || replaced.evicted;
@@ -1422,17 +801,14 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
   async closeAll(): Promise<void> {
     const all = [...this.clients.entries()];
     this.clients.clear();
-    this.lastUsedByCollection.clear();
-    this.opsInFlightByCollection.clear();
-    const daemons = [...this.daemonClients.values()];
-    this.daemonClients.clear();
+    this.idleEviction?.clear();
     await Promise.all([
       ...all.map(async ([physicalCollectionName, e]) => {
         e.retired = true;
         await e.graphDb.close().catch(() => undefined);
         this.options.onCollectionClientClosed?.(physicalCollectionName);
       }),
-      ...daemons.map(async (e) => e.client.close().catch(() => undefined)),
+      this.daemonClients.closeAll(),
     ]);
   }
 }
@@ -1442,57 +818,6 @@ function unpinClient(entry: PoolEntry): void {
   entry.pinnedOps -= 1;
   if (entry.pinnedOps > 0) return;
   for (const wake of entry.drainWaiters.splice(0)) wake();
-}
-
-/**
- * Wrap a cached `DaemonGraphDbClient` so the handle handed to a caller has a
- * NO-OP `close()`. Every other method/property forwards to the real client.
- * The pool owns the single socket per collection and closes it in `closeAll`;
- * a per-call `close()` (e.g. `GraphFacade.withReadHandle`'s `finally`) must NOT
- * tear down the shared socket out from under other in-flight callers.
- */
-function wrapNoopClose(client: DaemonGraphDbClient): GraphDbClient {
-  return new Proxy(client, {
-    get(target, prop, receiver) {
-      if (prop === "close") {
-        return async (): Promise<void> => undefined;
-      }
-      const value = Reflect.get(target, prop, receiver) as unknown;
-      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
-    },
-  });
-}
-
-/**
- * The READ_ONLY client {@link GraphDbClientPool#acquireFileReader} hands out:
- * its first `close()` after the pool counted it reports the release, so the
- * pool's open-reader count drops exactly once per handle.
- */
-class TrackedFileReaderClient extends DuckDbGraphClient {
-  private counted = false;
-
-  constructor(
-    dbPath: string,
-    private readonly onRelease: () => void,
-  ) {
-    super({ path: dbPath, accessMode: "READ_ONLY" });
-  }
-
-  /** Called by the pool once the open succeeded and the handle is counted. */
-  markCounted(): void {
-    this.counted = true;
-  }
-
-  override async close(): Promise<void> {
-    try {
-      await super.close();
-    } finally {
-      if (this.counted) {
-        this.counted = false;
-        this.onRelease();
-      }
-    }
-  }
 }
 
 /**
