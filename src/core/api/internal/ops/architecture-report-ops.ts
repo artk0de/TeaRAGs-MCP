@@ -16,8 +16,6 @@
  * reader `find_cycles` uses), so this class never opens a DuckDB file.
  */
 
-import { extname } from "node:path";
-
 import type {
   FileDependencyEdge,
   FileDependencyGraph,
@@ -25,17 +23,14 @@ import type {
   TemporalCochangeGraph,
   TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
-import { silentCouplingGroupSubject } from "../../../contracts/types/diff-detector-finding.js";
 import {
   buildDependencyNormFilePrimaryTypes,
   buildDependencyNormFileRoles,
 } from "../../../domains/explore/naming-lexicon/index.js";
-import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
 import {
   buildComponentGraph,
   buildLayeringModel,
   buildLayerMap,
-  COMPONENT_CONTAINMENT_REASON,
   computeDependencyNorms,
   computePropagationCost,
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
@@ -47,25 +42,16 @@ import {
   detectLeakingAbstractions,
   detectMainSequenceDeviations,
   domainBoundaryFileEdges,
-  FACADE_AGGREGATION_REASON,
-  FACADE_MODULE_EXCLUSION_REASONS,
   inducedDomainGraph,
   layeringKnotKeepCosts,
   lookupLayeringKnot,
-  MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
-  MAIN_SEQUENCE_UNOBSERVABLE_REASON,
   NON_PRODUCTION_REASON,
   TEST_SUPPORT_REASON,
   type ComponentGraph,
   type ComponentStableDependenciesReport,
   type ConventionPrivacyReport,
   type DependencyNormsReport,
-  type LayeringBackEdgeViolation as DomainLayeringBackEdgeViolation,
-  type LayeringFeedbackEdge as DomainLayeringFeedbackEdge,
-  type LayeringViolation as DomainLayeringViolation,
-  type FacadeModuleAssessment,
   type HubLikeDependencyReport,
-  type LayeringKeepCost,
   type LayeringKnot,
   type LayeringKnotLookup,
   type LayeringModel,
@@ -75,40 +61,18 @@ import {
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   assessGraphCochangeSignificance,
-  computeSplitMergeVerdicts,
   detectSilentCoupling,
-  groupSilentCouplingPairs,
   linkImportedCochangePairs,
   oneWalkedViolationImporters,
-  SILENT_COUPLING_EXPLAINED_REASON,
   type SilentCouplingReport,
-  type SilentCouplingViolation,
-  type SplitMergeVerdicts,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type {
   ArchitectureDomainBoundaryEdge,
   ArchitectureDomainReport,
-  ArchitectureKnotMember,
   ArchitectureKnotView,
-  ArchitectureNormsReport,
-  ArchitectureRootCause,
   ArchitectureViolation,
-  FacadeModuleSummary,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
-  HubLikeDependencyReportSummary,
-  LayeringBackEdgeArchitectureViolation,
-  LayeringReportSummary,
-  LeakingAbstractionReportSummary,
-  MainSequenceReportSummary,
-  NormArchitectureViolation,
-  PropagationCostReportSummary,
-  SilentCouplingArchitectureViolation,
-  SilentCouplingGroupArchitectureViolation,
-  SilentCouplingReportSummary,
-  SplitMergeReportSummary,
-  SplitMergeVerdictsSummary,
-  StableDependenciesReportSummary,
 } from "../../public/dto/architecture.js";
 import { UnknownArchitectureComponentError } from "../../public/errors.js";
 import {
@@ -133,28 +97,52 @@ import {
   type MaintenanceCostFamilyOptions,
 } from "./architecture-maintenance-cost.js";
 import {
+  buildArchitectureKnotMembership,
+  compareCodePoints,
+  findingsInKnot,
+  hubLikeDependencyViolations,
+  isDocumentationPath,
+  knotView,
+  leakRootCauses,
+  leakViolations,
+  mainSequenceViolations,
+  normsDto,
+  normsViolations,
+  sdpRootCauses,
+  sdpViolations,
+  silentRootCauses,
+  silentViolations,
+  STABLE_DEPENDENCIES_EXCLUSION_REASONS,
+  summariseHubLikeDependency,
+  summariseLayering,
+  summariseLeaks,
+  summariseMainSequence,
+  summarisePropagationCost,
+  summariseSilentCoupling,
+  summariseSplitMerge,
+  summariseStableDependencies,
+  toLayeringArchitectureViolation,
+  type ArchitectureDetectorReports,
+} from "./architecture-report/index.js";
+import {
   runShotgunSurgery,
   shotgunSurgeryViolations,
   summariseShotgunSurgery,
   type ShotgunSurgeryRun,
 } from "./shotgun-surgery-findings.js";
-import {
-  SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
-  silentCouplingGroupDrillDown,
-  silentCouplingGroupPartners,
-} from "./silent-coupling-group-findings.js";
+
+export {
+  isDocumentationPath,
+  LAYERING_FEEDBACK_EDGE_LIMIT,
+  LAYERING_KNOT_MEMBER_LIMIT,
+  LAYERING_NESTED_PAIR_LIMIT,
+  buildArchitectureKnotMembership,
+  silentCouplingArchitectureViolations,
+  type ArchitectureKnotMembership,
+} from "./architecture-report/index.js";
 
 /** Default `GetArchitectureReportRequest.limit`. */
 export const DEFAULT_ARCHITECTURE_REPORT_LIMIT = 50;
-
-/** Knot / composition-cycle members listed per finding (most depended-on first); `memberCount` keeps the total. */
-export const LAYERING_KNOT_MEMBER_LIMIT = 20;
-
-/** Feedback-arc-set edges listed per knot (heaviest first); `cutEdgeCount` keeps the total. */
-export const LAYERING_FEEDBACK_EDGE_LIMIT = 10;
-
-/** Parent↔nested pairs listed per composition cycle; `nestedPairCount` keeps the total. */
-export const LAYERING_NESTED_PAIR_LIMIT = 10;
 
 type ArchitectureReportScope = Pick<
   GetArchitectureReportRequest,
@@ -189,12 +177,6 @@ export interface ArchitectureReportHistoryLookups {
   readFileCommitCounts?: GitFileCommitCountLookup;
   readFileMaintenanceSignals?: GitFileMaintenanceSignalLookup;
 }
-
-/** The per-file reading the volatility gate averages — named in the summary. */
-const MAIN_SEQUENCE_VOLATILITY_SIGNAL = "git.file.commitCount";
-
-/** The per-file reading a hub's churn averages — named in the summary. */
-const HUB_LIKE_DEPENDENCY_CHURN_SIGNAL = "git.file.commitCount";
 
 /** A family's full list — the maintenance-cost ranking caps it, after ordering (bd tea-rags-mcp-r8hme.20). */
 const UNCAPPED = Number.POSITIVE_INFINITY;
@@ -501,7 +483,7 @@ export class ArchitectureReportOps {
             containment: 0,
             lowConnectionCount: 0,
           },
-          exclusionReasons: EXCLUSION_REASONS,
+          exclusionReasons: STABLE_DEPENDENCIES_EXCLUSION_REASONS,
         },
         leakingAbstraction: summariseLeaks(
           detectLeakingAbstractions({ files: [], edges: [] }),
@@ -778,7 +760,7 @@ function summariseArchitectureDetectors(
       reason: NON_PRODUCTION_REASON,
     },
     testSupport: { ...production.testSupport, reason: TEST_SUPPORT_REASON },
-    stableDependencies: summarise(runs.sdp),
+    stableDependencies: summariseStableDependencies(runs.sdp),
     leakingAbstraction: summariseLeaks(runs.leaks, runs.privacy, limit),
     silentCoupling: summariseSilentCoupling(runs.silent, limit),
     splitMerge: summariseSplitMerge(runs.cochange, runs.components.componentOf),
@@ -916,791 +898,4 @@ function computeReportNorms(
     componentOf,
     sourcePathPattern,
   });
-}
-
-function normsDto(report: DependencyNormsReport): ArchitectureNormsReport {
-  return {
-    summary: { ...report.summary },
-    ledgers: report.ledgers.map(({ family, pairCount, significance }) => ({
-      family,
-      pairCount,
-      significance: { ...significance },
-    })),
-    findings: report.findings.map((f) => ({
-      ...f,
-      pValue: roundSignificant3(f.pValue),
-      establishedDirection: { ...f.establishedDirection },
-    })),
-  };
-}
-
-/** A p-value keeps 3 significant digits — 3 decimals would round every rejected one to 0. */
-function roundSignificant3(value: number): number {
-  return Number(value.toPrecision(3));
-}
-
-function normsViolations(report: DependencyNormsReport, limit: number): NormArchitectureViolation[] {
-  return report.findings.slice(0, limit).map(
-    (f): NormArchitectureViolation => ({
-      detector: "norms",
-      kind: f.kind,
-      sourceRelPath: f.sourceRelPath,
-      targetRelPath: f.targetRelPath,
-      evidence: {
-        roleSrc: f.roleSrc,
-        roleDst: f.roleDst,
-        locality: f.locality,
-        callWeight: f.callWeight,
-        pairSupport: f.pairSupport,
-        pValue: roundSignificant3(f.pValue),
-        establishedDirection: { ...f.establishedDirection },
-      },
-    }),
-  );
-}
-
-const EXCLUSION_REASONS = {
-  facadeAggregations: FACADE_AGGREGATION_REASON,
-  containment: COMPONENT_CONTAINMENT_REASON,
-} as const;
-
-function summarise(report: ComponentStableDependenciesReport): StableDependenciesReportSummary {
-  const { summary } = report;
-  return {
-    tolerance: summary.tolerance,
-    minConnectionCount: summary.minConnectionCount,
-    edgeCount: summary.edgeCount,
-    componentCount: summary.componentCount,
-    moduleComponentCount: summary.moduleComponentCount,
-    directoryComponentCount: summary.directoryComponentCount,
-    componentEdgeCount: summary.componentEdgeCount,
-    judgedEdgeCount: summary.judgedEdgeCount,
-    violationCount: summary.violationCount,
-    rootCauseCount: report.rootCauses.length,
-    excluded: { ...summary.excluded },
-    exclusionReasons: EXCLUSION_REASONS,
-    ...(summary.scope ? { outOfScopeEdgeCount: summary.scope.outOfScopeEdgeCount } : {}),
-  };
-}
-
-function sdpRootCauses(report: ComponentStableDependenciesReport, limit: number): ArchitectureRootCause[] {
-  return report.rootCauses.slice(0, limit).map(
-    (r): ArchitectureRootCause => ({
-      detector: "stableDependencies",
-      targetComponent: r.targetComponent,
-      targetInstability: r.targetInstability,
-      violationCount: r.violationCount,
-      maxInstabilityDelta: r.maxInstabilityDelta,
-      sources: r.sources,
-      cycleWithDependents: r.cycleWithDependents,
-    }),
-  );
-}
-
-function sdpViolations(report: ComponentStableDependenciesReport, limit: number): ArchitectureViolation[] {
-  return report.violations.slice(0, limit).map(
-    (v): ArchitectureViolation => ({
-      detector: "stableDependencies",
-      sourceComponent: v.sourceComponent,
-      targetComponent: v.targetComponent,
-      evidence: {
-        sourceInstability: v.sourceInstability,
-        targetInstability: v.targetInstability,
-        instabilityDelta: v.instabilityDelta,
-        sourceAfferentCount: v.sourceAfferentCount,
-        sourceEfferentCount: v.sourceEfferentCount,
-        targetAfferentCount: v.targetAfferentCount,
-        targetEfferentCount: v.targetEfferentCount,
-        callWeight: v.callWeight,
-        directoryRelation: v.directoryRelation,
-        fileEdgeCount: v.fileEdgeCount,
-        ...(v.compositionRoot ? { compositionRoot: v.compositionRoot } : {}),
-        fileEdges: v.fileEdges,
-      },
-    }),
-  );
-}
-
-function summariseLeaks(
-  report: LeakingAbstractionReport,
-  privacy: ConventionPrivacyReport,
-  limit: number,
-): LeakingAbstractionReportSummary {
-  const { summary } = report;
-  const notAdopted = report.modules
-    .filter((m) => m.status === "facade-not-adopted")
-    .sort((a, b) => b.externalImporterCount - a.externalImporterCount || compareCodePoints(a.moduleDir, b.moduleDir));
-  return {
-    adoptionThreshold: summary.adoptionThreshold,
-    adoptionThresholdMethod: summary.adoptionThresholdMethod,
-    ...(summary.adoptionSeparability === undefined
-      ? {}
-      : { adoptionSeparability: Math.round(summary.adoptionSeparability * 1000) / 1000 }),
-    minExternalImporters: summary.minExternalImporters,
-    edgeCount: summary.edgeCount,
-    judgedEdgeCount: summary.judgedEdgeCount,
-    violationCount: summary.violationCount + privacy.summary.violationCount,
-    rootCauseCount: report.rootCauses.length,
-    violationsByKind: { ...summary.violationsByKind, conventionPrivacy: privacy.summary.violationCount },
-    conventionPrivacy: {
-      candidateEdgeCount: privacy.summary.candidateEdgeCount,
-      violationsByRule: { ...privacy.summary.violationsByRule },
-    },
-    moduleCount: summary.moduleCount,
-    activeModuleCount: summary.activeModuleCount,
-    excludedModules: { ...summary.excludedModules },
-    deFactoSurfaces: summary.deFactoSurfaces.slice(0, limit).map((s) => ({ ...s })),
-    exclusionReasons: { ...FACADE_MODULE_EXCLUSION_REASONS },
-    activeModules: report.modules
-      .filter((m) => m.status === "active")
-      .slice(0, limit)
-      .map(moduleSummary),
-    notAdoptedModules: notAdopted.slice(0, limit).map(moduleSummary),
-    ...(summary.scope ? { outOfScopeEdgeCount: summary.scope.outOfScopeEdgeCount } : {}),
-  };
-}
-
-function moduleSummary(m: FacadeModuleAssessment): FacadeModuleSummary {
-  return {
-    moduleDir: m.moduleDir,
-    facadeRelPath: m.facadeRelPath,
-    externalImporterCount: m.externalImporterCount,
-    facadeImporterCount: m.facadeImporterCount,
-    deepImporterCount: m.deepImporterCount,
-    adoption: m.adoption,
-  };
-}
-
-function leakRootCauses(report: LeakingAbstractionReport, limit: number): ArchitectureRootCause[] {
-  return report.rootCauses.slice(0, limit).map(
-    (r): ArchitectureRootCause => ({
-      detector: "leakingAbstraction",
-      moduleDir: r.moduleDir,
-      facadeRelPath: r.facadeRelPath,
-      adoption: r.adoption,
-      facadeImporterCount: r.facadeImporterCount,
-      deepImporterCount: r.deepImporterCount,
-      violationCount: r.violationCount,
-      bypassCount: r.bypassCount,
-      internalReachCount: r.internalReachCount,
-      sources: r.sources,
-    }),
-  );
-}
-
-function leakViolations(
-  report: LeakingAbstractionReport,
-  privacy: ConventionPrivacyReport,
-  limit: number,
-): ArchitectureViolation[] {
-  const facadeLeaks = report.violations.map(
-    (v): ArchitectureViolation => ({
-      detector: "leakingAbstraction",
-      kind: v.kind,
-      sourceRelPath: v.sourceRelPath,
-      targetRelPath: v.targetRelPath,
-      evidence: {
-        moduleDir: v.moduleDir,
-        facadeRelPath: v.facadeRelPath,
-        adoption: v.adoption,
-        facadeImporterCount: v.facadeImporterCount,
-        deepImporterCount: v.deepImporterCount,
-        callWeight: v.callWeight,
-        kindBasis: v.kindBasis,
-        reExportUnsafe: v.reExportUnsafe,
-        ...(v.reExportCyclePath ? { reExportCyclePath: v.reExportCyclePath } : {}),
-        ...(v.importedNames ? { importedNames: v.importedNames } : {}),
-        ...(v.nonExportedNames ? { nonExportedNames: v.nonExportedNames } : {}),
-      },
-    }),
-  );
-  const privacyLeaks = privacy.violations.map(
-    (v): ArchitectureViolation => ({
-      detector: "leakingAbstraction",
-      kind: "conventionPrivacy",
-      sourceRelPath: v.sourceRelPath,
-      targetRelPath: v.targetRelPath,
-      evidence: { sourceSymbolId: v.sourceSymbolId, targetSymbolId: v.targetSymbolId, rule: v.rule },
-    }),
-  );
-  // One detector, one cap: facade leaks first, then convention-privacy leaks.
-  return [...facadeLeaks, ...privacyLeaks].slice(0, limit);
-}
-
-/**
- * Documentation by the same language table that sets `isDocumentation` on a
- * chunk — ingest owns it, and this layer is the one allowed to bridge ingest
- * and trajectory, so the detector receives the answer instead of the table.
- * Exported for the review sections' wiring, which feeds the same predicate to
- * the diff-scoped silent-coupling exclusions (bd tea-rags-mcp-89k7k.1.10) so
- * both paths answer documentation identically.
- */
-export function isDocumentationPath(relPath: RelPath): boolean {
-  const language = LANGUAGE_MAP[extname(relPath).toLowerCase()];
-  return language !== undefined && DOCUMENTATION_LANGUAGES.has(language);
-}
-
-function summariseSilentCoupling(report: SilentCouplingReport, limit: number): SilentCouplingReportSummary {
-  const { summary } = report;
-  const explained = summary.explainedCount > 0;
-  return {
-    built: summary.built,
-    ...(summary.build ? { build: { ...summary.build } } : {}),
-    pairCount: summary.pairCount,
-    candidateCount: summary.candidateCount,
-    strongCount: summary.strongCount,
-    strongLinkedCount: summary.strongLinkedCount,
-    violationCount: summary.violationCount,
-    groupedFindingCount: groupedSilentCouplingFindingCount(report.violations),
-    rootCauseCount: summary.rootCauseCount,
-    strengthThreshold: summary.strengthThreshold,
-    strengthThresholdMethod: summary.strengthThresholdMethod,
-    ...(summary.strengthSeparability === undefined
-      ? {}
-      : { strengthSeparability: Math.round(summary.strengthSeparability * 1000) / 1000 }),
-    ...(summary.sharedNeighbourThreshold === undefined
-      ? {}
-      : { sharedNeighbourThreshold: roundTo3(summary.sharedNeighbourThreshold) }),
-    sharedNeighbourThresholdMethod: summary.sharedNeighbourThresholdMethod,
-    ...(summary.sharedNeighbourSeparability === undefined
-      ? {}
-      : { sharedNeighbourSeparability: roundTo3(summary.sharedNeighbourSeparability) }),
-    excluded: { ...summary.excluded, explainedBySharedNeighbour: summary.explainedCount },
-    ...(summary.cochangeSignificance ? { cochangeSignificance: { ...summary.cochangeSignificance } } : {}),
-    ...(explained ? { exclusionReasons: { explainedBySharedNeighbour: SILENT_COUPLING_EXPLAINED_REASON } } : {}),
-    ...(explained
-      ? { explainedPairs: report.explained.slice(0, limit).map(toSilentCouplingArchitectureViolation) }
-      : {}),
-    ...(summary.scope ? { outOfScopePairCount: summary.scope.outOfScopePairCount } : {}),
-  };
-}
-
-/** Groups plus ungrouped pairs — the findings `silentCouplingArchitectureViolations` lists before `limit`. */
-function groupedSilentCouplingFindingCount(violations: readonly SilentCouplingViolation[]): number {
-  const { groups, singletons } = groupSilentCouplingPairs(violations);
-  return groups.length + singletons.length;
-}
-
-function roundTo3(value: number): number {
-  return Math.round(value * 1000) / 1000;
-}
-
-/**
- * The split/merge block (bd tea-rags-mcp-c3v6o): the report's own component
- * partition judged against the same co-change build silent coupling reads.
- * Absence of data is silence — no build, or a build that persisted no bundle
- * membership (pre-042 index, nothing admitted), reports `built: false` with
- * the reason, never zeros posing as verdicts. Provenance rides whenever a
- * build exists, so a not-built block still names what was absent.
- */
-function summariseSplitMerge(
-  cochange: TemporalCochangeGraph,
-  componentOf: ReadonlyMap<RelPath, string>,
-): SplitMergeReportSummary {
-  const { meta } = cochange;
-  if (!meta) return { built: false, reason: "noCochangeBuild" };
-  const provenance = { head: meta.head, builtAt: meta.builtAt };
-  if (!cochange.bundles || cochange.bundles.size === 0) {
-    return { built: false, reason: "noBundleMembership", ...provenance };
-  }
-  return {
-    built: true,
-    ...provenance,
-    verdicts: toSplitMergeVerdictsSummary(
-      computeSplitMergeVerdicts({ components: { componentOf }, edges: cochange.edges, bundles: cochange.bundles }),
-    ),
-  };
-}
-
-function toSplitMergeVerdictsSummary(verdicts: SplitMergeVerdicts): SplitMergeVerdictsSummary {
-  return {
-    splitCandidates: verdicts.splitCandidates.map((candidate) => ({
-      component: candidate.component,
-      clusters: candidate.clusters,
-      largestWeightShare: round3(candidate.largestWeightShare),
-      files: candidate.files.map((files) => [...files]),
-    })),
-    mergeCandidates: verdicts.mergeCandidates.map((candidate) => ({
-      componentA: candidate.componentA,
-      componentB: candidate.componentB,
-      support: candidate.support,
-      strength: round3(candidate.strength),
-      changesA: candidate.changesA,
-      changesB: candidate.changesB,
-    })),
-    threshold: verdicts.threshold,
-    thresholdMethod: verdicts.thresholdMethod,
-    excluded: { ...verdicts.excluded },
-  };
-}
-
-function silentRootCauses(report: SilentCouplingReport, limit: number): ArchitectureRootCause[] {
-  return report.rootCauses.slice(0, limit).map(
-    (r): ArchitectureRootCause => ({
-      detector: "silentCoupling",
-      relPath: r.relPath,
-      violationCount: r.violationCount,
-      maxStrength: r.maxStrength,
-      partners: r.partners,
-    }),
-  );
-}
-
-function silentViolations(report: SilentCouplingReport, limit: number): ArchitectureViolation[] {
-  return silentCouplingArchitectureViolations(report.violations, limit);
-}
-
-/**
- * The silent-coupling violations as listed (bd tea-rags-mcp-89k7k.1.14): pairs
- * sharing an endpoint ({@link groupSilentCouplingPairs}) become ONE grouped
- * finding each — greedy order, most pairs first — then the ungrouped pairs in
- * the detector's strongest-first order. Grouping reads EVERY violation, so a
- * group's `partners` is complete; `limit` caps the findings, not the pairs.
- */
-export function silentCouplingArchitectureViolations(
-  violations: readonly SilentCouplingViolation[],
-  limit: number,
-): ArchitectureViolation[] {
-  const { groups, singletons } = groupSilentCouplingPairs(violations);
-  return [
-    ...groups.map((group): SilentCouplingGroupArchitectureViolation => {
-      const partners = silentCouplingGroupPartners(group);
-      return {
-        detector: "silentCoupling",
-        kind: "group",
-        relPath: group.relPath,
-        subject: silentCouplingGroupSubject(group.relPath, partners.length),
-        partnerCount: partners.length,
-        evidence: {
-          topPartners: partners.slice(0, SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS),
-          maxStrength: partners[0].strength,
-          drillDown: silentCouplingGroupDrillDown(group.relPath, partners.length),
-        },
-        partners,
-      };
-    }),
-    ...singletons.map(toSilentCouplingArchitectureViolation),
-  ].slice(0, limit);
-}
-
-function toSilentCouplingArchitectureViolation(v: SilentCouplingViolation): SilentCouplingArchitectureViolation {
-  return {
-    detector: "silentCoupling",
-    sourceRelPath: v.relPathA,
-    targetRelPath: v.relPathB,
-    evidence: {
-      support: v.support,
-      confidenceAB: v.confidenceAB,
-      confidenceBA: v.confidenceBA,
-      lift: v.lift,
-      strength: v.strength,
-      ...(v.expectedSupport === undefined ? {} : { expectedSupport: roundTo3(v.expectedSupport) }),
-      lastCoChangeAt: v.lastCoChangeAt,
-      sampleCommits: v.sampleCommits,
-      structuralVisibility: v.structuralVisibility,
-      directoryRelation: v.directoryRelation,
-      ...(v.explainedBy
-        ? { explainedBy: { relPath: v.explainedBy.relPath, weight: roundTo3(v.explainedBy.weight) } }
-        : {}),
-    },
-  };
-}
-
-function summariseMainSequence(report: MainSequenceReport): MainSequenceReportSummary {
-  const { summary } = report;
-  return {
-    judgedComponentCount: summary.judgedComponentCount,
-    violationCount: summary.violationCount,
-    painCount: summary.painCount,
-    uselessnessCount: summary.uselessnessCount,
-    meanDistance: round3(summary.meanDistance),
-    distanceThreshold: round3(summary.distanceThreshold),
-    distanceThresholdMethod: summary.distanceThresholdMethod,
-    ...(summary.distanceSeparability === undefined
-      ? {}
-      : { distanceSeparability: round3(summary.distanceSeparability) }),
-    minConnectionCount: summary.minConnectionCount,
-    minTypeCount: summary.minTypeCount,
-    abstractTypeShareByLanguage: Object.fromEntries(
-      Object.entries(summary.abstractTypeShareByLanguage).map(([language, share]) => [language, round3(share)]),
-    ),
-    excluded: { ...summary.excluded },
-    exclusionReasons: {
-      unobservableAbstractness: MAIN_SEQUENCE_UNOBSERVABLE_REASON,
-      stableConcreteCalm: MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
-    },
-    ...(summary.volatility
-      ? {
-          volatility: {
-            signal: MAIN_SEQUENCE_VOLATILITY_SIGNAL,
-            threshold: round3(summary.volatility.threshold),
-            thresholdMethod: summary.volatility.thresholdMethod,
-            ...(summary.volatility.separability === undefined
-              ? {}
-              : { separability: round3(summary.volatility.separability) }),
-            fileMedian: round3(summary.volatility.fileMedian),
-            measuredComponentCount: summary.volatility.measuredComponentCount,
-          },
-        }
-      : {}),
-    ...(summary.scope ? { outOfScopeComponentCount: summary.scope.outOfScopeComponentCount } : {}),
-  };
-}
-
-function summariseLayering(report: LayeringReport): LayeringReportSummary {
-  const { summary } = report;
-  return {
-    componentCount: summary.componentCount,
-    componentEdgeCount: summary.componentEdgeCount,
-    levelCount: summary.levelCount,
-    coverage: round3(summary.coverage),
-    coherence: round3(summary.coherence),
-    knotCount: summary.knotCount,
-    backEdgeCount: summary.backEdgeCount,
-    abstractionBypassCount: summary.abstractionBypassCount,
-    compositionCycleCount: summary.compositionCycleCount,
-    islandCount: summary.islandCount,
-    violationCount: summary.violationCount,
-    ...(summary.scope ? { outOfScopeFindingCount: summary.scope.outOfScopeFindingCount } : {}),
-    ...(summary.foundation ? { foundation: summary.foundation } : {}),
-  };
-}
-
-function toLayeringArchitectureViolation(v: DomainLayeringViolation): ArchitectureViolation {
-  switch (v.kind) {
-    case "knot":
-      return {
-        detector: "layering",
-        kind: "knot",
-        components: v.components.slice(0, LAYERING_KNOT_MEMBER_LIMIT),
-        evidence: {
-          feedbackArcSet: v.feedbackArcSet.slice(0, LAYERING_FEEDBACK_EDGE_LIMIT).map(toLayeringFeedbackEdge),
-          cutEdgeCount: v.cutEdgeCount,
-          levelsAfterCut: v.levelsAfterCut,
-          memberCount: v.components.length,
-          instabilitySpread: round3(v.instabilitySpread),
-          ...(v.outOfScopeMemberCount !== undefined ? { outOfScopeMemberCount: v.outOfScopeMemberCount } : {}),
-          ...(v.outOfScopeFeedbackEdgeCount !== undefined
-            ? { outOfScopeFeedbackEdgeCount: v.outOfScopeFeedbackEdgeCount }
-            : {}),
-          drillDown: v.drillDown,
-        },
-      };
-    case "backEdge":
-      return toLayeringBackEdgeViolation(v);
-    case "abstractionBypass":
-      return {
-        detector: "layering",
-        kind: "abstractionBypass",
-        sourceComponent: v.sourceComponent,
-        targetComponent: v.targetComponent,
-        evidence: {
-          bypassedComponent: v.bypassedComponent,
-          concreteAbstractness: round3(v.concreteAbstractness),
-          bypassedAbstractness: round3(v.bypassedAbstractness),
-          callWeight: v.callWeight,
-          implementedBy: { ...v.implementedBy },
-        },
-      };
-    case "compositionCycle":
-      return {
-        detector: "layering",
-        kind: "compositionCycle",
-        components: v.components.slice(0, LAYERING_KNOT_MEMBER_LIMIT),
-        evidence: {
-          nestedPairs: v.nestedPairs.slice(0, LAYERING_NESTED_PAIR_LIMIT),
-          memberCount: v.components.length,
-          nestedPairCount: v.nestedPairs.length,
-          ...(v.outOfScopeMemberCount !== undefined ? { outOfScopeMemberCount: v.outOfScopeMemberCount } : {}),
-        },
-      };
-    case "island":
-      return {
-        detector: "layering",
-        kind: "island",
-        component: v.component,
-        evidence: {
-          height: v.height,
-          depth: v.depth,
-          afferentCount: v.afferentCount,
-          instability: round3(v.instability),
-        },
-      };
-  }
-}
-
-function toLayeringBackEdgeViolation(v: DomainLayeringBackEdgeViolation): LayeringBackEdgeArchitectureViolation {
-  return {
-    detector: "layering",
-    kind: "backEdge",
-    sourceComponent: v.sourceComponent,
-    targetComponent: v.targetComponent,
-    evidence: {
-      callWeight: v.callWeight,
-      counterFlowWeight: v.counterFlowWeight,
-      fileEdgeCount: v.fileEdgeCount,
-      fileEdges: v.fileEdges,
-    },
-  };
-}
-
-/**
- * The knot view (bd tea-rags-mcp-r8hme.38): the lookup's full lists paged at
- * `[offset, offset + limit)` — members and cut edges by the same window,
- * back-edges capped at `limit` — the counts kept before paging. Each member
- * carries its coupling on the partition the knot was found in (bd
- * tea-rags-mcp-r8hme.39); each cut edge on the page its keep cost (bd
- * tea-rags-mcp-r8hme.40), priced only for the page — never the whole cut.
- */
-function knotView(
-  lookup: Exclude<LayeringKnotLookup, { kind: "unknownComponent" }>,
-  layeringPartition: ComponentGraph,
-  instabilitySpread: number,
-  keepCostsOf: (
-    edges: readonly DomainLayeringFeedbackEdge[],
-  ) => { edge: DomainLayeringFeedbackEdge; keepCost: LayeringKeepCost }[],
-  limit: number,
-  offset: number,
-): ArchitectureKnotView {
-  const head = {
-    component: lookup.component,
-    inKnot: lookup.kind === "inKnot",
-    level: lookup.position.level,
-    depth: lookup.position.depth,
-    offset,
-    limit,
-  };
-  if (lookup.kind === "notInKnot") return head;
-  const { knot } = lookup;
-  const end = offset + limit;
-  const hasMore = end < knot.components.length || end < knot.feedbackArcSet.length;
-  return {
-    ...head,
-    knot: {
-      members: knot.components.slice(offset, end).map((component) => knotMember(component, layeringPartition)),
-      memberCount: knot.components.length,
-      instabilitySpread: round3(instabilitySpread),
-      feedbackArcSet: keepCostsOf(knot.feedbackArcSet.slice(offset, end)).map(({ edge, keepCost }) => ({
-        ...toLayeringFeedbackEdge(edge),
-        keepCost,
-      })),
-      cutEdgeCount: knot.cutEdgeCount,
-      levelsAfterCut: knot.levelsAfterCut,
-      composition: knot.composition,
-      backEdges: knot.backEdges.slice(0, limit).map(toLayeringBackEdgeViolation),
-      ...(knot.outOfScopeMemberCount !== undefined ? { outOfScopeMemberCount: knot.outOfScopeMemberCount } : {}),
-      ...(knot.outOfScopeFeedbackEdgeCount !== undefined
-        ? { outOfScopeFeedbackEdgeCount: knot.outOfScopeFeedbackEdgeCount }
-        : {}),
-      ...(hasMore ? { nextOffset: end } : {}),
-    },
-  };
-}
-
-function knotMember(component: string, layeringPartition: ComponentGraph): ArchitectureKnotMember {
-  const measured = layeringPartition.components.get(component);
-  return {
-    component,
-    instability: round3(measured?.instability ?? 0),
-    afferentCount: measured?.afferentCount ?? 0,
-    efferentCount: measured?.efferentCount ?? 0,
-  };
-}
-
-/**
- * Which findings sit inside one knot (bd tea-rags-mcp-r8hme.39). The knot's
- * members are components of the one partition every detector judges (bd
- * tea-rags-mcp-r8hme.52.7): a component is inside when it IS a member, a file
- * when its component is.
- */
-export interface ArchitectureKnotMembership {
-  holdsFile: (relPath: RelPath) => boolean;
-  holdsComponent: (component: string) => boolean;
-}
-
-export function buildArchitectureKnotMembership(
-  members: readonly string[],
-  partition: ComponentGraph,
-): ArchitectureKnotMembership {
-  const memberSet = new Set(members);
-  return {
-    holdsFile: (relPath) => {
-      const component = partition.componentOf.get(relPath);
-      return component !== undefined && memberSet.has(component);
-    },
-    holdsComponent: (component) => memberSet.has(component),
-  };
-}
-
-interface ArchitectureDetectorReports {
-  sdp: ComponentStableDependenciesReport;
-  leaks: LeakingAbstractionReport;
-  privacy: ConventionPrivacyReport;
-  silent: SilentCouplingReport;
-  mainSequence: MainSequenceReport;
-  hubLikeDependency: HubLikeDependencyReport;
-  /** Absent in knot mode: the view carries the knot's own back-edges. */
-  layering?: LayeringReport;
-}
-
-/**
- * The detector reports narrowed to the findings inside the knot, before any
- * `limit` cap (bd tea-rags-mcp-r8hme.39) — so a page lists up to `limit`
- * in-knot findings per detector. Only the first page (`offset` 0) carries
- * them; later pages page the view alone. The summaries keep reading the
- * unfiltered reports.
- */
-function findingsInKnot(
-  reports: Required<Omit<ArchitectureDetectorReports, "layering">>,
-  membership: ArchitectureKnotMembership,
-  offset: number,
-): ArchitectureDetectorReports {
-  const firstPage = offset === 0;
-  const keep = <T>(items: readonly T[], inside: (item: T) => boolean): T[] => (firstPage ? items.filter(inside) : []);
-  const { sdp, leaks, privacy, silent, mainSequence, hubLikeDependency } = reports;
-  const bothFiles = (v: { sourceRelPath: RelPath; targetRelPath: RelPath }) =>
-    membership.holdsFile(v.sourceRelPath) && membership.holdsFile(v.targetRelPath);
-  return {
-    sdp: {
-      ...sdp,
-      violations: keep(
-        sdp.violations,
-        (v) => membership.holdsComponent(v.sourceComponent) && membership.holdsComponent(v.targetComponent),
-      ),
-      rootCauses: keep(sdp.rootCauses, (r) => membership.holdsComponent(r.targetComponent)),
-    },
-    leaks: {
-      ...leaks,
-      violations: keep(leaks.violations, bothFiles),
-      rootCauses: keep(
-        leaks.rootCauses,
-        (r) => membership.holdsComponent(r.moduleDir) || membership.holdsFile(r.facadeRelPath),
-      ),
-    },
-    privacy: { ...privacy, violations: keep(privacy.violations, bothFiles) },
-    silent: {
-      ...silent,
-      violations: keep(silent.violations, (v) => membership.holdsFile(v.relPathA) && membership.holdsFile(v.relPathB)),
-      rootCauses: keep(silent.rootCauses, (r) => membership.holdsFile(r.relPath)),
-    },
-    mainSequence: {
-      ...mainSequence,
-      violations: keep(mainSequence.violations, (v) => membership.holdsComponent(v.component)),
-    },
-    hubLikeDependency: {
-      ...hubLikeDependency,
-      violations: keep(hubLikeDependency.violations, (v) => membership.holdsComponent(v.component)),
-    },
-  };
-}
-
-function toLayeringFeedbackEdge(edge: DomainLayeringFeedbackEdge) {
-  return {
-    sourceComponent: edge.sourceComponent,
-    targetComponent: edge.targetComponent,
-    callWeight: edge.callWeight,
-    fileEdges: edge.fileEdges,
-  };
-}
-
-function mainSequenceViolations(report: MainSequenceReport, limit: number): ArchitectureViolation[] {
-  return report.violations.slice(0, limit).map(
-    (v): ArchitectureViolation => ({
-      detector: "mainSequence",
-      component: v.component,
-      componentKind: v.kind,
-      facadeRelPath: v.facadeRelPath,
-      evidence: {
-        zone: v.zone,
-        distance: v.distance,
-        abstractness: v.abstractness,
-        instability: v.instability,
-        abstractTypeCount: v.abstractTypeCount,
-        concreteTypeCount: v.concreteTypeCount,
-        afferentCount: v.afferentCount,
-        efferentCount: v.efferentCount,
-        fileCount: v.fileCount,
-        unmeasuredFileCount: v.unmeasuredFileCount,
-        ...(v.entryPoint ? { entryPoint: v.entryPoint } : {}),
-        ...(v.volatility
-          ? {
-              volatility: {
-                value: round3(v.volatility.value),
-                measuredFileCount: v.volatility.measuredFileCount,
-                threshold: round3(v.volatility.threshold),
-                label: v.volatility.label,
-              },
-            }
-          : {}),
-      },
-    }),
-  );
-}
-
-/** The whole aggregate, with the component breakdown — already ordered by reach — capped at `limit`. */
-function summarisePropagationCost(
-  report: ReturnType<typeof computePropagationCost>,
-  limit: number,
-): PropagationCostReportSummary {
-  const { components, ...aggregate } = report;
-  return { ...aggregate, componentCount: components.length, components: components.slice(0, limit) };
-}
-
-function summariseHubLikeDependency(report: HubLikeDependencyReport): HubLikeDependencyReportSummary {
-  const { summary } = report;
-  const axis = (cut: HubLikeDependencyReport["summary"]["afferent"]) => ({
-    threshold: round3(cut.threshold),
-    thresholdMethod: cut.thresholdMethod,
-    ...(cut.separability === undefined ? {} : { separability: round3(cut.separability) }),
-    median: cut.median,
-  });
-  return {
-    componentCount: summary.componentCount,
-    judgedComponentCount: summary.judgedComponentCount,
-    violationCount: summary.violationCount,
-    minConnectionCount: summary.minConnectionCount,
-    afferent: axis(summary.afferent),
-    efferent: axis(summary.efferent),
-    excluded: { ...summary.excluded },
-    ...(summary.churnMeasured ? { churnSignal: HUB_LIKE_DEPENDENCY_CHURN_SIGNAL } : {}),
-    ...(summary.scope ? { outOfScopeComponentCount: summary.scope.outOfScopeComponentCount } : {}),
-  };
-}
-
-function hubLikeDependencyViolations(report: HubLikeDependencyReport, limit: number): ArchitectureViolation[] {
-  return report.violations.slice(0, limit).map(
-    (v): ArchitectureViolation => ({
-      detector: "hubLikeDependency",
-      component: v.component,
-      componentKind: v.kind,
-      facadeRelPath: v.facadeRelPath,
-      evidence: {
-        afferentCount: v.afferentCount,
-        efferentCount: v.efferentCount,
-        instability: round3(v.instability),
-        fileCount: v.fileCount,
-        dependentComponentCount: v.dependentComponentCount,
-        dependencyComponentCount: v.dependencyComponentCount,
-        topDependents: v.topDependents.map(roundNeighbour),
-        topDependencies: v.topDependencies.map(roundNeighbour),
-        transitiveImpact: v.transitiveImpact,
-        ...(v.churn ? { churn: { value: round3(v.churn.value), measuredFileCount: v.churn.measuredFileCount } } : {}),
-        ...(v.compositionRoot ? { compositionRoot: v.compositionRoot } : {}),
-      },
-    }),
-  );
-}
-
-function roundNeighbour<T extends { callWeight: number }>(neighbour: T): T {
-  return { ...neighbour, callWeight: round3(neighbour.callWeight) };
-}
-
-function round3(value: number): number {
-  return Math.round(value * 1000) / 1000;
-}
-
-/** Locale-independent, so the order is the same on every machine. */
-function compareCodePoints(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
 }
