@@ -507,3 +507,53 @@ describe("ConeDispatchResolver — receiver declaration stays in the cone (bd m9
     expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#m"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// bd tea-rags-mcp-0qaht.64 — an OUT-OF-PROJECT receiver type extended by a
+// project class. `class TreeContentHashes extends Map` overrides `get`, so
+// every `counts.get(...)` on a plain `Map` became a 1-wide cone to
+// `TreeContentHashes#get` (527 callers on tea-rags). The external class's own
+// `get` is the runtime target the cone cannot emit, so the cone declines and
+// the chain answers. A contract (`implements` only) has no runtime body of its
+// own, so its implementers still cone.
+// ---------------------------------------------------------------------------
+
+describe("ConeDispatchResolver — out-of-project receiver type (bd 0qaht.64)", () => {
+  const getTarget: SymbolResolutionTarget = {
+    targetRelPath: "src/tree-content-hashes.ts",
+    targetSymbolId: "TreeContentHashes#get",
+  };
+  const externalCtx = (kind: InheritanceEdge["kind"]): CallContext =>
+    ctx({
+      localBindings: { counts: [{ line: 1, type: "Map" }] },
+      hierarchy: {
+        getAncestors: () => [],
+        getDescendants: (fqName: string): readonly InheritanceEdge[] =>
+          fqName === "Map"
+            ? [{ sourceFqName: "TreeContentHashes", ancestorFqName: "Map", ancestorSymbolId: null, kind, depth: 1 }]
+            : [],
+      },
+    });
+  const getCall: CallRef = { callText: "counts.get", receiver: "counts", member: "get", startLine: 1 };
+  const locator = (projectTypes: ReadonlySet<string>): ConeTypeLocator => ({
+    ...locatorWith({ "TreeContentHashes#get": getTarget }, { TreeContentHashes: "src/tree-content-hashes.ts" }),
+    isProjectType: (typeName: string) => projectTypes.has(typeName),
+  });
+
+  it("declines a receiver whose type the project does not declare when a project class extends it", () => {
+    const resolver = new ConeDispatchResolver(locator(new Set(["TreeContentHashes"])), 8);
+    expect(edgesOf(resolver.resolveDispatch(getCall, externalCtx("super")))).toEqual([]);
+  });
+
+  it("still fans an out-of-project contract out to the project classes implementing it", () => {
+    const resolver = new ConeDispatchResolver(locator(new Set(["TreeContentHashes"])), 8);
+    const edges = edgesOf(resolver.resolveDispatch(getCall, externalCtx("implements")));
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["TreeContentHashes#get"]);
+  });
+
+  it("keeps the cone for a receiver type the project declares", () => {
+    const resolver = new ConeDispatchResolver(locator(new Set(["Map", "TreeContentHashes"])), 8);
+    const edges = edgesOf(resolver.resolveDispatch(getCall, externalCtx("super")));
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["TreeContentHashes#get"]);
+  });
+});

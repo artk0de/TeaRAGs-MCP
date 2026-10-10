@@ -95,7 +95,9 @@ describe("resolveLanguageCodeVersions", () => {
     // walker 4 (post-v1.45.1): bd tea-rags-mcp-89k7k.31 — resolved type-only
     // imports merge into `GraphEdges.fileEdges` at callWeight 0 beside the
     // dedicated `typeOnlyFileEdges` channel.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 4, walker: 4, codegraphSchema: 2 });
+    // walker 5: bd tea-rags-mcp-0qaht.64 — the cone declines a library receiver
+    // type a project class extends, when the locator answers `isProjectType`.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 4, walker: 5, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -105,7 +107,7 @@ describe("resolveLanguageCodeVersions", () => {
     const stamp = resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE);
     if (stamp) stamp.walker = 99;
 
-    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(4);
+    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(5);
   });
 });
 
@@ -478,8 +480,12 @@ describe("seeded support versions", () => {
       // ruby 7: bd tea-rags-mcp-r8hme.52.12 — a constant whose namespace nested
       // files reopen resolves to the declarer at its Zeitwerk path, so an index
       // built by walker 6 (shipped in v1.47.0) lacks those file and call edges.
+      // typescript 13: bd tea-rags-mcp-0qaht.64 — a receiver typed by a library
+      // class a project class extends keeps the chain's answer, so an index
+      // built by walker 12 (shipped in v1.47.0) holds the 1-wide fan to the
+      // one project override.
       const WALKER_BUMPED = new Map([
-        ["typescript", 12],
+        ["typescript", 13],
         ["javascript", 4],
         ["python", 10],
         ["ruby", 7],

@@ -62,7 +62,10 @@ describe("RubyCallResolver.resolveDispatch — cone-first, then dynamic fan-out 
   const resolver = new RubyCallResolver();
 
   it("CONE WINS: a polymorphic typed receiver fans out to overriding subtypes (no dynamic edge)", () => {
+    // `Agent` is a project class: an undeclared superclass reads as a library
+    // class, whose own `check` the cone declines to bypass (bd 0qaht.64).
     const symbolTable = tableWith(
+      ["app/agent.rb", [sym("Agent", "Agent", "app/agent.rb", [])]],
       [
         "app/child_a.rb",
         [sym("ChildA", "ChildA", "app/child_a.rb", []), sym("ChildA#check", "check", "app/child_a.rb", ["ChildA"])],

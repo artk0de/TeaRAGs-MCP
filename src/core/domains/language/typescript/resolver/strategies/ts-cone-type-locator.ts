@@ -2,6 +2,7 @@ import {
   pickSingleCandidate,
   type CallContext,
   type RelPath,
+  type SymbolDefinitionKind,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { ConeTypeLocator } from "../../../../../contracts/types/language.js";
@@ -69,4 +70,26 @@ export class TSConeTypeLocator implements ConeTypeLocator {
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
   }
+
+  /**
+   * Could `typeName` name a project type (bd tea-rags-mcp-0qaht.64)? True when
+   * any top-level TS / JS declaration of its last segment is a type (class,
+   * interface, type alias, enum, namespace) or carries no kind. False only
+   * when the project declares nothing it could mean: a library class like
+   * `Map`, which `class TreeContentHashes extends Map` extends.
+   */
+  isProjectType(typeName: string, ctx: CallContext): boolean {
+    const bareName = typeName.slice(typeName.lastIndexOf(".") + 1);
+    return lookupEcmascriptSymbolsByShortName(ctx, bareName).some(
+      (def) => def.scope.length === 0 && (def.symbolKind === undefined || TS_TYPE_KINDS.has(def.symbolKind)),
+    );
+  }
 }
+
+const TS_TYPE_KINDS: ReadonlySet<SymbolDefinitionKind> = new Set([
+  "class",
+  "interface",
+  "type_alias",
+  "enum",
+  "module",
+]);

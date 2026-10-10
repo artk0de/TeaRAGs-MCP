@@ -312,9 +312,14 @@
   still emits `[]`. The RTA prune maps each instantiated type to its nearest
   definer, so it drops subclass OVERRIDES nothing instantiated reaches and keeps
   the receiver's own target while `T` or a non-overriding subtype is
-  instantiated. What "runtime class" means is the language's. Why: a 1-wide
-  override cone is a `single` fan that REPLACES the chain's answer, so without
-  the receiver's own target the exact edge never reached the graph.
+  instantiated. What "runtime class" means is the language's. A receiver whose
+  type the locator's optional `isProjectType` says the project does not declare,
+  extended by a project class through any nominal kind but `implements`,
+  DECLINES the cone: the library's own member is the target, and fanning to the
+  override claimed every plain `Map#get` for `TreeContentHashes#get` (bd
+  tea-rags-mcp-0qaht.64). Why: a 1-wide override cone is a `single` fan that
+  REPLACES the chain's answer, so without the receiver's own target the exact
+  edge never reached the graph.
 - **A framework vocabulary is gated by the project's DECLARED dependencies, and
   the rule is the kernel's.** `FrameworkVocabularyRegistry`
   (`kernel/framework-vocabulary.ts`) decides who is active: a vocabulary with no

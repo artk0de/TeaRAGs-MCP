@@ -41,7 +41,9 @@ import type { ConeTypeLocator, DispatchResolverComponent } from "../../../contra
  * assumption leaks into this shared core.
  *
  * Invariant: an `external` / unbound receiver carries no `localBinding`, so `T`
- * is undefined and the cone returns `[]` — external receivers never cone.
+ * is undefined and the cone returns `[]` — external receivers never cone. A
+ * receiver typed by a LIBRARY class a project class extends (`Map`,
+ * `Rack::Response`) declines too, when the locator answers `isProjectType`.
  */
 export class ConeDispatchResolver implements DispatchResolverComponent {
   constructor(
@@ -63,6 +65,7 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
     // Direct subtypes of `T`; dedup by source name (a transitive view could
     // repeat a class across depths).
     const descendants = ctx.hierarchy.getDescendants(baseType);
+    if (this.isOutOfProjectClass(baseType, descendants, ctx)) return [];
     const subtypes = new Set<string>();
     for (const edge of descendants) subtypes.add(edge.sourceFqName);
 
@@ -153,6 +156,23 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
     if (direct) return direct;
     const file = this.locator.resolveTypeFile(typeName, ctx);
     return file ? { targetRelPath: file, targetSymbolId: null } : null;
+  }
+
+  /**
+   * Is the receiver type a library CLASS a project class extends (bd
+   * tea-rags-mcp-0qaht.64)? Then an instance of the type itself — `new Map()`,
+   * `Rack::Response.new` — dispatches to the library's own member, a target
+   * outside the project the cone cannot emit, and fanning to the overriding
+   * project subclass would claim every such call for it. The cone declines and
+   * the chain's own answer stands. Decided only when the locator answers
+   * `isProjectType`; a type reached by `implements` alone is a contract with no
+   * runtime body of its own, so its implementers still cone.
+   */
+  private isOutOfProjectClass(typeName: string, descendants: readonly InheritanceEdge[], ctx: CallContext): boolean {
+    if (!this.locator.isProjectType || this.locator.isProjectType(typeName, ctx)) return false;
+    return descendants.some(
+      (edge) => edge.depth === 1 && edge.kind !== "implements" && NOMINAL_INHERITANCE_KINDS.includes(edge.kind),
+    );
   }
 
   /**

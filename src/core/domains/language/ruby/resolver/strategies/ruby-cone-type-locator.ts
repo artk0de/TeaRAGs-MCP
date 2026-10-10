@@ -44,4 +44,22 @@ export class RubyConeTypeLocator implements ConeTypeLocator {
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
   }
+
+  /**
+   * Could `typeName` name a project class or module (bd tea-rags-mcp-0qaht.64)?
+   * True when the constant resolves, or when any Ruby class / module (or a
+   * definition carrying no kind) ends with `typeName`'s segments — so a
+   * constant written relative to a lexical namespace still counts. False only
+   * when nothing in the project could be meant: a gem class like
+   * `Rack::Response`, which `Sinatra::Response` extends.
+   */
+  isProjectType(typeName: string, ctx: CallContext): boolean {
+    if (resolveConstant(typeName, ctx)) return true;
+    const segments = typeName.replace(/^::/, "").split("::");
+    return lookupRubySymbolsByShortName(ctx, lastConstantSegment(typeName)).some((def) => {
+      if (def.symbolKind !== undefined && def.symbolKind !== "class" && def.symbolKind !== "module") return false;
+      const path = [...def.scope, def.shortName];
+      return segments.every((segment, i) => path[path.length - segments.length + i] === segment);
+    });
+  }
 }

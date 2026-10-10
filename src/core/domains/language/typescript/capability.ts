@@ -169,7 +169,11 @@ export const capability: LanguageCapability = {
   // candidates gain `.d.ts` at tsc's position (.tsx, .ts, .d.ts, .jsx), where
   // `.js` already had it — `import "./view.jsx"` with only `view.d.ts` beside
   // it resolved for tsc and dropped the edge here (unverified head `.tsx`).
-  versions: { chunking: 2, walker: 12, codegraphSchema: 2 },
+  // walker 13: bd tea-rags-mcp-0qaht.64 — the cone locator answers
+  // `isProjectType`, so a receiver typed by a library class a project class
+  // extends (`Map` under `TreeContentHashes`) keeps the chain's answer instead
+  // of a 1-wide single fan to the one project override.
+  versions: { chunking: 2, walker: 13, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties
   // lowerCamelCase; a namespace-like module binding lowerCamelCase or
