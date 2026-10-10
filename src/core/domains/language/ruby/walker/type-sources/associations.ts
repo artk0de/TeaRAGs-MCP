@@ -30,8 +30,7 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import { RUBY_DSL, singularizeAssociation } from "../../dsl/index.js";
-import { readScopeResolution } from "../shared/ast-utils.js";
-import type { RubyExtractInput } from "../shared/extract-input.js";
+import { readScopeResolution, type RubyExtractInput } from "../shared/index.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 
 /** A constant name (`Foo`, `Acme::User`) — the accepted `class_name:` literal shape. */

@@ -5,7 +5,7 @@ paths:
   - "src/core/domains/language/ruby/walker/type-fact-store.ts"
   - "src/core/domains/language/ruby/walker/type-sources/ast-inference.ts"
   - "src/core/domains/language/ruby/walker/type-sources/yard.ts"
-  - "src/core/domains/language/ruby/resolver/type-propagation.ts"
+  - "src/core/domains/language/ruby/resolver/strategies/type-propagation.ts"
   - "src/core/domains/trajectory/codegraph/symbols/run-state.ts"
   - "src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.ts"
   - "src/core/domains/trajectory/codegraph/symbols/resolution-runner.ts"
@@ -42,8 +42,8 @@ file scan. Re-run quarterly.
 
 - `src/core/domains/language/ruby/walker/shared/ast-utils.ts` — fanIn 9 (hub),
   transitiveImpact 33
-- `src/core/domains/language/ruby/resolver/type-propagation.ts` — fanIn 10
-  (hub), transitiveImpact 30
+- `src/core/domains/language/ruby/resolver/strategies/type-propagation.ts` —
+  fanIn 10 (hub), transitiveImpact 30
 - `src/core/domains/language/ruby/walker/type-sources/yard.ts` — fanIn 6 (hub),
   transitiveImpact 30
 - `src/core/domains/language/ruby/walker/type-sources/ast-inference.ts` — fanIn

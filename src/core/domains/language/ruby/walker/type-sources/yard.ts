@@ -2,8 +2,7 @@ import { createIdentifierRecord } from "../../../../../contracts/identifier-reco
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import { RUBY_NIL_TYPE_REF, rubyUnionOf } from "../../type-ref.js";
-import { readScopeResolution } from "../shared/ast-utils.js";
-import type { RubyExtractInput } from "../shared/extract-input.js";
+import { readScopeResolution, type RubyExtractInput } from "../shared/index.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 
 /**

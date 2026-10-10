@@ -1,5 +1,4 @@
 import { DynamicDispatchResolver, EXPLICIT_RECEIVER_VISIBILITY_ACCESS } from "../../../kernel/index.js";
-import { RUBY_FANOUT_POPULATION, rubyMemberLookupRole } from "../short-name-lookup.js";
 import { RUBY_DUCK_VOCAB } from "./ruby-duck-vocabulary.js";
 import {
   RUBY_ASSIGNED_LOCAL_GATE_DEFAULT,
@@ -7,6 +6,7 @@ import {
   RubyExactPassAnswerProbe,
 } from "./ruby-dynamic-fanout-gates.js";
 import { DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT, lookupRubySymbolsByShortName, type ResolverConfig } from "./shared.js";
+import { RUBY_FANOUT_POPULATION, rubyMemberLookupRole } from "./short-name-lookup.js";
 
 /**
  * Map a literal-receiver source text to its Ruby core type (bd d9o7o), or

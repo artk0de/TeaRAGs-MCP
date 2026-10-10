@@ -1,7 +1,7 @@
 import { ChainTypeSymbolResolutionStrategy, type ReceiverTypingPorts } from "../../../kernel/index.js";
-import { createRubyTypeMemberLookup } from "../ruby-type-member-lookup.js";
-import { typeOfReceiver } from "../type-propagation.js";
+import { createRubyTypeMemberLookup } from "./ruby-type-member-lookup.js";
 import type { ResolverConfig } from "./shared.js";
+import { typeOfReceiver } from "./type-propagation.js";
 
 /**
  * Ruby's chain-fold typing: any receiver the propagation engine can type — a

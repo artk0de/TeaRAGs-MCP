@@ -27,8 +27,6 @@ import {
   type CallRef,
   type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { flatReturnFactMayOverrideKnownReceiver } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-return-facts.js";
-import { conventionReceiverType } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-unbound-receiver-types.js";
 import {
   lookupRubySymbolsByShortName,
   RubyConeTypeLocator,
@@ -38,6 +36,8 @@ import {
   RubyTableDispatchResolver,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
+import { flatReturnFactMayOverrideKnownReceiver } from "../../../../../../src/core/domains/language/ruby/resolver/strategies/ruby-return-facts.js";
+import { conventionReceiverType } from "../../../../../../src/core/domains/language/ruby/resolver/strategies/ruby-unbound-receiver-types.js";
 import {
   resolveInstanceMethodInClassChain,
   resolveSelfDispatchHookTarget,

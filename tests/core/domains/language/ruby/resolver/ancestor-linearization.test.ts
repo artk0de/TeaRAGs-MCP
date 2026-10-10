@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   linearizeAncestors,
   type RubyAncestorHierarchy,
-} from "../../../../../../src/core/domains/language/ruby/resolver/ancestor-linearization.js";
+} from "../../../../../../src/core/domains/language/ruby/resolver/strategies/ancestor-linearization.js";
 
 // bd tea-rags-mcp-uuux9 — the ORDERING substrate every MRO-sensitive consumer
 // reads. Each case below is a Ruby program whose `Class.ancestors` is the

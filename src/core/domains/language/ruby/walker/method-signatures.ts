@@ -25,7 +25,7 @@ import type {
   SendNameTemplate,
 } from "../../../../contracts/types/codegraph.js";
 import { positionalParamNames } from "./param-arg-types.js";
-import { attachedBlockOf, walk } from "./shared/ast-utils.js";
+import { attachedBlockOf, walk } from "./shared/index.js";
 
 const VISIBILITY_KEYWORDS = new Set<string>(["private", "protected", "public"]);
 

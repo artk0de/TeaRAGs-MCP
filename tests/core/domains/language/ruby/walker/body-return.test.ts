@@ -19,7 +19,7 @@ import {
   inferRubyMemberReturnType,
   rubyMemberReturnPorts,
 } from "../../../../../../src/core/domains/language/ruby/walker/body-return.js";
-import { rubyBodyTailExpression } from "../../../../../../src/core/domains/language/ruby/walker/shared/body-tail.js";
+import { rubyBodyTailExpression } from "../../../../../../src/core/domains/language/ruby/walker/shared/index.js";
 
 function parse(src: string): AstNode {
   const parser = new Parser();

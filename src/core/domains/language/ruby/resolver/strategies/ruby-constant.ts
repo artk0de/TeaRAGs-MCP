@@ -8,8 +8,8 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { rubyMemberLookupRole } from "../short-name-lookup.js";
 import { lookupRubySymbolsByShortName, resolveConstant, type ResolverConfig } from "./shared.js";
+import { rubyMemberLookupRole } from "./short-name-lookup.js";
 
 /**
  * Zeitwerk-style: receiver is a (possibly nested) constant chain. The walker's

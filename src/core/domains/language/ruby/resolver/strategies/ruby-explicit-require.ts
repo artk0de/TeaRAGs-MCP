@@ -4,8 +4,8 @@ import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolutio
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { ZEITWERK_PREFIX } from "../../zeitwerk-import-marker.js";
-import { rubyMemberLookupRole } from "../short-name-lookup.js";
 import { collectKnownPaths, lookupRubySymbolsByShortName, type ResolverConfig } from "./shared.js";
+import { rubyMemberLookupRole } from "./short-name-lookup.js";
 
 /**
  * Explicit `require` / `require_relative`. Fires ONLY when the receiver names

@@ -20,10 +20,10 @@ import type {
   CallRef,
   SymbolDefinition,
   SymbolLookupRole,
-} from "../../../../contracts/types/codegraph.js";
-import type { DispatchFanoutPopulation } from "../../../../contracts/types/language.js";
-import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../../kernel/index.js";
-import { capability } from "../capability.js";
+} from "../../../../../contracts/types/codegraph.js";
+import type { DispatchFanoutPopulation } from "../../../../../contracts/types/language.js";
+import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../../../kernel/index.js";
+import { capability } from "../../capability.js";
 
 /** Ruby's kind roles — a bare `Money(x)` calls a method, never `class Money`. */
 const RUBY_SYMBOL_KIND_ROLES = capability.codegraph.symbolKindRoles;

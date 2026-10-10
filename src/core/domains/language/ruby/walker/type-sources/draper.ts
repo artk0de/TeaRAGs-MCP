@@ -24,8 +24,7 @@
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import { catalogueFor } from "../../dsl/index.js";
-import { readScopeResolution } from "../shared/ast-utils.js";
-import type { RubyExtractInput } from "../shared/extract-input.js";
+import { readScopeResolution, type RubyExtractInput } from "../shared/index.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 
 /**

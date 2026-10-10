@@ -19,7 +19,7 @@ import type { RubyTypeRef } from "../../../../../../src/core/contracts/types/lan
 import {
   boundCallReturnType,
   typeOfReceiver,
-} from "../../../../../../src/core/domains/language/ruby/resolver/type-propagation.js";
+} from "../../../../../../src/core/domains/language/ruby/resolver/strategies/type-propagation.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const ctxOf = (over: Partial<CallContext> = {}): CallContext => ({

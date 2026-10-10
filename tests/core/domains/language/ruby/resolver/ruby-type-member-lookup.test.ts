@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../../src/core/contracts/types/language.js";
-import { createRubyTypeMemberLookup } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-type-member-lookup.js";
+import { createRubyTypeMemberLookup } from "../../../../../../src/core/domains/language/ruby/resolver/strategies/ruby-type-member-lookup.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 interface Def {

@@ -110,7 +110,6 @@ import {
   resolveTypeStaticMethod,
   type ResolverConfig,
 } from "../src/core/domains/language/ruby/resolver/strategies/shared.js";
-import { redirectSelfDispatchTemplate } from "../src/core/domains/language/ruby/resolver/template-redirect.js";
 import {
   boundCallReturnType,
   CHAIN_MAX_HOPS_DEFAULT,
@@ -119,7 +118,8 @@ import {
   ivarTypeName,
   returnTypeOf,
   typeOfReceiver,
-} from "../src/core/domains/language/ruby/resolver/type-propagation.js";
+} from "../src/core/domains/language/ruby/resolver/strategies/type-propagation.js";
+import { redirectSelfDispatchTemplate } from "../src/core/domains/language/ruby/resolver/template-redirect.js";
 // bd tea-rags-mcp-ikyqu — the const-chain oracle states nilable results honestly
 // through the 27q0z algebra instead of inventing a second union representation.
 import {
@@ -134,7 +134,7 @@ import {
   forEachClassScope,
   readScopeResolution,
   walk as walkAst,
-} from "../src/core/domains/language/ruby/walker/shared/ast-utils.js";
+} from "../src/core/domains/language/ruby/walker/shared/index.js";
 import {
   constInstanceType,
   RUBY_BLOCK_ITERATOR_METHODS,

@@ -19,7 +19,7 @@ import {
   CONTAINER_BLOCK_ITERATION_METHODS,
   CONTAINER_ELEMENT_RETURNING_METHODS,
   typeOfReceiver,
-} from "../../../../../../src/core/domains/language/ruby/resolver/type-propagation.js";
+} from "../../../../../../src/core/domains/language/ruby/resolver/strategies/type-propagation.js";
 import { RubyTypeFactStore } from "../../../../../../src/core/domains/language/ruby/walker/type-fact-store.js";
 import { rubyAstInferenceTypeSource } from "../../../../../../src/core/domains/language/ruby/walker/type-sources/ast-inference.js";
 import { rubyYardTypeSource } from "../../../../../../src/core/domains/language/ruby/walker/type-sources/yard.js";

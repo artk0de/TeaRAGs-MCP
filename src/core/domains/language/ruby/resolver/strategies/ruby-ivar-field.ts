@@ -6,8 +6,8 @@ import type {
   SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { conventionReceiverType, ivarTypeName } from "../type-propagation.js";
 import { resolveTypeInstanceMethod, resolveTypeMethod, type ResolverConfig } from "./shared.js";
+import { conventionReceiverType, ivarTypeName } from "./type-propagation.js";
 
 /** A single instance-variable receiver (`@client`); a chained `@a.b` is out of scope. */
 const IVAR_RECEIVER = /^@\w+$/;

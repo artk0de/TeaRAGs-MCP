@@ -28,11 +28,11 @@
  * hierarchy lookups, and both tiers' composition. Every export is unchanged.
  */
 
-import type { CallContext, SymbolDefinitionKind } from "../../../../contracts/types/codegraph.js";
-import type { RubyTypeRef } from "../../../../contracts/types/language.js";
-import { conventionClassNameFor, type NamingConventionPorts } from "../../kernel/index.js";
-import { catalogueFor } from "../dsl/index.js";
-import { RUBY_SELF_COPY_METHODS } from "../self-copy-methods.js";
+import type { CallContext, SymbolDefinitionKind } from "../../../../../contracts/types/codegraph.js";
+import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import { conventionClassNameFor, type NamingConventionPorts } from "../../../kernel/index.js";
+import { catalogueFor } from "../../dsl/index.js";
+import { RUBY_SELF_COPY_METHODS } from "../../self-copy-methods.js";
 import { selfMemberReturnType } from "./ruby-return-facts.js";
 import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 

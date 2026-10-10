@@ -37,3 +37,6 @@ export {
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
   type ResolverConfig,
 } from "./shared.js";
+export { rubyMemberLookupRole } from "./short-name-lookup.js";
+export { ivarTypeName, typeOfReceiver } from "./type-propagation.js";
+export { resolveZeitwerkConstant, constantToFilePath, snakeCase } from "./zeitwerk.js";

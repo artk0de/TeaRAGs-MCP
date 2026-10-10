@@ -30,7 +30,7 @@ import {
 } from "./method-signatures.js";
 import { isInsideRubyAssignmentCondition } from "./modifier-conditions.js";
 import { emitRegistryConstantRefs, exprToRubyDispatchRef } from "./registry-dispatch.js";
-import { readScopeResolution } from "./shared/ast-utils.js";
+import { readScopeResolution } from "./shared/index.js";
 
 /**
  * Methods that are dynamic-dispatch wrappers — when the first argument

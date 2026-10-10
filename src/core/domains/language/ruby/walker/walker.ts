@@ -68,7 +68,7 @@ import { attachRubyClassHierarchyChannels, collectRubyClassAncestors } from "./c
 import { collectRubyConstantRefs, collectRubyDefinedConstants, collectRubyRequires } from "./constant-refs.js";
 import { buildRubyFileTypeEnv } from "./file-type-env.js";
 import { collectRubyDispatchTables } from "./registry-dispatch.js";
-import type { RubyExtractInput } from "./shared/extract-input.js";
+import type { RubyExtractInput } from "./shared/index.js";
 import { rubyChunkDeclarationIndex } from "./symbol-kind.js";
 import { attachRubyTypeChannels } from "./type-channels.js";
 
@@ -127,4 +127,4 @@ export {
 export { SUPER_RECEIVER_SENTINEL } from "../super-receiver-sentinel.js";
 export { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
 export { isRubyCallbackMacro } from "./dsl-edge-emitters.js";
-export type { RubyExtractInput } from "./shared/extract-input.js";
+export type { RubyExtractInput } from "./shared/index.js";

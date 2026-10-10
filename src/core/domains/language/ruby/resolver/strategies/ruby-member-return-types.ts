@@ -8,79 +8,27 @@
  * and do not add a channel without measuring `resolveSuccessRate` /
  * `inProjectEdgeRecall` on a real corpus.
  *
- * The container vocabularies live here too: {@link CONTAINER_ELEMENT_RETURNING_METHODS}
+ * The container vocabularies are re-exported here: {@link CONTAINER_ELEMENT_RETURNING_METHODS}
  * is the unwrap set {@link returnTypeOf} applies to a `container` receiver, and
  * {@link CONTAINER_BLOCK_ITERATION_METHODS} is its walk-time sibling for block
- * parameters. Both are re-exported by `type-propagation.ts`, which is the
- * address every consumer imports them from.
+ * parameters. Both are defined in the `walker/shared/` leaf (so the walker reads
+ * them without importing the resolver) and re-exported by `type-propagation.ts`,
+ * which is the address every resolver consumer imports them from.
  *
  * Split out of `type-propagation.ts` (bd tea-rags-mcp-uetqq) with channel order,
  * guards and vocabulary byte-identical.
  */
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext } from "../../../../contracts/types/codegraph.js";
-import type { RubyTypeRef } from "../../../../contracts/types/language.js";
-import { MemberReturnTypeResolver } from "../../kernel/index.js";
-import { rubyNonNilArms, rubyTypeRefEquals } from "../type-ref.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
+import type { CallContext } from "../../../../../contracts/types/codegraph.js";
+import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import { MemberReturnTypeResolver } from "../../../kernel/index.js";
+import { rubyNonNilArms, rubyTypeRefEquals } from "../../type-ref.js";
+import { CONTAINER_ELEMENT_RETURNING_METHODS } from "../../walker/shared/index.js";
 import { activeRecordQueryReturn } from "./ruby-active-record-return-types.js";
 import { flatReturnFactMayOverrideKnownReceiver, RUBY_DECLARED_RETURN_FACT_PORTS } from "./ruby-return-facts.js";
 
-/**
- * Array/Enumerable methods that return a SINGLE ELEMENT from a typed container.
- * When `recv` is `{form:"container", element:E}` and the member is in this set,
- * `returnTypeOf` unwraps the container and returns `E` so multi-hop chains like
- * `posts.first.title` thread correctly: posts→container(Post), .first→Post,
- * .title→Post#title.
- *
- * Non-element methods (`size`, `count`, `map`, `length`) are intentionally
- * absent — those operate on the container itself (Array/Enumerable = external)
- * and their return types are not trackable without a full Enumerable type model.
- */
-export const CONTAINER_ELEMENT_RETURNING_METHODS = new Set([
-  "first",
-  "last",
-  "[]",
-  "fetch",
-  "sample",
-  "find",
-  "detect",
-  "min",
-  "max",
-  "dig",
-]);
-
-/**
- * Block-iteration methods whose FIRST block parameter is bound to the container's
- * element type at walk-time. When `recv` has a known container element type E,
- * `posts.each { |p| … }` binds `p` to `E`. This constant is the single source
- * of truth for the block-param inference set (bd Increment B / B-block) used by
- * both `rubyAstInferenceTypeSource` (via the `latestBinding` seed) and
- * `collectLocalBindingsForChunk` (via `RUBY_BLOCK_ITERATOR_METHODS`).
- *
- * Exported here so the engine and the walker share one definition; the walker's
- * `RUBY_BLOCK_ITERATOR_METHODS` re-exports this.
- */
-export const CONTAINER_BLOCK_ITERATION_METHODS = new Set([
-  "each",
-  "map",
-  "collect",
-  "select",
-  "filter",
-  "filter_map",
-  "reject",
-  "find",
-  "detect",
-  "find_all",
-  "flat_map",
-  "each_with_index",
-  "each_with_object",
-  "group_by",
-  "sort_by",
-  "min_by",
-  "max_by",
-  "partition",
-]);
+export { CONTAINER_BLOCK_ITERATION_METHODS, CONTAINER_ELEMENT_RETURNING_METHODS } from "../../walker/shared/index.js";
 
 /**
  * Channels 1–4 of {@link returnTypeOf} as the kernel `MemberReturnTypeResolver`

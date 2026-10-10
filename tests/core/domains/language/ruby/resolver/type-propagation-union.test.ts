@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../../../src/core/contracts/types/language.js";
-import { returnTypeOf } from "../../../../../../src/core/domains/language/ruby/resolver/type-propagation.js";
+import { returnTypeOf } from "../../../../../../src/core/domains/language/ruby/resolver/strategies/type-propagation.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const ctxOf = (over: Partial<CallContext> = {}): CallContext => ({

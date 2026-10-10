@@ -18,7 +18,7 @@ import { createIdentifierRecord } from "../../../../contracts/identifier-record.
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { CallRef, DispatchRef, DispatchTable } from "../../../../contracts/types/codegraph.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
-import { readScopeResolution, walk } from "./shared/ast-utils.js";
+import { readScopeResolution, walk } from "./shared/index.js";
 
 /**
  * Strip trailing no-arg call wrappers (`{...}.freeze`, `[...].freeze.dup`) to
