@@ -76,11 +76,17 @@ function layered(): FileDependencyGraph {
  * knot held by the weight-1 minority edge (clock → ulanzi carries 4).
  * `app` reaches `ulanzi` — a measured-concrete component — while it depends on
  * the measured-abstract `device` below it, and never touches `device` itself.
+ * The implementation evidence (bd tea-rags-mcp-r8hme.52.6): `ulanzi/u1.ts`
+ * declares `Panel`, which implements `device`'s `Device`, and `app` imports
+ * `Panel`.
  */
 function knot(): FileDependencyGraph {
   const files = [
     file("device/d.ts", census(6, 0)),
-    file("ulanzi/u1.ts", census(0, 3)),
+    {
+      ...file("ulanzi/u1.ts", census(0, 3)),
+      typeHeritage: [{ typeName: "Panel", supertypes: [{ name: "Device", declaringRelPaths: ["device/d.ts"] }] }],
+    },
     file("ulanzi/u2.ts", census(0, 3)),
     file("clock/c1.ts", census(0, 3)),
     file("clock/c2.ts", census(0, 3)),
@@ -92,7 +98,7 @@ function knot(): FileDependencyGraph {
     edge("clock/c1.ts", "ulanzi/u1.ts", 3),
     edge("clock/c2.ts", "ulanzi/u2.ts", 1),
     edge("ulanzi/u1.ts", "clock/c1.ts", 1),
-    edge("app/s.ts", "ulanzi/u1.ts"),
+    { ...edge("app/s.ts", "ulanzi/u1.ts"), importedExportNames: ["Panel"] },
   ];
   return { files, edges };
 }
@@ -324,6 +330,13 @@ describe("detectLayeringViolations", () => {
         concreteAbstractness: 0,
         bypassedAbstractness: 1,
         callWeight: 1,
+        implementedBy: {
+          consumerRelPath: "app/s.ts",
+          implementerTypeName: "Panel",
+          implementerRelPath: "ulanzi/u1.ts",
+          abstractionTypeName: "Device",
+          abstractionRelPath: "device/d.ts",
+        },
       },
     ]);
     expect(report.summary).toMatchObject({
@@ -1045,5 +1058,126 @@ describe("detectLayeringViolations — an entry facade over its foundation (bd t
     );
 
     expect(report.violations.filter((v) => v.kind === "knot" || v.kind === "backEdge")).toEqual([]);
+  });
+});
+
+describe("detectLayeringViolations — abstractionBypass needs implementation evidence (bd tea-rags-mcp-r8hme.52.6)", () => {
+  type GraphFile = FileDependencyGraph["files"][number];
+  type GraphEdge = FileDependencyGraph["edges"][number];
+
+  /** `knot()` with its files and edges rewritten — the census and the knot stay. */
+  function variant(
+    rewriteFile: (f: GraphFile) => GraphFile,
+    rewriteEdge: (e: GraphEdge) => GraphEdge = (e) => e,
+    extra: Partial<FileDependencyGraph> = {},
+  ): FileDependencyGraph {
+    const g = knot();
+    return {
+      files: [...g.files.map(rewriteFile), ...(extra.files ?? [])],
+      edges: [...g.edges.map(rewriteEdge), ...(extra.edges ?? [])],
+    };
+  }
+
+  const isAppEdge = (e: GraphEdge) => e.sourceRelPath === "app/s.ts" && e.targetRelPath === "ulanzi/u1.ts";
+
+  function bypasses(g: FileDependencyGraph) {
+    return judge(g).violations.filter((v) => v.kind === "abstractionBypass");
+  }
+
+  it("reports no bypass when nothing the concrete component declares implements the abstraction", () => {
+    const g = variant(({ typeHeritage: _dropped, ...f }) => f);
+
+    expect(bypasses(g)).toEqual([]);
+    expect(judge(g).summary.abstractionBypassCount).toBe(0);
+  });
+
+  it("reports no bypass when the consumer imports a concrete name that implements nothing beneath", () => {
+    const g = variant(
+      (f) => f,
+      (e) => (isAppEdge(e) ? { ...e, importedExportNames: ["Helper"] } : e),
+    );
+
+    expect(bypasses(g)).toEqual([]);
+  });
+
+  it("reports the bypass with its witness when the consumer imports the implementer", () => {
+    expect(bypasses(knot())).toEqual([
+      {
+        kind: "abstractionBypass",
+        sourceComponent: "app",
+        targetComponent: "ulanzi",
+        bypassedComponent: "device",
+        concreteAbstractness: 0,
+        bypassedAbstractness: 1,
+        callWeight: 1,
+        implementedBy: {
+          consumerRelPath: "app/s.ts",
+          implementerTypeName: "Panel",
+          implementerRelPath: "ulanzi/u1.ts",
+          abstractionTypeName: "Device",
+          abstractionRelPath: "device/d.ts",
+        },
+      },
+    ]);
+  });
+
+  it("reports no bypass when the consumer subclasses the implementer it imports", () => {
+    const g = variant((f) =>
+      f.relPath === "app/s.ts"
+        ? {
+            ...f,
+            typeHeritage: [
+              { typeName: "Custom", supertypes: [{ name: "Panel", declaringRelPaths: ["ulanzi/u1.ts"] }] },
+            ],
+          }
+        : f,
+    );
+
+    expect(bypasses(g)).toEqual([]);
+  });
+
+  it("names the evidenced abstraction beneath even when an unevidenced one is more abstract", () => {
+    const g = variant(
+      (f) => (f.relPath === "device/d.ts" ? { ...f, typeAbstractness: census(5, 1) } : f),
+      (e) => e,
+      { files: [file("port/p.ts", census(6, 0))], edges: [edge("ulanzi/u2.ts", "port/p.ts")] },
+    );
+
+    expect(bypasses(g)).toMatchObject([
+      { sourceComponent: "app", targetComponent: "ulanzi", bypassedComponent: "device", bypassedAbstractness: 5 / 6 },
+    ]);
+  });
+
+  it("matches an edge that records no imported names by the implementer's file", () => {
+    const g = variant(
+      (f) => f,
+      (e) => (isAppEdge(e) ? edge(e.sourceRelPath, e.targetRelPath, e.callWeight) : e),
+    );
+
+    expect(bypasses(g)).toMatchObject([
+      {
+        sourceComponent: "app",
+        targetComponent: "ulanzi",
+        bypassedComponent: "device",
+        implementedBy: {
+          consumerRelPath: "app/s.ts",
+          implementerTypeName: "Panel",
+          implementerRelPath: "ulanzi/u1.ts",
+        },
+      },
+    ]);
+  });
+
+  it("takes no evidence from a supertype declared inside the concrete component itself", () => {
+    const g = variant((f) =>
+      f.relPath === "ulanzi/u1.ts"
+        ? {
+            ...f,
+            typeHeritage: [{ typeName: "Panel", supertypes: [{ name: "Base", declaringRelPaths: ["ulanzi/u2.ts"] }] }],
+          }
+        : f,
+    );
+
+    expect(bypasses(g)).toEqual([]);
   });
 });

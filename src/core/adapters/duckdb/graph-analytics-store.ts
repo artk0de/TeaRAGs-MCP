@@ -28,6 +28,7 @@ import {
   type CycleScope,
   type FileDependencyGraph,
   type FileImportLookup,
+  type FileTypeHeritage,
   type NonPublicMemberEdge,
   type RelPath,
   type SymbolId,
@@ -231,6 +232,12 @@ export class DuckDbGraphAnalyticsStore {
    * toward its source's fanOut, exactly as `getFileMetricsBulk` counts it, and
    * dropping it here would move that file's instability. Deciding which edges
    * to judge is the caller's.
+   *
+   * A third statement attaches each file's `typeHeritage` (bd
+   * tea-rags-mcp-r8hme.52.6): every DIRECT supertype a declared type names in
+   * `cg_type_declarations.supertypes` (re-opening rows included), resolved by
+   * exact `type_id` or `short_name` to the files declaring it; a supertype no
+   * project file declares is dropped.
    */
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
     const fileRows = await this.session.queryAll<{
@@ -275,6 +282,7 @@ export class DuckDbGraphAnalyticsStore {
        LEFT JOIN edge_call_weight c ON c.source_rel_path = e.source_rel_path AND c.target_rel_path = e.target_rel_path
        ORDER BY e.source_rel_path, e.target_rel_path`,
     );
+    const heritageByFile = await this.readFileTypeHeritage();
     return {
       files: fileRows.map((r) => ({
         relPath: r.rel_path,
@@ -290,6 +298,7 @@ export class DuckDbGraphAnalyticsStore {
             }
           : {}),
         ...(r.outer_scope_names && r.outer_scope_names.length > 0 ? { outerScopeNames: [...r.outer_scope_names] } : {}),
+        ...(heritageByFile.has(r.rel_path) ? { typeHeritage: heritageByFile.get(r.rel_path) } : {}),
       })),
       edges: edgeRows.map((r) => {
         // bd tea-rags-mcp-r8hme.2 — present only when the walk recorded them.
@@ -309,6 +318,49 @@ export class DuckDbGraphAnalyticsStore {
         };
       }),
     };
+  }
+
+  /**
+   * `typeHeritage` per declaring file, grouped from one flat row per (file,
+   * type, supertype, declaring file), already sorted and deduplicated by the
+   * statement. Two equi-joins under UNION rather than one OR join, which
+   * DuckDB plans as a nested loop.
+   */
+  private async readFileTypeHeritage(): Promise<Map<RelPath, FileTypeHeritage[]>> {
+    const rows = await this.session.queryAll<{
+      rel_path: string;
+      type_name: string;
+      supertype_name: string;
+      declaring_rel_path: string;
+    }>(
+      `WITH sup AS (SELECT rel_path, short_name, unnest(supertypes) AS name FROM cg_type_declarations)
+       SELECT s.rel_path, s.short_name AS type_name, s.name AS supertype_name, d.rel_path AS declaring_rel_path
+         FROM sup s JOIN cg_type_declarations d ON d.type_id = s.name
+       UNION
+       SELECT s.rel_path, s.short_name AS type_name, s.name AS supertype_name, d.rel_path AS declaring_rel_path
+         FROM sup s JOIN cg_type_declarations d ON d.short_name = s.name
+       ORDER BY 1, 2, 3, 4`,
+    );
+    const byFile = new Map<RelPath, FileTypeHeritage[]>();
+    for (const row of rows) {
+      let types = byFile.get(row.rel_path);
+      if (!types) {
+        types = [];
+        byFile.set(row.rel_path, types);
+      }
+      let type = types.at(-1);
+      if (type?.typeName !== row.type_name) {
+        type = { typeName: row.type_name, supertypes: [] };
+        types.push(type);
+      }
+      let supertype = type.supertypes.at(-1);
+      if (supertype?.name !== row.supertype_name) {
+        supertype = { name: row.supertype_name, declaringRelPaths: [] };
+        type.supertypes.push(supertype);
+      }
+      supertype.declaringRelPaths.push(row.declaring_rel_path);
+    }
+    return byFile;
   }
 
   /**

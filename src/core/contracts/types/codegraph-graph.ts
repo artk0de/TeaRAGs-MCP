@@ -63,6 +63,29 @@ export interface FileDependencyGraphFile {
    * tea-rags-mcp-r8hme.11). Absent when no symbol of the file has a scope.
    */
   outerScopeNames?: string[];
+  /**
+   * The types this file declares that name an in-project supertype, each with
+   * the files declaring every such supertype (bd tea-rags-mcp-r8hme.52.6) —
+   * the implementation evidence `abstractionBypass` judges by. Absent when the
+   * file declares no type with an in-project supertype.
+   */
+  typeHeritage?: FileTypeHeritage[];
+}
+
+/**
+ * One type a file declares and the in-project files declaring each DIRECT
+ * supertype it names (bd tea-rags-mcp-r8hme.52.6), read from
+ * `cg_type_declarations.supertypes` — re-opening rows included.
+ */
+export interface FileTypeHeritage {
+  /** The declared type's short name — what an importer names it by. */
+  typeName: string;
+  /**
+   * Each written supertype the index resolves, by exact `type_id` or
+   * `short_name`, to a declaring project file; a supertype no project file
+   * declares (`Error`) is dropped.
+   */
+  supertypes: { name: string; declaringRelPaths: RelPath[] }[];
 }
 
 /**

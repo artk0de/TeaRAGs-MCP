@@ -639,6 +639,21 @@ export interface LayeringAbstractionBypassViolationEvidence {
   bypassedAbstractness: number;
   /** Confidence-weighted resolved calls across the consumer→concrete edge. */
   callWeight: number;
+  /**
+   * The implementation evidence (bd tea-rags-mcp-r8hme.52.6): a consumer file
+   * imports `implementerTypeName` (declared in `implementerRelPath`, inside
+   * the concrete component), whose DIRECT supertype `abstractionTypeName` is
+   * declared in `abstractionRelPath`, inside the bypassed component — the
+   * abstraction the consumer could have depended on instead. The
+   * code-point-smallest such chain.
+   */
+  implementedBy: {
+    consumerRelPath: string;
+    implementerTypeName: string;
+    implementerRelPath: string;
+    abstractionTypeName: string;
+    abstractionRelPath: string;
+  };
 }
 
 /** A consumer reaching a measured-concrete component that depends on a measured-abstract one below. */

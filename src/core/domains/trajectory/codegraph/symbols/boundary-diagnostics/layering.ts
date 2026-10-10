@@ -839,6 +839,119 @@ function knotMemberSets(model: LayeringModel): (a: string, b: string) => boolean
 }
 
 /**
+ * One implementer a concrete component declares over an abstraction declared
+ * in the component beneath it: `implementerTypeName` (in
+ * `implementerRelPath`) names `abstractionTypeName` (in `abstractionRelPath`)
+ * as a DIRECT supertype.
+ */
+interface BypassImplementer {
+  implementerTypeName: string;
+  implementerRelPath: string;
+  abstractionTypeName: string;
+  abstractionRelPath: string;
+}
+
+/**
+ * The implementation evidence per `concrete\0below` component pair (bd
+ * tea-rags-mcp-r8hme.52.6): every type a `concrete` file declares whose DIRECT
+ * supertype resolves to a `below` file. Direct only — a transitive chain
+ * re-admits error hierarchies (`ConfigValueInvalidError → ConfigError →
+ * TeaRagsError → TeaRagsErrorContract`), which are constructions, not
+ * dependency inversion. A supertype declared in the declaring file's own
+ * component, or in no component, is no evidence.
+ */
+function implementationEvidence(
+  componentGraph: ComponentGraph,
+  files: readonly FileDependencyGraphFile[],
+): Map<string, BypassImplementer[]> {
+  const evidence = new Map<string, BypassImplementer[]>();
+  for (const f of files) {
+    const concrete = componentGraph.componentOf.get(f.relPath);
+    if (concrete === undefined) continue;
+    for (const type of f.typeHeritage ?? []) {
+      for (const supertype of type.supertypes) {
+        for (const declaringRelPath of supertype.declaringRelPaths) {
+          const below = componentGraph.componentOf.get(declaringRelPath);
+          if (below === undefined || below === concrete) continue;
+          const key = dependencyKey(concrete, below);
+          const implementers = evidence.get(key) ?? [];
+          implementers.push({
+            implementerTypeName: type.typeName,
+            implementerRelPath: f.relPath,
+            abstractionTypeName: supertype.name,
+            abstractionRelPath: declaringRelPath,
+          });
+          evidence.set(key, implementers);
+        }
+      }
+    }
+  }
+  return evidence;
+}
+
+/**
+ * Per file, the files declaring the supertypes its own types name. A consumer
+ * file that subclasses an implementer inherits its implementation, which no
+ * abstraction can substitute for — so that implementer is no bypass witness
+ * from that file.
+ */
+function subclassedFiles(files: readonly FileDependencyGraphFile[]): Map<string, Set<string>> {
+  const subclassed = new Map<string, Set<string>>();
+  for (const f of files) {
+    if (!f.typeHeritage) continue;
+    const declaring = new Set<string>();
+    for (const type of f.typeHeritage) {
+      for (const supertype of type.supertypes) {
+        for (const relPath of supertype.declaringRelPaths) declaring.add(relPath);
+      }
+    }
+    subclassed.set(f.relPath, declaring);
+  }
+  return subclassed;
+}
+
+/**
+ * The code-point-smallest witness the consumer→concrete file edges give for
+ * `implementers`: an edge naming an implementer among its imported export
+ * names — or, for an edge that records none (a Ruby constant edge), targeting
+ * the implementer's file — from a source file that does not subclass it.
+ */
+function bypassWitness(
+  fileEdges: readonly FileDependencyEdge[],
+  implementers: readonly BypassImplementer[],
+  subclassed: Map<string, Set<string>>,
+): LayeringAbstractionBypassViolation["implementedBy"] | undefined {
+  let witness: LayeringAbstractionBypassViolation["implementedBy"] | undefined;
+  for (const fileEdge of fileEdges) {
+    const names = fileEdge.importedExportNames;
+    const inherits = subclassed.get(fileEdge.sourceRelPath);
+    for (const implementer of implementers) {
+      const named =
+        names && names.length > 0
+          ? names.includes(implementer.implementerTypeName)
+          : fileEdge.targetRelPath === implementer.implementerRelPath;
+      if (!named || inherits?.has(implementer.implementerRelPath)) continue;
+      const candidate = { consumerRelPath: fileEdge.sourceRelPath, ...implementer };
+      if (!witness || compareWitnesses(candidate, witness) < 0) witness = candidate;
+    }
+  }
+  return witness;
+}
+
+function compareWitnesses(
+  a: LayeringAbstractionBypassViolation["implementedBy"],
+  b: LayeringAbstractionBypassViolation["implementedBy"],
+): number {
+  return (
+    compareCodePoints(a.consumerRelPath, b.consumerRelPath) ||
+    compareCodePoints(a.implementerTypeName, b.implementerTypeName) ||
+    compareCodePoints(a.implementerRelPath, b.implementerRelPath) ||
+    compareCodePoints(a.abstractionTypeName, b.abstractionTypeName) ||
+    compareCodePoints(a.abstractionRelPath, b.abstractionRelPath)
+  );
+}
+
+/**
  * DIP bypasses: a consumer reaching a measured-concrete component that itself
  * depends on a measured-abstract one below it, while never touching that
  * abstraction. Both abstractness readings must exist (the walker's type
@@ -846,6 +959,13 @@ function knotMemberSets(model: LayeringModel): (a: string, b: string) => boolean
  * judged. A pair already tied in one knot is the knot's own finding, not a
  * bypass. One finding per consumer→concrete edge, naming the most abstract
  * component bypassed beneath it.
+ *
+ * The bypass must be EVIDENCED (bd tea-rags-mcp-r8hme.52.6): the consumer
+ * names a type of the concrete component (R2) whose direct supertype is
+ * declared in the bypassed one (R1), and does not subclass it (R3) — only
+ * then could the consumer have depended on the abstraction instead. Any other
+ * concrete→abstract import (a constant, an error class, a DTO) has no
+ * dependency-inversion content. The finding carries the witness.
  */
 function abstractionBypasses(
   componentGraph: ComponentGraph,
@@ -853,6 +973,8 @@ function abstractionBypasses(
   sameKnot: (a: string, b: string) => boolean,
 ): LayeringAbstractionBypassViolation[] {
   const abstractness = abstractnessByComponent(componentGraph, files);
+  const evidence = implementationEvidence(componentGraph, files);
+  const subclassed = subclassedFiles(files);
   const targetsOf = new Map<string, string[]>();
   for (const dependency of componentGraph.dependencies) {
     targetsOf.set(dependency.sourceComponent, [
@@ -869,15 +991,20 @@ function abstractionBypasses(
     const concreteReading = abstractness.get(concrete);
     if (!concreteReading || concreteReading.typeCount < BYPASS_MIN_TYPE_COUNT) continue;
     if (concreteReading.abstractness > BYPASS_CONCRETE_MAX_ABSTRACTNESS) continue;
-    let bypassed: { component: string; abstractness: number } | undefined;
+    let bypassed:
+      | { component: string; abstractness: number; implementedBy: LayeringAbstractionBypassViolation["implementedBy"] }
+      | undefined;
     for (const below of targetsOf.get(concrete) ?? []) {
       if ((targetsOf.get(consumer) ?? []).includes(below)) continue;
       const reading = abstractness.get(below);
       if (!reading || reading.typeCount < BYPASS_MIN_TYPE_COUNT) continue;
       if (reading.abstractness < BYPASS_ABSTRACT_MIN_ABSTRACTNESS) continue;
-      if (!bypassed || reading.abstractness > bypassed.abstractness) {
-        bypassed = { component: below, abstractness: reading.abstractness };
-      }
+      if (bypassed && reading.abstractness <= bypassed.abstractness) continue;
+      const implementers = evidence.get(dependencyKey(concrete, below));
+      if (!implementers) continue;
+      const implementedBy = bypassWitness(dependency.fileEdges, implementers, subclassed);
+      if (!implementedBy) continue;
+      bypassed = { component: below, abstractness: reading.abstractness, implementedBy };
     }
     if (!bypassed) continue;
     findings.push({
@@ -888,6 +1015,7 @@ function abstractionBypasses(
       concreteAbstractness: concreteReading.abstractness,
       bypassedAbstractness: bypassed.abstractness,
       callWeight: dependency.callWeight,
+      implementedBy: bypassed.implementedBy,
     });
   }
   return findings.sort(
