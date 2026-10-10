@@ -12,7 +12,7 @@ import {
   TSImportNarrowedFallbackSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
-import { receiverBoundToProjectType } from "../../../../../../src/core/domains/language/typescript/resolver/ts-local-receiver.js";
+import { receiverBoundToProjectType } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/ts-local-receiver.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 

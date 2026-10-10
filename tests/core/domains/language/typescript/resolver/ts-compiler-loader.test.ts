@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 // module graph is paid at collection and not against a test's wall-clock budget.
 import "../../../../../../src/core/domains/language/index.js";
 
-import { loadTypeScriptCompiler } from "../../../../../../src/core/domains/language/typescript/resolver/ts-compiler-loader.js";
+import { loadTypeScriptCompiler } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-compiler-loader.js";
 
 // The `typescript` package is ~9MB of CommonJS. Every importer of the language
 // domain — 349 test files, and the chunker worker on each fork, which never

@@ -40,8 +40,8 @@ import { dirname, join } from "node:path";
 
 import ts from "typescript";
 
+import { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import { loadTsConfig } from "../../src/core/domains/language/typescript/resolver/ts-config-loader.js";
-import { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 
 // realpath'd lazily after generation: `TSProgramCache.repoRoot` documents a
 // realpath-normalized root, and macOS's `/tmp` is a symlink into `/private` —
@@ -321,7 +321,7 @@ async function run(shape: ProbeShape): Promise<void> {
 
   for (let index = 0; index < entries.length; index++) {
     const { [index]: relPath } = entries;
-    const handle = cache.acquire(relPath as never);
+    const handle = cache.acquire(relPath);
     if (!handle) continue;
     if (!seen.has(handle.program)) {
       seen.add(handle.program);

@@ -8,7 +8,7 @@ import {
   createProjectFileProbe,
   mapImportToFile,
   TS_SOURCE_PATH_RULES,
-} from "../../../../../../src/core/domains/language/typescript/resolver/ts-path-mapper.js";
+} from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-path-mapper.js";
 
 describe("mapImportToFile", () => {
   it("resolves relative paths against caller file", () => {

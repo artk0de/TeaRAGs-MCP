@@ -38,9 +38,9 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { CallContext, CallRef, SymbolDefinition } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { targetsExternalImport } from "../../../../../../src/core/domains/language/typescript/resolver/ts-external-call.js";
-import { createProjectFileProbe } from "../../../../../../src/core/domains/language/typescript/resolver/ts-path-mapper.js";
-import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+import { createProjectFileProbe } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-path-mapper.js";
+import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
+import { targetsExternalImport } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/ts-external-call.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const tsOptions = { baseUrl: ".", paths: {} };

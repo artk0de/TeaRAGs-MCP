@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { TSParsedSourceLru } from "../../../../../../src/core/domains/language/typescript/resolver/ts-parsed-source-lru.js";
+import { TSParsedSourceLru } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-parsed-source-lru.js";
 
 describe("TSParsedSourceLru (bd tea-rags-mcp-vtuu4)", () => {
   it("evicts parses least-recently-used by source text bytes", () => {

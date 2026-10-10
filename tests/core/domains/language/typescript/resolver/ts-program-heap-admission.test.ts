@@ -27,7 +27,7 @@ import {
   TS_PROGRAM_HEAP_PER_TEXT_MB_DEFAULT,
   TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
   type TSProgramHeapBudget,
-} from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-heap-admission.js";
+} from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-heap-admission.js";
 import { resolveProgramHeapBudget } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 
 const MB = 1024 * 1024;

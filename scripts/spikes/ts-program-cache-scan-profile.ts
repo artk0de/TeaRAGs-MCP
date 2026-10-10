@@ -31,8 +31,8 @@ import { readdirSync, writeFileSync } from "node:fs";
 import { join, relative, resolve as resolvePath, sep } from "node:path";
 
 import type { RelPath } from "../../src/core/contracts/types/codegraph.js";
+import { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import { loadTsConfig } from "../../src/core/domains/language/typescript/resolver/ts-config-loader.js";
-import { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
 const SKIP_DIRS = new Set(["node_modules", "build", "dist", ".git", "coverage"]);

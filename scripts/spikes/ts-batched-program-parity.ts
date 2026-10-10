@@ -47,11 +47,11 @@ import { isMainThread, parentPort, Worker, workerData } from "node:worker_thread
 
 import ts from "typescript";
 
+import { readHeapSizeLimitMb } from "../../src/core/domains/language/typescript/resolver/program/ts-program-heap-admission.js";
 import {
   loadTsConfig,
   loadTsConfigFileNames,
 } from "../../src/core/domains/language/typescript/resolver/ts-config-loader.js";
-import { readHeapSizeLimitMb } from "../../src/core/domains/language/typescript/resolver/ts-program-heap-admission.js";
 import { TSCallResolver } from "../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 
 type Phase = "batched" | "whole";

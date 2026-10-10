@@ -76,10 +76,9 @@ import {
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
 } from "../../../kernel/index.js";
-import { loadTypeScriptCompiler } from "../ts-compiler-loader.js";
-import type { TSProgramCache } from "../ts-program-cache.js";
-import { declarationAccountsFor } from "../ts-receiver-member-evidence.js";
+import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
 import type { ResolverConfig } from "./shared.js";
+import { declarationAccountsFor } from "./ts-receiver-member-evidence.js";
 import { memberSeparator, prefixWithNamespaces } from "./ts-type-checker-shared.js";
 
 export class TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy implements SymbolResolutionStrategy {

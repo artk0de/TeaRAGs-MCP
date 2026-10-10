@@ -61,7 +61,7 @@ import type { FileExtraction } from "../../src/core/contracts/types/codegraph.js
 import { BUILTIN_IGNORE_PATTERNS } from "../../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { loadTsConfig } from "../../src/core/domains/language/typescript/resolver/index.js";
-import type { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+import type { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import { buildCodegraphExclusionFilter } from "../../src/core/domains/trajectory/codegraph/exclusion.js";
 import { CallEdgeResolutionRunner } from "../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import { CodegraphRunState } from "../../src/core/domains/trajectory/codegraph/symbols/run-state.js";

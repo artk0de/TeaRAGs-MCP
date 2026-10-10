@@ -32,7 +32,7 @@ import {
 } from "../../scripts/ts-codegraph-typechecker-oracle.js";
 import type { CallRef } from "../../src/core/contracts/types/codegraph.js";
 import { LanguageFactory } from "../../src/core/domains/language/index.js";
-import { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+import { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 
 /** One call-site row, defaulted so each test states only the axis it exercises. */
 function row(overrides: Partial<OracleRow> = {}): OracleRow {

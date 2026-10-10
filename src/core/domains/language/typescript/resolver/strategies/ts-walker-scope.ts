@@ -20,9 +20,9 @@
 
 import type ts from "typescript";
 
-import type { CallContext } from "../../../../contracts/types/codegraph.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../kernel/index.js";
-import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
+import type { CallContext } from "../../../../../contracts/types/codegraph.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
+import { loadTypeScriptCompiler } from "../program/index.js";
 
 /** An arrow or function expression — the value `functionValuedDeclaratorName` accepts. */
 export function isFunctionValuedInitializer(initializer: ts.Expression | undefined): boolean {

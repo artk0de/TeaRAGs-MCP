@@ -13,12 +13,12 @@ import {
   type InheritanceKind,
   type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import {
   TSGlobalShortNameSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
-import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
-import { memberCandidateLacksReceiverEvidence } from "../../../../../../src/core/domains/language/typescript/resolver/ts-receiver-member-evidence.js";
+import { memberCandidateLacksReceiverEvidence } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/ts-receiver-member-evidence.js";
 import { MapHierarchyView } from "../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
 import { buildHierarchySnapshot } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";

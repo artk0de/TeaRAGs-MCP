@@ -22,8 +22,8 @@
 
 import type ts from "typescript";
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../contracts/types/codegraph.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
+import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import {
   BARE_GLOBAL_CALLABLES,
   ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS,
@@ -32,18 +32,18 @@ import {
   ECMASCRIPT_GLOBALS,
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
-} from "../../kernel/index.js";
-import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
-import { jsxTagMemberDeclarations } from "./strategies/ts-type-checker-jsx-component.js";
+} from "../../../kernel/index.js";
 import {
-  calledMemberDeclarations,
-  findReceiverExpression,
-  findSuperKeyword,
-} from "./strategies/ts-type-checker-shared.js";
+  mapImportToFile,
+  type ProjectFileProbe,
+  type TsCompilerOptions,
+  type TSProgramCache,
+} from "../program/index.js";
 import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
 import { calleeIsExternalLocalBinding } from "./ts-local-callee.js";
-import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "./ts-path-mapper.js";
-import type { TSProgramCache } from "./ts-program-cache.js";
+import { findCallExpression } from "./ts-type-checker-fallback.js";
+import { jsxTagMemberDeclarations } from "./ts-type-checker-jsx-component.js";
+import { calledMemberDeclarations, findReceiverExpression, findSuperKeyword } from "./ts-type-checker-shared.js";
 import { typeConstituents } from "./ts-type-constituents.js";
 
 /**

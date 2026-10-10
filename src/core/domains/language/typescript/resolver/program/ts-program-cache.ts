@@ -145,7 +145,7 @@ import { dirname, isAbsolute, posix, relative, resolve as resolvePath, sep } fro
 
 import type ts from "typescript";
 
-import type { RelPath } from "../../../../contracts/types/codegraph.js";
+import type { RelPath } from "../../../../../contracts/types/codegraph.js";
 import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
 import { TSModuleResolutionMemo } from "./ts-module-resolution-memo.js";
 import { TSParsedSourceLru } from "./ts-parsed-source-lru.js";
@@ -538,7 +538,7 @@ interface BatchUnits {
  *
  * `jsx` is not cosmetic here even though nothing is emitted: with the option
  * unset, module resolution refuses to consider the `.tsx` extension at all, so
- * `import Button from "./button.js"` finds no file and every symbol in a React
+ * `import Button from "../button.js"` finds no file and every symbol in a React
  * codebase resolves to `unknown` with zero declarations. `Preserve` is the
  * cheapest setting that turns the extension back on — it neither requires a
  * `react/jsx-runtime` declaration to exist nor cares which runtime the project

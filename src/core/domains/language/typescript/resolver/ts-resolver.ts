@@ -101,6 +101,32 @@ import {
 } from "../../kernel/index.js";
 import { capability } from "../capability.js";
 import {
+  createProjectFileProbe,
+  mapImportToFile,
+  TS_PROGRAM_BATCH_CALL_SITES_DEFAULT,
+  TS_PROGRAM_BATCH_TEXT_BYTES_DEFAULT,
+  TS_PROGRAM_CACHE_MAX_DEFAULT,
+  TS_PROGRAM_HEAP_BASE_MB_DEFAULT,
+  TS_PROGRAM_HEAP_PER_1K_CALL_SITES_MB_DEFAULT,
+  TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
+  TS_PROGRAM_HEAP_PER_TEXT_MB_DEFAULT,
+  TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
+  TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT,
+  TS_PROGRAM_PARSED_FILES_MAX_DEFAULT,
+  TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT,
+  TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT,
+  TS_PROGRAM_STRATEGY_DEFAULT,
+  TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
+  TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
+  TSProgramCache,
+  type ProjectFileProbe,
+  type TsCompilerOptions,
+  type TSProgramCacheOptions,
+  type TSProgramHeapBudget,
+  type TSProgramStrategy,
+  type TSSourceFileStore,
+} from "./program/index.js";
+import {
   collectImportedFiles,
   CONE_MAX_DEFAULT,
   TSCallResultCalleeSymbolResolutionStrategy,
@@ -125,38 +151,8 @@ import {
   TSTypeCheckerUnionReceiverDispatchResolver,
   type ResolverConfig,
 } from "./strategies/index.js";
+import { targetsExternalImport } from "./strategies/ts-external-call.js";
 import { loadTsConfigFileNames } from "./ts-config-loader.js";
-import { targetsExternalImport } from "./ts-external-call.js";
-import {
-  createProjectFileProbe,
-  mapImportToFile,
-  type ProjectFileProbe,
-  type TsCompilerOptions,
-} from "./ts-path-mapper.js";
-import {
-  TS_PROGRAM_BATCH_CALL_SITES_DEFAULT,
-  TS_PROGRAM_BATCH_TEXT_BYTES_DEFAULT,
-  TS_PROGRAM_CACHE_MAX_DEFAULT,
-  TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT,
-  TS_PROGRAM_PARSED_FILES_MAX_DEFAULT,
-  TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT,
-  TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT,
-  TS_PROGRAM_STRATEGY_DEFAULT,
-  TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
-  TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
-  TSProgramCache,
-  type TSProgramCacheOptions,
-  type TSProgramStrategy,
-} from "./ts-program-cache.js";
-import {
-  TS_PROGRAM_HEAP_BASE_MB_DEFAULT,
-  TS_PROGRAM_HEAP_PER_1K_CALL_SITES_MB_DEFAULT,
-  TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
-  TS_PROGRAM_HEAP_PER_TEXT_MB_DEFAULT,
-  TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
-  type TSProgramHeapBudget,
-} from "./ts-program-heap-admission.js";
-import type { TSSourceFileStore } from "./ts-source-file-store.js";
 
 /** Parse `CODEGRAPH_TS_CONE_MAX`; fall back to the TS default on absent/invalid. */
 function resolveConeMax(raw: string | undefined): number {

@@ -11,11 +11,11 @@ import { dirname, join } from "node:path";
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import {
   TS_SOURCE_FILE_STORE_TEXT_BYTES_DEFAULT,
   TSSourceFileStore,
-} from "../../../../../../src/core/domains/language/typescript/resolver/ts-source-file-store.js";
+} from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-source-file-store.js";
 
 const tsOptions = { baseUrl: ".", paths: {} };
 

@@ -2,12 +2,12 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { targetsExternalImport } from "../ts-external-call.js";
-import { calleeIsLocalValueBinding } from "../ts-local-callee.js";
-import { receiverIsUnpinnableLocalValueBinding } from "../ts-local-receiver.js";
-import type { TSProgramCache } from "../ts-program-cache.js";
-import { memberCandidateLacksReceiverEvidence } from "../ts-receiver-member-evidence.js";
+import type { TSProgramCache } from "../program/index.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
+import { targetsExternalImport } from "./ts-external-call.js";
+import { calleeIsLocalValueBinding } from "./ts-local-callee.js";
+import { receiverIsUnpinnableLocalValueBinding } from "./ts-local-receiver.js";
+import { memberCandidateLacksReceiverEvidence } from "./ts-receiver-member-evidence.js";
 
 /**
  * Imports-narrowed fallback (bd tea-rags-mcp-2qp6). Recovery for the

@@ -5,8 +5,8 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { CallContext, CallRef } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import { TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-return-type-inference.js";
-import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 

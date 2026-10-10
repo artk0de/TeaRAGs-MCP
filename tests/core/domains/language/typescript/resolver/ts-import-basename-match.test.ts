@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { importSpecifierNamesReceiver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-import-basename-match.js";
+import { importSpecifierNamesReceiver } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/ts-import-basename-match.js";
 
 describe("importSpecifierNamesReceiver", () => {
   it("matches a kebab-case module basename to its PascalCase receiver across source extensions", () => {

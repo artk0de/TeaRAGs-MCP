@@ -37,10 +37,14 @@
  * what keeps a checker query off the resolving path.
  */
 
-import type { CallContext, CallRef } from "../../../../contracts/types/codegraph.js";
-import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
-import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "./ts-path-mapper.js";
-import type { TSProgramCache } from "./ts-program-cache.js";
+import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import {
+  mapImportToFile,
+  type ProjectFileProbe,
+  type TsCompilerOptions,
+  type TSProgramCache,
+} from "../program/index.js";
+import { findCallExpression } from "./ts-type-checker-fallback.js";
 
 /**
  * The project file the caller's own imports bind `call`'s bare callee name to,

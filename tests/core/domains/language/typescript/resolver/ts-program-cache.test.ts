@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 
 // `typescript`'s CJS default export is non-configurable, so `vi.spyOn(ts,
 // "createProgram")` fails with "Cannot redefine property". Replacing the
@@ -21,7 +21,7 @@ vi.mock("typescript", async (importOriginal) => {
 // The resolver obtains the compiler through `loadTypeScriptCompiler` (a
 // `createRequire`, which `vi.mock` does not intercept — bd tea-rags-mcp-bbo1h.2),
 // so the loader is pointed at the mocked module above.
-vi.mock("../../../../../../src/core/domains/language/typescript/resolver/ts-compiler-loader.js", async () => {
+vi.mock("../../../../../../src/core/domains/language/typescript/resolver/program/ts-compiler-loader.js", async () => {
   const mocked = await import("typescript");
   return { loadTypeScriptCompiler: () => mocked.default };
 });

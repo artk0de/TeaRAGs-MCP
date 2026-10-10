@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT,
   TSProgramCache,
-} from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+} from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import { resolveProgramBatchBudgets } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 
 const tsOptions = { baseUrl: ".", paths: {} };

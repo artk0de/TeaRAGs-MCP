@@ -15,8 +15,8 @@ import { describe, expect, it } from "vitest";
 import {
   TSProgramBatchPlanner,
   type TSProgramBatchPlan,
-} from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-batch-planner.js";
-import type { TSProgramImportGraph } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-import-graph.js";
+} from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-batch-planner.js";
+import type { TSProgramImportGraph } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-import-graph.js";
 
 interface NodeSpec {
   readonly text: number;

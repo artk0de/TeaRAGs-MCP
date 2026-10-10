@@ -17,8 +17,8 @@
 
 import { performance } from "node:perf_hooks";
 
+import { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import { loadTsConfig } from "../../src/core/domains/language/typescript/resolver/ts-config-loader.js";
-import { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { collectProjectFiles, FIXTURE_ROOT, parseShapeArgs } from "./ts-fixture-corpus.js";
 import { DEFAULT_SHAPE, generateFixture, type FixtureShape } from "./ts-fixture-gen.js";
 
@@ -96,7 +96,7 @@ function profile(shape: FixtureShape, entryLimit: number | null): void {
   for (const relPath of entries) {
     const closureBefore = closureMs;
     const createBefore = createProgramMsOf();
-    const handle = cache.acquire(relPath as never);
+    const handle = cache.acquire(relPath);
     if (!handle) continue;
     const entryClosureMs = closureMs - closureBefore;
     const entryCreateMs = createProgramMsOf() - createBefore;

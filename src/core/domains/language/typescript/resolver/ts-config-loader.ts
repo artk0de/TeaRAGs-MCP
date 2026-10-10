@@ -58,8 +58,7 @@ import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import type ts from "typescript";
 
 import { isDebug } from "../../../../infra/runtime.js";
-import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
-import type { TsCompilerOptions } from "./ts-path-mapper.js";
+import { loadTypeScriptCompiler, type TsCompilerOptions } from "./program/index.js";
 
 /** No `baseUrl`, no aliases — every non-relative specifier is then external. */
 const NO_PATH_MAPPING: TsCompilerOptions = { baseUrl: ".", paths: {} };
