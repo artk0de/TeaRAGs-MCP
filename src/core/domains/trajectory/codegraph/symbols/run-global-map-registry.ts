@@ -105,6 +105,9 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   // Python callable-value flow (P2, bd m99j1.1.19): the file that decorates a
   // view is rarely the file that declares the decorator.
   callableArgSources: { policy: "hydrate", sliceField: "callableArgSources" },
+  // The RTA instantiation set (bd 39xca.15): the instantiation that keeps a cone
+  // member alive sits in another file than the call site. Appended last.
+  instantiatedTypes: { policy: "hydrate", sliceField: "instantiatedTypes" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",
@@ -133,22 +136,19 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
     policy: "batchOnly",
     reason: "derived at seal from the hydrated self-dispatch methods (argTemplate rides their persisted record)",
   },
-  instantiatedTypes: {
-    policy: "batchOnly",
-    reason: "RTA set; measured zero recovered edges (bd 8qyax, bd 4yvms; re-measured 39xca.15)",
-  },
   ivarTypes: { policy: "batchOnly", reason: "no type source emits ivar facts yet (bd wr7ku), so unmeasurable" },
   classFieldCallResults: {
     policy: "batchOnly",
-    reason: "measured zero recovered edges with --ablate cfcr on huginn / octokit.rb / sinatra (bd 39xca.15)",
+    reason:
+      "measured zero recovered edges with --ablate cfcr on huginn / octokit.rb / sinatra, then mastodon and taxdome (bd 39xca.15)",
   },
   dispatchTables: {
     policy: "batchOnly",
-    reason: "measured zero recovered edges (bd 8qyax, bd 4yvms; re-measured 39xca.15)",
+    reason: "measured zero recovered edges (bd 8qyax, bd 4yvms; re-measured 39xca.15 incl. mastodon, taxdome)",
   },
   callbackParams: {
     policy: "batchOnly",
-    reason: "measured zero recovered edges (bd 8qyax, bd 4yvms; re-measured 39xca.15)",
+    reason: "measured zero recovered edges (bd 8qyax, bd 4yvms; re-measured 39xca.15 incl. mastodon, taxdome)",
   },
   paramTypes: { policy: "batchOnly", reason: "derived at seal from the hydrated param family" },
   derivedClassFieldTypes: { policy: "batchOnly", reason: "derived at seal from the hydrated param family" },

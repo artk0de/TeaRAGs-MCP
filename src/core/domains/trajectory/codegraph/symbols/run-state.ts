@@ -599,6 +599,13 @@ export class CodegraphRunState {
    */
   private returnTypesByFamily = new LanguageFamilyRecord<string>();
 
+  /**
+   * Which file each {@link returnTypesByFamily} entry came from, per family
+   * partition — the tie-break of {@link mergeReturnTypes}. Keyed by the partition
+   * OBJECT, so a reset seam that replaces the store forgets its declarers with it.
+   */
+  private readonly returnTypeDeclarers = new WeakMap<Record<string, string>, Map<string, RelPath>>();
+
   /** The all-family view of {@link returnTypesByFamily} — never a resolver input. */
   get returnTypes(): Record<string, string> {
     return this.returnTypesByFamily.view();
@@ -962,9 +969,10 @@ export class CodegraphRunState {
    * the entry goes. Every entry reads its map through `this` at call time,
    * because the reset seams REASSIGN the maps.
    *
-   * Every entry is batch-wins — a coordinate this run already walked is a FRESH
-   * fact and outranks the persisted one, which still describes the file's
-   * previous content.
+   * Every keyed entry is batch-wins — a coordinate this run already walked is a
+   * FRESH fact and outranks the persisted one, which still describes the file's
+   * previous content — except `returnTypes`, whose bare-name key two LIVE files
+   * can share, so it is settled by declaring file instead (bd 39xca.15).
    */
   private readonly pass1Hydrators: {
     readonly [M in HydratedRunGlobalMapField]: (slice: Pass1AggregateSlice) => void;
@@ -1016,8 +1024,11 @@ export class CodegraphRunState {
         "keep",
       );
     },
+    // NOT batch-wins: keyed by a bare function name, so a hydrated slice is a
+    // different, live declaration of the name rather than a stale copy of a
+    // walked one (bd tea-rags-mcp-39xca.15) — see `mergeReturnTypes`.
     returnTypes: (slice) => {
-      this.mergeIntoFamily(this.returnTypesByFamily, slice.language, slice.functionReturnTypes, "returnTypes", "keep");
+      this.mergeReturnTypes(slice.language, slice.functionReturnTypes, slice.relPath);
     },
     // The Python pair (bd tea-rags-mcp-4yvms). No `markContributed`: neither is a
     // {@link RunGlobalMapName} — `buildResolverInputs` hands both to pass-2
@@ -1053,6 +1064,12 @@ export class CodegraphRunState {
       for (const [key, sources] of Object.entries(slice.callableArgSources ?? {})) {
         if (!(key in this.callableArgSources)) this.callableArgSources[key] = sources;
       }
+    },
+    // The RTA instantiation set (bd 39xca.15): a union, exactly as `absorb`
+    // builds it. Nothing to displace — a walked file's own row is skipped, so a
+    // hydrated instantiation is another file's live one.
+    instantiatedTypes: (slice) => {
+      for (const type of slice.instantiatedTypes ?? []) this.instantiatedTypes.add(type);
     },
     // Ruby `self.table_name` overrides (bd tea-rags-mcp-39xca.9). The schema-column
     // pre-pass reads this map at the barrier, and `seal` runs this hydration before
@@ -1163,6 +1180,44 @@ export class CodegraphRunState {
       if (onExisting === "keep" && Object.hasOwn(partition, k)) continue;
       partition[k] = v;
       this.markContributed(name);
+    }
+  }
+
+  /**
+   * Fold one file's `functionReturnTypes` into `language`'s family partition,
+   * the same way whether the file was walked (`absorb`) or hydrated (`seal`).
+   * A name two files declare goes to the greater relPath — what a full run's
+   * last-write-wins over its relPath-ordered walk lands on.
+   *
+   * Why not batch-wins like the class-name maps (bd tea-rags-mcp-39xca.15): the
+   * key is a bare function NAME, so a hydrated slice declaring it is another
+   * file's live declaration — the walked file's own row is already skipped —
+   * not a stale copy of the walked fact. Batch-wins made the answer depend on
+   * which files the run walked: on mastodon `not_excluded_by_account` (a scope on
+   * both `Account` and `Status`) typed differently incrementally than in full,
+   * 26 lost / 1 phantom / 15 retargeted edges offline. Ordering by declarer
+   * makes the merge commutative, so walked set and absorb order cannot matter.
+   */
+  private mergeReturnTypes(
+    language: string,
+    source: Readonly<Record<string, string>> | undefined,
+    relPath: RelPath,
+  ): void {
+    if (source === undefined) return;
+    const entries = Object.entries(source);
+    if (entries.length === 0) return;
+    const partition = this.returnTypesByFamily.forLanguage(language);
+    let declarers = this.returnTypeDeclarers.get(partition);
+    if (declarers === undefined) {
+      declarers = new Map();
+      this.returnTypeDeclarers.set(partition, declarers);
+    }
+    for (const [name, type] of entries) {
+      const declarer = declarers.get(name);
+      if (declarer !== undefined && declarer > relPath) continue;
+      partition[name] = type;
+      declarers.set(name, relPath);
+      this.markContributed("returnTypes");
     }
   }
 
@@ -1974,16 +2029,11 @@ export class CodegraphRunState {
       }
     }
     // Function return types run-global, keyed by function name within the
-    // file's language family (bd tea-rags-mcp-6g9c, qea83). Last write wins; the
+    // file's language family (bd tea-rags-mcp-6g9c, qea83). A same-family name
+    // collision is settled by declaring file, not by absorb order; the
     // resolver's symbol-table existence gate suppresses a wrong type that
-    // survives a same-family name collision.
-    this.mergeIntoFamily(
-      this.returnTypesByFamily,
-      language,
-      extraction.functionReturnTypes,
-      "returnTypes",
-      "overwrite",
-    );
+    // survives it.
+    this.mergeReturnTypes(language, extraction.functionReturnTypes, extraction.relPath);
     // The Ruby type-source PRECISE maps, run-global and keyed by class, so the
     // precise `@ivar.method()` / structured-return paths see types regardless of
     // the declaring file. Last-write-wins, mirroring functionReturnTypes.
