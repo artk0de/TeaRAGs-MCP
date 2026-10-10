@@ -2022,6 +2022,74 @@ describe("judgeTypeDraft — a directory's role holds its files' primaries only"
 });
 
 /**
+ * A declared contract outranks the directory's majority suffix (bd
+ * tea-rags-mcp-0qaht.49). A draft whose head noun is its declared supertype's
+ * head noun names that contract's kind — `RubyExactPassAnswerProbe implements
+ * ExactChainAnswerProbe` in `ruby/resolver/strategies/` is a probe, and was
+ * MISFIT → `RubyExactPassAnswerProbeStrategy` off the sibling files' suffix
+ * when the directory family's own supertype left membership undecided.
+ */
+describe("judgeTypeDraft — a head shared with a declared supertype outranks the directory role", () => {
+  const row = (shortName: string, relPath: string, ancestors: string[] = []): TypeNameRow => ({
+    symbolId: shortName,
+    relPath,
+    shortName,
+    symbolKind: "class",
+    ancestors,
+  });
+  // No shared supertype: the family is not cohesive, so membership by supertype stays undecided.
+  const STRATEGIES = [
+    row("RubyBareCallStrategy", "src/strategies/bare-call.ts"),
+    row("RubyConstantStrategy", "src/strategies/constant.ts"),
+    row("RubySuperStrategy", "src/strategies/super.ts"),
+  ];
+  const judge = (rows: readonly TypeNameRow[], draft: { name: string; path: string; extends?: string }) =>
+    judgeTypeDraft({ ...draft, casing: "pascal", evidence: typeNameEvidence(rows, "type"), conceptNames: [] });
+
+  it("a draft extending a supertype with its own head → no directory MISFIT", () => {
+    const verdict = judge(STRATEGIES, {
+      name: "RubyStrictPassAnswerProbe",
+      path: "src/strategies/strict-pass.ts",
+      extends: "ExactChainAnswerProbe",
+    });
+    expect(verdict.verdict).not.toBe("MISFIT");
+  });
+
+  it("an existing declaration whose own supertype shares its head → no directory MISFIT", () => {
+    const rows = [
+      ...STRATEGIES,
+      row("RubyExactPassAnswerProbe", "src/strategies/exact-pass.ts", ["ExactChainAnswerProbe"]),
+    ];
+    expect(judge(rows, { name: "RubyExactPassAnswerProbe", path: "src/strategies/exact-pass.ts" }).verdict).not.toBe(
+      "MISFIT",
+    );
+  });
+
+  it("a namespaced supertype is read by its last segment", () => {
+    const verdict = judge(STRATEGIES, {
+      name: "RubyStrictPassAnswerProbe",
+      path: "src/strategies/strict-pass.ts",
+      extends: "Kernel::ExactChainAnswerProbe",
+    });
+    expect(verdict.verdict).not.toBe("MISFIT");
+  });
+
+  it("a supertype with another head leaves the directory MISFIT standing", () => {
+    expect(
+      judge(STRATEGIES, {
+        name: "RubyStrictPassAnswerProbe",
+        path: "src/strategies/strict-pass.ts",
+        extends: "ResolutionPass",
+      }),
+    ).toMatchObject({
+      verdict: "MISFIT",
+      suggestion: "RubyStrictPassAnswerProbeStrategy",
+      role: { word: "strategy", evidence: "directory" },
+    });
+  });
+});
+
+/**
  * Lexicon friction F3: a value draft whose type or call has too few owners to
  * hold a convention (no name carried by ≥ 2 of them) is no bare NEW_TERM an
  * agent re-justifies by hand — and no free choice either. It points at the
