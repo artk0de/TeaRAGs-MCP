@@ -15,11 +15,31 @@
 import { execFileSync } from "node:child_process";
 
 import { buildGitChildProcessEnv, resolveGitExecutable } from "../../../../infra/git-executable.js";
+import { readRepoGitState } from "../../../../infra/repo-git-state.js";
 import { execFileAsync, TREE_LISTING_STALL_MS } from "./exec.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
 
-/** Resolve HEAD SHA via CLI `git rev-parse HEAD`. */
+/** Environment variables that move where git finds the repository — present, only git knows HEAD. */
+const GIT_REPOSITORY_REDIRECTING_ENV = ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"] as const;
+
+/** A full object name, SHA-1 or SHA-256 — what `git rev-parse HEAD` prints. */
+const OBJECT_NAME = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/**
+ * Resolve HEAD's SHA. Read from the repository's own files when they answer it
+ * (bd tea-rags-mcp-0qaht.51): `HEAD`, the loose ref or `packed-refs` line it
+ * names, a linked worktree's per-worktree gitdir — the same commit
+ * `git rev-parse HEAD` prints, without the child an endpoint-security agent
+ * makes cost hundreds of milliseconds per read. Git is still asked when the
+ * environment redirects it (`GIT_DIR`, …), `repoRoot` holds no `.git` of its
+ * own (a subdirectory), or the files name no object (an unborn branch, a ref
+ * format the reader does not know) — so every failure stays git's.
+ */
 export async function getHead(repoRoot: string): Promise<string> {
+  if (!GIT_REPOSITORY_REDIRECTING_ENV.some((name) => process.env[name])) {
+    const commit = readRepoGitState(repoRoot)?.commit;
+    if (commit !== undefined && OBJECT_NAME.test(commit)) return commit;
+  }
   const { stdout } = await execFileAsync(resolveGitExecutable(), ["rev-parse", "HEAD"], { cwd: repoRoot });
   return stdout.trim();
 }

@@ -32,6 +32,9 @@ import {
 } from "./history.js";
 import { listTreePaths, listWorktreeDeletions, listWorktreeModifications } from "./working-tree.js";
 
+/** A full object name, SHA-1 or SHA-256 — never moves, unlike a ref name. */
+const OBJECT_NAME = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
 export class GitCliAdapter extends VcsGitAdapter {
   async getHead(): Promise<string> {
     return getHead(this.repoRoot);
@@ -41,9 +44,32 @@ export class GitCliAdapter extends VcsGitAdapter {
     return readHeadCommitTime(this.repoRoot, timeoutMs);
   }
 
+  /**
+   * One `git merge-base --is-ancestor` per commit pair for the adapter's life
+   * (bd tea-rags-mcp-0qaht.51): a warm run's file-churn and commit discoveries
+   * both top up from the prior snapshot's head and ask the same pair. Ancestry
+   * between two existing commits never changes, so a "yes" is kept, concurrent
+   * asks share the in-flight child, and a "no" — which also stands for a failed
+   * child — is dropped so the next ask retries. Ref names can move: only full
+   * object names are kept.
+   */
   async isAncestor(ancestor: string, descendant: string): Promise<boolean> {
-    return isAncestor(this.repoRoot, ancestor, descendant);
+    if (!OBJECT_NAME.test(ancestor) || !OBJECT_NAME.test(descendant)) {
+      return isAncestor(this.repoRoot, ancestor, descendant);
+    }
+    const key = `${ancestor}..${descendant}`;
+    let answer = this.ancestryAnswers.get(key);
+    if (answer === undefined) {
+      answer = isAncestor(this.repoRoot, ancestor, descendant);
+      this.ancestryAnswers.set(key, answer);
+      void answer.then((isDescendant) => {
+        if (!isDescendant) this.ancestryAnswers.delete(key);
+      });
+    }
+    return answer;
   }
+
+  private readonly ancestryAnswers = new Map<string, Promise<boolean>>();
 
   async readNumstatLog(sinceDate?: Date, timeoutMs?: number): Promise<Map<string, FileChurnData>> {
     return buildViaCli(this.repoRoot, sinceDate, timeoutMs);
