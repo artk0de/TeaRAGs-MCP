@@ -35,10 +35,7 @@ import type {
   WorktreeSeedRejectionReason,
   WorktreeSeedSourceRef,
 } from "../../../contracts/types/worktree.js";
-import {
-  parseMarkerPayload,
-  type WorktreeSeedPending,
-} from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
+import { parseMarkerPayload, type WorktreeSeedPending } from "../../../domains/ingest/infra/index.js";
 import { worktreeSeedPendingMarkerPatch } from "../../../domains/ingest/pipeline/indexing-marker.js";
 import { ShardedSnapshotManager } from "../../../domains/ingest/sync/snapshot/sharded-snapshot.js";
 import {

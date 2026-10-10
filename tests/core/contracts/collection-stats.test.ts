@@ -1,9 +1,21 @@
 import { describe, expect, it } from "vitest";
 
 import type { PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
-import { computeCollectionStats } from "../../../src/core/domains/ingest/infra/collection-stats.js";
+import { computeCollectionStats as computeCollectionStatsInjected } from "../../../src/core/domains/ingest/infra/collection-stats.js";
+import { CODE_LANGUAGES } from "../../../src/core/domains/ingest/pipeline/chunker/config.js";
 import { gitStatsAccumulators } from "../../../src/core/domains/trajectory/git/stats/index.js";
 import { staticStatsAccumulators } from "../../../src/core/domains/trajectory/static/stats/index.js";
+
+type ComputeCollectionStatsArgs = Parameters<typeof computeCollectionStatsInjected>;
+
+/** The production callers inject the chunker's code-language set; the suite does the same. */
+const computeCollectionStats = (
+  points: ComputeCollectionStatsArgs[0],
+  signals: ComputeCollectionStatsArgs[1],
+  accumulators: ComputeCollectionStatsArgs[2],
+  gitTimePeriods?: ComputeCollectionStatsArgs[4],
+): ReturnType<typeof computeCollectionStatsInjected> =>
+  computeCollectionStatsInjected(points, signals, accumulators, CODE_LANGUAGES, gitTimePeriods);
 
 const ALL_ACCS = [...staticStatsAccumulators, ...gitStatsAccumulators];
 
