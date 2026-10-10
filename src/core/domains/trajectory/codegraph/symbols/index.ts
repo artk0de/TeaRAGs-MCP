@@ -66,6 +66,8 @@ export {
 export { InMemoryGlobalSymbolTable } from "./symbol-table.js";
 export { CODEGRAPH_SYMBOLS_FILE_SIGNALS, CODEGRAPH_SYMBOLS_CHUNK_SIGNALS } from "./payload-signals.js";
 export { codegraphFilters } from "./filters.js";
+export { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "./rerank/derived-signals/index.js";
+export { CODEGRAPH_SYMBOLS_PRESETS } from "./rerank/presets/index.js";
 export * from "./path-tracing/index.js";
 export * from "./boundary-diagnostics/index.js";
 export * from "./edge-overlay/index.js";

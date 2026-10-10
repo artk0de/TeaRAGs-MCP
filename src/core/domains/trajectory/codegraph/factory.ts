@@ -37,10 +37,12 @@ import type {
 } from "../../../contracts/types/language.js";
 import type { DatabaseMigrationApplier } from "../../../contracts/types/migration.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
-import { CodegraphEnrichmentProvider } from "./symbols/provider.js";
-import { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "./symbols/rerank/derived-signals/index.js";
-import { CODEGRAPH_SYMBOLS_PRESETS } from "./symbols/rerank/presets/index.js";
-import { InMemoryGlobalSymbolTable } from "./symbols/symbol-table.js";
+import {
+  CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
+  CODEGRAPH_SYMBOLS_PRESETS,
+  CodegraphEnrichmentProvider,
+  InMemoryGlobalSymbolTable,
+} from "./symbols/index.js";
 import { createTemporalCochangeHooks, type TemporalCochangeConfig } from "./temporal/index.js";
 
 /**
