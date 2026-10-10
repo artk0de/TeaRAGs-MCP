@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildGitChildProcessEnv, resolveGitExecutable } from "../../../../infra/git-executable.js";
+import { readRepoGitDir } from "../../../../infra/repo-git-state.js";
 import { BULK_LOG_STALL_FLOOR_MS, TREE_LISTING_STALL_MS } from "./exec.js";
 import { splitNulTerminated } from "./parsers.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
@@ -214,12 +215,7 @@ async function execWorktreeDiffOnScratchIndex(
 ): Promise<string> {
   const { stallTimeoutMs, prepareScratchIndex } = options;
   const git = resolveGitExecutable();
-  const indexPath = (
-    await execWithStallGuard(git, ["rev-parse", "--path-format=absolute", "--git-path", "index"], {
-      cwd: repoRoot,
-      stallTimeoutMs,
-    })
-  ).trim();
+  const indexPath = await resolveWorktreeIndexPath(repoRoot, stallTimeoutMs);
   const scratch = await mkdtemp(join(tmpdir(), "tea-rags-scratch-index-"));
   const scratchIndex = join(scratch, "index");
   try {
@@ -230,6 +226,31 @@ async function execWorktreeDiffOnScratchIndex(
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
+}
+
+/** Environment variables that move where git looks for the index — present, only git knows the path. */
+const GIT_INDEX_REDIRECTING_ENV = ["GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"] as const;
+
+/**
+ * The index file of the checkout at `repoRoot` (bd tea-rags-mcp-0qaht.63):
+ * `<gitdir>/index`, read from the checkout's own `.git` — a linked worktree's
+ * names its per-worktree gitdir, which holds its own index — exactly what
+ * `git rev-parse --git-path index` answers there, without the child an
+ * endpoint-security agent makes cost hundreds of milliseconds. Git is still
+ * asked when the environment redirects it (a hook's `GIT_INDEX_FILE`, a
+ * `GIT_DIR`) or `repoRoot` holds no `.git` of its own (a subdirectory).
+ */
+async function resolveWorktreeIndexPath(repoRoot: string, stallTimeoutMs: number): Promise<string> {
+  if (!GIT_INDEX_REDIRECTING_ENV.some((name) => process.env[name])) {
+    const gitdir = readRepoGitDir(repoRoot);
+    if (gitdir !== null) return join(gitdir, "index");
+  }
+  return (
+    await execWithStallGuard(resolveGitExecutable(), ["rev-parse", "--path-format=absolute", "--git-path", "index"], {
+      cwd: repoRoot,
+      stallTimeoutMs,
+    })
+  ).trim();
 }
 
 /**
@@ -317,24 +338,34 @@ export async function readAddedLineRanges(
  * `+++` header. Every asked path gets an entry — `[]` when nothing was added.
  * Paths are literal (`--literal-pathspecs`): `[id].ts` names a file, not a
  * character class.
+ *
+ * `untrackedListing` is the tree's untracked files as the caller already read
+ * them (e.g. {@link readWorkingTreeChanges}' `untracked`): given, it is trusted
+ * as is and the untracked listing is not spawned again (bd
+ * tea-rags-mcp-0qaht.63) — a git spawn costs hundreds of milliseconds when an
+ * endpoint-security agent serializes them.
  */
 export async function readAddedLineRangesOfFiles(
   repoRoot: string,
   base: string,
   relPaths: readonly string[],
   timeoutMs = TREE_LISTING_STALL_MS,
+  untrackedListing?: readonly string[],
 ): Promise<Map<string, AddedLineRange[]>> {
   const ranges = new Map<string, AddedLineRange[]>(relPaths.map((relPath) => [relPath, []]));
   if (relPaths.length === 0) return ranges;
-  const untracked = new Set(
-    splitNulTerminated(
-      await execWithStallGuard(
-        resolveGitExecutable(),
-        ["--literal-pathspecs", "ls-files", "--others", "--exclude-standard", "-z", "--", ...relPaths],
-        { cwd: repoRoot, stallTimeoutMs: timeoutMs },
-      ),
-    ),
-  );
+  const untracked =
+    untrackedListing === undefined
+      ? new Set(
+          splitNulTerminated(
+            await execWithStallGuard(
+              resolveGitExecutable(),
+              ["--literal-pathspecs", "ls-files", "--others", "--exclude-standard", "-z", "--", ...relPaths],
+              { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+            ),
+          ),
+        )
+      : new Set(intersect(untrackedListing, relPaths));
   for (const relPath of untracked) {
     const lineCount = countLines(readFileSync(join(repoRoot, relPath), "utf8"));
     ranges.set(relPath, lineCount > 0 ? [{ start: 1, end: lineCount }] : []);
@@ -458,4 +489,10 @@ function countLines(text: string): number {
   if (text.length === 0) return 0;
   const newlines = text.split("\n").length - 1;
   return text.endsWith("\n") ? newlines : newlines + 1;
+}
+
+/** The `listing` entries `relPaths` asks about — a caller's whole-tree listing narrowed to one read. */
+function intersect(listing: readonly string[], relPaths: readonly string[]): string[] {
+  const asked = new Set(relPaths);
+  return listing.filter((relPath) => asked.has(relPath));
 }

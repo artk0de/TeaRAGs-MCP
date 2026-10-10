@@ -193,7 +193,10 @@ describe("ReviewChangesOps", () => {
           git(built, "add", "-A");
           git(built, "commit", "-q", "-m", "init");
         },
-        { prefix: "review-changes-ops-" },
+        // The review reads the copy through porcelain git only, which re-hashes
+        // what a stale stat cache flags — the refresh would be one more spawn
+        // per test (bd tea-rags-mcp-0qaht.63).
+        { prefix: "review-changes-ops-", refreshIndex: false },
       ).root,
     );
     repo = join(dir, "repo");

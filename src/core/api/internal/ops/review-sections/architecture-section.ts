@@ -49,7 +49,12 @@ import {
   oneWalkedViolationImporters,
   type SilentCouplingReport,
 } from "../../../../domains/trajectory/codegraph/temporal/index.js";
-import { findGitToplevel, gitPathFromRoot, gitPathPrefix } from "../../../../infra/repo-git-state.js";
+import {
+  findGitToplevel,
+  gitPathFromRoot,
+  gitPathPrefix,
+  readEnclosingRepoGitState,
+} from "../../../../infra/repo-git-state.js";
 import type { ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js";
 import {
   ArchitectureFactsCatalog,
@@ -318,7 +323,10 @@ export async function readDiffBaseEdges(
 ): Promise<DiffDetectorBaseEdgeReader | undefined> {
   const toplevel = findGitToplevel(scope.workTree);
   if (toplevel === undefined || scope.files.length === 0) return undefined;
-  if (!(await isAncestor(toplevel, scope.mergeBase, "HEAD"))) return undefined;
+  // A merge-base at HEAD is its own ancestor — answered from the repository's
+  // files, not a git child (bd tea-rags-mcp-0qaht.63).
+  const atHead = readEnclosingRepoGitState(toplevel)?.commit === scope.mergeBase;
+  if (!atHead && !(await isAncestor(toplevel, scope.mergeBase, "HEAD"))) return undefined;
   const prefix = gitPathPrefix(toplevel, scope.workTree);
   const targetsBySource = new Map<string, ReadonlySet<string>>();
   const blobs = createCatFileBatch(toplevel);

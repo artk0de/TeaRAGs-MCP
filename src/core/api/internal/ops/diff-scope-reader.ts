@@ -114,7 +114,12 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
   // change is not this project's.
   const toplevel = findGitToplevel(workTree) ?? workTree;
   const prefix = gitPathPrefix(toplevel, workTree);
-  const mergeBase = await resolveReviewMergeBase(toplevel, base);
+  // HEAD's commit from the repository's files, not a git child (bd
+  // tea-rags-mcp-0qaht.63): every spawn costs hundreds of milliseconds when an
+  // endpoint-security agent serializes them. Unknown ("" unborn, null not a
+  // repository) → every read below goes to git as before.
+  const headCommit = readEnclosingRepoGitState(toplevel)?.commit || undefined;
+  const mergeBase = await resolveReviewMergeBase(toplevel, base, headCommit);
   const changes = await gitRead(base, async () => readWorkingTreeChanges(toplevel, mergeBase));
   const changed = rebaseGitPathsOntoRoot(changes.changed, prefix);
   const deleted = rebaseGitPathsOntoRoot(changes.deleted, prefix);
@@ -133,6 +138,9 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
       toplevel,
       mergeBase,
       all.map((relPath) => gitPathFromRoot(relPath, prefix)),
+      undefined,
+      // The change's own untracked listing — the same whole-tree read, not a second spawn.
+      changes.untracked,
     ),
   );
   const addedLinesOf = (relPath: string): number =>
@@ -152,7 +160,9 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
   );
 
   const nonProduction = new Set(files.filter((relPath) => nonProductionFilter.ignores(relPath)));
-  const diffCommits = await gitRead(base, async () => listCommitsSince(toplevel, mergeBase));
+  // `HEAD..HEAD` is empty: a merge-base at HEAD has no commits of its own to list.
+  const diffCommits =
+    mergeBase === headCommit ? [] : await gitRead(base, async () => listCommitsSince(toplevel, mergeBase));
   return {
     workTree,
     base,
@@ -236,9 +246,12 @@ async function gitRead<T>(base: string, read: () => Promise<T>): Promise<T> {
  * changed", not "how the working tree differs from master's tip" — against a
  * tip that moved on, every file only the base touched reads as the branch's
  * (live on taxdome: 1527 files for a 61-file branch). A commit HEAD descends
- * from is its own merge-base, so an explicit sha is compared as given.
+ * from is its own merge-base, so an explicit sha is compared as given — and the
+ * default base `HEAD` is HEAD's own commit, answered from `headCommit` without
+ * a git child when the repository's files named it (bd tea-rags-mcp-0qaht.63).
  */
-async function resolveReviewMergeBase(repoRoot: string, base: string): Promise<string> {
+async function resolveReviewMergeBase(repoRoot: string, base: string, headCommit: string | undefined): Promise<string> {
+  if (base === DIFF_DEFAULT_BASE && headCommit !== undefined) return headCommit;
   const mergeBase = await gitRead(base, async () => readMergeBase(repoRoot, base));
   if (mergeBase === null) {
     throw new InvalidParameterError(
