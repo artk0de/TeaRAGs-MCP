@@ -67,6 +67,14 @@ import { paramFamilyFactsOf, paramFamilyFieldChannelOf, type ParamFamilyFieldCha
 import { selectHydratablePass1Aggregates } from "./pass1-aggregates.js";
 import { RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 import {
+  declaresOpenClasses,
+  ReopenedClassHeritage,
+  settleReopenedClassAncestors,
+  settleReopenedClassPrepends,
+  settleReopenedClassSuperclass,
+  type ReopenedClassAncestors,
+} from "./reopened-class-heritage.js";
+import {
   HYDRATED_RUN_GLOBAL_MAPS,
   type HydratedRunGlobalMapField,
   type Pass1AggregateSlice,
@@ -607,6 +615,21 @@ export class CodegraphRunState {
    */
   private readonly returnTypeDeclarers = new WeakMap<Record<string, string>, Map<string, RelPath>>();
 
+  /**
+   * Per-file contributions to an OPEN class's three heritage maps — ancestors,
+   * prepends, superclass — settled by {@link mergeClassHeritage} so a class
+   * reopened across files gets the union of its reopenings whatever the absorb
+   * order or walked set (bd tea-rags-mcp-89k7k.35.30). Keyed by partition object,
+   * like {@link returnTypeDeclarers}.
+   */
+  private readonly reopenedAncestors = new ReopenedClassHeritage<ReopenedClassAncestors, readonly string[]>(
+    settleReopenedClassAncestors,
+  );
+  private readonly reopenedPrepends = new ReopenedClassHeritage<readonly string[], readonly string[]>(
+    settleReopenedClassPrepends,
+  );
+  private readonly reopenedSuperclasses = new ReopenedClassHeritage<string, string>(settleReopenedClassSuperclass);
+
   /** The all-family view of {@link returnTypesByFamily} — never a resolver input. */
   get returnTypes(): Record<string, string> {
     return this.returnTypesByFamily.view();
@@ -991,10 +1014,21 @@ export class CodegraphRunState {
     // The three class-name maps hydrate into the SLICE's language family (bd
     // tea-rags-mcp-nbf8q), so batch-wins is judged within a family: a walked
     // Ruby `Error` outranks a persisted Ruby one and never a TypeScript one.
+    // An OPEN-class language is the exception: a hydrated slice is another
+    // reopening of the class, folded exactly as `absorb` folds a walked one
+    // (bd tea-rags-mcp-89k7k.35.30) — see `mergeClassHeritage`.
     ancestors: (slice) => {
+      if (declaresOpenClasses(slice.language)) {
+        this.mergeClassHeritage(slice, "ancestors");
+        return;
+      }
       this.mergeIntoFamily(this.ancestorsByFamily, slice.language, slice.classAncestors, "ancestors", "keep");
     },
     prependedAncestors: (slice) => {
+      if (declaresOpenClasses(slice.language)) {
+        this.mergeClassHeritage(slice, "prependedAncestors");
+        return;
+      }
       this.mergeIntoFamily(
         this.prependedAncestorsByFamily,
         slice.language,
@@ -1004,6 +1038,10 @@ export class CodegraphRunState {
       );
     },
     classExtends: (slice) => {
+      if (declaresOpenClasses(slice.language)) {
+        this.mergeClassHeritage(slice, "classExtends");
+        return;
+      }
       this.mergeIntoFamily(this.classExtendsByFamily, slice.language, slice.classExtends, "classExtends", "keep");
     },
     compactClasses: (slice) => {
@@ -1194,6 +1232,70 @@ export class CodegraphRunState {
     for (const [k, v] of entries) {
       if (onExisting === "keep" && Object.hasOwn(partition, k)) continue;
       partition[k] = v;
+      this.markContributed(name);
+    }
+  }
+
+  /**
+   * Fold one file's declaration of `map` for an OPEN-class language into its
+   * family partition, the same way whether the file was walked (`absorb`) or
+   * hydrated (`seal`): each class's value is settled from every file's
+   * contribution in relPath order (`reopened-class-heritage.ts`), so a class
+   * reopened across files keeps its first superclass and the union of its
+   * mixins whatever the absorb order or walked set (bd tea-rags-mcp-89k7k.35.30).
+   *
+   * Why not last-write-wins / batch-wins like the closed-class languages: a Ruby
+   * reopening is the SAME class, so neither file's entry is a stale or rival
+   * copy of the other's. On graphql-ruby the relPath-sorted walk ended on a
+   * `directive/*.rb` reopening that only restates `< Member`, and
+   * `GraphQL::Schema::Directive` lost its `extend HasArguments` — 16 edges that
+   * a shuffled walk gained or lost by absorb order alone.
+   */
+  private mergeClassHeritage(
+    file: Pick<FileExtraction, "relPath" | "language" | "classAncestors" | "classPrependedAncestors" | "classExtends">,
+    map: "ancestors" | "prependedAncestors" | "classExtends",
+  ): void {
+    const { relPath, language } = file;
+    if (map === "ancestors") {
+      this.foldReopenedClasses(this.ancestorsByFamily, language, file.classAncestors, map, (partition, cls, list) =>
+        this.reopenedAncestors.contribute(partition, cls, relPath, {
+          list,
+          superclass: identifierEntry(file.classExtends, cls),
+        }),
+      );
+    } else if (map === "prependedAncestors") {
+      this.foldReopenedClasses(
+        this.prependedAncestorsByFamily,
+        language,
+        file.classPrependedAncestors,
+        map,
+        (partition, cls, prepends) => this.reopenedPrepends.contribute(partition, cls, relPath, prepends),
+      );
+    } else {
+      this.foldReopenedClasses(this.classExtendsByFamily, language, file.classExtends, map, (partition, cls, parent) =>
+        this.reopenedSuperclasses.contribute(partition, cls, relPath, parent),
+      );
+    }
+  }
+
+  /**
+   * Write each class of `source` into `language`'s family partition as `settle`
+   * answers it. Marks `name` contributed per entry written, as
+   * {@link mergeIntoFamily} does.
+   */
+  private foldReopenedClasses<V>(
+    store: LanguageFamilyRecord<V>,
+    language: string,
+    source: Readonly<Record<string, V>> | undefined,
+    name: RunGlobalMapName,
+    settle: (partition: Record<string, V>, className: string, value: V) => V,
+  ): void {
+    if (source === undefined) return;
+    const entries = Object.entries(source);
+    if (entries.length === 0) return;
+    const partition = store.forLanguage(language);
+    for (const [className, value] of entries) {
+      partition[className] = settle(partition, className, value);
       this.markContributed(name);
     }
   }
@@ -2043,19 +2145,28 @@ export class CodegraphRunState {
       this.countOwnedExtraction(extraction);
     }
     // Class-name maps land in the file's language FAMILY (bd tea-rags-mcp-nbf8q).
+    // An OPEN-class language folds every reopening instead of letting the last
+    // absorbed file win (bd tea-rags-mcp-89k7k.35.30) — see `mergeClassHeritage`.
     const { language } = extraction;
-    this.mergeIntoFamily(this.ancestorsByFamily, language, extraction.classAncestors, "ancestors", "overwrite");
+    const openClasses = declaresOpenClasses(language);
+    if (openClasses) this.mergeClassHeritage(extraction, "ancestors");
+    else this.mergeIntoFamily(this.ancestorsByFamily, language, extraction.classAncestors, "ancestors", "overwrite");
     if (extraction.compactDeclaredClasses) {
       for (const fq of extraction.compactDeclaredClasses) this.compactClasses.add(fq);
     }
-    this.mergeIntoFamily(
-      this.prependedAncestorsByFamily,
-      language,
-      extraction.classPrependedAncestors,
-      "prependedAncestors",
-      "overwrite",
-    );
-    this.mergeIntoFamily(this.classExtendsByFamily, language, extraction.classExtends, "classExtends", "overwrite");
+    if (openClasses) {
+      this.mergeClassHeritage(extraction, "prependedAncestors");
+      this.mergeClassHeritage(extraction, "classExtends");
+    } else {
+      this.mergeIntoFamily(
+        this.prependedAncestorsByFamily,
+        language,
+        extraction.classPrependedAncestors,
+        "prependedAncestors",
+        "overwrite",
+      );
+      this.mergeIntoFamily(this.classExtendsByFamily, language, extraction.classExtends, "classExtends", "overwrite");
+    }
     // Explicit ORM table overrides (`self.table_name`), run-global so the barrier's
     // schema-column pre-pass sees every declaration (bd tea-rags-mcp-8l5fo).
     if (extraction.classSchemaTables) {
