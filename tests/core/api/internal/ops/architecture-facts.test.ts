@@ -268,7 +268,7 @@ describe("ArchitectureFactsCatalog", () => {
   });
 
   // bd tea-rags-mcp-89k7k.35.11: the diff run's foundationTerminal reads the
-  // SAME measured foundation the whole-repo layering exempts from layerSkip —
+  // SAME measured foundation the whole-repo layering reports in summary.foundation —
   // abstractness 1 at L0 of the domain partition, never a directory name.
   it("isLayeringFoundation answers the measured layering foundation, not a path name", () => {
     const graph = graphOf(

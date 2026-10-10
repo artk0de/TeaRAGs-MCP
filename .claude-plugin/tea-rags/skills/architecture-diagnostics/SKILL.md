@@ -73,8 +73,8 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
   a real cycle / leak; triage data, never suppression.
 - **`layerMap` expected in a bare report.** `response.layerMap` appears ONLY
   when the request carried `layerMap` — absent = not asked, never "no layers".
-- **`island` / `layerSkip` / `compositionCycle` read as violations.**
-  Informational findings — count separately, say informational.
+- **`island` / `compositionCycle` read as violations.** Informational findings —
+  count separately, say informational.
 - **`knot` with `composition: true` read as a defect.** Every edge joins a
   directory to one nested inside it — composition of a module with its own
   sub-parts, not a layering defect.
@@ -473,12 +473,12 @@ Longest-path levels: `level` = longest path from sinks (0 = foundation); `depth`
 = longest path from roots (0 = nothing depends on it). Component with no
 layering edge sits at level 0, depth 0.
 
-| Summary field (`summary.layering`) | Read as                                                                                                                 |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `levelCount`                       | distinct levels, 0-based; 0 = no layering edge at all                                                                   |
-| `coverage`                         | share of components outside multi-component knots — low = knot(s) dominate                                              |
-| `coherence`                        | rank correlation level vs instability — high = low layers really are the stable ones                                    |
-| `foundation`                       | `{components, exemptedLayerSkipCount}` — L0 components with measured abstractness 1 (≥5 types); absent = none qualifies |
+| Summary field (`summary.layering`) | Read as                                                                                                              |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `levelCount`                       | distinct levels, 0-based; 0 = no layering edge at all                                                                |
+| `coverage`                         | share of components outside multi-component knots — low = knot(s) dominate                                           |
+| `coherence`                        | rank correlation level vs instability — high = low layers really are the stable ones                                 |
+| `foundation`                       | `{components, terminalComponents?}` — L0 components with measured abstractness 1 (≥5 types); absent = none qualifies |
 
 Violations first, informational last, in `violations` order:
 
@@ -489,7 +489,6 @@ Violations first, informational last, in `violations` order:
 | `abstractionBypass` | consumer imports concrete component's type whose direct supertype lives in measured-abstract one beneath | `bypassedComponent`, `concreteAbstractness` / `bypassedAbstractness`, `implementedBy` (consumer file → implementer type/file → abstraction type/file); census-gated (≥5 types), same-knot pairs never judged; consumer subclassing implementer = no bypass |
 | `compositionCycle`  | parent ↔ own nested directories cycling                                                                  | informational — `nestedPairs`; composition of a module with its sub-parts                                                                                                                                                                                  |
 | `island`            | nothing depends on it AND it does not reach the top of the stack                                         | informational — `height`/`depth`, `afferentCount: 0`                                                                                                                                                                                                       |
-| `layerSkip`         | dependency jumping ≥2 levels to a lower one, never between knot members                                  | informational, weakest — `skippedLevels`, `callWeight`; hints a missing middle layer. Never into a `foundation` component (relaxed layering is legal there); a skip into a concrete L0 still counts                                                        |
 
 ## Phase 3f — LAYER MAP
 

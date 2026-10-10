@@ -486,8 +486,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "report (summary stays whole-project); violations knot (ranked by " +
       "member-instability spread — spread > 0 is an SDP break inside the cycle) / backEdge (minority-weight direction, equal weights never " +
       "guessed) / abstractionBypass (consumer imports a measured-concrete component's type whose direct supertype is declared in a measured-abstract one beneath; evidence.implementedBy names consumer file, implementer, abstraction); " +
-      "informational compositionCycle / island (nothing depends on it, below the top) / layerSkip (>=2 levels straight " +
-      "down, never into summary.layering.foundation = abstractness-1 L0 components); summary.layering: coverage, levelCount, coherence (rank correlation level vs instability). layerMap " +
+      "informational compositionCycle / island (nothing depends on it, below the top); summary.layering (foundation = abstractness-1 L0 components): coverage, levelCount, coherence (rank correlation level vs instability). layerMap " +
       "option: also return the map VIEW — levels per node in scopePathPattern (file|directory granularity, directoryDepth " +
       "collapse), boundary edges with the outside component's global level, move candidates; absent unless asked. domain " +
       "option: judge one directory AS ITS OWN SYSTEM (induced sub-graph, every metric recomputed inside — unlike " +

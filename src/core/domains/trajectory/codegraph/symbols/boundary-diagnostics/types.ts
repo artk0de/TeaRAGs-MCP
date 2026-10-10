@@ -935,24 +935,12 @@ export interface LayeringIslandViolation {
   instability: number;
 }
 
-/** A dependency jumping at least two levels straight to a lower one. */
-export interface LayeringLayerSkipViolation {
-  kind: "layerSkip";
-  sourceComponent: string;
-  targetComponent: string;
-  sourceLevel: number;
-  targetLevel: number;
-  skippedLevels: number;
-  callWeight: number;
-}
-
 export type LayeringViolation =
   | LayeringKnotViolation
   | LayeringBackEdgeViolation
   | LayeringAbstractionBypassViolation
   | LayeringCompositionCycleViolation
-  | LayeringIslandViolation
-  | LayeringLayerSkipViolation;
+  | LayeringIslandViolation;
 
 export interface LayeringSummary {
   componentCount: number;
@@ -966,7 +954,6 @@ export interface LayeringSummary {
   abstractionBypassCount: number;
   compositionCycleCount: number;
   islandCount: number;
-  layerSkipCount: number;
   /** Every finding, violations and informational alike. */
   violationCount: number;
   scope?: LayeringScope;
@@ -978,13 +965,11 @@ export interface LayeringSummary {
  * The components `measureLayeringFoundationComponents` names, the
  * foundation-terminal components one step out from them
  * (`measureLayeringFoundationTerminalComponents`, bd tea-rags-mcp-r8hme.52.3;
- * present only when one qualifies), and the layer skips into either set that
- * were not reported — counted under the same source scope as the findings.
+ * present only when one qualifies).
  */
 export interface LayeringFoundationSummary {
   components: string[];
   terminalComponents?: string[];
-  exemptedLayerSkipCount: number;
 }
 
 /**
@@ -1000,7 +985,7 @@ export interface LayeringScope {
 export interface LayeringOptions {
   /**
    * Keep only findings a matching file carries: a dependency finding (back-edge,
-   * bypass, layer skip) by its carrying source files, a component finding
+   * bypass) by its carrying source files, a component finding
    * (island) by the component's files, a knot or composition cycle by any
    * member's files.
    */

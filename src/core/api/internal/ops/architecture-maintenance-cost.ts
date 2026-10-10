@@ -420,7 +420,7 @@ export interface ArchitectureViolationCarrierFields {
  *
  * - a file pair, a shared endpoint and its partners, a shotgun spread's
  *   exemplar files: the files it names;
- * - a component edge (SDP, back-edge, layer skip, abstraction bypass): both
+ * - a component edge (SDP, back-edge, abstraction bypass): both
  *   endpoints of EVERY file edge from the source component into the target;
  * - a knot: the file edges of its feedback-arc set (the cut that dissolves it);
  * - a composition cycle: the file edges between each parent and its nested

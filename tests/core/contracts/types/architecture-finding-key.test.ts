@@ -250,13 +250,6 @@ const EVERY_VARIANT: ArchitectureViolation[] = [
     evidence: { height: 1, depth: 0, afferentCount: 0, instability: 1 },
   },
   {
-    detector: "layering",
-    kind: "layerSkip",
-    sourceComponent: "src/app",
-    targetComponent: "src/lib",
-    evidence: { sourceLevel: 4, targetLevel: 1, skippedLevels: 3, callWeight: 2 },
-  },
-  {
     detector: "norms",
     kind: "misfit",
     sourceRelPath: "src/app/a.ts",
@@ -300,7 +293,6 @@ describe("architecture finding key (bd tea-rags-mcp-89k7k.35.18)", () => {
         | "layering/abstractionBypass"
         | "layering/compositionCycle"
         | "layering/island"
-        | "layering/layerSkip"
         | "norms/misfit"
       >();
     });
@@ -311,7 +303,7 @@ describe("architecture finding key (bd tea-rags-mcp-89k7k.35.18)", () => {
     });
 
     it("keys every declared variant", () => {
-      expect(EVERY_VARIANT).toHaveLength(16);
+      expect(EVERY_VARIANT).toHaveLength(15);
       for (const violation of EVERY_VARIANT) expect(architectureViolationKey(violation)).toEqual(expect.any(String));
     });
   });

@@ -53,7 +53,6 @@ export type ArchitectureFindingKeyFamily =
   | "layering.abstractionBypass"
   | "layering.compositionCycle"
   | "layering.island"
-  | "layering.layerSkip"
   | "norms.misfit"
   | "cycles"
   | "facadeContract"
@@ -75,7 +74,6 @@ export const ARCHITECTURE_FINDING_KEY_REVISION: Readonly<Record<ArchitectureFind
   "layering.abstractionBypass": 1,
   "layering.compositionCycle": 1,
   "layering.island": 1,
-  "layering.layerSkip": 1,
   "norms.misfit": 1,
   cycles: 1,
   facadeContract: 1,
@@ -138,7 +136,6 @@ export function architectureViolationKey(violation: ArchitectureViolation): stri
           return findingKey("layering.island", [violation.component]);
         case "backEdge":
         case "abstractionBypass":
-        case "layerSkip":
           return findingKey(`layering.${violation.kind}`, [violation.sourceComponent, violation.targetComponent]);
         default:
           return unkeyedArchitectureFinding(violation);

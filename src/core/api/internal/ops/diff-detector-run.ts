@@ -145,7 +145,7 @@ export interface DiffDetectorCatalog {
   /**
    * Whether the file belongs to the measured layering foundation (bd
    * tea-rags-mcp-89k7k.35.11) — the components the whole-repo layering
-   * exempts from layerSkip (`measureLayeringFoundationComponents`: abstractness
+   * reports as its foundation (`measureLayeringFoundationComponents`: abstractness
    * 1 at L0). The diff run's `foundationTerminal` reads THIS, so both
    * pipelines name the same foundation; a file outside the graph is false.
    */
@@ -653,8 +653,8 @@ export class DiffDetectorRun {
    * FOUNDATION-TERMINAL ANNOTATION (bd tea-rags-mcp-r8hme.45): a finding
    * whose contributing edges ALL terminate inside the measured layering
    * foundation (`DiffDetectorCatalog#isLayeringFoundation`, bd
-   * tea-rags-mcp-89k7k.35.11 — the same set the whole-repo layering exempts
-   * from layerSkip, never a directory name) carries `foundationTerminal: true`
+   * tea-rags-mcp-89k7k.35.11 — the same set the whole-repo layering reports as its
+   * foundation, never a directory name) carries `foundationTerminal: true`
    * — the legal foundation direction (everything may depend on the lowest
    * layer). Contributing edges are the DIFF-ADDED ones (post-subtraction):
    * pre-existing imports do not dilute the annotation. The D still moved, so
