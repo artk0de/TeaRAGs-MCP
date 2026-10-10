@@ -146,12 +146,17 @@ export function createWorkingTreeGitSignalSource(deps: WorkingTreeGitSignalSourc
   const headReads = new OnDemandHeadGitReadMemo(HISTORY_CACHE_SIZE);
   let computing: Promise<unknown> = Promise.resolve();
 
-  /** Which commits on either side of the stamp touched which paths — one `git log` per (toplevel, stamp, HEAD). */
+  /**
+   * Which commits on either side of the stamp touched which paths — one `git log` per (toplevel, stamp, HEAD).
+   * A stamp HEAD still is has none on either side: `stamp...HEAD` is empty by definition, and `head` was read
+   * from the repository's files, so it exists — no git child (bd tea-rags-mcp-0qaht.51).
+   */
   const historySince = async (
     toplevel: string,
     sinceCommit: string,
     head: string,
   ): Promise<PathCommitsSince | undefined> => {
+    if (sinceCommit === head) return { headSide: new Map(), stampSide: new Map() };
     const key = `${toplevel}\0${sinceCommit}\0${head}`;
     let history = histories.get(key);
     if (!history) {
