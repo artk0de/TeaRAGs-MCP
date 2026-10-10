@@ -20,8 +20,10 @@ import type { ProductionDependencyGraph } from "../boundary-diagnostics/index.js
  *   edges only, never resolved member calls or class ancestry, so convention
  *   privacy judges an overlaid file on its INDEXED member edges.
  * - `fileNodes`: the walked-file rows (language, symbol count, the
- *   type-abstractness census, outer scope names) — main sequence's
- *   abstractness and the namespace partition read the indexed census; a file
+ *   type-abstractness census, outer scope names, type heritage) — main
+ *   sequence's abstractness and the namespace partition read the indexed
+ *   census, and abstractionBypass's implementation evidence the indexed
+ *   heritage (only the consumer's imported names move with the tree); a file
  *   the index never walked gets no node.
  * - `callWeight`: an overlay edge carries no resolved calls. A pair the index
  *   already held keeps its indexed weight, routed weight and import text; a

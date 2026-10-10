@@ -195,3 +195,78 @@ describe("applyEdgeOverlay", () => {
     expect(overlaid.cochange).toBe(base.cochange);
   });
 });
+
+describe("applyEdgeOverlay — abstractionBypass evidence parity (bd tea-rags-mcp-r8hme.52.6)", () => {
+  /**
+   * `app` imports `Panel` from the concrete `ulanzi`; `Panel` implements
+   * `device`'s `Device`, and `app` never touches `device` — one evidenced bypass.
+   */
+  function bypassGraph(): FileDependencyGraph {
+    const census = (abstractTypeCount: number, concreteTypeCount: number) => ({
+      abstractTypeCount,
+      concreteTypeCount,
+    });
+    return {
+      files: [
+        { ...file("device/d.ts"), typeAbstractness: census(6, 0) },
+        {
+          ...file("ulanzi/u1.ts"),
+          typeAbstractness: census(0, 6),
+          typeHeritage: [{ typeName: "Panel", supertypes: [{ name: "Device", declaringRelPaths: ["device/d.ts"] }] }],
+        },
+        { ...file("app/s.ts"), typeAbstractness: census(0, 6) },
+      ],
+      edges: [
+        { sourceRelPath: "ulanzi/u1.ts", targetRelPath: "device/d.ts", callWeight: 1 },
+        { sourceRelPath: "app/s.ts", targetRelPath: "ulanzi/u1.ts", callWeight: 1, importedExportNames: ["Panel"] },
+      ],
+    };
+  }
+
+  const bypass = expect.objectContaining({
+    detector: "layering",
+    kind: "abstractionBypass",
+    sourceComponent: "app",
+    targetComponent: "ulanzi",
+  });
+
+  it("reports the bypass with its implementedBy witness, and keeps the file heritage under an overlay", async () => {
+    const ops = new ArchitectureReportOps();
+    const base = await readArchitectureGraphFacts(graphDb(bypassGraph()), {});
+    const overlaid = applyEdgeOverlay(base, new ReviewEdgeOverlay([]));
+
+    expect(overlaid.production.graph.files).toBe(base.production.graph.files);
+    const before = await ops.judge(base, {});
+    expect(before.violations).toContainEqual(
+      expect.objectContaining({
+        kind: "abstractionBypass",
+        evidence: expect.objectContaining({
+          bypassedComponent: "device",
+          implementedBy: {
+            consumerRelPath: "app/s.ts",
+            implementerTypeName: "Panel",
+            implementerRelPath: "ulanzi/u1.ts",
+            abstractionTypeName: "Device",
+            abstractionRelPath: "device/d.ts",
+          },
+        }),
+      }),
+    );
+    expect((await ops.judge(overlaid, {})).violations).toEqual(before.violations);
+  });
+
+  it("drops the bypass when the overlaid consumer stops importing the implementer", async () => {
+    const ops = new ArchitectureReportOps();
+    const base = await readArchitectureGraphFacts(graphDb(bypassGraph()), {});
+    const overlay = new ReviewEdgeOverlay([
+      {
+        relPath: "app/s.ts",
+        language: "typescript",
+        edges: [{ sourceRelPath: "app/s.ts", targetRelPath: "ulanzi/u1.ts", importedExportNames: ["Helper"] }],
+      },
+    ]);
+
+    expect((await ops.judge(base, {})).violations).toContainEqual(bypass);
+    expect((await ops.judge(applyEdgeOverlay(base, overlay), {})).violations).not.toContainEqual(bypass);
+  });
+});

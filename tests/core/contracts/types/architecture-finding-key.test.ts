@@ -228,7 +228,19 @@ const EVERY_VARIANT: ArchitectureViolation[] = [
     kind: "abstractionBypass",
     sourceComponent: "src/app",
     targetComponent: "src/lib",
-    evidence: { bypassedComponent: "src/ports", concreteAbstractness: 0, bypassedAbstractness: 1, callWeight: 2 },
+    evidence: {
+      bypassedComponent: "src/ports",
+      concreteAbstractness: 0,
+      bypassedAbstractness: 1,
+      callWeight: 2,
+      implementedBy: {
+        consumerRelPath: "src/app/a.ts",
+        implementerTypeName: "Impl",
+        implementerRelPath: "src/lib/impl.ts",
+        abstractionTypeName: "Port",
+        abstractionRelPath: "src/ports/port.ts",
+      },
+    },
   },
   compositionCycle(["src/lib", "src/lib/nested"]),
   {

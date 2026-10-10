@@ -1353,6 +1353,7 @@ function toLayeringArchitectureViolation(v: DomainLayeringViolation): Architectu
           concreteAbstractness: round3(v.concreteAbstractness),
           bypassedAbstractness: round3(v.bypassedAbstractness),
           callWeight: v.callWeight,
+          implementedBy: { ...v.implementedBy },
         },
       };
     case "compositionCycle":

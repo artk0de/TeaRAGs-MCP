@@ -902,6 +902,18 @@ export interface LayeringAbstractionBypassViolation {
   concreteAbstractness: number;
   bypassedAbstractness: number;
   callWeight: number;
+  /**
+   * The implementation evidence (bd tea-rags-mcp-r8hme.52.6), the
+   * code-point-smallest one: the consumer file naming a type of the concrete
+   * component whose direct supertype is declared in the bypassed one.
+   */
+  implementedBy: {
+    consumerRelPath: string;
+    implementerTypeName: string;
+    implementerRelPath: string;
+    abstractionTypeName: string;
+    abstractionRelPath: string;
+  };
 }
 
 /** A parent and its own nested directories cycling — composition, not a layering defect. */
