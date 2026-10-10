@@ -8,13 +8,17 @@
  * absence-vs-not-built, and the envelope.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createGitWorkingTreeFixture } from "../../../__helpers__/git-working-tree-fixture.js";
+import { copyGitRepoTemplate } from "../../../__helpers__/git-repo-template.js";
+import {
+  createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
+  type GitWorkingTreeSeedStep,
+} from "../../../__helpers__/git-working-tree-fixture.js";
 import {
   ReviewChangesOps,
   type ReviewChangesOpsDeps,
@@ -30,6 +34,8 @@ import type { CollectionRegistry } from "../../../../../src/core/domains/mainten
 
 const CHANGED = "src/git/file-reader.ts";
 const PARTNER = "src/git/partner.ts";
+/** The fixture repository with the linked worktree `wt-feature` added at its tip. */
+const LINKED_WORKTREE: GitWorkingTreeSeedStep[] = [{ addWorktree: "feature" }];
 
 const ORIGINAL = "export function load(): void {\n  use(read());\n}\n";
 const CHANGED_TEXT =
@@ -166,15 +172,31 @@ describe("ReviewChangesOps", () => {
   let dir: string;
   let repo: string;
 
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture(LINKED_WORKTREE);
+  });
+
   beforeEach(() => {
-    dir = realpathSync(mkdtempSync(join(tmpdir(), "review-changes-ops-")));
+    // The committed repository is built once per process and copied: its git
+    // spawns cost seconds each on a loaded machine (bd tea-rags-mcp-x1r2a).
+    dir = realpathSync(
+      copyGitRepoTemplate(
+        "review-changes-ops:init",
+        (root) => {
+          const built = join(root, "repo");
+          mkdirSync(join(built, "src/git"), { recursive: true });
+          git(built, "init", "-q", "-b", "main");
+          // A test's own commit would otherwise fork a detached `git maintenance run --auto`.
+          git(built, "config", "maintenance.auto", "false");
+          writeFileSync(join(built, CHANGED), ORIGINAL);
+          writeFileSync(join(built, PARTNER), "export const partner = 1;\n");
+          git(built, "add", "-A");
+          git(built, "commit", "-q", "-m", "init");
+        },
+        { prefix: "review-changes-ops-" },
+      ).root,
+    );
     repo = join(dir, "repo");
-    mkdirSync(join(repo, "src/git"), { recursive: true });
-    git(repo, "init", "-q", "-b", "main");
-    writeFileSync(join(repo, CHANGED), ORIGINAL);
-    writeFileSync(join(repo, PARTNER), "export const partner = 1;\n");
-    git(repo, "add", "-A");
-    git(repo, "commit", "-q", "-m", "init");
     writeFileSync(join(repo, CHANGED), CHANGED_TEXT);
   });
 
@@ -439,9 +461,9 @@ describe("ReviewChangesOps", () => {
   // linked worktree reviews that tree against its repository's registered index — never the
   // unregistered collection the worktree path would hash to.
   it("a path alone at a linked worktree of a registered project reviews that worktree", async () => {
-    const fixture = createGitWorkingTreeFixture();
+    const fixture = createGitWorkingTreeFixture(LINKED_WORKTREE);
     try {
-      const tree = fixture.addWorktree("feature");
+      const tree = fixture.seeded.worktrees.feature;
       writeFileSync(join(tree, "src/index.ts"), "export const base = 2;\n");
       const main = { name: "main", collectionName: "code_main", path: fixture.mainRoot };
       const resolveActiveCollection = vi.fn(async (name: string) => name as never);

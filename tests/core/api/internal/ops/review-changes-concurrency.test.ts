@@ -4,12 +4,12 @@
  * graph handle closes only once every section has settled.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { copyGitRepoTemplate } from "../../../__helpers__/git-repo-template.js";
 import { ReviewChangesOps } from "../../../../../src/core/api/internal/ops/review-changes-ops.js";
 import {
   collectSymbols,
@@ -19,11 +19,6 @@ import {
 import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
 const CHANGED = "src/git/file-reader.ts";
-// Sections start only after the review has read a real git diff of the fixture
-// repo; under a loaded machine that spawn alone outlasts waitFor's 1 s default.
-// The bound only polls longer — sequential sections still never start cohesion
-// while naming is held, so the assertion fails either way.
-const SECTION_START_WAIT = { timeout: 15_000, interval: 20 };
 
 function git(root: string, ...args: string[]): void {
   execFileSync("git", args, {
@@ -69,13 +64,23 @@ describe("ReviewChangesOps — sections run together", () => {
   let repo: string;
 
   beforeEach(() => {
-    dir = realpathSync(mkdtempSync(join(tmpdir(), "review-changes-concurrency-")));
+    // The committed repository is built once per process and copied: its three
+    // git spawns cost seconds each on a loaded machine (bd tea-rags-mcp-x1r2a).
+    dir = realpathSync(
+      copyGitRepoTemplate(
+        "review-changes-concurrency:init",
+        (root) => {
+          const built = join(root, "repo");
+          mkdirSync(join(built, "src/git"), { recursive: true });
+          git(built, "init", "-q", "-b", "main");
+          writeFileSync(join(built, CHANGED), "export function load(): void {}\n");
+          git(built, "add", "-A");
+          git(built, "commit", "-q", "-m", "init");
+        },
+        { prefix: "review-changes-concurrency-" },
+      ).root,
+    );
     repo = join(dir, "repo");
-    mkdirSync(join(repo, "src/git"), { recursive: true });
-    git(repo, "init", "-q", "-b", "main");
-    writeFileSync(join(repo, CHANGED), "export function load(): void {}\n");
-    git(repo, "add", "-A");
-    git(repo, "commit", "-q", "-m", "init");
     writeFileSync(join(repo, CHANGED), "export function load(): void {}\nexport function scan(): void {}\n");
   });
 
@@ -84,9 +89,17 @@ describe("ReviewChangesOps — sections run together", () => {
   });
 
   function build(getNamingLexicon: () => Promise<unknown>, readTemporalSymbolCommits: () => Promise<unknown>) {
+    // Cohesion's graph read is the event "a later section started": awaited,
+    // not polled under a time bound the review's own git spawns could outlast.
+    // Sequential sections never reach it while naming is held — the test then
+    // fails on its budget instead.
+    const cohesionStarted = held<void>();
     const graph = {
       close: vi.fn(async () => undefined),
-      readTemporalSymbolCommits: vi.fn(readTemporalSymbolCommits),
+      readTemporalSymbolCommits: vi.fn(async () => {
+        cohesionStarted.resolve();
+        return readTemporalSymbolCommits();
+      }),
     };
     const ops = new ReviewChangesOps({
       pool: { acquireReader: vi.fn(async () => ({ graphDb: graph, symbolTable: {} })), hasDatabase: vi.fn(() => true) },
@@ -99,20 +112,19 @@ describe("ReviewChangesOps — sections run together", () => {
       },
       windowMonths: 6,
     } as never);
-    return { ops, graph };
+    return { ops, graph, cohesionStarted: cohesionStarted.promise };
   }
 
   it("a later section starts while an earlier one is still running; the envelope keeps the requested order", async () => {
     const naming = held<unknown>();
-    const { ops, graph } = build(
+    const { ops, graph, cohesionStarted } = build(
       async () => naming.promise,
       async () => ({ relPath: CHANGED, symbols: [] }),
     );
     const pending = ops.reviewChanges({ collection: "code_test", path: repo, sections: ["naming", "cohesion"] });
 
-    await vi.waitFor(() => {
-      expect(graph.readTemporalSymbolCommits).toHaveBeenCalled();
-    }, SECTION_START_WAIT);
+    await cohesionStarted;
+    expect(graph.readTemporalSymbolCommits).toHaveBeenCalled();
     naming.resolve(NAMING_ANSWER);
     const result = await pending;
 
@@ -123,7 +135,7 @@ describe("ReviewChangesOps — sections run together", () => {
 
   it("a failing section fails the review only after every section settled — the handle outlives them", async () => {
     const cohesion = held<unknown>();
-    const { ops, graph } = build(
+    const { ops, graph, cohesionStarted } = build(
       async () => {
         throw new Error("naming broke");
       },
@@ -135,9 +147,8 @@ describe("ReviewChangesOps — sections run together", () => {
       (error: unknown) => error,
     );
 
-    await vi.waitFor(() => {
-      expect(graph.readTemporalSymbolCommits).toHaveBeenCalled();
-    }, SECTION_START_WAIT);
+    await cohesionStarted;
+    expect(graph.readTemporalSymbolCommits).toHaveBeenCalled();
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(graph.close).not.toHaveBeenCalled();
 

@@ -19,7 +19,11 @@ import { join } from "node:path";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { createGitWorkingTreeFixture } from "../../../__helpers__/git-working-tree-fixture.js";
+import {
+  createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
+  type GitWorkingTreeSeedStep,
+} from "../../../__helpers__/git-working-tree-fixture.js";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import { createComposition } from "../../../../../src/core/api/internal/composition.js";
 import { createWorkingTreeDeltaSignalSource } from "../../../../../src/core/api/internal/infra/working-tree-delta-signals.js";
@@ -232,7 +236,12 @@ describe("createWorkingTreeDeltaSignalSource", () => {
         releaseBase = resolve;
       });
       const held = basePointsHolding([basePoint("b1", FOO, "Foo#kept", 4)]);
+      let markBaseAsked: () => void = () => undefined;
+      const baseAsked = new Promise<void>((resolve) => {
+        markBaseAsked = resolve;
+      });
       const readTouchedBasePoints = vi.fn<WorkingTreeTouchedBasePointsReader>(async (query) => {
+        markBaseAsked();
         await baseHeld;
         return held(query);
       });
@@ -240,9 +249,10 @@ describe("createWorkingTreeDeltaSignalSource", () => {
       const source = sourceReading(readTouchedBasePoints, unopenable);
 
       const enriched = source.enrich({ tree: TREE, rows: [deltaRow("d1", FOO, "Foo#kept")], readTreeGraph });
-      await vi.waitFor(() => {
-        expect(readTouchedBasePoints).toHaveBeenCalled();
-      });
+      // The base read's own call is the event; a polled wait gave up after its
+      // 1 s default on a loaded machine before the source got that far.
+      await baseAsked;
+      expect(readTouchedBasePoints).toHaveBeenCalled();
 
       expect(readTreeGraph).toHaveBeenCalledTimes(1);
       releaseBase();
@@ -369,7 +379,26 @@ export function run(): number {
  * `git.chunk` come from the git trajectory on demand, asked only for what no
  * base point answers. A file with no history at all keeps no git block.
  */
+const FOO_V1 = "export function kept(): number {\n  return 1;\n}\n";
+/** `src/foo.ts` committed with one function — the real-git source's repository. */
+const FOO_COMMITTED: GitWorkingTreeSeedStep[] = [{ commit: { [FOO]: FOO_V1 }, message: "add foo" }];
+/** foo committed and fixed; worktree `old` branches there and commits elsewhere; main then moves foo. */
+const FOO_DIVERGED: GitWorkingTreeSeedStep[] = [
+  { commit: { [FOO]: FOO_V1 }, message: "add foo" },
+  { commit: { [FOO]: FOO_V1.replace("1;", "2;") }, message: "fix: foo" },
+  { addWorktree: "old" },
+  { commit: { "src/other.ts": "export const o = 1;\n" }, message: "branch work", in: "old" },
+  { commit: { [FOO]: FOO_V1.replace("1;", "3;") }, message: "main moves foo" },
+];
+
 describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () => {
+  // The real-git tests copy their repository from a template; building it here
+  // keeps the recipe's git spawns out of each test's own budget.
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture(FOO_COMMITTED);
+    prebuildGitWorkingTreeFixture(FOO_DIVERGED);
+  });
+
   const OLD = "src/old-name.ts";
   const NEW = "src/new-name.ts";
   const SMALL = "src/cyc/c.ts";
@@ -515,9 +544,7 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
   // gets the chunk walk's zero block — what ingest writes for a chunk no commit
   // touched — not "no block". Real git: the port's answer is the invariant.
   it("gives a brand-new symbol in a tracked file the chunk walk's zero block", async () => {
-    const fixture = createGitWorkingTreeFixture([
-      { commit: { [FOO]: "export function kept(): number {\n  return 1;\n}\n" }, message: "add foo" },
-    ]);
+    const fixture = createGitWorkingTreeFixture(FOO_COMMITTED);
     try {
       appendFileSync(join(fixture.mainRoot, FOO), "\nexport function brandNew(): number {\n  return 2;\n}\n");
       const source = sourceWith(
@@ -861,14 +888,7 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
     // touched is in the delta, and its base history holds commits the tree
     // does not have — inheriting it would date the tree's code by main's.
     it("recomputes a file only commits the tree lacks touched, from the tree's own history", async () => {
-      const v1 = "export function kept(): number {\n  return 1;\n}\n";
-      const fixture = createGitWorkingTreeFixture([
-        { commit: { [FOO]: v1 }, message: "add foo" },
-        { commit: { [FOO]: v1.replace("1;", "2;") }, message: "fix: foo" },
-        { addWorktree: "old" },
-        { commit: { "src/other.ts": "export const o = 1;\n" }, message: "branch work", in: "old" },
-        { commit: { [FOO]: v1.replace("1;", "3;") }, message: "main moves foo" },
-      ]);
+      const fixture = createGitWorkingTreeFixture(FOO_DIVERGED);
       try {
         const tree = fixture.seeded.worktrees.old;
         const [, , , stamp] = fixture.seeded.commits;

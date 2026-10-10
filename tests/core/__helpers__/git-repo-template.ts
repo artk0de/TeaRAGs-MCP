@@ -102,6 +102,26 @@ export interface GitRepoTemplateOptions {
 }
 
 /**
+ * Builds the template for `key` now, if this process has not yet — without
+ * copying it. A `beforeAll` calls it so a test that copies the template later
+ * pays one index refresh inside its own budget, not the recipe's git spawns.
+ */
+export function buildGitRepoTemplate(key: string, build: (templateRoot: string) => unknown): void {
+  templateOf(key, build);
+}
+
+function templateOf(key: string, build: (templateRoot: string) => unknown): BuiltTemplate {
+  let template = templates.get(key);
+  if (template === undefined) {
+    const templateRoot = join(home(), String(templates.size));
+    mkdirSync(templateRoot);
+    template = { root: templateRoot, meta: build(templateRoot) };
+    templates.set(key, template);
+  }
+  return template;
+}
+
+/**
  * A fresh copy of the repository `build` lays out under an empty root. `build`
  * runs once per `key` per process, at a symlink-free root; its return value is
  * handed back as `meta` on every copy, so it must not hold paths under the
@@ -112,13 +132,7 @@ export function copyGitRepoTemplate<Meta>(
   build: (templateRoot: string) => Meta,
   options: GitRepoTemplateOptions = {},
 ): GitRepoTemplateCopy<Meta> {
-  let template = templates.get(key);
-  if (template === undefined) {
-    const templateRoot = join(home(), String(templates.size));
-    mkdirSync(templateRoot);
-    template = { root: templateRoot, meta: build(templateRoot) };
-    templates.set(key, template);
-  }
+  const template = templateOf(key, build);
 
   const root = mkdtempSync(join(tmpdir(), options.prefix ?? "git-repo-copy-"));
   cpSync(template.root, root, { recursive: true, preserveTimestamps: true });
