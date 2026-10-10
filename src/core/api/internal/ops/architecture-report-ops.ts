@@ -334,57 +334,24 @@ export class ArchitectureReportOps {
     readImportSpecifiers?: ModuleImportSpecifierLookup,
     readFileCommitCounts?: GitFileCommitCountLookup,
   ): Promise<ArchitectureDetectorRuns> {
-    const { whole, graph } = scope;
-    const { nonProduction } = scope.production;
+    const { graph } = scope;
     // Facade classification + components (bd tea-rags-mcp-r8hme.7): the
     // report-owned derivation in `architecture-facts.ts`.
     const { leaks, components } = deriveArchitectureComponentFacts(graph, request.pathPattern);
     const sdp = detectComponentStableDependencyViolations(components, { sourcePathPattern: request.pathPattern });
     // One commit-count read, shared by every detector that asks for it.
     const commitCounts = readFileCommitCounts ? readOnce(readFileCommitCounts) : undefined;
-    // Same components, A from the walker's type census (bd tea-rags-mcp-r8hme.8),
-    // the zone of pain gated on git volatility (bd tea-rags-mcp-r8hme.14).
-    const mainSequenceOptions = { sourcePathPattern: request.pathPattern };
-    const ungatedMainSequence = detectMainSequenceDeviations(components, graph.files, mainSequenceOptions);
-    const mainSequence =
-      commitCounts && ungatedMainSequence.summary.painCount > 0
-        ? detectMainSequenceDeviations(components, graph.files, {
-            ...mainSequenceOptions,
-            fileVolatility: await commitCounts(),
-          })
-        : ungatedMainSequence;
-    // Same components, both Ca and Ce past adaptive cuts (bd tea-rags-mcp-r8hme.47);
-    // churn rides along as evidence, read only when a hub exists.
-    const ungatedHubs = detectHubLikeDependencies(components, { sourcePathPattern: request.pathPattern });
-    const hubLikeDependency =
-      commitCounts && ungatedHubs.summary.violationCount > 0
-        ? detectHubLikeDependencies(components, {
-            sourcePathPattern: request.pathPattern,
-            fileVolatility: await commitCounts(),
-          })
-        : ungatedHubs;
+    const mainSequence = await detectVolatilityGatedMainSequence(
+      components,
+      graph.files,
+      request.pathPattern,
+      commitCounts,
+    );
+    const hubLikeDependency = await detectHubLikeDependenciesWithChurn(components, request.pathPattern, commitCounts);
     // An aggregate over the same graph and partition (bd tea-rags-mcp-r8hme.49),
     // not a violation family: nothing in it is ranked or capped by finding.
     const propagationCost = computePropagationCost(graph, { componentOf: components.componentOf });
-    const { memberEdges, classHierarchy } = facts;
-    // Domain mode keeps convention-privacy judgement inside the border too:
-    // a member edge reaching outside is the domain USING the system, not a
-    // privacy leak of the system the domain reports on.
-    const domainFiles = whole ? new Set(graph.files.map((f) => f.relPath)) : null;
-    const privacy = detectConventionPrivacyLeaks(
-      memberEdges.filter(
-        (e) =>
-          !nonProduction.ignores(e.sourceRelPath) &&
-          !nonProduction.ignores(e.targetRelPath) &&
-          (!domainFiles || (domainFiles.has(e.sourceRelPath) && domainFiles.has(e.targetRelPath))),
-      ),
-      {
-        sourcePathPattern: request.pathPattern,
-        // The subclass exemption's ancestry (bd tea-rags-mcp-r8hme.41): the
-        // persisted hierarchy, read only when a Python candidate needs it.
-        ...(classHierarchy !== undefined ? { classHierarchy } : {}),
-      },
-    );
+    const privacy = detectScopedConventionPrivacyLeaks(facts, scope, request.pathPattern);
     // One co-change read feeds both temporal detectors: silent coupling's
     // pairs and the split/merge verdicts' bundle membership.
     const { cochange } = facts;
@@ -392,21 +359,7 @@ export class ArchitectureReportOps {
     // Shotgun surgery (bd tea-rags-mcp-r8hme.50): the same bundles, over the
     // partition split/merge judges and its component graph.
     const shotgun = runShotgunSurgery(cochange, components, request.pathPattern);
-    // Inferred layering over the same DOMAIN partition (bd tea-rags-mcp-r8hme.30,
-    // one partition for every component detector since bd tea-rags-mcp-r8hme.52.7).
-    // Built once: the knot view reads the same model the detector judges.
-    const layeringModel = buildLayeringModel(components);
-    const layering = detectLayeringViolations(components, graph.files, {
-      sourcePathPattern: request.pathPattern,
-      model: layeringModel,
-    });
-    const knotLookup =
-      request.knotOf === undefined
-        ? undefined
-        : lookupLayeringKnot(components, layeringModel, request.knotOf, {
-            sourcePathPattern: request.pathPattern,
-          });
-    if (knotLookup?.kind === "unknownComponent") throw new UnknownArchitectureComponentError(knotLookup.component);
+    const { layeringModel, layering, knotLookup } = runArchitectureLayering(components, graph.files, request);
     // Dependency norms (bd tea-rags-mcp-rpx0v), read-time only when asked:
     // roles from each file's primary type, ledgers and verdicts off the graph
     // already in memory. The same partition decides sameDomain locality.
@@ -485,56 +438,10 @@ export class ArchitectureReportOps {
   ): GetArchitectureReportResponse {
     const { production, whole } = scope;
     const { findings, limit, offset, domainKnot } = view;
-    // Each family ranked by maintenance cost (bd tea-rags-mcp-r8hme.20)
-    // BEFORE its cap, so the cap keeps the costliest; a family's carriers are
-    // the files on the edges that make it (bd tea-rags-mcp-afyku), read off
-    // the one partition every detector judges. Every family is scored in ONE
-    // population — the shrinkage is estimated over all of the report's
-    // violations, uncapped. A new family opts in by adding its full list to
-    // `families`.
-    const carrierIndex = costModel
-      ? new ComponentEdgeCarrierIndex(runs.components.componentOf, runs.components.dependencies)
-      : undefined;
-    const carriersOf = (violation: object): RelPath[] =>
-      carrierIndex ? architectureViolationCarrierFiles(violation, carrierIndex) : [];
-    const family = (violations: readonly ArchitectureViolation[], options?: MaintenanceCostFamilyOptions) =>
-      maintenanceCostFamily(violations, carriersOf, undefined, options);
-    const families: MaintenanceCostFamily<ArchitectureViolation>[] = [
-      family(sdpViolations(findings.sdp, UNCAPPED)),
-      family(leakViolations(findings.leaks, findings.privacy, UNCAPPED)),
-      family(silentViolations(findings.silent, UNCAPPED)),
-      // Knot mode lists the knot's findings only; a spread is not a knot member.
-      // Spreads keep the detector's family-evidence order; cost only tags them.
-      ...(runs.knotLookup ? [] : [family(shotgunSurgeryViolations(runs.shotgun, UNCAPPED), { order: "detector" })]),
-      family(mainSequenceViolations(findings.mainSequence, UNCAPPED)),
-      family(hubLikeDependencyViolations(findings.hubLikeDependency, UNCAPPED)),
-      // Ranked on the layering findings: a knot's whole feedback-arc set and a
-      // composition cycle's every nested pair, which the listed form caps.
-      ...(findings.layering
-        ? [maintenanceCostFamily(findings.layering.violations, carriersOf, toLayeringArchitectureViolation)]
-        : []),
-      ...(runs.norms ? [family(normsViolations(runs.norms, UNCAPPED))] : []),
-    ];
-    const violations = rankFamiliesByMaintenanceCost(families, costModel).flatMap((ranked) => ranked.slice(0, limit));
+    const violations = rankArchitectureViolationsByMaintenanceCost(runs, findings, limit, costModel);
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
-      summary: {
-        nonProduction: {
-          excludedFileCount: production.excludedFileCount,
-          excludedEdgeCount: production.excludedEdgeCount,
-          reason: NON_PRODUCTION_REASON,
-        },
-        testSupport: { ...production.testSupport, reason: TEST_SUPPORT_REASON },
-        stableDependencies: summarise(runs.sdp),
-        leakingAbstraction: summariseLeaks(runs.leaks, runs.privacy, limit),
-        silentCoupling: summariseSilentCoupling(runs.silent, limit),
-        splitMerge: summariseSplitMerge(runs.cochange, runs.components.componentOf),
-        shotgunSurgery: summariseShotgunSurgery(runs.shotgun),
-        mainSequence: summariseMainSequence(runs.mainSequence),
-        hubLikeDependency: summariseHubLikeDependency(runs.hubLikeDependency),
-        propagationCost: summarisePropagationCost(runs.propagationCost, limit),
-        layering: summariseLayering(runs.layering),
-      },
+      summary: summariseArchitectureDetectors(production, runs, limit),
       rootCauses: [
         ...sdpRootCauses(findings.sdp, limit),
         ...leakRootCauses(findings.leaks, limit),
@@ -549,22 +456,7 @@ export class ArchitectureReportOps {
       // The knot VIEW only when asked (bd tea-rags-mcp-r8hme.38), paged here.
       // Keep costs price the page's cut edges on the WHOLE knot (bd
       // tea-rags-mcp-r8hme.40), whatever projection the page shows.
-      ...(runs.knotLookup
-        ? {
-            knot: knotView(
-              runs.knotLookup,
-              runs.components,
-              domainKnot?.instabilitySpread ?? 0,
-              (edges) => {
-                // An inKnot lookup always names a knot of the same model.
-                if (!domainKnot) throw new Error("knotOf lookup found a knot the layering model does not hold");
-                return layeringKnotKeepCosts(runs.components, runs.layeringModel, domainKnot, edges);
-              },
-              limit,
-              offset,
-            ),
-          }
-        : {}),
+      ...(runs.knotLookup ? { knot: architectureKnotView(runs.knotLookup, runs, domainKnot, limit, offset) } : {}),
       // The domain block only in domain mode (bd tea-rags-mcp-xb669.1): the
       // domain's own layering counts plus its border against the system.
       ...(whole ? { domain: domainView(whole, runs.components, runs.layering) } : {}),
@@ -728,6 +620,200 @@ async function detectSilentCouplingSeeingAssetImports(
   if (importers.length === 0) return first;
   const linked = linkImportedCochangePairs(cochange, await readImportSpecifiers(importers));
   return detectSilentCoupling(linked, walkedFiles, options);
+}
+
+/** The main-sequence family: commit counts read only when the ungated judgement puts a component in the zone of pain. */
+async function detectVolatilityGatedMainSequence(
+  components: ComponentGraph,
+  files: FileDependencyGraph["files"],
+  pathPattern: ArchitectureReportScope["pathPattern"],
+  commitCounts: GitFileCommitCountLookup | undefined,
+): Promise<MainSequenceReport> {
+  // Same components, A from the walker's type census (bd tea-rags-mcp-r8hme.8),
+  // the zone of pain gated on git volatility (bd tea-rags-mcp-r8hme.14).
+  const mainSequenceOptions = { sourcePathPattern: pathPattern };
+  const ungatedMainSequence = detectMainSequenceDeviations(components, files, mainSequenceOptions);
+  return commitCounts && ungatedMainSequence.summary.painCount > 0
+    ? detectMainSequenceDeviations(components, files, {
+        ...mainSequenceOptions,
+        fileVolatility: await commitCounts(),
+      })
+    : ungatedMainSequence;
+}
+
+/** The hub-like dependency family over the report's components, churn attached as evidence. */
+async function detectHubLikeDependenciesWithChurn(
+  components: ComponentGraph,
+  pathPattern: ArchitectureReportScope["pathPattern"],
+  commitCounts: GitFileCommitCountLookup | undefined,
+): Promise<HubLikeDependencyReport> {
+  // Same components, both Ca and Ce past adaptive cuts (bd tea-rags-mcp-r8hme.47);
+  // churn rides along as evidence, read only when a hub exists.
+  const ungatedHubs = detectHubLikeDependencies(components, { sourcePathPattern: pathPattern });
+  return commitCounts && ungatedHubs.summary.violationCount > 0
+    ? detectHubLikeDependencies(components, {
+        sourcePathPattern: pathPattern,
+        fileVolatility: await commitCounts(),
+      })
+    : ungatedHubs;
+}
+
+/**
+ * Convention-privacy leaks over the production member edges, held inside the
+ * domain border in domain mode (bd tea-rags-mcp-xb669.1).
+ */
+function detectScopedConventionPrivacyLeaks(
+  facts: ArchitectureGraphFacts,
+  scope: ScopedArchitectureGraph,
+  pathPattern: ArchitectureReportScope["pathPattern"],
+): ConventionPrivacyReport {
+  const { whole, graph } = scope;
+  const { nonProduction } = scope.production;
+  const { memberEdges, classHierarchy } = facts;
+  // Domain mode keeps convention-privacy judgement inside the border too:
+  // a member edge reaching outside is the domain USING the system, not a
+  // privacy leak of the system the domain reports on.
+  const domainFiles = whole ? new Set(graph.files.map((f) => f.relPath)) : null;
+  return detectConventionPrivacyLeaks(
+    memberEdges.filter(
+      (e) =>
+        !nonProduction.ignores(e.sourceRelPath) &&
+        !nonProduction.ignores(e.targetRelPath) &&
+        (!domainFiles || (domainFiles.has(e.sourceRelPath) && domainFiles.has(e.targetRelPath))),
+    ),
+    {
+      sourcePathPattern: pathPattern,
+      // The subclass exemption's ancestry (bd tea-rags-mcp-r8hme.41): the
+      // persisted hierarchy, read only when a Python candidate needs it.
+      ...(classHierarchy !== undefined ? { classHierarchy } : {}),
+    },
+  );
+}
+
+/** The layering family's runs: the model, its violations, and the knot lookup knot mode asked for. */
+type ArchitectureLayeringRuns = Pick<ArchitectureDetectorRuns, "layeringModel" | "layering" | "knotLookup">;
+
+/**
+ * Inferred layering over the report's DOMAIN partition (bd
+ * tea-rags-mcp-r8hme.30) and, in knot mode, the knot lookup over the same
+ * model (bd tea-rags-mcp-r8hme.38). An unknown component throws here, so the
+ * lookup returned is always resolved.
+ */
+function runArchitectureLayering(
+  components: ComponentGraph,
+  files: FileDependencyGraph["files"],
+  request: ArchitectureReportScope,
+): ArchitectureLayeringRuns {
+  // Inferred layering over the same DOMAIN partition (bd tea-rags-mcp-r8hme.30,
+  // one partition for every component detector since bd tea-rags-mcp-r8hme.52.7).
+  // Built once: the knot view reads the same model the detector judges.
+  const layeringModel = buildLayeringModel(components);
+  const layering = detectLayeringViolations(components, files, {
+    sourcePathPattern: request.pathPattern,
+    model: layeringModel,
+  });
+  const knotLookup =
+    request.knotOf === undefined
+      ? undefined
+      : lookupLayeringKnot(components, layeringModel, request.knotOf, {
+          sourcePathPattern: request.pathPattern,
+        });
+  if (knotLookup?.kind === "unknownComponent") throw new UnknownArchitectureComponentError(knotLookup.component);
+  return { layeringModel, layering, knotLookup };
+}
+
+/**
+ * Every violation family, ranked by maintenance cost and capped at `limit`
+ * per family — the report's `violations` list.
+ */
+function rankArchitectureViolationsByMaintenanceCost(
+  runs: ArchitectureDetectorRuns,
+  findings: ArchitectureDetectorReports,
+  limit: number,
+  costModel: FileMaintenanceCostModel | undefined,
+): ArchitectureViolation[] {
+  // Each family ranked by maintenance cost (bd tea-rags-mcp-r8hme.20)
+  // BEFORE its cap, so the cap keeps the costliest; a family's carriers are
+  // the files on the edges that make it (bd tea-rags-mcp-afyku), read off
+  // the one partition every detector judges. Every family is scored in ONE
+  // population — the shrinkage is estimated over all of the report's
+  // violations, uncapped. A new family opts in by adding its full list to
+  // `families`.
+  const carrierIndex = costModel
+    ? new ComponentEdgeCarrierIndex(runs.components.componentOf, runs.components.dependencies)
+    : undefined;
+  const carriersOf = (violation: object): RelPath[] =>
+    carrierIndex ? architectureViolationCarrierFiles(violation, carrierIndex) : [];
+  const family = (violations: readonly ArchitectureViolation[], options?: MaintenanceCostFamilyOptions) =>
+    maintenanceCostFamily(violations, carriersOf, undefined, options);
+  const families: MaintenanceCostFamily<ArchitectureViolation>[] = [
+    family(sdpViolations(findings.sdp, UNCAPPED)),
+    family(leakViolations(findings.leaks, findings.privacy, UNCAPPED)),
+    family(silentViolations(findings.silent, UNCAPPED)),
+    // Knot mode lists the knot's findings only; a spread is not a knot member.
+    // Spreads keep the detector's family-evidence order; cost only tags them.
+    ...(runs.knotLookup ? [] : [family(shotgunSurgeryViolations(runs.shotgun, UNCAPPED), { order: "detector" })]),
+    family(mainSequenceViolations(findings.mainSequence, UNCAPPED)),
+    family(hubLikeDependencyViolations(findings.hubLikeDependency, UNCAPPED)),
+    // Ranked on the layering findings: a knot's whole feedback-arc set and a
+    // composition cycle's every nested pair, which the listed form caps.
+    ...(findings.layering
+      ? [maintenanceCostFamily(findings.layering.violations, carriersOf, toLayeringArchitectureViolation)]
+      : []),
+    ...(runs.norms ? [family(normsViolations(runs.norms, UNCAPPED))] : []),
+  ];
+  return rankFamiliesByMaintenanceCost(families, costModel).flatMap((ranked) => ranked.slice(0, limit));
+}
+
+/** The per-detector summaries — each reads its family's unfiltered report, whatever projection the page shows. */
+function summariseArchitectureDetectors(
+  production: ProductionArchitectureGraph,
+  runs: ArchitectureDetectorRuns,
+  limit: number,
+): GetArchitectureReportResponse["summary"] {
+  return {
+    nonProduction: {
+      excludedFileCount: production.excludedFileCount,
+      excludedEdgeCount: production.excludedEdgeCount,
+      reason: NON_PRODUCTION_REASON,
+    },
+    testSupport: { ...production.testSupport, reason: TEST_SUPPORT_REASON },
+    stableDependencies: summarise(runs.sdp),
+    leakingAbstraction: summariseLeaks(runs.leaks, runs.privacy, limit),
+    silentCoupling: summariseSilentCoupling(runs.silent, limit),
+    splitMerge: summariseSplitMerge(runs.cochange, runs.components.componentOf),
+    shotgunSurgery: summariseShotgunSurgery(runs.shotgun),
+    mainSequence: summariseMainSequence(runs.mainSequence),
+    hubLikeDependency: summariseHubLikeDependency(runs.hubLikeDependency),
+    propagationCost: summarisePropagationCost(runs.propagationCost, limit),
+    layering: summariseLayering(runs.layering),
+  };
+}
+
+/**
+ * The knot VIEW knot mode asked for (bd tea-rags-mcp-r8hme.38), paged here.
+ * Keep costs price the page's cut edges on the WHOLE knot (bd
+ * tea-rags-mcp-r8hme.40), whatever projection the page shows.
+ */
+function architectureKnotView(
+  knotLookup: NonNullable<ArchitectureDetectorRuns["knotLookup"]>,
+  runs: ArchitectureDetectorRuns,
+  domainKnot: LayeringKnot | undefined,
+  limit: number,
+  offset: number,
+): ArchitectureKnotView {
+  return knotView(
+    knotLookup,
+    runs.components,
+    domainKnot?.instabilitySpread ?? 0,
+    (edges) => {
+      // An inKnot lookup always names a knot of the same model.
+      if (!domainKnot) throw new Error("knotOf lookup found a knot the layering model does not hold");
+      return layeringKnotKeepCosts(runs.components, runs.layeringModel, domainKnot, edges);
+    },
+    limit,
+    offset,
+  );
 }
 
 /**
