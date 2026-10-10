@@ -211,7 +211,7 @@
   the old client before it touches the file; database files land at a path by
   rename only.** `GraphDbClientPool#removeCollection` and
   `GraphDbClientPool#cloneDatabase` (source AND target) run under
-  `GraphDbClientPool#withPathLeases`: `GraphDbClientPool#retireForReplacement`
+  `CodegraphPathLeases#withLeases`: `GraphDbClientPool#retireForReplacement`
   drops the cached client, waits for every op
   `GraphDbClientPool#runCollectionOp` pinned to it
   (`GraphDbClientPool#pinClient` — a per-client refcount, the only hot-path
