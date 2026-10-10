@@ -64,7 +64,7 @@
     },
     "walker": {
       "version": 7,
-      "digest": "sha256:78bef31c187a7855ae918650a443d45f60e5249dff3be51b323e0c7ba12c7f7c"
+      "digest": "sha256:7db850ae84f747412352073467a9ac8649f9012fed3b5c655c8f6b7c8243ccdd"
     }
   },
   "rust": {

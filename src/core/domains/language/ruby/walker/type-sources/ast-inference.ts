@@ -280,6 +280,203 @@ function containerElementLift(
 }
 
 /**
+ * Accumulates the `kind: "local"` facts of one file's AST walk and the
+ * per-variable most-recent binding that copy-propagation and block-parameter
+ * element typing read. One instance per `extract` call; the walk is
+ * pre-order, so `latestBinding` write order is fact order.
+ */
+class RubyLocalTypeFactRecorder {
+  readonly facts: RubyTypeFact[] = [];
+  /** Per-variable most-recent binding for copy-propagation and block-parameter
+   *  element typing. Maps varName → { type, line }. Exposed because
+   *  {@link containerElementLift} takes the map. */
+  readonly latestBinding = new Map<string, { type: RubyTypeRef; line: number }>();
+
+  /**
+   * Pre-seeded with YARD @param types so block-iteration over a
+   * YARD-typed collection (`posts.each { |p| }`) resolves `posts` to its
+   * element type and binds the block param correctly — mirroring
+   * `collectLocalBindingsForChunk`'s behaviour where yardByLine is applied
+   * before the AST walk. YARD @param uses the ELEMENT type for collection
+   * params (Array<Post> → "Post"), so no unwrapping is needed here.
+   */
+  constructor(yardParamTypes: Map<number, Record<string, string>>) {
+    for (const [defLine, params] of yardParamTypes) {
+      for (const [name, type] of Object.entries(params)) {
+        this.latestBinding.set(name, {
+          type: { form: "instance", name: type },
+          line: defLine,
+        });
+      }
+    }
+  }
+
+  emit(name: string, type: RubyTypeRef, line: number): void {
+    this.facts.push({
+      kind: "local",
+      source: "ast",
+      symbolScope: [],
+      name,
+      line,
+      type,
+    });
+    this.latestBinding.set(name, { type, line });
+  }
+
+  /** The variable's most-recent type, only when bound at or before `line`. */
+  bindingVisibleAt(name: string, line: number): RubyTypeRef | undefined {
+    const prev = this.latestBinding.get(name);
+    return prev && prev.line <= line ? prev.type : undefined;
+  }
+}
+
+// Param-default inference: `def f(x = User.new)` binds `x` for the body at
+// the `def` line. Block params / untyped params are skipped (VTA scope).
+function inferRubyParamDefaultFacts(
+  node: AstNode,
+  line: number,
+  recorder: RubyLocalTypeFactRecorder,
+  catalogue: RubyDslCatalogue,
+): void {
+  const params = node.childForFieldName("parameters");
+  if (params) {
+    for (const param of params.namedChildren) {
+      if (param.type !== "optional_parameter") continue;
+      const nameNode = param.childForFieldName("name");
+      const valueNode = param.childForFieldName("value");
+      if (nameNode?.type !== "identifier" || !valueNode) continue;
+      const type = constInstanceType(valueNode, catalogue);
+      if (type) recorder.emit(nameNode.text, { form: "instance", name: type }, line);
+    }
+  }
+}
+
+// Block-parameter element typing: `coll.each { |e| ... }` binds `e` to
+// coll's resolved element type. Only the FIRST positional param (element);
+// subsequent params (index, accumulator) are skipped. VTA is sound only
+// when the receiver already has a binding in latestBinding.
+function inferRubyBlockParamElementFact(node: AstNode, line: number, recorder: RubyLocalTypeFactRecorder): void {
+  const { parent } = node;
+  const callMethod = parent?.childForFieldName("method")?.text;
+  const recvNode = parent?.childForFieldName("receiver");
+  if (
+    parent &&
+    (parent.type === "call" || parent.type === "method_call") &&
+    callMethod &&
+    RUBY_BLOCK_ITERATOR_METHODS.has(callMethod) &&
+    recvNode?.type === "identifier"
+  ) {
+    const recvBinding = recorder.latestBinding.get(recvNode.text);
+    if (recvBinding && recvBinding.line <= line) {
+      const paramsNode = node.childForFieldName("parameters"); // block_parameters
+      const firstParam = paramsNode?.namedChildren.find((p) => p.type === "identifier");
+      const bound = recvBinding.type.form === "container" ? recvBinding.type.element : recvBinding.type;
+      if (firstParam) recorder.emit(firstParam.text, bound, line);
+    }
+  }
+}
+
+// Rescue exception variable: `rescue Const => e` STATES e's type — the
+// one place in Ruby where a local's class is declared rather than
+// inferred (bd tea-rags-mcp-02saq). ONE constant binds an instance; a
+// list binds the union of the listed classes, which the union dispatch
+// and the external classifier already understand. A bare `rescue => e`
+// (implicit StandardError) or a list holding anything that is not a
+// constant binds NOTHING — the same silence discipline as everywhere
+// else here, since a dynamic exception class is unknowable statically.
+function inferRubyRescueVariableFact(node: AstNode, recorder: RubyLocalTypeFactRecorder): void {
+  const bound = node.children.find((c) => c.type === "exception_variable")?.namedChildren[0];
+  if (bound?.type !== "identifier") return;
+  const declared = node.children.find((c) => c.type === "exceptions")?.namedChildren ?? [];
+  if (declared.length === 0) return;
+  const members: RubyTypeRef[] = [];
+  for (const entry of declared) {
+    const name =
+      entry.type === "scope_resolution" ? readScopeResolution(entry) : entry.type === "constant" ? entry.text : null;
+    if (name === null || !YARD_CONST.test(name)) return; // dynamic entry → silence
+    members.push({ form: "instance", name });
+  }
+  const first = members[0];
+  if (first === undefined) return;
+  recorder.emit(bound.text, members.length === 1 ? first : { form: "union", members }, bound.startPosition.row + 1);
+}
+
+// Multiple assignment: `a, b = X.new, Y.new`. Pair positionally only when
+// the LHS identifier count matches the RHS element count (splat / uneven
+// arity is skipped — no guessing).
+function inferRubyMultipleAssignmentFacts(
+  lhs: AstNode,
+  rhs: AstNode,
+  line: number,
+  recorder: RubyLocalTypeFactRecorder,
+  catalogue: RubyDslCatalogue,
+): void {
+  const targets = lhs.namedChildren;
+  const values = rhs.namedChildren;
+  if (targets.length !== values.length) return;
+  for (let i = 0; i < targets.length; i++) {
+    const target = targets[i];
+    const value = values[i];
+    if (target?.type !== "identifier" || !value) continue;
+    const constType = constInstanceType(value, catalogue);
+    if (constType) {
+      recorder.emit(target.text, { form: "instance", name: constType }, line);
+    } else if (value.type === "identifier") {
+      const prev = recorder.bindingVisibleAt(value.text, line);
+      if (prev) recorder.emit(target.text, prev, line);
+    }
+  }
+}
+
+function inferRubySingleAssignmentFact(
+  varName: string,
+  rhs: AstNode,
+  line: number,
+  recorder: RubyLocalTypeFactRecorder,
+  catalogue: RubyDslCatalogue,
+): void {
+  // `var = CONST` — var holds the CLASS itself (not an instance). Bare constant
+  // RHS only (a call RHS is handled by constInstanceType above).
+  const rhsConst =
+    rhs.type === "scope_resolution" ? readScopeResolution(rhs) : rhs.type === "constant" ? rhs.text : null;
+  if (rhsConst && YARD_CONST.test(rhsConst)) {
+    recorder.emit(varName, { form: "class", name: rhsConst }, line);
+    return;
+  }
+
+  // Single assignment: class-constant instance call, or a receiverless
+  // `new(...)` in a singleton method (bd tea-rags-mcp-0qaht.54).
+  const instType = constInstanceType(rhs, catalogue) ?? singletonNewInstanceType(rhs);
+  if (instType) {
+    recorder.emit(varName, { form: "instance", name: instType }, line);
+    return;
+  }
+
+  // Bare relation assignment: `posts = Post.where(...)` — RHS is STILL a
+  // relation (terminal verb is relation-returning, not instance-returning).
+  // Emits a container fact so a later `posts.each { |p| }` unwraps to the
+  // element type (F2).
+  const relElement = relationElementConst(rhs, catalogue);
+  if (relElement) {
+    recorder.emit(varName, { form: "container", element: { form: "instance", name: relElement } }, line);
+    return;
+  }
+
+  // Element lift: `user = users.first` / `x = users[0]` on a container-bound local.
+  const lifted = containerElementLift(rhs, recorder.latestBinding, line);
+  if (lifted) {
+    recorder.emit(varName, lifted, line);
+    return;
+  }
+
+  // Copy-propagation: `var = other_var` copies other_var's most-recent type.
+  if (rhs.type === "identifier") {
+    const prev = recorder.bindingVisibleAt(rhs.text, line);
+    if (prev) recorder.emit(varName, prev, line);
+  }
+}
+
+/**
  * `rubyAstInferenceTypeSource` — walks the AST for a single Ruby file and
  * emits `kind: "local"` {@link RubyTypeFact} entries: one per inferred
  * local-variable binding produced by:
@@ -301,114 +498,27 @@ function containerElementLift(
 export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
   name: "ast",
   extract(input: RubyExtractInput): RubyTypeFact[] {
-    const facts: RubyTypeFact[] = [];
     // Gem-gated type-source grammar (adx5p.1b): compose the catalogue for this
     // project's Gemfile once; `instanceReturning` / `relationReturning` facets
     // gate `constInstanceType` / `relationElementConst`. undefined → FULL.
     const catalogue = catalogueFor(input.declaredDependencies);
-    // Track per-variable most-recent binding for copy-propagation and
-    // block-parameter element typing. Maps varName → { type, line }.
-    // Pre-seeded with YARD @param types so block-iteration over a
-    // YARD-typed collection (`posts.each { |p| }`) resolves `posts` to its
-    // element type and binds the block param correctly — mirroring
-    // `collectLocalBindingsForChunk`'s behaviour where yardByLine is applied
-    // before the AST walk. YARD @param uses the ELEMENT type for collection
-    // params (Array<Post> → "Post"), so no unwrapping is needed here.
-    const latestBinding = new Map<string, { type: RubyTypeRef; line: number }>();
-    for (const [defLine, params] of collectYardParamTypes(input.code)) {
-      for (const [name, type] of Object.entries(params)) {
-        latestBinding.set(name, {
-          type: { form: "instance", name: type },
-          line: defLine,
-        });
-      }
-    }
-
-    const emitFact = (name: string, type: RubyTypeRef, line: number): void => {
-      facts.push({
-        kind: "local",
-        source: "ast",
-        symbolScope: [],
-        name,
-        line,
-        type,
-      });
-      latestBinding.set(name, { type, line });
-    };
+    const recorder = new RubyLocalTypeFactRecorder(collectYardParamTypes(input.code));
 
     walk(input.tree.rootNode, (node) => {
       const line = node.startPosition.row + 1;
 
-      // Param-default inference: `def f(x = User.new)` binds `x` for the body at
-      // the `def` line. Block params / untyped params are skipped (VTA scope).
       if (node.type === "method" || node.type === "singleton_method") {
-        const params = node.childForFieldName("parameters");
-        if (params) {
-          for (const param of params.namedChildren) {
-            if (param.type !== "optional_parameter") continue;
-            const nameNode = param.childForFieldName("name");
-            const valueNode = param.childForFieldName("value");
-            if (nameNode?.type !== "identifier" || !valueNode) continue;
-            const type = constInstanceType(valueNode, catalogue);
-            if (type) emitFact(nameNode.text, { form: "instance", name: type }, line);
-          }
-        }
+        inferRubyParamDefaultFacts(node, line, recorder, catalogue);
         return;
       }
 
-      // Block-parameter element typing: `coll.each { |e| ... }` binds `e` to
-      // coll's resolved element type. Only the FIRST positional param (element);
-      // subsequent params (index, accumulator) are skipped. VTA is sound only
-      // when the receiver already has a binding in latestBinding.
       if (node.type === "block" || node.type === "do_block") {
-        const { parent } = node;
-        const callMethod = parent?.childForFieldName("method")?.text;
-        const recvNode = parent?.childForFieldName("receiver");
-        if (
-          parent &&
-          (parent.type === "call" || parent.type === "method_call") &&
-          callMethod &&
-          RUBY_BLOCK_ITERATOR_METHODS.has(callMethod) &&
-          recvNode?.type === "identifier"
-        ) {
-          const recvBinding = latestBinding.get(recvNode.text);
-          if (recvBinding && recvBinding.line <= line) {
-            const paramsNode = node.childForFieldName("parameters"); // block_parameters
-            const firstParam = paramsNode?.namedChildren.find((p) => p.type === "identifier");
-            const bound = recvBinding.type.form === "container" ? recvBinding.type.element : recvBinding.type;
-            if (firstParam) emitFact(firstParam.text, bound, line);
-          }
-        }
+        inferRubyBlockParamElementFact(node, line, recorder);
         return;
       }
 
-      // Rescue exception variable: `rescue Const => e` STATES e's type — the
-      // one place in Ruby where a local's class is declared rather than
-      // inferred (bd tea-rags-mcp-02saq). ONE constant binds an instance; a
-      // list binds the union of the listed classes, which the union dispatch
-      // and the external classifier already understand. A bare `rescue => e`
-      // (implicit StandardError) or a list holding anything that is not a
-      // constant binds NOTHING — the same silence discipline as everywhere
-      // else here, since a dynamic exception class is unknowable statically.
       if (node.type === "rescue") {
-        const bound = node.children.find((c) => c.type === "exception_variable")?.namedChildren[0];
-        if (bound?.type !== "identifier") return;
-        const declared = node.children.find((c) => c.type === "exceptions")?.namedChildren ?? [];
-        if (declared.length === 0) return;
-        const members: RubyTypeRef[] = [];
-        for (const entry of declared) {
-          const name =
-            entry.type === "scope_resolution"
-              ? readScopeResolution(entry)
-              : entry.type === "constant"
-                ? entry.text
-                : null;
-          if (name === null || !YARD_CONST.test(name)) return; // dynamic entry → silence
-          members.push({ form: "instance", name });
-        }
-        const first = members[0];
-        if (first === undefined) return;
-        emitFact(bound.text, members.length === 1 ? first : { form: "union", members }, bound.startPosition.row + 1);
+        inferRubyRescueVariableFact(node, recorder);
         return;
       }
 
@@ -417,72 +527,15 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
       const rhs = node.childForFieldName("right");
       if (!lhs || !rhs) return;
 
-      // Multiple assignment: `a, b = X.new, Y.new`. Pair positionally only when
-      // the LHS identifier count matches the RHS element count (splat / uneven
-      // arity is skipped — no guessing).
       if (lhs.type === "left_assignment_list" && rhs.type === "right_assignment_list") {
-        const targets = lhs.namedChildren;
-        const values = rhs.namedChildren;
-        if (targets.length !== values.length) return;
-        for (let i = 0; i < targets.length; i++) {
-          const target = targets[i];
-          const value = values[i];
-          if (target?.type !== "identifier" || !value) continue;
-          const constType = constInstanceType(value, catalogue);
-          if (constType) {
-            emitFact(target.text, { form: "instance", name: constType }, line);
-          } else if (value.type === "identifier") {
-            const prev = latestBinding.get(value.text);
-            if (prev && prev.line <= line) emitFact(target.text, prev.type, line);
-          }
-        }
+        inferRubyMultipleAssignmentFacts(lhs, rhs, line, recorder, catalogue);
         return;
       }
 
       if (lhs.type !== "identifier") return;
-      const varName = lhs.text;
-
-      // `var = CONST` — var holds the CLASS itself (not an instance). Bare constant
-      // RHS only (a call RHS is handled by constInstanceType above).
-      const rhsConst =
-        rhs.type === "scope_resolution" ? readScopeResolution(rhs) : rhs.type === "constant" ? rhs.text : null;
-      if (rhsConst && YARD_CONST.test(rhsConst)) {
-        emitFact(varName, { form: "class", name: rhsConst }, line);
-        return;
-      }
-
-      // Single assignment: class-constant instance call, or a receiverless
-      // `new(...)` in a singleton method (bd tea-rags-mcp-0qaht.54).
-      const instType = constInstanceType(rhs, catalogue) ?? singletonNewInstanceType(rhs);
-      if (instType) {
-        emitFact(varName, { form: "instance", name: instType }, line);
-        return;
-      }
-
-      // Bare relation assignment: `posts = Post.where(...)` — RHS is STILL a
-      // relation (terminal verb is relation-returning, not instance-returning).
-      // Emits a container fact so a later `posts.each { |p| }` unwraps to the
-      // element type (F2).
-      const relElement = relationElementConst(rhs, catalogue);
-      if (relElement) {
-        emitFact(varName, { form: "container", element: { form: "instance", name: relElement } }, line);
-        return;
-      }
-
-      // Element lift: `user = users.first` / `x = users[0]` on a container-bound local.
-      const lifted = containerElementLift(rhs, latestBinding, line);
-      if (lifted) {
-        emitFact(varName, lifted, line);
-        return;
-      }
-
-      // Copy-propagation: `var = other_var` copies other_var's most-recent type.
-      if (rhs.type === "identifier") {
-        const prev = latestBinding.get(rhs.text);
-        if (prev && prev.line <= line) emitFact(varName, prev.type, line);
-      }
+      inferRubySingleAssignmentFact(lhs.text, rhs, line, recorder, catalogue);
     });
 
-    return facts;
+    return recorder.facts;
   },
 };
