@@ -108,7 +108,11 @@ export const sharedVersions: LanguageSupportVersions = {
   // fanIn / instability / transitiveImpact count compile-time dependencies.
   // No table shape moves — the edges land in existing `cg_symbols_edges_file`
   // rows — so `codegraphSchema` stays.
-  walker: 4,
+  // walker 5, bd tea-rags-mcp-0qaht.64: the cone declines a receiver whose
+  // type the locator's `isProjectType` says the project does not declare when
+  // a project class extends it (not `implements`), so a library receiver
+  // (`Map`, `Rack::Response`) no longer fans to the one project override.
+  walker: 5,
   codegraphSchema: 2,
 };
 

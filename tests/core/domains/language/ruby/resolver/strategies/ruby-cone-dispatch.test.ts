@@ -202,4 +202,32 @@ describe("RubyConeDispatchResolver", () => {
       },
     ]);
   });
+
+  // bd tea-rags-mcp-0qaht.64: `Rack::Response` is a gem class; sinatra's
+  // `class Response < ::Rack::Response` overrides `finish`. A receiver typed
+  // `Rack::Response` is a Rack instance, so the cone declines instead of
+  // fanning every `res.finish` to `Sinatra::Response#finish`.
+  it("declines a receiver whose gem class a project class extends", () => {
+    const symbolTable = tableWith([
+      "lib/sinatra/base.rb",
+      [
+        { ...sym("Sinatra::Response", "Response", "lib/sinatra/base.rb", ["Sinatra"]), symbolKind: "class" },
+        {
+          ...sym("Sinatra::Response#finish", "finish", "lib/sinatra/base.rb", ["Sinatra", "Response"]),
+          symbolKind: "method",
+        },
+      ],
+    ]);
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "res.finish", receiver: "res", member: "finish", startLine: 1 },
+        ctx({
+          symbolTable,
+          localBindings: { res: [{ line: 1, type: "Rack::Response" }] },
+          hierarchy: hierarchyWith({ "Rack::Response": ["Sinatra::Response"] }),
+        }),
+      ),
+    );
+    expect(out).toEqual([]);
+  });
 });

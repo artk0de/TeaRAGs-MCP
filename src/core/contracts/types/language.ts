@@ -225,6 +225,15 @@ export interface ConeTypeLocator {
    * absent ⇒ the cone stays subtypes-only.
    */
   isRuntimeDispatchClass?: (typeName: string, ctx: CallContext) => boolean;
+  /**
+   * Whether the project declares a type `typeName` may name — false only when
+   * no project type could be meant (a library class: TypeScript `Map`, Ruby
+   * `Rack::Response`). Implementing it lets the cone DECLINE a receiver whose
+   * out-of-project class a project class extends, where the library's own
+   * member is the runtime target the cone cannot emit (bd
+   * tea-rags-mcp-0qaht.64); absent ⇒ the cone never declines on it.
+   */
+  isProjectType?: (typeName: string, ctx: CallContext) => boolean;
 }
 
 /**

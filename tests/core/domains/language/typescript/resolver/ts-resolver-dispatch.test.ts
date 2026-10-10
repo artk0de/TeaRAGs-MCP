@@ -370,3 +370,38 @@ describe("TSCallResolver.resolveDispatch — CHA cone fan-out for interface-type
     }
   });
 });
+
+// bd tea-rags-mcp-0qaht.64: `class TreeContentHashes extends Map` overrides
+// `get`. A receiver typed `Map` is a plain Map — the project declares no `Map`
+// — so the cone declines instead of fanning every `counts.get(...)` to
+// `TreeContentHashes#get`.
+describe("TSCallResolver.resolveDispatch — out-of-project receiver type (0qaht.64)", () => {
+  const resolver = new TSCallResolver(tsOptions);
+
+  it("declines a receiver typed by a library class a project class extends", () => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/tree-content-hashes.ts", [
+      { ...sym("TreeContentHashes", "TreeContentHashes", "src/tree-content-hashes.ts", []), symbolKind: "class" },
+      {
+        ...sym("TreeContentHashes#get", "get", "src/tree-content-hashes.ts", ["TreeContentHashes"]),
+        symbolKind: "method",
+      },
+    ]);
+    const mapEdge: InheritanceEdge = {
+      sourceFqName: "TreeContentHashes",
+      ancestorFqName: "Map",
+      ancestorSymbolId: null,
+      kind: "super",
+      depth: 1,
+    };
+    const hierarchy: HierarchyView = {
+      getAncestors: () => [],
+      getDescendants: (fqName) => (fqName === "Map" ? [mapEdge] : []),
+    };
+    const outcome = resolver.resolveDispatch(
+      { callText: "counts.get", receiver: "counts", member: "get", startLine: 1 },
+      ctx({ symbolTable, hierarchy, localBindings: { counts: [{ line: 1, type: "Map" }] } }),
+    );
+    expect(edgesOf(outcome)).toEqual([]);
+  });
+});
