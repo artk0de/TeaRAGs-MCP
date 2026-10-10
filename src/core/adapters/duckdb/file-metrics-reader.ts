@@ -9,10 +9,13 @@
  * both say why at the call site.
  */
 
-import type { FileGraphMetrics, RelPath } from "../../contracts/types/codegraph.js";
+import type { CodegraphGraphReadStore, FileGraphMetrics, RelPath } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
-export class DuckDbFileMetricsReader {
+export class DuckDbFileMetricsReader implements Pick<
+  CodegraphGraphReadStore,
+  "getFanIn" | "getFanOut" | "getFanInP95" | "getTransitiveImpact" | "getFileMetricsBulk"
+> {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   async getFanIn(relPath: RelPath): Promise<number> {

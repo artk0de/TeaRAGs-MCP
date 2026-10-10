@@ -25,6 +25,7 @@ import {
   type CalleeEdge,
   type CallerEdge,
   type ChunkGraphSignals,
+  type CodegraphGraphReadStore,
   type FileScopedSymbolId,
   type FileScopedSymbolRef,
   type MethodEdgeKind,
@@ -44,7 +45,18 @@ import type { DuckDbGraphSession } from "./graph-session.js";
  */
 const SCOPED_EDGE_IN_LIST_CHUNK = 200;
 
-export class DuckDbMethodEdgeReader {
+export class DuckDbMethodEdgeReader implements Pick<
+  CodegraphGraphReadStore,
+  | "getCallers"
+  | "getCallees"
+  | "getCalleeEdges"
+  | "getCalleeEdgesScoped"
+  | "getSymbolRelPaths"
+  | "getAmbiguousCallersByMember"
+  | "getCalledByCount"
+  | "getCallSiteCount"
+  | "getChunkSignalsBulk"
+> {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   async getCallers(symbolId: SymbolId): Promise<CallerEdge[]> {

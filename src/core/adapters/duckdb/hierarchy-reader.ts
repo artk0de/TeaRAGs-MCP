@@ -9,6 +9,7 @@
  */
 
 import type {
+  CodegraphGraphReadStore,
   HierarchySnapshot,
   InheritanceEdge,
   InheritanceEdgeRow,
@@ -16,7 +17,10 @@ import type {
 } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
-export class DuckDbHierarchyReader {
+export class DuckDbHierarchyReader implements Pick<
+  CodegraphGraphReadStore,
+  "getSupertypes" | "getSubtypes" | "getTransitiveSubtypes" | "loadHierarchySnapshot"
+> {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   async getSupertypes(fqName: string): Promise<InheritanceEdge[]> {

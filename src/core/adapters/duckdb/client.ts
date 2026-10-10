@@ -8,29 +8,34 @@
  * driver-specific concerns (prepared-statement reuse, BEGIN/COMMIT, value
  * binding) and the contract owns the SQL-agnostic shape.
  *
- * This file is the FACADE only. The contract's 39 methods are answered by seven
- * role collaborators over one shared {@link DuckDbGraphSession}, each owning the
- * tables its role is about:
+ * This file is the FACADE only. `GraphDbClient` is the intersection of seven
+ * storage sub-interfaces (contracts/types/codegraph-storage.ts); every member
+ * here is a one-line delegation to the collaborator typed against the slice of
+ * the sub-interface it answers, all over one shared {@link DuckDbGraphSession}:
  *
- * | Collaborator                 | Owns                                            |
- * | ---------------------------- | ----------------------------------------------- |
- * | `DuckDbGraphSession`         | connection, write queue, transactions, batching |
- * | `DuckDbFileGraphStore`       | `cg_symbols_files` + everything keyed by file   |
- * | `DuckDbFileMetricsReader`    | fanIn / fanOut / p95 / transitive impact        |
- * | `DuckDbSymbolStore`          | `cg_symbols` persistence + chunk resolution     |
- * | `DuckDbMethodEdgeReader`     | callers, callees, fan-out, chunk signals        |
- * | `DuckDbHierarchyReader`      | `cg_symbols_inheritance` reads                  |
- * | `DuckDbGraphAnalyticsStore`  | adjacency out, cycles + PageRank back in        |
- * | `DuckDbRunStatsStore`        | `cg_run_stats` + edge-kind distribution         |
- * | `DuckDbTemporalCochangeStore`| `cg_temporal_*` co-change sub-graph             |
- * | `DuckDbIdentifierStore`      | `cg_identifiers` (naming lexicon)               |
- * | `DuckDbOntologyReportStore`  | `cg_identifiers` ontology audit reads           |
- * | `DuckDbTypeNameStore`        | type-level `cg_symbols` rows + their ancestors  |
+ * | Collaborator                 | Answers                          | Owns                                            |
+ * | ---------------------------- | -------------------------------- | ----------------------------------------------- |
+ * | `DuckDbGraphSession`         | —                                | connection, write queue, transactions, batching |
+ * | `DuckDbStorageMaintenance`   | `CodegraphStorageMaintenance`    | lifecycle, durability, edge-index rebuild       |
+ * | `DuckDbRunStatsStore`        | (maintenance slice)              | `cg_run_stats` + edge-kind distribution         |
+ * | `DuckDbSymbolFileStore`      | `CodegraphSymbolFileStore`       | file-upsert transaction envelopes               |
+ * | `DuckDbFileGraphStore`       | (symbol-file slice)              | `cg_symbols_files` + everything keyed by file   |
+ * | `DuckDbSymbolStore`          | (symbol-file slice)              | `cg_symbols` persistence + chunk resolution     |
+ * | `DuckDbFileMetricsReader`    | `CodegraphGraphReadStore` slice  | fanIn / fanOut / p95 / transitive impact        |
+ * | `DuckDbMethodEdgeReader`     | `CodegraphGraphReadStore` slice  | callers, callees, fan-out, chunk signals        |
+ * | `DuckDbHierarchyReader`      | `CodegraphGraphReadStore` slice  | `cg_symbols_inheritance` reads                  |
+ * | `DuckDbGraphAnalyticsStore`  | `CodegraphGraphAnalyticsStore`   | adjacency out, cycles + PageRank back in        |
+ * | `DuckDbSignalDriftStore`     | (analytics slice)                | derived-signal drift baseline                   |
+ * | `DuckDbTemporalStoreFacade`  | `CodegraphTemporalStore`         | contract-name mapping over the temporal stores  |
+ * | `DuckDbIdentifierStore`      | `CodegraphIdentifierStore` slice | `cg_identifiers` (naming lexicon)               |
+ * | `DuckDbTypeNameStore`        | `CodegraphIdentifierStore` slice | type-level `cg_symbols` rows + their ancestors  |
+ * | `DuckDbOntologyReportStore`  | `CodegraphOntologyReportStore`   | `cg_identifiers` ontology audit reads           |
  *
  * Concurrency: methods run sequentially on a single shared connection owned by
  * the session; a transactional write holds the queue for its whole BEGIN/COMMIT
  * body. The `MigrationCapableClient` adapter surface (`exec` / `run` /
- * `queryAll`) is also exposed for the migration runner.
+ * `queryAll`) and `openedDatabaseFile` are concrete members of this class, not
+ * part of any storage sub-interface.
  */
 
 import type {
@@ -109,8 +114,11 @@ import { DuckDbMethodEdgeReader } from "./method-edge-reader.js";
 import { DuckDbOntologyReportStore } from "./ontology-report-store.js";
 import { DuckDbRunStatsStore } from "./run-stats-store.js";
 import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
+import { DuckDbStorageMaintenance } from "./storage-maintenance.js";
+import { DuckDbSymbolFileStore } from "./symbol-file-store.js";
 import { DuckDbSymbolStore } from "./symbol-store.js";
 import { DuckDbTemporalCochangeStore } from "./temporal-cochange-store.js";
+import { DuckDbTemporalStoreFacade } from "./temporal-store-facade.js";
 import { DuckDbTemporalSymbolCommitStore } from "./temporal-symbol-commit-store.js";
 import { DuckDbTypeNameStore } from "./type-name-store.js";
 
@@ -130,32 +138,32 @@ export type DuckDbGraphClientOptions = DuckDbGraphSessionOptions;
 
 export class DuckDbGraphClient implements GraphDbClient {
   private readonly session: DuckDbGraphSession;
-  private readonly fileGraph: DuckDbFileGraphStore;
+  private readonly maintenance: DuckDbStorageMaintenance;
+  private readonly symbolFiles: DuckDbSymbolFileStore;
   private readonly fileMetrics: DuckDbFileMetricsReader;
-  private readonly symbols: DuckDbSymbolStore;
   private readonly methodEdges: DuckDbMethodEdgeReader;
   private readonly hierarchy: DuckDbHierarchyReader;
   private readonly analytics: DuckDbGraphAnalyticsStore;
-  private readonly runStats: DuckDbRunStatsStore;
   private readonly signalDrift: DuckDbSignalDriftStore;
-  private readonly temporalCochange: DuckDbTemporalCochangeStore;
-  private readonly temporalSymbolCommits: DuckDbTemporalSymbolCommitStore;
+  private readonly temporal: DuckDbTemporalStoreFacade;
   private readonly identifiers: DuckDbIdentifierStore;
   private readonly ontology: DuckDbOntologyReportStore;
   private readonly typeNames: DuckDbTypeNameStore;
 
   constructor(options: DuckDbGraphClientOptions) {
     this.session = new DuckDbGraphSession(options);
-    this.fileGraph = new DuckDbFileGraphStore(this.session);
+    const fileGraph = new DuckDbFileGraphStore(this.session);
+    this.maintenance = new DuckDbStorageMaintenance(this.session, fileGraph, new DuckDbRunStatsStore(this.session));
+    this.symbolFiles = new DuckDbSymbolFileStore(this.session, fileGraph, new DuckDbSymbolStore(this.session));
     this.fileMetrics = new DuckDbFileMetricsReader(this.session);
-    this.symbols = new DuckDbSymbolStore(this.session);
     this.methodEdges = new DuckDbMethodEdgeReader(this.session);
     this.hierarchy = new DuckDbHierarchyReader(this.session);
     this.analytics = new DuckDbGraphAnalyticsStore(this.session);
-    this.runStats = new DuckDbRunStatsStore(this.session);
     this.signalDrift = new DuckDbSignalDriftStore(this.session);
-    this.temporalCochange = new DuckDbTemporalCochangeStore(this.session);
-    this.temporalSymbolCommits = new DuckDbTemporalSymbolCommitStore(this.session);
+    this.temporal = new DuckDbTemporalStoreFacade(
+      new DuckDbTemporalCochangeStore(this.session),
+      new DuckDbTemporalSymbolCommitStore(this.session),
+    );
     this.identifiers = new DuckDbIdentifierStore(this.session);
     this.ontology = new DuckDbOntologyReportStore(this.session);
     this.typeNames = new DuckDbTypeNameStore(this.session);
@@ -164,25 +172,25 @@ export class DuckDbGraphClient implements GraphDbClient {
   // ── Lifecycle + durability ──
 
   async init(): Promise<void> {
-    return this.session.open();
+    return this.maintenance.init();
   }
 
   async close(): Promise<void> {
-    return this.session.close();
+    return this.maintenance.close();
   }
 
   async checkpoint(): Promise<void> {
-    return this.session.checkpoint();
+    return this.maintenance.checkpoint();
   }
 
   /** See `GraphDbClient.compactStorage`; the protocol is `DuckDbGraphSession#compactDatabaseFile`. */
   async compactStorage(): Promise<CodegraphStorageCompactionOutcome> {
-    return this.session.compactDatabaseFile();
+    return this.maintenance.compactStorage();
   }
 
   /** See `GraphDbClient.exportSnapshot`; the protocol is `DuckDbGraphSession#exportSnapshot`. */
   async exportSnapshot(targetPath: string): Promise<void> {
-    return this.session.exportSnapshot(targetPath);
+    return this.maintenance.exportSnapshot(targetPath);
   }
 
   /** The database file this client holds open now — what the pool checks its path against. */
@@ -191,26 +199,12 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async hasData(): Promise<boolean> {
-    return this.fileGraph.hasData();
+    return this.maintenance.hasData();
   }
 
-  /**
-   * See `GraphDbClient.rebuildEdgeFileTargetIndex` (contracts/types/codegraph-storage.ts).
-   *
-   * Queued behind every transactional write, like `checkpoint` (bd
-   * tea-rags-mcp-sgo8v). Every writer of this database shares ONE connection —
-   * the daemon's per-collection client — so a DDL issued directly would execute
-   * inside whichever writer's BEGIN happened to be open: the node-flush chain
-   * during pass-2, and with one pass-2 per language partition, the other
-   * partition's `upsertFilesBulk` into the very table being re-indexed.
-   */
+  /** See `DuckDbStorageMaintenance#rebuildEdgeFileTargetIndex` — queued behind every transactional write. */
   async rebuildEdgeFileTargetIndex(): Promise<void> {
-    await this.session.serialize(async () =>
-      this.session.exec(
-        "DROP INDEX IF EXISTS idx_cg_symbols_edges_file_target; " +
-          "CREATE INDEX idx_cg_symbols_edges_file_target ON cg_symbols_edges_file (target_rel_path);",
-      ),
-    );
+    return this.maintenance.rebuildEdgeFileTargetIndex();
   }
 
   // ── Migration-runner surface (MigrationCapableClient) ──
@@ -232,49 +226,28 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   // ── File-graph writes ──
   //
-  // `upsertFile` and `upsertFilesBulk` write the SAME rows and differ only in
-  // transaction granularity — one BEGIN/COMMIT per file versus one per batch.
-  // The facade therefore keeps the two envelopes and dispatches both through a
-  // single `upsertFileRows` seam; the row body itself lives in the store.
+  // The transaction envelopes of `upsertFile` / `upsertFilesBulk` live in
+  // `DuckDbSymbolFileStore`, which owns the per-file write path.
 
   async upsertFile(node: GraphFileNode, edges: GraphEdges): Promise<void> {
-    return this.session.transaction(async () => this.upsertFileRows(node, edges));
+    return this.symbolFiles.upsertFile(node, edges);
   }
 
-  /**
-   * Bulk variant of `upsertFile` (mirrors `upsertSymbolsBulk`): fold M files'
-   * node + edge writes into ONE `BEGIN/COMMIT` instead of M per-file
-   * transactions — and, on the daemon path, ONE IPC round-trip instead of M.
-   * Unlike `upsertFile`, the DELETE+INSERT lifecycle is batched ACROSS the
-   * whole set (`DuckDbFileGraphStore#writeFileRowsBulk`), not looped per file:
-   * a chunked IN-list DELETE per table instead of one DELETE per file per
-   * table. Persisted rows are byte-identical to calling `upsertFile` per
-   * file — last-wins per relPath, cross-file PK collisions first-wins by
-   * batch order — only the statement count drops (bd tea-rags-mcp-wgt19
-   * follow-up: per-file DELETEs re-scanned the FSST-compressed
-   * source_rel_path column on every call). Any row failure rolls the whole
-   * batch back (callers cap batch size + skip pathological files upstream).
-   */
+  /** See `DuckDbSymbolFileStore#upsertFilesBulk` — one BEGIN/COMMIT for the whole batch. */
   async upsertFilesBulk(entries: readonly BulkFileUpsertEntry[]): Promise<void> {
-    if (entries.length === 0) return;
-    return this.session.transaction(async () => this.fileGraph.writeFileRowsBulk(entries));
-  }
-
-  /** The per-file DELETE+INSERT body both envelopes above share, unwrapped. */
-  private async upsertFileRows(node: GraphFileNode, edges: GraphEdges): Promise<void> {
-    return this.fileGraph.writeFileRows(node, edges);
+    return this.symbolFiles.upsertFilesBulk(entries);
   }
 
   async removeFile(relPath: RelPath): Promise<void> {
-    return this.fileGraph.removeFile(relPath);
+    return this.symbolFiles.removeFile(relPath);
   }
 
   async removeFiles(relPaths: readonly RelPath[]): Promise<void> {
-    return this.fileGraph.removeFiles(relPaths);
+    return this.symbolFiles.removeFiles(relPaths);
   }
 
   async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {
-    return this.fileGraph.listFileContentHashes();
+    return this.symbolFiles.listFileContentHashes();
   }
 
   // ── File metric reads ──
@@ -302,51 +275,51 @@ export class DuckDbGraphClient implements GraphDbClient {
   // ── Symbol persistence ──
 
   async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {
-    return this.symbols.upsertSymbols(relPath, definitions);
+    return this.symbolFiles.upsertSymbols(relPath, definitions);
   }
 
   async upsertSymbolsBulk(entries: BulkSymbolUpsertEntry[]): Promise<void> {
-    return this.symbols.upsertSymbolsBulk(entries);
+    return this.symbolFiles.upsertSymbolsBulk(entries);
   }
 
   async removeSymbolsForFile(relPath: RelPath): Promise<void> {
-    return this.symbols.removeSymbolsForFile(relPath);
+    return this.symbolFiles.removeSymbolsForFile(relPath);
   }
 
   async listAllSymbols(): Promise<SymbolDefinition[]> {
-    return this.symbols.listAllSymbols();
+    return this.symbolFiles.listAllSymbols();
   }
 
   async listPass1Aggregates(scope: Pass1AggregateReadScope): Promise<CodegraphPass1FileAggregates[]> {
-    return this.fileGraph.listPass1Aggregates(scope);
+    return this.symbolFiles.listPass1Aggregates(scope);
   }
 
   async listHierarchyDependencies(scope: Pass1AggregateReadScope): Promise<PersistedHierarchyDescendantDependency[]> {
-    return this.fileGraph.listHierarchyDependencies(scope);
+    return this.symbolFiles.listHierarchyDependencies(scope);
   }
 
   async invalidateHierarchyDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
-    return this.fileGraph.invalidateHierarchyDependentsOfDeletedFiles(relPaths);
+    return this.symbolFiles.invalidateHierarchyDependentsOfDeletedFiles(relPaths);
   }
 
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
-    return this.symbols.updateSymbolChunkIds(relPath, chunkIds);
+    return this.symbolFiles.updateSymbolChunkIds(relPath, chunkIds);
   }
 
   async updateSymbolChunkIdsBulk(entries: readonly SymbolChunkIdJoinEntry[]): Promise<void> {
-    return this.symbols.updateSymbolChunkIdsBulk(entries);
+    return this.symbolFiles.updateSymbolChunkIdsBulk(entries);
   }
 
   async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
-    return this.symbols.findSymbolChunk(symbolId);
+    return this.symbolFiles.findSymbolChunk(symbolId);
   }
 
   async getSymbolVisibilities(symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
-    return this.symbols.getSymbolVisibilities(symbolIds);
+    return this.symbolFiles.getSymbolVisibilities(symbolIds);
   }
 
   async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
-    return this.symbols.getSymbolLineRangesBulk(relPaths);
+    return this.symbolFiles.getSymbolLineRangesBulk(relPaths);
   }
 
   // ── Identifier declarations (naming lexicon) ──
@@ -526,37 +499,37 @@ export class DuckDbGraphClient implements GraphDbClient {
   // ── Temporal co-change sub-graph (bd tea-rags-mcp-x4rpp) ──
 
   async replaceTemporalCochange(snapshot: TemporalCochangeSnapshot): Promise<void> {
-    return this.temporalCochange.replace(snapshot);
+    return this.temporal.replaceTemporalCochange(snapshot);
   }
 
   async readTemporalCochangeMeta(): Promise<TemporalCochangeBuildMeta | null> {
-    return this.temporalCochange.readMeta();
+    return this.temporal.readTemporalCochangeMeta();
   }
 
   async readTemporalCochangeGraph(): Promise<TemporalCochangeGraph> {
-    return this.temporalCochange.readGraph();
+    return this.temporal.readTemporalCochangeGraph();
   }
 
   async readTemporalBundleFiles(): Promise<ReadonlyMap<number, readonly RelPath[]>> {
-    return this.temporalCochange.readBundleFiles();
+    return this.temporal.readTemporalBundleFiles();
   }
 
   // ── Temporal symbol-commit store (bd tea-rags-mcp-3gz4f) ──
 
   async replaceTemporalSymbolCommits(files: TemporalSymbolCommitFileSnapshot[]): Promise<void> {
-    return this.temporalSymbolCommits.replaceFiles(files);
+    return this.temporal.replaceTemporalSymbolCommits(files);
   }
 
   async storedTemporalSymbolCommitFilePaths(): Promise<string[]> {
-    return this.temporalSymbolCommits.storedFilePaths();
+    return this.temporal.storedTemporalSymbolCommitFilePaths();
   }
 
   async deleteTemporalSymbolCommitFiles(relPaths: string[]): Promise<void> {
-    return this.temporalSymbolCommits.deleteFiles(relPaths);
+    return this.temporal.deleteTemporalSymbolCommitFiles(relPaths);
   }
 
   async readTemporalSymbolCommits(relPath: RelPath): Promise<TemporalSymbolCommitFileSnapshot> {
-    return this.temporalSymbolCommits.readFile(relPath);
+    return this.temporal.readTemporalSymbolCommits(relPath);
   }
 
   /** File-scope `get_callers` (bd tea-rags-mcp-gfvr8): the files importing `relPath`. */
@@ -598,18 +571,18 @@ export class DuckDbGraphClient implements GraphDbClient {
   // ── Resolve-run stats (bd tea-rags-mcp-j431) ──
 
   async recordRunStats(rows: ResolveRunStatsRow[]): Promise<void> {
-    return this.runStats.recordRunStats(rows);
+    return this.maintenance.recordRunStats(rows);
   }
 
   async recordFileResolveStats(write: FileResolveStatsWrite): Promise<void> {
-    return this.runStats.recordFileResolveStats(write);
+    return this.maintenance.recordFileResolveStats(write);
   }
 
   async getRunStats(): Promise<ResolveRunStatsRow[]> {
-    return this.runStats.getRunStats();
+    return this.maintenance.getRunStats();
   }
 
   async getEdgeKindDistribution(): Promise<EdgeKindCount[]> {
-    return this.runStats.getEdgeKindDistribution();
+    return this.maintenance.getEdgeKindDistribution();
   }
 }

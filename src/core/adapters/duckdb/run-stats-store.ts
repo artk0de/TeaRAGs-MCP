@@ -19,6 +19,7 @@
  */
 
 import type {
+  CodegraphStorageMaintenance,
   EdgeKindCount,
   FileResolveStatsWrite,
   MethodEdgeKind,
@@ -41,7 +42,10 @@ const FILE_RESOLVE_STATS_VALUE_COLUMNS = [
 
 const COUNTER_COLUMNS = FILE_RESOLVE_STATS_VALUE_COLUMNS.slice(1);
 
-export class DuckDbRunStatsStore {
+export class DuckDbRunStatsStore implements Pick<
+  CodegraphStorageMaintenance,
+  "recordRunStats" | "recordFileResolveStats" | "getRunStats" | "getEdgeKindDistribution"
+> {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   async recordRunStats(rows: ResolveRunStatsRow[]): Promise<void> {
