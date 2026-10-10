@@ -29,6 +29,7 @@ import {
   FACADE_OTSU_MIN_POPULATION,
   resolveFacadeAdoptionThreshold,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
+import { binomialUpperTail } from "../../../../../../../src/core/infra/statistics/index.js";
 
 function walked(relPath: string, language = "typescript"): FileDependencyGraphFile {
   return { relPath, language, symbolCount: 1 };
@@ -241,7 +242,14 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
       violationsByKind: { bypass: 2, internalReach: 1 },
       moduleCount: 6,
       activeModuleCount: 1,
-      excludedModules: { facadeNotAdopted: 1, tooFewImporters: 2, languageEnforced: 2, intraParentConsumers: 2 },
+      excludedModules: {
+        facadeNotAdopted: 1,
+        tooFewImporters: 2,
+        languageEnforced: 2,
+        intraParentConsumers: 2,
+        deFactoSurfaceEdges: 0,
+      },
+      deFactoSurfaces: [],
     });
   });
 
@@ -824,6 +832,134 @@ describe("detectLeakingAbstractions — reExportUnsafe (bd tea-rags-mcp-89k7k.3)
       reExportUnsafe: true,
       reExportCyclePath: ["m/index.ts", "m/factory.ts", "m/base.ts", "app/u4.ts"],
     });
+  });
+});
+
+/**
+ * De-facto surface children (bd tea-rags-mcp-r8hme.52.16, rule R3b). A CHILD
+ * of an active module M is the first path segment under M on a violation
+ * edge's target. d(S) = distinct external importers reaching S directly,
+ * only(S) = those whose deep reach into M is S alone. S is a measured surface
+ * when P(X ≥ d(S)), X ~ Bin(ext(M), q), q = (deep(M) − only(S) + ½) /
+ * (ext(M) − only(S) + 1), survives Benjamini–Hochberg over every (M, S) unit,
+ * iterated with detected surfaces' only-mass leaving the background. Internal-
+ * reach edges into a surface are not violations; they are counted and the
+ * surface is listed.
+ */
+describe("detectLeakingAbstractions — de-facto surface children (bd tea-rags-mcp-r8hme.52.16)", () => {
+  /**
+   * `lib/m/` with `facadeCount` facade-only importers and, for each entry of
+   * `deep`, one importer `app/<prefix><i>.ts` reaching `lib/m/<target>`.
+   */
+  function surfaceGraph(facadeCount: number, deep: readonly { prefix: string; count: number; target: string }[]) {
+    const targets = [...new Set(deep.map((d) => d.target))];
+    const files = [walked("lib/m/index.ts"), ...targets.map((t) => walked(`lib/m/${t}`))];
+    const edges: FileDependencyEdge[] = [];
+    for (let i = 0; i < facadeCount; i++) {
+      files.push(walked(`app/f${i}.ts`));
+      edges.push(edge(`app/f${i}.ts`, "lib/m/index.ts"));
+    }
+    for (const d of deep) {
+      for (let i = 0; i < d.count; i++) {
+        files.push(walked(`app/${d.prefix}${i}.ts`));
+        edges.push(edge(`app/${d.prefix}${i}.ts`, `lib/m/${d.target}`));
+      }
+    }
+    return { files, edges };
+  }
+
+  it("keeps a child reached by one of many importers of an adopted facade an internal reach", () => {
+    const report = detectLeakingAbstractions(
+      surfaceGraph(9, [
+        { prefix: "x", count: 1, target: "x.ts" },
+        { prefix: "y", count: 1, target: "y.ts" },
+        { prefix: "z", count: 1, target: "z.ts" },
+      ]),
+    );
+
+    expect(report.violations.map((v) => [v.kind, v.targetRelPath])).toEqual([
+      ["internal-reach", "lib/m/x.ts"],
+      ["internal-reach", "lib/m/y.ts"],
+      ["internal-reach", "lib/m/z.ts"],
+    ]);
+    expect(report.summary.deFactoSurfaces).toEqual([]);
+    expect(report.summary.excludedModules.deFactoSurfaceEdges).toBe(0);
+  });
+
+  it("spares a child most deep importers reach over a near-zero background, counting and listing it", () => {
+    const report = detectLeakingAbstractions(
+      surfaceGraph(20, [
+        { prefix: "d", count: 8, target: "dto/x.ts" },
+        { prefix: "i", count: 1, target: "impl.ts" },
+      ]),
+    );
+
+    // dto: ext 29, deep 9, only 8 → q = 1.5 / 22; impl stays a leak.
+    expect(report.violations.map((v) => [v.kind, v.sourceRelPath, v.targetRelPath])).toEqual([
+      ["internal-reach", "app/i0.ts", "lib/m/impl.ts"],
+    ]);
+    expect(report.summary.deFactoSurfaces).toEqual([
+      {
+        moduleDir: "lib/m",
+        child: "dto",
+        directImporterCount: 8,
+        backgroundRate: 1.5 / 22,
+        pValue: binomialUpperTail(8, 29, 1.5 / 22),
+      },
+    ]);
+    expect(report.summary.excludedModules.deFactoSurfaceEdges).toBe(8);
+    expect(report.summary.violationsByKind).toEqual({ bypass: 0, internalReach: 1 });
+    // Judged edges are unchanged — a spared edge was still judged.
+    expect(report.summary.judgedEdgeCount).toBe(29);
+  });
+
+  it("finds a second surface only once the first leaves the background (R3b iteration)", () => {
+    const report = detectLeakingAbstractions(
+      surfaceGraph(60, [
+        { prefix: "a", count: 20, target: "a/x.ts" },
+        { prefix: "b", count: 5, target: "b/x.ts" },
+      ]),
+    );
+
+    // Without iteration b's background holds a's 20 importers: q = 20.5 / 81, p ≈ 1.
+    expect(binomialUpperTail(5, 85, 20.5 / 81)).toBeGreaterThan(0.5);
+    expect(report.violations).toEqual([]);
+    expect(report.summary.deFactoSurfaces).toEqual([
+      {
+        moduleDir: "lib/m",
+        child: "a",
+        directImporterCount: 20,
+        backgroundRate: 0.5 / 61,
+        pValue: binomialUpperTail(20, 85, 0.5 / 61),
+      },
+      {
+        moduleDir: "lib/m",
+        child: "b",
+        directImporterCount: 5,
+        backgroundRate: 0.5 / 61,
+        pValue: binomialUpperTail(5, 85, 0.5 / 61),
+      },
+    ]);
+    expect(report.summary.excludedModules.deFactoSurfaceEdges).toBe(25);
+  });
+
+  it("keeps a tiny module's lone deep import a leak — the Jeffreys half keeps the background off zero", () => {
+    const report = detectLeakingAbstractions(surfaceGraph(2, [{ prefix: "d", count: 1, target: "x.ts" }]));
+
+    // ext 3, deep 1, only 1 → q = 0.5 / 3, p = 1 − (5/6)³ ≈ 0.42.
+    expect(report.modules.find((m) => m.moduleDir === "lib/m")?.status).toBe("active");
+    expect(report.violations.map((v) => [v.kind, v.targetRelPath])).toEqual([["internal-reach", "lib/m/x.ts"]]);
+    expect(report.summary.deFactoSurfaces).toEqual([]);
+  });
+
+  it("never spares a bypass into a surface — only internal reach is a surface's privilege", () => {
+    const g = surfaceGraph(20, [{ prefix: "d", count: 8, target: "dto/x.ts" }]);
+    g.edges.push(edge("lib/m/index.ts", "lib/m/dto/x.ts"));
+    const report = detectLeakingAbstractions(g);
+
+    expect(report.summary.deFactoSurfaces.map((s) => s.child)).toEqual(["dto"]);
+    expect(report.violations.map((v) => v.kind)).toEqual(Array.from({ length: 8 }, () => "bypass"));
+    expect(report.summary.excludedModules.deFactoSurfaceEdges).toBe(0);
   });
 });
 

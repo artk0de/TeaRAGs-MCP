@@ -4,8 +4,14 @@ import {
   type MajorityFlooredOtsuThreshold,
 } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import {
+  benjaminiHochbergRejectionCount,
+  binomialUpperTail,
+  CONVENTIONAL_FDR_Q,
+} from "../../../../../infra/statistics/index.js";
 import { MODULE_ENTRY_FILE_NAMES, RE_EXPORT_CYCLE_PATH_CAP } from "../../component-geometry/index.js";
 import type {
+  FacadeDeFactoSurface,
   FacadeLeakKind,
   FacadeLeakRootCause,
   FacadeLeakViolation,
@@ -119,6 +125,13 @@ interface ModuleCandidate {
  * {@link classifyFacadeLeak}: by the export names both edges carry when they
  * do, by whether the entry file has an edge to `x` at all otherwise.
  *
+ * A module may have a SECOND surface its importers adopted beside the facade —
+ * a child they reach directly far above the module's background deep-import
+ * rate ({@link measureDeFactoSurfaces}, bd tea-rags-mcp-r8hme.52.16). An
+ * internal-reach edge into such a child is not a violation; it is counted in
+ * `summary.excludedModules.deFactoSurfaceEdges` and the child is listed in
+ * `summary.deFactoSurfaces`. A bypass into it stays a violation.
+ *
  * Diagnosis, not prescription: a violation says the importer walked past a
  * surface its peers use, not how the module should be drawn. One repair caveat
  * IS measured (bd tea-rags-mcp-89k7k.3, endpoint per bd tea-rags-mcp-89k7k.17):
@@ -165,42 +178,48 @@ export function detectLeakingAbstractions(
     assessments.set(m.moduleDir, { ...m, status });
   }
 
+  const deFactoSurfaces = measureDeFactoSurfaces(graph, candidates, assessments);
+  const surfaceKeys = new Set(deFactoSurfaces.map((s) => edgeKey(s.moduleDir, s.child)));
+
   const violations: FacadeLeakViolation[] = [];
   let judgedEdgeCount = 0;
+  let deFactoSurfaceEdges = 0;
   for (const edge of graph.edges) {
     if (scope && inScope && !inScope(edge.sourceRelPath)) {
       scope.outOfScopeEdgeCount++;
       continue;
     }
     if (edge.sourceRelPath === edge.targetRelPath) continue;
-    let judged = false;
-    // Innermost first: the first module the edge leaks past owns it.
-    for (const module of enclosingModules(candidates, edge.targetRelPath)) {
-      const assessment = assessments.get(module.moduleDir);
-      if (assessment?.status !== "active" || isInside(edge.sourceRelPath, module.moduleDir)) continue;
-      // An intra-parent consumer is internal to the parent component — never a
-      // bypass / internal-reach candidate (bd tea-rags-mcp-yo3ue).
-      if (isIntraParentConsumer(edge.sourceRelPath, module.moduleDir, candidates)) continue;
-      judged = true;
-      if (module.entries.has(edge.targetRelPath)) continue;
-      const facadeRelPath = assessment.facadeRelPath as RelPath;
-      const cyclePath = firstImportPath(importsFrom, facadeRelPath, edge.sourceRelPath);
-      violations.push({
-        ...classifyFacadeLeak(edge, module.entries, edgesByKey),
-        sourceRelPath: edge.sourceRelPath,
-        targetRelPath: edge.targetRelPath,
-        moduleDir: module.moduleDir,
-        facadeRelPath,
-        adoption: assessment.adoption,
-        facadeImporterCount: assessment.facadeImporterCount,
-        deepImporterCount: assessment.deepImporterCount,
-        callWeight: edge.callWeight,
-        reExportUnsafe: cyclePath !== undefined,
-        ...(cyclePath ? { reExportCyclePath: cyclePath } : {}),
-      });
-      break;
-    }
+    const { judged, owner } = judgeFacadeEdge(edge, candidates, assessments);
     if (judged) judgedEdgeCount++;
+    if (!owner) continue;
+    const { module, assessment } = owner;
+    const classification = classifyFacadeLeak(edge, module.entries, edgesByKey);
+    // Reaching a measured de-facto surface is how the module is used, not a
+    // leak — counted, never silently dropped (bd tea-rags-mcp-r8hme.52.16). A
+    // bypass stays: the facade already offers what the edge takes.
+    if (
+      classification.kind === "internal-reach" &&
+      surfaceKeys.has(edgeKey(module.moduleDir, childSegment(module.moduleDir, edge.targetRelPath)))
+    ) {
+      deFactoSurfaceEdges++;
+      continue;
+    }
+    const facadeRelPath = assessment.facadeRelPath as RelPath;
+    const cyclePath = firstImportPath(importsFrom, facadeRelPath, edge.sourceRelPath);
+    violations.push({
+      ...classification,
+      sourceRelPath: edge.sourceRelPath,
+      targetRelPath: edge.targetRelPath,
+      moduleDir: module.moduleDir,
+      facadeRelPath,
+      adoption: assessment.adoption,
+      facadeImporterCount: assessment.facadeImporterCount,
+      deepImporterCount: assessment.deepImporterCount,
+      callWeight: edge.callWeight,
+      reExportUnsafe: cyclePath !== undefined,
+      ...(cyclePath ? { reExportCyclePath: cyclePath } : {}),
+    });
   }
 
   violations.sort(bySeverity);
@@ -227,10 +246,174 @@ export function detectLeakingAbstractions(
         tooFewImporters: countStatus("too-few-importers"),
         languageEnforced: countStatus("language-enforced"),
         intraParentConsumers: intraParentConsumerKeys.size,
+        deFactoSurfaceEdges,
       },
+      deFactoSurfaces,
       ...(scope ? { scope } : {}),
     },
   };
+}
+
+/** The module a judged edge leaks past, with its assessment. */
+interface FacadeLeakOwner {
+  module: ModuleCandidate;
+  assessment: FacadeModuleAssessment;
+}
+
+/**
+ * Whether `edge` is judged by some active module, and the module it leaks
+ * past: innermost first, the first active module whose non-entry file the edge
+ * reaches from outside its parent component owns it. An edge into an inner
+ * module's entry is judged there and may still leak past an outer one.
+ */
+function judgeFacadeEdge(
+  edge: FileDependencyEdge,
+  candidates: Map<string, ModuleCandidate>,
+  assessments: ReadonlyMap<string, FacadeModuleAssessment>,
+): { judged: boolean; owner?: FacadeLeakOwner } {
+  let judged = false;
+  for (const module of enclosingModules(candidates, edge.targetRelPath)) {
+    const assessment = assessments.get(module.moduleDir);
+    if (assessment?.status !== "active" || isInside(edge.sourceRelPath, module.moduleDir)) continue;
+    // An intra-parent consumer is internal to the parent component — never a
+    // bypass / internal-reach candidate (bd tea-rags-mcp-yo3ue).
+    if (isIntraParentConsumer(edge.sourceRelPath, module.moduleDir, candidates)) continue;
+    judged = true;
+    if (module.entries.has(edge.targetRelPath)) continue;
+    return { judged, owner: { module, assessment } };
+  }
+  return { judged };
+}
+
+/** One (module, child) unit of the de-facto surface test. */
+interface SurfaceUnit {
+  moduleDir: string;
+  child: string;
+  /** d(S): distinct importers with a leak edge into the child. */
+  directImporterCount: number;
+  /** only(S): those whose leak edges into the module all land in this child. */
+  exclusiveImporterCount: number;
+  externalImporterCount: number;
+  deepImporterCount: number;
+}
+
+/**
+ * De-facto surface children (bd tea-rags-mcp-r8hme.52.16, rule R3b). A child S
+ * of an active module M is the first path segment under M on the target of a
+ * leak edge M owns ({@link judgeFacadeEdge}); entry files are never targets, so
+ * never children. Each (M, S) is tested against M's own background:
+ * p = P(X ≥ d(S)), X ~ Bin(ext(M), q), q = (deep(M) − out + ½) / (ext(M) − out
+ * + 1), where `out` is the exclusive-importer mass of S and of every surface
+ * already detected in M — a child must stand out against the deep imports that
+ * are NOT already explained by a surface, and the Jeffreys ½ keeps q off zero
+ * so a tiny module's lone deep import is never a surface. Benjamini–Hochberg at
+ * {@link CONVENTIONAL_FDR_Q} over every unit as one family; detected surfaces
+ * then leave the background and the test repeats until no new unit is
+ * rejected. Growing `out` lowers every q, so every p and with it the BH
+ * rejection set only grow: the loop terminates within units-many rounds, and
+ * the reported q and p are those of the final round. Direct file edges only.
+ */
+function measureDeFactoSurfaces(
+  graph: FileDependencyGraph,
+  candidates: Map<string, ModuleCandidate>,
+  assessments: ReadonlyMap<string, FacadeModuleAssessment>,
+): FacadeDeFactoSurface[] {
+  const childImporters = new Map<string, Map<string, Set<RelPath>>>();
+  const importerChildren = new Map<string, Map<RelPath, Set<string>>>();
+  for (const edge of graph.edges) {
+    if (edge.sourceRelPath === edge.targetRelPath) continue;
+    const { owner } = judgeFacadeEdge(edge, candidates, assessments);
+    if (!owner) continue;
+    const { moduleDir } = owner.module;
+    const child = childSegment(moduleDir, edge.targetRelPath);
+    const byChild = getOrCreate(childImporters, moduleDir, () => new Map<string, Set<RelPath>>());
+    getOrCreate(byChild, child, () => new Set<RelPath>()).add(edge.sourceRelPath);
+    const byImporter = getOrCreate(importerChildren, moduleDir, () => new Map<RelPath, Set<string>>());
+    getOrCreate(byImporter, edge.sourceRelPath, () => new Set<string>()).add(child);
+  }
+
+  const units: SurfaceUnit[] = [];
+  for (const [moduleDir, byChild] of childImporters) {
+    const assessment = assessments.get(moduleDir) as FacadeModuleAssessment;
+    const reach = importerChildren.get(moduleDir) as Map<RelPath, Set<string>>;
+    for (const [child, importers] of byChild) {
+      let exclusiveImporterCount = 0;
+      for (const importer of importers) if (reach.get(importer)?.size === 1) exclusiveImporterCount++;
+      units.push({
+        moduleDir,
+        child,
+        directImporterCount: importers.size,
+        exclusiveImporterCount,
+        externalImporterCount: assessment.externalImporterCount,
+        deepImporterCount: assessment.deepImporterCount,
+      });
+    }
+  }
+
+  const surfaces = new Set<SurfaceUnit>();
+  let tested = testSurfaceUnits(units, surfaces);
+  for (;;) {
+    const ascending = tested.map((t) => t.pValue).sort((a, b) => a - b);
+    const rejected = benjaminiHochbergRejectionCount(ascending, units.length, CONVENTIONAL_FDR_Q);
+    if (rejected === 0) break;
+    const cut = ascending[rejected - 1];
+    const fresh = tested.filter((t) => t.pValue <= cut && !surfaces.has(t.unit));
+    if (fresh.length === 0) break;
+    for (const t of fresh) surfaces.add(t.unit);
+    tested = testSurfaceUnits(units, surfaces);
+  }
+  return tested
+    .filter((t) => surfaces.has(t.unit))
+    .map(({ unit, backgroundRate, pValue }) => ({
+      moduleDir: unit.moduleDir,
+      child: unit.child,
+      directImporterCount: unit.directImporterCount,
+      backgroundRate,
+      pValue,
+    }))
+    .sort(
+      (a, b) =>
+        a.pValue - b.pValue || compareCodePoints(a.moduleDir, b.moduleDir) || compareCodePoints(a.child, b.child),
+    );
+}
+
+/**
+ * One round of the surface test: each unit's background rate with its own and
+ * every detected surface's exclusive importers left out, and its p-value.
+ */
+function testSurfaceUnits(
+  units: readonly SurfaceUnit[],
+  surfaces: ReadonlySet<SurfaceUnit>,
+): { unit: SurfaceUnit; backgroundRate: number; pValue: number }[] {
+  const surfaceMass = new Map<string, number>();
+  for (const s of surfaces) {
+    surfaceMass.set(s.moduleDir, (surfaceMass.get(s.moduleDir) ?? 0) + s.exclusiveImporterCount);
+  }
+  return units.map((unit) => {
+    const out = (surfaceMass.get(unit.moduleDir) ?? 0) + (surfaces.has(unit) ? 0 : unit.exclusiveImporterCount);
+    const backgroundRate = (unit.deepImporterCount - out + 1 / 2) / (unit.externalImporterCount - out + 1);
+    return {
+      unit,
+      backgroundRate,
+      pValue: binomialUpperTail(unit.directImporterCount, unit.externalImporterCount, backgroundRate),
+    };
+  });
+}
+
+/** First path segment of `relPath` under `moduleDir` — a directory or a file name. */
+function childSegment(moduleDir: string, relPath: RelPath): string {
+  const rest = moduleDir === "" ? relPath : relPath.slice(moduleDir.length + 1);
+  const slash = rest.indexOf("/");
+  return slash === -1 ? rest : rest.slice(0, slash);
+}
+
+function getOrCreate<K, V>(map: Map<K, V>, key: K, create: () => V): V {
+  let value = map.get(key);
+  if (value === undefined) {
+    value = create();
+    map.set(key, value);
+  }
+  return value;
 }
 
 /** Name of the whole-module import / re-export on a file edge. */

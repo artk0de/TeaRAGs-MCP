@@ -556,6 +556,27 @@ describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-je
     ]);
   });
 
+  it("lists a measured de-facto surface child and counts the internal reaches it spares (bd tea-rags-mcp-r8hme.52.16)", async () => {
+    const files = [file("mod/index.ts"), file("mod/dto/x.ts")];
+    const edges: FileDependencyGraph["edges"] = [];
+    for (let i = 0; i < 20; i++) {
+      files.push(file(`ext/f${i}.ts`));
+      edges.push({ sourceRelPath: `ext/f${i}.ts`, targetRelPath: "mod/index.ts", callWeight: 0 });
+    }
+    for (let i = 0; i < 8; i++) {
+      files.push(file(`ext/d${i}.ts`));
+      edges.push({ sourceRelPath: `ext/d${i}.ts`, targetRelPath: "mod/dto/x.ts", callWeight: 0 });
+    }
+    const report = await new ArchitectureReportOps().build(graphDb({ files, edges }), {});
+    const summary = report.summary.leakingAbstraction;
+
+    expect(report.violations.filter((v) => v.detector === "leakingAbstraction")).toEqual([]);
+    expect(summary.excludedModules.deFactoSurfaceEdges).toBe(8);
+    expect(summary.deFactoSurfaces).toEqual([
+      expect.objectContaining({ moduleDir: "mod", child: "dto", directImporterCount: 8, backgroundRate: 0.5 / 21 }),
+    ]);
+  });
+
   it("reports the majority method with no separability when the population is too small for Otsu", async () => {
     const summary = (await new ArchitectureReportOps().build(graphDb(facadeGraph()), {})).summary.leakingAbstraction;
 

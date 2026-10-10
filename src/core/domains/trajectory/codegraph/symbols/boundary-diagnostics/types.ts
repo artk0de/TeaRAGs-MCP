@@ -2,6 +2,7 @@ import type {
   ArchitectureDirectoryRelation,
   ArchitectureFileEdge,
   ConventionPrivacyRule,
+  FacadeDeFactoSurface,
   FacadeLeakKind,
   FacadeLeakKindBasis,
   FacadeModuleExclusionReason,
@@ -186,6 +187,9 @@ export type { FacadeLeakKindBasis };
  */
 export type { FacadeModuleExclusionReason };
 
+/** A measured de-facto surface child — defined once in the finding contract (bd tea-rags-mcp-r8hme.52.16). */
+export type { FacadeDeFactoSurface };
+
 export type FacadeModuleStatus = "active" | FacadeModuleExclusionReason;
 
 /** A module's facade adoption, counted over DISTINCT external importing files. */
@@ -291,7 +295,18 @@ export interface LeakingAbstractionSummary {
      * modules — unlike the three keys above.
      */
     intraParentConsumers: number;
+    /**
+     * In-scope internal-reach edges into a measured de-facto surface child
+     * (`deFactoSurfaces`): judged, not reported as violations. Counts edges.
+     */
+    deFactoSurfaceEdges: number;
   };
+  /**
+   * Children of active modules measured as de-facto second surfaces (bd
+   * tea-rags-mcp-r8hme.52.16), lowest p first. Measured over the whole graph,
+   * like adoption — a scope narrows what is judged, not what is measured.
+   */
+  deFactoSurfaces: FacadeDeFactoSurface[];
   /** Present when `sourcePathPattern` scoped the run (same shape as the SDP scope). */
   scope?: StableDependenciesScope;
 }

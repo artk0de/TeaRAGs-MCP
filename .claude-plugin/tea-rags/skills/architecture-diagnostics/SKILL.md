@@ -595,7 +595,14 @@ Reasons verbatim in `exclusionReasons`. Report them as "not judged", never as
 "clean".
 
 `summary.leakingAbstraction.excludedModules` — first three count modules NOT
-judged; `intraParentConsumers` counts excluded importer pairs:
+judged; `intraParentConsumers` counts excluded importer pairs;
+`deFactoSurfaceEdges` counts internal-reach edges spared because target child is
+measured de-facto surface. Surfaces listed in
+`summary.leakingAbstraction.deFactoSurfaces`
+(`moduleDir, child, directImporterCount, backgroundRate, pValue`): child (first
+path segment under module) importers reach directly far above module's
+background deep rate — binomial + BH. Report as second surface module grew, not
+leak; bypass into it still reported:
 
 | Counter                | Meaning                                                                                                                                                                          |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
