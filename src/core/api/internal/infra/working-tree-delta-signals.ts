@@ -80,11 +80,11 @@ import {
   type WorkingTreeTouchedBasePointsReader,
 } from "../../../contracts/types/working-tree.js";
 import { fileLinesOf } from "../../../domains/ingest/index.js";
+import { buildCodegraphFileSignals } from "../../../domains/trajectory/codegraph/index.js";
 import {
   settleCodegraphChunkSignals,
   type CodegraphStoredChunk,
 } from "../../../domains/trajectory/codegraph/symbols/chunk-signal-settlement.js";
-import { buildCodegraphFileSignals } from "../../../domains/trajectory/codegraph/symbols/payload-signals.js";
 import { gitFileSignalsAtLineCount } from "../../../domains/trajectory/git/index.js";
 import type { WorkingTreeGraphFileOpener } from "./working-tree-graph-read.js";
 

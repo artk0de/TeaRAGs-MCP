@@ -181,7 +181,8 @@ vi.mock("../../src/core/domains/explore/reranker.js", () => ({
 vi.mock("../../src/core/domains/explore/rerank/presets/index.js", () => ({
   resolvePresets: vi.fn().mockReturnValue([]),
 }));
-vi.mock("../../src/core/domains/trajectory/static/index.js", () => ({
+vi.mock(import("../../src/core/domains/trajectory/static/index.js"), async (importOriginal) => ({
+  ...(await importOriginal()),
   StaticTrajectory: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
     this.key = "static";
     this.payloadSignals = [];
