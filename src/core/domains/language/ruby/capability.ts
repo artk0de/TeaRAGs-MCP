@@ -81,7 +81,7 @@ export const capability: LanguageCapability = {
   // (`x ||= v`) publish `identifierDeclarations` rows, and accessor macros
   // declare `field` rows; a walker-5 index carries none of them, so only the
   // recompute adds them to the naming lexicon.
-  versions: { chunking: 2, walker: 6, codegraphSchema: 2 },
+  versions: { chunking: 2, walker: 7, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

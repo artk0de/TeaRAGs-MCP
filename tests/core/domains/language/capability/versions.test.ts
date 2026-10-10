@@ -475,11 +475,14 @@ describe("seeded support versions", () => {
       // moves Python extraction and resolution, so an index built by walker 9
       // (shipped in v1.45.1) holds none of its twin attributions, Self markers
       // or call-result spines.
+      // ruby 7: bd tea-rags-mcp-r8hme.52.12 — a constant whose namespace nested
+      // files reopen resolves to the declarer at its Zeitwerk path, so an index
+      // built by walker 6 (shipped in v1.47.0) lacks those file and call edges.
       const WALKER_BUMPED = new Map([
         ["typescript", 12],
         ["javascript", 4],
         ["python", 10],
-        ["ruby", 6],
+        ["ruby", 7],
         ["java", 3],
         ["rust", 3],
         ["go", 5],

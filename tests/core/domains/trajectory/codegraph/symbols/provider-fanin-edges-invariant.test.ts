@@ -44,9 +44,9 @@ import { collectSymbols } from "../../../../../../src/core/domains/language/kern
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { RubyCallResolver } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolvePath(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -415,5 +415,75 @@ describe("Codegraph fanIn ↔ getCallers consistency — Ruby fixtures (tea-rags
 
     const callers = await client.getCallers("C#foo");
     expect(callers.map((c) => c.sourceSymbolId)).toContain("A#foo");
+  });
+
+  /**
+   * End-to-end regression for bd tea-rags-mcp-r8hme.52.12 — a constant whose
+   * namespace nested files reopen. `acme/api.rb` defines `Acme::Api` with
+   * module_function methods; `acme/api/contracts/x/request.rb` reopens
+   * `module Api` to nest a contract under it, so the symbol table holds two
+   * declarers of `Acme::Api`. The caller must still get its file edge into
+   * `api.rb` and its call edge into `Acme::Api.send_event`.
+   */
+  it("links a call into a namespace reopened by nested files to its defining file (bd r8hme.52.12)", async () => {
+    writeRb(
+      "app/services/acme/api.rb",
+      [
+        "module Acme",
+        "  module Api",
+        "    module_function",
+        "",
+        "    def send_event(name)",
+        "      name",
+        "    end",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    writeRb(
+      "app/services/acme/api/contracts/x/request.rb",
+      [
+        "module Acme",
+        "  module Api",
+        "    module Contracts",
+        "      module X",
+        "        class Request",
+        "          def body",
+        "            {}",
+        "          end",
+        "        end",
+        "      end",
+        "    end",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    writeRb(
+      "app/services/crm/invitation_accept.rb",
+      [
+        "module Crm",
+        "  class InvitationAccept",
+        "    def call",
+        "      Acme::Api.send_event(:accepted)",
+        "    end",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+
+    await provider.buildFileSignals(root, {
+      paths: [
+        "app/services/acme/api.rb",
+        "app/services/acme/api/contracts/x/request.rb",
+        "app/services/crm/invitation_accept.rb",
+      ],
+    });
+
+    expect(await client.getFanIn("app/services/acme/api.rb")).toBe(1);
+    const callers = await client.getCallers("Acme::Api.send_event");
+    expect(callers.map((c) => c.sourceSymbolId)).toContain("Crm::InvitationAccept#call");
   });
 });

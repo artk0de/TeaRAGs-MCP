@@ -291,7 +291,55 @@ describe("RubyLocalTypeSymbolResolutionStrategy", () => {
   });
 
   it("RC-2 control: class file unresolvable AND no classAncestors entry → DROP (not continue)", () => {
-    // Same N>1 declaration scenario but no classAncestors → null returned → DROP.
+    // N>1 declarations, NONE at the constant's conventional path (two files
+    // reopening the namespace, no definer) and no classAncestors → null → DROP.
+    // A definer at `lib/octokit/enterprise_admin_client.rb` would resolve the
+    // file since bd tea-rags-mcp-r8hme.52.12 — see the next case.
+    const symbolTable = tableWith(
+      [
+        "lib/octokit/enterprise_admin_client/users.rb",
+        [
+          sym(
+            "Octokit::EnterpriseAdminClient",
+            "EnterpriseAdminClient",
+            "lib/octokit/enterprise_admin_client/users.rb",
+            ["Octokit"],
+          ),
+        ],
+      ],
+      [
+        "lib/octokit/enterprise_admin_client/admins.rb",
+        [
+          sym(
+            "Octokit::EnterpriseAdminClient",
+            "EnterpriseAdminClient",
+            "lib/octokit/enterprise_admin_client/admins.rb",
+            ["Octokit"],
+          ),
+        ],
+      ],
+    );
+    const clientCall: CallRef = {
+      callText: "client.configure",
+      receiver: "client",
+      member: "configure",
+      startLine: 1,
+    };
+    const outcome = strat.attempt(
+      clientCall,
+      ctx({
+        symbolTable,
+        localBindings: { client: [{ line: 1, type: "Octokit::EnterpriseAdminClient" }] },
+        // no classAncestors
+      }),
+    );
+    expect(outcome.kind).toBe("drop");
+  });
+
+  it("RC-2 reopened namespace: the declarer at the conventional path is the class file (bd r8hme.52.12)", () => {
+    // `enterprise_admin_client.rb` DEFINES the class; `enterprise_admin_client/admins.rb`
+    // only reopens it to nest a module. The definer is the class file, so an
+    // unknown member yields a file-only edge into it instead of a DROP.
     const symbolTable = tableWith(
       [
         "lib/octokit/enterprise_admin_client.rb",
@@ -324,10 +372,12 @@ describe("RubyLocalTypeSymbolResolutionStrategy", () => {
       ctx({
         symbolTable,
         localBindings: { client: [{ line: 1, type: "Octokit::EnterpriseAdminClient" }] },
-        // no classAncestors
       }),
     );
-    expect(outcome.kind).toBe("drop");
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "lib/octokit/enterprise_admin_client.rb", targetSymbolId: null },
+    });
   });
 });
 
