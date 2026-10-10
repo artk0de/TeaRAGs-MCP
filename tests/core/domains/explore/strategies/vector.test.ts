@@ -18,12 +18,14 @@ function createMockQdrant(
 const RELATIVE_PATH: PayloadSignalDescriptor = {
   key: "relativePath",
   type: "string",
+  treeDependence: "history-only",
   description: "path",
   level: "file",
 };
 const GIT_FILE_COMMITS: PayloadSignalDescriptor = {
   key: "git.file.commitCount",
   type: "number",
+  treeDependence: "history-only",
   description: "commits",
 };
 

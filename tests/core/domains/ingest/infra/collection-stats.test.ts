@@ -26,6 +26,7 @@ const testSignals: PayloadSignalDescriptor[] = [
   {
     key: "git.file.commitCount",
     type: "number",
+    treeDependence: "history-only",
     description: "test",
     stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
   },
@@ -36,12 +37,14 @@ const signalsWithChunkFilter: PayloadSignalDescriptor[] = [
   {
     key: "methodLines",
     type: "number",
+    treeDependence: "history-only",
     description: "Original method/block line count",
     stats: { labels: { p50: "small", p75: "large", p95: "decomposition_candidate" }, chunkTypeFilter: "function" },
   },
   {
     key: "methodDensity",
     type: "number",
+    treeDependence: "history-only",
     description: "Code density",
     stats: { labels: { p50: "sparse", p95: "dense" }, chunkTypeFilter: "function" },
   },
@@ -616,12 +619,14 @@ describe("computeCollectionStats distributions", () => {
       {
         key: "methodLines",
         type: "number",
+        treeDependence: "history-only",
         description: "method lines",
         stats: { labels: { p50: "small", p75: "large", p95: "decomposition_candidate" }, chunkTypeFilter: "function" },
       },
       {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "commit count",
         stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }, mean: true },
       },
@@ -740,12 +745,14 @@ describe("computeCollectionStats distributions", () => {
         {
           key: "git.file.bugFixRate",
           type: "number",
+          treeDependence: "history-only",
           description: "bug-fix share",
           stats: { labels: { p50: "healthy", p95: "critical" }, sourceScopeOnly: true },
         },
         {
           key: "git.file.commitCount",
           type: "number",
+          treeDependence: "history-only",
           description: "commit count",
           stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
         },
@@ -814,6 +821,7 @@ describe("computeCollectionStats distributions", () => {
         {
           key: "git.file.commitCount",
           type: "number",
+          treeDependence: "history-only",
           description: "test",
           stats: {
             labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" },
@@ -842,6 +850,7 @@ describe("computeCollectionStats distributions", () => {
         {
           key: "git.file.commitCount",
           type: "number",
+          treeDependence: "history-only",
           description: "test",
           stats: {
             labels: { p25: "low", p50: "typical" },
@@ -903,12 +912,14 @@ describe("computeCollectionStats distributions", () => {
         {
           key: "codegraph.file.fanIn",
           type: "number",
+          treeDependence: "history-only",
           description: "test",
           stats: { labels: { p25: "isolated", p50: "typical", p75: "popular", p95: "hub" } },
         },
         {
           key: "codegraph.file.connectionCount",
           type: "number",
+          treeDependence: "history-only",
           description: "test",
           stats: { labels: { p25: "sparse", p50: "typical", p75: "busy", p95: "highly-connected" } },
         },
@@ -938,6 +949,7 @@ describe("computeCollectionStats distributions", () => {
         {
           key: "codegraph.file.fanIn",
           type: "number",
+          treeDependence: "history-only",
           description: "test",
           stats: { labels: { p25: "isolated", p50: "typical", p75: "popular", p95: "hub" } },
         },
@@ -958,6 +970,7 @@ describe("computeCollectionStats distributions", () => {
     const bugFixRateNeedsP10: PayloadSignalDescriptor = {
       key: "git.file.bugFixRate",
       type: "number",
+      treeDependence: "history-only",
       description: "test",
       stats: {
         labels: { p50: "healthy", p75: "concerning", p95: "critical" },
@@ -977,6 +990,7 @@ describe("computeCollectionStats distributions", () => {
       const commitCountAllPercentiles: PayloadSignalDescriptor = {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "test",
         stats: { labels: { p10: "very-low", p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
       };
@@ -989,6 +1003,7 @@ describe("computeCollectionStats distributions", () => {
       const commitCountWithCompute: PayloadSignalDescriptor = {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "test",
         stats: {
           labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" },
@@ -1004,6 +1019,7 @@ describe("computeCollectionStats distributions", () => {
       const commitCountMissingP10: PayloadSignalDescriptor = {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "test",
         stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
       };
@@ -1022,6 +1038,7 @@ describe("computeCollectionStats distributions", () => {
       const bugFixScoreOnly: PayloadSignalDescriptor = {
         key: "git.file.bugFixRate",
         type: "number",
+        treeDependence: "history-only",
         description: "test",
         stats: {
           confidence: {
@@ -1033,6 +1050,7 @@ describe("computeCollectionStats distributions", () => {
       const commitCountWithoutP7: PayloadSignalDescriptor = {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "test",
         stats: { labels: { p25: "low" } },
       };
@@ -1045,6 +1063,7 @@ describe("computeCollectionStats distributions", () => {
       const chunkBugFix: PayloadSignalDescriptor = {
         key: "git.chunk.bugFixRate",
         type: "number",
+        treeDependence: "history-only",
         description: "test",
         stats: {
           confidence: {
@@ -1057,12 +1076,14 @@ describe("computeCollectionStats distributions", () => {
       const fileCC: PayloadSignalDescriptor = {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "test",
         stats: { labels: { p10: "x", p25: "low" } },
       };
       const chunkCC: PayloadSignalDescriptor = {
         key: "git.chunk.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "test",
         stats: { labels: { p25: "low" } },
       };
@@ -1078,6 +1099,7 @@ describe("computeCollectionStats distributions", () => {
       const nonScopedSignal: PayloadSignalDescriptor = {
         key: "methodLines",
         type: "number",
+        treeDependence: "history-only",
         description: "test",
         stats: {
           labels: { p50: "small" },
@@ -1102,6 +1124,7 @@ describe("computeCollectionStats distributions", () => {
       const instability: PayloadSignalDescriptor = {
         key: "codegraph.file.instability",
         type: "number",
+        treeDependence: "history-only",
         description: "instability",
         stats: {
           labels: { p50: "stable", p75: "mixed", p95: "unstable" },
@@ -1120,6 +1143,7 @@ describe("computeCollectionStats distributions", () => {
       const supportWired: PayloadSignalDescriptor = {
         key: "codegraph.file.connectionCount",
         type: "number",
+        treeDependence: "history-only",
         description: "connection count",
         stats: {
           labels: { p25: "sparse", p50: "typical", p75: "busy", p95: "highly-connected" },
@@ -1135,6 +1159,7 @@ describe("computeCollectionStats distributions", () => {
       const instability: PayloadSignalDescriptor = {
         key: "codegraph.file.instability",
         type: "number",
+        treeDependence: "history-only",
         description: "instability",
         stats: {
           labels: { p50: "stable" },
@@ -1149,6 +1174,7 @@ describe("computeCollectionStats distributions", () => {
       const supportMissingP10: PayloadSignalDescriptor = {
         key: "codegraph.file.connectionCount",
         type: "number",
+        treeDependence: "history-only",
         description: "connection count",
         // p10 is not declared in labels and not in percentilesToCompute
         stats: { labels: { p25: "sparse", p50: "typical" } },
@@ -1166,6 +1192,7 @@ describe("computeCollectionStats distributions", () => {
       const commitCountWithExtraP10: PayloadSignalDescriptor = {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "commit count",
         stats: {
           labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" },
@@ -1229,6 +1256,7 @@ describe("computeCollectionStats distributions", () => {
       {
         key: "moduleMethodCount",
         type: "number",
+        treeDependence: "history-only",
         description: "Distinct code symbols declared in the file",
         stats: {
           labels: { p50: "typical", p75: "busy", p95: "god-module" },
@@ -1336,6 +1364,7 @@ describe("zero observations in the percentile sample", () => {
     {
       key: "git.file.bugFixRate",
       type: "number",
+      treeDependence: "history-only",
       description: "Percentage of bug-fix commits (0-100)",
       stats: { labels: { p50: "healthy", p75: "concerning", p95: "critical" }, zeroIsValidObservation: true },
     },
@@ -1346,6 +1375,7 @@ describe("zero observations in the percentile sample", () => {
     {
       key: "git.file.commitCount",
       type: "number",
+      treeDependence: "history-only",
       description: "commits",
       stats: { labels: { p50: "typical", p95: "extreme" } },
     },
@@ -1432,6 +1462,7 @@ describe("chunkTypeFilter admitting more than one chunk type", () => {
     {
       key: "git.chunk.commitCount",
       type: "number",
+      treeDependence: "history-only",
       description: "commits touching this chunk",
       stats: { labels: { p50: "typical", p95: "extreme" }, chunkTypeFilter: ["function", "test"] },
     },
@@ -1442,6 +1473,7 @@ describe("chunkTypeFilter admitting more than one chunk type", () => {
     {
       key: "methodLines",
       type: "number",
+      treeDependence: "history-only",
       description: "method line count",
       stats: { labels: { p50: "small", p95: "large" }, chunkTypeFilter: "function" },
     },
@@ -1515,6 +1547,7 @@ describe("support-gated percentile sampling (minSupportPercentile)", () => {
     {
       key: "git.file.bugFixRate",
       type: "number",
+      treeDependence: "history-only",
       description: "Percentage of bug-fix commits (0-100)",
       stats: {
         labels: { p50: "healthy", p75: "concerning", p95: "critical" },
@@ -1528,12 +1561,14 @@ describe("support-gated percentile sampling (minSupportPercentile)", () => {
       // Identical values on the identical points, no gate — the control.
       key: "git.file.churnVolatility",
       type: "number",
+      treeDependence: "history-only",
       description: "ungated control carrying the identical values",
       stats: { labels: { p50: "stable", p95: "erratic" }, dedupeByFile: true },
     },
     {
       key: "git.file.commitCount",
       type: "number",
+      treeDependence: "history-only",
       description: "Total commits modifying this file",
       stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }, dedupeByFile: true },
     },
@@ -1662,6 +1697,7 @@ describe("structural atoms leave the percentile sample (structuralAtoms)", () =>
   const atomDeclared: PayloadSignalDescriptor = {
     key: "codegraph.file.instability",
     type: "number",
+    treeDependence: "history-only",
     description: "instability",
     stats: { labels: { p50: "stable", p75: "mixed", p95: "unstable" }, dedupeByFile: true, structuralAtoms: [0, 1] },
   };
@@ -1669,6 +1705,7 @@ describe("structural atoms leave the percentile sample (structuralAtoms)", () =>
   const control: PayloadSignalDescriptor = {
     key: "codegraph.file.fanOutRatioControl",
     type: "number",
+    treeDependence: "history-only",
     description: "control carrying the identical values",
     stats: {
       labels: { p50: "stable", p75: "mixed", p95: "unstable" },
@@ -1784,6 +1821,7 @@ describe("structural atoms leave the percentile sample (structuralAtoms)", () =>
     const support: PayloadSignalDescriptor = {
       key: "codegraph.file.connectionCount",
       type: "number",
+      treeDependence: "history-only",
       description: "fanIn + fanOut",
       stats: { labels: { p25: "sparse", p50: "typical", p75: "busy", p95: "hub" }, dedupeByFile: true },
     };
@@ -1819,6 +1857,7 @@ describe("co-signal class members leave the percentile sample (coSignalClass)", 
   const classDeclared: PayloadSignalDescriptor = {
     key: "git.file.recentDominantAuthorPct",
     type: "number",
+    treeDependence: "history-only",
     description: "dominance",
     stats: {
       labels: { p25: "shared", p50: "mixed", p75: "concentrated", p95: "silo" },
@@ -1830,6 +1869,7 @@ describe("co-signal class members leave the percentile sample (coSignalClass)", 
   const control: PayloadSignalDescriptor = {
     key: "git.file.dominanceControl",
     type: "number",
+    treeDependence: "history-only",
     description: "control carrying the identical values",
     stats: { labels: { p25: "shared", p50: "mixed", p75: "concentrated", p95: "silo" }, dedupeByFile: true },
   };

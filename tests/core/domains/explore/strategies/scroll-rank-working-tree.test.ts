@@ -27,7 +27,12 @@ const SCROLLED = [
   { id: "u", payload: { relativePath: "src/untouched.ts", language: "typescript", methodLines: 30 } },
 ];
 
-const METHOD_LINES: PayloadSignalDescriptor = { key: "methodLines", type: "number", description: "lines" };
+const METHOD_LINES: PayloadSignalDescriptor = {
+  key: "methodLines",
+  type: "number",
+  treeDependence: "history-only",
+  description: "lines",
+};
 
 /** Ranks by methodLines, largest first — what the preset would compute. */
 const reranker = {

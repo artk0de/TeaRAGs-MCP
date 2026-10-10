@@ -411,3 +411,39 @@ describe("TrajectoryRegistry.getPayloadKeyOwners", () => {
     );
   });
 });
+
+// bd tea-rags-mcp-39xca.20: the working-tree overlay recomputes a `line-count`
+// signal with its OWNING trajectory's formula — a declaration without one fails
+// at composition, never silently inherits a stale base value.
+describe("TrajectoryRegistry.getPayloadSignalTreeRecompute", () => {
+  const lineCountSignal: PayloadSignalDescriptor = {
+    key: "x.file.relativeChurn",
+    type: "number",
+    description: "churn over the current line count",
+    treeDependence: "line-count",
+  };
+
+  it("pairs every line-count signal with its trajectory's formula", () => {
+    const formula = () => 1;
+    const registry = new TrajectoryRegistry();
+    registry.register(
+      mockTrajectory({
+        key: "x",
+        payloadSignals: [lineCountSignal],
+        lineCountFormulas: new Map([[lineCountSignal.key, formula]]),
+      }),
+    );
+
+    const recompute = registry.getPayloadSignalTreeRecompute();
+
+    expect(recompute.descriptors).toEqual([lineCountSignal]);
+    expect(recompute.lineCountFormulas.get(lineCountSignal.key)).toBe(formula);
+  });
+
+  it("throws on a line-count signal its trajectory gives no formula", () => {
+    const registry = new TrajectoryRegistry();
+    registry.register(mockTrajectory({ key: "x", payloadSignals: [lineCountSignal] }));
+
+    expect(() => registry.getPayloadSignalTreeRecompute()).toThrow(/x\.file\.relativeChurn/);
+  });
+});

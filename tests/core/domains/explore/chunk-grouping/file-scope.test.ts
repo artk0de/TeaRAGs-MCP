@@ -125,8 +125,8 @@ describe("reduceToFileScope (bd tea-rags-mcp-mwq0k)", () => {
 
   it("derives file scope from descriptors: a flat key is file-level only when declared so", () => {
     const signals: PayloadSignalDescriptor[] = [
-      { key: "ownerTeam", type: "string", description: "file owner", level: "file" },
-      { key: "tokenCount", type: "number", description: "chunk tokens" },
+      { key: "ownerTeam", type: "string", treeDependence: "history-only", description: "file owner", level: "file" },
+      { key: "tokenCount", type: "number", treeDependence: "history-only", description: "chunk tokens" },
     ];
 
     const reduced = reduceToFileScope(

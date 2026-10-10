@@ -372,8 +372,8 @@ describe("SimilarSearchStrategy", () => {
       qdrant,
       reranker,
       [
-        { key: "relativePath", type: "string", description: "path" },
-        { key: "git.file.commitCount", type: "number", description: "commits" },
+        { key: "relativePath", type: "string", treeDependence: "history-only", description: "path" },
+        { key: "git.file.commitCount", type: "number", treeDependence: "history-only", description: "commits" },
       ],
       ["git.file.commitCount"],
       createMockEmbeddings(),

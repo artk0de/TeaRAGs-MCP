@@ -24,7 +24,12 @@ const ROWS = [
 
 const VIEW = fakeWorkingTreeView({ changed: ["src/modified.ts"], deleted: ["src/deleted.ts"] });
 
-const METHOD_LINES: PayloadSignalDescriptor = { key: "methodLines", type: "number", description: "lines" };
+const METHOD_LINES: PayloadSignalDescriptor = {
+  key: "methodLines",
+  type: "number",
+  treeDependence: "history-only",
+  description: "lines",
+};
 
 async function vectorRun(ctx: Partial<ExploreContext>) {
   const qdrant = { search: vi.fn().mockResolvedValue(ROWS) } as unknown as QdrantManager;

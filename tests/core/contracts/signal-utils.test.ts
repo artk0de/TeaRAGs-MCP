@@ -80,7 +80,13 @@ describe("toPhysicalPayloadKey", () => {
 
 describe("describeStatsSamplingContract", () => {
   function signal(stats: PayloadSignalDescriptor["stats"]): PayloadSignalDescriptor {
-    return { key: "git.file.bugFixRate", type: "number", description: "bug-fix share", stats };
+    return {
+      key: "git.file.bugFixRate",
+      type: "number",
+      treeDependence: "history-only",
+      description: "bug-fix share",
+      stats,
+    };
   }
 
   // Dropping the test bucket changes WHICH values the stats file holds, so an

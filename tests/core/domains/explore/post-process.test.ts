@@ -105,13 +105,13 @@ describe("postProcess", () => {
 
 describe("filterMetaOnly", () => {
   const payloadSignals: PayloadSignalDescriptor[] = [
-    { key: "relativePath", type: "string", description: "File path" },
-    { key: "language", type: "string", description: "Language" },
-    { key: "startLine", type: "number", description: "Start line" },
+    { key: "relativePath", type: "string", treeDependence: "history-only", description: "File path" },
+    { key: "language", type: "string", treeDependence: "history-only", description: "Language" },
+    { key: "startLine", type: "number", treeDependence: "history-only", description: "Start line" },
     // Git signals declared as the git trajectory declares them in production.
-    { key: "git.file.ageDays", type: "number", description: "File age" },
-    { key: "git.file.commitCount", type: "number", description: "File commits" },
-    { key: "git.chunk.commitCount", type: "number", description: "Chunk commits" },
+    { key: "git.file.ageDays", type: "number", treeDependence: "history-only", description: "File age" },
+    { key: "git.file.commitCount", type: "number", treeDependence: "history-only", description: "File commits" },
+    { key: "git.chunk.commitCount", type: "number", treeDependence: "history-only", description: "Chunk commits" },
   ];
 
   // metaOnly contract (2026-09-24, supersedes bd tea-rags-mcp-rtjrn): the
@@ -122,10 +122,10 @@ describe("filterMetaOnly", () => {
   describe("payload stays raw whatever the overlay carries", () => {
     const ownedSignals: PayloadSignalDescriptor[] = [
       ...payloadSignals,
-      { key: "git.file.bugFixRate", type: "number", description: "Bug-fix rate" },
-      { key: "imports", type: "string[]", description: "File imports", level: "file" },
-      { key: "codegraph.file.fanIn", type: "number", description: "File fan-in" },
-      { key: "codegraph.chunk.fanIn", type: "number", description: "Symbol fan-in" },
+      { key: "git.file.bugFixRate", type: "number", treeDependence: "history-only", description: "Bug-fix rate" },
+      { key: "imports", type: "string[]", treeDependence: "history-only", description: "File imports", level: "file" },
+      { key: "codegraph.file.fanIn", type: "number", treeDependence: "history-only", description: "File fan-in" },
+      { key: "codegraph.chunk.fanIn", type: "number", treeDependence: "history-only", description: "Symbol fan-in" },
     ];
 
     const liveFileHit = (): SearchResult => ({
@@ -317,7 +317,13 @@ describe("filterMetaOnly", () => {
   it("includes imports when marked essential in payload signals", () => {
     const signalsWithImports: PayloadSignalDescriptor[] = [
       ...payloadSignals,
-      { key: "imports", type: "string[]", description: "File imports", essential: true },
+      {
+        key: "imports",
+        type: "string[]",
+        treeDependence: "history-only",
+        description: "File imports",
+        essential: true,
+      },
     ];
     const results: SearchResult[] = [
       {

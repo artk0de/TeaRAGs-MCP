@@ -135,7 +135,12 @@ describe("strategies claim no floor when the request admitted none of the tree's
   });
 
   it("rank_chunks: a filter no delta row passes", async () => {
-    const methodLines: PayloadSignalDescriptor = { key: "methodLines", type: "number", description: "lines" };
+    const methodLines: PayloadSignalDescriptor = {
+      key: "methodLines",
+      type: "number",
+      treeDependence: "history-only",
+      description: "lines",
+    };
     const reranker = {
       rerank: vi.fn((r: unknown[]) => r),
       getDescriptors: vi

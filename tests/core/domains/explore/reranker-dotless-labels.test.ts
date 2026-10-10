@@ -32,6 +32,7 @@ const payloadSignals: PayloadSignalDescriptor[] = [
   {
     key: "moduleLines",
     type: "number",
+    treeDependence: "history-only",
     description: "Physical line count of the file",
     level: "file",
     stats: { labels: { p50: "small", p75: "large", p95: "god-module" }, dedupeByFile: true },
@@ -39,6 +40,7 @@ const payloadSignals: PayloadSignalDescriptor[] = [
   {
     key: "moduleMethodCount",
     type: "number",
+    treeDependence: "history-only",
     description: "Distinct callables declared in this file",
     level: "file",
     stats: { labels: { p50: "typical", p75: "busy", p95: "god-module" }, dedupeByFile: true },
@@ -46,6 +48,7 @@ const payloadSignals: PayloadSignalDescriptor[] = [
   {
     key: "memberCount",
     type: "number",
+    treeDependence: "history-only",
     description: "Distinct direct members declared by this class",
     stats: { labels: { p50: "typical", p75: "large", p95: "god-module" } },
   },
@@ -151,6 +154,7 @@ describe("Reranker — overlay labels for dotless payload keys", () => {
       {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "Total commits",
         stats: { labels: { p50: "typical", p95: "extreme" } },
       },

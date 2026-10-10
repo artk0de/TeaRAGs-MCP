@@ -34,6 +34,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importGitHistory } from "../../../__helpers__/git-history-import.js";
 import { GitCliAdapter } from "../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { BlameLine } from "../../../../../src/core/adapters/vcs/types.js";
+import { fullRegistryPayloadSignalTreeRecompute } from "../../../../../src/core/api/internal/composition.js";
 import { createWorkingTreeDeltaSignalSource } from "../../../../../src/core/api/internal/infra/working-tree-delta-signals.js";
 import { createWorkingTreeGitSignalSource } from "../../../../../src/core/api/internal/infra/working-tree-git-signals.js";
 import type {
@@ -308,6 +309,7 @@ async function overlayRows(
   );
   const source = createWorkingTreeDeltaSignalSource({
     graphFiles: () => undefined,
+    signalTreeRecompute: fullRegistryPayloadSignalTreeRecompute(),
     gitSignals: createWorkingTreeGitSignalSource({
       vcsAdapter: "git",
       timeoutMs: TIMEOUT_MS,

@@ -25,7 +25,10 @@ import {
   type GitWorkingTreeSeedStep,
 } from "../../../__helpers__/git-working-tree-fixture.js";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
-import { createComposition } from "../../../../../src/core/api/internal/composition.js";
+import {
+  createComposition,
+  fullRegistryPayloadSignalTreeRecompute,
+} from "../../../../../src/core/api/internal/composition.js";
 import { createWorkingTreeDeltaSignalSource } from "../../../../../src/core/api/internal/infra/working-tree-delta-signals.js";
 import { createWorkingTreeGitSignalSource } from "../../../../../src/core/api/internal/infra/working-tree-git-signals.js";
 import type {
@@ -50,6 +53,8 @@ import {
 
 const TREE: WorkingTree = { root: "/tree", baseIndex: { collectionName: "code_base", root: "/repo" } };
 const FOO = "src/foo.ts";
+/** This build's tree dependences and line-count formulas, as bootstrap wires them. */
+const signalTreeRecompute = fullRegistryPayloadSignalTreeRecompute();
 
 const GIT_FILE = { commitCount: 40, bugFixRate: 30, churnVolatility: 5, ageDays: 2, relativeChurn: 1.5 };
 const gitChunk = (commitCount: number) => ({ commitCount, churnRatio: 0.6, bugFixRate: 25, ageDays: 1 });
@@ -108,7 +113,7 @@ function sourceReading(
   readTouchedBasePoints: WorkingTreeTouchedBasePointsReader,
   graphFiles: Parameters<typeof createWorkingTreeDeltaSignalSource>[0]["graphFiles"],
 ) {
-  const source = createWorkingTreeDeltaSignalSource({ graphFiles });
+  const source = createWorkingTreeDeltaSignalSource({ graphFiles, signalTreeRecompute });
   return {
     enrich: async (request: WorkingTreeDeltaSignalRequest) => source.enrich({ ...request, readTouchedBasePoints }),
   };
@@ -408,6 +413,7 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
   function sourceWith(points: ReturnType<typeof basePoint>[], gitSignals?: WorkingTreeGitSignalSource) {
     const source = createWorkingTreeDeltaSignalSource({
       graphFiles: unopenable,
+      signalTreeRecompute,
       ...(gitSignals ? { gitSignals } : {}),
     });
     const readTouchedBasePoints = basePointsHolding(points);
@@ -540,6 +546,30 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
     expect(rows[1].payload.git).toEqual({ file: { ...churned, relativeChurn: 2 } });
   });
 
+  // bd tea-rags-mcp-39xca.20 — the relativeChurn asymmetry, DECLARED: the file
+  // value is `line-count` (rescaled above), the chunk value `history-only`. A
+  // reindex of a dirty tree walks each chunk over the HEAD rows its working rows
+  // carry onto (`carryDirtyChunkMapOntoHead`), so an uncommitted edit that grows
+  // a method leaves the chunk's denominator — and its relativeChurn — where the
+  // base's is; the parity harness pins it against a real reindex
+  // (`working-tree-git-parity.test.ts`). Rescaling it to the tree span broke
+  // that parity (0.16 → 0.15 on `helperA`).
+  it("keeps an inherited git.chunk's relativeChurn when the method grew in the tree, as a reindex does", async () => {
+    const churned = { ...GIT_FILE, linesAdded: 30, linesDeleted: 10, relativeChurn: 4 };
+    const baseChunk = { ...gitChunk(4), relativeChurn: 0.57 };
+    const point = basePoint("b1", FOO, "Foo#grew", 4);
+    const grown = {
+      ...point,
+      payload: { ...point.payload, startLine: 10, endLine: 19, git: { file: churned, chunk: baseChunk } },
+    };
+    const source = sourceWith([grown]);
+
+    const { rows } = await source.enrich({ tree: TREE, rows: [deltaRow("d1", FOO, "Foo#grew", [10, 49])] });
+
+    // The file takes the tree's 49 rows (40 / 49 → 0.82); the chunk keeps the base's value.
+    expect(rows[0].payload.git).toEqual({ file: { ...churned, relativeChurn: 0.82 }, chunk: baseChunk });
+  });
+
   // Invariant changed (live G4): a brand-new symbol in a tracked, modified file
   // gets the chunk walk's zero block — what ingest writes for a chunk no commit
   // touched — not "no block". Real git: the port's answer is the invariant.
@@ -603,7 +633,7 @@ describe("createWorkingTreeDeltaSignalSource — git beyond the same path", () =
   // at their history paths — never for the rest of the delta (live probe: a
   // 3,198-file delta re-read ~30k points of git / codegraph per request).
   it("asks the full base points of only the signalled rows' history paths", async () => {
-    const source = createWorkingTreeDeltaSignalSource({ graphFiles: unopenable });
+    const source = createWorkingTreeDeltaSignalSource({ graphFiles: unopenable, signalTreeRecompute });
     const read = basePointsHolding([
       basePoint("b1", OLD, "Foo#kept", 4),
       basePoint("b2", FOO, "Foo#kept", 4),

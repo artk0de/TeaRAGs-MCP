@@ -17,6 +17,7 @@ import {
   gitDerivedSignals,
   GitEnrichmentProvider,
   gitFilters,
+  gitLineCountFormulas,
   gitPayloadSignalDescriptors,
   gitStatsAccumulators,
   type GitProviderConfig,
@@ -28,6 +29,7 @@ export class GitTrajectory implements Trajectory {
   readonly name = "Git";
   readonly description = "Git history signals: churn, authorship, age, and derived analytics";
   readonly payloadSignals = gitPayloadSignalDescriptors;
+  readonly lineCountFormulas = gitLineCountFormulas;
   readonly derivedSignals = gitDerivedSignals;
   readonly filters = gitFilters;
   readonly presets = GIT_PRESETS;

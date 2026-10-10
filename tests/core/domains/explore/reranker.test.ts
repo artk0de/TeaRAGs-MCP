@@ -1427,17 +1427,72 @@ describe("Reranker with resolvedPresets", () => {
 
 describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () => {
   const testPayloadSignals = [
-    { key: "git.file.ageDays", type: "number" as const, description: "Days since last modification" },
-    { key: "git.file.commitCount", type: "number" as const, description: "Total commits" },
-    { key: "git.file.bugFixRate", type: "number" as const, description: "Bug fix rate" },
-    { key: "git.file.churnVolatility", type: "number" as const, description: "Churn volatility" },
-    { key: "git.file.changeDensity", type: "number" as const, description: "Change density" },
-    { key: "git.file.recentDominantAuthorPct", type: "number" as const, description: "Dominant author pct" },
-    { key: "git.file.recentContributorCount", type: "number" as const, description: "Contributors" },
-    { key: "git.file.relativeChurn", type: "number" as const, description: "Relative churn" },
-    { key: "git.file.recencyWeightedFreq", type: "number" as const, description: "Recency freq" },
-    { key: "git.chunk.commitCount", type: "number" as const, description: "Chunk commits" },
-    { key: "git.chunk.churnRatio", type: "number" as const, description: "Chunk churn ratio" },
+    {
+      key: "git.file.ageDays",
+      type: "number" as const,
+      treeDependence: "history-only" as const,
+      description: "Days since last modification",
+    },
+    {
+      key: "git.file.commitCount",
+      type: "number" as const,
+      treeDependence: "history-only" as const,
+      description: "Total commits",
+    },
+    {
+      key: "git.file.bugFixRate",
+      type: "number" as const,
+      treeDependence: "history-only" as const,
+      description: "Bug fix rate",
+    },
+    {
+      key: "git.file.churnVolatility",
+      type: "number" as const,
+      treeDependence: "history-only" as const,
+      description: "Churn volatility",
+    },
+    {
+      key: "git.file.changeDensity",
+      type: "number" as const,
+      treeDependence: "history-only" as const,
+      description: "Change density",
+    },
+    {
+      key: "git.file.recentDominantAuthorPct",
+      type: "number" as const,
+      treeDependence: "history-only" as const,
+      description: "Dominant author pct",
+    },
+    {
+      key: "git.file.recentContributorCount",
+      type: "number" as const,
+      treeDependence: "history-only" as const,
+      description: "Contributors",
+    },
+    {
+      key: "git.file.relativeChurn",
+      type: "number" as const,
+      treeDependence: "history-only" as const,
+      description: "Relative churn",
+    },
+    {
+      key: "git.file.recencyWeightedFreq",
+      type: "number" as const,
+      treeDependence: "history-only" as const,
+      description: "Recency freq",
+    },
+    {
+      key: "git.chunk.commitCount",
+      type: "number" as const,
+      treeDependence: "history-only" as const,
+      description: "Chunk commits",
+    },
+    {
+      key: "git.chunk.churnRatio",
+      type: "number" as const,
+      treeDependence: "history-only" as const,
+      description: "Chunk churn ratio",
+    },
   ];
 
   const rerankerWithPayload = new Reranker(allDescriptors, testPresets, testPayloadSignals);
@@ -1512,7 +1567,12 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
   it("supports non-git payload namespace via PayloadSignalDescriptor", async () => {
     // Create a custom descriptor that reads from "metrics.file.responseTime"
     const customPayloadSignals = [
-      { key: "metrics.file.responseTime", type: "number" as const, description: "Response time" },
+      {
+        key: "metrics.file.responseTime",
+        type: "number" as const,
+        treeDependence: "history-only" as const,
+        description: "Response time",
+      },
     ];
     // Custom derived signal that uses "responseTime" as source
     const responseTimeSignal = {
@@ -1560,11 +1620,24 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
 
 describe("Reranker — per-signal dampening (legacy dampeningSource + unified confidence)", () => {
   const payloadSignals: PayloadSignalDescriptor[] = [
-    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentilesToCompute: [25, 95] } },
-    { key: "git.file.bugFixRate", type: "number", description: "Bug fix rate", stats: { percentilesToCompute: [95] } },
+    {
+      key: "git.file.commitCount",
+      type: "number",
+      treeDependence: "history-only",
+      description: "Commits",
+      stats: { percentilesToCompute: [25, 95] },
+    },
+    {
+      key: "git.file.bugFixRate",
+      type: "number",
+      treeDependence: "history-only",
+      description: "Bug fix rate",
+      stats: { percentilesToCompute: [95] },
+    },
     {
       key: "git.file.churnVolatility",
       type: "number",
+      treeDependence: "history-only",
       description: "Volatility",
       stats: { percentilesToCompute: [95] },
     },
@@ -1603,12 +1676,14 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
       {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "Commits",
         stats: { percentilesToCompute: [25, 95] },
       },
       {
         key: "git.file.churnVolatility",
         type: "number",
+        treeDependence: "history-only",
         description: "Volatility",
         stats: {
           percentilesToCompute: [95],
@@ -1652,12 +1727,14 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
       {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "Commits",
         stats: { percentilesToCompute: [25, 95] },
       },
       {
         key: "git.file.churnVolatility",
         type: "number",
+        treeDependence: "history-only",
         description: "Volatility",
         stats: {
           percentilesToCompute: [95],
@@ -1700,12 +1777,14 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
       {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "Commits",
         stats: { percentilesToCompute: [25, 95] },
       },
       {
         key: "git.file.bugFixRate",
         type: "number",
+        treeDependence: "history-only",
         description: "Bug fix rate",
         stats: {
           percentilesToCompute: [95],
@@ -1747,12 +1826,14 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
       {
         key: "git.file.commitCount",
         type: "number",
+        treeDependence: "history-only",
         description: "Commits",
         stats: { percentilesToCompute: [25, 95] },
       },
       {
         key: "git.file.bugFixRate",
         type: "number",
+        treeDependence: "history-only",
         description: "Bug fix rate",
         stats: {
           labels: { p50: "healthy", p75: "concerning", p95: "critical" },
@@ -1847,10 +1928,17 @@ describe("Reranker — score dampening k is max(adaptive percentile, declared fl
     threshold: number;
     adaptivePercentile?: number;
   }): PayloadSignalDescriptor[] => [
-    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentilesToCompute: [25, 95] } },
+    {
+      key: "git.file.commitCount",
+      type: "number",
+      treeDependence: "history-only",
+      description: "Commits",
+      stats: { percentilesToCompute: [25, 95] },
+    },
     {
       key: "git.file.churnVolatility",
       type: "number",
+      treeDependence: "history-only",
       description: "Volatility",
       stats: {
         percentilesToCompute: [95],
@@ -1931,11 +2019,23 @@ describe("Reranker — score dampening k is max(adaptive percentile, declared fl
 
 describe("Reranker — collection-level p95 fallback for adaptive bounds", () => {
   const payloadSignals: PayloadSignalDescriptor[] = [
-    { key: "git.file.ageDays", type: "number", description: "Age", stats: { percentilesToCompute: [95] } },
-    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentilesToCompute: [25, 95] } },
+    {
+      key: "git.file.ageDays",
+      type: "number",
+      treeDependence: "history-only",
+      description: "Age",
+      stats: { percentilesToCompute: [95] },
+    },
+    {
+      key: "git.file.commitCount",
+      type: "number",
+      treeDependence: "history-only",
+      description: "Commits",
+      stats: { percentilesToCompute: [25, 95] },
+    },
     // The age floor reads the timestamp's p5 — the descriptor must be declared
     // for the signalKeyMap to resolve it (bd tea-rags-mcp-9ot33).
-    { key: "git.file.lastModifiedAt", type: "timestamp", description: "Stamp" },
+    { key: "git.file.lastModifiedAt", type: "timestamp", treeDependence: "history-only", description: "Stamp" },
   ];
 
   // Minimal descriptor: only age signal, no dampening complexity
