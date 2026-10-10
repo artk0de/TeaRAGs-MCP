@@ -159,9 +159,10 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
 
 ## Phase 2 — ROOT CAUSES
 
-SDP unit = COMPONENT: module with measured facade (A4 active or not-adopted —
-owns its directory subtree minus nested modules), else constant namespace path
-spells (`componentKind: "namespace"`, `::Billing` — Zeitwerk autoload:
+SDP unit = COMPONENT: facade directory, adoption notwithstanding (any A4 status
+— owns its directory subtree minus nested modules; ONE partition for SDP,
+mainSequence, hubLike, shotgun, layering), else constant namespace path spells
+(`componentKind: "namespace"`, `::Billing` — Zeitwerk autoload:
 `app/models/billing/*` + `app/services/billing/*` = one), else plain directory.
 Ca/Ce count distinct files across component border.
 
@@ -472,13 +473,12 @@ Longest-path levels: `level` = longest path from sinks (0 = foundation); `depth`
 = longest path from roots (0 = nothing depends on it). Component with no
 layering edge sits at level 0, depth 0.
 
-| Summary field (`summary.layering`) | Read as                                                                                                                           |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `levelCount`                       | distinct levels, 0-based; 0 = no layering edge at all                                                                             |
-| `facadePartition`                  | `{componentCount, levelCount}` of the facade-adoption partition — its per-subdirectory split reads deeper levels; comparison only |
-| `coverage`                         | share of components outside multi-component knots — low = knot(s) dominate                                                        |
-| `coherence`                        | rank correlation level vs instability — high = low layers really are the stable ones                                              |
-| `foundation`                       | `{components, exemptedLayerSkipCount}` — L0 components with measured abstractness 1 (≥5 types); absent = none qualifies           |
+| Summary field (`summary.layering`) | Read as                                                                                                                 |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `levelCount`                       | distinct levels, 0-based; 0 = no layering edge at all                                                                   |
+| `coverage`                         | share of components outside multi-component knots — low = knot(s) dominate                                              |
+| `coherence`                        | rank correlation level vs instability — high = low layers really are the stable ones                                    |
+| `foundation`                       | `{components, exemptedLayerSkipCount}` — L0 components with measured abstractness 1 (≥5 types); absent = none qualifies |
 
 Violations first, informational last, in `violations` order:
 

@@ -1,6 +1,6 @@
 /**
  * The architecture report's shotgun-surgery section (bd tea-rags-mcp-r8hme.50):
- * the detector run over the report's adoption partition and component graph —
+ * the detector run over the report's one component partition and graph —
  * the partition split/merge judges — and its summary and findings in the
  * report's contract. Absence of data is silence: no co-change build, or a
  * build that persisted no bundle membership, reports `built: false` with the

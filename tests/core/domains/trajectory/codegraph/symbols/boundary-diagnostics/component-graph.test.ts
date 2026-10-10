@@ -1,10 +1,11 @@
 /**
  * The component graph (bd tea-rags-mcp-r8hme.7): Martin defined his stability
  * metrics for COMPONENTS, not files. A component is a module whose facade the
- * leaking-abstraction detector judges (active, or measured and not adopted),
- * owning its directory subtree minus nested components; every other file
- * belongs to its own directory. Ca / Ce count distinct FILES across the border
- * (Martin counts classes), and file edges become component dependencies.
+ * leaking-abstraction detector assessed, adoption notwithstanding (the one
+ * DOMAIN partition, bd tea-rags-mcp-r8hme.52.7), owning its directory subtree
+ * minus nested components; every other file belongs to its own directory.
+ * Ca / Ce count distinct FILES across the border (Martin counts classes), and
+ * file edges become component dependencies.
  */
 import { describe, expect, it } from "vitest";
 
@@ -14,7 +15,6 @@ import type {
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   buildComponentGraph,
-  buildDomainComponentGraph,
   COMPONENT_CONTAINMENT_REASON,
   type FacadeModuleAssessment,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
@@ -99,7 +99,8 @@ describe("buildComponentGraph", () => {
       "app/other.ts": "app",
     });
     expect(components.components.get("lib")).toMatchObject({ kind: "module", facadeRelPath: "lib/index.ts" });
-    expect(components.components.get("small")).toMatchObject({ kind: "directory", facadeRelPath: null });
+    // One partition (bd tea-rags-mcp-r8hme.52.7): a facade too few files import is still the unit its directory declares.
+    expect(components.components.get("small")).toMatchObject({ kind: "module", facadeRelPath: "small/index.ts" });
   });
 
   it("counts Ca and Ce over distinct files across the border, containment included", () => {
@@ -155,11 +156,12 @@ describe("buildComponentGraph", () => {
  * The DOMAIN partition (bd tea-rags-mcp-r8hme.30): every directory with a
  * facade file is a component regardless of what the adoption measurement said.
  * `small/` here holds a facade three importers would be needed to measure —
- * the facade partition leaves its subtree to plain directories, the domain
- * partition claims it for the facade the directory declares. `go/` is a
- * language-enforced package with no facade file at all.
+ * the partition claims its subtree for the facade the directory declares.
+ * `go/` is a language-enforced package with no facade file at all. Since bd
+ * tea-rags-mcp-r8hme.52.7 it is the ONLY partition: no adoption-narrowed
+ * variant exists for any detector.
  */
-describe("buildDomainComponentGraph", () => {
+describe("buildComponentGraph — the domain partition", () => {
   const domainGraph: FileDependencyGraph = {
     files: [
       file("lib/index.ts"),
@@ -178,7 +180,7 @@ describe("buildDomainComponentGraph", () => {
   ];
 
   it("lets every facade directory own its subtree, adoption notwithstanding", () => {
-    const components = buildDomainComponentGraph(domainGraph, domainModules);
+    const components = buildComponentGraph(domainGraph, domainModules);
 
     expect(components.componentOf.get("small/util/su.ts")).toBe("small");
     expect(components.componentOf.get("go/pkg/p.go")).toBe("go");
@@ -190,12 +192,16 @@ describe("buildDomainComponentGraph", () => {
     expect(components.components.get("go")).toMatchObject({ kind: "module", facadeRelPath: null });
   });
 
-  it("keeps the facade-adoption partition as the default: an unmeasured facade owns nothing", () => {
-    const components = buildComponentGraph(domainGraph, domainModules);
+  it("admits every assessed module whatever its status — one partition, no adoption-narrowed variant", () => {
+    const g: FileDependencyGraph = {
+      files: [file("a/index.ts"), file("a/x/y.ts"), file("b/index.ts"), file("b/x/y.ts"), file("app/main.ts")],
+      edges: [edge("app/main.ts", "a/index.ts"), edge("app/main.ts", "b/index.ts")],
+    };
+    const components = buildComponentGraph(g, [module("a", "facade-not-adopted"), module("b", "too-few-importers")]);
 
-    expect(components.componentOf.get("small/util/su.ts")).toBe("small/util");
-    expect(components.components.get("small")).toMatchObject({ kind: "directory", facadeRelPath: null });
-    expect(components.components.has("go")).toBe(false);
+    expect(components.componentOf.get("a/x/y.ts")).toBe("a");
+    expect(components.componentOf.get("b/x/y.ts")).toBe("b");
+    expect(components.components.get("b")).toMatchObject({ kind: "module", facadeRelPath: "b/index.ts" });
   });
 });
 
@@ -368,7 +374,7 @@ describe("entry facades do not own a subtree (bd tea-rags-mcp-r8hme.52.4)", () =
   }
 
   it("lets the orphan directories under an entry facade become their own components", () => {
-    const components = buildDomainComponentGraph(entryOverOrphans(), [entryModule("root", "too-few-importers")]);
+    const components = buildComponentGraph(entryOverOrphans(), [entryModule("root", "too-few-importers")]);
 
     expect(Object.fromEntries(components.componentOf)).toEqual({
       "root/index.ts": "root",
@@ -385,7 +391,7 @@ describe("entry facades do not own a subtree (bd tea-rags-mcp-r8hme.52.4)", () =
     g.files.push(file("root/boot/index.ts"), file("root/boot/deep/c.ts"));
     g.edges.push(edge("root/main.ts", "root/boot/index.ts"), edge("root/boot/index.ts", "root/boot/deep/c.ts"));
 
-    const components = buildDomainComponentGraph(g, [
+    const components = buildComponentGraph(g, [
       entryModule("root", "too-few-importers"),
       { ...module("root/boot", "too-few-importers"), externalImporterCount: 1 },
     ]);
@@ -400,7 +406,7 @@ describe("entry facades do not own a subtree (bd tea-rags-mcp-r8hme.52.4)", () =
       edges: [edge("app/a.ts", "lib/deep/x.ts")],
     };
 
-    const components = buildDomainComponentGraph(g, [module("lib", "facade-not-adopted")]);
+    const components = buildComponentGraph(g, [module("lib", "facade-not-adopted")]);
 
     expect(components.componentOf.get("lib/deep/x.ts")).toBe("lib");
     expect(components.components.get("lib")).not.toHaveProperty("entryFacade");
@@ -416,10 +422,7 @@ describe("entry facades do not own a subtree (bd tea-rags-mcp-r8hme.52.4)", () =
       ],
     };
 
-    const components = buildDomainComponentGraph(g, [
-      module("lib", "active"),
-      entryModule("lib/inner", "too-few-importers"),
-    ]);
+    const components = buildComponentGraph(g, [module("lib", "active"), entryModule("lib/inner", "too-few-importers")]);
 
     expect(components.componentOf.get("lib/inner/deep/z.ts")).toBe("lib/inner");
   });
@@ -434,16 +437,18 @@ describe("entry facades do not own a subtree (bd tea-rags-mcp-r8hme.52.4)", () =
       facadeRelPath: null,
     };
 
-    const components = buildDomainComponentGraph(g, [goPackage]);
+    const components = buildComponentGraph(g, [goPackage]);
 
     expect(components.componentOf.get("pkg/sub/b.go")).toBe("pkg");
     expect(components.components.get("pkg")).not.toHaveProperty("entryFacade");
   });
 
-  it("marks the entry on a partition whose statuses do not admit its module — measured, not status-gated", () => {
-    const components = buildComponentGraph(entryOverOrphans(), [entryModule("root", "too-few-importers")]);
+  it("marks the entry whatever its module's adoption status — measured, not status-gated", () => {
+    for (const status of ["facade-not-adopted", "too-few-importers"] as const) {
+      const components = buildComponentGraph(entryOverOrphans(), [entryModule("root", status)]);
 
-    expect(components.components.get("root")).toMatchObject({ kind: "directory", entryFacade: true });
-    expect(components.componentOf.get("root/boot/a.ts")).toBe("root/boot");
+      expect(components.components.get("root")).toMatchObject({ kind: "module", entryFacade: true });
+      expect(components.componentOf.get("root/boot/a.ts")).toBe("root/boot");
+    }
   });
 });

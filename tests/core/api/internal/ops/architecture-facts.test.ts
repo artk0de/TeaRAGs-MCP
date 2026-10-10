@@ -366,3 +366,26 @@ describe("ArchitectureFactsCatalog — entry facade", () => {
     expect(catalog.componentOf("src/lib/b.ts")).not.toHaveProperty("entryFacade");
   });
 });
+
+/**
+ * One partition (bd tea-rags-mcp-r8hme.52.7): the diff run's catalog answers
+ * on the same DOMAIN partition the whole-repo report's detectors judge — a
+ * facade too few files import still owns its subtree there.
+ */
+describe("ArchitectureFactsCatalog — one partition", () => {
+  it("attributes a file under a too-few-importers facade to that facade's component", () => {
+    const graph = graphOf(
+      [file("lang/index.ts"), file("lang/sub/s.ts"), file("app/main.ts")],
+      [edge("app/main.ts", "lang/index.ts"), edge("lang/index.ts", "lang/sub/s.ts")],
+    );
+    const facts = deriveArchitectureComponentFacts(graph);
+    const catalog = new ArchitectureFactsCatalog(
+      facts,
+      distanceFromMainSequenceByComponent(facts.components, graph.files),
+      measureLayeringFoundationFiles(graph, facts),
+    );
+
+    expect(facts.leaks.modules.find((m) => m.moduleDir === "lang")?.status).toBe("too-few-importers");
+    expect(catalog.componentOf("lang/sub/s.ts")?.name).toBe("lang");
+  });
+});

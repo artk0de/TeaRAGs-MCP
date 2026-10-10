@@ -1,11 +1,5 @@
 export { CONVENTION_PRIVACY_LANGUAGES, detectConventionPrivacyLeaks } from "./convention-privacy.js";
-export {
-  buildComponentGraph,
-  buildDomainComponentGraph,
-  COMPONENT_CONTAINMENT_REASON,
-  COMPONENT_MODULE_STATUSES,
-  DOMAIN_MODULE_STATUSES,
-} from "./component-graph.js";
+export { buildComponentGraph, COMPONENT_CONTAINMENT_REASON } from "./component-graph.js";
 export {
   COMPONENT_EVIDENCE_FILE_EDGE_LIMIT,
   detectComponentStableDependencyViolations,
