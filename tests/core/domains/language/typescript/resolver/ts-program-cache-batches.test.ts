@@ -18,8 +18,8 @@ import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
-import type { TSProgramHeapBudget } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-heap-admission.js";
+import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
+import type { TSProgramHeapBudget } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-heap-admission.js";
 
 const tsOptions = { baseUrl: ".", paths: {} };
 const MB = 1024 * 1024;

@@ -21,7 +21,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   TSProgramCache,
   type TSProgramHandle,
-} from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+} from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 
 const tsOptions = { baseUrl: ".", paths: {} };
 

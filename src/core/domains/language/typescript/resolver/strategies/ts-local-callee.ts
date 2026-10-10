@@ -39,11 +39,10 @@
 
 import type ts from "typescript";
 
-import type { CallContext, CallRef } from "../../../../contracts/types/codegraph.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../kernel/index.js";
-import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
-import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
-import type { TSProgramCache } from "./ts-program-cache.js";
+import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
+import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
+import { findCallExpression } from "./ts-type-checker-fallback.js";
 import { isFunctionValuedInitializer, sameWalkerScope, walkerScopeOf } from "./ts-walker-scope.js";
 
 /**

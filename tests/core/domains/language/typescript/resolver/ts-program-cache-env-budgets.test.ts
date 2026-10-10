@@ -9,7 +9,7 @@ import {
   TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT,
   TS_PROGRAM_PARSED_FILES_MAX_DEFAULT,
   TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT,
-} from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+} from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import {
   resolveProgramCacheBudgets,
   TSCallResolver,

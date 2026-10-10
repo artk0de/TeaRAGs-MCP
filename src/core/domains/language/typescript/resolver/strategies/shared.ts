@@ -9,7 +9,7 @@
 
 import type { AmbiguousResolveMode, CallContext, SymbolLookupRole } from "../../../../../contracts/types/codegraph.js";
 import { reexportOriginFile as kernelReexportOriginFile, lookupEcmascriptSymbols } from "../../../kernel/index.js";
-import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "../ts-path-mapper.js";
+import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "../program/index.js";
 
 export interface ResolverConfig {
   tsOptions: TsCompilerOptions;

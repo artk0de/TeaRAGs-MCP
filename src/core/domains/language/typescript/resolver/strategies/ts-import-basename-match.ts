@@ -16,7 +16,7 @@
  * normalizing both sides so the common TS kebab-case → PascalCase file/class
  * naming convention resolves. Examples:
  *
- *   "../rank-module.js" → basename "rank-module.js" → norm "rankmodule"
+ *   "../../rank-module.js" → basename "rank-module.js" → norm "rankmodule"
  *   "RankModule"                                    → norm "rankmodule"
  *   "./foo.ts"          → basename "foo.ts"         → norm "foo"
  *   "Foo"                                           → norm "foo"

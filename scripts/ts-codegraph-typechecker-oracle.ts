@@ -180,15 +180,15 @@ import type { DeclaredDependenciesByLanguage } from "../src/core/contracts/types
 import { BUILTIN_IGNORE_PATTERNS } from "../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import { loadTsConfig, TSCallResolver } from "../src/core/domains/language/typescript/index.js";
+import type {
+  TSProgramCache,
+  TSProgramHandle,
+} from "../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import {
   composeSymbolId,
   findCallExpression,
 } from "../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-fallback.js";
 import { findJsxTagName } from "../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-jsx-component.js";
-import type {
-  TSProgramCache,
-  TSProgramHandle,
-} from "../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { FUNCTION_INVOKER_MEMBERS } from "../src/core/domains/language/typescript/walker/walker.js";
 import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
 import { extractFileInMemory } from "../src/core/domains/trajectory/codegraph/symbols/in-memory-extraction.js";

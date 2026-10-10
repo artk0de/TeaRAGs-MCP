@@ -38,9 +38,9 @@ import {
   type DispatchFanoutOutcome,
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
-import { receiverProjectInterfaceNames } from "../ts-interface-receiver.js";
-import type { TSProgramCache } from "../ts-program-cache.js";
+import type { TSProgramCache } from "../program/index.js";
 import { CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
+import { receiverProjectInterfaceNames } from "./ts-interface-receiver.js";
 
 export class TSTypeCheckerInterfaceReceiverDispatchResolver implements DispatchResolverComponent {
   constructor(

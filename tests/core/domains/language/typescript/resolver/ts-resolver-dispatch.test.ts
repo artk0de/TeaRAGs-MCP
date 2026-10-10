@@ -8,7 +8,7 @@ import type {
   HierarchyView,
   InheritanceEdge,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
-import type { TsCompilerOptions } from "../../../../../../src/core/domains/language/typescript/resolver/ts-path-mapper.js";
+import type { TsCompilerOptions } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-path-mapper.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 

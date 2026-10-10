@@ -10,12 +10,12 @@ import {
   type CallRef,
   type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import {
   TSGlobalShortNameSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
-import { importBoundProjectFile } from "../../../../../../src/core/domains/language/typescript/resolver/ts-import-bound-callee.js";
-import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+import { importBoundProjectFile } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/ts-import-bound-callee.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const tsOptions = { baseUrl: ".", paths: {} };

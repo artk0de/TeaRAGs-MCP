@@ -13,11 +13,11 @@ import { basename, dirname, join } from "node:path";
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { TSModuleResolutionMemo } from "../../../../../../src/core/domains/language/typescript/resolver/ts-module-resolution-memo.js";
+import { TSModuleResolutionMemo } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-module-resolution-memo.js";
 import {
   buildTSProgramImportGraph,
   type TSProgramImportGraph,
-} from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-import-graph.js";
+} from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-import-graph.js";
 
 const compilerOptions: ts.CompilerOptions = {
   allowJs: true,

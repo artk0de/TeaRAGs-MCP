@@ -58,8 +58,12 @@ import {
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
 } from "../../../kernel/index.js";
-import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "../ts-path-mapper.js";
-import type { TSProgramCache } from "../ts-program-cache.js";
+import {
+  mapImportToFile,
+  type ProjectFileProbe,
+  type TsCompilerOptions,
+  type TSProgramCache,
+} from "../program/index.js";
 import type { ResolverConfig } from "./shared.js";
 import { declarationOwnerName, findReceiverExpression, TS_SCOPE_SEPARATOR } from "./ts-type-checker-shared.js";
 

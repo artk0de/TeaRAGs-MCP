@@ -19,7 +19,7 @@ export interface TsCompilerOptions {
  * Answers whether a repo-relative path is a file in the indexed project.
  *
  * The mapper needs this because an import specifier does not name the
- * extension of the file it points at: `"./Button.js"` is `Button.ts` in one
+ * extension of the file it points at: `"../Button.js"` is `Button.ts` in one
  * project and `Button.tsx` in the next, and only the project tree can say
  * which. Injected rather than called directly so the mapper stays a pure
  * function of its inputs — tests supply a literal set, the resolver supplies
@@ -215,7 +215,7 @@ export function mapImportToFile(
 /**
  * The suffix a specifier writes, and the source extensions it can stand for,
  * in TypeScript's own precedence order. `.js` is the NodeNext convention —
- * source writes `import "./foo.js"` while the file on disk is `foo.ts` (or,
+ * source writes `import "../foo.js"` while the file on disk is `foo.ts` (or,
  * in a React project, `foo.tsx`). `.mjs` / `.cjs` are the same convention for
  * the ESM- and CJS-only formats, whose sources are `.mts` / `.cts`.
  *
@@ -307,8 +307,8 @@ export const TS_SOURCE_PATH_RULES = {
  * Candidate order IS `tsc`'s resolution order: the specifier as a file first,
  * then — for a specifier that named no extension — the directory it could be,
  * via its `index` module (bd tea-rags-mcp-hzsxy). A specifier that DID write a
- * suffix gets no directory candidates: `"./components.js"` names a file under
- * the NodeNext convention, and `"./components/index.js"` is how the directory
+ * suffix gets no directory candidates: `"../components.js"` names a file under
+ * the NodeNext convention, and `"../components/index.js"` is how the directory
  * form is spelled, so probing `components.js/index.ts` would invent a module
  * nothing referenced.
  *

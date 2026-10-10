@@ -36,11 +36,10 @@
 
 import type ts from "typescript";
 
-import type { CallContext, CallRef, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../kernel/index.js";
-import { findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
-import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
-import type { TSProgramCache } from "./ts-program-cache.js";
+import type { CallContext, CallRef, SymbolDefinition } from "../../../../../contracts/types/codegraph.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
+import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
+import { findReceiverExpression } from "./ts-type-checker-shared.js";
 import { typeConstituents } from "./ts-type-constituents.js";
 
 export function receiverProjectInterfaceNames(

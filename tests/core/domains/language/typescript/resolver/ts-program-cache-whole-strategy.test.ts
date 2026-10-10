@@ -16,13 +16,13 @@ import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { loadTsConfigFileNames } from "../../../../../../src/core/domains/language/typescript/resolver/ts-config-loader.js";
 import {
   TS_PROGRAM_STRATEGY_DEFAULT,
   TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
   TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
   TSProgramCache,
-} from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+} from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
+import { loadTsConfigFileNames } from "../../../../../../src/core/domains/language/typescript/resolver/ts-config-loader.js";
 import { resolveProgramCacheStrategy } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 
 const tsOptions = { baseUrl: ".", paths: {} };

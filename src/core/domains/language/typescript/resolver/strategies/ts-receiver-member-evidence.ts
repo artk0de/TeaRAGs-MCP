@@ -54,20 +54,18 @@
 
 import type ts from "typescript";
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import type {
   CallContext,
   CallRef,
   SymbolDefinition,
   SymbolLookupRole,
-} from "../../../../contracts/types/codegraph.js";
-import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../kernel/index.js";
-import { reexportOriginFile, type ResolverConfig } from "./strategies/shared.js";
-import { calledMemberDeclarations, declarationOwnerName } from "./strategies/ts-type-checker-shared.js";
-import { loadTypeScriptCompiler } from "./ts-compiler-loader.js";
+} from "../../../../../contracts/types/codegraph.js";
+import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
+import { loadTypeScriptCompiler, mapImportToFile, type TSProgramCache } from "../program/index.js";
+import { reexportOriginFile, type ResolverConfig } from "./shared.js";
 import { receiverTypeName } from "./ts-external-call.js";
-import { mapImportToFile } from "./ts-path-mapper.js";
-import type { TSProgramCache } from "./ts-program-cache.js";
+import { calledMemberDeclarations, declarationOwnerName } from "./ts-type-checker-shared.js";
 
 /** What the guard reads off a short-name candidate: where it lives, whose it is, which lines it spans. */
 export type EvidenceCandidate = Pick<SymbolDefinition, "relPath" | "scope" | "startLine" | "endLine">;

@@ -13,7 +13,7 @@ import {
   pinFunctionByWalkerScope,
   sameWalkerScope,
   walkerScopeOf,
-} from "../../../../../../src/core/domains/language/typescript/resolver/ts-walker-scope.js";
+} from "../../../../../../src/core/domains/language/typescript/resolver/strategies/ts-walker-scope.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function parse(code: string): ts.SourceFile {

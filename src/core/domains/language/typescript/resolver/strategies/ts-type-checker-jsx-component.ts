@@ -49,8 +49,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { loadTypeScriptCompiler } from "../ts-compiler-loader.js";
-import type { TSProgramCache } from "../ts-program-cache.js";
+import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
 import type { ResolverConfig } from "./shared.js";
 
 export class TSTypeCheckerJsxComponentSymbolResolutionStrategy implements SymbolResolutionStrategy {

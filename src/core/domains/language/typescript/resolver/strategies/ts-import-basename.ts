@@ -2,11 +2,10 @@ import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolutio
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { targetsExternalImport } from "../ts-external-call.js";
-import { importSpecifierNamesReceiver } from "../ts-import-basename-match.js";
-import { mapImportToFile } from "../ts-path-mapper.js";
-import type { TSProgramCache } from "../ts-program-cache.js";
+import { mapImportToFile, type TSProgramCache } from "../program/index.js";
 import type { ResolverConfig } from "./shared.js";
+import { targetsExternalImport } from "./ts-external-call.js";
+import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
 
 /**
  * Basename-normalized compare. Catches the common kebab-case → PascalCase TS

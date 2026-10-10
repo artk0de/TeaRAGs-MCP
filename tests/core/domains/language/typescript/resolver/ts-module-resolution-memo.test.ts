@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { TSModuleResolutionMemo } from "../../../../../../src/core/domains/language/typescript/resolver/ts-module-resolution-memo.js";
+import { TSModuleResolutionMemo } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-module-resolution-memo.js";
 
 describe("TSModuleResolutionMemo (bd tea-rags-mcp-vtuu4)", () => {
   let repoRoot: string;

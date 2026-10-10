@@ -20,8 +20,8 @@
 
 import { performance } from "node:perf_hooks";
 
+import { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import { loadTsConfig } from "../../src/core/domains/language/typescript/resolver/ts-config-loader.js";
-import { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { collectProjectFiles, FIXTURE_ROOT, parseShapeArgs } from "./ts-fixture-corpus.js";
 import { DEFAULT_SHAPE, generateFixture, type FixtureShape } from "./ts-fixture-gen.js";
 
@@ -51,7 +51,7 @@ function measureReuse(
       coveredBy.push(hit.order);
       continue;
     }
-    const handle = cache.acquire(relPath as never);
+    const handle = cache.acquire(relPath);
     if (!handle) continue;
     builds += 1;
     const covers = new Set<string>();
@@ -70,7 +70,7 @@ function measureBaseline(files: string[], cache: TSProgramCache): { builds: numb
   let builds = 0;
   const started = performance.now();
   for (const relPath of files) {
-    if (cache.acquire(relPath as never)) builds += 1;
+    if (cache.acquire(relPath)) builds += 1;
   }
   return { builds, wallMs: performance.now() - started };
 }

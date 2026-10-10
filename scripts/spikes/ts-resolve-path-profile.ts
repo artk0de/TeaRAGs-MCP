@@ -22,7 +22,7 @@ import { performance } from "node:perf_hooks";
 
 import type { FileExtraction, GraphEdges } from "../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
-import type { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+import type { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 import { CallEdgeResolutionRunner } from "../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import { CodegraphRunState } from "../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
