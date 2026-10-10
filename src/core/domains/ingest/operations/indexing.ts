@@ -55,6 +55,22 @@ export interface SetupResult {
   isMigration: boolean;
 }
 
+/**
+ * Everything the ingest-and-seal leg of a full index needs from the stages
+ * before it: the scanned corpus, the prepared versioned collection, the
+ * hashing synchronizer (reused by `saveSnapshot`) and the processing context.
+ */
+interface IndexLegContext {
+  files: string[];
+  absolutePath: string;
+  aliasCollectionName: CollectionAlias;
+  setup: SetupResult;
+  synchronizer: ParallelFileSynchronizer;
+  ctx: ProcessingContext;
+  quarantineStore: QuarantineStore;
+  modelInfo?: { model: string; contextLength: number; dimensions: number };
+}
+
 export class IndexPipeline extends BaseIndexingPipeline {
   async indexCodebase(
     path: string,
@@ -63,14 +79,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     overrides?: { chunkSize?: number; modelInfo?: { model: string; contextLength: number; dimensions: number } },
   ): Promise<IndexStats> {
     const startTime = Date.now();
-    const stats: IndexStats = {
-      filesScanned: 0,
-      filesIndexed: 0,
-      chunksCreated: 0,
-      durationMs: 0,
-      status: "completed",
-      errors: [],
-    };
+    const stats = this.initIndexStats();
 
     const { absolutePath, collectionName: aliasCollectionName } = await this.resolveContext(path);
     // Startup marker: the earliest per-event line a run emits. Everything
@@ -96,21 +105,13 @@ export class IndexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
-      // "qdrant-setup" stage (csyve) = collection exists-check / version bump /
-      // create / schema init / alias bookkeeping before any chunk is ingested.
-      const qdrantSetupStart = Date.now();
-      const setup = await this.setupCollection(
+      const setup = await this.runQdrantSetupStage(
         aliasCollectionName,
         absolutePath,
         options,
         overrides?.modelInfo?.dimensions,
       );
       build = setup;
-      pipelineLog.addStageTime("qdrant-setup", Date.now() - qdrantSetupStart);
-      pipelineLog.step({ component: "IndexRun" }, "QDRANT_READY", {
-        collection: setup.targetCollection,
-        ms: Date.now() - qdrantSetupStart,
-      });
       /* v8 ignore next 7 -- defensive guard: facade handles exists-without-force via reindexChanges */
       if (!setup.ready) {
         stats.status = "failed";
@@ -121,27 +122,8 @@ export class IndexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
-      // Poison-pill quarantine is bound to the base collection's snapshot dir.
-      // A full reindex (forceReindex) wipes the slate; otherwise broken files
-      // recorded on this pass are retried by the next reindex_changes.
-      const quarantineStore = new QuarantineStore(this.snapshotDir, aliasCollectionName);
-      if (options?.forceReindex) {
-        await quarantineStore.clearAll();
-      }
-
-      // The run's own hashes, for the enrichment providers to stamp onto their
-      // per-file rows (bd tea-rags-mcp-o317j). This path has no `detectChanges`
-      // to project them off, so it hashes the corpus itself — and the
-      // synchronizer is held for `saveSnapshot` below, which reuses the cached
-      // result instead of hashing everything a second time. Without the stamp
-      // every row lands NULL and the NEXT run repairs the entire corpus.
-      const synchronizer = this.deps.createSynchronizer(absolutePath, aliasCollectionName);
-      const hashesStart = Date.now();
-      const contentHashes = await synchronizer.computeContentHashes(files);
-      pipelineLog.step({ component: "IndexRun" }, "HASHES_COMPLETE", {
-        files: files.length,
-        ms: Date.now() - hashesStart,
-      });
+      const quarantineStore = await this.openRunQuarantineStore(aliasCollectionName, options?.forceReindex === true);
+      const { synchronizer, contentHashes } = await this.hashRunCorpus(absolutePath, aliasCollectionName, files);
 
       const ctx = this.initProcessing(
         setup.targetCollection,
@@ -155,58 +137,23 @@ export class IndexPipeline extends BaseIndexingPipeline {
       // file instead of aborting the whole pass.
       ctx.chunkPipeline.setQuarantineStore(quarantineStore);
 
-      const heartbeat = new HeartbeatGuard({
-        start: () => {
-          this.startHeartbeat(setup.targetCollection);
-          return () => {
-            this.stopHeartbeat();
-          };
+      // `return await`, not `return`: a rejected leg must land in the catch
+      // below, which discards the failed build and wraps the error (bd 8pymz).
+      return await this.executeIndexLeg(
+        {
+          files,
+          absolutePath,
+          aliasCollectionName,
+          setup,
+          synchronizer,
+          ctx,
+          quarantineStore,
+          modelInfo: overrides?.modelInfo,
         },
-      });
-
-      return await heartbeat.run(async () => {
-        // Pause HNSW indexing while we bulk-ingest. Reactive HNSW build during
-        // upserts otherwise throttles ingest; deferring to a single post-ingest
-        // pass is 2-3× faster on large codebases. `deleted_threshold` pause is
-        // harmless here (no deletes during initial index).
-        return new OptimizerLifecycle(this.qdrant).with(setup.targetCollection, async () => {
-          const result = await this.processAndTrack(files, absolutePath, ctx, quarantineStore, progressCallback);
-          stats.filesIndexed = result.filesProcessed;
-          stats.chunksCreated = result.chunksCreated;
-          if (result.errors.length > 0) {
-            stats.errors?.push(...result.errors);
-          }
-
-          progressCallback?.({
-            phase: "storing",
-            current: result.chunksCreated,
-            total: result.chunksCreated,
-            percentage: 90,
-            message: "Finalizing embeddings and storage...",
-          });
-
-          const enrichmentResult = await this.completePipeline(
-            ctx,
-            result.chunkMap,
-            {
-              targetCollection: setup.targetCollection,
-              collectionAlias: aliasCollectionName,
-              absolutePath,
-              modelInfo: overrides?.modelInfo,
-              promote: async () => this.finalizeAlias(aliasCollectionName, setup),
-              persist: async () => this.saveSnapshot(synchronizer, files, stats, setup.aliasVersion),
-            },
-            () => {
-              this.logPipelineCompletion(ctx);
-              this.reportFinalEmbeddingProgress(ctx, result.chunksQueued, progressCallback);
-            },
-          );
-          stats.enrichmentStatus = enrichmentResult.status;
-          stats.enrichmentMetrics = enrichmentResult.metrics;
-          stats.durationMs = Date.now() - startTime;
-          return stats;
-        });
-      });
+        stats,
+        startTime,
+        progressCallback,
+      );
     } catch (error) {
       // The run is over and its versioned collection will never be promoted.
       // Discard it here rather than leaving it for the next run's lazy sweep,
@@ -226,6 +173,138 @@ export class IndexPipeline extends BaseIndexingPipeline {
       const cleaner = new SnapshotCleaner(this.snapshotDir, aliasCollectionName);
       await cleaner.cleanupAfterIndexing();
     }
+  }
+
+  // ── Run stages ─────────────────────────────────────────
+
+  private initIndexStats(): IndexStats {
+    return {
+      filesScanned: 0,
+      filesIndexed: 0,
+      chunksCreated: 0,
+      durationMs: 0,
+      status: "completed",
+      errors: [],
+    };
+  }
+
+  private async runQdrantSetupStage(
+    aliasCollectionName: CollectionAlias,
+    absolutePath: string,
+    options: IndexOptions | undefined,
+    dimensionsOverride: number | undefined,
+  ): Promise<SetupResult> {
+    // "qdrant-setup" stage (csyve) = collection exists-check / version bump /
+    // create / schema init / alias bookkeeping before any chunk is ingested.
+    const qdrantSetupStart = Date.now();
+    const setup = await this.setupCollection(aliasCollectionName, absolutePath, options, dimensionsOverride);
+    pipelineLog.addStageTime("qdrant-setup", Date.now() - qdrantSetupStart);
+    pipelineLog.step({ component: "IndexRun" }, "QDRANT_READY", {
+      collection: setup.targetCollection,
+      ms: Date.now() - qdrantSetupStart,
+    });
+    return setup;
+  }
+
+  private async openRunQuarantineStore(
+    aliasCollectionName: CollectionAlias,
+    forceReindex: boolean,
+  ): Promise<QuarantineStore> {
+    // Poison-pill quarantine is bound to the base collection's snapshot dir.
+    // A full reindex (forceReindex) wipes the slate; otherwise broken files
+    // recorded on this pass are retried by the next reindex_changes.
+    const quarantineStore = new QuarantineStore(this.snapshotDir, aliasCollectionName);
+    if (forceReindex) {
+      await quarantineStore.clearAll();
+    }
+    return quarantineStore;
+  }
+
+  private async hashRunCorpus(
+    absolutePath: string,
+    aliasCollectionName: CollectionAlias,
+    files: string[],
+  ): Promise<{ synchronizer: ParallelFileSynchronizer; contentHashes: Map<string, string> }> {
+    // The run's own hashes, for the enrichment providers to stamp onto their
+    // per-file rows (bd tea-rags-mcp-o317j). This path has no `detectChanges`
+    // to project them off, so it hashes the corpus itself — and the
+    // synchronizer is held for `saveSnapshot`, which reuses the cached
+    // result instead of hashing everything a second time. Without the stamp
+    // every row lands NULL and the NEXT run repairs the entire corpus.
+    const synchronizer = this.deps.createSynchronizer(absolutePath, aliasCollectionName);
+    const hashesStart = Date.now();
+    const contentHashes = await synchronizer.computeContentHashes(files);
+    pipelineLog.step({ component: "IndexRun" }, "HASHES_COMPLETE", {
+      files: files.length,
+      ms: Date.now() - hashesStart,
+    });
+    return { synchronizer, contentHashes };
+  }
+
+  /**
+   * Heartbeat + paused optimizer around ingest and the run's seal. `stats` is
+   * the run's own object, mutated in place: `persist` hands it to
+   * `saveSnapshot`, so a copy would desynchronise the snapshot from the result.
+   */
+  private async executeIndexLeg(
+    leg: IndexLegContext,
+    stats: IndexStats,
+    startTime: number,
+    progressCallback: ProgressCallback | undefined,
+  ): Promise<IndexStats> {
+    const { files, absolutePath, aliasCollectionName, setup, synchronizer, ctx, quarantineStore } = leg;
+    const heartbeat = new HeartbeatGuard({
+      start: () => {
+        this.startHeartbeat(setup.targetCollection);
+        return () => {
+          this.stopHeartbeat();
+        };
+      },
+    });
+
+    return heartbeat.run(async () => {
+      // Pause HNSW indexing while we bulk-ingest. Reactive HNSW build during
+      // upserts otherwise throttles ingest; deferring to a single post-ingest
+      // pass is 2-3× faster on large codebases. `deleted_threshold` pause is
+      // harmless here (no deletes during initial index).
+      return new OptimizerLifecycle(this.qdrant).with(setup.targetCollection, async () => {
+        const result = await this.processAndTrack(files, absolutePath, ctx, quarantineStore, progressCallback);
+        stats.filesIndexed = result.filesProcessed;
+        stats.chunksCreated = result.chunksCreated;
+        if (result.errors.length > 0) {
+          stats.errors?.push(...result.errors);
+        }
+
+        progressCallback?.({
+          phase: "storing",
+          current: result.chunksCreated,
+          total: result.chunksCreated,
+          percentage: 90,
+          message: "Finalizing embeddings and storage...",
+        });
+
+        const enrichmentResult = await this.completePipeline(
+          ctx,
+          result.chunkMap,
+          {
+            targetCollection: setup.targetCollection,
+            collectionAlias: aliasCollectionName,
+            absolutePath,
+            modelInfo: leg.modelInfo,
+            promote: async () => this.finalizeAlias(aliasCollectionName, setup),
+            persist: async () => this.saveSnapshot(synchronizer, files, stats, setup.aliasVersion),
+          },
+          () => {
+            this.logPipelineCompletion(ctx);
+            this.reportFinalEmbeddingProgress(ctx, result.chunksQueued, progressCallback);
+          },
+        );
+        stats.enrichmentStatus = enrichmentResult.status;
+        stats.enrichmentMetrics = enrichmentResult.metrics;
+        stats.durationMs = Date.now() - startTime;
+        return stats;
+      });
+    });
   }
 
   // ── Scanning ───────────────────────────────────────────

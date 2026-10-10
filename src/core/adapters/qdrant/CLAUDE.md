@@ -50,15 +50,15 @@
   `storeIndexingMarker(…, complete=false, …)` in
   `IndexPipeline#setupCollection`, which publishes the lease as soon as the
   collection exists. `BaseIndexingPipeline#sealRun` — which closes every return
-  of both `IndexPipeline#indexCodebase` and `ReindexPipeline#reindexChanges` —
-  passes `complete=true`: it UPDATES that marker, it never creates it. The two
-  creation paths are DISJOINT: `create_collection` (`createApp` →
-  `CollectionOps#create`) is `recordModel`'s only caller, while an index run
-  creates its collection and the lease directly
-  (`IndexPipeline#setupCollection`) and never touches the guard — that
-  collection's verdict is first cached on its first `ensureMatch`, not at
-  creation. Reading either path off the completing calls puts the creation in
-  the wrong place entirely.
+  of both `IndexPipeline#indexCodebase` (its seal in
+  `IndexPipeline#executeIndexLeg`) and `ReindexPipeline#reindexChanges` — passes
+  `complete=true`: it UPDATES that marker, it never creates it. The two creation
+  paths are DISJOINT: `create_collection` (`createApp` → `CollectionOps#create`)
+  is `recordModel`'s only caller, while an index run creates its collection and
+  the lease directly (`IndexPipeline#setupCollection`) and never touches the
+  guard — that collection's verdict is first cached on its first `ensureMatch`,
+  not at creation. Reading either path off the completing calls puts the
+  creation in the wrong place entirely.
 
 - **A cache reset is the only thing that can forget weight drift.** The name
   verdict is re-derived on every assert; the canary verdict survives only as the
