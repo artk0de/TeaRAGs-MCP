@@ -15,10 +15,10 @@
 
 import type { IndexStatus } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
-import { isWorkerMessage, type EnrichmentOutcome } from "./ipc-protocol.js";
-import { fmtDuration, OverallTimer, PhaseProgressTracker } from "./phase-tracker.js";
+import { isWorkerMessage } from "./ipc-protocol.js";
+import { OverallTimer, PhaseProgressTracker } from "./phase-tracker.js";
 import { JsonProgressRenderer, type ProgressRenderer } from "./renderer.js";
-import { formatIndexStatus, formatIndexStatusJson } from "./status-format.js";
+import { IndexRunReportPrinter } from "./report-printer.js";
 
 /** Minimal child handle — satisfied by Node `ChildProcess` and a test EventEmitter. */
 export interface WorkerHandle {
@@ -50,6 +50,17 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
   const overall = new OverallTimer(now());
   let latestStatus: IndexStatus | undefined;
   const jsonRenderer = renderer instanceof JsonProgressRenderer ? renderer : null;
+  const printer = new IndexRunReportPrinter({
+    out,
+    colors,
+    jsonRenderer,
+    projectName: opts.projectName,
+    path: opts.path,
+  });
+  const printStatus = (): void => {
+    if (!latestStatus) return;
+    printer.printStatus(latestStatus, overall.elapsedMs());
+  };
 
   return new Promise<number>((resolve) => {
     let settled = false;
@@ -59,42 +70,8 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
       overall.stop(now());
       renderer.stop();
       printAfterStop?.();
-      if (!jsonRenderer) {
-        out(colors.bold(`total ${fmtDuration(overall.elapsedMs())}`));
-      }
+      printer.printTotal(overall.elapsedMs());
       resolve(code);
-    };
-
-    const printStatus = (): void => {
-      if (!latestStatus) return;
-      if (jsonRenderer) {
-        const o = formatIndexStatusJson(latestStatus, {
-          projectName: opts.projectName,
-          path: opts.path ?? "",
-          phases: jsonRenderer.phases,
-          overallMs: overall.elapsedMs(),
-          outcome: jsonRenderer.outcome,
-        });
-        out(JSON.stringify(o, null, 2));
-      } else {
-        out(formatIndexStatus(latestStatus, colors, { projectName: opts.projectName, path: opts.path }));
-      }
-    };
-
-    const printEta = (): void => {
-      if (jsonRenderer) return;
-      const seconds = eta.aggregateEtaSeconds(now());
-      if (seconds === null) {
-        out(colors.dim("enrichments: running in background…"));
-      } else {
-        out(colors.dim(`enrichments: ~${Math.ceil(seconds)}s remaining (background)`));
-      }
-    };
-
-    const printOutcome = (outcome: EnrichmentOutcome): void => {
-      if (jsonRenderer) return;
-      for (const p of outcome.failed) out(colors.alert(`✗ ${p}: enrichment failed`));
-      for (const p of outcome.degraded) out(colors.warn(`⚠ ${p}: enrichment degraded`));
     };
 
     child.on("message", (raw) => {
@@ -125,14 +102,14 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
             child.disconnect?.();
             finish(0, () => {
               printStatus();
-              if (!jsonRenderer) printEta();
+              printer.printEta(eta.aggregateEtaSeconds(now()));
             });
           }
           break;
         case "done":
           finish(raw.result.failed.length > 0 ? 1 : 0, () => {
             printStatus();
-            printOutcome(raw.result);
+            printer.printOutcome(raw.result);
           });
           break;
         case "qdrant-state":
@@ -144,25 +121,8 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
           // provider's recovery wait, shown like the qdrant one (umatc).
           break;
         case "error":
-          // Run-phase fatal. JSON mode must emit a parseable error object —
-          // a silent exit 1 with zero bytes is exactly the 2nfdm bug.
-          // The hint is the actionable half of a typed fatal ("Start Ollama:
-          // …"), so it is printed wherever the message is (bd tea-rags-mcp-umatc).
           finish(1, () => {
-            if (jsonRenderer) {
-              out(
-                JSON.stringify({
-                  error: {
-                    code: raw.code ?? "UNKNOWN",
-                    message: raw.message,
-                    ...(raw.hint !== undefined ? { hint: raw.hint } : {}),
-                  },
-                }),
-              );
-            } else {
-              out(colors.alert(`error: ${raw.message}`));
-              if (raw.hint !== undefined) out(`hint: ${raw.hint}`);
-            }
+            printer.printError(raw);
           });
           break;
       }
@@ -176,9 +136,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
         return;
       }
       finish(1, () => {
-        const message = `worker exited with code ${code ?? "null"} before reporting a result`;
-        if (jsonRenderer) out(JSON.stringify({ error: { code: "WORKER_EXIT", message } }));
-        else out(colors.alert(message));
+        printer.printWorkerExit(code);
       });
     });
   });
