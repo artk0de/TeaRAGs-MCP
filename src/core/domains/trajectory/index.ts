@@ -18,3 +18,5 @@ export {
   CodegraphMetricsError,
 } from "./errors.js";
 export type { TrajectoryErrorCode } from "./errors.js";
+
+export { ALL_COMPOSITE_FILTER_PRESETS, buildCompositeFilterPresets } from "./composite/filter-presets/index.js";

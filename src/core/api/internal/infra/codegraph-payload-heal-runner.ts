@@ -32,12 +32,12 @@ import {
   type CodegraphPayloadHealOutcome,
   type CodegraphPayloadHealRunner,
 } from "../../../domains/ingest/pipeline/enrichment/codegraph-payload-heal.js";
+import { buildCodegraphFileSignals } from "../../../domains/trajectory/codegraph/index.js";
 import {
   CodegraphChunkSettlementTally,
   settleCodegraphChunkSignals,
   type CodegraphChunkRangeSource,
 } from "../../../domains/trajectory/codegraph/symbols/chunk-signal-settlement.js";
-import { buildCodegraphFileSignals } from "../../../domains/trajectory/codegraph/symbols/payload-signals.js";
 
 /** Per-file metrics read in batches of this size, mirroring the provider's finalize read-back. */
 const HEAL_METRICS_READ_BATCH = 2000;

@@ -115,7 +115,7 @@ import {
 } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { InMemoryTemporalSymbolCommitBuffer } from "../core/domains/trajectory/codegraph/temporal/index.js";
-import { StaticPayloadBuilder } from "../core/domains/trajectory/static/provider.js";
+import { StaticPayloadBuilder } from "../core/domains/trajectory/static/index.js";
 import {
   collectTestDependencyManifestSources,
   readDeclaredTestDependencies,

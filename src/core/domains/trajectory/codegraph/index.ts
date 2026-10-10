@@ -141,3 +141,6 @@ export type { CodegraphExclusionOptions } from "./exclusion.js";
 export { createCodegraphEnrichmentProvider } from "./factory.js";
 export type { CodegraphWorkerConfig } from "./factory.js";
 export * from "./working-tree/index.js";
+
+export { CODEGRAPH_FILTER_PRESETS } from "./symbols/filter-presets/index.js";
+export { buildCodegraphFileSignals } from "./symbols/payload-signals.js";

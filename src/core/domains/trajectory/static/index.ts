@@ -18,3 +18,6 @@ export class StaticTrajectory implements Trajectory {
   readonly presets = STATIC_PRESETS;
   readonly statsAccumulators = [...staticStatsAccumulators];
 }
+
+export { StaticPayloadBuilder } from "./provider.js";
+export { STATIC_FILTER_PRESETS } from "./filter-presets/index.js";

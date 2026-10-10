@@ -39,7 +39,7 @@ import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
 import type { CollectionFootprintFactory } from "../../../domains/maintenance/footprint/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/collection-registry.js";
-import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
+import { StaticPayloadBuilder } from "../../../domains/trajectory/static/index.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
