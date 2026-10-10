@@ -17,6 +17,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { CallRef } from "../../../../contracts/types/codegraph.js";
+import { BLOCK_PASS_CALL_PREFIX } from "../block-pass-marker.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../super-receiver-sentinel.js";
 import { collectMethodLocalBindings, isBareIdentifierCallSite } from "./bare-call-detection.js";
@@ -274,7 +275,7 @@ function emitBlockPassEdge(node: AstNode, out: CallRef[]): void {
   const blockMember = extractBlockPassMethod(node);
   if (blockMember !== null) {
     out.push({
-      callText: `&:${blockMember}`,
+      callText: `${BLOCK_PASS_CALL_PREFIX}${blockMember}`,
       receiver: null,
       member: blockMember,
       startLine: node.startPosition.row + 1,

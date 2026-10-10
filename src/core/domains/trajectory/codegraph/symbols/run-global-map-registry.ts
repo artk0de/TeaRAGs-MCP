@@ -108,6 +108,9 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   // The RTA instantiation set (bd 39xca.15): the instantiation that keeps a cone
   // member alive sits in another file than the call site. Appended last.
   instantiatedTypes: { policy: "hydrate", sliceField: "instantiatedTypes" },
+  // Ruby extended-hook mixins (bd 89k7k.35.31): the `extend M` an instance
+  // lookup drops sits in another file than M's `self.extended` hook. Appended last.
+  extendedHookMixins: { policy: "hydrate", sliceField: "extendedHookMixins" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",

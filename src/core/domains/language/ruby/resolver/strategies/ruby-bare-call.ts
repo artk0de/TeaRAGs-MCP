@@ -2,7 +2,9 @@ import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { isBlockPassCallText } from "../../block-pass-marker.js";
 import {
+  callerAncestrySide,
   collectResolvedAncestorChain,
   lastConstantSegment,
   lookupRubySymbolsByShortName,
@@ -58,7 +60,13 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
       // Per-hop FQ canonicalization (bd lawlq.3.4): `classAncestors` VALUES are
       // raw source text, so a mixin chain whose hops are namespaced would
       // dead-end under a raw-string walk before reaching the DSL-method owner.
-      const mro = [enclosing, ...collectResolvedAncestorChain(enclosing, ctx)];
+      // Inside an instance method a bare self-send's MRO is the INSTANCE
+      // ancestry: a module the class only `extend`s is not where it lands (bd
+      // tea-rags-mcp-89k7k.35.31). Class-method and class-body callers keep the
+      // flat list, `extend`ed DSL modules included — and so does a block pass
+      // (`&:m`), which sends `m` to each yielded ELEMENT, not to `self`.
+      const side = isBlockPassCallText(call.callText) ? "unscoped" : callerAncestrySide(ctx);
+      const mro = [enclosing, ...collectResolvedAncestorChain(enclosing, ctx, new Set(), side)];
       let brokeAmbiguous = false;
       for (const klass of mro) {
         // Match a candidate's enclosing-scope tail against the MRO class in

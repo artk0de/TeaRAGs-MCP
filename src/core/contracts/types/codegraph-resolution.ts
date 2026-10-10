@@ -19,6 +19,7 @@ import type {
   FileExtraction,
   ImportRef,
   ModuleReexport,
+  RubyExtendedHookMixin,
   TypeDeclarationFact,
 } from "./codegraph-extraction.js";
 import type { GraphEdges } from "./codegraph-graph.js";
@@ -555,6 +556,13 @@ export interface CallContext {
    * in MRO so the resolver walks the array in REVERSE order.
    */
   classPrependedAncestors?: Record<string, readonly string[]>;
+  /**
+   * Run-global Ruby extended-hook mixins (bd tea-rags-mcp-89k7k.35.31), merged
+   * from every file's `FileExtraction.extendedHookMixins`. An instance-side
+   * ancestry walk that drops a singleton-only `extend M` substitutes what M's
+   * `self.extended` hook includes / prepends into the class.
+   */
+  extendedHookMixins?: Record<string, readonly RubyExtendedHookMixin[]>;
   /**
    * Optional reverse include-by index (bd cai0/2oky5): `fqName → classes that
    * have it as a direct ancestor` (superclass/include/prepend). Derived by the

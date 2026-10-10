@@ -80,6 +80,7 @@ export interface ResolverInputs {
   callableArgSources: CallContext["callableArgSources"];
   buildConstraintsByFile: CallContext["buildConstraintsByFile"];
   typeDeclarations: CallContext["typeDeclarations"];
+  extendedHookMixins: CallContext["extendedHookMixins"];
   /** The run's identity (bd tea-rags-mcp-39xca.6) — always the run state's, never per file. */
   runScope: NonNullable<CallContext["runScope"]>;
 }
@@ -136,6 +137,10 @@ export function resolverInputChannels(inputs: ResolverInputs): Partial<CallConte
     // bd tea-rags-mcp-y99pg.1 — which files DECLARE a type and which only
     // re-open it. Empty ⇒ every declaration counts as the type, as before.
     typeDeclarations: inputs.typeDeclarations,
+    // bd tea-rags-mcp-89k7k.35.31 — what a module's `self.extended` hook mixes
+    // into the extender. Absent ⇒ an instance lookup drops a singleton-only
+    // `extend M` and substitutes nothing, as before.
+    extendedHookMixins: inputs.extendedHookMixins,
     // bd tea-rags-mcp-39xca.6 — resolver memos scope their entries to this
     // token rather than to the pooled symbol table's identity.
     runScope: inputs.runScope,
@@ -598,6 +603,11 @@ export class CallEdgeResolutionRunner {
       // Run-global for the same reason: a type's declaration and its re-openings
       // live in files the caller does not own (bd tea-rags-mcp-y99pg.1).
       typeDeclarations: state.typeDeclarations,
+      // A module's `self.extended` hook and the `extend` it answers live in
+      // different files (bd tea-rags-mcp-89k7k.35.31): run-global if any file
+      // contributed, else this file's own.
+      extendedHookMixins:
+        Object.keys(state.extendedHookMixins).length > 0 ? state.extendedHookMixins : extraction.extendedHookMixins,
       runScope: state.runScope,
     };
   }

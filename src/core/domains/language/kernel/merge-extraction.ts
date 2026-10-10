@@ -159,6 +159,7 @@ const FILE_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<FileExtraction> = 
   // concatenating two passes' arrays would invent an order neither wrote.
   classAncestors: (base, pass) => unionBaseWins(base, pass),
   classPrependedAncestors: (base, pass) => unionBaseWins(base, pass),
+  extendedHookMixins: (base, pass) => unionBaseWins(base, pass),
   callbackParams: (base, pass) => unionBaseWins(base, pass),
   callableArgSources: (base, pass) => unionBaseWins(base, pass),
   // Keyed by symbolId, not by position — see `mergeChunks`.

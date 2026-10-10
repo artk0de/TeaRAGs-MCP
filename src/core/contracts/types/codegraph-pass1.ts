@@ -67,6 +67,7 @@ import type {
   ClassFieldParamLink,
   KnownTargetCallArgs,
   ModuleReexport,
+  RubyExtendedHookMixin,
   TypeDeclarationFact,
 } from "./codegraph-extraction.js";
 import type { InheritanceEdgeDecl, StructuralContractDecl } from "./codegraph-hierarchy.js";
@@ -356,4 +357,13 @@ export interface CodegraphPass1FileAggregates {
    * Persisted LAST, so every other row keeps its bytes.
    */
   instantiatedTypes?: readonly string[];
+  /**
+   * Ruby extended-hook mixins (bd tea-rags-mcp-89k7k.35.31), as
+   * `FileExtraction.extendedHookMixins`. Cross-file by construction: the
+   * `extend HasArguments` an instance lookup filters sits in another file than
+   * the hook that includes `ArgumentObjectLoader`. Union-merged at hydration;
+   * a re-walked file's row is skipped. Persisted LAST, so every other row
+   * keeps its bytes.
+   */
+  extendedHookMixins?: Record<string, readonly RubyExtendedHookMixin[]>;
 }

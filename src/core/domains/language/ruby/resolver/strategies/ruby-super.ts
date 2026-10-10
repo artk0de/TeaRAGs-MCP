@@ -4,7 +4,12 @@ import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../.
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../super-receiver-sentinel.js";
 import { linearizeAncestors } from "./ancestor-linearization.js";
-import { resolveInstanceMethodInClassChain, resolveViaIncludingClasses, type ResolverConfig } from "./shared.js";
+import {
+  callerAncestrySide,
+  resolveInstanceMethodInClassChain,
+  resolveViaIncludingClasses,
+  type ResolverConfig,
+} from "./shared.js";
 
 /**
  * Ruby runtime hook methods whose `super` MUST NOT produce a file-only fallback
@@ -110,7 +115,13 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
     // file-only edge is preferred over `null` when an ancestor's file is known
     // but the method lives outside the project (`ApplicationRecord#save`
     // actually on `ActiveRecord::Base`).
-    const mro = linearizeAncestors(enclosingClass, ctx);
+    //
+    // `super` from an INSTANCE method walks the instance ancestry only: a module
+    // the class merely `extend`s sits on the singleton class, so its same-named
+    // method is not what `super` reaches (bd tea-rags-mcp-89k7k.35.31). A class
+    // method's `super` keeps the flat list, `extend`ed modules included.
+    const side = callerAncestrySide(ctx);
+    const mro = linearizeAncestors(enclosingClass, ctx, side);
     const visited = new Set<string>([enclosingClass]);
     let fileOnlyFallback: SymbolResolutionTarget | null = null;
     for (const ancestor of mro.slice(mro.indexOf(enclosingClass) + 1)) {
@@ -121,6 +132,7 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
         this.cfg.mode,
         visited,
         ctx.callerSymbolId,
+        side,
       );
       if (resolvedTarget === null) continue;
       if (resolvedTarget.targetSymbolId !== null) return resolvedTarget;

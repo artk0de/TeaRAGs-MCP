@@ -20,7 +20,12 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import { ZEITWERK_PREFIX } from "../../zeitwerk-import-marker.js";
-import { linearizeAncestors } from "./ancestor-linearization.js";
+import {
+  linearizeAncestors,
+  rubyDirectAncestors,
+  rubyDirectPrepends,
+  type RubyAncestrySide,
+} from "./ancestor-linearization.js";
 import { isRubyPath, lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 import { isConventionalConstantPath, resolveZeitwerkConstant } from "./zeitwerk.js";
 
@@ -198,6 +203,8 @@ export function collectKnownPaths(ctx: CallContext): Iterable<string> {
   return paths;
 }
 
+export { callerAncestrySide } from "./ancestor-linearization.js";
+
 /**
  * Flatten a class's ancestor chain into a declaration-order list, cycle-guarded
  * via a `visited` set (mirrors the depth-first traversal inside
@@ -331,17 +338,18 @@ export function collectResolvedAncestorChain(
   klass: string,
   ctx: CallContext,
   visited: Set<string> = new Set(),
+  side: RubyAncestrySide = "unscoped",
 ): string[] {
   if (visited.has(klass)) return [];
   visited.add(klass);
   const chain: string[] = [];
-  const ancestors = identifierEntry(ctx.classAncestors, klass);
+  const ancestors = rubyDirectAncestors(klass, ctx, side);
   if (ancestors) {
-    for (const raw of ancestorsInMroOrder(klass, ancestors, ctx)) {
+    for (const raw of ancestorsInMroOrder(klass, ancestors, ctx, side)) {
       const fq = canonicalizeAncestorFq(raw, klass, ctx) ?? raw;
       if (visited.has(fq)) continue;
       chain.push(fq);
-      chain.push(...collectResolvedAncestorChain(fq, ctx, visited));
+      chain.push(...collectResolvedAncestorChain(fq, ctx, visited, side));
     }
   }
   return chain;
@@ -368,9 +376,14 @@ export function collectResolvedAncestorChain(
  * there is no order to fix and the linearization walks the whole ancestor
  * closure to compute one.
  */
-function ancestorsInMroOrder(klass: string, ancestors: readonly string[], ctx: CallContext): readonly string[] {
+function ancestorsInMroOrder(
+  klass: string,
+  ancestors: readonly string[],
+  ctx: CallContext,
+  side: RubyAncestrySide,
+): readonly string[] {
   if (ancestors.length < 2) return ancestors;
-  const mro = linearizeAncestors(klass, ctx);
+  const mro = linearizeAncestors(klass, ctx, side);
   const rank = (name: string): number => {
     const at = mro.indexOf(name);
     return at === -1 ? Number.MAX_SAFE_INTEGER : at;
@@ -403,6 +416,11 @@ function ancestorsInMroOrder(klass: string, ancestors: readonly string[], ctx: C
  * `callerSymbolId` here, because `super` can never dispatch to the method that
  * is executing (bd lawlq.5). Omitted everywhere else: a self-send that resolves
  * to the calling method is ordinary recursion.
+ *
+ * `side` is which `self` the lookup dispatches on (bd tea-rags-mcp-89k7k.35.31):
+ * `"instance"` walks superclass + include/prepend only, so a module the class
+ * merely `extend`s can neither answer the call nor become its file-only
+ * fallback; `"unscoped"` (the default) walks the flat walker list.
  */
 export function resolveInstanceMethodInClassChain(
   klass: string,
@@ -411,6 +429,7 @@ export function resolveInstanceMethodInClassChain(
   mode: AmbiguousResolveMode,
   visited: Set<string>,
   excludeSymbolId?: string,
+  side: RubyAncestrySide = "unscoped",
 ): SymbolResolutionTarget | null {
   if (visited.has(klass)) return null;
   visited.add(klass);
@@ -421,10 +440,18 @@ export function resolveInstanceMethodInClassChain(
   // than the class's own file edge. Reverse order: later `prepend` wins in MRO.
   // Mirrors `resolveTypeMethod`; shared so self/super honour prepend like the
   // local-type/ivar passes already do (bd tea-rags-mcp-3jvn family).
-  const prepended = identifierEntry(ctx.classPrependedAncestors, klass);
+  const prepended = rubyDirectPrepends(klass, ctx, side);
   if (prepended) {
     for (let i = prepended.length - 1; i >= 0; i--) {
-      const inherited = resolveInstanceMethodInClassChain(prepended[i], member, ctx, mode, visited, excludeSymbolId);
+      const inherited = resolveInstanceMethodInClassChain(
+        prepended[i],
+        member,
+        ctx,
+        mode,
+        visited,
+        excludeSymbolId,
+        side,
+      );
       if (inherited && inherited.targetSymbolId !== null) return inherited;
     }
   }
@@ -443,10 +470,10 @@ export function resolveInstanceMethodInClassChain(
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   }
 
-  const ancestors = identifierEntry(ctx.classAncestors, klass);
+  const ancestors = rubyDirectAncestors(klass, ctx, side);
   if (ancestors) {
-    for (const ancestor of ancestorsInMroOrder(klass, ancestors, ctx)) {
-      const inherited = resolveInstanceMethodInClassChain(ancestor, member, ctx, mode, visited, excludeSymbolId);
+    for (const ancestor of ancestorsInMroOrder(klass, ancestors, ctx, side)) {
+      const inherited = resolveInstanceMethodInClassChain(ancestor, member, ctx, mode, visited, excludeSymbolId, side);
       if (inherited === null) continue;
       // Method-level pin wins immediately; remember the first known file as a
       // fallback so a file-only ancestor edge survives if nothing pins later.
@@ -654,6 +681,9 @@ export function resolveTypeMethod(
  * the receiver's `LocalBinding.valueKind` is `"instance"` (or absent). Callers
  * that never track `valueKind` (ivar, return-type) keep using `resolveTypeMethod`
  * for backward compatibility.
+ *
+ * The receiver is an instance, so the walk is the INSTANCE ancestry — a module
+ * `typeName` only `extend`s is skipped (bd tea-rags-mcp-89k7k.35.31).
  */
 export function resolveTypeInstanceMethod(
   typeName: string,
@@ -661,7 +691,7 @@ export function resolveTypeInstanceMethod(
   ctx: CallContext,
   mode: AmbiguousResolveMode,
 ): SymbolResolutionTarget | null {
-  return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set(), symbolIdIsInstanceMethod);
+  return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set(), symbolIdIsInstanceMethod, "instance");
 }
 
 /**
@@ -745,6 +775,7 @@ function resolveTypeMethodInternal(
   mode: AmbiguousResolveMode,
   visited: Set<string>,
   symbolIdFilter: ((symbolId: string, member: string) => boolean) | null,
+  side: RubyAncestrySide = "unscoped",
 ): SymbolResolutionTarget | null {
   if (visited.has(typeName)) return null;
   visited.add(typeName);
@@ -758,10 +789,10 @@ function resolveTypeMethodInternal(
   if (!targetFile && !identifierEntry(ctx.classAncestors, typeName)) return null;
 
   if (targetFile !== null) {
-    const prepended = identifierEntry(ctx.classPrependedAncestors, typeName);
+    const prepended = rubyDirectPrepends(typeName, ctx, side);
     if (prepended) {
       for (let i = prepended.length - 1; i >= 0; i--) {
-        const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited, symbolIdFilter);
+        const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited, symbolIdFilter, side);
         if (inherited && inherited.targetSymbolId !== null) return inherited;
       }
     }
@@ -782,10 +813,10 @@ function resolveTypeMethodInternal(
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   }
 
-  const ancestors = identifierEntry(ctx.classAncestors, typeName);
+  const ancestors = rubyDirectAncestors(typeName, ctx, side);
   if (ancestors) {
-    for (const ancestor of ancestorsInMroOrder(typeName, ancestors, ctx)) {
-      const inherited = resolveTypeMethodInternal(ancestor, member, ctx, mode, visited, symbolIdFilter);
+    for (const ancestor of ancestorsInMroOrder(typeName, ancestors, ctx, side)) {
+      const inherited = resolveTypeMethodInternal(ancestor, member, ctx, mode, visited, symbolIdFilter, side);
       if (inherited && inherited.targetSymbolId !== null) return inherited;
     }
   }
