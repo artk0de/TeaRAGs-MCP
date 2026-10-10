@@ -449,7 +449,11 @@ async function computeSignals(
       }),
     };
   });
+  // HEAD off disk, read right before the call (a queued turn may run after HEAD
+  // moved): the computation then spawns no `rev-parse` of its own.
+  const head = readRepoGitState(toplevel)?.commit;
   return buildOnDemandGitSignals(adapter, targets, {
+    ...(head ? { head } : {}),
     timeoutMs: config.timeoutMs,
     chunk: config.chunk,
     ...(config.file ? { file: config.file } : {}),

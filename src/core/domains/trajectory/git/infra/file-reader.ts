@@ -4,7 +4,7 @@
  * calls remain here (the CLI specifics live in adapters/vcs/git/git-cli).
  */
 
-import type { FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
+import type { CommitFileNumstat, FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import { aggregateFileChurnFollowingRenames, sliceCommitsFollowingRenames } from "../history/index.js";
 import type { GitEnrichmentCache } from "./cache.js";
@@ -122,6 +122,10 @@ const BACKFILL_BATCH = 500;
  * follows them. A path the window holds no commit for is absent — the caller
  * adds its zero-observation entry with whole-history age stamps
  * (`addDormantFileChurn`), as ingest's file phase does.
+ *
+ * `read` is the pathspec numstat read (default: the adapter's); an on-demand
+ * computation hands in its per-call reads so the chunk walk can slice this
+ * read instead of repeating it (`PathspecNumstatReads`).
  */
 export async function buildWindowedFileSignalsForPaths(
   adapter: VcsGitAdapter,
@@ -130,6 +134,8 @@ export async function buildWindowedFileSignalsForPaths(
   timeoutMs = 30000,
   /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
   anchorSec?: number,
+  read: (paths: string[], timeoutMs: number, since: Date) => Promise<CommitFileNumstat[]> = async (paths, ms, since) =>
+    adapter.readCommitFileNumstatForPaths(paths, ms, since),
 ): Promise<Map<string, FileChurnData>> {
   const { sinceDate, lowerBoundSec } = fileChurnWindowOf(maxAgeMonths, anchorSec);
   const result = new Map<string, FileChurnData>();
@@ -138,7 +144,7 @@ export async function buildWindowedFileSignalsForPaths(
     try {
       const entries = await sliceCommitsFollowingRenames(
         async (queried) =>
-          (await adapter.readCommitFileNumstatForPaths(queried, timeoutMs, sinceDate)).map((entry) => ({
+          (await read(queried, timeoutMs, sinceDate)).map((entry) => ({
             ...entry,
             changedFiles: entry.files,
           })),

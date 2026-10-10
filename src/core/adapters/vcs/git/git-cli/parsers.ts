@@ -341,6 +341,36 @@ export function parseCommitFileNumstat(stdout: string): CommitFileNumstat[] {
   return result;
 }
 
+/**
+ * The commits of a `git log --numstat --summary --format=<NUMSTAT_LOG_FORMAT_WITH_COMMITTER>`
+ * read whose diff block CREATES or DELETES a path (a ` create mode ` or
+ * ` delete mode ` summary line), in log order — the set a
+ * `--diff-filter=AD --format=%H` log over the same pathspec and window prints
+ * (bd tea-rags-mcp-89k7k.35.22). A rename both sides of which the pathspec
+ * names prints a ` rename ` line and a mode change a ` mode change ` line;
+ * neither is an add or a delete, and a merge has no diff block at all. Walks
+ * the same `\0` sections as `parseCommitFileNumstat`, which skips the summary
+ * lines (no tab) — the commit message section is never scanned.
+ */
+export function parseAddOrDeleteShas(stdout: string): string[] {
+  const shas: string[] = [];
+  const sections = stdout.split("\0");
+  let i = 0;
+  while (i < sections.length) {
+    const sha = sections[i]?.trim();
+    if (sha?.length !== 40 || !/^[a-f0-9]+$/.test(sha)) {
+      i++;
+      continue;
+    }
+    // sha, parents, author, email, author time, committer time, body — then the diff block.
+    const diffBlock = sections[i + 7] || "";
+    i += 8;
+    const lines = diffBlock.split("\n");
+    if (lines.some((line) => line.startsWith(" create mode ") || line.startsWith(" delete mode "))) shas.push(sha);
+  }
+  return shas;
+}
+
 /** Marks a commit header token in `parseCommitPathChanges` input — never the first byte of a status or a path. */
 export const COMMIT_PATH_CHANGES_HEADER = "\u0001";
 

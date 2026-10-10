@@ -33,6 +33,7 @@
 
 import type {
   BlameLine,
+  BlobBatchReader,
   CommitWithChangedFiles,
   FileChurnData,
   VcsGitAdapter,
@@ -61,6 +62,7 @@ import { buildFileSignalsForPaths, buildWindowedFileSignalsForPaths } from "./fi
 import type { SquashOptions } from "./metrics.js";
 import { computeRelativeChurn } from "./metrics/extractors.js";
 import { assembleFileSignals } from "./metrics/file-assembler.js";
+import { createPathspecNumstatReads, type PathspecNumstatReads } from "./pathspec-numstat-reads.js";
 import { carryWorkingRowsOntoHead, zeroOverlaysOfUncommittedRows } from "./working-rows.js";
 
 /** One row to attribute, in the working file's lines; `chunkId` unique across the call. */
@@ -105,6 +107,12 @@ export interface OnDemandGitSignalOptions {
    * writes). Never written here.
    */
   churnStore?: FileChurnDiscoveryPersistence;
+  /**
+   * The HEAD commit, when the caller already holds it (the working-tree
+   * source reads it off disk). Absent → resolved once per call, and only when
+   * something reads it.
+   */
+  head?: string;
 }
 
 /** The options with the history anchor resolved once for the whole call. */
@@ -136,63 +144,93 @@ export async function buildOnDemandGitSignals(
   const historyAnchorSec = await resolveHistoryAnchorSec(adapter, callOptions.anchor ?? "now", callOptions.timeoutMs);
   const options: AnchoredOnDemandOptions =
     historyAnchorSec === undefined ? callOptions : { ...callOptions, historyAnchorSec };
-  const names = await persistedAuthorNames(adapter, options);
-  const churn = canonicalizeChurnNames(
-    await fileChurnOf(
-      adapter,
-      targets.map((target) => target.relPath),
-      options,
-    ),
-    names,
-  );
-  // A dormant file (no commit in the window, history before it) has history.
-  const withHistory = targets.filter((target) => churn.has(target.relPath));
-  const neverCommitted = targets.filter((target) => !churn.has(target.relPath));
-  await walkNeverCommitted(adapter, neverCommitted, options, result);
-  if (withHistory.length === 0) return result;
+  // Per-call state shared by the file walk, the HEAD carry and both chunk walks
+  // (bd tea-rags-mcp-89k7k.35.22): a git process costs ~200 ms of creation at
+  // load against a few ms of git's own work.
+  const head = lazyHead(adapter, callOptions.head);
+  const shared: OnDemandCallGitState = {
+    reads: createPathspecNumstatReads(adapter),
+    // Spawned on its first read only; closed here, so no walk closes it.
+    reader: adapter.createBlobBatchReader(),
+  };
+  try {
+    const names = await persistedAuthorNames(adapter, options, head);
+    const churn = canonicalizeChurnNames(
+      await fileChurnOf(
+        adapter,
+        targets.map((target) => target.relPath),
+        options,
+        shared.reads,
+      ),
+      names,
+    );
+    // A dormant file (no commit in the window, history before it) has history.
+    const withHistory = targets.filter((target) => churn.has(target.relPath));
+    const neverCommitted = targets.filter((target) => !churn.has(target.relPath));
+    await walkNeverCommitted(adapter, neverCommitted, options, shared, result);
+    if (withHistory.length === 0) return result;
 
-  const blameByPath = await blameAtHead(adapter, withHistory, churn, options.timeoutMs, names);
-  for (const target of withHistory) {
-    const data = churn.get(target.relPath) as WindowedFileChurn;
-    result.set(target.relPath, {
-      ...(target.fileSignals
-        ? {
-            file: assembleFileSignals(
-              data,
-              target.lineCount,
-              options.squashOpts,
-              buildBugFixShaSet(data.commits),
-              blameByPath.get(target.relPath),
-            ),
-          }
-        : {}),
-      chunks: new Map(),
-    });
-  }
-
-  const { chunkMap, uncommittedRows } = await carryWorkingRowsOntoHead(
-    adapter,
-    withHistory.flatMap(({ relPath, workingContent, chunks }) =>
+    const carried = withHistory.flatMap(({ relPath, workingContent, chunks }) =>
       workingContent === undefined ? [] : [{ relPath, workingContent, chunks }],
-    ),
-  );
-  const zero = zeroOverlaysOfUncommittedRows(adapter.repoRoot, uncommittedRows, {
-    fileChurnDataMap: churn,
-    maxFileLines: options.chunk.maxFileLines,
-    ...(options.squashOpts ? { squashOpts: options.squashOpts } : {}),
-  });
-  const walked =
-    chunkMap.size === 0
-      ? new Map<string, Map<string, ChunkChurnOverlay>>()
-      : await walkChunks(adapter, chunkMap, options, churn, blameByPath);
-  for (const overlays of [zero, walked]) {
-    for (const [relPath, byChunk] of overlays) {
-      const answer = result.get(relPath);
-      if (!answer) continue;
-      for (const [chunkId, overlay] of byChunk) answer.chunks.set(chunkId, overlay);
+    );
+    // Blame and the HEAD carry are independent: one serial stage, not two.
+    const [blameByPath, { chunkMap, uncommittedRows }] = await Promise.all([
+      blameAtHead(adapter, withHistory, churn, options.timeoutMs, names),
+      carried.some((file) => file.chunks.length > 0)
+        ? head().then(async (commit) => carryWorkingRowsOntoHead(adapter, carried, shared.reader, commit))
+        : carryWorkingRowsOntoHead(adapter, carried, shared.reader),
+    ]);
+    for (const target of withHistory) {
+      const data = churn.get(target.relPath) as WindowedFileChurn;
+      result.set(target.relPath, {
+        ...(target.fileSignals
+          ? {
+              file: assembleFileSignals(
+                data,
+                target.lineCount,
+                options.squashOpts,
+                buildBugFixShaSet(data.commits),
+                blameByPath.get(target.relPath),
+              ),
+            }
+          : {}),
+        chunks: new Map(),
+      });
     }
+
+    const zero = zeroOverlaysOfUncommittedRows(adapter.repoRoot, uncommittedRows, {
+      fileChurnDataMap: churn,
+      maxFileLines: options.chunk.maxFileLines,
+      ...(options.squashOpts ? { squashOpts: options.squashOpts } : {}),
+    });
+    const walked =
+      chunkMap.size === 0
+        ? new Map<string, Map<string, ChunkChurnOverlay>>()
+        : await walkChunks(adapter, chunkMap, options, shared, churn, blameByPath);
+    for (const overlays of [zero, walked]) {
+      for (const [relPath, byChunk] of overlays) {
+        const answer = result.get(relPath);
+        if (!answer) continue;
+        for (const [chunkId, overlay] of byChunk) answer.chunks.set(chunkId, overlay);
+      }
+    }
+    return result;
+  } finally {
+    await shared.reader.close();
   }
-  return result;
+}
+
+/** The git state one call shares between its walks — per call, never run-scoped. */
+interface OnDemandCallGitState {
+  reads: PathspecNumstatReads;
+  /** Owned by `buildOnDemandGitSignals`, which closes it. */
+  reader: BlobBatchReader;
+}
+
+/** HEAD, resolved at most once per call — never when the caller handed it in. */
+function lazyHead(adapter: VcsGitAdapter, known?: string): () => Promise<string> {
+  let pending: Promise<string> | undefined;
+  return async () => (pending ??= known === undefined ? adapter.getHead() : Promise.resolve(known));
 }
 
 /**
@@ -220,17 +258,20 @@ async function fileChurnOf(
   adapter: VcsGitAdapter,
   paths: string[],
   options: AnchoredOnDemandOptions,
+  reads: PathspecNumstatReads,
 ): Promise<Map<string, WindowedFileChurn>> {
   const { historyAnchorSec } = options;
   if (!options.file) {
     return anchorFileChurn(await buildFileSignalsForPaths(adapter, paths, options.timeoutMs), historyAnchorSec);
   }
+  // Through the call's reads: the chunk walk slices its window out of this read.
   const windowed: Map<string, WindowedFileChurn> = await buildWindowedFileSignalsForPaths(
     adapter,
     paths,
     options.file.maxAgeMonths,
     options.timeoutMs,
     historyAnchorSec,
+    reads.read,
   );
   const dormant = paths.filter((path) => !windowed.has(path));
   if (dormant.length > 0) {
@@ -246,9 +287,13 @@ async function fileChurnOf(
  * restricted to the paths — rename rows restored — so a commit no merge
  * simplification hides is lost. The bug-fix set is built over what was read,
  * as the matrix builds it over its rows (merges carry no numstat in either).
+ * When the call's file walk already read a window containing this one over
+ * the same paths (a file window at least as wide as the chunk window), the
+ * commits are sliced from that read (`PathspecNumstatReads#sliceFor`) instead
+ * of read again; otherwise they are read here.
  */
 function pathspecCommitDiscovery(
-  adapter: VcsGitAdapter,
+  reads: PathspecNumstatReads,
   maxAgeMonths: number,
   timeoutMs: number,
   historyAnchorSec?: number,
@@ -257,7 +302,8 @@ function pathspecCommitDiscovery(
   let read: CommitWithChangedFiles[] = [];
   return {
     commitsForFiles: async (paths) => {
-      read = (await adapter.readCommitFileNumstatForPaths(paths, timeoutMs, sinceDate)).map(({ commit, files }) => ({
+      const entries = reads.sliceFor(paths, sinceDate) ?? (await reads.read(paths, timeoutMs, sinceDate));
+      read = entries.map(({ commit, files }) => ({
         commit,
         changedFiles: files.map(({ path, previousPath }) =>
           previousPath === undefined ? { path } : { path, previousPath },
@@ -269,11 +315,15 @@ function pathspecCommitDiscovery(
   };
 }
 
-/** One chunk walk over `chunkMap` (absolute-path keys), as ingest's chunk phase runs it. */
+/**
+ * One chunk walk over `chunkMap` (absolute-path keys), as ingest's chunk phase
+ * runs it, reading blobs through the call's reader (the walk does not close it).
+ */
 async function walkChunks(
   adapter: VcsGitAdapter,
   chunkMap: Map<string, ChunkLookupEntry[]>,
   options: AnchoredOnDemandOptions,
+  shared: OnDemandCallGitState,
   churn?: Map<string, FileChurnData>,
   blameByPath?: Map<string, BlameLine[]>,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
@@ -289,9 +339,14 @@ async function walkChunks(
     options.chunk.maxFileLines,
     undefined,
     blameByPath,
+    shared.reader,
     undefined,
-    undefined,
-    pathspecCommitDiscovery(adapter, options.chunk.maxAgeMonths, options.chunk.timeoutMs, options.historyAnchorSec),
+    pathspecCommitDiscovery(
+      shared.reads,
+      options.chunk.maxAgeMonths,
+      options.chunk.timeoutMs,
+      options.historyAnchorSec,
+    ),
     undefined,
     undefined,
     options.historyAnchorSec,
@@ -312,6 +367,7 @@ async function walkNeverCommitted(
   adapter: VcsGitAdapter,
   targets: readonly OnDemandGitSignalTarget[],
   options: AnchoredOnDemandOptions,
+  shared: OnDemandCallGitState,
   result: Map<string, OnDemandGitSignals>,
 ): Promise<void> {
   const chunkMap = new Map<string, ChunkLookupEntry[]>();
@@ -323,7 +379,7 @@ async function walkNeverCommitted(
     );
   }
   if (chunkMap.size === 0) return;
-  const overlays = await walkChunks(adapter, chunkMap, options);
+  const overlays = await walkChunks(adapter, chunkMap, options, shared);
   for (const [relPath, byChunk] of overlays) result.set(relPath, { chunks: new Map(byChunk) });
 }
 
@@ -361,11 +417,12 @@ async function blameAtHead(
 async function persistedAuthorNames(
   adapter: VcsGitAdapter,
   options: AnchoredOnDemandOptions,
+  head: () => Promise<string>,
 ): Promise<AuthorNameDirectory> {
   if (!options.file) return new Map();
   try {
     const store = options.churnStore ?? new FileChurnDiscoveryStore();
-    const snapshot = store.load(adapter.repoRoot, await adapter.getHead()) ?? store.loadLatest(adapter.repoRoot);
+    const snapshot = store.load(adapter.repoRoot, await head()) ?? store.loadLatest(adapter.repoRoot);
     if (!snapshot) return new Map();
     const { lowerBoundSec } = fileChurnWindowOf(options.file.maxAgeMonths, options.historyAnchorSec);
     return buildAuthorNameDirectory(
