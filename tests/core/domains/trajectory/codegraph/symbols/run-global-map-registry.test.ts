@@ -62,7 +62,7 @@ const EXPECTED_POLICY = {
   selfInstantiatingClassMethods: "batchOnly",
   selfDispatchArgTemplates: "batchOnly",
   schemaTables: "hydrate",
-  instantiatedTypes: "batchOnly",
+  instantiatedTypes: "hydrate",
   ivarTypes: "batchOnly",
   classFieldCallResults: "batchOnly",
   buildConstraintsByFile: "hydrate",
@@ -117,6 +117,8 @@ const PERSISTED_KEY_ORDER = [
   "moduleValueTypes",
   // P2 (bd m99j1.1.19) — Python callable-value sources, appended last.
   "callableArgSources",
+  // bd 39xca.15 — the Ruby RTA instantiation set, appended last.
+  "instantiatedTypes",
 ];
 
 const RELPATH = "app/models/account.rb";
@@ -147,9 +149,9 @@ function everyChannelExtraction(): FileExtraction {
     structuralContracts: [{ name: "Billable", members: [{ name: "charge", params: 1 }] }],
     moduleValueTypes: { [`${RELPATH}::DEFAULT_FIRM`]: { form: "instance", name: "Firm" } },
     callableArgSources: { [`${RELPATH}::register`]: [{ calleeReceiver: null, argIndex: 0, argument: "handler" }] },
+    instantiatedTypes: ["Account"],
     // Batch-only facts: present on the extraction, absent from the slice.
     ivarTypes: { Account: { "@firm": "Firm" } },
-    instantiatedTypes: ["Account"],
     callbackParams: { "Account#each": [0] },
   } as unknown as FileExtraction;
 }

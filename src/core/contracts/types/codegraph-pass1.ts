@@ -34,16 +34,17 @@
  * call site, and they are small: a Ruby file declares one or two classes.
  *
  * The type-inference family that `RunState#absorb` also merges run-globally —
- * `ivarTypes`, `instantiatedTypes`, `dispatchTables`, `callbackParams` — has the
- * SAME batch-scoped lifetime and therefore the same class of incremental
- * divergence, but every one of them measures at exactly ZERO recovered edges
- * (bd tea-rags-mcp-8qyax on a Ruby corpus, bd tea-rags-mcp-4yvms on three Python
- * ones, re-measured by bd tea-rags-mcp-39xca.15 on huginn / octokit.rb / sinatra
- * / flask once the harness absorbed like the sink). They are left unpersisted
- * on the strength of those numbers, not on the per-method size argument that
- * first deferred them — see `structuredReturnTypes` below for how that argument
- * fared. The Ruby parameter family was in that list until the re-measurement
- * refuted its zero; see `knownTargetCallArgs` below.
+ * `ivarTypes`, `dispatchTables`, `callbackParams` — has the SAME batch-scoped
+ * lifetime and therefore the same class of incremental divergence, but every
+ * one of them measures at exactly ZERO recovered edges (bd tea-rags-mcp-8qyax
+ * on a Ruby corpus, bd tea-rags-mcp-4yvms on three Python ones, re-measured by
+ * bd tea-rags-mcp-39xca.15 on huginn / octokit.rb / sinatra / graphql-ruby /
+ * mastodon / taxdome / flask once the harness absorbed like the sink). They are
+ * left unpersisted on the strength of those numbers, not on the per-method size
+ * argument that first deferred them — see `structuredReturnTypes` below for how
+ * that argument fared. The Ruby parameter family and `instantiatedTypes` were in
+ * that list until a re-measurement refuted their zero; see
+ * `knownTargetCallArgs` and `instantiatedTypes` below.
  *
  * ── Why the fields are stored verbatim rather than derived back ──
  * `cg_symbols_inheritance` already persists every ancestry fact, so inverting
@@ -343,4 +344,16 @@ export interface CodegraphPass1FileAggregates {
    * walked `csrf_exempt`.
    */
   callableArgSources?: Record<string, CallableArgSource[]>;
+  /**
+   * The fq constants this file instantiates — the RTA set (bd tea-rags-mcp-pffv)
+   * the cone engine prunes CHA cones against, persisted by bd
+   * tea-rags-mcp-39xca.15. Cross-file by construction: the `System.new` that
+   * keeps `System#id` in a cone is rarely in the caller's file. Batch-scoped, a
+   * prune whose walked files named no cone member came back empty and kept the
+   * whole cone — taxdome, random 5% seed 1: a phantom `Guest#id` beside
+   * `System#id`, recovered by `--ablate rta` alone. Union-merged at hydration;
+   * a re-walked file's row is skipped, so an instantiation it dropped is gone.
+   * Persisted LAST, so every other row keeps its bytes.
+   */
+  instantiatedTypes?: readonly string[];
 }
