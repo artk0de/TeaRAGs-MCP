@@ -18,6 +18,23 @@ function spawnSyncReturning(result: Partial<SpawnSyncResult>): typeof spawnSync 
   return vi.fn(() => ({ pid: 1, output: [], stdout: "", stderr: "", status: null, signal: null, ...result })) as never;
 }
 
+/** Answers each successive probe attempt with the next result; the last one repeats. */
+function spawnSyncAnswering(...results: Partial<SpawnSyncResult>[]): typeof spawnSync {
+  let call = 0;
+  return vi.fn(() => {
+    const result = results[Math.min(call, results.length - 1)];
+    call += 1;
+    return { pid: 1, output: [], stdout: "", stderr: "", status: null, signal: null, ...result };
+  }) as never;
+}
+
+const TIMED_OUT: Partial<SpawnSyncResult> = {
+  status: null,
+  signal: "SIGTERM",
+  error: Object.assign(new Error("spawnSync /usr/bin/git ETIMEDOUT"), { code: "ETIMEDOUT" }),
+};
+const GIT_BANNER: Partial<SpawnSyncResult> = { status: 0, stdout: "git version 2.39.5 (Apple Git-154)\n" };
+
 describe("probeGitExecutable", () => {
   it("accepts a candidate that exits 0 and prints a `git version` banner", () => {
     const impl = spawnSyncReturning({ status: 0, stdout: "git version 2.39.5 (Apple Git-154)\n" });
@@ -26,7 +43,7 @@ describe("probeGitExecutable", () => {
     expect(impl).toHaveBeenCalledWith(
       PLATFORM_GIT_EXECUTABLE,
       ["--version"],
-      expect.objectContaining({ timeout: 3000, encoding: "utf8" }),
+      expect.objectContaining({ timeout: 5000, encoding: "utf8" }),
     );
   });
 
@@ -46,11 +63,45 @@ describe("probeGitExecutable", () => {
     expect(probeGitExecutable(PLATFORM_GIT_EXECUTABLE, impl)).toBe(false);
   });
 
-  it("rejects a candidate whose probe timed out", () => {
-    const timeout = Object.assign(new Error("spawnSync /usr/bin/git ETIMEDOUT"), { code: "ETIMEDOUT" });
-    const impl = spawnSyncReturning({ status: null, signal: "SIGTERM", error: timeout });
+  it("keeps the candidate when every attempt timed out — a timeout is no verdict (0qaht.67)", () => {
+    const impl = spawnSyncAnswering(TIMED_OUT);
+
+    expect(probeGitExecutable(PLATFORM_GIT_EXECUTABLE, impl)).toBe(true);
+    expect(impl).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a timed-out probe with a longer, hang-only window and accepts the answer", () => {
+    const impl = spawnSyncAnswering(TIMED_OUT, GIT_BANNER);
+
+    expect(probeGitExecutable(PLATFORM_GIT_EXECUTABLE, impl)).toBe(true);
+    expect(impl).toHaveBeenCalledTimes(2);
+    expect(impl).toHaveBeenNthCalledWith(
+      1,
+      PLATFORM_GIT_EXECUTABLE,
+      ["--version"],
+      expect.objectContaining({ timeout: 5000 }),
+    );
+    expect(impl).toHaveBeenNthCalledWith(
+      2,
+      PLATFORM_GIT_EXECUTABLE,
+      ["--version"],
+      expect.objectContaining({ timeout: 30_000 }),
+    );
+  });
+
+  it("rejects on an explicit failure after a timeout — only explicit failures are verdicts", () => {
+    const impl = spawnSyncAnswering(TIMED_OUT, { status: 1, stdout: "" });
 
     expect(probeGitExecutable(PLATFORM_GIT_EXECUTABLE, impl)).toBe(false);
+    expect(impl).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry an explicit failure", () => {
+    const enoent = Object.assign(new Error("spawnSync /usr/bin/git ENOENT"), { code: "ENOENT" });
+    const impl = spawnSyncAnswering({ status: null, error: enoent }, GIT_BANNER);
+
+    expect(probeGitExecutable(PLATFORM_GIT_EXECUTABLE, impl)).toBe(false);
+    expect(impl).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a candidate that does not exist (ENOENT)", () => {
@@ -102,6 +153,24 @@ describe("createGitExecutableResolver", () => {
     expect(resolve()).toBe("git");
     expect(resolve()).toBe("git");
     expect(probe).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("git executable decision under a slow probe (0qaht.67)", () => {
+  it("decides once per process: a timed-out-then-answered probe runs its attempts once, not per spawn", () => {
+    const impl = spawnSyncAnswering(TIMED_OUT, GIT_BANNER);
+    const resolve = createGitExecutableResolver((candidate) => probeGitExecutable(candidate, impl));
+
+    expect(resolve()).toBe(PLATFORM_GIT_EXECUTABLE);
+    expect(resolve()).toBe(PLATFORM_GIT_EXECUTABLE);
+    expect(resolve()).toBe(PLATFORM_GIT_EXECUTABLE);
+    expect(impl).toHaveBeenCalledTimes(2);
+  });
+
+  it("an explicit failure still falls back to PATH git", () => {
+    const impl = spawnSyncAnswering({ status: 1, stdout: "" });
+
+    expect(createGitExecutableResolver((candidate) => probeGitExecutable(candidate, impl))()).toBe(PATH_GIT_EXECUTABLE);
   });
 });
 

@@ -15,7 +15,9 @@
  * `existsSync`: on macOS without Command Line Tools `/usr/bin/git` is an xcrun
  * shim that requests an install and exits non-zero. On other platforms the
  * same probe holds (on Linux `/usr/bin/git` is normally the distro git), so
- * there is one code path and no platform branch.
+ * there is one code path and no platform branch. Only an explicit failure of
+ * that run rejects the candidate; a timeout is retried, never a verdict (see
+ * `probeGitExecutable`).
  *
  * The decision is memoized per module instance: once per process, and once per
  * worker thread (each thread loads its own copy of this module).
@@ -33,30 +35,63 @@ export const PLATFORM_GIT_EXECUTABLE = "/usr/bin/git";
 /** Fallback: whatever `git` the PATH resolves to (Homebrew on macOS). */
 export const PATH_GIT_EXECUTABLE = "git";
 
-const GIT_PROBE_TIMEOUT_MS = 3000;
+/**
+ * Per-attempt windows for the `--version` probe (bd tea-rags-mcp-0qaht.67).
+ * Under induced load the probe of `/usr/bin/git` measured p50 0.9–1.8s with a
+ * max of ~3.3s, so the first window sits above the observed max with margin;
+ * the second is a hang-only bound — it exists to stop a wedged child, not to
+ * judge a slow one.
+ */
+const GIT_PROBE_ATTEMPT_TIMEOUTS_MS = [5000, 30_000] as const;
 
 /** Decides whether a git candidate can actually run. */
 export type GitExecutableProbe = (candidate: string) => boolean;
 
-/**
- * True iff `<candidate> --version` exits 0 within the timeout and prints a
- * `git version` banner. Any failure — ENOENT, timeout, the xcrun shim's
- * non-zero exit, unexpected output, a throwing spawn — reads as unusable.
- */
-export function probeGitExecutable(candidate: string, spawnSyncImpl?: typeof spawnSync): boolean {
+type GitProbeAttemptVerdict = "usable" | "unusable" | "timed-out";
+
+function probeGitExecutableOnce(
+  candidate: string,
+  timeoutMs: number,
+  spawnSyncImpl: typeof spawnSync | undefined,
+): GitProbeAttemptVerdict {
   try {
     // Resolved inside the try: even reaching `spawnSync` can throw (a module
     // mock without that export), and the probe must still answer "unusable".
     const result = (spawnSyncImpl ?? spawnSync)(candidate, ["--version"], {
-      timeout: GIT_PROBE_TIMEOUT_MS,
+      timeout: timeoutMs,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }) as ReturnType<typeof spawnSync> | undefined;
-    if (!result || result.error || result.status !== 0) return false;
-    return String(result.stdout).startsWith("git version");
+    if (!result) return "unusable";
+    const spawnError: NodeJS.ErrnoException | undefined = result.error;
+    if (spawnError?.code === "ETIMEDOUT") return "timed-out";
+    if (spawnError || result.status !== 0) return "unusable";
+    return String(result.stdout).startsWith("git version") ? "usable" : "unusable";
   } catch {
-    return false;
+    return "unusable";
   }
+}
+
+/**
+ * False iff `<candidate> --version` FAILS EXPLICITLY: ENOENT/EACCES, the xcrun
+ * shim's non-zero exit, output that is not a `git version` banner, a throwing
+ * spawn. A timeout is NO verdict (bd tea-rags-mcp-0qaht.67): a loaded machine
+ * makes the probe slow, and treating slow as broken permanently moved the
+ * process — and every worker adopting its choice — onto the EDR-throttled PATH
+ * git. A timed-out attempt is retried with the next, longer window. If every
+ * window times out the candidate is KEPT: ~35s without an answer means the
+ * machine is starved, and PATH git would be no faster there; falling back would
+ * trade a probe we could not read for a known ~3x throughput loss for the rest
+ * of the process. No caller relies on the probe having proven responsiveness —
+ * the hot blame/log spawns run under `execWithStallGuard`, so a git that truly
+ * hangs fails loudly there instead of degrading silently here.
+ */
+export function probeGitExecutable(candidate: string, spawnSyncImpl?: typeof spawnSync): boolean {
+  for (const timeoutMs of GIT_PROBE_ATTEMPT_TIMEOUTS_MS) {
+    const verdict = probeGitExecutableOnce(candidate, timeoutMs, spawnSyncImpl);
+    if (verdict !== "timed-out") return verdict === "usable";
+  }
+  return true;
 }
 
 /** Builds a resolver that probes the platform git once and memoizes the answer. */
