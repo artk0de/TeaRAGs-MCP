@@ -1598,16 +1598,6 @@ export function readCorpusDeclaredDependencies(
   return readDeclaredDependenciesByLanguage(repoRoot, collectDependencyManifestSources(factory));
 }
 
-/**
- * Harness parity with the pre-K8 extraction (bd tea-rags-mcp-0qaht.48): the raw
- * Gemfile never reached {@link extractFile}, so the tally walked Ruby with the
- * FULL DSL catalogue while production gates it. Dropping Ruby's entry keeps the
- * substrate baselines byte-identical until they are re-cut with the gate on.
- */
-function withoutRubyEntry(declared: DeclaredDependenciesByLanguage): DeclaredDependenciesByLanguage {
-  return new Map([...declared].filter(([language]) => language !== "ruby"));
-}
-
 /** Walker output for one file, or `null` when the file could not be parsed. */
 export function extractFile(
   repoRoot: string,
@@ -1630,7 +1620,7 @@ export function extractFile(
     // that materialized what production skips would report a wall production
     // never pays.
     return extractFileInMemory({ languageFactory: factory, collectSymbols, composer }, relPath, code, {
-      declaredDependencies: declaredDependencies && withoutRubyEntry(declaredDependencies),
+      declaredDependencies,
     });
   } catch (error) {
     onError?.(error);
