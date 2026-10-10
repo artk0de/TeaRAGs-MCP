@@ -19,16 +19,20 @@
  * (`wall ≤ +25%` on netbox) actually cares about.
  */
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import { isDerivedLocalBinding, type CallContext, type LocalBinding } from "../../../../contracts/types/codegraph.js";
-import type { TypeRef } from "../../../../contracts/types/language.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
+import {
+  isDerivedLocalBinding,
+  type CallContext,
+  type LocalBinding,
+} from "../../../../../contracts/types/codegraph.js";
+import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   CHAIN_MAX_HOPS_DEFAULT,
   splitAtBracketDepthZero,
   splitReceiverHops,
   stripCallArgs,
   type ReceiverTypePorts,
-} from "../../kernel/index.js";
+} from "../../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { pythonClassKey } from "./python-class-key.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
@@ -55,7 +59,7 @@ import {
   receiverModuleText,
   resolveTypeFile,
   type PythonMemberAccess,
-} from "./strategies/shared.js";
+} from "./shared.js";
 
 export const PYTHON_CHAIN_MAX_HOPS_ENV = "CODEGRAPH_PY_CHAIN_MAX_HOPS";
 

@@ -5,8 +5,8 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { ConeTypeLocator } from "../../../../../contracts/types/language.js";
-import { isPythonPlacedClassKey, pythonClassKey } from "../python-class-key.js";
-import { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import { isPythonPlacedClassKey, pythonClassKey } from "./python-class-key.js";
+import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { resolveTypeFile } from "./python-local-binding.js";
 import { lastSegment, lookupPythonSymbolsByShortName, type ResolverConfig } from "./shared.js";
 

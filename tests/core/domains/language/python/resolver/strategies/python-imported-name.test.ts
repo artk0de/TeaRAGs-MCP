@@ -23,8 +23,8 @@ import type {
   ImportRef,
   ModuleReexport,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
-import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
-import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
+import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-ancestor-policy.js";
+import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
 import { PythonImportedNameSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-imported-name.js";
 import { PYTHON_UNRESOLVABLE_BASE } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";

@@ -13,15 +13,15 @@ import {
   type ReceiverTypingPorts,
   type TypeMemberLookup,
 } from "../../../kernel/index.js";
-import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
-import { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
+import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   pythonAssignedValueTypes,
   pythonDerivedBindingType,
   pythonLocalBindingInForce,
-} from "../python-iteration-types.js";
-import { pythonPlacedBindingUnion } from "../python-member-return-types.js";
-import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
+} from "./python-iteration-types.js";
+import { pythonPlacedBindingUnion } from "./python-member-return-types.js";
+import { createPythonCallBindingPorts } from "./python-receiver-type-ports.js";
 import {
   lastSegment,
   pythonCallBindingType,

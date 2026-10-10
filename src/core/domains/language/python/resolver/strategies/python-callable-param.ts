@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import type { PythonCallableParamTargets } from "../python-callable-param-targets.js";
+import type { PythonCallableParamTargets } from "./python-callable-param-targets.js";
 
 /**
  * `view_func(...)` where `view_func` is a parameter of an enclosing

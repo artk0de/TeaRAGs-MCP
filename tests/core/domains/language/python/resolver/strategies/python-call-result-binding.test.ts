@@ -20,8 +20,8 @@ import type {
   LocalBinding,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../../../src/core/contracts/types/language.js";
-import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
-import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
+import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-ancestor-policy.js";
+import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
 import { PythonLocalBindingSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-local-binding.js";
 import { pythonBoundToForeignCall } from "../../../../../../../src/core/domains/language/python/resolver/strategies/shared.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";

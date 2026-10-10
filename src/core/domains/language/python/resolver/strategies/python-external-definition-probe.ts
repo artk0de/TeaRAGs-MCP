@@ -38,9 +38,9 @@ import {
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
-} from "../../../../contracts/types/codegraph.js";
-import type { TypeRef } from "../../../../contracts/types/language.js";
-import { stripCallArgs, type ReceiverTypePorts } from "../../kernel/index.js";
+} from "../../../../../contracts/types/codegraph.js";
+import type { TypeRef } from "../../../../../contracts/types/language.js";
+import { stripCallArgs, type ReceiverTypePorts } from "../../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { createPythonReceiverTypePorts } from "./python-receiver-type-ports.js";
@@ -51,7 +51,7 @@ import {
   pythonEnclosingClass,
   resolvePythonInheritedMember,
   resolvePythonMemberOnTypeThroughMro,
-} from "./strategies/shared.js";
+} from "./shared.js";
 
 /** The two spellings the Python walker emits for a zero-argument `super()`. */
 const SUPER_RECEIVERS: ReadonlySet<string> = new Set(["super", "super()"]);

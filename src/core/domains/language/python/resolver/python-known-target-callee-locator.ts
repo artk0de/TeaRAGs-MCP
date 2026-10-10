@@ -28,9 +28,9 @@ import {
 } from "../../../../contracts/types/codegraph.js";
 import type { KnownTargetCalleeLocatorInput } from "../../../../contracts/types/language.js";
 import { findMemberInAncestorChain } from "../../kernel/index.js";
-import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
-import { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { parsePythonClassKey } from "./python-type-addressing.js";
+import { PythonAncestorLinearizerCache } from "./strategies/python-ancestor-policy.js";
+import { PythonImportFileMapper } from "./strategies/python-import-file-mapper.js";
+import { parsePythonClassKey } from "./strategies/python-type-addressing.js";
 import { pythonClassKeyIsDeclared } from "./strategies/shared.js";
 
 /** Build one run's locator over the barrier's complete run-global maps. */

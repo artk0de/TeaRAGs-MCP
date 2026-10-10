@@ -47,16 +47,16 @@
  * (decision 7: netbox has ~3,600 classes and ~30,000 `self.` call sites).
  */
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { AmbiguousResolveMode, CallContext, RelPath } from "../../../../contracts/types/codegraph.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
+import type { AmbiguousResolveMode, CallContext, RelPath } from "../../../../../contracts/types/codegraph.js";
 import {
   AncestorLinearizerCache,
   reexportOriginFile,
   type AncestorClosure,
   type AncestorLinearizationPolicy,
-} from "../../kernel/index.js";
-import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
-import { PYTHON_UNRESOLVABLE_BASE } from "../walker/walker.js";
+} from "../../../kernel/index.js";
+import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
+import { PYTHON_UNRESOLVABLE_BASE } from "../../walker/walker.js";
 import { linearizeC3 } from "./mro.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {

@@ -12,10 +12,10 @@
  * paths keep working (same pattern as `short-name-lookup.ts`).
  */
 
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext, ImportRef } from "../../../../contracts/types/codegraph.js";
-import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
-import { isPythonFrameworkAnswerClass } from "../vocabulary/frameworks/index.js";
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
+import type { CallContext, ImportRef } from "../../../../../contracts/types/codegraph.js";
+import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
+import { isPythonFrameworkAnswerClass } from "../../vocabulary/frameworks/index.js";
 import { isPythonPlacedClassKey, parsePythonClassKey, pythonClassKey } from "./python-class-key.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";

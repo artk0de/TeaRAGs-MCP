@@ -57,16 +57,16 @@ import {
 } from "../../kernel/index.js";
 import { PythonChainAnswerProbe } from "./dispatch/index.js";
 import { createPythonUnionDispatchPorts } from "./dispatch/python-union-ports.js";
-import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { createPythonDispatchComponents } from "./python-dispatch-components.js";
-import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
-import { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { pythonDerivedBindingFold } from "./python-iteration-types.js";
-import { pythonClassifierLocalBindings, pythonVisibleLocalBindings } from "./python-member-return-types.js";
-import { createPythonReceiverTypePorts } from "./python-receiver-type-ports.js";
 import { PythonUndecidableCallClassifier } from "./python-undecidable.js";
 import { lookupPythonSymbolsByShortName, type ResolverConfig } from "./strategies/index.js";
+import { PythonAncestorLinearizerCache } from "./strategies/python-ancestor-policy.js";
+import { PythonExternalVocabulary } from "./strategies/python-external-vocabulary.js";
+import { PythonImportFileMapper } from "./strategies/python-import-file-mapper.js";
+import { pythonDerivedBindingFold } from "./strategies/python-iteration-types.js";
+import { pythonClassifierLocalBindings, pythonVisibleLocalBindings } from "./strategies/python-member-return-types.js";
+import { createPythonReceiverTypePorts } from "./strategies/python-receiver-type-ports.js";
 
 export class PythonCallResolver implements CallResolver {
   readonly language = "python";

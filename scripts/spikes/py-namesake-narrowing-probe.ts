@@ -11,7 +11,7 @@
  *   npx tsx scripts/spikes/py-namesake-narrowing-probe.ts --corpus polar \
  *     --names get_client,Subscription,Organization
  */
-import { PythonImportFileMapper } from "../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
+import { PythonImportFileMapper } from "../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
 import {
   findPythonImportBinding,
   lookupPythonSymbolsByShortName,

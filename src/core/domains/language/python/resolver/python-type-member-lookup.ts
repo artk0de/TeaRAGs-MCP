@@ -15,8 +15,8 @@
  */
 import type { AmbiguousResolveMode } from "../../../../contracts/types/codegraph.js";
 import { createTypeMemberLookup, type TypeMemberLookup } from "../../kernel/index.js";
-import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
-import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
+import type { PythonAncestorLinearizerCache } from "./strategies/python-ancestor-policy.js";
+import type { PythonImportFileMapper } from "./strategies/python-import-file-mapper.js";
 import { resolvePythonMemberOnType, resolvePythonMemberOnTypeThroughMro } from "./strategies/shared.js";
 
 /**

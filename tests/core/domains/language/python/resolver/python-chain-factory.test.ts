@@ -24,9 +24,9 @@ import type {
   SymbolResolutionStrategy,
 } from "../../../../../../src/core/contracts/types/language.js";
 import { createPythonSymbolResolutionChain } from "../../../../../../src/core/domains/language/python/resolver/index.js";
-import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonCallResolver } from "../../../../../../src/core/domains/language/python/resolver/python-resolver.js";
 import { CONE_MAX_DEFAULT } from "../../../../../../src/core/domains/language/python/resolver/strategies/index.js";
+import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const cfg = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };

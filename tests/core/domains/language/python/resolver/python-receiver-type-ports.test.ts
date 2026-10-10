@@ -18,8 +18,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext, ImportRef, LocalBinding } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
-import { createPythonReceiverTypePorts } from "../../../../../../src/core/domains/language/python/resolver/python-receiver-type-ports.js";
+import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-import-file-mapper.js";
+import { createPythonReceiverTypePorts } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-receiver-type-ports.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const LAYOUT_IMPORT: ImportRef = {

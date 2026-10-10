@@ -59,15 +59,15 @@ import {
   type TypeMemberLookup,
 } from "../../../kernel/index.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
-import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
-import { PythonExternalVocabulary } from "../python-external-vocabulary.js";
-import { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
+import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
+import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   pythonAssignedValueTypes,
   pythonDerivedBindingIsFact,
   pythonLocalBindingInForce,
-} from "../python-iteration-types.js";
-import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
+} from "./python-iteration-types.js";
+import { createPythonCallBindingPorts } from "./python-receiver-type-ports.js";
 import {
   lookupPythonSymbolsByShortName,
   pythonBoundClassKey,
