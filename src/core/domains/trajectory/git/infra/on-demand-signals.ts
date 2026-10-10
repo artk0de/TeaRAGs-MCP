@@ -56,6 +56,7 @@ import {
   addDormantFileChurn,
   anchorFileChurn,
   readFileLifetimeStamps,
+  type FileLifetimeStamps,
   type WindowedFileChurn,
 } from "./file-lifetime.js";
 import { buildFileSignalsForPaths, buildWindowedFileSignalsForPaths } from "./file-reader.js";
@@ -113,10 +114,21 @@ export interface OnDemandGitSignalOptions {
    * something reads it.
    */
   head?: string;
+  /**
+   * The history anchor of `anchor: head`, when the caller already holds it
+   * (the working-tree source memoizes it per (toplevel, HEAD),
+   * `OnDemandHeadGitReadMemo`). Given → no `git log -1 %ct` read; absent →
+   * resolved once per call.
+   */
+  historyAnchorSec?: number;
+  /**
+   * The whole-history age stamps (`readFileLifetimeStamps`) a path the file
+   * window holds nothing for is stamped from, when the caller memoizes them
+   * per (toplevel, HEAD). Asked only when such a path exists. Absent → read
+   * once per call that needs them.
+   */
+  fileLifetimeStamps?: () => Promise<ReadonlyMap<string, FileLifetimeStamps>>;
 }
-
-/** The options with the history anchor resolved once for the whole call. */
-type AnchoredOnDemandOptions = OnDemandGitSignalOptions & { readonly historyAnchorSec?: number };
 
 export interface OnDemandGitSignals {
   file?: GitFileSignals;
@@ -141,8 +153,10 @@ export async function buildOnDemandGitSignals(
 ): Promise<Map<string, OnDemandGitSignals>> {
   const result = new Map<string, OnDemandGitSignals>();
   if (targets.length === 0) return result;
-  const historyAnchorSec = await resolveHistoryAnchorSec(adapter, callOptions.anchor ?? "now", callOptions.timeoutMs);
-  const options: AnchoredOnDemandOptions =
+  const historyAnchorSec =
+    callOptions.historyAnchorSec ??
+    (await resolveHistoryAnchorSec(adapter, callOptions.anchor ?? "now", callOptions.timeoutMs));
+  const options: OnDemandGitSignalOptions =
     historyAnchorSec === undefined ? callOptions : { ...callOptions, historyAnchorSec };
   // Per-call state shared by the file walk, the HEAD carry and both chunk walks
   // (bd tea-rags-mcp-89k7k.35.22): a git process costs ~200 ms of creation at
@@ -257,7 +271,7 @@ export function gitFileSignalsAtLineCount(file: Record<string, unknown>, lineCou
 async function fileChurnOf(
   adapter: VcsGitAdapter,
   paths: string[],
-  options: AnchoredOnDemandOptions,
+  options: OnDemandGitSignalOptions,
   reads: PathspecNumstatReads,
 ): Promise<Map<string, WindowedFileChurn>> {
   const { historyAnchorSec } = options;
@@ -275,7 +289,10 @@ async function fileChurnOf(
   );
   const dormant = paths.filter((path) => !windowed.has(path));
   if (dormant.length > 0) {
-    addDormantFileChurn(windowed, dormant, await readFileLifetimeStamps(adapter, options.timeoutMs));
+    const lifetime = options.fileLifetimeStamps
+      ? await options.fileLifetimeStamps()
+      : await readFileLifetimeStamps(adapter, options.timeoutMs);
+    addDormantFileChurn(windowed, dormant, lifetime);
   }
   return anchorFileChurn(windowed, historyAnchorSec);
 }
@@ -322,7 +339,7 @@ function pathspecCommitDiscovery(
 async function walkChunks(
   adapter: VcsGitAdapter,
   chunkMap: Map<string, ChunkLookupEntry[]>,
-  options: AnchoredOnDemandOptions,
+  options: OnDemandGitSignalOptions,
   shared: OnDemandCallGitState,
   churn?: Map<string, FileChurnData>,
   blameByPath?: Map<string, BlameLine[]>,
@@ -366,7 +383,7 @@ async function walkChunks(
 async function walkNeverCommitted(
   adapter: VcsGitAdapter,
   targets: readonly OnDemandGitSignalTarget[],
-  options: AnchoredOnDemandOptions,
+  options: OnDemandGitSignalOptions,
   shared: OnDemandCallGitState,
   result: Map<string, OnDemandGitSignals>,
 ): Promise<void> {
@@ -416,7 +433,7 @@ async function blameAtHead(
  */
 async function persistedAuthorNames(
   adapter: VcsGitAdapter,
-  options: AnchoredOnDemandOptions,
+  options: OnDemandGitSignalOptions,
   head: () => Promise<string>,
 ): Promise<AuthorNameDirectory> {
   if (!options.file) return new Map();
