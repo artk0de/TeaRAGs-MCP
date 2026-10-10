@@ -212,59 +212,71 @@ export function createCodegraphExtractionSink(
     },
     finish: async (options) => {
       finished = true;
-      const key = deps.collectionKey(physicalCollectionName);
-      // Hand the buffered node defs to the flush chain. Owning it here makes the
-      // sink self-contained — correct for every caller (incremental finalize,
-      // standalone sink, cross-pass drain where the buffer is already empty so
-      // this no-ops).
-      //
-      // Whether pass-2 then WAITS for that chain is the one thing
-      // `CODEGRAPH_NODE_DRAIN_OVERLAP` decides. It does not have to: pass-2
-      // resolves against the in-memory symbol table and writes only
-      // `cg_symbols_files` and the edge / inheritance / fan-out tables — it
-      // never reads or writes `cg_symbols`, and the schema declares no foreign
-      // keys (migration 001 omits them deliberately and says why). So
-      // "nodes-before-edges" is a statement about the run's end state, which the
-      // settle below still guarantees, not a precondition of the resolve.
-      deps.nodeFlush.dispatchRemainder(key, physicalCollectionName);
-      try {
-        // The kill-switch shape: settle the whole chain here and pass-2 starts
-        // against a fully durable `cg_symbols`, exactly as it did before.
-        if (!overlapNodeDrain) await deps.nodeFlush.settle();
-        await spill.close();
-        await sealRunState(deps, physicalCollectionName);
-        await appendConeMovedDependents(deps, physicalCollectionName, spill);
-        if (spill.rowCount > 0) {
-          await deps.resolveAndUpsert(spill.spillPath, physicalCollectionName);
-        }
-        // The real nodes-before-metrics point. A latched flush error surfaces
-        // here instead of before pass-2: the run still aborts on it, one stage
-        // later, having spent that stage on work the failure does not invalidate
-        // (the edge tables are reconciled per source file on the next pass).
-        await deps.nodeFlush.settle();
-        // Metric recompute is best-effort by contract: data integrity is
-        // preserved by the resolve+upsert stage; only cycle / pagerank freshness
-        // is at stake. A failure there degrades find_cycles and rerank rather
-        // than aborting the index pass, so we swallow CodegraphMetricsError
-        // after the debug log the helper itself emits. Other error types (spill
-        // IO, resolve) DO propagate from the stage above. A language partition
-        // leaves the recompute to the collection's completion owner.
-        if (options?.recomputeMetrics !== false) {
-          await recomputeCodegraphMetricsBestEffort(async () => deps.recomputeMetrics(physicalCollectionName));
-        }
-      } finally {
-        // A dispatched node write must never outlive `finish`. On the success
-        // path this already settled; on a throw path it lets the chain land
-        // before the error propagates, so the run is not torn down with a
-        // `cg_symbols` transaction still open. Its own latched error is
-        // swallowed HERE on purpose — whatever brought us to the `finally` is
-        // the root cause and must be the error that surfaces. Mirrors
-        // `GraphBuildFinalizer#resolveAndUpsert`'s closing `settleFlush`.
-        await deps.nodeFlush.settle().catch(() => undefined);
-        await spill.cleanup();
-      }
+      await finishCodegraphExtractionRun(deps, physicalCollectionName, spill, overlapNodeDrain, options);
     },
   };
+}
+
+/** `finish`'s body: dispatch the node-flush remainder, run pass-2 against the
+ * closed spill, settle, recompute metrics, and always clean up. */
+async function finishCodegraphExtractionRun(
+  deps: CodegraphSinkDeps,
+  physicalCollectionName: PhysicalCollectionName | undefined,
+  spill: CodegraphExtractionSpillWriter,
+  overlapNodeDrain: boolean,
+  options: CodegraphSinkFinishOptions | undefined,
+): Promise<void> {
+  const key = deps.collectionKey(physicalCollectionName);
+  // Hand the buffered node defs to the flush chain. Owning it here makes the
+  // sink self-contained — correct for every caller (incremental finalize,
+  // standalone sink, cross-pass drain where the buffer is already empty so
+  // this no-ops).
+  //
+  // Whether pass-2 then WAITS for that chain is the one thing
+  // `CODEGRAPH_NODE_DRAIN_OVERLAP` decides. It does not have to: pass-2
+  // resolves against the in-memory symbol table and writes only
+  // `cg_symbols_files` and the edge / inheritance / fan-out tables — it
+  // never reads or writes `cg_symbols`, and the schema declares no foreign
+  // keys (migration 001 omits them deliberately and says why). So
+  // "nodes-before-edges" is a statement about the run's end state, which the
+  // settle below still guarantees, not a precondition of the resolve.
+  deps.nodeFlush.dispatchRemainder(key, physicalCollectionName);
+  try {
+    // The kill-switch shape: settle the whole chain here and pass-2 starts
+    // against a fully durable `cg_symbols`, exactly as it did before.
+    if (!overlapNodeDrain) await deps.nodeFlush.settle();
+    await spill.close();
+    await sealRunState(deps, physicalCollectionName);
+    await appendConeMovedDependents(deps, physicalCollectionName, spill);
+    if (spill.rowCount > 0) {
+      await deps.resolveAndUpsert(spill.spillPath, physicalCollectionName);
+    }
+    // The real nodes-before-metrics point. A latched flush error surfaces
+    // here instead of before pass-2: the run still aborts on it, one stage
+    // later, having spent that stage on work the failure does not invalidate
+    // (the edge tables are reconciled per source file on the next pass).
+    await deps.nodeFlush.settle();
+    // Metric recompute is best-effort by contract: data integrity is
+    // preserved by the resolve+upsert stage; only cycle / pagerank freshness
+    // is at stake. A failure there degrades find_cycles and rerank rather
+    // than aborting the index pass, so we swallow CodegraphMetricsError
+    // after the debug log the helper itself emits. Other error types (spill
+    // IO, resolve) DO propagate from the stage above. A language partition
+    // leaves the recompute to the collection's completion owner.
+    if (options?.recomputeMetrics !== false) {
+      await recomputeCodegraphMetricsBestEffort(async () => deps.recomputeMetrics(physicalCollectionName));
+    }
+  } finally {
+    // A dispatched node write must never outlive `finish`. On the success
+    // path this already settled; on a throw path it lets the chain land
+    // before the error propagates, so the run is not torn down with a
+    // `cg_symbols` transaction still open. Its own latched error is
+    // swallowed HERE on purpose — whatever brought us to the `finally` is
+    // the root cause and must be the error that surfaces. Mirrors
+    // `GraphBuildFinalizer#resolveAndUpsert`'s closing `settleFlush`.
+    await deps.nodeFlush.settle().catch(() => undefined);
+    await spill.cleanup();
+  }
 }
 
 /** `write`'s persistence half: a walked file's defs land in the in-memory
