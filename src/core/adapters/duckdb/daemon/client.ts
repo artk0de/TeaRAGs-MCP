@@ -6,7 +6,6 @@ import type {
   CalleeEdge,
   CallerEdge,
   ChunkGraphSignals,
-  CochangeFileLineCounts,
   CodegraphPass1FileAggregates,
   CodegraphSignalDrift,
   CodegraphStorageCompactionOutcome,
@@ -66,14 +65,18 @@ import type {
   TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
-import { CodegraphSnapshotExportFailedError } from "../errors.js";
+import type { DaemonClientOptions, StaleClientBuilds } from "./connection-lifecycle.js";
+import { DaemonOpChannel } from "./op-channel.js";
+import type { DaemonHandshakeResult } from "./protocol.js";
 import {
-  DaemonConnectionLifecycle,
-  type DaemonClientOptions,
-  type LegacyToleratedDaemonOp,
-  type StaleClientBuilds,
-} from "./connection-lifecycle.js";
-import type { DaemonHandshakeResult, DaemonOp, DaemonOpParamsMap } from "./protocol.js";
+  DaemonGraphAnalyticsStoreProxy,
+  DaemonGraphReadStoreProxy,
+  DaemonIdentifierStoreProxy,
+  DaemonOntologyReportStoreProxy,
+  DaemonStorageMaintenanceProxy,
+  DaemonSymbolFileStoreProxy,
+  DaemonTemporalStoreProxy,
+} from "./store-proxies/index.js";
 
 // The connection lifecycle (connect/retry, pending-call settlement, liveness
 // watch, reconnect-and-replay) moved to `connection-lifecycle.ts` (bd
@@ -87,53 +90,51 @@ export {
   REQUIRED_DAEMON_OPS,
 } from "./connection-lifecycle.js";
 export type { DaemonCapabilityVerdict, DaemonClientOptions, StaleClientBuilds } from "./connection-lifecycle.js";
-
-/**
- * Thrown when a daemon-internal op is invoked on the daemon client. In daemon
- * mode the `DaemonGraphDbClient` is the SOLE accessor of the DuckDB file, so it
- * proxies the ENTIRE `GraphDbClient` surface — every write AND every read — over
- * the socket. The lone exception is `streamAdjacency`: the heavy graph analysis
- * runs daemon-side via `computeAndPersistCyclesAndSignals`, so the adjacency
- * stream must NOT cross IPC and still throws this error if called on the client.
- */
-export class UnsupportedDaemonReadError extends Error {
-  constructor(op: string) {
-    super(`DaemonGraphDbClient is write-only; read op "${op}" must use the in-process RO handle`);
-    this.name = "UnsupportedDaemonReadError";
-  }
-}
+// Lives with the analytics proxy that throws it (bd tea-rags-mcp-0qaht.38).
+export { UnsupportedDaemonReadError } from "./store-proxies/index.js";
 
 /**
  * `GraphDbClient` that proxies the entire codegraph surface — every mutation
  * and every read — to the codegraph daemon over a unix socket using
- * newline-JSON framing. Each call gets a monotonic id; responses are matched
- * back by id through the `pending` map. Only `streamAdjacency` is NOT proxied:
- * it stays daemon-internal (consumed by the daemon-side
+ * newline-JSON framing. Only `streamAdjacency` is NOT proxied: it stays
+ * daemon-internal (consumed by the daemon-side
  * `computeAndPersistCyclesAndSignals`) and throws `UnsupportedDaemonReadError`.
  *
- * The connection itself — connect/retry, pending-call settlement, the liveness
- * watch, reconnect-and-replay — is owned by the `DaemonConnectionLifecycle`
- * this class constructs and delegates to; the methods below are the unchanged
- * public surface plus the one-op-per-call wrappers.
+ * Composition (bd tea-rags-mcp-0qaht.38): the op transport — typed `call`,
+ * tolerated legacy ops, handshake, shutdown, the read-only switch — is the
+ * `DaemonOpChannel`; each `GraphDbClient` sub-interface is one per-store proxy
+ * sending its ops through that channel. The members below are the unchanged
+ * public surface, each a one-line delegation, so callers and the tests that
+ * spy on this class's prototype see exactly the shape they always did.
  */
 export class DaemonGraphDbClient implements GraphDbClient {
-  private readonly lifecycle: DaemonConnectionLifecycle;
+  private readonly channel: DaemonOpChannel;
+  private readonly maintenance: DaemonStorageMaintenanceProxy;
+  private readonly symbolFiles: DaemonSymbolFileStoreProxy;
+  private readonly graphReads: DaemonGraphReadStoreProxy;
+  private readonly analytics: DaemonGraphAnalyticsStoreProxy;
+  private readonly identifiers: DaemonIdentifierStoreProxy;
+  private readonly ontology: DaemonOntologyReportStoreProxy;
+  private readonly temporal: DaemonTemporalStoreProxy;
 
-  constructor(
-    socketPath: string,
-    private readonly physicalCollectionName: PhysicalCollectionName,
-    opts?: DaemonClientOptions,
-  ) {
-    this.lifecycle = new DaemonConnectionLifecycle(socketPath, physicalCollectionName, opts);
+  constructor(socketPath: string, physicalCollectionName: PhysicalCollectionName, opts?: DaemonClientOptions) {
+    this.channel = new DaemonOpChannel(socketPath, physicalCollectionName, opts);
+    this.maintenance = new DaemonStorageMaintenanceProxy(this.channel, physicalCollectionName);
+    this.symbolFiles = new DaemonSymbolFileStoreProxy(this.channel);
+    this.graphReads = new DaemonGraphReadStoreProxy(this.channel);
+    this.analytics = new DaemonGraphAnalyticsStoreProxy(this.channel);
+    this.identifiers = new DaemonIdentifierStoreProxy(this.channel);
+    this.ontology = new DaemonOntologyReportStoreProxy(this.channel);
+    this.temporal = new DaemonTemporalStoreProxy(this.channel);
   }
 
   /** Connect to the daemon socket with bounded retry — see `DaemonConnectionLifecycle#init`. */
   async init(): Promise<void> {
-    return this.lifecycle.init();
+    return this.channel.init();
   }
 
   async close(): Promise<void> {
-    return this.lifecycle.close();
+    return this.channel.close();
   }
 
   /**
@@ -143,7 +144,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
    * process's life.
    */
   isConnected(): boolean {
-    return this.lifecycle.isConnected();
+    return this.channel.isConnected();
   }
 
   /**
@@ -154,150 +155,89 @@ export class DaemonGraphDbClient implements GraphDbClient {
    * pool's handshake calls it; the replay path applies it to itself.
    */
   restrictToReads(builds: StaleClientBuilds): void {
-    this.lifecycle.restrictToReads(builds);
+    this.channel.restrictToReads(builds);
   }
 
-  /**
-   * Send one request and await its response — see `DaemonConnectionLifecycle#call`.
-   * `params` is the op's `DaemonOpParamsMap` shape, so the proxy line and the
-   * wire contract cannot drift apart (bd tea-rags-mcp-89k7k.35.6).
-   */
-  private async call<Op extends DaemonOp>(
-    op: Op,
-    params: DaemonOpParamsMap[Op],
-    options: { replayable?: boolean } = {},
-  ): Promise<unknown> {
-    return this.lifecycle.call(op, { ...params }, options);
-  }
-
-  /** `call` for a tolerated legacy op — see `DaemonConnectionLifecycle#callTolerated`. */
-  private async callTolerated<T, Op extends LegacyToleratedDaemonOp>(
-    op: Op,
-    params: DaemonOpParamsMap[Op],
-    decode: (result: unknown) => T,
-    fallback: () => T | Promise<T>,
-  ): Promise<T> {
-    return this.lifecycle.callTolerated(op, { ...params }, decode, fallback);
-  }
-
-  // ── build-version handshake (bd tea-rags-mcp-ji56r) ──
-
-  /**
-   * Exchange build fingerprints with the daemon. Sends the CLIENT's
-   * fingerprint; resolves the daemon's (a legacy daemon returns null — no
-   * fingerprint, treated by the pool as "proceed, no restart"). On a match or
-   * legacy peer the daemon also opens + migrates + hydrates the collection.
-   */
+  /** Exchange build fingerprints with the daemon — see `DaemonOpChannel#handshake`. */
   async handshake(buildFingerprint?: string): Promise<DaemonHandshakeResult | null> {
-    if (buildFingerprint !== undefined) this.lifecycle.rememberHandshakeFingerprint(buildFingerprint);
-    // `undefined` vanishes in JSON serialisation — a legacy-shaped request.
-    return (await this.call("handshake", { buildFingerprint })) as DaemonHandshakeResult | null;
+    return this.channel.handshake(buildFingerprint);
   }
 
-  /**
-   * Ask the daemon to drain in-flight ops and exit gracefully (release the RW
-   * DuckDB lock + remove its lifecycle files). The daemon ACKS first, then
-   * tears down via its idle-watcher drain/exit path — the caller must close
-   * its socket and poll the lifecycle files for the actual exit.
-   */
+  /** Ask the daemon to drain and exit — see `DaemonOpChannel#requestShutdown`. */
   async requestShutdown(): Promise<void> {
-    await this.call("shutdown", {});
+    return this.channel.requestShutdown();
   }
-
-  // ── writes (proxied over the socket) ──
 
   async upsertFile(node: GraphFileNode, edges: GraphEdges): Promise<void> {
-    await this.call("upsertFile", { node, edges });
+    return this.symbolFiles.upsertFile(node, edges);
   }
 
   async removeFile(relPath: RelPath): Promise<void> {
-    await this.call("removeFile", { relPath });
+    return this.symbolFiles.removeFile(relPath);
   }
 
   async removeFiles(relPaths: readonly RelPath[]): Promise<void> {
-    await this.call("removeFiles", { relPaths: [...relPaths] });
+    return this.symbolFiles.removeFiles(relPaths);
   }
 
   async removeSymbolsForFile(relPath: RelPath): Promise<void> {
-    await this.call("removeSymbolsForFile", { relPath });
+    return this.symbolFiles.removeSymbolsForFile(relPath);
   }
 
   async pruneDerivedForDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
-    await this.call("pruneDerivedForDeletedFiles", { relPaths: [...relPaths] });
+    return this.analytics.pruneDerivedForDeletedFiles(relPaths);
   }
 
   async hasStaleDerivedTables(): Promise<boolean> {
-    return (await this.call("hasStaleDerivedTables", {})) as boolean;
+    return this.analytics.hasStaleDerivedTables();
   }
 
   async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {
-    await this.call("upsertSymbols", { relPath, definitions });
+    return this.symbolFiles.upsertSymbols(relPath, definitions);
   }
 
   async upsertSymbolsBulk(entries: BulkSymbolUpsertEntry[]): Promise<void> {
-    await this.call("upsertSymbolsBulk", { entries });
+    return this.symbolFiles.upsertSymbolsBulk(entries);
   }
 
   async upsertFilesBulk(entries: readonly BulkFileUpsertEntry[]): Promise<void> {
-    await this.call("upsertFilesBulk", { entries });
+    return this.symbolFiles.upsertFilesBulk(entries);
   }
 
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
-    await this.call("updateSymbolChunkIds", { relPath, chunkIds: [...chunkIds.entries()] });
+    return this.symbolFiles.updateSymbolChunkIds(relPath, chunkIds);
   }
 
   async updateSymbolChunkIdsBulk(entries: readonly SymbolChunkIdJoinEntry[]): Promise<void> {
-    // Each file's join travels as Map entries — a Map does not survive JSON.
-    await this.call("updateSymbolChunkIdsBulk", {
-      entries: entries.map((e) => ({ relPath: e.relPath, chunkIds: [...e.chunkIds.entries()] })),
-    });
+    return this.symbolFiles.updateSymbolChunkIdsBulk(entries);
   }
 
   async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
-    return (await this.call("findSymbolChunk", { symbolId })) as SymbolChunkLocation | null;
+    return this.symbolFiles.findSymbolChunk(symbolId);
   }
 
   async getSymbolVisibilities(symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
-    return (await this.call("getSymbolVisibilities", { symbolIds: [...symbolIds] })) as SymbolVisibilityRow[];
+    return this.symbolFiles.getSymbolVisibilities(symbolIds);
   }
 
-  // ── Identifier declarations (naming lexicon, bd tea-rags-mcp-4p3sb.8) ──
-
   async replaceIdentifiersBulk(entries: readonly IdentifierReplaceEntry[]): Promise<void> {
-    await this.call("replaceIdentifiersBulk", { entries: [...entries] });
+    return this.identifiers.replaceIdentifiersBulk(entries);
   }
 
   async replaceTypeDeclarationsBulk(entries: readonly TypeDeclarationReplaceEntry[]): Promise<void> {
-    await this.call("replaceTypeDeclarationsBulk", { entries: [...entries] });
+    return this.identifiers.replaceTypeDeclarationsBulk(entries);
   }
 
   async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {
-    return (await this.call("aggregateIdentifiersByType", {
-      types: [...q.types],
-      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
-      excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
-      languages: q.languages === undefined ? undefined : [...q.languages],
-      groupByLanguage: q.groupByLanguage,
-      groupByMultiplicity: q.groupByMultiplicity,
-      countSameTypeSiblings: q.countSameTypeSiblings,
-      countHolders: q.countHolders,
-      groupByOwnerKind: q.groupByOwnerKind,
-    })) as IdentifierTypeAggregateRow[];
+    return this.identifiers.aggregateIdentifiersByType(q);
   }
 
   async aggregateIdentifiersByCallee(q: IdentifierCalleeScopeQuery): Promise<IdentifierCalleeAggregateRow[]> {
-    return (await this.call("aggregateIdentifiersByCallee", {
-      callees: [...q.callees],
-      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
-      excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
-      languages: q.languages === undefined ? undefined : [...q.languages],
-      groupByLanguage: q.groupByLanguage,
-      countHolders: q.countHolders,
-    })) as IdentifierCalleeAggregateRow[];
+    return this.identifiers.aggregateIdentifiersByCallee(q);
   }
 
   async anchorIdentifierTypes(symbolIds: readonly SymbolId[]): Promise<AnchorIdentifierTypeRow[]> {
-    return (await this.call("anchorIdentifierTypes", { symbolIds: [...symbolIds] })) as AnchorIdentifierTypeRow[];
+    return this.identifiers.anchorIdentifierTypes(symbolIds);
   }
 
   async identifierNameTypes(
@@ -305,11 +245,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     excludePaths?: readonly string[],
     languages?: readonly string[],
   ): Promise<IdentifierNameTypeRow[]> {
-    return (await this.call("identifierNameTypes", {
-      names: [...names],
-      excludePaths: excludePaths === undefined ? undefined : [...excludePaths],
-      languages: languages === undefined ? undefined : [...languages],
-    })) as IdentifierNameTypeRow[];
+    return this.identifiers.identifierNameTypes(names, excludePaths, languages);
   }
 
   async existingSymbolShortNames(
@@ -317,497 +253,277 @@ export class DaemonGraphDbClient implements GraphDbClient {
     excludePaths?: readonly string[],
     languages?: readonly string[],
   ): Promise<string[]> {
-    return (await this.call("existingSymbolShortNames", {
-      names: [...names],
-      excludePaths: excludePaths === undefined ? undefined : [...excludePaths],
-      languages: languages === undefined ? undefined : [...languages],
-    })) as string[];
+    return this.identifiers.existingSymbolShortNames(names, excludePaths, languages);
   }
 
   async readMethodHeadWords(q: MethodHeadWordQuery): Promise<MethodHeadWordRow[]> {
-    return (await this.call("readMethodHeadWords", { query: q })) as MethodHeadWordRow[];
+    return this.identifiers.readMethodHeadWords(q);
   }
 
   async readMethodTailVerbs(q: MethodTailVerbQuery): Promise<MethodTailVerbRow[]> {
-    return (await this.call("readMethodTailVerbs", { query: q })) as MethodTailVerbRow[];
+    return this.identifiers.readMethodTailVerbs(q);
   }
 
   async readMethodNamesMatching(q: MethodNamePatternQuery): Promise<MethodNameRow[]> {
-    return (await this.call("readMethodNamesMatching", { query: q })) as MethodNameRow[];
+    return this.identifiers.readMethodNamesMatching(q);
   }
 
   async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {
-    return (await this.call("countIdentifiers", {
-      types: [...q.types],
-      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
-      excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
-      languages: q.languages === undefined ? undefined : [...q.languages],
-    })) as number;
+    return this.identifiers.countIdentifiers(q);
   }
 
   async aggregateIdentifiersByName(q: IdentifierNameScopeQuery): Promise<IdentifierNameKindTypeRow[]> {
-    return (await this.call("aggregateIdentifiersByName", {
-      names: [...q.names],
-      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
-      excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
-      languages: q.languages === undefined ? undefined : [...q.languages],
-      groupByLanguage: q.groupByLanguage,
-      countHolders: q.countHolders,
-    })) as IdentifierNameKindTypeRow[];
+    return this.identifiers.aggregateIdentifiersByName(q);
   }
 
   async identifierLanguageCounts(q: IdentifierLanguageCountQuery): Promise<IdentifierLanguageCountRow[]> {
-    return (await this.call("identifierLanguageCounts", {
-      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
-      pathSuffixes: q.pathSuffixes === undefined ? undefined : [...q.pathSuffixes],
-      excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
-      languages: q.languages === undefined ? undefined : [...q.languages],
-    })) as IdentifierLanguageCountRow[];
+    return this.identifiers.identifierLanguageCounts(q);
   }
 
   async sampleIdentifierShapes(q: IdentifierShapeSampleQuery): Promise<IdentifierShapeSampleRow[]> {
-    return (await this.call("sampleIdentifierShapes", {
-      limit: q.limit,
-      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
-      excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
-      languages: q.languages === undefined ? undefined : [...q.languages],
-      groupByLanguage: q.groupByLanguage,
-    })) as IdentifierShapeSampleRow[];
+    return this.identifiers.sampleIdentifierShapes(q);
   }
 
   async readOntologyReportSummary(q: OntologyReportQuery): Promise<OntologyReportSummaryRows> {
-    return (await this.call("readOntologyReportSummary", { query: q })) as OntologyReportSummaryRows;
+    return this.ontology.readOntologyReportSummary(q);
   }
 
   async readOntologyReportSections(
     q: OntologyReportQuery,
     excludedGenericNames: readonly string[],
   ): Promise<OntologyReportSectionRows> {
-    return (await this.call("readOntologyReportSections", {
-      query: q,
-      excludedGenericNames: [...excludedGenericNames],
-    })) as OntologyReportSectionRows;
+    return this.ontology.readOntologyReportSections(q, excludedGenericNames);
   }
 
   async readTypeNameRows(q: TypeNameQuery): Promise<TypeNameRow[]> {
-    return (await this.call("readTypeNameRows", { query: q })) as TypeNameRow[];
+    return this.identifiers.readTypeNameRows(q);
   }
 
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {
-    await this.call("replaceCycles", { scope, sccs });
+    return this.analytics.replaceCycles(scope, sccs);
   }
 
   async replacePageRanks(ranks: ReadonlyMap<string, number>): Promise<void> {
-    // A Map cannot JSON-serialise — send entries; the server rebuilds the Map.
-    await this.call("replacePageRanks", { ranks: [...ranks.entries()] });
+    return this.analytics.replacePageRanks(ranks);
   }
 
   async checkpoint(): Promise<void> {
-    await this.call("checkpoint", {});
+    return this.maintenance.checkpoint();
   }
 
-  /**
-   * Compact the collection's graph file daemon-side (bd tea-rags-mcp-dvzdm). A
-   * tolerated legacy op: a daemon that predates it leaves the file as it is.
-   */
   async compactStorage(): Promise<CodegraphStorageCompactionOutcome> {
-    return this.callTolerated<CodegraphStorageCompactionOutcome, "compactStorage">(
-      "compactStorage",
-      {},
-      (result) => result as CodegraphStorageCompactionOutcome,
-      () => ({ kind: "skipped", reason: "unsupported" }),
-    );
+    return this.maintenance.compactStorage();
   }
 
-  /**
-   * Have the daemon — the holder of the collection's file and its WAL — write
-   * the snapshot (bd tea-rags-mcp-xi2r9). A tolerated legacy op, but with no
-   * stand-in answer: no other process can read what that daemon's WAL holds,
-   * so an older daemon is refused with a typed error the caller degrades on.
-   */
   async exportSnapshot(targetPath: string): Promise<void> {
-    await this.callTolerated(
-      "exportSnapshot",
-      { targetPath },
-      () => undefined,
-      () => {
-        throw new CodegraphSnapshotExportFailedError(this.physicalCollectionName, targetPath, "unsupported");
-      },
-    );
+    return this.maintenance.exportSnapshot(targetPath);
   }
 
   async rebuildEdgeFileTargetIndex(): Promise<void> {
-    await this.call("rebuildEdgeFileTargetIndex", {});
+    return this.maintenance.rebuildEdgeFileTargetIndex();
   }
 
   async recordRunStats(rows: ResolveRunStatsRow[]): Promise<void> {
-    await this.call("recordRunStats", { rows });
+    return this.maintenance.recordRunStats(rows);
   }
 
   async recordFileResolveStats(write: FileResolveStatsWrite): Promise<void> {
-    await this.call("recordFileResolveStats", { write });
+    return this.maintenance.recordFileResolveStats(write);
   }
 
-  /**
-   * Delete the superseded version's DuckDB file after the Qdrant alias swap.
-   * Concrete daemon method (NOT on the `GraphDbClient` interface) — driven by
-   * the force-reindex path once the alias flips readers onto `newVersion`.
-   */
   async finalizeReindex(oldVersion: string, newVersion: string): Promise<void> {
-    await this.call("finalizeReindex", { oldVersion, newVersion });
+    return this.maintenance.finalizeReindex(oldVersion, newVersion);
   }
 
-  /**
-   * Have the daemon's pool remove `target`'s database under its path lease (bd
-   * tea-rags-mcp-r4veq): the ops running on its client finish first. Resolves
-   * whether the daemon evicted a cached client, or `undefined` when the daemon
-   * predates the op and the caller must remove the files itself.
-   */
   async removeCollectionDatabase(target: PhysicalCollectionName): Promise<boolean | undefined> {
-    return this.callTolerated(
-      "removeCollectionDatabase",
-      { target },
-      (result) => result === true,
-      () => undefined,
-    );
+    return this.maintenance.removeCollectionDatabase(target);
   }
 
-  /**
-   * Have the daemon's pool clone `source` over `target` under both paths'
-   * leases (bd tea-rags-mcp-r4veq). Resolves `false` when the daemon predates
-   * the op and the caller must copy the files itself.
-   */
   async cloneCollectionDatabase(source: PhysicalCollectionName, target: PhysicalCollectionName): Promise<boolean> {
-    return this.callTolerated(
-      "cloneCollectionDatabase",
-      { source, target },
-      () => true,
-      () => false,
-    );
+    return this.maintenance.cloneCollectionDatabase(source, target);
   }
 
-  /**
-   * Concrete daemon method (NOT yet on the `GraphDbClient` interface — added in
-   * Task 7). Runs SCC + PageRank daemon-side so the heavy graph build stays in
-   * the single daemon process.
-   */
   async computeAndPersistCyclesAndSignals(): Promise<void> {
-    await this.call("computeAndPersistCyclesAndSignals", {});
+    return this.analytics.computeAndPersistCyclesAndSignals();
   }
 
-  /**
-   * Record the current signals as the baseline for the next run's drift diff
-   * (bd tea-rags-mcp-a2ddb). A tolerated legacy op: a daemon that predates it
-   * has not run migration 023 either, so there is no baseline to refresh.
-   */
   async refreshSymbolSignalsPrev(): Promise<void> {
-    await this.callTolerated(
-      "refreshSymbolSignalsPrev",
-      {},
-      () => undefined,
-      () => undefined,
-    );
+    return this.analytics.refreshSymbolSignalsPrev();
   }
 
-  /**
-   * Symbols and files whose derived signals moved since the baseline
-   * (bd tea-rags-mcp-a2ddb). A tolerated legacy op: a daemon that predates it
-   * answers "nothing moved" — why that and not "everything moved" is recorded
-   * on `LEGACY_TOLERATED_OPS`.
-   */
   async diffSymbolSignals(): Promise<CodegraphSignalDrift> {
-    return this.callTolerated(
-      "diffSymbolSignals",
-      {},
-      (result) => result as CodegraphSignalDrift,
-      () => ({ symbols: [], files: [] }),
-    );
+    return this.analytics.diffSymbolSignals();
   }
-
-  // ── reads (proxied over the socket) ──
-  // Every read routes through the daemon's own RW connection: DuckDB's RW lock
-  // is process-exclusive, so a cross-process READ_ONLY attach throws
-  // "Conflicting lock is held" while the daemon holds RW. The daemon being the
-  // sole file opener means zero conflict. `streamAdjacency` is the ONE read
-  // that stays daemon-internal (below) — its heavy adjacency stream must not
-  // cross IPC and is consumed daemon-side by computeAndPersistCyclesAndSignals.
 
   async getFanIn(relPath: RelPath): Promise<number> {
-    return (await this.call("getFanIn", { relPath })) as number;
+    return this.graphReads.getFanIn(relPath);
   }
 
   async getFanInP95(): Promise<number> {
-    return (await this.call("getFanInP95", {})) as number;
+    return this.graphReads.getFanInP95();
   }
 
   async getFanOut(relPath: RelPath): Promise<number> {
-    return (await this.call("getFanOut", { relPath })) as number;
+    return this.graphReads.getFanOut(relPath);
   }
 
   async getCallers(symbolId: SymbolId): Promise<CallerEdge[]> {
-    return (await this.call("getCallers", { symbolId })) as CallerEdge[];
+    return this.graphReads.getCallers(symbolId);
   }
 
   async getCallees(symbolId: SymbolId): Promise<CalleeEdge[]> {
-    return (await this.call("getCallees", { symbolId })) as CalleeEdge[];
+    return this.graphReads.getCallees(symbolId);
   }
 
   async getAmbiguousCallersByMember(member: string, limit?: number): Promise<AmbiguousCallerSite[]> {
-    return (await this.call("getAmbiguousCallersByMember", { member, limit })) as AmbiguousCallerSite[];
+    return this.graphReads.getAmbiguousCallersByMember(member, limit);
   }
 
   async getCalleeEdges(symbolIds: SymbolId[]): Promise<Map<SymbolId, SymbolId[]>> {
-    // The server serialises the `Map<SymbolId, SymbolId[]>` as `[key, value][]`
-    // entries (a Map cannot JSON-serialise) — rebuild the Map here.
-    const entries = (await this.call("getCalleeEdges", { symbolIds })) as [SymbolId, SymbolId[]][];
-    return new Map(entries);
+    return this.graphReads.getCalleeEdges(symbolIds);
   }
 
   async getCalleeEdgesScoped(refs: FileScopedSymbolRef[]): Promise<Map<FileScopedSymbolId, FileScopedSymbolRef[]>> {
-    // Own op rather than a widened `getCalleeEdges` payload (bd
-    // tea-rags-mcp-oxnvl): a daemon from an older build stays running across a
-    // rebuild, and reusing the name would hand it a shape it cannot read.
-    // Serialised as `[key, value][]` entries — a Map cannot JSON-serialise.
-    const entries = (await this.call("getCalleeEdgesScoped", { refs })) as [
-      FileScopedSymbolId,
-      FileScopedSymbolRef[],
-    ][];
-    return new Map(entries);
+    return this.graphReads.getCalleeEdgesScoped(refs);
   }
 
   async getSymbolRelPaths(symbolIds: SymbolId[]): Promise<Map<SymbolId, RelPath[]>> {
-    const entries = (await this.call("getSymbolRelPaths", { symbolIds })) as [SymbolId, RelPath[]][];
-    return new Map(entries);
+    return this.graphReads.getSymbolRelPaths(symbolIds);
   }
 
   async getCalledByCount(symbolId: SymbolId): Promise<number> {
-    return (await this.call("getCalledByCount", { symbolId })) as number;
+    return this.graphReads.getCalledByCount(symbolId);
   }
 
   async getCallSiteCount(symbolId: SymbolId): Promise<number> {
-    return (await this.call("getCallSiteCount", { symbolId })) as number;
+    return this.graphReads.getCallSiteCount(symbolId);
   }
 
   async getChunkSignalsBulk(): Promise<Map<FileScopedSymbolId, ChunkGraphSignals>> {
-    // Server serialises the Map as `[key, value][]` entries — rebuild here
-    // (same pattern as getCalleeEdges / listAdjacency). The key is the
-    // file-scoped composite (bd tea-rags-mcp-xtdkq), so the wire shape is
-    // unchanged — one more string, still one flat entry list.
-    const entries = (await this.call("getChunkSignalsBulk", {})) as [FileScopedSymbolId, ChunkGraphSignals][];
-    return new Map(entries);
+    return this.graphReads.getChunkSignalsBulk();
   }
 
   async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
-    // Server serialises the Map as `[key, value][]` entries — rebuild here. A
-    // tolerated legacy op: a daemon that predates it answers "no rows known",
-    // which leaves every chunk the heal would place unsettled — no write, never
-    // a guessed owner (bd tea-rags-mcp-39xca.2).
-    return this.callTolerated(
-      "getSymbolLineRangesBulk",
-      { relPaths },
-      (result) => new Map(result as [RelPath, PersistedSymbolLineRanges][]),
-      () => new Map<RelPath, PersistedSymbolLineRanges>(),
-    );
+    return this.symbolFiles.getSymbolLineRangesBulk(relPaths);
   }
 
   async hasData(): Promise<boolean> {
-    return (await this.call("hasData", {})) as boolean;
+    return this.maintenance.hasData();
   }
 
   async getRunStats(): Promise<ResolveRunStatsRow[]> {
-    return (await this.call("getRunStats", {})) as ResolveRunStatsRow[];
+    return this.maintenance.getRunStats();
   }
 
   async getEdgeKindDistribution(): Promise<EdgeKindCount[]> {
-    return (await this.call("getEdgeKindDistribution", {})) as EdgeKindCount[];
+    return this.maintenance.getEdgeKindDistribution();
   }
 
   async listAllSymbols(): Promise<SymbolDefinition[]> {
-    return (await this.call("listAllSymbols", {})) as SymbolDefinition[];
+    return this.symbolFiles.listAllSymbols();
   }
 
   async listPass1Aggregates(scope: Pass1AggregateReadScope): Promise<CodegraphPass1FileAggregates[]> {
-    return (await this.call("listPass1Aggregates", { scope })) as CodegraphPass1FileAggregates[];
+    return this.symbolFiles.listPass1Aggregates(scope);
   }
 
   async listHierarchyDependencies(scope: Pass1AggregateReadScope): Promise<PersistedHierarchyDescendantDependency[]> {
-    return (await this.call("listHierarchyDependencies", { scope })) as PersistedHierarchyDescendantDependency[];
+    return this.symbolFiles.listHierarchyDependencies(scope);
   }
 
   async invalidateHierarchyDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
-    await this.call("invalidateHierarchyDependentsOfDeletedFiles", { relPaths: [...relPaths] });
+    return this.symbolFiles.invalidateHierarchyDependentsOfDeletedFiles(relPaths);
   }
 
   async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {
-    return (await this.call("listFileContentHashes", {})) as { relPath: RelPath; contentHash: string | null }[];
+    return this.symbolFiles.listFileContentHashes();
   }
 
   async getTransitiveImpact(relPath: RelPath, maxDepth?: number): Promise<number> {
-    return (await this.call("getTransitiveImpact", { relPath, maxDepth })) as number;
+    return this.graphReads.getTransitiveImpact(relPath, maxDepth);
   }
 
   async getFileMetricsBulk(relPaths: readonly RelPath[], maxDepth?: number): Promise<Map<RelPath, FileGraphMetrics>> {
-    // Server serialises the Map as `[key, value][]` entries — rebuild here
-    // (same pattern as getChunkSignalsBulk / getCalleeEdges). The caller
-    // bounds `relPaths`: this array IS the request frame, and the daemon's
-    // reply frame carries one entry per root it knows about.
-    return this.callTolerated(
-      "getFileMetricsBulk",
-      { relPaths, maxDepth },
-      (result) => new Map(result as [RelPath, FileGraphMetrics][]),
-      async () => this.fileMetricsPerFile(relPaths, maxDepth),
-    );
-  }
-
-  /**
-   * Legacy-daemon fallback for `getFileMetricsBulk`, a tolerated legacy op. A
-   * pool tolerates a daemon from another build while it advertises every
-   * REQUIRED op (pool.ts), so a client from this build can meet a daemon that
-   * never heard of the setwise op. Rather than failing the whole finalize pass,
-   * walk the same roots through the three per-file reads the op replaces and
-   * assemble the identical map: absent means all-zero, so a root with nothing
-   * in either direction is left out.
-   *
-   * Deliberately serialized and deliberately slow — this is the pre-setwise
-   * cost, on a path that only has to stay CORRECT until the daemon is
-   * restarted from the matching build.
-   */
-  private async fileMetricsPerFile(
-    relPaths: readonly RelPath[],
-    maxDepth?: number,
-  ): Promise<Map<RelPath, FileGraphMetrics>> {
-    const out = new Map<RelPath, FileGraphMetrics>();
-    for (const relPath of relPaths) {
-      const fanIn = await this.getFanIn(relPath);
-      const fanOut = await this.getFanOut(relPath);
-      const transitiveImpact = await this.getTransitiveImpact(relPath, maxDepth);
-      if (fanIn !== 0 || fanOut !== 0 || transitiveImpact !== 0) {
-        out.set(relPath, { fanIn, fanOut, transitiveImpact });
-      }
-    }
-    return out;
+    return this.graphReads.getFileMetricsBulk(relPaths, maxDepth);
   }
 
   async findCycles(scope: CycleScope, pathPattern?: string): Promise<CycleEntry[]> {
-    return (await this.call("findCycles", { scope, pathPattern })) as CycleEntry[];
+    return this.analytics.findCycles(scope, pathPattern);
   }
 
   async listAdjacency(scope: CycleScope): Promise<Map<string, string[]>> {
-    // The server serialises the `Map<string, string[]>` as `[key, value][]`
-    // entries (a Map cannot JSON-serialise) — rebuild the Map here.
-    const entries = (await this.call("listAdjacency", { scope })) as [string, string[]][];
-    return new Map(entries);
+    return this.analytics.listAdjacency(scope);
   }
 
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
-    return (await this.call("readFileDependencyGraph", {})) as FileDependencyGraph;
+    return this.analytics.readFileDependencyGraph();
   }
 
   async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {
-    return (await this.call("readNonPublicMemberEdges", { languages: [...languages] })) as NonPublicMemberEdge[];
+    return this.analytics.readNonPublicMemberEdges(languages);
   }
 
   async replaceTemporalCochange(snapshot: TemporalCochangeSnapshot): Promise<void> {
-    await this.call("replaceTemporalCochange", { snapshot });
+    return this.temporal.replaceTemporalCochange(snapshot);
   }
 
   async replaceTemporalSymbolCommits(files: TemporalSymbolCommitFileSnapshot[]): Promise<void> {
-    await this.call("replaceTemporalSymbolCommits", { files });
+    return this.temporal.replaceTemporalSymbolCommits(files);
   }
 
   async deleteTemporalSymbolCommitFiles(relPaths: string[]): Promise<void> {
-    await this.call("deleteTemporalSymbolCommitFiles", { relPaths: [...relPaths] });
+    return this.temporal.deleteTemporalSymbolCommitFiles(relPaths);
   }
 
   async storedTemporalSymbolCommitFilePaths(): Promise<string[]> {
-    return (await this.call("storedTemporalSymbolCommitFilePaths", {})) as string[];
+    return this.temporal.storedTemporalSymbolCommitFilePaths();
   }
 
   async readTemporalSymbolCommits(relPath: string): Promise<TemporalSymbolCommitFileSnapshot> {
-    return (await this.call("readTemporalSymbolCommits", { relPath })) as TemporalSymbolCommitFileSnapshot;
+    return this.temporal.readTemporalSymbolCommits(relPath);
   }
 
   async readTemporalCochangeMeta(): Promise<TemporalCochangeBuildMeta | null> {
-    return (await this.call("readTemporalCochangeMeta", {})) as TemporalCochangeBuildMeta | null;
+    return this.temporal.readTemporalCochangeMeta();
   }
 
   async readTemporalCochangeGraph(): Promise<TemporalCochangeGraph> {
-    // The server serialises the bundle Map as `[id, paths][]` entries — rebuild
-    // it here (same pattern as getFileMetricsBulk). An older daemon's reply
-    // carries no `bundles` at all: absence stays absence, never "no bundles".
-    const { bundles, bundleCommits, bundleBursts, bundleTaskIds, bundleFileLines, bundleTimestamps, ...rest } =
-      (await this.call("readTemporalCochangeGraph", {})) as Omit<
-        TemporalCochangeGraph,
-        "bundles" | "bundleCommits" | "bundleBursts" | "bundleTaskIds" | "bundleFileLines" | "bundleTimestamps"
-      > & {
-        bundles?: [number, readonly RelPath[]][];
-        bundleCommits?: [number, readonly string[]][];
-        bundleBursts?: [number, number][];
-        bundleTaskIds?: [number, readonly string[]][];
-        bundleFileLines?: [number, [RelPath, CochangeFileLineCounts][]][];
-        bundleTimestamps?: [number, number][];
-      };
-    return {
-      ...rest,
-      ...(bundles ? { bundles: new Map(bundles) } : {}),
-      ...(bundleCommits ? { bundleCommits: new Map(bundleCommits) } : {}),
-      ...(bundleBursts ? { bundleBursts: new Map(bundleBursts) } : {}),
-      ...(bundleTaskIds ? { bundleTaskIds: new Map(bundleTaskIds) } : {}),
-      ...(bundleFileLines
-        ? { bundleFileLines: new Map(bundleFileLines.map(([bundleId, files]) => [bundleId, new Map(files)])) }
-        : {}),
-      ...(bundleTimestamps ? { bundleTimestamps: new Map(bundleTimestamps) } : {}),
-    };
+    return this.temporal.readTemporalCochangeGraph();
   }
 
   async readTemporalBundleFiles(): Promise<ReadonlyMap<number, readonly RelPath[]>> {
-    return new Map((await this.call("readTemporalBundleFiles", {})) as [number, readonly RelPath[]][]);
+    return this.temporal.readTemporalBundleFiles();
   }
 
   async getFileImporters(relPath: RelPath): Promise<FileImportLookup> {
-    return (await this.call("getFileImporters", { relPath })) as FileImportLookup;
+    return this.analytics.getFileImporters(relPath);
   }
 
   async getFileImports(relPath: RelPath): Promise<FileImportLookup> {
-    return (await this.call("getFileImports", { relPath })) as FileImportLookup;
+    return this.analytics.getFileImports(relPath);
   }
 
   async getPageRank(symbolId: SymbolId, relPath?: RelPath): Promise<number> {
-    return (await this.call("getPageRank", relPath === undefined ? { symbolId } : { symbolId, relPath })) as number;
+    return this.analytics.getPageRank(symbolId, relPath);
   }
 
   async getSupertypes(fqName: string): Promise<InheritanceEdge[]> {
-    return (await this.call("getSupertypes", { fqName })) as InheritanceEdge[];
+    return this.graphReads.getSupertypes(fqName);
   }
 
   async getSubtypes(fqName: string): Promise<InheritanceEdge[]> {
-    return (await this.call("getSubtypes", { fqName })) as InheritanceEdge[];
+    return this.graphReads.getSubtypes(fqName);
   }
 
   async getTransitiveSubtypes(fqName: string): Promise<InheritanceEdge[]> {
-    return (await this.call("getTransitiveSubtypes", { fqName })) as InheritanceEdge[];
+    return this.graphReads.getTransitiveSubtypes(fqName);
   }
 
   async loadHierarchySnapshot(): Promise<HierarchySnapshot> {
-    // HierarchySnapshot is plain Records of arrays — JSON-serialisable as-is,
-    // no Map rebuild needed (unlike getCalleeEdges / listAdjacency).
-    return (await this.call("loadHierarchySnapshot", {})) as HierarchySnapshot;
+    return this.graphReads.loadHierarchySnapshot();
   }
 
-  // ── daemon-internal (NOT proxied) ──
-  // `streamAdjacency` stays daemon-internal: the heavy graph analysis runs
-  // inside the daemon (computeAndPersistCyclesAndSignals), so streaming the
-  // adjacency over IPC is never correct. Throws on first iteration.
-
-  streamAdjacency(_scope: CycleScope): AsyncIterableIterator<[source: string, target: string, weight?: number]> {
-    const error = new UnsupportedDaemonReadError("streamAdjacency");
-    return {
-      [Symbol.asyncIterator]() {
-        return this;
-      },
-      async next(): Promise<IteratorResult<[source: string, target: string, weight?: number]>> {
-        throw error;
-      },
-    };
+  streamAdjacency(scope: CycleScope): AsyncIterableIterator<[source: string, target: string, weight?: number]> {
+    return this.analytics.streamAdjacency(scope);
   }
 }
