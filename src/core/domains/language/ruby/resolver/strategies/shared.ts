@@ -169,6 +169,138 @@ function declaringFileOf(qualified: string, defs: readonly SymbolDefinition[]): 
 }
 
 /**
+ * `qualified`'s fully-qualified name and EVERY Ruby file that declares it, read
+ * off the same probes {@link resolveConstant} tries — the literal name, then the
+ * enclosing-scope walk for an unqualified one — and answered by the first probe
+ * the symbol table knows. `null` when no probe is declared anywhere.
+ *
+ * {@link resolveConstant} answers "which ONE file defines the constant"; a class
+ * reopened across files has no such file unless the Zeitwerk convention breaks
+ * the tie, and even then a member can live in any of the reopenings (graphql-ruby
+ * declares `GraphQL::Schema::Resolver` in `resolver.rb` and reopens it in
+ * `resolver/has_payload_type.rb`; `GraphQL` does not snake_case to `graphql`, so
+ * no declarer is conventional). The member lookup therefore ranges over all of
+ * them (bd tea-rags-mcp-89k7k.35.32).
+ */
+function rubyConstantDeclarers(qualified: string, ctx: CallContext): { fq: string; files: Set<string> } | null {
+  const probes = [qualified];
+  if (!qualified.includes("::")) {
+    for (let i = ctx.callerScope.length; i > 0; i--) {
+      probes.push(`${ctx.callerScope.slice(0, i).join("::")}::${qualified}`);
+    }
+  }
+  for (const fq of probes) {
+    const defs = lookupRubySymbolsByQualifiedName(ctx, fq);
+    if (defs.length > 0) return { fq, files: new Set(defs.map((def) => def.relPath)) };
+  }
+  return null;
+}
+
+/**
+ * Pin `member` to a method OF `klass` declared in any file that declares
+ * `klass` other than `skipFile` (the file {@link resolveConstant} already
+ * searched, if any). Unlike the single-file lookup — where every def of the name
+ * in the class's own file counts — a reopening file routinely nests OTHER
+ * constants (`Resolver::HasPayloadType`), so a def qualifies only when its owner
+ * IS `klass` (`enclosingTypeOf(symbolId)`), whichever reopening holds it, and
+ * only in the FORM the caller dispatches on — an instance (`#`) caller reaches
+ * `Klass#m`, a class-method (`.`) caller `Klass.m`, a caller of unknown form
+ * either: a reopened class routinely declares both (`Directive#graphql_name`
+ * beside a class-side lookup that reaches the extended DSL's). A unique match is
+ * a method-level edge; none or an ambiguity is `null`, never a file-only edge:
+ * a reopened class has no one file to stand for it.
+ */
+function pinMemberInClassDeclarers(
+  klass: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+  skipFile: string | null,
+  accept: (def: SymbolDefinition) => boolean,
+): SymbolResolutionTarget | null {
+  const declarers = rubyConstantDeclarers(klass, ctx);
+  if (declarers === null) return null;
+  if (skipFile !== null) declarers.files.delete(skipFile);
+  if (declarers.files.size === 0) return null;
+  const callerForm = rubyCallerMethodForm(ctx.callerSymbolId);
+  const candidates = preferDeclaredOverSchemaColumn(
+    lookupRubySymbolsByShortName(ctx, member, { role: "callee", includeSchemaColumns: true }).filter(
+      (def) =>
+        declarers.files.has(def.relPath) &&
+        enclosingTypeOf(def.symbolId) === declarers.fq &&
+        (callerForm === null || rubyCallerMethodForm(def.symbolId) === callerForm) &&
+        accept(def),
+    ),
+  );
+  const target = pickSingleCandidate(candidates, mode);
+  return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
+}
+
+/**
+ * `"#"` for an instance-method symbolId, `"."` for a class-method one, `null`
+ * for a top-level function or an absent id. `#partN` (a chunker split suffix)
+ * is not a separator.
+ */
+function rubyCallerMethodForm(symbolId: string | undefined): "#" | "." | null {
+  if (symbolId === undefined) return null;
+  const base = symbolId.replace(/#part\d+$/, "");
+  const hash = base.lastIndexOf("#");
+  const dot = base.lastIndexOf(".");
+  if (hash === -1 && dot === -1) return null;
+  return hash > dot ? "#" : ".";
+}
+
+/**
+ * The ancestors of `klass` that may stand in, BY THEIR FILE, for a definer
+ * outside the project: its superclass chain (`classExtends` followed upward,
+ * `klass` itself excluded). A module reached through `include` / `extend` /
+ * `prepend` — or injected by an `extended` hook — that does not define the
+ * member is not where the call goes, however near it sits, so its file is no
+ * file-only answer (bd tea-rags-mcp-89k7k.35.32).
+ *
+ * `null` when nothing records which kind of ancestor each entry is — no
+ * superclass for `klass` and no kind-precise hierarchy row from it — so absent
+ * evidence reads as before: every ancestor may stand in.
+ */
+export function rubyFileOnlyStandIns(klass: string, ctx: CallContext): ReadonlySet<string> | null {
+  const chain = new Set<string>();
+  let parent = identifierEntry(ctx.classExtends, klass);
+  if (parent === undefined && !hasKindPreciseAncestry(klass, ctx)) return null;
+  while (parent !== undefined && parent !== klass && !chain.has(parent)) {
+    chain.add(parent);
+    parent = identifierEntry(ctx.classExtends, parent);
+  }
+  return chain;
+}
+
+function hasKindPreciseAncestry(klass: string, ctx: CallContext): boolean {
+  return (ctx.hierarchy?.getAncestors(klass) ?? []).some((row) => row.sourceFqName === klass);
+}
+
+/**
+ * Whether an ancestor's file-only answer may become the walk's fallback: the
+ * ancestor is a stand-in ({@link rubyFileOnlyStandIns}), or its file genuinely
+ * declares `member` — a file-only edge there is an AMBIGUOUS pin (two defs of the
+ * name the walk could not choose between), not a guess (bd 89k7k.35.32).
+ */
+export function fileOnlyFallbackAdmissible(
+  ancestor: string,
+  target: SymbolResolutionTarget,
+  member: string,
+  standIns: ReadonlySet<string> | null,
+  ctx: CallContext,
+): boolean {
+  if (standIns === null || standIns.has(ancestor)) return true;
+  return lookupRubySymbolsByShortName(ctx, member, { role: "callee", includeSchemaColumns: true }).some((def) => {
+    if (def.relPath !== target.targetRelPath) return false;
+    // Owned by the ancestor itself — another class in the same file defining
+    // the name says nothing about this module (sinatra's `base.rb`).
+    const owner = enclosingTypeOf(def.symbolId);
+    return owner === ancestor || (owner?.endsWith(`::${ancestor}`) ?? false);
+  });
+}
+
+/**
  * The fully-qualified counterpart of `lookupRubySymbolsByShortName`, on the
  * same `isRubyPath` axis (bd tea-rags-mcp-zn4uf). `symbolTable.lookup` is
  * language-blind for the identical reason `lookupByShortName` is — one table
@@ -405,9 +537,15 @@ function ancestorsInMroOrder(
  *      {@link ancestorsInMroOrder} and accumulating into `visited` so
  *      `A < B < A` cycles short-circuit. The first ancestor that owns `member`
  *      at the method level wins.
+ *   2b. Miss → the member may be declared by a file that REOPENS `klass`:
+ *      every declarer of `klass` in the symbol table is searched, a def counting
+ *      only when its owner IS `klass` (bd tea-rags-mcp-89k7k.35.32).
  *   4. File known but method absent anywhere in the chain → file-only edge
- *      (`targetSymbolId: null`) for the FIRST class whose file resolved, keeping
- *      file-level fan accurate for out-of-project parents (`ApplicationRecord`).
+ *      (`targetSymbolId: null`) for the FIRST class on the CLASS chain (`klass`,
+ *      then its superclasses) whose file resolved, keeping file-level fan
+ *      accurate for out-of-project parents (`ApplicationRecord`). A module
+ *      reached through `include` / `extend` / `prepend` never stands in: it
+ *      defines the member or it is not where the call goes (bd 89k7k.35.32).
  *   5. No class in the chain resolves to a known file → `null` (caller DROPs).
  *
  * `excludeSymbolId` removes ONE definition from every candidate set along the
@@ -469,16 +607,31 @@ export function resolveInstanceMethodInClassChain(
     const target = pickSingleCandidate(candidates, mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   }
+  // The member may live in a file that REOPENS the class — every declarer
+  // counts, not just the one `resolveConstant` could name (bd 89k7k.35.32).
+  const reopened = pinMemberInClassDeclarers(
+    klass,
+    member,
+    ctx,
+    mode,
+    klassFile,
+    (def) => def.symbolId !== excludeSymbolId,
+  );
+  if (reopened) return reopened;
 
   const ancestors = rubyDirectAncestors(klass, ctx, side);
   if (ancestors) {
+    const standIns = rubyFileOnlyStandIns(klass, ctx);
     for (const ancestor of ancestorsInMroOrder(klass, ancestors, ctx, side)) {
       const inherited = resolveInstanceMethodInClassChain(ancestor, member, ctx, mode, visited, excludeSymbolId, side);
       if (inherited === null) continue;
-      // Method-level pin wins immediately; remember the first known file as a
-      // fallback so a file-only ancestor edge survives if nothing pins later.
+      // Method-level pin wins immediately. Only the superclass may leave a
+      // file-only fallback — a mixed-in module that does not define the member
+      // is not where the call goes (bd 89k7k.35.32).
       if (inherited.targetSymbolId !== null) return inherited;
-      if (fileOnlyFallback === null) fileOnlyFallback = inherited;
+      if (fileOnlyFallback === null && fileOnlyFallbackAdmissible(ancestor, inherited, member, standIns, ctx)) {
+        fileOnlyFallback = inherited;
+      }
     }
   }
 
@@ -568,12 +721,17 @@ export function firstDefinerAfter(
   const idx = mro.indexOf(startAfter);
   if (idx === -1) return null;
   const visited = new Set<string>(mro.slice(0, idx + 1));
+  // Same stand-in rule as the class-chain walk: only `klass`'s superclass chain
+  // may leave a file-only fallback (bd 89k7k.35.32).
+  const standIns = rubyFileOnlyStandIns(klass, ctx);
   let fileOnlyFallback: SymbolResolutionTarget | null = null;
   for (let i = idx + 1; i < mro.length; i++) {
     const t = resolveInstanceMethodInClassChain(mro[i], member, ctx, mode, visited, excludeSymbolId);
     if (t === null) continue;
     if (t.targetSymbolId !== null) return t;
-    if (fileOnlyFallback === null) fileOnlyFallback = t;
+    if (fileOnlyFallback === null && fileOnlyFallbackAdmissible(mro[i], t, member, standIns, ctx)) {
+      fileOnlyFallback = t;
+    }
   }
   return fileOnlyFallback;
 }
@@ -812,7 +970,6 @@ function resolveTypeMethodInternal(
     const target = pickSingleCandidate(candidates, mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   }
-
   const ancestors = rubyDirectAncestors(typeName, ctx, side);
   if (ancestors) {
     for (const ancestor of ancestorsInMroOrder(typeName, ancestors, ctx, side)) {
