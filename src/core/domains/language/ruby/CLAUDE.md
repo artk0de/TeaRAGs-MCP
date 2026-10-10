@@ -85,8 +85,13 @@
   directly, or it loses the hook's prepends. Ruby's MEMBER walk is NOT the
   kernel's: `resolveInstanceMethodInClassChain` (`strategies/shared.ts`) carries
   the prepend pre-pass, the schema-column preference and the file-only fallback
-  ordering, none of which are neutral, and it stays here. Change the order here;
-  change the walk in the kernel and re-run
+  ordering, none of which are neutral, and it stays here. A file-only fallback
+  comes only from the class chain (`rubyFileOnlyStandIns`) or from a module
+  whose own file declares the member (`fileOnlyFallbackAdmissible`) — never from
+  the nearest mixin merely because its file resolves — and a class reopened
+  across files is searched through every declarer, not `resolveConstant`'s one
+  file (bd tea-rags-mcp-89k7k.35.32). Change the order here; change the walk in
+  the kernel and re-run
   `scripts/spikes/ruby-resolver-parity.ts --before-root <pre-seam checkout>`.
 - **The external-member suppression set is `ACTIVE_RECORD_INSTANCE_BUILTINS` in
   `dsl/rails-runtime.ts` — not `dsl/core-members.ts`.** Membership means "the

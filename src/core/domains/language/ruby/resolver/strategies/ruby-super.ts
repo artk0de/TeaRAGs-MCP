@@ -6,8 +6,10 @@ import { SUPER_RECEIVER_SENTINEL } from "../../super-receiver-sentinel.js";
 import { linearizeAncestors } from "./ancestor-linearization.js";
 import {
   callerAncestrySide,
+  fileOnlyFallbackAdmissible,
   resolveInstanceMethodInClassChain,
   resolveViaIncludingClasses,
+  rubyFileOnlyStandIns,
   type ResolverConfig,
 } from "./shared.js";
 
@@ -123,6 +125,10 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
     const side = callerAncestrySide(ctx);
     const mro = linearizeAncestors(enclosingClass, ctx, side);
     const visited = new Set<string>([enclosingClass]);
+    // Only the CLASS chain may leave a file-only fallback: a module mixed in
+    // along the way that does not define `member` is not where `super` goes, so
+    // its file is no stand-in for an out-of-project definer (bd 89k7k.35.32).
+    const standIns = rubyFileOnlyStandIns(enclosingClass, ctx);
     let fileOnlyFallback: SymbolResolutionTarget | null = null;
     for (const ancestor of mro.slice(mro.indexOf(enclosingClass) + 1)) {
       const resolvedTarget = resolveInstanceMethodInClassChain(
@@ -136,7 +142,9 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
       );
       if (resolvedTarget === null) continue;
       if (resolvedTarget.targetSymbolId !== null) return resolvedTarget;
-      if (fileOnlyFallback === null) fileOnlyFallback = resolvedTarget;
+      if (fileOnlyFallback === null && fileOnlyFallbackAdmissible(ancestor, resolvedTarget, member, standIns, ctx)) {
+        fileOnlyFallback = resolvedTarget;
+      }
     }
     // Class-keyed walk fully missed — the module-method case: `super` lives in a
     // module M whose own ancestors don't define `member`. Resolve via the classes
