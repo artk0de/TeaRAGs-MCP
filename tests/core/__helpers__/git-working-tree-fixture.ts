@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, wr
 import { dirname, join, resolve, sep } from "node:path";
 
 import { importGitHistory, type GitHistoryCommit } from "./git-history-import.js";
-import { copyGitRepoTemplate } from "./git-repo-template.js";
+import { buildGitRepoTemplate, copyGitRepoTemplate } from "./git-repo-template.js";
 
 /**
  * One step of the repository a fixture starts from, applied in order on top of
@@ -120,60 +120,29 @@ function gitOps(tempRoot: string): GitOps {
   return { git, commit, addWorktree };
 }
 
+interface FixtureTemplateMeta {
+  commits: string[];
+  worktrees: string[];
+}
+
+const templateKey = (seed: readonly GitWorkingTreeSeedStep[]): string =>
+  `git-working-tree-fixture:${JSON.stringify(seed)}`;
+
+/**
+ * Builds the template `createGitWorkingTreeFixture(seed)` copies, without
+ * copying it: a `beforeAll` pays the recipe's git spawns in the hook's budget,
+ * so the test that creates the fixture pays only the copy's index refresh.
+ */
+export function prebuildGitWorkingTreeFixture(seed: readonly GitWorkingTreeSeedStep[] = []): void {
+  buildGitRepoTemplate(templateKey(seed), fixtureRecipe(seed));
+}
+
 /** A repository whose main checkout holds one commit with `src/index.ts`, then the `seed` steps. */
 export function createGitWorkingTreeFixture(seed: readonly GitWorkingTreeSeedStep[] = []): GitWorkingTreeFixture {
-  const copy = copyGitRepoTemplate(
-    `git-working-tree-fixture:${JSON.stringify(seed)}`,
-    (templateRoot) => {
-      const ops = gitOps(templateRoot);
-      const templateMain = join(templateRoot, MAIN);
-      mkdirSync(templateMain);
-      // Every seed commit goes in through ONE fast-import (bd
-      // tea-rags-mcp-1r3e5): a commit made in a linked worktree lands on its
-      // `wt-<name>` branch, forked from the main tip the worktree was added at.
-      // Only the worktrees themselves are added live, after the import.
-      const now = new Date();
-      const history: GitHistoryCommit[] = [
-        { label: "init", message: "init", author: IDENTITY_PERSON, authorDate: now, writes: { "src/index.ts": BASE } },
-      ];
-      const commitLabels: string[] = [];
-      const forkedAt = new Map<string, string>();
-      const branchesWithCommits = new Set<string>();
-      let mainTip = "init";
-      seed.forEach((step, i) => {
-        if ("addWorktree" in step) {
-          forkedAt.set(step.addWorktree, mainTip);
-          return;
-        }
-        const label = `seed-${i}`;
-        const onWorktree = step.in;
-        const fork = onWorktree !== undefined && !branchesWithCommits.has(onWorktree);
-        history.push({
-          label,
-          ...(onWorktree === undefined ? {} : { branch: worktreeDir(onWorktree) }),
-          ...(fork ? { from: forkedAt.get(onWorktree) } : {}),
-          message: step.message ?? "change",
-          author: IDENTITY_PERSON,
-          authorDate: now,
-          writes: step.commit,
-        });
-        if (onWorktree === undefined) mainTip = label;
-        else branchesWithCommits.add(onWorktree);
-        commitLabels.push(label);
-      });
-      const shas = importGitHistory(templateMain, history);
-
-      const worktrees: string[] = [];
-      for (const [name, base] of forkedAt) {
-        const tree = join(templateRoot, worktreeDir(name));
-        if (branchesWithCommits.has(name)) ops.git(templateMain, "worktree", "add", "-q", tree, worktreeDir(name));
-        else ops.git(templateMain, "worktree", "add", "-q", "-b", worktreeDir(name), tree, shas[base]);
-        worktrees.push(name);
-      }
-      return { commits: commitLabels.map((label) => shas[label]), worktrees };
-    },
-    { prefix: "git-working-tree-", env: { ...process.env, ...IDENTITY } },
-  );
+  const copy = copyGitRepoTemplate(templateKey(seed), fixtureRecipe(seed), {
+    prefix: "git-working-tree-",
+    env: { ...process.env, ...IDENTITY },
+  });
 
   const tempRoot = realpathSync(copy.root);
   const ops = gitOps(tempRoot);
@@ -190,5 +159,63 @@ export function createGitWorkingTreeFixture(seed: readonly GitWorkingTreeSeedSte
     cleanup: () => {
       rmSync(tempRoot, { recursive: true, force: true });
     },
+  };
+}
+
+/** The recipe of the template a seed starts from — the import, then the live worktree adds. */
+function fixtureRecipe(seed: readonly GitWorkingTreeSeedStep[]): (templateRoot: string) => FixtureTemplateMeta {
+  return (templateRoot) => {
+    const ops = gitOps(templateRoot);
+    const templateMain = join(templateRoot, MAIN);
+    mkdirSync(templateMain);
+    // Every seed commit goes in through ONE fast-import (bd
+    // tea-rags-mcp-1r3e5): a commit made in a linked worktree lands on its
+    // `wt-<name>` branch, forked from the main tip the worktree was added at.
+    // Only the worktrees themselves are added live, after the import.
+    const now = new Date();
+    const history: GitHistoryCommit[] = [
+      { label: "init", message: "init", author: IDENTITY_PERSON, authorDate: now, writes: { "src/index.ts": BASE } },
+    ];
+    const commitLabels: string[] = [];
+    const forkedAt = new Map<string, string>();
+    const branchesWithCommits = new Set<string>();
+    let mainTip = "init";
+    seed.forEach((step, i) => {
+      if ("addWorktree" in step) {
+        forkedAt.set(step.addWorktree, mainTip);
+        return;
+      }
+      const label = `seed-${i}`;
+      const onWorktree = step.in;
+      const fork = onWorktree !== undefined && !branchesWithCommits.has(onWorktree);
+      history.push({
+        label,
+        ...(onWorktree === undefined ? {} : { branch: worktreeDir(onWorktree) }),
+        ...(fork ? { from: forkedAt.get(onWorktree) } : {}),
+        message: step.message ?? "change",
+        author: IDENTITY_PERSON,
+        authorDate: now,
+        writes: step.commit,
+      });
+      if (onWorktree === undefined) mainTip = label;
+      else branchesWithCommits.add(onWorktree);
+      commitLabels.push(label);
+    });
+    // A live `commit` on a copy would otherwise fork a detached
+    // `git maintenance run --auto` per commit: one more process the EDR
+    // scans and the loaded machine schedules, and one that repacks the
+    // objects the code under test is reading.
+    const shas = importGitHistory(templateMain, history, {
+      config: { "maintenance.auto": "false", "gc.auto": "0" },
+    });
+
+    const worktrees: string[] = [];
+    for (const [name, base] of forkedAt) {
+      const tree = join(templateRoot, worktreeDir(name));
+      if (branchesWithCommits.has(name)) ops.git(templateMain, "worktree", "add", "-q", tree, worktreeDir(name));
+      else ops.git(templateMain, "worktree", "add", "-q", "-b", worktreeDir(name), tree, shas[base]);
+      worktrees.push(name);
+    }
+    return { commits: commitLabels.map((label) => shas[label]), worktrees };
   };
 }

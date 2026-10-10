@@ -306,7 +306,15 @@ describe("createWorkingTreeGitSignalSource", () => {
     });
 
     it("recomputes when the tree content, the signal builder, or the day differs", async () => {
-      const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
+      // Under test is WHETHER the source computes, not what: the first call
+      // runs the real git computation, the later ones replay its answer — each
+      // real one is a serial chain of ~8 git processes, and four of them
+      // outran the test budget under load (bd tea-rags-mcp-0qaht.51).
+      const realBuild = onDemand.buildOnDemandGitSignals;
+      let firstAnswer: ReturnType<typeof realBuild> | undefined;
+      const spy = vi
+        .spyOn(onDemand, "buildOnDemandGitSignals")
+        .mockImplementation(async (...args) => (firstAnswer ??= realBuild(...args)));
       const day = 86_400_000;
       const t0 = Date.now();
 
