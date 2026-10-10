@@ -5,7 +5,7 @@
  */
 
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
-import type { EnrichmentMarkerMap } from "./enrichment/types.js";
+import type { EnrichmentMarkerMap } from "./enrichment-run-liveness.js";
 
 /**
  * What a first index seeded from a sibling worktree still owes its collection

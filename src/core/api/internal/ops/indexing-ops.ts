@@ -34,18 +34,17 @@ import {
   cleanupOrphanedVersions,
   computeCollectionStats,
   isCollectionIndexingInFlight,
+  parseMarkerPayload,
   type CollectionIndexingLock,
   type HeldCollectionIndexingLock,
+  type WorktreeSeedPending,
 } from "../../../domains/ingest/infra/index.js";
 import { resolvePhysicalCollection } from "../../../domains/ingest/operations/index.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
+import { CODE_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/config.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import type { DeferredChunkRecoveryHandoff } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
-import {
-  parseMarkerPayload,
-  type WorktreeSeedPending,
-} from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
 import {
   clearWorktreeSeedPending,
   markWorktreeSeedPending,
@@ -819,7 +818,13 @@ export class IndexingOps {
     if (!this.statsCache || !this.allPayloadSignals) return;
     try {
       const points = await scrollAllPoints(this.qdrant, collectionName);
-      const stats = computeCollectionStats(points, this.allPayloadSignals, this.statsAccumulators, this.gitTimePeriods);
+      const stats = computeCollectionStats(
+        points,
+        this.allPayloadSignals,
+        this.statsAccumulators,
+        CODE_LANGUAGES,
+        this.gitTimePeriods,
+      );
       const scoreBackground = await this.measureScoreBackground(collectionName);
       if (scoreBackground) stats.scoreBackground = scoreBackground;
       const payloadFieldKeys = payloadFieldKeysOf(this.allPayloadSignals);

@@ -14,6 +14,7 @@ import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { PayloadBuilder } from "../../contracts/types/provider.js";
 import type { IngestDependencies, SynchronizerTuning } from "../../domains/ingest/factory.js";
 import { computeCollectionStats } from "../../domains/ingest/infra/collection-stats.js";
+import { CODE_LANGUAGES } from "../../domains/ingest/pipeline/chunker/config.js";
 import { ParallelFileSynchronizer } from "../../domains/ingest/sync/parallel-synchronizer.js";
 import { createShardedSnapshotAccess } from "../../domains/ingest/sync/snapshot/sharded-snapshot-access.js";
 import { EnrichmentStoreAdapter } from "../../domains/maintenance/migration/adapters/enrichment-store-adapter.js";
@@ -108,7 +109,13 @@ export function createIngestDependencies(
         undefined,
         undefined,
         (points) =>
-          computeCollectionStats(points, fullRegistrySignals, fullRegistryStatsAccumulators(), gitTimePeriods),
+          computeCollectionStats(
+            points,
+            fullRegistrySignals,
+            fullRegistryStatsAccumulators(),
+            CODE_LANGUAGES,
+            gitTimePeriods,
+          ),
         fullRegistrySignals,
       );
 

@@ -25,10 +25,22 @@ import type {
 } from "../../../../../../src/core/contracts/types/trajectory.js";
 import { resolvePresets } from "../../../../../../src/core/domains/explore/rerank/presets/index.js";
 import { Reranker, type RerankableResult } from "../../../../../../src/core/domains/explore/reranker.js";
-import { computeCollectionStats } from "../../../../../../src/core/domains/ingest/infra/collection-stats.js";
+import { computeCollectionStats as computeCollectionStatsInjected } from "../../../../../../src/core/domains/ingest/infra/collection-stats.js";
+import { CODE_LANGUAGES } from "../../../../../../src/core/domains/ingest/pipeline/chunker/config.js";
 import { CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/payload-signals.js";
 import { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/rerank/derived-signals/index.js";
 import { staticStatsAccumulators } from "../../../../../../src/core/domains/trajectory/static/stats/index.js";
+
+type ComputeCollectionStatsArgs = Parameters<typeof computeCollectionStatsInjected>;
+
+/** The production callers inject the chunker's code-language set; the suite does the same. */
+const computeCollectionStats = (
+  points: ComputeCollectionStatsArgs[0],
+  signals: ComputeCollectionStatsArgs[1],
+  accumulators: ComputeCollectionStatsArgs[2],
+  gitTimePeriods?: ComputeCollectionStatsArgs[4],
+): ReturnType<typeof computeCollectionStatsInjected> =>
+  computeCollectionStatsInjected(points, signals, accumulators, CODE_LANGUAGES, gitTimePeriods);
 
 const INSTABILITY_KEY = "codegraph.file.instability";
 const CONNECTION_COUNT_KEY = "codegraph.file.connectionCount";

@@ -23,7 +23,6 @@ import type {
   SignalStats,
 } from "../../../contracts/types/trajectory.js";
 import { detectScope, type ScopeDetectionConfig } from "../../../infra/scope-detection.js";
-import { CODE_LANGUAGES } from "../pipeline/chunker/config.js";
 
 const MIN_SAMPLE_SIZE = 10;
 /**
@@ -154,10 +153,14 @@ function countTestChunksPerLanguage(points: StatsPoint[]): Map<string, number> {
 }
 
 /** Derive per-point context once so all accumulators share the same parse. */
-function derivePointContext(point: StatsPoint, scopeConfig: ScopeDetectionConfig): PointContext {
+function derivePointContext(
+  point: StatsPoint,
+  scopeConfig: ScopeDetectionConfig,
+  codeLanguages: ReadonlySet<string>,
+): PointContext {
   const pointChunkType = typeof point.payload["chunkType"] === "string" ? point.payload["chunkType"] : undefined;
   const lang = typeof point.payload["language"] === "string" ? point.payload["language"] : undefined;
-  const isCodeLanguage = lang !== undefined && CODE_LANGUAGES.has(lang);
+  const isCodeLanguage = lang !== undefined && codeLanguages.has(lang);
   const relPath = typeof point.payload["relativePath"] === "string" ? point.payload["relativePath"] : "";
   const scope = isCodeLanguage && lang !== undefined ? detectScope(pointChunkType, relPath, lang, scopeConfig) : null;
   return { pointChunkType, lang, isCodeLanguage, relPath, scope };
@@ -448,6 +451,7 @@ function extractSignalValues(
   points: StatsPoint[],
   statsSignals: PayloadSignalDescriptor[],
   trajectoryDescriptors: readonly StatsAccumulatorDescriptor[],
+  codeLanguages: ReadonlySet<string>,
   scopeConfig?: ScopeDetectionConfig,
 ): ExtractedValues {
   const languageTestChunkCounts = countTestChunksPerLanguage(points);
@@ -457,7 +461,7 @@ function extractSignalValues(
   const instances = new Map<string, StatsAccumulator>(descriptors.map((d) => [d.key, d.factory()]));
 
   for (const point of points) {
-    const ctx = derivePointContext(point, effectiveScopeConfig);
+    const ctx = derivePointContext(point, effectiveScopeConfig, codeLanguages);
     for (const acc of instances.values()) acc.accept(point, ctx);
   }
 
@@ -780,11 +784,16 @@ function buildDistributions(
  * - Skips members of the signal's `stats.coSignalClass`
  * - Computes only what's declared: percentiles, mean, stddev
  * - Returns empty perSignal map for signals with no valid values
+ *
+ * `codeLanguages` is the set of languages with AST support (per-language scoped
+ * stats and scope detection apply to those only). The caller injects it: the
+ * chunker config that owns the set sits above `ingest/infra`.
  */
 export function computeCollectionStats(
   points: StatsPoint[],
   signals: PayloadSignalDescriptor[],
   trajectoryAccumulators: readonly StatsAccumulatorDescriptor[],
+  codeLanguages: ReadonlySet<string>,
   gitTimePeriods?: { fileMonths: number; chunkMonths: number },
 ): CollectionSignalStats {
   // The stats scroll reads every point of the collection. The indexing marker
@@ -792,7 +801,7 @@ export function computeCollectionStats(
   // distribution and the language-share denominator (bd tea-rags-mcp-39xca.12).
   const chunkPoints = points.filter((point) => !isServicePointPayload(point.payload));
   const statsSignals = signals.filter((s) => s.stats !== undefined);
-  const extracted = extractSignalValues(chunkPoints, statsSignals, trajectoryAccumulators);
+  const extracted = extractSignalValues(chunkPoints, statsSignals, trajectoryAccumulators, codeLanguages);
   const perSignal = computePerSignalStats(
     extracted.valueArrays,
     statsSignals,
@@ -805,7 +814,7 @@ export function computeCollectionStats(
 
   for (const [lang, langValueArrays] of extracted.perLanguageValues) {
     // Only code languages with AST support qualify
-    if (!CODE_LANGUAGES.has(lang)) continue;
+    if (!codeLanguages.has(lang)) continue;
 
     // Must represent >= 5% of project chunks
     const langCount = extracted.languageCounts[lang] ?? 0;

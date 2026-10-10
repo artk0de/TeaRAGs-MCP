@@ -37,9 +37,16 @@
  *     healthy), legacy `in_progress` keeps the time-based crash check.
  */
 
+import {
+  ENRICHMENT_STALE_THRESHOLD_MS,
+  ENRICHMENT_TERMINAL_STATUSES,
+  getNestedMarker,
+  type EnrichmentLevelRecord,
+} from "../../infra/index.js";
 import type { EnrichmentHealthMap, EnrichmentLevelHealth, EnrichmentMarkerMap, RunMarker } from "./types.js";
 
-const STALE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+type LevelRecord = EnrichmentLevelRecord;
+
 const CRASHED_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour — pipeline crashed long ago
 const DEFAULT_STALL_DEADLINE_MS = 15 * 60 * 1000; // 15 minutes — in_progress past this renders failed
 
@@ -69,11 +76,6 @@ function stallDeadlineMessage(elapsedMs: number, deadlineMs: number): string {
   return `Enrichment appears stalled — no progress in ${elapsedMin} minutes, past the stall deadline (${deadlineMin} min). Status recovered on read. Will recover on next reindex.`;
 }
 
-type LevelRecord = Record<string, unknown>;
-
-/** Statuses a level marker can carry that describe a FINISHED attempt. */
-const TERMINAL_STATUSES: ReadonlySet<unknown> = new Set(["completed", "degraded", "failed"]);
-
 /**
  * @param activeEnrichmentProviders provider keys of the RUNNING composition —
  *   the frame. The caller owns it because only the composition root knows which
@@ -90,39 +92,6 @@ export function mapMarkerToHealth(
   return run ? mapWithRunPointer(markerMap, run, activeEnrichmentProviders) : mapLegacy(markerMap);
 }
 
-/**
- * Is the enrichment run the `_run` pointer names still running (bd
- * tea-rags-mcp-62pgi)? Live means: some provider the run covers still owes a
- * terminal marker carrying the run's `runId` at either level, AND the run's last
- * progress is within the same stalled threshold `mapLevelWithRun` renders as
- * "Enrichment in progress..." — past it the run reads as stalled, and a crashed
- * run must not be mistaken for a live one.
- *
- * `progressAfter` (epoch ms) discounts progress stamped at or before it: the
- * caller's own finished run left that evidence, so it proves nothing about
- * anyone else.
- */
-export function isEnrichmentRunLive(
-  markerMap: EnrichmentMarkerMap,
-  options: { now?: number; progressAfter?: number } = {},
-): boolean {
-  const run = markerMap._run;
-  if (!run) return false;
-  const owesTerminal = (run.providers ?? []).some((providerKey) => {
-    const entry = getNested(markerMap, providerKey) as { file?: LevelRecord; chunk?: LevelRecord } | undefined;
-    return !isTerminalForRun(entry?.file, run) || !isTerminalForRun(entry?.chunk, run);
-  });
-  if (!owesTerminal) return false;
-  const progressAt = Date.parse(run.lastProgressAt ?? run.startedAt);
-  if (Number.isNaN(progressAt)) return false;
-  if (progressAt <= (options.progressAfter ?? Number.NEGATIVE_INFINITY)) return false;
-  return (options.now ?? Date.now()) - progressAt <= STALE_THRESHOLD_MS;
-}
-
-function isTerminalForRun(level: LevelRecord | undefined, run: RunMarker): boolean {
-  return level?.runId === run.runId && TERMINAL_STATUSES.has(level.status);
-}
-
 /** Terminal-only path: navigate the nested marker of every ACTIVE provider. */
 function mapWithRunPointer(
   markerMap: EnrichmentMarkerMap,
@@ -133,7 +102,7 @@ function mapWithRunPointer(
   const coveredByRun = new Set(run.providers ?? []);
   let hasAny = false;
   for (const providerKey of activeEnrichmentProviders) {
-    const entry = getNested(markerMap, providerKey) as { file?: LevelRecord; chunk?: LevelRecord } | undefined;
+    const entry = getNestedMarker(markerMap, providerKey) as { file?: LevelRecord; chunk?: LevelRecord } | undefined;
     if (coveredByRun.has(providerKey)) {
       hasAny = true;
       health[providerKey] = {
@@ -161,7 +130,7 @@ function mapWithRunPointer(
  * run never reached a terminal state.
  */
 function mapLevelOutsideRun(level: LevelRecord | undefined, levelName: "file" | "chunk"): EnrichmentLevelHealth {
-  if (level && TERMINAL_STATUSES.has(level.status)) return renderTerminal(level, levelName);
+  if (level && ENRICHMENT_TERMINAL_STATUSES.has(level.status)) return renderTerminal(level, levelName);
   const prefix = levelName === "file" ? "File-level enrichment" : "Chunk enrichment";
   return {
     ...(level ? pickMeta(level) : {}),
@@ -194,7 +163,7 @@ function mapLevelWithRun(
   if (elapsed > deadlineMs) {
     return { status: "failed", message: stallDeadlineMessage(elapsed, deadlineMs) };
   }
-  if (elapsed > STALE_THRESHOLD_MS) {
+  if (elapsed > ENRICHMENT_STALE_THRESHOLD_MS) {
     return {
       status: "in_progress",
       message: "Enrichment appears stalled — no progress in 2 minutes. May need reindex.",
@@ -272,7 +241,7 @@ function mapLegacyLevel(level: LevelRecord | undefined, levelName: "file" | "chu
     if (heartbeatAgeMs !== undefined && heartbeatAgeMs > deadlineMs) {
       return { ...base, status: "failed", message: stallDeadlineMessage(heartbeatAgeMs, deadlineMs) };
     }
-    const isStale = heartbeatAgeMs !== undefined && heartbeatAgeMs > STALE_THRESHOLD_MS;
+    const isStale = heartbeatAgeMs !== undefined && heartbeatAgeMs > ENRICHMENT_STALE_THRESHOLD_MS;
     return {
       ...base,
       status: "in_progress",
@@ -298,11 +267,3 @@ function pickMeta(level: LevelRecord): Record<string, unknown> {
 }
 
 /** Navigate a dotted path into a nested object; undefined if any segment missing. */
-function getNested(obj: LevelRecord, path: string): unknown {
-  let cur: unknown = obj;
-  for (const seg of path.split(".")) {
-    if (cur === null || typeof cur !== "object") return undefined;
-    cur = (cur as LevelRecord)[seg];
-  }
-  return cur;
-}

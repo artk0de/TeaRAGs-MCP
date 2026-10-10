@@ -20,7 +20,7 @@ import { EMBEDDED_MARKER } from "../../../../../src/core/adapters/qdrant/embedde
 import { WorktreeSeedOps } from "../../../../../src/core/api/internal/ops/worktree-seed-ops.js";
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
 import type { CollectionEntry } from "../../../../../src/core/contracts/types/registry.js";
-import type { WorktreeSeedPending } from "../../../../../src/core/domains/ingest/pipeline/indexing-marker-codec.js";
+import type { WorktreeSeedPending } from "../../../../../src/core/domains/ingest/infra/indexing-marker-codec.js";
 import { ShardedSnapshotManager } from "../../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
 import type { CollectionFootprintFactory } from "../../../../../src/core/domains/maintenance/footprint/index.js";
 import { QdrantArtifact } from "../../../../../src/core/domains/maintenance/footprint/qdrant-artifact.js";

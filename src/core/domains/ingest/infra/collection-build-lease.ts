@@ -20,13 +20,13 @@ import type { CollectionAlias, PhysicalCollectionName } from "../../../contracts
 import { versionedPhysicalCollectionName } from "../../../infra/collection-name.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { VersionedCollectionClaimError } from "../errors.js";
+import { isEnrichmentRunLive } from "./enrichment-run-liveness.js";
 import {
   indexingRunHeartbeatAt,
-  isEnrichmentRunLive,
   isIndexingRunStale,
   parseMarkerPayload,
   type IndexingMarkerPayload,
-} from "../pipeline/index.js";
+} from "./indexing-marker-codec.js";
 
 /**
  * Is a live indexing run building this collection right now?

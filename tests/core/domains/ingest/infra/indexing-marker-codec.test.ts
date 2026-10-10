@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseMarkerPayload,
   serializeMarkerPayload,
-} from "../../../../../src/core/domains/ingest/pipeline/indexing-marker-codec.js";
+} from "../../../../../src/core/domains/ingest/infra/indexing-marker-codec.js";
 
 describe("parseMarkerPayload", () => {
   it("parses complete valid payload", () => {

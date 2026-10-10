@@ -19,7 +19,7 @@ import {
   type CollectionIndexingLockOptions,
   type IndexingLockRecord,
 } from "../../../../../src/core/domains/ingest/infra/collection-indexing-lock.js";
-import { STALE_INDEXING_THRESHOLD_MS } from "../../../../../src/core/domains/ingest/pipeline/indexing-marker-codec.js";
+import { STALE_INDEXING_THRESHOLD_MS } from "../../../../../src/core/domains/ingest/infra/indexing-marker-codec.js";
 
 const COLLECTION = "code_abc";
 const HOST = "host-a";

@@ -30,11 +30,15 @@ import type {
   EdgeKindBreakdown,
   IndexStatus,
 } from "../../../types.js";
-import { MIN_LANGUAGE_SHARE, type IndexingLockLivenessProbe } from "../infra/index.js";
+import {
+  MIN_LANGUAGE_SHARE,
+  parseMarkerPayload,
+  STALE_INDEXING_THRESHOLD_MS,
+  type IndexingLockLivenessProbe,
+} from "../infra/index.js";
 import { QuarantineStore } from "../sync/index.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
-import { parseMarkerPayload, STALE_INDEXING_THRESHOLD_MS } from "./indexing-marker-codec.js";
 
 // The threshold itself lives with the marker codec: `infra/alias-cleanup` reads
 // the same number to decide whether a half-built collection may be reclaimed,
