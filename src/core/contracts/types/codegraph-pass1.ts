@@ -68,6 +68,7 @@ import type {
   KnownTargetCallArgs,
   ModuleReexport,
   RubyExtendedHookMixin,
+  RubyInstantiationSite,
   TypeDeclarationFact,
 } from "./codegraph-extraction.js";
 import type { InheritanceEdgeDecl, StructuralContractDecl } from "./codegraph-hierarchy.js";
@@ -366,4 +367,14 @@ export interface CodegraphPass1FileAggregates {
    * keeps its bytes.
    */
   extendedHookMixins?: Record<string, readonly RubyExtendedHookMixin[]>;
+  /**
+   * Ruby instantiation sites (bd tea-rags-mcp-0qaht.65), as
+   * `FileExtraction.rubyInstantiationSites`. Persisted UNRESOLVED, because the
+   * class a site names depends on what the whole run declares: the barrier
+   * resolves walked and hydrated sites alike at every seal, so a declaration
+   * another file adds moves the answer on an incremental run too. Union-merged
+   * at hydration; a re-walked file's row is skipped. Persisted LAST, so every
+   * other row keeps its bytes.
+   */
+  rubyInstantiationSites?: readonly RubyInstantiationSite[];
 }

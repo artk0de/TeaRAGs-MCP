@@ -324,8 +324,18 @@ export interface FileExtraction {
    *
    * Plain array (NOT Set) so the value round-trips through the NDJSON spill.
    * Undefined for languages whose walkers don't collect instantiation sites.
+   * Ruby publishes {@link rubyInstantiationSites} instead.
    */
   instantiatedTypes?: string[];
+  /**
+   * Ruby's instantiation sites, unresolved (bd tea-rags-mcp-0qaht.65). A Ruby
+   * constant names a class only through lexical lookup against what the
+   * project DECLARES, which a per-file walk cannot see — pre-qualifying by
+   * scope recorded mastodon's top-level `AccountReachFinder` as
+   * `SuspendAccountService::AccountReachFinder`. The barrier resolves each site
+   * into the run's `instantiatedTypes` set. Deduped; plain array for NDJSON.
+   */
+  rubyInstantiationSites?: RubyInstantiationSite[];
   /**
    * Argument types observed at call sites whose CALLEE IS SYNTACTICALLY KNOWN
    * — no resolution required (bd tea-rags-mcp-bvalc). Populated by the Ruby
@@ -449,6 +459,35 @@ export interface FileExtraction {
 export interface RubyExtendedHookMixin {
   readonly kind: "include" | "prepend";
   readonly module: string;
+}
+
+/**
+ * One Ruby `Klass.new` / factory / finder site as Ruby's constant lookup sees
+ * it (bd tea-rags-mcp-0qaht.65). The walker has no symbol table, so it records
+ * the constant as written plus the lexical nesting it was written in, and the
+ * pass-1 barrier resolves it against the run's declared classes into the RTA
+ * instantiation set.
+ */
+export interface RubyInstantiationSite {
+  /** The constant as written, root anchor stripped (`GraphQL::ExecutionError`, `Cat` for `::Cat`). */
+  readonly name: string;
+  /**
+   * `Module.nesting` at the site, innermost first, each level fully qualified
+   * by lexical composition. A compact `class A::B` is ONE level (`A::B`): Ruby
+   * does not put `A` on the nesting there.
+   */
+  readonly nesting: readonly string[];
+  /** Written `::Cat` — looked up at the top level only. */
+  readonly rootAnchored: boolean;
+}
+
+/**
+ * The identity of a {@link RubyInstantiationSite}: two sites with the same
+ * name, anchor and nesting resolve alike, so the walker, the extraction merge
+ * and the run-global union all dedupe on this one key.
+ */
+export function rubyInstantiationSiteKey(site: RubyInstantiationSite): string {
+  return [site.rootAnchored ? `::${site.name}` : site.name, ...site.nesting].join("\u0000");
 }
 
 export interface TypeMemberCensus {

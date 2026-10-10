@@ -342,7 +342,13 @@
       "ordinal": 0
     }
   ],
-  "instantiatedTypes": ["Acme::Auth::Login::User"],
+  "rubyInstantiationSites": [
+    {
+      "name": "User",
+      "nesting": ["Acme::Auth::Login", "Acme::Auth", "Acme"],
+      "rootAnchored": false
+    }
+  ],
   "classFieldTypes": {
     "Acme::Auth::Login": {
       "@user": "User"

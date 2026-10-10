@@ -2,7 +2,7 @@
  * Publishes the type-inference channels of a Ruby `FileExtraction`.
  *
  * Everything the resolver learns about TYPES from one file leaves through here:
- * `functionReturnTypes`, `instantiatedTypes`, `classFieldTypes`,
+ * `functionReturnTypes`, `rubyInstantiationSites`, `classFieldTypes`,
  * `knownTargetCallArgs`, `classFieldParamLinks`, `structuredReturnTypes`,
  * `ivarTypes` and `associationTypes`. Some come straight off the file type env,
  * some need one more AST pass, and two are MERGES whose precedence is the point
@@ -26,7 +26,7 @@ import {
   collectRubyClassFieldParamLinks,
   type KnownTargetCallSite,
 } from "./param-arg-types.js";
-import { collectRubyInstantiatedTypes } from "./type-sources/ast-inference.js";
+import { collectRubyInstantiationSites } from "./type-sources/ast-inference.js";
 
 export function attachRubyTypeChannels(
   out: FileExtraction,
@@ -43,13 +43,14 @@ export function attachRubyTypeChannels(
   const bodyReturnTypes = trackTypes ? collectRubyBodyReturnTypes(root, catalogue) : {};
   const returnTypes = { ...bodyReturnTypes, ...store.returnTypeByMethod() };
   if (Object.keys(returnTypes).length > 0) out.functionReturnTypes = returnTypes;
-  // RTA instantiation set (bd tea-rags-mcp-pffv): fq consts this file
-  // instantiates (`Klass.new` / factory / finder). Gated on the same
-  // type-tracking env as the other inference channels — without local-type
-  // tracking the cone engine has no localBindings to fan out anyway. The
-  // provider unions these run-global to prune CHA cones to live subtypes.
-  const instantiatedTypes = trackTypes ? collectRubyInstantiatedTypes(root, catalogue) : [];
-  if (instantiatedTypes.length > 0) out.instantiatedTypes = instantiatedTypes;
+  // RTA instantiation SITES (bd tea-rags-mcp-pffv, 0qaht.65): the consts this
+  // file instantiates (`Klass.new` / factory / finder) with the nesting each
+  // was written in. Gated on the same type-tracking env as the other inference
+  // channels — without local-type tracking the cone engine has no localBindings
+  // to fan out anyway. The barrier resolves them against the run's declared
+  // classes into the run-global set that prunes CHA cones to live subtypes.
+  const instantiationSites = trackTypes ? collectRubyInstantiationSites(root, catalogue) : [];
+  if (instantiationSites.length > 0) out.rubyInstantiationSites = instantiationSites;
   // `@ivar` receiver types via the universal `classFieldTypes` channel (cai0
   // imass) — same env gate as the other type-inference paths. Ruby is the 5th
   // language to fill this channel (after TS/Java/Python/Rust).

@@ -77,6 +77,7 @@ const EXPECTED_POLICY = {
   moduleValueTypes: "hydrate",
   callableArgSources: "hydrate",
   extendedHookMixins: "hydrate",
+  rubyInstantiationSites: "hydrate",
   paramTypes: "batchOnly",
   derivedClassFieldTypes: "batchOnly",
 } as const satisfies Record<RunGlobalMapField, "hydrate" | "batchOnly">;
@@ -122,6 +123,8 @@ const PERSISTED_KEY_ORDER = [
   "instantiatedTypes",
   // bd 89k7k.35.31 — Ruby extended-hook mixins, appended last.
   "extendedHookMixins",
+  // bd 0qaht.65 — Ruby instantiation sites, resolved at the barrier, appended last.
+  "rubyInstantiationSites",
 ];
 
 const RELPATH = "app/models/account.rb";
@@ -154,6 +157,7 @@ function everyChannelExtraction(): FileExtraction {
     callableArgSources: { [`${RELPATH}::register`]: [{ calleeReceiver: null, argIndex: 0, argument: "handler" }] },
     instantiatedTypes: ["Account"],
     extendedHookMixins: { Auditable: [{ kind: "include", module: "Auditable::Loader" }] },
+    rubyInstantiationSites: [{ name: "Firm", nesting: ["Account"], rootAnchored: false }],
     // Batch-only facts: present on the extraction, absent from the slice.
     ivarTypes: { Account: { "@firm": "Firm" } },
     callbackParams: { "Account#each": [0] },

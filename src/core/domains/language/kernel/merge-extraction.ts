@@ -31,7 +31,12 @@
  * drop a facet somebody added to the contract.
  */
 
-import type { ChunkExtraction, FileExtraction } from "../../../contracts/types/codegraph.js";
+import {
+  rubyInstantiationSiteKey,
+  type ChunkExtraction,
+  type FileExtraction,
+  type RubyInstantiationSite,
+} from "../../../contracts/types/codegraph.js";
 
 /**
  * How one channel `K` of `TOwner` merges: the base's value (which may be absent)
@@ -46,6 +51,16 @@ export type ExtractionChannelMerger<TOwner, K extends keyof TOwner> = (
 export type ExtractionMergeRulebook<TOwner> = {
   [K in keyof TOwner]-?: ExtractionChannelMerger<TOwner, K>;
 };
+
+/** Instantiation sites with value-equal repeats dropped, the first occurrence kept. */
+function dedupeInstantiationSites(sites: readonly RubyInstantiationSite[]): RubyInstantiationSite[] {
+  const byKey = new Map<string, RubyInstantiationSite>();
+  for (const site of sites) {
+    const key = rubyInstantiationSiteKey(site);
+    if (!byKey.has(key)) byKey.set(key, site);
+  }
+  return [...byKey.values()];
+}
 
 /** Union of two Records where a key the BASE already carries keeps the base's value. */
 function unionBaseWins<V>(base: Record<string, V> | undefined, pass: Record<string, V>): Record<string, V> {
@@ -139,6 +154,8 @@ const FILE_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<FileExtraction> = 
   // NDJSON spill still sees a plain array).
   compactDeclaredClasses: (base, pass) => [...new Set([...(base ?? []), ...pass])],
   instantiatedTypes: (base, pass) => [...new Set([...(base ?? []), ...pass])],
+  // Structured sites dedupe by VALUE (name, anchor, nesting), first kept.
+  rubyInstantiationSites: (base, pass) => dedupeInstantiationSites([...(base ?? []), ...pass]),
   // Records: union of keys, base's value kept on a conflict.
   classExtends: (base, pass) => unionBaseWins(base, pass),
   classSchemaTables: (base, pass) => unionBaseWins(base, pass),

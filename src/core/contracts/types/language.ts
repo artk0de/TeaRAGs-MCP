@@ -26,6 +26,7 @@ import type {
   ModuleReexport,
   NamedSymbol,
   RelPath,
+  RubyInstantiationSite,
   StructuralContractDecl,
   SymbolDefinition,
   SymbolDefinitionKind,
@@ -895,7 +896,26 @@ export interface LanguageProvider {
    * them.
    */
   knownTargetCalleeLocator?: KnownTargetCalleeLocatorFactory;
+  /**
+   * Optional instantiation-site resolver (bd tea-rags-mcp-0qaht.65) — present on
+   * a language whose walker records `FileExtraction.rubyInstantiationSites`
+   * instead of resolved names, because the class a constant names depends on
+   * what the whole run declares. The barrier asks it about every site at every
+   * seal and adds the answer to the RTA instantiation set. Absent → a site
+   * enters the set as written.
+   */
+  instantiationSiteResolver?: InstantiationSiteResolver;
 }
+
+/**
+ * Resolve one instantiation site to the type it instantiates, given the run's
+ * existence oracle (`isDeclared(fq)`: some file of the run declares `fq`). Pure;
+ * a site nothing declares answers its name as written.
+ */
+export type InstantiationSiteResolver = (
+  site: RubyInstantiationSite,
+  isDeclared: (typeName: string) => boolean,
+) => string;
 
 /** The run-global facts a {@link KnownTargetCalleeLocatorFactory} reads, complete at the barrier. */
 export interface KnownTargetCalleeLocatorInput {

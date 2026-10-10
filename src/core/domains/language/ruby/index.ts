@@ -35,6 +35,7 @@ import {
 } from "../../../contracts/types/codegraph.js";
 import type {
   DependencyManifestSource,
+  InstantiationSiteResolver,
   LanguageChunkerHooks,
   LanguageProvider,
   LanguageSymbolResolver,
@@ -47,6 +48,7 @@ import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
 import { catalogueFor } from "./dsl/index.js";
 import { RUBY_DEPENDENCY_MANIFEST, RUBY_TEST_DEPENDENCY_MANIFEST } from "./gemfile.js";
 import { RUBY_IDENTIFIER_FINDER_METHODS } from "./identifier-finder-methods.js";
+import { resolveRubyInstantiationSite } from "./instantiation-site-lookup.js";
 import { rubyKernel } from "./kernel.js";
 import { RubyCallResolver } from "./resolver/index.js";
 import { RAILS_SCHEMA_COLUMN_ACCESSORS } from "./schema/index.js";
@@ -142,6 +144,8 @@ export class RubyLanguage implements LanguageProvider {
   readonly schemaColumnAccessors = RAILS_SCHEMA_COLUMN_ACCESSORS;
   /** ActiveRecord finders for the naming lexicon's `finder` stage (bd tea-rags-mcp-4p3sb.9). */
   readonly identifierFinderMethods = RUBY_IDENTIFIER_FINDER_METHODS;
+  /** Ruby constant lookup for the walker's instantiation sites, run at the barrier (bd tea-rags-mcp-0qaht.65). */
+  readonly instantiationSiteResolver: InstantiationSiteResolver = resolveRubyInstantiationSite;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const callResolver: CallResolver = new RubyCallResolver(mode);

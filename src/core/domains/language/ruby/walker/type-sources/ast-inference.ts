@@ -1,10 +1,10 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
+import { rubyInstantiationSiteKey, type RubyInstantiationSite } from "../../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import { catalogueFor, FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../../dsl/index.js";
 import {
   CONTAINER_BLOCK_ITERATION_METHODS,
   CONTAINER_ELEMENT_RETURNING_METHODS,
-  lexicalScopeFqName,
   readScopeResolution,
   typeConstantName,
   walk,
@@ -209,45 +209,71 @@ export function isOrAssignment(node: AstNode): boolean {
   return node.type === "operator_assignment" && node.children.some((c) => c.text === "||=");
 }
 
+/** Whether a constant path is written root-anchored (`::Cat`, `::A::B`): its leftmost scope is empty. */
+function isRootAnchoredConstant(node: AstNode): boolean {
+  if (node.type !== "scope_resolution") return false;
+  const scope = node.childForFieldName("scope");
+  return scope === null ? true : isRootAnchoredConstant(scope);
+}
+
 /**
- * Collect the program's instantiation set for one Ruby file (bd
- * tea-rags-mcp-pffv): every fully-qualified constant instantiated via
- * `Klass.new` or a factory/finder in `RUBY_INSTANCE_RETURNING` — exactly the
- * sites {@link constInstanceType} already classifies. Deduped. The provider
- * unions these across files into the run-global RTA set used to prune CHA
- * cones. Pure AST walk; no symbol-table access (walker discipline).
+ * Collect one Ruby file's instantiation SITES (bd tea-rags-mcp-pffv, bd
+ * tea-rags-mcp-0qaht.65): every constant instantiated via `Klass.new` or a
+ * factory/finder in `RUBY_INSTANCE_RETURNING` — exactly the sites
+ * {@link constInstanceType} already classifies — with the lexical nesting it
+ * was written in. Deduped. Pure AST walk; no symbol-table access (walker
+ * discipline).
  *
- * Keys are scope-aware lexical-fq via {@link lexicalScopeFqName}: `Cat.new`
- * inside `module Zoo` emits `"Zoo::Cat"`, matching the `sourceFqName` the
- * inheritance edge builder writes for the same nesting (pffv Task 5). Top-level
- * sites are unchanged (`"Cat"` at top level → `"Cat"`).
+ * The walker does NOT pick the class: which `Cat` a `Cat.new` inside
+ * `module Zoo` instantiates depends on whether the project declares `Zoo::Cat`,
+ * which only the barrier knows (`resolveRubyInstantiationSite`). Pre-qualifying
+ * by scope recorded mastodon's top-level `AccountReachFinder` as
+ * `SuspendAccountService::AccountReachFinder` and doubled graphql-ruby's
+ * written `GraphQL::` qualifier. Nesting levels compose lexically, a compact
+ * `class A::B` being ONE level, as in `Module.nesting`. A value-scoped constant
+ * (`described_class::Price`) is read by {@link lexicalConstantName} as the
+ * unanchored `Price`, an ordinary lexical site.
  */
-export function collectRubyInstantiatedTypes(
+export function collectRubyInstantiationSites(
   root: AstNode,
   catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
-): string[] {
-  const seen = new Set<string>();
-  const walkScope = (node: AstNode, scope: string[]): void => {
+): RubyInstantiationSite[] {
+  const sites = new Map<string, RubyInstantiationSite>();
+  // The anchor of the constant the reader last named: `instanceTypeOf` reads at
+  // most one constant to an answer, and a null read resets it.
+  let anchored = false;
+  const readConst = (node: AstNode): string | null => {
+    const name = lexicalConstantName(node);
+    anchored = name !== null && isRootAnchoredConstant(node);
+    return name;
+  };
+  const walkScope = (node: AstNode, nesting: readonly string[]): void => {
     if (node.type === "class" || node.type === "module") {
       const nameNode = node.childForFieldName("name");
       if (!nameNode) {
-        for (const child of node.children) walkScope(child, scope);
+        for (const child of node.children) walkScope(child, nesting);
         return;
       }
       const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+      const level = nesting.length === 0 ? localName : `${nesting[0]}::${localName}`;
       const body = node.childForFieldName("body");
       const recurseChildren = body ? body.children : node.children;
-      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
+      for (const child of recurseChildren) walkScope(child, [level, ...nesting]);
       return;
     }
     if (node.type === "call" || node.type === "method_call") {
-      const constText = instanceTypeOf(node, catalogue, lexicalConstantName);
-      if (constText) seen.add(lexicalScopeFqName(scope, constText));
+      anchored = false;
+      const name = instanceTypeOf(node, catalogue, readConst);
+      if (name) {
+        const site: RubyInstantiationSite = { name, nesting: [...nesting], rootAnchored: anchored };
+        const key = rubyInstantiationSiteKey(site);
+        if (!sites.has(key)) sites.set(key, site);
+      }
     }
-    for (const child of node.children) walkScope(child, scope);
+    for (const child of node.children) walkScope(child, nesting);
   };
   walkScope(root, []);
-  return [...seen];
+  return [...sites.values()];
 }
 
 /**
