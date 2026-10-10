@@ -71,7 +71,7 @@
 - **Finalize the alias BEFORE storing the completion marker, and signal failure
   by THROWING.** The order lives ONCE, in `BaseIndexingPipeline#sealRun`:
   `promote` → `storeIndexingMarker(…, true, …)` → `persist` →
-  `#recordRegistryEntry`. `IndexPipeline#indexCodebase` supplies
+  `#recordRegistryEntry`. `IndexPipeline#executeIndexLeg` supplies
   `#finalizeAlias` as `promote` and `#saveSnapshot` as `persist`;
   `ReindexPipeline#reindexSealSpec` has no `promote`. Every return of both
   pipelines closes through it (bd tea-rags-mcp-7njy). Raw failures are wrapped

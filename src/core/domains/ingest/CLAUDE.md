@@ -18,13 +18,13 @@ pipeline, operations and enrichment halves each carry their own.
   snapshot dir, deleting the collection does NOT reap it —
   `StatusModule#clearIndex` drops it explicitly alongside the stats cache.
   `forceReindex` and schema-drift rebuilds call `clearAll()`
-  (`IndexPipeline#indexCodebase`). Mutations serialize per `QuarantineStore`
-  instance through a write chain with UUID-suffixed tmp files; concurrent
-  PROCESSES are last-rename-wins by accepted design. Why: move it inside the
-  snapshot dir and a mid-pass failure list vanishes on the next save; drop the
-  explicit `clearAll` on the assumption that snapshot deletion reaps it, and
-  quarantine state leaks across a collection delete, hiding files from the next
-  index.
+  (`IndexPipeline#openRunQuarantineStore`). Mutations serialize per
+  `QuarantineStore` instance through a write chain with UUID-suffixed tmp files;
+  concurrent PROCESSES are last-rename-wins by accepted design. Why: move it
+  inside the snapshot dir and a mid-pass failure list vanishes on the next save;
+  drop the explicit `clearAll` on the assumption that snapshot deletion reaps
+  it, and quarantine state leaks across a collection delete, hiding files from
+  the next index.
 
 ## Boundaries
 
