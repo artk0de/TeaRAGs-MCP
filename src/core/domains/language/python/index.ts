@@ -57,8 +57,7 @@ import type {
 import { composeExtractionWalker, deriveStructuralConformance } from "../kernel/index.js";
 import { pythonKernel } from "./kernel.js";
 import { PYTHON_DEPENDENCY_MANIFEST } from "./manifest.js";
-import { PythonCallResolver } from "./resolver/index.js";
-import { createPythonKnownTargetCalleeLocator } from "./resolver/python-known-target-callee-locator.js";
+import { createPythonKnownTargetCalleeLocator, PythonCallResolver } from "./resolver/index.js";
 import { isPythonSourcePath } from "./vocabulary/source-extensions.js";
 import {
   extractFromPythonFile,
