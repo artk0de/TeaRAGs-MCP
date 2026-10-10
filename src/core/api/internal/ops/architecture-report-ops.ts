@@ -1273,7 +1273,6 @@ function summariseLayering(report: LayeringReport): LayeringReportSummary {
     abstractionBypassCount: summary.abstractionBypassCount,
     compositionCycleCount: summary.compositionCycleCount,
     islandCount: summary.islandCount,
-    layerSkipCount: summary.layerSkipCount,
     violationCount: summary.violationCount,
     ...(summary.scope ? { outOfScopeFindingCount: summary.scope.outOfScopeFindingCount } : {}),
     ...(summary.foundation ? { foundation: summary.foundation } : {}),
@@ -1338,19 +1337,6 @@ function toLayeringArchitectureViolation(v: DomainLayeringViolation): Architectu
           depth: v.depth,
           afferentCount: v.afferentCount,
           instability: round3(v.instability),
-        },
-      };
-    case "layerSkip":
-      return {
-        detector: "layering",
-        kind: "layerSkip",
-        sourceComponent: v.sourceComponent,
-        targetComponent: v.targetComponent,
-        evidence: {
-          sourceLevel: v.sourceLevel,
-          targetLevel: v.targetLevel,
-          skippedLevels: v.skippedLevels,
-          callWeight: v.callWeight,
         },
       };
   }

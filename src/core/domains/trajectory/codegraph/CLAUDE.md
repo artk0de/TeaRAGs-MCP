@@ -541,24 +541,23 @@
   both pipelines.** `measureLayeringFoundationComponents`
   (symbols/boundary-diagnostics/layering.ts) names every L0 component outside a
   knot whose census abstractness is exactly 1 over at least the main-sequence
-  type floor. `detectLayeringViolations` drops a layerSkip into one and counts
-  it in `summary.foundation`; the diff run's `foundationTerminal` reads the same
-  set through `DiffDetectorCatalog#isLayeringFoundation`, which
+  type floor. `detectLayeringViolations` lists it in `summary.foundation`; the
+  diff run's `foundationTerminal` reads the same set through
+  `DiffDetectorCatalog#isLayeringFoundation`, which
   `measureLayeringFoundationFiles` (api/internal/ops/architecture-facts.ts)
   builds over the report's DOMAIN partition. Why: the diff run once keyed on a
-  `contracts` path segment while the layering run flagged the same edges — 29 of
-  57 layerSkips on this repo were skips into that pure-types component (bd
-  tea-rags-mcp-89k7k.35.11). A concrete L0 target keeps its skips; a name check
-  anywhere in either pipeline reintroduces the disagreement. The exemption goes
-  exactly ONE step out (bd tea-rags-mcp-r8hme.52.3):
-  `measureLayeringFoundationTerminalComponents` names each non-knot component
-  with at least one dependency, every one into the foundation, and both
-  pipelines exempt foundation ∪ terminal — `summary.foundation` lists the
-  terminals, `measureLayeringFoundationFiles` maps them to files. Never close it
-  transitively: "every dependency foundation-or-exempt" absorbs every acyclic
-  component of a DAG (measured 60 of 88), and a kernel over a terminal leaf
-  kernel keeps its skips. Cost: skips past a wrapping kernel straight into the
-  leaf it wraps (`language/<lang> → infra/symbolid`) leave the layering view.
+  `contracts` path segment while the layering run named the same edges (bd
+  tea-rags-mcp-89k7k.35.11); a name check anywhere in either pipeline
+  reintroduces the disagreement. The set goes exactly ONE step out (bd
+  tea-rags-mcp-r8hme.52.3): `measureLayeringFoundationTerminalComponents` names
+  each non-knot component with at least one dependency, every one into the
+  foundation, and both pipelines treat foundation ∪ terminal as the foundation —
+  `summary.foundation` lists the terminals, `measureLayeringFoundationFiles`
+  maps them to files. Never close it transitively: "every dependency
+  foundation-or-terminal" absorbs every acyclic component of a DAG (measured 60
+  of 88). The `layerSkip` finding family is gone (bd tea-rags-mcp-r8hme.52.9: 0
+  of 78 true, and it crowded backEdge findings out of the report limit); the
+  layer map and this measurement stay because the diff run reads them.
 
 - **Composition roots and entry surfaces are MEASURED too, and an entry owns no
   subtree.** `buildComponentGraph` (symbols/boundary-diagnostics/

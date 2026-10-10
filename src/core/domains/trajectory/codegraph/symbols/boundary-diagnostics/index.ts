@@ -99,7 +99,6 @@ export type {
   LayeringKnotDrillDown,
   LayeringKnotLookup,
   LayeringKnotViolation,
-  LayeringLayerSkipViolation,
   LayeringModel,
   LayerMap,
   LayerMapBoundaryEdge,

@@ -107,10 +107,9 @@ really are the stable ones). Knots are reported with the lightest set of edges
 whose removal levels their members, so a cycle across directories comes with
 its own fix, and back-edges name the minority-weight direction inside a knot
 pair. An abstraction bypass flags a consumer reaching a measured-concrete
-component while a measured-abstract one sits beneath it. Composition cycles,
-islands and layer skips are informational: a parent cycling with its own nested
-directories, a component nothing depends on, a dependency jumping two or more
-levels down.
+component while a measured-abstract one sits beneath it. Composition cycles and
+islands are informational: a parent cycling with its own nested directories, a
+component nothing depends on.
 
 For a closer look at one area, the report request carries an optional
 `layerMap` object, and the response gains a `layerMap` view — per-node levels

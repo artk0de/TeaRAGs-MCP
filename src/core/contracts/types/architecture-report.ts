@@ -459,16 +459,9 @@ export interface HubLikeDependencyArchitectureViolation {
  * one, `abstractionBypass` — a consumer reaching a measured-concrete component
  * past the measured-abstract one beneath it; informational:
  * `compositionCycle` (a parent and its own nested directories cycling),
- * `island` (nothing depends on it, and it does not reach the top),
- * `layerSkip` (a dependency jumping two or more levels straight down).
+ * `island` (nothing depends on it, and it does not reach the top).
  */
-export type LayeringViolationKind =
-  | "knot"
-  | "backEdge"
-  | "abstractionBypass"
-  | "compositionCycle"
-  | "island"
-  | "layerSkip";
+export type LayeringViolationKind = "knot" | "backEdge" | "abstractionBypass" | "compositionCycle" | "island";
 
 /** One edge the knot's feedback arc set removes, with the file edges that carry it. */
 export interface LayeringFeedbackEdge {
@@ -712,32 +705,12 @@ export interface LayeringIslandArchitectureViolation {
   evidence: LayeringIslandViolationEvidence;
 }
 
-/** Why an edge is a layer skip. */
-export interface LayeringLayerSkipViolationEvidence {
-  sourceLevel: number;
-  targetLevel: number;
-  /** `sourceLevel − targetLevel`, at least 2. */
-  skippedLevels: number;
-  /** Confidence-weighted resolved calls across the edge. */
-  callWeight: number;
-}
-
-/** A dependency jumping at least two levels straight to a lower one — informational. */
-export interface LayeringLayerSkipArchitectureViolation {
-  detector: "layering";
-  kind: "layerSkip";
-  sourceComponent: string;
-  targetComponent: string;
-  evidence: LayeringLayerSkipViolationEvidence;
-}
-
 export type LayeringArchitectureViolation =
   | LayeringKnotArchitectureViolation
   | LayeringBackEdgeArchitectureViolation
   | LayeringAbstractionBypassArchitectureViolation
   | LayeringCompositionCycleArchitectureViolation
-  | LayeringIslandArchitectureViolation
-  | LayeringLayerSkipArchitectureViolation;
+  | LayeringIslandArchitectureViolation;
 
 /** The inferred layering of the whole graph, as the `layering` summary reports it. */
 export interface LayeringReportSummary {
@@ -755,7 +728,6 @@ export interface LayeringReportSummary {
   abstractionBypassCount: number;
   compositionCycleCount: number;
   islandCount: number;
-  layerSkipCount: number;
   /** Every finding, violations and informational alike. */
   violationCount: number;
   /**
@@ -765,15 +737,12 @@ export interface LayeringReportSummary {
   outOfScopeFindingCount?: number;
   /**
    * The measured foundation (bd tea-rags-mcp-89k7k.35.11): components at L0
-   * whose measured abstractness is 1. A layer skip into one is legal relaxed
-   * layering and is not reported; `exemptedLayerSkipCount` counts those, under
-   * the same scope as the findings. Absent when no component qualifies.
+   * whose measured abstractness is 1. Absent when no component qualifies.
    * `terminalComponents` (bd tea-rags-mcp-r8hme.52.3): the components outside
-   * any knot with at least one dependency, every one landing in the foundation —
-   * a skip into one is exempted and counted the same way. Present only when one
-   * qualifies.
+   * any knot with at least one dependency, every one landing in the foundation.
+   * Present only when one qualifies.
    */
-  foundation?: { components: string[]; terminalComponents?: string[]; exemptedLayerSkipCount: number };
+  foundation?: { components: string[]; terminalComponents?: string[] };
 }
 
 /**
@@ -823,7 +792,7 @@ export interface ArchitectureFileMaintenanceCost {
  * DV8 / Xiao-Cai "architecture roots": a modularity violation costs the extra
  * maintenance of the files carrying it). The carrying files are the files on
  * the edges that MAKE the violation (bd tea-rags-mcp-afyku): its file
- * endpoints; every file edge of a component edge (SDP, back-edge, layer skip,
+ * endpoints; every file edge of a component edge (SDP, back-edge,
  * abstraction bypass) or of a knot's feedback-arc set; a hub's files on its
  * afferent/efferent edges; a zone-of-pain component's files its dependents
  * reach; every file of an island or a zone-of-uselessness component (no edge

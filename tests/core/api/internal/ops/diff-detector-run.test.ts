@@ -588,7 +588,7 @@ describe("mainSequence", () => {
   });
 
   // bd tea-rags-mcp-89k7k.35.11: the foundation is the MEASURED one the
-  // whole-repo layering exempts from layerSkip (abstractness 1 at L0), served
+  // whole-repo layering reports in summary.foundation (abstractness 1 at L0), served
   // by the catalog — never a directory name. Both pipelines agree on it.
   it("annotates a delta into a measured foundation whatever the directory is called", () => {
     const toFoundation = new Map<string, ComponentFact>([

@@ -4,7 +4,8 @@
  * component, a greedy weighted feedback arc set per knot, layering coverage
  * and the rank correlation of level vs instability. Violations: knots, the
  * minority-weight back-edges inside them, abstraction bypasses (DIP);
- * informational: composition cycles, detached islands, layer skips.
+ * informational: composition cycles, detached islands. No layer-skip family
+ * (bd tea-rags-mcp-r8hme.52.9).
  */
 import { describe, expect, it } from "vitest";
 
@@ -41,7 +42,7 @@ const census = (abstractTypeCount: number, concreteTypeCount: number) => ({ abst
 
 /**
  * `core` ← `lib` ← `svc` ← `app`, plus two side entries: `app/deep.ts` reaching
- * core directly (a layer skip, L3 → L0) and `proto` depending on core with
+ * core directly (L3 → L0, jumping three levels) and `proto` depending on core with
  * nothing depending on it (a detached island). No census — no bypass is
  * judged without one.
  */
@@ -284,7 +285,6 @@ describe("detectLayeringViolations", () => {
         abstractionBypassCount: 0,
         compositionCycleCount: 0,
         islandCount: 0,
-        layerSkipCount: 0,
         violationCount: 0,
       },
     });
@@ -407,7 +407,7 @@ describe("detectLayeringViolations", () => {
     });
   });
 
-  it("reports detached islands and layer skips as informational findings", () => {
+  it("reports detached islands as informational findings", () => {
     const report = judge(layered());
 
     expect(report.violations).toEqual([
@@ -419,15 +419,6 @@ describe("detectLayeringViolations", () => {
         afferentCount: 0,
         instability: 1,
       },
-      {
-        kind: "layerSkip",
-        sourceComponent: "app",
-        targetComponent: "core",
-        sourceLevel: 3,
-        targetLevel: 0,
-        skippedLevels: 3,
-        callWeight: 1,
-      },
     ]);
     expect(report.summary).toMatchObject({
       componentCount: 5,
@@ -438,9 +429,33 @@ describe("detectLayeringViolations", () => {
       coherence: 6 / Math.sqrt(9.5 * 9),
       knotCount: 0,
       islandCount: 1,
-      layerSkipCount: 1,
-      violationCount: 2,
+      violationCount: 1,
     });
+  });
+
+  it("emits no layer-skip finding or count: a dependency jumping levels is not judged (bd tea-rags-mcp-r8hme.52.9)", () => {
+    // app/deep.ts → core/a.ts jumps L3 → L0; the retired family reported it.
+    const g = layered();
+    const bareReport = judge(g);
+    const fileScoped = detectLayeringViolations(buildComponentGraph(g, []), g.files, {
+      sourcePathPattern: "app/deep.ts",
+    });
+
+    for (const report of [bareReport, fileScoped]) {
+      expect(report.violations.map((v) => v.kind as string)).not.toContain("layerSkip");
+      expect(report.summary).not.toHaveProperty("layerSkipCount");
+    }
+    // The map still levels the jumped component: only the finding family is gone.
+    expect(bareReport.summary.levelCount).toBe(4);
+    expect(fileScoped.violations).toEqual([]);
+
+    // The knot graph plus a top component jumping straight to its L0: the
+    // knot, back-edge and bypass findings are exactly those of the plain graph.
+    const withJump = knot();
+    withJump.files.push(file("cli/c.ts"));
+    withJump.edges.push(edge("cli/c.ts", "app/s.ts"), edge("cli/c.ts", "device/d.ts"));
+    expect(judge(withJump).violations.map((v) => v.kind)).toEqual(judge(knot()).violations.map((v) => v.kind));
+    expect(judge(withJump).summary).not.toHaveProperty("layerSkipCount");
   });
 
   it("does not report a composition root or a fully-isolated graph as islands", () => {
@@ -449,7 +464,7 @@ describe("detectLayeringViolations", () => {
     rooted.files = rooted.files.filter((f) => !f.relPath.startsWith("proto/"));
     rooted.edges = rooted.edges.filter((e) => e.sourceRelPath !== "proto/p.ts");
     const rootedReport = judge(rooted);
-    expect(rootedReport.violations.map((v) => v.kind)).toEqual(["layerSkip"]);
+    expect(rootedReport.violations.map((v) => v.kind)).toEqual([]);
     expect(rootedReport.summary.islandCount).toBe(0);
 
     // One component, no edges: no level to hang below, nothing is detached.
@@ -467,7 +482,6 @@ describe("detectLayeringViolations", () => {
         abstractionBypassCount: 0,
         compositionCycleCount: 0,
         islandCount: 0,
-        layerSkipCount: 0,
         violationCount: 0,
       },
     });
@@ -502,7 +516,6 @@ describe("detectLayeringViolations", () => {
         abstractionBypassCount: 0,
         compositionCycleCount: 0,
         islandCount: 0,
-        layerSkipCount: 0,
         violationCount: 0,
       },
     });
@@ -547,16 +560,16 @@ describe("detectLayeringViolations — source scope (bd tea-rags-mcp-r8hme.33)",
     expect(report.summary).toMatchObject({ knotCount: 1, backEdgeCount: 0, abstractionBypassCount: 0 });
   });
 
-  it("scopes islands by their own files and layer skips by the file carrying the dependency", () => {
+  it("scopes islands by their own files", () => {
     expect(judgeScoped(layered(), "proto/**").violations.map((v) => v.kind)).toEqual(["island"]);
-    expect(judgeScoped(layered(), "app/deep.ts").violations.map((v) => v.kind)).toEqual(["layerSkip"]);
+    expect(judgeScoped(layered(), "app/deep.ts").violations).toEqual([]);
     expect(judgeScoped(layered(), "app/m.ts").violations).toEqual([]);
   });
 
   it("honours a negated pattern", () => {
     const report = judgeScoped(layered(), "!proto/**");
 
-    expect(report.violations.map((v) => v.kind)).toEqual(["layerSkip"]);
+    expect(report.violations.map((v) => v.kind)).toEqual([]);
     expect(report.summary.scope).toEqual({ sourcePathPattern: "!proto/**", outOfScopeFindingCount: 1 });
   });
 
@@ -630,11 +643,10 @@ describe("detectLayeringViolations — source scope (bd tea-rags-mcp-r8hme.33)",
 
 /**
  * `layered()` with a type census on `core` (L0) and, optionally, `lib` (L1),
- * plus `app/deep2.ts` reaching `lib` directly — a second skip, L3 → L1.
+ * plus `app/deep2.ts` reaching `lib` directly (L3 → L1).
  * `lib/y.ts` and `proto/p.ts` also reach the uncensused `util` (L0), so
- * neither depends on the foundation alone: `lib` stays a reported skip target
- * once `core` is measured foundation, and neither is foundation-terminal (bd
- * tea-rags-mcp-r8hme.52.3).
+ * neither depends on the foundation alone and neither is foundation-terminal
+ * (bd tea-rags-mcp-r8hme.52.3).
  */
 function layeredWithCensus(
   coreCensus: TypeAbstractnessCensus | undefined,
@@ -653,33 +665,26 @@ function layeredWithCensus(
   return g;
 }
 
-const skipTargets = (report: ReturnType<typeof judge>) =>
-  report.violations.filter((v) => v.kind === "layerSkip").map((v) => (v.kind === "layerSkip" ? v.targetComponent : ""));
-
 describe("layering foundation — measured, never named (bd tea-rags-mcp-89k7k.35.11)", () => {
-  it("does not report a skip into an abstractness-1 L0 component", () => {
+  it("lists an abstractness-1 L0 component as the foundation", () => {
     const report = judge(layeredWithCensus(census(5, 0)));
 
-    expect(skipTargets(report)).toEqual(["lib"]);
-    expect(report.summary.layerSkipCount).toBe(1);
-    expect(report.summary.foundation).toEqual({ components: ["core"], exemptedLayerSkipCount: 1 });
+    expect(report.summary.foundation).toEqual({ components: ["core"] });
   });
 
-  it("still reports a skip into a concrete or mixed L0 component", () => {
-    expect(skipTargets(judge(layeredWithCensus(census(0, 5))))).toEqual(["core", "lib"]);
-    expect(skipTargets(judge(layeredWithCensus(census(4, 1))))).toEqual(["core", "lib"]);
+  it("lists no foundation for a concrete or mixed L0 component", () => {
+    expect(judge(layeredWithCensus(census(0, 5))).summary.foundation).toBeUndefined();
     expect(judge(layeredWithCensus(census(4, 1))).summary.foundation).toBeUndefined();
   });
 
-  it("still reports a skip into an abstractness-1 component above L0", () => {
+  it("lists no foundation for an abstractness-1 component above L0", () => {
     const report = judge(layeredWithCensus(census(0, 5), census(5, 0)));
 
-    expect(skipTargets(report)).toEqual(["core", "lib"]);
     expect(report.summary.foundation).toBeUndefined();
   });
 
   it("needs the main-sequence type floor before abstractness 1 counts as measured", () => {
-    expect(skipTargets(judge(layeredWithCensus(census(2, 0))))).toEqual(["core", "lib"]);
+    expect(judge(layeredWithCensus(census(2, 0))).summary.foundation).toBeUndefined();
   });
 
   it("names the foundation set from the model and the census alone", () => {
@@ -690,13 +695,13 @@ describe("layering foundation — measured, never named (bd tea-rags-mcp-89k7k.3
     ]);
   });
 
-  it("counts an exempted skip under a scope only when its carrying file matches", () => {
+  it("keeps the whole-graph foundation under a source scope", () => {
     const g = layeredWithCensus(census(5, 0));
     const scoped = (pattern: string) =>
       detectLayeringViolations(buildComponentGraph(g, []), g.files, { sourcePathPattern: pattern }).summary.foundation;
 
-    expect(scoped("app/deep.ts")).toEqual({ components: ["core"], exemptedLayerSkipCount: 1 });
-    expect(scoped("app/m.ts")).toEqual({ components: ["core"], exemptedLayerSkipCount: 0 });
+    expect(scoped("app/deep.ts")).toEqual({ components: ["core"] });
+    expect(scoped("app/m.ts")).toEqual({ components: ["core"] });
   });
 });
 
@@ -705,7 +710,7 @@ describe("layering foundation — measured, never named (bd tea-rags-mcp-89k7k.3
  * out from it, all reached directly from `app` at the top of a tower:
  * - `kit` — concrete, depends on `core` alone (foundation-terminal, L1);
  * - `leaf` — concrete, depends on nothing (Ce 0, L0): one step out from
- *   nothing, so a concrete L0 that keeps its skips (bd tea-rags-mcp-89k7k.35.11);
+ *   nothing, so a concrete L0 outside the terminal set (bd tea-rags-mcp-89k7k.35.11);
  * - `kern` — depends on `core` AND on the terminal `kit` (kernel shape, L2);
  * - `hop1 → core`, `hop2 → hop1` — a two-hop chain: `hop1` is terminal,
  *   `hop2` is not, since `hop1` is not itself foundation.
@@ -755,32 +760,14 @@ describe("layering foundation-terminal targets (bd tea-rags-mcp-r8hme.52.3)", ()
     ]);
   });
 
-  it("exempts a skip into a component whose only dependency is the foundation", () => {
+  it("lists the terminal components next to the foundation in the summary", () => {
     const report = judge(foundationTerminals());
 
-    expect(skipTargets(report)).not.toContain("kit");
-    // app → core, kern → core (foundation); app → kit, app → hop1 (terminal).
+    // `leaf` (Ce 0), `kern` (kernel shape) and `hop2` (second hop) are not terminal.
     expect(report.summary.foundation).toEqual({
       components: ["core"],
       terminalComponents: ["hop1", "kit"],
-      exemptedLayerSkipCount: 4,
     });
-  });
-
-  it("still reports a skip into a concrete Ce 0 leaf — not one step out from the foundation", () => {
-    expect(skipTargets(judge(foundationTerminals()))).toContain("leaf");
-  });
-
-  it("still reports a skip into the kernel shape — a component that also depends on a non-foundation terminal", () => {
-    expect(skipTargets(judge(foundationTerminals()))).toContain("kern");
-  });
-
-  it("still reports a skip into the second hop of a chain — the exemption goes exactly one step out", () => {
-    const report = judge(foundationTerminals());
-
-    expect(skipTargets(report)).toContain("hop2");
-    expect(skipTargets(report)).not.toContain("hop1");
-    expect(report.summary.layerSkipCount).toBe(3);
   });
 
   it("never names a knot member terminal, even when the knot only reaches the foundation", () => {
