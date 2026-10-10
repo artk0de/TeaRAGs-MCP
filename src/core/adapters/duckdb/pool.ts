@@ -41,7 +41,7 @@ import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.j
 import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./daemon/build-fingerprint.js";
 import type { DaemonCapabilityVerdict, DaemonGraphDbClient } from "./daemon/client.js";
 import type { DaemonDatabaseFileReplacer, DaemonDatabaseReplacement } from "./daemon/database-file-replacer.js";
-import type { ForeignBuildDaemonLockArbiter } from "./daemon/foreign-build-lock-arbiter.js";
+import type { ForeignBuildDaemonLockArbiter, ForeignBuildLockSettlement } from "./daemon/foreign-build-lock-arbiter.js";
 import {
   daemonPathsForKeyDir,
   DEFAULT_EXIT_TIMEOUT_MS,
@@ -347,10 +347,17 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
   private idleEvictionTimer: NodeJS.Timeout | undefined;
   /**
    * Collections whose open already waited out a whole `openRetry` window
-   * against a foreign-build daemon still in use, by that holder's pid (bd
-   * tea-rags-mcp-hw27k). Cleared by the collection's next successful open.
+   * against a foreign-build daemon, with that holder's verdict — the holder as
+   * named in the error, and why it stays up (bd tea-rags-mcp-hw27k). A verdict
+   * no connect can change (`unreachable`, `exitTimeout`) fails later opens at
+   * once (bd tea-rags-mcp-89k7k.35.27). Re-checked against the lock's pid on
+   * every open and dropped when that pid exited or changed; cleared by the
+   * collection's next successful open.
    */
-  private readonly foreignHeldCollections = new Map<PhysicalCollectionName, number>();
+  private readonly foreignHeldCollections = new Map<
+    PhysicalCollectionName,
+    Extract<ForeignBuildLockSettlement, { kind: "held" }>
+  >();
   /** Open {@link acquireFileReader} handles per file path — see {@link isFileReaderOpen}. */
   private readonly openFileReaders = new Map<string, number>();
 
@@ -1049,16 +1056,34 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
         if (!(err instanceof DuckDbOpenFailedError) || !err.lockContention) throw err;
         const windowSpent = !retry || Date.now() + intervalMs > deadline;
         const arbiter = this.options.foreignBuildLockArbiter;
+        let verdict = this.foreignHeldCollections.get(physicalCollectionName);
+        // A verdict belongs to one holder: the lock now held by another pid, or
+        // by none alive, is settled afresh (bd tea-rags-mcp-89k7k.35.27).
+        if (verdict && !arbiter?.isStillHeldBy(err, verdict.holder)) {
+          this.foreignHeldCollections.delete(physicalCollectionName);
+          verdict = undefined;
+        }
+        // Nothing a connect could change: settling again would only retry a
+        // socket that did not accept, or a drain that did not end in an exit.
+        if (verdict && (verdict.reason === "unreachable" || verdict.reason === "exitTimeout")) {
+          throw new CodegraphDatabaseHeldByForeignDaemonError(err.dbPath, verdict.holder, err);
+        }
         const settlement = await arbiter?.settle(err, physicalCollectionName);
         // Retried at once, within the window only: a foreign session respawning
         // its daemon and re-taking the file each time must not spin this loop.
         if (settlement?.kind === "drained" && !windowSpent) continue;
         if (arbiter && settlement?.kind === "held") {
           // One window per holder, not one per op (bd tea-rags-mcp-hw27k): the
-          // op that already waited it out recorded the holder.
-          if (windowSpent || this.foreignHeldCollections.get(physicalCollectionName) === settlement.holder.pid) {
-            this.foreignHeldCollections.set(physicalCollectionName, settlement.holder.pid);
-            const holder = await arbiter.describe(settlement.holder, physicalCollectionName);
+          // op that already waited it out recorded the holder's verdict, whose
+          // fingerprint spares a second describe connect.
+          if (windowSpent || verdict) {
+            const holder = verdict
+              ? {
+                  ...settlement.holder,
+                  buildFingerprint: settlement.holder.buildFingerprint ?? verdict.holder.buildFingerprint,
+                }
+              : await arbiter.describe(settlement.holder, physicalCollectionName);
+            this.foreignHeldCollections.set(physicalCollectionName, { ...settlement, holder });
             throw new CodegraphDatabaseHeldByForeignDaemonError(err.dbPath, holder, err);
           }
         } else if (windowSpent) {

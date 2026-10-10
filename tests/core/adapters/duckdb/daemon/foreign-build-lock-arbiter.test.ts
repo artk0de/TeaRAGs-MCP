@@ -18,12 +18,12 @@
  * dir, which the pool turns into `CodegraphDatabaseHeldByForeignDaemonError`.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { ForeignBuildDaemonLockArbiter } from "../../../../../src/core/adapters/duckdb/daemon/foreign-build-lock-arbiter.js";
@@ -41,6 +41,7 @@ import {
   CodegraphDaemonDrainRefusedError,
   DuckDbOpenFailedError,
 } from "../../../../../src/core/adapters/duckdb/errors.js";
+import { setDebug } from "../../../../../src/core/infra/runtime.js";
 
 const COLLECTION = fixturePhysicalCollectionName("code_arbiter_v1");
 const OWN_FINGERPRINT = "/here/build/core/adapters/duckdb/daemon|0.0.0|1";
@@ -51,6 +52,8 @@ let storageDir: string;
 const servers: Server[] = [];
 
 afterEach(async () => {
+  setDebug(false);
+  vi.restoreAllMocks();
   for (const server of servers.splice(0)) {
     await new Promise<void>((res) => {
       server.close(() => {
@@ -84,10 +87,14 @@ function lockErrorHeldBy(pid: number | undefined): DuckDbOpenFailedError {
   );
 }
 
-/** Scripted daemon on `paths.socketPath`: answers the handshake, answers `shutdown` as told. */
+/**
+ * Scripted daemon on `paths.socketPath`: answers the handshake, answers
+ * `shutdown` as told. `"exit"` accepts it and, a beat later, removes the pid
+ * file the way an exiting daemon does.
+ */
 async function listenAsDaemon(
   paths: CodegraphDaemonPaths,
-  onShutdown: "refuse" | "accept",
+  onShutdown: "refuse" | "accept" | "exit",
 ): Promise<{ shutdownRequests: () => number }> {
   let shutdownRequests = 0;
   const server = createServer((sock) => {
@@ -102,6 +109,11 @@ async function listenAsDaemon(
           sock.write(encodeFrame({ id: req.id, ok: true, result: { buildFingerprint: FOREIGN_FINGERPRINT } }));
         } else if (req.op === "shutdown") {
           shutdownRequests++;
+          if (onShutdown === "exit") {
+            setTimeout(() => {
+              rmSync(paths.pidFile, { force: true });
+            }, 150);
+          }
           const refusal = new CodegraphDaemonDrainRefusedError({ socketPath: paths.socketPath });
           sock.write(
             encodeFrame(
@@ -260,6 +272,87 @@ describe("ForeignBuildDaemonLockArbiter#settle (hw27k)", () => {
       const holder = { pid: process.pid, buildDir: foreign.buildDir, buildFingerprint: undefined };
 
       expect(await makeArbiter().describe(holder, COLLECTION)).toEqual(holder);
+    });
+  });
+
+  describe("isStillHeldBy (bd tea-rags-mcp-89k7k.35.27)", () => {
+    it("holds while the open error names the same live pid, registered under the same build dir", () => {
+      makeRoot();
+      const foreign = makeKeyDir(FOREIGN_FINGERPRINT, process.pid);
+      const holder = { pid: process.pid, buildDir: foreign.buildDir, buildFingerprint: undefined };
+
+      expect(makeArbiter().isStillHeldBy(lockErrorHeldBy(process.pid), holder)).toBe(true);
+    });
+
+    it("drops once the open error names another pid, or none", () => {
+      makeRoot();
+      const foreign = makeKeyDir(FOREIGN_FINGERPRINT, process.pid);
+      const holder = { pid: process.pid, buildDir: foreign.buildDir, buildFingerprint: undefined };
+
+      expect(makeArbiter().isStillHeldBy(lockErrorHeldBy(process.ppid), holder)).toBe(false);
+      expect(makeArbiter().isStillHeldBy(lockErrorHeldBy(undefined), holder)).toBe(false);
+    });
+
+    it("drops once the holder's pid is dead, even if the error still names it", () => {
+      makeRoot();
+      const deadPid = 2 ** 22 + 7;
+      const foreign = makeKeyDir(FOREIGN_FINGERPRINT, deadPid);
+      const holder = { pid: deadPid, buildDir: foreign.buildDir, buildFingerprint: undefined };
+
+      expect(makeArbiter().isStillHeldBy(lockErrorHeldBy(deadPid), holder)).toBe(false);
+    });
+
+    it("drops once the pid is registered under another build dir", () => {
+      makeRoot();
+      makeKeyDir(FOREIGN_FINGERPRINT, process.pid);
+      const holder = { pid: process.pid, buildDir: join(storageDir, "gone"), buildFingerprint: undefined };
+
+      expect(makeArbiter().isStillHeldBy(lockErrorHeldBy(process.pid), holder)).toBe(false);
+    });
+  });
+
+  describe("the drain debug line (bd tea-rags-mcp-89k7k.35.28)", () => {
+    function captureStderr(onWrite: (line: string) => void = () => undefined): () => string {
+      const lines: string[] = [];
+      vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+        const line = String(chunk);
+        lines.push(line);
+        onWrite(line);
+        return true;
+      });
+      return () => lines.join("");
+    }
+
+    it("never claims a drain when the holder did not exit in time, and names the outcome", async () => {
+      makeRoot();
+      setDebug(true);
+      const foreign = makeKeyDir(FOREIGN_FINGERPRINT, process.pid);
+      await listenAsDaemon(foreign, "accept");
+      const stderr = captureStderr();
+
+      const settlement = await makeArbiter(300).settle(lockErrorHeldBy(process.pid), COLLECTION);
+
+      expect(settlement.kind).toBe("held");
+      expect(stderr()).not.toContain("drained idle daemon");
+      expect(stderr()).toContain("exitTimeout");
+    });
+
+    it("reports a drain only once the holder's exit is confirmed", async () => {
+      makeRoot();
+      setDebug(true);
+      const foreign = makeKeyDir(FOREIGN_FINGERPRINT, process.pid);
+      await listenAsDaemon(foreign, "exit");
+      let pidFileAtDrainLine: boolean | undefined;
+      const stderr = captureStderr((line) => {
+        if (line.includes("drained idle daemon")) pidFileAtDrainLine = existsSync(foreign.pidFile);
+      });
+
+      const settlement = await makeArbiter(5_000).settle(lockErrorHeldBy(process.pid), COLLECTION);
+
+      expect(settlement.kind).toBe("drained");
+      expect(stderr()).toContain("drained idle daemon");
+      // Written after the exit poll saw the pid file go, not before it.
+      expect(pidFileAtDrainLine).toBe(false);
     });
   });
 });

@@ -98,6 +98,20 @@ export class ForeignBuildDaemonLockArbiter {
   }
 
   /**
+   * Whether `openError` is still the lock of `holder`: it names the same pid,
+   * and that pid is alive and registered under the same build-key dir. Reads
+   * lifecycle files only, never connects — so a verdict remembered for the
+   * holder is re-checked on every op for free, and a holder that exited or was
+   * replaced drops it (bd tea-rags-mcp-89k7k.35.27).
+   */
+  isStillHeldBy(openError: DuckDbOpenFailedError, holder: ForeignBuildDaemonLockHolder): boolean {
+    if (openError.lockHolderPid !== holder.pid) return false;
+    return listDaemonKeyDirs(this.options.storageDir).some(
+      (s) => s.alive && s.pid === holder.pid && s.keyDir === holder.buildDir,
+    );
+  }
+
+  /**
    * The holder with its build fingerprint filled in over a short control
    * connection, for naming it in an error. A handshake from another build
    * opens nothing on the daemon's side. Best-effort: an unreachable socket
@@ -152,15 +166,20 @@ export class ForeignBuildDaemonLockArbiter {
       }
     }
     await client.close().catch(() => undefined);
-    if (isDebug()) {
-      process.stderr.write(
-        `[tea-rags] codegraph: drained idle daemon pid ${holder.pid} of another build (${status.keyDir}) — it held ` +
-          `${physicalCollectionName}'s database file and no client was connected (bd tea-rags-mcp-hw27k)\n`,
-      );
-    }
     const exited = await waitForDaemonExit(status.paths, holder.pid, {
       timeoutMs: this.options.exitTimeoutMs ?? DEFAULT_EXIT_TIMEOUT_MS,
     });
+    // Logged once the exit poll settled, naming its outcome: a line written
+    // before it also claimed a drain on exitTimeout (bd tea-rags-mcp-89k7k.35.28).
+    if (isDebug()) {
+      const outcome = exited
+        ? "drained idle daemon"
+        : "exitTimeout: idle daemon accepted the shutdown but did not exit — it still holds the file —";
+      process.stderr.write(
+        `[tea-rags] codegraph: ${outcome} pid ${holder.pid} of another build (${status.keyDir}); it held ` +
+          `${physicalCollectionName}'s database file and no client was connected (bd tea-rags-mcp-hw27k)\n`,
+      );
+    }
     return exited ? { kind: "drained", holder: described } : { kind: "held", holder: described, reason: "exitTimeout" };
   }
 
