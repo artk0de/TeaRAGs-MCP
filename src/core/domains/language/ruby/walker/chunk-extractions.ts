@@ -117,6 +117,9 @@ export function buildRubyChunkExtractions(
       const guarded = collectRubyGuardedAssignments(input.tree.rootNode, c.startLine, c.endLine);
       attachModifierConditionSpans(guarded, localBindings);
       if (Object.keys(localBindings).length > 0) base.localBindings = localBindings;
+      // Which of them are exact `X.new` constructions (bd tea-rags-mcp-0qaht.66).
+      const constructedLocals = store.constructedLocalsForChunk(c.startLine, c.endLine);
+      if (Object.keys(constructedLocals).length > 0) base.constructedLocals = constructedLocals;
       // `localCallBindings` (var → called method) pairs with the run-global
       // `functionReturnTypes` so the resolver binds `x = recv.meth(); x.member`
       // to `<meth's return type>#member` (cai0 a71lj, same channel as Go).

@@ -129,6 +129,33 @@ export interface LocalBinding {
 }
 
 /**
+ * The `LocalBinding`s that are EXACT constructions, per local name: the 1-based
+ * `line` of each binding whose value is a direct construction of its `type`
+ * (Ruby `x = X.new(…)`, TypeScript `const x = new X(…)`) and which is the
+ * name's only binding in its scope — no second assignment, parameter,
+ * memoization or loop target (bd tea-rags-mcp-0qaht.66). Such a local's runtime
+ * class is `type` itself, never a subtype. A binding whose line is absent here
+ * is only a static bound (declared, annotated, inferred from a finder, copied)
+ * and may hold any subtype.
+ *
+ * A channel beside `localBindings` rather than a field on the binding, so every
+ * binding a walker records keeps its shape.
+ */
+export type ConstructedLocalLines = Record<string, number[]>;
+
+/**
+ * Whether `binding`, the binding `varName` resolved to, is an exact
+ * construction per {@link ConstructedLocalLines}.
+ */
+export function isConstructedLocalBinding(
+  constructedLocals: ConstructedLocalLines | undefined,
+  varName: string,
+  binding: LocalBinding,
+): boolean {
+  return identifierEntry(constructedLocals, varName)?.includes(binding.line) ?? false;
+}
+
+/**
  * A source span of a modifier's condition (bd tea-rags-mcp-0qaht.55): lines
  * 1-based, columns 0-based, the end column EXCLUSIVE — tree-sitter's
  * positions, lines shifted to the codegraph's 1-based convention. When

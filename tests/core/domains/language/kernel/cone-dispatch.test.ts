@@ -557,3 +557,73 @@ describe("ConeDispatchResolver — out-of-project receiver type (bd 0qaht.64)", 
     expect(edges.map((e) => e.targetSymbolId)).toEqual(["TreeContentHashes#get"]);
   });
 });
+
+describe("ConeDispatchResolver — exact-construction receiver (bd 0qaht.66)", () => {
+  const row = (source: string, ancestor: string): InheritanceEdgeRow => ({
+    sourceFqName: source,
+    sourceSymbolId: null,
+    ancestorFqName: ancestor,
+    ancestorSymbolId: null,
+    kind: "super",
+    ordinal: 0,
+  });
+  /** `Root <- Base <- {A, B}`; the `definers` declare `m`. */
+  const snapshot: HierarchySnapshot = {
+    ancestorsBySource: { A: [row("A", "Base")], B: [row("B", "Base")], Base: [row("Base", "Root")] },
+    descendantsByAncestor: { Base: [row("A", "Base"), row("B", "Base")], Root: [row("Base", "Root")] },
+  };
+  const locator = (definers: ReadonlySet<string>): ConeTypeLocator => ({
+    resolveTypeFile: (t) => `${t.toLowerCase()}.rb`,
+    findDirectMethod: (t, member): SymbolResolutionTarget | null =>
+      member === "m" && definers.has(t) ? { targetRelPath: `${t.toLowerCase()}.rb`, targetSymbolId: `${t}#m` } : null,
+  });
+  const callAt = (line: number): CallRef => ({ callText: "obj.m", receiver: "obj", member: "m", startLine: line });
+  const resolve = (
+    definers: ReadonlySet<string>,
+    bindings: CallContext["localBindings"],
+    constructedLocals?: CallContext["constructedLocals"],
+  ): DispatchEdge[] =>
+    edgesOf(
+      new ConeDispatchResolver(locator(definers), 8).resolveDispatch(
+        callAt(5),
+        ctx({
+          localBindings: bindings,
+          hierarchy: new MapHierarchyView(snapshot),
+          ...(constructedLocals ? { constructedLocals } : {}),
+        }),
+      ),
+    );
+  const constructedAtLine1 = { obj: [1] };
+
+  it("resolves a constructed receiver to its own declaration, never a subclass override", () => {
+    const edges = resolve(new Set(["Base", "A"]), { obj: [{ line: 1, type: "Base" }] }, constructedAtLine1);
+    expect(edges).toEqual([
+      { sourceSymbolId: null, targetRelPath: "base.rb", targetSymbolId: "Base#m", edgeKind: "exact", confidence: 1 },
+    ]);
+  });
+
+  it("resolves a constructed receiver to the declaration it inherits from its nearest ancestor", () => {
+    const edges = resolve(new Set(["Root", "A"]), { obj: [{ line: 1, type: "Base" }] }, constructedAtLine1);
+    expect(edges.map((e) => [e.targetSymbolId, e.edgeKind])).toEqual([["Root#m", "exact"]]);
+  });
+
+  it("declines when no class on the constructed receiver's MRO declares the member", () => {
+    expect(resolve(new Set(["A"]), { obj: [{ line: 1, type: "Base" }] }, constructedAtLine1)).toEqual([]);
+  });
+
+  it("keeps the cone for a declared (non-constructed) receiver type", () => {
+    const edges = resolve(new Set(["Base", "A"]), { obj: [{ line: 1, type: "Base" }] });
+    expect(edges.map((e) => [e.targetSymbolId, e.edgeKind])).toEqual([["A#m", "cone"]]);
+  });
+
+  it("keeps the cone once a later binding without the construction fact shadows it", () => {
+    const bindings = {
+      obj: [
+        { line: 1, type: "Base" },
+        { line: 3, type: "Base" },
+      ],
+    };
+    const edges = resolve(new Set(["Base", "A"]), bindings, constructedAtLine1);
+    expect(edges.map((e) => [e.targetSymbolId, e.edgeKind])).toEqual([["A#m", "cone"]]);
+  });
+});

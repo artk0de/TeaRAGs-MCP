@@ -10,6 +10,7 @@ import {
   walk,
   type RubyExtractInput,
 } from "../shared/index.js";
+import { RubyLocalBindingSites } from "./local-binding-sites.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 import { collectYardParamTypes, YARD_CONST } from "./yard.js";
 
@@ -311,7 +312,7 @@ class RubyLocalTypeFactRecorder {
     }
   }
 
-  emit(name: string, type: RubyTypeRef, line: number): void {
+  emit(name: string, type: RubyTypeRef, line: number, constructed = false): void {
     this.facts.push({
       kind: "local",
       source: "ast",
@@ -319,9 +320,13 @@ class RubyLocalTypeFactRecorder {
       name,
       line,
       type,
+      ...(constructed ? { constructed: true as const } : {}),
     });
     this.latestBinding.set(name, { type, line });
   }
+
+  /** Binding-site counts per local scope, for the exact-construction fact (bd 0qaht.66). */
+  readonly bindingSites = new RubyLocalBindingSites();
 
   /** The variable's most-recent type, only when bound at or before `line`. */
   bindingVisibleAt(name: string, line: number): RubyTypeRef | undefined {
@@ -428,7 +433,30 @@ function inferRubyMultipleAssignmentFacts(
   }
 }
 
+/**
+ * Whether `assignment` binds `varName` to an EXACT construction (bd
+ * tea-rags-mcp-0qaht.66): a plain `=` (a `||=` may keep the earlier value)
+ * whose right-hand side is `Const.new(…)` on the constant itself — not a
+ * finder (`User.find` may return an STI subclass), not a receiverless `new` in
+ * a singleton method (`self` may be a subclass) — and the only binding of the
+ * name in its local scope.
+ */
+function isExactConstruction(
+  assignment: AstNode,
+  rhs: AstNode,
+  varName: string,
+  recorder: RubyLocalTypeFactRecorder,
+): boolean {
+  if (assignment.type !== "assignment") return false;
+  if (rhs.type !== "call" && rhs.type !== "method_call") return false;
+  if (rhs.childForFieldName("method")?.text !== "new") return false;
+  const receiver = rhs.childForFieldName("receiver");
+  if (receiver?.type !== "constant" && receiver?.type !== "scope_resolution") return false;
+  return recorder.bindingSites.isSoleBinding(assignment, varName);
+}
+
 function inferRubySingleAssignmentFact(
+  assignment: AstNode,
   varName: string,
   rhs: AstNode,
   line: number,
@@ -448,7 +476,12 @@ function inferRubySingleAssignmentFact(
   // `new(...)` in a singleton method (bd tea-rags-mcp-0qaht.54).
   const instType = constInstanceType(rhs, catalogue) ?? singletonNewInstanceType(rhs);
   if (instType) {
-    recorder.emit(varName, { form: "instance", name: instType }, line);
+    recorder.emit(
+      varName,
+      { form: "instance", name: instType },
+      line,
+      isExactConstruction(assignment, rhs, varName, recorder),
+    );
     return;
   }
 
@@ -533,7 +566,7 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
       }
 
       if (lhs.type !== "identifier") return;
-      inferRubySingleAssignmentFact(lhs.text, rhs, line, recorder, catalogue);
+      inferRubySingleAssignmentFact(node, lhs.text, rhs, line, recorder, catalogue);
     });
 
     return recorder.facts;

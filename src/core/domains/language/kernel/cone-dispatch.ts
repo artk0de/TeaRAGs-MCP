@@ -1,6 +1,7 @@
 import {
+  isConstructedLocalBinding,
   NOMINAL_INHERITANCE_KINDS,
-  resolveLocalBindingType,
+  resolveLocalBinding,
   type CallContext,
   type CallRef,
   type DispatchEdge,
@@ -44,6 +45,11 @@ import type { ConeTypeLocator, DispatchResolverComponent } from "../../../contra
  * is undefined and the cone returns `[]` — external receivers never cone. A
  * receiver typed by a LIBRARY class a project class extends (`Map`,
  * `Rack::Response`) declines too, when the locator answers `isProjectType`.
+ *
+ * A receiver whose binding is an exact construction (`CallContext.constructedLocals`:
+ * `x = X.new`, `const x = new X()`) has `T` as its
+ * runtime class, never a subtype — it resolves to `T`'s own definer of `m` as
+ * one `exact` edge instead of the fan (bd tea-rags-mcp-0qaht.66).
  */
 export class ConeDispatchResolver implements DispatchResolverComponent {
   constructor(
@@ -59,7 +65,8 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
 
   private resolveDispatchEdges(call: CallRef, ctx: CallContext): DispatchEdge[] {
     if (!call.receiver) return [];
-    const baseType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine, call.startColumn);
+    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine, call.startColumn);
+    const baseType = binding?.type;
     if (!baseType || !ctx.hierarchy) return [];
 
     // Direct subtypes of `T`; dedup by source name (a transitive view could
@@ -79,6 +86,9 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
       if (target) subtypeOverrides.set(subtype, target);
     }
     if (subtypeOverrides.size === 0) return [];
+    if (isConstructedLocalBinding(ctx.constructedLocals, call.receiver, binding)) {
+      return this.constructedReceiverEdge(baseType, call.member, ctx);
+    }
 
     // The RECEIVER's own dispatch target (bd tea-rags-mcp-m99j1.1.84): an
     // instance of `T` itself lands on `T`'s declaration of `m` (or the nominal
@@ -139,6 +149,28 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
         targetRelPath: base.targetRelPath,
         targetSymbolId: base.targetSymbolId,
         edgeKind: "poly-base",
+        confidence: 1,
+      },
+    ];
+  }
+
+  /**
+   * The one target of a receiver bound by an exact construction (bd
+   * tea-rags-mcp-0qaht.66): its runtime class IS `typeName`, so `member`
+   * dispatches to `typeName`'s nearest definer and no override is reachable.
+   * `[]` when no class on the MRO declares `member` in the project — the chain
+   * answers then, exactly as for a receiver whose type has no overrides.
+   */
+  private constructedReceiverEdge(typeName: string, member: string, ctx: CallContext): DispatchEdge[] {
+    const definer = this.nearestDefiner(typeName, member, ctx);
+    const target = definer ? this.locator.findDirectMethod(definer, member, ctx) : null;
+    if (!target) return [];
+    return [
+      {
+        sourceSymbolId: null,
+        targetRelPath: target.targetRelPath,
+        targetSymbolId: target.targetSymbolId,
+        edgeKind: "exact",
         confidence: 1,
       },
     ];

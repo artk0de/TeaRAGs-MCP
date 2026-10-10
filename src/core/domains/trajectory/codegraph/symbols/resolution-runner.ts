@@ -992,6 +992,8 @@ export class CallEdgeResolutionRunner {
       callResultBindings: chunk.callResultBindings,
       // bd tea-rags-mcp-m99j1.1.57 — per-chunk for the same reason.
       assignedLocals: chunk.assignedLocals,
+      // bd tea-rags-mcp-0qaht.66 — per-chunk, read beside `localBindings`.
+      constructedLocals: chunk.constructedLocals,
       compactDeclaredClasses: this.runState.compactClasses,
       declaredDependencies: this.runState.declaredDependenciesFor(extraction.language),
       projectRoot: this.runState.projectRoot,

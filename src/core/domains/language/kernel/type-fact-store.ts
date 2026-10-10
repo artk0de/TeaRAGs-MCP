@@ -18,7 +18,7 @@
  * claims that coordinate.
  */
 import { createIdentifierRecord } from "../../../contracts/identifier-record.js";
-import type { LocalBinding } from "../../../contracts/types/codegraph.js";
+import type { ConstructedLocalLines, LocalBinding } from "../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../contracts/types/language.js";
 import type { TypeFact } from "./type-facts.js";
 
@@ -133,6 +133,22 @@ export class TypeFactStore {
       (out[name] ??= []).push(binding);
     }
     for (const list of Object.values(out)) list.sort((a, b) => a.line - b.line);
+    return out;
+  }
+
+  /**
+   * The {@link ConstructedLocalLines} of the bindings {@link localBindingsForChunk}
+   * renders for the same lines: each winning `local` fact that is an exact
+   * construction (bd tea-rags-mcp-0qaht.66). A higher-ranked source that won
+   * the coordinate (a declared type) leaves its line out.
+   */
+  constructedLocalsForChunk(startLine: number, endLine: number): ConstructedLocalLines {
+    const out: ConstructedLocalLines = createIdentifierRecord();
+    for (const f of this.resolvedFacts) {
+      if (f.kind !== "local" || !f.constructed || f.type.form !== "instance" || !f.name) continue;
+      if (f.line === undefined || f.line < startLine || f.line > endLine) continue;
+      (out[f.name] ??= []).push(f.line);
+    }
     return out;
   }
 

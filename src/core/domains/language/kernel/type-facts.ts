@@ -36,6 +36,13 @@ export interface TypeFact {
   /** 1-based source line for position-scoped inline facts; undefined for sidecar/name-keyed facts. */
   line?: number;
   type: TypeRef;
+  /**
+   * A `local` fact whose value is an exact construction of `type`, the name's
+   * only binding in its scope — rendered into `ChunkExtraction.constructedLocals`
+   * by `TypeFactStore#constructedLocalsForChunk` (bd tea-rags-mcp-0qaht.66).
+   * ABSENT on every other fact.
+   */
+  constructed?: true;
 }
 
 /**

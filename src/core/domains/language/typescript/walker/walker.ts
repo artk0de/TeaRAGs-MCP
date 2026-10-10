@@ -21,6 +21,7 @@ import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.
 import type {
   CallRef,
   ChunkExtraction,
+  ConstructedLocalLines,
   DispatchRef,
   DispatchTable,
   FileExtraction,
@@ -35,6 +36,7 @@ import {
   exportNamesField,
   moduleCallExportNames,
 } from "../../shared/ecmascript-export-names.js";
+import { TypescriptLocalBindingSites } from "./local-binding-sites.js";
 import {
   collectObjectLiteralDeclarators,
   collectTypescriptCallableArities,
@@ -102,7 +104,8 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   // re-assignment / shadowing case relies on the most-recent line ≤ call).
   const variableBindings = collectVariableBindings(input.tree.rootNode, typeAliases);
   const allBindings = [...paramBindings, ...variableBindings].sort((a, b) => a.startLine - b.startLine);
-  const bindingOwnership = assignParamBindingsToInnermostChunks(allBindings, input.chunks);
+  const constructedOwnership = new Map<number, ConstructedLocalLines>();
+  const bindingOwnership = assignParamBindingsToInnermostChunks(allBindings, input.chunks, constructedOwnership);
   // bd tea-rags-mcp-39xca.14 — positional arity per callable, joined to its
   // chunk by the declaring line, so structural conformance can reject an
   // implementer requiring more arguments than the contract passes.
@@ -124,6 +127,8 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
     if (symbolKind !== undefined) chunk.symbolKind = symbolKind;
     const bindings = bindingOwnership.get(chunkIndex);
     if (bindings && Object.keys(bindings).length > 0) chunk.localBindings = bindings;
+    const constructedLocals = constructedOwnership.get(chunkIndex);
+    if (constructedLocals !== undefined) chunk.constructedLocals = constructedLocals;
     return chunk;
   });
   const out: FileExtraction = {
@@ -1279,6 +1284,8 @@ interface ParamBinding {
   type: string;
   /** 1-based declaration line — used for innermost-chunk attribution. */
   startLine: number;
+  /** `LocalBinding.constructed`: a `new T()` value, the name's only binding in its function (bd 0qaht.66). */
+  constructed?: true;
 }
 
 /**
@@ -1341,6 +1348,11 @@ function collectParamBindings(root: AstNode, typeAliases: ReadonlyMap<string, As
  */
 function collectVariableBindings(root: AstNode, typeAliases: ReadonlyMap<string, AstNode>): ParamBinding[] {
   const out: ParamBinding[] = [];
+  // Form A's value is an EXACT `T` only while nothing else binds the name
+  // (bd tea-rags-mcp-0qaht.66); an annotated Form B is a static bound.
+  const bindingSites = new TypescriptLocalBindingSites();
+  const constructed = (at: AstNode, name: string): { constructed?: true } =>
+    bindingSites.isSoleBinding(at, name) ? { constructed: true } : {};
   walk(root, (node) => {
     // `const/let x = …` — one or more `variable_declarator` children.
     if (node.type === "variable_declaration" || node.type === "lexical_declaration") {
@@ -1361,7 +1373,14 @@ function collectVariableBindings(root: AstNode, typeAliases: ReadonlyMap<string,
         // Form A: `= new T()`.
         const value = decl.childForFieldName("value");
         const ctor = constructorTypeName(value);
-        if (ctor) out.push({ name: name.text, type: ctor, startLine: decl.startPosition.row + 1 });
+        if (ctor) {
+          out.push({
+            name: name.text,
+            type: ctor,
+            startLine: decl.startPosition.row + 1,
+            ...constructed(decl, name.text),
+          });
+        }
       }
       return;
     }
@@ -1370,7 +1389,14 @@ function collectVariableBindings(root: AstNode, typeAliases: ReadonlyMap<string,
       const left = node.childForFieldName("left");
       if (left?.type !== "identifier") return;
       const ctor = constructorTypeName(node.childForFieldName("right"));
-      if (ctor) out.push({ name: left.text, type: ctor, startLine: node.startPosition.row + 1 });
+      if (ctor) {
+        out.push({
+          name: left.text,
+          type: ctor,
+          startLine: node.startPosition.row + 1,
+          ...constructed(node, left.text),
+        });
+      }
     }
   });
   return out;
@@ -1400,11 +1426,13 @@ function constructorTypeName(node: AstNode | null): string | null {
  * variable may accumulate several across its path) so a call site resolves
  * against the most-recent binding at or before its own line. Chunks with no
  * bindings have no entry. Bindings whose line falls outside every chunk are
- * dropped silently.
+ * dropped silently. A `constructed` binding also records its line in
+ * `constructedOut` under the same chunk index (bd tea-rags-mcp-0qaht.66).
  */
 function assignParamBindingsToInnermostChunks(
   bindings: ParamBinding[],
   chunks: { startLine: number; endLine: number; scope: string[] }[],
+  constructedOut: Map<number, ConstructedLocalLines>,
 ): Map<number, Record<string, LocalBinding[]>> {
   const out = new Map<number, Record<string, LocalBinding[]>>();
   for (const binding of bindings) {
@@ -1425,6 +1453,11 @@ function assignParamBindingsToInnermostChunks(
     if (bestIdx === -1) continue;
     const bucket = out.get(bestIdx) ?? createIdentifierRecord<LocalBinding[]>();
     (bucket[binding.name] ??= []).push({ line: binding.startLine, type: binding.type });
+    if (binding.constructed) {
+      const lines = constructedOut.get(bestIdx) ?? createIdentifierRecord<number[]>();
+      (lines[binding.name] ??= []).push(binding.startLine);
+      constructedOut.set(bestIdx, lines);
+    }
     out.set(bestIdx, bucket);
   }
   return out;

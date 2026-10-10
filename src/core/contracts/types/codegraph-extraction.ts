@@ -13,7 +13,7 @@
 
 import type { CallableArgSource, DispatchRef, DispatchTable } from "./codegraph-dispatch.js";
 import type { InheritanceEdgeDecl, StructuralContractDecl } from "./codegraph-hierarchy.js";
-import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
+import type { CallResultBinding, ConstructedLocalLines, LocalBinding } from "./codegraph-local-binding.js";
 import type { AritySignature, KwargSignature, RelPath, SymbolDefinitionKind, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
 
@@ -999,6 +999,12 @@ export interface ChunkExtraction {
    * nothing.
    */
   assignedLocals?: string[];
+  /**
+   * Which of this chunk's `localBindings` are EXACT constructions — name →
+   * binding lines, see {@link ConstructedLocalLines} (bd tea-rags-mcp-0qaht.66).
+   * Set by the walkers that can prove one; absent when the chunk has none.
+   */
+  constructedLocals?: ConstructedLocalLines;
   /**
    * Positional-arity envelope of the method definition this chunk represents
    * (bd xlnub). Populated by the Ruby walker for `method` / `singleton_method`
