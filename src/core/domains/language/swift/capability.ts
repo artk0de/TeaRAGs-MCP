@@ -702,7 +702,10 @@ export const capability: LanguageCapability = {
   // walker 7: release v1.44.2 shipped walker 6, and a release cycle gets ONE
   // walker bump. Every branch-local number above (7…66) collapses into this
   // one; the history stays as the record of what an index built by 6 lacks.
-  versions: { chunking: 4, walker: 7, codegraphSchema: 2 },
+  // walker 8 (bd tea-rags-mcp-0qaht.30): a backtick-quoted declared name
+  // (`default`) is published unquoted in `identifierDeclarations`; an index
+  // built by walker 7 (shipped in v1.47.0) holds no row for it.
+  versions: { chunking: 4, walker: 8, codegraphSchema: 2 },
   // Swift API Design Guidelines: types and protocols UpperCamelCase, everything
   // else lowerCamelCase — constants included (no SCREAMING_SNAKE). A module is
   // named like a type (`Alamofire`, `Foundation`).

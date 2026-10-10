@@ -256,4 +256,32 @@ describe("Swift walker — identifier type multiplicity", () => {
       ["local", "seen", "Item", "many"],
     ]);
   });
+  // bd tea-rags-mcp-0qaht.30 — backticks are Swift syntax for a reserved word used as a name.
+  it("declares backtick-quoted names without the backticks, for every site kind", () => {
+    const src = [
+      "class Session {",
+      "  public static let `default` = Session()",
+      "  func run(`in` queue: Queue, `repeat` count: Int) {",
+      "    let `class` = Widget()",
+      "    let (`is`, b) = (1, 2)",
+      "  }",
+      "  func `switch`() -> Item { Item() }",
+      "}",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "Session", startLine: 1, endLine: 8, scope: [] },
+      { symbolId: "Session#run", startLine: 3, endLine: 6, scope: ["Session"] },
+      { symbolId: "Session#switch", startLine: 7, endLine: 7, scope: ["Session"] },
+    ];
+    const declarations = declarationsOf(src, chunks) ?? [];
+    expect(declarations.map((d) => [d.kind, d.name, d.line])).toEqual([
+      ["field", "default", 2],
+      ["param", "queue", 3],
+      ["param", "count", 3],
+      ["local", "class", 4],
+      ["local", "is", 5],
+      ["local", "b", 5],
+      ["return", "switch", 7],
+    ]);
+  });
 });

@@ -100,9 +100,30 @@ function propertySites(node: AstNode): DeclaredIdentifierSite[] {
   return sites;
 }
 
+/**
+ * `` `default` `` is Swift's spelling of a reserved word used as a name; the
+ * declared name is `default`. The kernel reads `nameNode.text` and rejects
+ * anything but a bare identifier, so a backticked site is handed over as a view
+ * of the same node whose text is unquoted (position and type unchanged).
+ */
+function unquotedNameNode(node: AstNode): AstNode {
+  const { text } = node;
+  if (text.length < 3 || !text.startsWith("`") || !text.endsWith("`")) return node;
+  const bare = text.slice(1, -1);
+  return new Proxy(node, {
+    get: (target, prop): unknown => (prop === "text" ? bare : Reflect.get(target, prop, target)),
+  });
+}
+
+/** Every collected site, its declared name stripped of Swift's backtick quoting. */
+const unquoted =
+  (collect: IdentifierDeclarationRule["collect"]): IdentifierDeclarationRule["collect"] =>
+  (node) =>
+    collect(node).map((site) => ({ ...site, nameNode: unquotedNameNode(site.nameNode) }));
+
 const rule = (nodeType: string, collect: IdentifierDeclarationRule["collect"]): IdentifierDeclarationRule => ({
   nodeType,
-  collect,
+  collect: unquoted(collect),
 });
 
 /**
