@@ -65,8 +65,26 @@ export function resolveZeitwerkConstant(qualified: string, knownPaths: Iterable<
   }
   // Basename fallback — any path ending in `/<suffix>` or just `<suffix>`.
   for (const p of paths) {
-    if (p === suffix) return p;
-    if (p.endsWith(`/${suffix}`)) return p;
+    if (pathEndsWithSuffix(p, suffix)) return p;
   }
   return null;
+}
+
+/**
+ * True when `relPath` sits where Zeitwerk would look for `qualified` — the
+ * constant's snake_case path, at the repo root or under any directory. Every
+ * `<root>/<suffix>` candidate {@link resolveZeitwerkConstant} tries satisfies
+ * this, and so does its basename fallback, so the predicate is the convention
+ * itself rather than a second copy of it.
+ *
+ * Used to tell a constant's DEFINER from the files that merely reopen its
+ * namespace (`app/services/acme/api.rb` vs `app/services/acme/api/contracts/x.rb`,
+ * both declaring `Acme::Api`) — bd tea-rags-mcp-r8hme.52.12.
+ */
+export function isConventionalConstantPath(qualified: string, relPath: string): boolean {
+  return pathEndsWithSuffix(relPath, constantToFilePath(qualified));
+}
+
+function pathEndsWithSuffix(relPath: string, suffix: string): boolean {
+  return relPath === suffix || relPath.endsWith(`/${suffix}`);
 }

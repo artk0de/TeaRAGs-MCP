@@ -22,7 +22,7 @@ import {
 import { ZEITWERK_PREFIX } from "../../zeitwerk-import-marker.js";
 import { linearizeAncestors } from "../ancestor-linearization.js";
 import { isRubyPath, lookupRubySymbolsByShortName } from "../short-name-lookup.js";
-import { resolveZeitwerkConstant } from "../zeitwerk.js";
+import { isConventionalConstantPath, resolveZeitwerkConstant } from "../zeitwerk.js";
 
 /**
  * `ResolverConfig` / `CONE_MAX_DEFAULT` live in the kernel
@@ -119,6 +119,10 @@ export function lastConstantSegment(qualified: string): string {
  *     receiver itself is unqualified.
  *   - Pass 3: Zeitwerk convention against known file paths.
  *
+ * Passes 1 and 2 accept a probe with several Ruby declarers when exactly one
+ * of them sits at the constant's Zeitwerk path ({@link declaringFileOf}) — a
+ * namespace reopened by nested files (bd tea-rags-mcp-r8hme.52.12).
+ *
  * Every symbol-table probe is RUBY-ONLY (bd tea-rags-mcp-zn4uf) — pass 3 is
  * inherently so (`constantToFilePath` emits a `.rb` suffix), passes 1 and 2 are
  * made so by {@link lookupRubySymbolsByQualifiedName}.
@@ -126,16 +130,37 @@ export function lastConstantSegment(qualified: string): string {
  * Shared by the local-type, Zeitwerk-constant and super passes.
  */
 export function resolveConstant(qualified: string, ctx: CallContext): string | null {
-  const direct = lookupRubySymbolsByQualifiedName(ctx, qualified);
-  if (direct.length === 1) return direct[0].relPath;
+  const direct = declaringFileOf(qualified, lookupRubySymbolsByQualifiedName(ctx, qualified));
+  if (direct !== null) return direct;
   if (!qualified.includes("::") && ctx.callerScope.length > 0) {
     for (let i = ctx.callerScope.length; i > 0; i--) {
-      const prefix = ctx.callerScope.slice(0, i).join("::");
-      const matches = lookupRubySymbolsByQualifiedName(ctx, `${prefix}::${qualified}`);
-      if (matches.length === 1) return matches[0].relPath;
+      const nested = `${ctx.callerScope.slice(0, i).join("::")}::${qualified}`;
+      const match = declaringFileOf(nested, lookupRubySymbolsByQualifiedName(ctx, nested));
+      if (match !== null) return match;
     }
   }
   return resolveZeitwerkConstant(qualified, collectKnownPaths(ctx));
+}
+
+/**
+ * The file that DEFINES `qualified`, given every Ruby definition the symbol
+ * table holds for it. One declarer answers outright. Several declarers are the
+ * normal Rails shape of a namespace that nested files reopen — `acme/api.rb`
+ * defines `Acme::Api`, and every `acme/api/**` file opens `module Api` again to
+ * nest under it (bd tea-rags-mcp-r8hme.52.12). The Zeitwerk convention breaks
+ * that tie: the declarer at the constant's conventional path defines it, the
+ * rest reopen it. Exactly one conventional declarer answers; none or several
+ * (two autoload roots shadowing each other — an order the resolver does not
+ * know) stays unresolved, as before.
+ */
+function declaringFileOf(qualified: string, defs: readonly SymbolDefinition[]): string | null {
+  if (defs.length === 1) return defs[0].relPath;
+  const conventional = new Set(
+    defs.map((def) => def.relPath).filter((relPath) => isConventionalConstantPath(qualified, relPath)),
+  );
+  if (conventional.size !== 1) return null;
+  const [relPath] = conventional;
+  return relPath;
 }
 
 /**
