@@ -53,6 +53,7 @@ import {
   type CallContext,
   type CallRef,
   type CallResultBinding,
+  type SymbolDefinitionKind,
 } from "../../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import {
@@ -62,6 +63,7 @@ import {
   type ReceiverTypePorts,
 } from "../../../kernel/index.js";
 import { catalogueFor } from "../../dsl/index.js";
+import { activeRecordRelationModel } from "./ruby-active-record-return-types.js";
 import { boundCallReturnTypeVia, isProjectDeclaredConstant } from "./ruby-bound-call-return-types.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
 import { declaredReturnType } from "./ruby-return-facts.js";
@@ -155,6 +157,26 @@ export function boundCallReturnType(
 }
 
 /** Ruby's `singleHopType` port: a receiver with no dot in it. */
+/**
+ * The model of the AR RELATION a call-result local holds at `site` (bd
+ * tea-rags-mcp-89k7k.35.29) — `result = collection_items` then
+ * `result.with_accounts` — or `undefined`.
+ *
+ * Read POSITIONALLY, through the same receiver fold `chainType` uses: the
+ * binding visible above the call, so `scope = scope.not_excluded_by(x)` reads
+ * the relation the right-hand side was sent to, never its own statement's
+ * result. Only a local the walker recorded as a call result is asked — a
+ * receiver bound any other way keeps every reading it had.
+ */
+export function callResultRelationModel(
+  site: Pick<CallRef, "receiver" | "startLine" | "startColumn">,
+  ctx: CallContext,
+): string | undefined {
+  const { receiver } = site;
+  if (!receiver || identifierEntry(ctx.callResultBindings, receiver) === undefined) return undefined;
+  return activeRecordRelationModel(typeOfReceiver(receiver, site.startLine, ctx, site.startColumn), ctx);
+}
+
 function rubySingleHopType(
   receiver: string,
   atLine: number,
@@ -245,6 +267,9 @@ function callResultBindingsEnabled(): boolean {
  * older reading resolves, and a fact can name a class nobody declares
  * (`belongs_to :status` singularized to `Statu`) — measured on mastodon, that
  * phantom dropped three exact `status.*` edges the naming convention owned.
+ * The one container kept is an AR RELATION over a project model (bd
+ * tea-rags-mcp-89k7k.35.29): `chainType` still CONTINUEs on it, and the
+ * bound-call reader is what pins its members on the model's class.
  */
 function callResultLocalType(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
   const bindings = identifierEntry(ctx.callResultBindings, receiver);
@@ -256,8 +281,27 @@ function callResultLocalType(receiver: string, atLine: number, ctx: CallContext)
   }
   if (nearest === undefined) return undefined;
   const folded = typeOfReceiver(nearest.callee, nearest.line, ctx);
+  if (activeRecordRelationModel(folded, ctx) !== undefined) return folded;
   if (folded === undefined || (folded.form !== "class" && folded.form !== "instance")) return undefined;
+  if (folded.form === "instance" && isModuleOnlyConstant(folded.name, ctx)) return undefined;
   return isProjectDeclaredConstant(folded.name, ctx) ? folded : undefined;
+}
+
+const MODULE_KIND: ReadonlySet<SymbolDefinitionKind> = new Set(["module"]);
+const CLASS_KIND: ReadonlySet<SymbolDefinitionKind> = new Set(["class"]);
+
+/**
+ * A constant the run declares as a MODULE and never as a class — whose
+ * "instance" no Ruby program can hold (bd tea-rags-mcp-89k7k.35.29). A project
+ * monkey-patch reopening a gem's namespace (`module Faraday; module Utils`)
+ * declares the module, so `Faraday.new(…)` — a module function answering a gem
+ * class — would otherwise type its result as a project `Faraday` instance.
+ */
+function isModuleOnlyConstant(name: string, ctx: CallContext): boolean {
+  return (
+    ctx.symbolTable.lookup(name, { kinds: MODULE_KIND }).length > 0 &&
+    ctx.symbolTable.lookup(name, { kinds: CLASS_KIND }).length === 0
+  );
 }
 
 /**
