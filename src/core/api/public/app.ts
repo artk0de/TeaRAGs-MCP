@@ -2,9 +2,9 @@
  * App — unified public API contract for tea-rags.
  *
  * The CONTRACT layer, nothing else (bd tea-rags-mcp-89k7k.22): this file holds
- * the `App` interface (what MCP/CLI consumers depend on) and `AppDeps` (what
- * bootstrap provides to create an App) — type-only. The factory that wires
- * deps into an App lives in the composition root,
+ * the `App` interface (what MCP/CLI consumers depend on) — type-only. The
+ * factory that wires deps into an App, and `AppDeps` (what bootstrap provides
+ * to create one, k7kmu C1), live in the composition root,
  * `api/internal/app-factory.ts`, re-exported through the api root barrel;
  * a runtime edge from this stable layer into the unstable assembly would put
  * the whole consumer surface in a dependency cycle with it.
@@ -18,27 +18,10 @@
  * 5. Register MCP tool in src/mcp/tools/
  */
 
-import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
-import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
 import type { LanguageCapability } from "../../contracts/types/language.js";
-import type { Reranker } from "../../domains/explore/reranker.js";
-import type { IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
-import type { CollectionEntry, CollectionRegistry, ProjectInfo } from "../../domains/maintenance/registry/index.js";
-import type {
-  CollectionOps,
-  DocumentOps,
-  ExploreFacade,
-  GraphFacade,
-  IngestFacade,
-  NamingLexiconOps,
-  OntologyReportOps,
-  PathCollectionResolver,
-  ProjectRegistryOps,
-  ReviewFacade,
-  TracePathOps,
-} from "../index.js";
+import type { CollectionEntry, PathCollectionResolver, ProjectInfo } from "../../contracts/types/registry.js";
+import type { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
 import type {
   AddDocumentsRequest,
   CollectionInfo,
@@ -79,7 +62,6 @@ import type {
   ReviewSectionId,
   SemanticSearchRequest,
   TracePathRequest,
-  WorkingTreeIndexTarget,
 } from "./dto/index.js";
 
 // ---------------------------------------------------------------------------
@@ -237,82 +219,4 @@ export interface App {
   // skip registration when a required trajectory provider is not loaded.
   // Source of truth is the registered trajectory keys at composition time.
   hasProvider: (key: string) => boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Dependency interface
-// ---------------------------------------------------------------------------
-
-export interface AppDeps {
-  qdrant: QdrantManager;
-  embeddings: EmbeddingProvider;
-  ingest: IngestFacade;
-  /**
-   * Resolves the IngestFacade an index run of `path` must use — the one built
-   * from THAT project's registry env rather than from the process env. Wired by
-   * bootstrap (`ProjectIngestFactory`), which is the only layer that may parse
-   * config. Omitted → every run uses the process-wide `ingest` facade.
-   *
-   * An MCP server is long-lived with a fixed process env, so this per-request
-   * lookup is the only way a project's recorded tuning can govern a run; the
-   * CLI seeds the same values into its forked worker's env instead. Returns a
-   * facade rather than mutating env, so concurrent runs on different projects
-   * cannot clobber each other (tea-rags-mcp-pmfm4).
-   */
-  ingestForPath?: (path: string) => IngestFacade;
-  /**
-   * The base index a working-tree path is read against (live D10, bd
-   * tea-rags-mcp-xi2r9): `getIndexStatus` of a linked worktree answers with
-   * that index's status and the tree's marker, never "not indexed". Wired by
-   * bootstrap to `ExploreFacade#workingTreeIndexOf`. Omitted → the path is
-   * always its own index.
-   */
-  workingTreeIndexOf?: (path: string) => Promise<WorkingTreeIndexTarget | undefined>;
-  explore: ExploreFacade;
-  reranker: Reranker;
-  driftReporter: IndexDriftReporter;
-  projectRegistryOps: ProjectRegistryOps;
-  quantizationScalar: boolean;
-  turboQuant: boolean;
-  modelGuard?: EmbeddingModelGuard;
-  /** Optional — present when CODEGRAPH_DISABLED is unset and DuckDB is wired. */
-  graphFacade?: GraphFacade;
-  /** Optional — present when codegraph is wired (built in bootstrap alongside graphFacade). */
-  tracePathOps?: TracePathOps;
-  /** Optional — present when codegraph is wired (built in bootstrap alongside tracePathOps). */
-  namingLexiconOps?: NamingLexiconOps;
-  /** Optional — present when codegraph is wired (built in bootstrap alongside graphFacade). */
-  ontologyReportOps?: OntologyReportOps;
-  /**
-   * The diff-scoped review facade (bd tea-rags-mcp-89k7k.1.4). Built in
-   * bootstrap beside `namingLexiconOps` — the review's naming section shares
-   * that instance — and present only when codegraph is wired. Absent →
-   * `App.reviewChanges` answers the not-built envelope
-   * (`emptyReviewChangesResult`).
-   */
-  reviewFacade?: ReviewFacade;
-  /**
-   * Collection/document CRUD handlers, pre-built by the api composition root
-   * (`composeAppOps` in internal/composition.ts) and injected into the
-   * factory. Omitted → `createApp` composes them from the raw handles above
-   * (the bare-AppDeps path tests use).
-   */
-  collectionOps?: CollectionOps;
-  /** Same construction path as `collectionOps` — the pair shares one metadata-schema compiler. */
-  documentOps?: DocumentOps;
-  /**
-   * Per-collection DuckDB pool — present when codegraph is wired.
-   * CollectionOps uses it to delete the per-collection DuckDB file when
-   * the Qdrant collection is dropped (clear / delete / force-reindex
-   * paths). Omitted when codegraph is disabled — ops degrades to
-   * Qdrant-only cleanup.
-   */
-  codegraphPool?: GraphDbClientPool;
-  /**
-   * Set of trajectory keys registered at composition time (from
-   * `TrajectoryRegistry.getRegisteredKeys()`). Backs `App.hasProvider` —
-   * MCP tool registrars consult it to skip registering tools whose
-   * required provider is not loaded. Defaults to empty when omitted.
-   */
-  registeredProviderKeys?: ReadonlySet<string>;
 }

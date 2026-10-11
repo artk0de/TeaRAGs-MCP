@@ -7,7 +7,7 @@
  * `contracts/`, `adapters/`, `infra/`, `api/internal/`, or `bootstrap/`).
  *
  * What this layer holds (bd tea-rags-mcp-89k7k.22): the contract and nothing
- * else — the `App`/`AppDeps` interfaces, DTOs, the input-error vocabulary
+ * else — the `App` interface, DTOs, the input-error vocabulary
  * (`./errors.js`), pure render/predicate rules re-exported from `contracts/`,
  * and TYPE-only re-exports of handler shapes (type-only edges are not
  * SDP-judged, bd tea-rags-mcp-0qaht.36). RUNTIME classes and assembly
@@ -22,9 +22,10 @@
 // ── App contract ──────────────────────────────────────────────────────
 // The FACTORY is not contract: `createApp` lives in the composition root
 // (`api/internal/app-factory.ts`), re-exported through the api root barrel
-// for bootstrap — the assembly surface (bd tea-rags-mcp-89k7k.22). This
-// barrel keeps the interface types only.
-export type { App, AppDeps } from "./app.js";
+// for bootstrap — the assembly surface (bd tea-rags-mcp-89k7k.22). So is its
+// input: `AppDeps` names adapters and domain services and lives beside the
+// factory (k7kmu C1). This barrel keeps the `App` interface only.
+export type { App } from "./app.js";
 
 // ── DTOs ─────────────────────────────────────────────────────────────
 // The one runtime symbol among them: the recompute-path predicate both
