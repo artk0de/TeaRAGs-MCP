@@ -36,8 +36,7 @@ Add interface to appropriate domain file. Rules:
   - `CollectionRef` — endpoints accepting `collection` or `path`
   - `TypedFilterParams` — endpoints with trajectory filters
 - **No logic** — DTOs pure data shapes (interfaces only, no classes)
-- **Import only from** contracts/ or infra/ types if needed (e.g.,
-  `RankingOverlay`)
+- **Import only from** contracts/ types if needed (e.g., `RankingOverlay`)
 
 ## Step 3: Export from barrel
 

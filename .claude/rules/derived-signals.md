@@ -171,9 +171,9 @@ export class MySignal implements DerivedSignalDescriptor {
 ### Template — Chunk-primary signal
 
 ```typescript
+import { normalize } from "contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "contracts/types/reranker.js";
 import type { ExtractContext } from "contracts/types/trajectory.js";
-import { normalize } from "infra/signal-utils.js";
 
 import { chunkNum, payloadAlpha } from "./helpers.js";
 

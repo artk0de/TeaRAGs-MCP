@@ -231,7 +231,7 @@
 - `.claude/rules/qdrant-required-version.md` — `required-version.ts` and
   `embedded/`.
 - `.claude/rules/migrations.md` — `schema-manager.ts`, `sparse.ts`, `types.ts`.
-- `.claude/rules/domain-boundaries.md` — records this guard's move OUT of
-  `infra/`, under its rule that a module whose reason to change is a PRODUCT
-  decision does not belong in the foundation; also where tests for this
+- `.claude/rules/domain-boundaries.md` — records this guard's move OUT of the
+  retired infra layer, under its rule that a module whose reason to change is a
+  PRODUCT decision does not belong in the foundation; also where tests for this
   directory go.

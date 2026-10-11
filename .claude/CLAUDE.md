@@ -123,8 +123,8 @@ language stays legal; two is an enumeration.
 
 `adapters/qdrant/` is the one navigator outside `src/core/domains/`.
 `.claude/rules/domain-boundaries.md` records the embedding-model guard's move
-out of `infra/` (a layer now being retired), under its rule that a module whose
-reason to change is a PRODUCT decision does not belong in the foundation.
+out of the retired `infra` layer, under its rule that a module whose reason to
+change is a PRODUCT decision does not belong in the foundation.
 
 ## Terminology (MANDATORY)
 
@@ -202,7 +202,6 @@ All paths relative to `src/core/`, with one exception marked below.
 | `migration`         | `domains/maintenance/migration/`                            |
 | `contracts`         | `contracts/`                                                |
 | `primitives`        | `primitives/` — I/O-free shared code, `<category>/index.js` |
-| `infra`             | `infra/` — being retired (2wu2h), no new modules            |
 | `bootstrap`         | **`src/bootstrap/`** — sibling of `src/core/`, not under it |
 
 Per-trajectory filter presets live at

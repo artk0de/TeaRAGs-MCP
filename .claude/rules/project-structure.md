@@ -88,7 +88,6 @@ core/
 
   primitives/                          # Foundation: I/O-free shared code (lowest runtime layer)
                                        # NO root barrel — import <category>/index.js
-                                       # (target layout; filled wave by wave under 2wu2h)
     collections/                       # in-memory LRUs, memos
     concurrency/                       # promise semaphore
     math/                              # vector math, score background, statistics/
@@ -97,8 +96,6 @@ core/
     paths/                             # path patterns, scope detection, file classification
     errors/                            # TeaRagsError base hierarchy
     diagnostics/                       # debug flag
-
-  infra/                               # BEING RETIRED (bd tea-rags-mcp-2wu2h) — no new modules
 
   contracts/                           # Foundation: interfaces + registries
     signal-utils.ts                    # normalize, p95, payload resolvers
@@ -131,7 +128,8 @@ core/
         daemon.ts                      # Process manager with refcounting
         download.ts                    # Binary downloader (postinstall + lazy)
         types.ts                       # DaemonPaths, QdrantResolution
-    git/
+    duckdb/                            # DuckDB codegraph stores
+    vcs/                               # version-control client behind a port
     embeddings/
     filesystem/                        # local-disk I/O (stats file, manifests, path canonicalization)
     tree-sitter/                       # SyntaxNode -> AstNode anti-corruption layer

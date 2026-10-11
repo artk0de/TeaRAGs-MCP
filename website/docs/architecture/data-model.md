@@ -183,7 +183,7 @@ The server bumps `schemaVersion` when the Qdrant payload **indexes** change (add
 | Git signal catalog | `src/core/domains/trajectory/git/payload-signals.ts` (`gitPayloadSignalDescriptors`) |
 | Git enrichment pipeline | `src/core/domains/trajectory/git/` + `src/core/domains/ingest/pipeline/enrichment/` |
 | Schema versioning | `src/core/adapters/qdrant/schema-manager.ts` (`SchemaManager`) |
-| Percentile thresholds | `src/core/infra/stats-cache.ts` (`StatsCache`) |
+| Percentile thresholds | `src/core/adapters/filesystem/stats-cache.ts` (`StatsCache`) |
 
 ## Related
 
