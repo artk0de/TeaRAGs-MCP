@@ -208,6 +208,7 @@ vi.mock("../../src/mcp/prompts/register.js", () => ({
 }));
 vi.mock("../../src/mcp/prompts/index.js", () => ({
   loadPromptsConfig: vi.fn(),
+  registerAllPrompts: vi.fn(),
 }));
 vi.mock("node:fs", async () => {
   const actual = await import("node:fs");

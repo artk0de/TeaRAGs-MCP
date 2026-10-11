@@ -6,8 +6,9 @@
  * layer (instability 0.05) calling the unstable composition root (0.93) with
  * delta 0.87 — the largest SDP violation in the scan, `cycleWithDependents`,
  * multiplying with every new tool. Assembly is not contract: the factory moved
- * here, next to `composition.ts`, and `api/public` keeps the `App`/`AppDeps`
- * interfaces as a pure contract. Bootstrap (and tests) reach this through the
+ * here, next to `composition.ts`, and `api/public` keeps the `App` interface as
+ * a pure contract. `AppDeps` — the assembly input naming adapters and domain
+ * services — followed it here (k7kmu C1). Bootstrap (and tests) reach this through the
  * api root barrel, which re-exports `createApp` — the assembly surface.
  *
  * To add a new endpoint:
@@ -18,14 +19,30 @@
  * 5. Register MCP tool in src/mcp/tools/
  */
 
-import { formatIndexDriftReport } from "../../domains/maintenance/drift/index.js";
+import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
+import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
+import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
+import type { Reranker } from "../../domains/explore/reranker.js";
+import { formatIndexDriftReport, type IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
 // The handler TYPES arrive through the api barrel (`../index.js`), which
-// aggregates composition + facades — a type-only edge the contract layer and
-// this factory both keep (bd tea-rags-mcp-0qaht.12). No deep `../public/`
-// path beyond the contract itself is imported.
-import type { CollectionOps, DocumentOps, ExploreFacade, IngestFacade, ProjectRegistryOps } from "../index.js";
-import type { App, AppDeps } from "../public/app.js";
-import type { IndexStatus, PresetDetail } from "../public/dto/index.js";
+// aggregates composition + facades — a type-only edge this factory keeps
+// (bd tea-rags-mcp-0qaht.12). No deep `../public/` path beyond the contract
+// itself is imported.
+import type {
+  CollectionOps,
+  DocumentOps,
+  ExploreFacade,
+  GraphFacade,
+  IngestFacade,
+  NamingLexiconOps,
+  OntologyReportOps,
+  ProjectRegistryOps,
+  ReviewFacade,
+  TracePathOps,
+} from "../index.js";
+import type { App } from "../public/app.js";
+import type { IndexStatus, PresetDetail, WorkingTreeIndexTarget } from "../public/dto/index.js";
 import {
   createPathCollectionResolver as createPathCollectionResolverImpl,
   resolveBaseIndexEntry as resolveBaseIndexEntryImpl,
@@ -39,6 +56,86 @@ import {
   resolveLanguageCapabilities as resolveDomainLanguageCapabilities,
 } from "./composition.js";
 import { reviewSectionIds as reviewSectionIdsValue } from "./ops/review-sections/index.js";
+
+// ---------------------------------------------------------------------------
+// Dependency interface — what bootstrap provides to create an App. Assembly
+// input, not consumer contract: it names adapters and domain services, so it
+// lives beside createApp rather than in the stable api/public layer (k7kmu C1).
+// ---------------------------------------------------------------------------
+
+export interface AppDeps {
+  qdrant: QdrantManager;
+  embeddings: EmbeddingProvider;
+  ingest: IngestFacade;
+  /**
+   * Resolves the IngestFacade an index run of `path` must use — the one built
+   * from THAT project's registry env rather than from the process env. Wired by
+   * bootstrap (`ProjectIngestFactory`), which is the only layer that may parse
+   * config. Omitted → every run uses the process-wide `ingest` facade.
+   *
+   * An MCP server is long-lived with a fixed process env, so this per-request
+   * lookup is the only way a project's recorded tuning can govern a run; the
+   * CLI seeds the same values into its forked worker's env instead. Returns a
+   * facade rather than mutating env, so concurrent runs on different projects
+   * cannot clobber each other (tea-rags-mcp-pmfm4).
+   */
+  ingestForPath?: (path: string) => IngestFacade;
+  /**
+   * The base index a working-tree path is read against (live D10, bd
+   * tea-rags-mcp-xi2r9): `getIndexStatus` of a linked worktree answers with
+   * that index's status and the tree's marker, never "not indexed". Wired by
+   * bootstrap to `ExploreFacade#workingTreeIndexOf`. Omitted → the path is
+   * always its own index.
+   */
+  workingTreeIndexOf?: (path: string) => Promise<WorkingTreeIndexTarget | undefined>;
+  explore: ExploreFacade;
+  reranker: Reranker;
+  driftReporter: IndexDriftReporter;
+  projectRegistryOps: ProjectRegistryOps;
+  quantizationScalar: boolean;
+  turboQuant: boolean;
+  modelGuard?: EmbeddingModelGuard;
+  /** Optional — present when CODEGRAPH_DISABLED is unset and DuckDB is wired. */
+  graphFacade?: GraphFacade;
+  /** Optional — present when codegraph is wired (built in bootstrap alongside graphFacade). */
+  tracePathOps?: TracePathOps;
+  /** Optional — present when codegraph is wired (built in bootstrap alongside tracePathOps). */
+  namingLexiconOps?: NamingLexiconOps;
+  /** Optional — present when codegraph is wired (built in bootstrap alongside graphFacade). */
+  ontologyReportOps?: OntologyReportOps;
+  /**
+   * The diff-scoped review facade (bd tea-rags-mcp-89k7k.1.4). Built in
+   * bootstrap beside `namingLexiconOps` — the review's naming section shares
+   * that instance — and present only when codegraph is wired. Absent →
+   * `App.reviewChanges` answers the not-built envelope
+   * (`emptyReviewChangesResult`).
+   */
+  reviewFacade?: ReviewFacade;
+  /**
+   * Collection/document CRUD handlers, pre-built by the api composition root
+   * (`composeAppOps` in internal/composition.ts) and injected into the
+   * factory. Omitted → `createApp` composes them from the raw handles above
+   * (the bare-AppDeps path tests use).
+   */
+  collectionOps?: CollectionOps;
+  /** Same construction path as `collectionOps` — the pair shares one metadata-schema compiler. */
+  documentOps?: DocumentOps;
+  /**
+   * Per-collection DuckDB pool — present when codegraph is wired.
+   * CollectionOps uses it to delete the per-collection DuckDB file when
+   * the Qdrant collection is dropped (clear / delete / force-reindex
+   * paths). Omitted when codegraph is disabled — ops degrades to
+   * Qdrant-only cleanup.
+   */
+  codegraphPool?: GraphDbClientPool;
+  /**
+   * Set of trajectory keys registered at composition time (from
+   * `TrajectoryRegistry.getRegisteredKeys()`). Backs `App.hasProvider` —
+   * MCP tool registrars consult it to skip registering tools whose
+   * required provider is not loaded. Defaults to empty when omitted.
+   */
+  registeredProviderKeys?: ReadonlySet<string>;
+}
 
 /**
  * wireFacades — returns the pre-assembled domain facades from deps.

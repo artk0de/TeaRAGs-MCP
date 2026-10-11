@@ -314,16 +314,16 @@ describe("api-public → maintenance/drift attribution pin (bd tea-rags-mcp-89k7
     return { files, edges };
   }
 
-  it("carries the component dependency's file edges from app.ts only — no barrel edge", () => {
+  // k7kmu C1 moved AppDeps (and with it app.ts's drift import) out of the
+  // contract layer, retiring SDP violation S4: api/public now depends on
+  // maintenance/drift through no file at all, barrel or otherwise.
+  it("api/public carries no component dependency on maintenance/drift", () => {
     const componentGraph = buildComponentGraph(repositorySliceGraph(), []);
     const dependency = componentGraph.dependencies.find(
       (d) => d.sourceComponent === API_PUBLIC_DIR && d.targetComponent === DRIFT_DIR,
     );
 
-    expect(dependency).toBeDefined();
-    expect(dependency?.fileEdges.map((e) => [e.sourceRelPath, e.targetRelPath])).toEqual([
-      ["src/core/api/public/app.ts", "src/core/domains/maintenance/drift/index.ts"],
-    ]);
+    expect(dependency?.fileEdges.map((e) => [e.sourceRelPath, e.targetRelPath]) ?? []).toEqual([]);
   });
 
   it("no api/public/index.ts edge reaches maintenance/drift, runtime or type-only", () => {

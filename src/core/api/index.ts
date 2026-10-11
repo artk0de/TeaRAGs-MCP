@@ -13,7 +13,8 @@
 
 // Public contract types (the factory is assembly — see internal/app-factory.ts)
 export { createApp } from "./internal/app-factory.js";
-export type { App, AppDeps } from "./public/app.js";
+export type { AppDeps } from "./internal/app-factory.js";
+export type { App } from "./public/app.js";
 export type {
   // Explore DTOs
   CollectionRef,
@@ -76,8 +77,8 @@ export { GraphFacade } from "./internal/facades/graph-facade.js";
 export type { GraphFacadeDeps } from "./internal/facades/graph-facade.js";
 export { ReviewFacade, validateReviewChangesRequest } from "./internal/facades/review-facade.js";
 export type { ReviewFacadeDeps } from "./internal/facades/review-facade.js";
-// Ops/facade handler types AppDeps references — public/app.ts imports them
-// from this barrel instead of deep internal paths. The four classes below are
+// Ops/facade handler types AppDeps references — internal/app-factory.ts
+// imports them from this barrel instead of deep internal paths. The four classes below are
 // exported as runtime symbols (bootstrap constructs them), which carries the
 // type side too; CollectionOps/DocumentOps are type-only here because their
 // construction lives inside composeAppOps.

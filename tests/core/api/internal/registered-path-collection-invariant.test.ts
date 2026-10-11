@@ -51,7 +51,10 @@ vi.mock("../../../../src/bootstrap/factory.js", () => ({ createAppContext: creat
 vi.mock("../../../../src/bootstrap/config/index.js", () => ({
   parseAppConfig: () => ({}),
   getZodConfig: () => ({ deprecations: [] }),
-  resolveRegistryEnvCodeDefaults,
+  // Deferred: mcp-hint.ts loads this barrel before the deep import above is
+  // initialised, so the binding is read at call time, not at mock time.
+  resolveRegistryEnvCodeDefaults: (...args: Parameters<typeof resolveRegistryEnvCodeDefaults>) =>
+    resolveRegistryEnvCodeDefaults(...args),
 }));
 
 vi.mock("tree-sitter", () => ({

@@ -48,7 +48,7 @@ guard zone. Rationale and the type duplication the stricter rule caused:
 `docs/superpowers/specs/2026-07-26-infra-tidy-design.md`.
 
 **Consumer surface rule (MANDATORY).** `mcp` reaches `core` ONLY through
-`core/api/public/` — the CONTRACT surface: `App`/`AppDeps` interfaces, DTOs, the
+`core/api/public/` — the CONTRACT surface: the `App` interface, DTOs, the
 input-error vocabulary (`api/public/errors.ts`), pure render/predicate rules
 re-exported from `contracts/`, and TYPE-only re-exports of handler shapes. `cli`
 additionally may import the api root barrel `core/api/index.js` — the ASSEMBLY
@@ -89,11 +89,13 @@ See spec
 
 **core/api/** — Composition root + unified App interface
 
-- **public/**: the CONTRACT layer — App/AppDeps interfaces, DTOs by domain, the
+- **public/**: the CONTRACT layer — the App interface, DTOs by domain, the
   input-error vocabulary (public/errors.ts)
   - App interface (public/app.ts): unified public contract for MCP/CLI
-  - createApp() + AppDeps wiring: `internal/app-factory.ts` (assembly — bd
-    tea-rags-mcp-89k7k.22), reached through the api root barrel
+  - createApp() + the AppDeps interface: `internal/app-factory.ts` (assembly —
+    bd tea-rags-mcp-89k7k.22; AppDeps names adapters and domain services, so it
+    is assembly input, not contract — k7kmu C1), reached through the api root
+    barrel
   - DTOs grouped by domain: explore, ingest, collection, document
 - **internal/**: orchestration + wiring (not exported to MCP consumers)
   - facades/: ExploreFacade, IngestFacade (search/indexing orchestration)

@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { resolveCollection } from "../../core/api/index.js";
 import { CollectionRegistry, IndexFreshnessCheck, outerEnvForRegistryEntry } from "../../core/api/public/index.js";
 import type { McpAutoUpdateTrigger } from "../../mcp/tools/explore.js";
-import { resolveRegistryEnvCodeDefaults } from "../config/registry-env-code-defaults.js";
+import { resolveRegistryEnvCodeDefaults } from "../config/index.js";
 import { spawnDetachedUpdater } from "./spawner.js";
 import { AutoUpdateTrigger } from "./trigger.js";
 import { closeAutoUpdateLog, openAutoUpdateLog } from "./updater-log.js";

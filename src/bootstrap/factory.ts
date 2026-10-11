@@ -124,26 +124,27 @@ import {
 import { setDebug } from "../core/infra/runtime.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
-import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
-import { registerAllPrompts } from "../mcp/prompts/register.js";
+import { loadPromptsConfig, registerAllPrompts, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
 import { buildMcpAutoUpdateTrigger } from "./auto-update/mcp-hint.js";
-import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
 import {
+  applyEmbeddedDeleteTuning,
+  buildAppConfig,
   buildEffectiveIndexEnvSnapshot,
   buildPinnedRegistryEnvSnapshot,
   buildRunningIndexEnvSnapshot,
-} from "./config/env-snapshot.js";
-import { buildAppConfig, getConfigDump, getZodConfig, parseAppConfigZod, type AppConfig } from "./config/index.js";
-import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
-import { resolveRegistryEnvCodeDefaults } from "./config/registry-env-code-defaults.js";
-import {
+  checkExternalQdrantVersion,
+  getConfigDump,
+  getZodConfig,
+  parseAppConfigZod,
   reconcileStrictMode,
   reconcileTurbo,
   reportTurboMigration,
+  resolveRegistryEnvCodeDefaults,
+  type AppConfig,
   type TurboMigrationListener,
-} from "./config/turbo-reconcile.js";
+} from "./config/index.js";
 import { buildEmbeddingBinding } from "./embedding-binding.js";
 import { ProjectIngestFactory } from "./project-ingest-factory.js";
 import {

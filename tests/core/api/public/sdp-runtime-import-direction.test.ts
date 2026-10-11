@@ -13,9 +13,10 @@
  * `api/internal/app-factory.ts` (re-exported for bootstrap through the api
  * root barrel), the input-error vocabulary moved INTO the public layer
  * (`public/errors.ts` — the exception vocabulary IS contract vocabulary), and
- * the pure optimizer-recovery render rules moved to `contracts/`. What
- * remains in `api/public` is the contract: the `App`/`AppDeps` interfaces,
- * DTOs, and type-only re-exports (bd tea-rags-mcp-0qaht.36's settled
+ * the pure optimizer-recovery render rules moved to `contracts/`. `AppDeps`
+ * — assembly input naming adapters and domain services — followed `createApp`
+ * into `app-factory.ts` (k7kmu C1). What remains in `api/public` is the
+ * contract: the `App` interface, DTOs, and type-only re-exports (bd tea-rags-mcp-0qaht.36's settled
  * vocabulary — `import type` edges are not SDP-judged and stay legal).
  *
  * This test pins the direction: no file under `src/core/api/public/` may hold
