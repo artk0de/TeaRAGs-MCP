@@ -161,11 +161,13 @@ export default tseslint.config(
   // Allowed targets per layer (everything else is an error, incl. `import type`):
   //   cli       → bootstrap, core/api/public, core/api/index (assembly surface, bd tea-rags-mcp-89k7k.22)
   //   mcp       → core/api/public
-  //   bootstrap → mcp, core/api/*, core/{contracts,adapters,infra}
+  //   bootstrap → mcp, core/api/*, core/{contracts,primitives,adapters}
   //   index.ts  → bootstrap
-  //   api       → core/{domains,contracts,adapters,infra}
-  //   domains/* → core/{contracts,adapters,infra}  (never each other)
-  //   contracts → (nothing)   adapters → infra   infra → (nothing)
+  //   api       → core/{domains,contracts,primitives,adapters}
+  //   domains/* → core/{contracts,primitives,adapters}  (never each other)
+  //   contracts → contracts   primitives → (type-only contracts)
+  //   adapters  → core/{contracts,primitives}
+  //   infra     → (type-only contracts) — being retired (bd tea-rags-mcp-2wu2h)
   // api/public holds the contract only; runtime classes and the App factory
   // live behind the api root barrel, which cli commands that construct ops
   // with bare clients import as the assembly seam.
@@ -181,6 +183,7 @@ export default tseslint.config(
                 "**/core/domains/**",
                 "**/core/contracts/**",
                 "**/core/adapters/**",
+                "**/core/primitives/**",
                 "**/core/infra/**",
                 "**/core/api/internal/**",
                 "**/core/api/errors",
@@ -207,6 +210,7 @@ export default tseslint.config(
                 "**/core/domains/**",
                 "**/core/contracts/**",
                 "**/core/adapters/**",
+                "**/core/primitives/**",
                 "**/core/infra/**",
                 "**/core/api/internal/**",
                 "**/core/api/errors",
@@ -288,7 +292,7 @@ export default tseslint.config(
                 "**/mcp/**",
                 "**/cli/**",
               ],
-              message: "explore may import only core/{contracts,adapters,infra}; domains are mutually isolated.",
+              message: "explore may import only core/{contracts,primitives,adapters}; domains are mutually isolated.",
             },
           ],
         },
@@ -314,7 +318,7 @@ export default tseslint.config(
                 "**/cli/**",
               ],
               message:
-                "trajectory may import only core/{contracts,adapters,infra}; reach language via injected LanguageFactory.",
+                "trajectory may import only core/{contracts,primitives,adapters}; reach language via injected LanguageFactory.",
             },
           ],
         },
@@ -340,7 +344,7 @@ export default tseslint.config(
                 "**/cli/**",
               ],
               message:
-                "ingest may import only core/{contracts,adapters,infra}; reach language via injected LanguageFactory.",
+                "ingest may import only core/{contracts,primitives,adapters}; reach language via injected LanguageFactory.",
             },
           ],
         },
@@ -356,7 +360,7 @@ export default tseslint.config(
           patterns: [
             {
               group: ["**/ingest/**", "**/trajectory/**", "**/explore/**", "**/api/**", "**/bootstrap/**"],
-              message: "domains/language is a leaf domain — import only contracts/, infra/, tree-sitter.",
+              message: "domains/language is a leaf domain — import only contracts/, primitives/, tree-sitter.",
             },
           ],
         },
@@ -385,7 +389,8 @@ export default tseslint.config(
                 "**/mcp/**",
                 "**/cli/**",
               ],
-              message: "maintenance may import only core/{contracts,adapters,infra}; domains are mutually isolated.",
+              message:
+                "maintenance may import only core/{contracts,primitives,adapters}; domains are mutually isolated.",
             },
           ],
         },
@@ -405,6 +410,7 @@ export default tseslint.config(
               // pattern never matches and the zone silently allows everything.
               group: [
                 "**/infra/**",
+                "**/primitives/**",
                 "**/adapters/**",
                 "**/domains/**",
                 "**/api/**",
@@ -434,7 +440,79 @@ export default tseslint.config(
               // adapters -> contracts, and the old zone only appeared to forbid
               // it because the "**/core/..." glob never fired.
               group: ["**/domains/**", "**/api/**", "**/bootstrap/**", "**/mcp/**", "**/cli/**"],
-              message: "adapters may import only core/{contracts,infra}.",
+              message: "adapters may import only core/{contracts,primitives}.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // primitives: I/O-free shared code, the lowest runtime layer (bd tea-rags-mcp-2wu2h).
+  // `contracts` is absent from the group on purpose — primitives may `import type`
+  // from it. no-restricted-imports cannot express "type-only", so the runtime
+  // half of that edge, dynamic import()/require() and the I/O globals are pinned
+  // by tests/core/primitives/no-io-guard.test.ts. The group never lists the bare
+  // `**/infra/**` glob: it would also match domain-local infra/ dirs.
+  {
+    files: ["src/core/primitives/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            "fs",
+            "node:fs",
+            "fs/promises",
+            "node:fs/promises",
+            "child_process",
+            "node:child_process",
+            "net",
+            "node:net",
+            "http",
+            "node:http",
+            "https",
+            "node:https",
+            "http2",
+            "node:http2",
+            "dgram",
+            "node:dgram",
+            "dns",
+            "node:dns",
+            "tls",
+            "node:tls",
+            "worker_threads",
+            "node:worker_threads",
+            "cluster",
+            "node:cluster",
+            "readline",
+            "node:readline",
+            "os",
+            "node:os",
+            "process",
+            "node:process",
+            "inspector",
+            "node:inspector",
+            "v8",
+            "node:v8",
+            "es-git",
+            "ollama",
+            "undici",
+            "node-fetch",
+            "simple-git",
+          ].map((name) => ({
+            name,
+            message:
+              "primitives are I/O-free; move to adapters/<system> behind a port or to the owning domain (domain-boundaries.md).",
+          })),
+          patterns: [
+            {
+              group: ["**/domains/**", "**/adapters/**", "**/api/**", "**/bootstrap/**", "**/mcp/**", "**/cli/**"],
+              message: "primitives is the lowest runtime layer — it may only import type from contracts.",
+            },
+            {
+              group: ["@qdrant/*", "@duckdb/*", "duckdb", "duckdb-*"],
+              message:
+                "primitives are I/O-free; move to adapters/<system> behind a port or to the owning domain (domain-boundaries.md).",
             },
           ],
         },

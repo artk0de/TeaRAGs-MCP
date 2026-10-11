@@ -26,8 +26,8 @@ import type {
   GraphEdges,
 } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
-import { pageRank, tarjanScc } from "../../../../infra/graph/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import { pageRank, tarjanScc } from "../../../../primitives/graph/index.js";
 import {
   CodegraphCheckpointError,
   CodegraphMetricsError,

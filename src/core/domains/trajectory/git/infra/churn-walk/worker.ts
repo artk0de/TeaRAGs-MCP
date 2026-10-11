@@ -28,9 +28,9 @@ import {
   type GitAdapterKind,
   type VcsGitAdapter,
 } from "../../../../../adapters/vcs/index.js";
-import { CommitDiffMemo } from "../../../../../infra/commit-diff-memo.js";
 import { adoptGitExecutable } from "../../../../../infra/git-executable.js";
-import { Semaphore } from "../../../../../infra/semaphore.js";
+import { CommitDiffMemo } from "../../../../../primitives/collections/index.js";
+import { Semaphore } from "../../../../../primitives/concurrency/index.js";
 import { buildChunkChurnMapUncached } from "../chunk-reader.js";
 import type { ChunkChurnWalkStats, WalkCommitDiscovery } from "../walk-commits.js";
 import type {

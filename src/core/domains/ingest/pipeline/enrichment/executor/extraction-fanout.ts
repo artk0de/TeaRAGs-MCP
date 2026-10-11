@@ -40,7 +40,7 @@
  */
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type { FileExtractionPass1Telemetry } from "../../../../../contracts/types/provider.js";
-import { Semaphore } from "../../../../../infra/semaphore.js";
+import { Semaphore } from "../../../../../primitives/concurrency/index.js";
 import type {
   EnrichmentCallRequest,
   EnrichmentWorkerRequest,

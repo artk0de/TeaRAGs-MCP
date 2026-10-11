@@ -4,7 +4,7 @@
  * the separability gate that refuses the cut when the sample is not bimodal
  * enough for one to mean anything (bd tea-rags-mcp-r8hme.46).
  *
- * Pure arithmetic, foundation home (`core/infra/graph/`, beside Tarjan SCC,
+ * Pure arithmetic, primitives home (`core/primitives/graph/`, beside Tarjan SCC,
  * PageRank and the weight-threshold clustering). The contract — "an adaptive
  * threshold drawn from the population it judges, floored and gated" — is
  * consumed by several sibling subdomains that may not import each other, so

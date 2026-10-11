@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ByteBoundedLru } from "../../../src/core/infra/byte-bounded-lru.js";
+import { ByteBoundedLru } from "../../../../src/core/primitives/collections/byte-bounded-lru.js";
 
 describe("ByteBoundedLru", () => {
   it("bounds by the bytes its entries declare, not by how many there are", () => {

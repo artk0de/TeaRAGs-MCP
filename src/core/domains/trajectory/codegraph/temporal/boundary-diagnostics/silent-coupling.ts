@@ -22,8 +22,8 @@ import type {
   TemporalCochangeGraph,
 } from "../../../../../contracts/types/codegraph.js";
 import { classify } from "../../../../../infra/file-classification/index.js";
-import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { resolveMajorityFlooredOtsuThreshold } from "../../../../../primitives/graph/index.js";
 import {
   classifyDirectoryRelation,
   MODULE_ENTRY_FILE_NAMES,

@@ -29,7 +29,7 @@ import {
   FACADE_OTSU_MIN_POPULATION,
   resolveFacadeAdoptionThreshold,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
-import { binomialUpperTail } from "../../../../../../../src/core/infra/statistics/index.js";
+import { binomialUpperTail } from "../../../../../../../src/core/primitives/math/statistics/index.js";
 
 function walked(relPath: string, language = "typescript"): FileDependencyGraphFile {
   return { relPath, language, symbolCount: 1 };
@@ -966,7 +966,7 @@ describe("detectLeakingAbstractions — de-facto surface children (bd tea-rags-m
 /**
  * The detector's adaptive adoption threshold over the majority-floored Otsu
  * policy (bd tea-rags-mcp-jetrd). The policy itself is a foundation primitive
- * (`core/infra/graph/otsu-split.ts`) and is tested there — these pin how THIS
+ * (`core/primitives/graph/otsu-split.ts`) and is tested there — these pin how THIS
  * detector parameterises it. Moved here from `otsu-split.test.ts` when the
  * primitive left the domain (bd tea-rags-mcp-89k7k.24); examples unchanged.
  */

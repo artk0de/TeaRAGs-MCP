@@ -1,5 +1,5 @@
 /**
- * Pure graph algorithms — foundation layer (`core/infra/`), importable by any
+ * Pure graph algorithms — primitives layer (`core/primitives/`), importable by any
  * layer above (adapters AND domains). Moved out of the codegraph trajectory so
  * the codegraph daemon (an adapter) can run SCC/PageRank without an
  * adapter->domain import.

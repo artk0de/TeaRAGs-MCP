@@ -20,7 +20,7 @@
  */
 
 import type { CochangeBurstWindowMethod } from "../../../../../contracts/types/codegraph.js";
-import { mulberry32 } from "../../../../../infra/statistics/index.js";
+import { mulberry32 } from "../../../../../primitives/math/index.js";
 import { authorIdentityKey } from "../../../git/history/index.js";
 import type { CochangeCommit } from "./commit-bundles.js";
 

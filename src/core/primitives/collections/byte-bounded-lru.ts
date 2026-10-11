@@ -9,7 +9,7 @@
  * first. An entry larger than the whole bound is not held at all, and setting
  * it drops what its key held before.
  *
- * Stays in `infra`: the explore domain (row cache, dense vectors) and the api
+ * Lives in `primitives`: the explore domain (row cache, dense vectors) and the api
  * layer (tree-graph content-hash memo) both hold one.
  */
 export class ByteBoundedLru<V> {

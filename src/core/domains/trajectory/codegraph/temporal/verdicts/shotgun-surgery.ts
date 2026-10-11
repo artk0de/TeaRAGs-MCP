@@ -125,14 +125,14 @@
  */
 
 import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { resolveMajorityFlooredOtsuThreshold } from "../../../../../primitives/graph/index.js";
 import {
   binomialUpperTail,
   mulberry32,
   poissonBinomialUpperTail,
   seedFromKey,
-} from "../../../../../infra/statistics/index.js";
+} from "../../../../../primitives/math/index.js";
 import { componentAncestry } from "../../component-geometry/index.js";
 import {
   benjaminiHochbergRejectionCount,

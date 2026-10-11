@@ -1,11 +1,11 @@
 /**
- * Barrel import-direction guard for the `src/core/infra/graph` foundation
+ * Barrel import-direction guard for the `src/core/primitives/graph` foundation
  * primitives (bd tea-rags-mcp-g7ca1).
  *
- * `infra/graph/` owns the pure graph algorithms (Tarjan SCC, PageRank, Otsu
+ * `primitives/graph/` owns the pure graph algorithms (Tarjan SCC, PageRank, Otsu
  * split, weighted-threshold components) behind an `index.ts` barrel. Consumers
  * in `src/` and `tests/` MUST import the capability through that barrel;
- * importing `infra/graph/tarjan-scc.js`, `infra/graph/page-rank.js` etc.
+ * importing `primitives/graph/tarjan-scc.js`, `primitives/graph/page-rank.js` etc.
  * directly past it is the leakingAbstraction BYPASS kind: the barrel cannot
  * vouch for (or re-shape) the graph surface without auditing every deep
  * importer by hand.
@@ -15,7 +15,7 @@
  * scan of runtime named import statements, resolved relative to the importing
  * file. `import type` clauses are erased at compile time and stay legal.
  *
- * The primitives' own unit tests (`tests/core/infra/graph/*.test.ts`) are
+ * The primitives' own unit tests (`tests/core/primitives/graph/*.test.ts`) are
  * exempt: a unit test exercises its unit under test directly, that is the
  * intra-module case Rule 2 of `.claude/rules/barrel-files.md` allows.
  *
@@ -33,12 +33,12 @@ import { describe, expect, it } from "vitest";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 /** The barrel home whose consumers this guard pins. */
-const BARREL_DIR = "src/core/infra/graph";
+const BARREL_DIR = "src/core/primitives/graph";
 /** Unit tests of the primitives themselves — the intra-module exemption. */
-const BARREL_UNIT_TESTS = "tests/core/infra/graph";
+const BARREL_UNIT_TESTS = "tests/core/primitives/graph";
 
 /** Deep specifiers must route through this barrel file instead. */
-const DEEP_SPECIFIER = /infra\/graph\/(?!index\.js$)[^"']+\.js$/;
+const DEEP_SPECIFIER = /primitives\/graph\/(?!index\.js$)[^"']+\.js$/;
 
 /** Files whose deep import is the assertion itself (barrel-identity pins). */
 const IDENTITY_TEST_EXEMPTS = [
@@ -87,8 +87,8 @@ function tsFiles(scanRoot: string): string[] {
   return files.map((file) => relative(ROOT, file));
 }
 
-describe("infra/graph primitives are consumed through the barrel", () => {
-  it("no file outside src/core/infra/graph/ runtime-imports an infra/graph/<file>.js deep path", () => {
+describe("primitives/graph is consumed through the barrel", () => {
+  it("no file outside src/core/primitives/graph/ runtime-imports a primitives/graph/<file>.js deep path", () => {
     const offenders: string[] = [];
     for (const scanRoot of SCAN_ROOTS) {
       for (const file of tsFiles(scanRoot)) {
@@ -112,7 +112,7 @@ describe("infra/graph primitives are consumed through the barrel", () => {
       for (const file of tsFiles(scanRoot)) {
         const text = readFileSync(join(ROOT, file), "utf-8");
         for (const statement of runtimeImports(text)) {
-          if (!statement.specifier.endsWith("infra/graph/index.js")) continue;
+          if (!statement.specifier.endsWith("primitives/graph/index.js")) continue;
           for (const name of statement.names) {
             expect(barrel, `${BARREL_DIR}/index.ts must re-export "${name}" for ${file}`).toMatch(
               new RegExp(`\\b${name}\\b`),

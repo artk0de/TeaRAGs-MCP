@@ -20,8 +20,8 @@ import type { BlobBatchReader } from "../../../../adapters/vcs/index.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOptions, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
-import { CommitDiffMemo } from "../../../../infra/commit-diff-memo.js";
-import { Semaphore } from "../../../../infra/semaphore.js";
+import { CommitDiffMemo } from "../../../../primitives/collections/index.js";
+import { Semaphore } from "../../../../primitives/concurrency/index.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../infra/index.js";
@@ -128,7 +128,7 @@ export class ChunkPhase {
    * commits are otherwise re-diffed by every batch. Lazily created beside the
    * blobReader on the first chunk-signal dispatch, dropped at `drain()`.
    * Memory is bounded inside CommitDiffMemo (LRU cap ~50k entries — see
-   * infra/commit-diff-memo.ts for the bound rationale).
+   * primitives/collections/commit-diff-memo.ts for the bound rationale).
    */
   private runDiffMemo?: CommitDiffMemo;
   /**

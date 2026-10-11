@@ -4,7 +4,7 @@ import {
   benjaminiHochbergRejectionCount,
   CONVENTIONAL_FDR_Q,
   signTestPValue,
-} from "../../../../../infra/statistics/index.js";
+} from "../../../../../primitives/math/index.js";
 import { languageFamilyOf } from "../language-family-record.js";
 import type {
   DependencyNormEstablishedDirection,

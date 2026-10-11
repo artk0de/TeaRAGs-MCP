@@ -30,7 +30,7 @@ import {
 import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
 import { applyOffsets, changedRowsInRange, mapHunksToChunks, type AdjustedRange } from "./offset-tracker.js";
 
-/** Duck type for injected concurrency limiter — matches infra/semaphore.ts Semaphore shape. */
+/** Duck type for injected concurrency limiter — matches primitives/concurrency/semaphore.ts Semaphore shape. */
 export interface ChunkConcurrencySemaphore {
   acquire: () => Promise<() => void>;
 }
@@ -40,7 +40,7 @@ export type WalkCommitDiffHunk = CommitDiffHunk;
 
 /**
  * Duck type for the run-scoped (commitSha, filePath) → hunks memo — matches
- * infra/commit-diff-memo.ts CommitDiffMemo (bd tea-rags-mcp-7gnre). An empty
+ * primitives/collections/commit-diff-memo.ts CommitDiffMemo (bd tea-rags-mcp-7gnre). An empty
  * array is a valid memoized value (identical or empty blobs / patch failure);
  * `undefined` means never computed.
  */

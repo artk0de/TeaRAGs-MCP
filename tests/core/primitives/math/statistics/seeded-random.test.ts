@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { mulberry32, seedFromKey } from "../../../../src/core/infra/statistics/index.js";
+import { mulberry32, seedFromKey } from "../../../../../src/core/primitives/math/statistics/index.js";
 
 describe("mulberry32", () => {
   it("keeps the sequence it produced before the lift into infra", () => {

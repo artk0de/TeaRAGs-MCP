@@ -10,7 +10,7 @@ import {
   binomialUpperTail,
   poissonBinomialUpperTail,
   signTestPValue,
-} from "../../../../src/core/infra/statistics/index.js";
+} from "../../../../../src/core/primitives/math/statistics/index.js";
 
 // bd tea-rags-mcp-zf9yz: the lifecycle test's tail — independent trials, each with its own probability.
 describe("poissonBinomialUpperTail", () => {

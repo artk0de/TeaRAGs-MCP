@@ -11,7 +11,7 @@
  * The pin was proven FAILING against the pre-move source: split-merge.ts
  * imported `resolveMajorityFlooredOtsuThreshold` from the detector barrel.
  * The design call (orchestrator, 2026-10-04) moved the primitive to the
- * foundation — `core/infra/graph/otsu-split.ts`, the Tarjan/PageRank home —
+ * foundation — `core/primitives/graph/otsu-split.ts`, the Tarjan/PageRank home —
  * and split-merge now imports it from there; this pin holds the direction
  * from here on.
  */

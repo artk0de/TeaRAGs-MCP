@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Semaphore } from "../../../src/core/infra/semaphore.js";
+import { Semaphore } from "../../../../src/core/primitives/concurrency/semaphore.js";
 
 describe("Semaphore", () => {
   it("allows up to N concurrent acquisitions", async () => {

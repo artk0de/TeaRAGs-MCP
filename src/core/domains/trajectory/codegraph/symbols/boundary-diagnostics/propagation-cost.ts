@@ -29,7 +29,7 @@
  * plus bitset rows — and one per component over its induced sub-graph.
  */
 import type { FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { resolveMajorityFlooredOtsuThreshold, transitiveVisibility } from "../../../../../infra/graph/index.js";
+import { resolveMajorityFlooredOtsuThreshold, transitiveVisibility } from "../../../../../primitives/graph/index.js";
 
 /** Same population floor the other boundary detectors trust Otsu's split on. */
 export const PROPAGATION_COST_OTSU_MIN_POPULATION = 8;

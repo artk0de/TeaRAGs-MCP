@@ -1,5 +1,5 @@
 /**
- * Pure statistical tests — foundation layer (`core/infra/`), shared by the
+ * Pure statistical tests — primitives layer (`core/primitives/`), shared by the
  * co-change pair gate and the dependency norms (bd tea-rags-mcp-xb669.8).
  */
 

@@ -3,13 +3,13 @@
  * leaking-abstraction detector draws over its facade-adoption population, and
  * the policy that turns it into the effective adoption threshold. Foundation
  * primitive since bd tea-rags-mcp-89k7k.24 (the temporal verdicts consume it
- * too), so it is tested beside its `core/infra/graph/` siblings; the
+ * too), so it is tested beside its `core/primitives/graph/` siblings; the
  * facade-adoption detector's own use stays with the detector, in
  * `boundary-diagnostics/leaking-abstraction.test.ts`.
  */
 import { describe, expect, it } from "vitest";
 
-import { otsuSplit, resolveMajorityFlooredOtsuThreshold } from "../../../../src/core/infra/graph/index.js";
+import { otsuSplit, resolveMajorityFlooredOtsuThreshold } from "../../../../src/core/primitives/graph/index.js";
 
 describe("otsuSplit", () => {
   it("cuts a bimodal set at the midpoint of the gap between its modes", () => {

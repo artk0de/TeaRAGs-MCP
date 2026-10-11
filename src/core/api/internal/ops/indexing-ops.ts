@@ -57,8 +57,8 @@ import { advanceChunkSetStamp } from "../../../domains/maintenance/drift/index.j
 import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/index.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { isDebug } from "../../../infra/runtime.js";
-import { computeScoreBackground } from "../../../infra/score-background.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
+import { computeScoreBackground } from "../../../primitives/math/index.js";
 import type {
   ChangeStats,
   ChunkerConfig,

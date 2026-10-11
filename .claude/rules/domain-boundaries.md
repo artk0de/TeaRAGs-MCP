@@ -19,7 +19,7 @@ paths:
             domains/{explore, trajectory, ingest, language}   <- Domain modules
                  \    |    /
                   \   |   /
-              contracts   adapters   infra         <- Foundation (lowest level)
+         contracts   primitives   adapters       <- Foundation (lowest level)
 ```
 
 **Dependency rules:**
@@ -28,23 +28,25 @@ paths:
 | -------------------------- | ----------------------------------------------------------------------- | ---------------------------- |
 | `cli/`                     | `bootstrap/`, `core/api/public/`, `core/api/index.js` (assembly barrel) | (process entry)              |
 | `mcp/`                     | `core/api/public/`                                                      | tool surface                 |
-| `bootstrap/`               | `mcp/`, `core/api/`, `core/{contracts, adapters, infra}/`               | composition root             |
+| `bootstrap/`               | `mcp/`, `core/api/`, `core/{contracts, primitives, adapters}/`          | composition root             |
 | `src/index.ts`             | `bootstrap/`                                                            | process bootstrap            |
-| `core/api/`                | domain modules, `contracts/`, `adapters/`, `infra/`                     | `cli/`, `mcp/`, `bootstrap/` |
-| `core/domains/explore/`    | `contracts/`, `adapters/`, `infra/`                                     | `api/`                       |
-| `core/domains/trajectory/` | `contracts/`, `adapters/`, `infra/`                                     | `api/`                       |
-| `core/domains/ingest/`     | `contracts/`, `adapters/`, `infra/`                                     | `api/`                       |
-| `core/domains/language/`   | `contracts/`, `infra/` _(leaf)_                                         | injected via factory         |
-| `core/contracts/`          | _(nothing — pure interfaces/types, zero `core/` deps)_                  | domain modules, `api/`       |
-| `core/adapters/`           | `contracts/`, `infra/`                                                  | domain modules, `api/`       |
-| `core/infra/`              | `contracts/` _(type-only)_                                              | all `core/` layers           |
+| `core/api/`                | domain modules, `contracts/`, `primitives/`, `adapters/`                | `cli/`, `mcp/`, `bootstrap/` |
+| `core/domains/explore/`    | `contracts/`, `primitives/`, `adapters/`                                | `api/`                       |
+| `core/domains/trajectory/` | `contracts/`, `primitives/`, `adapters/`                                | `api/`                       |
+| `core/domains/ingest/`     | `contracts/`, `primitives/`, `adapters/`                                | `api/`                       |
+| `core/domains/language/`   | `contracts/`, `primitives/` _(leaf)_                                    | injected via factory         |
+| `core/contracts/`          | _(other `contracts/` modules only — zero other `core/` deps)_           | all `core/` layers           |
+| `core/primitives/`         | `contracts/` _(type-only)_                                              | all `core/` layers           |
+| `core/adapters/`           | `contracts/`, `primitives/`                                             | domain modules, `api/`       |
+| `core/infra/`              | _being retired (bd tea-rags-mcp-2wu2h) — no new modules_                | legacy importers only        |
 
 **Foundation order.** Inside the foundation row the three layers are ordered
-`contracts < infra < adapters`. `contracts` imports nothing; `infra` may
-`import type` from `contracts` (runtime imports stay forbidden — a runtime edge
-means logic, not a type, was placed wrong); `adapters` may import both. No cycle
-can form, because `contracts` is held free of every `core/` import by its own
-guard zone. Rationale and the type duplication the stricter rule caused:
+`contracts < primitives < adapters`. `contracts` imports only other `contracts`
+modules; `primitives` may `import type` from `contracts` (runtime imports stay
+forbidden — a runtime edge means logic, not a type, was placed wrong);
+`adapters` may import both. No cycle can form, because `contracts` is held free
+of every other `core/` import by its own guard zone. Rationale and the type
+duplication the stricter rule caused:
 `docs/superpowers/specs/2026-07-26-infra-tidy-design.md`.
 
 **Consumer surface rule (MANDATORY).** `mcp` reaches `core` ONLY through
@@ -56,9 +58,9 @@ surface — for the runtime pieces its commands construct directly (ops classes,
 the path-collection resolver, `createApp`); a command that news up ops over bare
 clients is a composition actor, not a contract consumer (bd
 tea-rags-mcp-89k7k.22). Deep paths stay forbidden for both: NOT
-`api/internal/**`, `contracts/`, `adapters/`, `infra/` directly. A VALUE
-re-export of an internal runtime symbol through `api/public/index.ts` is the
-defect this split removed — it put the stable contract layer in a dependency
+`api/internal/**`, `contracts/`, `primitives/`, `adapters/`, `infra/` directly.
+A VALUE re-export of an internal runtime symbol through `api/public/index.ts` is
+the defect this split removed — it put the stable contract layer in a dependency
 cycle with the unstable api component (delta 0.87). Pin:
 `tests/core/api/public/sdp-runtime-import-direction.test.ts`.
 
@@ -79,11 +81,13 @@ See spec
 **Prohibited dependencies (hard errors):**
 
 - Domain modules -x-> each other (`explore` -x-> `trajectory`, etc.)
-- Foundation -x-> any layer above (`contracts`/`adapters`/`infra` -x-> domain
-  modules, `api/`, or outer layers)
+- Foundation -x-> any layer above (`contracts`/`primitives`/`adapters` -x->
+  domain modules, `api/`, or outer layers)
+- `primitives/` -x-> `adapters/`; `primitives/` -x-> `contracts/` at runtime
+  (`import type` only)
 - Outer layers -x-> `core` below `api/public` (`cli`/`mcp` -x-> `domains` /
-  `contracts` / `adapters` / `infra` / `api/internal`)
-- `contracts/` -x-> any `core/` layer (contracts are pure)
+  `contracts` / `primitives` / `adapters` / `infra` / `api/internal`)
+- `contracts/` -x-> any non-`contracts` `core/` layer
 
 ## Layer Responsibilities
 
@@ -156,6 +160,10 @@ See spec
   etc.)
 - Signal utilities (normalize, p95, payload resolvers)
 - Barrel exports via index.ts
+- **Contracts exception.** Pure code whose only runtime dependency is other
+  `contracts/` modules MAY live here (render/predicate rules over contract
+  types). Code that needs a `primitives/`, `adapters/` or domain import does
+  not.
 
 **core/adapters/** — External system types (foundation)
 
@@ -163,27 +171,38 @@ See spec
   etc.)
 - Git client, embedding providers
 
-**core/infra/** — Foundation utilities (lowest level)
+**core/primitives/** — I/O-free shared code (lowest runtime layer)
 
-Only technology-generic primitives, and only ones at least two layers need. A
-module whose reason to change is a PRODUCT decision belongs to its owning
-domain, however many places import it — see
-`docs/superpowers/specs/2026-07-26-infra-tidy-design.md` for the criterion and
-what it moved out (the project registry and the migration framework to
-`domains/maintenance/`, drift detection likewise, the embedding-model guard to
-`adapters/qdrant/`).
+Deterministic, side-effect-free code needed below the domains: shared by two
+domains that may not import each other, by adapters, or by `api/`. Grouped by
+category — `collections/`, `concurrency/`, `math/`, `graph/`, `ids/`, `paths/`,
+`errors/`, `diagnostics/`. NO root barrel: consumers import
+`primitives/<category>/index.js`. Allowed imports: relative within
+`primitives/`, `import type` from `contracts/`, pure npm and `node:` modules
+(`node:path`, `node:crypto`, `picomatch`, `ignore`). Pins:
+`tests/core/primitives/no-io-guard.test.ts` (no I/O module, no runtime
+`contracts` edge, no upward edge) and the `src/core/primitives/**` eslint zone.
 
-- `runtime.ts` — isDebug(), setDebug(); imported by every layer
-- `errors.ts` — `TeaRagsError` base + config errors + `UnknownError`
-- `collection-name.ts` — validatePath, resolveCollectionName (request
-  resolution, which validates input and throws api errors, lives in
-  `api/internal/collection-resolver.ts`)
-- `semaphore.ts`, `materialize.ts`, `stats-cache.ts`
-- `graph/` — Tarjan SCC + PageRank, language-agnostic
-- `symbolid/`, `file-classification/`, `scope-detection.ts`,
-  `commit-diff-memo.ts` — each shared by two domains that may not import each
-  other, so the foundation is their only legal home; each says so in its
-  docblock
+**Three-destination rule (MANDATORY).** There is no "foundation utilities"
+bucket. A module below `api/` goes to exactly one of:
+
+1. **I/O against a concrete external system** (Qdrant, DuckDB, git, embeddings,
+   tree-sitter native API, local filesystem, child processes) →
+   `adapters/<system>/`, behind a domain-owned port.
+2. **I/O-free, deterministic code needed below the domains** →
+   `primitives/<category>/`.
+3. **Anything whose reason to change is one domain's product decision** → that
+   domain, however many places import it.
+
+"Effectful but not an adapter" is not a category. The contracts exception above
+is the only other home: pure code that depends on `contracts/` alone.
+
+**core/infra/** — being retired (bd tea-rags-mcp-2wu2h)
+
+No new modules. Remaining files move to their three-destination home wave by
+wave; `infra` keeps its legacy zone (`import type` from `contracts` only) until
+the directory is deleted. Background:
+`docs/superpowers/specs/2026-07-26-infra-tidy-design.md`.
 
 ## New Code Placement Rule (MANDATORY)
 
@@ -196,6 +215,8 @@ dirs under `src/` — all code goes into `core/`.
 | Embedding adapter     | `core/adapters/embeddings/`   | `src/providers/`     |
 | New domain module     | `core/domains/<module-name>/` | `src/<module-name>/` |
 | Bootstrap/config      | `bootstrap/`                  | `src/config/`        |
+| Pure shared helper    | `core/primitives/<category>/` | `core/infra/`        |
+| Local-disk/process IO | `core/adapters/<system>/`     | `core/infra/`        |
 
 Tests mirror source structure: `tests/core/adapters/qdrant/` for
 `src/core/adapters/qdrant/`.

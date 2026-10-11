@@ -40,7 +40,7 @@ import {
   resolveMajorityFlooredOtsuThreshold,
   weightThresholdComponents,
   type WeightedNodeEdge,
-} from "../../../../../infra/graph/index.js";
+} from "../../../../../primitives/graph/index.js";
 import {
   cochangeStrength,
   SILENT_COUPLING_OTSU_MIN_POPULATION,
