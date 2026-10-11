@@ -11,7 +11,7 @@ import {
 } from "../__helpers__/test-helpers.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import { pipelineLog } from "../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
-import { setDebug } from "../../../../../src/core/infra/runtime.js";
+import { setDebug } from "../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 vi.mock("tree-sitter", () => ({
   default: class MockParser {

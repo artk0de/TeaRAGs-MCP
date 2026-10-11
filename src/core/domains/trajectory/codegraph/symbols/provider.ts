@@ -59,7 +59,7 @@ import type {
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { collectDependencyManifestSources } from "../../../../infra/dependency-manifests.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type { PathFilter } from "../../../../primitives/paths/index.js";
 import {
   buildCodegraphExclusionFilter,

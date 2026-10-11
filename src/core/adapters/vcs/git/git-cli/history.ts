@@ -5,7 +5,7 @@
  * base, commit time, ancestry) stay in `client.ts`.
  */
 import { resolveGitExecutable } from "../../../../infra/git-executable.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type {
   BlameLine,
   CommitChangedPath,

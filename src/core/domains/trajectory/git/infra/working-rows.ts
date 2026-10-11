@@ -29,7 +29,7 @@ import { isAbsolute } from "node:path";
 import { structuredPatch } from "diff";
 
 import type { BlobBatchReader, FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import { assembleOverlays } from "./assemble-overlays.js";

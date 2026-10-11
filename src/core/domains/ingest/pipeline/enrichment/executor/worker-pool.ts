@@ -56,7 +56,7 @@ import type {
   FileSignalOverlay,
   WorkerEnrichmentDescriptor,
 } from "../../../../../contracts/index.js";
-import { isDebug } from "../../../../../infra/runtime.js";
+import { isDebug } from "../../../../../primitives/diagnostics/index.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import { pipelineLog } from "../../infra/debug-logger.js";
 import {

@@ -11,7 +11,7 @@ import {
   TrajectoryGitError,
   TrajectoryStaticError,
 } from "../../../../src/core/domains/trajectory/errors.js";
-import { TeaRagsError } from "../../../../src/core/infra/errors.js";
+import { TeaRagsError } from "../../../../src/core/primitives/errors/tea-rags-error.js";
 
 describe("TrajectoryError hierarchy", () => {
   describe("TrajectoryError (abstract)", () => {

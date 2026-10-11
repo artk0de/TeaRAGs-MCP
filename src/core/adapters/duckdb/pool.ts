@@ -35,7 +35,7 @@ import type { CollectionGraphHandle, GraphDbClientPoolPort } from "../../contrac
 import type { CallResolver, GlobalSymbolTable } from "../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { DatabaseMigrationApplier } from "../../contracts/types/migration.js";
-import { isDebug } from "../../infra/runtime.js";
+import { isDebug } from "../../primitives/diagnostics/index.js";
 import { DuckDbGraphClient } from "./client.js";
 import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.js";
 import { CodegraphPathLeases } from "./codegraph-path-leases.js";

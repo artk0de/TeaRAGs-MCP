@@ -20,7 +20,7 @@ import {
   WorktreeSeedMarkerUnreadableError,
 } from "../../../../src/core/domains/ingest/errors.js";
 import { createDeletionOutcome } from "../../../../src/core/domains/ingest/sync/deletion/outcome.js";
-import { TeaRagsError } from "../../../../src/core/infra/errors.js";
+import { TeaRagsError } from "../../../../src/core/primitives/errors/tea-rags-error.js";
 
 describe("IngestError hierarchy", () => {
   describe("IngestError (abstract)", () => {

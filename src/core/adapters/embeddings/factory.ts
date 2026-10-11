@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { EmbeddingConfig } from "../../contracts/types/config.js";
-import { ConfigValueInvalidError, ConfigValueMissingError } from "../../infra/errors.js";
+import { ConfigValueInvalidError, ConfigValueMissingError } from "../../primitives/errors/index.js";
 import type { EmbeddingProvider } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
 import { LLAMA_SERVER_DEFAULT_URL, LlamaServerEmbeddings } from "./llama-server/provider.js";

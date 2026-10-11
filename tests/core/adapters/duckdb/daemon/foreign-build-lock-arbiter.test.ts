@@ -41,7 +41,7 @@ import {
   CodegraphDaemonDrainRefusedError,
   DuckDbOpenFailedError,
 } from "../../../../../src/core/adapters/duckdb/errors.js";
-import { setDebug } from "../../../../../src/core/infra/runtime.js";
+import { setDebug } from "../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 const COLLECTION = fixturePhysicalCollectionName("code_arbiter_v1");
 const OWN_FINGERPRINT = "/here/build/core/adapters/duckdb/daemon|0.0.0|1";

@@ -20,7 +20,7 @@ import {
   type ProjectInfo,
   type RegistryEnvEdit,
 } from "../../../domains/maintenance/registry/index.js";
-import { ConfigError } from "../../../infra/errors.js";
+import { ConfigError } from "../../../primitives/errors/index.js";
 import { resolveCollectionName } from "../../../primitives/ids/index.js";
 import type { ProjectRegistryAddress, StaleProjectEntry, StaleProjectPruneReport } from "../../public/dto/registry.js";
 import {

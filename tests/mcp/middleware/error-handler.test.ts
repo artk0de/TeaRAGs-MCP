@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { LlamaServerUnavailableError } from "../../../src/core/adapters/embeddings/llama-server/errors.js";
-import { TeaRagsError, UnknownError } from "../../../src/core/infra/errors.js";
+import { TeaRagsError, UnknownError } from "../../../src/core/primitives/errors/tea-rags-error.js";
 import type { McpToolResult } from "../../../src/mcp/format.js";
 import {
   createRegisterTool,

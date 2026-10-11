@@ -16,7 +16,7 @@ import type {
   VcsGitAdapter,
 } from "../../../../adapters/vcs/index.js";
 import type { CommitDiffHunk, CommitDiffMemoPort } from "../../../../contracts/types/commit-diff-memo.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import {
   authorIdentityKey,

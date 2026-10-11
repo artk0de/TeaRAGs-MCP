@@ -5,7 +5,7 @@
  * that can fail due to external service unavailability.
  */
 
-import { TeaRagsError } from "../infra/errors.js";
+import { TeaRagsError } from "../primitives/errors/index.js";
 
 /**
  * Every infrastructure error code, at runtime — `InfraErrorCode` is derived

@@ -5,7 +5,7 @@
  */
 
 import type { CommitFileNumstat, FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import { aggregateFileChurnFollowingRenames, sliceCommitsFollowingRenames } from "../history/index.js";
 import type { GitEnrichmentCache } from "./cache.js";
 import { aggregateFileChurnWindow, fileChurnWindowOf, type FileChurnDiscovery } from "./file-churn-discovery.js";

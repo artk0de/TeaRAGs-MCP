@@ -20,7 +20,7 @@ import type {
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
 import { materializeTree } from "../../../../infra/materialize.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import {
   classifyMethod,
   constObjectNamespaceContainerName,

@@ -27,7 +27,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { BlameLine } from "../../../../adapters/vcs/index.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import { mailmapStampMatches, readMailmapFingerprint, resolveRepoIdentity } from "../history/index.js";
 
 const DEFAULT_MAX_BYTES = 128 * 1024 * 1024;

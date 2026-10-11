@@ -34,7 +34,7 @@ export type {
 } from "./types.js";
 export { pipelineLog } from "./debug-logger.js";
 export { parallelLimit } from "./parallel.js";
-export { isDebug, setDebug } from "../../../../infra/runtime.js";
+export { isDebug, setDebug } from "../../../../primitives/diagnostics/index.js";
 export { WorkerDispatchPool } from "./worker-dispatch-pool.js";
 export { WorkerPool } from "./worker-pool.js";
 export { ThreadTransport } from "./thread-transport.js";

@@ -27,7 +27,7 @@ import type {
 } from "../core/api/index.js";
 import type { CollectionEntry } from "../core/api/public/index.js";
 import type { EmbeddingConfig } from "../core/contracts/types/config.js";
-import { isDebug } from "../core/infra/runtime.js";
+import { isDebug } from "../core/primitives/diagnostics/index.js";
 
 /** A binding as constructed: usable at once, ready to embed once `ready` settles. */
 export interface PreparedCollectionEmbeddingBinding {

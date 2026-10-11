@@ -14,7 +14,7 @@
 
 import Bottleneck from "bottleneck";
 
-import { isDebug } from "../../infra/runtime.js";
+import { isDebug } from "../../primitives/diagnostics/index.js";
 import {
   effectiveRecoveryWaitMs,
   type EmbeddingCallOptions,

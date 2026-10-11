@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import { assertRegistryEnvValueParses } from "../../src/bootstrap/config/parse.js";
-import { ConfigValueInvalidError } from "../../src/core/infra/errors.js";
+import { ConfigValueInvalidError } from "../../src/core/primitives/errors/tea-rags-error.js";
 
 describe("assertRegistryEnvValueParses", () => {
   it("accepts values the config schema parses", () => {

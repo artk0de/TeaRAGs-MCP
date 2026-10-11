@@ -1,12 +1,12 @@
 /**
  * Language domain errors — per-language provider construction.
  *
- * Lives in the leaf `domains/language/` domain. Imports only `infra/errors.js`
- * (allowed by the leaf-domain eslint guard, which permits contracts/, infra/,
+ * Lives in the leaf `domains/language/` domain. Imports only `primitives/errors/index.js`
+ * (allowed by the leaf-domain eslint guard, which permits contracts/, primitives/,
  * and tree-sitter). Per `.claude/rules/typed-errors.md`: no `throw new Error`.
  */
 
-import { TeaRagsError } from "../../infra/errors.js";
+import { TeaRagsError } from "../../primitives/errors/index.js";
 
 export type LanguageErrorCode = "LANGUAGE_UNSUPPORTED" | "LANGUAGE_GRAMMAR_NOT_INSTALLED";
 

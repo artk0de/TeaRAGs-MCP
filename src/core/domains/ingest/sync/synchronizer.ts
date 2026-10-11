@@ -15,7 +15,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { fileContentHash } from "../../../primitives/ids/index.js";
 import type { FileChanges } from "../../../types.js";
 import { MerkleTree } from "./infra/merkle.js";

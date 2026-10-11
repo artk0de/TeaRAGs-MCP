@@ -19,7 +19,7 @@
  * spawner tells "the build failed" from "the child died" by whether a reply
  * arrived, and only the second carries an exit code worth reading.
  */
-import { isDebug, setDebug } from "../../../../infra/runtime.js";
+import { isDebug, setDebug } from "../../../../primitives/diagnostics/index.js";
 import { buildWorkingTreeGraph } from "./tree-graph-build.js";
 import { TreeGraphParseCacheRegistry } from "./tree-graph-parse-caches.js";
 import {

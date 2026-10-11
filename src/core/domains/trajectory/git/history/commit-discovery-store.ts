@@ -37,7 +37,7 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSy
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type {
   GitCommitDiscoveryEntry,
   GitCommitDiscoveryPersistence,

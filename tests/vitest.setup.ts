@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterAll } from "vitest";
 
 import { languageTestFileConventions } from "../src/core/domains/language/capability/native.js";
-import { setDebug } from "../src/core/infra/runtime.js";
+import { setDebug } from "../src/core/primitives/diagnostics/debug-flag.js";
 import { installTestFileConventions } from "../src/core/primitives/paths/file-classification/test-file-conventions.js";
 
 // The language domain owns every language's test-file masks and installs them

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { ResolveRunStatsRow } from "../../../../../src/core/contracts/types/codegraph.js";
 import { summarizeCodegraphResolve } from "../../../../../src/core/domains/ingest/pipeline/status-module.js";
-import { setDebug } from "../../../../../src/core/infra/runtime.js";
+import { setDebug } from "../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 // bd tea-rags-mcp-cnqrg — the per-(language, receiverKind) cg_run_stats rows fold
 // into the status DTO: aggregate over all rows + a per-language breakdown that

@@ -13,7 +13,7 @@ import { z } from "zod";
 
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { PROJECT_NAME_RE } from "../../../domains/maintenance/registry/constants.js";
-import { ConfigValueInvalidError } from "../../../infra/errors.js";
+import { ConfigValueInvalidError } from "../../../primitives/errors/index.js";
 
 /**
  * Zod schema for an optional project name. Sourced from PROJECT_NAME_RE

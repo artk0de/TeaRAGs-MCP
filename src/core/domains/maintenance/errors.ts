@@ -3,7 +3,7 @@
  */
 
 import type { IndexingLockHolder } from "../../contracts/types/footprint.js";
-import { TeaRagsError } from "../../infra/errors.js";
+import { TeaRagsError } from "../../primitives/errors/index.js";
 
 /**
  * Maintenance domain error codes. Local strict union.

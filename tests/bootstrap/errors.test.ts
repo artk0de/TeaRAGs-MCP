@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ConfigError, ConfigValueInvalidError, ConfigValueMissingError } from "../../src/bootstrap/errors.js";
-import { TeaRagsError } from "../../src/core/infra/errors.js";
+import { TeaRagsError } from "../../src/core/primitives/errors/tea-rags-error.js";
 
 describe("ConfigError hierarchy", () => {
   describe("ConfigValueInvalidError", () => {

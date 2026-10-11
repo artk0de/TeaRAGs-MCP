@@ -23,7 +23,7 @@
  * it is re-exported here so the module's import surface is unchanged.
  */
 
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import { readConcurrencyLimits } from "./debug-log-dependencies.js";
 import { formatElapsed, renderSlowFilesBlock, renderStageProfilingBlock } from "./debug-log-format.js";
 import { PipelineLogSink } from "./pipeline-log-sink.js";

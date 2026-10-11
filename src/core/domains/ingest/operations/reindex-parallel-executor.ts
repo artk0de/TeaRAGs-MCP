@@ -14,7 +14,7 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import type { ChunkLookupEntry, FileChanges, ProgressCallback } from "../../../types.js";
 import type { ProcessingContext } from "../pipeline/base.js";
 import { processRelativeFiles } from "../pipeline/file-processor.js";

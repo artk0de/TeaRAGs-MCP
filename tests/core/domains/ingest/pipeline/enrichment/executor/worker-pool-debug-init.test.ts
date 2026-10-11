@@ -9,7 +9,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { setDebug } from "../../../../../../../src/core/infra/runtime.js";
+import { setDebug } from "../../../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 const { poolSpy } = vi.hoisted(() => ({ poolSpy: vi.fn() }));
 

@@ -21,7 +21,7 @@ import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ing
 import { FilePhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/file-phase.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
-import { setDebug } from "../../../../../../src/core/infra/runtime.js";
+import { setDebug } from "../../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 const COLL = fixturePhysicalCollectionName("coll");
 

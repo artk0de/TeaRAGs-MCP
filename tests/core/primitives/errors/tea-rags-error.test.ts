@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { TeaRagsError, UnknownError } from "../../../src/core/infra/errors.js";
+import { TeaRagsError, UnknownError } from "../../../../src/core/primitives/errors/tea-rags-error.js";
 
 describe("TeaRagsError", () => {
   // TeaRagsError is abstract, so we test via UnknownError (concrete subclass)

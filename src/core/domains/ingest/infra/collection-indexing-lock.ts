@@ -35,7 +35,7 @@ import { hostname as osHostname } from "node:os";
 import { join } from "node:path";
 
 import type { IndexingLockRemovalOutcome } from "../../../contracts/types/footprint.js";
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { IndexingLockUnavailableError } from "../errors.js";
 import { INDEXING_HEARTBEAT_INTERVAL_MS, STALE_INDEXING_THRESHOLD_MS } from "./indexing-marker-codec.js";
 

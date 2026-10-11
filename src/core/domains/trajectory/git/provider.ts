@@ -35,7 +35,7 @@ import type {
   WorkerEnrichmentDescriptor,
 } from "../../../contracts/types/provider.js";
 import type { RerankPreset } from "../../../contracts/types/reranker.js";
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { GIT_TRAJECTORY_ALGORITHM_VERSION } from "./algorithm-version.js";
 import { gitFilters } from "./filters.js";
 import {

@@ -4,7 +4,7 @@
  * Re-exports subdomain errors for convenience.
  */
 
-import { TeaRagsError } from "../../infra/errors.js";
+import { TeaRagsError } from "../../primitives/errors/index.js";
 
 /**
  * Trajectory domain error codes (git + static + codegraph).

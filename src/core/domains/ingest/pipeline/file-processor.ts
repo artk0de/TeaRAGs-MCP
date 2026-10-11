@@ -10,7 +10,7 @@
 import { join } from "node:path";
 
 import type { FileExtraction } from "../../../contracts/types/codegraph.js";
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import type { ChunkLookupEntry } from "../../../types.js";
 import type { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
 import type { QuarantineStore } from "../sync/index.js";

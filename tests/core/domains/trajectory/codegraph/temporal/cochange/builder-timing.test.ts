@@ -16,7 +16,7 @@ import {
   TemporalCochangeBuilder,
   type TemporalCochangeHistorySource,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
-import { setDebug } from "../../../../../../../src/core/infra/runtime.js";
+import { setDebug } from "../../../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 const NOW_MS = 1_760_000_000_000;
 /** A day: wider than any burst window (bd tea-rags-mcp-3vg0x), so the two commits are two bursts. */

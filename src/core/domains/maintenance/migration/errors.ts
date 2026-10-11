@@ -1,4 +1,4 @@
-import { TeaRagsError } from "../../../infra/errors.js";
+import { TeaRagsError } from "../../../primitives/errors/index.js";
 
 export class MigrationStepError extends TeaRagsError {
   constructor(pipeline: string, stepName: string, cause: Error) {

@@ -17,7 +17,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import type { EmbeddingProducerStarvation } from "../../../contracts/types/registry.js";
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { PipelineNotStartedError } from "../errors.js";
 import { classifyEmbeddingQuarantinable, type QuarantineStore } from "../sync/index.js";
 import { AdaptiveBatchSizer } from "./adaptive-batch-sizer.js";

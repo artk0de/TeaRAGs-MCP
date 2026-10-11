@@ -57,7 +57,7 @@ import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
 import type ts from "typescript";
 
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import { loadTypeScriptCompiler, type TsCompilerOptions } from "./program/index.js";
 
 /** No `baseUrl`, no aliases — every non-relative specifier is then external. */

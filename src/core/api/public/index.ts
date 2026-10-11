@@ -147,7 +147,7 @@ export {
 } from "./errors.js";
 export type { InputErrorCode, DocumentMetadataViolation } from "./errors.js";
 
-// ── Error classes — foundation + config (infra/errors.ts) ─────────────
+// ── Error classes — foundation + config (primitives/errors) ──────────
 export {
   TeaRagsError,
   UnknownError,
@@ -155,8 +155,8 @@ export {
   ConfigValueInvalidError,
   ConfigValueMissingError,
   ConfigNotInitializedError,
-} from "../../infra/errors.js";
-export type { ConfigErrorCode } from "../../infra/errors.js";
+} from "../../primitives/errors/index.js";
+export type { ConfigErrorCode } from "../../primitives/errors/index.js";
 
 // ── Error classes — ingest domain (domains/ingest/errors.ts) ─────────
 // The auto-update updater tells "the collection is already indexing" apart

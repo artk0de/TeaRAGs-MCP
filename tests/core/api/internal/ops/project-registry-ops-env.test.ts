@@ -20,7 +20,7 @@ import {
   ProjectNotRegisteredError,
 } from "../../../../../src/core/api/public/errors.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
-import { ConfigValueInvalidError } from "../../../../../src/core/infra/errors.js";
+import { ConfigValueInvalidError } from "../../../../../src/core/primitives/errors/tea-rags-error.js";
 
 describe("ProjectRegistryOps — project env", () => {
   let dir: string;

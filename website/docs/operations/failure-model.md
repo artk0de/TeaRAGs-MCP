@@ -12,8 +12,8 @@ How TeaRAGs handles things going wrong: what can fail, what's retried automatica
 Every runtime error is a concrete subclass of `TeaRagsError`. The MCP server never returns a generic `Error` to clients — every failure carries a stable code and an actionable hint. Source: `src/core/contracts/errors.ts` and the domain-specific error files.
 
 ```
-TeaRagsError (abstract)                    src/core/infra/errors.ts
-  ├─ UnknownError                          src/core/infra/errors.ts
+TeaRagsError (abstract)                    src/core/primitives/errors/tea-rags-error.ts
+  ├─ UnknownError                          src/core/primitives/errors/tea-rags-error.ts
   ├─ InputValidationError (abstract)       src/core/api/errors.ts
   ├─ InfraError (abstract)                 src/core/adapters/errors.ts
   ├─ IngestError (abstract)                src/core/domains/ingest/errors.ts

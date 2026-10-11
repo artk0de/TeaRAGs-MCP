@@ -2,7 +2,7 @@
  * Base error class and UnknownError — foundation for all TeaRags errors.
  */
 
-import type { ErrorCode, TeaRagsErrorContract } from "../contracts/errors.js";
+import type { ErrorCode, TeaRagsErrorContract } from "../../contracts/errors.js";
 
 /**
  * Abstract base class for all TeaRags errors.

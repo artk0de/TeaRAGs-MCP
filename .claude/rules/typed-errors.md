@@ -33,8 +33,8 @@ All runtime errors MUST use concrete error classes from unified hierarchy.
 ## Error Hierarchy
 
 ```
-TeaRagsError (abstract)                    src/core/infra/errors.ts
-  ├─ UnknownError                          src/core/infra/errors.ts
+TeaRagsError (abstract)                    src/core/primitives/errors/tea-rags-error.ts
+  ├─ UnknownError                          src/core/primitives/errors/tea-rags-error.ts
   ├─ InputValidationError (abstract)       src/core/api/errors.ts
   ├─ InfraError (abstract)                 src/core/adapters/errors.ts
   ├─ IngestError (abstract)                src/core/domains/ingest/errors.ts

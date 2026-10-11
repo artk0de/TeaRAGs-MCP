@@ -17,7 +17,7 @@
 import { dirname } from "node:path";
 
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { CodegraphDaemonUnreachableError } from "../errors.js";
 import { DaemonGraphDbClient } from "./client.js";
 import { daemonPathsForKeyDir, isDaemonPidAlive, readDaemonPid } from "./lifecycle.js";

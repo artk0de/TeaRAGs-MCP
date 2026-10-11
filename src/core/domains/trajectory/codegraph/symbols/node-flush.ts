@@ -38,7 +38,7 @@ import type {
   TypeDeclarationRow,
 } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 
 /**
  * Resolve the graph client for a collection. The queue never learns about pool

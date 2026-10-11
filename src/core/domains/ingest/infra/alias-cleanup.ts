@@ -1,6 +1,6 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { isCollectionBuildInFlight } from "./collection-build-lease.js";
 
 /**
