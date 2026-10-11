@@ -356,3 +356,96 @@ describe("ForeignBuildDaemonLockArbiter#settle (hw27k)", () => {
     });
   });
 });
+
+describe("the arbitration debug line (bd tea-rags-mcp-zlt41)", () => {
+  const KEY = "CODEGRAPH_FOREIGN_DAEMON_ARBITRATION";
+
+  /** Parsed fields of every arbitration line written to stderr. */
+  function captureArbitrationLines(): () => Record<string, unknown>[] {
+    const lines: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    return () =>
+      lines
+        .filter((l) => l.includes(KEY))
+        .map((l) => JSON.parse(l.slice(l.indexOf(KEY) + KEY.length).trim()) as Record<string, unknown>);
+  }
+
+  it("names a drained holder with its pid, build dir, duration and database", async () => {
+    makeRoot();
+    setDebug(true);
+    const foreign = makeKeyDir(FOREIGN_FINGERPRINT, process.pid);
+    await listenAsDaemon(foreign, "exit");
+    const lines = captureArbitrationLines();
+
+    const error = lockErrorHeldBy(process.pid);
+    await makeArbiter(5_000).settle(error, COLLECTION);
+
+    expect(lines()).toHaveLength(1);
+    expect(lines()[0]).toMatchObject({
+      outcome: "drained",
+      holderPid: process.pid,
+      holderBuildDir: foreign.buildDir,
+      holderBuildFingerprint: FOREIGN_FINGERPRINT,
+      collection: COLLECTION,
+      dbPath: error.dbPath,
+    });
+    expect(lines()[0].durationMs).toEqual(expect.any(Number));
+  });
+
+  it("names a holder left alone with the reason it stays up", async () => {
+    makeRoot();
+    setDebug(true);
+    const foreign = makeKeyDir(FOREIGN_FINGERPRINT, process.pid);
+    await listenAsDaemon(foreign, "refuse");
+    const lines = captureArbitrationLines();
+
+    await makeArbiter().settle(lockErrorHeldBy(process.pid), COLLECTION);
+
+    expect(lines()).toHaveLength(1);
+    expect(lines()[0]).toMatchObject({
+      outcome: "held",
+      reason: "drainRefused",
+      holderPid: process.pid,
+      holderBuildDir: foreign.buildDir,
+    });
+  });
+
+  it("logs a connected-client holder once, not on every retry of the same holder", async () => {
+    makeRoot();
+    setDebug(true);
+    const foreign = makeKeyDir(FOREIGN_FINGERPRINT, process.pid);
+    writeFileSync(foreign.refsFile, "1", "utf-8");
+    const lines = captureArbitrationLines();
+    const arbiter = makeArbiter();
+
+    await arbiter.settle(lockErrorHeldBy(process.pid), COLLECTION);
+    await arbiter.settle(lockErrorHeldBy(process.pid), COLLECTION);
+
+    expect(lines()).toHaveLength(1);
+    expect(lines()[0]).toMatchObject({ outcome: "held", reason: "clientConnected", holderPid: process.pid });
+  });
+
+  it("names a holder that is not another build's daemon", async () => {
+    makeRoot();
+    setDebug(true);
+    const lines = captureArbitrationLines();
+
+    await makeArbiter().settle(lockErrorHeldBy(undefined), COLLECTION);
+
+    expect(lines()).toHaveLength(1);
+    expect(lines()[0]).toMatchObject({ outcome: "notForeignBuildDaemon", collection: COLLECTION });
+  });
+
+  it("writes nothing unless debug is on", async () => {
+    makeRoot();
+    setDebug(false);
+    const lines = captureArbitrationLines();
+
+    await makeArbiter().settle(lockErrorHeldBy(undefined), COLLECTION);
+
+    expect(lines()).toHaveLength(0);
+  });
+});

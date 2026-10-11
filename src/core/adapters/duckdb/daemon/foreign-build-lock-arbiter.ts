@@ -73,6 +73,13 @@ export interface ForeignBuildDaemonLockArbiterOptions {
 }
 
 export class ForeignBuildDaemonLockArbiter {
+  /**
+   * Arbitration lines already written, so the open retry — which settles the
+   * same holder once per interval for the whole window — logs each outcome of
+   * a holder once, not once per attempt. A drain is always logged.
+   */
+  private readonly loggedOutcomes = new Set<string>();
+
   constructor(private readonly options: ForeignBuildDaemonLockArbiterOptions) {}
 
   /**
@@ -81,6 +88,49 @@ export class ForeignBuildDaemonLockArbiter {
    * files; connects to the holder only to drain it.
    */
   async settle(
+    openError: DuckDbOpenFailedError,
+    physicalCollectionName: PhysicalCollectionName,
+  ): Promise<ForeignBuildLockSettlement> {
+    const startedAt = Date.now();
+    const settlement = await this.arbitrate(openError, physicalCollectionName);
+    this.logArbitration(settlement, openError, physicalCollectionName, Date.now() - startedAt);
+    return settlement;
+  }
+
+  /**
+   * One debug line per arbitration outcome (bd tea-rags-mcp-zlt41): without it
+   * a live validation could only infer a drain from the process disappearing.
+   * `durationMs` is this settle call — the drain and exit poll for `drained`,
+   * `exitTimeout` and `drainRefused`, near zero for the file-only verdicts.
+   */
+  private logArbitration(
+    settlement: ForeignBuildLockSettlement,
+    openError: DuckDbOpenFailedError,
+    physicalCollectionName: PhysicalCollectionName,
+    durationMs: number,
+  ): void {
+    if (!isDebug()) return;
+    const holder = settlement.kind === "notForeignBuildDaemon" ? undefined : settlement.holder;
+    const reason = settlement.kind === "held" ? settlement.reason : undefined;
+    const dedupKey = `${settlement.kind}|${reason ?? ""}|${holder?.pid ?? openError.lockHolderPid ?? ""}|${openError.dbPath}`;
+    if (settlement.kind !== "drained") {
+      if (this.loggedOutcomes.has(dedupKey)) return;
+      this.loggedOutcomes.add(dedupKey);
+    }
+    const fields = {
+      outcome: settlement.kind,
+      reason,
+      holderPid: holder?.pid ?? openError.lockHolderPid,
+      holderBuildDir: holder?.buildDir,
+      holderBuildFingerprint: holder?.buildFingerprint,
+      durationMs,
+      collection: physicalCollectionName,
+      dbPath: openError.dbPath,
+    };
+    process.stderr.write(`[tea-rags] CODEGRAPH_FOREIGN_DAEMON_ARBITRATION ${JSON.stringify(fields)}\n`);
+  }
+
+  private async arbitrate(
     openError: DuckDbOpenFailedError,
     physicalCollectionName: PhysicalCollectionName,
   ): Promise<ForeignBuildLockSettlement> {
