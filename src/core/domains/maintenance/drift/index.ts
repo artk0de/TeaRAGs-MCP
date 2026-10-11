@@ -15,6 +15,7 @@ export { judgeStatsContract, type StatsContractFinding, type StatsContractJudgem
 export { LanguageVersionDriftMonitor } from "./language-version-drift-monitor.js";
 export { CommitDriftMonitor } from "./commit-drift-monitor.js";
 export { EnvDriftMonitor } from "./env-drift-monitor.js";
+export { TrajectoryVersionDriftMonitor } from "./trajectory-version-drift-monitor.js";
 export {
   advanceChunkSetStamp,
   chunkSetBumpSelector,
