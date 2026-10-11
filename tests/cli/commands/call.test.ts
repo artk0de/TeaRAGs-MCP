@@ -19,7 +19,7 @@ import {
   InvalidParameterError,
   MissingArgumentError,
   type App,
-  type SchemaBuilder,
+  type SchemaBuilderPort,
 } from "../../../src/core/api/public/index.js";
 import { createRegisterTool } from "../../../src/mcp/middleware/error-handler.js";
 import { registerCodegraphTools } from "../../../src/mcp/tools/codegraph.js";
@@ -43,13 +43,13 @@ function makeApp(overrides: Partial<Record<string, unknown>> = {}, hasCodegraph 
   } as unknown as App;
 }
 
-function makeSchemaBuilder(): SchemaBuilder {
+function makeSchemaBuilder(): SchemaBuilderPort {
   return {
     buildPresetSchema: vi.fn(() => z.enum(["bugHunt", "dangerous", "hotspots"])),
     buildRerankSchema: vi.fn(() => z.any()),
     buildFilterSchema: vi.fn(() => z.any()),
     filterParamNames: vi.fn(() => [...TYPED_FILTER_PARAM_NAMES]),
-  } as unknown as SchemaBuilder;
+  } as unknown as SchemaBuilderPort;
 }
 
 interface Harness {

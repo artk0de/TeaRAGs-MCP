@@ -5,7 +5,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App, SchemaBuilder } from "../../../core/api/public/index.js";
+import type { App, SchemaBuilderPort } from "../../../core/api/public/index.js";
 import {
   appendDriftWarning,
   formatMcpText,
@@ -19,7 +19,7 @@ import { createSearchSchemas } from "../schemas.js";
 
 export function registerSearchTools(
   server: McpServer,
-  deps: { app: App; schemaBuilder: SchemaBuilder; register: RegisterToolFn },
+  deps: { app: App; schemaBuilder: SchemaBuilderPort; register: RegisterToolFn },
 ): void {
   const { app, register: registerToolSafe } = deps;
   const searchSchemas = createSearchSchemas(deps.schemaBuilder);

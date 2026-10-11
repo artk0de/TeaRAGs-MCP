@@ -28,7 +28,7 @@ import {
   type GetCallersRequest,
   type GetOntologyReportRequest,
   type NamingLexiconRequest,
-  type SchemaBuilder,
+  type SchemaBuilderPort,
   type TracePathRequest,
 } from "../../core/api/public/index.js";
 import { formatMcpText, type McpToolResult } from "../format.js";
@@ -216,7 +216,7 @@ const FindCoChangedInputShape = {
  * `.optional()` keeps the field omittable — there is no default. Omitting it
  * yields a lean trace (no danger ranking); pass a preset to opt into the overlay.
  */
-function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
+function buildTracePathInputShape(schemaBuilder: SchemaBuilderPort) {
   return {
     ...collectionPathFields(),
     from: z.string().describe("Start symbol id (caller end, e.g. main)"),
@@ -330,7 +330,7 @@ function buildNamingLexiconInputSchema() {
  * registry via the SchemaBuilder, `get_naming_lexicon` compiles its refined
  * object).
  */
-function createCodegraphSchemas(schemaBuilder: SchemaBuilder) {
+function createCodegraphSchemas(schemaBuilder: SchemaBuilderPort) {
   return {
     get_callers: GetCallersInputShape,
     get_callees: GetCalleesInputShape,
@@ -552,7 +552,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
 
 export function registerCodegraphTools(
   server: McpServer,
-  deps: { app: App; schemaBuilder: SchemaBuilder; register: RegisterToolFn },
+  deps: { app: App; schemaBuilder: SchemaBuilderPort; register: RegisterToolFn },
 ): void {
   const { app, schemaBuilder, register: registerToolSafe } = deps;
 

@@ -10,7 +10,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App, SchemaBuilder } from "../../core/api/public/index.js";
+import type { App, SchemaBuilderPort } from "../../core/api/public/index.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import { registerIndexTools } from "./code/register-index-tools.js";
 import { registerMaintenanceTools } from "./code/register-maintenance-tools.js";
@@ -19,7 +19,7 @@ import { registerStatusTools } from "./code/register-status-tools.js";
 
 export function registerCodeTools(
   server: McpServer,
-  deps: { app: App; schemaBuilder: SchemaBuilder; register: RegisterToolFn },
+  deps: { app: App; schemaBuilder: SchemaBuilderPort; register: RegisterToolFn },
 ): void {
   registerIndexTools(server, { app: deps.app, register: deps.register });
   registerStatusTools(server, { app: deps.app, register: deps.register });

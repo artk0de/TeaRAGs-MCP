@@ -16,8 +16,13 @@
  * the pure optimizer-recovery render rules moved to `contracts/`. `AppDeps`
  * — assembly input naming adapters and domain services — followed `createApp`
  * into `app-factory.ts` (k7kmu C1). What remains in `api/public` is the
- * contract: the `App` interface, DTOs, and type-only re-exports (bd tea-rags-mcp-0qaht.36's settled
- * vocabulary — `import type` edges are not SDP-judged and stay legal).
+ * contract: the `App` interface and DTOs. Type-only edges ARE SDP-judged — the
+ * component detector has no type-only flag, and `domain-boundaries.md` ("Strict
+ * import-direction model") grants no `allowTypeImports` escape hatch — so k7kmu
+ * C2 removed the last type re-exports out of `api/internal/` too: the resolver
+ * types moved to `contracts/types/registry.ts`, `OptimizerRecoveryOps` left for
+ * the api root barrel, and mcp writes against the `SchemaBuilderPort` contract
+ * instead of the internal `SchemaBuilder` class.
  *
  * This test pins the direction: no file under `src/core/api/public/` may hold
  * a RUNTIME (value) import or re-export whose specifier resolves into
@@ -79,6 +84,12 @@ function runtimeNamedStatements(text: string): RuntimeImport[] {
  */
 function resolvesIntoUnstableApi(fileRel: string, specifier: string): boolean {
   if (!specifier.startsWith(".")) return false;
+  const path = resolveSpecifier(fileRel, specifier);
+  return path.startsWith("src/core/api/internal/") || path === "src/core/api/errors.js";
+}
+
+/** Repo-relative path a relative `specifier` lands on, resolved from `fileRel`. */
+function resolveSpecifier(fileRel: string, specifier: string): string {
   const dir = fileRel.split("/").slice(0, -1).join("/");
   const segments = [...dir.split("/"), ...specifier.split("/")];
   const resolved: string[] = [];
@@ -87,8 +98,7 @@ function resolvesIntoUnstableApi(fileRel: string, specifier: string): boolean {
     if (segment === "..") resolved.pop();
     else resolved.push(segment);
   }
-  const path = resolved.join("/");
-  return path.startsWith("src/core/api/internal/") || path === "src/core/api/errors.js";
+  return resolved.join("/");
 }
 
 describe("api/public holds only the contract — no runtime import from the unstable api component", () => {
@@ -99,6 +109,21 @@ describe("api/public holds only the contract — no runtime import from the unst
       for (const statement of runtimeNamedStatements(text)) {
         if (!resolvesIntoUnstableApi(file, statement.specifier)) continue;
         offenders.push(`${file}: ${statement.names.join(", ")} from "${statement.specifier}"`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("no file under src/core/api/public imports or re-exports from api/internal — type-only included (k7kmu C2)", () => {
+    const offenders: string[] = [];
+    const pattern = /(?:import|export)\s+(?:type\s+)?(?:\{[^}]*\}|\*(?:\s+as\s+\w+)?|\w+)\s*from\s*"([^"]+)"/g;
+    for (const file of tsFilesUnder(PUBLIC_DIR)) {
+      const text = readFileSync(join(ROOT, file), "utf-8");
+      for (const match of text.matchAll(pattern)) {
+        const specifier = match[1];
+        if (!specifier.startsWith(".")) continue;
+        if (!resolveSpecifier(file, specifier).startsWith("src/core/api/internal/")) continue;
+        offenders.push(`${file}: "${specifier}"`);
       }
     }
     expect(offenders).toEqual([]);

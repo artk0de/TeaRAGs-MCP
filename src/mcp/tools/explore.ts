@@ -5,7 +5,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { ExploreResponse, HybridSearchRequest, SemanticSearchRequest } from "../../core/api/public/dto/explore.js";
-import type { App, SchemaBuilder } from "../../core/api/public/index.js";
+import type { App, SchemaBuilderPort } from "../../core/api/public/index.js";
 import { appendAutoUpdateHint, formatDenseUnavailable, sanitizeRerank, type McpToolResult } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import { SearchResultOutputSchema } from "./output-schemas.js";
@@ -152,7 +152,7 @@ export interface McpAutoUpdateTrigger {
 
 export function registerSearchTools(
   server: McpServer,
-  deps: { app: App; schemaBuilder: SchemaBuilder; register: RegisterToolFn; autoUpdate?: McpAutoUpdateTrigger },
+  deps: { app: App; schemaBuilder: SchemaBuilderPort; register: RegisterToolFn; autoUpdate?: McpAutoUpdateTrigger },
 ): void {
   const { app, register: registerToolSafe, autoUpdate } = deps;
   const searchSchemas = createSearchSchemas(deps.schemaBuilder);
