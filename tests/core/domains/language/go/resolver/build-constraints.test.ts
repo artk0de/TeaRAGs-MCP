@@ -22,6 +22,7 @@ import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/lang
 import { buildPass1Aggregates } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/pass1-aggregates.js";
 import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 /**
  * Build-tag twins: gin declares `validate` twice in package `binding` —
@@ -112,7 +113,7 @@ function bindingCtx(over: Partial<CallContext> = {}): CallContext {
   };
 }
 
-const resolver = new GoCallResolver(new DefaultSymbolIdComposer());
+const resolver = new GoCallResolver(new DefaultSymbolIdComposer(), undefined, readManifestFiles);
 
 /** The barrier resolves a table only for schema columns / self-dispatch; neither is in play here. */
 const noopTable = async (): Promise<GlobalSymbolTable> => new NoopGlobalSymbolTable();

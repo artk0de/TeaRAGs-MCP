@@ -5,6 +5,7 @@ import type {
   LanguageCapability,
   LanguageFactoryDescriptor,
   LanguageProvider,
+  ManifestFilesReader,
 } from "../../contracts/types/language.js";
 import type { SignalFloors } from "../../contracts/types/trajectory.js";
 import { BashLanguage } from "./bash/index.js";
@@ -112,6 +113,12 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * factory builds is otherwise as fresh as the factory.
    */
   private readonly crossRunParseCache: CrossRunParseCache | undefined;
+  /**
+   * The manifest walk, injected (bd tea-rags-mcp-2wu2h): this leaf domain never
+   * reaches the disk walk itself. Go's module map reads its go.mod files
+   * through it; absent, Go package matching stays GOPATH-shaped.
+   */
+  private readonly manifestFilesReader: ManifestFilesReader | undefined;
 
   /**
    * @param options.ambiguousResolveMode Threaded into native resolvers
@@ -126,6 +133,9 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * @param options.crossRunParseCache Parse stores a long-lived process hands
    *   every factory it builds, run after run (the warm working-tree graph
    *   child). Threaded to the providers that parse.
+   * @param options.manifestFilesReader The manifest walk the composition layer
+   *   injects. Threaded to the providers that read location-bound manifests
+   *   (Go's go.mod module map).
    */
   constructor(
     options: {
@@ -133,8 +143,10 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
       repoRoot?: string;
       isGrammarPackageInstalled?: (packageName: string) => boolean;
       crossRunParseCache?: CrossRunParseCache;
+      manifestFilesReader?: ManifestFilesReader;
     } = {},
   ) {
+    this.manifestFilesReader = options.manifestFilesReader;
     this.ambiguousResolveMode = options.ambiguousResolveMode ?? DEFAULT_AMBIGUOUS_RESOLVE_MODE;
     this.repoRoot = options.repoRoot ?? process.cwd();
     this.isGrammarPackageInstalled = options.isGrammarPackageInstalled ?? isPackageResolvable;
@@ -169,7 +181,7 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
     }
     if (lang === "javascript") return new JavaScriptLanguage(this.ambiguousResolveMode);
     if (lang === "python") return new PythonLanguage(this.ambiguousResolveMode);
-    if (lang === "go") return new GoLanguage(this.ambiguousResolveMode);
+    if (lang === "go") return new GoLanguage(this.ambiguousResolveMode, this.manifestFilesReader);
     if (lang === "java") return new JavaLanguage(this.ambiguousResolveMode);
     if (lang === "rust") return new RustLanguage(this.ambiguousResolveMode);
     if (lang === "bash") return new BashLanguage(this.ambiguousResolveMode);

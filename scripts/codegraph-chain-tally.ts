@@ -120,7 +120,7 @@ import {
   type ReceiverKindTally,
 } from "../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { collectDependencyManifestSources } from "../src/core/infra/dependency-manifests.js";
+import { collectDependencyManifestSources, readManifestFiles } from "../src/core/infra/dependency-manifests.js";
 import { NO_FAN, scoreFan, type PyFanOutcomeKind } from "./lib/py-oracle-core.js";
 import { formatTallyEdgeDump, type TallyEdgeDumpRow } from "./lib/tally-edge-dump.js";
 import {
@@ -695,7 +695,9 @@ export async function run(
   // corpus. Left unset, a TypeScript run finds no files and declines every call
   // while still LOOKING like a valid walk (the f4wcm class of defect). Neither
   // the python nor the java provider reads it, so the existing legs are unmoved.
-  const factory = new LanguageFactory({ repoRoot: root });
+  // The manifest walk is injected the way production's composition injects it,
+  // or Go's module map reads no go.mod and every module-path import misses.
+  const factory = new LanguageFactory({ repoRoot: root, manifestFilesReader: readManifestFiles });
   const production = factory.create(lang).resolver;
   if (!production) throw new Error(`language '${lang}' has no resolver`);
 

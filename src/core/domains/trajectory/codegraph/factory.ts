@@ -33,10 +33,12 @@ import type {
   CollectSymbolsFn,
   LanguageCrossRunParseCache,
   LanguageFactoryDescriptor,
+  ManifestFilesReader,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
 import type { DatabaseMigrationApplier } from "../../../contracts/types/migration.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
+import { readManifestFiles } from "../../../infra/dependency-manifests.js";
 import {
   CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
   CODEGRAPH_SYMBOLS_PRESETS,
@@ -138,6 +140,7 @@ interface LanguageModule {
   LanguageFactory: new (options?: {
     ambiguousResolveMode?: AmbiguousResolveMode;
     crossRunParseCache?: LanguageCrossRunParseCache;
+    manifestFilesReader?: ManifestFilesReader;
   }) => LanguageFactoryDescriptor;
   CrossRunParseCache: new () => LanguageCrossRunParseCache;
   DefaultSymbolIdComposer: new () => SymbolIdComposer;
@@ -227,8 +230,12 @@ export async function createCodegraphProviderRuntime(
   // at a directory that holds no project, so every path alias was silently lost
   // on every project (bd tea-rags-mcp-f4wcm). The root a resolver needs is the
   // one the RUN is indexing, and it arrives per call on `CallContext.projectRoot`.
+  // The manifest walk is a function, so it cannot ride the structured-clone
+  // config: this module — loaded in-thread by the enrichment worker — wires it
+  // here, exactly as the main-thread composition does (bd tea-rags-mcp-2wu2h).
   const languageFactory = new lang.LanguageFactory({
     ambiguousResolveMode: config.ambiguousResolveMode,
+    manifestFilesReader: readManifestFiles,
     ...(runtimeDeps.crossRunParseCache ? { crossRunParseCache: runtimeDeps.crossRunParseCache } : {}),
   });
   const composer = new lang.DefaultSymbolIdComposer();

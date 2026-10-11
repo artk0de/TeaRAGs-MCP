@@ -11,6 +11,7 @@ import { GoLanguage } from "../../../../../../src/core/domains/language/go/index
 import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 /**
  * A receiver that is the RESULT of a bare call — gin's `ginS/gins.go` wraps
@@ -78,7 +79,7 @@ const call = (receiver: string, member: string): CallRef => ({
   startLine: 5,
 });
 
-const resolver = new GoCallResolver(new DefaultSymbolIdComposer());
+const resolver = new GoCallResolver(new DefaultSymbolIdComposer(), undefined, readManifestFiles);
 
 describe("GoCallResolver — call-result receiver heads", () => {
   it("types `engine().Run()` through engine's declared return type", () => {
@@ -188,7 +189,7 @@ describe("Go walker — what calling a package-level func-valued var returns", (
     const src = `${lines.join("\n")}\n`;
     const parser = new Parser();
     parser.setLanguage(GoLang);
-    const go = new GoLanguage();
+    const go = new GoLanguage(undefined, readManifestFiles);
     const funcLine = src.split("\n").findIndex((l) => l.startsWith("func GET")) + 1;
     const extraction = go.walker.walk({
       tree: parser.parse(src),

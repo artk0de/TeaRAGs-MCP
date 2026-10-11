@@ -13,6 +13,7 @@ import type {
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 /**
  * bd tea-rags-mcp-7h6j0 — the run-global `functionReturnTypes` channel is keyed
@@ -108,7 +109,7 @@ function resolveCalls(
   table: InMemoryGlobalSymbolTable,
   root: string,
 ): Map<string, string | null> {
-  const go = new GoLanguage();
+  const go = new GoLanguage(undefined, readManifestFiles);
   go.resolver.prepareResolvePass?.({ expectedFileCount: 3, projectRoot: root });
   const out = new Map<string, string | null>();
   for (const chunk of extraction.chunks) {

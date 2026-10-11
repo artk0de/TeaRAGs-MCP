@@ -75,6 +75,7 @@ import {
 } from "../../domains/trajectory/index.js";
 import { STATIC_FILTER_PRESETS, StaticTrajectory } from "../../domains/trajectory/static/index.js";
 import { staticStatsAccumulators } from "../../domains/trajectory/static/stats/index.js";
+import { readManifestFiles } from "../../infra/dependency-manifests.js";
 import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../public/dto/architecture.js";
 import type { FindCoChangedRequest, FindCoChangedResult } from "../public/dto/cochange.js";
 import type { GetOntologyReportRequest, GetOntologyReportResponse } from "../public/dto/ontology.js";
@@ -332,6 +333,7 @@ export function createComposition(options: CompositionOptions = {}): Composition
   // codegraph trajectory so it can be injected into the codegraph provider.
   const languageFactory = new LanguageFactory({
     ambiguousResolveMode: options.codegraph?.ambiguousResolveMode,
+    manifestFilesReader: readManifestFiles,
   });
 
   const registry = new TrajectoryRegistry();

@@ -25,7 +25,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { readManifestFiles } from "../../../../../infra/dependency-manifests.js";
+import type { ManifestFilesReader } from "../../../../../contracts/types/language.js";
 import { GO_MODULE_MANIFEST_FILE, GO_MODULE_WALK_IGNORED_DIRS, parseGoModulePath } from "../../manifest.js";
 
 interface GoModuleRoot {
@@ -197,22 +197,30 @@ export class GoModuleMap {
  * Single-entry, like `TypeScriptLanguage`'s bound resolver: one provider serves
  * one indexed project at a time. `reload` is what `prepareResolvePass` calls, so
  * every pass-2 reads the go.mod files as they are NOW — a long-lived process
- * never resolves a new run against a stale module path. Without a root (unit
- * tests, harnesses that pass none) there is nothing to read and the caller
- * falls back to GOPATH-shaped matching.
+ * never resolves a new run against a stale module path. Without a root or an
+ * injected reader (unit tests, harnesses that pass none) there is nothing to
+ * read and the caller falls back to GOPATH-shaped matching.
  */
 export class GoModuleMapCache {
   private bound: { root: string; map: GoModuleMap } | undefined;
 
+  /**
+   * `manifestFilesReader` is the injected manifest walk (bd tea-rags-mcp-2wu2h):
+   * `domains/language` never reaches the disk walk itself. Absent, there is
+   * nothing to read — the same answer as no root — and the caller falls back
+   * to GOPATH-shaped matching.
+   */
+  constructor(private readonly manifestFilesReader?: ManifestFilesReader) {}
+
   forRoot(root: string | undefined): GoModuleMap | undefined {
-    if (root === undefined) return undefined;
+    if (root === undefined || this.manifestFilesReader === undefined) return undefined;
     if (this.bound?.root !== root) this.reload(root);
     return this.bound?.map;
   }
 
   reload(root: string | undefined): void {
-    if (root === undefined) return;
-    const files = readManifestFiles(
+    if (root === undefined || this.manifestFilesReader === undefined) return;
+    const files = this.manifestFilesReader(
       root,
       (fileName) => fileName === GO_MODULE_MANIFEST_FILE,
       GO_MODULE_WALK_IGNORED_DIRS,

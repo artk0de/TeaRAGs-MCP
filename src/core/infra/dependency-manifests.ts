@@ -36,6 +36,7 @@ import type {
   DeclaredDependenciesByLanguage,
   DependencyManifestSource,
   LanguageFactoryDescriptor,
+  ManifestFile,
   TestDependencyManifestSource,
 } from "../contracts/types/language.js";
 import { buildGitChildProcessEnv, resolveGitExecutable } from "./git-executable.js";
@@ -253,17 +254,11 @@ function readRootFileNames(root: string): string[] {
   }
 }
 
-/** One manifest file the walk found: where it sits, and what it says. */
-export interface ManifestFile {
-  /** Repo-relative directory holding the file, `/`-separated; `""` is the root. */
-  readonly relDir: string;
-  readonly fileName: string;
-  readonly content: string;
-}
-
 /**
  * Every file under `root` that `matchesManifestFile` accepts, with its location
  * — the same walk, bounds and ignore list as {@link readDeclaredDependencies}.
+ * The concrete `ManifestFilesReader` the composition layer injects into
+ * `LanguageFactory` (bd tea-rags-mcp-2wu2h).
  *
  * For a manifest whose meaning depends on WHERE it sits rather than on a union
  * of names (bd tea-rags-mcp-e6xx): a Go `go.mod` declares the module path of

@@ -13,6 +13,7 @@ import type {
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 /**
  * bd tea-rags-mcp-e6xx — a type from ANOTHER package is that package's type,
@@ -165,7 +166,7 @@ describe("Go types and callees from a package outside the project", () => {
       "app/app.go",
       app.chunks.map((chunk) => sym(chunk.symbolId, "app/app.go")),
     );
-    const go = new GoLanguage();
+    const go = new GoLanguage(undefined, readManifestFiles);
     go.resolver.prepareResolvePass?.({ expectedFileCount: 2, projectRoot: root });
     const out = new Map<string, string | null>();
     for (const chunk of app.chunks) {

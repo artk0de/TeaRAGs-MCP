@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CallContext, CallRef, SymbolDefinition } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 /**
  * bd tea-rags-mcp-e6xx — package-qualified calls under a Go MODULE path. gin's
@@ -63,14 +64,14 @@ describe("Go importMatch under go.mod module paths", () => {
   }
 
   it("resolves `bytesconv.StringToBytes` through the module path (gin auth.go)", () => {
-    const go = new GoLanguage();
+    const go = new GoLanguage(undefined, readManifestFiles);
     expect(
       go.resolver.resolve(call("bytesconv", "StringToBytes"), ctx("github.com/gin-gonic/gin/internal/bytesconv")),
     ).toEqual({ targetRelPath: "internal/bytesconv/bytesconv.go", targetSymbolId: "StringToBytes" });
   });
 
   it("reads the module map at pass start, before any call site names the root", () => {
-    const go = new GoLanguage();
+    const go = new GoLanguage(undefined, readManifestFiles);
     go.resolver.prepareResolvePass?.({ expectedFileCount: 1, projectRoot: root });
     expect(
       go.resolver.resolve(call("bytesconv", "StringToBytes"), ctx("github.com/gin-gonic/gin/internal/bytesconv"))
@@ -79,7 +80,7 @@ describe("Go importMatch under go.mod module paths", () => {
   });
 
   it("resolves only in the package's OWN directory, never a sub-package", () => {
-    const go = new GoLanguage();
+    const go = new GoLanguage(undefined, readManifestFiles);
     expect(go.resolver.resolve(call("binding", "Default"), ctx("github.com/gin-gonic/gin/binding"))).toEqual({
       targetRelPath: "binding/binding.go",
       targetSymbolId: "Default",
@@ -87,7 +88,7 @@ describe("Go importMatch under go.mod module paths", () => {
   });
 
   it("NEGATIVE: a standard-library import never maps onto a same-named project directory", () => {
-    const go = new GoLanguage();
+    const go = new GoLanguage(undefined, readManifestFiles);
     expect(go.resolver.resolve(call("json", "Marshal"), ctx("encoding/json"))).toBeNull();
   });
 
@@ -95,7 +96,7 @@ describe("Go importMatch under go.mod module paths", () => {
     table.upsertFile("internal/bytesconv/bytesconv.go", [
       sym("Converter#StringToBytes", "internal/bytesconv/bytesconv.go"),
     ]);
-    const go = new GoLanguage();
+    const go = new GoLanguage(undefined, readManifestFiles);
     expect(
       go.resolver.resolve(call("bytesconv", "StringToBytes"), ctx("github.com/gin-gonic/gin/internal/bytesconv")),
     ).toBeNull();
@@ -110,21 +111,26 @@ describe("Go importMatch without a go.mod (GOPATH-style fixtures)", () => {
   it("matches the import path as the package's exact directory", () => {
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("foo/bar/x.go", [sym("Func", "foo/bar/x.go")]);
-    expect(new GoLanguage().resolver.resolve(call("bar", "Func"), ctx("foo/bar", table))?.targetRelPath).toBe(
-      "foo/bar/x.go",
-    );
+    expect(
+      new GoLanguage(undefined, readManifestFiles).resolver.resolve(call("bar", "Func"), ctx("foo/bar", table))
+        ?.targetRelPath,
+    ).toBe("foo/bar/x.go");
   });
 
   it("NEGATIVE: `foo/bar` does not match the prefix namesake `foo/barista/`", () => {
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("foo/barista/x.go", [sym("Func", "foo/barista/x.go")]);
-    expect(new GoLanguage().resolver.resolve(call("bar", "Func"), ctx("foo/bar", table))).toBeNull();
+    expect(
+      new GoLanguage(undefined, readManifestFiles).resolver.resolve(call("bar", "Func"), ctx("foo/bar", table)),
+    ).toBeNull();
   });
 
   it("NEGATIVE: `foo/bar` does not match its sub-package `foo/bar/sub/`", () => {
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("foo/bar/sub/y.go", [sym("Func", "foo/bar/sub/y.go")]);
-    expect(new GoLanguage().resolver.resolve(call("bar", "Func"), ctx("foo/bar", table))).toBeNull();
+    expect(
+      new GoLanguage(undefined, readManifestFiles).resolver.resolve(call("bar", "Func"), ctx("foo/bar", table)),
+    ).toBeNull();
   });
 });
 
@@ -145,7 +151,7 @@ describe("Go importMatch across a multi-module repository", () => {
   it("maps an import of the nested module to that module's own directory tree", () => {
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("tools/lint/rules/rules.go", [sym("Check", "tools/lint/rules/rules.go")]);
-    const target = new GoLanguage().resolver.resolve(call("rules", "Check"), {
+    const target = new GoLanguage(undefined, readManifestFiles).resolver.resolve(call("rules", "Check"), {
       callerFile: "cmd/main.go",
       callerScope: [],
       imports: [{ importText: "example.com/lint/rules", startLine: 1 }],

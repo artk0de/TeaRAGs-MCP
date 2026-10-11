@@ -12,6 +12,7 @@ import type {
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 /**
  * bd tea-rags-mcp-e6xx — a package-qualified generic call, `pkg.Map[int](xs, f)`
@@ -57,35 +58,44 @@ describe("Go package-qualified generic calls", () => {
   const slicesImport: ImportRef[] = [{ importText: "example.com/app/internal/slices", startLine: 3 }];
 
   it("resolves `slices.Map[int](xs, f)` through the module-path import", () => {
-    expect(new GoLanguage().resolver.resolve(bare("slices.Map[int]"), ctx(slicesImport))).toEqual({
+    expect(
+      new GoLanguage(undefined, readManifestFiles).resolver.resolve(bare("slices.Map[int]"), ctx(slicesImport)),
+    ).toEqual({
       targetRelPath: "internal/slices/map.go",
       targetSymbolId: "Map",
     });
   });
 
   it("resolves the single-argument form `slices.Pair[int, string](x)` the same way", () => {
-    expect(new GoLanguage().resolver.resolve(bare("slices.Pair[int, string]"), ctx(slicesImport))?.targetSymbolId).toBe(
-      "Pair",
-    );
+    expect(
+      new GoLanguage(undefined, readManifestFiles).resolver.resolve(bare("slices.Pair[int, string]"), ctx(slicesImport))
+        ?.targetSymbolId,
+    ).toBe("Pair");
   });
 
   it("honours an import alias", () => {
     const aliased: ImportRef[] = [{ ...slicesImport[0], importedNames: ["sl"] }];
-    expect(new GoLanguage().resolver.resolve(bare("sl.Map[int]"), ctx(aliased))?.targetSymbolId).toBe("Map");
+    expect(
+      new GoLanguage(undefined, readManifestFiles).resolver.resolve(bare("sl.Map[int]"), ctx(aliased))?.targetSymbolId,
+    ).toBe("Map");
   });
 
   it("NEGATIVE: a qualifier that names no import is not a package (`c.handlers[c.index](c)`)", () => {
-    expect(new GoLanguage().resolver.resolve(bare("c.handlers[c.index]"), ctx(slicesImport))).toBeNull();
+    expect(
+      new GoLanguage(undefined, readManifestFiles).resolver.resolve(bare("c.handlers[c.index]"), ctx(slicesImport)),
+    ).toBeNull();
   });
 
   it("NEGATIVE: a local named like the package shadows it", () => {
     const shadowed = ctx(slicesImport, { localBindings: { slices: [{ line: 2, type: "Registry" }] } });
-    expect(new GoLanguage().resolver.resolve(bare("slices.Map[int]"), shadowed)).toBeNull();
+    expect(new GoLanguage(undefined, readManifestFiles).resolver.resolve(bare("slices.Map[int]"), shadowed)).toBeNull();
   });
 
   it("NEGATIVE: a standard-library package never lands on a same-named project directory", () => {
     const stdlib: ImportRef[] = [{ importText: "slices", startLine: 3 }];
     table.upsertFile("slices/slices.go", [sym("Map", "slices/slices.go")]);
-    expect(new GoLanguage().resolver.resolve(bare("slices.Map[int]"), ctx(stdlib))).toBeNull();
+    expect(
+      new GoLanguage(undefined, readManifestFiles).resolver.resolve(bare("slices.Map[int]"), ctx(stdlib)),
+    ).toBeNull();
   });
 });

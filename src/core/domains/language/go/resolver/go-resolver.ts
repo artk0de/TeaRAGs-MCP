@@ -57,7 +57,11 @@ import {
   type SymbolResolutionPassPlan,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
-import type { SymbolIdComposer, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import type {
+  ManifestFilesReader,
+  SymbolIdComposer,
+  SymbolResolutionStrategy,
+} from "../../../../contracts/types/language.js";
 import { resolveViaChain } from "../../kernel/index.js";
 import { GoModuleMapCache } from "./strategies/go-module-map.js";
 import {
@@ -75,7 +79,7 @@ export class GoCallResolver implements CallResolver {
   readonly language = "go";
   private readonly strategies: SymbolResolutionStrategy[];
   /** The project's go.mod module map, read once per root and re-read at every pass start. */
-  private readonly moduleMaps = new GoModuleMapCache();
+  private readonly moduleMaps: GoModuleMapCache;
 
   /**
    * `composer` builds the `Type#member` / `Type.member` candidate ids per the
@@ -83,8 +87,17 @@ export class GoCallResolver implements CallResolver {
    * Injected as the contracts `SymbolIdComposer` interface. `GoLanguage`
    * self-constructs the concrete `DefaultSymbolIdComposer` (a stateless pure
    * mapper in the same `domains/language` domain) and passes it here.
+   *
+   * `manifestFilesReader` reads the project's go.mod files (bd
+   * tea-rags-mcp-2wu2h); absent, no module map is built and package matching
+   * stays GOPATH-shaped.
    */
-  constructor(composer: SymbolIdComposer, mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
+  constructor(
+    composer: SymbolIdComposer,
+    mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    manifestFilesReader?: ManifestFilesReader,
+  ) {
+    this.moduleMaps = new GoModuleMapCache(manifestFilesReader);
     const cfg: ResolverConfig = { composer, mode, moduleMaps: this.moduleMaps };
     this.strategies = [
       new GoLocalBindingSymbolResolutionStrategy(cfg),
