@@ -27,7 +27,7 @@ import { describe, expect, it } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
-import type { ChunkItem } from "../../../../../../src/core/domains/ingest/pipeline/types.js";
+import type { ChunkItem } from "../../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 
 /** ChunkItem whose filePath sits under pathBase "/r", so `relative("/r", …)`
  *  yields the overlay key the applier looks up. */

@@ -13,6 +13,7 @@ export { pipelineLog } from "./infra/debug-logger.js";
 export { WorkerPool } from "./infra/worker-pool.js";
 export { PipelineManager, createQdrantPipeline } from "./pipeline-manager.js";
 export type { PipelineHandlers } from "./pipeline-manager.js";
+export type { IngestDependencies } from "./dependencies.js";
 
 // Types
 export type {
@@ -25,11 +26,10 @@ export type {
   ChunkItem,
   DeleteItem,
   OperationType,
-  PipelineConfig,
-  PipelineStats,
   UpsertItem,
   WorkerPoolConfig,
   WorkItem,
-} from "./types.js";
+} from "./infra/index.js";
+export type { PipelineConfig, PipelineStats } from "./types.js";
 
 export { buildPipelineConfig } from "./types.js";

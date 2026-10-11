@@ -5,7 +5,7 @@ import { fixturePhysicalCollectionName } from "../../../../__helpers__/collectio
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
-import type { ChunkItem } from "../../../../../../src/core/domains/ingest/pipeline/types.js";
+import type { ChunkItem } from "../../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 
 const makeChunkItem = (chunkId: string, filePath: string, startLine: number, endLine: number): ChunkItem => ({
   type: "upsert",

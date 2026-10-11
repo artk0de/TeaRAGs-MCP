@@ -1,19 +1,6 @@
-/**
- * Tracks the per-path outcome of a deletion pass.
- *
- * Callers populate `failed` via markFailed or markAllFailed when the
- * underlying Qdrant operation reports (or behaves as) a partial or total
- * failure. Consumers (e.g. ReindexCoordinator in Phase 3) use `failed`
- * to decide which files must be excluded from subsequent upsert.
- */
-export interface DeletionOutcome {
-  readonly succeeded: Set<string>;
-  readonly failed: Set<string>;
-  chunksDeleted: number;
-  markFailed: (path: string) => void;
-  markAllFailed: () => void;
-  isFullSuccess: () => boolean;
-}
+import type { DeletionOutcome } from "../../../../contracts/types/deletion.js";
+
+export type { DeletionOutcome };
 
 export function createDeletionOutcome(attemptedPaths: string[]): DeletionOutcome {
   const succeeded = new Set(attemptedPaths);

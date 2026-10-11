@@ -70,7 +70,7 @@ import type {
 } from "../../../../../../../../src/core/contracts/types/provider.js";
 import { EnrichmentCoordinator } from "../../../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { WorkerPoolEnrichmentExecutor } from "../../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/worker-pool.js";
-import type { ChunkItem } from "../../../../../../../../src/core/domains/ingest/pipeline/types.js";
+import type { ChunkItem } from "../../../../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 import { LanguageFactory } from "../../../../../../../../src/core/domains/language/index.js";
 import { collectSymbols } from "../../../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../../../src/core/domains/language/kernel/symbol-id.js";

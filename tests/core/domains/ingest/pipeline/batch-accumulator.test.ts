@@ -16,7 +16,7 @@ import type {
   Batch,
   BatchAccumulatorConfig,
   UpsertItem,
-} from "../../../../../src/core/domains/ingest/pipeline/types.js";
+} from "../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 
 describe("BatchAccumulator", () => {
   let accumulator: BatchAccumulator<UpsertItem>;

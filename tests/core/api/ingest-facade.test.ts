@@ -62,10 +62,6 @@ vi.mock("../../../src/core/domains/ingest/pipeline/enrichment/recovery.js", () =
   },
 }));
 
-vi.mock("../../../src/core/domains/ingest/factory.js", () => ({
-  createIngestDependencies: vi.fn().mockReturnValue({}),
-}));
-
 vi.mock("../../../src/core/domains/trajectory/git/provider.js", () => ({
   GitEnrichmentProvider: class {},
 }));

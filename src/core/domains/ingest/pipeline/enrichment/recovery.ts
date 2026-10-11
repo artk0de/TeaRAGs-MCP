@@ -10,7 +10,7 @@ import { servicePointExclusions } from "../../../../adapters/qdrant/service-poin
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
-import type { ChunkItem } from "../types.js";
+import type { ChunkItem } from "../infra/index.js";
 import { bareStampableChunkIds, type EnrichmentApplier } from "./applier.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";

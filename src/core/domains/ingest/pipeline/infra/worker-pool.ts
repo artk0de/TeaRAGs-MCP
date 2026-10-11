@@ -9,14 +9,7 @@
  */
 
 import { isDebug } from "../../../../infra/runtime.js";
-import type {
-  Batch,
-  BatchCompletionCallback,
-  BatchHandler,
-  BatchResult,
-  WorkerPoolConfig,
-  WorkItem,
-} from "../types.js";
+import type { Batch, BatchCompletionCallback, BatchHandler, BatchResult, WorkerPoolConfig, WorkItem } from "./types.js";
 
 interface QueuedBatch<T extends WorkItem> {
   batch: Batch<T>;

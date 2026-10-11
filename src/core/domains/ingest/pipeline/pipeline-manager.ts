@@ -20,11 +20,12 @@
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { isDebug } from "../../../infra/runtime.js";
 import { PipelineNotStartedError } from "../errors.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
-import { isDebug } from "../../../infra/runtime.js";
+import type { Batch, BatchResult, DeleteItem, UpsertItem, WorkItem } from "./infra/index.js";
 import { WorkerPool } from "./infra/worker-pool.js";
-import type { Batch, BatchResult, DeleteItem, PipelineConfig, PipelineStats, UpsertItem, WorkItem } from "./types.js";
+import type { PipelineConfig, PipelineStats } from "./types.js";
 
 /**
  * Handlers for processing different operation types

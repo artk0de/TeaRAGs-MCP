@@ -30,15 +30,9 @@ import {
 } from "./embedding-throughput-tuner.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-logger.js";
+import type { Batch, BatchAccumulatorConfig, BatchResult, ChunkItem, WorkerPoolConfig } from "./infra/index.js";
 import { WorkerPool } from "./infra/worker-pool.js";
-import type {
-  Batch,
-  BatchAccumulatorConfig,
-  BatchResult,
-  ChunkItem,
-  PipelineStats,
-  WorkerPoolConfig,
-} from "./types.js";
+import type { PipelineStats } from "./types.js";
 
 const LOG_CTX = { component: "ChunkPipeline" };
 

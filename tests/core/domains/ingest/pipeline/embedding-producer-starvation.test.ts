@@ -26,12 +26,8 @@ import {
 } from "../../../../../src/core/domains/ingest/pipeline/embedding-throughput-tuner.js";
 import { BatchAccumulator } from "../../../../../src/core/domains/ingest/pipeline/infra/batch-accumulator.js";
 import { pipelineLog } from "../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
-import {
-  buildPipelineConfig,
-  type Batch,
-  type ChunkItem,
-  type WorkItem,
-} from "../../../../../src/core/domains/ingest/pipeline/types.js";
+import type { Batch, ChunkItem, WorkItem } from "../../../../../src/core/domains/ingest/pipeline/infra/index.js";
+import { buildPipelineConfig } from "../../../../../src/core/domains/ingest/pipeline/types.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import { StaticPayloadBuilder } from "../../../../../src/core/domains/trajectory/static/provider.js";
 

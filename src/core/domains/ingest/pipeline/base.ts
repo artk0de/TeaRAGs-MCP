@@ -31,10 +31,10 @@ import {
   readWorkingTreeDirtyPaths,
 } from "../../../infra/repo-git-state.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
-import type { IngestDependencies } from "../factory.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
 import { INDEXING_HEARTBEAT_INTERVAL_MS } from "../infra/index.js";
 import { ChunkerPool, type ChunkerPoolPort } from "./chunker/infra/pool.js";
+import type { IngestDependencies } from "./dependencies.js";
 import { EmbeddingThroughputTuner, type EmbeddingEndpointThroughputOptimum } from "./embedding-throughput-tuner.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
 import { reindexRunSpec, type EnrichmentRunSpec, type StreamedEnrichmentRunInput } from "./enrichment/run-spec.js";

@@ -9,20 +9,19 @@
  * `api/internal/ingest-dependencies.ts`: it assembles the migration pipelines,
  * which now live in the maintenance domain, and ingest may not import a sibling
  * domain — `createMigrator` therefore hands back a `MigratorPort`.
+ *
+ * It lives in `pipeline/` beside its consumer `BaseIndexingPipeline`, not at
+ * the ingest root: the root is the domain's stable sink and may not import
+ * back into `sync/` or `pipeline/chunker/` (bd tea-rags-mcp-g7w8f G2).
  */
 
-import type { SchemaManager } from "../../adapters/qdrant/schema-manager.js";
-import type { MigratorPort } from "../../contracts/types/migration.js";
-import type { PayloadBuilder } from "../../contracts/types/provider.js";
-import type { ChunkerPoolFactory } from "./pipeline/chunker/infra/pool.js";
-import type { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
+import type { SchemaManager } from "../../../adapters/qdrant/schema-manager.js";
+import type { MigratorPort } from "../../../contracts/types/migration.js";
+import type { PayloadBuilder } from "../../../contracts/types/provider.js";
+import type { ParallelFileSynchronizer } from "../sync/index.js";
+import type { ChunkerPoolFactory } from "./chunker/infra/pool.js";
 
 // ── Public interfaces ────────────────────────────────────────────
-
-export interface SynchronizerTuning {
-  concurrency?: number;
-  ioConcurrency?: number;
-}
 
 export interface IngestDependencies {
   createSchemaManager: (collectionName: string) => SchemaManager;

@@ -36,7 +36,7 @@ import type { BatchPayloadOp } from "../../../../../src/core/domains/ingest/pipe
 import { ChunkPhase } from "../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
 import { InlineEnrichmentExecutor } from "../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { EnrichmentRecovery } from "../../../../../src/core/domains/ingest/pipeline/enrichment/recovery.js";
-import type { ChunkItem } from "../../../../../src/core/domains/ingest/pipeline/types.js";
+import type { ChunkItem } from "../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 import { collectSymbols } from "../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
