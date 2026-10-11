@@ -235,6 +235,16 @@ export interface ConeTypeLocator {
    * tea-rags-mcp-0qaht.64); absent ⇒ the cone never declines on it.
    */
   isProjectType?: (typeName: string, ctx: CallContext) => boolean;
+  /**
+   * Whether a STRUCTURAL descendant of the receiver's type — a `structural`
+   * hierarchy row, derived from member names and arity alone — can actually be
+   * the receiver's runtime value (bd tea-rags-mcp-iw702). A language with a
+   * type checker answers false when the descendant is provably not assignable
+   * to the receiver's type at `call`, and true whenever it lacks the evidence.
+   * Declared rows (`extends`, `implements`, …) are never asked. Absent ⇒ every
+   * structural descendant stays in the cone.
+   */
+  admitsStructuralDescendant?: (descendant: string, baseType: string, call: CallRef, ctx: CallContext) => boolean;
 }
 
 /**

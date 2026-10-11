@@ -50,6 +50,10 @@ import type { ConeTypeLocator, DispatchResolverComponent } from "../../../contra
  * `x = X.new`, `const x = new X()`) has `T` as its
  * runtime class, never a subtype — it resolves to `T`'s own definer of `m` as
  * one `exact` edge instead of the fan (bd tea-rags-mcp-0qaht.66).
+ *
+ * A `structural` descendant (derived from member names and arity, never
+ * declared) joins the cone only when the locator's optional
+ * `admitsStructuralDescendant` does not veto it (bd tea-rags-mcp-iw702).
  */
 export class ConeDispatchResolver implements DispatchResolverComponent {
   constructor(
@@ -60,10 +64,24 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
     // The cone is bounded by design (`coneMax` → poly-base collapse), so it
     // never yields an over-cap `ambiguous` verdict — always an edges outcome.
-    return { kind: "edges", edges: this.resolveDispatchEdges(call, ctx) };
+    return { kind: "edges", edges: this.resolveGatedDispatchEdges(call, ctx) };
   }
 
-  private resolveDispatchEdges(call: CallRef, ctx: CallContext): DispatchEdge[] {
+  /**
+   * The structural gate (bd tea-rags-mcp-iw702) only THINS a cone the engine
+   * already enumerates: the cone is first resolved without it, and only an
+   * answer of `cone` edges is re-resolved with vetoed descendants left out. A
+   * `poly-base` answer stands as it was — the locator keeps a descendant it
+   * cannot judge for lack of evidence, not on proof, so enumerating whatever
+   * survives under the cap would trade the base edge for unproven targets.
+   */
+  private resolveGatedDispatchEdges(call: CallRef, ctx: CallContext): DispatchEdge[] {
+    const ungated = this.resolveDispatchEdges(call, ctx, false);
+    if (!this.locator.admitsStructuralDescendant || !ungated.some((edge) => edge.edgeKind === "cone")) return ungated;
+    return this.resolveDispatchEdges(call, ctx, true);
+  }
+
+  private resolveDispatchEdges(call: CallRef, ctx: CallContext, gateStructural: boolean): DispatchEdge[] {
     if (!call.receiver) return [];
     const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine, call.startColumn);
     const baseType = binding?.type;
@@ -74,7 +92,11 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
     const descendants = ctx.hierarchy.getDescendants(baseType);
     if (this.isOutOfProjectClass(baseType, descendants, ctx)) return [];
     const subtypes = new Set<string>();
-    for (const edge of descendants) subtypes.add(edge.sourceFqName);
+    for (const edge of descendants) {
+      const vetoed =
+        gateStructural && edge.kind === "structural" && !this.admitsStructural(edge.sourceFqName, baseType, call, ctx);
+      if (!vetoed) subtypes.add(edge.sourceFqName);
+    }
 
     // Keep only subtypes that DIRECTLY override `m` (a method-level pin) — an
     // inheriting subtype that doesn't redefine `m` adds no new target. Keyed by
@@ -152,6 +174,15 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
         confidence: 1,
       },
     ];
+  }
+
+  /**
+   * Does a `structural` descendant stay in the cone (bd tea-rags-mcp-iw702)?
+   * Such a row is derived from member names and arity alone, so a language
+   * that can check assignability may veto it; one that cannot keeps every row.
+   */
+  private admitsStructural(descendant: string, baseType: string, call: CallRef, ctx: CallContext): boolean {
+    return this.locator.admitsStructuralDescendant?.(descendant, baseType, call, ctx) ?? true;
   }
 
   /**

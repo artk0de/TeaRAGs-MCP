@@ -1,14 +1,16 @@
 import {
   pickSingleCandidate,
   type CallContext,
+  type CallRef,
   type RelPath,
   type SymbolDefinitionKind,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { ConeTypeLocator } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { mapImportToFile } from "../program/index.js";
+import { mapImportToFile, type TSProgramCache } from "../program/index.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
+import { structuralDescendantIsAssignable } from "./ts-structural-assignability.js";
 
 /**
  * TypeScript specifics for the generic `ConeDispatchResolver` (bd
@@ -30,7 +32,29 @@ import { collectImportedFiles, type ResolverConfig } from "./shared.js";
  * the TypeScript naming / resolution conventions.
  */
 export class TSConeTypeLocator implements ConeTypeLocator {
-  constructor(private readonly cfg: ResolverConfig) {}
+  /**
+   * @param programCache the resolver's checker, or `null` when it is disabled
+   *   (`CODEGRAPH_TS_TYPECHECKER=0`) — then every structural descendant stays.
+   */
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly programCache: TSProgramCache | null = null,
+  ) {}
+
+  /**
+   * Keep a `structural` descendant only when the checker does not prove it
+   * unassignable to the receiver's type at the call (bd tea-rags-mcp-iw702).
+   */
+  admitsStructuralDescendant(descendant: string, baseType: string, call: CallRef, ctx: CallContext): boolean {
+    return structuralDescendantIsAssignable(
+      descendant,
+      baseType,
+      this.resolveTypeFile(descendant, ctx),
+      call,
+      ctx,
+      this.programCache,
+    );
+  }
 
   /** Resolve a type name to its declaring file via symbol table + import disambiguation, or null. */
   resolveTypeFile(typeName: string, ctx: CallContext): RelPath | null {
