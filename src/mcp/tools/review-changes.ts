@@ -16,8 +16,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import type { ReviewChangesRequest, ReviewSectionId } from "../../core/api/public/dto/index.js";
-import { CODEGRAPH_SYMBOLS_PROVIDER_KEY, type App } from "../../core/api/public/index.js";
+import {
+  CODEGRAPH_SYMBOLS_PROVIDER_KEY,
+  type App,
+  type ReviewChangesRequest,
+  type ReviewSectionId,
+} from "../../core/api/public/index.js";
 import { formatMcpText, type McpToolResult } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import { collectionPathFields } from "./codegraph.js";

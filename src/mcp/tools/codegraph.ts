@@ -17,21 +17,19 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import type {
-  FindCoChangedRequest,
-  FindCyclesRequest,
-  GetArchitectureReportRequest,
-  GetCalleesRequest,
-  GetCallersRequest,
-  GetOntologyReportRequest,
-  NamingLexiconRequest,
-  TracePathRequest,
-} from "../../core/api/public/dto/index.js";
 import {
   CODEGRAPH_SYMBOLS_PROVIDER_KEY,
   PROJECT_NAME_RE,
   type App,
+  type FindCoChangedRequest,
+  type FindCyclesRequest,
+  type GetArchitectureReportRequest,
+  type GetCalleesRequest,
+  type GetCallersRequest,
+  type GetOntologyReportRequest,
+  type NamingLexiconRequest,
   type SchemaBuilder,
+  type TracePathRequest,
 } from "../../core/api/public/index.js";
 import { formatMcpText, type McpToolResult } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";

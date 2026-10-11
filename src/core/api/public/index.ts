@@ -75,6 +75,8 @@ export type {
   CollectionInfo,
   CollectionMemoryBytes,
   CollectionMemoryMetrics,
+  // Index metrics DTOs (get_index_metrics, prime)
+  IndexMetrics,
   // Document DTOs
   AddDocumentsRequest,
   DeleteDocumentsRequest,
@@ -93,6 +95,11 @@ export type {
   CoChangedPartner,
   FindCoChangedRequest,
   FindCoChangedResult,
+  // Call-graph DTOs (get_callers, get_callees, trace_path, find_cycles)
+  FindCyclesRequest,
+  GetCalleesRequest,
+  GetCallersRequest,
+  TracePathRequest,
   // Naming lexicon DTOs
   NamingLexiconRequest,
   NamingLexiconResult,

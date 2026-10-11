@@ -1,6 +1,11 @@
 import type { AutoUpdateTriggerOutcome } from "../../bootstrap/auto-update/trigger.js";
-import type { CollectionMemoryMetrics, IndexMetrics, IndexStatus } from "../../core/api/public/dto/index.js";
-import type { CollectionEntry, LanguageCapability } from "../../core/api/public/index.js";
+import type {
+  CollectionEntry,
+  CollectionMemoryMetrics,
+  IndexMetrics,
+  IndexStatus,
+  LanguageCapability,
+} from "../../core/api/public/index.js";
 import type { UpdateStatus } from "../update-check/types.js";
 
 /** Registry entry as consumed by the prime digest (env snapshot + legacy tuning). */
