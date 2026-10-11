@@ -12,9 +12,9 @@ import { resolve } from "node:path";
 import type { Argv, CommandModule } from "yargs";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
+import type { OptimizerRecoveryOps } from "../../core/api/index.js";
 import {
   TeaRagsError,
-  type OptimizerRecoveryOps,
   type OptimizerRecoveryOutcome,
   type OptimizerRecoveryTarget,
 } from "../../core/api/public/index.js";

@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App, SchemaBuilder } from "../../core/api/public/index.js";
+import type { App, SchemaBuilderPort } from "../../core/api/public/index.js";
 import { createRegisterTool, type HealthProbes } from "../middleware/error-handler.js";
 import { registerCodeTools } from "./code.js";
 import { registerCodegraphTools } from "./codegraph.js";
@@ -21,7 +21,7 @@ import { registerUnregisterProjectTool } from "./unregister-project.js";
 
 export interface ToolDependencies {
   app: App;
-  schemaBuilder: SchemaBuilder;
+  schemaBuilder: SchemaBuilderPort;
   healthProbes?: HealthProbes;
   /** Auto-update trigger for search tools (hpg2); absent = feature inert. */
   autoUpdate?: McpAutoUpdateTrigger;

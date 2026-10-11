@@ -357,6 +357,19 @@ export interface CollectionRegistryPort {
  */
 export type PathCollectionResolver = (path: string) => Promise<CollectionAlias>;
 
+/**
+ * Input for path/project/collection resolution — 3-priority resolution:
+ *   collection > project > path > error.
+ * The rule that consumes it is `api/internal/collection-resolver.ts`
+ * (`resolveCollection`); the shape lives here so the contract barrel can name
+ * it without reaching into the api layer (bd tea-rags-mcp-k7kmu C2).
+ */
+export interface ResolveInput {
+  collection?: string;
+  project?: string;
+  path?: string;
+}
+
 // ── Registry env vocabulary (relocated from
 // domains/maintenance/registry/env-groups.ts, bd tea-rags-mcp-0qaht.36) ──
 // The stable layers (`api/public`, `bootstrap`) re-export/consume these

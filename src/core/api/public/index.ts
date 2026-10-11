@@ -9,14 +9,15 @@
  * What this layer holds (bd tea-rags-mcp-89k7k.22): the contract and nothing
  * else — the `App` interface, DTOs, the input-error vocabulary
  * (`./errors.js`), pure render/predicate rules re-exported from `contracts/`,
- * and TYPE-only re-exports of handler shapes (type-only edges are not
- * SDP-judged, bd tea-rags-mcp-0qaht.36). RUNTIME classes and assembly
- * functions (ops classes, the path-collection resolver, `SchemaBuilder`,
- * `createApp`, `reviewSectionIds`) are NOT re-exported from here — a value
- * edge onto the unstable api component put the whole consumer surface in a
- * dependency cycle with it. Consumers that construct runtime pieces reach
- * them through the api root barrel (`core/api/index.js`, the assembly
- * surface); deep `api/internal/` paths stay forbidden.
+ * and contract ports (`SchemaBuilderPort`). This file holds NO edge into
+ * `api/internal/` — runtime or type-only: type-only edges ARE SDP-judged
+ * (the component detector has no type-only flag; `domain-boundaries.md`
+ * grants no `allowTypeImports` escape hatch — bd tea-rags-mcp-k7kmu C2,
+ * pinned by `sdp-runtime-import-direction.test.ts`). RUNTIME classes and
+ * assembly functions (ops classes, the path-collection resolver,
+ * `SchemaBuilder`, `createApp`, `reviewSectionIds`) are reached through the
+ * api root barrel (`core/api/index.js`, the assembly surface); deep
+ * `api/internal/` paths stay forbidden.
  */
 
 // ── App contract ──────────────────────────────────────────────────────
@@ -228,9 +229,9 @@ export { validatePath } from "../../adapters/filesystem/path-canonicalization.js
 // The resolver is runtime logic, not contract: `bootstrap` and `cli` reach the
 // functions through the api root barrel, which re-exports them from
 // api/internal (bd tea-rags-mcp-dxa9w, moved off this barrel by
-// tea-rags-mcp-89k7k.22). The resolver TYPES stay — type-only edges are not
-// SDP-judged (bd tea-rags-mcp-0qaht.36 vocabulary).
-export type { PathCollectionResolver, ResolveInput } from "../internal/collection-resolver.js";
+// tea-rags-mcp-89k7k.22). The resolver TYPES are contract and come from
+// `contracts/` — no edge into api/internal (bd tea-rags-mcp-k7kmu C2).
+export type { PathCollectionResolver, ResolveInput } from "../../contracts/types/registry.js";
 
 // ── Poison-pill quarantine — read surface for `doctor --quarantine` ───
 export { QuarantineStore } from "../../domains/ingest/sync/index.js";
@@ -289,25 +290,25 @@ export type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.j
 // `api/internal/ops/` (moved off this barrel by bd tea-rags-mcp-89k7k.22 —
 // a VALUE re-export here was a stable→unstable edge with delta 0.87).
 // ── Qdrant optimizer recovery (cli/qdrant recover; status surfaces print the command) ──
-// The write path (`OptimizerRecoveryOps`) is assembly — root barrel. The
+// The write path (`OptimizerRecoveryOps`) is assembly — root barrel only,
+// type included (bd tea-rags-mcp-k7kmu C2). The
 // failure predicate and the remedy's rendering rule are pure contract
 // vocabulary and live in `contracts/optimizer-recovery.ts` (the `resolve-rate`
 // precedent), re-exported here for both the CLI and MCP status surfaces (bd
 // tea-rags-mcp-ye5o, tea-rags-mcp-89k7k.22).
 export { isOptimizerFailure, renderOptimizerRecoveryCommand } from "../../contracts/optimizer-recovery.js";
 export type { OptimizerRecoveryOutcome, OptimizerRecoveryTarget } from "../../contracts/optimizer-recovery.js";
-export type { OptimizerRecoveryOps } from "../internal/ops/optimizer-recovery-ops.js";
 // The one wording of a first index's worktree seed outcome — CLI status block
 // and MCP `index_codebase` response both render it (bd tea-rags-mcp-k8gac).
 // Through the worktree domain facade, not the deep module (bd
 // tea-rags-mcp-0qaht.36).
 export { formatWorktreeSeedReport } from "../../domains/maintenance/worktree/index.js";
 
-// ── SchemaBuilder (used by mcp tool registration) ─────────────────────
-// mpc holds the TYPE only — bootstrap constructs the builder and injects it,
-// through the api root barrel (bd tea-rags-mcp-89k7k.22). A VALUE re-export
-// here was a stable→unstable edge; the type-only edge is not SDP-judged.
-export type { SchemaBuilder } from "../internal/infra/schema-builder.js";
+// ── SchemaBuilderPort (used by mcp tool registration) ─────────────────
+// mcp writes against the PORT; bootstrap constructs the internal
+// `SchemaBuilder` class (which implements it) through the api root barrel and
+// injects it (bd tea-rags-mcp-89k7k.22, tea-rags-mcp-k7kmu C2).
+export type { RerankSchema, SchemaBuilderPort, ScoringWeightsSchema } from "./schema-builder-port.js";
 
 // ── Index / enrichment runtime metrics (consumed by mcp formatters) ───
 // Defined in core/types.ts (root) for now — relocation into contracts/types

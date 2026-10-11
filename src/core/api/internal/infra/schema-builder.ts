@@ -14,6 +14,7 @@ import { z } from "zod";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { PROJECT_NAME_RE } from "../../../domains/maintenance/registry/constants.js";
 import { ConfigValueInvalidError } from "../../../primitives/errors/index.js";
+import type { RerankSchema, SchemaBuilderPort, ScoringWeightsSchema } from "../../public/schema-builder-port.js";
 
 /**
  * Zod schema for an optional project name. Sourced from PROJECT_NAME_RE
@@ -35,7 +36,7 @@ const collectionIdentifierSchema = z.object({
   path: z.string().optional(),
 });
 
-export class SchemaBuilder {
+export class SchemaBuilder implements SchemaBuilderPort {
   constructor(private readonly reranker: Reranker) {}
 
   /**
@@ -51,7 +52,7 @@ export class SchemaBuilder {
    * Build Zod schema for custom scoring weights.
    * Each derived signal becomes an optional numeric field (no descriptions).
    */
-  buildScoringWeightsSchema(): z.ZodObject<Record<string, z.ZodOptional<z.ZodNumber>>> {
+  buildScoringWeightsSchema(): ScoringWeightsSchema {
     const shape: Record<string, z.ZodOptional<z.ZodNumber>> = {};
     for (const d of this.reranker.getDescriptorInfo()) {
       shape[d.name] = z.number().optional();
@@ -78,7 +79,7 @@ export class SchemaBuilder {
   /**
    * Build the full rerank union schema: preset enum | { custom: weights }.
    */
-  buildRerankSchema(tool: string) {
+  buildRerankSchema(tool: string): RerankSchema {
     const presetSchema = this.buildPresetSchema(tool);
     const weightsSchema = this.buildScoringWeightsSchema();
     return z.union([presetSchema, z.object({ custom: weightsSchema })]);

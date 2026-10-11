@@ -7,7 +7,7 @@
  * field definition that gets composed into the final schema by the SDK.
  *
  * Search-related schemas (SemanticSearch, HybridSearch, SearchCode) are generated
- * dynamically via createSearchSchemas(SchemaBuilder) to avoid hardcoded imports
+ * dynamically via createSearchSchemas(SchemaBuilderPort) to avoid hardcoded imports
  * from domain/foundation layers. All other schemas remain static.
  *
  * Param descriptions are INLINE HINTS (≤ 20 words): the one semantic an agent
@@ -20,7 +20,7 @@
 
 import { z } from "zod";
 
-import { PROJECT_NAME_RE, type SchemaBuilder } from "../../core/api/public/index.js";
+import { PROJECT_NAME_RE, type SchemaBuilderPort } from "../../core/api/public/index.js";
 
 /** Coerce string→number for MCP params (agents sometimes send "5" instead of 5) */
 const coerceNumber = () => z.preprocess((v) => (typeof v === "string" ? Number(v) : v), z.number());
@@ -381,7 +381,7 @@ function vectorSearchSchema(rerankSchema: z.ZodTypeAny, filterSchema: z.ZodTypeA
   };
 }
 
-export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
+export function createSearchSchemas(schemaBuilder: SchemaBuilderPort) {
   // Typed filter params the registered trajectories apply — the only ones a
   // typed-filter tool exposes (bd tea-rags-mcp-86wsz).
   const appliedFilterParams = new Set(schemaBuilder.filterParamNames());

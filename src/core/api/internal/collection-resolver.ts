@@ -13,7 +13,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 import { validatePathSync } from "../../adapters/filesystem/path-canonicalization.js";
 import { findGitToplevel, resolveGitCommonDir } from "../../adapters/vcs/index.js";
-import type { CollectionEntry, PathCollectionResolver } from "../../contracts/types/registry.js";
+import type { CollectionEntry, PathCollectionResolver, ResolveInput } from "../../contracts/types/registry.js";
 import type { WorkingTree } from "../../contracts/types/working-tree.js";
 import { CollectionNotFoundError } from "../../domains/explore/index.js";
 import type { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
@@ -26,15 +26,8 @@ import {
   SubmoduleNotIndexedError,
 } from "../public/index.js";
 
-/**
- * Input for resolveCollection — 3-priority resolution:
- *   collection > project > path > error.
- */
-export interface ResolveInput {
-  collection?: string;
-  project?: string;
-  path?: string;
-}
+/** Declared in `contracts/types/registry.ts`; re-exported for this file's callers. */
+export type { ResolveInput };
 
 /**
  * Resolve a collection identifier from a request.
