@@ -21,6 +21,7 @@ import type {
   RerankPreset,
   SignalLevel,
 } from "../../contracts/types/reranker.js";
+import type { StatsRecomputeServicePort } from "../../contracts/types/stats-recompute.js";
 import type {
   CollectionSignalStats,
   PayloadSignalDescriptor,
@@ -29,7 +30,6 @@ import type {
   SignalStats,
 } from "../../contracts/types/trajectory.js";
 import { detectScope } from "../../infra/scope-detection.js";
-import type { StatsRecomputeService } from "../ingest/infra/stats-recompute.js";
 import { resolveLabel } from "./label-resolver.js";
 import { ageSourceBoundDays, applySignalFloors, floorsForSignal } from "./signal-floors.js";
 
@@ -101,7 +101,7 @@ export class Reranker {
   /** Opaque marker of the stats revision held, supplied by whoever loaded it. */
   private collectionStatsRevision?: number;
   private payloadFieldKeys?: string[];
-  private recomputeService?: StatsRecomputeService;
+  private recomputeService?: StatsRecomputeServicePort;
   private resolvedFilterPresetNames: string[] = [];
   private resolvedFilterParamNames: string[] = [];
   private ageCapabilityMap?: Map<string, { cap: AgeDerivationCapability; level: "file" | "chunk" }>;
@@ -178,7 +178,7 @@ export class Reranker {
    * this, missing adaptive percentiles fall back to `rule.fallback` /
    * `score.threshold` for every query — useful for tests / fixtures.
    */
-  setRecomputeService(service: StatsRecomputeService): void {
+  setRecomputeService(service: StatsRecomputeServicePort): void {
     this.recomputeService = service;
   }
 

@@ -57,6 +57,7 @@ import type { Reranker } from "../../../domains/explore/reranker.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
 import { DOCUMENTATION_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/config.js";
+import { mapMarkerToHealth } from "../../../domains/ingest/pipeline/enrichment/index.js";
 import { formatIndexDriftReport, type IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/compiler.js";
@@ -273,6 +274,7 @@ export class ExploreOps {
         deps.qdrant,
         deps.statsCache,
         this.payloadSignals,
+        mapMarkerToHealth,
         deps.signalFloors,
       );
       this.recomputeService = new StatsRecomputeService(deps.qdrant, deps.statsCache);

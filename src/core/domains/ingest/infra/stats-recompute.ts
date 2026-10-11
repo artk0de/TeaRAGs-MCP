@@ -36,6 +36,7 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
 import { resolvePayloadValue } from "../../../contracts/signal-utils.js";
+import type { StatsRecomputeServicePort } from "../../../contracts/types/stats-recompute.js";
 import type {
   CollectionSignalStats,
   PayloadSignalDescriptor,
@@ -45,7 +46,7 @@ import type { StatsCache } from "../../../infra/stats-cache.js";
 
 const FAILURE_BACKOFF_MS = 60_000;
 
-export class StatsRecomputeService {
+export class StatsRecomputeService implements StatsRecomputeServicePort {
   private readonly inFlight = new Map<string, Promise<number[]>>();
   private readonly failedAt = new Map<string, number>();
 

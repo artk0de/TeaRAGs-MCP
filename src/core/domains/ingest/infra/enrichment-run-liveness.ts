@@ -1,99 +1,26 @@
 /**
- * The persisted enrichment marker format and the run-liveness predicate over it.
+ * The run-liveness predicate over the persisted enrichment marker.
  *
  * Lives in `ingest/infra` — below the pipeline — because the collection lease
  * (`collection-build-lease`) and the indexing-marker codec read the marker to
  * tell a running enrichment from an idle one. The health mapper in
  * `pipeline/enrichment` renders the same marker for the API and imports the
- * shared threshold, terminal-status set and nested lookup from here.
+ * shared threshold, terminal-status set and nested lookup from here. The marker
+ * types themselves live in `contracts/types/enrichment.ts` (explore reads them
+ * too) and are re-exported here so ingest keeps its import paths.
  */
 
-// --- Enrichment marker types (per-provider, per-level) ---
+import type { EnrichmentMarkerMap, RunMarker } from "../../../contracts/types/enrichment.js";
 
-/**
- * Run-pointer — the ONLY pre-completion marker write. Lives at
- * `payload.enrichment._run`. Written once at run start (`markRunStart`) and
- * refreshed by a throttled heartbeat.
- *
- * It is evidence about the providers it COVERS (`providers`) and about nobody
- * else. For a covered provider the health mapper compares each per-kind
- * marker's `runId` against `runId` here to detect stale/in-flight work (a
- * marker whose runId differs is derived from these timestamps — in_progress or
- * failed, never healthy). For an ACTIVE provider this run did not cover, these
- * timestamps describe someone else's work and are not consulted at all: its own
- * latest terminal marker stands. See `health-mapper.ts` for the full frame.
- */
-export interface RunMarker {
-  runId: string;
-  startedAt: string;
-  /** Throttled heartbeat; advanced on real apply progress. */
-  lastProgressAt: string;
-  /**
-   * Provider keys THIS RUN covered — a coverage set, not the frame of the
-   * health report. `--force-enrichments codegraph` writes a run naming
-   * `codegraph.symbols` alone while git markers from an earlier run stay valid
-   * on the same points, so the health mapper navigates from the RUNNING
-   * COMPOSITION's provider list (passed in by the caller) and consults this
-   * list only to decide whether the run's timestamps describe a given provider.
-   *
-   * Markers are stored NESTED (`enrichment.codegraph.symbols.file`, matching
-   * the applier's codegraph convention), so the marker tree is not
-   * self-describing — a dotted key like `codegraph.symbols` is
-   * indistinguishable from nesting. Both lists are dotted keys read the same
-   * way, which is why either can drive the navigation.
-   */
-  providers: string[];
-}
-
-/**
- * PERSISTED per-level status is terminal-only. `in_progress` / `pending` /
- * `stalled` are NEVER written — they are DERIVED at read time by the health
- * mapper from the `_run` pointer, for a provider the run covers (absent or
- * stale-runId marker). An active provider the run does NOT cover is never
- * derived as in progress: its own terminal marker renders as is, and a missing
- * or non-terminal one renders as a derived `failed`. See
- * `EnrichmentLevelHealth` for the API-facing (derived) status union.
- */
-export type EnrichmentLevelStatus = "completed" | "degraded" | "failed";
-
-export interface EnrichmentLevelMarker {
-  /** The run that produced this terminal marker (staleness key). */
-  runId?: string;
-  status: EnrichmentLevelStatus;
-  startedAt?: string;
-  completedAt?: string;
-  durationMs?: number;
-  matchedFiles?: number;
-  missedFiles?: number;
-  /** Files intentionally skipped by per-file enrichment policy (not a failure). */
-  ignoredFiles?: number;
-  unenrichedChunks: number;
-  /**
-   * Propagated error message when `status === "failed"`. Surfaced to
-   * `get_index_status` via the health mapper so MCP consumers see the
-   * concrete failure (e.g. "Codegraph spill write failed at .spill/…")
-   * instead of a generic failure placeholder.
-   */
-  errorMessage?: string;
-}
-
-export type FileEnrichmentMarker = EnrichmentLevelMarker;
-
-export type ChunkEnrichmentMarker = EnrichmentLevelMarker;
-
-export interface ProviderEnrichmentMarker {
-  runId: string;
-  file: FileEnrichmentMarker;
-  chunk: ChunkEnrichmentMarker;
-}
-
-/**
- * Shape stored in Qdrant metadata point (ID=1) payload.enrichment.
- * Per-provider entries are keyed by provider key; `_run` holds the run-pointer.
- */
-export type EnrichmentMarkerMap = {
-  _run?: RunMarker;
-} & Record<string, ProviderEnrichmentMarker | RunMarker | undefined>;
+export type {
+  ChunkEnrichmentMarker,
+  EnrichmentLevelMarker,
+  EnrichmentLevelStatus,
+  EnrichmentMarkerMap,
+  FileEnrichmentMarker,
+  ProviderEnrichmentMarker,
+  RunMarker,
+} from "../../../contracts/types/enrichment.js";
 
 /** An enrichment level record as read off the persisted marker (untyped payload). */
 export type EnrichmentLevelRecord = Record<string, unknown>;
