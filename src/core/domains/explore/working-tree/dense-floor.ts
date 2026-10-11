@@ -36,6 +36,7 @@ import { createHash } from "node:crypto";
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { ExploreResult } from "../../../contracts/types/search-result.js";
 import type {
   WorkingTreeBasePoint,
   WorkingTreeTouchedBasePointsReader,
@@ -43,7 +44,6 @@ import type {
 import { cosine } from "../../../infra/vector-math.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { WorkingTreeEmbeddingMalformedError } from "../errors.js";
-import type { ExploreResult } from "../strategies/types.js";
 import type { WorkingTreeChunkStore, WorkingTreeChunkStoreKey } from "./chunk-store.js";
 import { WorkingTreePassCache } from "./pass-cache.js";
 

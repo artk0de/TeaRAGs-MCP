@@ -45,8 +45,8 @@ import { createHash } from "node:crypto";
 import { payloadMatchesFilter } from "../../../adapters/qdrant/filters/payload-match.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import type { SparseVector } from "../../../adapters/qdrant/types.js";
+import type { ExploreResult } from "../../../contracts/types/search-result.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
-import type { ExploreResult } from "../strategies/types.js";
 import type { WorkingTreeChunkSparseVectors } from "./chunk-store.js";
 
 /**

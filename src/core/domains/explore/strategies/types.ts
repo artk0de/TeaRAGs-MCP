@@ -5,8 +5,7 @@
  * (vector, hybrid, scroll-rank) while keeping the MCP layer thin.
  */
 
-import type { RankingOverlay } from "../../../contracts/types/reranker.js";
-import type { WorkingTreeState } from "../../../contracts/types/working-tree.js";
+import type { ExploreResult } from "../../../contracts/types/search-result.js";
 import type { WorkingTreeView } from "../working-tree/overlay.js";
 
 export interface ExploreContext {
@@ -45,17 +44,9 @@ export interface ExploreContext {
   historyAnchorSec?: number;
 }
 
-export interface ExploreResult<P = Record<string, unknown>> {
-  id?: string | number;
-  score: number;
-  payload?: P;
-  rankingOverlay?: RankingOverlay;
-  /**
-   * Set on a base row of a file the working tree changed or deleted, where no
-   * floor replaced it — always on a row of an index-served file.
-   */
-  treeState?: WorkingTreeState;
-}
+// The row lives in contracts so the working-tree floors and the chunk groupers
+// beneath the strategies need not import them (bd tea-rags-mcp-g7w8f).
+export type { ExploreResult };
 
 export interface ExploreStrategy {
   readonly type: "vector" | "hybrid" | "scroll-rank" | "similar";
