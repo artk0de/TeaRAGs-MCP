@@ -86,10 +86,19 @@ core/
     maintenance/                       # Registry, migrations, drift, footprint, worktree index lifecycle
       schema-drift-monitor.ts          # SchemaDriftMonitor: payload signal-descriptor drift detection
 
-  infra/                               # Foundation: utilities (lowest layer)
-    runtime.ts                         # isDebug(), setDebug()
-    collection-name.ts                 # validatePath, resolveCollectionName, resolveCollection
-    stats-cache.ts                     # StatsCache: collection signal stats persistence
+  primitives/                          # Foundation: I/O-free shared code (lowest runtime layer)
+                                       # NO root barrel — import <category>/index.js
+                                       # (target layout; filled wave by wave under 2wu2h)
+    collections/                       # in-memory LRUs, memos
+    concurrency/                       # promise semaphore
+    math/                              # vector math, score background, statistics/
+    graph/                             # Tarjan SCC, PageRank, Otsu split, visibility
+    ids/                               # symbolId, collection identity, content hash
+    paths/                             # path patterns, scope detection, file classification
+    errors/                            # TeaRagsError base hierarchy
+    diagnostics/                       # debug flag
+
+  infra/                               # BEING RETIRED (bd tea-rags-mcp-2wu2h) — no new modules
 
   contracts/                           # Foundation: interfaces + registries
     signal-utils.ts                    # normalize, p95, payload resolvers
@@ -124,4 +133,6 @@ core/
         types.ts                       # DaemonPaths, QdrantResolution
     git/
     embeddings/
+    filesystem/                        # local-disk I/O (stats file, manifests, path canonicalization)
+    tree-sitter/                       # SyntaxNode -> AstNode anti-corruption layer
 ```
