@@ -49,8 +49,7 @@ import type {
   LanguageWalker,
   TestDependencyManifestSource,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/index.js";
-import { readEcmascriptImportSpecifiers } from "../typescript/chunking/index.js";
+import { composeExtractionWalker, readEcmascriptImportSpecifiers } from "../kernel/index.js";
 import { PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST } from "../typescript/package-manifest.js";
 import { javascriptHooks, JsChunkClassifier, jsExportNameExtractor } from "./chunking/index.js";
 import { javascriptKernel } from "./kernel.js";

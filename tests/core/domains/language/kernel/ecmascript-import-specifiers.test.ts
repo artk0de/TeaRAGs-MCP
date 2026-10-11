@@ -10,8 +10,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
-import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
+import { TreeSitterChunker } from "../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
+import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../src/core/domains/language/index.js";
 
 const chunker = new TreeSitterChunker(
   { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 },

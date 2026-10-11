@@ -54,6 +54,7 @@ const FORBIDDEN_SPECIFIER_SUFFIXES = [
   /\/import-file-edges\.js$/,
   /\/external-classifier\.js$/,
   /\/ecmascript-globals\.js$/,
+  /\/(?:ecmascript-)?import-specifiers\.js$/,
 ] as const;
 
 interface NamedStatement {
@@ -114,6 +115,13 @@ describe("language verticals reach the promoted leaf modules only through the ke
     );
     expect(text, "the frozen ECMAScript global vocabulary must be re-exported from ./ecmascript-globals.js").toMatch(
       /export\s*\{[^}]*\bECMASCRIPT_GLOBALS\b[^}]*\}\s*from\s*"\.\/ecmascript-globals\.js"/,
+    );
+  });
+
+  it("the kernel barrel exports the ECMAScript import-specifier reader (k7kmu C12)", () => {
+    const text = readFileSync(join(ROOT, KERNEL_BARREL), "utf-8");
+    expect(text, "readEcmascriptImportSpecifiers must be re-exported from ./ecmascript-import-specifiers.js").toMatch(
+      /export\s*\{[^}]*\breadEcmascriptImportSpecifiers\b[^}]*\}\s*from\s*"\.\/ecmascript-import-specifiers\.js"/,
     );
   });
 });
