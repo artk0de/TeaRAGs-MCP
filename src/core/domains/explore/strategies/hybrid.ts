@@ -13,7 +13,7 @@
 
 import { QdrantInvalidQueryParameterError } from "../../../adapters/qdrant/errors.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
-import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
+import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { InvalidQueryError } from "../errors.js";

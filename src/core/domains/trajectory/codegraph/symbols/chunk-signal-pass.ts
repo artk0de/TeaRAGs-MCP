@@ -16,8 +16,8 @@ import type {
   SymbolLineRange,
 } from "../../../../contracts/types/codegraph.js";
 import type { ChunkLookupEntry, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
-import type { PathFilter } from "../../../../infra/file-classification/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import type { PathFilter } from "../../../../primitives/paths/index.js";
 import {
   CodegraphChunkSettlementTally,
   settleCodegraphChunkSignals,

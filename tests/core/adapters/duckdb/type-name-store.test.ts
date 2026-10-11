@@ -26,7 +26,7 @@ import type {
 import { languageTestFileConventions } from "../../../../src/core/domains/language/capability/native.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
-import { nonProductionPathPatterns } from "../../../../src/core/infra/file-classification/index.js";
+import { nonProductionPathPatterns } from "../../../../src/core/primitives/paths/file-classification/index.js";
 
 const TYPE_KINDS: readonly SymbolDefinitionKind[] = ["class", "module", "interface", "enum", "type_alias"];
 const NON_PRODUCTION_PATHS = nonProductionPathPatterns(languageTestFileConventions());

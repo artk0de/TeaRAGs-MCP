@@ -22,7 +22,7 @@ import type {
   ScopedSignalStats,
   SignalStats,
 } from "../../../contracts/types/trajectory.js";
-import { detectScope, type ScopeDetectionConfig } from "../../../infra/scope-detection.js";
+import { detectScope, type ScopeDetectionConfig } from "../../../primitives/paths/index.js";
 
 const MIN_SAMPLE_SIZE = 10;
 /**

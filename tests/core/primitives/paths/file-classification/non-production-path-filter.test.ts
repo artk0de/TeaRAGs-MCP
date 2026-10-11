@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { buildNonProductionPathFilter } from "../../../../src/core/infra/file-classification/index.js";
+import { buildNonProductionPathFilter } from "../../../../../src/core/primitives/paths/file-classification/index.js";
 
 describe("buildNonProductionPathFilter", () => {
   const filter = buildNonProductionPathFilter();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classify } from "../../../../src/core/infra/file-classification/index.js";
+import { classify } from "../../../../../src/core/primitives/paths/file-classification/index.js";
 
 describe("classify", () => {
   it("flags Rails schema as generated", () => {

@@ -9,7 +9,7 @@ import { payloadFieldIndexSchema, type PayloadFieldIndexSchema } from "../../../
 import { scrollOrderedBy } from "../../../adapters/qdrant/scroll.js";
 import { toPhysicalPayloadKey } from "../../../contracts/signal-utils.js";
 import type { RankingOverlay, RerankableResult } from "../../../contracts/types/reranker.js";
-import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
+import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { InvalidQueryError } from "../errors.js";

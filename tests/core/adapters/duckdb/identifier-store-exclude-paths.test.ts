@@ -17,7 +17,7 @@ import type { IdentifierRow, OntologyReportQuery } from "../../../../src/core/co
 import { languageTestFileConventions } from "../../../../src/core/domains/language/capability/native.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
-import { nonProductionPathPatterns } from "../../../../src/core/infra/file-classification/index.js";
+import { nonProductionPathPatterns } from "../../../../src/core/primitives/paths/file-classification/index.js";
 
 const KEPT = "app/kept.rb";
 const CHANGED = "app/changed.rb";

@@ -1,6 +1,6 @@
 import type { FileDependencyGraphFile } from "../../../../../contracts/types/codegraph.js";
-import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../primitives/graph/index.js";
+import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import { DEFAULT_SDP_MIN_CONNECTION_COUNT } from "./stable-dependencies.js";
 import type {
   ComponentGraph,

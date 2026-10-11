@@ -1,6 +1,6 @@
 import type { TestFileConventions } from "../../../contracts/types/file-classification.js";
 import type { LanguageCapability } from "../../../contracts/types/language.js";
-import { installTestFileConventions } from "../../../infra/file-classification/index.js";
+import { installTestFileConventions } from "../../../primitives/paths/index.js";
 import { capability as bashCapability } from "../bash/capability.js";
 import { capability as goCapability } from "../go/capability.js";
 import { capability as javaCapability } from "../java/capability.js";
@@ -39,7 +39,7 @@ export function nativeLanguageCapabilities(): Map<string, LanguageCapability> {
 /**
  * Every language's test-file masks, aggregated once (bd tea-rags-mcp-vjz6s):
  * every call returns the same object, which is what the installed readers in
- * `infra/file-classification` key their caches on.
+ * `primitives/paths/file-classification` key their caches on.
  */
 export function languageTestFileConventions(): TestFileConventions {
   aggregatedTestFileConventions ??= aggregateTestFileConventions(nativeLanguageCapabilities());
@@ -48,7 +48,7 @@ export function languageTestFileConventions(): TestFileConventions {
 
 let aggregatedTestFileConventions: TestFileConventions | undefined;
 
-// `infra/file-classification` owns no language's test shapes, and its
+// `primitives/paths/file-classification` owns no language's test shapes, and its
 // module-level readers (`classify`, scope detection, the codegraph exclusion)
 // throw until something installs them. Installing on load of THIS module — the
 // one every path into the language domain crosses: the factory, the public

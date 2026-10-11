@@ -1,6 +1,6 @@
 import type { FileDependencyEdge, FileDependencyGraphFile } from "../../../../../contracts/types/codegraph.js";
-import { compilePathPatternMatcher, type PathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import { tarjanScc } from "../../../../../primitives/graph/index.js";
+import { compilePathPatternMatcher, type PathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import { COMPONENT_EVIDENCE_FILE_EDGE_LIMIT } from "./component-stable-dependencies.js";
 import { DEFAULT_MAIN_SEQUENCE_MIN_TYPE_COUNT } from "./main-sequence.js";
 import type {

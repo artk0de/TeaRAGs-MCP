@@ -1,6 +1,6 @@
 import ignore from "ignore";
 
-import type { TestFileConventions } from "../../contracts/types/file-classification.js";
+import type { TestFileConventions } from "../../../contracts/types/file-classification.js";
 import { installedTestFileConventions, testPathPatterns } from "./test-file-conventions.js";
 
 /** The one question every test-path consumer asks, in the `ignore` package's shape. */

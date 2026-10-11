@@ -4,7 +4,7 @@ import {
   isCompiledJsContent,
   isJsFamilyPath,
   maxLineLength,
-} from "../../../../src/core/infra/file-classification/index.js";
+} from "../../../../../src/core/primitives/paths/file-classification/index.js";
 
 describe("maxLineLength", () => {
   it("returns 0 for an empty string", () => {

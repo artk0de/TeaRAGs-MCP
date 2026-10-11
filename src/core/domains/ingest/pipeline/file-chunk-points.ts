@@ -22,8 +22,7 @@ import { join } from "node:path";
 
 import { toQdrantPointId } from "../../../adapters/qdrant/point-id.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
-import { isCompiledJsContent, isJsFamilyPath } from "../../../infra/file-classification/index.js";
-import { isTestPath } from "../../../infra/scope-detection.js";
+import { isCompiledJsContent, isJsFamilyPath, isTestPath } from "../../../primitives/paths/index.js";
 import { buildChunkPointPayload } from "./chunk-point-payload.js";
 import { assignNavigationAndDocSymbolId } from "./chunker/chunk-navigation.js";
 import type { ChunkerPoolPort } from "./chunker/infra/pool.js";

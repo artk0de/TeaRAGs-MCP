@@ -17,15 +17,15 @@ import { join } from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { describe, expect, it } from "vitest";
 
-import { compileNonProductionPathPredicate } from "../../../../src/core/adapters/duckdb/non-production-path-sql.js";
-import { languageTestFileConventions } from "../../../../src/core/domains/language/capability/native.js";
+import { compileNonProductionPathPredicate } from "../../../../../src/core/adapters/duckdb/non-production-path-sql.js";
+import { languageTestFileConventions } from "../../../../../src/core/domains/language/capability/native.js";
 import {
   buildNonProductionPathFilter,
   buildTestPathFilter,
   classify,
   nonProductionPathPatterns,
-} from "../../../../src/core/infra/file-classification/index.js";
-import { isTestPath } from "../../../../src/core/infra/scope-detection.js";
+} from "../../../../../src/core/primitives/paths/file-classification/index.js";
+import { isTestPath } from "../../../../../src/core/primitives/paths/scope-detection.js";
 
 interface ClassificationBaseline {
   corpus: string[];

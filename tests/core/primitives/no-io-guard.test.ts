@@ -155,7 +155,7 @@ function describeViolation(v: PrimitiveViolation): string {
  * Floor for the scan, so an emptied or mis-rooted directory cannot pass
  * vacuously. Raise it as later waves move more modules in; never lower it.
  */
-const MIN_PRIMITIVE_FILES = 31;
+const MIN_PRIMITIVE_FILES = 42;
 
 function listPrimitiveFiles(): string[] {
   const out: string[] = [];

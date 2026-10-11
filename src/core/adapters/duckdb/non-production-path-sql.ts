@@ -3,7 +3,7 @@
  * tea-rags-mcp-4p3sb.25): the same declared masks `buildNonProductionPathFilter`
  * matches in JS — the tooling directories plus the test shapes, split into
  * case-insensitive and case-sensitive sets by `nonProductionPathPatterns`
- * (`infra/file-classification`) — compiled into constant SQL: no per-file bind
+ * (`primitives/paths/file-classification`) — compiled into constant SQL: no per-file bind
  * list, no extra read.
  *
  * The masks are an ARGUMENT. The per-language test shapes are owned by

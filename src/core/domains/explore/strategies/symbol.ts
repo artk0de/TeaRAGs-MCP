@@ -70,7 +70,7 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import type { WorkingTreeGraphReader } from "../../../contracts/types/working-tree.js";
-import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
+import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { isTestExampleChunk, memberOwnerOf, splitFragmentBase, type ScrollChunk } from "../chunk-grouping/index.js";
 import { historyClockRerankOption } from "../history-clock.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";

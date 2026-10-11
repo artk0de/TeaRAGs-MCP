@@ -1,6 +1,6 @@
 import ignore, { type Ignore } from "ignore";
 
-import type { FileClassification, TestFileConventions } from "../../contracts/types/file-classification.js";
+import type { FileClassification, TestFileConventions } from "../../../contracts/types/file-classification.js";
 import { GENERATED_CONTENT_MARKERS, GENERATED_PATTERNS } from "./patterns.js";
 import { installedFileClassificationSettings, type FileClassificationSettings } from "./settings.js";
 import { installedTestFileConventions } from "./test-file-conventions.js";

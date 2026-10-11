@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { compilePathPatternMatcher, pathPatternLiteralPrefix } from "../../../src/core/infra/path-pattern.js";
+import {
+  compilePathPatternMatcher,
+  pathPatternLiteralPrefix,
+} from "../../../../src/core/primitives/paths/path-pattern.js";
 
 const RUNNER = "src/core/domains/ingest/pipeline/enrichment/completion-runner.ts";
 const COORDINATOR = "src/core/domains/ingest/pipeline/enrichment/coordinator.ts";

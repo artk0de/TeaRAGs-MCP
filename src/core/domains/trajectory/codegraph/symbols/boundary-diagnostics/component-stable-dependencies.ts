@@ -1,4 +1,4 @@
-import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import { DEFAULT_SDP_MIN_CONNECTION_COUNT, DEFAULT_SDP_TOLERANCE } from "./stable-dependencies.js";
 import type {
   ComponentDependency,

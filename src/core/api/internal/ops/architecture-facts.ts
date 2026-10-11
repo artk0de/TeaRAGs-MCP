@@ -39,7 +39,7 @@ import {
   type LeakingAbstractionReport,
   type ProductionDependencyGraph,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
-import { buildNonProductionPathFilter, type PathFilter } from "../../../infra/file-classification/index.js";
+import { buildNonProductionPathFilter, type PathFilter } from "../../../primitives/paths/index.js";
 import type { DiffDetectorCatalog } from "./diff-detector-run.js";
 
 /**

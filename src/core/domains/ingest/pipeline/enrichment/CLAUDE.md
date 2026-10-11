@@ -304,18 +304,18 @@
   deliberately KEPT past finalize. Why: the deferred chunk pass still reads
   `chunkSymbolByLine` — "cleaning it up" at finalize empties the chunk-level
   codegraph signals with no error anywhere.
-- **`classify()` (`core/infra/file-classification/`) is the FACT; `shouldEnrich`
-  is per-provider POLICY**, and the two policies deliberately diverge: git
-  declines generated, gives docs `file-only`, keeps tests at `full`
+- **`classify()` (`core/primitives/paths/file-classification/`) is the FACT;
+  `shouldEnrich` is per-provider POLICY**, and the two policies deliberately
+  diverge: git declines generated, gives docs `file-only`, keeps tests at `full`
   (`GitEnrichmentProvider#shouldEnrich` — ownership is legitimate); codegraph
   declines generated plus its own exclusion filter, which takes tests out
   unconditionally and says nothing about docs — that filter is owned by
   `../../../trajectory/codegraph/CLAUDE.md`. `FileClassification` is NOT
-  duplicated — `infra/file-classification/classify.ts` imports and re-exports it
-  from `contracts/types/file-classification.ts`. Why: collapsing both into one
-  shared boolean loses a deliberate divergence, and re-creating an infra-local
-  copy of the type contradicts the foundation order that legalized the type-only
-  edge.
+  duplicated — `primitives/paths/file-classification/classify.ts` imports and
+  re-exports it from `contracts/types/file-classification.ts`. Why: collapsing
+  both into one shared boolean loses a deliberate divergence, and re-creating a
+  classifier-local copy of the type contradicts the foundation order that
+  legalized the type-only edge.
 
 ## See also
 

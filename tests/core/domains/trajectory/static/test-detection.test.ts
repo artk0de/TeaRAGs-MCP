@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { detectTestFile } from "../../../../../src/core/domains/trajectory/static/test-detection.js";
-import { classify } from "../../../../../src/core/infra/file-classification/index.js";
+import { classify } from "../../../../../src/core/primitives/paths/file-classification/index.js";
 
 describe("detectTestFile", () => {
   describe("typescript", () => {

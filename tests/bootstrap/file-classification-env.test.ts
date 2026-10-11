@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { parseAppConfigZod } from "../../src/bootstrap/config/parse.js";
 import { fileClassificationSchema } from "../../src/bootstrap/config/schemas.js";
 import { REGISTRY_ENV_ALLOWLIST } from "../../src/core/domains/maintenance/registry/env-groups.js";
-import { DEFAULT_MINIFIED_LINE_LENGTH } from "../../src/core/infra/file-classification/index.js";
+import { DEFAULT_MINIFIED_LINE_LENGTH } from "../../src/core/primitives/paths/file-classification/index.js";
 
 describe("fileClassificationSchema", () => {
   it("defaults to no extra generated globs and the 50k threshold", () => {

@@ -3,10 +3,10 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { languageTestFileConventions } from "../../../src/core/domains/language/capability/native.js";
-import { classify } from "../../../src/core/infra/file-classification/index.js";
-import { COMMON_TEST_DIRECTORY_PATTERNS } from "../../../src/core/infra/file-classification/patterns.js";
-import { detectScope, isTestPath } from "../../../src/core/infra/scope-detection.js";
+import { languageTestFileConventions } from "../../../../src/core/domains/language/capability/native.js";
+import { classify } from "../../../../src/core/primitives/paths/file-classification/index.js";
+import { COMMON_TEST_DIRECTORY_PATTERNS } from "../../../../src/core/primitives/paths/file-classification/patterns.js";
+import { detectScope, isTestPath } from "../../../../src/core/primitives/paths/scope-detection.js";
 
 /** The classification corpus of the vjz6s parity baseline: every test pattern at depth, in three casings, plus near-misses. */
 const CLASSIFICATION_CORPUS = (

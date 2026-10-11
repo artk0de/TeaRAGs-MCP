@@ -74,13 +74,13 @@ import {
   nativeLanguageCapabilities,
 } from "../../../domains/language/capability/native.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
+import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import {
   buildNonProductionPathFilter,
   nonProductionPathPatterns,
+  pathPatternLiteralPrefix,
   type PathFilter,
-} from "../../../infra/file-classification/index.js";
-import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
-import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
+} from "../../../primitives/paths/index.js";
 import type {
   GetOntologyReportRequest,
   GetOntologyReportResponse,

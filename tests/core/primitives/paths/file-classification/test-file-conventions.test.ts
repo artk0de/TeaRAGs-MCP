@@ -7,13 +7,14 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { TestFileConventions } from "../../../../src/core/contracts/types/file-classification.js";
+import type { TestFileConventions } from "../../../../../src/core/contracts/types/file-classification.js";
 
 async function freshModules() {
   vi.resetModules();
-  const conventions = await import("../../../../src/core/infra/file-classification/test-file-conventions.js");
-  const classifier = await import("../../../../src/core/infra/file-classification/classify.js");
-  const scope = await import("../../../../src/core/infra/scope-detection.js");
+  const conventions =
+    await import("../../../../../src/core/primitives/paths/file-classification/test-file-conventions.js");
+  const classifier = await import("../../../../../src/core/primitives/paths/file-classification/classify.js");
+  const scope = await import("../../../../../src/core/primitives/paths/scope-detection.js");
   return { ...conventions, ...classifier, ...scope };
 }
 

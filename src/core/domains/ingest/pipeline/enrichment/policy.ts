@@ -1,5 +1,5 @@
 /**
- * Bridges the FACT layer (infra/file-classification) and the POLICY layer
+ * Bridges the FACT layer (primitives/paths/file-classification) and the POLICY layer
  * (EnrichmentProvider.shouldEnrich). Stateless — imported directly by
  * file-phase and chunk-phase so no DI threading touches the hot coordinator.
  *
@@ -10,7 +10,7 @@
 import { extname } from "node:path";
 
 import type { EnrichmentProvider, EnrichmentScope } from "../../../../contracts/types/provider.js";
-import { classify } from "../../../../infra/file-classification/index.js";
+import { classify } from "../../../../primitives/paths/index.js";
 import { LANGUAGE_DEFINITIONS, LANGUAGE_MAP } from "../chunker/config.js";
 
 function isDocumentationPath(relPath: string): boolean {

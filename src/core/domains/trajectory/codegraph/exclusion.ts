@@ -29,7 +29,7 @@ import type {
   SchemaColumnAccessorSource,
   StructuralConformanceDeriver,
 } from "../../../contracts/types/language.js";
-import { buildTestPathFilter, GENERATED_PATTERNS, type PathFilter } from "../../../infra/file-classification/index.js";
+import { buildTestPathFilter, GENERATED_PATTERNS, type PathFilter } from "../../../primitives/paths/index.js";
 
 /**
  * Generated / machine-authored files that look like source but never participate
@@ -37,7 +37,7 @@ import { buildTestPathFilter, GENERATED_PATTERNS, type PathFilter } from "../../
  * env-var opt-out because including them is never the right behaviour for a
  * code-graph (no human edits, no real callers, no real callees).
  *
- * Sourced from the single source of truth in `infra/file-classification`
+ * Sourced from the single source of truth in `primitives/paths/file-classification`
  * (consolidated 2026-06-05, tea-rags-mcp-sjxz). Re-exported under the codegraph
  * name for backward compatibility with existing importers.
  */

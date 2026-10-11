@@ -9,7 +9,7 @@ import {
   defaultEnrichmentFilesPerThread,
 } from "../../core/domains/ingest/pipeline/infra/pool-defaults.js";
 import { defaultBlamePoolSize } from "../../core/domains/trajectory/git/index.js";
-import { DEFAULT_MINIFIED_LINE_LENGTH } from "../../core/infra/file-classification/index.js";
+import { DEFAULT_MINIFIED_LINE_LENGTH } from "../../core/primitives/paths/index.js";
 import {
   booleanFromEnv,
   booleanFromEnvWithDefault,

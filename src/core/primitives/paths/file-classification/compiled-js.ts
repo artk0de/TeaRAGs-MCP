@@ -14,7 +14,7 @@
  *   (a) a source-map comment (`//# sourceMappingURL=` / legacy `//@ ...`),
  *   (b) minified — the longest physical line exceeds a length threshold.
  *
- * Lives in `infra/file-classification` (it owns content-marker detection via
+ * Lives in `primitives/paths/file-classification` (it owns content-marker detection via
  * `GENERATED_CONTENT_MARKERS`). Foundation layer: imports nothing from `core/`.
  */
 

@@ -10,7 +10,7 @@
  * against the query vector — and merged with the page by score.
  */
 
-import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
+import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import { InvalidQueryError } from "../errors.js";
 import { scoreWorkingTreeRowsByVector } from "../working-tree/dense-floor.js";

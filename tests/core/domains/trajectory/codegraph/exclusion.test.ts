@@ -8,7 +8,7 @@ import {
 import {
   installedTestFileConventions,
   testPathPatterns,
-} from "../../../../../src/core/infra/file-classification/index.js";
+} from "../../../../../src/core/primitives/paths/file-classification/index.js";
 import { languageFactory } from "./__helpers__/language-factory.js";
 
 /**

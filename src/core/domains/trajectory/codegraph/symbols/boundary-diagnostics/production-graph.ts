@@ -1,5 +1,5 @@
 import type { FileDependencyGraph } from "../../../../../contracts/types/codegraph.js";
-import { buildNonProductionPathFilter, type PathFilter } from "../../../../../infra/file-classification/index.js";
+import { buildNonProductionPathFilter, type PathFilter } from "../../../../../primitives/paths/index.js";
 
 /** What the non-production exclusion takes out, named for a report (bd tea-rags-mcp-r8hme.9). */
 export const NON_PRODUCTION_REASON =
@@ -23,7 +23,7 @@ export interface ProductionDependencyGraph {
  * them out of the graph altogether.
  *
  * The classification is the file classifier's (`buildNonProductionPathFilter`,
- * `infra/file-classification`), not a glob owned here; it is a parameter so a
+ * `primitives/paths/file-classification`), not a glob owned here; it is a parameter so a
  * caller can judge with another one.
  */
 export function excludeNonProductionFiles(

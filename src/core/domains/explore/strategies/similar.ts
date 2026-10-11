@@ -26,7 +26,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { QdrantPointNotFoundError } from "../../../adapters/qdrant/errors.js";
 import { toQdrantPointId } from "../../../adapters/qdrant/point-id.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
+import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { ChunkNotFoundError } from "../errors.js";

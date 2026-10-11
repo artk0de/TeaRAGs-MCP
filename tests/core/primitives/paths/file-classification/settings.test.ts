@@ -12,7 +12,7 @@ import {
   installedFileClassificationSettings,
   installFileClassificationSettings,
   isCompiledJsContent,
-} from "../../../../src/core/infra/file-classification/index.js";
+} from "../../../../../src/core/primitives/paths/file-classification/index.js";
 
 const TWENTY_CHARS = "12345678901234567890";
 
