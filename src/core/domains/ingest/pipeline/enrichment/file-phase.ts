@@ -14,6 +14,7 @@ import { relative } from "node:path";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentRunCoverage, FileSignalOverlay } from "../../../../contracts/types/provider.js";
+import { isDebug } from "../../../../infra/runtime.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
@@ -381,7 +382,29 @@ export class FilePhase {
     return Promise.resolve();
   }
 
+  /**
+   * Await every queued file-phase write. Under DEBUG it reports its wall clock
+   * and Qdrant's update-queue length at both ends (`FILE_PHASE_DRAIN`, bd
+   * tea-rags-mcp-4ybh4): a drain that waits out a deep queue is Qdrant
+   * back-pressure, one that returns at once with the queue empty is not. Both
+   * the queue reads and the timing are skipped when DEBUG is off.
+   */
   async drain(): Promise<void> {
+    if (!isDebug()) return this.drainFileWork();
+    const startedAt = Date.now();
+    const queueLengthStart = await this.markerStore.payloadUpdateQueueLength(this.coll);
+    await this.drainFileWork();
+    const durationMs = Date.now() - startedAt;
+    const queueLengthEnd = await this.markerStore.payloadUpdateQueueLength(this.coll);
+    pipelineLog.enrichmentPhase("FILE_PHASE_DRAIN", {
+      collection: this.coll,
+      durationMs,
+      ...(queueLengthStart !== undefined && { queueLengthStart }),
+      ...(queueLengthEnd !== undefined && { queueLengthEnd }),
+    });
+  }
+
+  private async drainFileWork(): Promise<void> {
     const all = [...this.states.values()].flatMap((s) => s.fileWork);
     if (all.length === 0) return;
     await Promise.allSettled(all);

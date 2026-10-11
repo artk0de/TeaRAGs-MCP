@@ -609,6 +609,21 @@ describe("QdrantManager", () => {
       expect(info.optimizerStatus).toBe("error: Service internal error: segment optimization failed");
     });
 
+    // bd tea-rags-mcp-4ybh4 — the pending-update queue is what a drain waits out.
+    it("surfaces the update-queue length, and omits it when the server reports none", async () => {
+      const config = { params: { vectors: { size: 384, distance: "Cosine" } } };
+      mockClient.getCollection.mockResolvedValueOnce({
+        collection_name: "queued",
+        points_count: 10,
+        update_queue: { length: 17 },
+        config,
+      });
+      mockClient.getCollection.mockResolvedValueOnce({ collection_name: "plain", points_count: 10, config });
+
+      expect((await manager.getCollectionInfo("queued")).updateQueueLength).toBe(17);
+      expect(await manager.getCollectionInfo("plain")).not.toHaveProperty("updateQueueLength");
+    });
+
     it("maps quantization to 'turbo' when the config carries a turbo block", async () => {
       mockClient.getCollection.mockResolvedValue({
         collection_name: "turbo-col",

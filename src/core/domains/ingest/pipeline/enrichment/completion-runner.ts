@@ -227,6 +227,27 @@ export class CompletionRunner {
     }
   }
 
+  /**
+   * Time one stage INSIDE `fileFinalize` and report it as `FILE_FINALIZE_STEP`
+   * (bd tea-rags-mcp-4ybh4). A separate event from `COMPLETION_STEP`, so the
+   * serial tail's top-level step sequence stays the stable list readers and
+   * tests pin, and the sub-steps nest under `fileFinalize` rather than
+   * interleaving with its siblings. `provider` is absent for stages that span
+   * every provider.
+   */
+  private async timedFinalizeSubstep<T>(step: string, stepBody: () => Promise<T>, provider?: string): Promise<T> {
+    const startedAt = Date.now();
+    try {
+      return await stepBody();
+    } finally {
+      pipelineLog.enrichmentPhase("FILE_FINALIZE_STEP", {
+        step,
+        ...(provider !== undefined && { provider }),
+        durationMs: Date.now() - startedAt,
+      });
+    }
+  }
+
   async run(
     physicalCollectionName: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
@@ -467,7 +488,13 @@ export class CompletionRunner {
       // `beginExtractionRun` call in `coordinator.beginRun`. No-op off cross-pass
       // (incremental finalize runs on this same instance and owns its own flush)
       // and for providers without the seam (git omits it).
-      if (filePhase.crossPassEnabled) await ctx.provider.endExtractionRun?.(physicalCollectionName || undefined);
+      if (filePhase.crossPassEnabled) {
+        await this.timedFinalizeSubstep(
+          "endExtractionRun",
+          async () => ctx.provider.endExtractionRun?.(physicalCollectionName || undefined),
+          ctx.key,
+        );
+      }
       // bd tea-rags-mcp-weno4 — read the persisted pass-1 aggregate slices HERE,
       // on the MAIN instance, and inject them into the finalize below. This
       // instance's pool replaces a daemon from another build or one lacking a
@@ -475,26 +502,35 @@ export class CompletionRunner {
       // since 39xca.4, refuses such a daemon with `CodegraphDaemonBuildSkewError`
       // rather than silently degrading the znxg8 repair. Providers with no
       // pass-1 store (git) omit the method.
-      const pass1Aggregates = await this.readPass1Aggregates(physicalCollectionName, ctx);
+      const pass1Aggregates = await this.timedFinalizeSubstep(
+        "readPass1Aggregates",
+        async () => this.readPass1Aggregates(physicalCollectionName, ctx),
+        ctx.key,
+      );
       // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
       // drains the main-written input spill (pass-1) before resolving (pass-2),
       // instead of relying on a streamFileBatch that no-opped. Other providers
       // (git) ignore the flag.
-      const fileOverlays = await executor.runFinalize(ctx.provider, root, {
-        collectionName: physicalCollectionName || undefined,
-        crossPass: filePhase.crossPassEnabled,
-        // bd tea-rags-mcp-xpmwg — always explicit on this path, so a pipeline
-        // run can never fall back to the provider's direct-caller default.
-        runCoverage: filePhase.runCoverage,
-        // The run's per-file hashes, stamped onto the rows pass-2 writes (bd
-        // tea-rags-mcp-o317j). Finalize is the one dispatch every ingest path
-        // makes, and pass-2 — the only writer of those rows — runs inside it, so
-        // this is what keeps a first index / `--force` from persisting NULL and
-        // making the next run repair the whole corpus. Providers that keep no
-        // per-file store (git) ignore it.
-        contentHashes: filePhase.runContentHashes,
-        ...(pass1Aggregates ? { pass1Aggregates } : {}),
-      });
+      const fileOverlays = await this.timedFinalizeSubstep(
+        "runFinalize",
+        async () =>
+          executor.runFinalize(ctx.provider, root, {
+            collectionName: physicalCollectionName || undefined,
+            crossPass: filePhase.crossPassEnabled,
+            // bd tea-rags-mcp-xpmwg — always explicit on this path, so a pipeline
+            // run can never fall back to the provider's direct-caller default.
+            runCoverage: filePhase.runCoverage,
+            // The run's per-file hashes, stamped onto the rows pass-2 writes (bd
+            // tea-rags-mcp-o317j). Finalize is the one dispatch every ingest path
+            // makes, and pass-2 — the only writer of those rows — runs inside it, so
+            // this is what keeps a first index / `--force` from persisting NULL and
+            // making the next run repair the whole corpus. Providers that keep no
+            // per-file store (git) ignore it.
+            contentHashes: filePhase.runContentHashes,
+            ...(pass1Aggregates ? { pass1Aggregates } : {}),
+          }),
+        ctx.key,
+      );
       // Apply whenever there is something to settle, not only when the graph
       // returned overlays: the apply is also what bare-stamps (and miss-tracks)
       // a file the graph holds nothing for. An incremental run that touched only
@@ -504,10 +540,14 @@ export class CompletionRunner {
       // that accumulates no chunk map (git) still skips on an empty map.
       const chunkMap = chunkPhase.getDeferredChunkMap(ctx.key);
       if (fileOverlays.size > 0 || chunkMap.size > 0) {
-        await filePhase.applyFinalize(physicalCollectionName, ctx, fileOverlays, chunkMap);
+        await this.timedFinalizeSubstep(
+          "applyFinalize",
+          async () => filePhase.applyFinalize(physicalCollectionName, ctx, fileOverlays, chunkMap),
+          ctx.key,
+        );
       }
     }
-    await filePhase.drain();
+    await this.timedFinalizeSubstep("drain", async () => filePhase.drain());
   }
 
   /**

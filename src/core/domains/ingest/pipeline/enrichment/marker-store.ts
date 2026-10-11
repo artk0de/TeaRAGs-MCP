@@ -156,6 +156,20 @@ export class EnrichmentMarkerStore {
     }
   }
 
+  /**
+   * Qdrant's pending-update queue length for a collection, for drain timing
+   * (bd tea-rags-mcp-4ybh4). `undefined` when the server does not report a queue
+   * or the read fails: an absent figure is not an empty queue, and a diagnostic
+   * read must never fail the drain it describes.
+   */
+  async payloadUpdateQueueLength(coll: string): Promise<number | undefined> {
+    try {
+      return (await this.qdrant.getCollectionInfo(coll)).updateQueueLength;
+    } catch {
+      return undefined;
+    }
+  }
+
   async markChunkFinal(coll: string, providerKey: string, input: ChunkFinalInput): Promise<void> {
     await this.writeKeys(coll, [
       {
