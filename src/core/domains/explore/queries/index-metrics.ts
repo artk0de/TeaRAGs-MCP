@@ -10,12 +10,11 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import type { EnrichmentHealthMapper, EnrichmentMarkerMap } from "../../../contracts/types/enrichment.js";
 import type { IndexMetrics, SignalMetrics } from "../../../contracts/types/index-metrics.js";
 import type { PayloadSignalDescriptor, SignalFloors, SignalStats } from "../../../contracts/types/trajectory.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import { NotIndexedError } from "../../ingest/errors.js";
-import { mapMarkerToHealth } from "../../ingest/pipeline/enrichment/health-mapper.js";
-import type { EnrichmentMarkerMap } from "../../ingest/pipeline/enrichment/types.js";
 import { CollectionNotFoundError } from "../errors.js";
 import { resolvableLabelBands } from "../label-resolver.js";
 import { applySignalFloors, floorsForSignal } from "../signal-floors.js";
@@ -25,6 +24,12 @@ export class IndexMetricsQuery {
     private readonly qdrant: QdrantManager,
     private readonly statsCache: StatsCache,
     private readonly payloadSignals: PayloadSignalDescriptor[],
+    /**
+     * Renders the persisted enrichment marker as health. Injected by the
+     * composition root (ingest's `mapMarkerToHealth`) so explore does not
+     * import the ingest implementation.
+     */
+    private readonly mapEnrichmentHealth: EnrichmentHealthMapper,
     /**
      * Per-language structural-signal floors from the composition root. Absent
      * → labelMaps stay purely percentile-derived.
@@ -180,6 +185,6 @@ export class IndexMetricsQuery {
   ): Promise<IndexMetrics["enrichment"]> {
     const markerPoint = await this.qdrant.getPoint(collectionName, INDEXING_METADATA_ID).catch(() => null);
     const rawEnrichment = markerPoint?.payload?.enrichment as EnrichmentMarkerMap | undefined;
-    return rawEnrichment ? mapMarkerToHealth(rawEnrichment, activeEnrichmentProviders) : undefined;
+    return rawEnrichment ? this.mapEnrichmentHealth(rawEnrichment, activeEnrichmentProviders) : undefined;
   }
 }

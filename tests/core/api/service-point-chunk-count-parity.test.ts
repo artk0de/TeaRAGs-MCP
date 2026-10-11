@@ -19,6 +19,7 @@ import { IngestFacade } from "../../../src/core/api/internal/facades/ingest-faca
 import { INDEXING_METADATA_ID } from "../../../src/core/contracts/constants.js";
 import { IndexMetricsQuery } from "../../../src/core/domains/explore/queries/index-metrics.js";
 import { EnrichmentCoordinator } from "../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
+import { mapMarkerToHealth } from "../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import type { EnrichmentProvider } from "../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 import { pipelineLog } from "../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
 import { resolveCollectionName, validatePath } from "../../../src/core/infra/collection-name.js";
@@ -146,7 +147,7 @@ describe("chunk counts — status, metrics and the recompute agree on one collec
         computedAt: Date.now(),
       }),
     };
-    const query = new IndexMetricsQuery(qdrant as never, statsCache as never, []);
+    const query = new IndexMetricsQuery(qdrant as never, statsCache as never, [], mapMarkerToHealth);
     return (await query.run(collectionName, codebaseDir)).totalChunks;
   }
 

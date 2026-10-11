@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { SignalFloors } from "../../../../../src/core/contracts/types/trajectory.js";
 import { IndexMetricsQuery } from "../../../../../src/core/domains/explore/queries/index-metrics.js";
+import { mapMarkerToHealth } from "../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 
 const FLOORS = new Map<string, SignalFloors>([["typescript", { moduleLines: { large: 300, "god-module": 600 } }]]);
 
@@ -66,7 +67,7 @@ function makeDeps() {
 describe("IndexMetricsQuery — industry floors", () => {
   it("raises source thresholds that sit below the language's published limits", async () => {
     const { qdrant, statsCache, payloadSignals } = makeDeps();
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, FLOORS);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth, FLOORS);
 
     const result = await query.run("col", "/project");
 
@@ -76,7 +77,7 @@ describe("IndexMetricsQuery — industry floors", () => {
 
   it("leaves test scope purely percentile-derived", async () => {
     const { qdrant, statsCache, payloadSignals } = makeDeps();
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, FLOORS);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth, FLOORS);
 
     const result = await query.run("col", "/project");
 
@@ -86,7 +87,7 @@ describe("IndexMetricsQuery — industry floors", () => {
 
   it("reports raw percentiles when no floors are wired at all", async () => {
     const { qdrant, statsCache, payloadSignals } = makeDeps();
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
     const result = await query.run("col", "/project");
 
@@ -99,7 +100,7 @@ describe("IndexMetricsQuery — industry floors", () => {
 
   it("reports raw percentiles for a language that declares no floors", async () => {
     const { qdrant, statsCache, payloadSignals } = makeDeps();
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, new Map([["ruby", {}]]));
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth, new Map([["ruby", {}]]));
 
     const result = await query.run("col", "/project");
 
@@ -108,7 +109,7 @@ describe("IndexMetricsQuery — industry floors", () => {
 
   it("keeps min/max/count reporting the real distribution, not the floored one", async () => {
     const { qdrant, statsCache, payloadSignals } = makeDeps();
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, FLOORS);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth, FLOORS);
 
     const result = await query.run("col", "/project");
 

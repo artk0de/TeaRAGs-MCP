@@ -8,6 +8,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { IndexMetricsQuery } from "../../../../../src/core/domains/explore/queries/index-metrics.js";
+import { mapMarkerToHealth } from "../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 
 describe("IndexMetricsQuery", () => {
   const makeDeps = (overrides: Partial<Record<string, unknown>> = {}) => {
@@ -70,7 +71,7 @@ describe("IndexMetricsQuery", () => {
   it("throws when collection does not exist", async () => {
     const { qdrant, statsCache, payloadSignals } = makeDeps();
     qdrant.collectionExists.mockResolvedValue(false);
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
     await expect(query.run("missing_col", "/project")).rejects.toThrow(/not found/);
   });
@@ -78,14 +79,14 @@ describe("IndexMetricsQuery", () => {
   it("throws NotIndexedError when statsCache returns null", async () => {
     const { qdrant, statsCache, payloadSignals } = makeDeps();
     statsCache.load.mockReturnValue(null);
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
     await expect(query.run("col", "/project")).rejects.toThrow(/is not indexed/);
   });
 
   it("returns shape with collection, totalChunks, totalFiles, distributions, signals", async () => {
     const { qdrant, statsCache, payloadSignals } = makeDeps();
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
     const result = await query.run("col", "/project");
 
@@ -98,7 +99,7 @@ describe("IndexMetricsQuery", () => {
 
   it("omits global metrics key when only a single code language is present", async () => {
     const { qdrant, statsCache, payloadSignals } = makeDeps();
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
     const result = await query.run("col", "/project");
 
@@ -144,7 +145,7 @@ describe("IndexMetricsQuery", () => {
       },
       computedAt: Date.now(),
     });
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
     const result = await query.run("col", "/project");
 
@@ -180,7 +181,7 @@ describe("IndexMetricsQuery", () => {
       },
       computedAt: Date.now(),
     });
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
     const result = await query.run("col", "/project");
     const rubyCC = result.signals["ruby"]["git.file.commitCount"];
@@ -202,16 +203,30 @@ describe("IndexMetricsQuery", () => {
         },
       },
     });
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
     const result = await query.run("col", "/project");
 
     expect(result.enrichment).toBeDefined();
   });
 
+  it("renders enrichment health through the injected mapper", async () => {
+    const { qdrant, statsCache, payloadSignals } = makeDeps();
+    const markers = { git: { runId: "r1" } };
+    qdrant.getPoint.mockResolvedValue({ payload: { enrichment: markers } });
+    const health = { git: { file: { status: "healthy" }, chunk: { status: "healthy" } } };
+    const mapEnrichmentHealth = vi.fn().mockReturnValue(health);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapEnrichmentHealth);
+
+    const result = await query.run("col", "/project", ["git"]);
+
+    expect(mapEnrichmentHealth).toHaveBeenCalledWith(markers, ["git"]);
+    expect(result.enrichment).toBe(health);
+  });
+
   it("leaves enrichment undefined when no marker payload exists", async () => {
     const { qdrant, statsCache, payloadSignals } = makeDeps();
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
     const result = await query.run("col", "/project");
 
@@ -242,7 +257,7 @@ describe("IndexMetricsQuery", () => {
     it("renders every active provider, git from its own older terminal marker", async () => {
       const { qdrant, statsCache, payloadSignals } = makeDeps();
       qdrant.getPoint.mockResolvedValue({ payload: { enrichment: forcedCodegraphRun } });
-      const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+      const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
       const result = await query.run("col", "/project", ["git", "codegraph.symbols"]);
 
@@ -258,7 +273,7 @@ describe("IndexMetricsQuery", () => {
     it("reports nothing for a run-pointer marker when no active providers are wired", async () => {
       const { qdrant, statsCache, payloadSignals } = makeDeps();
       qdrant.getPoint.mockResolvedValue({ payload: { enrichment: forcedCodegraphRun } });
-      const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+      const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
       const result = await query.run("col", "/project");
 
@@ -307,7 +322,7 @@ describe("IndexMetricsQuery", () => {
         stats: { labels: { p25: "isolated", p50: "typical", p75: "popular", p95: "hub" } },
       },
     ] as any;
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
     const result = await query.run("col", "/project");
 
@@ -369,7 +384,7 @@ describe("IndexMetricsQuery", () => {
         },
       },
     ] as any;
-    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
 
     const result = await query.run("col", "/project");
 
@@ -417,7 +432,7 @@ describe("IndexMetricsQuery", () => {
         }),
       } as any;
       const payloadSignals = [{ key, type: "number", description: "probe", stats: { labels } }] as any;
-      return new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+      return new IndexMetricsQuery(qdrant, statsCache, payloadSignals, mapMarkerToHealth);
     };
 
     it("drops a band whose successor starts at the same threshold", async () => {
