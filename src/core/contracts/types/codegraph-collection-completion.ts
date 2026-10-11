@@ -20,7 +20,7 @@
  * throws is logged and never fails the run.
  */
 
-import type { GraphDbClient } from "../../../contracts/types/codegraph.js";
+import type { GraphDbClient } from "./codegraph.js";
 
 /** What a hook gets at collection completion. */
 export interface CodegraphCollectionCompletionContext {
