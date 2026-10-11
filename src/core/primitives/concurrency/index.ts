@@ -4,4 +4,5 @@
  * behind it.
  */
 
+export { defaultIoBoundPoolSize } from "./default-io-bound-pool-size.js";
 export { Semaphore } from "./semaphore.js";
