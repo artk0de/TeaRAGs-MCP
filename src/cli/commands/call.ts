@@ -13,8 +13,8 @@ import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { CommandModule } from "yargs";
 import { hideBin } from "yargs/helpers";
 
-import { openInProcessMcpSession } from "../../bootstrap/in-process-session.js";
 import type { InProcessToolSession } from "../../bootstrap/transport/in-memory.js";
+import { openInProcessMcpSession } from "../../bootstrap/transport/in-process-session.js";
 import { resolveBaseIndexEntry } from "../../core/api/index.js";
 import { CLI_OWNED_TOOLS, cliCommandForTool } from "../call/cli-owned-tools.js";
 import { prepareCallProjectEnv } from "../call/project-env.js";

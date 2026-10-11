@@ -1,8 +1,8 @@
-// src/bootstrap/in-process-session.ts
-import { createConfiguredServer } from "./factory.js";
-import { prepareMcpServerRuntime } from "./server-runtime.js";
-import { connectInProcessClient, type InProcessToolSession } from "./transport/in-memory.js";
-import { releaseWithin } from "./transport/stdio.js";
+// src/bootstrap/transport/in-process-session.ts
+import { createConfiguredServer } from "../factory.js";
+import { prepareMcpServerRuntime } from "../server-runtime.js";
+import { connectInProcessClient, type InProcessToolSession } from "./in-memory.js";
+import { releaseWithin } from "./stdio.js";
 
 /** Upper bound on how long `close()` waits for the AppContext to release. */
 const RELEASE_TIMEOUT_MS = 5_000;

@@ -22,7 +22,7 @@ const sessionState = vi.hoisted(() => ({
   open: undefined as undefined | (() => Promise<unknown>),
 }));
 
-vi.mock("../../../src/bootstrap/in-process-session.js", () => ({
+vi.mock("../../../src/bootstrap/transport/in-process-session.js", () => ({
   openInProcessMcpSession: async () => {
     if (!sessionState.open) throw new Error("no session configured");
     return sessionState.open();

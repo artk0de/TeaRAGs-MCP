@@ -2,8 +2,8 @@
  * AppConfig — resolves Zod config slices into the typed AppConfig structure.
  */
 
+import { ConfigNotInitializedError } from "../../core/infra/errors.js";
 import type { IngestCodeConfig, TrajectoryIngestConfig } from "../../core/types.js";
-import { ConfigNotInitializedError } from "../errors.js";
 import { DEFAULT_CODE_EXTENSIONS, DEFAULT_IGNORE_PATTERNS } from "./defaults.js";
 import { parseAppConfigZod } from "./parse.js";
 import { appDataDir, daemonPidFile, daemonSocketPath, logsDir, modelsDir, snapshotsDir } from "./paths.js";
