@@ -9,3 +9,7 @@ export * from "./utils.js";
 export * from "./schemas.js";
 export * from "./parse.js";
 export * from "./registry-env-code-defaults.js";
+export * from "./env-snapshot.js";
+export * from "./qdrant-compat.js";
+export * from "./turbo-reconcile.js";
+export * from "./embedded-tuning.js";
