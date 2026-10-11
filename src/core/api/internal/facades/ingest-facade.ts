@@ -23,7 +23,7 @@ import type { ChunkSetBumpScopes } from "../../../contracts/types/rechunk.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import type { SynchronizerTuning } from "../../../domains/ingest/factory.js";
+import type { SynchronizerTuning } from "../../../domains/ingest/index.js";
 import { CollectionIndexingLock } from "../../../domains/ingest/infra/index.js";
 import { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";

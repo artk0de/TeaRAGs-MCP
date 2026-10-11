@@ -13,6 +13,7 @@ export { pipelineLog } from "./infra/debug-logger.js";
 export { WorkerPool } from "./infra/worker-pool.js";
 export { PipelineManager, createQdrantPipeline } from "./pipeline-manager.js";
 export type { PipelineHandlers } from "./pipeline-manager.js";
+export type { IngestDependencies } from "./dependencies.js";
 
 // Types
 export type {

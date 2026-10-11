@@ -40,8 +40,9 @@ migrations.
 ### Update Factory (if needed)
 
 Migration needs new constructor args → update
-`src/core/domains/ingest/factory.ts` → `createIngestDependencies()` to pass
-them.
+`src/core/api/internal/ingest-dependencies.ts` → `createIngestDependencies()` to
+pass them (the `IngestDependencies` contract lives in
+`src/core/domains/ingest/pipeline/dependencies.ts`).
 
 Step-by-step process for adding a migration to one of three pipelines.
 

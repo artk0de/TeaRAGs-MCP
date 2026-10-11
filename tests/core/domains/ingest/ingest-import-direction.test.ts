@@ -6,7 +6,7 @@
  * them. Each assertion below pins one edge group that used to close the ingest
  * knot. `import type` counts: the architecture detector judges type edges too.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -30,12 +30,31 @@ function relativeTargets(file: string): string[] {
 const rel = (abs: string): string => relative(ROOT, abs);
 const isUnder = (abs: string, dir: string): boolean => abs.startsWith(dir + sep);
 
+/** Root-level ingest files other than the `index.ts` facade (facade aggregation is not judged). */
+function rootFilesExceptFacade(): string[] {
+  return readdirSync(INGEST_DIR)
+    .filter((entry) => entry.endsWith(".ts") && entry !== "index.ts")
+    .map((entry) => join(INGEST_DIR, entry));
+}
+
 describe("ingest root never imports into its children", () => {
   it("ingest/errors.ts imports no file under an ingest child directory (DeletionOutcome is a contract)", () => {
     const errorsFile = join(INGEST_DIR, "errors.ts");
     const offenders = relativeTargets(errorsFile)
       .filter((target) => isUnder(target, INGEST_DIR) && dirname(target) !== INGEST_DIR)
       .map((target) => `${rel(errorsFile)} -> ${rel(target)}`);
+    expect(offenders).toEqual([]);
+  });
+
+  it("no root ingest file except index.ts imports a file under pipeline/, sync/, operations/ or infra/ (IngestDependencies lives in pipeline)", () => {
+    const offenders: string[] = [];
+    for (const file of rootFilesExceptFacade()) {
+      for (const target of relativeTargets(file)) {
+        if (isUnder(target, INGEST_DIR) && dirname(target) !== INGEST_DIR) {
+          offenders.push(`${rel(file)} -> ${rel(target)}`);
+        }
+      }
+    }
     expect(offenders).toEqual([]);
   });
 });

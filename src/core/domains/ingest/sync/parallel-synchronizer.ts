@@ -63,6 +63,12 @@ export interface FileChangesWithHashes extends FileChanges {
   computedHashes: Map<string, FileMetadata>;
 }
 
+/** Concurrency knobs of {@link ParallelFileSynchronizer}'s constructor, wired by the api composition. */
+export interface SynchronizerTuning {
+  concurrency?: number;
+  ioConcurrency?: number;
+}
+
 export class ParallelFileSynchronizer {
   private readonly codebasePath: string;
   private readonly collectionName: string;
