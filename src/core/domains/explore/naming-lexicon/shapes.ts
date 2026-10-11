@@ -184,6 +184,15 @@ export function calleeDerivedName(member: string, casing: IdentifierCasing): str
   return words.length > 0 ? joinIdentifierWords(words, casing) : undefined;
 }
 
+/**
+ * The declaration kinds whose value the declaration itself binds — a local, a
+ * field, a constant (bd tea-rags-mcp-0qaht.30) — and so may name the call it is
+ * bound to. A param's default is the caller's choice; a `return` names a method.
+ */
+export function isCallBindableIdentifierKind(kind: IdentifierDeclarationKind | undefined): boolean {
+  return kind === "local" || kind === "field" || kind === "constant";
+}
+
 /** Classifies one identifier's name into a {@link NamingShape}; type-based shapes win over `CALLEE_DERIVED`. */
 export function classifyNamingShape(input: NamingShapeInput): NamingShape {
   const nameWords = splitIdentifierWords(input.name);
@@ -191,7 +200,7 @@ export function classifyNamingShape(input: NamingShapeInput): NamingShape {
     const shape = typeShape(input.name, nameWords, input.typeName, input);
     if (shape) return shape;
   }
-  if (input.callee && (input.kind === "local" || input.kind === "field")) {
+  if (input.callee && isCallBindableIdentifierKind(input.kind)) {
     const derived = calleeDerivedWords(input.callee.member);
     if (derived.length > 0 && sameWords(nameWords, derived)) return "CALLEE_DERIVED";
   }

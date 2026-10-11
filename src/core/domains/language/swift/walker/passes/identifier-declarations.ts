@@ -3,8 +3,9 @@
  * kernel's `createIdentifierDeclarationFacetPass` reads to publish
  * `identifierDeclarations`: function and closure parameters (the INTERNAL name —
  * `with opts: Options` declares `opts`), `let` / `var` in a body as locals,
- * stored properties of a type body as fields, and each func's return type
- * (`returnSites`).
+ * stored properties of a type body as fields (a `static let` as a constant),
+ * file-scope `let` / `var` as the file's constants / locals
+ * (`propertyPlacement`), and each func's return type (`returnSites`).
  *
  * Every read is POSITIONAL. tree-sitter-swift registers `parameter.type` and
  * `type_annotation.type` under `name` as well, and `materializeTree` keeps only
@@ -74,9 +75,39 @@ function patternNameNodes(pattern: AstNode): AstNode[] {
   return names;
 }
 
+/** `static` / `class` in a declaration's `modifiers` child — storage of the type, not of an instance. */
+function isTypeLevel(node: AstNode): boolean {
+  const modifiers = node.children.find((child) => child.type === "modifiers");
+  return (
+    modifiers?.namedChildren.some(
+      (modifier) => modifier.type === "property_modifier" && (modifier.text === "static" || modifier.text === "class"),
+    ) === true
+  );
+}
+
+/**
+ * What a `let` / `var` declares, by where it stands (bd tea-rags-mcp-0qaht.30):
+ * in a type body an instance field — or a `constant` when it is a `static` /
+ * `class` `let`, a value of the type itself; at the source file's own level a
+ * global, owned by the file (`fileScope`), a `constant` when `let` and a
+ * `local` when `var` (a mutable global is a variable, not a constant); anywhere
+ * else a body's local. A `static var` stays a `field`: telling mutable type
+ * storage apart would take a flag every `cg_identifiers` reader carries, for no
+ * lexicon role that reads it.
+ */
+function propertyPlacement(node: AstNode): Pick<DeclaredIdentifierSite, "kind" | "fileScope"> {
+  const immutable = node.children.find((child) => child.type === "value_binding_pattern")?.text === "let";
+  const parentType = node.parent?.type;
+  if (parentType !== undefined && TYPE_BODY_TYPES.has(parentType)) {
+    return { kind: immutable && isTypeLevel(node) ? "constant" : "field" };
+  }
+  if (parentType === "source_file") return { kind: immutable ? "constant" : "local", fileScope: true };
+  return { kind: "local" };
+}
+
 /** `let x: Int = 1, y = Foo()` — one clause per `pattern` child, annotation and value following it. */
 function propertySites(node: AstNode): DeclaredIdentifierSite[] {
-  const kind = node.parent && TYPE_BODY_TYPES.has(node.parent.type) ? "field" : "local";
+  const placement = propertyPlacement(node);
   const sites: DeclaredIdentifierSite[] = [];
   const kids = node.children;
   for (let i = 0; i < kids.length; i++) {
@@ -89,12 +120,12 @@ function propertySites(node: AstNode): DeclaredIdentifierSite[] {
     if (names.length === 1) {
       sites.push({
         nameNode: names[0],
-        kind,
+        ...placement,
         typeNode: annotation ? nodeAfter(annotation, ":") : null,
         valueNode,
       });
     } else {
-      for (const nameNode of names) sites.push({ nameNode, kind });
+      for (const nameNode of names) sites.push({ nameNode, ...placement });
     }
   }
   return sites;

@@ -269,9 +269,9 @@ function buildNamingLexiconInputSchema() {
   const draftName = z.object({
     name: z.string().min(1),
     kind: z
-      .enum(["param", "local", "field", "return", "type"])
+      .enum(["param", "local", "field", "constant", "return", "type"])
       .optional()
-      .describe("ivar/attribute/property: field; method: return, type=result type"),
+      .describe("ivar/attribute/property: field; static/global immutable: constant; method: return, type=result type"),
     type: z.string().optional(),
     typeMultiplicity: z.enum(["one", "many"]).optional().describe("many: type=element"),
     callee: z.object({ member: z.string().min(1), receiver: z.string().optional() }).optional(),

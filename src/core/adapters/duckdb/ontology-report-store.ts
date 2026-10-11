@@ -261,7 +261,7 @@ function ontologyConceptCte(q: OntologyReportQuery): SqlPredicate {
         SELECT rel_path, owner_symbol_id, kind, name, type_name, type_spelling, type_source, type_multiplicity, line
           FROM canon_resolved
          WHERE type_name IS NOT NULL
-           AND kind IN ('param', 'local', 'field')
+           AND kind IN ('param', 'local', 'field', 'constant')
            AND NOT regexp_full_match(type_name, '[A-Z]?')
            AND length(${BARE_NAME_SQL}) > 1
            AND NOT (kind IN ('param', 'local') AND ${UNUSED_MARKER_SQL})

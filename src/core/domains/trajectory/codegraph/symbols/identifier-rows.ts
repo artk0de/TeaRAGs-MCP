@@ -283,7 +283,8 @@ function recoveredType(
       : { typeName: decl.typeName, typeSource };
   }
   if (decl.kind === "return") return undefined;
-  if (decl.kind === "field") {
+  // A type-level constant (`static let`) is a member of its type; a file-scope one has no chunk, so neither read answers.
+  if (decl.kind === "field" || decl.kind === "constant") {
     const fieldType = fieldTypeOf(extraction, chunk, decl.name);
     if (fieldType) return { typeName: fieldType, typeSource: "field-type" };
   } else {

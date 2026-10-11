@@ -43,6 +43,7 @@ export interface LanguageIdentifierCensus {
   param: number;
   local: number;
   field: number;
+  constant: number;
   return: number;
   typed: number;
   files: number;
@@ -80,6 +81,7 @@ interface LanguageCounters {
   param: number;
   local: number;
   field: number;
+  constant: number;
   return: number;
   typed: number;
   files: number;
@@ -141,6 +143,7 @@ export class IdentifierDeclarationsCensusAccumulator {
         param: c.param,
         local: c.local,
         field: c.field,
+        constant: c.constant,
         return: c.return,
         typed: c.typed,
         files: c.files,
@@ -173,6 +176,7 @@ export class IdentifierDeclarationsCensusAccumulator {
         param: 0,
         local: 0,
         field: 0,
+        constant: 0,
         return: 0,
         typed: 0,
         files: 0,

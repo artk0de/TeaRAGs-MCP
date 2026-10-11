@@ -150,6 +150,20 @@ describe("buildIdentifierRows", () => {
     expect(rows[0]).toMatchObject({ typeName: "HttpClient", typeSource: "field-type" });
   });
 
+  // bd tea-rags-mcp-0qaht.30 — a type-level constant (`static let`) is a member of its type,
+  // so its type comes from the class's field types the way a field's does.
+  it("types a type-level constant from the class field types", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        language: "swift",
+        chunks: [chunk({ symbolId: "Session" })],
+        classFieldTypes: { Session: { shared: "Session" } },
+        identifierDeclarations: [decl({ name: "shared", kind: "constant", ownerSymbolId: "Session" })],
+      }),
+    );
+    expect(rows[0]).toMatchObject({ kind: "constant", typeName: "Session", typeSource: "field-type" });
+  });
+
   it("builds a return row from a structured return type", () => {
     const rows = buildIdentifierRows(
       extraction({

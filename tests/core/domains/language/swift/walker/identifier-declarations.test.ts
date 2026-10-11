@@ -18,18 +18,18 @@ function parse(src: string) {
  * under `name` as well, and materialization keeps only `name`, so a field read
  * of the type passes on a native tree and returns nothing in production.
  */
-function extractionOf(src: string, chunks: WalkInput["chunks"]) {
+function extractionOf(src: string, chunks: WalkInput["chunks"], relPath = "Sources/Svc.swift") {
   return new SwiftLanguage().walker.walk({
     tree: { rootNode: materializeTree(parse(src).rootNode, src) },
     code: src,
-    relPath: "Sources/Svc.swift",
+    relPath,
     language: "swift",
     chunks,
   });
 }
 
-function declarationsOf(src: string, chunks: WalkInput["chunks"]) {
-  return extractionOf(src, chunks).identifierDeclarations;
+function declarationsOf(src: string, chunks: WalkInput["chunks"], relPath?: string) {
+  return extractionOf(src, chunks, relPath).identifierDeclarations;
 }
 
 // bd tea-rags-mcp-4p3sb.6 — the naming lexicon's syntactic half for Swift.
@@ -275,13 +275,75 @@ describe("Swift walker — identifier type multiplicity", () => {
     ];
     const declarations = declarationsOf(src, chunks) ?? [];
     expect(declarations.map((d) => [d.kind, d.name, d.line])).toEqual([
-      ["field", "default", 2],
+      ["constant", "default", 2],
       ["param", "queue", 3],
       ["param", "count", 3],
       ["local", "class", 4],
       ["local", "is", 5],
       ["local", "b", 5],
       ["return", "switch", 7],
+    ]);
+  });
+
+  // bd tea-rags-mcp-0qaht.30 (decision A) — a file-scope binding is owned by its file, an immutable
+  // one is a `constant`, and a `static` / `class` `let` is a type-level constant, not an instance field.
+  it("owns file-scope bindings by the file: `let` a constant, `var` a local", () => {
+    const src = [
+      "import Foundation",
+      "public let AF = Session.default",
+      "var counter = 0",
+      "class Svc {",
+      "  func run() {}",
+      "}",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "Svc", startLine: 4, endLine: 6, scope: [] },
+      { symbolId: "Svc#run", startLine: 5, endLine: 5, scope: ["Svc"] },
+    ];
+    const declarations = declarationsOf(src, chunks) ?? [];
+    expect(declarations.filter((d) => d.kind !== "return")).toEqual([
+      { name: "AF", kind: "constant", line: 2, ownerSymbolId: "Sources/Svc.swift" },
+      { name: "counter", kind: "local", line: 3, ownerSymbolId: "Sources/Svc.swift" },
+    ]);
+  });
+
+  it("declares a Package.swift's file-scope constants though the file has no symbol range", () => {
+    const src = [
+      "// swift-tools-version:5.7",
+      "import PackageDescription",
+      "",
+      'let package = Package(name: "Alamofire",',
+      "                      targets: [])",
+    ].join("\n");
+    const declarations = declarationsOf(src, [], "Package.swift") ?? [];
+    expect(declarations.map((d) => [d.kind, d.name, d.line, d.ownerSymbolId, d.typeName])).toEqual([
+      ["constant", "package", 4, "Package.swift", "Package"],
+    ]);
+  });
+
+  it("tells a static / class `let` apart from an instance stored property", () => {
+    const src = [
+      "class Svc {",
+      "  static let shared = Svc()",
+      "  public static let limit: Int = 3",
+      "  let inst = Cache()",
+      "  static var hits = 0",
+      "}",
+      "enum Keys {",
+      '  static let token = "t"',
+      "}",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "Svc", startLine: 1, endLine: 6, scope: [] },
+      { symbolId: "Keys", startLine: 7, endLine: 9, scope: [] },
+    ];
+    const declarations = declarationsOf(src, chunks) ?? [];
+    expect(declarations.map((d) => [d.kind, d.name, d.ownerSymbolId])).toEqual([
+      ["constant", "shared", "Svc"],
+      ["constant", "limit", "Svc"],
+      ["field", "inst", "Svc"],
+      ["field", "hits", "Svc"],
+      ["constant", "token", "Keys"],
     ]);
   });
 });

@@ -45,6 +45,7 @@ import {
   calleeDerivedName,
   calleeDerivedWords,
   classifyNamingShape,
+  isCallBindableIdentifierKind,
   isNonConceptType,
   matchesTypeWords,
   mergedHolders,
@@ -597,7 +598,7 @@ function judgeByCallee(
       freeNameMustBeKnown: kind !== "return",
     });
   }
-  if (kind !== "local" && kind !== "field") return undefined;
+  if (!isCallBindableIdentifierKind(kind)) return undefined;
   const derived = calleeDerivedName(callee.member, input.casing);
   if (derived === undefined) return undefined;
   // No rows for this callee: the callee-derived name only where the project names that way.
@@ -760,7 +761,7 @@ export function withFamilyAnalogues(verdict: NamingVerdict, familyRows: readonly
 }
 
 /** The value kinds a missing convention leaves free; a `return` stays judged by the method vocabulary. */
-const FREE_CHOICE_KINDS: ReadonlySet<IdentifierDeclarationKind> = new Set(["param", "local", "field"]);
+const FREE_CHOICE_KINDS: ReadonlySet<IdentifierDeclarationKind> = new Set(["param", "local", "field", "constant"]);
 
 /**
  * A NEW_TERM offering nothing: every stage reaches it only when no name has
@@ -844,11 +845,11 @@ const CONSTANT_RECEIVER = /^(?:::)?[A-Z]\w*(?:::[A-Z]\w*)*$/;
  * receiver's words without its head — what the container holds,
  * `upload_target` — then the receiver's own words. A member that names its
  * value (`reason_for`) or a receiver that is a value (`buffer.read`) derives
- * nothing. Only `local` / `field` drafts are bound to a call.
+ * nothing. Only `local` / `field` / `constant` drafts are bound to a call.
  */
 function receiverConceptTerms(input: DraftNameJudgementInput): string[][] {
   const { callee, kind } = input;
-  if (callee?.receiver === undefined || (kind !== "local" && kind !== "field")) return [];
+  if (callee?.receiver === undefined || !isCallBindableIdentifierKind(kind)) return [];
   if (!CONSTANT_RECEIVER.test(callee.receiver) || calleeDerivedWords(callee.member).length > 0) return [];
   const words = typeNameWords(callee.receiver);
   if (words.length === 0) return [];
