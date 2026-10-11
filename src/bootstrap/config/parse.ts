@@ -1,4 +1,4 @@
-import { ConfigValueInvalidError, ConfigValueMissingError } from "../../core/infra/errors.js";
+import { ConfigValueInvalidError, ConfigValueMissingError } from "../../core/primitives/errors/index.js";
 import {
   codegraphSchema,
   coreSchema,

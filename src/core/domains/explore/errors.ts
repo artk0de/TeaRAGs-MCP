@@ -2,7 +2,7 @@
  * Explore domain errors — search, hybrid, query validation.
  */
 
-import { TeaRagsError } from "../../infra/errors.js";
+import { TeaRagsError } from "../../primitives/errors/index.js";
 
 /**
  * Explore domain error codes. Local strict union.

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { VcsAdapterUnavailableError } from "../../../../src/core/adapters/vcs/errors.js";
 import { VcsAdapterFactory } from "../../../../src/core/adapters/vcs/factory.js";
 import { GitCliAdapter } from "../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
-import { ConfigValueInvalidError } from "../../../../src/core/infra/errors.js";
+import { ConfigValueInvalidError } from "../../../../src/core/primitives/errors/tea-rags-error.js";
 
 // The es-git binding IS installed on dev machines (optionalDependency), so a
 // missing binding is SIMULATED: the factory's dynamic import of the es-git

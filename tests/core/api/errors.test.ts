@@ -5,7 +5,7 @@ import {
   InputValidationError,
   ProjectNameNotUniqueError,
 } from "../../../src/core/api/public/errors.js";
-import { TeaRagsError } from "../../../src/core/infra/errors.js";
+import { TeaRagsError } from "../../../src/core/primitives/errors/tea-rags-error.js";
 
 describe("InputValidationError hierarchy", () => {
   describe("CollectionNotProvidedError", () => {

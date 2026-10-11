@@ -3,7 +3,7 @@
  */
 
 import type { DeletionOutcome } from "../../contracts/types/deletion.js";
-import { TeaRagsError } from "../../infra/errors.js";
+import { TeaRagsError } from "../../primitives/errors/index.js";
 
 /**
  * Ingest domain error codes. Local strict union.

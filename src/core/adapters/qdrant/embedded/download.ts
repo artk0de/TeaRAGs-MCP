@@ -4,7 +4,7 @@ import { get } from "node:https";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { ConfigValueInvalidError } from "../../../infra/errors.js";
+import { ConfigValueInvalidError } from "../../../primitives/errors/index.js";
 import { QdrantDowngradeNotSupportedError, QdrantOperationError } from "../errors.js";
 import { compareSemver, isSemver, QDRANT_VERSION } from "../required-version.js";
 

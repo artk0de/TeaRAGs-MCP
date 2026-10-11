@@ -23,7 +23,7 @@ import type {
   PayloadSignalTreeRecompute,
   Trajectory,
 } from "../../contracts/types/trajectory.js";
-import { ConfigValueInvalidError } from "../../infra/errors.js";
+import { ConfigValueInvalidError } from "../../primitives/errors/index.js";
 
 export class TrajectoryRegistry {
   private readonly trajectories: Map<string, Trajectory> = new Map();

@@ -23,13 +23,13 @@ import {
   type PathCollectionResolver,
   type RegistryGitState,
 } from "../../../contracts/types/registry.js";
-import { TeaRagsError } from "../../../infra/errors.js";
 import {
   findGitToplevel,
   readRepoGitState,
   readWorkingTreeDirty,
   readWorkingTreeDirtyPaths,
 } from "../../../infra/repo-git-state.js";
+import { TeaRagsError } from "../../../primitives/errors/index.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
 import { INDEXING_HEARTBEAT_INTERVAL_MS } from "../infra/index.js";

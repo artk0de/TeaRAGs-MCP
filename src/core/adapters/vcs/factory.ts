@@ -7,7 +7,7 @@
  * escape hatch is setting `GIT_ADAPTER=git`.
  */
 
-import { ConfigValueInvalidError } from "../../infra/errors.js";
+import { ConfigValueInvalidError } from "../../primitives/errors/index.js";
 import { VcsAdapterUnavailableError } from "./errors.js";
 import type { VcsGitAdapter } from "./git/adapter.js";
 import { GitCliAdapter } from "./git/git-cli/adapter.js";

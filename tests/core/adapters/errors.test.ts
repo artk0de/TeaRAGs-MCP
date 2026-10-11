@@ -10,13 +10,13 @@ import { OnnxInferenceError, OnnxModelLoadError } from "../../../src/core/adapte
 import { OpenAIAuthError, OpenAIRateLimitError } from "../../../src/core/adapters/embeddings/openai/errors.js";
 import { VoyageApiError, VoyageRateLimitError } from "../../../src/core/adapters/embeddings/voyage/errors.js";
 import { InfraError } from "../../../src/core/adapters/errors.js";
-import { GitCliNotFoundError, GitCliTimeoutError } from "../../../src/core/adapters/vcs/git/git-cli/errors.js";
 import {
   QdrantOperationError,
   QdrantTimeoutError,
   QdrantUnavailableError,
 } from "../../../src/core/adapters/qdrant/errors.js";
-import { TeaRagsError } from "../../../src/core/infra/errors.js";
+import { GitCliNotFoundError, GitCliTimeoutError } from "../../../src/core/adapters/vcs/git/git-cli/errors.js";
+import { TeaRagsError } from "../../../src/core/primitives/errors/tea-rags-error.js";
 
 // ---------------------------------------------------------------------------
 // InfraError (abstract — tested via concrete subclasses)
