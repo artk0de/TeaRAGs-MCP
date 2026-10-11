@@ -12,6 +12,7 @@
  * scoped under their own provider key (`enrichment/CLAUDE.md`).
  */
 
+import { TEST_CHUNK_LINK_METADATA_KEYS } from "../../../contracts/types/chunker.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import type { CodeChunk } from "../../../types.js";
 import type { ChunkItem } from "./infra/index.js";
@@ -49,10 +50,7 @@ export function toChunkPointInput(chunk: CodeChunk, imports: readonly string[]):
       moduleMethodCount: chunk.metadata.moduleMethodCount,
       headingPath: chunk.metadata.headingPath,
       navigation: chunk.metadata.navigation,
-      scopeLineRanges: chunk.metadata.scopeLineRanges,
-      memberRowCounts: chunk.metadata.memberRowCounts,
-      memberSymbolIds: chunk.metadata.memberSymbolIds,
-      memberLineRanges: chunk.metadata.memberLineRanges,
+      ...Object.fromEntries(TEST_CHUNK_LINK_METADATA_KEYS.map((key) => [key, chunk.metadata[key]])),
       ...(imports.length > 0 && { imports: [...imports] }),
     } as CodeChunk["metadata"],
   };

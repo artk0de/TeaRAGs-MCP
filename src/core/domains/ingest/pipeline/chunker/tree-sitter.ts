@@ -12,7 +12,7 @@ import { extname } from "node:path";
 import Parser from "tree-sitter";
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
-import type { BodyChunkResult, ChunkDecision } from "../../../../contracts/types/chunker.js";
+import type { BodyChunkResult, ChunkDecision, TestChunkLinkMetadataKey } from "../../../../contracts/types/chunker.js";
 import type {
   LanguageChunkerHooks,
   LanguageFactoryDescriptor,
@@ -50,9 +50,7 @@ import { SymbolIdDisambiguator } from "./symbol-id-disambiguator.js";
  * answer one member of an example pack with that member's own lines. All
  * persist; absent keys stay absent.
  */
-function testChunkLinks(
-  result: BodyChunkResult,
-): Pick<CodeChunk["metadata"], "scopeLineRanges" | "memberRowCounts" | "memberSymbolIds" | "memberLineRanges"> {
+function testChunkLinks(result: BodyChunkResult): Pick<CodeChunk["metadata"], TestChunkLinkMetadataKey> {
   const packed = result.memberSymbolIds !== undefined && result.lineRanges?.length === result.memberSymbolIds.length;
   return {
     ...(result.scopeLineRanges === undefined ? {} : { scopeLineRanges: result.scopeLineRanges }),

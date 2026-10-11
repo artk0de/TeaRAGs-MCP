@@ -40,6 +40,22 @@ export interface ChunkLookupEntry {
   moduleLines?: number;
 }
 
+/**
+ * The chunk-metadata keys that link a packed test chunk to its members (bd
+ * tea-rags-mcp-5xpq4, g5i0a): the chunker emits them from a
+ * {@link BodyChunkResult}, ingest copies them onto the point payload. ONE list
+ * for both sides — a key missing from either was dropped silently, twice
+ * (bd tea-rags-mcp-f3gq0).
+ */
+export const TEST_CHUNK_LINK_METADATA_KEYS = [
+  "scopeLineRanges",
+  "memberRowCounts",
+  "memberSymbolIds",
+  "memberLineRanges",
+] as const;
+
+export type TestChunkLinkMetadataKey = (typeof TEST_CHUNK_LINK_METADATA_KEYS)[number];
+
 export interface BodyChunkResult {
   content: string;
   startLine: number;
