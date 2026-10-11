@@ -10,7 +10,7 @@ import {
   isOptimizerFailure,
   renderOptimizerRecoveryCommand,
 } from "../../../../../src/core/contracts/optimizer-recovery.js";
-import { NotIndexedError } from "../../../../../src/core/domains/ingest/errors.js";
+import { NotIndexedError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 /**

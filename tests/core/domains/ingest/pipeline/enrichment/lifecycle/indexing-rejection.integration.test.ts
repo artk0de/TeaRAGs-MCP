@@ -15,7 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { INDEXING_METADATA_ID } from "../../../../../../../src/core/contracts/constants.js";
-import { IndexingAlreadyInProgressError } from "../../../../../../../src/core/domains/ingest/errors.js";
+import { IndexingAlreadyInProgressError } from "../../../../../../../src/core/domains/ingest/errors/index.js";
 import { STALE_INDEXING_THRESHOLD_MS } from "../../../../../../../src/core/domains/ingest/infra/indexing-marker-codec.js";
 import {
   startIngestLifecycleHarness,

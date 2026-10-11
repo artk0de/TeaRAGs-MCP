@@ -8,7 +8,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { IndexMetricsQuery } from "../../../../../src/core/domains/explore/queries/index-metrics.js";
-import { NotIndexedError } from "../../../../../src/core/domains/ingest/errors.js";
+import { NotIndexedError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import { mapMarkerToHealth } from "../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 
 const createNotIndexedError = (path: string): Error => new NotIndexedError(path);

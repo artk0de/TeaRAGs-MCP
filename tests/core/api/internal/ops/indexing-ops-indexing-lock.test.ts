@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fixtureCollectionAlias, fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { IndexingOps, type IndexingOpsDeps } from "../../../../../src/core/api/internal/ops/indexing-ops.js";
 import type { IndexOptions } from "../../../../../src/core/api/public/dto/ingest.js";
-import { IndexingAlreadyInProgressError } from "../../../../../src/core/domains/ingest/errors.js";
+import { IndexingAlreadyInProgressError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import {
   CollectionIndexingLock,
   type CollectionIndexingLockOptions,

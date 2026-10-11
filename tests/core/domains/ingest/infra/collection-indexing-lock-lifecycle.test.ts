@@ -23,7 +23,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { IndexingLockUnavailableError } from "../../../../../src/core/domains/ingest/errors.js";
+import { IndexingLockUnavailableError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import {
   CollectionIndexingLock,
   type CollectionIndexingLockOptions,

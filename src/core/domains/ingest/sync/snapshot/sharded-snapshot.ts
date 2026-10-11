@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { SnapshotCorruptedError } from "../../errors.js";
+import { SnapshotCorruptedError } from "../../errors/index.js";
 import { ConsistentHash } from "../infra/consistent-hash.js";
 import { MerkleTree } from "../infra/merkle.js";
 

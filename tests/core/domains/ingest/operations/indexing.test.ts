@@ -16,7 +16,7 @@ import { OllamaUnavailableError } from "../../../../../src/core/adapters/embeddi
 import { EmbeddingModelGuard } from "../../../../../src/core/adapters/qdrant/embedding-model-guard.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
-import { IndexingFailedError } from "../../../../../src/core/domains/ingest/errors.js";
+import { IndexingFailedError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import { EnrichmentCoordinator } from "../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import type { IngestCodeConfig } from "../../../../../src/core/types.js";
 

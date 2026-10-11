@@ -6,7 +6,7 @@ import {
   FileReadError,
   IngestError,
   QuarantinableIngestError,
-} from "../errors.js";
+} from "../errors/index.js";
 
 /** Error codes that mean the chunk exceeded the embedding model's context window. */
 const CONTEXT_OVERFLOW_CODES = new Set(["INFRA_OLLAMA_CONTEXT_OVERFLOW", "INFRA_LLAMA_SERVER_CONTEXT_OVERFLOW"]);

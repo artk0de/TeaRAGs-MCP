@@ -159,10 +159,10 @@ export {
 } from "../../primitives/errors/index.js";
 export type { ConfigErrorCode } from "../../primitives/errors/index.js";
 
-// ── Error classes — ingest domain (domains/ingest/errors.ts) ─────────
+// ── Error classes — ingest domain (domains/ingest/errors/ingest-errors.ts) ─────────
 // The auto-update updater tells "the collection is already indexing" apart
 // from a failed run (bd tea-rags-mcp-62pgi).
-export { IndexingAlreadyInProgressError } from "../../domains/ingest/errors.js";
+export { IndexingAlreadyInProgressError } from "../../domains/ingest/errors/index.js";
 
 // ── Error classes — Qdrant adapter (adapters/qdrant/errors.ts) ────────
 // `tea-rags qdrant recover` renders an optimizer error that survived the

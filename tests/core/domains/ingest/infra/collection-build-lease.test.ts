@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { fixtureCollectionAlias } from "../../../__helpers__/collection-identity.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import { CollectionAlreadyExistsError } from "../../../../../src/core/adapters/qdrant/errors.js";
-import { VersionedCollectionClaimError } from "../../../../../src/core/domains/ingest/errors.js";
+import { VersionedCollectionClaimError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import {
   claimVersionedCollection,
   isCollectionBuildInFlight,

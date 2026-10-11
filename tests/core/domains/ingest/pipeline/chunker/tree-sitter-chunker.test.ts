@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../../../../../src/core/domains/ingest/errors.js";
+import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../../../../../src/core/domains/ingest/errors/index.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
 import { generateChunkId } from "../../../../../../src/core/domains/ingest/pipeline/chunker/utils/chunk-id.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";

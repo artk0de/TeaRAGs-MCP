@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
-import { WorktreeSeedMarkerUnreadableError } from "../../../../../src/core/domains/ingest/errors.js";
+import { WorktreeSeedMarkerUnreadableError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import {
   clearWorktreeSeedPending,
   markWorktreeSeedPending,

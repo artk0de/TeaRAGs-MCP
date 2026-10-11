@@ -16,7 +16,7 @@
  * "worker" remains the in-process executor's vocabulary.
  */
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
-import { PipelineNotStartedError, WorkerTimeoutError } from "../../errors.js";
+import { PipelineNotStartedError, WorkerTimeoutError } from "../../errors/index.js";
 import { defaultWorkerDispatchTimeoutMs } from "./pool-defaults.js";
 import type { WorkerHandle, WorkerTransport } from "./worker-transport.js";
 

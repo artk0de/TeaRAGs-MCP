@@ -30,7 +30,7 @@ import {
   type MethodClassification,
 } from "../../../../primitives/ids/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
-import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../errors.js";
+import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../errors/index.js";
 import { AstSymbolSplitter } from "./ast-symbol-splitter.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";

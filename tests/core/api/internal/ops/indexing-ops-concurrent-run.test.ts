@@ -15,7 +15,7 @@ import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { IndexingOps, type IndexingOpsDeps } from "../../../../../src/core/api/internal/ops/indexing-ops.js";
-import { IndexingAlreadyInProgressError } from "../../../../../src/core/domains/ingest/errors.js";
+import { IndexingAlreadyInProgressError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import { resolveCollectionName } from "../../../../../src/core/primitives/ids/collection-identity.js";
 import type { ChangeStats } from "../../../../../src/core/types.js";
 

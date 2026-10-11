@@ -37,17 +37,18 @@ pipeline, operations and enrichment halves each carry their own.
   (`classifyQuarantinable`, same file): a catch-all — anything that is NOT an
   `InfraError` (transient infra) or an `IngestError` (pipeline invariant)
   becomes a `FileReadError` (FS codes) or `FileParseError`. UPSERT:
-  `QdrantPayloadTooLargeError` is declared (`domains/ingest/errors.ts`) but
-  constructed nowhere in `src/`; `ChunkPipeline` rethrows every upsert error
-  after notifying `AdaptiveBatchSizer` (`ChunkPipeline#createBatchHandler`). The
-  intentional `secrets` / `chunk-limit` / `compiled` skips
-  (`PreParseSkipReason`, `SourceFileIngestor#ingest`,
-  `SourceFileIngestor#preParseSkipReason`) are not failures and never reach
-  either classifier. Why: the read/parse side quarantines by DEFAULT — its only
-  guard is the `InfraError` / `IngestError` exclusion, so widening that catch
-  (or narrowing the exclusion) starts permanently quarantining files a transient
-  FS or infra hiccup touched. And treating "Qdrant 413 on upsert" as a live
-  quarantine path sends an agent hunting for a classifier that does not exist.
+  `QdrantPayloadTooLargeError` is declared
+  (`domains/ingest/errors/ingest-errors.ts`) but constructed nowhere in `src/`;
+  `ChunkPipeline` rethrows every upsert error after notifying
+  `AdaptiveBatchSizer` (`ChunkPipeline#createBatchHandler`). The intentional
+  `secrets` / `chunk-limit` / `compiled` skips (`PreParseSkipReason`,
+  `SourceFileIngestor#ingest`, `SourceFileIngestor#preParseSkipReason`) are not
+  failures and never reach either classifier. Why: the read/parse side
+  quarantines by DEFAULT — its only guard is the `InfraError` / `IngestError`
+  exclusion, so widening that catch (or narrowing the exclusion) starts
+  permanently quarantining files a transient FS or infra hiccup touched. And
+  treating "Qdrant 413 on upsert" as a live quarantine path sends an agent
+  hunting for a classifier that does not exist.
 
 ## See also
 

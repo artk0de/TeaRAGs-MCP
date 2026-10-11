@@ -31,7 +31,7 @@ import {
   IndexingAlreadyInProgressError,
   IndexingProcessBuildStaleError,
   NotIndexedError,
-} from "../../../domains/ingest/errors.js";
+} from "../../../domains/ingest/errors/index.js";
 import {
   cleanupOrphanedVersions,
   computeCollectionStats,

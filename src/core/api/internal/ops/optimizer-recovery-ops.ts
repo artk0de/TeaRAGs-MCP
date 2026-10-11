@@ -19,7 +19,7 @@ import {
   type OptimizerRecoveryOutcome,
   type OptimizerRecoveryTarget,
 } from "../../../contracts/optimizer-recovery.js";
-import { NotIndexedError } from "../../../domains/ingest/errors.js";
+import { NotIndexedError } from "../../../domains/ingest/errors/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/collection-registry.js";
 import { resolveCollection } from "../collection-resolver.js";
 

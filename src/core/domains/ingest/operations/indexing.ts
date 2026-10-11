@@ -13,7 +13,7 @@
 import type { CollectionAlias, PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../../types.js";
-import { IndexingFailedError } from "../errors.js";
+import { IndexingFailedError } from "../errors/index.js";
 import {
   cleanupOrphanedVersions,
   discardFailedCollectionBuild,

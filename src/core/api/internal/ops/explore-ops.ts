@@ -55,7 +55,7 @@ import {
 } from "../../../domains/explore/index.js";
 import type { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import { NotIndexedError } from "../../../domains/ingest/errors.js";
+import { NotIndexedError } from "../../../domains/ingest/errors/index.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
 import { DOCUMENTATION_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/config.js";
 import { mapMarkerToHealth } from "../../../domains/ingest/pipeline/enrichment/index.js";
