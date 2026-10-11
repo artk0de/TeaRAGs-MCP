@@ -142,9 +142,9 @@ import {
 } from "../../../domains/explore/naming-lexicon/index.js";
 import { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
-import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
 import { Semaphore } from "../../../primitives/concurrency/index.js";
+import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import { cosine } from "../../../primitives/math/index.js";
 import type { ExploreResponse, FindSymbolRequest, SemanticSearchRequest } from "../../public/dto/explore.js";
 import type { IndexMetrics } from "../../public/dto/metrics.js";

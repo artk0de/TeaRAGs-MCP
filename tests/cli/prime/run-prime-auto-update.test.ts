@@ -12,7 +12,7 @@ import { unavailable } from "../../../src/cli/update-check/types.js";
 import { createPathCollectionResolver } from "../../../src/core/api/index.js";
 import { CollectionRegistry } from "../../../src/core/api/public/index.js";
 import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
-import { resolveCollectionName } from "../../../src/core/infra/collection-name.js";
+import { resolveCollectionName } from "../../../src/core/primitives/ids/collection-identity.js";
 
 const { pingMock, createAppContextMock } = vi.hoisted(() => ({
   pingMock: vi.fn(),

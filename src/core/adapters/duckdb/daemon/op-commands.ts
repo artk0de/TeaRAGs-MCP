@@ -4,7 +4,7 @@
 // the daemon's dispatch table has with codegraph-storage.ts
 // (bd tea-rags-mcp-89k7k.25).
 import type { GraphDbClient } from "../../../contracts/types/codegraph-storage.js";
-import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
+import { physicalCollectionNameFromDaemonRequest } from "../../../primitives/ids/index.js";
 import type { GraphDbClientPool } from "../pool.js";
 import { computeAndPersistCyclesAndSignals } from "./graph-analysis.js";
 import type { DaemonHandshakeResult, DaemonOp, DaemonRequestParams } from "./protocol.js";

@@ -80,7 +80,7 @@ import {
   CODEGRAPH_LANGUAGE_BY_EXTENSION,
   type CodegraphWorkerConfig,
 } from "../../src/core/domains/trajectory/codegraph/index.js";
-import { resolvePhysicalCollection } from "../../src/core/infra/collection-name.js";
+import { resolvePhysicalCollection } from "../../src/core/primitives/ids/collection-identity.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = resolve(__dirname, "../..");
@@ -231,7 +231,7 @@ function codegraphProviderHandle(config: CodegraphWorkerConfig, fanout: boolean)
     streamFileBatch: async () => new Map(),
     defersChunkEnrichment: true,
     workerDescriptor: descriptor,
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 // ── Fan-out modes ─────────────────────────────────────────────────────────────

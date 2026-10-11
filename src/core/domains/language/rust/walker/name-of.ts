@@ -11,7 +11,7 @@
  * travels with it).
  *
  * `function_item` routes through `methodKindFromClassify` (the kernel helper
- * that wraps `classifyMethod` in `infra/symbolid`) so the chunker and codegraph
+ * that wraps `classifyMethod` in `primitives/ids/symbolid`) so the chunker and codegraph
  * agree on the separator for the same physical AST node
  * (`.claude/rules/symbolid-convention.md`): a `function_item` WITH a
  * `self`/`&self` parameter is instance-level (`#`), one WITHOUT is an associated

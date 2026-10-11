@@ -13,7 +13,7 @@
  * left this one explicitly out of scope pending evidence; the evidence arrived
  * with the same measurement pass. See "What it cost to leave this unnamed".
  *
- * Lives in `infra/symbolid` for the reason its three siblings do: the answer has
+ * Lives in `primitives/ids/symbolid` for the reason its three siblings do: the answer has
  * to be the same for the same physical AST node no matter who asks
  * (`.claude/rules/symbolid-convention.md`). Here the shared half is the KIND —
  * this gate reads `classifyMethod` for it, and so does the chunker's class-body
@@ -58,9 +58,8 @@
  *   docblock got wrong about THIS shape.
  */
 
-import type { AstNode } from "../../contracts/types/ast.js";
-import type { MethodClassification } from "./classify.js";
-import { classifyMethod } from "./classify.js";
+import type { AstNode } from "../../../contracts/types/ast.js";
+import { classifyMethod, type MethodClassification } from "./classify.js";
 import { isFunctionValuedExpression } from "./const-bound-function.js";
 
 /** A class field that declares a callable, and the member kind it binds. */

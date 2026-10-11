@@ -21,7 +21,7 @@
  *     one file are suffixed `~N` instead of deduped. Mirrors
  *     `LANGUAGE_DEFINITIONS.java` AND the codegraph `.java` entry (bd
  *     tea-rags-mcp-a466) so cg_symbols + Qdrant payload agree.
- *   - `isInstanceMethod` — derived from `classifyMethod` (infra/symbolid): a
+ *   - `isInstanceMethod` — derived from `classifyMethod` (primitives/ids/symbolid): a
  *     `method_declaration` without a `static` modifier is an instance method; a
  *     `static`-modified one is class-level. Non-method nodes yield `null` → not
  *     "instance" → `false`, identical to the per-engine static checks.
@@ -29,7 +29,7 @@
 
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
-import { classifyMethod } from "../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../primitives/ids/index.js";
 
 interface TreeSitterLanguageModule {
   default?: unknown;

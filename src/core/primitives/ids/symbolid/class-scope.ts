@@ -15,13 +15,13 @@
  * `build.Local#run`. DIFFERENT symbols collapsed onto one id, and the chunk id
  * disagreed with the graph row.
  *
- * Lives in `infra/symbolid` for the reason `./const-object-namespace.ts` does:
+ * Lives in `primitives/ids/symbolid` for the reason `./const-object-namespace.ts` does:
  * the codegraph walker (`domains/language/typescript/walker/name-of.ts`) and the
  * chunker (`domains/ingest/pipeline/chunker/tree-sitter.ts`) must answer "which
  * class, under which name" identically, or they fall out of lockstep.
  */
 
-import type { AstNode } from "../../contracts/types/ast.js";
+import type { AstNode } from "../../../contracts/types/ast.js";
 import { unwrapTypeAssertions } from "./const-object-namespace.js";
 
 /** The class node types a TypeScript / JavaScript member can sit in. */

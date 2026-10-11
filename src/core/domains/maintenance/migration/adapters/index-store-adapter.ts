@@ -9,7 +9,7 @@ import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import type { PayloadFieldIndex } from "../../../../adapters/qdrant/payload-index.js";
 import type { PayloadFieldIndexSchema } from "../../../../adapters/qdrant/schema-manager.js";
 import { SchemaMetadataPointStore } from "../../../../adapters/qdrant/schema-metadata-point.js";
-import { resolvePhysicalCollection } from "../../../../infra/collection-name.js";
+import { resolvePhysicalCollection } from "../../../../primitives/ids/index.js";
 import type { IndexStore, PayloadIndexStore } from "../types.js";
 
 export class IndexStoreAdapter implements IndexStore, PayloadIndexStore {

@@ -188,7 +188,7 @@ match** to `find_symbol` (`Class` alone, or bare `method`) and read the real
 separator off `result.symbolId`; never downgrade an empty `find_symbol` to
 ripgrep. Producer-side source of truth (how separator chosen per language at
 index time): `.claude/rules/symbolid-convention.md` (`INSTANCE_METHOD_SEPARATOR`
-in `infra/symbolid/classify.ts`).
+in `primitives/ids/symbolid/classify.ts`).
 
 ### find_symbol — the navigation workhorse (two addressing modes)
 

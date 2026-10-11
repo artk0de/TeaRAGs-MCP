@@ -651,8 +651,8 @@ function third() {
       await createTestFile(codebaseDir, "test.ts", "export const y = 2;");
 
       // Simulate legacy: create a real collection (not via indexCodebase to avoid alias)
-      const { resolveCollectionName, validatePath } =
-        await import("../../../../../src/core/domains/ingest/pipeline/../../../infra/collection-name.js");
+      const { resolveCollectionName } = await import("../../../../../src/core/primitives/ids/collection-identity.js");
+      const { validatePath } = await import("../../../../../src/core/adapters/filesystem/path-canonicalization.js");
       const absPath = await validatePath(codebaseDir);
       const collName = resolveCollectionName(absPath);
       await qdrant.createCollection(collName, 384, "Cosine");
@@ -769,7 +769,8 @@ function third() {
       await createTestFile(codebaseDir, "test.ts", "export const y = 2;");
 
       // Simulate legacy: create a real (unversioned) collection so forceReindex migrates.
-      const { resolveCollectionName, validatePath } = await import("../../../../../src/core/infra/collection-name.js");
+      const { resolveCollectionName } = await import("../../../../../src/core/primitives/ids/collection-identity.js");
+      const { validatePath } = await import("../../../../../src/core/adapters/filesystem/path-canonicalization.js");
       const absPath = await validatePath(codebaseDir);
       const collName = resolveCollectionName(absPath);
       await qdrant.createCollection(collName, 384, "Cosine");
@@ -894,7 +895,8 @@ function third() {
 
       vi.restoreAllMocks();
 
-      const { resolveCollectionName, validatePath } = await import("../../../../../src/core/infra/collection-name.js");
+      const { resolveCollectionName } = await import("../../../../../src/core/primitives/ids/collection-identity.js");
+      const { validatePath } = await import("../../../../../src/core/adapters/filesystem/path-canonicalization.js");
       const alias = resolveCollectionName(await validatePath(codebaseDir));
       const leftovers = (await qdrant.listCollections()).filter((c) => c.startsWith(`${alias}_v`));
       expect(leftovers).toHaveLength(1);

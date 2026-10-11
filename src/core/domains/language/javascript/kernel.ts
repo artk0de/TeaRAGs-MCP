@@ -14,7 +14,7 @@
  *     set `"."` explicitly). Methods use `#`/`.` via `SymbolIdComposer`.
  *   - `scopeContainerTypes` / `disambiguateOverloads` — UNSET for JavaScript
  *     (mirrors `LANGUAGE_DEFINITIONS.javascript`, which declares neither).
- *   - `isInstanceMethod` — derived from `classifyMethod` (infra/symbolid): a
+ *   - `isInstanceMethod` — derived from `classifyMethod` (primitives/ids/symbolid): a
  *     `method_definition` without the `static` keyword is an instance method
  *     (JS shares the `method_definition` shape with TypeScript). Non-method
  *     nodes yield `null` → not "instance" → `false`, identical to the per-engine
@@ -23,7 +23,7 @@
 
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
-import { classifyMethod } from "../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../primitives/ids/index.js";
 
 interface TreeSitterLanguageModule {
   default?: unknown;

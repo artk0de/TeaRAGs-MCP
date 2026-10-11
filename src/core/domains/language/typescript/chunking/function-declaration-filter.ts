@@ -24,7 +24,7 @@
  *     inside the `variable_declarator`), so the engine's generic shaping would
  *     emit an anonymous `block` chunk with no symbolId.
  *
- * Both delegate to `infra/symbolid`'s shared gate — the same function the
+ * Both delegate to `primitives/ids/symbolid`'s shared gate — the same function the
  * codegraph walker calls — so the Qdrant payload `symbolId` and
  * `cg_symbols.symbol_id` cannot drift for the same physical AST node
  * (`.claude/rules/symbolid-convention.md`).
@@ -35,7 +35,7 @@ import type { ChunkDecision, ChunkingHook, LanguageChunkClassifier } from "../..
 import {
   constObjectNamespaceContainerName,
   moduleLevelFunctionDeclarationNames,
-} from "../../../../infra/symbolid/index.js";
+} from "../../../../primitives/ids/index.js";
 
 /** The declaration node types a `variable_declarator` can sit under. */
 const DECLARATION_TYPES = new Set(["lexical_declaration", "variable_declaration"]);

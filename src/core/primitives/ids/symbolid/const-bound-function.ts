@@ -18,7 +18,7 @@
  * resolver chain got — and the chunker emitted no chunk either, leaving those
  * functions invisible to `find_symbol` as well.
  *
- * Lives in `infra/symbolid` for the same reason `classifyMethod` and
+ * Lives in `primitives/ids/symbolid` for the same reason `classifyMethod` and
  * `constObjectNamespaceName` do: TWO consumers must answer this question
  * identically about the same physical AST node or they fall out of lockstep
  * (`.claude/rules/symbolid-convention.md`).
@@ -95,7 +95,7 @@
  * through to a same-named symbol elsewhere.
  */
 
-import type { AstNode } from "../../contracts/types/ast.js";
+import type { AstNode } from "../../../contracts/types/ast.js";
 
 /**
  * The syntactic shapes a callable VALUE can take.

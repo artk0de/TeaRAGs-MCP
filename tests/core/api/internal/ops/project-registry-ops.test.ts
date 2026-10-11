@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { validatePath } from "../../../../../src/core/adapters/filesystem/path-canonicalization.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import { ProjectRegistryOps } from "../../../../../src/core/api/internal/ops/project-registry-ops.js";
 import {
@@ -15,7 +16,7 @@ import {
   ProjectPathAlreadyRegisteredError,
 } from "../../../../../src/core/api/public/errors.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
-import { resolveCollectionName, validatePath } from "../../../../../src/core/infra/collection-name.js";
+import { resolveCollectionName } from "../../../../../src/core/primitives/ids/collection-identity.js";
 
 describe("ProjectRegistryOps", () => {
   let dir: string;

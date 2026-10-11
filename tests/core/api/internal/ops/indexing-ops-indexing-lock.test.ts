@@ -26,7 +26,7 @@ import {
   type IndexingLockRecord,
 } from "../../../../../src/core/domains/ingest/infra/collection-indexing-lock.js";
 import { STALE_INDEXING_THRESHOLD_MS } from "../../../../../src/core/domains/ingest/infra/indexing-marker-codec.js";
-import { resolveCollectionName } from "../../../../../src/core/infra/collection-name.js";
+import { resolveCollectionName } from "../../../../../src/core/primitives/ids/collection-identity.js";
 import type { ChangeStats } from "../../../../../src/core/types.js";
 
 const ALIAS = resolveCollectionName(resolve("/repo"));

@@ -28,12 +28,12 @@ export function parseCollectionVersion(collectionName: string, name: string | un
 
 /**
  * Alias → physical resolution is owned by the foundation (bd tea-rags-mcp-39xca.1):
- * `resolvePhysicalCollection` in `infra/collection-name.ts` is the one producer
+ * `resolvePhysicalCollection` in `primitives/ids/collection-identity.ts` is the one producer
  * of a `PhysicalCollectionName`, reachable from every layer that needs it.
  * Re-exported here so the ingest pipelines keep their import site.
  */
 export type { CollectionAliasEntry } from "../../../contracts/types/collection-identity.js";
-export { findAliasTarget, resolvePhysicalCollection } from "../../../infra/collection-name.js";
+export { findAliasTarget, resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 
 /**
  * Highest `_vN` among `allCollections` for the given base. 0 if none exist.

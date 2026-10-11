@@ -1,7 +1,7 @@
 /**
  * Swift tier-1 chunking — symbolId composition through the real
  * tree-sitter-swift grammar. The per-language detection contract these
- * symbolIds encode lives in `src/core/infra/symbolid/classify.ts`
+ * symbolIds encode lives in `src/core/primitives/ids/symbolid/classify.ts`
  * (`.claude/rules/symbolid-convention.md`); the tree-sitter-swift node shapes
  * it reads are non-obvious (one `class_declaration` node for five keywords,
  * the `class` modifier arriving as a bare keyword child), so each convention

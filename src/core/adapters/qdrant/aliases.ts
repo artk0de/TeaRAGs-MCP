@@ -12,7 +12,7 @@
  */
 
 import type { CollectionAliasEntry, PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
-import { collectionAliasEntryFromQdrant, resolvePhysicalCollection } from "../../infra/collection-name.js";
+import { collectionAliasEntryFromQdrant, resolvePhysicalCollection } from "../../primitives/ids/index.js";
 import type { QdrantConnection } from "./connection.js";
 import { AliasOperationError } from "./errors.js";
 

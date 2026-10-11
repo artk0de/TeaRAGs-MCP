@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   constObjectNamespaceName,
   constObjectNamespaceOwner,
-} from "../../../../src/core/infra/symbolid/const-object-namespace.js";
+} from "../../../../../src/core/primitives/ids/symbolid/const-object-namespace.js";
 
 /**
  * Build a minimal SyntaxNode-like object — only the fields the module consults:

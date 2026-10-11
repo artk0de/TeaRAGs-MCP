@@ -51,7 +51,7 @@ import {
   type RelPath,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.js";
+import { INSTANCE_METHOD_SEPARATOR } from "../../../../../primitives/ids/index.js";
 import {
   ECMASCRIPT_BUILTIN_TYPES,
   ECMASCRIPT_GLOBALS,

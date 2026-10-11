@@ -8,7 +8,7 @@
  * (extractGoSymbol) and inline in `goNameOf`. bd tea-rags-mcp-n7x5 / j2b7 / aah9.
  */
 import type { AstNode } from "../../../contracts/types/ast.js";
-import { INSTANCE_METHOD_SEPARATOR } from "../../../infra/symbolid/index.js";
+import { INSTANCE_METHOD_SEPARATOR } from "../../../primitives/ids/index.js";
 
 export interface GoSymbol {
   name: string;

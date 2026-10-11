@@ -20,16 +20,16 @@
  *   - `disambiguateOverloads` — UNSET for Rust (mirrors
  *     `LANGUAGE_DEFINITIONS.rust`, which declares none — Rust has no method
  *     overloading; each `impl` method has a unique name in its scope).
- *   - `isInstanceMethod` — derived from `classifyMethod` (infra/symbolid): a
+ *   - `isInstanceMethod` — derived from `classifyMethod` (primitives/ids/symbolid): a
  *     `function_item` WITH a `self` / `&self` parameter is an instance method;
  *     one WITHOUT is an associated (static) function. Non-method nodes yield
  *     `null` → not "instance" → `false`, identical to the per-engine static
- *     checks (`infra/symbolid/classify.ts::rustHasSelfParam`).
+ *     checks (`primitives/ids/symbolid/classify.ts::rustHasSelfParam`).
  */
 
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
-import { classifyMethod } from "../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../primitives/ids/index.js";
 
 interface TreeSitterLanguageModule {
   default?: unknown;

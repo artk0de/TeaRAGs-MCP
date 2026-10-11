@@ -24,7 +24,7 @@
  * bd tea-rags-mcp-kfzx
  */
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import { INSTANCE_METHOD_SEPARATOR, isFunctionValuedExpression } from "../../../../infra/symbolid/index.js";
+import { INSTANCE_METHOD_SEPARATOR, isFunctionValuedExpression } from "../../../../primitives/ids/index.js";
 
 function walkAssignmentChainToTerminalRhs(node: AstNode): AstNode | null {
   let cur: AstNode | null = node;

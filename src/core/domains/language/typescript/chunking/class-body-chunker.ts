@@ -22,7 +22,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
-import { isStaticMethodNode } from "../../../../infra/symbolid/index.js";
+import { isStaticMethodNode } from "../../../../primitives/ids/index.js";
 import { findClassBody } from "./utils.js";
 
 // ── Classification ────────────────────────────────────────────────

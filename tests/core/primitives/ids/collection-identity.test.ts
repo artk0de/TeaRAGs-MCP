@@ -1,15 +1,12 @@
-import { realpath } from "node:fs/promises";
-
 import { describe, expect, it } from "vitest";
 
-import { fixtureCollectionAlias } from "../__helpers__/collection-identity.js";
+import { fixtureCollectionAlias } from "../../__helpers__/collection-identity.js";
 import {
   collectionAliasEntryFromQdrant,
   physicalCollectionNameFromDaemonRequest,
   resolveCollectionName,
-  validatePath,
   versionedPhysicalCollectionName,
-} from "../../../src/core/infra/collection-name.js";
+} from "../../../../src/core/primitives/ids/collection-identity.js";
 
 describe("collection-name utilities", () => {
   describe("resolveCollectionName", () => {
@@ -28,19 +25,6 @@ describe("collection-name utilities", () => {
       const a = resolveCollectionName("/tmp/project-a");
       const b = resolveCollectionName("/tmp/project-b");
       expect(a).not.toBe(b);
-    });
-  });
-
-  describe("validatePath", () => {
-    it("resolves existing path", async () => {
-      const expected = await realpath("/tmp");
-      const result = await validatePath("/tmp");
-      expect(result).toBe(expected);
-    });
-
-    it("returns absolute path for non-existent path", async () => {
-      const result = await validatePath("/nonexistent/path");
-      expect(result).toBe("/nonexistent/path");
     });
   });
 

@@ -35,7 +35,7 @@ import { CodegraphDbFiles } from "../../../../src/core/adapters/duckdb/codegraph
 import { sweepCodegraphOrphans } from "../../../../src/core/domains/ingest/infra/alias-cleanup.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
-import { versionedPhysicalCollectionName } from "../../../../src/core/infra/collection-name.js";
+import { versionedPhysicalCollectionName } from "../../../../src/core/primitives/ids/collection-identity.js";
 
 const BASE = fixtureCollectionAlias("code_force");
 const V1 = versionedPhysicalCollectionName(BASE, 1);

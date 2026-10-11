@@ -8,8 +8,8 @@
  * again after each index run resets it (spec decision 13).
  */
 
+import { hashCollectionForPath } from "../../../adapters/filesystem/path-canonicalization.js";
 import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
-import { hashCollectionForPath } from "../../../infra/collection-name.js";
 import type { IndexDriftAxis, IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 import { foldIndexDriftRemedies, renderIndexDriftRemedy, type IndexDriftRemedy } from "./remedy.js";
 

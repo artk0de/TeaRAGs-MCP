@@ -43,8 +43,7 @@ import {
   resolveInheritedMemberDefiner,
   type InheritedMemberGraph,
 } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
-import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
-import { splitMethodSymbol } from "../../../infra/symbolid/index.js";
+import { resolvePhysicalCollection, splitMethodSymbol } from "../../../primitives/ids/index.js";
 import type {
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,

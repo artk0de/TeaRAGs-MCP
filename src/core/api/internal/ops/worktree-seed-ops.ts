@@ -48,8 +48,8 @@ import {
   findWorktreeSeedCandidates,
   type WorktreeSeedBuildIdentity,
 } from "../../../domains/maintenance/worktree/index.js";
-import { versionedPhysicalCollectionName } from "../../../infra/collection-name.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
+import { versionedPhysicalCollectionName } from "../../../primitives/ids/index.js";
 
 export interface WorktreeSeedOpsDeps {
   registry: { list: () => CollectionEntry[] };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { validatePath } from "../../../../../src/core/adapters/filesystem/path-canonicalization.js";
 import { SHARED_LANGUAGE, type LanguageCodeVersions } from "../../../../../src/core/contracts/types/language.js";
 import { CommitDriftMonitor } from "../../../../../src/core/domains/maintenance/drift/commit-drift-monitor.js";
 import { EnvDriftMonitor } from "../../../../../src/core/domains/maintenance/drift/env-drift-monitor.js";
@@ -13,7 +14,7 @@ import {
   IndexDriftReporter,
 } from "../../../../../src/core/domains/maintenance/drift/report.js";
 import { SchemaDriftMonitor } from "../../../../../src/core/domains/maintenance/drift/schema-drift-monitor.js";
-import { resolveCollectionName, validatePath } from "../../../../../src/core/infra/collection-name.js";
+import { resolveCollectionName } from "../../../../../src/core/primitives/ids/collection-identity.js";
 
 const fixed = (findings: IndexDriftFinding[]): IndexDriftMonitor => ({
   axis: findings[0]?.axis ?? "payloadKeys",

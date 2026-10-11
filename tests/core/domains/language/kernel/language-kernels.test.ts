@@ -7,7 +7,7 @@
  * detection + parser-load contract each kernel inherits from its
  * `LANGUAGE_DEFINITIONS` ancestor stays pinned.
  *
- * `isInstanceMethod` is derived from `classifyMethod` (infra/symbolid): for the
+ * `isInstanceMethod` is derived from `classifyMethod` (primitives/ids/symbolid): for the
  * source languages a parsed instance method node returns `true`; a non-method
  * node returns `false`. Markdown never sees code nodes, so every node is
  * `false`.

@@ -13,7 +13,7 @@
  * The rule used to live in comments and navigators, and every new entry point
  * had to remember it. These brands make it a compile error instead: a bare
  * `string` is neither, and neither is assignable to the other. Both are minted
- * ONLY in `infra/collection-name.ts`, and a lint rule rejects the cast anywhere
+ * ONLY in `primitives/ids/collection-identity.ts`, and a lint rule rejects the cast anywhere
  * else — so a name reaches a physical-storage boundary only by being resolved,
  * constructed as a new generation, or read back from the storage it names.
  *

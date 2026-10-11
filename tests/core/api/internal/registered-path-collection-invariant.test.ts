@@ -27,11 +27,12 @@ import { resolveRegistryEnvCodeDefaults } from "../../../../src/bootstrap/config
 import { runPrime } from "../../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../../src/cli/update-check/types.js";
+import { validatePath } from "../../../../src/core/adapters/filesystem/path-canonicalization.js";
 import { createPathCollectionResolver, IngestFacade } from "../../../../src/core/api/index.js";
 import { resolveCollection } from "../../../../src/core/api/internal/collection-resolver.js";
 import { resolveLanguageCapabilities } from "../../../../src/core/domains/language/capability/resolve.js";
 import { CollectionRegistry } from "../../../../src/core/domains/maintenance/registry/collection-registry.js";
-import { resolveCollectionName, validatePath } from "../../../../src/core/infra/collection-name.js";
+import { resolveCollectionName } from "../../../../src/core/primitives/ids/collection-identity.js";
 import type { IngestCodeConfig } from "../../../../src/core/types.js";
 import {
   createTestFile,

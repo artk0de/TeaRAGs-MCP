@@ -95,8 +95,8 @@
   codegraph pool hid until it produced a shadow `<alias>.duckdb` no reader ever
   opened (7 of 44 projects, incl. taxdome and tea-rags itself; 6goqa). Every
   storage boundary now requires the physical brand, and only
-  `infra/collection-name.ts` mints it — `resolvePhysicalCollection` (used in
-  `ReindexPipeline#prepareReindexContext` and `IndexingOps`),
+  `primitives/ids/collection-identity.ts` mints it — `resolvePhysicalCollection`
+  (used in `ReindexPipeline#prepareReindexContext` and `IndexingOps`),
   `versionedPhysicalCollectionName` (`claimVersionedCollection`), or a read-back
   from storage; lint rejects the cast anywhere else, and
   `CodegraphDbFiles#writablePathFor` is the runtime backstop. Two ingest-local

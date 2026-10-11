@@ -29,8 +29,10 @@ const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../../src")
  * resolves through `createPathCollectionResolver` / `resolveCollection`.
  */
 const ALLOWED = [
-  // Defines the hash, and packages the registry-free fallback every layer shares.
-  "core/infra/collection-name.ts",
+  // Defines the hash.
+  "core/primitives/ids/collection-identity.ts",
+  // Packages the registry-free fallback every layer shares.
+  "core/adapters/filesystem/path-canonicalization.ts",
   // The owner: canonicalize, registry entry first, the hash only as its fallback.
   "core/api/internal/collection-resolver.ts",
   // `register` CREATES the identity, and only after `findByPath` says no entry
@@ -112,6 +114,6 @@ describe("a path becomes a collection through one owner", () => {
       const source = readFileSync(join(SRC_DIR, rel), "utf8");
       expect(findHashCallsIn(source), rel).not.toEqual([]);
     }
-    expect(ALLOWED).toHaveLength(4);
+    expect(ALLOWED).toHaveLength(5);
   });
 });

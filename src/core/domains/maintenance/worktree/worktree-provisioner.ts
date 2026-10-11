@@ -1,14 +1,14 @@
 import { basename, dirname, join, resolve } from "node:path";
 
+import { validatePathSync } from "../../../adapters/filesystem/path-canonicalization.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { WorktreeCreateInput, WorktreeCreateResult, WorktreeRemoveInput } from "../../../contracts/index.js";
 import {
   collectionAliasOfRegistryEntry,
   resolveCollectionName,
   resolvePhysicalCollection,
-  validatePathSync,
   versionedPhysicalCollectionName,
-} from "../../../infra/collection-name.js";
+} from "../../../primitives/ids/index.js";
 import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
 import {
   cloneCollectionFootprint,

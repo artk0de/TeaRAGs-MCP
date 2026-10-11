@@ -10,7 +10,7 @@
  *   - `scopeContainerTypes` — `class` / `module` / `singleton_class`, so the
  *     chunker accumulates the full scope qualifier for nested-namespace leaf
  *     methods (bd tea-rags-mcp-bdvm).
- *   - `isInstanceMethod` — derived from `classifyMethod` (infra/symbolid): a
+ *   - `isInstanceMethod` — derived from `classifyMethod` (primitives/ids/symbolid): a
  *     node is an instance method iff `classifyMethod(node) === "instance"`.
  *     Non-method nodes yield `null` → not "instance" → `false`, identical to
  *     the per-engine static checks.
@@ -18,7 +18,7 @@
 
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
-import { classifyMethod } from "../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../primitives/ids/index.js";
 
 interface TreeSitterLanguageModule {
   default?: unknown;

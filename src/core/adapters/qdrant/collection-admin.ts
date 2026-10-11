@@ -19,7 +19,7 @@ import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
-import { physicalCollectionNamesListedByStorage } from "../../infra/collection-name.js";
+import { physicalCollectionNamesListedByStorage } from "../../primitives/ids/index.js";
 import type { QdrantConnection } from "./connection.js";
 import { CollectionAlreadyExistsError, QdrantUnavailableError } from "./errors.js";
 

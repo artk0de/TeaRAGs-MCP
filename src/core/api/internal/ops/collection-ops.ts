@@ -6,7 +6,7 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantCollectionMemoryUsage, QdrantManager, QdrantMemoryUsage } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
-import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
+import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import type {
   CollectionInfo,
   CollectionMemoryBytes,

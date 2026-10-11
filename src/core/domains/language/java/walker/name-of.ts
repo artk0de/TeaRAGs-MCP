@@ -10,7 +10,7 @@
  * delegation).
  *
  * `method_declaration` routes through `methodKindFromClassify` (the kernel
- * helper that wraps `classifyMethod` in `infra/symbolid`) so the chunker and
+ * helper that wraps `classifyMethod` in `primitives/ids/symbolid`) so the chunker and
  * codegraph agree on the separator for the same physical AST node
  * (`.claude/rules/symbolid-convention.md`): a `method_declaration` with a
  * `static` modifier is class-level (`.`), without one is instance-level (`#`).

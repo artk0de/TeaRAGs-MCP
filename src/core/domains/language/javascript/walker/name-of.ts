@@ -30,7 +30,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
-import { INSTANCE_METHOD_SEPARATOR, isFunctionValuedExpression } from "../../../../infra/symbolid/index.js";
+import { INSTANCE_METHOD_SEPARATOR, isFunctionValuedExpression } from "../../../../primitives/ids/index.js";
 import { tsNameOf } from "../../typescript/walker/name-of.js";
 
 export function jsNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {

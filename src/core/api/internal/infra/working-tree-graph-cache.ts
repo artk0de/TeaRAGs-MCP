@@ -92,8 +92,8 @@ import {
   type WorkingTreeGraphProviderConfig,
   type WorkingTreeGraphSeed,
 } from "../../../domains/trajectory/codegraph/working-tree/index.js";
-import { physicalCollectionNamesListedByStorage, resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { isDebug } from "../../../infra/runtime.js";
+import { physicalCollectionNamesListedByStorage, resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 
 /** The reason a caller gets when its wait lapsed and the build is still running. */
 export const WORKING_TREE_GRAPH_BUILDING_REASON = "building";

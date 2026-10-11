@@ -11,6 +11,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { hashCollectionForPath, validatePath } from "../../../adapters/filesystem/path-canonicalization.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { SchemaMetadataPointStore } from "../../../adapters/qdrant/schema-metadata-point.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
@@ -20,7 +21,6 @@ import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-p
 import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
-import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { StatsCache } from "../../../infra/stats-cache.js";
 import type {

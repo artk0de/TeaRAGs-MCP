@@ -23,7 +23,7 @@
  *   - NO `extractLanguage` / `scopeSeparator` / `scopeContainerTypes` /
  *     `disambiguateOverloads` — markdown declares none (the original entry set
  *     none either; doc chunks use `doc:<hash>` ids with no scope composition).
- *   - `isInstanceMethod` — derived from `classifyMethod` (infra/symbolid) for
+ *   - `isInstanceMethod` — derived from `classifyMethod` (primitives/ids/symbolid) for
  *     uniformity with the source-language verticals. Moot for markdown: it never
  *     sees code AST nodes (no walker, no parser), and every node yields
  *     `classifyMethod(node) !== "instance"` → `false`, identical to the legacy
@@ -32,7 +32,7 @@
 
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
-import { classifyMethod } from "../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../primitives/ids/index.js";
 
 export const markdownKernel: LanguageKernel = {
   // No tree-sitter grammar — remark parses markdown. Mirrors the legacy

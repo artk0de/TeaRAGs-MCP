@@ -10,9 +10,9 @@ import { join } from "node:path";
 
 import type { GraphDbClient } from "../../../../contracts/types/codegraph-storage.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
-import { readFileContentHash, readFileContentHashSync } from "../../../../infra/file-content-hash.js";
 import { WorkingTreeGraphIncompleteError } from "../../errors.js";
 import type { CodegraphEnrichmentProvider } from "../symbols/index.js";
+import { readFileContentHash, readFileContentHashSync } from "./file-content-hash-reader.js";
 
 /** One opened clone a tree build writes: the provider over it and its client. */
 export interface TreeGraphClone {

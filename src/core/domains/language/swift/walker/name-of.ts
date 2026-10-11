@@ -21,7 +21,7 @@
  *
  * `function_declaration` / `protocol_function_declaration` route through
  * `methodKindFromClassify` (the kernel wrapper over `classifyMethod` in
- * `infra/symbolid`), which already carries Swift's branches: a `static` or
+ * `primitives/ids/symbolid`), which already carries Swift's branches: a `static` or
  * `class` modifier is class-level (`.`), otherwise instance (`#`), and
  * `init_declaration` is always instance-bound — it initializes an instance,
  * like the Java constructor (`.claude/rules/symbolid-convention.md`).
