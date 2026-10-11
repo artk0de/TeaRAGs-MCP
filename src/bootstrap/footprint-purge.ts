@@ -22,16 +22,16 @@ import {
 } from "../core/adapters/duckdb/daemon/lifecycle.js";
 import { StatsCache } from "../core/adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../core/adapters/qdrant/client.js";
-import type { CodegraphFootprintStore } from "../core/contracts/types/footprint.js";
-import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
-import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
-import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
 import {
   CollectionFootprintFactory,
   CollectionFootprintPurger,
+  CollectionIndexingLock,
+  QuarantineStore,
+  ShardedSnapshotManager,
   type CodegraphDaemonLiveness,
-} from "../core/domains/maintenance/footprint/index.js";
-import type { CollectionRegistry } from "../core/domains/maintenance/registry/index.js";
+  type CollectionRegistry,
+} from "../core/api/index.js";
+import type { CodegraphFootprintStore } from "../core/contracts/types/footprint.js";
 
 export interface FootprintPurgeDeps {
   qdrant: QdrantManager;

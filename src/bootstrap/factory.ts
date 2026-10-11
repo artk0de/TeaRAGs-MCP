@@ -31,16 +31,27 @@ import {
   buildFileChunkPoints,
   buildPipelineConfig,
   ChunkerPool,
+  CODEGRAPH_LANGUAGE_BY_EXTENSION,
+  CollectionFootprintFactory,
+  CollectionIndexingLock,
+  CollectionRegistry,
   collectSymbols,
   CommitDriftMonitor,
   composeAppOps,
   createApp,
   createComposition,
+  createDatabaseMigrationApplier,
   createNamingReviewExtractor,
   createPathCollectionResolver,
+  createWorkingTreeBasePointStore,
+  createWorkingTreeChunkLayer,
+  createWorkingTreeChunkStore,
+  createWorkingTreeDeltaReader,
   createWorkingTreeDeltaSignalSource,
+  createWorkingTreeFileWriter,
   createWorkingTreeGitSignalSource,
   createWorkingTreeGitSignalStore,
+  DATABASE_MIGRATIONS_MODULE_URL,
   defaultEnrichmentWorkerMemoryLimitMb,
   DefaultSymbolIdComposer,
   detectLanguage,
@@ -55,6 +66,7 @@ import {
   IngestFacade,
   initDebugLogger,
   InMemoryGlobalSymbolTable,
+  InMemoryTemporalSymbolCommitBuffer,
   LanguageVersionDriftMonitor,
   NamingLexiconOps,
   nativeLanguageCapabilities,
@@ -62,25 +74,41 @@ import {
   OntologyReportOps,
   pipelineLog,
   ProjectRegistryOps,
+  QuarantineStore,
   readPayloadFileCommitCounts,
   readPayloadFileMaintenanceSignals,
   readPayloadImportSpecifiers,
   readPayloadIndexedFileImports,
   ReviewChangesOps,
   ReviewFacade,
+  scheduleWorkingTreeBasePointSweep,
+  scheduleWorkingTreeChunkSweep,
   scheduleWorkingTreeGitSignalSweep,
   scheduleWorkingTreeGraphSweep,
   SchemaBuilder,
   SchemaDriftMonitor,
+  ShardedSnapshotManager,
+  StaticPayloadBuilder,
   StatsContractDriftMonitor,
   TracePathOps,
   TrajectoryVersionDriftMonitor,
   WorkerPoolEnrichmentExecutor,
   WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
+  WorkingTreeDeltaWarmer,
+  WorkingTreeDenseVectorSource,
   WorkingTreeGraphCache,
+  WorkingTreeGraphProcessBuilder,
+  WorkingTreeOverlay,
+  WorkingTreeTouchedBasePoints,
+  WorkingTreeWatcher,
   WorktreeOps,
+  WorktreeProvisioner,
+  type AmbientEnvRole,
   type App,
+  type CodegraphDeps,
+  type CodegraphWorkerConfig,
   type GraphFacadeDeps,
+  type TemporalCochangeConfig,
   type WorkingTreeGitSignalConfig,
   type WorkingTreeGraphCodegraphRuntime,
 } from "../core/api/index.js";
@@ -91,39 +119,6 @@ import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-exe
 import type { LanguageFactoryDescriptor } from "../core/contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
-import {
-  createWorkingTreeBasePointStore,
-  createWorkingTreeChunkLayer,
-  createWorkingTreeChunkStore,
-  createWorkingTreeDeltaReader,
-  createWorkingTreeFileWriter,
-  scheduleWorkingTreeBasePointSweep,
-  scheduleWorkingTreeChunkSweep,
-  WorkingTreeDeltaWarmer,
-  WorkingTreeDenseVectorSource,
-  WorkingTreeOverlay,
-  WorkingTreeTouchedBasePoints,
-  WorkingTreeWatcher,
-} from "../core/domains/explore/index.js";
-import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
-import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
-import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
-import { CollectionFootprintFactory } from "../core/domains/maintenance/footprint/index.js";
-import {
-  createDatabaseMigrationApplier,
-  DATABASE_MIGRATIONS_MODULE_URL,
-} from "../core/domains/maintenance/migration/database/index.js";
-import { CollectionRegistry, type AmbientEnvRole } from "../core/domains/maintenance/registry/index.js";
-import { WorktreeProvisioner } from "../core/domains/maintenance/worktree/index.js";
-import {
-  CODEGRAPH_LANGUAGE_BY_EXTENSION,
-  WorkingTreeGraphProcessBuilder,
-  type CodegraphDeps,
-  type CodegraphWorkerConfig,
-  type TemporalCochangeConfig,
-} from "../core/domains/trajectory/codegraph/index.js";
-import { InMemoryTemporalSymbolCommitBuffer } from "../core/domains/trajectory/codegraph/temporal/index.js";
-import { StaticPayloadBuilder } from "../core/domains/trajectory/static/index.js";
 import { setDebug } from "../core/primitives/diagnostics/index.js";
 import { installFileClassificationSettings } from "../core/primitives/paths/index.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";

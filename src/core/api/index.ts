@@ -160,6 +160,49 @@ export {
   WorkerPoolEnrichmentExecutor,
 } from "../domains/ingest/pipeline/index.js";
 
+// ingest/infra + ingest/sync — the indexing lock, quarantine and snapshot stores
+export { CollectionIndexingLock } from "../domains/ingest/infra/index.js";
+export { QuarantineStore, ShardedSnapshotManager } from "../domains/ingest/sync/index.js";
+
+// explore — the working-tree overlay and its stores, readers and sweeps
+export {
+  createWorkingTreeBasePointStore,
+  createWorkingTreeChunkLayer,
+  createWorkingTreeChunkStore,
+  createWorkingTreeDeltaReader,
+  createWorkingTreeFileWriter,
+  scheduleWorkingTreeBasePointSweep,
+  scheduleWorkingTreeChunkSweep,
+  WorkingTreeDeltaWarmer,
+  WorkingTreeDenseVectorSource,
+  WorkingTreeOverlay,
+  WorkingTreeTouchedBasePoints,
+  WorkingTreeWatcher,
+} from "../domains/explore/index.js";
+
+// trajectory — codegraph worker wiring, temporal commit buffer, static payload
+export {
+  CODEGRAPH_LANGUAGE_BY_EXTENSION,
+  WorkingTreeGraphProcessBuilder,
+  type CodegraphDeps,
+  type CodegraphWorkerConfig,
+  type TemporalCochangeConfig,
+} from "../domains/trajectory/codegraph/index.js";
+export { InMemoryTemporalSymbolCommitBuffer } from "../domains/trajectory/codegraph/temporal/index.js";
+export { StaticPayloadBuilder } from "../domains/trajectory/static/index.js";
+
+// maintenance — footprint, database migrations, worktree provisioning
+export {
+  CollectionFootprintFactory,
+  CollectionFootprintPurger,
+  type CodegraphDaemonLiveness,
+} from "../domains/maintenance/footprint/index.js";
+export {
+  createDatabaseMigrationApplier,
+  DATABASE_MIGRATIONS_MODULE_URL,
+} from "../domains/maintenance/migration/database/index.js";
+export { WorktreeProvisioner } from "../domains/maintenance/worktree/index.js";
+
 // Project registry types re-exported from infra (public surface)
-export type { CollectionEntry, ProjectInfo } from "../domains/maintenance/registry/index.js";
+export type { AmbientEnvRole, CollectionEntry, ProjectInfo } from "../domains/maintenance/registry/index.js";
 export { CollectionRegistry } from "../domains/maintenance/registry/index.js";
