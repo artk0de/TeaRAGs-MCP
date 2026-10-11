@@ -19,6 +19,7 @@ import { validatePath } from "../../../src/core/adapters/filesystem/path-canonic
 import { IngestFacade } from "../../../src/core/api/internal/facades/ingest-facade.js";
 import { INDEXING_METADATA_ID } from "../../../src/core/contracts/constants.js";
 import { IndexMetricsQuery } from "../../../src/core/domains/explore/queries/index-metrics.js";
+import { NotIndexedError } from "../../../src/core/domains/ingest/errors.js";
 import { EnrichmentCoordinator } from "../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { mapMarkerToHealth } from "../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import type { EnrichmentProvider } from "../../../src/core/domains/ingest/pipeline/enrichment/types.js";
@@ -74,6 +75,8 @@ function gitProvider(): EnrichmentProvider {
     buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
   };
 }
+
+const createNotIndexedError = (path: string): Error => new NotIndexedError(path);
 
 describe("chunk counts — status, metrics and the recompute agree on one collection", () => {
   let qdrant: MockQdrantManager;
@@ -148,7 +151,13 @@ describe("chunk counts — status, metrics and the recompute agree on one collec
         computedAt: Date.now(),
       }),
     };
-    const query = new IndexMetricsQuery(qdrant as never, statsCache as never, [], mapMarkerToHealth);
+    const query = new IndexMetricsQuery(
+      qdrant as never,
+      statsCache as never,
+      [],
+      mapMarkerToHealth,
+      createNotIndexedError,
+    );
     return (await query.run(collectionName, codebaseDir)).totalChunks;
   }
 

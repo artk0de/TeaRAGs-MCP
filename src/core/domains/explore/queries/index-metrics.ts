@@ -14,7 +14,6 @@ import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { EnrichmentHealthMapper, EnrichmentMarkerMap } from "../../../contracts/types/enrichment.js";
 import type { IndexMetrics, SignalMetrics } from "../../../contracts/types/index-metrics.js";
 import type { PayloadSignalDescriptor, SignalFloors, SignalStats } from "../../../contracts/types/trajectory.js";
-import { NotIndexedError } from "../../ingest/errors.js";
 import { CollectionNotFoundError } from "../errors.js";
 import { resolvableLabelBands } from "../label-resolver.js";
 import { applySignalFloors, floorsForSignal } from "../signal-floors.js";
@@ -30,6 +29,12 @@ export class IndexMetricsQuery {
      * import the ingest implementation.
      */
     private readonly mapEnrichmentHealth: EnrichmentHealthMapper,
+    /**
+     * Builds the error thrown when the collection has no cached stats. Injected
+     * by the composition root (ingest's `NotIndexedError`) so explore does not
+     * import the ingest error class.
+     */
+    private readonly createNotIndexedError: (sourcePath: string) => Error,
     /**
      * Per-language structural-signal floors from the composition root. Absent
      * → labelMaps stay purely percentile-derived.
@@ -56,7 +61,7 @@ export class IndexMetricsQuery {
 
     const stats = this.statsCache.load(collectionName);
     if (!stats) {
-      throw new NotIndexedError(sourcePath);
+      throw this.createNotIndexedError(sourcePath);
     }
 
     // Chunks only — `pointsCount` also counts the indexing marker and the schema
