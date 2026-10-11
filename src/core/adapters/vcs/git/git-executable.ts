@@ -22,9 +22,9 @@
  * The decision is memoized per module instance: once per process, and once per
  * worker thread (each thread loads its own copy of this module).
  *
- * Lives in `infra` rather than the git-cli adapter because
- * `infra/repo-git-state.ts` spawns git too, and `infra` may not import
- * `adapters` — the foundation is the only layer every spawning site can reach.
+ * Lives beside the git-cli adapter rather than inside it because
+ * `adapters/vcs/git/repo-git-state.ts` and `adapters/filesystem/dependency-manifests.ts`
+ * spawn git too; every spawning site reaches it from `adapters/vcs/git/`.
  */
 
 import { spawnSync } from "node:child_process";

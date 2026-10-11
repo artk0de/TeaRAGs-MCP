@@ -4,12 +4,12 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { readManifestFiles } from "../../../../../../src/core/adapters/filesystem/dependency-manifests.js";
 import { parseGoModulePath } from "../../../../../../src/core/domains/language/go/manifest.js";
 import {
   GoModuleMap,
   GoModuleMapCache,
 } from "../../../../../../src/core/domains/language/go/resolver/strategies/go-module-map.js";
-import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 /**
  * bd tea-rags-mcp-e6xx — Go imports name MODULE paths

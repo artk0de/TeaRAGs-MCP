@@ -37,6 +37,7 @@
 import { writeFileSync } from "node:fs";
 import { extname, resolve as resolvePath, sep } from "node:path";
 
+import { readDeclaredDependencies } from "../../src/core/adapters/filesystem/dependency-manifests.js";
 import {
   chunkCallerScope,
   type CallContext,
@@ -49,7 +50,6 @@ import { RUBY_DEPENDENCY_MANIFEST } from "../../src/core/domains/language/ruby/g
 import { RubyCallResolver } from "../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { readDeclaredDependencies } from "../../src/core/infra/dependency-manifests.js";
 import { sameTarget } from "../codegraph-chain-tally.js";
 import { resolveCheckoutCommit } from "../lib/checkout-commit.js";
 import {

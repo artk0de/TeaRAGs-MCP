@@ -4,7 +4,6 @@
  * git trajectory and the co-change history consume. Repo queries (HEAD, merge
  * base, commit time, ancestry) stay in `client.ts`.
  */
-import { resolveGitExecutable } from "../../../../infra/git-executable.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type {
   BlameLine,
@@ -15,6 +14,7 @@ import type {
   CommitWithChangedFiles,
   FileChurnData,
 } from "../../types.js";
+import { resolveGitExecutable } from "../git-executable.js";
 import { BULK_LOG_STALL_FLOOR_MS, execFileAsync, execFileForPathspec, TREE_LISTING_STALL_MS } from "./exec.js";
 import {
   COMMIT_PATH_CHANGES_HEADER,

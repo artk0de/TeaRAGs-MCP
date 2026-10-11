@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { readDeclaredDependencies } from "../../../../../../src/core/adapters/filesystem/dependency-manifests.js";
 import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { propagateReceiverType } from "../../../../../../src/core/domains/language/kernel/index.js";
 import { PYTHON_DEPENDENCY_MANIFEST } from "../../../../../../src/core/domains/language/python/manifest.js";
@@ -18,7 +19,6 @@ import { PythonImportFileMapper } from "../../../../../../src/core/domains/langu
 import { createPythonReceiverTypePorts } from "../../../../../../src/core/domains/language/python/resolver/strategies/python-receiver-type-ports.js";
 import { pythonVocabularyFor } from "../../../../../../src/core/domains/language/python/vocabulary/frameworks/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { readDeclaredDependencies } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 function table(): InMemoryGlobalSymbolTable {
   const built = new InMemoryGlobalSymbolTable();

@@ -1,6 +1,6 @@
 /**
  * Every git child tea-rags spawns runs under the git child env contract (bd
- * tea-rags-mcp-s5kpv): `buildGitChildProcessEnv` from `infra/git-executable.ts`
+ * tea-rags-mcp-s5kpv): `buildGitChildProcessEnv` from `adapters/vcs/git/git-executable.ts`
  * turns git's OPTIONAL locks off, so no read in the user's tree takes
  * `index.lock`. A spawn site that forgets it reintroduces the stale-lock bug
  * silently — nothing else fails — so this guard reads the source.
@@ -19,7 +19,7 @@ import { join, relative } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-const ROOT = join(import.meta.dirname, "..", "..", "..");
+const ROOT = join(import.meta.dirname, "..", "..", "..", "..", "..");
 const SRC = join(ROOT, "src");
 
 const GIT_EXECUTABLE_RESOLVER = "resolveGitExecutable";

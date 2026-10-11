@@ -4,14 +4,14 @@ import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createGitWorkingTreeFixture } from "../__helpers__/git-working-tree-fixture.js";
+import { createGitWorkingTreeFixture } from "../../../__helpers__/git-working-tree-fixture.js";
 import {
   detectDefaultBranch,
   findGitToplevel,
   readRepoGitState,
   readWorkingTreeDirty,
   readWorkingTreeDirtyPaths,
-} from "../../../src/core/infra/repo-git-state.js";
+} from "../../../../../src/core/adapters/vcs/git/repo-git-state.js";
 
 const created: string[] = [];
 

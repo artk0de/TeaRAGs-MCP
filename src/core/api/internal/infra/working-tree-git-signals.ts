@@ -54,7 +54,12 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
 import {
+  findGitToplevel,
+  gitPathFromRoot,
+  gitPathPrefix,
   readPathCommitsSince,
+  readRepoGitState,
+  rebaseGitPathsOntoRoot,
   VcsAdapterFactory,
   type GitAdapterKind,
   type PathCommitsSince,
@@ -74,13 +79,6 @@ import {
   type OnDemandGitSignalTarget,
   type SquashOptions,
 } from "../../../domains/trajectory/git/index.js";
-import {
-  findGitToplevel,
-  gitPathFromRoot,
-  gitPathPrefix,
-  readRepoGitState,
-  rebaseGitPathsOntoRoot,
-} from "../../../infra/repo-git-state.js";
 import type {
   WorkingTreeGitSignalBlock,
   WorkingTreeGitSignalRecord,

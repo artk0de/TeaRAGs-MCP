@@ -28,6 +28,7 @@
  */
 
 import { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import { readManifestFiles } from "../../../adapters/filesystem/dependency-manifests.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
@@ -38,7 +39,6 @@ import type {
 } from "../../../contracts/types/language.js";
 import type { DatabaseMigrationApplier } from "../../../contracts/types/migration.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
-import { readManifestFiles } from "../../../infra/dependency-manifests.js";
 import {
   CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
   CODEGRAPH_SYMBOLS_PRESETS,

@@ -72,6 +72,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { extname, resolve as resolvePath, sep } from "node:path";
 
+import {
+  collectDependencyManifestSources,
+  readManifestFiles,
+} from "../src/core/adapters/filesystem/dependency-manifests.js";
 import { deferred } from "../src/core/contracts/resolution.js";
 import { formatResolveRateCell, resolveRateMiss } from "../src/core/contracts/resolve-rate.js";
 import {
@@ -120,7 +124,6 @@ import {
   type ReceiverKindTally,
 } from "../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { collectDependencyManifestSources, readManifestFiles } from "../src/core/infra/dependency-manifests.js";
 import { NO_FAN, scoreFan, type PyFanOutcomeKind } from "./lib/py-oracle-core.js";
 import { formatTallyEdgeDump, type TallyEdgeDumpRow } from "./lib/tally-edge-dump.js";
 import {

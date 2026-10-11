@@ -38,8 +38,8 @@ import type {
   LanguageFactoryDescriptor,
   ManifestFile,
   TestDependencyManifestSource,
-} from "../contracts/types/language.js";
-import { buildGitChildProcessEnv, resolveGitExecutable } from "./git-executable.js";
+} from "../../contracts/types/language.js";
+import { buildGitChildProcessEnv, resolveGitExecutable } from "../vcs/git/git-executable.js";
 
 /**
  * Directories the walk never descends into. Vendored dependency trees

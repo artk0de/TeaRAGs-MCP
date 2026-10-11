@@ -31,11 +31,11 @@ import {
   reapGitChildProcesses,
   trackGitChildProcess,
 } from "../../../../../../src/core/adapters/vcs/git/git-cli/git-child-process-registry.js";
-import type * as GitExecutableModule from "../../../../../../src/core/infra/git-executable.js";
+import type * as GitExecutableModule from "../../../../../../src/core/adapters/vcs/git/git-executable.js";
 
 // The fake git is reached through PATH, so pin the PATH executable — otherwise
 // the client resolves Apple's /usr/bin/git and bypasses the fixture entirely.
-vi.mock("../../../../../../src/core/infra/git-executable.js", async (importOriginal) => ({
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-executable.js", async (importOriginal) => ({
   ...(await importOriginal<typeof GitExecutableModule>()),
   resolveGitExecutable: () => "git",
 }));

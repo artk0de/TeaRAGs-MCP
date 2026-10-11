@@ -13,13 +13,13 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { DependencyManifestSource } from "../../../src/core/contracts/types/language.js";
-import { PYTHON_DEPENDENCY_MANIFEST } from "../../../src/core/domains/language/python/manifest.js";
-import { RUBY_DEPENDENCY_MANIFEST } from "../../../src/core/domains/language/ruby/gemfile.js";
 import {
   readDeclaredDependencies,
   readDeclaredDependenciesByLanguage,
-} from "../../../src/core/infra/dependency-manifests.js";
+} from "../../../../src/core/adapters/filesystem/dependency-manifests.js";
+import type { DependencyManifestSource } from "../../../../src/core/contracts/types/language.js";
+import { PYTHON_DEPENDENCY_MANIFEST } from "../../../../src/core/domains/language/python/manifest.js";
+import { RUBY_DEPENDENCY_MANIFEST } from "../../../../src/core/domains/language/ruby/gemfile.js";
 
 const SOURCES: readonly DependencyManifestSource[] = [PYTHON_DEPENDENCY_MANIFEST];
 

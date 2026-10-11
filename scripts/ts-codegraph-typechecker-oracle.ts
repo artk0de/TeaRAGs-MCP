@@ -169,6 +169,10 @@ import ignore, { type Ignore } from "ignore";
 import ts from "typescript";
 
 import {
+  collectDependencyManifestSources,
+  readDeclaredDependenciesByLanguage,
+} from "../src/core/adapters/filesystem/dependency-manifests.js";
+import {
   chunkCallerScope,
   type CallContext,
   type CallRef,
@@ -197,10 +201,6 @@ import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/s
 import { symbolDefinitionsOf } from "../src/core/domains/trajectory/codegraph/symbols/symbol-definitions.js";
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import {
-  collectDependencyManifestSources,
-  readDeclaredDependenciesByLanguage,
-} from "../src/core/infra/dependency-manifests.js";
 import type { PathFilter } from "../src/core/primitives/paths/file-classification/index.js";
 import {
   DECLARATION_FILE_SUFFIXES,

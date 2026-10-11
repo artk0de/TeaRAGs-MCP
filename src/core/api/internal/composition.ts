@@ -8,6 +8,7 @@
 
 import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
+import { readManifestFiles } from "../../adapters/filesystem/dependency-manifests.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
 import {
@@ -75,7 +76,6 @@ import {
 } from "../../domains/trajectory/index.js";
 import { STATIC_FILTER_PRESETS, StaticTrajectory } from "../../domains/trajectory/static/index.js";
 import { staticStatsAccumulators } from "../../domains/trajectory/static/stats/index.js";
-import { readManifestFiles } from "../../infra/dependency-manifests.js";
 import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../public/dto/architecture.js";
 import type { FindCoChangedRequest, FindCoChangedResult } from "../public/dto/cochange.js";
 import type { GetOntologyReportRequest, GetOntologyReportResponse } from "../public/dto/ontology.js";

@@ -13,12 +13,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createCatFileBatch } from "../../../../../../src/core/adapters/vcs/git/git-cli/cat-file.js";
 import { blameFile } from "../../../../../../src/core/adapters/vcs/git/git-cli/history.js";
-import type * as GitExecutableModule from "../../../../../../src/core/infra/git-executable.js";
+import type * as GitExecutableModule from "../../../../../../src/core/adapters/vcs/git/git-executable.js";
 
 const RESOLVED_GIT = "/resolved/by/test/git";
 
 vi.mock("node:child_process");
-vi.mock("../../../../../../src/core/infra/git-executable.js", async (importOriginal) => ({
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-executable.js", async (importOriginal) => ({
   ...(await importOriginal<typeof GitExecutableModule>()),
   resolveGitExecutable: () => RESOLVED_GIT,
 }));

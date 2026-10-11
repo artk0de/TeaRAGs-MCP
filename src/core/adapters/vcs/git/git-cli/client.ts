@@ -14,8 +14,8 @@
  */
 import { execFileSync } from "node:child_process";
 
-import { buildGitChildProcessEnv, resolveGitExecutable } from "../../../../infra/git-executable.js";
-import { readRepoGitState } from "../../../../infra/repo-git-state.js";
+import { buildGitChildProcessEnv, resolveGitExecutable } from "../git-executable.js";
+import { readRepoGitState } from "../repo-git-state.js";
 import { execFileAsync, TREE_LISTING_STALL_MS } from "./exec.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
 

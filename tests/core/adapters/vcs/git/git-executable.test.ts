@@ -10,7 +10,7 @@ import {
   PLATFORM_GIT_EXECUTABLE,
   probeGitExecutable,
   resolveGitExecutable,
-} from "../../../src/core/infra/git-executable.js";
+} from "../../../../../src/core/adapters/vcs/git/git-executable.js";
 
 type SpawnSyncResult = ReturnType<typeof spawnSync>;
 

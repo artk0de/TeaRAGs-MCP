@@ -7,13 +7,13 @@ import {
   prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
+import type { RepoGitState } from "../../../../../src/core/adapters/vcs/git/repo-git-state.js";
 import type { CollectionEntry, RegistryAutoUpdateConfig } from "../../../../../src/core/contracts/types/registry.js";
 import {
   AUTO_UPDATE_FAILURE_BACKOFF_MS,
   AUTO_UPDATE_RUN_TTL_MS,
   IndexFreshnessCheck,
 } from "../../../../../src/core/domains/maintenance/freshness/index.js";
-import type { RepoGitState } from "../../../../../src/core/infra/repo-git-state.js";
 
 const NOW = 1_000_000_000;
 

@@ -18,6 +18,7 @@ import {
   collectSourceFiles,
   extractFile,
 } from "../../scripts/ts-codegraph-typechecker-oracle.js";
+import { collectDependencyManifestSources } from "../../src/core/adapters/filesystem/dependency-manifests.js";
 import type { FileExtraction } from "../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { collectSchemaColumnSources } from "../../src/core/domains/trajectory/codegraph/exclusion.js";
@@ -32,7 +33,6 @@ import {
   type ReceiverKindTally,
 } from "../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { collectDependencyManifestSources } from "../../src/core/infra/dependency-manifests.js";
 
 /**
  * The scored set is inverted out of the engine's own extension→language map

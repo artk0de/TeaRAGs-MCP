@@ -20,19 +20,19 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { DependencyManifestSource } from "../../../src/core/contracts/types/language.js";
-import { PYTHON_DEPENDENCY_MANIFEST } from "../../../src/core/domains/language/python/manifest.js";
-import {
-  RUBY_DEPENDENCY_MANIFEST,
-  RUBY_TEST_DEPENDENCY_MANIFEST,
-} from "../../../src/core/domains/language/ruby/gemfile.js";
-import { PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST } from "../../../src/core/domains/language/typescript/package-manifest.js";
 import {
   readDeclaredDependencies,
   readDeclaredDependenciesByLanguage,
   readDeclaredTestDependencies,
   readManifestFiles,
-} from "../../../src/core/infra/dependency-manifests.js";
+} from "../../../../src/core/adapters/filesystem/dependency-manifests.js";
+import type { DependencyManifestSource } from "../../../../src/core/contracts/types/language.js";
+import { PYTHON_DEPENDENCY_MANIFEST } from "../../../../src/core/domains/language/python/manifest.js";
+import {
+  RUBY_DEPENDENCY_MANIFEST,
+  RUBY_TEST_DEPENDENCY_MANIFEST,
+} from "../../../../src/core/domains/language/ruby/gemfile.js";
+import { PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST } from "../../../../src/core/domains/language/typescript/package-manifest.js";
 
 const SOURCES: readonly DependencyManifestSource[] = [PYTHON_DEPENDENCY_MANIFEST];
 

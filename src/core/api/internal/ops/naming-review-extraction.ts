@@ -16,6 +16,10 @@
  * imports neither.
  */
 
+import {
+  collectDependencyManifestSources,
+  readDeclaredDependenciesByLanguage,
+} from "../../../adapters/filesystem/dependency-manifests.js";
 import type { IdentifierRow, TypeDeclarationFact } from "../../../contracts/types/codegraph.js";
 import type { LanguageFactoryDescriptor } from "../../../contracts/types/language.js";
 import { collectSymbols, DefaultSymbolIdComposer } from "../../../domains/language/index.js";
@@ -27,10 +31,6 @@ import {
   type IdentifierFinderVocabulary,
   type InMemoryExtractionContext,
 } from "../../../domains/trajectory/codegraph/index.js";
-import {
-  collectDependencyManifestSources,
-  readDeclaredDependenciesByLanguage,
-} from "../../../infra/dependency-manifests.js";
 
 /** One file's declarations, as the review judges them. */
 export interface NamingReviewFileDeclarations {

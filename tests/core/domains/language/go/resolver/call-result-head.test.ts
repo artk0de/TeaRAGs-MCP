@@ -6,12 +6,12 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { readManifestFiles } from "../../../../../../src/core/adapters/filesystem/dependency-manifests.js";
 import type { CallContext, CallRef, SymbolDefinition } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 /**
  * A receiver that is the RESULT of a bare call — gin's `ginS/gins.go` wraps

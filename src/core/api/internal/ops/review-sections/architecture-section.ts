@@ -24,7 +24,14 @@
  * a VALID review: built, no findings.
  */
 
-import { createCatFileBatch, isAncestor } from "../../../../adapters/vcs/index.js";
+import {
+  createCatFileBatch,
+  findGitToplevel,
+  gitPathFromRoot,
+  gitPathPrefix,
+  isAncestor,
+  readEnclosingRepoGitState,
+} from "../../../../adapters/vcs/index.js";
 import type {
   FileDependencyEdge,
   FileDependencyGraphFile,
@@ -49,12 +56,6 @@ import {
   oneWalkedViolationImporters,
   type SilentCouplingReport,
 } from "../../../../domains/trajectory/codegraph/temporal/index.js";
-import {
-  findGitToplevel,
-  gitPathFromRoot,
-  gitPathPrefix,
-  readEnclosingRepoGitState,
-} from "../../../../infra/repo-git-state.js";
 import type { ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js";
 import {
   ArchitectureFactsCatalog,

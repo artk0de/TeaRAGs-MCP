@@ -76,6 +76,7 @@
 import { writeFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 
+import { collectDependencyManifestSources } from "../../src/core/adapters/filesystem/dependency-manifests.js";
 import type { CodegraphPass1FileAggregates } from "../../src/core/contracts/types/codegraph-pass1.js";
 import type {
   FileExtraction,
@@ -101,7 +102,6 @@ import { CallEdgeResolutionRunner } from "../../src/core/domains/trajectory/code
 import { CodegraphRunState, languageKindTally } from "../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { extractSelfDispatchMethods } from "../../src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { collectDependencyManifestSources } from "../../src/core/infra/dependency-manifests.js";
 import {
   buildCorpusExclusionFilter,
   buildSymbolDefs,

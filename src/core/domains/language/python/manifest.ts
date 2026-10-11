@@ -21,7 +21,7 @@
  * transitive world, where a framework pulled in by something else would activate
  * grammar the project's own code never uses.
  *
- * Pure. The WALK that finds these files is `infra/dependency-manifests.ts` —
+ * Pure. The WALK that finds these files is `adapters/filesystem/dependency-manifests.ts` —
  * `domains/language` touches no filesystem.
  */
 
