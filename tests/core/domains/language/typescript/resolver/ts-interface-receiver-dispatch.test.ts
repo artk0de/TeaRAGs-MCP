@@ -492,7 +492,140 @@ describe("TSCallResolver.resolveDispatch — structural implementer of a checker
 });
 
 /**
- * bd tea-rags-mcp-39xca.19 — an object-literal factory's members are
+ * bd tea-rags-mcp-iw702 — a structural descendant is admitted only when the
+ * checker says a value of it is ASSIGNABLE to the receiver's type. Name and
+ * arity alone made `TreeContentHashes extends Map<string, string>` an
+ * implementer of every single-member `{ get(collectionName) }` registry port,
+ * though its `get` returns `string | undefined`, not the port's entry type. A
+ * class that does fit the port without `implements` keeps its edge, and so
+ * does a declared implementer — the gate reads `structural` rows only.
+ */
+describe("TSCallResolver.resolveDispatch — structural implementer gated by checker assignability (bd iw702)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-structural-assignable-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  const arity = (minRequired: number, maxPositional: number) => ({ minRequired, maxPositional, hasSplat: false });
+
+  function writeRegistryFixture(): void {
+    writeSource(repoRoot, "src/lookup.ts", [
+      `export interface Entry {`,
+      `  alias: string;`,
+      `}`,
+      ``,
+      `export interface IndexLookup {`,
+      `  get: (collectionName: string) => Entry | null | undefined;`,
+      `}`,
+    ]);
+    writeSource(repoRoot, "src/tree-hashes.ts", [
+      `export class TreeHashes extends Map<string, string> {`,
+      `  override get(relPath: string): string | undefined {`,
+      `    return super.get(relPath);`,
+      `  }`,
+      `}`,
+    ]);
+    writeSource(repoRoot, "src/registry.ts", [
+      `import type { Entry } from "./lookup.js";`,
+      ``,
+      `export class Registry {`,
+      `  get(collectionName: string): Entry | null {`,
+      `    return collectionName.length > 0 ? { alias: collectionName } : null;`,
+      `  }`,
+      `}`,
+    ]);
+    writeSource(repoRoot, "src/overlay.ts", [
+      `import type { IndexLookup } from "./lookup.js";`,
+      `import "./registry.js";`,
+      `import "./tree-hashes.js";`,
+      ``,
+      `export function measure(deps: { registry: IndexLookup }, lookup: IndexLookup): void {`,
+      `  const { registry } = deps;`,
+      `  registry.get("a");`,
+      `  lookup.get("b");`,
+      `}`,
+    ]);
+  }
+
+  /** Destructured: the walker binds no type, only the checker names `IndexLookup`. */
+  const CHECKER_TYPED_CALL: CallRef = {
+    callText: `registry.get("a")`,
+    receiver: "registry",
+    member: "get",
+    startLine: 7,
+  };
+  /** A typed parameter: the walker binds `IndexLookup` and the plain cone runs. */
+  const WALKER_TYPED_CALL: CallRef = { callText: `lookup.get("b")`, receiver: "lookup", member: "get", startLine: 8 };
+
+  function registryCtx(): CallContext {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("src/lookup.ts", []);
+    table.upsertFile("src/tree-hashes.ts", [
+      sym("TreeHashes", "TreeHashes", "src/tree-hashes.ts", []),
+      { ...sym("TreeHashes#get", "get", "src/tree-hashes.ts", ["TreeHashes"]), arity: arity(1, 1) },
+    ]);
+    table.upsertFile("src/registry.ts", [
+      sym("Registry", "Registry", "src/registry.ts", []),
+      { ...sym("Registry#get", "get", "src/registry.ts", ["Registry"]), arity: arity(1, 1) },
+    ]);
+    const structuralRows = new TypeScriptLanguage().structuralConformance({
+      contracts: [{ name: "IndexLookup", members: [{ name: "get", params: 1 }] }],
+      memberDefinitions: table.lookupByShortName("get"),
+      nominalRows: [],
+    });
+    expect(structuralRows.map((row) => `${row.sourceFqName} ${row.kind} ${row.ancestorFqName}`)).toEqual([
+      "Registry structural IndexLookup",
+      "TreeHashes structural IndexLookup",
+    ]);
+    return {
+      callerFile: "src/overlay.ts",
+      callerScope: ["measure"],
+      imports: [{ importText: "./lookup.js", startLine: 1, importedNames: ["IndexLookup"] }],
+      symbolTable: table,
+      localBindings: { lookup: [{ line: 5, type: "IndexLookup" }] },
+      hierarchy: new MapHierarchyView(buildHierarchySnapshot(structuralRows)),
+    };
+  }
+
+  const resolver = (): TSCallResolver => new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
+
+  it("drops the Map subclass whose get is not assignable and keeps the assignable structural class (checker-typed receiver)", () => {
+    writeRegistryFixture();
+    expect(edgesOf(resolver().resolveDispatch(CHECKER_TYPED_CALL, registryCtx()))).toEqual([
+      edgeTo("src/registry.ts", "Registry#get", 1),
+    ]);
+  });
+
+  it("applies the same gate to a walker-typed receiver on the plain cone", () => {
+    writeRegistryFixture();
+    expect(edgesOf(resolver().resolveDispatch(WALKER_TYPED_CALL, registryCtx()))).toEqual([
+      edgeTo("src/registry.ts", "Registry#get", 1),
+    ]);
+  });
+
+  it("keeps the name-and-arity answer when the type checker is disabled (CODEGRAPH_TS_TYPECHECKER=0)", () => {
+    writeRegistryFixture();
+    const previous = process.env.CODEGRAPH_TS_TYPECHECKER;
+    process.env.CODEGRAPH_TS_TYPECHECKER = "0";
+    try {
+      expect(edgesOf(resolver().resolveDispatch(WALKER_TYPED_CALL, registryCtx()))).toEqual([
+        edgeTo("src/registry.ts", "Registry#get", 0.5),
+        edgeTo("src/tree-hashes.ts", "TreeHashes#get", 0.5),
+      ]);
+    } finally {
+      if (previous === undefined) delete process.env.CODEGRAPH_TS_TYPECHECKER;
+      else process.env.CODEGRAPH_TS_TYPECHECKER = previous;
+    }
+  });
+});
+
+/**
+ * bd tea-rags-mcp-39xca.19 —an object-literal factory's members are
  * instance-bound (`createDeletionOutcome#isFullSuccess`), and only instance-bound
  * members make an owner conform. The table here is what the WALKER composes for
  * the real source, so the test also fails when the walker drifts back to `.`.

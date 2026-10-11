@@ -627,3 +627,76 @@ describe("ConeDispatchResolver — exact-construction receiver (bd 0qaht.66)", (
     expect(edges.map((e) => [e.targetSymbolId, e.edgeKind])).toEqual([["A#m", "cone"]]);
   });
 });
+
+describe("ConeDispatchResolver — structural descendant gate (bd iw702)", () => {
+  const target = (owner: string): SymbolResolutionTarget => ({
+    targetRelPath: `src/${owner.toLowerCase()}.ts`,
+    targetSymbolId: `${owner}#get`,
+  });
+  const descendants: readonly [string, InheritanceEdge["kind"]][] = [
+    ["Declared", "implements"],
+    ["Fits", "structural"],
+    ["Misfit", "structural"],
+  ];
+  /** `Port` has two structural descendants and one declared implementer. */
+  const portCtx = (): CallContext =>
+    ctx({
+      localBindings: { port: [{ line: 1, type: "Port" }] },
+      hierarchy: {
+        getAncestors: () => [],
+        getDescendants: (fqName: string): readonly InheritanceEdge[] =>
+          fqName === "Port"
+            ? descendants.map(([sourceFqName, kind]) => ({
+                sourceFqName,
+                ancestorFqName: "Port",
+                ancestorSymbolId: null,
+                kind,
+                depth: 1,
+              }))
+            : [],
+      },
+    });
+  const getCall: CallRef = { callText: "port.get", receiver: "port", member: "get", startLine: 1 };
+  const baseLocator = locatorWith(Object.fromEntries(descendants.map(([owner]) => [`${owner}#get`, target(owner)])));
+
+  it("drops a structural descendant the locator vetoes and never asks about a declared one", () => {
+    const asked: string[] = [];
+    const locator: ConeTypeLocator = {
+      ...baseLocator,
+      admitsStructuralDescendant: (descendant, baseType) => {
+        asked.push(`${descendant}<:${baseType}`);
+        return descendant !== "Misfit";
+      },
+    };
+    const edges = edgesOf(new ConeDispatchResolver(locator, 8).resolveDispatch(getCall, portCtx()));
+    expect(edges.map((e) => [e.targetSymbolId, e.confidence])).toEqual([
+      ["Declared#get", 0.5],
+      ["Fits#get", 0.5],
+    ]);
+    expect(asked).toEqual(["Fits<:Port", "Misfit<:Port"]);
+  });
+
+  /**
+   * The gate only ever thins a cone the engine already ENUMERATES. Above the
+   * cap the call stays the one `poly-base` edge it was: a descendant the
+   * locator could not judge is kept for lack of evidence, not on proof, so
+   * enumerating the survivors would swap a base edge for unproven targets.
+   */
+  it("keeps the poly-base edge of a cone that exceeded the cap before the veto", () => {
+    const locator: ConeTypeLocator = {
+      ...locatorWith(Object.fromEntries(descendants.map(([owner]) => [`${owner}#get`, target(owner)])), {
+        Port: "src/port.ts",
+      }),
+      admitsStructuralDescendant: (descendant) => descendant !== "Misfit",
+    };
+    const edges = edgesOf(new ConeDispatchResolver(locator, 2).resolveDispatch(getCall, portCtx()));
+    expect(edges.map((e) => [e.targetRelPath, e.targetSymbolId, e.edgeKind])).toEqual([
+      ["src/port.ts", null, "poly-base"],
+    ]);
+  });
+
+  it("keeps every structural descendant when the locator has no gate", () => {
+    const edges = edgesOf(new ConeDispatchResolver(baseLocator, 8).resolveDispatch(getCall, portCtx()));
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["Declared#get", "Fits#get", "Misfit#get"]);
+  });
+});

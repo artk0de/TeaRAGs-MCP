@@ -324,6 +324,16 @@
   tea-rags-mcp-0qaht.66). Why: a 1-wide override cone is a `single` fan that
   REPLACES the chain's answer, so without the receiver's own target the exact
   edge never reached the graph.
+- **A `structural` descendant enters the cone only past the locator's optional
+  `admitsStructuralDescendant`.** Those rows are name-and-arity conformance,
+  never declared, so a checker-backed language vetoes one only on PROOF that the
+  descendant's value is not assignable to the receiver's type at the call;
+  declared rows are never asked, and a locator without the port keeps every row.
+  The veto only THINS a cone the engine already enumerates: a call whose ungated
+  cone was a `poly-base` keeps that edge, because a descendant kept for lack of
+  evidence is not a proven target. Why: arity alone made a `Map` subclass whose
+  `get` returns `string` an implementer of every one-member
+  `{ get(name): Entry }` port (bd tea-rags-mcp-iw702).
 - **A framework vocabulary is gated by the project's DECLARED dependencies, and
   the rule is the kernel's.** `FrameworkVocabularyRegistry`
   (`kernel/framework-vocabulary.ts`) decides who is active: a vocabulary with no

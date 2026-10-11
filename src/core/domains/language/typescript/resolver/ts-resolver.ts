@@ -389,7 +389,6 @@ export class TSCallResolver implements CallResolver {
       coneMax: resolveConeMax(process.env.CODEGRAPH_TS_CONE_MAX),
       fileExists: this.fileExists,
     };
-    this.cone = new ConeDispatchResolver(new TSConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
     this.programCache = typeCheckerFallbackEnabled(process.env.CODEGRAPH_TS_TYPECHECKER)
       ? new TSProgramCache({
           repoRoot,
@@ -407,6 +406,10 @@ export class TSCallResolver implements CallResolver {
           ...(options.sourceFileStore ? { sourceFileStore: options.sourceFileStore } : {}),
         })
       : null;
+    this.cone = new ConeDispatchResolver(
+      new TSConeTypeLocator(cfg, this.programCache),
+      cfg.coneMax ?? CONE_MAX_DEFAULT,
+    );
     this.unionReceiver = this.programCache
       ? new TSTypeCheckerUnionReceiverDispatchResolver(cfg, this.programCache)
       : null;
