@@ -6,8 +6,8 @@
  * re-chunked?" to render the minimal `Run:` line; `IndexingOps` asks "which
  * pending bumps did this finished run's selection cover?" to advance the stamp.
  * Two implementations would disagree the way the stats contract's once did
- * (`stats-contract-drift.ts`): a report no run clears, or a stamp advanced over
- * files that were never re-chunked. Pure — no stamp is read or written here.
+ * (`contracts/stats-contract.ts`): a report no run clears, or a stamp advanced
+ * over files that were never re-chunked. Pure — no stamp is read or written here.
  *
  * The stamp stays per language and per axis: `chunking: k` claims every
  * revision up to k was applied to every file of the language. A scoped run

@@ -48,8 +48,8 @@
   (`language/kernel/capability.ts`) is compared unconditionally; its findings
   render with no `--languages`.
 - **`StatsContractDriftMonitor` shares its judgement with the stats migration.**
-  Both call `judgeStatsContract` (`stats-contract-drift.ts`) — the monitor to
-  report, `StatsStoreAdapter#getStatsContractState` to decide whether
+  Both call `judgeStatsContract` (`contracts/stats-contract.ts`) — the monitor
+  to report, `StatsStoreAdapter#getStatsContractState` to decide whether
   `StatsV7SamplingContract` has work. Two implementations would eventually
   disagree, and then prime reports a drift no reindex clears, or clears one it
   never reported. It is also the only axis whose remedy is `incremental`: the

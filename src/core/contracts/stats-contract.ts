@@ -9,7 +9,9 @@
  *
  * ONE judgement, two consumers: `StatsContractDriftMonitor` reports it and the
  * stats migration repairs it. Split them and prime starts reporting a drift the
- * reindex never clears, or clearing one it never reported.
+ * reindex never clears, or clearing one it never reported. Both import it from
+ * here — a drift-domain home would make the migration framework depend on the
+ * component that merely reports what this judges (bd tea-rags-mcp-k7kmu C9).
  *
  * Two kinds of evidence, in order of strength:
  *
@@ -29,8 +31,8 @@
  * change the evidence it is judged by.
  */
 
-import { describeStatsSamplingContract } from "../../../contracts/signal-utils.js";
-import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import { describeStatsSamplingContract } from "./signal-utils.js";
+import type { CollectionSignalStats, PayloadSignalDescriptor } from "./types/trajectory.js";
 
 export interface StatsContractFinding {
   /** Signal key whose sample no longer matches what the build declares. */
