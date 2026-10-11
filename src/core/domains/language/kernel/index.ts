@@ -42,6 +42,7 @@ export {
   ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS,
   ECMASCRIPT_GLOBALS,
 } from "./ecmascript-globals.js";
+export { readEcmascriptImportSpecifiers } from "./ecmascript-import-specifiers.js";
 export {
   ECMASCRIPT_SOURCE_EXTENSIONS,
   isEcmascriptSourcePath,

@@ -1,16 +1,17 @@
 /**
  * find_co_changed DTOs (bd tea-rags-mcp-l1ot.1) — co-change partners from the
- * temporal sub-graph (`cg_temporal_*`). Partner shapes are the domain's
- * ranking output aliased here, so the public contract and the domain answer
- * cannot drift apart: ops returns the ranking as-is.
+ * temporal sub-graph (`cg_temporal_*`). Partner shapes are the contract
+ * types the domain's ranking returns (`contracts/types/codegraph-temporal.ts`),
+ * aliased here, so the public contract and the domain answer cannot drift
+ * apart: ops returns the ranking as-is.
  */
 
-import type { TemporalCochangeBuildMeta } from "../../../contracts/types/codegraph.js";
-import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import type {
   FileCochangeRanking,
   RankedCochangePartner,
-} from "../../../domains/trajectory/codegraph/temporal/partners/index.js";
+  TemporalCochangeBuildMeta,
+} from "../../../contracts/types/codegraph.js";
+import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 
 export interface FindCoChangedRequest {
   /** Project alias from the collection registry — RECOMMENDED. */

@@ -19,7 +19,7 @@
  * inside them is never visited as a statement (bd tea-rags-mcp-mjq5n).
  */
 
-import type { AstNode } from "../../../../contracts/types/ast.js";
+import type { AstNode } from "../../../contracts/types/ast.js";
 
 export function readEcmascriptImportSpecifiers(root: AstNode): string[] {
   const specifiers: string[] = [];

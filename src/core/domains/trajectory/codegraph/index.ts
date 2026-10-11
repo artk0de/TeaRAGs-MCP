@@ -123,7 +123,7 @@ export * from "./temporal/index.js";
 export type {
   CodegraphCollectionCompletionContext,
   CodegraphCollectionCompletionHook,
-} from "./collection-completion-hook.js";
+} from "../../../contracts/types/codegraph-collection-completion.js";
 export {
   CODEGRAPH_LANGUAGE_BY_EXTENSION,
   CODEGRAPH_LANGUAGES,

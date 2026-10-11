@@ -16,9 +16,9 @@
  */
 
 import type { GitAdapterKind } from "../../../../adapters/vcs/index.js";
+import type { CodegraphCollectionCompletionHook } from "../../../../contracts/types/codegraph-collection-completion.js";
 import type { TemporalSymbolCommitBuffer } from "../../../../contracts/types/codegraph.js";
 import type { Trajectory } from "../../../../contracts/types/trajectory.js";
-import type { CodegraphCollectionCompletionHook } from "../collection-completion-hook.js";
 import { TemporalCochangeBuilder } from "./cochange/index.js";
 
 /** Registered trajectory key — gates anything that depends on the co-change graph. */

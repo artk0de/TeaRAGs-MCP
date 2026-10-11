@@ -20,6 +20,7 @@ import { join, dirname as pathDirname } from "node:path";
 import type { Ignore } from "ignore";
 
 import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/codegraph-payload.js";
+import type { CodegraphCollectionCompletionHook } from "../../../../contracts/types/codegraph-collection-completion.js";
 import type { GraphDbClientPoolPort } from "../../../../contracts/types/codegraph-pool.js";
 import type {
   CodegraphPass1FileAggregates,
@@ -60,7 +61,6 @@ import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contract
 import { collectDependencyManifestSources } from "../../../../infra/dependency-manifests.js";
 import type { PathFilter } from "../../../../infra/file-classification/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
-import type { CodegraphCollectionCompletionHook } from "../collection-completion-hook.js";
 import {
   buildCodegraphExclusionFilter,
   collectInstantiationSiteResolvers,
@@ -168,7 +168,7 @@ export interface CodegraphProviderDeps {
    * (bd tea-rags-mcp-x4rpp — the temporal co-change graph). Run best-effort after
    * the metric recompute: at a single-worker finalize, or at the completion
    * owner's `readBack` under language affinity. See
-   * `../collection-completion-hook.ts`.
+   * `contracts/types/codegraph-collection-completion.ts`.
    */
   collectionCompletionHooks?: readonly CodegraphCollectionCompletionHook[];
 }

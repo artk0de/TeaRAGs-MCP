@@ -26,6 +26,10 @@ import { relative, sep } from "node:path";
 
 import { VcsAdapterFactory, type GitAdapterKind } from "../../../../../adapters/vcs/index.js";
 import type {
+  CodegraphCollectionCompletionContext,
+  CodegraphCollectionCompletionHook,
+} from "../../../../../contracts/types/codegraph-collection-completion.js";
+import type {
   RelPath,
   TemporalCochangeBuildMeta,
   TemporalSymbolCommitBuffer,
@@ -36,10 +40,6 @@ import {
   GitCommitDiscoveryStore,
   type GitCommitDiscoveryEntry,
 } from "../../../git/history/index.js";
-import type {
-  CodegraphCollectionCompletionContext,
-  CodegraphCollectionCompletionHook,
-} from "../../collection-completion-hook.js";
 import { estimateBurstWindow } from "./burst-window.js";
 import { bundleCochangeCommits, compareCodePoints } from "./commit-bundles.js";
 import { scopeCochangeHistory } from "./history-scope.js";

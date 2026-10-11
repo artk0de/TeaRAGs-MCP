@@ -202,6 +202,32 @@ export interface TemporalCochangeGraph {
   bundleTimestamps?: ReadonlyMap<number, number>;
 }
 
+/** One partner of the queried file, from the queried file's perspective. */
+export interface RankedCochangePartner {
+  relPath: RelPath;
+  /** Admitted bundles touching both files. */
+  support: number;
+  /** P(partner changes | file changes) — the stored confidence, flipped when the pair was stored the other way round. */
+  pPartnerGivenFile: number;
+  /** P(file changes | partner changes). */
+  pFileGivenPartner: number;
+  /** Wilson lower bound on the co-change rate, max of both directions. */
+  strength: number;
+  lift: number;
+  lastCoChangeAt: number;
+  sampleCommits: string[];
+  structurallyLinked: boolean;
+}
+
+/** One queried file's answer. */
+export interface FileCochangeRanking {
+  relPath: RelPath;
+  /** The built graph holds at least one stored partner for the file. */
+  inGraph: boolean;
+  /** Live partners, ranked — `strength` desc, `support` desc, path asc as the deterministic tiebreak. */
+  partners: RankedCochangePartner[];
+}
+
 /**
  * One `cg_temporal_symbol_commits` row (bd tea-rags-mcp-3gz4f): the commits
  * whose hunks touched a symbol's chunk lines inside one file — the chunk
