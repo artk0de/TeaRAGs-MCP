@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { findGitToplevel, readRepoGitState } from "../../../adapters/vcs/index.js";
 import type { CollectionEntry, RegistryGitState } from "../../../contracts/types/registry.js";
 import {
   WORKING_TREE_ANSWER_BUDGET_MS,
@@ -27,7 +28,6 @@ import {
   type WorkingTreeTouchedBasePointsByPath,
   type WorkingTreeTouchedBasePointsReader,
 } from "../../../contracts/types/working-tree.js";
-import { findGitToplevel, readRepoGitState } from "../../../infra/repo-git-state.js";
 import type { ChunkerConfig } from "../../../types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import type { WorkingTreeChunkLayer, WorkingTreeChunkLayerRead } from "./chunk-layer.js";

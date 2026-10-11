@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { resolveGoFiles } from "../__helpers__/go-corpus.js";
 import { fromCgPass1Row, toCgPass1Row } from "../../../../../../src/core/adapters/duckdb/cg-pass1-aggregates-row.js";
 import { NoopGlobalSymbolTable } from "../../../../../../src/core/adapters/duckdb/daemon/noop-symbol-table.js";
+import { readManifestFiles } from "../../../../../../src/core/adapters/filesystem/dependency-manifests.js";
 import type {
   CallContext,
   CallRef,
@@ -22,7 +23,6 @@ import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/lang
 import { buildPass1Aggregates } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/pass1-aggregates.js";
 import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 /**
  * Build-tag twins: gin declares `validate` twice in package `binding` —

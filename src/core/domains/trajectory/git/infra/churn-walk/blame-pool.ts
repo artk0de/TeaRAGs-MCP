@@ -27,8 +27,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
-import type { BlameLine, GitAdapterKind } from "../../../../../adapters/vcs/index.js";
-import { resolveGitExecutable } from "../../../../../infra/git-executable.js";
+import { resolveGitExecutable, type BlameLine, type GitAdapterKind } from "../../../../../adapters/vcs/index.js";
 import { ChunkChurnWalkThreadError } from "../../errors.js";
 import type {
   BlameJobInput,

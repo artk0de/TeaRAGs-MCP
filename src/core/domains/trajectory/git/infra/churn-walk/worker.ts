@@ -22,13 +22,13 @@
 import { parentPort, workerData } from "node:worker_threads";
 
 import {
+  adoptGitExecutable,
   VcsAdapterFactory,
   type BlameLine,
   type BlobBatchReader,
   type GitAdapterKind,
   type VcsGitAdapter,
 } from "../../../../../adapters/vcs/index.js";
-import { adoptGitExecutable } from "../../../../../infra/git-executable.js";
 import { CommitDiffMemo } from "../../../../../primitives/collections/index.js";
 import { Semaphore } from "../../../../../primitives/concurrency/index.js";
 import { buildChunkChurnMapUncached } from "../chunk-reader.js";

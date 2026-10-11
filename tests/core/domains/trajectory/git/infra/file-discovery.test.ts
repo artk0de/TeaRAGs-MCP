@@ -29,6 +29,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { importGitHistory } from "../../../../__helpers__/git-history-import.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
+import type * as GitExecutableModule from "../../../../../../src/core/adapters/vcs/git/git-executable.js";
 import type { FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
   buildFileSignalDiscovery,
@@ -36,11 +37,10 @@ import {
   sliceFileSignalsByPaths,
 } from "../../../../../../src/core/domains/trajectory/git/infra/file-reader.js";
 import { GitEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/git/provider.js";
-import type * as GitExecutableModule from "../../../../../../src/core/infra/git-executable.js";
 
 // The spawn counter is a PATH shim, so pin the PATH executable — otherwise the
 // client resolves Apple's /usr/bin/git and bypasses the shim entirely.
-vi.mock("../../../../../../src/core/infra/git-executable.js", async (importOriginal) => ({
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-executable.js", async (importOriginal) => ({
   ...(await importOriginal<typeof GitExecutableModule>()),
   resolveGitExecutable: () => "git",
 }));

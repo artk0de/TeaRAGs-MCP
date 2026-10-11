@@ -20,6 +20,7 @@ import {
   readRefs,
   resolveDaemonClientTarget,
 } from "../core/adapters/duckdb/daemon/lifecycle.js";
+import { StatsCache } from "../core/adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../core/adapters/qdrant/client.js";
 import type { CodegraphFootprintStore } from "../core/contracts/types/footprint.js";
 import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
@@ -31,7 +32,6 @@ import {
   type CodegraphDaemonLiveness,
 } from "../core/domains/maintenance/footprint/index.js";
 import type { CollectionRegistry } from "../core/domains/maintenance/registry/index.js";
-import { StatsCache } from "../core/infra/stats-cache.js";
 
 export interface FootprintPurgeDeps {
   qdrant: QdrantManager;

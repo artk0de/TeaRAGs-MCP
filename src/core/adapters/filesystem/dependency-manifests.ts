@@ -12,7 +12,7 @@
  * runs the same walker on its own parse — reads it once per worker.
  *
  * The split of duty mirrors `schemaColumnAccessors`: `domains/language` says
- * which files are manifests and what a manifest declares, infra does the I/O.
+ * which files are manifests and what a manifest declares, this adapter does the I/O.
  *
  * The ignore list is the difference between a gate and a rubber stamp. A
  * checked-in virtualenv or `site-packages` tree holds a manifest for every
@@ -38,8 +38,8 @@ import type {
   LanguageFactoryDescriptor,
   ManifestFile,
   TestDependencyManifestSource,
-} from "../contracts/types/language.js";
-import { buildGitChildProcessEnv, resolveGitExecutable } from "./git-executable.js";
+} from "../../contracts/types/language.js";
+import { buildGitChildProcessEnv, resolveGitExecutable } from "../vcs/git/git-executable.js";
 
 /**
  * Directories the walk never descends into. Vendored dependency trees

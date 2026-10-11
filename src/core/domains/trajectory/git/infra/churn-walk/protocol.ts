@@ -24,7 +24,7 @@ import type { ChunkChurnWalkStats } from "../walk-commits.js";
 /** `workerData` every churn-walk worker is started with. */
 export interface ChurnWalkWorkerData {
   /** The git binary the spawning thread resolved — the worker adopts it
-   *  instead of probing again (`infra/git-executable.ts`). */
+   *  instead of probing again (`adapters/vcs/git/git-executable.ts`). */
   gitExecutable: string;
 }
 

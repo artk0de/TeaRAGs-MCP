@@ -11,7 +11,7 @@
 
 import { spawn } from "node:child_process";
 
-import { buildGitChildProcessEnv } from "../../../../infra/git-executable.js";
+import { buildGitChildProcessEnv } from "../git-executable.js";
 import { trackGitChildProcess } from "./git-child-process-registry.js";
 
 export interface StallGuardOptions {

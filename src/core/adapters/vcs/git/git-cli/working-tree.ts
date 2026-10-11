@@ -9,8 +9,8 @@ import { copyFile, mkdtemp, rm, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { buildGitChildProcessEnv, resolveGitExecutable } from "../../../../infra/git-executable.js";
-import { readRepoGitDir } from "../../../../infra/repo-git-state.js";
+import { buildGitChildProcessEnv, resolveGitExecutable } from "../git-executable.js";
+import { readRepoGitDir } from "../repo-git-state.js";
 import { BULK_LOG_STALL_FLOOR_MS, TREE_LISTING_STALL_MS } from "./exec.js";
 import { splitNulTerminated } from "./parsers.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";

@@ -101,7 +101,7 @@ describe("ReindexingOperations.reindexChanges — registry stamp on quiet runs (
   beforeEach(async () => {
     ({ tempDir, codebaseDir } = await createTempTestDir());
     // File-based git fixture (same shape as base-registry.test.ts): the
-    // finalize reads `.git` directly through infra/repo-git-state, and the
+    // finalize reads `.git` directly through adapters/vcs/git/repo-git-state, and the
     // commit stamp is the whole point of this spec. Written BEFORE the first
     // index so the quiet run really is quiet — none of these files carry a
     // supported extension, so the scanner never sees them either way.

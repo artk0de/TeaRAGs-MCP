@@ -6,10 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
+import { StatsCache } from "../../../../src/core/adapters/filesystem/stats-cache.js";
 import { QuarantineStore } from "../../../../src/core/domains/ingest/sync/quarantine-store.js";
 import { ShardedSnapshotManager } from "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
 import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
-import { StatsCache } from "../../../../src/core/infra/stats-cache.js";
 
 describe("owner clone methods", () => {
   let dir: string;

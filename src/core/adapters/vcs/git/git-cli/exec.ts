@@ -6,7 +6,7 @@
 
 import { execFile, type ExecFileOptions } from "node:child_process";
 
-import { buildGitChildProcessEnv, resolveGitExecutable } from "../../../../infra/git-executable.js";
+import { buildGitChildProcessEnv, resolveGitExecutable } from "../git-executable.js";
 import { trackGitChildProcess } from "./git-child-process-registry.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
 

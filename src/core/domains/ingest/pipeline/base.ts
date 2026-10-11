@@ -13,6 +13,12 @@ import { hashCollectionForPath, validatePath } from "../../../adapters/filesyste
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
+import {
+  findGitToplevel,
+  readRepoGitState,
+  readWorkingTreeDirty,
+  readWorkingTreeDirtyPaths,
+} from "../../../adapters/vcs/index.js";
 import type { CollectionAlias, PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { EnrichmentRunHandle } from "../../../contracts/types/enrichment-executor.js";
 import {
@@ -23,12 +29,6 @@ import {
   type PathCollectionResolver,
   type RegistryGitState,
 } from "../../../contracts/types/registry.js";
-import {
-  findGitToplevel,
-  readRepoGitState,
-  readWorkingTreeDirty,
-  readWorkingTreeDirtyPaths,
-} from "../../../infra/repo-git-state.js";
 import { TeaRagsError } from "../../../primitives/errors/index.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";

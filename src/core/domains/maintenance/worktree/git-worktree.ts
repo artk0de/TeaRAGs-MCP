@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
-import { buildGitChildProcessEnv, resolveGitExecutable } from "../../../infra/git-executable.js";
+import { buildGitChildProcessEnv, resolveGitExecutable } from "../../../adapters/vcs/index.js";
 
 /**
  * Idempotent: no-op when targetPath already exists (attach to existing worktree).

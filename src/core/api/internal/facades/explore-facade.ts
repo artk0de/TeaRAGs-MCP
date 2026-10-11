@@ -9,6 +9,7 @@
  */
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
@@ -23,7 +24,6 @@ import type { WorkingTreeOverlay } from "../../../domains/explore/working-tree/i
 import type { IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
-import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ExploreCodeRequest,
   ExploreResponse,

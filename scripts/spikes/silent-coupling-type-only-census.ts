@@ -29,6 +29,7 @@ import { writeFileSync } from "node:fs";
 import { extname, resolve } from "node:path";
 
 import { DuckDbGraphClient } from "../../src/core/adapters/duckdb/client.js";
+import { collectDependencyManifestSources } from "../../src/core/adapters/filesystem/dependency-manifests.js";
 import type {
   FileExtraction,
   RelPath,
@@ -50,7 +51,6 @@ import {
   detectSilentCoupling,
 } from "../../src/core/domains/trajectory/codegraph/temporal/boundary-diagnostics/silent-coupling.js";
 import type { SilentCouplingReport } from "../../src/core/domains/trajectory/codegraph/temporal/boundary-diagnostics/types.js";
-import { collectDependencyManifestSources } from "../../src/core/infra/dependency-manifests.js";
 import { buildNonProductionPathFilter, classify } from "../../src/core/primitives/paths/file-classification/index.js";
 import {
   buildCorpusExclusionFilter,

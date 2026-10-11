@@ -19,6 +19,7 @@ import { join, dirname as pathDirname } from "node:path";
 
 import type { Ignore } from "ignore";
 
+import { collectDependencyManifestSources } from "../../../../adapters/filesystem/dependency-manifests.js";
 import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/codegraph-payload.js";
 import type { CodegraphCollectionCompletionHook } from "../../../../contracts/types/codegraph-collection-completion.js";
 import type { GraphDbClientPoolPort } from "../../../../contracts/types/codegraph-pool.js";
@@ -58,7 +59,6 @@ import type {
   WorkerEnrichmentDescriptor,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
-import { collectDependencyManifestSources } from "../../../../infra/dependency-manifests.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type { PathFilter } from "../../../../primitives/paths/index.js";
 import {

@@ -263,7 +263,7 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
 
   it("records the git block when the codebase is a git repository (hpg2)", async () => {
     // File-based fixture — the pipeline's finalize reads .git directly via
-    // infra/repo-git-state; indexedDirty stays false because the fake repo
+    // adapters/vcs/git/repo-git-state; indexedDirty stays false because the fake repo
     // has no objects, so the porcelain probe fails conservative-clean.
     mkdirSync(join(codebaseDir, ".git", "refs", "heads"), { recursive: true });
     writeFileSync(join(codebaseDir, ".git", "HEAD"), "ref: refs/heads/master\n");

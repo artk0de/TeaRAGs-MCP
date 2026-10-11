@@ -6,8 +6,8 @@
  * `IndexDriftReporter`'s business, not this class's.
  */
 
+import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { PayloadKeyOwner } from "../../../contracts/types/trajectory.js";
-import type { StatsCache } from "../../../infra/stats-cache.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 import { resolvePayloadKeyRemedy } from "./remedy.js";
 import { checkSchemaDrift, type SchemaDrift } from "./schema-drift.js";

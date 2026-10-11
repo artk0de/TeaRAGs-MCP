@@ -26,7 +26,7 @@
     },
     "walker": {
       "version": 5,
-      "digest": "sha256:8b7dd91f44aa422b6af281f41db783e9a19cc8dcd6c80a302622567856948afb"
+      "digest": "sha256:7cd095f9a4a31e8c4e85f57f56ef970615297ec97030797970bdc63d9d946fd2"
     }
   },
   "java": {
@@ -54,7 +54,7 @@
   "python": {
     "walker": {
       "version": 10,
-      "digest": "sha256:7b83ea61656e56be7975e4e086945b477eadfd68d4026f0d4baf1b217305b153"
+      "digest": "sha256:fba7aa833315c369f787eafe0b7cfff408bca2240956e2860650927cc1a36753"
     }
   },
   "ruby": {

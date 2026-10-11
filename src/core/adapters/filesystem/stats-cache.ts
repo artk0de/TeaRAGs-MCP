@@ -7,7 +7,7 @@ import type {
   ScopedSignalStats,
   ScoreBackground,
   SignalStats,
-} from "../contracts/types/trajectory.js";
+} from "../../contracts/types/trajectory.js";
 
 interface StatsFileContentV7 {
   version: 7;

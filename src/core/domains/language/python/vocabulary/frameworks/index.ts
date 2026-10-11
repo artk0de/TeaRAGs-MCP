@@ -2,7 +2,7 @@
  * The Python framework-vocabulary registry and the per-project catalogue it
  * composes (bd tea-rags-mcp-w205u.1) — the Python counterpart of
  * `ruby/dsl/catalogue.ts`, minus the tree-sitter parse, because the declared set
- * arrives already parsed (`infra/dependency-manifests.ts`).
+ * arrives already parsed (`adapters/filesystem/dependency-manifests.ts`).
  *
  * The composition rule is Ruby's, unchanged: an UNCONDITIONAL vocabulary always
  * loads; a gated one loads iff its `activatedBy` family intersects the project's

@@ -132,7 +132,8 @@ async function snapshot(opts: SnapshotOptions): Promise<void> {
   if (opts.typescriptPackage !== null) registerTypescriptOverride(opts.typescriptPackage);
   const ts = (await import("typescript")).default;
   const { DefaultSymbolIdComposer, LanguageFactory } = await import("../../src/core/domains/language/index.js");
-  const { collectDependencyManifestSources } = await import("../../src/core/infra/dependency-manifests.js");
+  const { collectDependencyManifestSources } =
+    await import("../../src/core/adapters/filesystem/dependency-manifests.js");
   const { collectSchemaColumnSources, collectStructuralConformanceDerivers } =
     await import("../../src/core/domains/trajectory/codegraph/exclusion.js");
   const { CODEGRAPH_SUPPORTED_EXTENSIONS, extensionOf } =

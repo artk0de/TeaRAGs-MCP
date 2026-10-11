@@ -25,6 +25,7 @@
  */
 
 import { isProviderRecoveryWaitSpent } from "../../../adapters/embeddings/errors.js";
+import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
@@ -48,7 +49,6 @@ import {
   findWorktreeSeedCandidates,
   type WorktreeSeedBuildIdentity,
 } from "../../../domains/maintenance/worktree/index.js";
-import type { StatsCache } from "../../../infra/stats-cache.js";
 import { versionedPhysicalCollectionName } from "../../../primitives/ids/index.js";
 
 export interface WorktreeSeedOpsDeps {

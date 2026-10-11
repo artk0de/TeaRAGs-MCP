@@ -15,6 +15,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { readDeclaredDependenciesByLanguage } from "../../../../adapters/filesystem/dependency-manifests.js";
 import { createIdentifierRecord, identifierEntry } from "../../../../contracts/identifier-record.js";
 import { formatResolveRate } from "../../../../contracts/resolve-rate.js";
 import {
@@ -52,7 +53,6 @@ import type {
   StructuralConformanceDeriver,
 } from "../../../../contracts/types/language.js";
 import type { FileExtractionAbsorbRole, ProviderRunMetrics } from "../../../../contracts/types/provider.js";
-import { readDeclaredDependenciesByLanguage } from "../../../../infra/dependency-manifests.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import { MapHierarchyView } from "../hierarchy-view.js";
 import {

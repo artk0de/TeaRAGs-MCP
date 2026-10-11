@@ -17,6 +17,11 @@ import {
 import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import type { OllamaRecoveryWaitEvent } from "../core/adapters/embeddings/ollama.js";
+import {
+  collectTestDependencyManifestSources,
+  readDeclaredTestDependencies,
+} from "../core/adapters/filesystem/dependency-manifests.js";
+import { StatsCache } from "../core/adapters/filesystem/stats-cache.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
@@ -117,11 +122,6 @@ import {
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { InMemoryTemporalSymbolCommitBuffer } from "../core/domains/trajectory/codegraph/temporal/index.js";
 import { StaticPayloadBuilder } from "../core/domains/trajectory/static/index.js";
-import {
-  collectTestDependencyManifestSources,
-  readDeclaredTestDependencies,
-} from "../core/infra/dependency-manifests.js";
-import { StatsCache } from "../core/infra/stats-cache.js";
 import { setDebug } from "../core/primitives/diagnostics/index.js";
 import { installFileClassificationSettings } from "../core/primitives/paths/index.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";

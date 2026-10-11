@@ -19,6 +19,7 @@ import {
   type EmbeddingProvider,
 } from "../../../adapters/embeddings/base.js";
 import { isEmbeddingProviderUnavailable } from "../../../adapters/embeddings/errors.js";
+import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type {
   EmbeddingModelGuard,
@@ -62,7 +63,6 @@ import { formatIndexDriftReport, type IndexDriftReporter } from "../../../domain
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/compiler.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
-import type { StatsCache } from "../../../infra/stats-cache.js";
 import {
   projectSearchResultPayloads,
   stripInternalFields,

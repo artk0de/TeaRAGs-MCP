@@ -16,7 +16,7 @@
  * the one place that policy lives.
  */
 
-import { readEnclosingRepoGitState, type RepoGitState } from "../../../infra/repo-git-state.js";
+import { readEnclosingRepoGitState, type RepoGitState } from "../../../adapters/vcs/index.js";
 import type { CollectionRegistry } from "../registry/collection-registry.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 

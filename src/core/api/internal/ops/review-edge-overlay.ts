@@ -28,6 +28,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import {
+  collectDependencyManifestSources,
+  readDeclaredDependenciesByLanguage,
+} from "../../../adapters/filesystem/dependency-manifests.js";
 import type { ReviewFileEdge } from "../../../contracts/types/codegraph-storage.js";
 import type { CallContext, FileExtraction, GlobalSymbolTable, GraphEdges } from "../../../contracts/types/codegraph.js";
 import type {
@@ -37,10 +41,6 @@ import type {
 } from "../../../contracts/types/language.js";
 import { extractFileInMemory, type InMemoryExtractionContext } from "../../../domains/trajectory/codegraph/index.js";
 import type { ReviewFileEdgeRead } from "../../../domains/trajectory/codegraph/symbols/index.js";
-import {
-  collectDependencyManifestSources,
-  readDeclaredDependenciesByLanguage,
-} from "../../../infra/dependency-manifests.js";
 
 /**
  * One working-tree file edge: the changed file imports/knows the target file.

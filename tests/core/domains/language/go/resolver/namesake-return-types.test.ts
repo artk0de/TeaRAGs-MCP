@@ -6,6 +6,7 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { readManifestFiles } from "../../../../../../src/core/adapters/filesystem/dependency-manifests.js";
 import type {
   CallContext,
   FileExtraction,
@@ -13,7 +14,6 @@ import type {
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 /**
  * bd tea-rags-mcp-7h6j0 — the run-global `functionReturnTypes` channel is keyed

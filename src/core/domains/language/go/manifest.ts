@@ -1,7 +1,8 @@
 /**
  * Go's module manifest (bd tea-rags-mcp-e6xx) — which file declares a module
  * and how to read its path out of one. Pure: the directory walk that finds the
- * files is infra's (`infra/dependency-manifests.ts#readManifestFiles`), the
+ * files is the filesystem adapter's
+ * (`adapters/filesystem/dependency-manifests.ts#readManifestFiles`), the
  * same split Python's `manifest.ts` keeps with `readDeclaredDependencies`.
  *
  * Deliberately NOT a `DependencyManifestSource`. That facility unions declared

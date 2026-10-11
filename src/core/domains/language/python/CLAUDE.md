@@ -728,13 +728,13 @@
   registry's rule (`domains/language/CLAUDE.md` framework-vocabulary bullet);
   here, no `pyproject.toml` / `requirements*.txt` anywhere means `undefined`,
   not an empty set. The set is built once per run by
-  `infra/dependency-manifests.ts`, which walks every `pyproject.toml` /
-  `requirements*.txt` under the root outside the vendored dirs and unions what
-  `manifest.ts` parses out of them; `domains/language` contributes the
-  recognizing and the parsing and touches no filesystem. Both production seams
-  thread it — `CodegraphRunState.loadDeclaredDependencies` for the codegraph
-  pass, the chunker worker's `buildChunker` for the cross-pass one — and so must
-  every harness: `extractFile` takes it as its fifth argument and
+  `adapters/filesystem/dependency-manifests.ts`, which walks every
+  `pyproject.toml` / `requirements*.txt` under the root outside the vendored
+  dirs and unions what `manifest.ts` parses out of them; `domains/language`
+  contributes the recognizing and the parsing and touches no filesystem. Both
+  production seams thread it — `CodegraphRunState.loadDeclaredDependencies` for
+  the codegraph pass, the chunker worker's `buildChunker` for the cross-pass one
+  — and so must every harness: `extractFile` takes it as its fifth argument and
   `readCorpusDeclaredDependencies` is what fills it, because a tally walked
   ungated is a measurement of a gate nothing ships.
 - **A new Python extraction facet is a new pass, never an edit to

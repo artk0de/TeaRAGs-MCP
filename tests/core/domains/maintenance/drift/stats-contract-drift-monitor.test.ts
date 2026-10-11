@@ -11,11 +11,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { StatsCache } from "../../../../../src/core/adapters/filesystem/stats-cache.js";
 import { describeStatsSamplingContract } from "../../../../../src/core/contracts/signal-utils.js";
 import type { PayloadSignalDescriptor } from "../../../../../src/core/contracts/types/trajectory.js";
 import { formatIndexDriftReport, IndexDriftReporter } from "../../../../../src/core/domains/maintenance/drift/index.js";
 import { StatsContractDriftMonitor } from "../../../../../src/core/domains/maintenance/drift/stats-contract-drift-monitor.js";
-import { StatsCache } from "../../../../../src/core/infra/stats-cache.js";
 
 const COLLECTION = "code_test";
 

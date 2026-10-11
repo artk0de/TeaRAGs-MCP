@@ -12,8 +12,8 @@
  * Spec: docs/specs/2026-08-06-auto-update-watcher-design.md §2.
  */
 
+import { readEnclosingRepoGitState, type RepoGitState } from "../../../adapters/vcs/index.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
-import { readEnclosingRepoGitState, type RepoGitState } from "../../../infra/repo-git-state.js";
 
 /** Trigger-side debounce: skip when the last run finished under this ago. */
 export const AUTO_UPDATE_RUN_TTL_MS = 120_000;

@@ -34,16 +34,16 @@
 
 import { isMainThread } from "node:worker_threads";
 
+import {
+  collectDependencyManifestSources,
+  readDeclaredDependenciesByLanguage,
+} from "../../../../../adapters/filesystem/dependency-manifests.js";
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
   SymbolIdComposer,
 } from "../../../../../contracts/types/language.js";
-import {
-  collectDependencyManifestSources,
-  readDeclaredDependenciesByLanguage,
-} from "../../../../../infra/dependency-manifests.js";
 import type { ChunkerConfig } from "../../../../../types.js";
 import { createWorkerRuntime } from "../../infra/worker-runtime.js";
 import { TreeSitterChunker } from "../tree-sitter.js";

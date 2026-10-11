@@ -4,13 +4,13 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { StatsCache } from "../../../../../src/core/adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import type {
   CollectionSignalStats,
   PayloadSignalDescriptor,
 } from "../../../../../src/core/contracts/types/trajectory.js";
 import { StatsStoreAdapter } from "../../../../../src/core/domains/maintenance/migration/adapters/stats-store-adapter.js";
-import { StatsCache } from "../../../../../src/core/infra/stats-cache.js";
 
 const COLLECTION = "code_test";
 

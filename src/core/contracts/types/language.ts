@@ -862,7 +862,7 @@ export interface LanguageProvider {
   /**
    * Optional dependency-manifest reader — which files declare this language's
    * dependencies and how to read the names out of one. The run-start walk
-   * (`infra/dependency-manifests.ts`) finds the files and unions the answers into
+   * (`adapters/filesystem/dependency-manifests.ts`) finds the files and unions the answers into
    * the run's `declaredDependencies`; the language never touches the filesystem,
    * exactly as `schemaColumnAccessors` parses a snapshot the provider read.
    * Absent → this language contributes nothing to the declared set.
@@ -873,7 +873,7 @@ export interface LanguageProvider {
    * Optional development-dependency reader (bd tea-rags-mcp-89k7k.35.3) — which
    * manifests declare packages for development and tests only, and how to split
    * one's packages into those and the rest. The composition root reads the
-   * files (`readDeclaredTestDependencies` in `infra/dependency-manifests.ts`); a
+   * files (`readDeclaredTestDependencies` in `adapters/filesystem/dependency-manifests.ts`); a
    * package tests import that the manifests declare for development only is
    * evidence of test support. Absent → this language declares none.
    */

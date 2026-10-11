@@ -9,6 +9,19 @@
 export { VcsAdapterFactory } from "./factory.js";
 export { VcsGitAdapter } from "./git/adapter.js";
 export { listRepoWorkTrees, resolveGitCommonDir } from "./git/common-dir.js";
+export { adoptGitExecutable, buildGitChildProcessEnv, resolveGitExecutable } from "./git/git-executable.js";
+export {
+  detectDefaultBranch,
+  findGitToplevel,
+  gitPathFromRoot,
+  gitPathPrefix,
+  readEnclosingRepoGitState,
+  readRepoGitState,
+  readWorkingTreeDirty,
+  readWorkingTreeDirtyPaths,
+  rebaseGitPathsOntoRoot,
+  type RepoGitState,
+} from "./git/repo-git-state.js";
 export { createCatFileBatch, readBlobCommitTime } from "./git/git-cli/cat-file.js";
 export { isAncestor, readCommitTime, readMergeBase, resolveRepoRoot } from "./git/git-cli/client.js";
 export { reapGitChildProcesses } from "./git/git-cli/git-child-process-registry.js";

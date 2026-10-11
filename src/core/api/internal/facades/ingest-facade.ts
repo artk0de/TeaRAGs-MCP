@@ -12,6 +12,7 @@ import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { selectLanguages } from "../../../contracts/language-selector.js";
@@ -40,7 +41,6 @@ import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strat
 import type { CollectionFootprintFactory } from "../../../domains/maintenance/footprint/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/collection-registry.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/index.js";
-import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
   ChunkerConfig,

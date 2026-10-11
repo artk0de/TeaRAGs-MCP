@@ -40,7 +40,10 @@ import {
   readWorkingTreeChanges,
   readWorkingTreeRenames,
 } from "../../../../../../src/core/adapters/vcs/git/git-cli/working-tree.js";
-import { readWorkingTreeDirty, readWorkingTreeDirtyPaths } from "../../../../../../src/core/infra/repo-git-state.js";
+import {
+  readWorkingTreeDirty,
+  readWorkingTreeDirtyPaths,
+} from "../../../../../../src/core/adapters/vcs/git/repo-git-state.js";
 
 interface IndexSnapshot {
   mtimeMs: number;

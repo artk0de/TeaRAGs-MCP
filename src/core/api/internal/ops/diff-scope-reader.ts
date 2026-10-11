@@ -13,21 +13,19 @@
 import { realpathSync } from "node:fs";
 
 import {
-  listCommitsSince,
-  listRepoWorkTrees,
-  readAddedLineRangesOfFiles,
-  readMergeBase,
-  readWorkingTreeChanges,
-  type AddedLineRange,
-} from "../../../adapters/vcs/index.js";
-import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
-import {
   findGitToplevel,
   gitPathFromRoot,
   gitPathPrefix,
+  listCommitsSince,
+  listRepoWorkTrees,
+  readAddedLineRangesOfFiles,
   readEnclosingRepoGitState,
+  readMergeBase,
+  readWorkingTreeChanges,
   rebaseGitPathsOntoRoot,
-} from "../../../infra/repo-git-state.js";
+  type AddedLineRange,
+} from "../../../adapters/vcs/index.js";
+import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { InvalidParameterError } from "../../public/errors.js";
 import { ontologyNonProductionPathFilter } from "./ontology-report-ops.js";
 

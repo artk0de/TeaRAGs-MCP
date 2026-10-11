@@ -216,7 +216,7 @@ export {
 export type { IndexFreshnessVerdict } from "../../domains/maintenance/freshness/index.js";
 
 // ── Repo git state helpers (infra) — CLI default-branch autodetect ────
-export { detectDefaultBranch } from "../../infra/repo-git-state.js";
+export { detectDefaultBranch } from "../../adapters/vcs/index.js";
 
 // ── Path canonicalization (adapters/filesystem/path-canonicalization.ts) ─
 // `resolveCollectionName` is deliberately NOT here: a consumer that hashes a

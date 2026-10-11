@@ -7,13 +7,13 @@
  * labels, and folds per-language / per-scope stats into the response shape.
  */
 
+import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { EnrichmentHealthMapper, EnrichmentMarkerMap } from "../../../contracts/types/enrichment.js";
 import type { IndexMetrics, SignalMetrics } from "../../../contracts/types/index-metrics.js";
 import type { PayloadSignalDescriptor, SignalFloors, SignalStats } from "../../../contracts/types/trajectory.js";
-import type { StatsCache } from "../../../infra/stats-cache.js";
 import { NotIndexedError } from "../../ingest/errors.js";
 import { CollectionNotFoundError } from "../errors.js";
 import { resolvableLabelBands } from "../label-resolver.js";

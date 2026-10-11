@@ -13,8 +13,9 @@
   renders the scoped `Run:` line from); `trajectoryVersions` by
   `IndexingOps#stampTrajectoryVersions` (only after a run that rebuilt the
   provider for every point) and, for a worktree clone, by `WorktreeProvisioner`;
-  `payloadFieldKeys` by `infra/stats-cache.ts`. A monitor that needs a value
-  none of them writes has found a missing stamp, not a place to compute one.
+  `payloadFieldKeys` by `adapters/filesystem/stats-cache.ts`. A monitor that
+  needs a value none of them writes has found a missing stamp, not a place to
+  compute one.
 - **`IndexDriftReporter` owns consumption.** The two consuming checks —
   `checkAndConsume` (by path) and `checkAndConsumeByCollectionName`, both of
   them search — show a collection once per REPORT SIGNATURE per process, so a
