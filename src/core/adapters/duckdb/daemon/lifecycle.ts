@@ -4,6 +4,11 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { DaemonLock } from "../../qdrant/embedded/daemon-lock.js";
+import type {
+  CodegraphDaemonClientAddressing,
+  CodegraphDaemonClientTarget,
+  CodegraphDaemonPaths,
+} from "../daemon-ports.js";
 import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./build-fingerprint.js";
 
 const daemonLock = new DaemonLock();
@@ -14,39 +19,17 @@ const IDLE_POLL_INTERVAL_MS = 5_000;
 export { IDLE_SHUTDOWN_MS };
 
 /**
+ * The lifecycle-file types the duckdb root consumes moved to `daemon-ports.ts`
+ * (bd tea-rags-mcp-89k7k.35, H4a1); re-exported here for existing importers.
+ */
+export type { CodegraphDaemonClientAddressing, CodegraphDaemonClientTarget, CodegraphDaemonPaths };
+
+/**
  * Size at which the daemon log is started over on the next spawn. The daemon
  * writes only startup and failure output, so this holds many spawns' worth of
  * history while keeping an unattended install from growing a log forever.
  */
 export const DAEMON_LOG_MAX_BYTES = 1024 * 1024;
-
-export interface CodegraphDaemonPaths {
-  /**
-   * The base storage dir `getDaemonPaths` was called with (bd
-   * tea-rags-mcp-42hno). NOT the directory the files sit in — that is
-   * `buildDir`. For the legacy and for-key-dir views the two coincide.
-   */
-  storageDir: string;
-  /**
-   * The directory the lifecycle files actually sit in: `<storageDir>/<build
-   * key>` for the keyed view, the plain dir for the legacy / for-key-dir
-   * views. A daemon's cleanup and the orphan sweep remove THIS directory.
-   */
-  buildDir: string;
-  socketPath: string;
-  pidFile: string;
-  portFile: string;
-  refsFile: string;
-  lockFile: string;
-  /**
-   * Single-instance ownership lock of the key directory (bd tea-rags-mcp-imgjx):
-   * held by the owning daemon for its whole lifetime, stamped with its pid. See
-   * `claimDaemonOwnership`.
-   */
-  ownerFile: string;
-  /** Where the spawned daemon's stdout + stderr are recorded. */
-  logFile: string;
-}
 
 /* v8 ignore next 3 -- fallback for backward compat when DI app-data path not provided */
 function fallbackAppDataDir(): string {
@@ -123,30 +106,9 @@ export function getDaemonPathsForBuild(storageDir: string, fingerprint: string):
 }
 
 /**
- * How a client process's build relates to the build on disk, and therefore
- * which key directory it addresses (bd tea-rags-mcp-llrja):
- * - `own-build` — loaded == on disk (or the fingerprint env override): its own
- *   build's key dir, exactly `getDaemonPaths`;
- * - `on-disk-build` — the process predates a rebuild / `npm link` / upgrade:
- *   the ON-DISK build's key dir, because every daemon spawned from this tree
- *   runs that build and keys itself by it. The build handshake then settles
- *   what the stale process may do there (bd tea-rags-mcp-1wr7p);
- * - `build-tree-gone` — the loaded tree is unreadable: nothing can be spawned
- *   from it, so only a still-running daemon of the loaded build is reachable.
+ * The two views of a process's build a client target is decided from.
+ * `CodegraphDaemonClientTarget` itself lives in `../daemon-ports.ts`.
  */
-export type CodegraphDaemonClientAddressing = "own-build" | "on-disk-build" | "build-tree-gone";
-
-/** Which daemon a client process talks to right now — see `resolveDaemonClientTarget`. */
-export interface CodegraphDaemonClientTarget {
-  readonly addressing: CodegraphDaemonClientAddressing;
-  readonly paths: CodegraphDaemonPaths;
-  /** The build this process loaded. */
-  readonly loadedFingerprint: string;
-  /** The build on disk now; undefined when the tree is gone. */
-  readonly onDiskFingerprint: string | undefined;
-}
-
-/** The two views of a process's build a client target is decided from. */
 export interface DaemonClientBuildSource {
   readonly loaded: () => string;
   readonly onDisk: () => string | undefined;

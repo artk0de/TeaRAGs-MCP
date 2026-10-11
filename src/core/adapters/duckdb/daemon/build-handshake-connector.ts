@@ -15,6 +15,7 @@ import { dirname } from "node:path";
 
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
+import type { CodegraphDaemonRestartWiring } from "../daemon-ports.js";
 import {
   CodegraphClientStaleBuildError,
   CodegraphDaemonBuildSkewError,
@@ -39,33 +40,11 @@ import {
 } from "./lifecycle.js";
 
 /**
- * Build + capability handshake restart wiring — `GraphDbClientPoolOptions.daemonRestart`
- * documents when it applies.
+ * `CodegraphDaemonRestartWiring` moved to `../daemon-ports.ts` (bd
+ * tea-rags-mcp-89k7k.35, H4a1); re-exported here for existing importers —
+ * `GraphDbClientPoolOptions.daemonRestart` documents when it applies.
  */
-export interface CodegraphDaemonRestartWiring {
-  /** Cold-spawn hook — wired to `ensureCodegraphDaemon` by the bootstrap factory. */
-  respawn?: () => void;
-  /** Override the module-captured loaded fingerprint (tests). */
-  buildFingerprint?: string;
-  /**
-   * Override the reader of the build fingerprint on disk NOW (tests) — what a
-   * daemon respawned from this process's build tree would report. Defaults to
-   * `readOnDiskBuildFingerprint`.
-   */
-  readOnDiskBuildFingerprint?: () => string | undefined;
-  /** Bound on the wait for the stale daemon's exit (default 10s). */
-  exitTimeoutMs?: number;
-  /** Lifecycle-file poll interval while waiting for the exit. */
-  pollIntervalMs?: number;
-  /**
-   * Drain-respawn attempts before the typed error (default 3, floor 1). Kept
-   * small on purpose: it widens the window for losing a spawn race, it is not
-   * a wait-until-healthy loop.
-   */
-  maxRestartAttempts?: number;
-  /** Base delay between restart attempts; jittered (default 250ms). */
-  restartDelayMs?: number;
-}
+export type { CodegraphDaemonRestartWiring };
 
 /**
  * Drain-respawn attempts before `CodegraphDaemonStaleBuildError`: enough to lose

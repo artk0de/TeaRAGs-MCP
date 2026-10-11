@@ -33,6 +33,7 @@
 
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
+import type { ForeignBuildLockArbiter, ForeignBuildLockSettlement } from "../daemon-ports.js";
 import { isDaemonDrainRefusal, type DuckDbOpenFailedError, type ForeignBuildDaemonLockHolder } from "../errors.js";
 import { DaemonGraphDbClient } from "./client.js";
 import {
@@ -43,23 +44,17 @@ import {
   type DaemonKeyDirStatus,
 } from "./lifecycle.js";
 
+/**
+ * `ForeignBuildLockSettlement` and the `ForeignBuildLockArbiter` port this class
+ * implements moved to `../daemon-ports.ts` (bd tea-rags-mcp-89k7k.35, H4a1);
+ * the settlement is re-exported here for existing importers.
+ */
+export type { ForeignBuildLockSettlement };
+
 /** Connect bound for the control connection: the pid file says the daemon is up. */
 const CONTROL_CONNECT_TIMEOUT_MS = 1_500;
 /** The daemon's own drain is hard-capped at ~3 s (`createShutdown`). */
 const DEFAULT_EXIT_TIMEOUT_MS = 10_000;
-
-/** How a lock held by another build's daemon was settled. */
-export type ForeignBuildLockSettlement =
-  /** The holder is not a codegraph daemon of another build — plain retry applies. */
-  | { kind: "notForeignBuildDaemon" }
-  /** The holder served nobody and has exited; the open may be retried at once. */
-  | { kind: "drained"; holder: ForeignBuildDaemonLockHolder }
-  /** The holder is in use, refused the drain, or could not be drained; it stays up. */
-  | {
-      kind: "held";
-      holder: ForeignBuildDaemonLockHolder;
-      reason: "clientConnected" | "drainRefused" | "unreachable" | "exitTimeout";
-    };
 
 export interface ForeignBuildDaemonLockArbiterOptions {
   /** Base daemon storage dir — the parent of every build-key directory. */
@@ -72,7 +67,7 @@ export interface ForeignBuildDaemonLockArbiterOptions {
   exitTimeoutMs?: number;
 }
 
-export class ForeignBuildDaemonLockArbiter {
+export class ForeignBuildDaemonLockArbiter implements ForeignBuildLockArbiter {
   /**
    * Arbitration lines already written, so the open retry — which settles the
    * same holder once per interval for the whole window — logs each outcome of
