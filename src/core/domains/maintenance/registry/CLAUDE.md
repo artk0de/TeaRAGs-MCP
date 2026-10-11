@@ -210,7 +210,7 @@
 
 ## See also
 
-- `.claude/rules/domain-boundaries.md` — why the registry lives here, not in
-  `core/infra/`.
+- `.claude/rules/domain-boundaries.md` — why the registry lives here, not in the
+  foundation.
 - `../worktree/CLAUDE.md` — the provisioner is the only writer of `worktreeOf` /
   `worktreeName`.

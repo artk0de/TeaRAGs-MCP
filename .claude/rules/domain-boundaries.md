@@ -38,7 +38,6 @@ paths:
 | `core/contracts/`          | _(other `contracts/` modules only — zero other `core/` deps)_           | all `core/` layers           |
 | `core/primitives/`         | `contracts/` _(type-only)_                                              | all `core/` layers           |
 | `core/adapters/`           | `contracts/`, `primitives/`                                             | domain modules, `api/`       |
-| `core/infra/`              | _being retired (bd tea-rags-mcp-2wu2h) — no new modules_                | legacy importers only        |
 
 **Foundation order.** Inside the foundation row the three layers are ordered
 `contracts < primitives < adapters`. `contracts` imports only other `contracts`
@@ -58,9 +57,9 @@ surface — for the runtime pieces its commands construct directly (ops classes,
 the path-collection resolver, `createApp`); a command that news up ops over bare
 clients is a composition actor, not a contract consumer (bd
 tea-rags-mcp-89k7k.22). Deep paths stay forbidden for both: NOT
-`api/internal/**`, `contracts/`, `primitives/`, `adapters/`, `infra/` directly.
-A VALUE re-export of an internal runtime symbol through `api/public/index.ts` is
-the defect this split removed — it put the stable contract layer in a dependency
+`api/internal/**`, `contracts/`, `primitives/`, `adapters/` directly. A VALUE
+re-export of an internal runtime symbol through `api/public/index.ts` is the
+defect this split removed — it put the stable contract layer in a dependency
 cycle with the unstable api component (delta 0.87). Pin:
 `tests/core/api/public/sdp-runtime-import-direction.test.ts`.
 
@@ -86,7 +85,7 @@ See spec
 - `primitives/` -x-> `adapters/`; `primitives/` -x-> `contracts/` at runtime
   (`import type` only)
 - Outer layers -x-> `core` below `api/public` (`cli`/`mcp` -x-> `domains` /
-  `contracts` / `primitives` / `adapters` / `infra` / `api/internal`)
+  `contracts` / `primitives` / `adapters` / `api/internal`)
 - `contracts/` -x-> any non-`contracts` `core/` layer
 
 ## Layer Responsibilities
@@ -197,11 +196,10 @@ bucket. A module below `api/` goes to exactly one of:
 "Effectful but not an adapter" is not a category. The contracts exception above
 is the only other home: pure code that depends on `contracts/` alone.
 
-**core/infra/** — being retired (bd tea-rags-mcp-2wu2h)
-
-No new modules. Remaining files move to their three-destination home wave by
-wave; `infra` keeps its legacy zone (`import type` from `contracts` only) until
-the directory is deleted. Background:
+**No `infra` layer exists.** `src/core/infra/` was retired (bd
+tea-rags-mcp-2wu2h); the three-destination rule above is the whole decision
+tree, and `eslint.config.js` has no zone that would let a directory by that name
+carry a layer. Background:
 `docs/superpowers/specs/2026-07-26-infra-tidy-design.md`.
 
 ## New Code Placement Rule (MANDATORY)
@@ -215,8 +213,8 @@ dirs under `src/` — all code goes into `core/`.
 | Embedding adapter     | `core/adapters/embeddings/`   | `src/providers/`     |
 | New domain module     | `core/domains/<module-name>/` | `src/<module-name>/` |
 | Bootstrap/config      | `bootstrap/`                  | `src/config/`        |
-| Pure shared helper    | `core/primitives/<category>/` | `core/infra/`        |
-| Local-disk/process IO | `core/adapters/<system>/`     | `core/infra/`        |
+| Pure shared helper    | `core/primitives/<category>/` | (no `infra` layer)   |
+| Local-disk/process IO | `core/adapters/<system>/`     | (no `infra` layer)   |
 
 Tests mirror source structure: `tests/core/adapters/qdrant/` for
 `src/core/adapters/qdrant/`.

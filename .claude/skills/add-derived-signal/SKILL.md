@@ -18,7 +18,7 @@ Add new normalized (0-1) signal computed from raw payload at rerank time.
   ownership, etc.). Use `helpers.ts` for payload access + alpha-blending.
 - **Static trajectory** (`domains/trajectory/static/rerank/derived-signals/`):
   signals from code structure (chunk size, imports, documentation). Use
-  `normalize()` from `infra/signal-utils.ts`.
+  `normalize()` from `contracts/signal-utils.ts`.
 
 ## Step 2: Create the signal file (with JSDoc)
 
@@ -60,9 +60,9 @@ export class MySignal implements DerivedSignalDescriptor {
 **Static signal template:**
 
 ```typescript
+import { normalize } from "../../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
-import { normalize } from "../../../../../infra/signal-utils.js";
 
 export class MySignal implements DerivedSignalDescriptor {
   readonly name = "mySignal";

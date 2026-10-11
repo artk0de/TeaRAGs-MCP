@@ -1,7 +1,7 @@
 /**
  * Layer-guard fixture test.
  *
- * The foundation eslint zones (`contracts`, `infra`, `adapters`) were dead for
+ * The foundation eslint zones (`contracts`, `primitives`, `adapters`) were dead for
  * months: their globs were anchored at "core/", while every import
  * inside `src/core` is relative (`../domains/ingest/...`) and so never contains
  * the `core/` segment. Nothing matched, nothing was ever reported.
@@ -38,14 +38,6 @@ interface Fixture {
 }
 
 const FIXTURES = {
-  infraToDomains: {
-    path: "src/core/infra/__layer_guard_infra_to_domains__.ts",
-    source: `import "../${STABLE_DOMAIN_MODULE}";\n`,
-  },
-  contractsToInfra: {
-    path: "src/core/contracts/__layer_guard_contracts_to_infra__.ts",
-    source: 'import "../infra/runtime.js";\n',
-  },
   adaptersToApi: {
     path: "src/core/adapters/__layer_guard_adapters_to_api__.ts",
     source: 'import "../api/public/index.js";\n',
@@ -53,10 +45,6 @@ const FIXTURES = {
   adaptersToDomains: {
     path: "src/core/adapters/__layer_guard_adapters_to_domains__.ts",
     source: `import "../${STABLE_DOMAIN_MODULE}";\n`,
-  },
-  infraToContractsType: {
-    path: "src/core/infra/__layer_guard_infra_to_contracts_type__.ts",
-    source: 'import type { AstNode } from "../contracts/types/ast.js";\n\nexport type Fixture = AstNode;\n',
   },
   primitivesToDomains: {
     path: "src/core/primitives/math/__layer_guard_primitives_to_domains__.ts",
@@ -125,11 +113,7 @@ describe("eslint layer guard — foundation zones", () => {
         expect(line, fixture.path).toMatch(new RegExp(`^${LAYER_RULE_ID}: `));
       }
     }
-    expect(reportFor(FIXTURES.contractsToInfra)).toMatch(new RegExp(`^${LAYER_RULE_ID}: `));
-  });
-
-  it("rejects a relative contracts -> infra import", () => {
-    expect(reportFor(FIXTURES.contractsToInfra)).toContain("contracts is pure");
+    expect(reportFor(FIXTURES.contractsToPrimitives)).toMatch(new RegExp(`^${LAYER_RULE_ID}: `));
   });
 
   it("rejects a relative adapters -> api import", () => {
@@ -138,14 +122,6 @@ describe("eslint layer guard — foundation zones", () => {
 
   it("rejects a relative adapters -> domains import", () => {
     expect(reportFor(FIXTURES.adaptersToDomains)).toContain("adapters may import only");
-  });
-
-  it("allows an infra -> contracts type-only import", () => {
-    expect(reportFor(FIXTURES.infraToContractsType)).not.toContain("infra is the lowest layer");
-  });
-
-  it("rejects a relative infra -> domains import", () => {
-    expect(reportFor(FIXTURES.infraToDomains)).toContain("infra is the lowest layer");
   });
 
   it("rejects a relative primitives -> domains import", () => {

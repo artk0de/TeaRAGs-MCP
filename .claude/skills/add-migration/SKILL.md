@@ -30,8 +30,9 @@ FIRST. Migrations against missing interfaces silently no-op.
 
 Migration needs capabilities not in existing store interface:
 
-1. Add method to interface in `src/core/infra/migration/types.ts`
-2. Implement in adapter: `src/core/infra/migration/adapters/<store>-adapter.ts`
+1. Add method to interface in `src/core/domains/maintenance/migration/types.ts`
+2. Implement in adapter:
+   `src/core/domains/maintenance/migration/adapters/<store>-adapter.ts`
 3. Update mock in tests
 
 **Do NOT** inject `QdrantManager` or other concrete classes directly into
@@ -60,18 +61,18 @@ Step-by-step process for adding a migration to one of three pipelines.
 
 Read runner constructor to find highest existing version:
 
-| Pipeline   | Runner file                                     |
-| ---------- | ----------------------------------------------- |
-| `schema`   | `src/core/infra/migration/schema-migrator.ts`   |
-| `snapshot` | `src/core/infra/migration/snapshot-migrator.ts` |
-| `sparse`   | `src/core/infra/migration/sparse-migrator.ts`   |
+| Pipeline   | Runner file                                                   |
+| ---------- | ------------------------------------------------------------- |
+| `schema`   | `src/core/domains/maintenance/migration/schema-migrator.ts`   |
+| `snapshot` | `src/core/domains/maintenance/migration/snapshot-migrator.ts` |
+| `sparse`   | `src/core/domains/maintenance/migration/sparse-migrator.ts`   |
 
 New version = highest existing + 1.
 
 ## Step 2: Create Migration File
 
 **File**:
-`src/core/infra/migration/<pipeline>_migrations/<pipeline>-v<N>-<description>.ts`
+`src/core/domains/maintenance/migration/<pipeline>_migrations/<pipeline>-v<N>-<description>.ts`
 
 ### Template — Schema migration (index creation)
 
@@ -252,7 +253,7 @@ before continuing.
 
 ## Step 6: Write Tests
 
-**File**: `tests/core/infra/migration/<pipeline>-migrator.test.ts`
+**File**: `tests/core/domains/maintenance/migration/<pipeline>-migrator.test.ts`
 
 Add to existing test file or create new one for the specific migration.
 

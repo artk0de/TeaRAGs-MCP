@@ -62,7 +62,7 @@ Git enrichment is the second-most expensive operation. The pipeline caches resul
 
 ## StatsCache — Percentile Thresholds
 
-`StatsCache` (`src/core/infra/stats-cache.ts`) holds per-collection percentile thresholds used for signal labels (`low`/`typical`/`high`/`extreme`). Scoped by `(language, signal, source|test)`.
+`StatsCache` (`src/core/adapters/filesystem/stats-cache.ts`) holds per-collection percentile thresholds used for signal labels (`low`/`typical`/`high`/`extreme`). Scoped by `(language, signal, source|test)`.
 
 **Lifecycle:**
 

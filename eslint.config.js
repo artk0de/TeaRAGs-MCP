@@ -167,7 +167,6 @@ export default tseslint.config(
   //   domains/* → core/{contracts,primitives,adapters}  (never each other)
   //   contracts → contracts   primitives → (type-only contracts)
   //   adapters  → core/{contracts,primitives}
-  //   infra     → (type-only contracts) — being retired (bd tea-rags-mcp-2wu2h)
   // api/public holds the contract only; runtime classes and the App factory
   // live behind the api root barrel, which cli commands that construct ops
   // with bare clients import as the assembly seam.
@@ -184,7 +183,6 @@ export default tseslint.config(
                 "**/core/contracts/**",
                 "**/core/adapters/**",
                 "**/core/primitives/**",
-                "**/core/infra/**",
                 "**/core/api/internal/**",
                 "**/core/api/errors",
                 "**/core/api/errors.js",
@@ -211,7 +209,6 @@ export default tseslint.config(
                 "**/core/contracts/**",
                 "**/core/adapters/**",
                 "**/core/primitives/**",
-                "**/core/infra/**",
                 "**/core/api/internal/**",
                 "**/core/api/errors",
                 "**/core/api/errors.js",
@@ -406,10 +403,9 @@ export default tseslint.config(
           patterns: [
             {
               // Globs are prefix-free on purpose: every import inside src/core is
-              // relative ("../infra/runtime.js"), so a "**/core/..."-anchored
+              // relative ("../primitives/runtime.js"), so a "**/core/..."-anchored
               // pattern never matches and the zone silently allows everything.
               group: [
-                "**/infra/**",
                 "**/primitives/**",
                 "**/adapters/**",
                 "**/domains/**",
@@ -513,27 +509,6 @@ export default tseslint.config(
               group: ["@qdrant/*", "@duckdb/*", "duckdb", "duckdb-*"],
               message:
                 "primitives are I/O-free; move to adapters/<system> behind a port or to the owning domain (domain-boundaries.md).",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ["src/core/infra/**/*.ts"],
-    rules: {
-      "@typescript-eslint/no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              // Foundation order: contracts < infra < adapters. `infra` may
-              // `import type` from `contracts` — contracts has zero core/ deps
-              // (its own zone enforces that), so no cycle can form. See
-              // docs/superpowers/specs/2026-07-26-infra-tidy-design.md.
-              //
-              group: ["**/domains/**", "**/adapters/**", "**/api/**", "**/bootstrap/**", "**/mcp/**", "**/cli/**"],
-              message: "infra is the lowest layer — it may only import type from contracts.",
             },
           ],
         },

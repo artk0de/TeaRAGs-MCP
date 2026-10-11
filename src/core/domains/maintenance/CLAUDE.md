@@ -92,6 +92,7 @@
 - `.claude/rules/migrations.md` — the five pipelines, where a new migration is
   registered, and the live end-to-end verification protocol.
 - `.claude/rules/domain-boundaries.md` — why the registry and migration
-  framework live here rather than in `core/infra/`.
+  framework live here rather than in the foundation (`primitives/`,
+  `adapters/`).
 - `drift/CLAUDE.md`, `registry/CLAUDE.md`, `footprint/CLAUDE.md`,
   `worktree/CLAUDE.md` — sibling navigators.

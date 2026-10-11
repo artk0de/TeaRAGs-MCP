@@ -65,7 +65,7 @@ None fit → create `dto/<new-domain>.ts` + add re-export to `dto/index.ts`.
 - Extend `CollectionRef` for endpoints accepting `collection` or `path`
 - Extend `TypedFilterParams` for endpoints with trajectory filters
 - Pure interfaces only (no classes, no logic)
-- Import only from `contracts/` or `infra/` if needed
+- Import only from `contracts/` if needed
 
 **Export chain (MANDATORY):**
 
