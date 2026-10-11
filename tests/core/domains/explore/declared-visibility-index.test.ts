@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DeclaredVisibilityIndex } from "../../../src/core/infra/declared-visibility-index.js";
+import { DeclaredVisibilityIndex } from "../../../../src/core/domains/explore/declared-visibility-index.js";
 
 describe("DeclaredVisibilityIndex (bd tea-rags-mcp-sqqkz)", () => {
   const index = DeclaredVisibilityIndex.fromRows([

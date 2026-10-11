@@ -10,7 +10,12 @@
  * defaults to `public`.
  */
 
-import type { DeclaredSymbolVisibility, RelPath, SymbolId, SymbolVisibilityRow } from "../contracts/types/codegraph.js";
+import type {
+  DeclaredSymbolVisibility,
+  RelPath,
+  SymbolId,
+  SymbolVisibilityRow,
+} from "../../contracts/types/codegraph.js";
 
 export class DeclaredVisibilityIndex {
   static readonly EMPTY = new DeclaredVisibilityIndex(new Map());

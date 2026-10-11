@@ -20,7 +20,7 @@ import Parser from "tree-sitter";
 
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
 import type { DeclaredDependenciesByLanguage } from "../../../../contracts/types/language.js";
-import { extractCodeFileFromText } from "../../../../infra/code-file-extraction.js";
+import { extractCodeFileFromText } from "./code-file-extraction.js";
 import {
   CODEGRAPH_LANGUAGES,
   extensionOf,
