@@ -97,3 +97,18 @@ describe("pipeline/infra owns the batching and work-item vocabulary", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("the enrichment executor owns its wire format", () => {
+  it("nothing under enrichment/executor/ imports a file elsewhere under enrichment/ (the worker protocol lives in executor/)", () => {
+    const executorDir = join(ENRICHMENT_DIR, "executor");
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder(executorDir)) {
+      for (const target of relativeTargets(file)) {
+        if (isUnder(target, ENRICHMENT_DIR) && !isUnder(target, executorDir)) {
+          offenders.push(`${rel(file)} -> ${rel(target)}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

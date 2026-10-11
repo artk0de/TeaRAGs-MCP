@@ -5,3 +5,11 @@
  */
 export { InlineEnrichmentExecutor } from "./inline.js";
 export { WorkerPoolEnrichmentExecutor } from "./worker-pool.js";
+export type {
+  EnrichmentCallRequest,
+  EnrichmentMethod,
+  EnrichmentReleaseRequest,
+  EnrichmentShutdownRequest,
+  EnrichmentWorkerRequest,
+  EnrichmentWorkerResponse,
+} from "./worker-protocol.js";

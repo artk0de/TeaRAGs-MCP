@@ -27,7 +27,7 @@
  *      then delete the cache entry. Idempotent: uncached entry returns
  *      `released: false` without error.
  *
- * Protocol (`./worker-protocol.ts`):
+ * Protocol (`../executor/worker-protocol.ts`, type-only):
  *   Receives: EnrichmentWorkerRequest (call | release | shutdown)
  *   Returns:  EnrichmentWorkerResponse (fileOverlay | chunkOverlay | released | error)
  */
@@ -37,11 +37,11 @@ import { parentPort, resourceLimits, workerData } from "node:worker_threads";
 
 import type { EnrichmentProvider } from "../../../../../contracts/types/provider.js";
 import { applyWorkerDebug } from "../../infra/worker-debug.js";
+import type { EnrichmentReleaseRequest, EnrichmentWorkerRequest, EnrichmentWorkerResponse } from "../executor/index.js";
 import { chunkedCpuProfilerConfigFromEnv, startChunkedCpuProfiler } from "./chunked-cpu-profiler.js";
 import { chunkedHeapProfilerConfigFromEnv, startChunkedHeapProfiler } from "./chunked-heap-profiler.js";
 import { describeUnenforcedHeapCeiling } from "./heap-ceiling-enforcement.js";
 import { enrichmentProviderCacheKey, invokeEnrichmentMethod } from "./worker-invoke.js";
-import type { EnrichmentReleaseRequest, EnrichmentWorkerRequest, EnrichmentWorkerResponse } from "./worker-protocol.js";
 
 // A worker thread starts with its own module registry, so the debug flag is
 // false here until the pool's init payload says otherwise. Without this, every

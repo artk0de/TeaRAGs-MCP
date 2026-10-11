@@ -27,13 +27,9 @@ import type {
   FileSignalOptions,
   FileSignalOverlay,
 } from "../../../../../contracts/types/provider.js";
-import type {
-  EnrichmentCallRequest,
-  EnrichmentReleaseRequest,
-  EnrichmentWorkerResponse,
-} from "../infra/worker-protocol.js";
 import type { ExtractionFanoutDispatch } from "./extraction-fanout.js";
 import type { LanguageAffinityPartition, LanguageAffinityPlan } from "./language-affinity-plan.js";
+import type { EnrichmentCallRequest, EnrichmentReleaseRequest, EnrichmentWorkerResponse } from "./worker-protocol.js";
 
 export class LanguageAffinityDispatcher {
   constructor(private readonly dispatch: ExtractionFanoutDispatch) {}

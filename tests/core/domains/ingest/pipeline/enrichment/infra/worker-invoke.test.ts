@@ -8,11 +8,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { EnrichmentProvider } from "../../../../../../../src/core/contracts/types/provider.js";
+import type { EnrichmentCallRequest } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/worker-protocol.js";
 import {
   enrichmentProviderCacheKey,
   invokeEnrichmentMethod,
 } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/infra/worker-invoke.js";
-import type { EnrichmentCallRequest } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/infra/worker-protocol.js";
 
 interface Recorded {
   method: string;

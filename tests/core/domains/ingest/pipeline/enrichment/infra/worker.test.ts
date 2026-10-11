@@ -24,7 +24,7 @@ import { fixturePhysicalCollectionName } from "../../../../../__helpers__/collec
 import type {
   EnrichmentWorkerRequest,
   EnrichmentWorkerResponse,
-} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/infra/worker-protocol.js";
+} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/worker-protocol.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const WORKER_PATH = resolve(

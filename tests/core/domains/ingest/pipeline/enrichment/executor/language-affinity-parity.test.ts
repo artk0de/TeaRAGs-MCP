@@ -43,15 +43,15 @@ import {
   planLanguageAffinity,
   type LanguageAffinityPlan,
 } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/language-affinity-plan.js";
-import {
-  enrichmentProviderCacheKey,
-  invokeEnrichmentMethod,
-} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/infra/worker-invoke.js";
 import type {
   EnrichmentCallRequest,
   EnrichmentWorkerRequest,
   EnrichmentWorkerResponse,
-} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/infra/worker-protocol.js";
+} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/worker-protocol.js";
+import {
+  enrichmentProviderCacheKey,
+  invokeEnrichmentMethod,
+} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/infra/worker-invoke.js";
 import { collectSymbols } from "../../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { runMigrations } from "../../../../../../../src/core/domains/maintenance/migration/database/runner.js";

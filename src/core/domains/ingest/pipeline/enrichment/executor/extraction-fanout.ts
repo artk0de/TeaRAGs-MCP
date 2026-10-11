@@ -41,12 +41,8 @@
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type { FileExtractionPass1Telemetry } from "../../../../../contracts/types/provider.js";
 import { Semaphore } from "../../../../../primitives/concurrency/index.js";
-import type {
-  EnrichmentCallRequest,
-  EnrichmentWorkerRequest,
-  EnrichmentWorkerResponse,
-} from "../infra/worker-protocol.js";
 import type { LanguageAffinityPartition, LanguageAffinityPlan } from "./language-affinity-plan.js";
+import type { EnrichmentCallRequest, EnrichmentWorkerRequest, EnrichmentWorkerResponse } from "./worker-protocol.js";
 
 /** The pool dispatch the fan-out drives. Injected so the split logic is testable without threads. */
 export type ExtractionFanoutDispatch = (

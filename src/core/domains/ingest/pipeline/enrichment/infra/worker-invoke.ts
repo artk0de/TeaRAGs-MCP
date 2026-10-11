@@ -10,7 +10,7 @@
 
 import type { ChunkSignalOptions, EnrichmentProvider } from "../../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
-import type { EnrichmentCallRequest, EnrichmentWorkerResponse } from "./worker-protocol.js";
+import type { EnrichmentCallRequest, EnrichmentWorkerResponse } from "../executor/index.js";
 
 /**
  * The worker's provider-cache key. One provider instance per (module,

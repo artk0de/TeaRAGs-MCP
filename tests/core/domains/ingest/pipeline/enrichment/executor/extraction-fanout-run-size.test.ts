@@ -21,7 +21,7 @@ import type {
   EnrichmentCallRequest,
   EnrichmentWorkerRequest,
   EnrichmentWorkerResponse,
-} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/infra/worker-protocol.js";
+} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/worker-protocol.js";
 
 const COLLECTION = "code_test";
 const FILES_PER_THREAD = 400;
