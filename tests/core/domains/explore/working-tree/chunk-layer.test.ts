@@ -22,7 +22,7 @@ import {
 import type { ChunkerPoolPort } from "../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
 import { buildFileChunkPoints } from "../../../../../src/core/domains/ingest/pipeline/file-chunk-points.js";
 import { processFiles } from "../../../../../src/core/domains/ingest/pipeline/file-processor.js";
-import type { ChunkItem } from "../../../../../src/core/domains/ingest/pipeline/types.js";
+import type { ChunkItem } from "../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 import { StaticPayloadBuilder } from "../../../../../src/core/domains/trajectory/static/provider.js";
 import type { ChunkerConfig } from "../../../../../src/core/types.js";
 import { cleanupTempDir, createTempTestDir } from "../../ingest/__helpers__/test-helpers.js";

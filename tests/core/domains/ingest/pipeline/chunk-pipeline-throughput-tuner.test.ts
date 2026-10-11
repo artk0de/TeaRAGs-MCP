@@ -13,7 +13,7 @@ import { OllamaContextOverflowError } from "../../../../../src/core/adapters/emb
 import { ChunkPipeline } from "../../../../../src/core/domains/ingest/pipeline/chunk-pipeline.js";
 import { EmbeddingThroughputTuner } from "../../../../../src/core/domains/ingest/pipeline/embedding-throughput-tuner.js";
 import { pipelineLog } from "../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
-import type { ChunkItem } from "../../../../../src/core/domains/ingest/pipeline/types.js";
+import type { ChunkItem } from "../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 import type { QuarantineStore } from "../../../../../src/core/domains/ingest/sync/quarantine-store.js";
 import { StaticPayloadBuilder } from "../../../../../src/core/domains/trajectory/static/provider.js";
 

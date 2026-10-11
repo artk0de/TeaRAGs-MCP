@@ -12,11 +12,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
+import type { Batch, DeleteItem, UpsertItem } from "../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 import {
   createQdrantPipeline,
   PipelineManager,
 } from "../../../../../src/core/domains/ingest/pipeline/pipeline-manager.js";
-import type { Batch, DeleteItem, UpsertItem } from "../../../../../src/core/domains/ingest/pipeline/types.js";
 
 describe("PipelineManager", () => {
   let pipeline: PipelineManager;

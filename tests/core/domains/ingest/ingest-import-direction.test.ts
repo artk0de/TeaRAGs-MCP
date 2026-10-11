@@ -6,13 +6,25 @@
  * them. Each assertion below pins one edge group that used to close the ingest
  * knot. `import type` counts: the architecture detector judges type edges too.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 const ROOT = join(import.meta.dirname, "../../../../");
 const INGEST_DIR = join(ROOT, "src/core/domains/ingest");
+const PIPELINE_DIR = join(INGEST_DIR, "pipeline");
+const PIPELINE_INFRA_DIR = join(PIPELINE_DIR, "infra");
+const ENRICHMENT_DIR = join(PIPELINE_DIR, "enrichment");
+
+function tsFilesUnder(dir: string, acc: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const abs = join(dir, entry);
+    if (statSync(abs).isDirectory()) tsFilesUnder(abs, acc);
+    else if (entry.endsWith(".ts")) acc.push(abs);
+  }
+  return acc;
+}
 
 /** Resolved absolute targets of every relative module specifier in a file (static, re-export, dynamic, type). */
 function relativeTargets(file: string): string[] {
@@ -53,6 +65,33 @@ describe("ingest root never imports into its children", () => {
         if (isUnder(target, INGEST_DIR) && dirname(target) !== INGEST_DIR) {
           offenders.push(`${rel(file)} -> ${rel(target)}`);
         }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("pipeline/infra owns the batching and work-item vocabulary", () => {
+  it("nothing under pipeline/infra/ imports a file directly in pipeline/ or the ingest root other than errors.ts", () => {
+    const allowed = join(INGEST_DIR, "errors.ts");
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder(PIPELINE_INFRA_DIR)) {
+      for (const target of relativeTargets(file)) {
+        const dir = dirname(target);
+        if ((dir === PIPELINE_DIR || dir === INGEST_DIR) && target !== allowed) {
+          offenders.push(`${rel(file)} -> ${rel(target)}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("nothing under pipeline/enrichment/ imports pipeline/types.ts (ChunkItem comes from pipeline/infra)", () => {
+    const pipelineTypes = join(PIPELINE_DIR, "types.ts");
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder(ENRICHMENT_DIR)) {
+      for (const target of relativeTargets(file)) {
+        if (target === pipelineTypes) offenders.push(`${rel(file)} -> ${rel(target)}`);
       }
     }
     expect(offenders).toEqual([]);

@@ -17,6 +17,21 @@
  */
 
 export { BatchAccumulator } from "./batch-accumulator.js";
+export type {
+  Batch,
+  BatchAccumulatorConfig,
+  BatchCompletionCallback,
+  BatchFlushTrigger,
+  BatchHandler,
+  BatchResult,
+  BackpressureCallback,
+  ChunkItem,
+  DeleteItem,
+  OperationType,
+  UpsertItem,
+  WorkerPoolConfig,
+  WorkItem,
+} from "./types.js";
 export { pipelineLog } from "./debug-logger.js";
 export { parallelLimit } from "./parallel.js";
 export { isDebug, setDebug } from "../../../../infra/runtime.js";

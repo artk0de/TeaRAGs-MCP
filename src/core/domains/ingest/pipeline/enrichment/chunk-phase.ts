@@ -24,7 +24,7 @@ import { CommitDiffMemo } from "../../../../infra/commit-diff-memo.js";
 import { Semaphore } from "../../../../infra/semaphore.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
-import type { ChunkItem } from "../types.js";
+import type { ChunkItem } from "../infra/index.js";
 import { bareStampableChunkIds, type EnrichmentApplier } from "./applier.js";
 import { enrichmentScope, enrichmentSkipReason, fileLinesOf, type EnrichmentSkipReason } from "./policy.js";
 import type { ProviderContext } from "./types.js";

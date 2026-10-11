@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QdrantOptimizationInProgressError } from "../../../../../src/core/adapters/qdrant/errors.js";
 import { ChunkPipeline } from "../../../../../src/core/domains/ingest/pipeline/chunk-pipeline.js";
 import { pipelineLog } from "../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
-import type { ChunkItem } from "../../../../../src/core/domains/ingest/pipeline/types.js";
+import type { ChunkItem } from "../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 // Use real StaticPayloadBuilder for full payload construction
 import { StaticPayloadBuilder } from "../../../../../src/core/domains/trajectory/static/provider.js";
 

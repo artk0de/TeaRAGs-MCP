@@ -17,7 +17,7 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
-import type { ChunkItem } from "../../../../../../src/core/domains/ingest/pipeline/types.js";
+import type { ChunkItem } from "../../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 
 type SetOp = { payload: Record<string, unknown>; points: (string | number)[]; key?: string };
 type DeleteOp = { keys: string[]; points: (string | number)[] };

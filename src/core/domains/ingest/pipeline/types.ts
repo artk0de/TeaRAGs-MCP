@@ -1,149 +1,11 @@
 /**
- * Pipeline Types - Interfaces for the batching/worker pool system
+ * Pipeline Types - pipeline manager configuration and statistics.
+ *
+ * The batching / work-item vocabulary lives in `infra/types.ts`.
  */
 
 import { IMPLICIT_EMBEDDING_CONCURRENCY_CEILING } from "./embedding-throughput-tuner.js";
-
-/**
- * Types of operations the pipeline can handle
- */
-export type OperationType = "upsert" | "delete";
-
-/**
- * Base work item interface
- */
-export interface WorkItem {
-  type: OperationType;
-  id: string;
-}
-
-/**
- * Upsert operation - add or update points in Qdrant
- */
-export interface UpsertItem extends WorkItem {
-  type: "upsert";
-  point: {
-    id: string;
-    vector: number[];
-    sparseVector?: { indices: number[]; values: number[] };
-    payload: Record<string, unknown>;
-  };
-}
-
-/**
- * Chunk operation - raw chunk needing embedding before upsert
- * Used by ChunkPipeline for batched embedding + storage
- */
-export interface ChunkItem extends WorkItem {
-  type: "upsert";
-  chunk: {
-    content: string;
-    startLine: number;
-    endLine: number;
-    metadata: {
-      filePath: string;
-      language: string;
-      chunkIndex: number;
-      name?: string;
-      chunkType?: string;
-      /** Parent class/module name for methods extracted from large classes */
-      parentSymbolId?: string;
-      /** Parent AST node type (e.g., "class", "module") */
-      parentType?: string;
-      /** Symbol identifier: "ClassName.methodName" or just "functionName" */
-      symbolId?: string;
-      /** True for documentation chunks (markdown, etc.) */
-      isDocumentation?: boolean;
-      /** File-level imports (inherited by all chunks from the file) */
-      imports?: string[];
-      /** Original method/block line count before chunk splitting. Used by decomposition signals. */
-      methodLines?: number;
-      /** Physical line count of the file (symbol-mass pass); the enrichment policy's size input. */
-      moduleLines?: number;
-      /** A test setup chunk's member scope spans (bd tea-rags-mcp-5xpq4). */
-      scopeLineRanges?: { start: number; end: number }[];
-      /** A test setup chunk's rows per member (bd tea-rags-mcp-5xpq4). */
-      memberRowCounts?: number[];
-      /** The member ids a packed test chunk answers find_symbol for (bd tea-rags-mcp-5xpq4). */
-      memberSymbolIds?: string[];
-      /** A packed test chunk's own line range per member, aligned with memberSymbolIds (bd tea-rags-mcp-g5i0a). */
-      memberLineRanges?: { start: number; end: number }[];
-    };
-  };
-  /** Pre-computed chunk ID */
-  chunkId: string;
-  /** Absolute path of the codebase for relativePath calculation */
-  codebasePath: string;
-}
-
-/**
- * Delete operation - remove points by path filter
- */
-export interface DeleteItem extends WorkItem {
-  type: "delete";
-  relativePath: string;
-}
-
-/**
- * What made a `BatchAccumulator` let a batch go: it reached its size, the
- * formation timeout fired on a partial one, or a drain forced the tail out. A
- * `timeout` batch formed while an embed slot sat idle is the producer-starvation
- * signal (bd tea-rags-mcp-y1ynz).
- */
-export type BatchFlushTrigger = "size" | "timeout" | "drain";
-
-/**
- * Batch of work items ready for processing
- */
-export interface Batch<T extends WorkItem = WorkItem> {
-  id: string;
-  type: OperationType;
-  items: T[];
-  createdAt: number;
-  /** Absent on a batch built outside the accumulator. */
-  flushTrigger?: BatchFlushTrigger;
-}
-
-/**
- * Result of processing a batch
- */
-export interface BatchResult {
-  batchId: string;
-  type: OperationType;
-  success: boolean;
-  itemCount: number;
-  durationMs: number;
-  error?: string;
-  retryCount?: number;
-}
-
-/**
- * Worker pool configuration
- */
-export interface WorkerPoolConfig {
-  /** Number of concurrent workers */
-  concurrency: number;
-  /** Maximum retries per batch */
-  maxRetries: number;
-  /** Base delay for exponential backoff (ms) */
-  retryBaseDelayMs: number;
-  /** Maximum delay between retries (ms) */
-  retryMaxDelayMs: number;
-}
-
-/**
- * Batch accumulator configuration
- */
-export interface BatchAccumulatorConfig {
-  /** Target batch size */
-  batchSize: number;
-  /** Minimum items before timeout flush (default: batchSize * 0.5) */
-  minBatchSize?: number;
-  /** Flush timeout (ms) - send partial batch after this time */
-  flushTimeoutMs: number;
-  /** Maximum queue size before applying backpressure */
-  maxQueueSize: number;
-}
+import type { BatchAccumulatorConfig, WorkerPoolConfig } from "./infra/index.js";
 
 /**
  * Pipeline manager configuration
@@ -191,21 +53,6 @@ export interface PipelineStats {
   /** Time since pipeline started */
   uptimeMs: number;
 }
-
-/**
- * Callback for batch completion
- */
-export type BatchCompletionCallback = (result: BatchResult) => void;
-
-/**
- * Callback for backpressure events
- */
-export type BackpressureCallback = (isPaused: boolean) => void;
-
-/**
- * Handler function for processing batches
- */
-export type BatchHandler<T extends WorkItem> = (batch: Batch<T>) => Promise<void>;
 
 /**
  * Build pipeline config from pre-parsed config slices.

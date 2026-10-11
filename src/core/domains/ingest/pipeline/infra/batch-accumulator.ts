@@ -18,7 +18,7 @@ import type {
   BatchFlushTrigger,
   OperationType,
   WorkItem,
-} from "../types.js";
+} from "./types.js";
 
 export class BatchAccumulator<T extends WorkItem> {
   private readonly config: BatchAccumulatorConfig;

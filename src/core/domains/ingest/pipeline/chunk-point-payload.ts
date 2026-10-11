@@ -14,7 +14,7 @@
 
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import type { CodeChunk } from "../../../types.js";
-import type { ChunkItem } from "./types.js";
+import type { ChunkItem } from "./infra/index.js";
 
 export interface ChunkPointPayloadContext {
   /** Root the chunk's `filePath` is made relative to — the indexed tree. */

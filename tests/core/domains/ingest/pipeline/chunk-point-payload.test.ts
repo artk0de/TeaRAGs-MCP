@@ -18,7 +18,7 @@ import type {
   FileChunkResult,
 } from "../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
 import { processFiles } from "../../../../../src/core/domains/ingest/pipeline/file-processor.js";
-import type { ChunkItem } from "../../../../../src/core/domains/ingest/pipeline/types.js";
+import type { ChunkItem } from "../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 import { StaticPayloadBuilder } from "../../../../../src/core/domains/trajectory/static/provider.js";
 
 const SOURCE = `import { join } from "node:path";
