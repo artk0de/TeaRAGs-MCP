@@ -9,12 +9,12 @@ import Parser from "tree-sitter";
 import JsLang from "tree-sitter-javascript";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { JavaScriptLanguage } from "../../../../../../src/core/domains/language/javascript/index.js";
 import { extractFromJavascriptFile } from "../../../../../../src/core/domains/language/javascript/walker/walker.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 function extract(src: string): { composed: FileExtraction; native: FileExtraction } {
   const language = new JavaScriptLanguage();

@@ -10,17 +10,17 @@ import Parser from "tree-sitter";
 import PyLang from "tree-sitter-python";
 import { describe, expect, it, vi } from "vitest";
 
-import type { FileExtraction } from "../../../src/core/contracts/types/codegraph.js";
+import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
   LanguageWalker,
   SymbolIdComposer,
   WalkInput,
-} from "../../../src/core/contracts/types/language.js";
+} from "../../../../../../src/core/contracts/types/language.js";
 import {
   extractCodeFileFromText,
   type CodeFileExtractionRequest,
-} from "../../../src/core/infra/code-file-extraction.js";
+} from "../../../../../../src/core/domains/trajectory/codegraph/symbols/code-file-extraction.js";
 
 function pythonParser(): Parser {
   const parser = new Parser();

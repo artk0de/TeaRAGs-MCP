@@ -1,9 +1,9 @@
 import Parser from "tree-sitter";
 
+import { materializeTree } from "../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { LanguageProvider } from "../../../../../src/core/contracts/types/language.js";
 import { collectSymbols } from "../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { materializeTree } from "../../../../../src/core/infra/materialize.js";
 
 /**
  * `symbolId → visibility` for every chunk the COMPOSED walker emits a

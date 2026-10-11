@@ -10,11 +10,11 @@ import Parser from "tree-sitter";
 import JavaLang from "tree-sitter-java";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import { JavaLanguage } from "../../../../../../src/core/domains/language/java/index.js";
 import { symbolKindOf } from "../../../../../../src/core/domains/language/java/walker/symbol-kind.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 /** `symbolId → symbolKind` through the seam production runs (materialize, `collectSymbols`, `walker.walk`). */
 function symbolKindsOf(src: string): Record<string, string | undefined> {

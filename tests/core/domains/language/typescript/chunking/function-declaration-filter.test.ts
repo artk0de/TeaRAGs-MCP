@@ -15,12 +15,12 @@ import Parser from "tree-sitter";
 import TsLang from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { AstNode } from "../../../../../../src/core/contracts/types/ast.js";
 import {
   typescriptChunkClassifier,
   typescriptFunctionDeclarationFilterHook,
 } from "../../../../../../src/core/domains/language/typescript/chunking/index.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 function parse(src: string): AstNode {
   const parser = new Parser();

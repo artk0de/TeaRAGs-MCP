@@ -6,6 +6,7 @@ import Parser from "tree-sitter";
 import TsLang from "tree-sitter-typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
@@ -30,7 +31,6 @@ import { MapHierarchyView } from "../../../../../../src/core/domains/trajectory/
 import { buildHierarchySnapshot } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 import { symbolDefinitionsOf } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-definitions.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 const tsOptions = { baseUrl: ".", paths: {} };
 const cfg: ResolverConfig = { tsOptions, mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };

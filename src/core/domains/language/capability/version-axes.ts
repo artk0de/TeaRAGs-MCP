@@ -57,7 +57,7 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       "src/core/primitives/ids/symbolid",
       // `chunker/materialize.ts` is a seven-line re-export; the AST every
       // chunker and the codegraph provider actually walk is built here.
-      "src/core/infra/materialize.ts",
+      "src/core/adapters/tree-sitter/materialize.ts",
       // Test-scope chunk emission every language's test chunker hands its
       // scope tree to: it moves chunks and never an edge, so it is pruned back
       // out of the kernel's walker axis below.

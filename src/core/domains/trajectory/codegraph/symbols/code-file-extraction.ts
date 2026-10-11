@@ -9,18 +9,18 @@
  * They differ in how they find the language and load its grammar, never in what
  * happens after — so that part lives here once, and the two cannot drift.
  *
- * It lives in `infra/` beside {@link materializeTree} and
- * {@link fileIsInertForExtraction}, which it composes. `infra` imports nothing
- * above it at runtime, so every collaborator that belongs to a language — the
- * configured parser, the walker, the symbol collector, the composer — arrives
- * injected, and the per-extension table stays the caller's.
+ * It lives in the codegraph symbols trajectory, the domain that owns both
+ * entry points, and composes {@link materializeTree} and
+ * {@link fileIsInertForExtraction}. A domain may not import `domains/language`,
+ * so every collaborator that belongs to a language — the configured parser,
+ * the walker, the symbol collector, the composer — arrives injected, and the
+ * per-extension table stays the caller's.
  */
 import type Parser from "tree-sitter";
 
-import type { FileExtraction } from "../contracts/types/codegraph.js";
-import type { CollectSymbolsFn, LanguageWalker, SymbolIdComposer } from "../contracts/types/language.js";
-import { fileIsInertForExtraction } from "./extraction-fast-path.js";
-import { materializeTree } from "./materialize.js";
+import { fileIsInertForExtraction, materializeTree } from "../../../../adapters/tree-sitter/index.js";
+import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
+import type { CollectSymbolsFn, LanguageWalker, SymbolIdComposer } from "../../../../contracts/types/language.js";
 
 /** The language collaborators one extraction runs with, all resolved by the caller. */
 export interface CodeFileExtractionCollaborators {

@@ -11,11 +11,11 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 /** Walk `src` through the seam production runs (materialize, `collectSymbols`, `walker.walk`). */
 function extract(src: string): FileExtraction {

@@ -10,11 +10,11 @@ import Parser from "tree-sitter";
 import SwiftLang from "tree-sitter-swift";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { SwiftLanguage } from "../../../../../../src/core/domains/language/swift/index.js";
 import { symbolKindOf } from "../../../../../../src/core/domains/language/swift/walker/symbol-kind.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 const grammar = ((SwiftLang as { default?: unknown }).default ?? SwiftLang) as Parser.Language;
 

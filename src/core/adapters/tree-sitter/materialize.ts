@@ -1,6 +1,6 @@
 import type Parser from "tree-sitter";
 
-import type { AstNode } from "../contracts/types/ast.js";
+import type { AstNode } from "../../contracts/types/ast.js";
 
 /** Concrete immutable node. `text` slices the shared `code` lazily (no per-node strings). */
 class MaterializedNode implements AstNode {
@@ -57,8 +57,10 @@ class MaterializedNode implements AstNode {
  * in the installed node-tree-sitter binding (tree-sitter.d.ts audited). The
  * eager one-touch-per-node capture is deterministic (DECIDER finding).
  *
- * Lives in `infra/` so both `domains/ingest` (chunker) and `domains/trajectory`
- * (codegraph extractOneFile) can import it without a domain-boundary violation.
+ * Lives in `adapters/tree-sitter/` — the anti-corruption layer from the native
+ * `SyntaxNode` to the `AstNode` contract — so both `domains/ingest` (chunker)
+ * and `domains/trajectory` (codegraph extractOneFile) can import it without a
+ * domain-boundary violation.
  */
 export function materializeTree(nativeRoot: Parser.SyntaxNode, code: string): AstNode {
   const build = (native: Parser.SyntaxNode, parent: MaterializedNode | null): MaterializedNode => {

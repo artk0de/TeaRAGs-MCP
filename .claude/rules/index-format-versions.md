@@ -13,7 +13,7 @@ paths:
   - "src/core/domains/ingest/pipeline/chunker/utils/import-extractor.ts"
   - "src/core/domains/ingest/pipeline/chunker/utils/non-code-text-mask.ts"
   - "src/core/primitives/ids/symbolid/**"
-  - "src/core/infra/materialize.ts"
+  - "src/core/adapters/tree-sitter/materialize.ts"
   - "src/core/contracts/types/codegraph-*.ts"
 ---
 

@@ -11,6 +11,7 @@ import { extname } from "node:path";
 
 import Parser from "tree-sitter";
 
+import { materializeTree } from "../../../../adapters/tree-sitter/index.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkDecision, TestChunkLinkMetadataKey } from "../../../../contracts/types/chunker.js";
 import type {
@@ -19,7 +20,6 @@ import type {
   LanguageKernel,
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
-import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import {
   classifyMethod,

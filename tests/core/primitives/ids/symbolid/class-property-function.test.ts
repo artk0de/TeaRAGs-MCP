@@ -17,8 +17,8 @@ import Parser from "tree-sitter";
 import TsLang from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { AstNode } from "../../../../../src/core/contracts/types/ast.js";
-import { materializeTree } from "../../../../../src/core/infra/materialize.js";
 import { classPropertyFunction } from "../../../../../src/core/primitives/ids/symbolid/class-property-function.js";
 
 function parse(src: string): AstNode {

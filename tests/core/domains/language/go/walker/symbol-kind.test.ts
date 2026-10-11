@@ -9,11 +9,11 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { symbolKindOf } from "../../../../../../src/core/domains/language/go/walker/symbol-kind.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 /** `symbolId → symbolKind` through the seam production runs (materialize, `collectSymbols`, `walker.walk`). */
 function symbolKindsOf(src: string): Record<string, string | undefined> {

@@ -27,6 +27,7 @@ import { extname, join, relative } from "node:path";
 import ignore, { type Ignore } from "ignore";
 import Parser from "tree-sitter";
 
+import { materializeTree } from "../src/core/adapters/tree-sitter/materialize.js";
 // bd tea-rags-mcp-e8feo — the single-segment DROP-surface oracle drives the REAL
 // strategy chain, so it needs the three-state constructors the strategies return.
 import { CONTINUE, DROP, resolved as resolvedOutcome } from "../src/core/contracts/resolution.js";
@@ -181,7 +182,6 @@ import {
 // resolver that does not exist. Import it instead.
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { materializeTree } from "../src/core/infra/materialize.js";
 
 // ---------------------------------------------------------------------------
 // config

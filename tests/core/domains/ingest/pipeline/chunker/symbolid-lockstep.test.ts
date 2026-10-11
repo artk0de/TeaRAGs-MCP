@@ -19,6 +19,7 @@ import JsLang from "tree-sitter-javascript";
 import TsLang from "tree-sitter-typescript";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { AstNode } from "../../../../../../src/core/contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type { LanguageKernel } from "../../../../../../src/core/contracts/types/language.js";
@@ -29,7 +30,6 @@ import { javascriptKernel } from "../../../../../../src/core/domains/language/ja
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { tsNameOf } from "../../../../../../src/core/domains/language/typescript/index.js";
 import { typescriptKernel } from "../../../../../../src/core/domains/language/typescript/kernel.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
 const composer = new DefaultSymbolIdComposer();

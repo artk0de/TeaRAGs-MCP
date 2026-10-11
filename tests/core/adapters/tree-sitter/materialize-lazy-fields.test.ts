@@ -13,8 +13,8 @@ import Parser from "tree-sitter";
 import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
-import type { AstNode } from "../../../src/core/contracts/types/ast.js";
-import { materializeTree } from "../../../src/core/infra/materialize.js";
+import { materializeTree } from "../../../../src/core/adapters/tree-sitter/materialize.js";
+import type { AstNode } from "../../../../src/core/contracts/types/ast.js";
 
 /** Enough grammar shapes that most node types in the tree carry no field at all. */
 const FIXTURE = [

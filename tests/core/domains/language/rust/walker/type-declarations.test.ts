@@ -12,11 +12,11 @@ import Parser from "tree-sitter";
 import RustLang from "tree-sitter-rust";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { RustLanguage } from "../../../../../../src/core/domains/language/rust/index.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 /** Walk `src` through the seam production runs (materialize, `collectSymbols`, `walker.walk`). */
 function extract(src: string): FileExtraction {

@@ -21,8 +21,8 @@
 
 import type { SymbolVisibilityResolver } from "../../contracts/types/codegraph.js";
 import type { WorkingTreeGraphReader } from "../../contracts/types/working-tree.js";
-import { DeclaredVisibilityIndex } from "../../infra/declared-visibility-index.js";
 import type { MemberVisibilityLookup } from "./chunk-grouping/types.js";
+import { DeclaredVisibilityIndex } from "./declared-visibility-index.js";
 
 export async function renderWithDeclaredVisibility<T>(
   render: (visibilityOf?: MemberVisibilityLookup) => T,

@@ -16,7 +16,7 @@ import type {
   GraphDbClient,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
-import { DeclaredVisibilityIndex } from "../../../infra/declared-visibility-index.js";
+import { DeclaredVisibilityIndex } from "../../../domains/explore/declared-visibility-index.js";
 import type { DeclaredVisibilityField } from "../../public/dto/graph.js";
 
 type VisibilityReader = Pick<GraphDbClient, "getSymbolVisibilities">;

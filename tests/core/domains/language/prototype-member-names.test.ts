@@ -15,6 +15,7 @@
 import Parser from "tree-sitter";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../src/core/adapters/tree-sitter/materialize.js";
 import { resolveLocalBinding } from "../../../../src/core/contracts/types/codegraph-local-binding.js";
 import type { FileExtraction } from "../../../../src/core/contracts/types/codegraph.js";
 import {
@@ -24,7 +25,6 @@ import {
 } from "../../../../src/core/domains/language/index.js";
 import { loadCodegraphGrammarSync } from "../../../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { CODEGRAPH_LANGUAGES } from "../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
-import { materializeTree } from "../../../../src/core/infra/materialize.js";
 
 function extract(relPath: string, lines: string[]): FileExtraction {
   const code = `${lines.join("\n")}\n`;

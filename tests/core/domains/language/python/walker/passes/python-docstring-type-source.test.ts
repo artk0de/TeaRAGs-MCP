@@ -13,6 +13,7 @@ import Parser from "tree-sitter";
 import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { AstNode } from "../../../../../../../src/core/contracts/types/ast.js";
 import type { TypeFact } from "../../../../../../../src/core/domains/language/kernel/type-facts.js";
 import {
@@ -20,7 +21,6 @@ import {
   pythonDocstringText,
   pythonDocstringTypeSource,
 } from "../../../../../../../src/core/domains/language/python/walker/passes/python-docstring-type-source.js";
-import { materializeTree } from "../../../../../../../src/core/infra/materialize.js";
 
 function parse(src: string): AstNode {
   const parser = new Parser();

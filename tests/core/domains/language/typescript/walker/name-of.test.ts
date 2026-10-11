@@ -2,12 +2,12 @@ import Parser from "tree-sitter";
 import TsLang from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { CollectedSymbolRange } from "../../../../../../src/core/contracts/types/language.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { typescriptKernel } from "../../../../../../src/core/domains/language/typescript/kernel.js";
 import { tsNameOf } from "../../../../../../src/core/domains/language/typescript/walker/name-of.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 const composer = new DefaultSymbolIdComposer();
 

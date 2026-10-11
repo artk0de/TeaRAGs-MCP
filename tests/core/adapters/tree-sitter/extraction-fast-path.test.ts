@@ -13,7 +13,7 @@ import Parser from "tree-sitter";
 import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
-import { fileIsInertForExtraction } from "../../../src/core/infra/extraction-fast-path.js";
+import { fileIsInertForExtraction } from "../../../../src/core/adapters/tree-sitter/extraction-fast-path.js";
 
 /** The Python walker's own list, as `PythonLanguage` declares it. */
 const PYTHON_TYPES = [

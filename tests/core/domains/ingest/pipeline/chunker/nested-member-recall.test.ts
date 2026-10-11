@@ -28,12 +28,12 @@ import Parser from "tree-sitter";
 import JsLang from "tree-sitter-javascript";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 import { jsNameOf } from "../../../../../../src/core/domains/language/javascript/index.js";
 import { javascriptKernel } from "../../../../../../src/core/domains/language/javascript/kernel.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
 const composer = new DefaultSymbolIdComposer();

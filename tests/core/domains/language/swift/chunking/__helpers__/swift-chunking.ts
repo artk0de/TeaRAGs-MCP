@@ -13,6 +13,7 @@
 
 import Parser from "tree-sitter";
 
+import { materializeTree } from "../../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { AstNode } from "../../../../../../../src/core/contracts/types/ast.js";
 import type { HookContext } from "../../../../../../../src/core/contracts/types/chunker.js";
 import type {
@@ -24,7 +25,6 @@ import { TreeSitterChunker } from "../../../../../../../src/core/domains/ingest/
 import { DefaultSymbolIdComposer } from "../../../../../../../src/core/domains/language/index.js";
 import { swiftHooks } from "../../../../../../../src/core/domains/language/swift/chunking/index.js";
 import { SwiftLanguage } from "../../../../../../../src/core/domains/language/swift/index.js";
-import { materializeTree } from "../../../../../../../src/core/infra/materialize.js";
 import type { CodeChunk } from "../../../../../../../src/core/types.js";
 
 let cachedLanguage: unknown;

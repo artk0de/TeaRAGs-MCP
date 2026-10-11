@@ -40,6 +40,7 @@ import {
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
+import type { DeclaredVisibilityIndex } from "../../../domains/explore/declared-visibility-index.js";
 import {
   claimWorkingTreeFloors,
   historyClockRerankOption,
@@ -53,7 +54,6 @@ import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolveInheritedMemberDefiner } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
 import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/index.js";
-import type { DeclaredVisibilityIndex } from "../../../infra/declared-visibility-index.js";
 import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "../../public/dto/graph.js";
 import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";

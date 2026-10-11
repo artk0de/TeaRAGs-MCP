@@ -50,7 +50,7 @@ const sym = (symbolId: string, shortName: string, relPath: string, scope: string
 /**
  * The project look-alikes. Each is a real in-project symbol whose SHORT NAME
  * collides with a member of an out-of-project type the project also calls
- * against — the shape `src/core/infra/materialize.ts` has by design, since
+ * against — the shape `src/core/adapters/tree-sitter/materialize.ts` has by design, since
  * `MaterializedNode` mirrors tree-sitter's `SyntaxNode` interface deliberately.
  * One symbol per name, so `globalShortName` is confident enough to commit.
  */
