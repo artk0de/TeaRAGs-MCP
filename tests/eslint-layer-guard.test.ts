@@ -70,6 +70,30 @@ const FIXTURES = {
     path: "src/core/contracts/__layer_guard_contracts_to_primitives__.ts",
     source: 'import "../primitives/graph/index.js";\n',
   },
+  exploreToIngest: {
+    path: "src/core/domains/explore/__layer_guard_explore_to_ingest__.ts",
+    source: 'import "../ingest/index.js";\n',
+  },
+  exploreToLanguage: {
+    path: "src/core/domains/explore/queries/__layer_guard_explore_to_language__.ts",
+    source: 'import "../../language/index.js";\n',
+  },
+  exploreToOwnSubdir: {
+    path: "src/core/domains/explore/__layer_guard_explore_to_own_subdir__.ts",
+    source: 'import "./queries/index.js";\n',
+  },
+  trajectoryToExplore: {
+    path: "src/core/domains/trajectory/__layer_guard_trajectory_to_explore__.ts",
+    source: 'import "../explore/index.js";\n',
+  },
+  ingestToTrajectory: {
+    path: "src/core/domains/ingest/__layer_guard_ingest_to_trajectory__.ts",
+    source: 'import "../trajectory/index.js";\n',
+  },
+  ingestToExplore: {
+    path: "src/core/domains/ingest/__layer_guard_ingest_to_explore__.ts",
+    source: 'import "../explore/index.js";\n',
+  },
 } satisfies Record<string, Fixture>;
 
 /** The rule every zone is configured through — the only rule this test runs. */
@@ -146,5 +170,29 @@ describe("eslint layer guard — foundation zones", () => {
 
   it("rejects a relative contracts -> primitives import", () => {
     expect(reportFor(FIXTURES.contractsToPrimitives)).toContain("contracts is pure");
+  });
+
+  it("rejects a relative explore -> ingest import", () => {
+    expect(reportFor(FIXTURES.exploreToIngest)).toContain("explore may import only");
+  });
+
+  it("rejects a relative explore -> language import", () => {
+    expect(reportFor(FIXTURES.exploreToLanguage)).toContain("explore may import only");
+  });
+
+  it("allows an explore import of its own subdirectory", () => {
+    expect(reportFor(FIXTURES.exploreToOwnSubdir)).toBe("");
+  });
+
+  it("rejects a relative trajectory -> explore import", () => {
+    expect(reportFor(FIXTURES.trajectoryToExplore)).toContain("trajectory may import only");
+  });
+
+  it("rejects a relative ingest -> trajectory import", () => {
+    expect(reportFor(FIXTURES.ingestToTrajectory)).toContain("ingest may import only");
+  });
+
+  it("rejects a relative ingest -> explore import", () => {
+    expect(reportFor(FIXTURES.ingestToExplore)).toContain("ingest may import only");
   });
 });

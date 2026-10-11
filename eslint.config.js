@@ -280,10 +280,13 @@ export default tseslint.config(
         {
           patterns: [
             {
+              // Bare segment globs (as in the maintenance block): imports inside
+              // src/core are relative (`../ingest/...`), so a `**/domains/<d>/**`
+              // glob never matched and the zone was dead.
               group: [
-                "**/domains/trajectory/**",
-                "**/domains/ingest/**",
-                "**/domains/language/**",
+                "**/trajectory/**",
+                "**/ingest/**",
+                "**/language/**",
                 "**/api/**",
                 "**/bootstrap/**",
                 "**/mcp/**",
@@ -305,10 +308,9 @@ export default tseslint.config(
           patterns: [
             {
               group: [
-                "**/domains/explore/**",
-                "**/domains/ingest/**",
-                "**/domains/language/**",
-                "**/language/index.js",
+                "**/explore/**",
+                "**/ingest/**",
+                "**/language/**",
                 "**/api/**",
                 "**/bootstrap/**",
                 "**/mcp/**",
@@ -331,10 +333,9 @@ export default tseslint.config(
           patterns: [
             {
               group: [
-                "**/domains/explore/**",
-                "**/domains/trajectory/**",
-                "**/domains/language/**",
-                "**/language/index.js",
+                "**/explore/**",
+                "**/trajectory/**",
+                "**/language/**",
                 "**/api/**",
                 "**/bootstrap/**",
                 "**/mcp/**",
