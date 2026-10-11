@@ -17,7 +17,7 @@
  *     `LANGUAGE_DEFINITIONS.python` 1:1.
  *   - `disambiguateOverloads` — UNSET for Python (mirrors
  *     `LANGUAGE_DEFINITIONS.python`, which declares none).
- *   - `isInstanceMethod` — derived from `classifyMethod` (infra/symbolid): a
+ *   - `isInstanceMethod` — derived from `classifyMethod` (primitives/ids/symbolid): a
  *     `function_definition` inside a class without `@classmethod`/`@staticmethod`
  *     is an instance method; a decorated one is class-level. Non-method nodes
  *     yield `null` → not "instance" → `false`, identical to the per-engine
@@ -26,7 +26,7 @@
 
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
-import { classifyMethod } from "../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../primitives/ids/index.js";
 
 interface TreeSitterLanguageModule {
   default?: unknown;

@@ -28,7 +28,7 @@ import {
   enclosingClassScopeNames,
   enclosingFactoryScopeNames,
   type MethodClassification,
-} from "../../../../infra/symbolid/index.js";
+} from "../../../../primitives/ids/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
 import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../errors.js";
 import { AstSymbolSplitter } from "./ast-symbol-splitter.js";
@@ -1616,7 +1616,7 @@ export class TreeSitterChunker implements CodeChunker {
     const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
     // Universal `#` (instance) vs `.` (class/static) vs scope separator
     // (namespace member, e.g. a `method_definition` in an object literal) —
-    // single source of truth in `infra/symbolid`. See
+    // single source of truth in `primitives/ids/symbolid`. See
     // `.claude/rules/symbolid-convention.md` and bd tea-rags-mcp-pdv8m.
     const methodKind = classifyMethod(semanticNode);
     // Accumulate intermediate scope-container ancestor names between

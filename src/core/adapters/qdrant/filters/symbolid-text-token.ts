@@ -23,7 +23,7 @@
  *      text index instead of scanning the collection once per id.
  *
  * Domains may import adapters, so one copy serves both. (The AST-level half of
- * the symbolId convention lives in `infra/symbolid/` — that module answers what
+ * the symbolId convention lives in `primitives/ids/symbolid/` — that module answers what
  * an id IS, this one answers how Qdrant stored it.)
  *
  * A token that is too LOOSE costs candidates, never correctness — where it is

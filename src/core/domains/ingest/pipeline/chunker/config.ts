@@ -223,7 +223,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // provider's `rustNameOf`. Without this, impl blocks chunked whole
     // (then split by enforceMaxChunkSize into anonymous `Foo#part1..partN`).
     // Mirrors Python t6sr / Go n7x5 / Java c5wt. `self`-param detection
-    // lives in `infra/symbolid/classify.ts::rustHasSelfParam` (already
+    // lives in `primitives/ids/symbolid/classify.ts::rustHasSelfParam` (already
     // wired into `isStaticMethodNode`).
     chunkableTypes: [
       "function_item",
@@ -296,7 +296,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // provider's `javaNameOf`. Without this, classes chunked whole (then
     // split by enforceMaxChunkSize into anonymous `Foo#part1..partN`). Mirrors
     // the Python t6sr / Go n7x5 fixes. `static` modifier detection lives in
-    // `infra/symbolid/classify.ts::javaHasStaticModifier` (already wired into
+    // `primitives/ids/symbolid/classify.ts::javaHasStaticModifier` (already wired into
     // the universal `isStaticMethodNode`). Constructor `name` field equals the
     // class identifier in tree-sitter-java, so `Foo() {}` inside `class Foo`
     // composes as `Foo#Foo` (instance) per .claude/rules/symbolid-convention.md.

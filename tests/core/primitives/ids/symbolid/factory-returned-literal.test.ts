@@ -11,11 +11,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { classifyMethod } from "../../../../src/core/infra/symbolid/classify.js";
+import { classifyMethod } from "../../../../../src/core/primitives/ids/symbolid/classify.js";
 import {
   enclosingFactoryScopeNames,
   isFactoryReturnedLiteral,
-} from "../../../../src/core/infra/symbolid/factory-returned-literal.js";
+} from "../../../../../src/core/primitives/ids/symbolid/factory-returned-literal.js";
 
 interface MockNode {
   type: string;

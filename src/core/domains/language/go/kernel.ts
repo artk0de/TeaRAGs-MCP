@@ -16,7 +16,7 @@
  *     which declares none — Go has no class/method nesting to accumulate
  *     scope for).
  *   - `disambiguateOverloads` — UNSET for Go (mirrors `LANGUAGE_DEFINITIONS.go`).
- *   - `isInstanceMethod` — derived from `classifyMethod` (infra/symbolid): a
+ *   - `isInstanceMethod` — derived from `classifyMethod` (primitives/ids/symbolid): a
  *     `method_declaration` (which always carries a receiver) is an instance
  *     method; a top-level `function_declaration` is not, so it gets the bare
  *     `name` form. Non-method nodes yield `null` → not "instance" → `false`,
@@ -25,7 +25,7 @@
 
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
-import { classifyMethod } from "../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../primitives/ids/index.js";
 
 interface TreeSitterLanguageModule {
   default?: unknown;

@@ -38,7 +38,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkingHook, ChunkType, HookContext } from "../../../../contracts/types/chunker.js";
-import { classifyMethod } from "../../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../../primitives/ids/index.js";
 
 /** Which test framework a Swift type belongs to. */
 export type SwiftSuiteKind = "xctest" | "swift-testing" | "quick";

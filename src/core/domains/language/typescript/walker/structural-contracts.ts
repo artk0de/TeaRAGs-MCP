@@ -31,7 +31,7 @@ import type {
   StructuralContractMemberRef,
   SymbolDefinitionKind,
 } from "../../../../contracts/types/codegraph.js";
-import { constObjectNamespaceName } from "../../../../infra/symbolid/index.js";
+import { constObjectNamespaceName } from "../../../../primitives/ids/index.js";
 import { symbolIdNames } from "../../kernel/index.js";
 
 /** A rest parameter accepts any number of arguments, so no implementation requires too many. */

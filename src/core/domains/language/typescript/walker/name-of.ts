@@ -7,7 +7,7 @@
  * Behaviour-preserving extraction: the node-shape detection and symbol emission
  * are identical to the provider's former inline function.
  *
- * `method_definition` routes through `classifyMethod` (in `infra/symbolid`) so
+ * `method_definition` routes through `classifyMethod` (in `primitives/ids/symbolid`) so
  * the chunker and codegraph agree on the separator (`#` instance / `.` static)
  * for the same physical AST node (`.claude/rules/symbolid-convention.md`).
  *
@@ -27,7 +27,7 @@ import {
   classPropertyFunction,
   constObjectNamespaceName,
   functionValuedDeclaratorName,
-} from "../../../../infra/symbolid/index.js";
+} from "../../../../primitives/ids/index.js";
 import { callValuedExportNames } from "./call-valued-export.js";
 
 function methodKindFromClassify(node: AstNode): "instance" | "static" | undefined {
@@ -55,7 +55,7 @@ export function tsNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
   // The same member as a `method_definition` for every purpose that matters
   // downstream, so it composes the same way — `#` for an instance field, `.` for
   // a `static` one. The shape-plus-kind gate lives in
-  // `infra/symbolid/class-property-function.ts`, next to `classifyMethod`, which
+  // `primitives/ids/symbolid/class-property-function.ts`, next to `classifyMethod`, which
   // is what it reads for the kind and what the chunker's class-body grouper
   // reads to bucket the same field.
   //
@@ -100,7 +100,7 @@ export function tsNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
   // class's constructor in a file became one bare `constructor` — distinct
   // symbols collapsing onto one id. It is a class like the declaration above,
   // so it is named, scoped and given an implicit constructor the same way. The
-  // name gate lives in `infra/symbolid/class-scope.ts`, which the chunker reads
+  // name gate lives in `primitives/ids/symbolid/class-scope.ts`, which the chunker reads
   // for the same member (`.claude/rules/symbolid-convention.md`).
   const classExpression = classExpressionName(node);
   if (classExpression) return { name: classExpression, descendsInto: true, syntheticConstructorIfMissing: true };
@@ -126,7 +126,7 @@ export function tsNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
   //
   // The shape gate (object literal carrying at least one `method_definition`,
   // seen through `as const` / `satisfies` / parentheses) lives in
-  // `infra/symbolid/const-object-namespace.ts` — the CHUNKER asks the same
+  // `primitives/ids/symbolid/const-object-namespace.ts` — the CHUNKER asks the same
   // question about the same node and the two must not drift apart
   // (bd tea-rags-mcp-62hzr).
   const namespaceName = constObjectNamespaceName(node);

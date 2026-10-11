@@ -15,7 +15,7 @@
  * MUST stay in sync with `../walker/name-of.ts:jsNameOf`. See
  * `.claude/rules/symbolid-convention.md`. The narrower "is this value a
  * function?" question both producers ask is no longer restated here — it is the
- * shared `isFunctionValuedExpression` gate in `infra/symbolid`, which is where
+ * shared `isFunctionValuedExpression` gate in `primitives/ids/symbolid`, which is where
  * questions both the chunker and the walker must answer identically about the
  * same physical AST node live (bd tea-rags-mcp-qrjc5).
  *
@@ -23,7 +23,7 @@
  */
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
-import { constObjectNamespaceContainerName, isFunctionValuedExpression } from "../../../../infra/symbolid/index.js";
+import { constObjectNamespaceContainerName, isFunctionValuedExpression } from "../../../../primitives/ids/index.js";
 
 /**
  * Walk an `assignment_expression` chain (`a = b = c = fn`) and return the

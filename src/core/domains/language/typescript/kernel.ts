@@ -21,7 +21,7 @@
  *     (mirrors `LANGUAGE_DEFINITIONS.typescript`, which declares neither; TS
  *     getter/setter accessor pairs deliberately let the first occurrence win,
  *     unlike Java overloads — see the provider's `disambiguateOverloads` note).
- *   - `isInstanceMethod` — derived from `classifyMethod` (infra/symbolid): a
+ *   - `isInstanceMethod` — derived from `classifyMethod` (primitives/ids/symbolid): a
  *     `method_definition` without the `static` keyword is an instance method.
  *     Non-method nodes yield `null` → not "instance" → `false`, identical to
  *     the per-engine static checks.
@@ -29,7 +29,7 @@
 
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
-import { classifyMethod } from "../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../primitives/ids/index.js";
 
 interface TreeSitterLanguageModule {
   default?: unknown;

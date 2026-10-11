@@ -8,7 +8,7 @@
  * is the `@overload` yield below (bd tea-rags-mcp-0qyze).
  *
  * `function_definition` / `class_definition` route through `classifyMethod`
- * (in `infra/symbolid`) so the chunker and codegraph agree on the separator for
+ * (in `primitives/ids/symbolid`) so the chunker and codegraph agree on the separator for
  * the same physical AST node (`.claude/rules/symbolid-convention.md`): a method
  * decorated with `@classmethod` / `@staticmethod` is class-level (`.`), an
  * undecorated method inside a class is instance-level (`#`).
@@ -16,7 +16,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
-import { classifyMethod } from "../../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../../primitives/ids/index.js";
 
 function methodKindFromClassify(node: AstNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);

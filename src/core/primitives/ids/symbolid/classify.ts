@@ -22,7 +22,7 @@
  * grammars evolve and new languages are added.
  */
 
-import type { AstNode } from "../../contracts/types/ast.js";
+import type { AstNode } from "../../../contracts/types/ast.js";
 import { isFactoryReturnedLiteral } from "./factory-returned-literal.js";
 
 /** Universal separator between a class and its instance method. */

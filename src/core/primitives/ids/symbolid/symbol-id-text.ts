@@ -8,7 +8,7 @@
  * (static) are member boundaries, `::` is a namespace separator.
  */
 
-import type { SymbolId } from "../../contracts/types/codegraph.js";
+import type { SymbolId } from "../../../contracts/types/codegraph.js";
 
 /**
  * Split a method symbolId into its declaring type, the class↔member separator,

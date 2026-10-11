@@ -10,7 +10,7 @@
  * they compose with the namespace `.` — there is no instance to bind, which is
  * why `classifyMethod` declines to classify them (see `classify.js`).
  *
- * Lives in `infra/symbolid` for the same reason `classifyMethod` does: TWO
+ * Lives in `primitives/ids/symbolid` for the same reason `classifyMethod` does: TWO
  * consumers must answer this question identically or they fall out of lockstep.
  *
  *   1. The codegraph walker (`domains/language/typescript/walker/name-of.ts`)
@@ -25,7 +25,7 @@
  * `[]`. One implementation, two entry points, is the only way that stays fixed.
  */
 
-import type { AstNode } from "../../contracts/types/ast.js";
+import type { AstNode } from "../../../contracts/types/ast.js";
 
 /**
  * The namespace name a `variable_declarator` declares, or null when the

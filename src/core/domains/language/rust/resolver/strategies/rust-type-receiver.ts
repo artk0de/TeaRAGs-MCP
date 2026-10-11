@@ -1,7 +1,7 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef, SymbolDefinition } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.js";
+import { INSTANCE_METHOD_SEPARATOR } from "../../../../../primitives/ids/index.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-constructor.js";
 import {
   lookupRustSymbolsByShortName,

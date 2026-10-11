@@ -59,7 +59,7 @@
  * cannot name as an agreement — the one verdict where agreeing costs the graph
  * an edge. Every column that reflects the FILE decision moved by exactly zero.
  *
- * ## Why this is not in `infra/symbolid`
+ * ## Why this is not in `primitives/ids/symbolid`
  *
  * Its neighbours there (`classifyMethod`, `constObjectNamespaceName`,
  * `const-bound-function`) live in the foundation because TWO producers — the
@@ -77,7 +77,7 @@
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import { isFunctionValuedExpression, unwrapTypeAssertions } from "../../../../infra/symbolid/index.js";
+import { isFunctionValuedExpression, unwrapTypeAssertions } from "../../../../primitives/ids/index.js";
 
 /**
  * The name a wrapper-exported component publishes, as a single-element list, or

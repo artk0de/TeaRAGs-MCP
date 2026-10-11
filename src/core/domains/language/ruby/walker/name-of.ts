@@ -6,7 +6,7 @@
  * `domains/language` consolidation (spec §3).
  *
  * Both `method` and `singleton_method` route through `classifyMethod` (in
- * `infra/symbolid`) so the chunker and codegraph agree on the separator for
+ * `primitives/ids/symbolid`) so the chunker and codegraph agree on the separator for
  * the same physical AST node (`.claude/rules/symbolid-convention.md`).
  *
  * Class-body DSL macro expansion (`attr_*`, `delegate`, `has_many`, `scope`,
@@ -20,7 +20,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
-import { classifyMethod, rubyInsideSingletonClass } from "../../../../infra/symbolid/index.js";
+import { classifyMethod, rubyInsideSingletonClass } from "../../../../primitives/ids/index.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { expandAliasKeyword, expandClassBodyMacros, type DeclaredMethod } from "./macro-expansion.js";
 
@@ -65,7 +65,7 @@ export function rbNameOf(
   catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): NamedSymbol | NamedSymbol[] | null {
   // Both `method` and `singleton_method` route through classifyMethod
-  // (in core/infra/symbolid) so the chunker and codegraph agree on the
+  // (in core/primitives/ids/symbolid) so the chunker and codegraph agree on the
   // separator for the same physical AST node. classifyMethod also walks
   // up to detect `class << self` blocks — regular `method` nodes inside
   // a singleton_class become class-level and join with `.` instead of `#`.

@@ -13,7 +13,7 @@
  * scope and short name both match IS the declaration's row.
  *
  * The mirror follows `tsNameOf` (`typescript/walker/name-of.ts`) and the
- * `infra/symbolid` gates it calls. It answers `null` on any ancestor it cannot
+ * `primitives/ids/symbolid` gates it calls. It answers `null` on any ancestor it cannot
  * name the way the walker would — a computed member name — so a shape the two
  * disagree on declines instead of guessing.
  */

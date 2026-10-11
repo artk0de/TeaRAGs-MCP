@@ -23,7 +23,7 @@
  *     repeat a name across declarations. Each overload carries a distinct body,
  *     so duplicate composed symbolIds inside one file are suffixed `~N` instead
  *     of deduped (Java precedent, bd tea-rags-mcp-a466).
- *   - `isInstanceMethod` — derived from `classifyMethod` (infra/symbolid): a
+ *   - `isInstanceMethod` — derived from `classifyMethod` (primitives/ids/symbolid): a
  *     `function_declaration` / `protocol_function_declaration` carrying a
  *     `static` / `class` modifier is class-level; without one it is an instance
  *     method; `init_declaration` is always instance-bound. Non-method nodes
@@ -32,7 +32,7 @@
 
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
-import { classifyMethod } from "../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../primitives/ids/index.js";
 
 interface TreeSitterLanguageModule {
   default?: unknown;

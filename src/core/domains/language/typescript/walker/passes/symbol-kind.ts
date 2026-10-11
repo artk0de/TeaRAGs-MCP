@@ -23,7 +23,7 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { SymbolDefinitionKind } from "../../../../../contracts/types/codegraph-symbols.js";
 import type { ChunkExtraction, FileExtraction, NamedSymbol } from "../../../../../contracts/types/codegraph.js";
-import { unwrapTypeAssertions } from "../../../../../infra/symbolid/index.js";
+import { unwrapTypeAssertions } from "../../../../../primitives/ids/index.js";
 import { symbolIdNames, type ExtractionFacetPass } from "../../../kernel/index.js";
 import { SYMBOL_KIND_NODE_TYPES, symbolKindOf, type EcmascriptSymbolKindContext } from "../symbol-kind.js";
 

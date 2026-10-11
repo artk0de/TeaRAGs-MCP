@@ -75,7 +75,7 @@ instance even though invoked via `new Class()`.
 
 ## Where the convention is implemented
 
-- `src/core/infra/symbolid/classify.ts`
+- `src/core/primitives/ids/symbolid/classify.ts`
   - `classifyMethod(node)` — the per-language `instance` / `static` detection
     BOTH producers consult, dispatched by node type
   - `class-property-function.ts` beside it — the TypeScript class-FIELD gate,

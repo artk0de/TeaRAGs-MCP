@@ -21,7 +21,7 @@ import type {
   SymbolId,
   SymbolVisibilityRow,
 } from "../../contracts/types/codegraph.js";
-import { lastNameSegment } from "../../infra/symbolid/index.js";
+import { lastNameSegment } from "../../primitives/ids/index.js";
 import {
   CG_SYMBOLS_DEF_COLUMNS,
   CG_SYMBOLS_KEY_COLUMNS,

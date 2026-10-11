@@ -48,7 +48,7 @@ import type {
   TypeDeclarationFact,
   TypeMemberCensus,
 } from "../../../../../contracts/types/codegraph.js";
-import { constObjectNamespaceName, unwrapTypeAssertions } from "../../../../../infra/symbolid/index.js";
+import { constObjectNamespaceName, unwrapTypeAssertions } from "../../../../../primitives/ids/index.js";
 import type { ExtractionFacetPass } from "../../../kernel/index.js";
 import { classBodyMemberCounts, objectTypeMemberCounts, type EcmascriptMemberCounts } from "./type-member-census.js";
 

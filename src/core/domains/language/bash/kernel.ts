@@ -20,7 +20,7 @@
  *     for).
  *   - `disambiguateOverloads` — UNSET for Bash (mirrors `LANGUAGE_DEFINITIONS.bash`;
  *     shell functions have no overloading).
- *   - `isInstanceMethod` — derived from `classifyMethod` (infra/symbolid) for
+ *   - `isInstanceMethod` — derived from `classifyMethod` (primitives/ids/symbolid) for
  *     uniformity with the other verticals. Bash has no methods, so this is moot:
  *     `function_definition` is a top-level function (never an instance method),
  *     and every node yields `classifyMethod(node) !== "instance"` → `false`,
@@ -29,7 +29,7 @@
 
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
-import { classifyMethod } from "../../../infra/symbolid/index.js";
+import { classifyMethod } from "../../../primitives/ids/index.js";
 
 interface TreeSitterLanguageModule {
   default?: unknown;

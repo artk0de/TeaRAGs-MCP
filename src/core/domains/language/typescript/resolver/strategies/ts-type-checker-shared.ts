@@ -31,7 +31,7 @@
 
 import type ts from "typescript";
 
-import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.js";
+import { INSTANCE_METHOD_SEPARATOR } from "../../../../../primitives/ids/index.js";
 import { loadTypeScriptCompiler } from "../program/index.js";
 
 /** TypeScript joins namespaces and static members with a dot. */

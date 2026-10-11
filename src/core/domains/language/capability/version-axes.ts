@@ -54,7 +54,7 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       // (bd tea-rags-mcp-mjq5n).
       `${CHUNKER_ROOT}/utils/import-extractor.ts`,
       `${CHUNKER_ROOT}/utils/non-code-text-mask.ts`,
-      "src/core/infra/symbolid",
+      "src/core/primitives/ids/symbolid",
       // `chunker/materialize.ts` is a seven-line re-export; the AST every
       // chunker and the codegraph provider actually walk is built here.
       "src/core/infra/materialize.ts",

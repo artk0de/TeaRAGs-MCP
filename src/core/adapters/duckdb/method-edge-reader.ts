@@ -32,7 +32,7 @@ import {
   type RelPath,
   type SymbolId,
 } from "../../contracts/types/codegraph.js";
-import { splitMethodSymbol } from "../../infra/symbolid/index.js";
+import { splitMethodSymbol } from "../../primitives/ids/index.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
 /**

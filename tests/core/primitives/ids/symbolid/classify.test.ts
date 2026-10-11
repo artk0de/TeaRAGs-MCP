@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { classifyMethod, isStaticMethodNode } from "../../../../src/core/infra/symbolid/classify.js";
+import { classifyMethod, isStaticMethodNode } from "../../../../../src/core/primitives/ids/symbolid/classify.js";
 
 /**
  * Build a minimal SyntaxNode-like object — only the fields classify.ts

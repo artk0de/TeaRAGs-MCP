@@ -15,7 +15,7 @@
  * `createDeletionOutcome#isFullSuccess` is the id both producers write
  * (bd tea-rags-mcp-39xca.19).
  *
- * Lives in `infra/symbolid` for the reason its siblings do: `classifyMethod`
+ * Lives in `primitives/ids/symbolid` for the reason its siblings do: `classifyMethod`
  * consults it, and `classifyMethod` is what the chunker (Qdrant payload
  * `symbolId`) and the codegraph walker (`cg_symbols.symbol_id`) BOTH read, so
  * one answer reaches both.
@@ -50,7 +50,7 @@
  *     trade one consistent `.` for a `#` only one producer composes.
  */
 
-import type { AstNode } from "../../contracts/types/ast.js";
+import type { AstNode } from "../../../contracts/types/ast.js";
 import { functionValuedDeclaratorName } from "./const-bound-function.js";
 
 /** Type-level wrappers between a returned expression and the value underneath. */
