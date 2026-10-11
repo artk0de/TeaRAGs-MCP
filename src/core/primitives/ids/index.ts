@@ -1,9 +1,12 @@
 /**
  * Identity rules — primitives layer (`core/primitives/`), I/O-free and
  * importable by every core layer: the AST → symbolId classification rules
- * under `symbolid/` and the collection identity rule (`collection-identity.ts`).
- * Consumers import this barrel, never a file behind it.
+ * under `symbolid/`, the collection identity rule (`collection-identity.ts`)
+ * and the per-file content hash (`content-hash.ts`). Consumers import this
+ * barrel, never a file behind it.
  */
+
+export { fileContentHash } from "./content-hash.js";
 
 export {
   collectionAliasEntryFromQdrant,

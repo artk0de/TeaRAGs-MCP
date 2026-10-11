@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkingTreeContentHashes } from "../../../../../src/core/domains/explore/working-tree/index.js";
-import { fileContentHash } from "../../../../../src/core/infra/file-content-hash.js";
+import { fileContentHash } from "../../../../../src/core/primitives/ids/content-hash.js";
 
 const sha256 = (content: string): string => createHash("sha256").update(content).digest("hex");
 

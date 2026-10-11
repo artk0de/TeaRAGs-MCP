@@ -29,7 +29,7 @@ import {
   treeGraphSeedOf,
   type WorkingTreeDeltaRecord,
 } from "../../../../../../src/core/domains/trajectory/codegraph/working-tree/tree-graph-seed.js";
-import { fileContentHash } from "../../../../../../src/core/infra/file-content-hash.js";
+import { fileContentHash } from "../../../../../../src/core/primitives/ids/content-hash.js";
 import {
   buildTreeGraphFixture,
   cleanupTreeGraphFixtures,

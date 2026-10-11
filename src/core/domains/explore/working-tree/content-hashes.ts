@@ -24,8 +24,8 @@
 
 import { promises as nodeFs } from "node:fs";
 
-import { fileContentHash } from "../../../infra/file-content-hash.js";
 import { ByteBoundedLru } from "../../../primitives/collections/index.js";
+import { fileContentHash } from "../../../primitives/ids/index.js";
 
 /**
  * Default bound of the memo: ~210 bytes per file for a 100-byte path, so
