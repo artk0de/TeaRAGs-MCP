@@ -12,7 +12,7 @@ import type { RankingOverlay, RerankableResult } from "../../../contracts/types/
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
-import { InvalidQueryError } from "../errors.js";
+import { InvalidQueryError } from "../errors/index.js";
 import { keepPathPatternMatches } from "../post-process.js";
 import { RankModule, type RankOptions } from "../rank-module.js";
 import { filterReadsWorkingTreeSignals } from "../working-tree/overlay.js";

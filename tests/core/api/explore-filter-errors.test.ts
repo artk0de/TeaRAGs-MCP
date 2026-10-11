@@ -15,7 +15,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
 import type { FilterPresetDef } from "../../../src/core/contracts/types/filter-preset.js";
-import { EmptyFilterPresetError, UnknownFilterPresetError } from "../../../src/core/domains/explore/errors.js";
+import { EmptyFilterPresetError, UnknownFilterPresetError } from "../../../src/core/domains/explore/errors/index.js";
 
 // ---------------------------------------------------------------------------
 // Module mocks (mirrors explore-facade-filter.test.ts harness)

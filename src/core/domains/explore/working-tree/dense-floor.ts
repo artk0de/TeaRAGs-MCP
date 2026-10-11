@@ -43,7 +43,7 @@ import type {
 } from "../../../contracts/types/working-tree.js";
 import { cosine } from "../../../primitives/math/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
-import { WorkingTreeEmbeddingMalformedError } from "../errors.js";
+import { WorkingTreeEmbeddingMalformedError } from "../errors/index.js";
 import type { WorkingTreeChunkStore, WorkingTreeChunkStoreKey } from "./chunk-store.js";
 import { WorkingTreePassCache } from "./pass-cache.js";
 

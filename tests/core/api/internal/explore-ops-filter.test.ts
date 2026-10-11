@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 
 import { resolveFilterSpec } from "../../../../src/core/api/internal/ops/explore-ops.js";
 import type { FilterPresetDef, FilterSpec } from "../../../../src/core/contracts/types/filter-preset.js";
-import { EmptyFilterPresetError, UnknownFilterPresetError } from "../../../../src/core/domains/explore/errors.js";
+import { EmptyFilterPresetError, UnknownFilterPresetError } from "../../../../src/core/domains/explore/errors/index.js";
 
 // ---------------------------------------------------------------------------
 // Stub filter-preset definitions

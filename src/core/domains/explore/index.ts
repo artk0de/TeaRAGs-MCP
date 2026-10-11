@@ -6,8 +6,8 @@ export {
   InvalidStrategyError,
   UnknownFilterPresetError,
   EmptyFilterPresetError,
-} from "./errors.js";
-export type { ExploreErrorCode } from "./errors.js";
+} from "./errors/index.js";
+export type { ExploreErrorCode } from "./errors/index.js";
 export { Reranker } from "./reranker.js";
 export type { ScoringWeights, RerankableResult, RerankMode } from "./reranker.js";
 export { historyClockRerankOption } from "./history-clock.js";

@@ -91,8 +91,8 @@ contributors:
 `api/internal/ops/project-registry-ops.ts` (86%),
 `ingest/pipeline/enrichment/recovery.ts` (59%), `adapters/qdrant/errors.ts`
 (87%), `api/public/app.ts` (85%), `api/errors.ts` (88%),
-`domains/explore/errors.ts` (76%), `domains/trajectory/errors.ts` (90%),
-`adapters/errors.ts` (not re-measured — absent from the scan window).
+`domains/explore/errors/explore-errors.ts` (76%), `domains/trajectory/errors.ts`
+(90%), `adapters/errors.ts` (not re-measured — absent from the scan window).
 
 A stale list is worse than no list: it demanded ceremony from files that had
 already healed while saying nothing about the ones that had gone silo since.

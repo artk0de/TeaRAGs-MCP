@@ -38,7 +38,7 @@ TeaRagsError (abstract)                    src/core/primitives/errors/tea-rags-e
   ├─ InputValidationError (abstract)       src/core/api/errors.ts
   ├─ InfraError (abstract)                 src/core/adapters/errors.ts
   ├─ IngestError (abstract)                src/core/domains/ingest/errors.ts
-  ├─ ExploreError (abstract)               src/core/domains/explore/errors.ts
+  ├─ ExploreError (abstract)               src/core/domains/explore/errors/explore-errors.ts
   ├─ TrajectoryError (abstract)            src/core/domains/trajectory/errors.ts
   └─ ConfigError (abstract)                src/bootstrap/errors.ts
 ```

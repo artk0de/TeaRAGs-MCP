@@ -17,7 +17,7 @@ import type { PayloadSignalDescriptor, SignalFloors } from "../../../contracts/t
 import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
   InvalidQueryError,
-} from "../../../domains/explore/errors.js";
+} from "../../../domains/explore/errors/index.js";
 import type { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { WorkingTreeOverlay } from "../../../domains/explore/working-tree/index.js";

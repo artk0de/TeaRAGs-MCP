@@ -12,7 +12,7 @@
 
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
-import { InvalidQueryError } from "../errors.js";
+import { InvalidQueryError } from "../errors/index.js";
 import { scoreWorkingTreeRowsByVector } from "../working-tree/dense-floor.js";
 import type { WorkingTreeView } from "../working-tree/overlay.js";
 import { fuseWorkingTreeRows, workingTreeRowAdmitted } from "../working-tree/sparse-floor.js";

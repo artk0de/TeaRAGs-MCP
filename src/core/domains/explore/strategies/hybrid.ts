@@ -16,7 +16,7 @@ import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
-import { InvalidQueryError } from "../errors.js";
+import { InvalidQueryError } from "../errors/index.js";
 import { scoreWorkingTreeRowsByVector, WORKING_TREE_DENSE_WAIT_MS } from "../working-tree/dense-floor.js";
 import { claimWorkingTreeFloors, relativePathOf } from "../working-tree/index.js";
 import { fuseWorkingTreeRows, scoreWorkingTreeRows, workingTreeRowAdmitted } from "../working-tree/sparse-floor.js";

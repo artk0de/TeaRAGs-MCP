@@ -14,7 +14,7 @@ import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { EnrichmentHealthMapper, EnrichmentMarkerMap } from "../../../contracts/types/enrichment.js";
 import type { IndexMetrics, SignalMetrics } from "../../../contracts/types/index-metrics.js";
 import type { PayloadSignalDescriptor, SignalFloors, SignalStats } from "../../../contracts/types/trajectory.js";
-import { CollectionNotFoundError } from "../errors.js";
+import { CollectionNotFoundError } from "../errors/index.js";
 import { resolvableLabelBands } from "../label-resolver.js";
 import { applySignalFloors, floorsForSignal } from "../signal-floors.js";
 

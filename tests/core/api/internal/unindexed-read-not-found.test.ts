@@ -23,7 +23,7 @@ import { NamingLexiconOps } from "../../../../src/core/api/internal/ops/naming-l
 import { OntologyReportOps } from "../../../../src/core/api/internal/ops/ontology-report-ops.js";
 import { ReviewChangesOps } from "../../../../src/core/api/internal/ops/review-changes-ops.js";
 import { TracePathOps } from "../../../../src/core/api/internal/ops/trace-path-ops.js";
-import { CollectionNotFoundError } from "../../../../src/core/domains/explore/errors.js";
+import { CollectionNotFoundError } from "../../../../src/core/domains/explore/errors/index.js";
 import {
   createWorkingTreeDeltaReader,
   WorkingTreeOverlay,
