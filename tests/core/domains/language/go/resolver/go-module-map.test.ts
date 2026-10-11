@@ -9,6 +9,7 @@ import {
   GoModuleMap,
   GoModuleMapCache,
 } from "../../../../../../src/core/domains/language/go/resolver/strategies/go-module-map.js";
+import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 
 /**
  * bd tea-rags-mcp-e6xx — Go imports name MODULE paths
@@ -91,7 +92,7 @@ describe("GoModuleMapCache", () => {
   it("reads every go.mod under the root once and keeps the map while the root holds", () => {
     write("go.mod", "module example.com/app\n");
     write(join("sub", "go.mod"), "module example.com/app/sub\n");
-    const cache = new GoModuleMapCache();
+    const cache = new GoModuleMapCache(readManifestFiles);
     const first = cache.forRoot(root);
     expect(first?.packageDirOf("example.com/app/sub/pkg")).toBe("sub/pkg");
     expect(cache.forRoot(root)).toBe(first);
@@ -102,14 +103,14 @@ describe("GoModuleMapCache", () => {
     // go.mod into vendor/; reading one would make a dependency a project module.
     write("go.mod", "module example.com/app\n");
     write(join("vendor", "github.com", "dep", "go.mod"), "module github.com/dep\n");
-    const map = new GoModuleMapCache().forRoot(root);
+    const map = new GoModuleMapCache(readManifestFiles).forRoot(root);
     expect(map?.packageDirOf("github.com/dep/x")).toBeUndefined();
     expect(map?.packageDirOf("example.com/app/x")).toBe("x");
   });
 
   it("re-reads on reload, so a new pass sees an edited go.mod", () => {
     write("go.mod", "module example.com/old\n");
-    const cache = new GoModuleMapCache();
+    const cache = new GoModuleMapCache(readManifestFiles);
     expect(cache.forRoot(root)?.packageDirOf("example.com/old/a")).toBe("a");
     write("go.mod", "module example.com/new\n");
     cache.reload(root);
@@ -126,7 +127,7 @@ describe("GoModuleMapCache", () => {
     write("go.mod", "module example.com/app\n");
     write(join("api", "v1", "types.go"), "// Package v1 is the v1 API.\npackage v1\n");
     write(join("internal", "json-iter", "iter.go"), "package jsoniter\n");
-    const map = new GoModuleMapCache().forRoot(root);
+    const map = new GoModuleMapCache(readManifestFiles).forRoot(root);
     expect(map?.packageNameOf("api/v1")).toBe("v1");
     expect(map?.packageNameOf("internal/json-iter")).toBe("jsoniter");
   });
@@ -137,7 +138,7 @@ describe("GoModuleMapCache", () => {
     write(join("widget", "gen.go"), "//go:build ignore\n\npackage main\n");
     write(join("widget", "widget.go"), "package widget\n");
     write(join("tests", "x_test.go"), "package tests\n");
-    const map = new GoModuleMapCache().forRoot(root);
+    const map = new GoModuleMapCache(readManifestFiles).forRoot(root);
     expect(map?.packageNameOf("widget")).toBe("widget");
     expect(map?.packageNameOf("tests")).toBeUndefined();
     expect(map?.packageNameOf("missing")).toBeUndefined();
@@ -155,7 +156,7 @@ describe("GoModuleMapCache", () => {
     write(join("lib", "lib.go"), "package lib\n");
     write(join("legacy", "a_gen.go"), "// Copyright\n\n// +build ignore\n\npackage gen\n");
     write(join("legacy", "legacy.go"), "package legacy\n");
-    const map = new GoModuleMapCache().forRoot(root);
+    const map = new GoModuleMapCache(readManifestFiles).forRoot(root);
     expect(map?.packageNameOf("lib")).toBe("lib");
     expect(map?.packageNameOf("legacy")).toBe("legacy");
   });
@@ -164,7 +165,7 @@ describe("GoModuleMapCache", () => {
     write("go.mod", "module example.com/app\n");
     write(join("osx", "open_linux.go"), "//go:build linux\n\npackage osx\n");
     write(join("osx", "open_windows.go"), "//go:build windows\n\npackage osx\n");
-    expect(new GoModuleMapCache().forRoot(root)?.packageNameOf("osx")).toBe("osx");
+    expect(new GoModuleMapCache(readManifestFiles).forRoot(root)?.packageNameOf("osx")).toBe("osx");
   });
 
   it("NEGATIVE: files that still disagree on the clause leave it unread", () => {
@@ -173,7 +174,7 @@ describe("GoModuleMapCache", () => {
     write(join("mixed", "b.go"), "package beta\n");
     write(join("gated", "a.go"), "//go:build tools\n\npackage tools\n");
     write(join("gated", "b.go"), "//go:build !tools\n\npackage gated\n");
-    const map = new GoModuleMapCache().forRoot(root);
+    const map = new GoModuleMapCache(readManifestFiles).forRoot(root);
     expect(map?.packageNameOf("mixed")).toBeUndefined();
     expect(map?.packageNameOf("gated")).toBeUndefined();
   });
@@ -197,7 +198,7 @@ describe("GoModuleMapCache", () => {
       join("lines", "doc.go"),
       "// Package lines is documented by line comments.\n//\n// package lines is not a clause here.\npackage lines\n",
     );
-    const map = new GoModuleMapCache().forRoot(root);
+    const map = new GoModuleMapCache(readManifestFiles).forRoot(root);
     expect(map?.packageNameOf("lib5")).toBe("eps");
     expect(map?.packageNameOf("zeta")).toBe("zeta");
     expect(map?.packageNameOf("lines")).toBe("lines");
@@ -214,7 +215,7 @@ describe("GoModuleMapCache", () => {
     write(join("open", "b_gen.go"), "//go:build ignore\n\npackage gen\n");
     write(join("spaced", "a.go"), "\t//go:build ignore\n\npackage gen\n");
     write(join("spaced", "b.go"), "package spaced\n");
-    const map = new GoModuleMapCache().forRoot(root);
+    const map = new GoModuleMapCache(readManifestFiles).forRoot(root);
     expect(map?.packageNameOf("open")).toBe("open");
     expect(map?.packageNameOf("spaced")).toBe("spaced");
   });
@@ -223,7 +224,7 @@ describe("GoModuleMapCache", () => {
     write("go.mod", "module example.com/app\n");
     write(join("broken", "a.go"), "/* unterminated\npackage broken\n");
     write(join("broken", "b.go"), "func x() {}\npackage broken\n");
-    expect(new GoModuleMapCache().forRoot(root)?.packageNameOf("broken")).toBeUndefined();
+    expect(new GoModuleMapCache(readManifestFiles).forRoot(root)?.packageNameOf("broken")).toBeUndefined();
   });
 
   it("knows no package name without a root to read from", () => {

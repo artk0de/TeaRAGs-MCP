@@ -23,6 +23,7 @@ import { GoLanguage } from "../../../../../../src/core/domains/language/go/index
 import { collectSymbols } from "../../../../../../src/core/domains/language/index.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { readManifestFiles } from "../../../../../../src/core/infra/dependency-manifests.js";
 import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 /** Write `files` (relPath → source) under a fresh temp directory and return it. */
@@ -54,7 +55,7 @@ function goSourceFiles(root: string, dir = ""): string[] {
 
 /** Every call site of the corpus at `root`, resolved. */
 export function resolveGoCorpus(root: string): Map<string, string | null> {
-  const go = new GoLanguage();
+  const go = new GoLanguage(undefined, readManifestFiles);
   const composer = new DefaultSymbolIdComposer();
   const parser = new Parser();
   parser.setLanguage(GoLang);

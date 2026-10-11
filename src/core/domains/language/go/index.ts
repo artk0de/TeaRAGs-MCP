@@ -53,6 +53,7 @@ import type {
   LanguageProvider,
   LanguageSymbolResolver,
   LanguageWalker,
+  ManifestFilesReader,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker, DefaultSymbolIdComposer } from "../kernel/index.js";
 import { GoChunkClassifier } from "./chunking/index.js";
@@ -94,8 +95,13 @@ export class GoLanguage implements LanguageProvider {
   });
   readonly resolver: LanguageSymbolResolver;
 
-  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const callResolver: CallResolver = new GoCallResolver(new DefaultSymbolIdComposer(), mode);
+  /**
+   * `manifestFilesReader` reads the project's go.mod files for the module map
+   * (bd tea-rags-mcp-2wu2h). Injected by `LanguageFactory` — this leaf never
+   * walks the disk itself; absent, package matching stays GOPATH-shaped.
+   */
+  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE, manifestFilesReader?: ManifestFilesReader) {
+    const callResolver: CallResolver = new GoCallResolver(new DefaultSymbolIdComposer(), mode, manifestFilesReader);
     this.resolver = {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>

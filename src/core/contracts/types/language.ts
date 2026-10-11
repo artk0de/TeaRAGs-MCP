@@ -1023,6 +1023,32 @@ export interface DependencyManifestSource {
   readonly parseSelfPackageName?: (fileName: string, content: string) => string | undefined;
 }
 
+/** One manifest file the walk found: where it sits, and what it says. */
+export interface ManifestFile {
+  /** Repo-relative directory holding the file, `/`-separated; `""` is the root. */
+  readonly relDir: string;
+  readonly fileName: string;
+  readonly content: string;
+}
+
+/**
+ * Read every manifest file under `root` that `matchesManifestFile` accepts
+ * (asked per file BASENAME), with its location — for a manifest whose meaning
+ * depends on WHERE it sits, like Go's `go.mod` (bd tea-rags-mcp-e6xx).
+ * `extraIgnoredDirs` are directory names the caller also skips on top of the
+ * walk's shared ignore set. Total: an unreadable directory or file is skipped,
+ * never thrown.
+ *
+ * A port, not a walk: `domains/language` is a leaf and never touches the disk
+ * walk itself (bd tea-rags-mcp-2wu2h). The composition layer injects the
+ * concrete reader through `LanguageFactory`'s `manifestFilesReader` option.
+ */
+export type ManifestFilesReader = (
+  root: string,
+  matchesManifestFile: (fileName: string) => boolean,
+  extraIgnoredDirs?: ReadonlySet<string>,
+) => ManifestFile[];
+
 /**
  * Each language's declared dependencies, keyed by language id. A language with
  * no manifest under the root has NO key — the "every vocabulary active" answer —
