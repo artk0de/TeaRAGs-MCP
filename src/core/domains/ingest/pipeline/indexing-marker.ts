@@ -7,9 +7,32 @@
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantUpdateStatus } from "../../../adapters/qdrant/types.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
-import { WorktreeSeedMarkerUnreadableError } from "../errors.js";
+import { WorktreeSeedMarkerUnconfirmedError, WorktreeSeedMarkerUnreadableError } from "../errors.js";
 import { parseMarkerPayload, type WorktreeSeedPending } from "../infra/index.js";
+
+/**
+ * Whether a waited marker write is confirmed. Qdrant ends a `wait: true` request
+ * after its own ~60 s with a SUCCESSFUL `wait_timeout` answer: the write is
+ * queued, not applied (bd tea-rags-mcp-yf4je). Such a write is confirmed through
+ * the write barrier (`QdrantManager#awaitWriteBarrier`, the one bounded loop);
+ * `false` means the budget was spent or the barrier failed, i.e. unconfirmed.
+ */
+async function isMarkerWriteConfirmed(
+  qdrant: QdrantManager,
+  collectionName: string,
+  status: QdrantUpdateStatus | undefined,
+): Promise<boolean> {
+  if (status !== "wait_timeout") return true;
+  return (await qdrant.awaitWriteBarrier(collectionName)).kind === "drained";
+}
+
+function logMarkerWriteUnconfirmed(collectionName: string, write: string): void {
+  console.error(
+    `[IndexingMarker] MARKER_UPDATE_UNCONFIRMED ${JSON.stringify({ collection: collectionName, write })}: Qdrant answered wait_timeout and the write barrier did not confirm it`,
+  );
+}
 
 /**
  * Store or update the indexing metadata marker in a collection.
@@ -46,10 +69,15 @@ export async function storeIndexingMarker(
         ...(modelInfo && { modelInfo }),
       };
       try {
-        await qdrant.setPayload(collectionName, completionFields, {
+        const status = await qdrant.setPayload(collectionName, completionFields, {
           points: [INDEXING_METADATA_ID],
           wait: true,
         });
+        // Queued, not applied: logged, not retried — recreating a point the
+        // queue is about to update would only race it.
+        if (!(await isMarkerWriteConfirmed(qdrant, collectionName, status))) {
+          logMarkerWriteUnconfirmed(collectionName, "completion");
+        }
       } catch (error) {
         console.error("[IndexingMarker] Failed to set completion marker via setPayload:", error);
         // Recreate the point rather than patch it. Both its width and its vector
@@ -134,6 +162,9 @@ export async function storeIndexingMarker(
  */
 export async function updateHeartbeat(qdrant: QdrantManager, collectionName: string): Promise<void> {
   try {
+    // A `wait_timeout` answer is deliberately not read: the heartbeat repeats on
+    // an interval, so a queued one is superseded by the next and never decides
+    // anything.
     await qdrant.setPayload(
       collectionName,
       { lastHeartbeat: new Date().toISOString() },
@@ -158,17 +189,23 @@ export function worktreeSeedPendingMarkerPatch(pending: WorktreeSeedPending): Re
  * Rewrite what a seeded first index still owes its collection (bd
  * tea-rags-mcp-k8gac) — see {@link WorktreeSeedPending}. The first record rides
  * the seed's clone; this is the later rewrite, once part of the debt is paid.
- * Throws: a debt that cannot be persisted must not be treated as settled.
+ * Throws: a debt that cannot be persisted must not be treated as settled — that
+ * includes a write Qdrant answered `wait_timeout` that the write barrier never
+ * confirmed ({@link WorktreeSeedMarkerUnconfirmedError}).
  */
 export async function markWorktreeSeedPending(
   qdrant: QdrantManager,
   collectionName: string,
   pending: WorktreeSeedPending,
 ): Promise<void> {
-  await qdrant.setPayload(collectionName, worktreeSeedPendingMarkerPatch(pending), {
+  const status = await qdrant.setPayload(collectionName, worktreeSeedPendingMarkerPatch(pending), {
     points: [INDEXING_METADATA_ID],
     wait: true,
   });
+  if (!(await isMarkerWriteConfirmed(qdrant, collectionName, status))) {
+    logMarkerWriteUnconfirmed(collectionName, "worktreeSeedPending");
+    throw new WorktreeSeedMarkerUnconfirmedError(collectionName);
+  }
 }
 
 /**
@@ -210,6 +247,9 @@ export async function readWorktreeSeedPendingOrThrow(
 /** The seed is settled. A failed clear only means the next run redoes the stamp and the git rebuild. */
 export async function clearWorktreeSeedPending(qdrant: QdrantManager, collectionName: string): Promise<void> {
   try {
+    // A `wait_timeout` answer is deliberately not read, and `batchDeletePayload`
+    // does not report one: a queued clear applies in submission order, and an
+    // unapplied one is the same outcome as a failed clear (below).
     await qdrant.batchDeletePayload(
       collectionName,
       [{ keys: ["worktreeSeedPending"], points: [INDEXING_METADATA_ID] }],

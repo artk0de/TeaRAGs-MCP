@@ -119,8 +119,14 @@ export class RelativePathExactCapability implements RelativePathExactGate {
       const version = await this.deps.readSchemaVersion(physical);
       if (version === undefined || version < RELATIVE_PATH_EXACT_SCHEMA_VERSION) return false;
       const { withBoth, missing } = await probeRelativePathExactPresence(this.deps.backfillStore, physical);
-      const healed = missing > 0 ? await backfillRelativePathExact(this.deps.backfillStore, physical, { missing }) : 0;
-      if (!(await ensureRelativePathExactIndexComplete(this.deps.keywordIndex, physical, withBoth + healed))) {
+      const heal =
+        missing > 0
+          ? await backfillRelativePathExact(this.deps.backfillStore, physical, { missing })
+          : { backfilled: 0, unconfirmedWrites: 0 };
+      // An unconfirmed twin write may not be visible to the caller's keyword
+      // filter yet: answer no (the pairs stay) and let the next probe heal again.
+      if (heal.unconfirmedWrites > 0) return false;
+      if (!(await ensureRelativePathExactIndexComplete(this.deps.keywordIndex, physical, withBoth + heal.backfilled))) {
         return false;
       }
       this.servedUntil.set(physical, Date.now() + SERVED_TTL_MS);

@@ -283,7 +283,10 @@
   scan and writes `degraded` with `degradedReason: "barrier-timeout"`
   (`PayloadWriteBarrierOutcome`, bd tea-rags-mcp-yf4je). A new waited write
   whose completion matters must read the returned `QdrantUpdateStatus` the same
-  way `EnrichmentMarkerStore#writeKeys` does.
+  way `EnrichmentMarkerStore#writeKeys` does. The bounded loop itself is
+  `awaitWriteBarrier` (`adapters/qdrant/write-barrier.ts`); the marker store
+  only binds its budget and its `PAYLOAD_WRITE_BARRIER_*` log lines to it (bd
+  tea-rags-mcp-wjyaf).
 
 ## Boundaries
 

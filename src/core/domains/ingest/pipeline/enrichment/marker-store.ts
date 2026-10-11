@@ -20,24 +20,12 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import { awaitWriteBarrier, type PayloadWriteBarrierOutcome } from "../../../../adapters/qdrant/write-barrier.js";
 import { DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS, INDEXING_METADATA_ID } from "../../../../contracts/constants.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkFinalInput, FileFinalInput, RecoveryResultInput } from "./types.js";
 
-/**
- * What waiting for a collection's queued payload writes established
- * (`EnrichmentMarkerStore#awaitQueuedPayloadWrites`, bd tea-rags-mcp-yf4je).
- *
- * - `drained` — Qdrant confirmed (`completed`) the queue applied.
- * - `timedOut` — every round answered `wait_timeout` until the budget was
- *   spent: the queue is still undrained, and a read now sees stale segments.
- * - `failed` — the barrier request itself threw; best-effort, as before the
- *   barrier existed.
- */
-export type PayloadWriteBarrierOutcome =
-  | { readonly kind: "drained"; readonly rounds: number; readonly waitedMs: number }
-  | { readonly kind: "timedOut"; readonly rounds: number; readonly waitedMs: number }
-  | { readonly kind: "failed" };
+export type { PayloadWriteBarrierOutcome };
 
 export interface EnrichmentMarkerStoreOptions {
   /** Total barrier budget (ms); undefined → DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS. */
@@ -129,31 +117,17 @@ export class EnrichmentMarkerStore {
    * applied, which is what every read did before this existed.
    */
   async awaitQueuedPayloadWrites(coll: string): Promise<PayloadWriteBarrierOutcome> {
-    const startedAt = Date.now();
-    let rounds = 0;
-    try {
-      for (;;) {
-        const roundStartedAt = Date.now();
-        const status = await this.qdrant.awaitQueuedUpdates(coll);
-        rounds++;
-        const waitedMs = Date.now() - startedAt;
-        if (status !== "wait_timeout") return { kind: "drained", rounds, waitedMs };
-        pipelineLog.enrichmentPhase("PAYLOAD_WRITE_BARRIER_TIMED_OUT", {
-          collection: coll,
-          round: rounds,
-          roundMs: Date.now() - roundStartedAt,
-          waitedMs,
-          budgetMs: this.payloadWriteBarrierBudgetMs,
-        });
-        if (waitedMs >= this.payloadWriteBarrierBudgetMs) return { kind: "timedOut", rounds, waitedMs };
-      }
-    } catch (error) {
-      pipelineLog.enrichmentPhase("PAYLOAD_WRITE_BARRIER_FAILED", {
-        collection: coll,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return { kind: "failed" };
-    }
+    return awaitWriteBarrier(this.qdrant, coll, {
+      budgetMs: this.payloadWriteBarrierBudgetMs,
+      log: {
+        timedOutRound: (fields) => {
+          pipelineLog.enrichmentPhase("PAYLOAD_WRITE_BARRIER_TIMED_OUT", fields);
+        },
+        failed: (fields) => {
+          pipelineLog.enrichmentPhase("PAYLOAD_WRITE_BARRIER_FAILED", fields);
+        },
+      },
+    });
   }
 
   /**

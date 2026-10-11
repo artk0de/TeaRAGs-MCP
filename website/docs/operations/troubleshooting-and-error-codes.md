@@ -54,7 +54,8 @@ sidebar_position: 3
 
 | Issue                               | Error Code                      | Solution                                                                  |
 | ----------------------------------- | ------------------------------- | ------------------------------------------------------------------------- |
-| **Collection not found**            | `EXPLORE_COLLECTION_NOT_FOUND`  | Index the codebase first with `index_codebase`                            |
+| **Collection not found**            | `INGEST_SEED_MARKER_UNCONFIRMED`        | `WorktreeSeedMarkerUnconfirmedError` | 503 | Qdrant did not confirm the pending worktree seed rewrite on the indexing marker of "`{collectionName}`" within the write-barrier budget | The seed is treated as still owed. Retry once Qdrant has drained its update queue, or raise `QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS` |
+| `EXPLORE_COLLECTION_NOT_FOUND`  | Index the codebase first with `index_codebase`                            |
 | **Collection or path not provided** | `INPUT_COLLECTION_NOT_PROVIDED` | Provide a `collection` name or a `path` to the codebase                   |
 | **Hybrid search not enabled**       | `EXPLORE_HYBRID_NOT_ENABLED`    | Re-run `index_codebase` — hybrid is enabled by default and auto-migrates  |
 | **Invalid query**                   | `EXPLORE_INVALID_QUERY`         | Fix query parameters                                                      |

@@ -362,16 +362,17 @@ export class MockQdrantManager implements Partial<QdrantManager> {
 
   batchSetPayloadCalls: { collectionName: string; operations: any[] }[] = [];
 
-  async setPayload(collectionName: string, payload: Record<string, any>, options: any): Promise<void> {
+  async setPayload(collectionName: string, payload: Record<string, any>, options: any): Promise<QdrantUpdateStatus> {
     const resolved = this.resolve(collectionName);
     const points = this.points.get(resolved);
-    if (!points || !options?.points) return;
+    if (!points || !options?.points) return "completed";
     for (const id of options.points) {
       const point = points.find((p) => p.id === id);
       if (point) {
         point.payload = { ...point.payload, ...payload };
       }
     }
+    return "completed";
   }
 
   async batchSetPayload(
