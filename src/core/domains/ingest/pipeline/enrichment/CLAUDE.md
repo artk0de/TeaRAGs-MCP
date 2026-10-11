@@ -276,7 +276,14 @@
   finalize writes, and the index showed them stamped a minute later (bd
   tea-rags-mcp-vnmj1). Mock Qdrant applies writes synchronously, so no suite
   catches a new scan placed before the drain unless it queues writes the way
-  `completion-runner-terminal-scan-visibility.test.ts` does.
+  `completion-runner-terminal-scan-visibility.test.ts` does. A `wait: true`
+  answer is NOT proof of a drain: Qdrant ends the wait after ~60 s with a
+  SUCCESSFUL `wait_timeout` status, so the barrier repeats until `completed`
+  within `QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS`, and a spent budget skips the
+  scan and writes `degraded` with `degradedReason: "barrier-timeout"`
+  (`PayloadWriteBarrierOutcome`, bd tea-rags-mcp-yf4je). A new waited write
+  whose completion matters must read the returned `QdrantUpdateStatus` the same
+  way `EnrichmentMarkerStore#writeKeys` does.
 
 ## Boundaries
 

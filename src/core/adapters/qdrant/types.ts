@@ -7,6 +7,18 @@
  */
 
 /**
+ * What Qdrant says about an update it accepted (`UpdateResult.status`).
+ *
+ * `completed` — applied and visible to reads. `acknowledged` — accepted into
+ * the WAL, not yet applied (the answer to `wait: false`). `wait_timeout` — a
+ * `wait: true` update whose server-side wait ran out before the update was
+ * applied: Qdrant 1.18 returns it as a SUCCESSFUL response after its default
+ * ~60 s, so only this status tells the caller the queue is still undrained
+ * (bd tea-rags-mcp-yf4je).
+ */
+export type QdrantUpdateStatus = "completed" | "acknowledged" | "wait_timeout";
+
+/**
  * A Qdrant sparse vector: parallel index/value arrays. Produced by the BM25
  * generator in `sparse.ts`, written by `QdrantPointStore`, queried by
  * `QdrantSearchExecutor` — declared here because it is shared by all three and

@@ -1,5 +1,6 @@
 import type { Ignore } from "ignore";
 
+import type { EnrichmentDegradedReason } from "../../../../contracts/types/enrichment.js";
 import type { EnrichmentProvider } from "../../../../contracts/types/provider.js";
 
 export type {
@@ -36,6 +37,7 @@ export type {
 // API-facing enrichment health types live in core/contracts/types/enrichment.ts.
 // Re-exported here so internal ingest code keeps the same import paths.
 export type {
+  EnrichmentDegradedReason,
   EnrichmentLevelHealth,
   EnrichmentProviderHealth,
   EnrichmentHealthMap,
@@ -57,6 +59,11 @@ export interface FileFinalInput {
    * reader (get_index_status / prime) can surface the failure from (2nfdm).
    */
   errorMessage?: string;
+  /**
+   * Set with `status: "degraded"` when the status was NOT decided by a scan
+   * (`unenrichedChunks` is then 0 = not measured) — see EnrichmentDegradedReason.
+   */
+  degradedReason?: EnrichmentDegradedReason;
 }
 
 /** Input for EnrichmentMarkerStore.markChunkFinal. */
@@ -67,6 +74,8 @@ export interface ChunkFinalInput {
   unenrichedChunks: number;
   /** Cause of the upstream failure — see FileFinalInput.errorMessage. */
   errorMessage?: string;
+  /** See FileFinalInput.degradedReason. */
+  degradedReason?: EnrichmentDegradedReason;
 }
 
 /** Input for EnrichmentMarkerStore.markRecoveryResult. */

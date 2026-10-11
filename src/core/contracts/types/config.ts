@@ -89,6 +89,13 @@ export interface QdrantTuneConfig {
   deleteBatchSize: number;
   deleteConcurrency: number;
   deleteFlushTimeoutMs: number;
+  /**
+   * Total budget (ms) for the enrichment payload-write barrier
+   * (`QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS`); default
+   * `DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS` in `contracts/constants.ts`,
+   * which also applies when absent.
+   */
+  writeBarrierBudgetMs?: number;
   quantizationScalar: boolean;
   /** Enable Qdrant 1.18 TurboQuant 8x dense quantization (default true). */
   turboQuant: boolean;

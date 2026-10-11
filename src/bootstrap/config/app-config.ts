@@ -87,6 +87,7 @@ export function buildAppConfig(zodConfig: ReturnType<typeof parseAppConfigZod>):
       turboQuant: zodConfig.qdrantTune.turboQuant,
       enableGitMetadata: zodConfig.trajectoryGit.enabled,
       userSetChunkSize: zodConfig.flags.userSetChunkSize,
+      payloadWriteBarrierBudgetMs: zodConfig.qdrantTune.writeBarrierBudgetMs,
       maxChunksPerFile: undefined,
       maxTotalChunks: undefined,
     },

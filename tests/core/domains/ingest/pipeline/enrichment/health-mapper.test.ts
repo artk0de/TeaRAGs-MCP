@@ -201,6 +201,24 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
     expect(r.git.chunk.message).toMatch(/crashed|recovered/i);
   });
 
+  // bd tea-rags-mcp-yf4je — a marker decided behind an undrained write queue is
+  // degraded for a named reason, not for a measured unenriched count.
+  it("renders a barrier-timeout degraded marker with its reason, not an unenriched count", () => {
+    const map = {
+      _run: run({ providers: ["codegraph.symbols"] }),
+      codegraph: {
+        symbols: {
+          file: { runId: RUN, status: "degraded", unenrichedChunks: 0, degradedReason: "barrier-timeout" },
+          chunk: { runId: RUN, status: "completed", unenrichedChunks: 0 },
+        },
+      },
+    } as unknown as EnrichmentMarkerMap;
+    const r = mapMarkerToHealth(map, ["codegraph.symbols"])!;
+    expect(r["codegraph.symbols"].file).toMatchObject({ status: "degraded", degradedReason: "barrier-timeout" });
+    expect(r["codegraph.symbols"].file.message).toMatch(/barrier timed out/i);
+    expect(r["codegraph.symbols"].file.message).not.toMatch(/0 chunks missing/);
+  });
+
   it("renders degraded / failed terminal statuses (matching runId), with errorMessage", () => {
     const map = {
       _run: run({ providers: ["codegraph.symbols"] }),

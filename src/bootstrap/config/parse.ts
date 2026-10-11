@@ -174,6 +174,7 @@ function buildEnvInputs(env: EnvReader) {
     deleteBatchSize: env("QDRANT_TUNE_DELETE_BATCH_SIZE", "QDRANT_DELETE_BATCH_SIZE", "DELETE_BATCH_SIZE"),
     deleteConcurrency: env("QDRANT_TUNE_DELETE_CONCURRENCY", "QDRANT_DELETE_CONCURRENCY", "DELETE_CONCURRENCY"),
     deleteFlushTimeoutMs: env("QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS", "DELETE_FLUSH_TIMEOUT_MS"),
+    writeBarrierBudgetMs: env("QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS"),
     quantizationScalar: env("QDRANT_QUANTIZATION_SCALAR"),
     turboQuant: env("QDRANT_TURBO_QUANT"),
     maxResidentMemoryPercent: env("QDRANT_MAX_RESIDENT_MEMORY_PERCENT"),

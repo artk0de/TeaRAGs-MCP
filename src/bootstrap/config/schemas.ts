@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
+import { DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS } from "../../core/contracts/constants.js";
 import {
   defaultChunkerPoolSize,
   defaultEnrichmentFilesPerThread,
@@ -288,6 +289,14 @@ export const qdrantTuneSchema = z.object({
   deleteBatchSize: intWithDefault(500),
   deleteConcurrency: intWithDefault(8),
   deleteFlushTimeoutMs: intWithDefault(1000),
+  /**
+   * Total time (ms) enrichment completion waits for Qdrant to apply its queued
+   * payload writes before deciding the terminal markers. Qdrant answers one
+   * waited request after ~60 s with `wait_timeout`, so the barrier repeats
+   * round by round within this budget; spent → the run is `degraded` with
+   * reason `barrier-timeout` (bd tea-rags-mcp-yf4je).
+   */
+  writeBarrierBudgetMs: intWithDefault(DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS),
   quantizationScalar: booleanFromEnv,
   turboQuant: booleanFromEnvWithDefault(true),
   // Strict-mode OOM guard: reject memory-consuming writes above N% resident RAM.

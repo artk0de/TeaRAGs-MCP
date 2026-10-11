@@ -11,6 +11,7 @@ import type { EmbeddingProvider } from "../../../../../src/core/adapters/embeddi
 import { QdrantAliasManager } from "../../../../../src/core/adapters/qdrant/aliases.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import type { QdrantConnection } from "../../../../../src/core/adapters/qdrant/connection.js";
+import type { QdrantUpdateStatus } from "../../../../../src/core/adapters/qdrant/types.js";
 import type {
   CollectionAliasEntry,
   PhysicalCollectionName,
@@ -377,7 +378,7 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     collectionName: string,
     operations: { payload: Record<string, any>; points: (string | number)[]; key?: string }[],
     _options?: any,
-  ): Promise<void> {
+  ): Promise<QdrantUpdateStatus> {
     this.batchSetPayloadCalls.push({ collectionName, operations });
     // Model real Qdrant set_payload: when `key` is present the payload is
     // merged into the nested object AT that dotted path, leaving sibling
@@ -385,7 +386,8 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     // each other). Without `key`, merge at the payload root.
     const resolved = this.resolve(collectionName);
     const points = this.points.get(resolved);
-    if (!points) return;
+    // Applied synchronously, so every write is `completed` — never `wait_timeout`.
+    if (!points) return "completed";
     for (const op of operations) {
       // The payload as it reaches Qdrant: JSON drops an `undefined` value, so a
       // key the caller left undefined keeps whatever the point already carried
@@ -408,11 +410,12 @@ export class MockQdrantManager implements Partial<QdrantManager> {
         }
       }
     }
+    return "completed";
   }
 
   /** Every write above applies synchronously, so nothing is ever queued behind this barrier. */
-  async awaitQueuedUpdates(_collectionName: string): Promise<void> {
-    return Promise.resolve();
+  async awaitQueuedUpdates(_collectionName: string): Promise<QdrantUpdateStatus> {
+    return Promise.resolve("completed");
   }
 
   batchDeletePayloadCalls: { collectionName: string; operations: { keys: string[]; points: (string | number)[] }[] }[] =

@@ -67,7 +67,7 @@ export interface CodegraphPayloadHealRunnerDeps {
     batchSetPayload: (
       collectionName: string,
       operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[],
-    ) => Promise<void>;
+    ) => Promise<unknown>;
   };
   /**
    * Opens the graph client for the PHYSICAL collection name the caller already

@@ -395,6 +395,7 @@ export class IngestFacade {
       deps.blobReaderFactory,
       codegraphHeal,
       codegraphCompaction,
+      deps.config.payloadWriteBarrierBudgetMs,
     );
     // Codegraph DuckDB cleanup for orphan collections during alias cleanup.
     // Wired from the pool's removeCollection (closes any cached handle, then

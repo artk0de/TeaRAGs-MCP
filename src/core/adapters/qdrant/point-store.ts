@@ -36,10 +36,24 @@ import { relativePathExactFilter, relativePathExactGroups } from "./filters/rela
 import { anyOfOnTextIndexed, exactMatchOnTextIndexed } from "./filters/text-indexed-exact.js";
 import { toQdrantPointId } from "./point-id.js";
 import type { RelativePathExactGate } from "./relative-path-exact-capability.js";
-import type { SparseVector } from "./types.js";
+import type { QdrantUpdateStatus, SparseVector } from "./types.js";
 
 /** Named by the no-op barrier update in `awaitQueuedUpdates`; its filter matches no point, so nothing is deleted. */
 const QUEUED_UPDATE_BARRIER_KEY = "__queued_update_barrier__";
+
+/**
+ * The status of one `batchUpdate` answer, folded over its per-operation results:
+ * `wait_timeout` if any operation's wait ran out, else `acknowledged` if any is
+ * only queued, else `completed`. An answer carrying no result list states no
+ * timeout, so it reads as `completed` (bd tea-rags-mcp-yf4je).
+ */
+function batchUpdateStatus(results: unknown): QdrantUpdateStatus {
+  if (!Array.isArray(results)) return "completed";
+  const statuses = results.map((result: unknown) => (result as { status?: unknown } | null)?.status);
+  if (statuses.includes("wait_timeout")) return "wait_timeout";
+  if (statuses.includes("acknowledged")) return "acknowledged";
+  return "completed";
+}
 
 export class QdrantPointStore {
   /** Page size for scroll pagination when collecting point IDs by filter. */
@@ -673,10 +687,11 @@ export class QdrantPointStore {
       wait?: boolean;
       ordering?: "weak" | "medium" | "strong";
     } = {},
-  ): Promise<void> {
-    if (operations.length === 0) return;
+  ): Promise<QdrantUpdateStatus> {
+    if (operations.length === 0) return "completed";
 
     const { wait = false, ordering = "weak" } = options;
+    let status: QdrantUpdateStatus = "completed";
 
     // Split into sub-batches of 100 operations to avoid oversized requests
     const BATCH_SIZE = 100;
@@ -692,14 +707,18 @@ export class QdrantPointStore {
         },
       }));
 
-      await this.connection.call(async () =>
+      const results = await this.connection.call(async () =>
         this.connection.client.batchUpdate(collectionName, {
           operations: updateOps,
           wait: isLast ? wait : false,
           ordering,
         }),
       );
+      status = batchUpdateStatus(results);
     }
+    // The last sub-batch carries the caller's `wait`, so its status is the answer
+    // a waited write must read: `wait_timeout` = not yet applied (yf4je).
+    return status;
   }
 
   /**
@@ -746,14 +765,20 @@ export class QdrantPointStore {
    * order, so a `wait: true` update is a barrier on all of them. This one is a
    * `delete_payload` whose filter selects no point (`has_id: []`): sequenced like
    * any update, touching nothing, needing no point to exist.
+   *
+   * Returns Qdrant's status for the barrier. `wait_timeout` means the server's
+   * wait ran out first: the queue is NOT drained, however successful the
+   * response looks. Repeating the barrier is the caller's decision (bd
+   * tea-rags-mcp-yf4je).
    */
-  async awaitQueuedUpdates(collectionName: string): Promise<void> {
-    await this.connection.call(async () =>
+  async awaitQueuedUpdates(collectionName: string): Promise<QdrantUpdateStatus> {
+    const results = await this.connection.call(async () =>
       this.connection.client.batchUpdate(collectionName, {
         operations: [{ delete_payload: { keys: [QUEUED_UPDATE_BARRIER_KEY], filter: { must: [{ has_id: [] }] } } }],
         wait: true,
       }),
     );
+    return batchUpdateStatus(results);
   }
 
   /** Delete payload keys from all points (or filtered subset). */

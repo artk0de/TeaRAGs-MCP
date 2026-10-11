@@ -41,12 +41,18 @@ const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BASE_DELAY_MS = 100;
 
 export async function batchSetPayloadWithRetry(
-  qdrant: { batchSetPayload: (collectionName: string, operations: BatchPayloadOp[]) => Promise<void> },
+  qdrant: { batchSetPayload: (collectionName: string, operations: BatchPayloadOp[]) => Promise<unknown> },
   collectionName: string,
   operations: BatchPayloadOp[],
   opts: BatchWriteRetryOptions = {},
 ): Promise<boolean> {
-  return writeWithRetry("batchSetPayload", async () => qdrant.batchSetPayload(collectionName, operations), opts);
+  return writeWithRetry(
+    "batchSetPayload",
+    async () => {
+      await qdrant.batchSetPayload(collectionName, operations);
+    },
+    opts,
+  );
 }
 
 /**

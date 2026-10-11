@@ -2627,6 +2627,14 @@ describe("QdrantManager", () => {
   });
 
   describe("batchSetPayload", () => {
+    it("reports the waited write's wait_timeout status (yf4je)", async () => {
+      mockClient.batchUpdate.mockResolvedValueOnce([{ operation_id: 3, status: "wait_timeout" }]);
+
+      await expect(
+        manager.batchSetPayload("test-collection", [{ payload: { a: 1 }, points: ["id-1"] }], { wait: true }),
+      ).resolves.toBe("wait_timeout");
+    });
+
     it("should early return on empty operations", async () => {
       await manager.batchSetPayload("test-collection", []);
 
@@ -2760,6 +2768,20 @@ describe("QdrantManager", () => {
       expect(request.operations).toHaveLength(1);
       expect(request.operations[0].delete_payload.filter).toEqual({ must: [{ has_id: [] }] });
       expect(request.operations[0].delete_payload.points).toBeUndefined();
+    });
+
+    // bd tea-rags-mcp-yf4je — Qdrant answers a wait:true update that outlives its
+    // server-side wait with a SUCCESSFUL response carrying `wait_timeout`.
+    it("reports wait_timeout when Qdrant's wait ran out before the queue drained", async () => {
+      mockClient.batchUpdate.mockResolvedValueOnce([{ operation_id: 7, status: "wait_timeout" }]);
+
+      await expect(manager.awaitQueuedUpdates("test-collection")).resolves.toBe("wait_timeout");
+    });
+
+    it("reports completed when Qdrant applied the barrier", async () => {
+      mockClient.batchUpdate.mockResolvedValueOnce([{ operation_id: 7, status: "completed" }]);
+
+      await expect(manager.awaitQueuedUpdates("test-collection")).resolves.toBe("completed");
     });
   });
 
