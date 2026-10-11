@@ -8,11 +8,13 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
+  type GitWorkingTreeSeedStep,
 } from "../../../__helpers__/git-working-tree-fixture.js";
 import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
 import {
@@ -64,11 +66,18 @@ describe("WorkingTreeOverlay dense warm-up", { timeout: 60_000 }, () => {
   const view = async (o: WorkingTreeOverlay) =>
     o.view({ root: tree, baseIndex: { collectionName: COLLECTION, root: fixture.mainRoot } }, "proj");
 
+  const SEED = [
+    { commit: { "src/keep.ts": "export const keep = 1;\n" }, message: "A" },
+    { addWorktree: "feature" },
+  ] satisfies readonly GitWorkingTreeSeedStep[];
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture(SEED);
+  });
+
   beforeEach(() => {
-    fixture = createGitWorkingTreeFixture([
-      { commit: { "src/keep.ts": "export const keep = 1;\n" }, message: "A" },
-      { addWorktree: "feature" },
-    ]);
+    fixture = createGitWorkingTreeFixture(SEED);
     const [indexedCommit] = fixture.seeded.commits;
     tree = fixture.seeded.worktrees.feature;
     registryDir = mkdtempSync(join(tmpdir(), "wto-dense-registry-"));

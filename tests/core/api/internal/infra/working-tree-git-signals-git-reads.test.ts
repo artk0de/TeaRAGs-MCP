@@ -7,10 +7,11 @@
  * so the range is not asked of git. What is pinned here is WHICH reads run; the
  * answers are `working-tree-git-signals.test.ts`'s.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
 import * as gitCli from "../../../../../src/core/adapters/vcs/git/git-cli/history.js";
@@ -27,6 +28,11 @@ const DEPS = {
 describe("createWorkingTreeGitSignalSource — a stamp at HEAD", () => {
   let fixture: GitWorkingTreeFixture;
   let tree: string;
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture([{ commit: { "src/a.ts": "export const a = 1;\n" }, message: "add a" }]);
+  });
 
   beforeEach(() => {
     fixture = createGitWorkingTreeFixture([{ commit: { "src/a.ts": "export const a = 1;\n" }, message: "add a" }]);

@@ -12,10 +12,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as realDelay } from "node:timers/promises";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
 import { readBlobCommitTime } from "../../../../../src/core/adapters/vcs/git/git-cli/cat-file.js";
@@ -84,6 +85,11 @@ describe("WorkingTreeChunkStore", { timeout: 60_000 }, () => {
     fixture.commit(tree, { [relativePath]: content });
     return Number(fixture.git(tree, "log", "-1", "--format=%ct").trim()) * 1000;
   };
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture([{ addWorktree: "feature" }]);
+  });
 
   beforeEach(() => {
     fixture = createGitWorkingTreeFixture([{ addWorktree: "feature" }]);

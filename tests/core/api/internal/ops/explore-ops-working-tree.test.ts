@@ -10,10 +10,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
 import { ExploreFacade } from "../../../../../src/core/api/internal/facades/explore-facade.js";
@@ -358,6 +359,11 @@ describe("ExploreOps drift check reads the INDEX root, never the tree", { timeou
   let registryDir: string;
   let collectionRegistry: CollectionRegistry;
   let tree: string;
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture();
+  });
 
   beforeEach(() => {
     fixture = createGitWorkingTreeFixture();

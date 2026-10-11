@@ -309,9 +309,12 @@ describe("WorkingTreeGraphCache#graphFor", () => {
 
   it("waitMs 0 is a warm-up: returns at once and the build finishes in the background", async () => {
     const { cache, builder } = harness();
+    // The build is held at the gate: without it the lapse races a build that can finish first (bd 723i6).
+    builder.gate = gate();
     const root = treeDir("t1");
 
     expect(await cache.graphFor(request(root), 0)).toMatchObject({ kind: "unavailable" });
+    builder.gate.open();
     await vi.waitFor(() => {
       expect(treeEntries()).toHaveLength(1);
     });

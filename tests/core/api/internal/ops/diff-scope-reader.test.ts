@@ -14,13 +14,15 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { importGitHistory } from "../../../__helpers__/git-history-import.js";
 import { copyGitRepoTemplate } from "../../../__helpers__/git-repo-template.js";
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
+  type GitWorkingTreeSeedStep,
 } from "../../../__helpers__/git-working-tree-fixture.js";
 import { resolveWorkingTree } from "../../../../../src/core/api/internal/collection-resolver.js";
 import { readDiffScope, readTreeLag } from "../../../../../src/core/api/internal/ops/diff-scope-reader.js";
@@ -417,16 +419,23 @@ describe("readDiffScope / readTreeLag — a project registered at a repository s
   let fixture: GitWorkingTreeFixture;
   let sub: string;
 
-  beforeEach(() => {
-    fixture = createGitWorkingTreeFixture([
-      {
-        commit: {
-          "sub/a.ts": "export const a = 1;\n",
-          "sub/c.ts": "export const c = 1;\n",
-          "sibling/b.ts": "export const b = 1;\n",
-        },
+  const SEED = [
+    {
+      commit: {
+        "sub/a.ts": "export const a = 1;\n",
+        "sub/c.ts": "export const c = 1;\n",
+        "sibling/b.ts": "export const b = 1;\n",
       },
-    ]);
+    },
+  ] satisfies readonly GitWorkingTreeSeedStep[];
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture(SEED);
+  });
+
+  beforeEach(() => {
+    fixture = createGitWorkingTreeFixture(SEED);
     sub = join(fixture.mainRoot, "sub");
     writeFileSync(join(sub, "a.ts"), "export const a = 1;\nexport const a2 = 2;\n");
     writeFileSync(join(sub, "new.ts"), "export const n = 1;\nexport const m = 2;\n");
