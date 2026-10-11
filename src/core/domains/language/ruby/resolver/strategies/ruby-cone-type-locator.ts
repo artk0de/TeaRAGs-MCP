@@ -46,6 +46,18 @@ export class RubyConeTypeLocator implements ConeTypeLocator {
   }
 
   /**
+   * Every Ruby class and module is a runtime dispatch class (bd
+   * tea-rags-mcp-0qaht.60): there is no interface, abstract or protocol
+   * construct whose member is a body-less contract, so a receiver typed `T`
+   * dispatches to `T`'s own (or inherited, mixin-supplied) declaration
+   * whenever an instance of `T` or of a non-overriding subtype exists. The
+   * cone therefore keeps that declaration beside the subtype overrides.
+   */
+  isRuntimeDispatchClass(_typeName: string, _ctx: CallContext): boolean {
+    return true;
+  }
+
+  /**
    * Could `typeName` name a project class or module (bd tea-rags-mcp-0qaht.64)?
    * True when the constant resolves, or when any Ruby class / module (or a
    * definition carrying no kind) ends with `typeName`'s segments — so a

@@ -58,7 +58,7 @@ describe("CodegraphEnrichmentProvider — CHA cone dispatch end-to-end (bd tea-r
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("fans a polymorphic typed-receiver call out to overriding subtypes (cone)", async () => {
+  it("fans a polymorphic typed-receiver call out to the receiver's own declaration and its overriding subtypes (cone)", async () => {
     const sink = provider.asExtractionSink();
     await sink.write(rubyClass("Animal", "speak"));
     await sink.write(rubyClass("Dog", "speak", "Animal"));
@@ -82,7 +82,7 @@ describe("CodegraphEnrichmentProvider — CHA cone dispatch end-to-end (bd tea-r
     await sink.finish();
 
     const callees = await client.getCallees("ZooKeeper#make_noise");
-    expect(callees.map((c) => c.targetSymbolId).sort()).toEqual(["Cat#speak", "Dog#speak"]);
+    expect(callees.map((c) => c.targetSymbolId).sort()).toEqual(["Animal#speak", "Cat#speak", "Dog#speak"]);
   });
 
   it("collapses an over-K cone to a poly-base edge (base persisted, subtypes query-expanded)", async () => {

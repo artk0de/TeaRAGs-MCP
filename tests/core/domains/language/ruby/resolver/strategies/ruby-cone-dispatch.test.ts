@@ -147,7 +147,7 @@ describe("RubyConeDispatchResolver", () => {
     expect(out).toEqual([]);
   });
 
-  it("fans out to N overriding subtypes with confidence 1/N and edgeKind 'cone' (|cone| ≤ K)", () => {
+  it("fans out to the receiver's own declaration plus N overriding subtypes with confidence 1/(N+1) and edgeKind 'cone' (|overrides| ≤ K)", () => {
     const symbolTable = tableWith(agentBase, website, twitter);
     const out = sortEdges(
       edgesOf(
@@ -164,17 +164,24 @@ describe("RubyConeDispatchResolver", () => {
     expect(out).toEqual([
       {
         sourceSymbolId: null,
+        targetRelPath: "app/models/agent.rb",
+        targetSymbolId: "Agent#check",
+        edgeKind: "cone",
+        confidence: 1 / 3,
+      },
+      {
+        sourceSymbolId: null,
         targetRelPath: "app/agents/twitter_agent.rb",
         targetSymbolId: "TwitterAgent#check",
         edgeKind: "cone",
-        confidence: 0.5,
+        confidence: 1 / 3,
       },
       {
         sourceSymbolId: null,
         targetRelPath: "app/agents/website_agent.rb",
         targetSymbolId: "WebsiteAgent#check",
         edgeKind: "cone",
-        confidence: 0.5,
+        confidence: 1 / 3,
       },
     ]);
   });
@@ -229,5 +236,71 @@ describe("RubyConeDispatchResolver", () => {
       ),
     );
     expect(out).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-0qaht.60: graphql-ruby shape. `module Finalizer` defines
+  // `ast_node`; `class RuntimeError` includes it; `InvalidNullError < RuntimeError`
+  // overrides it. Every Ruby class is a runtime dispatch class, so `err.ast_node`
+  // with `err` typed RuntimeError keeps the receiver's own declaration
+  // (Finalizer#ast_node) beside the override.
+  it("keeps the receiver's own (mixin) declaration beside the subtype override", () => {
+    const symbolTable = tableWith(
+      [
+        "lib/finalizer.rb",
+        [
+          { ...sym("Finalizer", "Finalizer", "lib/finalizer.rb", []), symbolKind: "module" },
+          { ...sym("Finalizer#ast_node", "ast_node", "lib/finalizer.rb", ["Finalizer"]), symbolKind: "method" },
+        ],
+      ],
+      [
+        "lib/runtime_error.rb",
+        [{ ...sym("RuntimeError", "RuntimeError", "lib/runtime_error.rb", []), symbolKind: "class" }],
+      ],
+      [
+        "lib/invalid_null_error.rb",
+        [
+          { ...sym("InvalidNullError", "InvalidNullError", "lib/invalid_null_error.rb", []), symbolKind: "class" },
+          {
+            ...sym("InvalidNullError#ast_node", "ast_node", "lib/invalid_null_error.rb", ["InvalidNullError"]),
+            symbolKind: "method",
+          },
+        ],
+      ],
+    );
+    const hierarchy: HierarchyView = {
+      getAncestors: (fqName: string): readonly InheritanceEdge[] =>
+        fqName === "RuntimeError"
+          ? [
+              {
+                sourceFqName: "RuntimeError",
+                ancestorFqName: "Finalizer",
+                ancestorSymbolId: null,
+                kind: "include",
+                depth: 1,
+              },
+            ]
+          : [],
+      getDescendants: (fqName: string): readonly InheritanceEdge[] =>
+        fqName === "RuntimeError"
+          ? [
+              {
+                sourceFqName: "InvalidNullError",
+                ancestorFqName: "RuntimeError",
+                ancestorSymbolId: null,
+                kind: "super",
+                depth: 1,
+              },
+            ]
+          : [],
+    };
+    const out = sortEdges(
+      edgesOf(
+        resolver.resolveDispatch(
+          { callText: "err.ast_node", receiver: "err", member: "ast_node", startLine: 1 },
+          ctx({ symbolTable, localBindings: { err: [{ line: 1, type: "RuntimeError" }] }, hierarchy }),
+        ),
+      ),
+    );
+    expect(out.map((e) => e.targetSymbolId)).toEqual(["Finalizer#ast_node", "InvalidNullError#ast_node"]);
   });
 });
