@@ -81,7 +81,11 @@ export const capability: LanguageCapability = {
   // (`x ||= v`) publish `identifierDeclarations` rows, and accessor macros
   // declare `field` rows; a walker-5 index carries none of them, so only the
   // recompute adds them to the naming lexicon.
-  versions: { chunking: 2, walker: 7, codegraphSchema: 2 },
+  // walker 8: bd tea-rags-mcp-44cpv (c-1=a). A class whose own methods are all
+  // `initialize` — or that defines none, its body holding only attr accessors
+  // and constants — leaves the type-abstractness census. Recompute:
+  // `--force-enrichments codegraph --languages ruby`.
+  versions: { chunking: 2, walker: 8, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

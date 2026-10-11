@@ -112,7 +112,12 @@ export const sharedVersions: LanguageSupportVersions = {
   // type the locator's `isProjectType` says the project does not declare when
   // a project class extends it (not `implements`), so a library receiver
   // (`Map`, `Rack::Response`) no longer fans to the one project override.
-  walker: 5,
+  // walker 6, bd tea-rags-mcp-44cpv (c-1=a): the census facet grows the shared
+  // behaviour-free fold (`isBehaviourFreeClassBody`) — a class whose members
+  // are only a constructor, fields and accessors counts in neither bucket. The
+  // languages that read it (typescript, javascript, python, java, ruby, swift)
+  // bump their own walker too; go and rust keep their reading.
+  walker: 6,
   codegraphSchema: 2,
 };
 

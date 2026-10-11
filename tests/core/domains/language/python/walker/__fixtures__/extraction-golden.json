@@ -333,7 +333,7 @@
     },
     "typeAbstractness": {
       "abstractTypeCount": 2,
-      "concreteTypeCount": 8
+      "concreteTypeCount": 1
     },
     "identifierDeclarations": [
       {
@@ -1332,7 +1332,7 @@
     ],
     "typeAbstractness": {
       "abstractTypeCount": 0,
-      "concreteTypeCount": 1
+      "concreteTypeCount": 0
     },
     "identifierDeclarations": [
       {

@@ -58,6 +58,7 @@ export {
   type DeclaredVisibilityReading,
 } from "./declared-visibility-pass.js";
 export {
+  isBehaviourFreeClassBody,
   typeAbstractnessFacetPass,
   type TypeAbstractnessReader,
   type TypeAbstractnessVerdict,

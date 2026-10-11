@@ -2,7 +2,10 @@
  * Python type-abstractness census (bd tea-rags-mcp-r8hme.8). A class is
  * abstract when it declares itself so — an `ABC` / `Protocol` base (bare,
  * module-qualified or subscripted), an `ABCMeta` metaclass — or when it declares
- * an `@abstractmethod`. Every other class is concrete.
+ * an `@abstractmethod`. A class that declares behaviour of its own is concrete;
+ * a class whose body is only an `__init__`, fields and property accessors
+ * declares no behaviour — an Exception subclass, a dataclass — and counts as
+ * neither (bd tea-rags-mcp-44cpv, decision c-1=a).
  */
 import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
@@ -34,7 +37,7 @@ describe("Python walker — type-abstractness census", () => {
     expect(censusOf(src)).toEqual({ abstractTypeCount: 5, concreteTypeCount: 0 });
   });
 
-  it("counts every other class as concrete, nested ones included", () => {
+  it("counts a behaviour-declaring class as concrete, nested ones included", () => {
     const src = [
       "class Service(Base):",
       "    def run(self):",
@@ -47,6 +50,62 @@ describe("Python walker — type-abstractness census", () => {
       "",
     ].join("\n");
 
-    expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 3 });
+    // `Config` (an empty body) and `Row` (fields only) are behaviour-free
+    // (44cpv c-1); only `Service`, which declares `run`, counts.
+    expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 1 });
+  });
+
+  describe("behaviour-free classes (bd tea-rags-mcp-44cpv, decision c-1=a)", () => {
+    it("counts an Exception subclass whose only def is __init__ as neither bucket", () => {
+      const src = [
+        "class PipelineError(Exception):",
+        "    default_code = 'pipeline'",
+        "    def __init__(self, code):",
+        "        super().__init__(code)",
+        "        self.code = code",
+        "",
+      ].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 0 });
+    });
+
+    it("counts field-only and assignment-only bodies as neither", () => {
+      const src = [
+        "class Point:",
+        "    x: int",
+        "    y: int = 0",
+        "class Marker:",
+        "    pass",
+        "class Color(Enum):",
+        "    RED = 1",
+        "    GREEN = 2",
+        "",
+      ].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 0 });
+    });
+
+    it("counts property accessors as data and every other def as behaviour", () => {
+      const src = [
+        "class Accessors:",
+        "    @property",
+        "    def total(self):",
+        "        return 1",
+        "    @total.setter",
+        "    def total(self, v):",
+        "        pass",
+        "class WithClassMethod:",
+        "    @classmethod",
+        "    def from_row(cls, row):",
+        "        return cls()",
+        "class WithStaticMethod:",
+        "    @staticmethod",
+        "    def helper():",
+        "        pass",
+        "",
+      ].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 2 });
+    });
   });
 });

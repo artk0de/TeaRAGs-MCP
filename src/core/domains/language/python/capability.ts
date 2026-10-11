@@ -100,7 +100,11 @@ export const capability: LanguageCapability = {
   // `return self` published as the Self marker, constructor-rooted call-result
   // spines, value-receiver constructors untyped, conditional-local unions,
   // @contextmanager targets, the receiver's own target in the CHA cone.
-  versions: { chunking: 1, walker: 10, codegraphSchema: 2 },
+  // walker 11: bd tea-rags-mcp-44cpv (c-1=a). A class whose body is only
+  // `__init__`, field assignments and property accessors — an Exception
+  // subclass, a dataclass — leaves the type-abstractness census. Recompute:
+  // `--force-enrichments codegraph --languages python`.
+  versions: { chunking: 1, walker: 11, codegraphSchema: 2 },
   // PEP 8: classes CapWords, modules short lowercase (underscores allowed),
   // functions, methods, variables and attributes snake_case, module-level
   // constants SCREAMING_SNAKE.

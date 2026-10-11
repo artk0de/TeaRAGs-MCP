@@ -35,6 +35,44 @@ export type TypeAbstractnessVerdict = "abstract" | "concrete";
  */
 export type TypeAbstractnessReader = (node: AstNode) => TypeAbstractnessVerdict | null;
 
+/**
+ * Whether a class body declares NO behaviour of its own (bd tea-rags-mcp-44cpv,
+ * decision c-1=a, 2026-10-11): every member is a constructor, a data property
+ * or an accessor. Such a class is a thrown value no dependent substitutes — an
+ * `Error` subclass — or a data carrier — a record shape, a dataclass — and the
+ * census counts it in NEITHER bucket, mirroring how the TypeScript pass already
+ * keeps a data-shape interface out of both.
+ *
+ * The rule is uniform over member KINDS, never over spellings: no branch reads
+ * `extends Error` — a data-only class and an exception subclass are the same
+ * reading. The boundary calls, per decision c-1:
+ *
+ * - a static method, or a property whose value is a function (an arrow, a
+ *   function expression, a lambda), is BEHAVIOUR — the class stays concrete;
+ * - a static constant/data property is DATA (static readonly / static let /
+ *   a primitive-valued field);
+ * - a constructor parameter property (`constructor(private x)`) is a FIELD;
+ * - accessors alone (getters/setters, `@property` accessors) are DATA;
+ * - an initializer block (`static { … }`, a Java static initializer) is DATA —
+ *   it initializes, it is not a member a dependent calls;
+ * - abstract classes, interfaces/protocols and decorated abstract declarations
+ *   keep their existing reading — an abstract class stays abstract whatever its
+ *   members.
+ *
+ * Which member is behaviour stays language knowledge: each pass supplies
+ * `memberDeclaresBehaviour` over its own grammar's class-body members. A body
+ * that is missing (an error-tolerant parse of a truncated class) has no member
+ * that declares behaviour and reads as behaviour-free — the safe default, and
+ * the reading an empty class body takes too: zero members is the degenerate
+ * constructor-and-fields-only class.
+ */
+export function isBehaviourFreeClassBody(
+  body: AstNode | null | undefined,
+  memberDeclaresBehaviour: (member: AstNode) => boolean,
+): boolean {
+  return !body?.namedChildren.some(memberDeclaresBehaviour);
+}
+
 export function typeAbstractnessFacetPass(read: TypeAbstractnessReader): ExtractionFacetPass {
   return {
     run: (root): Partial<FileExtraction> => {
