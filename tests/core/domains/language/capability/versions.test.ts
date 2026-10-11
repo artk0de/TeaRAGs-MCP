@@ -97,7 +97,9 @@ describe("resolveLanguageCodeVersions", () => {
     // dedicated `typeOnlyFileEdges` channel.
     // walker 5: bd tea-rags-mcp-0qaht.64 — the cone declines a library receiver
     // type a project class extends, when the locator answers `isProjectType`.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 4, walker: 5, codegraphSchema: 2 });
+    // walker 6: bd tea-rags-mcp-44cpv (c-1=a) — the census facet grows the
+    // shared behaviour-free fold over class bodies.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 4, walker: 6, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -107,7 +109,7 @@ describe("resolveLanguageCodeVersions", () => {
     const stamp = resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE);
     if (stamp) stamp.walker = 99;
 
-    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(5);
+    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(6);
   });
 });
 
@@ -487,15 +489,22 @@ describe("seeded support versions", () => {
       // swift 8: bd tea-rags-mcp-0qaht.30 — a backtick-quoted declared name is
       // published unquoted, so an index built by walker 7 (shipped in v1.47.0)
       // lacks the identifier-declaration rows for `default`-style names.
+      // typescript 14 / javascript 5 / python 11 / ruby 8 / java 4 / swift 9:
+      // bd tea-rags-mcp-44cpv (c-1=a) — a class whose members are only a
+      // constructor, fields and accessors leaves the type-abstractness census,
+      // so an index built by the previous walker over-counts concrete types in
+      // exactly those components. go and rust read member kinds across sibling
+      // nodes (methods live outside the type declaration) and keep their
+      // reading.
       const WALKER_BUMPED = new Map([
-        ["typescript", 13],
-        ["javascript", 4],
-        ["python", 10],
-        ["ruby", 7],
-        ["java", 3],
+        ["typescript", 14],
+        ["javascript", 5],
+        ["python", 11],
+        ["ruby", 8],
+        ["java", 4],
         ["rust", 3],
         ["go", 5],
-        ["swift", 8],
+        ["swift", 9],
         ["bash", 2],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;

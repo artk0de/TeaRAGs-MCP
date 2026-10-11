@@ -705,7 +705,10 @@ export const capability: LanguageCapability = {
   // walker 8 (bd tea-rags-mcp-0qaht.30): a backtick-quoted declared name
   // (`default`) is published unquoted in `identifierDeclarations`; an index
   // built by walker 7 (shipped in v1.47.0) holds no row for it.
-  versions: { chunking: 4, walker: 8, codegraphSchema: 2 },
+  // walker 9 (bd tea-rags-mcp-44cpv, c-1=a): a type whose members are only
+  // initializers, stored and computed properties — an error struct, a value
+  // object — leaves the type-abstractness census.
+  versions: { chunking: 4, walker: 9, codegraphSchema: 2 },
   // Swift API Design Guidelines: types and protocols UpperCamelCase, everything
   // else lowerCamelCase — constants included (no SCREAMING_SNAKE). A module is
   // named like a type (`Alamofire`, `Foundation`).

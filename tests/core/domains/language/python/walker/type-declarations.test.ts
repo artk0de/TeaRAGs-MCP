@@ -206,7 +206,19 @@ describe("Python walker — type and constant declarations", () => {
         .map((t) => t.type);
       expect(grammarTypes.length).toBeGreaterThan(50);
       const counted = grammarTypes.filter((type) => {
-        const node = { type, childForFieldName: () => null, namedChildren: [] } as unknown as AstNode;
+        // A body carrying one def, so a class the type-name alone counts
+        // answers (bd tea-rags-mcp-44cpv: a behaviour-free class answers
+        // `null` on purpose — an empty body is the degenerate data-only class).
+        const body = {
+          type: "block",
+          childForFieldName: () => null,
+          namedChildren: [{ type: "function_definition", childForFieldName: () => null, namedChildren: [] }],
+        };
+        const node = {
+          type,
+          childForFieldName: (field: string) => (field === "body" ? body : null),
+          namedChildren: [],
+        } as unknown as AstNode;
         return readPythonTypeAbstractness(node) !== null;
       });
       expect(counted.length).toBeGreaterThan(0);

@@ -8,7 +8,11 @@
  *   | EXPORTED interface / object-type alias that is a behaviour        | abstract  |
  *   | contract: a method, call or construct signature, or mostly        |           |
  *   | function-typed properties                                         |           |
- *   | `class`                                                           | concrete  |
+ *   | `class` that declares behaviour of its own — a method, a static  | concrete  |
+ *   | method, an abstract method signature, a function-valued property |           |
+ *   | `class` whose members are only a constructor, property fields    | neither   |
+ *   | and accessors (bd tea-rags-mcp-44cpv c-1=a: an Error subclass,   |           |
+ *   | a data-only shape; an empty class is the degenerate case)        |           |
  *   | any other interface or alias (data shape, props, union), an enum, | neither   |
  *   | a behaviour contract the file keeps to itself                     |           |
  *
@@ -29,11 +33,18 @@
  *   `contracts/` are written as function-typed properties, which is why
  *   method signatures alone (17) would miss them.
  *
+ * The behaviour-free clause (44cpv) reads member KINDS, never a base-list
+ * spelling: an `Error` subclass and a data-only class are the same reading,
+ * and the boundary calls (function-valued property = behaviour, static data =
+ * data, parameter property = field, accessors = data, `static { … }` block =
+ * initializer) live with the kernel's `isBehaviourFreeClassBody` doc.
+ *
  * Only declarations count: a class expression is a value.
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import {
+  isBehaviourFreeClassBody,
   typeAbstractnessFacetPass,
   type ExtractionFacetPass,
   type TypeAbstractnessReader,
@@ -44,6 +55,32 @@ const BEHAVIOUR_SIGNATURE_TYPES: ReadonlySet<string> = new Set([
   "call_signature",
   "construct_signature",
 ]);
+
+/** A function VALUE on a class property: an arrow or a function expression (`handler = async () => {}`). */
+function isFunctionValuedProperty(node: AstNode | null | undefined): boolean {
+  return node?.type === "arrow_function" || node?.type === "function_expression";
+}
+
+/**
+ * Whether one class-body member declares behaviour: a method that is neither
+ * the constructor nor an accessor, an abstract method signature, or a property
+ * holding a function value. Everything else — fields, parameter-property
+ * constructors, getters/setters, index signatures, a `static { … }` block — is
+ * data or initialization.
+ */
+function classMemberDeclaresBehaviour(member: AstNode): boolean {
+  switch (member.type) {
+    case "method_definition":
+      if (member.childForFieldName("name")?.text === "constructor") return false;
+      return !member.children.some((child) => child.type === "get" || child.type === "set");
+    case "abstract_method_signature":
+      return true;
+    case "public_field_definition":
+      return isFunctionValuedProperty(member.childForFieldName("value"));
+    default:
+      return false;
+  }
+}
 
 /** A function type, seen through parentheses and an optional-value union (`(() => void) | undefined`). */
 export function isFunctionType(node: AstNode | null | undefined): boolean {
@@ -82,7 +119,7 @@ export const readTypescriptTypeAbstractness: TypeAbstractnessReader = (node) => 
     case "abstract_class_declaration":
       return "abstract";
     case "class_declaration":
-      return "concrete";
+      return isBehaviourFreeClassBody(node.childForFieldName("body"), classMemberDeclaresBehaviour) ? null : "concrete";
     case "interface_declaration":
       return exported(node) && declaresBehaviour(node.childForFieldName("body")) ? "abstract" : null;
     case "type_alias_declaration": {

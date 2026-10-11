@@ -79,7 +79,11 @@ export const capability: LanguageCapability = {
   // every class a member census on `cg_type_declarations` (migration 040).
   // chunking 3: bd tea-rags-mcp-39xca.19 — the same `#` reaches the payload
   // `symbolId`, and a declarator-bound factory's members gain its segment.
-  versions: { chunking: 3, walker: 4, codegraphSchema: 2 },
+  // walker 5: bd tea-rags-mcp-44cpv (c-1=a). A class whose members are only a
+  // constructor, fields and accessors — an Error subclass, a data-only shape —
+  // leaves the type-abstractness census (member kinds, never a base-list
+  // spelling). Recompute: `--force-enrichments codegraph --languages javascript`.
+  versions: { chunking: 3, walker: 5, codegraphSchema: 2 },
   // Google JavaScript Style Guide — the same convention as TypeScript:
   // classes UpperCamelCase, functions / methods / parameters / locals /
   // properties lowerCamelCase, a module binding lowerCamelCase or

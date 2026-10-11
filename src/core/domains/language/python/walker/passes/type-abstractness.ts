@@ -8,15 +8,27 @@
  *   - a method of its own body decorated `@abstractmethod` (or the legacy
  *     `abstractproperty` / `abstractclassmethod` / `abstractstaticmethod`).
  *
- * Every other class is concrete. The reading is by NAME, as written: a class
+ * Every other class that declares behaviour of its own is concrete. A class
+ * whose body is only an `__init__`, field assignments and property accessors
+ * declares no behaviour (bd tea-rags-mcp-44cpv, decision c-1=a: an Exception
+ * subclass, a dataclass, an enum of constants; `pass` is the degenerate case)
+ * and counts as neither. The reading is by NAME, as written: a class
  * inheriting its abstractness from a project base that is itself an `ABC`
  * declares nothing of its own and counts as concrete, which is what it is
  * unless it leaves an `@abstractmethod` open.
+ *
+ * The behaviour-free member rule: `__init__` is the constructor, `@property` /
+ * `@cached_property` / `@x.setter`-family accessors are data, and every other
+ * def — `@classmethod`, `@staticmethod` included — is behaviour. A statement
+ * that is not a def of its own can still hold one (`if` / `try` in a class
+ * body conditionally define methods), so the scan recurses into statements,
+ * stopping at def and class boundaries: their interiors belong to them.
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { TypeAbstractnessCensus } from "../../../../../contracts/types/codegraph.js";
 import {
+  isBehaviourFreeClassBody,
   typeAbstractnessFacetPass,
   type ExtractionFacetPass,
   type TypeAbstractnessReader,
@@ -30,6 +42,8 @@ const ABSTRACT_DECORATOR_NAMES: ReadonlySet<string> = new Set([
   "abstractclassmethod",
   "abstractstaticmethod",
 ]);
+const ACCESSOR_PROPERTY_NAMES: ReadonlySet<string> = new Set(["property", "cached_property"]);
+const ACCESSOR_TWIN_MEMBERS: ReadonlySet<string> = new Set(["setter", "deleter", "getter"]);
 
 /** The last segment of a name as written: `Protocol`, `typing.Protocol`, `Protocol[T]` → `Protocol`. */
 function lastSegment(node: AstNode | null | undefined): string | undefined {
@@ -65,12 +79,35 @@ function declaresAbstractMethod(body: AstNode | null): boolean {
   );
 }
 
+/** `@property` / `@cached_property` / `@x.setter` / `@x.deleter` / `@x.getter` — an accessor, data not behaviour. */
+function decoratorIsAccessor(decorator: AstNode): boolean {
+  const name = lastSegment(decorator.namedChildren[0]);
+  return ACCESSOR_PROPERTY_NAMES.has(name ?? "") || ACCESSOR_TWIN_MEMBERS.has(name ?? "");
+}
+
+/** Whether one class-body statement declares behaviour; see the module doc. */
+function classMemberDeclaresBehaviour(member: AstNode): boolean {
+  if (member.type === "function_definition") return member.childForFieldName("name")?.text !== "__init__";
+  if (member.type === "decorated_definition") {
+    const decorators = member.namedChildren.filter((c) => c.type === "decorator");
+    if (decorators.some((d) => decoratorIsAccessor(d))) return false;
+    const definition = member.childForFieldName("definition");
+    if (definition?.type !== "function_definition") return false;
+    return definition.childForFieldName("name")?.text !== "__init__";
+  }
+  if (member.type === "class_definition") return false;
+  return member.namedChildren.some(classMemberDeclaresBehaviour);
+}
+
 export const readPythonTypeAbstractness: TypeAbstractnessReader = (node) => {
   if (node.type !== "class_definition") return null;
-  return declaresAbstractBase(node.childForFieldName("superclasses")) ||
+  if (
+    declaresAbstractBase(node.childForFieldName("superclasses")) ||
     declaresAbstractMethod(node.childForFieldName("body"))
-    ? "abstract"
-    : "concrete";
+  ) {
+    return "abstract";
+  }
+  return isBehaviourFreeClassBody(node.childForFieldName("body"), classMemberDeclaresBehaviour) ? null : "concrete";
 };
 
 /**

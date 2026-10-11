@@ -151,6 +151,33 @@ describe("detectMainSequenceDeviations", () => {
     expect(judge(graph(), { minTypeCount: 7 }).summary.excluded.fewTypes).toBe(4);
   });
 
+  it("moves a component's verdict when its behaviour-free classes leave the census (bd tea-rags-mcp-44cpv, c-1=a)", () => {
+    // `errors/` mirrors `core/` before decision c-1: six concrete types, six
+    // dependents, no dependency — pain at D 1. Its classes are Error
+    // subclasses, and a constructor/fields-only class no longer counts as
+    // concrete, so four of the six leave the census: the component holds two
+    // types, falls below the type floor, and is excluded instead of reported.
+    const before = graph();
+    for (let i = 1; i <= 6; i++) {
+      before.files.push(file(`errors/e${i}.ts`, census(0, 1)));
+      before.edges.push(edge(`app/c${i}.ts`, `errors/e${i}.ts`));
+    }
+    expect(judge(before).violations.map((v) => v.component)).toContain("errors");
+
+    const after = graph();
+    for (let i = 1; i <= 2; i++) {
+      after.files.push(file(`errors/e${i}.ts`, census(0, 1)));
+      after.edges.push(edge(`app/c${i}.ts`, `errors/e${i}.ts`));
+    }
+    for (let i = 3; i <= 6; i++) {
+      after.files.push(file(`errors/e${i}.ts`, census(0, 0)));
+      after.edges.push(edge(`app/c${i}.ts`, `errors/e${i}.ts`));
+    }
+    const report = judge(after);
+    expect(report.violations.map((v) => v.component)).not.toContain("errors");
+    expect(report.summary.excluded.fewTypes).toBe(2);
+  });
+
   it("reports only components holding an in-scope file, judged against the whole graph", () => {
     const report = judge(graph(), { sourcePathPattern: "ports/**" });
 

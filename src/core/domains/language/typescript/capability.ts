@@ -173,7 +173,11 @@ export const capability: LanguageCapability = {
   // `isProjectType`, so a receiver typed by a library class a project class
   // extends (`Map` under `TreeContentHashes`) keeps the chain's answer instead
   // of a 1-wide single fan to the one project override.
-  versions: { chunking: 2, walker: 13, codegraphSchema: 2 },
+  // walker 14: bd tea-rags-mcp-44cpv (c-1=a). A class whose members are only a
+  // constructor, fields and accessors — an Error subclass, a data-only shape —
+  // leaves the type-abstractness census (member kinds, never a base-list
+  // spelling). Recompute: `--force-enrichments codegraph --languages typescript`.
+  versions: { chunking: 2, walker: 14, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties
   // lowerCamelCase; a namespace-like module binding lowerCamelCase or
