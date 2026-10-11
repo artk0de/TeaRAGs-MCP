@@ -45,6 +45,7 @@ import type {
   SymbolIdComposer,
 } from "../../../../../contracts/types/language.js";
 import type { ChunkerConfig } from "../../../../../types.js";
+import { applyWorkerDebug } from "../../infra/worker-debug.js";
 import { createWorkerRuntime } from "../../infra/worker-runtime.js";
 import { TreeSitterChunker } from "../tree-sitter.js";
 import { extractFromChunkerParse, type ChunkerEngine } from "./cross-pass-extraction.js";
@@ -101,7 +102,12 @@ const runtime = createWorkerRuntime<ChunkerConfig, WorkerRequest>();
 // Build the engine once per thread/process. The async load is awaited before
 // the first request is serviced: requests that arrive during load queue behind
 // the promise, preserving order.
-const chunkerPromise = runtime.init().then(async (config) => buildChunker(config));
+const chunkerPromise = runtime.init().then(async (config) => {
+  // Adopt the parent's debug flag first: this process has a fresh module
+  // registry, so chunker-side debug output is silent without it (372we).
+  applyWorkerDebug(config);
+  return buildChunker(config);
+});
 // ThreadWorkerRuntime.onShutdown closes parentPort (clean NAPI-destructor exit),
 // after which the thread drains and ends on its own. process.exit(0) belongs to
 // the forked-process path ONLY: from a worker thread it would terminate the
