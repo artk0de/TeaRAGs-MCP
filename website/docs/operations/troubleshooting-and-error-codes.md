@@ -54,8 +54,7 @@ sidebar_position: 3
 
 | Issue                               | Error Code                      | Solution                                                                  |
 | ----------------------------------- | ------------------------------- | ------------------------------------------------------------------------- |
-| **Collection not found**            | `INGEST_SEED_MARKER_UNCONFIRMED`        | `WorktreeSeedMarkerUnconfirmedError` | 503 | Qdrant did not confirm the pending worktree seed rewrite on the indexing marker of "`{collectionName}`" within the write-barrier budget | The seed is treated as still owed. Retry once Qdrant has drained its update queue, or raise `QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS` |
-| `EXPLORE_COLLECTION_NOT_FOUND`  | Index the codebase first with `index_codebase`                            |
+| **Collection not found**            | `EXPLORE_COLLECTION_NOT_FOUND`  | Index the codebase first with `index_codebase`                            |
 | **Collection or path not provided** | `INPUT_COLLECTION_NOT_PROVIDED` | Provide a `collection` name or a `path` to the codebase                   |
 | **Hybrid search not enabled**       | `EXPLORE_HYBRID_NOT_ENABLED`    | Re-run `index_codebase` — hybrid is enabled by default and auto-migrates  |
 | **Invalid query**                   | `EXPLORE_INVALID_QUERY`         | Fix query parameters                                                      |
@@ -156,6 +155,7 @@ Full table of all structured error codes returned by the MCP server.
 | `INGEST_EMBEDDING_REJECTED`            | `EmbeddingRejectedError`     | 400  | Embedding rejected for "`{path}`": `{detail}`                  | Quarantined + auto-retried - see [Quarantine](/operations/quarantine)  |
 | `INGEST_WORKER_TIMEOUT`                | `WorkerTimeoutError`         | 504  | `{pool}` worker did not respond for "`{request}`" within `{timeoutMs}`ms | The hung worker was recycled. Raise `CHUNKER_WORKER_TIMEOUT_MS` for a genuinely large file; otherwise report the crash/deadlock |
 | `INGEST_SEED_MARKER_UNREADABLE`        | `WorktreeSeedMarkerUnreadableError` | 503 | Could not read the indexing marker of "`{collectionName}`" to check for a pending worktree seed | Nothing was stamped or rebuilt. Retry once Qdrant answers |
+| `INGEST_SEED_MARKER_UNCONFIRMED`       | `WorktreeSeedMarkerUnconfirmedError` | 503 | Qdrant did not confirm the pending worktree seed rewrite on the indexing marker of "`{collectionName}`" within the write-barrier budget | The seed is treated as still owed. Retry once Qdrant has drained its update queue, or raise `QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS` |
 | `EXPLORE_COLLECTION_NOT_FOUND`         | `CollectionNotFoundError`    | 404  | Collection "`{collectionName}`" does not exist                 | Index the codebase first                                               |
 | `EXPLORE_HYBRID_NOT_ENABLED`           | `HybridNotEnabledError`      | 400  | Collection "`{collectionName}`" does not support hybrid search | Re-run `index_codebase` — hybrid is enabled by default and auto-migrates |
 | `EXPLORE_INVALID_QUERY`                | `InvalidQueryError`          | 400  | Invalid query: `{reason}`                                      | Fix query parameters                                                   |
