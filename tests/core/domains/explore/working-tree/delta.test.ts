@@ -1,11 +1,13 @@
 import { appendFileSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
+  type GitWorkingTreeSeedStep,
 } from "../../../__helpers__/git-working-tree-fixture.js";
 import * as gitClient from "../../../../../src/core/adapters/vcs/git/git-cli/working-tree.js";
 import {
@@ -37,19 +39,26 @@ describe("WorkingTreeDeltaReader", () => {
     return { changed: [...read.delta.changed].sort(), deleted: [...read.delta.deleted].sort() };
   };
 
-  beforeEach(async () => {
-    fixture = createGitWorkingTreeFixture([
-      {
-        commit: {
-          ".gitignore": "ignored.ts\n",
-          ".contextignore": "generated/\n",
-          "src/keep.ts": "export const keep = 1;\n",
-          "src/old-name.ts": "export const moved = 1;\n",
-        },
-        message: "A",
+  const SEED = [
+    {
+      commit: {
+        ".gitignore": "ignored.ts\n",
+        ".contextignore": "generated/\n",
+        "src/keep.ts": "export const keep = 1;\n",
+        "src/old-name.ts": "export const moved = 1;\n",
       },
-      { addWorktree: "feature" },
-    ]);
+      message: "A",
+    },
+    { addWorktree: "feature" },
+  ] satisfies readonly GitWorkingTreeSeedStep[];
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture(SEED);
+  });
+
+  beforeEach(async () => {
+    fixture = createGitWorkingTreeFixture(SEED);
     [indexedCommit] = fixture.seeded.commits;
     tree = fixture.seeded.worktrees.feature;
     const scanner = new FileScanner({ supportedExtensions: [".ts"], ignorePatterns: [] });
@@ -230,14 +239,21 @@ describe("WorkingTreeDeltaReader rename pairs", () => {
     return Object.fromEntries(read.delta.renamedFrom ?? []);
   };
 
+  const SEED = [
+    {
+      commit: { "src/a.ts": body("a"), "src/b.ts": body("b"), "src/c.ts": body("c"), "src/d.ts": body("d") },
+      message: "A",
+    },
+    { addWorktree: "moves" },
+  ] satisfies readonly GitWorkingTreeSeedStep[];
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture(SEED);
+  });
+
   beforeEach(() => {
-    fixture = createGitWorkingTreeFixture([
-      {
-        commit: { "src/a.ts": body("a"), "src/b.ts": body("b"), "src/c.ts": body("c"), "src/d.ts": body("d") },
-        message: "A",
-      },
-      { addWorktree: "moves" },
-    ]);
+    fixture = createGitWorkingTreeFixture(SEED);
     [indexedCommit] = fixture.seeded.commits;
     tree = fixture.seeded.worktrees.moves;
   });

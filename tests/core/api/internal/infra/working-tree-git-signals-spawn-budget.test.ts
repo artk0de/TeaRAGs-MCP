@@ -16,10 +16,11 @@ import type { ChildProcess } from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
   type GitWorkingTreeSeedStep,
 } from "../../../__helpers__/git-working-tree-fixture.js";
@@ -86,6 +87,11 @@ describe("on-demand working-tree git signals — git spawn budget (89k7k.35.22)"
       { key: "fresh", startLine: 5, endLine: 7 },
     ],
     ...overrides,
+  });
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture(C_HISTORY);
   });
 
   beforeEach(() => {

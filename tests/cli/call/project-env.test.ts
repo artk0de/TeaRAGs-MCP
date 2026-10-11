@@ -12,13 +12,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { applyCallProjectEnv, resolveCallProjectEntry } from "../../../src/cli/call/project-env.js";
 import { resolveBaseIndexEntry } from "../../../src/core/api/index.js";
 import { CollectionRegistry } from "../../../src/core/api/public/index.js";
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../core/__helpers__/git-working-tree-fixture.js";
 
@@ -101,6 +102,11 @@ describe("resolveCallProjectEntry — a linked worktree addressed by path", { ti
   let fixture: GitWorkingTreeFixture;
   let dataDir: string;
   let registry: CollectionRegistry;
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture();
+  });
 
   beforeEach(() => {
     fixture = createGitWorkingTreeFixture();

@@ -11,10 +11,11 @@ import type { ChildProcess } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
   type GitWorkingTreeSeedStep,
 } from "../../../__helpers__/git-working-tree-fixture.js";
@@ -70,6 +71,11 @@ describe("on-demand working-tree git signals — reads per (toplevel, HEAD) (89k
       chunks: [{ key: "r", startLine: 1, endLine: 1 }],
     };
   };
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture(C_HISTORY);
+  });
 
   beforeEach(() => {
     fixture = createGitWorkingTreeFixture(C_HISTORY);

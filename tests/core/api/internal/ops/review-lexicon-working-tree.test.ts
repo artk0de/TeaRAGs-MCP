@@ -9,10 +9,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
@@ -96,6 +97,11 @@ describe("NamingLexiconOps workingTree marker", () => {
 
 describe("ReviewChangesOps workingTree marker", { timeout: 60_000 }, () => {
   let fixture: GitWorkingTreeFixture;
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture();
+  });
 
   beforeEach(() => {
     fixture = createGitWorkingTreeFixture();

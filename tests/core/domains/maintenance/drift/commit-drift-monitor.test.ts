@@ -10,10 +10,11 @@
 
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../__helpers__/git-working-tree-fixture.js";
 import { CommitDriftMonitor } from "../../../../../src/core/domains/maintenance/drift/commit-drift-monitor.js";
@@ -202,6 +203,11 @@ describe("CommitDriftMonitor", () => {
 // project path saw no repository and the monitor never reported a moved HEAD.
 describe("CommitDriftMonitor — a project registered at a repository subdirectory", { timeout: 60_000 }, () => {
   let fixture: GitWorkingTreeFixture;
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture();
+  });
 
   beforeEach(() => {
     fixture = createGitWorkingTreeFixture();

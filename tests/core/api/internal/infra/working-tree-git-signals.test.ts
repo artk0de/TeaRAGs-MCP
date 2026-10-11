@@ -11,10 +11,11 @@ import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, vi, it as vitestIt } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
   type GitWorkingTreeSeedStep,
 } from "../../../__helpers__/git-working-tree-fixture.js";
@@ -44,15 +45,53 @@ const DEPS = {
   chunk: { maxAgeMonths: 6, timeoutMs: 30_000, maxFileLines: 5000, concurrency: 4 },
 };
 
-describe("createWorkingTreeGitSignalSource", () => {
-  let fixture: GitWorkingTreeFixture;
-  let tree: string;
+interface TestRepo {
+  seed: { steps: GitWorkingTreeSeedStep[] };
+  fixture: GitWorkingTreeFixture;
+  tree: string;
+  write: (relativePath: string, content: string) => void;
+}
 
-  const write = (relativePath: string, content: string): void => {
-    const target = join(tree, relativePath);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, content);
-  };
+/**
+ * Per-test repository state (bd 723i6): a test that times out leaves its async
+ * body running, and file-level `fixture` / `tree` / `indexed` variables the next
+ * test reassigns would hand that orphan the next test's repository. Fixtures of
+ * `it.extend` are created per test and torn down with it, so an orphan keeps only
+ * its own, removed, repository.
+ */
+const repoFixtures = (steps: GitWorkingTreeSeedStep[]) => ({
+  // An object, not the array: vitest reads a bare array fixture value as a [value, options] tuple.
+  seed: { steps },
+  fixture: async (
+    { seed }: { seed: { steps: GitWorkingTreeSeedStep[] } },
+    use: (fixture: GitWorkingTreeFixture) => Promise<void>,
+  ) => {
+    const fixture = createGitWorkingTreeFixture(seed.steps);
+    try {
+      await use(fixture);
+    } finally {
+      fixture.cleanup();
+    }
+  },
+  tree: async ({ fixture }: Pick<TestRepo, "fixture">, use: (tree: string) => Promise<void>) => {
+    await use(fixture.mainRoot);
+  },
+  write: async ({ tree }: Pick<TestRepo, "tree">, use: (write: TestRepo["write"]) => Promise<void>) => {
+    await use((relativePath, content) => {
+      const target = join(tree, relativePath);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, content);
+    });
+  },
+});
+
+const it = vitestIt.extend<TestRepo>(repoFixtures(C_HISTORY));
+
+describe("createWorkingTreeGitSignalSource", () => {
+  // Pay the git template recipe here, not inside the first test's budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture(C_HISTORY);
+  });
 
   const target = (overrides: Partial<WorkingTreeGitSignalTarget> = {}): WorkingTreeGitSignalTarget => ({
     relativePath: "src/cyc/c.ts",
@@ -63,18 +102,12 @@ describe("createWorkingTreeGitSignalSource", () => {
     ...overrides,
   });
 
-  beforeEach(() => {
-    fixture = createGitWorkingTreeFixture(C_HISTORY);
-    tree = fixture.mainRoot;
-  });
-
   afterEach(() => {
     vi.restoreAllMocks();
-    fixture.cleanup();
   });
 
   describe("git.file", () => {
-    it("computes git.file of a committed file from its history and blame", async () => {
+    it("computes git.file of a committed file from its history and blame", async ({ tree }) => {
       const signals = await createWorkingTreeGitSignalSource(DEPS).signalsOf(tree, [target()]);
 
       const file = signals.get("src/cyc/c.ts")?.file;
@@ -82,7 +115,7 @@ describe("createWorkingTreeGitSignalSource", () => {
       expect(file?.lastModifiedAt).toEqual(expect.any(Number));
     });
 
-    it("follows the history of a file renamed in a commit", async () => {
+    it("follows the history of a file renamed in a commit", async ({ fixture, tree }) => {
       fixture.git(tree, "mv", "src/cyc/c.ts", "src/cyc/moved.ts");
       fixture.git(tree, "commit", "-q", "-m", "move c");
 
@@ -100,7 +133,10 @@ describe("createWorkingTreeGitSignalSource", () => {
     // tree's rows of such a file get the same chunk block, by the same walk.
     // Invariant changed (round-4 P4): its `git.file` is that bare run stamp —
     // what ingest's applier writes — not nothing.
-    it("answers an untracked file's rows with the chunk walk's zero block and a bare-stamp git.file", async () => {
+    it("answers an untracked file's rows with the chunk walk's zero block and a bare-stamp git.file", async ({
+      tree,
+      write,
+    }) => {
       write("src/fresh.ts", "export const fresh = 1;\n");
 
       const signals = await createWorkingTreeGitSignalSource(DEPS).signalsOf(tree, [
@@ -125,7 +161,10 @@ describe("createWorkingTreeGitSignalSource", () => {
       });
     });
 
-    it("answers nothing for an untracked file past the chunk walk's line limit, as ingest walks none of it", async () => {
+    it("answers nothing for an untracked file past the chunk walk's line limit, as ingest walks none of it", async ({
+      tree,
+      write,
+    }) => {
       write("src/huge.ts", "export const huge = 1;\n".repeat(20));
 
       const signals = await createWorkingTreeGitSignalSource({
@@ -143,7 +182,7 @@ describe("createWorkingTreeGitSignalSource", () => {
       expect(signals.get("src/huge.ts")?.chunks.size ?? 0).toBe(0);
     });
 
-    it("names paths relative to a tree root below the git toplevel", async () => {
+    it("names paths relative to a tree root below the git toplevel", async ({ tree }) => {
       const signals = await createWorkingTreeGitSignalSource(DEPS).signalsOf(join(tree, "src"), [
         target({ relativePath: "cyc/c.ts", treePath: "cyc/c.ts" }),
       ]);
@@ -153,7 +192,7 @@ describe("createWorkingTreeGitSignalSource", () => {
   });
 
   describe("git.chunk", () => {
-    it("attributes the commits that changed a row's lines, in the TREE file's coordinates", async () => {
+    it("attributes the commits that changed a row's lines, in the TREE file's coordinates", async ({ tree, write }) => {
       // Two uncommitted header lines push cFn to working rows 3-5 (HEAD rows 1-3).
       write("src/cyc/c.ts", `// header\n// header 2\n${C_V2}`);
 
@@ -176,7 +215,7 @@ describe("createWorkingTreeGitSignalSource", () => {
     // symbol — gets the walk's zero overlay (`assembleOverlays` over an
     // accumulator no commit reached), not nothing. Its lines were never
     // committed, so no blame line attributes them: ownership is unknown.
-    it("gives rows made only of uncommitted lines the chunk walk's zero block", async () => {
+    it("gives rows made only of uncommitted lines the chunk walk's zero block", async ({ tree }) => {
       appendFileSync(join(tree, "src/cyc/c.ts"), FRESH);
 
       const signals = await createWorkingTreeGitSignalSource(DEPS).signalsOf(tree, [
@@ -201,7 +240,7 @@ describe("createWorkingTreeGitSignalSource", () => {
       });
     });
 
-    it("reads a renamed file's history at its old path and its lines at the new one", async () => {
+    it("reads a renamed file's history at its old path and its lines at the new one", async ({ tree }) => {
       renameSync(join(tree, "src/cyc/c.ts"), join(tree, "src/cyc/c2.ts"));
 
       const signals = await createWorkingTreeGitSignalSource(DEPS).signalsOf(tree, [
@@ -214,7 +253,11 @@ describe("createWorkingTreeGitSignalSource", () => {
 
   // Live G1: whose history moved since the index — one git call per range.
   describe("pathsCommittedSince", () => {
-    it("lists every path a commit since the stamp touched, both sides of a committed move, no uncommitted edit", async () => {
+    it("lists every path a commit since the stamp touched, both sides of a committed move, no uncommitted edit", async ({
+      fixture,
+      tree,
+      write,
+    }) => {
       const indexed = fixture.git(tree, "rev-parse", "HEAD").trim();
       fixture.commit(tree, { "src/new.ts": "export const n = 1;\n", "README.md": "# r\n" }, "add new");
       fixture.git(tree, "mv", "src/cyc/c.ts", "src/cyc/moved.ts");
@@ -234,7 +277,7 @@ describe("createWorkingTreeGitSignalSource", () => {
 
     // Live G1 on a diverged HEAD: the tree branched before the stamp, so the
     // stamp's side holds commits the tree's history lacks — their paths moved too.
-    it("lists the paths either side touched when HEAD does not descend from the stamp", async () => {
+    it("lists the paths either side touched when HEAD does not descend from the stamp", async ({ fixture, tree }) => {
       const worktree = fixture.addWorktree("old");
       fixture.commit(worktree, { "src/branch.ts": "export const b = 1;\n" }, "branch work");
       const stamp = fixture.commit(tree, { "src/cyc/c.ts": C_V1 }, "main moves c");
@@ -244,11 +287,11 @@ describe("createWorkingTreeGitSignalSource", () => {
       );
     });
 
-    it("answers undefined for a commit the repository does not have", async () => {
+    it("answers undefined for a commit the repository does not have", async ({ tree }) => {
       expect(await createWorkingTreeGitSignalSource(DEPS).pathsCommittedSince(tree, "f".repeat(40))).toBeUndefined();
     });
 
-    it("asks git once per range, and again once HEAD moves", async () => {
+    it("asks git once per range, and again once HEAD moves", async ({ fixture, tree }) => {
       const spy = vi.spyOn(gitCli, "readPathCommitsSince");
       const indexed = fixture.git(tree, "rev-parse", "HEAD").trim();
       fixture.commit(tree, { "src/new.ts": "export const n = 1;\n" });
@@ -292,7 +335,7 @@ describe("createWorkingTreeGitSignalSource", () => {
       }),
     ];
 
-    it("answers a second process from the store, computing nothing for unchanged inputs", async () => {
+    it("answers a second process from the store, computing nothing for unchanged inputs", async ({ tree }) => {
       appendFileSync(join(tree, "src/cyc/c.ts"), FRESH);
       const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
 
@@ -305,7 +348,7 @@ describe("createWorkingTreeGitSignalSource", () => {
       expect(second.get("src/cyc/c.ts")?.chunks.get("fresh")).toMatchObject({ commitCount: 0 });
     });
 
-    it("recomputes when the tree content, the signal builder, or the day differs", async () => {
+    it("recomputes when the tree content, the signal builder, or the day differs", async ({ tree }) => {
       // Under test is WHETHER the source computes, not what: the first call
       // runs the real git computation, the later ones replay its answer — each
       // real one is a serial chain of ~8 git processes, and four of them
@@ -333,17 +376,22 @@ describe("createWorkingTreeGitSignalSource", () => {
   // blocks depend only on the commits that touched it.
   describe("records scoped to each path's own history since the index", () => {
     let storeRoot: string;
-    let indexed: string;
+    // The outer repository plus "add d", built once and copied.
+    const HISTORY_WITH_D: GitWorkingTreeSeedStep[] = [
+      ...C_HISTORY,
+      { commit: { "src/d.ts": "export const d = 1;\n" }, message: "add d" },
+    ];
+    const scopedIt = vitestIt.extend<TestRepo & { indexed: string }>({
+      ...repoFixtures(HISTORY_WITH_D),
+      indexed: async ({ fixture }, use) => {
+        await use(fixture.seeded.commits[2]);
+      },
+    });
+    beforeAll(() => {
+      prebuildGitWorkingTreeFixture(HISTORY_WITH_D);
+    });
     beforeEach(() => {
       storeRoot = mkdtempSync(join(tmpdir(), "wt-git-history-"));
-      // The outer repository plus "add d", built once and copied.
-      fixture.cleanup();
-      fixture = createGitWorkingTreeFixture([
-        ...C_HISTORY,
-        { commit: { "src/d.ts": "export const d = 1;\n" }, message: "add d" },
-      ]);
-      tree = fixture.mainRoot;
-      [, , indexed] = fixture.seeded.commits;
     });
     afterEach(() => {
       rmSync(storeRoot, { recursive: true, force: true });
@@ -362,32 +410,38 @@ describe("createWorkingTreeGitSignalSource", () => {
     const computedPaths = (spy: { mock: { calls: unknown[][] } }, call: number): string[] =>
       (spy.mock.calls[call][1] as { relPath: string }[]).map((t) => t.relPath);
 
-    it("keeps another file's record a hit across a commit that touched one file, in a new process", async () => {
-      const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
-      await persistent().signalsOf(tree, both(), indexed);
+    scopedIt(
+      "keeps another file's record a hit across a commit that touched one file, in a new process",
+      async ({ fixture, tree, indexed }) => {
+        const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
+        await persistent().signalsOf(tree, both(), indexed);
 
-      fixture.commit(tree, { "src/cyc/c.ts": "export function cFn(n: number): number {\n  return n + 2;\n}\n" });
-      const after = await persistent().signalsOf(tree, both(), indexed);
+        fixture.commit(tree, { "src/cyc/c.ts": "export function cFn(n: number): number {\n  return n + 2;\n}\n" });
+        const after = await persistent().signalsOf(tree, both(), indexed);
 
-      expect(spy).toHaveBeenCalledTimes(2);
-      expect(computedPaths(spy, 1)).toEqual(["src/cyc/c.ts"]);
-      expect(after.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 3 });
-      expect(after.get("src/cyc/c.ts")?.chunks.get("cFn")).toMatchObject({ commitCount: 3 });
-      expect(after.get("src/d.ts")?.file).toMatchObject({ commitCount: 1 });
-    });
+        expect(spy).toHaveBeenCalledTimes(2);
+        expect(computedPaths(spy, 1)).toEqual(["src/cyc/c.ts"]);
+        expect(after.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 3 });
+        expect(after.get("src/cyc/c.ts")?.chunks.get("cFn")).toMatchObject({ commitCount: 3 });
+        expect(after.get("src/d.ts")?.file).toMatchObject({ commitCount: 1 });
+      },
+    );
 
-    it("keeps a record a hit while HEAD moves on through commits that touch other files", async () => {
-      const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
-      fixture.commit(tree, { "src/cyc/c.ts": "export function cFn(n: number): number {\n  return n + 2;\n}\n" });
-      await persistent().signalsOf(tree, both(), indexed);
+    scopedIt(
+      "keeps a record a hit while HEAD moves on through commits that touch other files",
+      async ({ fixture, tree, indexed }) => {
+        const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
+        fixture.commit(tree, { "src/cyc/c.ts": "export function cFn(n: number): number {\n  return n + 2;\n}\n" });
+        await persistent().signalsOf(tree, both(), indexed);
 
-      fixture.commit(tree, { "src/e.ts": "export const e = 1;\n" });
-      await persistent().signalsOf(tree, both(), indexed);
+        fixture.commit(tree, { "src/e.ts": "export const e = 1;\n" });
+        await persistent().signalsOf(tree, both(), indexed);
 
-      expect(spy).toHaveBeenCalledTimes(1);
-    });
+        expect(spy).toHaveBeenCalledTimes(1);
+      },
+    );
 
-    it("recomputes a path a later commit touched again", async () => {
+    scopedIt("recomputes a path a later commit touched again", async ({ fixture, tree, indexed }) => {
       const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
       fixture.commit(tree, { "src/d.ts": "export const d = 2;\n" });
       await persistent().signalsOf(tree, both(), indexed);
@@ -399,39 +453,45 @@ describe("createWorkingTreeGitSignalSource", () => {
       expect(after.get("src/d.ts")?.file).toMatchObject({ commitCount: 3 });
     });
 
-    it("does not answer a HEAD that lacks a commit of the stamp's history from the stamp's record", async () => {
-      await persistent().signalsOf(tree, both(), indexed);
+    scopedIt(
+      "does not answer a HEAD that lacks a commit of the stamp's history from the stamp's record",
+      async ({ fixture, tree, indexed }) => {
+        await persistent().signalsOf(tree, both(), indexed);
 
-      // A branch off the commit before "add d": its d.ts history is empty.
-      fixture.git(tree, "checkout", "-q", "-b", "side", `${indexed}~1`);
-      fixture.commit(tree, { "src/e.ts": "export const e = 1;\n" });
-      const after = await persistent().signalsOf(tree, both(), indexed);
+        // A branch off the commit before "add d": its d.ts history is empty.
+        fixture.git(tree, "checkout", "-q", "-b", "side", `${indexed}~1`);
+        fixture.commit(tree, { "src/e.ts": "export const e = 1;\n" });
+        const after = await persistent().signalsOf(tree, both(), indexed);
 
-      // No history on this HEAD: the bare stamp (round-4 P4), never the stamp's record.
-      expect(after.get("src/d.ts")?.file).toEqual({ enrichedAt: expect.any(String) });
-      expect(after.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 2 });
-    });
+        // No history on this HEAD: the bare stamp (round-4 P4), never the stamp's record.
+        expect(after.get("src/d.ts")?.file).toEqual({ enrichedAt: expect.any(String) });
+        expect(after.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 2 });
+      },
+    );
 
-    it("recomputes a committed move's record when the history behind the move differs", async () => {
-      const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
-      fixture.git(tree, "mv", "src/cyc/c.ts", "src/cyc/moved.ts");
-      fixture.git(tree, "commit", "-q", "-m", "move c");
-      const moved = [target({ relativePath: "src/cyc/moved.ts", treePath: "src/cyc/moved.ts" })];
-      await persistent().signalsOf(tree, moved, indexed);
-      expect(spy).toHaveBeenCalledTimes(1);
+    scopedIt(
+      "recomputes a committed move's record when the history behind the move differs",
+      async ({ fixture, tree, indexed }) => {
+        const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
+        fixture.git(tree, "mv", "src/cyc/c.ts", "src/cyc/moved.ts");
+        fixture.git(tree, "commit", "-q", "-m", "move c");
+        const moved = [target({ relativePath: "src/cyc/moved.ts", treePath: "src/cyc/moved.ts" })];
+        await persistent().signalsOf(tree, moved, indexed);
+        expect(spy).toHaveBeenCalledTimes(1);
 
-      // Same tree, a history that holds one more commit on the old side of the move.
-      fixture.git(tree, "reset", "-q", "--hard", indexed);
-      fixture.commit(tree, { "src/cyc/c.ts": "export function cFn(n: number): number {\n  return n + 3;\n}\n" });
-      fixture.git(tree, "mv", "src/cyc/c.ts", "src/cyc/moved.ts");
-      fixture.git(tree, "commit", "-q", "-m", "move c");
-      writeFileSync(join(tree, "src/cyc/moved.ts"), "export function cFn(n: number): number {\n  return n + 1;\n}\n");
-      fixture.git(tree, "commit", "-q", "-am", "restore body");
-      const after = await persistent().signalsOf(tree, moved, indexed);
+        // Same tree, a history that holds one more commit on the old side of the move.
+        fixture.git(tree, "reset", "-q", "--hard", indexed);
+        fixture.commit(tree, { "src/cyc/c.ts": "export function cFn(n: number): number {\n  return n + 3;\n}\n" });
+        fixture.git(tree, "mv", "src/cyc/c.ts", "src/cyc/moved.ts");
+        fixture.git(tree, "commit", "-q", "-m", "move c");
+        writeFileSync(join(tree, "src/cyc/moved.ts"), "export function cFn(n: number): number {\n  return n + 1;\n}\n");
+        fixture.git(tree, "commit", "-q", "-am", "restore body");
+        const after = await persistent().signalsOf(tree, moved, indexed);
 
-      expect(spy).toHaveBeenCalledTimes(2);
-      expect(after.get("src/cyc/moved.ts")?.file).toMatchObject({ commitCount: 5 });
-    });
+        expect(spy).toHaveBeenCalledTimes(2);
+        expect(after.get("src/cyc/moved.ts")?.file).toMatchObject({ commitCount: 5 });
+      },
+    );
   });
 
   // Round-4 P1: the blocks are the ones a reindex of the tree would write WITH
@@ -442,7 +502,7 @@ describe("createWorkingTreeGitSignalSource", () => {
   describe("the configuration of the index the tree is read against", () => {
     const SQUASHED = { ...DEPS, squashOpts: { squashAwareSessions: true, sessionGapMinutes: 30 } };
 
-    it("computes a path with the git config of the index it serves, each index its own", async () => {
+    it("computes a path with the git config of the index it serves, each index its own", async ({ tree }) => {
       // c.ts: two commits by one author seconds apart — one session, two commits.
       const source = createWorkingTreeGitSignalSource({
         ...DEPS,
@@ -456,7 +516,7 @@ describe("createWorkingTreeGitSignalSource", () => {
       expect(plain.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 2 });
     });
 
-    it("keeps a stored record of one config from answering another", async () => {
+    it("keeps a stored record of one config from answering another", async ({ tree }) => {
       const storeRoot = mkdtempSync(join(tmpdir(), "wt-git-config-"));
       try {
         const persistent = () =>
@@ -480,7 +540,10 @@ describe("createWorkingTreeGitSignalSource", () => {
     // (`TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`); a path it finds nothing for reads
     // the zero observation, with its age stamps from the whole history (bd
     // tea-rags-mcp-i6tkc — it used to be backfilled with lifetime counters).
-    it("reads git.file over the file walk's window, and a path with nothing in it as a zero observation with exact age", async () => {
+    it("reads git.file over the file walk's window, and a path with nothing in it as a zero observation with exact age", async ({
+      fixture,
+      tree,
+    }) => {
       const dated = (iso: string, files: Record<string, string>): void => {
         vi.stubEnv("GIT_AUTHOR_DATE", iso);
         vi.stubEnv("GIT_COMMITTER_DATE", iso);
@@ -513,7 +576,10 @@ describe("createWorkingTreeGitSignalSource", () => {
   // Round-4 P4: ingest's applier stamps every block it writes with the run's
   // `enrichedAt`, and a file it found no history for with the bare stamp.
   describe("enrichedAt", () => {
-    it("stamps every computed block with the computation time, and a path with no history with the bare stamp", async () => {
+    it("stamps every computed block with the computation time, and a path with no history with the bare stamp", async ({
+      tree,
+      write,
+    }) => {
       const at = Date.UTC(2026, 9, 3, 12);
       const stamp = new Date(at).toISOString();
       appendFileSync(join(tree, "src/cyc/c.ts"), FRESH);
@@ -545,7 +611,7 @@ describe("createWorkingTreeGitSignalSource", () => {
   });
 
   describe("cache", () => {
-    it("reads git once per path at one HEAD and content, and again once either moves", async () => {
+    it("reads git once per path at one HEAD and content, and again once either moves", async ({ fixture, tree }) => {
       const spy = vi.spyOn(onDemand, "buildOnDemandGitSignals");
       const source = createWorkingTreeGitSignalSource(DEPS);
       const ask = [target({ chunks: [{ key: "cFn", startLine: 1, endLine: 3 }] })];

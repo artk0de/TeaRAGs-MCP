@@ -12,10 +12,11 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createGitWorkingTreeFixture,
+  prebuildGitWorkingTreeFixture,
   type GitWorkingTreeFixture,
 } from "../../../../__helpers__/git-working-tree-fixture.js";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
@@ -130,6 +131,11 @@ describe("buildOnDemandGitSignals with memoized HEAD reads — result equivalenc
   let fixture: GitWorkingTreeFixture;
   let repo: string;
   let deletionSha: string;
+
+  // Pay the git template recipe here, not inside the first test's 30 s beforeEach budget (bd 723i6).
+  beforeAll(() => {
+    prebuildGitWorkingTreeFixture();
+  });
 
   beforeEach(() => {
     fixture = createGitWorkingTreeFixture();
