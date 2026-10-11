@@ -1,8 +1,10 @@
 // src/bootstrap/server-runtime.ts
 import type { PromptsConfig } from "../mcp/prompts/index.js";
 import { getZodConfig, parseAppConfig, type AppConfig } from "./config/index.js";
-import { createAppContext, loadPrompts, type AppContext } from "./factory.js";
+import { createAppContext, createConfiguredServer, loadPrompts, type AppContext } from "./factory.js";
 import { migrateHomeDir } from "./migrate.js";
+import { startHttpServer } from "./transport/http.js";
+import { startStdioServer } from "./transport/stdio.js";
 
 /** Everything an MCP server process needs before it builds its `McpServer`. */
 export interface McpServerRuntime {
@@ -50,4 +52,46 @@ export async function prepareMcpServerRuntime(options: McpServerRuntimeOptions =
   }
 
   return { config, ctx, promptsConfig, deprecations };
+}
+
+/** What a caller of {@link runMcpServer} overrides about the server it starts. */
+export interface McpServerRunOptions {
+  /** Serve over HTTP regardless of the configured `transportMode` (`tea-rags server --http`). */
+  http?: boolean;
+}
+
+/**
+ * The one long-lived MCP server lifecycle both server entry points run — the
+ * `tea-rags server` command and the `src/index.ts` script — so a lifecycle fix
+ * (release on signals, stdin-close exit, deprecation reporting) lands once
+ * (bd tea-rags-mcp-f3gq0).
+ */
+export async function runMcpServer(options: McpServerRunOptions = {}): Promise<void> {
+  const { config, ctx, promptsConfig, deprecations } = await prepareMcpServerRuntime();
+
+  // Graceful shutdown: disconnect embedding provider (daemon refcount--)
+  const { cleanup } = ctx;
+  if (cleanup) {
+    const release = (): void => {
+      void cleanup();
+    };
+    process.on("SIGTERM", release);
+    process.on("SIGINT", release);
+    process.on("beforeExit", release);
+  }
+
+  if (options.http || config.transportMode === "http") {
+    await startHttpServer({ config, ctx, promptsConfig });
+  } else {
+    const server = createConfiguredServer(ctx, promptsConfig);
+    // bd tea-rags-mcp-e6cpu — stdin closing (or SIGTERM/SIGINT) releases
+    // resources and then exits; the listeners above only release.
+    await startStdioServer(server, { cleanup: ctx.cleanup });
+
+    // Send deprecation warnings via MCP logging (visible to client)
+    if (deprecations.length > 0) {
+      const lines = deprecations.map((d) => `${d.oldName} -> use ${d.newName}`).join(", ");
+      await server.sendLoggingMessage({ level: "warning", data: `Deprecated env vars: ${lines}` });
+    }
+  }
 }

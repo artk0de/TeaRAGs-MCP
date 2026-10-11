@@ -1,9 +1,6 @@
 import type { CommandModule } from "yargs";
 
-import { createConfiguredServer } from "../../bootstrap/factory.js";
-import { prepareMcpServerRuntime } from "../../bootstrap/server-runtime.js";
-import { startHttpServer } from "../../bootstrap/transport/http.js";
-import { startStdioServer } from "../../bootstrap/transport/stdio.js";
+import { runMcpServer } from "../../bootstrap/server-runtime.js";
 
 export interface ServerArgs {
   http?: boolean;
@@ -13,32 +10,7 @@ export interface ServerArgs {
  * Run the MCP server. Extracted for testability.
  */
 export async function runServer(args: ServerArgs): Promise<void> {
-  const { config, ctx, promptsConfig, deprecations } = await prepareMcpServerRuntime();
-
-  // Graceful shutdown
-  const { cleanup } = ctx;
-  if (cleanup) {
-    const release = (): void => {
-      void cleanup();
-    };
-    process.on("SIGTERM", release);
-    process.on("SIGINT", release);
-    process.on("beforeExit", release);
-  }
-
-  if (args.http || config.transportMode === "http") {
-    await startHttpServer({ config, ctx, promptsConfig });
-  } else {
-    const server = createConfiguredServer(ctx, promptsConfig);
-    // bd tea-rags-mcp-e6cpu — stdin closing (or SIGTERM/SIGINT) releases
-    // resources and then exits; the listeners above only release.
-    await startStdioServer(server, { cleanup: ctx.cleanup });
-
-    if (deprecations.length > 0) {
-      const lines = deprecations.map((d) => `${d.oldName} -> use ${d.newName}`).join(", ");
-      await server.sendLoggingMessage({ level: "warning", data: `Deprecated env vars: ${lines}` });
-    }
-  }
+  await runMcpServer({ http: args.http });
 }
 
 export const serverCommand: CommandModule<object, ServerArgs> = {
