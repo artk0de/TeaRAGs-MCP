@@ -28,7 +28,7 @@ import type {
   EnrichmentReleaseRequest,
   EnrichmentWorkerRequest,
   EnrichmentWorkerResponse,
-} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/infra/worker-protocol.js";
+} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/worker-protocol.js";
 
 const COLLECTION = "code_mixed_v2";
 const BY_EXTENSION = { ".ts": "typescript", ".rb": "ruby", ".js": "javascript" };

@@ -72,17 +72,17 @@ import {
 } from "../../infra/pool-defaults.js";
 import { ThreadTransport } from "../../infra/thread-transport.js";
 import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
+import { ExtractionFanoutDispatcher } from "./extraction-fanout.js";
+import { InlineEnrichmentExecutor } from "./inline.js";
+import { LanguageAffinityDispatcher } from "./language-affinity-dispatch.js";
+import { planLanguageAffinity, type LanguageAffinityPlan } from "./language-affinity-plan.js";
 import type {
   EnrichmentCallRequest,
   EnrichmentMethod,
   EnrichmentReleaseRequest,
   EnrichmentWorkerRequest,
   EnrichmentWorkerResponse,
-} from "../infra/worker-protocol.js";
-import { ExtractionFanoutDispatcher } from "./extraction-fanout.js";
-import { InlineEnrichmentExecutor } from "./inline.js";
-import { LanguageAffinityDispatcher } from "./language-affinity-dispatch.js";
-import { planLanguageAffinity, type LanguageAffinityPlan } from "./language-affinity-plan.js";
+} from "./worker-protocol.js";
 
 /**
  * Batches smaller than this go to the affinity worker whole. Splitting a handful

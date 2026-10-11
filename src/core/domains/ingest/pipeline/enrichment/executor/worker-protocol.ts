@@ -3,7 +3,7 @@
  *
  * Pure structurally-cloneable types — no runtime, no `domains/trajectory`
  * import — shared by the ingest-side `WorkerPoolEnrichmentExecutor` (which
- * dispatches requests) and the sibling worker ENTRY (`./worker.ts`, which
+ * dispatches requests) and the worker ENTRY (`../infra/worker.ts`, which
  * builds providers in-thread via dynamic-import).
  *
  * The worker ENTRY lives in `domains/ingest` (its home domain), so the
