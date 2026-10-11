@@ -6,10 +6,11 @@
  * (callee-derived locals, a return verb) applies only when the project-wide
  * prior shows it.
  */
-import type {
-  IdentifierBoundCallee,
-  IdentifierDeclarationKind,
-  IdentifierTypeMultiplicity,
+import {
+  VALUE_IDENTIFIER_DECLARATION_KINDS,
+  type IdentifierBoundCallee,
+  type IdentifierDeclarationKind,
+  type IdentifierTypeMultiplicity,
 } from "../../../contracts/types/codegraph-extraction.js";
 import type { CallableSymbolKind, SymbolDefinitionKind } from "../../../contracts/types/codegraph-symbols.js";
 import type { FileDependencyEdge } from "../../../contracts/types/codegraph.js";
@@ -761,7 +762,7 @@ export function withFamilyAnalogues(verdict: NamingVerdict, familyRows: readonly
 }
 
 /** The value kinds a missing convention leaves free; a `return` stays judged by the method vocabulary. */
-const FREE_CHOICE_KINDS: ReadonlySet<IdentifierDeclarationKind> = new Set(["param", "local", "field", "constant"]);
+const FREE_CHOICE_KINDS: ReadonlySet<IdentifierDeclarationKind> = new Set(VALUE_IDENTIFIER_DECLARATION_KINDS);
 
 /**
  * A NEW_TERM offering nothing: every stage reaches it only when no name has
