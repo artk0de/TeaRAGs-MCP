@@ -275,6 +275,7 @@ export class ExploreOps {
         deps.statsCache,
         this.payloadSignals,
         mapMarkerToHealth,
+        (sourcePath) => new NotIndexedError(sourcePath),
         deps.signalFloors,
       );
       this.recomputeService = new StatsRecomputeService(deps.qdrant, deps.statsCache);
