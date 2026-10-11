@@ -18,7 +18,7 @@ import {
   SnapshotCorruptedError,
   SnapshotMissingError,
   WorktreeSeedMarkerUnreadableError,
-} from "../../../../src/core/domains/ingest/errors.js";
+} from "../../../../src/core/domains/ingest/errors/index.js";
 import { createDeletionOutcome } from "../../../../src/core/domains/ingest/sync/deletion/outcome.js";
 import { TeaRagsError } from "../../../../src/core/primitives/errors/tea-rags-error.js";
 

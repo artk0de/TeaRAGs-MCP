@@ -5,7 +5,7 @@ import type { EmbeddingProvider } from "../../../../../src/core/adapters/embeddi
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import { QdrantPointNotFoundError } from "../../../../../src/core/adapters/qdrant/errors.js";
 import { toQdrantPointId } from "../../../../../src/core/adapters/qdrant/point-id.js";
-import { ChunkNotFoundError } from "../../../../../src/core/domains/explore/errors.js";
+import { ChunkNotFoundError } from "../../../../../src/core/domains/explore/errors/index.js";
 import type { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
 import { SimilarSearchStrategy } from "../../../../../src/core/domains/explore/strategies/similar.js";
 

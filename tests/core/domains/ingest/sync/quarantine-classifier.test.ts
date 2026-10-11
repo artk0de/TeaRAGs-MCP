@@ -13,7 +13,7 @@ import {
   FileParseError,
   FileReadError,
   IngestInvariantError,
-} from "../../../../../src/core/domains/ingest/errors.js";
+} from "../../../../../src/core/domains/ingest/errors/index.js";
 import {
   classifyEmbeddingQuarantinable,
   classifyQuarantinable,

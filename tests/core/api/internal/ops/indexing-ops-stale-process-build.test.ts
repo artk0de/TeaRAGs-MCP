@@ -22,7 +22,7 @@ import {
   type IndexingOpsDeps,
   type ProcessBuildFingerprintSource,
 } from "../../../../../src/core/api/internal/ops/indexing-ops.js";
-import { IndexingProcessBuildStaleError } from "../../../../../src/core/domains/ingest/errors.js";
+import { IndexingProcessBuildStaleError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import { CollectionIndexingLock } from "../../../../../src/core/domains/ingest/infra/collection-indexing-lock.js";
 import type { ChangeStats } from "../../../../../src/core/types.js";
 

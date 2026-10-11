@@ -20,7 +20,7 @@ import type {
   WorktreeSeedRequest,
 } from "../../../../../src/core/api/internal/ops/worktree-seed-ops.js";
 import type { LanguageCodeVersions } from "../../../../../src/core/contracts/types/language.js";
-import { IndexingAlreadyInProgressError } from "../../../../../src/core/domains/ingest/errors.js";
+import { IndexingAlreadyInProgressError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import type { ChangeStats } from "../../../../../src/core/types.js";
 
 const TARGET = resolve("/repo/wt");

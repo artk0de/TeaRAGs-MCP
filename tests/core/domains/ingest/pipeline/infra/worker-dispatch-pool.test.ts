@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { WorkerTimeoutError } from "../../../../../../src/core/domains/ingest/errors.js";
+import { WorkerTimeoutError } from "../../../../../../src/core/domains/ingest/errors/index.js";
 import { WorkerDispatchPool } from "../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch-pool.js";
 /**
  * Custom WorkerTransport that supports HANG (never replies) semantics needed by

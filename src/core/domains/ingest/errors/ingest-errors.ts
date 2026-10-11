@@ -2,8 +2,8 @@
  * Ingest domain errors — indexing, collections, snapshots.
  */
 
-import type { DeletionOutcome } from "../../contracts/types/deletion.js";
-import { TeaRagsError } from "../../primitives/errors/index.js";
+import type { DeletionOutcome } from "../../../contracts/types/deletion.js";
+import { TeaRagsError } from "../../../primitives/errors/index.js";
 
 /**
  * Ingest domain error codes. Local strict union.

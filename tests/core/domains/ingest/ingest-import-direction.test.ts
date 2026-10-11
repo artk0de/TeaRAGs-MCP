@@ -1,10 +1,12 @@
 /**
- * Import-direction pins for the ingest domain (bd tea-rags-mcp-g7w8f, item 1).
+ * Import-direction pins for the ingest domain (bd tea-rags-mcp-g7w8f, item 1,
+ * plus the error-component pins of bd tea-rags-mcp-81bfm decision (c)).
  *
  * The ingest root is the stable sink of the domain: pipeline, sync, operations
- * and infra import `errors.ts`, so the root may not import back into any of
- * them. Each assertion below pins one edge group that used to close the ingest
- * knot. `import type` counts: the architecture detector judges type edges too.
+ * and infra import the error vocabulary, so the root may not import back into
+ * any of them. Each assertion below pins one edge group that used to close the
+ * ingest knot. `import type` counts: the architecture detector judges type
+ * edges too.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -16,6 +18,11 @@ const INGEST_DIR = join(ROOT, "src/core/domains/ingest");
 const PIPELINE_DIR = join(INGEST_DIR, "pipeline");
 const PIPELINE_INFRA_DIR = join(PIPELINE_DIR, "infra");
 const ENRICHMENT_DIR = join(PIPELINE_DIR, "enrichment");
+const SYNC_DIR = join(INGEST_DIR, "sync");
+const OPERATIONS_DIR = join(INGEST_DIR, "operations");
+const INFRA_DIR = join(INGEST_DIR, "infra");
+const ERRORS_DIR = join(INGEST_DIR, "errors");
+const ERRORS_BARREL = join(ERRORS_DIR, "index.ts");
 
 function tsFilesUnder(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -50,8 +57,8 @@ function rootFilesExceptFacade(): string[] {
 }
 
 describe("ingest root never imports into its children", () => {
-  it("ingest/errors.ts imports no file under an ingest child directory (DeletionOutcome is a contract)", () => {
-    const errorsFile = join(INGEST_DIR, "errors.ts");
+  it("ingest/errors/ingest-errors.ts imports no file under an ingest child directory (DeletionOutcome is a contract)", () => {
+    const errorsFile = join(ERRORS_DIR, "ingest-errors.ts");
     const offenders = relativeTargets(errorsFile)
       .filter((target) => isUnder(target, INGEST_DIR) && dirname(target) !== INGEST_DIR)
       .map((target) => `${rel(errorsFile)} -> ${rel(target)}`);
@@ -106,6 +113,37 @@ describe("the enrichment executor owns its wire format", () => {
       for (const target of relativeTargets(file)) {
         if (isUnder(target, ENRICHMENT_DIR) && !isUnder(target, executorDir)) {
           offenders.push(`${rel(file)} -> ${rel(target)}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("ingest/errors is a leaf component of the domain (81bfm decision c)", () => {
+  it("has ingest/errors populated", () => {
+    expect(tsFilesUnder(ERRORS_DIR).length).toBeGreaterThan(0);
+  });
+
+  it("no file under ingest/errors/ imports a file directly in the ingest root", () => {
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder(ERRORS_DIR)) {
+      for (const target of relativeTargets(file)) {
+        if (dirname(target) === INGEST_DIR) offenders.push(`${rel(file)} -> ${rel(target)}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("ingest children import the error vocabulary only through ingest/errors/index.js", () => {
+    const offenders: string[] = [];
+    for (const dir of [PIPELINE_DIR, SYNC_DIR, OPERATIONS_DIR, INFRA_DIR]) {
+      for (const file of tsFilesUnder(dir)) {
+        for (const target of relativeTargets(file)) {
+          const hitsRootOrErrorsFile = dirname(target) === INGEST_DIR || isUnder(target, ERRORS_DIR);
+          if (hitsRootOrErrorsFile && target !== ERRORS_BARREL) {
+            offenders.push(`${rel(file)} -> ${rel(target)}`);
+          }
         }
       }
     }

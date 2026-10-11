@@ -3,7 +3,7 @@
  * tea-rags-mcp-xgzyv, wave 2 of the barrel-discipline sweep).
  *
  * `domains/explore/index.ts` is the explore facade barrel (`.claude/rules/
- * barrel-files.md` rule 1). A direct `explore/errors.js`,
+ * barrel-files.md` rule 1). A direct `explore/errors/index.js`,
  * `explore/queries/index-metrics.js` or `explore/strategies/index.js` import
  * from api/internal is the leakingAbstraction BYPASS kind — same shape the
  * rwhhc sweep pinned for the public contract surface
@@ -18,7 +18,7 @@
  * compile time and stay legal.
  *
  * The pin is per-file, not directory-wide: other api/internal files
- * (`facades/explore-facade.ts` among them) still import `explore/errors.js`
+ * (`facades/explore-facade.ts` among them) still import `explore/errors/index.js`
  * directly and are tracked outside this sweep.
  */
 import { readFileSync } from "node:fs";

@@ -19,7 +19,7 @@ import { validatePath } from "../../../src/core/adapters/filesystem/path-canonic
 import { IngestFacade } from "../../../src/core/api/internal/facades/ingest-facade.js";
 import { INDEXING_METADATA_ID } from "../../../src/core/contracts/constants.js";
 import { IndexMetricsQuery } from "../../../src/core/domains/explore/queries/index-metrics.js";
-import { NotIndexedError } from "../../../src/core/domains/ingest/errors.js";
+import { NotIndexedError } from "../../../src/core/domains/ingest/errors/index.js";
 import { EnrichmentCoordinator } from "../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { mapMarkerToHealth } from "../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import type { EnrichmentProvider } from "../../../src/core/domains/ingest/pipeline/enrichment/types.js";

@@ -5,7 +5,7 @@ import {
   QdrantInvalidQueryParameterError,
   QdrantOperationError,
 } from "../../../../../src/core/adapters/qdrant/errors.js";
-import { InvalidQueryError } from "../../../../../src/core/domains/explore/errors.js";
+import { InvalidQueryError } from "../../../../../src/core/domains/explore/errors/index.js";
 import type { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
 import { HybridSearchStrategy } from "../../../../../src/core/domains/explore/strategies/hybrid.js";
 import { HybridNotEnabledError } from "../../../../../src/core/domains/explore/strategies/types.js";

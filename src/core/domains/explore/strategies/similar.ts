@@ -29,7 +29,7 @@ import type { PayloadSignalDescriptor } from "../../../contracts/types/trajector
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
-import { ChunkNotFoundError } from "../errors.js";
+import { ChunkNotFoundError } from "../errors/index.js";
 import type { Reranker } from "../reranker.js";
 import { recommendWorkingTreeScore, type WorkingTreeDenseVectors } from "../working-tree/dense-floor.js";
 import type { WorkingTreeView } from "../working-tree/overlay.js";

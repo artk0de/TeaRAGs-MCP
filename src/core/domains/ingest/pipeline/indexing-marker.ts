@@ -9,7 +9,7 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { QdrantUpdateStatus } from "../../../adapters/qdrant/types.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
-import { WorktreeSeedMarkerUnconfirmedError, WorktreeSeedMarkerUnreadableError } from "../errors.js";
+import { WorktreeSeedMarkerUnconfirmedError, WorktreeSeedMarkerUnreadableError } from "../errors/index.js";
 import { parseMarkerPayload, type WorktreeSeedPending } from "../infra/index.js";
 
 /**

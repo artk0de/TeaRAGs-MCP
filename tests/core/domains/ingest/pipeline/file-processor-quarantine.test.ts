@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../../../../src/core/domains/ingest/errors.js";
+import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import type { ChunkPipeline } from "../../../../../src/core/domains/ingest/pipeline/chunk-pipeline.js";
 import type { ChunkerPool } from "../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
 import { processFiles } from "../../../../../src/core/domains/ingest/pipeline/file-processor.js";

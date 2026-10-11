@@ -36,7 +36,7 @@ import { join } from "node:path";
 
 import type { IndexingLockRemovalOutcome } from "../../../contracts/types/footprint.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
-import { IndexingLockUnavailableError } from "../errors.js";
+import { IndexingLockUnavailableError } from "../errors/index.js";
 import { INDEXING_HEARTBEAT_INTERVAL_MS, STALE_INDEXING_THRESHOLD_MS } from "./indexing-marker-codec.js";
 
 /** The lock file's JSON content. */

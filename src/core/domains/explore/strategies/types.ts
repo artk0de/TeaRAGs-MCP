@@ -54,4 +54,4 @@ export interface ExploreStrategy {
 }
 
 // Re-export typed error for backward compatibility
-export { HybridNotEnabledError } from "../errors.js";
+export { HybridNotEnabledError } from "../errors/index.js";

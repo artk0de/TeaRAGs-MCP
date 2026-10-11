@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
 import type { ErrorCode } from "../../../contracts/errors.js";
-import type { QuarantinableIngestError, QuarantinePhase } from "../errors.js";
+import type { QuarantinableIngestError, QuarantinePhase } from "../errors/index.js";
 
 /**
  * One quarantined file: why it failed, where in the pipeline, and how often.

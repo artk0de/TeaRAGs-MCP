@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ChunkOversizedError, FileReadError } from "../../../../../src/core/domains/ingest/errors.js";
+import { ChunkOversizedError, FileReadError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import { QuarantineStore } from "../../../../../src/core/domains/ingest/sync/quarantine-store.js";
 
 describe("QuarantineStore", () => {

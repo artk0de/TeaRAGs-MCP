@@ -6,7 +6,7 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
-import { CollectionNotFoundError } from "../../../domains/explore/errors.js";
+import { CollectionNotFoundError } from "../../../domains/explore/errors/index.js";
 import type { AddDocumentsRequest, DeleteDocumentsRequest } from "../../public/dto/index.js";
 import { DocumentMetadataSchemaCompiler, readDocumentMetadataSchema } from "./document-metadata-schema.js";
 

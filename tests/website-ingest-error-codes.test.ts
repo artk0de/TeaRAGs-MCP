@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = join(import.meta.dirname, "..");
-const ERRORS_SOURCE = "src/core/domains/ingest/errors.ts";
+const ERRORS_SOURCE = "src/core/domains/ingest/errors/ingest-errors.ts";
 const PAGE = "website/docs/operations/troubleshooting-and-error-codes.md";
 const TABLE_HEADING = "## Error Codes Reference";
 

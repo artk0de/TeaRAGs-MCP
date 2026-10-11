@@ -5,8 +5,8 @@ export {
   SnapshotMissingError,
   PipelineNotStartedError,
   IngestInvariantError,
-} from "./errors.js";
-export type { IngestErrorCode } from "./errors.js";
+} from "./errors/index.js";
+export type { IngestErrorCode } from "./errors/index.js";
 export { IndexPipeline, ReindexPipeline } from "./operations/index.js";
 export { cleanupOrphanedVersions, computeCollectionStats } from "./infra/index.js";
 export type { IngestDependencies } from "./pipeline/index.js";

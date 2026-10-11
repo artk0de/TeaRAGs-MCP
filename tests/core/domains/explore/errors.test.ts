@@ -5,7 +5,7 @@ import {
   ExploreError,
   HybridNotEnabledError,
   InvalidQueryError,
-} from "../../../../src/core/domains/explore/errors.js";
+} from "../../../../src/core/domains/explore/errors/index.js";
 import { TeaRagsError } from "../../../../src/core/primitives/errors/tea-rags-error.js";
 
 describe("ExploreError hierarchy", () => {

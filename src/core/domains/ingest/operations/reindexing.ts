@@ -10,7 +10,7 @@ import type { PhysicalCollectionName } from "../../../contracts/types/collection
 import type { RechunkFileSelector } from "../../../contracts/types/rechunk.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../../types.js";
-import { NotIndexedError, PartialDeletionError, ReindexFailedError, SnapshotMissingError } from "../errors.js";
+import { NotIndexedError, PartialDeletionError, ReindexFailedError, SnapshotMissingError } from "../errors/index.js";
 import { cleanupOrphanedVersions, sweepCodegraphOrphans } from "../infra/alias-cleanup.js";
 import {
   BaseIndexingPipeline,

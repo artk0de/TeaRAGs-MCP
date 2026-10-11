@@ -94,7 +94,7 @@ describe("tracked text files", () => {
   it("finds the files to scan — every text kind, no binary one", () => {
     const files = trackedTextFiles();
     for (const path of [
-      "src/core/domains/ingest/errors.ts",
+      "src/core/domains/ingest/errors/ingest-errors.ts",
       ".husky/pre-commit",
       ".claude-plugin/tea-rags/rules/search-cascade.md",
       "package.json",
