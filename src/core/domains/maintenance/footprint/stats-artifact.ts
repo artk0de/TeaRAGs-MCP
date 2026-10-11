@@ -1,4 +1,4 @@
-import type { StatsCache } from "../../../infra/stats-cache.js";
+import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { CollectionArtifact, FootprintContext } from "./artifact.js";
 
 export class StatsArtifact implements CollectionArtifact {

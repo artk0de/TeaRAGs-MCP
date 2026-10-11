@@ -15,8 +15,8 @@
  * command already does.
  */
 
+import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import type { StatsCache } from "../../../infra/stats-cache.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 import { judgeStatsContract } from "./stats-contract-drift.js";
 

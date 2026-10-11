@@ -13,6 +13,7 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import { isProviderRecoveryWaitSpent } from "../../../adapters/embeddings/errors.js";
 import { hashCollectionForPath, validatePath } from "../../../adapters/filesystem/path-canonicalization.js";
+import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
@@ -56,7 +57,6 @@ import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { advanceChunkSetStamp } from "../../../domains/maintenance/drift/index.js";
 import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/index.js";
-import type { StatsCache } from "../../../infra/stats-cache.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { computeScoreBackground } from "../../../primitives/math/index.js";
 import type {

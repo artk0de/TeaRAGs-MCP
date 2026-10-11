@@ -8,6 +8,7 @@
  * contract; this is the only place that knows every concrete.
  */
 
+import { StatsCache } from "../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { SchemaManager } from "../../adapters/qdrant/schema-manager.js";
 import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
@@ -28,7 +29,6 @@ import { SchemaMigrator } from "../../domains/maintenance/migration/schema-migra
 import { SnapshotMigrator } from "../../domains/maintenance/migration/snapshot-migrator.js";
 import { SparseMigrator } from "../../domains/maintenance/migration/sparse-migrator.js";
 import { StatsMigrator } from "../../domains/maintenance/migration/stats-migrator.js";
-import { StatsCache } from "../../infra/stats-cache.js";
 import {
   declaredPayloadIndexSet,
   fullRegistryPayloadSignalDescriptors,

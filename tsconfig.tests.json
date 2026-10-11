@@ -222,7 +222,7 @@
     "tests/core/domains/trajectory/static/filters.test.ts",
     "tests/core/domains/trajectory/static/static-trajectory.test.ts",
     "tests/core/domains/trajectory/trajectory-registry.test.ts",
-    "tests/core/infra/stats-cache.test.ts",
+    "tests/core/adapters/filesystem/stats-cache.test.ts",
     "tests/integration/codegraph-tea-rags-slice.test.ts",
     "tests/mcp/middleware/error-handler.test.ts",
     "tests/mcp/resources/resources.test.ts",

@@ -17,12 +17,12 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { StatsCache } from "../../../src/core/adapters/filesystem/stats-cache.js";
 import { IngestFacade } from "../../../src/core/api/index.js";
 import { QuarantineStore } from "../../../src/core/domains/ingest/sync/quarantine-store.js";
 import { ShardedSnapshotManager } from "../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
 import { CollectionFootprintFactory } from "../../../src/core/domains/maintenance/footprint/factory.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
-import { StatsCache } from "../../../src/core/infra/stats-cache.js";
 import { resolveCollectionName } from "../../../src/core/primitives/ids/collection-identity.js";
 import {
   defaultTestConfig,

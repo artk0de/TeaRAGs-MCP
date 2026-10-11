@@ -15,8 +15,8 @@ import {
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
 import { warmChunkerPoolFactory } from "../__helpers__/warm-chunker-pool.js";
+import { StatsCache } from "../../../../../src/core/adapters/filesystem/stats-cache.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
-import { StatsCache } from "../../../../../src/core/infra/stats-cache.js";
 import type { IngestCodeConfig } from "../../../../../src/core/types.js";
 
 vi.mock("tree-sitter", () => ({

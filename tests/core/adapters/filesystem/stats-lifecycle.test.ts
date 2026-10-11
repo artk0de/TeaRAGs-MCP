@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { CollectionSignalStats } from "../../../src/core/contracts/types/trajectory.js";
-import { Reranker } from "../../../src/core/domains/explore/reranker.js";
-import { StatsCache } from "../../../src/core/infra/stats-cache.js";
+import { StatsCache } from "../../../../src/core/adapters/filesystem/stats-cache.js";
+import type { CollectionSignalStats } from "../../../../src/core/contracts/types/trajectory.js";
+import { Reranker } from "../../../../src/core/domains/explore/reranker.js";
 
 describe("Reranker.hasCollectionStats", () => {
   const reranker = new Reranker([], [], []);

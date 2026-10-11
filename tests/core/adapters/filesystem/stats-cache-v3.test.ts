@@ -5,8 +5,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { CollectionSignalStats } from "../../../src/core/contracts/types/trajectory.js";
-import { StatsCache } from "../../../src/core/infra/stats-cache.js";
+import { StatsCache } from "../../../../src/core/adapters/filesystem/stats-cache.js";
+import type { CollectionSignalStats } from "../../../../src/core/contracts/types/trajectory.js";
 
 describe("StatsCache v3", () => {
   let cache: StatsCache;

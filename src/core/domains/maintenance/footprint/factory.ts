@@ -1,3 +1,4 @@
+import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type {
   CodegraphFootprintStore,
@@ -5,7 +6,6 @@ import type {
   QuarantineArtifactStoreFactory,
   SnapshotArtifactStoreFactory,
 } from "../../../contracts/index.js";
-import type { StatsCache } from "../../../infra/stats-cache.js";
 import type { CollectionArtifact, FootprintContext, ResolvedCollection } from "./artifact.js";
 import { CodegraphArtifact } from "./codegraph-artifact.js";
 import { IndexingLockArtifact } from "./indexing-lock-artifact.js";

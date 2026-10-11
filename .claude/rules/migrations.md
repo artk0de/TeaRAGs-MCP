@@ -11,7 +11,7 @@ paths:
   - "src/core/domains/ingest/operations/reindexing.ts"
   - "src/core/domains/ingest/sync/snapshot/**/*.ts"
   - "src/core/domains/trajectory/*/payload-signals.ts"
-  - "src/core/infra/stats-cache.ts"
+  - "src/core/adapters/filesystem/stats-cache.ts"
   - "src/core/adapters/qdrant/types.ts"
   - "src/core/adapters/qdrant/schema-manager.ts"
   - "src/core/adapters/qdrant/sparse.ts"
