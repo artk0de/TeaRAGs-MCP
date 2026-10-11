@@ -383,11 +383,17 @@ export class FilePhase {
   }
 
   /**
-   * Await every queued file-phase write. Under DEBUG it reports its wall clock
-   * and Qdrant's update-queue length at both ends (`FILE_PHASE_DRAIN`, bd
-   * tea-rags-mcp-4ybh4): a drain that waits out a deep queue is Qdrant
-   * back-pressure, one that returns at once with the queue empty is not. Both
-   * the queue reads and the timing are skipped when DEBUG is off.
+   * Await every queued file-phase promise. Under DEBUG it reports its wall
+   * clock and Qdrant's update-queue length at both ends (`FILE_PHASE_DRAIN`,
+   * bd tea-rags-mcp-4ybh4). What `fileWork` holds depends on the provider: a
+   * streaming provider queues its `wait: false` payload writes, so a long drain
+   * there is the client-side write path; a provider with
+   * `defersChunkEnrichment` queues its deferred pass-1 EXTRACTION, so a long
+   * drain there is worker parse time, and the queue numbers only show what
+   * Qdrant absorbed meanwhile. Neither path waits on Qdrant's apply queue —
+   * that barrier is `EnrichmentMarkerStore#awaitQueuedPayloadWrites` (bd
+   * tea-rags-mcp-ek7fd). Both the queue reads and the timing are skipped when
+   * DEBUG is off.
    */
   async drain(): Promise<void> {
     if (!isDebug()) return this.drainFileWork();
