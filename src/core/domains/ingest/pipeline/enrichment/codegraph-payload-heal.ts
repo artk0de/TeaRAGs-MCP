@@ -145,7 +145,7 @@ export interface CodegraphPayloadHealerDeps {
     ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
     /** The collection's size, read ONCE per heal to choose the read shape. */
     countPoints: (collectionName: string, filter?: Record<string, unknown>) => Promise<number>;
-    batchSetPayload: (collectionName: string, operations: BatchPayloadOp[]) => Promise<void>;
+    batchSetPayload: (collectionName: string, operations: BatchPayloadOp[]) => Promise<unknown>;
   };
   /**
    * The codegraph provider's own key (`codegraph.symbols`). Injected rather than

@@ -899,6 +899,16 @@ describe("parseAppConfigZod — qdrantTune", () => {
     expect(qdrantTune.deleteFlushTimeoutMs).toBe(1000);
   });
 
+  // bd tea-rags-mcp-yf4je — the payload-write barrier's total budget.
+  it("QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS defaults to ten minutes and is overridable", async () => {
+    const { parseAppConfigZod } = await freshImport();
+    expect(parseAppConfigZod().qdrantTune.writeBarrierBudgetMs).toBe(600_000);
+
+    process.env.QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS = "120000";
+    const fresh = await freshImport();
+    expect(fresh.parseAppConfigZod().qdrantTune.writeBarrierBudgetMs).toBe(120_000);
+  });
+
   it("QDRANT_TUNE_UPSERT_BATCH_SIZE falls back through QDRANT_UPSERT_BATCH_SIZE then CODE_BATCH_SIZE", async () => {
     process.env.CODE_BATCH_SIZE = "200";
     const { parseAppConfigZod } = await freshImport();

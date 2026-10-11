@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import type { QdrantUpdateStatus } from "../../../../../../src/core/adapters/qdrant/types.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 
@@ -189,5 +190,126 @@ describe("EnrichmentMarkerStore (terminal-only + runId, nested storage)", () => 
       expect(await store.getRunId(COLL, "git")).toBeUndefined();
       expect(await store.getRunId(COLL, "absent")).toBeUndefined();
     });
+  });
+});
+
+/**
+ * bd tea-rags-mcp-yf4je — Qdrant 1.18 answers a `wait: true` update whose
+ * server-side wait (~60 s) ran out with a SUCCESSFUL response whose status is
+ * `wait_timeout`. The barrier and the terminal marker writes must read that
+ * status: a timed-out round is repeated until `completed`, within a budget.
+ */
+describe("EnrichmentMarkerStore Qdrant wait_timeout handling (yf4je)", () => {
+  const COLL = "test_coll";
+  const ROUND_MS = 60_000;
+  const BUDGET_MS = 150_000;
+
+  /** Answers each wait:true update with the next scripted status; each round costs ROUND_MS of server wait. */
+  class WaitTimeoutQdrant extends MockQdrantManager {
+    barrierCalls = 0;
+    constructor(
+      private readonly barrierStatuses: QdrantUpdateStatus[],
+      private readonly writeStatus: QdrantUpdateStatus = "completed",
+    ) {
+      super();
+    }
+
+    override async awaitQueuedUpdates(_collectionName: string): Promise<QdrantUpdateStatus> {
+      const status = this.barrierStatuses[Math.min(this.barrierCalls, this.barrierStatuses.length - 1)];
+      this.barrierCalls++;
+      vi.setSystemTime(Date.now() + ROUND_MS);
+      return status;
+    }
+
+    override async batchSetPayload(
+      collectionName: string,
+      operations: any[],
+      options?: any,
+    ): Promise<QdrantUpdateStatus> {
+      await super.batchSetPayload(collectionName, operations, options);
+      return options?.wait === true ? this.writeStatus : "acknowledged";
+    }
+  }
+
+  async function storeOver(qdrant: MockQdrantManager): Promise<EnrichmentMarkerStore> {
+    await qdrant.createCollection(COLL, 384);
+    await qdrant.addPoints(COLL, [{ id: INDEXING_METADATA_ID, vector: new Array(384).fill(0), payload: {} }]);
+    return new EnrichmentMarkerStore(qdrant as any, { payloadWriteBarrierBudgetMs: BUDGET_MS });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns drained after one round when Qdrant completes the barrier", async () => {
+    const qdrant = new WaitTimeoutQdrant(["completed"]);
+    const store = await storeOver(qdrant);
+
+    await expect(store.awaitQueuedPayloadWrites(COLL)).resolves.toMatchObject({ kind: "drained", rounds: 1 });
+    expect(qdrant.barrierCalls).toBe(1);
+  });
+
+  it("repeats a wait_timeout round until Qdrant completes the barrier", async () => {
+    const qdrant = new WaitTimeoutQdrant(["wait_timeout", "completed"]);
+    const store = await storeOver(qdrant);
+
+    await expect(store.awaitQueuedPayloadWrites(COLL)).resolves.toMatchObject({ kind: "drained", rounds: 2 });
+    expect(qdrant.barrierCalls).toBe(2);
+  });
+
+  it("gives up as timedOut once the budget is spent on wait_timeout rounds", async () => {
+    const qdrant = new WaitTimeoutQdrant(["wait_timeout"]);
+    const store = await storeOver(qdrant);
+
+    const outcome = await store.awaitQueuedPayloadWrites(COLL);
+
+    // 60 s rounds against a 150 s budget: rounds start at 0, 60 and 120 s; the third ends at 180 s, past the budget.
+    expect(outcome).toMatchObject({ kind: "timedOut", rounds: 3, waitedMs: 3 * ROUND_MS });
+    expect(qdrant.barrierCalls).toBe(3);
+  });
+
+  it("confirms a terminal marker write Qdrant answered with wait_timeout through the barrier", async () => {
+    const qdrant = new WaitTimeoutQdrant(["wait_timeout", "completed"], "wait_timeout");
+    const store = await storeOver(qdrant);
+
+    await store.markFileFinal(COLL, "git", {
+      runId: "r1",
+      status: "completed",
+      durationMs: 1,
+      unenrichedChunks: 0,
+      matchedFiles: 1,
+      missedFiles: 0,
+    });
+
+    expect(qdrant.barrierCalls).toBe(2);
+  });
+
+  it("does not run the barrier after a marker write Qdrant completed", async () => {
+    const qdrant = new WaitTimeoutQdrant(["completed"]);
+    const store = await storeOver(qdrant);
+
+    await store.markChunkFinal(COLL, "git", { runId: "r1", status: "completed", durationMs: 1, unenrichedChunks: 0 });
+
+    expect(qdrant.barrierCalls).toBe(0);
+  });
+
+  it("records the barrier-timeout reason on a degraded terminal marker", async () => {
+    const qdrant = new WaitTimeoutQdrant(["completed"]);
+    const store = await storeOver(qdrant);
+
+    await store.markChunkFinal(COLL, "git", {
+      runId: "r1",
+      status: "degraded",
+      durationMs: 1,
+      unenrichedChunks: 0,
+      degradedReason: "barrier-timeout",
+    });
+
+    const { chunk } = (await store.read(COLL))!.git as any;
+    expect(chunk).toMatchObject({ status: "degraded", degradedReason: "barrier-timeout" });
   });
 });

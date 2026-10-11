@@ -131,6 +131,7 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   if (flags.userSetDeleteBatchSize) put("QDRANT_TUNE_DELETE_BATCH_SIZE", qdrantTune.deleteBatchSize);
   if (flags.userSetDeleteConcurrency) put("QDRANT_TUNE_DELETE_CONCURRENCY", qdrantTune.deleteConcurrency);
   put("QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS", qdrantTune.deleteFlushTimeoutMs);
+  put("QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS", qdrantTune.writeBarrierBudgetMs);
   put("QDRANT_QUANTIZATION_SCALAR", qdrantTune.quantizationScalar);
   put("QDRANT_TURBO_QUANT", qdrantTune.turboQuant);
   put("QDRANT_MAX_RESIDENT_MEMORY_PERCENT", qdrantTune.maxResidentMemoryPercent);

@@ -20,12 +20,39 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
-import { INDEXING_METADATA_ID } from "../../../../contracts/constants.js";
+import { DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS, INDEXING_METADATA_ID } from "../../../../contracts/constants.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkFinalInput, FileFinalInput, RecoveryResultInput } from "./types.js";
 
+/**
+ * What waiting for a collection's queued payload writes established
+ * (`EnrichmentMarkerStore#awaitQueuedPayloadWrites`, bd tea-rags-mcp-yf4je).
+ *
+ * - `drained` — Qdrant confirmed (`completed`) the queue applied.
+ * - `timedOut` — every round answered `wait_timeout` until the budget was
+ *   spent: the queue is still undrained, and a read now sees stale segments.
+ * - `failed` — the barrier request itself threw; best-effort, as before the
+ *   barrier existed.
+ */
+export type PayloadWriteBarrierOutcome =
+  | { readonly kind: "drained"; readonly rounds: number; readonly waitedMs: number }
+  | { readonly kind: "timedOut"; readonly rounds: number; readonly waitedMs: number }
+  | { readonly kind: "failed" };
+
+export interface EnrichmentMarkerStoreOptions {
+  /** Total barrier budget (ms); undefined → DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS. */
+  readonly payloadWriteBarrierBudgetMs?: number;
+}
+
 export class EnrichmentMarkerStore {
-  constructor(private readonly qdrant: QdrantManager) {}
+  private readonly payloadWriteBarrierBudgetMs: number;
+
+  constructor(
+    private readonly qdrant: QdrantManager,
+    options: EnrichmentMarkerStoreOptions = {},
+  ) {
+    this.payloadWriteBarrierBudgetMs = options.payloadWriteBarrierBudgetMs ?? DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS;
+  }
 
   /**
    * Run-pointer — the only pre-completion write. Lives at enrichment._run and
@@ -75,6 +102,7 @@ export class EnrichmentMarkerStore {
           missedFiles: input.missedFiles,
           ignoredFiles: input.ignoredFiles,
           ...(input.errorMessage !== undefined ? { errorMessage: input.errorMessage } : {}),
+          ...(input.degradedReason !== undefined ? { degradedReason: input.degradedReason } : {}),
         },
       },
     ]);
@@ -90,17 +118,41 @@ export class EnrichmentMarkerStore {
    * segments as they were. The barrier (`QdrantManager#awaitQueuedUpdates`)
    * changes no payload, so it can run before any read without leaving a trace.
    *
-   * Best-effort: a barrier that fails leaves the caller reading whatever is
+   * Qdrant 1.18 ends a waited request after its own ~60 s with a SUCCESSFUL
+   * `wait_timeout` answer (bd tea-rags-mcp-yf4je), so the status is read: a
+   * timed-out round is repeated until `completed`, while the time spent stays
+   * under the budget. Each timed-out round logs
+   * PAYLOAD_WRITE_BARRIER_TIMED_OUT. A spent budget returns `timedOut` — the
+   * caller must not decide anything from a read behind that queue.
+   *
+   * Best-effort on a thrown barrier: it leaves the caller reading whatever is
    * applied, which is what every read did before this existed.
    */
-  async awaitQueuedPayloadWrites(coll: string): Promise<void> {
+  async awaitQueuedPayloadWrites(coll: string): Promise<PayloadWriteBarrierOutcome> {
+    const startedAt = Date.now();
+    let rounds = 0;
     try {
-      await this.qdrant.awaitQueuedUpdates(coll);
+      for (;;) {
+        const roundStartedAt = Date.now();
+        const status = await this.qdrant.awaitQueuedUpdates(coll);
+        rounds++;
+        const waitedMs = Date.now() - startedAt;
+        if (status !== "wait_timeout") return { kind: "drained", rounds, waitedMs };
+        pipelineLog.enrichmentPhase("PAYLOAD_WRITE_BARRIER_TIMED_OUT", {
+          collection: coll,
+          round: rounds,
+          roundMs: Date.now() - roundStartedAt,
+          waitedMs,
+          budgetMs: this.payloadWriteBarrierBudgetMs,
+        });
+        if (waitedMs >= this.payloadWriteBarrierBudgetMs) return { kind: "timedOut", rounds, waitedMs };
+      }
     } catch (error) {
       pipelineLog.enrichmentPhase("PAYLOAD_WRITE_BARRIER_FAILED", {
         collection: coll,
         error: error instanceof Error ? error.message : String(error),
       });
+      return { kind: "failed" };
     }
   }
 
@@ -115,6 +167,7 @@ export class EnrichmentMarkerStore {
           durationMs: input.durationMs,
           unenrichedChunks: input.unenrichedChunks,
           ...(input.errorMessage !== undefined ? { errorMessage: input.errorMessage } : {}),
+          ...(input.degradedReason !== undefined ? { degradedReason: input.degradedReason } : {}),
         },
       },
     ]);
@@ -223,11 +276,12 @@ export class EnrichmentMarkerStore {
     wait = true,
   ): Promise<void> {
     try {
-      await this.qdrant.batchSetPayload(
+      const status = await this.qdrant.batchSetPayload(
         coll,
         entries.map((e) => ({ payload: e.value, points: [INDEXING_METADATA_ID], key: e.key })),
         { wait },
       );
+      if (wait && status === "wait_timeout") await this.confirmTimedOutWrite(coll, entries);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error(`[Enrichment] Failed to update marker for collection ${coll}:`, msg);
@@ -237,6 +291,23 @@ export class EnrichmentMarkerStore {
         error: msg,
       });
     }
+  }
+
+  /**
+   * A waited marker write Qdrant answered with `wait_timeout` is queued, not
+   * applied (bd tea-rags-mcp-yf4je). Updates apply in submission order, so the
+   * barrier after it confirms it; a barrier that spends its budget leaves the
+   * marker unconfirmed, logged as MARKER_UPDATE_UNCONFIRMED.
+   */
+  private async confirmTimedOutWrite(coll: string, entries: { key: string }[]): Promise<void> {
+    const barrier = await this.awaitQueuedPayloadWrites(coll);
+    if (barrier.kind === "drained") return;
+    pipelineLog.enrichmentPhase("MARKER_UPDATE_UNCONFIRMED", {
+      collection: coll,
+      keys: entries.map((e) => e.key),
+      barrier: barrier.kind,
+      ...(barrier.kind === "timedOut" ? { waitedMs: barrier.waitedMs } : {}),
+    });
   }
 }
 

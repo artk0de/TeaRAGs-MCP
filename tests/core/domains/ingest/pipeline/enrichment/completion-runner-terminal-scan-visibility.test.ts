@@ -14,10 +14,11 @@
  * `QueuedWriteQdrant` models that visibility rule; the unenriched reader reads
  * only what has been applied.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
 import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
+import type { QdrantUpdateStatus } from "../../../../../../src/core/adapters/qdrant/types.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
@@ -37,8 +38,11 @@ class QueuedWriteQdrant extends MockQdrantManager {
     collectionName: string,
     operations: { payload: Record<string, any>; points: (string | number)[]; key?: string }[],
     options?: WriteOptions,
-  ): Promise<void> {
-    await this.enqueue(async () => super.batchSetPayload(collectionName, operations, options), options);
+  ): Promise<QdrantUpdateStatus> {
+    await this.enqueue(async () => {
+      await super.batchSetPayload(collectionName, operations, options);
+    }, options);
+    return options?.wait === true ? "completed" : "acknowledged";
   }
 
   override async batchDeletePayload(
@@ -49,8 +53,9 @@ class QueuedWriteQdrant extends MockQdrantManager {
     await this.enqueue(async () => super.batchDeletePayload(collectionName, operations, options), options);
   }
 
-  override async awaitQueuedUpdates(_collectionName: string): Promise<void> {
+  override async awaitQueuedUpdates(_collectionName: string): Promise<QdrantUpdateStatus> {
     await this.drain();
+    return "completed";
   }
 
   private async enqueue(apply: () => Promise<void>, options: WriteOptions): Promise<void> {
@@ -161,6 +166,45 @@ describe("CompletionRunner terminal scan visibility (vnmj1)", () => {
 
     const { chunk } = await terminalMarkers(marker);
     expect(chunk).toMatchObject({ status: "completed", unenrichedChunks: 0 });
+  });
+});
+
+/**
+ * bd tea-rags-mcp-yf4je — Qdrant 1.18 answers a `wait: true` update whose
+ * server-side wait (~60 s) ran out with a SUCCESSFUL response carrying
+ * `wait_timeout`: the queue is still undrained. A barrier that never completes
+ * within its budget must not let the scan behind it decide the terminal status.
+ */
+class NeverDrainingBarrierQdrant extends QueuedWriteQdrant {
+  barrierCalls = 0;
+
+  override async awaitQueuedUpdates(_collectionName: string): Promise<QdrantUpdateStatus> {
+    this.barrierCalls++;
+    vi.setSystemTime(Date.now() + 60_000);
+    return "wait_timeout";
+  }
+}
+
+describe("CompletionRunner terminal markers behind a barrier that timed out (yf4je)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("marks both levels degraded for barrier-timeout instead of trusting a scan behind the undrained queue", async () => {
+    const qdrant = new NeverDrainingBarrierQdrant();
+    await seed(qdrant);
+    const { run, marker } = buildRun(qdrant, new Map([["a.ts", { fanIn: 2 }]]));
+
+    await run();
+
+    const { file, chunk } = await terminalMarkers(marker);
+    expect(file).toMatchObject({ status: "degraded", degradedReason: "barrier-timeout" });
+    expect(chunk).toMatchObject({ status: "degraded", degradedReason: "barrier-timeout" });
+    expect(qdrant.barrierCalls).toBeGreaterThan(1);
   });
 });
 

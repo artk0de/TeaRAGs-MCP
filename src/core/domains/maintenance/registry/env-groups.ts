@@ -179,6 +179,7 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
     consequence: "runtime",
   },
   { canonical: "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS", aliases: ["DELETE_FLUSH_TIMEOUT_MS"], consequence: "runtime" },
+  { canonical: "QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS", aliases: [], consequence: "runtime" },
   { canonical: "QDRANT_QUANTIZATION_SCALAR", aliases: [], consequence: "runtime" },
   { canonical: "QDRANT_TURBO_QUANT", aliases: [], consequence: "runtime" },
   { canonical: "QDRANT_MAX_RESIDENT_MEMORY_PERCENT", aliases: [], consequence: "runtime" },

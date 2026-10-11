@@ -652,11 +652,18 @@ export class CompletionRunner {
    * barrier that drained 37.9s of queue — came after the scan. Only the scan
    * needs the barrier; the marker write that follows stays `wait: true` for
    * durability.
+   *
+   * `undrained` is true when the barrier spent its budget on Qdrant
+   * `wait_timeout` rounds (bd tea-rags-mcp-yf4je): the scan would then read
+   * writes still in flight, so the marker steps skip it and report
+   * `degraded / barrier-timeout` instead.
    */
-  private async drainQueuedPayloadWrites(physicalCollectionName: PhysicalCollectionName): Promise<number> {
+  private async drainQueuedPayloadWrites(
+    physicalCollectionName: PhysicalCollectionName,
+  ): Promise<{ readonly drainMs: number; readonly undrained: boolean }> {
     const startedAt = Date.now();
-    await this.deps.markerStore.awaitQueuedPayloadWrites(physicalCollectionName);
-    return Date.now() - startedAt;
+    const barrier = await this.deps.markerStore.awaitQueuedPayloadWrites(physicalCollectionName);
+    return { drainMs: Date.now() - startedAt, undrained: barrier?.kind === "timedOut" };
   }
 
   /**
@@ -674,12 +681,13 @@ export class CompletionRunner {
   ): Promise<{ readonly kind: "fileLevelWritten" }> {
     await this.timedStep("fileMarkers", async () => {
       const { filePhase, applier, markerStore } = this.deps;
-      const drainMs = await this.drainQueuedPayloadWrites(physicalCollectionName);
+      const { drainMs, undrained } = await this.drainQueuedPayloadWrites(physicalCollectionName);
       let scanMs = 0;
       let writeMs = 0;
       for (const ctx of contexts.values()) {
         const scanStartedAt = Date.now();
-        const fileUnenriched = await readUnenriched(physicalCollectionName, ctx.provider, "file");
+        // Behind an undrained queue the scan counts writes still in flight (yf4je) — not run.
+        const fileUnenriched = undrained ? 0 : await readUnenriched(physicalCollectionName, ctx.provider, "file");
         scanMs += Date.now() - scanStartedAt;
         const writeStartedAt = Date.now();
         // A failed pass-1 aggregate read (bd tea-rags-mcp-weno4) degrades the run
@@ -689,7 +697,8 @@ export class CompletionRunner {
         // ranks BELOW `failed` — the prefetch failure is still the stronger verdict.
         const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
           ? "failed"
-          : fileUnenriched > 0 ||
+          : undrained ||
+              fileUnenriched > 0 ||
               this.pass1AggregateReadFailures.has(ctx.key) ||
               this.deps.storeReadFailedProviderKeys?.has(ctx.key) === true
             ? "degraded"
@@ -706,6 +715,7 @@ export class CompletionRunner {
           // write used to overwrite markPrefetchFailed's errorMessage, leaving
           // `failed` with no cause anywhere (worker stderr is detached).
           ...(fileStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
+          ...(fileStatus === "degraded" && undrained ? { degradedReason: "barrier-timeout" as const } : {}),
         });
         writeMs += Date.now() - writeStartedAt;
       }
@@ -794,18 +804,19 @@ export class CompletionRunner {
   ): Promise<{ readonly kind: "allLevelsWritten" }> {
     await this.timedStep("chunkMarkers", async () => {
       const { filePhase, chunkPhase, markerStore } = this.deps;
-      const drainMs = await this.drainQueuedPayloadWrites(physicalCollectionName);
+      const { drainMs, undrained } = await this.drainQueuedPayloadWrites(physicalCollectionName);
       let scanMs = 0;
       let writeMs = 0;
       for (const ctx of contexts.values()) {
         const scanStartedAt = Date.now();
-        const chunkUnenriched = await readUnenriched(physicalCollectionName, ctx.provider, "chunk");
+        // Behind an undrained queue the scan counts writes still in flight (yf4je) — not run.
+        const chunkUnenriched = undrained ? 0 : await readUnenriched(physicalCollectionName, ctx.provider, "chunk");
         scanMs += Date.now() - scanStartedAt;
         const writeStartedAt = Date.now();
         let chunkStatus: ChunkFinalInput["status"];
         if (filePhase.hasPrefetchFailed(ctx.key) || chunkPhase.hasChunkEnrichmentFailed(ctx.key)) {
           chunkStatus = "failed";
-        } else if (chunkUnenriched > 0) {
+        } else if (undrained || chunkUnenriched > 0) {
           chunkStatus = "degraded";
         } else {
           chunkStatus = "completed";
@@ -818,6 +829,7 @@ export class CompletionRunner {
           durationMs: finalChunkMetrics.providerDurationsMs[ctx.key] ?? 0,
           unenrichedChunks: chunkUnenriched,
           ...(chunkStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
+          ...(chunkStatus === "degraded" && undrained ? { degradedReason: "barrier-timeout" as const } : {}),
         });
         writeMs += Date.now() - writeStartedAt;
       }

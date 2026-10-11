@@ -34,4 +34,11 @@ export interface IngestCodeConfig {
 
   /** True when user explicitly set INGEST_CHUNK_SIZE env var */
   userSetChunkSize?: boolean;
+
+  /**
+   * Total time (ms) enrichment completion waits for Qdrant to apply queued
+   * payload writes (`QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS`). Absent →
+   * `DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS` (bd tea-rags-mcp-yf4je).
+   */
+  payloadWriteBarrierBudgetMs?: number;
 }

@@ -67,7 +67,7 @@ export interface RelativePathExactBackfillStore {
   batchSetPayload: (
     collection: string,
     operations: { payload: Record<string, unknown>; points: (string | number)[] }[],
-  ) => Promise<void>;
+  ) => Promise<unknown>;
 }
 
 /** The backfill store plus the exact count the missing-twin probe needs. */

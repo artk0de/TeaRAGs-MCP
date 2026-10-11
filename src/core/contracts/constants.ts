@@ -34,3 +34,17 @@ export const EMBEDDING_CANARY_TEXT = "tea-rags embedding canary: resolve(callSit
  * here.
  */
 export const EMBEDDING_CANARY_MIN_COSINE = 0.999;
+
+/**
+ * Default total time (ms) the enrichment completion waits for Qdrant to apply
+ * its queued payload writes before deciding a terminal marker
+ * (`QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS`, bd tea-rags-mcp-yf4je).
+ *
+ * Qdrant ends one `wait: true` request after its own ~60 s with a successful
+ * `wait_timeout` answer, so the barrier is repeated round by round until
+ * `completed`; this budget bounds the rounds. Ten minutes: the slow taxdome
+ * recomputes drained past one 60 s round under load 15-100, and a run that
+ * spends the whole budget is reported `degraded` (reason `barrier-timeout`)
+ * rather than judged from a scan behind an undrained queue.
+ */
+export const DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS = 600_000;

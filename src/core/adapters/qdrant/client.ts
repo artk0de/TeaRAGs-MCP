@@ -46,7 +46,7 @@ import { SchemaMetadataPointStore } from "./schema-metadata-point.js";
 import { QdrantScroller } from "./scroller.js";
 import { QdrantSearchExecutor, type SearchResult } from "./search-executor.js";
 import { QdrantSnapshotStore } from "./snapshots.js";
-import type { SparseVector } from "./types.js";
+import type { QdrantUpdateStatus, SparseVector } from "./types.js";
 
 export type {
   CollectionInfo,
@@ -425,7 +425,7 @@ export class QdrantManager {
       wait?: boolean;
       ordering?: "weak" | "medium" | "strong";
     } = {},
-  ): Promise<void> {
+  ): Promise<QdrantUpdateStatus> {
     return this.points.batchSetPayload(collectionName, operations, options);
   }
 
@@ -441,8 +441,12 @@ export class QdrantManager {
     return this.points.batchDeletePayload(collectionName, operations, options);
   }
 
-  /** Resolve once every update queued on the collection before this call is visible to reads. */
-  async awaitQueuedUpdates(collectionName: string): Promise<void> {
+  /**
+   * Resolve once every update queued on the collection before this call is
+   * visible to reads — or once Qdrant's own wait ran out, which the returned
+   * `wait_timeout` reports (bd tea-rags-mcp-yf4je).
+   */
+  async awaitQueuedUpdates(collectionName: string): Promise<QdrantUpdateStatus> {
     return this.points.awaitQueuedUpdates(collectionName);
   }
 

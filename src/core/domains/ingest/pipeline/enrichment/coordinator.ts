@@ -304,8 +304,14 @@ export class EnrichmentCoordinator {
      * root, under the same condition.
      */
     private readonly codegraphCompaction?: CodegraphStorageCompactionRunner,
+    /**
+     * Total time the terminal markers wait for Qdrant to apply this run's queued
+     * payload writes (`QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS`, bd
+     * tea-rags-mcp-yf4je). Undefined → the marker store's documented default.
+     */
+    payloadWriteBarrierBudgetMs?: number,
   ) {
-    this.markerStore = new EnrichmentMarkerStore(qdrant);
+    this.markerStore = new EnrichmentMarkerStore(qdrant, { payloadWriteBarrierBudgetMs });
     this.providers = Array.isArray(providers) ? providers : [providers];
     this.executor = executor ?? new InlineEnrichmentExecutor();
     this.daemonGuard = daemonGuard ?? NOOP_DAEMON_GUARD;

@@ -176,6 +176,15 @@ function mapLevelWithRun(
 function renderTerminal(level: LevelRecord, levelName: "file" | "chunk"): EnrichmentLevelHealth {
   const base = pickMeta(level);
   if (level.status === "completed") return { ...base, status: "healthy" };
+  if (level.status === "degraded" && level.degradedReason === "barrier-timeout") {
+    // bd tea-rags-mcp-yf4je — decided without a scan; there is no count to report.
+    return {
+      ...base,
+      status: "degraded",
+      degradedReason: "barrier-timeout",
+      message: `Qdrant's payload-write barrier timed out before the ${levelName}-level scan; unenriched count not measured. Will recover on next reindex.`,
+    };
+  }
   if (level.status === "degraded") {
     return {
       ...base,

@@ -184,6 +184,7 @@ bottlenecks.
 | `QDRANT_TUNE_DELETE_BATCH_SIZE`        | Paths per delete batch                    | `500`   |
 | `QDRANT_TUNE_DELETE_CONCURRENCY`       | Parallel delete requests                  | `8`     |
 | `QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS`  | Flush timeout for delete accumulator (ms) | `1000`  |
+| `QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS`  | Total wait for queued enrichment writes before terminal markers (ms); spent → `degraded` / `barrier-timeout` | `600000` |
 
 ### Embedding Tune
 

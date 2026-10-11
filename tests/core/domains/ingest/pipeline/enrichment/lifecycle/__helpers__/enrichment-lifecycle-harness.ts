@@ -220,7 +220,7 @@ export class RecordingQdrant extends MockQdrantManager {
     collectionName: string,
     operations: { payload: Record<string, any>; points: (string | number)[]; key?: string }[],
     options?: any,
-  ): Promise<void> {
+  ): ReturnType<MockQdrantManager["batchSetPayload"]> {
     for (const op of operations) {
       if (op.key?.startsWith("enrichment.")) {
         this.events.push({ kind: "marker", key: op.key, runId: op.payload.runId as string | undefined });
@@ -229,7 +229,7 @@ export class RecordingQdrant extends MockQdrantManager {
         this.chunkSignalWrites.push({ points: [...op.points], payload: { ...op.payload } });
       }
     }
-    await super.batchSetPayload(collectionName, operations, options);
+    return super.batchSetPayload(collectionName, operations, options);
   }
 }
 
