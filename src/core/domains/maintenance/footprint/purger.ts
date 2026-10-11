@@ -1,7 +1,7 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
-import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
+import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import type { ArtifactId, FootprintContext, ResolvedCollection } from "./artifact.js";
 import type { CollectionFootprintFactory } from "./factory.js";
 

@@ -16,7 +16,7 @@ import type {
   CollectionAliasEntry,
   PhysicalCollectionName,
 } from "../../../../../src/core/contracts/types/collection-identity.js";
-import { physicalCollectionNamesListedByStorage } from "../../../../../src/core/infra/collection-name.js";
+import { physicalCollectionNamesListedByStorage } from "../../../../../src/core/primitives/ids/collection-identity.js";
 import type { IngestCodeConfig, TrajectoryIngestConfig } from "../../../../../src/core/types.js";
 
 /** Mock alias manager for QdrantManager */

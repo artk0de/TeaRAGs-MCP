@@ -9,6 +9,7 @@
 import type { Ignore } from "ignore";
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import { hashCollectionForPath, validatePath } from "../../../adapters/filesystem/path-canonicalization.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
@@ -22,7 +23,6 @@ import {
   type PathCollectionResolver,
   type RegistryGitState,
 } from "../../../contracts/types/registry.js";
-import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
 import {
   findGitToplevel,

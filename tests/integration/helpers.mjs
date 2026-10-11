@@ -8,6 +8,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { hashCollectionForPath } from "../../build/core/adapters/filesystem/path-canonicalization.js";
 // Facade composition for post-SOLID architecture.
 // CodeIndexer was split into IngestFacade (write side) + ExploreFacade (read side).
 import { createComposition } from "../../build/core/api/internal/composition.js";
@@ -15,7 +16,6 @@ import { ExploreFacade } from "../../build/core/api/internal/facades/explore-fac
 import { IngestFacade } from "../../build/core/api/internal/facades/ingest-facade.js";
 import { storeIndexingMarker } from "../../build/core/domains/ingest/pipeline/indexing-marker.js";
 import { CollectionRegistry } from "../../build/core/domains/maintenance/registry/index.js";
-import { hashCollectionForPath } from "../../build/core/infra/collection-name.js";
 import { StatsCache } from "../../build/core/infra/stats-cache.js";
 
 // ANSI colors

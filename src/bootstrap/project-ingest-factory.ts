@@ -145,7 +145,7 @@ function fingerprint(overlay: Record<string, string>): string {
 
 /**
  * Normalize exactly as the indexing pipeline does before it records the entry
- * (`infra/collection-name.ts#validatePath` = realpath of the resolved path), so
+ * (`adapters/filesystem/path-canonicalization.ts#validatePath` = realpath of the resolved path), so
  * a project addressed through a symlink, a relative path or a trailing slash
  * still finds ITS entry. A miss would fall through to "most recently indexed
  * project" and run this project under another project's tuning. Synchronous

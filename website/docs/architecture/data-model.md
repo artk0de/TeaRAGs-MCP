@@ -16,7 +16,7 @@ A Qdrant collection contains:
 1. **Chunk points** — one per indexed chunk, carrying vector(s) + payload (all fields below).
 2. **Schema metadata point** — a reserved point with `_type: "schema_metadata"` holding collection-level bookkeeping (see [Schema Versioning](#schema-versioning) below).
 
-Collection naming is derived from the codebase absolute path hash — see `src/core/infra/collection-name.ts` (`resolveCollectionName`).
+Collection naming is derived from the codebase absolute path hash — see `src/core/primitives/ids/collection-identity.ts` (`resolveCollectionName`).
 
 ## Chunk Payload
 

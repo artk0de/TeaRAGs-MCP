@@ -26,7 +26,7 @@ import type { PhysicalCollectionName } from "../../../contracts/types/collection
 import type { WorkingTree } from "../../../contracts/types/working-tree.js";
 import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
-import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
+import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import type {
   ReviewChangesRequest,
   ReviewChangesResult,

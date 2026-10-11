@@ -218,11 +218,11 @@ export type { IndexFreshnessVerdict } from "../../domains/maintenance/freshness/
 // ── Repo git state helpers (infra) — CLI default-branch autodetect ────
 export { detectDefaultBranch } from "../../infra/repo-git-state.js";
 
-// ── Collection-name helpers (infra/collection-name.ts) ────────────────
+// ── Path canonicalization (adapters/filesystem/path-canonicalization.ts) ─
 // `resolveCollectionName` is deliberately NOT here: a consumer that hashes a
 // path bypasses the registry and addresses a collection a relocated project no
 // longer uses (bd tea-rags-mcp-dxa9w). Consumers take the resolver below.
-export { validatePath } from "../../infra/collection-name.js";
+export { validatePath } from "../../adapters/filesystem/path-canonicalization.js";
 
 // ── Path → collection, the one owner (api/internal/collection-resolver.ts) ──
 // The resolver is runtime logic, not contract: `bootstrap` and `cli` reach the

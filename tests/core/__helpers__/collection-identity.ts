@@ -2,7 +2,7 @@
  * Fixture names for the collection-identity brands (bd tea-rags-mcp-39xca.1).
  *
  * Production mints `PhysicalCollectionName` / `CollectionAlias` only in
- * `src/core/infra/collection-name.ts`, and lint rejects the cast everywhere
+ * `src/core/primitives/ids/collection-identity.ts`, and lint rejects the cast everywhere
  * else. Tests need literal names without a Qdrant to resolve them against, so
  * this is the ONE test-side place that brands a string — fixtures call these
  * instead of casting.

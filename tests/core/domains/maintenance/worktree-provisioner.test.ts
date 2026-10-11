@@ -18,7 +18,7 @@ import {
   WorktreeProvisioner,
   type WorktreeProvisionerDeps,
 } from "../../../../src/core/domains/maintenance/worktree/worktree-provisioner.js";
-import { resolveCollectionName } from "../../../../src/core/infra/collection-name.js";
+import { resolveCollectionName } from "../../../../src/core/primitives/ids/collection-identity.js";
 
 function fakeArtifact(id: string, calls: string[], failOn?: string) {
   return {

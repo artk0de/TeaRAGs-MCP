@@ -22,8 +22,8 @@ import { QuarantineStore } from "../../../src/core/domains/ingest/sync/quarantin
 import { ShardedSnapshotManager } from "../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
 import { CollectionFootprintFactory } from "../../../src/core/domains/maintenance/footprint/factory.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
-import { resolveCollectionName } from "../../../src/core/infra/collection-name.js";
 import { StatsCache } from "../../../src/core/infra/stats-cache.js";
+import { resolveCollectionName } from "../../../src/core/primitives/ids/collection-identity.js";
 import {
   defaultTestConfig,
   defaultTrajectoryConfig,

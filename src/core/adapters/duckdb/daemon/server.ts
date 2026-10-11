@@ -1,5 +1,5 @@
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
-import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
+import { physicalCollectionNameFromDaemonRequest } from "../../../primitives/ids/index.js";
 import { CodegraphDaemonRequestAbortedError, daemonErrorToWire } from "../errors.js";
 import type { GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";

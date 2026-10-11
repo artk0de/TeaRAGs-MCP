@@ -15,6 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../__helpers__/collection-identity.js";
+import { validatePath } from "../../../src/core/adapters/filesystem/path-canonicalization.js";
 import { IngestFacade } from "../../../src/core/api/internal/facades/ingest-facade.js";
 import { INDEXING_METADATA_ID } from "../../../src/core/contracts/constants.js";
 import { IndexMetricsQuery } from "../../../src/core/domains/explore/queries/index-metrics.js";
@@ -22,7 +23,7 @@ import { EnrichmentCoordinator } from "../../../src/core/domains/ingest/pipeline
 import { mapMarkerToHealth } from "../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import type { EnrichmentProvider } from "../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 import { pipelineLog } from "../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
-import { resolveCollectionName, validatePath } from "../../../src/core/infra/collection-name.js";
+import { resolveCollectionName } from "../../../src/core/primitives/ids/collection-identity.js";
 import {
   cleanupTempDir,
   createTempTestDir,

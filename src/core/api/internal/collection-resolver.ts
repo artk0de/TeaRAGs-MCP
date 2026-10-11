@@ -11,17 +11,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
+import { validatePathSync } from "../../adapters/filesystem/path-canonicalization.js";
 import { resolveGitCommonDir } from "../../adapters/vcs/index.js";
 import type { CollectionEntry, PathCollectionResolver } from "../../contracts/types/registry.js";
 import type { WorkingTree } from "../../contracts/types/working-tree.js";
 import { CollectionNotFoundError } from "../../domains/explore/index.js";
 import type { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
-import {
-  collectionAliasOfRegistryEntry,
-  resolveCollectionName,
-  validatePathSync,
-} from "../../infra/collection-name.js";
 import { findGitToplevel } from "../../infra/repo-git-state.js";
+import { collectionAliasOfRegistryEntry, resolveCollectionName } from "../../primitives/ids/index.js";
 import {
   CollectionNotProvidedError,
   InvalidParameterError,

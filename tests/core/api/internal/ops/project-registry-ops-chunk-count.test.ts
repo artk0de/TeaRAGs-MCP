@@ -17,10 +17,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { validatePath } from "../../../../../src/core/adapters/filesystem/path-canonicalization.js";
 import { ProjectRegistryOps } from "../../../../../src/core/api/internal/ops/project-registry-ops.js";
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
-import { resolveCollectionName, validatePath } from "../../../../../src/core/infra/collection-name.js";
+import { resolveCollectionName } from "../../../../../src/core/primitives/ids/collection-identity.js";
 import { MockQdrantManager } from "../../../domains/ingest/__helpers__/test-helpers.js";
 
 const CHUNK_COUNT = 3;

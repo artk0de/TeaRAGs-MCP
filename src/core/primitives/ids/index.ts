@@ -1,8 +1,20 @@
 /**
  * Identity rules — primitives layer (`core/primitives/`), I/O-free and
  * importable by every core layer: the AST → symbolId classification rules
- * under `symbolid/`. Consumers import this barrel, never a file behind it.
+ * under `symbolid/` and the collection identity rule (`collection-identity.ts`).
+ * Consumers import this barrel, never a file behind it.
  */
+
+export {
+  collectionAliasEntryFromQdrant,
+  collectionAliasOfRegistryEntry,
+  findAliasTarget,
+  physicalCollectionNameFromDaemonRequest,
+  physicalCollectionNamesListedByStorage,
+  resolveCollectionName,
+  resolvePhysicalCollection,
+  versionedPhysicalCollectionName,
+} from "./collection-identity.js";
 
 export {
   INSTANCE_METHOD_SEPARATOR,

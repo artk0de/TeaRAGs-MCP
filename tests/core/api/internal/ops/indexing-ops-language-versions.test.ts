@@ -13,7 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { IndexingOps, type IndexingOpsDeps } from "../../../../../src/core/api/internal/ops/indexing-ops.js";
 import type { LanguageCodeVersions } from "../../../../../src/core/contracts/types/language.js";
-import { resolveCollectionName } from "../../../../../src/core/infra/collection-name.js";
+import { resolveCollectionName } from "../../../../../src/core/primitives/ids/collection-identity.js";
 import type { ChangeStats } from "../../../../../src/core/types.js";
 
 const changeStats: ChangeStats = {

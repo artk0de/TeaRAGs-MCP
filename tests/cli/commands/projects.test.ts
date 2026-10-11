@@ -17,7 +17,7 @@ import { projectsCommand, runInfo, runList, runRegister, runUnregister } from ".
 import { createColorizer } from "../../../src/cli/infra/color.js";
 import { SERVICE_POINT_TYPES } from "../../../src/core/adapters/qdrant/service-points.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
-import { resolveCollectionName } from "../../../src/core/infra/collection-name.js";
+import { resolveCollectionName } from "../../../src/core/primitives/ids/collection-identity.js";
 
 describe("CLI 'projects' command group", () => {
   let dir: string;

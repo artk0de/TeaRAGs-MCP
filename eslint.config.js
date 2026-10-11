@@ -543,27 +543,27 @@ export default tseslint.config(
 
   // ── Collection identity brands (bd tea-rags-mcp-39xca.1) ──────────
   // `PhysicalCollectionName` / `CollectionAlias` are minted ONLY in
-  // src/core/infra/collection-name.ts — by resolving an alias, constructing a
+  // src/core/primitives/ids/collection-identity.ts — by resolving an alias, constructing a
   // new generation, or reading a name back from the storage keyed by it — and,
   // for fixture strings, in the one test helper. A cast anywhere else skips the
   // resolution the brand exists to force.
   {
     files: ["src/**/*.ts", "tests/**/*.ts"],
-    ignores: ["src/core/infra/collection-name.ts", "tests/core/__helpers__/collection-identity.ts"],
+    ignores: ["src/core/primitives/ids/collection-identity.ts", "tests/core/__helpers__/collection-identity.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
         {
           selector: "TSAsExpression > TSTypeReference[typeName.name=/^(PhysicalCollectionName|CollectionAlias)$/]",
           message:
-            "Do not cast to a collection-identity brand. Mint it in src/core/infra/collection-name.ts " +
+            "Do not cast to a collection-identity brand. Mint it in src/core/primitives/ids/collection-identity.ts " +
             "(resolvePhysicalCollection, versionedPhysicalCollectionName, …); tests use " +
             "tests/core/__helpers__/collection-identity.ts.",
         },
         {
           selector: "TSTypeAssertion > TSTypeReference[typeName.name=/^(PhysicalCollectionName|CollectionAlias)$/]",
           message:
-            "Do not cast to a collection-identity brand. Mint it in src/core/infra/collection-name.ts " +
+            "Do not cast to a collection-identity brand. Mint it in src/core/primitives/ids/collection-identity.ts " +
             "(resolvePhysicalCollection, versionedPhysicalCollectionName, …); tests use " +
             "tests/core/__helpers__/collection-identity.ts.",
         },
