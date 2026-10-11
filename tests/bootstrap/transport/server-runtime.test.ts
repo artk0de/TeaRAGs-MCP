@@ -7,21 +7,21 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getZodConfig, parseAppConfig } from "../../src/bootstrap/config/index.js";
-import { createAppContext, loadPrompts } from "../../src/bootstrap/factory.js";
-import { prepareMcpServerRuntime } from "../../src/bootstrap/server-runtime.js";
+import { getZodConfig, parseAppConfig } from "../../../src/bootstrap/config/index.js";
+import { createAppContext, loadPrompts } from "../../../src/bootstrap/factory.js";
+import { prepareMcpServerRuntime } from "../../../src/bootstrap/transport/server-runtime.js";
 
-vi.mock("../../src/bootstrap/config/index.js", () => ({
+vi.mock("../../../src/bootstrap/config/index.js", () => ({
   parseAppConfig: vi.fn(),
   getZodConfig: vi.fn(),
 }));
 
-vi.mock("../../src/bootstrap/factory.js", () => ({
+vi.mock("../../../src/bootstrap/factory.js", () => ({
   createAppContext: vi.fn(),
   loadPrompts: vi.fn(),
 }));
 
-vi.mock("../../src/bootstrap/migrate.js", () => ({ migrateHomeDir: vi.fn() }));
+vi.mock("../../../src/bootstrap/migrate.js", () => ({ migrateHomeDir: vi.fn() }));
 
 describe("prepareMcpServerRuntime", () => {
   beforeEach(() => {

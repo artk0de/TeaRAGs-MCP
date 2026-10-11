@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { runMcpServer } from "./bootstrap/server-runtime.js";
+import { runMcpServer } from "./bootstrap/transport/server-runtime.js";
 
 runMcpServer({}).catch((error) => {
   console.error("Fatal error:", error);
