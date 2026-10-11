@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CommitDiffMemo } from "../../../src/core/infra/commit-diff-memo.js";
+import { CommitDiffMemo } from "../../../../src/core/primitives/collections/commit-diff-memo.js";
 
 const hunk = (n: number) => ({ oldStart: n, oldLines: 1, newStart: n, newLines: 1 });
 

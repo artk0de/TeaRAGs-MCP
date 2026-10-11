@@ -117,7 +117,7 @@ export default defineConfig({
         "src/core/adapters/qdrant/filters/index.ts",
         "src/mcp/prompts/index.ts",
         "src/core/adapters/duckdb/daemon/index.ts",
-        "src/core/infra/graph/index.ts",
+        "src/core/primitives/graph/index.ts",
         // I/O-heavy runtime (child process spawn, HTTP download — tested via integration)
         "src/core/adapters/qdrant/embedded/daemon.ts",
         "src/core/adapters/qdrant/embedded/download.ts",

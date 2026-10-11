@@ -8,10 +8,11 @@
  * walkCommits (via ChunkSignalOptions.diffMemo) so each (commit, file) pair is
  * diffed at most once per run.
  *
- * Stays in `infra` on purpose: TWO domains construct it — the ingest chunk phase
- * (`enrichment/chunk-phase.ts`) and the git churn-walk worker
+ * Lives in `primitives` on purpose: TWO domains construct it — the ingest chunk
+ * phase (`enrichment/chunk-phase.ts`) and the git churn-walk worker
  * (`trajectory/git/infra/churn-walk/worker.ts`). Moving it into either one would
- * create a `domains <-> domains` edge, so the foundation is the only legal home.
+ * create a `domains <-> domains` edge; it is pure and I/O-free, so primitives is
+ * its only legal home.
  * Consumers that merely read it depend on `CommitDiffMemoPort` in contracts.
  *
  * Memory bound: entries are LRU-capped at {@link CommitDiffMemo.DEFAULT_MAX_ENTRIES}
@@ -21,7 +22,7 @@
  * with the blobReader, so nothing outlives the run.
  */
 
-import type { CommitDiffHunk, CommitDiffMemoPort } from "../contracts/types/commit-diff-memo.js";
+import type { CommitDiffHunk, CommitDiffMemoPort } from "../../contracts/types/commit-diff-memo.js";
 
 export type { CommitDiffHunk };
 

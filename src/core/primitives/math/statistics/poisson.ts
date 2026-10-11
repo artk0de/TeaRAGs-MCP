@@ -5,7 +5,7 @@
  * upper tail judges a pair co-changing MORE than its configuration null
  * predicts. The foundation is its home so every trajectory sub-domain reads
  * the same math without reaching into another's internals — the same reason
- * Otsu's split lives in `infra/graph`.
+ * Otsu's split lives in `primitives/graph`.
  */
 
 import { logGamma } from "./log-gamma.js";

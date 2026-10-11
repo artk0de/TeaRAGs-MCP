@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/history.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
-import { CommitDiffMemo } from "../../../../../../src/core/infra/commit-diff-memo.js";
+import { CommitDiffMemo } from "../../../../../../src/core/primitives/collections/commit-diff-memo.js";
 
 // Wrap the real structuredPatch in a spy so recompute counts are observable.
 vi.mock("diff", async (importOriginal) => {

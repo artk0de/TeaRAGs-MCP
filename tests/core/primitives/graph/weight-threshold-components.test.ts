@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { weightThresholdComponents } from "../../../../src/core/infra/graph/index.js";
+import { weightThresholdComponents } from "../../../../src/core/primitives/graph/index.js";
 
 const e = (a: string, b: string, weight: number) => ({ a, b, weight });
 

@@ -6,8 +6,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { AdjacencyMap } from "../../../../src/core/infra/graph/tarjan-scc.js";
-import { transitiveVisibility } from "../../../../src/core/infra/graph/transitive-visibility.js";
+import type { AdjacencyMap } from "../../../../src/core/primitives/graph/tarjan-scc.js";
+import { transitiveVisibility } from "../../../../src/core/primitives/graph/transitive-visibility.js";
 
 function naiveVisibility(adjacency: AdjacencyMap) {
   const fanOut = new Map<string, number>();

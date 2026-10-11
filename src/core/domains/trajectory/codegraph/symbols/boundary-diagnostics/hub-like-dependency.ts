@@ -1,6 +1,6 @@
 import type { RelPath } from "../../../../../contracts/types/codegraph.js";
-import { resolveMajorityFlooredOtsuThreshold } from "../../../../../infra/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { resolveMajorityFlooredOtsuThreshold } from "../../../../../primitives/graph/index.js";
 import { MAIN_SEQUENCE_OTSU_MIN_POPULATION } from "./main-sequence.js";
 import { DEFAULT_SDP_MIN_CONNECTION_COUNT } from "./stable-dependencies.js";
 import type {

@@ -9,7 +9,7 @@ import {
   benjaminiHochbergRejectionCount,
   CONVENTIONAL_FDR_Q,
   poissonUpperTail,
-} from "../../../../src/core/infra/statistics/index.js";
+} from "../../../../../src/core/primitives/math/statistics/index.js";
 
 describe("statistics barrel", () => {
   it("carries the pair gate's BH procedure and its conventional q", () => {

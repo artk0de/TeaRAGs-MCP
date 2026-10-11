@@ -33,7 +33,7 @@ import {
   computeDependencyNorms,
   judgePlannedEdge,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
-import { signTestPValue } from "../../../../../../../src/core/infra/statistics/index.js";
+import { signTestPValue } from "../../../../../../../src/core/primitives/math/statistics/index.js";
 
 type PairCount = [roleSrc: string, roleDst: string, edgeCount: number];
 

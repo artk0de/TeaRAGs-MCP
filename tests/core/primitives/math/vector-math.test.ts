@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cosine } from "../../../src/core/infra/vector-math.js";
+import { cosine } from "../../../../src/core/primitives/math/vector-math.js";
 
 describe("cosine", () => {
   it("scores identical direction as 1 regardless of magnitude", () => {

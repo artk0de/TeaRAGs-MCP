@@ -40,7 +40,7 @@ import {
   benjaminiHochbergRejectionCount,
   CONVENTIONAL_FDR_Q,
   poissonUpperTail,
-} from "../../../../../infra/statistics/index.js";
+} from "../../../../../primitives/math/index.js";
 import { TEMPORAL_COCHANGE_MIN_SUPPORT } from "../cochange/index.js";
 
 /** The false-discovery rate BH controls — the conventional 5% FDR. */

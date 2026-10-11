@@ -12,8 +12,8 @@ import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import { sampleVectors, scrollAllPoints } from "../../../../adapters/qdrant/scroll.js";
 import type { StatsPoint } from "../../../../contracts/types/stats-accumulator.js";
 import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../../../contracts/types/trajectory.js";
-import { computeScoreBackground } from "../../../../infra/score-background.js";
 import type { StatsCache } from "../../../../infra/stats-cache.js";
+import { computeScoreBackground } from "../../../../primitives/math/index.js";
 import { judgeStatsContract } from "../../drift/stats-contract-drift.js";
 import type { StatsStore } from "../types.js";
 

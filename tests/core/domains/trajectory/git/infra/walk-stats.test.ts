@@ -14,7 +14,7 @@ import type {
   ChunkChurnWalkStats,
   WalkCommitDiscovery,
 } from "../../../../../../src/core/domains/trajectory/git/infra/walk-commits.js";
-import { CommitDiffMemo } from "../../../../../../src/core/infra/commit-diff-memo.js";
+import { CommitDiffMemo } from "../../../../../../src/core/primitives/collections/commit-diff-memo.js";
 
 const COMMIT_SHA = "a".repeat(40);
 const PARENT_SHA = "p".repeat(40);

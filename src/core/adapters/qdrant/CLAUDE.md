@@ -116,8 +116,8 @@
   `EmbeddingModelGuard#compareCanary` compares the two lengths before calling
   `cosine` and scores a mismatch as zero, which then fails the threshold. That
   `cosine` leaves the length question to its callers at all is the `cosine`
-  docblock in `infra/vector-math.ts` — the contract lives there, and the guard
-  is one of the two callers it names.
+  docblock in `primitives/math/vector-math.ts` — the contract lives there, and
+  the guard is one of the two callers it names.
 
 - **Entry points and what each costs.** `ensureMatch` — four call sites:
   `ExploreOps#searchCode`, `ExploreOps#resolveAndGuard`, `DocumentOps#add`,

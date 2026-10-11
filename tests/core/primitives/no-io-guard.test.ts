@@ -11,6 +11,7 @@
  * wave, and the guard takes no allowlist. Lifting them into bootstrap config is
  * the follow-up that adds that clause.
  */
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
 import ts from "typescript";
@@ -150,6 +151,40 @@ function findPrimitiveViolations(file: string, text: string): PrimitiveViolation
 function describeViolation(v: PrimitiveViolation): string {
   return `${v.file}:${v.line} ${v.what} — ${FIX_HINT}`;
 }
+
+/**
+ * Floor for the scan, so an emptied or mis-rooted directory cannot pass
+ * vacuously. Raise it as later waves move more modules in; never lower it.
+ */
+const MIN_PRIMITIVE_FILES = 20;
+
+function listPrimitiveFiles(): string[] {
+  const out: string[] = [];
+  const visit = (dir: string): void => {
+    for (const entry of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) visit(rel);
+      else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) out.push(rel);
+    }
+  };
+  visit(PRIMITIVES_DIR);
+  return out;
+}
+
+describe("primitives I/O-free guard — src/core/primitives", () => {
+  const files = listPrimitiveFiles();
+
+  it(`scans at least ${MIN_PRIMITIVE_FILES} primitives source files`, () => {
+    expect(files.length).toBeGreaterThanOrEqual(MIN_PRIMITIVE_FILES);
+  });
+
+  it("holds no I/O module, no upward layer edge, no runtime contracts edge, no I/O global", () => {
+    const violations = files.flatMap((file) =>
+      findPrimitiveViolations(file, readFileSync(join(ROOT, file), "utf8")).map(describeViolation),
+    );
+    expect(violations).toEqual([]);
+  });
+});
 
 const FIXTURE_FILE = `${PRIMITIVES_DIR}/math/__fixture__.ts`;
 

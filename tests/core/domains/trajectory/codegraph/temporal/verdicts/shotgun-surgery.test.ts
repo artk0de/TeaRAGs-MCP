@@ -52,7 +52,7 @@ import {
   shotgunSurgeryRetirementMinFiles,
   type ShotgunSurgeryInput,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
-import { binomialUpperTail, mulberry32 } from "../../../../../../../src/core/infra/statistics/index.js";
+import { binomialUpperTail, mulberry32 } from "../../../../../../../src/core/primitives/math/statistics/index.js";
 
 /** Component `c` holds `src/<c>/*.ts`. */
 function fileOf(component: string, name = "f"): RelPath {

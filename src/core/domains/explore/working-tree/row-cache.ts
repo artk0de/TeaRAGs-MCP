@@ -6,7 +6,7 @@
  * the whole bound is not held at all.
  */
 
-import { ByteBoundedLru } from "../../../infra/byte-bounded-lru.js";
+import { ByteBoundedLru } from "../../../primitives/collections/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { WorkingTreePassCache } from "./pass-cache.js";
 

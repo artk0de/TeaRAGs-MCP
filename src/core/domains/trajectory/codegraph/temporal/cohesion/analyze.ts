@@ -23,7 +23,7 @@
  */
 
 import type { TemporalSymbolCommitFileSnapshot } from "../../../../../contracts/types/codegraph.js";
-import { weightThresholdComponents } from "../../../../../infra/graph/index.js";
+import { weightThresholdComponents } from "../../../../../primitives/graph/index.js";
 import { compareCodePoints, TEMPORAL_COCHANGE_MIN_SUPPORT } from "../cochange/index.js";
 import { fenceMassCommits } from "./mass-commit-fence.js";
 

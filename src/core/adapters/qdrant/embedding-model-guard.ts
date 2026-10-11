@@ -23,7 +23,7 @@ import {
 } from "../../adapters/embeddings/errors.js";
 import { EMBEDDING_CANARY_MIN_COSINE, EMBEDDING_CANARY_TEXT, INDEXING_METADATA_ID } from "../../contracts/constants.js";
 import { isDebug } from "../../infra/runtime.js";
-import { cosine } from "../../infra/vector-math.js";
+import { cosine } from "../../primitives/math/index.js";
 import type { QdrantManager } from "./client.js";
 
 /** Canary as stored in the marker payload: the text embedded, and its vector. */

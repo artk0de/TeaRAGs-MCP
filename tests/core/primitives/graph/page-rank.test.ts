@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pageRank, type AdjacencyMap } from "../../../../src/core/infra/graph/page-rank.js";
+import { pageRank, type AdjacencyMap } from "../../../../src/core/primitives/graph/page-rank.js";
 
 describe("pageRank", () => {
   it("returns an empty result for an empty graph", () => {
