@@ -516,7 +516,21 @@ export interface TypeAbstractnessCensus {
  * tea-rags-mcp-0qaht.30); the naming lexicon reads it under the language's
  * `constant` casing role.
  */
-export type IdentifierDeclarationKind = "param" | "local" | "field" | "constant" | "return";
+export const IDENTIFIER_DECLARATION_KINDS = ["param", "local", "field", "constant", "return"] as const;
+
+export type IdentifierDeclarationKind = (typeof IDENTIFIER_DECLARATION_KINDS)[number];
+
+/** A kind that declares a VALUE — every kind but `return`, which types its owning method's result. */
+export type ValueIdentifierDeclarationKind = Exclude<IdentifierDeclarationKind, "return">;
+
+/**
+ * The value kinds, derived from {@link IDENTIFIER_DECLARATION_KINDS}: the
+ * ontology report reads concepts from exactly these rows, and the naming
+ * lexicon leaves exactly these free when no convention binds them. One list, so
+ * a new value kind reaches both readers by construction (bd tea-rags-mcp-q2eqs).
+ */
+export const VALUE_IDENTIFIER_DECLARATION_KINDS: readonly ValueIdentifierDeclarationKind[] =
+  IDENTIFIER_DECLARATION_KINDS.filter((kind): kind is ValueIdentifierDeclarationKind => kind !== "return");
 
 /**
  * Where a declared identifier's type came from. The pass emits `annotation` and

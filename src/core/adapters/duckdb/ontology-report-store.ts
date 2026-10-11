@@ -52,6 +52,7 @@
  * parameter as VARCHAR); every string is bound.
  */
 
+import { VALUE_IDENTIFIER_DECLARATION_KINDS } from "../../contracts/types/codegraph-extraction.js";
 import type {
   CodegraphOntologyReportStore,
   IdentifierDeclarationKind,
@@ -261,7 +262,7 @@ function ontologyConceptCte(q: OntologyReportQuery): SqlPredicate {
         SELECT rel_path, owner_symbol_id, kind, name, type_name, type_spelling, type_source, type_multiplicity, line
           FROM canon_resolved
          WHERE type_name IS NOT NULL
-           AND kind IN ('param', 'local', 'field', 'constant')
+           AND kind IN (${placeholders(VALUE_IDENTIFIER_DECLARATION_KINDS)})
            AND NOT regexp_full_match(type_name, '[A-Z]?')
            AND length(${BARE_NAME_SQL}) > 1
            AND NOT (kind IN ('param', 'local') AND ${UNUSED_MARKER_SQL})
@@ -269,7 +270,14 @@ function ontologyConceptCte(q: OntologyReportQuery): SqlPredicate {
            AND ${scope.sql}
            AND ${names.sql}
       )`,
-    params: [...resolved.params, ...canonical.params, ...nonConcept.params, ...scope.params, ...names.params],
+    params: [
+      ...resolved.params,
+      ...canonical.params,
+      ...VALUE_IDENTIFIER_DECLARATION_KINDS,
+      ...nonConcept.params,
+      ...scope.params,
+      ...names.params,
+    ],
   };
 }
 
