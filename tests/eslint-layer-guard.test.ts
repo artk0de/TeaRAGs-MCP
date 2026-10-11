@@ -58,6 +58,30 @@ const FIXTURES = {
     path: "src/core/infra/__layer_guard_infra_to_contracts_type__.ts",
     source: 'import type { AstNode } from "../contracts/types/ast.js";\n\nexport type Fixture = AstNode;\n',
   },
+  primitivesToDomains: {
+    path: "src/core/primitives/math/__layer_guard_primitives_to_domains__.ts",
+    source: `import "../../${STABLE_DOMAIN_MODULE}";\n`,
+  },
+  primitivesToAdapters: {
+    path: "src/core/primitives/math/__layer_guard_primitives_to_adapters__.ts",
+    source: 'import "../../adapters/qdrant/client.js";\n',
+  },
+  primitivesToNodeFs: {
+    path: "src/core/primitives/math/__layer_guard_primitives_to_node_fs__.ts",
+    source: 'import { readFileSync } from "node:fs";\n\nexport const read = readFileSync;\n',
+  },
+  primitivesToQdrantClient: {
+    path: "src/core/primitives/math/__layer_guard_primitives_to_qdrant_client__.ts",
+    source: 'import { QdrantClient } from "@qdrant/js-client-rest";\n\nexport const Client = QdrantClient;\n',
+  },
+  primitivesToContractsType: {
+    path: "src/core/primitives/math/__layer_guard_primitives_to_contracts_type__.ts",
+    source: 'import type { AstNode } from "../../contracts/types/ast.js";\n\nexport type Fixture = AstNode;\n',
+  },
+  contractsToPrimitives: {
+    path: "src/core/contracts/__layer_guard_contracts_to_primitives__.ts",
+    source: 'import "../primitives/graph/index.js";\n',
+  },
 } satisfies Record<string, Fixture>;
 
 /** The rule every zone is configured through — the only rule this test runs. */
@@ -122,5 +146,29 @@ describe("eslint layer guard — foundation zones", () => {
 
   it("rejects a relative infra -> domains import", () => {
     expect(reportFor(FIXTURES.infraToDomains)).toContain("infra is the lowest layer");
+  });
+
+  it("rejects a relative primitives -> domains import", () => {
+    expect(reportFor(FIXTURES.primitivesToDomains)).toContain("primitives is the lowest runtime layer");
+  });
+
+  it("rejects a relative primitives -> adapters import", () => {
+    expect(reportFor(FIXTURES.primitivesToAdapters)).toContain("primitives is the lowest runtime layer");
+  });
+
+  it("rejects a primitives -> node:fs import", () => {
+    expect(reportFor(FIXTURES.primitivesToNodeFs)).toContain("primitives are I/O-free");
+  });
+
+  it("rejects a primitives -> I/O client package import", () => {
+    expect(reportFor(FIXTURES.primitivesToQdrantClient)).toContain("primitives are I/O-free");
+  });
+
+  it("allows a primitives -> contracts type-only import", () => {
+    expect(reportFor(FIXTURES.primitivesToContractsType)).toBe("");
+  });
+
+  it("rejects a relative contracts -> primitives import", () => {
+    expect(reportFor(FIXTURES.contractsToPrimitives)).toContain("contracts is pure");
   });
 });
