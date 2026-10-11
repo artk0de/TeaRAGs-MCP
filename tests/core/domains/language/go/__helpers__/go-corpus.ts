@@ -19,12 +19,12 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 
 import { readManifestFiles } from "../../../../../../src/core/adapters/filesystem/dependency-manifests.js";
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { CallContext, FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/index.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 /** Write `files` (relPath → source) under a fresh temp directory and return it. */
 export function writeGoCorpus(files: Readonly<Record<string, string>>): string {

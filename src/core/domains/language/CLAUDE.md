@@ -150,11 +150,11 @@
   trap: `/usr/bin/time -l` prints `peak memory footprint` beside
   `maximum resident set size`, and every python record uses the second.
 - **Extraction has a pre-materialization gate and it reads the NATIVE tree.**
-  `fileIsInertForExtraction` (`infra/extraction-fast-path.ts`) asks
-  `descendantsOfType` whether a file bears any of its walker's
+  `fileIsInertForExtraction` (`adapters/tree-sitter/extraction-fast-path.ts`)
+  asks `descendantsOfType` whether a file bears any of its walker's
   `LanguageWalker.extractionBearingNodeTypes`; bearing none, the file is never
-  materialized. It sits in `infra/` because its two consumers cannot reach each
-  other — the codegraph provider
+  materialized. It sits in `adapters/tree-sitter/` because its two consumers
+  cannot reach each other — the codegraph provider
   (`domains/trajectory/codegraph/symbols/provider.ts`) and the oracle harness
   (`scripts/ts-codegraph-typechecker-oracle.ts`, whose walk the python oracle
   imports) — and those two must stay in step, or a measured number is taken over
@@ -629,31 +629,31 @@
   name.
 - **A grammar may register ONE child under TWO field names, and materialization
   keeps only one — so a walker can read types fine in tests and extract nothing
-  in production.** `materializeTree` (`infra/materialize.ts`) rebuilds each
-  node's field map from `fieldNameForChild(i)`, which answers a single name per
-  child; the NATIVE `childForFieldName` answers from tree-sitter's own table,
-  where a child may carry several. `tree-sitter-swift` does exactly this: a
-  `parameter`'s type child reports `name`, so on a materialized tree
-  `childForFieldName("type")` is `null` while the native tree answers correctly.
-  The pipeline walks ONLY materialized trees (the codegraph file extractor
-  materializes before extraction) and unit tests parse NATIVELY, so Swift's
-  annotated parameters, annotated locals and the whole stored-property channel
-  evaluated to nothing on a real index while every spec stayed green. Fix is to
-  read the type POSITIONALLY (the child after `:` in a parameter / annotation,
-  after `->` in a signature) and pin it with a materialized-vs-native parity
-  test — no other test shape can observe the difference. Measured clean over
-  ~2.5M real-corpus nodes for go, java, rust, python, ruby, javascript and bash;
-  typescript loses three pairs, all in type-position nodes no walker queries. So
-  this is a per-grammar hazard, not a global one — and swift is the outlier, at
-  15 lossy shapes. Both halves are now guarded for EVERY grammar in
-  `tests/core/domains/language/materialization/`: `extraction-parity.test.ts`
-  runs the production extraction path over both trees and requires identical
-  output, and `field-loss-inventory.test.ts` pins the `(nodeType, fieldName)`
-  pairs each grammar loses — including the ones no walker reads yet, so a
-  `tree-sitter-*` bump that introduces a collision fails on the bump commit.
-  Why: a walker that reads any field by name is one grammar quirk away from
-  silently extracting nothing, and the failure surfaces as "that language just
-  resolves poorly", never as a red test.
+  in production.** `materializeTree` (`adapters/tree-sitter/materialize.ts`)
+  rebuilds each node's field map from `fieldNameForChild(i)`, which answers a
+  single name per child; the NATIVE `childForFieldName` answers from
+  tree-sitter's own table, where a child may carry several. `tree-sitter-swift`
+  does exactly this: a `parameter`'s type child reports `name`, so on a
+  materialized tree `childForFieldName("type")` is `null` while the native tree
+  answers correctly. The pipeline walks ONLY materialized trees (the codegraph
+  file extractor materializes before extraction) and unit tests parse NATIVELY,
+  so Swift's annotated parameters, annotated locals and the whole
+  stored-property channel evaluated to nothing on a real index while every spec
+  stayed green. Fix is to read the type POSITIONALLY (the child after `:` in a
+  parameter / annotation, after `->` in a signature) and pin it with a
+  materialized-vs-native parity test — no other test shape can observe the
+  difference. Measured clean over ~2.5M real-corpus nodes for go, java, rust,
+  python, ruby, javascript and bash; typescript loses three pairs, all in
+  type-position nodes no walker queries. So this is a per-grammar hazard, not a
+  global one — and swift is the outlier, at 15 lossy shapes. Both halves are now
+  guarded for EVERY grammar in `tests/core/domains/language/materialization/`:
+  `extraction-parity.test.ts` runs the production extraction path over both
+  trees and requires identical output, and `field-loss-inventory.test.ts` pins
+  the `(nodeType, fieldName)` pairs each grammar loses — including the ones no
+  walker reads yet, so a `tree-sitter-*` bump that introduces a collision fails
+  on the bump commit. Why: a walker that reads any field by name is one grammar
+  quirk away from silently extracting nothing, and the failure surfaces as "that
+  language just resolves poorly", never as a red test.
 - **The capability drift-guard is one-sided.**
   `tests/core/domains/language/capability/drift-guard.test.ts` only checks
   renders of `LanguageFactory#capabilities` against the committed artefacts — it

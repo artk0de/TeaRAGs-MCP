@@ -19,9 +19,9 @@ import Parser from "tree-sitter";
 import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { AstNode } from "../../../../../../src/core/contracts/types/ast.js";
 import { walkOnce, walkPythonClassScopes } from "../../../../../../src/core/domains/language/python/walker/walker.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 const SOURCE = [
   "import os",

@@ -18,11 +18,11 @@ import Parser from "tree-sitter";
 import TsLang from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TypeScriptLanguage } from "../../../../../../src/core/domains/language/typescript/index.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 const grammar = (TsLang as unknown as { typescript: unknown }).typescript;
 

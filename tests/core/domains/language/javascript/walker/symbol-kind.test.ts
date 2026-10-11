@@ -9,10 +9,10 @@ import Parser from "tree-sitter";
 import JsLang from "tree-sitter-javascript";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import { JavaScriptLanguage } from "../../../../../../src/core/domains/language/javascript/index.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 function symbolKinds(src: string): Record<string, string | undefined> {
   const language = new JavaScriptLanguage();

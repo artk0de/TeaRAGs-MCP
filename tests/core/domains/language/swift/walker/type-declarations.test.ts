@@ -13,9 +13,9 @@ import Parser from "tree-sitter";
 import SwiftLang from "tree-sitter-swift";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { extractFromSwiftFile } from "../../../../../../src/core/domains/language/swift/walker/walker.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 function parse(src: string) {
   const p = new Parser();

@@ -29,6 +29,7 @@ import { extname, join } from "node:path";
 
 import Parser from "tree-sitter";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { AstNode, MaterializedTree } from "../../../../../../src/core/contracts/types/ast.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph-extraction.js";
 import type { CollectedSymbolRange } from "../../../../../../src/core/contracts/types/language.js";
@@ -39,7 +40,6 @@ import {
   CODEGRAPH_LANGUAGES,
   loadCodegraphGrammarSync,
 } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 /** Repository root — six levels up from `tests/core/domains/language/materialization/__helpers__/`. */
 const REPO_ROOT = join(import.meta.dirname, "../../../../../..");

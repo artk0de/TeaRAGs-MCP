@@ -56,6 +56,7 @@
 import Parser from "tree-sitter";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { SymbolDefinitionKind } from "../../../../../src/core/contracts/types/codegraph-symbols.js";
 import type { FileExtraction } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { LanguageWalker, WalkInput } from "../../../../../src/core/contracts/types/language.js";
@@ -78,7 +79,6 @@ import { RUST_EXTRACTION_PASSES } from "../../../../../src/core/domains/language
 import { extractFromRustFile } from "../../../../../src/core/domains/language/rust/walker/walker.js";
 import { TYPESCRIPT_EXTRACTION_PASSES } from "../../../../../src/core/domains/language/typescript/walker/passes.js";
 import { extractFromTypescriptFile } from "../../../../../src/core/domains/language/typescript/walker/walker.js";
-import { materializeTree } from "../../../../../src/core/infra/materialize.js";
 
 interface LanguageCase {
   readonly language: string;

@@ -18,6 +18,7 @@ import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
 import { resolvePackageFile } from "../../../../__helpers__/package-files.js";
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { AstNode } from "../../../../../../src/core/contracts/types/ast.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
@@ -26,7 +27,6 @@ import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/lang
 import { PythonLanguage } from "../../../../../../src/core/domains/language/python/index.js";
 import { readPythonTypeAbstractness } from "../../../../../../src/core/domains/language/python/walker/passes/type-abstractness.js";
 import { extractFileInMemory } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/in-memory-extraction.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "__fixtures__");

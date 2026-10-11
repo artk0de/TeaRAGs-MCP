@@ -18,10 +18,9 @@
  */
 import type Parser from "tree-sitter";
 
+import { fileIsInertForExtraction, materializeTree } from "../../../../adapters/tree-sitter/index.js";
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
 import type { CollectSymbolsFn, LanguageWalker, SymbolIdComposer } from "../../../../contracts/types/language.js";
-import { fileIsInertForExtraction } from "../../../../infra/extraction-fast-path.js";
-import { materializeTree } from "../../../../infra/materialize.js";
 
 /** The language collaborators one extraction runs with, all resolved by the caller. */
 export interface CodeFileExtractionCollaborators {

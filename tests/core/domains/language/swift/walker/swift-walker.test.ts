@@ -20,6 +20,7 @@ import Parser from "tree-sitter";
 import SwiftLang from "tree-sitter-swift";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import {
   resolveLocalBindingType,
   type SymbolDefinitionKind,
@@ -29,7 +30,6 @@ import { collectSymbols } from "../../../../../../src/core/domains/language/kern
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { swiftNameOf } from "../../../../../../src/core/domains/language/swift/walker/name-of.js";
 import { extractFromSwiftFile } from "../../../../../../src/core/domains/language/swift/walker/walker.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 function parse(src: string) {
   const p = new Parser();

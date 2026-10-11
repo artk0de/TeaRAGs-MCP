@@ -8,11 +8,11 @@ import Parser from "tree-sitter";
 import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { PythonLanguage } from "../../../../../../src/core/domains/language/python/index.js";
 import { symbolKindOf } from "../../../../../../src/core/domains/language/python/walker/symbol-kind.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 /**
  * `symbolId → symbolKind` for every chunk the COMPOSED walker emits, through the

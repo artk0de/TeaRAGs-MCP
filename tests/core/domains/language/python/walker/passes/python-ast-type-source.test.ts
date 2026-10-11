@@ -18,6 +18,7 @@ import Parser from "tree-sitter";
 import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { AstNode } from "../../../../../../../src/core/contracts/types/ast.js";
 import { TypeFactStore } from "../../../../../../../src/core/domains/language/kernel/type-fact-store.js";
 import type { TypeFact } from "../../../../../../../src/core/domains/language/kernel/type-facts.js";
@@ -33,7 +34,6 @@ import {
   pythonInferredReturnReader,
 } from "../../../../../../../src/core/domains/language/python/walker/passes/python-ast-type-source.js";
 import { pythonTypeChannels } from "../../../../../../../src/core/domains/language/python/walker/passes/python-type-channels.js";
-import { materializeTree } from "../../../../../../../src/core/infra/materialize.js";
 
 function parse(src: string): AstNode {
   const parser = new Parser();

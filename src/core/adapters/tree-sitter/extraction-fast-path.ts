@@ -9,8 +9,8 @@
  * of netbox's 11.6 s pass 1 and roughly 800 MB of live heap to learn it had
  * nothing to say. `extras/data/iata.py` cost another 0.41 s.
  *
- * The predicate lives in `infra/` for the reason {@link materializeTree} does,
- * and beside it: both `domains/trajectory` (the codegraph provider) and
+ * The predicate lives in `adapters/tree-sitter/` for the reason
+ * {@link materializeTree} does, and beside it: both `domains/trajectory` (the codegraph provider) and
  * `domains/language` consume it, and `trajectory -> domains/language` is a
  * boundary violation (`eslint.config.js`, `.claude/rules/domains-language.md`
  * §2 — reach language only through the injected factory). The QUESTION is

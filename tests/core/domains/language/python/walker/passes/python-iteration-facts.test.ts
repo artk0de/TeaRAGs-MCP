@@ -18,13 +18,13 @@ import Parser from "tree-sitter";
 import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../../../../../../../src/core/adapters/tree-sitter/materialize.js";
 import type { AstNode } from "../../../../../../../src/core/contracts/types/ast.js";
 import type { FileExtraction } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import type { TypeFact } from "../../../../../../../src/core/domains/language/kernel/type-facts.js";
 import { PythonLanguage } from "../../../../../../../src/core/domains/language/python/index.js";
 import { PYTHON_INLINE_TYPE_SOURCES } from "../../../../../../../src/core/domains/language/python/walker/passes/annotation-type-facts.js";
 import { pythonIterationTypeSource } from "../../../../../../../src/core/domains/language/python/walker/passes/python-iteration-facts.js";
-import { materializeTree } from "../../../../../../../src/core/infra/materialize.js";
 
 function parse(src: string): AstNode {
   const parser = new Parser();

@@ -26,9 +26,9 @@ import { join } from "node:path";
 import Parser from "tree-sitter";
 import { describe, expect, it } from "vitest";
 
+import { materializeTree } from "../src/core/adapters/tree-sitter/materialize.js";
 import type { LanguageSymbolResolver } from "../src/core/contracts/types/language.js";
 import { LanguageFactory } from "../src/core/domains/language/factory.js";
-import { materializeTree } from "../src/core/infra/materialize.js";
 import { navigators, REPO_ROOT } from "./navigator-files.js";
 
 /** This file, as a navigator must cite it. */

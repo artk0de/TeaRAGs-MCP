@@ -26,13 +26,13 @@ import { isDeepStrictEqual } from "node:util";
 
 import Parser from "tree-sitter";
 
+import { fileIsInertForExtraction } from "../../src/core/adapters/tree-sitter/extraction-fast-path.js";
+import { materializeTree } from "../../src/core/adapters/tree-sitter/materialize.js";
 import type { FileExtraction } from "../../src/core/contracts/types/codegraph.js";
 import type { InertFileExtractionFacets } from "../../src/core/contracts/types/language.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { loadCodegraphGrammarSync } from "../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
-import { fileIsInertForExtraction } from "../../src/core/infra/extraction-fast-path.js";
-import { materializeTree } from "../../src/core/infra/materialize.js";
 import { buildCorpusExclusionFilter, collectSourceFiles } from "../ts-codegraph-typechecker-oracle.js";
 
 const WALKED_EXTENSIONS: readonly string[] = Object.keys(CODEGRAPH_LANGUAGES);
