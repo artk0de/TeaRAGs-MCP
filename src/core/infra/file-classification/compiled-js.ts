@@ -20,8 +20,9 @@
 
 import { extname } from "node:path";
 
-/** Default longest-line length above which JS content is treated as minified. */
-export const DEFAULT_MINIFIED_LINE_LENGTH = 50_000;
+import { installedFileClassificationSettings } from "./settings.js";
+
+export { DEFAULT_MINIFIED_LINE_LENGTH } from "./settings.js";
 
 /**
  * JS-family extensions the content gate applies to — TypeScript's ESM / CJS
@@ -76,26 +77,16 @@ export function maxLineLength(code: string): number {
 }
 
 /**
- * Minified-line threshold. Overridable via `TEA_RAGS_MINIFIED_LINE_THRESHOLD`
- * (a positive integer). Read at call time — mirroring how `pool-defaults.ts`
- * reads `CHUNKER_WORKER_TIMEOUT_MS` — so tests / operators can flip it without a
- * module reload. An invalid / non-positive value falls back to the default.
- */
-function minifiedLineLengthThreshold(): number {
-  const raw = process.env.TEA_RAGS_MINIFIED_LINE_THRESHOLD;
-  if (raw !== undefined && raw.trim() !== "") {
-    const parsed = Number.parseInt(raw, 10);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
-  return DEFAULT_MINIFIED_LINE_LENGTH;
-}
-
-/**
  * Does this JS source look compiled (and therefore should NOT be indexed)?
- * Fires on a source-map comment OR a line longer than the minified threshold.
- * Pure given the content + current env; caller gates on {@link isJsFamilyPath}.
+ * Fires on a source-map comment OR a line longer than `minifiedLineLength` —
+ * the operator's `TEA_RAGS_MINIFIED_LINE_THRESHOLD` as bootstrap installed it
+ * (`./settings.ts`) unless the caller passes one. Pure given its arguments and
+ * the installed settings; caller gates on {@link isJsFamilyPath}.
  */
-export function isCompiledJsContent(code: string): boolean {
+export function isCompiledJsContent(
+  code: string,
+  minifiedLineLength: number = installedFileClassificationSettings().minifiedLineLength,
+): boolean {
   if (SOURCE_MAP_COMMENT.test(code)) return true;
-  return maxLineLength(code) > minifiedLineLengthThreshold();
+  return maxLineLength(code) > minifiedLineLength;
 }

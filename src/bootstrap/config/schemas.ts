@@ -9,6 +9,7 @@ import {
   defaultEnrichmentFilesPerThread,
 } from "../../core/domains/ingest/pipeline/infra/pool-defaults.js";
 import { defaultBlamePoolSize } from "../../core/domains/trajectory/git/index.js";
+import { DEFAULT_MINIFIED_LINE_LENGTH } from "../../core/infra/file-classification/index.js";
 import {
   booleanFromEnv,
   booleanFromEnvWithDefault,
@@ -312,10 +313,42 @@ export const qdrantTuneSchema = z.object({
   lowMemory: booleanFromEnvWithDefault(false),
 });
 
+/**
+ * The file classifier's operator knobs (bd tea-rags-mcp-82ztq), installed into
+ * the classifier by `createAppContext`. Process-owned: read straight from the
+ * env source, outside the registry env mechanism (no `REGISTRY_ENV_GROUPS`
+ * entry, never in `explicitEnvKeys`) — as they were when the classifier read
+ * them itself.
+ */
+export const fileClassificationSchema = z.object({
+  /** `TEA_RAGS_GENERATED_PATTERNS` — comma-separated gitignore globs, appended to the built-in generated set. */
+  userGeneratedPatterns: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  /** `TEA_RAGS_MINIFIED_LINE_THRESHOLD` — a positive integer; anything else keeps the default. */
+  minifiedLineLength: z
+    .string()
+    .optional()
+    .transform((raw) => {
+      if (raw !== undefined && raw.trim() !== "") {
+        const parsed = Number.parseInt(raw, 10);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      }
+      return DEFAULT_MINIFIED_LINE_LENGTH;
+    }),
+});
+
 export type CoreConfig = z.infer<typeof coreSchema>;
 export type IngestTuneConfig = z.infer<typeof ingestTuneSchema>;
 export type IngestConfig = z.infer<typeof ingestSchema>;
 export type CodegraphConfig = z.infer<typeof codegraphSchema>;
+export type FileClassificationConfig = z.infer<typeof fileClassificationSchema>;
 
 // These types are defined in core/contracts — Zod schemas stay here, interfaces live there
 export type {

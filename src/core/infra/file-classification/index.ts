@@ -13,5 +13,10 @@ export {
   GENERATED_PATTERNS,
   NON_PRODUCTION_PATTERNS,
   GENERATED_CONTENT_MARKERS,
-  USER_GENERATED_PATTERNS,
 } from "./patterns.js";
+export {
+  DEFAULT_FILE_CLASSIFICATION_SETTINGS,
+  installFileClassificationSettings,
+  installedFileClassificationSettings,
+  type FileClassificationSettings,
+} from "./settings.js";

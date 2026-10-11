@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   isCompiledJsContent,
@@ -73,31 +73,5 @@ describe("isCompiledJsContent", () => {
   it("does NOT match a sourceMappingURL substring embedded mid-line in a string literal", () => {
     const code = 'const note = "see sourceMappingURL= docs"; // not a real marker\n';
     expect(isCompiledJsContent(code)).toBe(false);
-  });
-});
-
-describe("isCompiledJsContent — threshold env override", () => {
-  const ENV = "TEA_RAGS_MINIFIED_LINE_THRESHOLD";
-  const original = process.env[ENV];
-
-  afterEach(() => {
-    if (original === undefined) delete process.env[ENV];
-    else process.env[ENV] = original;
-  });
-
-  it("uses a lowered threshold supplied via the env var", () => {
-    process.env[ENV] = "10";
-    // A 20-char single line is far below the 50k default but above 10.
-    expect(isCompiledJsContent("12345678901234567890")).toBe(true);
-  });
-
-  it("falls back to the default threshold when the env value is not a valid number", () => {
-    process.env[ENV] = "not-a-number";
-    expect(isCompiledJsContent("12345678901234567890")).toBe(false);
-  });
-
-  it("ignores a non-positive env value and keeps the default threshold", () => {
-    process.env[ENV] = "0";
-    expect(isCompiledJsContent("12345678901234567890")).toBe(false);
   });
 });

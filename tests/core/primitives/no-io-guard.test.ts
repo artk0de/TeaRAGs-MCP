@@ -6,10 +6,9 @@
  * and it cannot express "type-only" for the `contracts` edge. This guard reads
  * the source with the TypeScript compiler and pins all of those.
  *
- * `process.env` / `process.cwd()` reads are NOT checked here yet: two
- * pre-existing reads in the file classifier move into primitives in a later
- * wave, and the guard takes no allowlist. Lifting them into bootstrap config is
- * the follow-up that adds that clause.
+ * It also forbids `process.env` and `process.cwd()`: configuration is parsed by
+ * bootstrap and injected, never read by a primitive (bd tea-rags-mcp-82ztq
+ * lifted the file classifier's two env knobs into `bootstrap/config`).
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -58,7 +57,7 @@ const FORBIDDEN_LAYER_DIRS = [
 const CONTRACTS_DIR = "src/core/contracts";
 
 const FORBIDDEN_GLOBAL_CALLS = new Set(["fetch", "require"]);
-const FORBIDDEN_PROCESS_STREAMS = new Set(["stdout", "stderr"]);
+const FORBIDDEN_PROCESS_MEMBERS = new Set(["stdout", "stderr", "env", "cwd"]);
 
 interface PrimitiveViolation {
   file: string;
@@ -138,7 +137,7 @@ function findPrimitiveViolations(file: string, text: string): PrimitiveViolation
       ts.isPropertyAccessExpression(node) &&
       ts.isIdentifier(node.expression) &&
       node.expression.text === "process" &&
-      FORBIDDEN_PROCESS_STREAMS.has(node.name.text)
+      FORBIDDEN_PROCESS_MEMBERS.has(node.name.text)
     ) {
       violations.push({ file, line: lineOf(node), what: `touches process.${node.name.text}` });
     }
@@ -221,6 +220,10 @@ describe("primitives I/O-free guard — detector", () => {
     ['export const get = () => fetch("http://x");', "calls fetch()"],
     ['process.stdout.write("x");', "touches process.stdout"],
     ['process.stderr.write("x");', "touches process.stderr"],
+    ["const raw = process.env.TEA_RAGS_MINIFIED_LINE_THRESHOLD;", "touches process.env"],
+    ['const raw = process.env["TEA_RAGS_GENERATED_PATTERNS"];', "touches process.env"],
+    ["const { HOME } = process.env;", "touches process.env"],
+    ["const root = process.cwd();", "touches process.cwd"],
   ])("flags %s", (source, expected) => {
     expect(violationsIn(source)).toContain(expected);
   });
