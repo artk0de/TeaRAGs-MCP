@@ -145,6 +145,13 @@ describe("classifyNamingShape — CALLEE_DERIVED", () => {
     ).toBe("CALLEE_DERIVED");
   });
 
+  // bd tea-rags-mcp-0qaht.30 — a constant is a value bound to its initializer, like a local or field.
+  it("a constant bound to a call is callee-derived", () => {
+    expect(
+      classifyNamingShape({ name: "session", kind: "constant", casing: "camel", callee: { member: "makeSession" } }),
+    ).toBe("CALLEE_DERIVED");
+  });
+
   it("a bare verb callee (`Model.find`) derives no name", () => {
     expect(
       classifyNamingShape({

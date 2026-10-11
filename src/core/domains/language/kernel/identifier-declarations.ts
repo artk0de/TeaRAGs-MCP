@@ -56,6 +56,24 @@ export interface DeclaredIdentifierSite {
    * `Result` around `T`, an async function's `Promise` (bd tea-rags-mcp-bjzaf).
    */
   returnWrapper?: string;
+  /**
+   * `true` when the declaration sits at the source file's own level — a
+   * global, not a member or a body's local (bd tea-rags-mcp-0qaht.30). Such a
+   * site no chunk covers is owned by the file ({@link fileScopeOwnerId}) rather
+   * than dropped; every other site keeps the chunk ownership gate.
+   */
+  fileScope?: true;
+}
+
+/**
+ * The owner of a file-scope declaration no chunk covers: the file's `relPath`,
+ * the id a file is addressed by everywhere else — `find_symbol relativePath`,
+ * the file graph's nodes, `cg_identifiers.rel_path`. A file is not a symbol, so
+ * no composed symbolId names it, and a second spelling would only be a
+ * convention to keep in sync.
+ */
+export function fileScopeOwnerId(ctx: Pick<WalkContext, "relPath">): string {
+  return ctx.relPath;
 }
 
 /**
@@ -276,8 +294,9 @@ export function createIdentifierDeclarationFacetPass(syntax: IdentifierDeclarati
   }
 
   return {
+    // No early return on a file without chunks: a file-scope site still has its file as owner
+    // (a `Package.swift` declares only top-level constants), and every other site drops below.
     run: (root, ctx): Partial<FileExtraction> => {
-      if (ctx.chunks.length === 0) return {};
       const declarations: IdentifierDeclaration[] = [];
       const seen = new Set<string>();
       // Iterative pre-order in document order: children pushed in reverse so the
@@ -290,9 +309,11 @@ export function createIdentifierDeclarationFacetPass(syntax: IdentifierDeclarati
             if (!IDENTIFIER_LIKE.test(name)) continue;
             const line = site.nameNode.startPosition.row + 1;
             const isReturn = site.kind === "return";
-            const ownerSymbolId = isReturn
+            const chunkOwner = isReturn
               ? returnOwnerSymbolId(line, name, ctx.chunks)
               : innermostChunkSymbolId(line, ctx.chunks);
+            const ownerSymbolId =
+              chunkOwner === undefined && site.fileScope === true && !isReturn ? fileScopeOwnerId(ctx) : chunkOwner;
             if (ownerSymbolId === undefined) continue;
             const type = typeOf(site, syntax);
             // An unannotated function declares no return: the row would say nothing.

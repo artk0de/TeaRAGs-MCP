@@ -298,6 +298,23 @@ describe("DuckDbGraphClient#readOntologyReportSummary / #readOntologyReportSecti
     expect(synonyms?.[0].evidence).toEqual({ binding: 8 });
   });
 
+  // bd tea-rags-mcp-0qaht.30 — a constant (`static let`, a file-scope `let`) is a value of its type, as a field is.
+  it("type groups include constant rows as their own kind", async () => {
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "Sources/Session.swift",
+        rows: [
+          ...rows(3, typed("shared", "SessionStore", "constant"), 1),
+          ...rows(2, typed("instance", "SessionStore", "constant"), 10),
+        ],
+      },
+    ]);
+    const { synonyms } = await readReport(query({ sections: ["synonyms"], pathPrefixes: ["Sources/"] }));
+    expect(synonyms?.map((g) => [g.typeName, g.kind, g.n, g.names.map((n) => n.name)])).toEqual([
+      ["SessionStore", "constant", 5, ["shared", "instance"]],
+    ]);
+  });
+
   it("`names` narrows the summary read to those names; their judgement is the unnarrowed one", async () => {
     const all = await db.readOntologyReportSummary(query());
     const asked = await db.readOntologyReportSummary(query({ names: ["result", "user"] }));

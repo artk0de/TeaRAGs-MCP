@@ -560,6 +560,7 @@ const KIND_ROLE: Record<IdentifierDeclarationKind, IdentifierRole> = {
   param: "param",
   local: "local",
   field: "field",
+  constant: "constant",
   return: "method",
 };
 

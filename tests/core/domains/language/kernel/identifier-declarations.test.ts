@@ -251,4 +251,52 @@ describe("identifier declaration pass", () => {
     expect(innermostChunkSymbolId(8, c)).toBe("A#constructor");
     expect(innermostChunkSymbolId(20, c)).toBeUndefined();
   });
+
+  // bd tea-rags-mcp-0qaht.30 — a site the syntax marks file-scope has the FILE as its owner when no
+  // chunk covers it, even in a file with no chunk at all; every other site keeps the ownership gate.
+  describe("file-scope owner fallback", () => {
+    const fileScopeSyntax: IdentifierDeclarationSyntax = {
+      ...syntax,
+      rules: [
+        {
+          nodeType: "variable_declarator",
+          collect: (node) => {
+            const nameNode = node.childForFieldName("name");
+            if (nameNode === null) return [];
+            const atFileLevel = node.parent?.parent?.type === "program";
+            return [
+              atFileLevel
+                ? { nameNode, kind: "constant" as const, fileScope: true as const }
+                : { nameNode, kind: "local" as const },
+            ];
+          },
+        },
+      ],
+    };
+    const runFileScope = (code: string, chunks: WalkContext["chunks"]) => {
+      const p = new Parser();
+      p.setLanguage(TS.typescript);
+      return createIdentifierDeclarationFacetPass(fileScopeSyntax).run(p.parse(code).rootNode, {
+        code,
+        relPath: "src/consts.ts",
+        language: "typescript",
+        chunks,
+      });
+    };
+
+    it("owns an uncovered file-scope site by the file's relPath, also when the file has no chunks", () => {
+      expect(runFileScope("const AF = 1;", []).identifierDeclarations).toEqual([
+        { name: "AF", kind: "constant", line: 1, ownerSymbolId: "src/consts.ts" },
+      ]);
+    });
+
+    it("keeps a covering chunk's ownership and still drops an uncovered site that is not file-scope", () => {
+      const code = ["const AF = 1;", "function f() {", "  const x = 2;", "}", "const B = 3;"].join("\n");
+      const out = runFileScope(code, [{ symbolId: "B", startLine: 5, endLine: 5, scope: [] }]);
+      expect(out.identifierDeclarations).toEqual([
+        { name: "AF", kind: "constant", line: 1, ownerSymbolId: "src/consts.ts" },
+        { name: "B", kind: "constant", line: 5, ownerSymbolId: "B" },
+      ]);
+    });
+  });
 });

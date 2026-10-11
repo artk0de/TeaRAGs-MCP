@@ -511,9 +511,12 @@ export interface TypeAbstractnessCensus {
  * What a declared identifier is to its owning symbol. `return` is the symbol's
  * own declared return type: the pass emits it from a syntactic return
  * annotation, the sink-time row builder from the language's return-type
- * channels.
+ * channels. `constant` is an immutable binding that belongs to no instance and
+ * no call — a file-scope `let`, or a type-level `static let` (bd
+ * tea-rags-mcp-0qaht.30); the naming lexicon reads it under the language's
+ * `constant` casing role.
  */
-export type IdentifierDeclarationKind = "param" | "local" | "field" | "return";
+export type IdentifierDeclarationKind = "param" | "local" | "field" | "constant" | "return";
 
 /**
  * Where a declared identifier's type came from. The pass emits `annotation` and
@@ -557,7 +560,11 @@ export interface IdentifierDeclaration {
   readonly kind: IdentifierDeclarationKind;
   /** 1-based line of the declared name. */
   readonly line: number;
-  /** The innermost chunk containing the declaration; for a `return`, the function's own chunk. */
+  /**
+   * The innermost chunk containing the declaration; for a `return`, the function's own chunk.
+   * A file-scope declaration no chunk covers is owned by its FILE — the `relPath`
+   * a file is addressed by everywhere else (bd tea-rags-mcp-0qaht.30).
+   */
   readonly ownerSymbolId: string;
   readonly typeName?: string;
   readonly typeSource?: Extract<IdentifierTypeSource, "annotation" | "constructor">;
