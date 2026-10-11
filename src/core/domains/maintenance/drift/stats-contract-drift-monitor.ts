@@ -16,9 +16,9 @@
  */
 
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
+import { judgeStatsContract } from "../../../contracts/stats-contract.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
-import { judgeStatsContract } from "./stats-contract-drift.js";
 
 export class StatsContractDriftMonitor implements IndexDriftMonitor {
   readonly axis = "statsContract" as const;
