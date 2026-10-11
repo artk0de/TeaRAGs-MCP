@@ -14,6 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
+import { isDebug } from "../../../../../primitives/diagnostics/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../../types.js";
 import { ProcessTransport } from "../../infra/process-transport.js";
 import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
@@ -95,6 +96,10 @@ export class ChunkerPool {
       {
         ...config,
         languageModulePath: LANGUAGE_MODULE_PATH,
+        // A forked child has its own module registry, so the debug flag starts
+        // false there; the worker entry adopts this via `applyWorkerDebug`
+        // (bd tea-rags-mcp-372we).
+        debug: isDebug(),
       },
       // Preserve "ChunkerPool"-flavored error messages in user-facing rejections
       // and `PipelineNotStartedError` — the consumer's identity, not the
