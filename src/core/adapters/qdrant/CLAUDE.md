@@ -190,6 +190,19 @@
   candidate's live payload; rewriting a false candidate only leaves another dead
   version behind (bd tea-rags-mcp-ejio7).
 
+- **A `wait: true` write that Qdrant answers `wait_timeout` is queued, not
+  applied, and the ONE loop that waits it out is `awaitWriteBarrier`
+  (`write-barrier.ts`).** `QdrantManager#awaitWriteBarrier` binds it to the
+  manager's budget (`QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS`); the enrichment
+  marker store binds it to its own. Each caller owns what an exhausted budget
+  means: `QdrantManager#createPayloadIndex` logs `PAYLOAD_INDEX_UNCONFIRMED` and
+  does not fail (the index may still be building), `backfillRelativePathExact`
+  counts `unconfirmedWrites` in its outcome (the gate then answers no and heals
+  again on the next probe), and `domains/ingest/pipeline/indexing-marker.ts`
+  logs the completion marker and throws on the pending-seed rewrite. A new
+  waited write reads the returned `QdrantUpdateStatus`; it never grows a second
+  loop (bd tea-rags-mcp-wjyaf).
+
 ## Gotchas
 
 - **The canary throw puts a description where the error expects a model name.**

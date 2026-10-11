@@ -60,7 +60,7 @@ export class SchemaV20RelativePathExactKeyword implements Migration {
 
   async apply(): Promise<StepResult> {
     const { withBoth } = await probeRelativePathExactPresence(this.store, this.collection);
-    const backfilled = await backfillRelativePathExact(this.store, this.collection);
+    const { backfilled, unconfirmedWrites } = await backfillRelativePathExact(this.store, this.collection);
 
     await this.store.ensureIndex(this.collection, RELATIVE_PATH_EXACT_KEY, "keyword");
     const complete = await ensureRelativePathExactIndexComplete(
@@ -73,7 +73,7 @@ export class SchemaV20RelativePathExactKeyword implements Migration {
     );
     return {
       applied: [
-        `${RELATIVE_PATH_EXACT_KEY} backfilled on ${backfilled} points`,
+        `${RELATIVE_PATH_EXACT_KEY} backfilled on ${backfilled} points${unconfirmedWrites > 0 ? ` (${unconfirmedWrites} writes unconfirmed by Qdrant; the gate heals the rest on first use)` : ""}`,
         `${RELATIVE_PATH_EXACT_KEY}:keyword${complete ? "" : " (index still incomplete after re-create)"}`,
       ],
     };

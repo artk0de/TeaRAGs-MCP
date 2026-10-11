@@ -251,7 +251,9 @@ async function resolveInfrastructure(
           storagePath: resolution.storagePath,
         }
       : undefined;
-  const qdrant = new QdrantManager(resolution.url, config.qdrantApiKey, reconnect, daemon);
+  const qdrant = new QdrantManager(resolution.url, config.qdrantApiKey, reconnect, daemon, {
+    writeBarrierBudgetMs: zodConfig.qdrantTune.writeBarrierBudgetMs,
+  });
   const embeddedRelease = resolution.mode === "embedded" ? resolution.release : undefined;
 
   // Initialize debug logger with DI paths before any pipeline work

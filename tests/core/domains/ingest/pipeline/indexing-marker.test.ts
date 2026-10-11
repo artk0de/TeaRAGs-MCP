@@ -5,6 +5,7 @@ import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constant
 import { WorktreeSeedMarkerUnreadableError } from "../../../../../src/core/domains/ingest/errors.js";
 import {
   clearWorktreeSeedPending,
+  markWorktreeSeedPending,
   readWorktreeSeedPending,
   readWorktreeSeedPendingOrThrow,
   storeIndexingMarker,
@@ -288,5 +289,62 @@ describe("pending worktree seed on the marker (bd k8gac)", () => {
       [{ keys: ["worktreeSeedPending"], points: [INDEXING_METADATA_ID] }],
       { wait: true },
     );
+  });
+});
+
+// bd tea-rags-mcp-wjyaf — a waited marker write Qdrant answers with `wait_timeout` is queued, not applied.
+describe("marker writes under wait_timeout (bd wjyaf)", () => {
+  const drained = { kind: "drained", rounds: 2, waitedMs: 5 } as const;
+  const timedOut = { kind: "timedOut", rounds: 3, waitedMs: 9 } as const;
+  let errors: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    errors.mockClear();
+  });
+
+  const completionQdrant = (status: string, outcome: unknown) => ({
+    setPayload: vi.fn().mockResolvedValue(status),
+    awaitWriteBarrier: vi.fn().mockResolvedValue(outcome),
+    getCollectionInfo: vi.fn(),
+    addPoints: vi.fn(),
+    addPointsWithSparse: vi.fn(),
+  });
+  const embeddings = { getDimensions: () => 4, getModel: () => "m" };
+
+  it("completion marker, completed: no barrier, nothing logged", async () => {
+    const qdrant = completionQdrant("completed", drained);
+    await storeIndexingMarker(qdrant as never, embeddings as never, "col", true);
+
+    expect(qdrant.awaitWriteBarrier).not.toHaveBeenCalled();
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("completion marker, wait_timeout then drained: confirmed through the barrier, nothing logged", async () => {
+    const qdrant = completionQdrant("wait_timeout", drained);
+    await storeIndexingMarker(qdrant as never, embeddings as never, "col", true);
+
+    expect(qdrant.awaitWriteBarrier).toHaveBeenCalledWith("col");
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("completion marker, always wait_timeout: logs MARKER_UPDATE_UNCONFIRMED and does not recreate the point", async () => {
+    const qdrant = completionQdrant("wait_timeout", timedOut);
+    await expect(storeIndexingMarker(qdrant as never, embeddings as never, "col", true)).resolves.toBeUndefined();
+
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining("MARKER_UPDATE_UNCONFIRMED"));
+    expect(qdrant.addPoints).not.toHaveBeenCalled();
+  });
+
+  it("pending-seed rewrite, always wait_timeout: throws — an unpersisted debt must not read as settled", async () => {
+    const qdrant = completionQdrant("wait_timeout", timedOut);
+
+    await expect(markWorktreeSeedPending(qdrant as never, "col", {} as never)).rejects.toThrow(/did not confirm/i);
+  });
+
+  it("pending-seed rewrite, wait_timeout then drained: resolves", async () => {
+    const qdrant = completionQdrant("wait_timeout", drained);
+
+    await expect(markWorktreeSeedPending(qdrant as never, "col", {} as never)).resolves.toBeUndefined();
   });
 });

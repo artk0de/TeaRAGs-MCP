@@ -14,6 +14,7 @@
 import { InfraError } from "../errors.js";
 import type { QdrantConnection } from "./connection.js";
 import { QdrantOperationError, QdrantUnavailableError } from "./errors.js";
+import { foldUpdateStatus } from "./write-barrier.js";
 
 /**
  * One payload field index as Qdrant reports it in a collection's
@@ -28,7 +29,16 @@ export interface PayloadFieldIndex {
 }
 
 export class QdrantPayloadIndexManager {
-  constructor(private readonly connection: QdrantConnection) {}
+  /**
+   * `onUnconfirmedIndex` runs when a waited creation answered `wait_timeout`:
+   * the index may still be building, and what to do about that (confirm it
+   * through the write barrier, log it) belongs to the manager that owns the
+   * barrier budget. It must not throw — a slow index never fails indexing.
+   */
+  constructor(
+    private readonly connection: QdrantConnection,
+    private readonly onUnconfirmedIndex: (collectionName: string, fieldName: string) => Promise<void> = async () => {},
+  ) {}
 
   /**
    * Create a payload index on a field for faster filtering.
@@ -42,13 +52,15 @@ export class QdrantPayloadIndexManager {
     fieldName: string,
     fieldSchema: "keyword" | "integer" | "float" | "bool" | "geo" | "datetime" | "text" | "uuid",
   ): Promise<void> {
-    await this.connection.call(async () =>
+    const result = await this.connection.call(async () =>
       this.connection.client.createPayloadIndex(collectionName, {
         field_name: fieldName,
         field_schema: fieldSchema,
         wait: true,
       }),
     );
+    // `wait_timeout`: the index is still being built (bd tea-rags-mcp-wjyaf).
+    if (foldUpdateStatus(result) === "wait_timeout") await this.onUnconfirmedIndex(collectionName, fieldName);
   }
 
   /**

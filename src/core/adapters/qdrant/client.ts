@@ -30,6 +30,7 @@
 
 import type { QdrantClient } from "@qdrant/js-client-rest";
 
+import { DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS } from "../../contracts/constants.js";
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { QdrantAliasManager } from "./aliases.js";
 import {
@@ -47,6 +48,7 @@ import { QdrantScroller } from "./scroller.js";
 import { QdrantSearchExecutor, type SearchResult } from "./search-executor.js";
 import { QdrantSnapshotStore } from "./snapshots.js";
 import type { QdrantUpdateStatus, SparseVector } from "./types.js";
+import { awaitWriteBarrier, type PayloadWriteBarrierOutcome } from "./write-barrier.js";
 
 export type {
   CollectionInfo,
@@ -57,7 +59,13 @@ export type {
   SparseVector,
 };
 
+export interface QdrantManagerOptions {
+  /** Total write-barrier budget (ms); undefined → DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS. */
+  readonly writeBarrierBudgetMs?: number;
+}
+
 export class QdrantManager {
+  private readonly writeBarrierBudgetMs: number;
   private readonly connection: QdrantConnection;
   private readonly collections: QdrantCollectionAdmin;
   private readonly payloadIndexes: QdrantPayloadIndexManager;
@@ -72,10 +80,14 @@ export class QdrantManager {
     apiKey?: string,
     reconnect?: () => Promise<string | null>,
     daemon?: EmbeddedDaemonProbe,
+    options: QdrantManagerOptions = {},
   ) {
+    this.writeBarrierBudgetMs = options.writeBarrierBudgetMs ?? DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS;
     this.connection = new QdrantConnection(url, apiKey, reconnect, daemon);
     this.collections = new QdrantCollectionAdmin(this.connection);
-    this.payloadIndexes = new QdrantPayloadIndexManager(this.connection);
+    this.payloadIndexes = new QdrantPayloadIndexManager(this.connection, async (collection, field) =>
+      this.confirmTimedOutPayloadIndex(collection, field),
+    );
     // One gate per manager, shared by the point store and every domain reader
     // that asks through `servesRelativePathExact`, so they share one cache.
     const metadataPoint = new SchemaMetadataPointStore(this);
@@ -89,6 +101,7 @@ export class QdrantManager {
         scrollPayloadPages: (collection, request) =>
           this.scrollPayloadPages(collection, request.payloadInclude, request.pageSize, request.filter),
         batchSetPayload: async (collection, operations) => this.batchSetPayload(collection, operations, { wait: true }),
+        confirmQueuedWrites: async (collection) => this.awaitWriteBarrier(collection),
       },
       keywordIndex: {
         listPayloadIndexes: async (collection) => this.listPayloadIndexes(collection),
@@ -409,7 +422,7 @@ export class QdrantManager {
       wait?: boolean;
       ordering?: "weak" | "medium" | "strong";
     },
-  ): Promise<void> {
+  ): Promise<QdrantUpdateStatus> {
     return this.points.setPayload(collectionName, payload, options);
   }
 
@@ -448,6 +461,43 @@ export class QdrantManager {
    */
   async awaitQueuedUpdates(collectionName: string): Promise<QdrantUpdateStatus> {
     return this.points.awaitQueuedUpdates(collectionName);
+  }
+
+  /**
+   * Wait for every update queued on the collection to apply, repeating
+   * `wait_timeout` rounds under this manager's write-barrier budget
+   * (`QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS`). The ONE loop is `awaitWriteBarrier`
+   * in `./write-barrier.ts`; this binds it to the manager's client, budget and
+   * the adapter's log channel. What an exhausted budget means is the caller's
+   * decision (bd tea-rags-mcp-wjyaf).
+   */
+  async awaitWriteBarrier(collectionName: string): Promise<PayloadWriteBarrierOutcome> {
+    return awaitWriteBarrier(this, collectionName, {
+      budgetMs: this.writeBarrierBudgetMs,
+      log: {
+        timedOutRound: (fields) => {
+          console.error(`[Qdrant] PAYLOAD_WRITE_BARRIER_TIMED_OUT ${JSON.stringify(fields)}`);
+        },
+        failed: (fields) => {
+          console.error(`[Qdrant] PAYLOAD_WRITE_BARRIER_FAILED ${JSON.stringify(fields)}`);
+        },
+      },
+    });
+  }
+
+  /**
+   * A waited payload-index creation Qdrant answered with `wait_timeout` is still
+   * being built. Updates apply in submission order, so the barrier after it
+   * confirms it; one that spends its budget only logs PAYLOAD_INDEX_UNCONFIRMED —
+   * a slow index must not fail indexing, and filters on the field full-scan until
+   * it finishes.
+   */
+  private async confirmTimedOutPayloadIndex(collectionName: string, fieldName: string): Promise<void> {
+    const barrier = await this.awaitWriteBarrier(collectionName);
+    if (barrier.kind === "drained") return;
+    console.error(
+      `[Qdrant] PAYLOAD_INDEX_UNCONFIRMED ${JSON.stringify({ collection: collectionName, field: fieldName, barrier: barrier.kind })}`,
+    );
   }
 
   /** Delete payload keys from all points (or filtered subset). */

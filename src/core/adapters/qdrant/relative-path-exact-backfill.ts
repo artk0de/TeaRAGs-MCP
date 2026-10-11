@@ -29,6 +29,7 @@
  */
 
 import { RELATIVE_PATH_EXACT_KEY } from "../../contracts/relative-path-exact.js";
+import type { PayloadWriteBarrierOutcome } from "./write-barrier.js";
 
 /**
  * CANDIDATES for the backfill: points that have a `relativePath` and (per the
@@ -64,10 +65,28 @@ export interface RelativePathExactBackfillStore {
     collection: string,
     request: { payloadInclude: string[]; filter?: Record<string, unknown>; pageSize?: number },
   ) => AsyncIterable<{ id: string | number; payload: Record<string, unknown> }[]>;
+  /** A waited write; answers Qdrant's update status — `wait_timeout` means queued, not applied. */
   batchSetPayload: (
     collection: string,
     operations: { payload: Record<string, unknown>; points: (string | number)[] }[],
   ) => Promise<unknown>;
+  /**
+   * Confirms a write that answered `wait_timeout` (the write barrier, bd
+   * tea-rags-mcp-wjyaf). A store without one cannot confirm, so a timed-out
+   * write counts as unconfirmed.
+   */
+  confirmQueuedWrites?: (collection: string) => Promise<PayloadWriteBarrierOutcome>;
+}
+
+/**
+ * What a backfill walk did: `backfilled` points written, and how many of its
+ * waited writes stayed `unconfirmedWrites` — answered `wait_timeout` and not
+ * confirmed by the write barrier within its budget. A caller that needs the
+ * twins visible next must treat `unconfirmedWrites > 0` as "not healed yet".
+ */
+export interface RelativePathExactBackfillOutcome {
+  backfilled: number;
+  unconfirmedWrites: number;
 }
 
 /** The backfill store plus the exact count the missing-twin probe needs. */
@@ -120,21 +139,24 @@ export async function probeRelativePathExactPresence(
 
 /**
  * Write the twin onto every point whose LIVE payload lacks it (or carries a
- * different value), grouped by path; returns how many points were written.
+ * different value), grouped by path; returns how many points were written (and how many writes stayed unconfirmed).
  *
  * Candidates come from {@link RELATIVE_PATH_EXACT_MISSING_FILTER}; each one's
  * live payload is checked before it is written, so a false candidate (a point
  * nominated by its unvacuumed dead version) costs a read and never a write —
  * a rewrite would only leave another dead version behind. With `missing`
  * known (the probe's count), the walk stops once that many points are written
- * instead of reading every remaining false candidate.
+ * instead of reading every remaining false candidate. A write Qdrant answered
+ * `wait_timeout` is confirmed through the store's barrier or counted in the
+ * outcome's `unconfirmedWrites` (bd tea-rags-mcp-wjyaf).
  */
 export async function backfillRelativePathExact(
   store: RelativePathExactBackfillStore,
   collection: string,
   options: { missing?: number } = {},
-): Promise<number> {
+): Promise<RelativePathExactBackfillOutcome> {
   let backfilled = 0;
+  let unconfirmedWrites = 0;
   const pages = store.scrollPayloadPages(collection, {
     payloadInclude: ["relativePath", RELATIVE_PATH_EXACT_KEY],
     filter: RELATIVE_PATH_EXACT_MISSING_FILTER,
@@ -151,15 +173,19 @@ export async function backfillRelativePathExact(
       else idsByPath.set(path, [id]);
     }
     if (idsByPath.size > 0) {
-      await store.batchSetPayload(
+      const status = await store.batchSetPayload(
         collection,
         [...idsByPath].map(([path, points]) => ({ payload: { [RELATIVE_PATH_EXACT_KEY]: path }, points })),
       );
+      if (status === "wait_timeout") {
+        const barrier = await store.confirmQueuedWrites?.(collection);
+        if (barrier?.kind !== "drained") unconfirmedWrites++;
+      }
       for (const ids of idsByPath.values()) backfilled += ids.length;
     }
     if (options.missing !== undefined && backfilled >= options.missing) break;
   }
-  return backfilled;
+  return { backfilled, unconfirmedWrites };
 }
 
 /** The two index operations the completeness check needs; `QdrantManager` and the migration's `IndexStore` both provide them. */

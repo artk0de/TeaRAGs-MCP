@@ -29,7 +29,8 @@ export type IngestErrorCode =
   | "INGEST_FILE_PARSE_FAILED"
   | "INGEST_FILE_READ_FAILED"
   | "INGEST_WORKER_TIMEOUT"
-  | "INGEST_SEED_MARKER_UNREADABLE";
+  | "INGEST_SEED_MARKER_UNREADABLE"
+  | "INGEST_SEED_MARKER_UNCONFIRMED";
 
 /**
  * Phase of the indexing pipeline in which a file failed. Carried by
@@ -352,6 +353,23 @@ export class WorktreeSeedMarkerUnreadableError extends IngestError {
       hint: "Nothing was stamped or rebuilt. Retry the run once Qdrant answers; the recompute re-reads the marker before it rebuilds anything.",
       httpStatus: 503,
       cause,
+    });
+  }
+}
+
+/**
+ * The pending-worktree-seed rewrite on the indexing marker was answered with
+ * Qdrant's `wait_timeout` and the write barrier never confirmed it within its
+ * budget: the rewritten debt may not be persisted, and a debt that cannot be
+ * confirmed must not be treated as settled (bd tea-rags-mcp-wjyaf).
+ */
+export class WorktreeSeedMarkerUnconfirmedError extends IngestError {
+  constructor(collectionName: string) {
+    super({
+      code: "INGEST_SEED_MARKER_UNCONFIRMED",
+      message: `Qdrant did not confirm the pending worktree seed rewrite on the indexing marker of "${collectionName}" within the write-barrier budget`,
+      hint: "The seed is treated as still owed. Retry once Qdrant has drained its update queue, or raise QDRANT_TUNE_WRITE_BARRIER_BUDGET_MS.",
+      httpStatus: 503,
     });
   }
 }

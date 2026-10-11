@@ -37,23 +37,10 @@ import { anyOfOnTextIndexed, exactMatchOnTextIndexed } from "./filters/text-inde
 import { toQdrantPointId } from "./point-id.js";
 import type { RelativePathExactGate } from "./relative-path-exact-capability.js";
 import type { QdrantUpdateStatus, SparseVector } from "./types.js";
+import { foldUpdateStatus } from "./write-barrier.js";
 
 /** Named by the no-op barrier update in `awaitQueuedUpdates`; its filter matches no point, so nothing is deleted. */
 const QUEUED_UPDATE_BARRIER_KEY = "__queued_update_barrier__";
-
-/**
- * The status of one `batchUpdate` answer, folded over its per-operation results:
- * `wait_timeout` if any operation's wait ran out, else `acknowledged` if any is
- * only queued, else `completed`. An answer carrying no result list states no
- * timeout, so it reads as `completed` (bd tea-rags-mcp-yf4je).
- */
-function batchUpdateStatus(results: unknown): QdrantUpdateStatus {
-  if (!Array.isArray(results)) return "completed";
-  const statuses = results.map((result: unknown) => (result as { status?: unknown } | null)?.status);
-  if (statuses.includes("wait_timeout")) return "wait_timeout";
-  if (statuses.includes("acknowledged")) return "acknowledged";
-  return "completed";
-}
 
 export class QdrantPointStore {
   /** Page size for scroll pagination when collecting point IDs by filter. */
@@ -658,10 +645,10 @@ export class QdrantPointStore {
       wait?: boolean;
       ordering?: "weak" | "medium" | "strong";
     },
-  ): Promise<void> {
+  ): Promise<QdrantUpdateStatus> {
     const normalizedPoints = options.points?.map((id) => this.normalizeId(id));
 
-    await this.connection.call(async () =>
+    const result = await this.connection.call(async () =>
       this.connection.client.setPayload(collectionName, {
         payload,
         points: normalizedPoints,
@@ -670,6 +657,8 @@ export class QdrantPointStore {
         ordering: options.ordering ?? "weak",
       }),
     );
+    // A waited write answered `wait_timeout` is queued, not applied (wjyaf).
+    return foldUpdateStatus(result);
   }
 
   /**
@@ -714,7 +703,7 @@ export class QdrantPointStore {
           ordering,
         }),
       );
-      status = batchUpdateStatus(results);
+      status = foldUpdateStatus(results);
     }
     // The last sub-batch carries the caller's `wait`, so its status is the answer
     // a waited write must read: `wait_timeout` = not yet applied (yf4je).
@@ -778,7 +767,7 @@ export class QdrantPointStore {
         wait: true,
       }),
     );
-    return batchUpdateStatus(results);
+    return foldUpdateStatus(results);
   }
 
   /** Delete payload keys from all points (or filtered subset). */
