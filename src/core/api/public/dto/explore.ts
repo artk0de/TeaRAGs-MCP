@@ -2,9 +2,10 @@
  * Explore domain DTOs — search request/response types.
  */
 
-import type { RankingOverlay, SignalLevel } from "../../../contracts/types/reranker.js";
+import type { SignalLevel } from "../../../contracts/types/reranker.js";
+import type { SearchResult } from "../../../contracts/types/search-result.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import type { WorkingTreeMarker, WorkingTreeState } from "../../../contracts/types/working-tree.js";
+import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import type { SearchConfidence } from "../../../domains/explore/index.js";
 import type { CollectionIdentifier } from "./common.js";
 
@@ -191,18 +192,9 @@ export interface FindSymbolRequest extends CollectionRef {
 // Search result types
 // ---------------------------------------------------------------------------
 
-export interface SearchResult {
-  id: string | number;
-  score: number;
-  payload?: Record<string, unknown>;
-  rankingOverlay?: RankingOverlay;
-  /**
-   * The working tree changed (`modified`) or deleted (`deleted`) this row's
-   * file and the tool has no floor to answer from the tree (bd
-   * tea-rags-mcp-xi2r9.3). Absent on rows the tree did not touch.
-   */
-  treeState?: WorkingTreeState;
-}
+// The row lives in contracts so the explore domain that produces it need not
+// import the api layer (bd tea-rags-mcp-g7w8f).
+export type { SearchResult } from "../../../contracts/types/search-result.js";
 
 /**
  * A rerank preset's DEFAULT filter narrowed the candidate set, and the caller

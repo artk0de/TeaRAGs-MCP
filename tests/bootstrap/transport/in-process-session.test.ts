@@ -11,25 +11,25 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { parseAppConfig } from "../../src/bootstrap/config/index.js";
-import { createAppContext, createConfiguredServer, loadPrompts } from "../../src/bootstrap/factory.js";
-import { openInProcessMcpSession } from "../../src/bootstrap/in-process-session.js";
-import { migrateHomeDir } from "../../src/bootstrap/migrate.js";
+import { parseAppConfig } from "../../../src/bootstrap/config/index.js";
+import { createAppContext, createConfiguredServer, loadPrompts } from "../../../src/bootstrap/factory.js";
+import { migrateHomeDir } from "../../../src/bootstrap/migrate.js";
+import { openInProcessMcpSession } from "../../../src/bootstrap/transport/in-process-session.js";
 
-vi.mock("../../src/bootstrap/config/index.js", () => ({
+vi.mock("../../../src/bootstrap/config/index.js", () => ({
   parseAppConfig: vi.fn(),
   getZodConfig: vi.fn(),
 }));
 
-vi.mock("../../src/bootstrap/factory.js", () => ({
+vi.mock("../../../src/bootstrap/factory.js", () => ({
   createAppContext: vi.fn(),
   createConfiguredServer: vi.fn(),
   loadPrompts: vi.fn(),
 }));
 
-vi.mock("../../src/bootstrap/migrate.js", () => ({ migrateHomeDir: vi.fn() }));
+vi.mock("../../../src/bootstrap/migrate.js", () => ({ migrateHomeDir: vi.fn() }));
 
-const { getZodConfig } = await import("../../src/bootstrap/config/index.js");
+const { getZodConfig } = await import("../../../src/bootstrap/config/index.js");
 
 function echoServer(): McpServer {
   const server = new McpServer({ name: "tea-rags-test", version: "0.0.0" });

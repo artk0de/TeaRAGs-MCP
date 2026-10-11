@@ -10,7 +10,7 @@
  * Pure data transformer, no I/O.
  */
 
-import type { ExploreResult } from "../strategies/index.js";
+import type { ExploreResult } from "../../../contracts/types/search-result.js";
 
 /** Payload key a file-level result is grouped on — its identity. */
 export const FILE_GROUP_KEY = "relativePath";

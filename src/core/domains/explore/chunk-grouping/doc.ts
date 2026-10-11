@@ -5,7 +5,7 @@
  * Pure data transformer, no I/O.
  */
 
-import type { SearchResult } from "../../../api/public/dto/explore.js";
+import type { SearchResult } from "../../../contracts/types/search-result.js";
 import type { ScrollChunk } from "./types.js";
 
 /** `(part N/M)` suffix a size cap appends to the name of each piece it cuts. */

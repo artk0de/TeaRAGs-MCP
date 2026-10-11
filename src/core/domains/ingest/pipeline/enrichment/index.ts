@@ -9,3 +9,4 @@ export type {
   FileEnrichmentMarker,
   ProviderContext,
 } from "./types.js";
+export { enrichmentSkipReason, fileLinesOf, type EnrichmentSkipReason } from "./policy.js";

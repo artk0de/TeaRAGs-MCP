@@ -283,7 +283,7 @@ export default tseslint.config(
                 "**/domains/trajectory/**",
                 "**/domains/ingest/**",
                 "**/domains/language/**",
-                "**/core/api/**",
+                "**/api/**",
                 "**/bootstrap/**",
                 "**/mcp/**",
                 "**/cli/**",
@@ -308,7 +308,7 @@ export default tseslint.config(
                 "**/domains/ingest/**",
                 "**/domains/language/**",
                 "**/language/index.js",
-                "**/core/api/**",
+                "**/api/**",
                 "**/bootstrap/**",
                 "**/mcp/**",
                 "**/cli/**",
@@ -334,7 +334,7 @@ export default tseslint.config(
                 "**/domains/trajectory/**",
                 "**/domains/language/**",
                 "**/language/index.js",
-                "**/core/api/**",
+                "**/api/**",
                 "**/bootstrap/**",
                 "**/mcp/**",
                 "**/cli/**",
@@ -355,7 +355,7 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ["**/ingest/**", "**/trajectory/**", "**/explore/**", "**/core/api/**", "**/bootstrap/**"],
+              group: ["**/ingest/**", "**/trajectory/**", "**/explore/**", "**/api/**", "**/bootstrap/**"],
               message: "domains/language is a leaf domain — import only contracts/, infra/, tree-sitter.",
             },
           ],

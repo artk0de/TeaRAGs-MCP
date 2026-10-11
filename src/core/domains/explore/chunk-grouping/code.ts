@@ -4,8 +4,8 @@
  * Pure data transformer, no I/O.
  */
 
-import type { SearchResult } from "../../../api/public/dto/explore.js";
 import { TEST_SCOPE_PARENT_TYPE } from "../../../contracts/types/chunker.js";
+import type { SearchResult } from "../../../contracts/types/search-result.js";
 import { splitFragmentBase } from "./split-fragment.js";
 import type { MemberVisibilityLookup, ScrollChunk } from "./types.js";
 

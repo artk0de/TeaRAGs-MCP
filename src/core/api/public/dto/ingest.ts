@@ -4,6 +4,7 @@
  * App-facing types only. Internal pipeline types stay in core/types.ts.
  */
 
+import type { EnrichmentHealthMap } from "../../../contracts/types/enrichment.js";
 import {
   isRestrictingRechunkSelector,
   type RechunkFileSelector,
@@ -11,7 +12,6 @@ import {
 } from "../../../contracts/types/rechunk.js";
 import type { EmbeddingProducerStarvation, EmbeddingThroughputOptimum } from "../../../contracts/types/registry.js";
 import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
-import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
 import type {
   CodegraphResolveSummary,
   EnrichmentMetrics,

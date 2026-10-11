@@ -7,10 +7,8 @@ export {
   IngestInvariantError,
 } from "./errors.js";
 export type { IngestErrorCode } from "./errors.js";
-export { IndexPipeline } from "./operations/indexing.js";
-export { ReindexPipeline } from "./operations/reindexing.js";
-export { computeCollectionStats } from "./infra/collection-stats.js";
+export { IndexPipeline, ReindexPipeline } from "./operations/index.js";
+export { cleanupOrphanedVersions, computeCollectionStats } from "./infra/index.js";
 export type { IngestDependencies, SynchronizerTuning } from "./factory.js";
 export { INDEXING_METADATA_ID } from "../../contracts/constants.js";
-export { cleanupOrphanedVersions } from "./infra/alias-cleanup.js";
-export { enrichmentSkipReason, fileLinesOf, type EnrichmentSkipReason } from "./pipeline/enrichment/policy.js";
+export { enrichmentSkipReason, fileLinesOf, type EnrichmentSkipReason } from "./pipeline/enrichment/index.js";
