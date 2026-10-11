@@ -5,7 +5,7 @@
  * No I/O, no Qdrant dependency.
  */
 
-import type { SearchResult } from "../../api/public/dto/explore.js";
+import type { SearchResult } from "../../contracts/types/search-result.js";
 import {
   CodeChunkGrouper,
   DocChunkGrouper,

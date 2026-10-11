@@ -9,8 +9,8 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
-import type { IndexMetrics, SignalMetrics } from "../../../api/public/dto/index.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import type { IndexMetrics, SignalMetrics } from "../../../contracts/types/index-metrics.js";
 import type { PayloadSignalDescriptor, SignalFloors, SignalStats } from "../../../contracts/types/trajectory.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import { NotIndexedError } from "../../ingest/errors.js";
