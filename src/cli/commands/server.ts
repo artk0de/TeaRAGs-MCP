@@ -1,6 +1,6 @@
 import type { CommandModule } from "yargs";
 
-import { runMcpServer } from "../../bootstrap/server-runtime.js";
+import { runMcpServer } from "../../bootstrap/transport/server-runtime.js";
 
 export interface ServerArgs {
   http?: boolean;

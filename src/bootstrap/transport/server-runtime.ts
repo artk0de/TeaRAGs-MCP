@@ -1,10 +1,10 @@
-// src/bootstrap/server-runtime.ts
-import type { PromptsConfig } from "../mcp/prompts/index.js";
-import { getZodConfig, parseAppConfig, type AppConfig } from "./config/index.js";
-import { createAppContext, createConfiguredServer, loadPrompts, type AppContext } from "./factory.js";
-import { migrateHomeDir } from "./migrate.js";
-import { startHttpServer } from "./transport/http.js";
-import { startStdioServer } from "./transport/stdio.js";
+// src/bootstrap/transport/server-runtime.ts
+import type { PromptsConfig } from "../../mcp/prompts/index.js";
+import { getZodConfig, parseAppConfig, type AppConfig } from "../config/index.js";
+import { createAppContext, createConfiguredServer, loadPrompts, type AppContext } from "../factory.js";
+import { migrateHomeDir } from "../migrate.js";
+import { startHttpServer } from "./http.js";
+import { startStdioServer } from "./stdio.js";
 
 /** Everything an MCP server process needs before it builds its `McpServer`. */
 export interface McpServerRuntime {

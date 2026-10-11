@@ -8,10 +8,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runMcpServer } from "../../src/bootstrap/server-runtime.js";
-import { runServer } from "../../src/cli/commands/server.js";
+import { runMcpServer } from "../../../src/bootstrap/transport/server-runtime.js";
+import { runServer } from "../../../src/cli/commands/server.js";
 
-vi.mock("../../src/bootstrap/server-runtime.js", () => ({
+vi.mock("../../../src/bootstrap/transport/server-runtime.js", () => ({
   runMcpServer: vi.fn(),
 }));
 
@@ -31,7 +31,7 @@ describe("MCP server entry points", () => {
   });
 
   it("src/index.ts runs the same shared lifecycle with no transport override", async () => {
-    await import("../../src/index.js");
+    await import("../../../src/index.js");
     await vi.waitFor(() => {
       expect(runMcpServer).toHaveBeenCalledWith({});
     });
