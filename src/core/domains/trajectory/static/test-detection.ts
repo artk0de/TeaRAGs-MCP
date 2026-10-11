@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 
-import { classify } from "../../../infra/file-classification/index.js";
+import { classify } from "../../../primitives/paths/index.js";
 
 /**
  * Is this repo-relative path a test file? Delegates to the infra file

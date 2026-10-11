@@ -9,7 +9,7 @@
 
 import type { ReviewFileEdge } from "../../../../../contracts/types/codegraph-storage.js";
 import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
-import type { PathFilter } from "../../../../../infra/file-classification/index.js";
+import type { PathFilter } from "../../../../../primitives/paths/index.js";
 import type { ProductionDependencyGraph } from "../boundary-diagnostics/index.js";
 
 /**

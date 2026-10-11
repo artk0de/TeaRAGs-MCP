@@ -2,7 +2,7 @@
  * What kind of file this is — the single FACT consumed by per-provider
  * enrichment policy (EnrichmentProvider.shouldEnrich). Canonical home.
  *
- * Sole declaration: `infra/file-classification/classify()` imports this type
+ * Sole declaration: `primitives/paths/file-classification/classify()` imports this type
  * and re-exports it. The foundation order (contracts < infra < adapters) makes
  * that type-only edge legal — before it was legalized, infra kept a
  * structurally-identical copy that had to be hand-synced.

@@ -7,14 +7,14 @@
  * asks for `pipeline/enrichment/` — every file of that directory. The lowering
  * stays: it is a correct SUPERSET and it uses the index. This module narrows that
  * superset to what the glob names, with the matcher every pathPattern-taking tool
- * shares (`infra/path-pattern.ts`).
+ * shares (`primitives/paths/path-pattern.ts`).
  *
  * Narrowing thins a page, so a strategy fetches again with a doubled limit until
  * the page is filled, the source is exhausted, or `PATH_PATTERN_MAX_FETCHES`
  * requests have gone out. No pathPattern → exactly one fetch, results untouched.
  */
 
-import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
+import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { keepPathPatternMatches } from "../post-process.js";
 import type { ExploreResult } from "./types.js";
 

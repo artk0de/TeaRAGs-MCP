@@ -1,7 +1,7 @@
 /**
  * Per-language test-file masks live in `domains/language` (bd tea-rags-mcp-vjz6s):
  * each vertical declares its own on its capability, the language domain
- * aggregates them, and `infra/file-classification` only matches what it is
+ * aggregates them, and `primitives/paths/file-classification` only matches what it is
  * given. Assertions carried over from the retired
  * `tests/core/infra/file-classification/test-patterns.test.ts`, which pinned the
  * same table while it lived in infra.
@@ -22,10 +22,10 @@ import {
 import {
   COMMON_TEST_DIRECTORY_PATTERNS,
   testPathPatterns,
-} from "../../../../../src/core/infra/file-classification/index.js";
+} from "../../../../../src/core/primitives/paths/file-classification/index.js";
 
 const LANGUAGE_DIR = join(process.cwd(), "src/core/domains/language");
-const INFRA_DIR = join(process.cwd(), "src/core/infra");
+const INFRA_DIR = join(process.cwd(), "src/core/primitives");
 
 // The canonical pre-relocation flat TEST_PATTERNS set. The per-language
 // reorganization MUST stay lossless against this — no test-file shape dropped,
@@ -205,7 +205,7 @@ describe("how the conventions reach the file classifier (bd tea-rags-mcp-vjz6s)"
 
   it("loading the language capability map installs them, so no entry point has to remember to", async () => {
     vi.resetModules();
-    const infra = await import("../../../../../src/core/infra/file-classification/test-file-conventions.js");
+    const infra = await import("../../../../../src/core/primitives/paths/file-classification/test-file-conventions.js");
     expect(() => infra.installedTestFileConventions()).toThrow(/installTestFileConventions/);
     const language = await import("../../../../../src/core/domains/language/capability/native.js");
     expect(infra.installedTestFileConventions()).toBe(language.languageTestFileConventions());

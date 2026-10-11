@@ -1,10 +1,10 @@
 import type { DependencyNormFileRole, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import {
   benjaminiHochbergRejectionCount,
   CONVENTIONAL_FDR_Q,
   signTestPValue,
 } from "../../../../../primitives/math/index.js";
+import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import { languageFamilyOf } from "../language-family-record.js";
 import type {
   DependencyNormEstablishedDirection,

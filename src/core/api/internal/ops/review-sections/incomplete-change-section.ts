@@ -65,8 +65,8 @@ import {
   SILENT_COUPLING_OTSU_MIN_POPULATION,
   SILENT_COUPLING_STRENGTH_MAJORITY,
 } from "../../../../domains/trajectory/codegraph/temporal/index.js";
-import { classify } from "../../../../infra/file-classification/index.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../primitives/graph/index.js";
+import { classify } from "../../../../primitives/paths/index.js";
 import type { IncompleteChangePartner, IncompleteChangePartnerKind } from "../../../public/dto/review.js";
 import { isDocumentationPath } from "../architecture-report-ops.js";
 import type { ReviewSectionProvider } from "./review-section-provider.js";

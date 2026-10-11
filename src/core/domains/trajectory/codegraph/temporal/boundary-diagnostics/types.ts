@@ -120,7 +120,7 @@ export interface SilentCouplingRootCause {
 
 /** Pairs read but not judged, by the first reason that applied. */
 export interface SilentCouplingExclusionCounts {
-  /** An endpoint is a test file (the infra file classifier). */
+  /** An endpoint is a test file (the file classifier, `primitives/paths`). */
   testEndpoints: number;
   /** An endpoint is generated or vendored code. */
   generatedEndpoints: number;

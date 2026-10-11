@@ -705,7 +705,7 @@
   vertical declares `testFiles` in `<lang>/test-files.ts` (excluded from its
   walker digest: masks move no edge); languages with no vertical sit in
   `TEST_FILES_OF_LANGUAGES_WITHOUT_VERTICAL` (`capability/test-files.ts`), and a
-  language in both throws. `infra/file-classification` keeps only the
+  language in both throws. `primitives/paths/file-classification` keeps only the
   language-agnostic directories. The earlier `configureTestPatterns()` design
   was abandoned because every process context had to remember a call; here the
   install is a side effect of `native.ts`, which the factory, the barrel, a

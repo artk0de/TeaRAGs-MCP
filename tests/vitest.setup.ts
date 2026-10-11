@@ -12,8 +12,8 @@ import { join } from "node:path";
 import { afterAll } from "vitest";
 
 import { languageTestFileConventions } from "../src/core/domains/language/capability/native.js";
-import { installTestFileConventions } from "../src/core/infra/file-classification/test-file-conventions.js";
 import { setDebug } from "../src/core/infra/runtime.js";
+import { installTestFileConventions } from "../src/core/primitives/paths/file-classification/test-file-conventions.js";
 
 // The language domain owns every language's test-file masks and installs them
 // for the file classifier when its capability map loads (bd

@@ -1,7 +1,8 @@
 import ignore, { type Ignore } from "ignore";
 
-import type { FileClassification, TestFileConventions } from "../../contracts/types/file-classification.js";
-import { GENERATED_CONTENT_MARKERS, GENERATED_PATTERNS, USER_GENERATED_PATTERNS } from "./patterns.js";
+import type { FileClassification, TestFileConventions } from "../../../contracts/types/file-classification.js";
+import { GENERATED_CONTENT_MARKERS, GENERATED_PATTERNS } from "./patterns.js";
+import { installedFileClassificationSettings, type FileClassificationSettings } from "./settings.js";
 import { installedTestFileConventions } from "./test-file-conventions.js";
 import { buildTestPathFilter, type PathFilter } from "./test-path-filter.js";
 
@@ -14,17 +15,21 @@ export interface ClassifyOptions {
   isDocumentation?: boolean;
 }
 
-// Built once — immutable after construction (the `ignore` package is stateless
-// once loaded). Lazily initialised so module import stays side-effect-light.
-let generatedFilter: Ignore | undefined;
+/**
+ * The generated filter, built for the settings installed when it was built —
+ * rebuilt on a re-install (the `ignore` package is stateless once loaded).
+ * Lazily initialised so module import stays side-effect-light.
+ */
+let generatedFilter: { settings: FileClassificationSettings; filter: Ignore } | undefined;
 /** The test filter, built for the conventions installed when it was built — rebuilt on a re-install. */
 let testFilter: { conventions: TestFileConventions; filter: PathFilter } | undefined;
 
 function getGeneratedFilter(): Ignore {
-  if (!generatedFilter) {
-    generatedFilter = ignore().add(GENERATED_PATTERNS).add(USER_GENERATED_PATTERNS);
+  const settings = installedFileClassificationSettings();
+  if (generatedFilter?.settings !== settings) {
+    generatedFilter = { settings, filter: ignore().add(GENERATED_PATTERNS).add(settings.userGeneratedPatterns) };
   }
-  return generatedFilter;
+  return generatedFilter.filter;
 }
 
 function getTestFilter(): PathFilter {

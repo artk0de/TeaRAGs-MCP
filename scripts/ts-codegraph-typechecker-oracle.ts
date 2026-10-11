@@ -201,7 +201,7 @@ import {
   collectDependencyManifestSources,
   readDeclaredDependenciesByLanguage,
 } from "../src/core/infra/dependency-manifests.js";
-import type { PathFilter } from "../src/core/infra/file-classification/index.js";
+import type { PathFilter } from "../src/core/primitives/paths/file-classification/index.js";
 import {
   DECLARATION_FILE_SUFFIXES,
   diffResolution,

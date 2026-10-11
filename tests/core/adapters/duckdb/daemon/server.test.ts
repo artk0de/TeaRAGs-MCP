@@ -12,7 +12,7 @@ import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.
 import type { IdentifierRow } from "../../../../../src/core/contracts/types/codegraph-storage.js";
 import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { nonProductionPathPatterns } from "../../../../../src/core/infra/file-classification/index.js";
+import { nonProductionPathPatterns } from "../../../../../src/core/primitives/paths/file-classification/index.js";
 
 let root: string;
 afterEach(() => {

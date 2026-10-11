@@ -1,5 +1,5 @@
 /**
- * The per-language test-file conventions, as `infra` receives them (bd
+ * The per-language test-file conventions, as `primitives` receives them (bd
  * tea-rags-mcp-vjz6s).
  *
  * `domains/language` owns them — each vertical declares its own
@@ -23,7 +23,7 @@
  * Nothing installed is a wiring bug, not "no language masks": a read throws
  * rather than silently calling every `*_test.go` production code.
  */
-import type { CaseSplitPathPatterns, TestFileConventions } from "../../contracts/types/file-classification.js";
+import type { CaseSplitPathPatterns, TestFileConventions } from "../../../contracts/types/file-classification.js";
 import { COMMON_TEST_DIRECTORY_PATTERNS } from "./patterns.js";
 
 let installed: TestFileConventions | undefined;

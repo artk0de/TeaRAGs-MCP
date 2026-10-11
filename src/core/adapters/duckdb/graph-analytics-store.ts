@@ -34,7 +34,7 @@ import {
   type RelPath,
   type SymbolId,
 } from "../../contracts/types/codegraph.js";
-import { compilePathPatternMatcher } from "../../infra/path-pattern.js";
+import { compilePathPatternMatcher } from "../../primitives/paths/index.js";
 import { decodeFileEdgeExportNames } from "./file-edge-export-names-codec.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 

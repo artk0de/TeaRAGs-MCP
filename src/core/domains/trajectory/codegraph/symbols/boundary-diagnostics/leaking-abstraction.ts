@@ -1,5 +1,4 @@
 import type { FileDependencyEdge, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import {
   resolveMajorityFlooredOtsuThreshold,
   type MajorityFlooredOtsuThreshold,
@@ -9,6 +8,7 @@ import {
   binomialUpperTail,
   CONVENTIONAL_FDR_Q,
 } from "../../../../../primitives/math/index.js";
+import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import { MODULE_ENTRY_FILE_NAMES, RE_EXPORT_CYCLE_PATH_CAP } from "../../component-geometry/index.js";
 import type {
   FacadeDeFactoSurface,

@@ -1,6 +1,6 @@
 import ignore from "ignore";
 
-import type { CaseSplitPathPatterns, TestFileConventions } from "../../contracts/types/file-classification.js";
+import type { CaseSplitPathPatterns, TestFileConventions } from "../../../contracts/types/file-classification.js";
 import { NON_PRODUCTION_PATTERNS } from "./patterns.js";
 import { installedTestFileConventions, testPathPatterns } from "./test-file-conventions.js";
 import { buildTestPathFilter, type PathFilter } from "./test-path-filter.js";
@@ -36,7 +36,7 @@ export function nonProductionPathPatterns(
  * bd tea-rags-mcp-4p3sb.25). Both read tables the codegraph walk wrote, and that
  * walk already drops test files (`buildCodegraphExclusionFilter`), so for them
  * the test half is the walk's own exclusion restated at read time — the two
- * reports cannot disagree about a row the walk let through. Lives in `infra`
+ * reports cannot disagree about a row the walk let through. Lives in `primitives`
  * because the codegraph trajectory and the DuckDB adapter both need it and
  * neither may import the other.
  */

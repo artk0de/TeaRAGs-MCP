@@ -125,7 +125,6 @@
  */
 
 import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../primitives/graph/index.js";
 import {
   binomialUpperTail,
@@ -133,6 +132,7 @@ import {
   poissonBinomialUpperTail,
   seedFromKey,
 } from "../../../../../primitives/math/index.js";
+import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import { componentAncestry } from "../../component-geometry/index.js";
 import {
   benjaminiHochbergRejectionCount,

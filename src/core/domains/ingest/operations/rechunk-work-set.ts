@@ -18,8 +18,7 @@
 import { extname } from "node:path";
 
 import type { RechunkFileSelector } from "../../../contracts/types/rechunk.js";
-import { classify } from "../../../infra/file-classification/index.js";
-import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
+import { classify, compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { extensionsForLanguages } from "../pipeline/chunker/config.js";
 
 /** True iff a project-relative path is selected. */

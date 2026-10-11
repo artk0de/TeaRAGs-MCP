@@ -15,7 +15,7 @@ import {
   NON_PRODUCTION_PATTERNS,
   nonProductionPathPatterns,
   testPathPatterns,
-} from "../../../../src/core/infra/file-classification/index.js";
+} from "../../../../src/core/primitives/paths/file-classification/index.js";
 
 /** The predicate the ontology report compiles from the installed conventions. */
 const nonProductionPathSql = compileNonProductionPathPredicate(nonProductionPathPatterns());

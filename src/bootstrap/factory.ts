@@ -123,6 +123,7 @@ import {
 } from "../core/infra/dependency-manifests.js";
 import { setDebug } from "../core/infra/runtime.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
+import { installFileClassificationSettings } from "../core/primitives/paths/index.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
 import { loadPromptsConfig, registerAllPrompts, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllResources } from "../mcp/resources/index.js";
@@ -1341,6 +1342,9 @@ export interface AppContextOptions {
 export async function createAppContext(config: AppConfig, options?: AppContextOptions): Promise<AppContext> {
   const zodConfig = getZodConfig();
   setDebug(zodConfig.core.debug);
+  // Process-owned classifier knobs (generated globs, minified threshold): the
+  // classifier reads no env itself (bd tea-rags-mcp-82ztq).
+  installFileClassificationSettings(zodConfig.fileClassification);
   const ambientEnvRole = options?.ambientEnvRole ?? "invocation";
 
   const infra = await resolveInfrastructure(

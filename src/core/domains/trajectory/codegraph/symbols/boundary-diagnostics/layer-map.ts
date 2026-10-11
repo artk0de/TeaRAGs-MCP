@@ -1,5 +1,5 @@
 import type { FileDependencyEdge, FileDependencyGraph } from "../../../../../contracts/types/codegraph.js";
-import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import { classifyDirectoryRelation } from "../../component-geometry/index.js";
 import { isFacadeAggregationEdge } from "./facade-aggregation.js";
 import {

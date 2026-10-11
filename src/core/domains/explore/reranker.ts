@@ -29,7 +29,7 @@ import type {
   SignalFloors,
   SignalStats,
 } from "../../contracts/types/trajectory.js";
-import { detectScope } from "../../infra/scope-detection.js";
+import { detectScope } from "../../primitives/paths/index.js";
 import { resolveLabel } from "./label-resolver.js";
 import { ageSourceBoundDays, applySignalFloors, floorsForSignal } from "./signal-floors.js";
 

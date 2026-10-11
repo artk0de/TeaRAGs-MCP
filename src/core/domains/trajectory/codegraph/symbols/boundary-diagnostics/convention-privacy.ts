@@ -1,5 +1,5 @@
 import type { HierarchyView, NonPublicMemberEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import { MapHierarchyView } from "../../hierarchy-view.js";
 import type {
   ConventionPrivacyOptions,

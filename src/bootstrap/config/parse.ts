@@ -3,6 +3,7 @@ import {
   codegraphSchema,
   coreSchema,
   embeddingSchema,
+  fileClassificationSchema,
   ingestSchema,
   qdrantTuneSchema,
   trajectoryGitSchema,
@@ -10,6 +11,7 @@ import {
   type CodegraphConfig,
   type CoreConfig,
   type EmbeddingConfig,
+  type FileClassificationConfig,
   type IngestConfig,
   type QdrantTuneConfig,
   type TrajectoryGitConfig,
@@ -216,6 +218,7 @@ export function parseAppConfigZod(source: EnvSource = process.env): {
   vcs: VcsConfig;
   codegraph: CodegraphConfig;
   qdrantTune: QdrantTuneConfig;
+  fileClassification: FileClassificationConfig;
   deprecations: DeprecationNotice[];
   flags: {
     userSetBatchSize: boolean;
@@ -253,6 +256,16 @@ export function parseAppConfigZod(source: EnvSource = process.env): {
   const vcs = validateSchema(vcsSchema, inputs.vcs, "vcs");
   const codegraph = validateSchema(codegraphSchema, inputs.codegraph, "codegraph");
   const qdrantTune = validateSchema(qdrantTuneSchema, inputs.qdrantTune, "qdrantTune");
+  // Read from `source` directly, not through the recording reader: these knobs
+  // are process-owned and must not reach `explicitEnvKeys` (registry pinning).
+  const fileClassification = validateSchema(
+    fileClassificationSchema,
+    {
+      userGeneratedPatterns: source.TEA_RAGS_GENERATED_PATTERNS,
+      minifiedLineLength: source.TEA_RAGS_MINIFIED_LINE_THRESHOLD,
+    },
+    "fileClassification",
+  );
 
   validateApiKey(embedding);
 
@@ -268,6 +281,7 @@ export function parseAppConfigZod(source: EnvSource = process.env): {
     vcs,
     codegraph,
     qdrantTune,
+    fileClassification,
     deprecations,
     flags: {
       userSetBatchSize: !!inputs.userSetBatchSize,

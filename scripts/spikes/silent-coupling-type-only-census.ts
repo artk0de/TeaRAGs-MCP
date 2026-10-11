@@ -51,7 +51,7 @@ import {
 } from "../../src/core/domains/trajectory/codegraph/temporal/boundary-diagnostics/silent-coupling.js";
 import type { SilentCouplingReport } from "../../src/core/domains/trajectory/codegraph/temporal/boundary-diagnostics/types.js";
 import { collectDependencyManifestSources } from "../../src/core/infra/dependency-manifests.js";
-import { buildNonProductionPathFilter, classify } from "../../src/core/infra/file-classification/index.js";
+import { buildNonProductionPathFilter, classify } from "../../src/core/primitives/paths/file-classification/index.js";
 import {
   buildCorpusExclusionFilter,
   buildSymbolDefs,

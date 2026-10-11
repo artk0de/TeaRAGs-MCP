@@ -179,8 +179,8 @@ carry their own navigators.
 - **Every percentile is scope-split; the global aggregate is source-scope,
   code-language only.** Stats are computed per (language, scope ∈ source|test),
   and `chunkType: "test_setup"` is dropped from both (`detectScope` in
-  `infra/scope-detection.ts`). The `perSignal` map that filter presets and
-  dampening thresholds read accepts a point only when
+  `primitives/paths/scope-detection.ts`). The `perSignal` map that filter
+  presets and dampening thresholds read accepts a point only when
   `ctx.isCodeLanguage && ctx.scope === "source"`
   (`SignalValuesAccumulator#accept`). Path-pattern test detection
   (`CODE_TEST_PATHS`, else per-language defaults) is a FALLBACK: it fires only
@@ -240,11 +240,11 @@ carry their own navigators.
   label on a small-share language, not a polyglot-mixed one, and nothing falls
   back to the global distribution (`../explore/CLAUDE.md` owns the resolution
   side).
-- **`payload.isTest` is owned by the infra file classifier, absent when false.**
+- **`payload.isTest` is owned by the file classifier, absent when false.**
   `detectTestFile` (`static/test-detection.ts`) delegates to `classify` in
-  `core/infra/file-classification/`, the same patterns the codegraph exclusion
-  and the enrichment `skippedAs: "test"` stamp read, so it is path-aware
-  (`tests/helpers.py` hits). Add a test shape to the language's
+  `core/primitives/paths/file-classification/`, the same patterns the codegraph
+  exclusion and the enrichment `skippedAs: "test"` stamp read, so it is
+  path-aware (`tests/helpers.py` hits). Add a test shape to the language's
   `domains/language/<lang>/test-files.ts` (the classifier matches what that
   domain installs, bd tea-rags-mcp-vjz6s), never beside `detectTestFile`. The
   provider writes the key only on a hit (`StaticPayloadBuilder#buildPayload`),
