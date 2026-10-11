@@ -14,7 +14,7 @@ import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import {
   CodegraphClientStaleBuildError,
   CodegraphDaemonBuildSkewError,

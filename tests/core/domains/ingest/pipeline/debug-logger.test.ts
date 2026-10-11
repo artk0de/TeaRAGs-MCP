@@ -5,7 +5,7 @@ import type {
   LogContext,
 } from "../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
 // Import after setting DEBUG
-import { setDebug } from "../../../../../src/core/infra/runtime.js";
+import { setDebug } from "../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 // Mock fs module before importing the module under test
 vi.mock("node:fs", () => ({
@@ -715,8 +715,7 @@ describe("DebugLogger - initLogFile branches", () => {
     const originalDebug = process.env.DEBUG;
     process.env.DEBUG = "true";
 
-    const { setDebug: freshSetDebug } =
-      await import("../../../../../src/core/infra/runtime.js");
+    const { setDebug: freshSetDebug } = await import("../../../../../src/core/primitives/diagnostics/debug-flag.js");
     freshSetDebug(true);
 
     const { pipelineLog: freshLogger, initDebugLogger: freshInit } =
@@ -754,8 +753,7 @@ describe("DebugLogger - initLogFile branches", () => {
     const originalDebug = process.env.DEBUG;
     process.env.DEBUG = "true";
 
-    const { setDebug: freshSetDebug } =
-      await import("../../../../../src/core/infra/runtime.js");
+    const { setDebug: freshSetDebug } = await import("../../../../../src/core/primitives/diagnostics/debug-flag.js");
     freshSetDebug(true);
 
     const { pipelineLog: freshLogger, initDebugLogger: freshInit } =
@@ -800,8 +798,7 @@ describe("DebugLogger - lazy initialization", () => {
     process.env.DEBUG = "true";
 
     // After resetModules, must reimport runtime to set debug on the fresh instance
-    const { setDebug: freshSetDebug } =
-      await import("../../../../../src/core/infra/runtime.js");
+    const { setDebug: freshSetDebug } = await import("../../../../../src/core/primitives/diagnostics/debug-flag.js");
     freshSetDebug(true);
 
     const { pipelineLog: freshLogger, initDebugLogger: freshInit } =
@@ -992,8 +989,7 @@ describe("DebugLogger - DEBUG environment variable", () => {
     delete process.env.DEBUG;
 
     // After resetModules, must reimport runtime to set debug on the fresh instance
-    const { setDebug: freshSetDebug } =
-      await import("../../../../../src/core/infra/runtime.js");
+    const { setDebug: freshSetDebug } = await import("../../../../../src/core/primitives/diagnostics/debug-flag.js");
     freshSetDebug(false);
 
     // Import module with DEBUG unset (vi.resetModules() already cleared cache)

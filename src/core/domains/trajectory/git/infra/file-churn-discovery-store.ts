@@ -37,7 +37,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { parseNumstatChangedPath, type CommitFileNumstat } from "../../../../adapters/vcs/index.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import { mailmapStampMatches, pruneSnapshots, readMailmapFingerprint, resolveRepoIdentity } from "../history/index.js";
 import type { FileChurnDiscoveryPersistence, PersistedFileChurnDiscovery } from "./file-churn-discovery.js";
 

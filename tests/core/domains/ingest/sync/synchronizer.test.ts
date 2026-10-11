@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setDebug } from "../../../../../src/core/infra/runtime.js";
 import { FileSynchronizer } from "../../../../../src/core/domains/ingest/sync/synchronizer.js";
+import { setDebug } from "../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 describe("FileSynchronizer", () => {
   let tempDir: string;

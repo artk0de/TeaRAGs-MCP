@@ -45,7 +45,7 @@ import {
   DATABASE_MIGRATIONS_MODULE_URL,
 } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { setDebug } from "../../../../../src/core/infra/runtime.js";
+import { setDebug } from "../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 let root: string | undefined;
 const daemons: (() => Promise<void>)[] = [];

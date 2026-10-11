@@ -8,7 +8,7 @@
  * - Graceful shutdown
  */
 
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type { Batch, BatchCompletionCallback, BatchHandler, BatchResult, WorkerPoolConfig, WorkItem } from "./types.js";
 
 interface QueuedBatch<T extends WorkItem> {

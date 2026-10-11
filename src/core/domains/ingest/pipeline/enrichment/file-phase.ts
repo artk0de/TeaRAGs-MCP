@@ -14,7 +14,7 @@ import { relative } from "node:path";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentRunCoverage, FileSignalOverlay } from "../../../../contracts/types/provider.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../infra/index.js";
 import type { EnrichmentApplier } from "./applier.js";

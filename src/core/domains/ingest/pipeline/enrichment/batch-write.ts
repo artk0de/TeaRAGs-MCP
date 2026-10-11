@@ -16,7 +16,7 @@
  * the attempt budget is exhausted.
  */
 
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 
 export interface BatchPayloadOp {
   payload: Record<string, unknown>;

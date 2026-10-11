@@ -15,7 +15,7 @@
  */
 
 import type { CommitChangedPath, CommitInfo, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import { historyWindowSince } from "./history-anchor.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 

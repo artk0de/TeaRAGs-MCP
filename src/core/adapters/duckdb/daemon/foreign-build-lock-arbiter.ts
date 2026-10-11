@@ -32,7 +32,7 @@
  */
 
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { isDaemonDrainRefusal, type DuckDbOpenFailedError, type ForeignBuildDaemonLockHolder } from "../errors.js";
 import { DaemonGraphDbClient } from "./client.js";
 import {

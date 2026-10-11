@@ -53,7 +53,7 @@ import type {
 } from "../../../../contracts/types/language.js";
 import type { FileExtractionAbsorbRole, ProviderRunMetrics } from "../../../../contracts/types/provider.js";
 import { readDeclaredDependenciesByLanguage } from "../../../../infra/dependency-manifests.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import { MapHierarchyView } from "../hierarchy-view.js";
 import {
   deriveClassFieldTypesFromParams,

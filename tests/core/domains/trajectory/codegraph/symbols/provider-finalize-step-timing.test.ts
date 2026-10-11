@@ -22,7 +22,7 @@ import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/lang
 import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { setDebug } from "../../../../../../src/core/infra/runtime.js";
+import { setDebug } from "../../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");

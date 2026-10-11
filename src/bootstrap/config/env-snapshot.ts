@@ -42,7 +42,7 @@ import {
   replayRegistryEnv,
   type AmbientEnvRole,
 } from "../../core/domains/maintenance/registry/env-replay.js";
-import { isDebug } from "../../core/infra/runtime.js";
+import { isDebug } from "../../core/primitives/diagnostics/index.js";
 import { parseAppConfigZod } from "./parse.js";
 import type { CodegraphConfig, IngestConfig } from "./schemas.js";
 

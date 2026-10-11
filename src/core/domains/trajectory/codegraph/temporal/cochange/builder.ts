@@ -34,7 +34,7 @@ import type {
   TemporalCochangeBuildMeta,
   TemporalSymbolCommitBuffer,
 } from "../../../../../contracts/types/codegraph.js";
-import { isDebug } from "../../../../../infra/runtime.js";
+import { isDebug } from "../../../../../primitives/diagnostics/index.js";
 import {
   GitCommitDiscovery,
   GitCommitDiscoveryStore,

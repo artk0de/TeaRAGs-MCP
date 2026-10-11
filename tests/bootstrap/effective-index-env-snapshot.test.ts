@@ -21,7 +21,7 @@ import {
 } from "../../src/bootstrap/config/env-snapshot.js";
 import { parseAppConfigZod } from "../../src/bootstrap/config/parse.js";
 import { EnvDriftMonitor } from "../../src/core/domains/maintenance/drift/env-drift-monitor.js";
-import { isDebug, setDebug } from "../../src/core/infra/runtime.js";
+import { isDebug, setDebug } from "../../src/core/primitives/diagnostics/debug-flag.js";
 
 /** A stamp in the shape `buildRegistryEnvSnapshot` writes: canonical keys only. */
 const STAMP = {

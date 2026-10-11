@@ -23,7 +23,7 @@ import type {
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
 import { extractCodeFileFromText } from "../../../../infra/code-file-extraction.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type { PathFilter } from "../../../../primitives/paths/index.js";
 import type { CodegraphPhaseTimings } from "./phase-timings.js";
 import type { CodegraphRunState } from "./run-state.js";

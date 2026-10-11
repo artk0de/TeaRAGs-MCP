@@ -17,7 +17,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { CollectionAlreadyExistsError } from "../../../adapters/qdrant/errors.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { CollectionAlias, PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { versionedPhysicalCollectionName } from "../../../primitives/ids/index.js";
 import { VersionedCollectionClaimError } from "../errors.js";
 import { isEnrichmentRunLive } from "./enrichment-run-liveness.js";

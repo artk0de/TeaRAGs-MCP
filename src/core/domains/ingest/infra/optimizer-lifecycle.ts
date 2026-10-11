@@ -7,7 +7,7 @@
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import { isDebug } from "../../../infra/runtime.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 
 export class OptimizerLifecycle {
   constructor(private readonly qdrant: QdrantManager) {}

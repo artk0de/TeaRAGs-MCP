@@ -21,8 +21,8 @@ import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-p
 import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
-import { isDebug } from "../../../infra/runtime.js";
 import { StatsCache } from "../../../infra/stats-cache.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import type {
   CodegraphResolveKindRow,
   CodegraphResolveLanguageRow,

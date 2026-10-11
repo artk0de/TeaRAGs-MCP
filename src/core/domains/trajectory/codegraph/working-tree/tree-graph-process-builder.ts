@@ -29,7 +29,7 @@
 import { fork, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type { WorkingTreeGraphBuildInput, WorkingTreeGraphBuilt } from "./tree-graph-build.js";
 import {
   isWorkingTreeGraphEntryReply,

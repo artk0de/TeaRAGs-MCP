@@ -13,7 +13,7 @@
 
 import type { VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import type { TrajectoryGitConfig } from "../../../../contracts/types/config.js";
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 
 export type GitHistoryAnchorMode = TrajectoryGitConfig["anchor"];
 

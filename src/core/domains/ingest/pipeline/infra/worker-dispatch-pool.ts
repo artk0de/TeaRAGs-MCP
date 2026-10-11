@@ -15,7 +15,7 @@
  * distinct name. "WorkerDispatch" denotes the generic transport-backed pool;
  * "worker" remains the in-process executor's vocabulary.
  */
-import { isDebug } from "../../../../infra/runtime.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import { PipelineNotStartedError, WorkerTimeoutError } from "../../errors.js";
 import { defaultWorkerDispatchTimeoutMs } from "./pool-defaults.js";
 import type { WorkerHandle, WorkerTransport } from "./worker-transport.js";

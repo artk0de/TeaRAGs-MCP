@@ -6,7 +6,7 @@ import {
   historyWindowSince,
   resolveHistoryAnchorSec,
 } from "../../../../../../src/core/domains/trajectory/git/history/history-anchor.js";
-import { isDebug, setDebug } from "../../../../../../src/core/infra/runtime.js";
+import { isDebug, setDebug } from "../../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 function adapterReadingHead(readHeadCommitTime: (timeoutMs?: number) => Promise<number>): VcsGitAdapter {
   return { readHeadCommitTime } as unknown as VcsGitAdapter;

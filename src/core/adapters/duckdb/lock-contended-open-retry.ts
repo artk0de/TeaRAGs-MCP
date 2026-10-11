@@ -6,7 +6,7 @@
  */
 
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
-import { isDebug } from "../../infra/runtime.js";
+import { isDebug } from "../../primitives/diagnostics/index.js";
 import type { ForeignBuildDaemonLockArbiter, ForeignBuildLockSettlement } from "./daemon/foreign-build-lock-arbiter.js";
 import { CodegraphDatabaseHeldByForeignDaemonError, DuckDbOpenFailedError } from "./errors.js";
 

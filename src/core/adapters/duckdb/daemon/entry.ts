@@ -29,7 +29,7 @@ import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { MigrationCapableGraphClient } from "../../../contracts/types/migration.js";
-import { setDebug } from "../../../infra/runtime.js";
+import { setDebug } from "../../../primitives/diagnostics/index.js";
 import { CodegraphDaemonDrainRefusedError, CodegraphDaemonOwnedElsewhereError } from "../errors.js";
 import { GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";

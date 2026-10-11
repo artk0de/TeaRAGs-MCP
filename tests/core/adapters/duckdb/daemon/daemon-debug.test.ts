@@ -23,7 +23,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { daemonRuntimeOptionsFromEnv, runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import { getDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import { DATABASE_MIGRATIONS_MODULE_URL } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
-import { isDebug, setDebug } from "../../../../../src/core/infra/runtime.js";
+import { isDebug, setDebug } from "../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 const BASE_ENV = {
   TEA_RAGS_CODEGRAPH_DAEMON_ROOT: "/data/root",

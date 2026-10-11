@@ -121,8 +121,8 @@ import {
   collectTestDependencyManifestSources,
   readDeclaredTestDependencies,
 } from "../core/infra/dependency-manifests.js";
-import { setDebug } from "../core/infra/runtime.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
+import { setDebug } from "../core/primitives/diagnostics/index.js";
 import { installFileClassificationSettings } from "../core/primitives/paths/index.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
 import { loadPromptsConfig, registerAllPrompts, type PromptsConfig } from "../mcp/prompts/index.js";
