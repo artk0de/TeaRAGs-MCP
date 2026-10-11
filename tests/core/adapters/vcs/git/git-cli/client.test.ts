@@ -38,8 +38,10 @@ vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js", () => 
   parseBlameOutput: vi.fn(),
 }));
 
-// Mock runtime
-vi.mock("../../../../src/core/infra/runtime.js", () => ({
+// Force debug on — history.ts logs batch failures only when isDebug() is true.
+// Partial mock: the rest of the diagnostics barrel stays real.
+vi.mock("../../../../../../src/core/primitives/diagnostics/index.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   isDebug: vi.fn(() => true),
 }));
 
