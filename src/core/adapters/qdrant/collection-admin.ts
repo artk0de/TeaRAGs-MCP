@@ -47,6 +47,12 @@ export interface CollectionInfo {
    * written at creation). Absent when the collection carries none.
    */
   metadata?: Record<string, unknown>;
+  /**
+   * Operations Qdrant has accepted but not yet applied (`update_queue.length`,
+   * Qdrant >= 1.18). Absent when the server does not report a queue — an older
+   * server, or a build that omits it — which is not the same as an empty one.
+   */
+  updateQueueLength?: number;
 }
 
 /**
@@ -236,6 +242,7 @@ export class QdrantCollectionAdmin {
       optimizerStatus: describeOptimizerStatus(info.optimizer_status),
       quantization: mapQuantization((info.config as { quantization_config?: unknown }).quantization_config),
       ...(isJsonObject(info.config.metadata) && { metadata: info.config.metadata }),
+      ...(typeof info.update_queue?.length === "number" && { updateQueueLength: info.update_queue.length }),
     };
   }
 

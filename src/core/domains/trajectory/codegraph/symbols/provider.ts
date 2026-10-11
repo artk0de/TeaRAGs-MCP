@@ -686,6 +686,29 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
+   * Time one step of the worker-side finalize and report it (bd
+   * tea-rags-mcp-4ybh4): `fileFinalize` ran 125-158 s fast and 496-1214 s slow
+   * with nothing inside it carrying a timestamp. Same channel and gate as
+   * `logPhaseTimings` — the worker has no pipeline logger — and when DEBUG is
+   * off the body runs bare, with no clock read.
+   *
+   * `readOverlays` is `getFanInP95` plus the batched `getFileMetricsBulk` reads;
+   * `recordRunStats` is `recordRunStats` plus `recordFileResolveStats`.
+   */
+  private async timedFinalizeStep<T>(step: string, body: () => Promise<T>): Promise<T> {
+    if (!isDebug()) return body();
+    const startedAt = Date.now();
+    try {
+      return await body();
+    } finally {
+      console.error(
+        "[GitEnrich] PHASE: CODEGRAPH_FINALIZE_STEP",
+        JSON.stringify({ step, durationMs: Date.now() - startedAt }),
+      );
+    }
+  }
+
+  /**
    * Per-run counters for `EnrichmentMetrics.byProvider["codegraph.symbols"]`.
    * Read-and-clear: returning the snapshot resets internal state so the
    * next enrichment cycle starts at zero. CompletionRunner calls this
@@ -1100,11 +1123,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // yl9tv Task 5b — cross-pass: pass-1 is deferred to here, so drain the
       // main-written input spill before `sink.finish()` resolves pass-2.
       // Non-cross-pass runs already populated the sink via streamFileBatch.
-      if (options?.crossPass) await this.drainInputSpill(key, options?.collectionName);
+      if (options?.crossPass) {
+        await this.timedFinalizeStep("spillDrain", async () => this.drainInputSpill(key, options?.collectionName));
+      }
       const sink = this.runSinks.get(key);
       // A partition's pass-2 ends while others may still be writing, so cycles
       // and PageRank wait for the completion owner's `readBack`.
-      if (sink) await sink.finish(partitioned ? { recomputeMetrics: false } : undefined);
+      if (sink) {
+        await this.timedFinalizeStep("pass2Resolve", async () =>
+          sink.finish(partitioned ? { recomputeMetrics: false } : undefined),
+        );
+      }
       const { graphDb } = await this.getStore(options?.collectionName);
       // No sink = this run walked no codegraph file, so nothing recomputed
       // cycles / PageRank — which a prior deletion may have left pruned but
@@ -1118,12 +1147,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       if (!partitioned) {
         const paths =
           options?.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
-        await readCodegraphFileOverlays(graphDb, paths, file);
+        await this.timedFinalizeStep("readOverlays", async () => readCodegraphFileOverlays(graphDb, paths, file));
       }
       // Persist the resolve breakdown (bd tea-rags-mcp-2jet-D) after
       // `sink.finish()`, so every resolved call is already counted. A partition
       // persists only its own languages, which the store scopes its writes by.
-      await this.recordRunStats(graphDb, options?.runCoverage);
+      await this.timedFinalizeStep("recordRunStats", async () => this.recordRunStats(graphDb, options?.runCoverage));
       // No collection-completion hook here (bd tea-rags-mcp-vtuu4): this runs
       // inside the enrichment worker while `TSProgramCache` still holds the
       // whole-project `ts.Program`, and the co-change build on top of it ran a
@@ -1163,14 +1192,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.resolverDiagnosticsForReadBack.delete(key);
     try {
       if (options.ownsCollectionCompletion === true) {
-        await recomputeCodegraphMetricsBestEffort(async () =>
-          this.recomputeGraphMetricsStreaming(options.collectionName, resolvers),
+        await this.timedFinalizeStep("readBackRecompute", async () =>
+          recomputeCodegraphMetricsBestEffort(async () =>
+            this.recomputeGraphMetricsStreaming(options.collectionName, resolvers),
+          ),
         );
       }
       const { graphDb } = await this.getStore(options.collectionName);
       const paths =
         options.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
-      await readCodegraphFileOverlays(graphDb, paths, file);
+      await this.timedFinalizeStep("readOverlays", async () => readCodegraphFileOverlays(graphDb, paths, file));
     } finally {
       this.runExtractedPaths.delete(key);
     }
