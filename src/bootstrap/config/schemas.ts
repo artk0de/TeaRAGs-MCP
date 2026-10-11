@@ -3,12 +3,12 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
-import { DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS } from "../../core/contracts/constants.js";
 import {
+  defaultBlamePoolSize,
   defaultChunkerPoolSize,
   defaultEnrichmentFilesPerThread,
-} from "../../core/domains/ingest/pipeline/infra/pool-defaults.js";
-import { defaultBlamePoolSize } from "../../core/domains/trajectory/git/index.js";
+} from "../../core/api/pool-sizing.js";
+import { DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS } from "../../core/contracts/constants.js";
 import { DEFAULT_MINIFIED_LINE_LENGTH } from "../../core/primitives/paths/index.js";
 import {
   booleanFromEnv,

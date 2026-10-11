@@ -33,15 +33,14 @@
  * against the first, and the two enable flags against the second.
  */
 
-import type { EmbeddingConfig, QdrantTuneConfig, TrajectoryGitConfig, VcsConfig } from "../../core/contracts/index.js"; // Deep import, not the registry barrel: `env-replay.js` depends on nothing but
-
-// the group table, while the barrel reaches the qdrant-daemon and vcs adapters
-// through `env-resolution.js`.
+// The narrow api re-export, not the api assembly barrel: config parsing must
+// not load the whole api graph (see `core/api/registry-env-replay.ts`).
 import {
   outerEnvForRegistryStamp,
   replayRegistryEnv,
   type AmbientEnvRole,
-} from "../../core/domains/maintenance/registry/env-replay.js";
+} from "../../core/api/registry-env-replay.js";
+import type { EmbeddingConfig, QdrantTuneConfig, TrajectoryGitConfig, VcsConfig } from "../../core/contracts/index.js";
 import { isDebug } from "../../core/primitives/diagnostics/index.js";
 import { parseAppConfigZod } from "./parse.js";
 import type { CodegraphConfig, IngestConfig } from "./schemas.js";

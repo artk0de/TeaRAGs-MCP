@@ -125,6 +125,84 @@ export {
 } from "./internal/infra/working-tree-git-signal-store.js";
 export { InputValidationError, CollectionNotProvidedError } from "./public/errors.js";
 
+// ── Composition-root domain surface (bd tea-rags-mcp-k7kmu C5, h4a H2a) ──
+// `domain-boundaries.md`: bootstrap reaches domain modules only through this
+// barrel. Each section re-exports from the domain's FACADE, never a deep path;
+// names are unchanged. Pinned by tests/bootstrap/bootstrap-import-direction.test.ts.
+
+// maintenance/drift — the index drift monitors the reporter is built from
+export {
+  CommitDriftMonitor,
+  EnvDriftMonitor,
+  IndexDriftReporter,
+  LanguageVersionDriftMonitor,
+  SchemaDriftMonitor,
+  StatsContractDriftMonitor,
+  TrajectoryVersionDriftMonitor,
+} from "../domains/maintenance/drift/index.js";
+
+// language — symbol collection and the native capability table
+export { collectSymbols, DefaultSymbolIdComposer, nativeLanguageCapabilities } from "../domains/language/index.js";
+
+// trajectory/codegraph/symbols — the global symbol table
+export { InMemoryGlobalSymbolTable } from "../domains/trajectory/codegraph/symbols/index.js";
+
+// ingest/pipeline — pools, scanner, chunk-point builder, debug log, pool sizing
+export {
+  buildFileChunkPoints,
+  buildPipelineConfig,
+  ChunkerPool,
+  defaultEnrichmentWorkerMemoryLimitMb,
+  detectLanguage,
+  FileScanner,
+  initDebugLogger,
+  pipelineLog,
+  WorkerPoolEnrichmentExecutor,
+} from "../domains/ingest/pipeline/index.js";
+
+// ingest/infra + ingest/sync — the indexing lock, quarantine and snapshot stores
+export { CollectionIndexingLock } from "../domains/ingest/infra/index.js";
+export { QuarantineStore, ShardedSnapshotManager } from "../domains/ingest/sync/index.js";
+
+// explore — the working-tree overlay and its stores, readers and sweeps
+export {
+  createWorkingTreeBasePointStore,
+  createWorkingTreeChunkLayer,
+  createWorkingTreeChunkStore,
+  createWorkingTreeDeltaReader,
+  createWorkingTreeFileWriter,
+  scheduleWorkingTreeBasePointSweep,
+  scheduleWorkingTreeChunkSweep,
+  WorkingTreeDeltaWarmer,
+  WorkingTreeDenseVectorSource,
+  WorkingTreeOverlay,
+  WorkingTreeTouchedBasePoints,
+  WorkingTreeWatcher,
+} from "../domains/explore/index.js";
+
+// trajectory — codegraph worker wiring, temporal commit buffer, static payload
+export {
+  CODEGRAPH_LANGUAGE_BY_EXTENSION,
+  WorkingTreeGraphProcessBuilder,
+  type CodegraphDeps,
+  type CodegraphWorkerConfig,
+  type TemporalCochangeConfig,
+} from "../domains/trajectory/codegraph/index.js";
+export { InMemoryTemporalSymbolCommitBuffer } from "../domains/trajectory/codegraph/temporal/index.js";
+export { StaticPayloadBuilder } from "../domains/trajectory/static/index.js";
+
+// maintenance — footprint, database migrations, worktree provisioning
+export {
+  CollectionFootprintFactory,
+  CollectionFootprintPurger,
+  type CodegraphDaemonLiveness,
+} from "../domains/maintenance/footprint/index.js";
+export {
+  createDatabaseMigrationApplier,
+  DATABASE_MIGRATIONS_MODULE_URL,
+} from "../domains/maintenance/migration/database/index.js";
+export { WorktreeProvisioner } from "../domains/maintenance/worktree/index.js";
+
 // Project registry types re-exported from infra (public surface)
-export type { CollectionEntry, ProjectInfo } from "../domains/maintenance/registry/index.js";
+export type { AmbientEnvRole, CollectionEntry, ProjectInfo } from "../domains/maintenance/registry/index.js";
 export { CollectionRegistry } from "../domains/maintenance/registry/index.js";

@@ -16,8 +16,8 @@ import { LlamaServerEmbeddings } from "../core/adapters/embeddings/llama-server/
 import { OllamaEmbeddings, type OllamaRecoveryWaitEvent } from "../core/adapters/embeddings/ollama.js";
 import type { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { EmbeddingModelGuard } from "../core/adapters/qdrant/embedding-model-guard.js";
+import { pipelineLog } from "../core/api/index.js";
 import type { EmbeddingConfig } from "../core/contracts/types/config.js";
-import { pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { armEmbeddingModelParameters } from "./embedding-parameters.js";
 import type { PreparedCollectionEmbeddingBinding } from "./registry-collection-embeddings-resolver.js";
 
