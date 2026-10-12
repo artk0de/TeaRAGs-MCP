@@ -19,7 +19,7 @@ import { extname } from "node:path";
 
 import type { RechunkFileSelector } from "../../../contracts/types/rechunk.js";
 import { classify, compilePathPatternMatcher } from "../../../primitives/paths/index.js";
-import { extensionsForLanguages } from "../pipeline/chunker/config.js";
+import { extensionsForLanguages } from "../pipeline/chunker/language-config/index.js";
 
 /** True iff a project-relative path is selected. */
 export type RechunkFileMatcher = (relativePath: string) => boolean;

@@ -3,7 +3,7 @@ paths:
   - "src/core/domains/language/*/chunking/**/*.ts"
   - "src/core/domains/ingest/pipeline/chunker/hooks/**/*.ts"
   - "src/core/domains/ingest/pipeline/chunker/tree-sitter.ts"
-  - "src/core/domains/ingest/pipeline/chunker/config.ts"
+  - "src/core/domains/ingest/pipeline/chunker/language-config/config.ts"
 ---
 
 # Chunker Hook Chain (MANDATORY)

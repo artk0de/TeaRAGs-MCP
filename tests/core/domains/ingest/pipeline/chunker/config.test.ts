@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LANGUAGE_DEFINITIONS } from "../../../../../../src/core/domains/ingest/pipeline/chunker/config.js";
+import { LANGUAGE_DEFINITIONS } from "../../../../../../src/core/domains/ingest/pipeline/chunker/language-config/index.js";
 
 describe("LANGUAGE_DEFINITIONS", () => {
   describe("typescript extractLanguage", () => {

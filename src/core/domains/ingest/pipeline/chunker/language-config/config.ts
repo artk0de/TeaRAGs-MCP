@@ -1,8 +1,7 @@
 import type Parser from "tree-sitter";
 
-import type { AstNode } from "../../../../contracts/types/ast.js";
-import type { LanguageChunkClassifier } from "../../../../contracts/types/chunker.js";
-import type { ChunkingHook } from "./hooks/types.js";
+import type { AstNode } from "../../../../../contracts/types/ast.js";
+import type { ChunkingHook, LanguageChunkClassifier } from "../../../../../contracts/types/chunker.js";
 
 // Type for tree-sitter language modules
 interface TreeSitterLanguageModule {

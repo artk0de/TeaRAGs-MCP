@@ -70,8 +70,8 @@ export const <language>Hooks: ChunkingHook[] = [
 
 ## Step 5: Register in language config
 
-Edit `chunker/config.ts`. Find language entry in `LANGUAGE_DEFINITIONS`, add
-`hooks` property:
+Edit `chunker/language-config/config.ts`. Find language entry in
+`LANGUAGE_DEFINITIONS`, add `hooks` property:
 
 ```typescript
 import { <language>Hooks } from "./hooks/<language>/index.js";

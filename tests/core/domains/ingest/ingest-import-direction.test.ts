@@ -188,6 +188,34 @@ describe("pipeline/infra/debug-log is a self-contained submodule (6oah1 PI1)", (
   });
 });
 
+describe("pipeline/chunker/language-config is the enrichment-facing language-table leaf (g7w8f-2 G4)", () => {
+  const CHUNKER_DIR = join(PIPELINE_DIR, "chunker");
+  const LANGUAGE_CONFIG_DIR = join(CHUNKER_DIR, "language-config");
+  const LANGUAGE_CONFIG_BARREL = join(LANGUAGE_CONFIG_DIR, "index.ts");
+
+  it("the language-config cluster lives under pipeline/chunker/language-config/ behind an index.ts barrel", () => {
+    expect(existsSync(LANGUAGE_CONFIG_BARREL)).toBe(true);
+    const files = existsSync(LANGUAGE_CONFIG_DIR)
+      ? readdirSync(LANGUAGE_CONFIG_DIR)
+          .filter((entry) => entry.endsWith(".ts"))
+          .sort()
+      : [];
+    expect(files).toEqual(["config.ts", "index.ts", "language-detector.ts"]);
+  });
+
+  it("nothing under pipeline/enrichment/ imports a chunker file except through chunker/language-config/index.js", () => {
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder(ENRICHMENT_DIR)) {
+      for (const target of relativeTargets(file)) {
+        if (isUnder(target, CHUNKER_DIR) && target !== LANGUAGE_CONFIG_BARREL) {
+          offenders.push(`${rel(file)} -> ${rel(target)}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("ingest/infra exposes the indexing lock through ports (6oah1 I1)", () => {
   const PORTS_FILE = join(INFRA_DIR, "ports.ts");
 

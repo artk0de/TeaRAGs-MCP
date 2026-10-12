@@ -68,7 +68,7 @@ import {
   type MethodVerbNamespace,
   type NamingShape,
 } from "../../../domains/explore/naming-lexicon/index.js";
-import { LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
+import { LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import {
   languageTestFileConventions,
   nativeLanguageCapabilities,

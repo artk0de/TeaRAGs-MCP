@@ -38,7 +38,7 @@ import {
   computeCollectionStats as computeCollectionStatsInjected,
   validateSignalDependencies,
 } from "../../../../../../src/core/domains/ingest/infra/collection-stats.js";
-import { CODE_LANGUAGES } from "../../../../../../src/core/domains/ingest/pipeline/chunker/config.js";
+import { CODE_LANGUAGES } from "../../../../../../src/core/domains/ingest/pipeline/chunker/language-config/index.js";
 import { CODEGRAPH_FILTER_PRESETS } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/filter-presets/index.js";
 import {
   CODEGRAPH_SYMBOLS_CHUNK_SIGNALS,

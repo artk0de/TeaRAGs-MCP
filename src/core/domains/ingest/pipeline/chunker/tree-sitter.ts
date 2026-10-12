@@ -34,9 +34,9 @@ import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../errors/index.js"
 import { AstSymbolSplitter } from "./ast-symbol-splitter.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
-import type { LanguageConfig } from "./config.js";
 import { planContainerRemainder, type ContainerRemainderPart } from "./container-remainder.js";
 import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
+import type { LanguageConfig } from "./language-config/index.js";
 import { MarkdownChunker } from "./markdown-chunker.js";
 import { SymbolIdDisambiguator } from "./symbol-id-disambiguator.js";
 

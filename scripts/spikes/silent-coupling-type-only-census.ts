@@ -36,7 +36,10 @@ import type {
   TemporalCochangeEdgeWithLinkage,
   TemporalCochangeGraph,
 } from "../../src/core/contracts/types/codegraph.js";
-import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../src/core/domains/ingest/pipeline/chunker/config.js";
+import {
+  DOCUMENTATION_LANGUAGES,
+  LANGUAGE_MAP,
+} from "../../src/core/domains/ingest/pipeline/chunker/language-config/index.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { SQL_037_CG_TYPE_ONLY_FILE_EDGES } from "../../src/core/domains/maintenance/migration/database/migrations/037-cg-type-only-file-edges.js";
 import { collectSchemaColumnSources } from "../../src/core/domains/trajectory/codegraph/exclusion.js";

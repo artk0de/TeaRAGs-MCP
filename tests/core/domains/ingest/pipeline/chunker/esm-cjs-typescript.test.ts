@@ -6,8 +6,8 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { detectLanguage } from "../../../../../../src/core/domains/ingest/pipeline/chunker/language-config/index.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
-import { detectLanguage } from "../../../../../../src/core/domains/ingest/pipeline/chunker/utils/language-detector.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 
 const MODULE = `

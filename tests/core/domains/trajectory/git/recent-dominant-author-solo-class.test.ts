@@ -19,7 +19,7 @@ import type { CollectionSignalStats } from "../../../../../src/core/contracts/ty
 import { resolvePresets } from "../../../../../src/core/domains/explore/rerank/presets/index.js";
 import { Reranker, type RerankableResult } from "../../../../../src/core/domains/explore/reranker.js";
 import { computeCollectionStats as computeCollectionStatsInjected } from "../../../../../src/core/domains/ingest/infra/collection-stats.js";
-import { CODE_LANGUAGES } from "../../../../../src/core/domains/ingest/pipeline/chunker/config.js";
+import { CODE_LANGUAGES } from "../../../../../src/core/domains/ingest/pipeline/chunker/language-config/index.js";
 import { gitPayloadSignalDescriptors } from "../../../../../src/core/domains/trajectory/git/payload-signals.js";
 import { gitDerivedSignals } from "../../../../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
 import { gitStatsAccumulators } from "../../../../../src/core/domains/trajectory/git/stats/index.js";
