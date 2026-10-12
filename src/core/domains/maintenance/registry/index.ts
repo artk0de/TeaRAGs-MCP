@@ -42,6 +42,7 @@ export type { RegistryEnvEdit } from "./env-edit.js";
 export { outerEnvForRegistryStamp, replayRegistryEnv } from "./env-replay.js";
 export type { AmbientEnvRole } from "./env-replay.js";
 export {
+  entriesSharingRepo,
   outerEnvForRegistryEntry,
   pickRegistryEntry,
   pickRegistryEnvSeed,

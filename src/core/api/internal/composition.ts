@@ -42,7 +42,7 @@ import { OrderByFieldResolver } from "../../domains/explore/rank-module.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import type { RerankerPort } from "../../domains/explore/reranker-port.js";
 import { Reranker } from "../../domains/explore/reranker.js";
-import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
+import { validateSignalDependencies } from "../../domains/ingest/infra/index.js";
 import { resolveChunkSetBumpScopes, resolveLanguageCodeVersions } from "../../domains/language/capability/versions.js";
 import { LanguageFactory, resolveLanguageCapabilities } from "../../domains/language/index.js";
 import type { DeclaredPayloadIndexSet } from "../../domains/maintenance/migration/payload_index_migrations/index.js";
@@ -53,10 +53,10 @@ import {
 } from "../../domains/trajectory/codegraph/index.js";
 import {
   CODEGRAPH_SYMBOLS_CHUNK_SIGNALS,
+  CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
   CODEGRAPH_SYMBOLS_FILE_SIGNALS,
   codegraphFilters,
 } from "../../domains/trajectory/codegraph/symbols/index.js";
-import { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "../../domains/trajectory/codegraph/symbols/rerank/derived-signals/index.js";
 import { buildCompositePresets } from "../../domains/trajectory/composite/presets/index.js";
 import { filterPayloadKeys } from "../../domains/trajectory/filter-payload-keys.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
@@ -75,8 +75,11 @@ import {
   buildCompositeFilterPresets,
   TrajectoryRegistry,
 } from "../../domains/trajectory/index.js";
-import { STATIC_FILTER_PRESETS, StaticTrajectory } from "../../domains/trajectory/static/index.js";
-import { staticStatsAccumulators } from "../../domains/trajectory/static/stats/index.js";
+import {
+  STATIC_FILTER_PRESETS,
+  staticStatsAccumulators,
+  StaticTrajectory,
+} from "../../domains/trajectory/static/index.js";
 import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../public/dto/architecture.js";
 import type { FindCoChangedRequest, FindCoChangedResult } from "../public/dto/cochange.js";
 import type { GetOntologyReportRequest, GetOntologyReportResponse } from "../public/dto/ontology.js";

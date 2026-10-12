@@ -24,7 +24,7 @@
  */
 
 import type { CollectionEntry, RegistryLookup } from "../../../contracts/types/registry.js";
-import { REGISTRY_ENV_GROUPS, type EnvConsequence } from "../registry/env-groups.js";
+import { REGISTRY_ENV_GROUPS, type EnvConsequence } from "../registry/index.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 import type { IndexDriftRemedy } from "./remedy.js";
 

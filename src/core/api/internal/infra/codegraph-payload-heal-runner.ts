@@ -37,7 +37,7 @@ import {
   CodegraphChunkSettlementTally,
   settleCodegraphChunkSignals,
   type CodegraphChunkRangeSource,
-} from "../../../domains/trajectory/codegraph/symbols/chunk-signal-settlement.js";
+} from "../../../domains/trajectory/codegraph/symbols/index.js";
 
 /** Per-file metrics read in batches of this size, mirroring the provider's finalize read-back. */
 const HEAL_METRICS_READ_BATCH = 2000;

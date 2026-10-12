@@ -28,11 +28,8 @@ import { resolveGitCommonDir } from "../../../adapters/vcs/index.js";
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
 import type { WorktreeSeedRejectionReason } from "../../../contracts/types/worktree.js";
-import { LanguageVersionDriftMonitor } from "../drift/language-version-drift-monitor.js";
-import { checkSchemaDrift } from "../drift/schema-drift.js";
-import { REGISTRY_ENV_GROUPS } from "../registry/env-groups.js";
-import { entriesSharingRepo } from "../registry/env-resolution.js";
-import { resolveRegistryQdrantBackend } from "../registry/qdrant-backend-resolution.js";
+import { checkSchemaDrift, LanguageVersionDriftMonitor } from "../drift/index.js";
+import { entriesSharingRepo, REGISTRY_ENV_GROUPS, resolveRegistryQdrantBackend } from "../registry/index.js";
 
 export interface WorktreeSeedRejection {
   reason: WorktreeSeedRejectionReason;

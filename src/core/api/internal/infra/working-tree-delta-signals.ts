@@ -93,7 +93,7 @@ import { buildCodegraphFileSignals } from "../../../domains/trajectory/codegraph
 import {
   settleCodegraphChunkSignals,
   type CodegraphStoredChunk,
-} from "../../../domains/trajectory/codegraph/symbols/chunk-signal-settlement.js";
+} from "../../../domains/trajectory/codegraph/symbols/index.js";
 import type { WorkingTreeGraphFileOpener } from "./working-tree-graph-read.js";
 
 /** Tree-graph signal reads kept per process — one per recent (graph, file set). */
