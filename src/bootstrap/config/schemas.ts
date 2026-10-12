@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
-import { defaultChunkerPoolSize, defaultEnrichmentFilesPerThread } from "../../core/api/pool-sizing.js";
+import { defaultChunkerPoolSize, defaultEnrichmentFilesPerThread } from "../../core/api/entry-points/index.js";
 import { DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS } from "../../core/contracts/constants.js";
 import { defaultIoBoundPoolSize } from "../../core/primitives/concurrency/index.js";
 import { DEFAULT_MINIFIED_LINE_LENGTH } from "../../core/primitives/paths/index.js";
