@@ -15,7 +15,11 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type {
+  QdrantCollectionCatalog,
+  QdrantPointReader,
+  QdrantPointWriter,
+} from "../../../../adapters/qdrant/ports.js";
 import { servicePointExclusions } from "../../../../adapters/qdrant/service-points.js";
 import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/codegraph-payload.js";
 import { selectProviderKeys } from "../../../../contracts/provider-selector.js";
@@ -284,7 +288,7 @@ export class EnrichmentCoordinator {
   }
 
   constructor(
-    private readonly qdrant: QdrantManager,
+    private readonly qdrant: QdrantCollectionCatalog & QdrantPointReader & QdrantPointWriter,
     providers: EnrichmentProvider | EnrichmentProvider[],
     private readonly recovery?: EnrichmentRecovery,
     executor?: EnrichmentExecutor,

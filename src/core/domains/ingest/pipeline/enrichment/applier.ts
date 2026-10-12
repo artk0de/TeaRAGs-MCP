@@ -10,7 +10,7 @@
 
 import { relative } from "node:path";
 
-import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { QdrantPointWriter } from "../../../../adapters/qdrant/ports.js";
 import type {
   ChunkLookupEntry,
   ChunkSignalOverlay,
@@ -204,7 +204,7 @@ export class EnrichmentApplier {
   private readonly optionalOverlayKeys: ReadonlyMap<string, OptionalOverlayKeys>;
 
   constructor(
-    private readonly qdrant: QdrantManager,
+    private readonly qdrant: QdrantPointWriter,
     private readonly retryOptions?: BatchWriteRetryOptions,
     /**
      * The providers whose overlays this applier writes, for the one thing it

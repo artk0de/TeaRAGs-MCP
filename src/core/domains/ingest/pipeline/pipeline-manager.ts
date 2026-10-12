@@ -19,7 +19,7 @@
  *   await pipeline.shutdown();
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantPointWriter } from "../../../adapters/qdrant/ports.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { PipelineNotStartedError } from "../errors/index.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
@@ -290,7 +290,7 @@ export class PipelineManager {
  * Factory function to create a PipelineManager with Qdrant handlers
  */
 export function createQdrantPipeline(
-  qdrant: QdrantManager,
+  qdrant: QdrantPointWriter,
   collectionName: string,
   options?: {
     config?: Partial<PipelineConfig>;
