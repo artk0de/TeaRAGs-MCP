@@ -33,13 +33,10 @@
  * against the first, and the two enable flags against the second.
  */
 
-// The narrow api re-export, not the api assembly barrel: config parsing must
-// not load the whole api graph (see `core/api/registry-env-replay.ts`).
-import {
-  outerEnvForRegistryStamp,
-  replayRegistryEnv,
-  type AmbientEnvRole,
-} from "../../core/api/registry-env-replay.js";
+// The stable api entry-points sub-component, not the api assembly barrel:
+// config parsing must not load the whole api graph (see
+// `core/api/entry-points/registry-env-replay.ts`).
+import { outerEnvForRegistryStamp, replayRegistryEnv, type AmbientEnvRole } from "../../core/api/entry-points/index.js";
 import type { EmbeddingConfig, QdrantTuneConfig, TrajectoryGitConfig, VcsConfig } from "../../core/contracts/index.js";
 import { isDebug } from "../../core/primitives/diagnostics/index.js";
 import { parseAppConfigZod } from "./parse.js";

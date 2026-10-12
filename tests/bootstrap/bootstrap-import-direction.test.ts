@@ -5,12 +5,15 @@
  * `mcp/`, `core/api/`, `core/{contracts, primitives, adapters}/`. Domain
  * modules are reached only through the api ASSEMBLY barrel
  * (`core/api/index.ts`) — or, for config-time reads that must not load the
- * whole api graph, through a narrow `core/api/*.ts` re-export file
- * (`pool-sizing.ts`, `registry-env-replay.ts`).
+ * whole api graph, through the STABLE `core/api/entry-points/` sub-component
+ * (bd tea-rags-mcp-89k7k.35.36): config parsing runs on every cli command, so
+ * its edge must not point at the churning assembly component itself.
  *
- * The pin: no file under `src/bootstrap/` holds an import or re-export
+ * The pins: no file under `src/bootstrap/` holds an import or re-export
  * (value OR type, static OR dynamic) whose specifier resolves into
- * `src/core/domains/**` or `src/core/api/internal/**`.
+ * `src/core/domains/**` or `src/core/api/internal/**`; and no file under
+ * `src/bootstrap/config/` reaches `src/core/api/**` at all EXCEPT through
+ * `src/core/api/entry-points/`.
  *
  * Worker entry modules handed to a pool BY PATH (the codegraph provider
  * factory, the language module, the enrichment worker) are `join(...)`
@@ -65,6 +68,21 @@ describe("bootstrap reaches domain modules only through core/api", () => {
       for (const specifier of moduleSpecifiers(text)) {
         const resolved = resolveRelative(file, specifier);
         if (resolved !== undefined && reachesPastTheApiBarrel(resolved)) offenders.push(`${file}: "${specifier}"`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("no bootstrap/config file imports core/api except through core/api/entry-points", () => {
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder("src/bootstrap/config")) {
+      const text = readFileSync(join(ROOT, file), "utf-8");
+      for (const specifier of moduleSpecifiers(text)) {
+        const resolved = resolveRelative(file, specifier);
+        if (resolved === undefined) continue;
+        if (resolved.startsWith("src/core/api/") && !resolved.startsWith("src/core/api/entry-points/")) {
+          offenders.push(`${file}: "${specifier}"`);
+        }
       }
     }
     expect(offenders).toEqual([]);
