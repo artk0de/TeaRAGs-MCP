@@ -19,7 +19,11 @@
  * durable before the call returns.
  */
 
-import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type {
+  QdrantCollectionCatalog,
+  QdrantPointReader,
+  QdrantPointWriter,
+} from "../../../../adapters/qdrant/ports.js";
 import { awaitWriteBarrier, type PayloadWriteBarrierOutcome } from "../../../../adapters/qdrant/write-barrier.js";
 import { DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS, INDEXING_METADATA_ID } from "../../../../contracts/constants.js";
 import { pipelineLog } from "../infra/debug-log/index.js";
@@ -36,7 +40,7 @@ export class EnrichmentMarkerStore {
   private readonly payloadWriteBarrierBudgetMs: number;
 
   constructor(
-    private readonly qdrant: QdrantManager,
+    private readonly qdrant: QdrantCollectionCatalog & QdrantPointReader & QdrantPointWriter,
     options: EnrichmentMarkerStoreOptions = {},
   ) {
     this.payloadWriteBarrierBudgetMs = options.payloadWriteBarrierBudgetMs ?? DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS;

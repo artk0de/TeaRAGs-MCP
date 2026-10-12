@@ -6,7 +6,7 @@
  */
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantCollectionCatalog, QdrantPointReader, QdrantPointWriter } from "../../../adapters/qdrant/ports.js";
 import type { QdrantUpdateStatus } from "../../../adapters/qdrant/types.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { WorktreeSeedMarkerUnconfirmedError, WorktreeSeedMarkerUnreadableError } from "../errors/index.js";
@@ -20,7 +20,7 @@ import { parseMarkerPayload, type WorktreeSeedPending } from "../infra/index.js"
  * `false` means the budget was spent or the barrier failed, i.e. unconfirmed.
  */
 async function isMarkerWriteConfirmed(
-  qdrant: QdrantManager,
+  qdrant: QdrantPointWriter,
   collectionName: string,
   status: QdrantUpdateStatus | undefined,
 ): Promise<boolean> {
@@ -46,7 +46,7 @@ function logMarkerWriteUnconfirmed(collectionName: string, write: string): void 
  * may be missing or stale when registering an out-of-band collection.
  */
 export async function storeIndexingMarker(
-  qdrant: QdrantManager,
+  qdrant: QdrantPointWriter & QdrantCollectionCatalog,
   embeddings: EmbeddingProvider,
   collectionName: string,
   complete: boolean,
@@ -160,7 +160,7 @@ export async function storeIndexingMarker(
  * Stale detection uses lastHeartbeat (or startedAt as fallback) to decide
  * whether an "in progress" marker belongs to a live or crashed process.
  */
-export async function updateHeartbeat(qdrant: QdrantManager, collectionName: string): Promise<void> {
+export async function updateHeartbeat(qdrant: QdrantPointWriter, collectionName: string): Promise<void> {
   try {
     // A `wait_timeout` answer is deliberately not read: the heartbeat repeats on
     // an interval, so a queued one is superseded by the next and never decides
@@ -194,7 +194,7 @@ export function worktreeSeedPendingMarkerPatch(pending: WorktreeSeedPending): Re
  * confirmed ({@link WorktreeSeedMarkerUnconfirmedError}).
  */
 export async function markWorktreeSeedPending(
-  qdrant: QdrantManager,
+  qdrant: QdrantPointWriter,
   collectionName: string,
   pending: WorktreeSeedPending,
 ): Promise<void> {
@@ -215,7 +215,7 @@ export async function markWorktreeSeedPending(
  * stamps something of its own needs {@link readWorktreeSeedPendingOrThrow}.
  */
 export async function readWorktreeSeedPending(
-  qdrant: QdrantManager,
+  qdrant: QdrantPointReader,
   collectionName: string,
 ): Promise<WorktreeSeedPending | undefined> {
   try {
@@ -235,7 +235,7 @@ export async function readWorktreeSeedPending(
  * for a 5xx or a timeout, which is exactly that "none".
  */
 export async function readWorktreeSeedPendingOrThrow(
-  qdrant: QdrantManager,
+  qdrant: QdrantPointReader,
   collectionName: string,
 ): Promise<WorktreeSeedPending | undefined> {
   const point = await qdrant.getPointOrThrow(collectionName, INDEXING_METADATA_ID).catch((error: unknown) => {
@@ -245,7 +245,7 @@ export async function readWorktreeSeedPendingOrThrow(
 }
 
 /** The seed is settled. A failed clear only means the next run redoes the stamp and the git rebuild. */
-export async function clearWorktreeSeedPending(qdrant: QdrantManager, collectionName: string): Promise<void> {
+export async function clearWorktreeSeedPending(qdrant: QdrantPointWriter, collectionName: string): Promise<void> {
   try {
     // A `wait_timeout` answer is deliberately not read, and `batchDeletePayload`
     // does not report one: a queued clear applies in submission order, and an

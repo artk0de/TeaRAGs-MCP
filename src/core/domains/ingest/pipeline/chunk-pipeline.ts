@@ -13,7 +13,7 @@
  */
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantPointWriter } from "../../../adapters/qdrant/ports.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import type { EmbeddingProducerStarvation } from "../../../contracts/types/registry.js";
@@ -68,7 +68,7 @@ export interface ChunkPipelineConfig {
 
 export class ChunkPipeline {
   private readonly config: ChunkPipelineConfig;
-  private readonly qdrant: QdrantManager;
+  private readonly qdrant: QdrantPointWriter;
   private readonly embeddings: EmbeddingProvider;
   private readonly collectionName: string;
   private readonly payloadBuilder: PayloadBuilder;
@@ -97,7 +97,7 @@ export class ChunkPipeline {
   private readonly batchFormation = { formed: 0, starved: 0 };
 
   constructor(
-    qdrant: QdrantManager,
+    qdrant: QdrantPointWriter,
     embeddings: EmbeddingProvider,
     collectionName: string,
     payloadBuilder: PayloadBuilder,

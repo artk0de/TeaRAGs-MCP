@@ -13,7 +13,7 @@
  * earlier in this same run.
  */
 
-import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { QdrantPointWriter } from "../../../../adapters/qdrant/ports.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../../contracts/types/provider.js";
@@ -34,7 +34,7 @@ const BATCH_SIZE = 100;
  * stamps. Points of a batch that never landed keep their old overlay whole.
  */
 async function writeOverlayOps(
-  qdrant: QdrantManager,
+  qdrant: QdrantPointWriter,
   physicalCollectionName: PhysicalCollectionName,
   ops: BatchPayloadOp[],
   levelKey: string,
@@ -52,7 +52,7 @@ async function writeOverlayOps(
 export class EnrichmentBackfiller {
   constructor(
     private readonly applier: EnrichmentApplier,
-    private readonly qdrant: QdrantManager,
+    private readonly qdrant: QdrantPointWriter,
     private readonly executor: EnrichmentExecutor,
   ) {}
 

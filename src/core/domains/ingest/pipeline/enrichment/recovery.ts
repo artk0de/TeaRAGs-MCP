@@ -5,7 +5,7 @@
  * groups them by file, and calls the provider to re-enrich.
  */
 
-import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { QdrantPointReader } from "../../../../adapters/qdrant/ports.js";
 import { servicePointExclusions } from "../../../../adapters/qdrant/service-points.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
@@ -148,7 +148,7 @@ export class EnrichmentRecovery {
   private readonly executor: EnrichmentExecutor;
 
   constructor(
-    private readonly qdrant: QdrantManager,
+    private readonly qdrant: QdrantPointReader,
     private readonly applier: EnrichmentApplier,
     options?: RecoveryOptions,
   ) {
