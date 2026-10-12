@@ -11,7 +11,7 @@
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { isDebug } from "../../../../primitives/diagnostics/index.js";
+import { isDebug } from "../../../../../primitives/diagnostics/index.js";
 import { readConfigDump, readLogsDir } from "./debug-log-dependencies.js";
 import { localTimestamp, renderSessionHeader } from "./debug-log-format.js";
 

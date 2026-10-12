@@ -33,7 +33,7 @@ import { INDEXING_METADATA_ID } from "../../../../../../../src/core/contracts/co
 import type { WorkerEnrichmentDescriptor } from "../../../../../../../src/core/contracts/types/provider.js";
 import { EnrichmentCoordinator } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { WorkerPoolEnrichmentExecutor } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/worker-pool.js";
-import { pipelineLog } from "../../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../../../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js";
 import { LanguageFactory } from "../../../../../../../src/core/domains/language/index.js";
 import { collectSymbols } from "../../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../../src/core/domains/language/kernel/symbol-id.js";

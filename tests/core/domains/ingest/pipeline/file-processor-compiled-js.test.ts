@@ -14,7 +14,7 @@ import { processFiles } from "../../../../../src/core/domains/ingest/pipeline/fi
 import {
   pipelineLog,
   type FileIngestRecord,
-} from "../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
+} from "../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js";
 
 // Stub tree-sitter so any path that DOES reach the chunker stays inert. The
 // compiled-content gate runs BEFORE chunking, so for skipped files the stub is

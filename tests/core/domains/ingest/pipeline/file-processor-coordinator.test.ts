@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cleanupTempDir, createTempTestDir, createTestFile } from "../__helpers__/test-helpers.js";
 import { processFiles } from "../../../../../src/core/domains/ingest/pipeline/file-processor.js";
-import type { FileIngestRecord } from "../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
+import type { FileIngestRecord } from "../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js";
 import { createDeletionOutcome } from "../../../../../src/core/domains/ingest/sync/deletion/outcome.js";
 import { ReindexCoordinator } from "../../../../../src/core/domains/ingest/sync/deletion/reindex-coordinator.js";
 

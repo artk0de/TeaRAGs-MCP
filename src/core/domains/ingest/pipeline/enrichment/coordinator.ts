@@ -29,7 +29,7 @@ import type {
 } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentRunCoverage } from "../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, EnrichmentProgressCallback } from "../../../../types.js";
-import { pipelineLog } from "../infra/debug-logger.js";
+import { pipelineLog } from "../infra/debug-log/index.js";
 import type { ChunkItem } from "../infra/index.js";
 import { EnrichmentApplier, type EnrichmentApplyEvent } from "./applier.js";
 import { EnrichmentBackfiller } from "./backfiller.js";

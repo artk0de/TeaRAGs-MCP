@@ -19,7 +19,7 @@ import type {
   FileSignalTransform,
   OptionalOverlayKeys,
 } from "../../../../contracts/types/provider.js";
-import { pipelineLog } from "../infra/debug-logger.js";
+import { pipelineLog } from "../infra/debug-log/index.js";
 import type { ChunkItem } from "../infra/index.js";
 import { batchDeletePayloadWithRetry, batchSetPayloadWithRetry, type BatchWriteRetryOptions } from "./batch-write.js";
 import { MissedFileTracker } from "./missed-file-tracker.js";

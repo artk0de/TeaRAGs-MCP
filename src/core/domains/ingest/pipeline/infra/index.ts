@@ -12,8 +12,9 @@
  *
  * Cross-subdomain consumers SHOULD import through this barrel (per
  * `.claude/rules/barrel-files.md`). Existing deep imports from `runtime.ts` /
- * `debug-logger.ts` / `parallel.ts` are kept working — re-exported below — so
- * the barrel addition is non-breaking and incrementally adoptable.
+ * `parallel.ts` are kept working — re-exported below — and the debug-log
+ * cluster re-exports through its own `debug-log/index.js` facade, so the
+ * barrel addition is non-breaking and incrementally adoptable.
  */
 
 export { BatchAccumulator } from "./batch-accumulator.js";
@@ -32,7 +33,7 @@ export type {
   WorkerPoolConfig,
   WorkItem,
 } from "./types.js";
-export { pipelineLog } from "./debug-logger.js";
+export { pipelineLog } from "./debug-log/index.js";
 export { parallelLimit } from "./parallel.js";
 export { isDebug, setDebug } from "../../../../primitives/diagnostics/index.js";
 export { WorkerDispatchPool } from "./worker-dispatch-pool.js";

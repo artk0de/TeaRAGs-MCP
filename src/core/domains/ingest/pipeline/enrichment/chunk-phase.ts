@@ -23,7 +23,7 @@ import type { ChunkSignalOptions, ChunkSignalOverlay } from "../../../../contrac
 import { CommitDiffMemo } from "../../../../primitives/collections/index.js";
 import { Semaphore } from "../../../../primitives/concurrency/index.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
-import { pipelineLog } from "../infra/debug-logger.js";
+import { pipelineLog } from "../infra/debug-log/index.js";
 import type { ChunkItem } from "../infra/index.js";
 import { bareStampableChunkIds, type EnrichmentApplier } from "./applier.js";
 import { enrichmentScope, enrichmentSkipReason, fileLinesOf, type EnrichmentSkipReason } from "./policy.js";

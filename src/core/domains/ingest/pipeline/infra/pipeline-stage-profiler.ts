@@ -1,7 +1,7 @@
 /**
  * Cumulative and wall-clock timing per pipeline stage.
  *
- * Split out of `debug-logger.ts`: measuring stages is arithmetic over a stage
+ * Split out of `debug-log/debug-logger.ts`: measuring stages is arithmetic over a stage
  * map, not logging. Nothing here touches the filesystem or the log format, so
  * the profiler is directly testable and the logger keeps one job.
  *

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   FileIngestRecord,
   LogContext,
-} from "../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
+} from "../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js";
 // Import after setting DEBUG
 import { setDebug } from "../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
@@ -20,7 +20,7 @@ process.env.DEBUG = "true";
 setDebug(true);
 
 const { pipelineLog, initDebugLogger, SlowFileTracker } =
-  await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js");
+  await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js");
 const fs = await import("node:fs");
 
 // Initialize debug logger with test logsDir so file logging works
@@ -719,7 +719,7 @@ describe("DebugLogger - initLogFile branches", () => {
     freshSetDebug(true);
 
     const { pipelineLog: freshLogger, initDebugLogger: freshInit } =
-      await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js");
+      await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js");
     const fsModule = await import("node:fs");
 
     freshInit({
@@ -757,7 +757,7 @@ describe("DebugLogger - initLogFile branches", () => {
     freshSetDebug(true);
 
     const { pipelineLog: freshLogger, initDebugLogger: freshInit } =
-      await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js");
+      await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js");
 
     freshInit({
       logsDir: "/tmp/broken-dir",
@@ -802,7 +802,7 @@ describe("DebugLogger - lazy initialization", () => {
     freshSetDebug(true);
 
     const { pipelineLog: freshLogger, initDebugLogger: freshInit } =
-      await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js");
+      await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js");
     const fsModule = await import("node:fs");
 
     // Initialize with test logsDir
@@ -994,7 +994,7 @@ describe("DebugLogger - DEBUG environment variable", () => {
 
     // Import module with DEBUG unset (vi.resetModules() already cleared cache)
     const { pipelineLog: noDebugLogger } =
-      await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js");
+      await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js");
     const fsModule = await import("node:fs");
 
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});

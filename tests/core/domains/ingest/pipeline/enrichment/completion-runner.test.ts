@@ -16,7 +16,7 @@ import type {
   EnrichmentMarkerMap,
   EnrichmentProvider,
 } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
-import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js";
 
 // Real Qdrant set_payload requires the point to exist; mirror production seed
 // (storeIndexingMarker) so EnrichmentMarkerStore writes are visible to read().

@@ -53,7 +53,7 @@ import {
   readWorktreeSeedPending,
   readWorktreeSeedPendingOrThrow,
 } from "../../../domains/ingest/pipeline/indexing-marker.js";
-import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-log/index.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { advanceChunkSetStamp } from "../../../domains/maintenance/drift/index.js";
 import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/index.js";

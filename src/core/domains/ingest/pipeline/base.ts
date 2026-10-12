@@ -40,7 +40,7 @@ import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
 import { reindexRunSpec, type EnrichmentRunSpec, type StreamedEnrichmentRunInput } from "./enrichment/run-spec.js";
 import { ChunkPipeline } from "./index.js";
 import { storeIndexingMarker, updateHeartbeat } from "./indexing-marker.js";
-import { pipelineLog } from "./infra/debug-logger.js";
+import { pipelineLog } from "./infra/debug-log/index.js";
 import { defaultChunkerPoolSize } from "./infra/pool-defaults.js";
 import { FileScanner } from "./scanner.js";
 import type { PipelineConfig } from "./types.js";

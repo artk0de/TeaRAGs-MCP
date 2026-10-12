@@ -31,7 +31,7 @@ function isDocumentationPath(relPath: string): boolean {
  * an unstamped decline stays in the recovery scan forever, which is the whole
  * defect this vocabulary exists to close.
  *
- * Distinct from `skipReason` in `pipeline/infra/debug-logger.ts`, which records
+ * Distinct from `skipReason` in `pipeline/infra/debug-log/debug-logger.ts`, which records
  * why a file never reached the chunker at all.
  */
 export type EnrichmentSkipReason = "generated" | "test" | "documentation" | "oversized" | "policy";

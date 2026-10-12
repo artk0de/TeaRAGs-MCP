@@ -34,7 +34,7 @@ import type {
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentMetrics } from "../../../../types.js";
-import { pipelineLog } from "../infra/debug-logger.js";
+import { pipelineLog } from "../infra/debug-log/index.js";
 import type { EnrichmentApplier } from "./applier.js";
 import type { EnrichmentBackfiller } from "./backfiller.js";
 import type { ChunkPhase, ChunkPhaseMetrics } from "./chunk-phase.js";

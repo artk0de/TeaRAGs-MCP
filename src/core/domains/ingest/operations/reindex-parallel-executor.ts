@@ -18,7 +18,7 @@ import { isDebug } from "../../../primitives/diagnostics/index.js";
 import type { ChunkLookupEntry, FileChanges, ProgressCallback } from "../../../types.js";
 import type { ProcessingContext } from "../pipeline/base.js";
 import { processRelativeFiles } from "../pipeline/file-processor.js";
-import { pipelineLog } from "../pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../pipeline/infra/debug-log/index.js";
 import type { DeletionOutcome } from "../sync/deletion/outcome.js";
 import { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
 import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.js";

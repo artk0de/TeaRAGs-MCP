@@ -26,7 +26,7 @@ import { extractImportsExports } from "./chunker/utils/import-extractor.js";
 import { detectLanguage } from "./chunker/utils/language-detector.js";
 import { sourceContentSkipReason } from "./file-chunk-points.js";
 import type { FileProcessCallbacks, FileProcessorOptions, FileProcessResult } from "./file-processor.js";
-import { pipelineLog, type FileIngestRecord } from "./infra/debug-logger.js";
+import { pipelineLog, type FileIngestRecord } from "./infra/debug-log/index.js";
 
 /** Reasons a file is dropped BEFORE it is parsed — cheapest gates first. */
 type PreParseSkipReason = Extract<FileIngestRecord["skipReason"], "delete-failed" | "secrets" | "compiled">;

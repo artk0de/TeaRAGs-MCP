@@ -30,7 +30,7 @@ import {
 } from "../pipeline/enrichment/run-spec.js";
 import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
-import { pipelineLog } from "../pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../pipeline/infra/debug-log/index.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import { QuarantineStore, type ParallelFileSynchronizer } from "../sync/index.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";

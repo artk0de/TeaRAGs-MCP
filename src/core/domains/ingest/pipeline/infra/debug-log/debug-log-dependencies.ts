@@ -9,7 +9,7 @@
  * repeat the "config might not be available" dance.
  */
 
-import type { PipelineConcurrencyLimits } from "./pipeline-stage-profiler.js";
+import type { PipelineConcurrencyLimits } from "../pipeline-stage-profiler.js";
 
 let logsDir: string | null = null;
 let configDumpFn: (() => Record<string, unknown>) | null = null;
