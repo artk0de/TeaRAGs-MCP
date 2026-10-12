@@ -25,6 +25,7 @@ import {
 import {
   buildTreeGraphFixture,
   cleanupTreeGraphFixtures,
+  CODEGRAPH_POOL_FACTORY_MODULE,
   LANGUAGE_MODULE_PATH,
   methodEdges,
   MIGRATIONS_MODULE_PATH,
@@ -66,7 +67,11 @@ function inputFor(fixture: TreeGraphFixture, outputRoot = fixture.outputRoot): W
     treeRoot: fixture.treeRoot,
     changedRelPaths: ["src/a.ts"],
     deletedRelPaths: [],
-    providerConfig: { languageModulePath: LANGUAGE_MODULE_PATH, migrationsModulePath: MIGRATIONS_MODULE_PATH },
+    providerConfig: {
+      languageModulePath: LANGUAGE_MODULE_PATH,
+      migrationsModulePath: MIGRATIONS_MODULE_PATH,
+      poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
+    },
   };
 }
 

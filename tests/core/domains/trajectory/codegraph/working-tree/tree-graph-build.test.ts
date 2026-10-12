@@ -20,6 +20,7 @@ import { fileContentHash } from "../../../../../../src/core/primitives/ids/conte
 import {
   buildTreeGraphFixture,
   cleanupTreeGraphFixtures,
+  CODEGRAPH_POOL_FACTORY_MODULE,
   LANGUAGE_MODULE_PATH,
   methodEdgeRowsFrom,
   methodEdges,
@@ -50,6 +51,7 @@ function inputFor(
     providerConfig: {
       languageModulePath: LANGUAGE_MODULE_PATH,
       migrationsModulePath: MIGRATIONS_MODULE_PATH,
+      poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
     },
   };
 }

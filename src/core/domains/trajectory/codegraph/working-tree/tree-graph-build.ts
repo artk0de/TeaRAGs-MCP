@@ -30,12 +30,15 @@ import { deleteThenWalk, finishTreeGraph, type TreeDeltaWalk, type TreeGraphClon
  * `daemonSocketPath`: the clone is private to the build, so the provider runs in
  * direct mode and holds the only client. No `rootDir` / `collectionName`: those
  * are the build's own staging layout. No `temporal`: co-change history describes
- * commits, which a working tree adds none of.
+ * commits, which a working tree adds none of. `poolFactoryModulePath` rides
+ * along (S15): the child resolves the bootstrap-owned pool builder from it —
+ * a function cannot cross the IPC boundary.
  */
 export type WorkingTreeGraphProviderConfig = Pick<
   CodegraphWorkerConfig,
   | "languageModulePath"
   | "migrationsModulePath"
+  | "poolFactoryModulePath"
   | "customExcludePatterns"
   | "ambiguousResolveMode"
   | "dbMemoryLimit"

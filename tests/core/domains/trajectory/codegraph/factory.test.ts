@@ -25,6 +25,11 @@ const MIGRATIONS_MODULE_PATH = new URL(
   "../../../../../build/core/domains/maintenance/migration/database/index.js",
   import.meta.url,
 ).pathname;
+/** Compiled bootstrap-owned pool factory (S15) — the module path the runtime resolves the pool from. */
+const CODEGRAPH_POOL_FACTORY_MODULE = new URL(
+  "../../../../../build/bootstrap/codegraph-worker-pool-factory.js",
+  import.meta.url,
+).pathname;
 
 describe("createCodegraphEnrichmentProvider", () => {
   // The factory dynamic-imports the compiled language barrel — every
@@ -42,6 +47,7 @@ describe("createCodegraphEnrichmentProvider", () => {
     const config: CodegraphWorkerConfig = {
       languageModulePath: LANGUAGE_MODULE_PATH,
       migrationsModulePath: MIGRATIONS_MODULE_PATH,
+      poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
       rootDir: "/tmp/tea-rags-test-root",
       collectionName: "code_test",
       customExcludePatterns: [],
@@ -64,6 +70,7 @@ describe("createCodegraphEnrichmentProvider", () => {
     const config: CodegraphWorkerConfig = {
       languageModulePath: LANGUAGE_MODULE_PATH,
       migrationsModulePath: MIGRATIONS_MODULE_PATH,
+      poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
       rootDir: "/tmp/tea-rags-test-root",
     };
     const descriptor: WorkerEnrichmentDescriptor = {
@@ -96,11 +103,13 @@ describe("createCodegraphEnrichmentProvider", () => {
 
     it("symbolTableFactory and initHook fire when pool opens a collection for the first time", async () => {
       // Build the provider with a real rootDir so pool mode is active and the
-      // inline callbacks (`symbolTableFactory`, `initHook`) in factory.ts are
-      // exercised when the collection is first opened via acquireWrite.
+      // pool-builder callbacks (`symbolTableFactory`, `initHook` — now wired by
+      // the bootstrap worker pool factory, bd S15) are exercised when the
+      // collection is first opened via acquireWrite.
       const config: CodegraphWorkerConfig = {
         languageModulePath: LANGUAGE_MODULE_PATH,
         migrationsModulePath: MIGRATIONS_MODULE_PATH,
+        poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
         rootDir,
         customExcludePatterns: [],
       };
@@ -130,6 +139,7 @@ describe("createCodegraphEnrichmentProvider", () => {
       const config: CodegraphWorkerConfig = {
         languageModulePath: LANGUAGE_MODULE_PATH,
         migrationsModulePath: MIGRATIONS_MODULE_PATH,
+        poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
         rootDir,
         customExcludePatterns: [],
       };

@@ -125,6 +125,7 @@ async function recompute(mode: "collection" | "language"): Promise<RecomputeOutc
   const workerConfig: CodegraphWorkerConfig = {
     languageModulePath: LANGUAGE_MODULE,
     migrationsModulePath: pathToFileURL(MIGRATIONS_MODULE).href,
+    poolFactoryModulePath: join(REPO_ROOT, "build/bootstrap/codegraph-worker-pool-factory.js"),
     daemonSocketPath: daemonPaths.socketPath,
     rootDir: dataRoot,
   };

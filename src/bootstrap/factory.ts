@@ -182,6 +182,13 @@ export { pkg };
  */
 const CODEGRAPH_PROVIDER_MODULE_PATH = join(__dirname, "../core/domains/trajectory/codegraph/factory.js");
 /**
+ * Compiled bootstrap-owned pool factory (bd tea-rags-mcp-89k7k.35, S15): the
+ * module whose `createCodegraphWorkerPool` builds the worker-side pool, reached
+ * by module path from the codegraph runtime (`poolFactoryModulePath`) — the
+ * enrichment worker and the tree-graph build child resolve it in-thread.
+ */
+const CODEGRAPH_WORKER_POOL_FACTORY_MODULE_PATH = join(__dirname, "./codegraph-worker-pool-factory.js");
+/**
  * Compiled `domains/language` barrel the codegraph worker-factory imports
  * in-thread to rebuild the `LanguageFactory` (walker + resolver capabilities).
  * Mirrors the chunker pool's `LANGUAGE_MODULE_PATH`.
@@ -928,12 +935,15 @@ export function wireCodegraph(
   });
 
   // The tree build reuses the worker's provider config verbatim, minus what
-  // its private clone must not carry (daemon socket, rootDir, temporal).
+  // its private clone must not carry (daemon socket, rootDir, temporal). The
+  // pool factory module path rides along (S15): the build child resolves the
+  // bootstrap-owned pool builder from it.
   const workingTreeGraphRuntime: WorkingTreeGraphCodegraphRuntime = {
     pool,
     providerConfig: {
       languageModulePath: codegraphWorkerConfig.languageModulePath,
       migrationsModulePath: codegraphWorkerConfig.migrationsModulePath,
+      poolFactoryModulePath: CODEGRAPH_WORKER_POOL_FACTORY_MODULE_PATH,
       customExcludePatterns: codegraphWorkerConfig.customExcludePatterns,
       ambiguousResolveMode: codegraphWorkerConfig.ambiguousResolveMode,
       dbMemoryLimit: codegraphWorkerConfig.dbMemoryLimit,
@@ -1161,6 +1171,9 @@ function buildCodegraphWorkerDescriptor(deps: {
   const codegraphWorkerConfig: CodegraphWorkerConfig = {
     languageModulePath: LANGUAGE_MODULE_PATH,
     migrationsModulePath: DATABASE_MIGRATIONS_MODULE_URL,
+    // S15: the worker-side pool is built by the bootstrap-owned factory,
+    // reached by module path — the domain runtime constructs no duckdb class.
+    poolFactoryModulePath: CODEGRAPH_WORKER_POOL_FACTORY_MODULE_PATH,
     daemonSocketPath: daemonPaths.socketPath,
     rootDir,
     customExcludePatterns: codegraph.customExcludePatterns ?? [],

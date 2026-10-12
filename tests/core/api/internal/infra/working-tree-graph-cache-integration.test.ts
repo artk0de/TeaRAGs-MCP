@@ -9,12 +9,13 @@ import { dirname } from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
+import { createCodegraphWorkerPool } from "../../../../../src/bootstrap/codegraph-worker-pool-factory.js";
 import { WorkingTreeGraphCache } from "../../../../../src/core/api/internal/infra/working-tree-graph-cache.js";
-import { createCodegraphProviderRuntime } from "../../../../../src/core/domains/trajectory/codegraph/factory.js";
 import { WorkingTreeGraphProcessBuilder } from "../../../../../src/core/domains/trajectory/codegraph/working-tree/index.js";
 import {
   buildTreeGraphFixture,
   cleanupTreeGraphFixtures,
+  CODEGRAPH_POOL_FACTORY_MODULE,
   LANGUAGE_MODULE_PATH,
   methodEdges,
   MIGRATIONS_MODULE_PATH,
@@ -37,7 +38,7 @@ describe("WorkingTreeGraphCache with the real builder and a direct-mode pool", (
     fixture.writeTree("src/a.ts", A_TREE);
     // The fixture's base graph sits at `<storageRoot>/codegraph/<physical>.duckdb`.
     const storageRoot = dirname(dirname(fixture.snapshotPath));
-    const { pool } = await createCodegraphProviderRuntime({
+    const pool = await createCodegraphWorkerPool({
       languageModulePath: LANGUAGE_MODULE_PATH,
       migrationsModulePath: MIGRATIONS_MODULE_PATH,
       rootDir: storageRoot,
@@ -48,7 +49,11 @@ describe("WorkingTreeGraphCache with the real builder and a direct-mode pool", (
         rootDir: fixture.outputRoot,
         codegraph: () => ({
           pool,
-          providerConfig: { languageModulePath: LANGUAGE_MODULE_PATH, migrationsModulePath: MIGRATIONS_MODULE_PATH },
+          providerConfig: {
+            languageModulePath: LANGUAGE_MODULE_PATH,
+            migrationsModulePath: MIGRATIONS_MODULE_PATH,
+            poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
+          },
         }),
         resolveActiveCollection: async () => PHYSICAL,
         builder: new WorkingTreeGraphProcessBuilder(),

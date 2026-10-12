@@ -298,19 +298,20 @@
 - **Pass-2 resolves against a PROJECT-wide symbol table, so its run-global maps
   must be project-wide too — and only `cg_pass1_aggregates` makes them so.** The
   symbol table hydrates from `cg_symbols` when the collection opens
-  (`codegraph/factory.ts` `initHook`); `CodegraphRunState`'s ancestry, hierarchy
-  view and self-dispatch registry are built in `absorb` from the files the
-  CURRENT batch walked. Matching one against the other does not under-resolve,
-  it MIS-resolves: with `KindOfService#call` absent from `selfDispatchTemplates`
-  the Ruby entry strategy CONTINUEs by design and the constant strategy's
-  ancestor walk lands every concrete `SomeService.call(...)` on the shared
-  mixin's own method — 200 of 200 sampled caller edges of that hub, from 134
-  files, while `inProjectEdgeRecall` read 1.0 (bd tea-rags-mcp-znxg8).
-  `RunState#seal` now absorbs the persisted slices FIRST, for files this run did
-  not walk, before the hierarchy view / include-by index / discovery that read
-  those maps. Two things an edit must keep: walked files are SKIPPED, not merged
-  (their row on disk still describes the previous content, so absorbing it
-  resurrects renamed-away classes), and hydration never counts as an extraction
+  (`createCodegraphWorkerPool` in the bootstrap worker pool factory);
+  `CodegraphRunState`'s ancestry, hierarchy view and self-dispatch registry are
+  built in `absorb` from the files the CURRENT batch walked. Matching one
+  against the other does not under-resolve, it MIS-resolves: with
+  `KindOfService#call` absent from `selfDispatchTemplates` the Ruby entry
+  strategy CONTINUEs by design and the constant strategy's ancestor walk lands
+  every concrete `SomeService.call(...)` on the shared mixin's own method — 200
+  of 200 sampled caller edges of that hub, from 134 files, while
+  `inProjectEdgeRecall` read 1.0 (bd tea-rags-mcp-znxg8). `RunState#seal` now
+  absorbs the persisted slices FIRST, for files this run did not walk, before
+  the hierarchy view / include-by index / discovery that read those maps. Two
+  things an edit must keep: walked files are SKIPPED, not merged (their row on
+  disk still describes the previous content, so absorbing it resurrects
+  renamed-away classes), and hydration never counts as an extraction
   (`extractedFilesByLanguage` drives run stats and the deferred chunk pass).
   WHICH maps hydrate is declared once, in `RUN_GLOBAL_MAP_PERSISTENCE`
   (symbols/run-global-map-registry.ts): the slice type, `buildPass1Aggregates`

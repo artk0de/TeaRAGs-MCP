@@ -89,6 +89,8 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../
 const BUILD = join(REPO_ROOT, "build/core");
 const WORKER_PATH = join(BUILD, "domains/ingest/pipeline/enrichment/infra/worker.js");
 const CODEGRAPH_FACTORY_MODULE = join(BUILD, "domains/trajectory/codegraph/factory.js");
+// The bootstrap-owned pool factory (S15) the worker-side runtime resolves by path.
+const CODEGRAPH_POOL_FACTORY_MODULE = join(REPO_ROOT, "build/bootstrap/codegraph-worker-pool-factory.js");
 const LANGUAGE_MODULE = join(BUILD, "domains/language/index.js");
 const MIGRATIONS_MODULE = join(BUILD, "domains/maintenance/migration/database/index.js");
 
@@ -385,6 +387,7 @@ async function startCodegraphFixture(options: CodegraphFixtureOptions): Promise<
   const workerConfig: CodegraphWorkerConfig = {
     languageModulePath: LANGUAGE_MODULE,
     migrationsModulePath: pathToFileURL(MIGRATIONS_MODULE).href,
+    poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
     daemonSocketPath: daemonPaths.socketPath,
     rootDir: dataRoot,
   };
