@@ -14,7 +14,7 @@ import { SchemaManager } from "../../adapters/qdrant/schema-manager.js";
 import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { PayloadBuilder } from "../../contracts/types/provider.js";
 import type { IngestDependencies, SynchronizerTuning } from "../../domains/ingest/index.js";
-import { computeCollectionStats } from "../../domains/ingest/infra/collection-stats.js";
+import { computeCollectionStats } from "../../domains/ingest/infra/index.js";
 import { CODE_LANGUAGES } from "../../domains/ingest/pipeline/chunker/language-config/index.js";
 import { ParallelFileSynchronizer } from "../../domains/ingest/sync/parallel-synchronizer.js";
 import { createShardedSnapshotAccess } from "../../domains/ingest/sync/snapshot/sharded-snapshot-access.js";

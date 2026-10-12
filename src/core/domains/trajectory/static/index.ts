@@ -21,3 +21,4 @@ export class StaticTrajectory implements Trajectory {
 
 export { StaticPayloadBuilder } from "./provider.js";
 export { STATIC_FILTER_PRESETS } from "./filter-presets/index.js";
+export { staticStatsAccumulators } from "./stats/index.js";

@@ -1,5 +1,5 @@
 export { cleanupOrphanedVersions } from "./alias-cleanup.js";
-export { isCollectionIndexingInFlight } from "./collection-build-lease.js";
+export { isCollectionBuildInFlight, isCollectionIndexingInFlight } from "./collection-build-lease.js";
 export {
   CollectionIndexingLock,
   HeldCollectionIndexingLock,
