@@ -55,7 +55,7 @@ import {
   type WorkingTreeView,
 } from "../../../domains/explore/index.js";
 import type { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
-import type { Reranker } from "../../../domains/explore/reranker.js";
+import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
 import { NotIndexedError } from "../../../domains/ingest/errors/index.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
 import { DOCUMENTATION_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
@@ -84,7 +84,7 @@ import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.j
 export interface ExploreOpsDeps {
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
-  reranker: Reranker;
+  reranker: RerankerPort;
   registry: TrajectoryRegistry;
   collectionRegistry: RegistryLookup;
   statsCache?: StatsCache;
@@ -211,7 +211,7 @@ interface ExploreFinalizeOptions {
 export class ExploreOps {
   private readonly qdrant: QdrantManager;
   private readonly embeddings: EmbeddingProvider;
-  private readonly reranker: Reranker;
+  private readonly reranker: RerankerPort;
   private readonly registry: TrajectoryRegistry;
   private readonly collectionRegistry: RegistryLookup;
   private readonly statsCache?: StatsCache;
@@ -1036,7 +1036,7 @@ function resolveDocRerank(
 function resolveEffectiveLevel(
   userLevel: SignalLevel | undefined,
   rerank: string | { custom: Record<string, number> } | undefined,
-  reranker: Reranker,
+  reranker: RerankerPort,
   tool: "semantic_search" | "search_code" | "rank_chunks",
 ): SignalLevel | undefined {
   if (userLevel) return userLevel;

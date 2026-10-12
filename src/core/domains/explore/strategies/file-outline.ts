@@ -17,7 +17,8 @@ import { CodeChunkGrouper, DocChunkGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { historyClockRerankOption } from "../history-clock.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
-import type { Reranker, RerankMode } from "../reranker.js";
+import type { RerankerPort } from "../reranker-port.js";
+import type { RerankMode } from "../reranker.js";
 import { recordingTreeGraphReader } from "../working-tree/tree-graph-marker.js";
 import { BaseExploreStrategy } from "./base.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
@@ -37,7 +38,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
 
   constructor(
     qdrant: QdrantManager,
-    reranker: Reranker,
+    reranker: RerankerPort,
     payloadSignals: PayloadSignalDescriptor[],
     essentialKeys: string[],
     private readonly input: FileOutlineInput,

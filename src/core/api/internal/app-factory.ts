@@ -23,7 +23,7 @@ import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
-import type { Reranker } from "../../domains/explore/reranker.js";
+import type { RerankerPort } from "../../domains/explore/reranker-port.js";
 import { formatIndexDriftReport, type IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
 // The handler TYPES arrive through the api barrel (`../index.js`), which
 // aggregates composition + facades — a type-only edge this factory keeps
@@ -89,7 +89,7 @@ export interface AppDeps {
    */
   workingTreeIndexOf?: (path: string) => Promise<WorkingTreeIndexTarget | undefined>;
   explore: ExploreFacade;
-  reranker: Reranker;
+  reranker: RerankerPort;
   driftReporter: IndexDriftReporter;
   projectRegistryOps: ProjectRegistryOps;
   quantizationScalar: boolean;

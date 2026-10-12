@@ -12,7 +12,8 @@ import type { PayloadSignalDescriptor } from "../../../contracts/types/trajector
 import { fileScopeOf, reduceToFileScope, type FileScope, type ScrollChunk } from "../chunk-grouping/index.js";
 import { historyClockRerankOption } from "../history-clock.js";
 import { filterMetaOnly } from "../post-process.js";
-import type { Reranker, RerankMode } from "../reranker.js";
+import type { RerankerPort } from "../reranker-port.js";
+import type { RerankMode } from "../reranker.js";
 import { TestSetupHydrator } from "../test-setup-hydration.js";
 import { WORKING_TREE_DENSE_WAIT_MS, type WorkingTreeDenseVectors } from "../working-tree/dense-floor.js";
 import { filterReadsWorkingTreeSignals, type WorkingTreeView } from "../working-tree/overlay.js";
@@ -73,7 +74,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
 
   constructor(
     protected readonly qdrant: QdrantManager,
-    protected readonly reranker: Reranker,
+    protected readonly reranker: RerankerPort,
     protected readonly payloadSignals: PayloadSignalDescriptor[],
     protected readonly essentialKeys: string[],
   ) {

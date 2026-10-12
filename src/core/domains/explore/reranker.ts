@@ -31,35 +31,13 @@ import type {
 } from "../../contracts/types/trajectory.js";
 import { detectScope } from "../../primitives/paths/index.js";
 import { resolveLabel } from "./label-resolver.js";
+import type { RerankerPort, RerankOptions } from "./reranker-port.js";
 import { ageSourceBoundDays, applySignalFloors, floorsForSignal } from "./signal-floors.js";
 
 // Re-export types as part of search module's public API
 export type { ScoringWeights } from "../../contracts/types/provider.js";
 export type { RerankableResult, RerankMode } from "../../contracts/types/reranker.js";
-
-/** Options for Reranker.rerank() — consolidates optional parameters. */
-export interface RerankOptions {
-  signalLevel?: SignalLevel;
-  query?: string;
-  /**
-   * When false, overlays are still computed and attached but the final
-   * score-descending sort is skipped — the returned array preserves input
-   * order. Default true (sort as before). Used by trace_path to annotate a
-   * path with danger overlays without disturbing execution order.
-   * Note: a preset with `groupBy` still runs its group-dedup pass under
-   * reorder:false, so the per-group representative is the first input-order
-   * entry, not the highest-scored.
-   */
-  reorder?: boolean;
-  /**
-   * Query-time reference clock, unix SECONDS (the lastModifiedAt unit).
-   * Injected once per rerank into `ExtractContext.now`, the age-source
-   * adaptive bounds and the overlay ageDays resolution, so age derives from
-   * lastModifiedAt at read time (bd tea-rags-mcp-9ot33). Defaults to the
-   * current time; tests pin it for determinism.
-   */
-  now?: number;
-}
+export type { RerankOptions } from "./reranker-port.js";
 
 /**
  * Output of `resolveMode()` — the resolved rerank configuration derived from
@@ -84,8 +62,12 @@ interface ResolvedMode {
  * Applies adaptive bounds (p95 from result batch, floored with defaultBound).
  * Confidence dampening is handled by each descriptor internally.
  * Attaches RankingOverlay to explain WHY each result scored the way it did.
+ *
+ * Implements `RerankerPort` (reranker-port.ts) — the consumed surface its
+ * holders are typed against; members outside that port (hasCollectionStats,
+ * getAvailablePresets, getPresetDescriptions) have no external caller.
  */
-export class Reranker {
+export class Reranker implements RerankerPort {
   private readonly descriptorMap: Map<string, DerivedSignalDescriptor>;
   private readonly signalKeyMap: Map<string, string>;
   private readonly payloadSignals: PayloadSignalDescriptor[];

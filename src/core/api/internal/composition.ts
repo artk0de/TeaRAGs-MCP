@@ -40,6 +40,7 @@ import type {
 } from "../../contracts/types/trajectory.js";
 import { OrderByFieldResolver } from "../../domains/explore/rank-module.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
+import type { RerankerPort } from "../../domains/explore/reranker-port.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
 import { resolveChunkSetBumpScopes, resolveLanguageCodeVersions } from "../../domains/language/capability/versions.js";
@@ -90,7 +91,7 @@ import { ReviewChangesOps } from "./ops/review-changes-ops.js";
 
 export interface CompositionResult {
   registry: TrajectoryRegistry;
-  reranker: Reranker;
+  reranker: RerankerPort;
   allPayloadSignalDescriptors: PayloadSignalDescriptor[];
   allDerivedSignals: DerivedSignalDescriptor[];
   allStatsAccumulators: StatsAccumulatorDescriptor[];

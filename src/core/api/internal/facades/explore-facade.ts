@@ -20,7 +20,7 @@ import {
   InvalidQueryError,
 } from "../../../domains/explore/errors/index.js";
 import type { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
-import type { Reranker } from "../../../domains/explore/reranker.js";
+import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
 import type { WorkingTreeOverlay } from "../../../domains/explore/working-tree/index.js";
 import type { IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
@@ -43,7 +43,7 @@ import { ExploreOps } from "../ops/explore-ops.js";
 export interface ExploreFacadeDeps {
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
-  reranker: Reranker;
+  reranker: RerankerPort;
   registry: TrajectoryRegistry;
   collectionRegistry: RegistryLookup;
   statsCache?: StatsCache;
