@@ -18,9 +18,17 @@ import { dirname } from "node:path";
 
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
+import type { CodegraphDatabaseFileReplacer, DaemonDatabaseReplacement } from "../daemon-ports.js";
 import { CodegraphDaemonUnreachableError } from "../errors.js";
 import { DaemonGraphDbClient } from "./client.js";
 import { daemonPathsForKeyDir, isDaemonPidAlive, readDaemonPid } from "./lifecycle.js";
+
+/**
+ * `DaemonDatabaseReplacement` and the `CodegraphDatabaseFileReplacer` port this
+ * class implements moved to `../daemon-ports.ts` (bd tea-rags-mcp-89k7k.35,
+ * H4a1); the replacement type is re-exported here for existing importers.
+ */
+export type { DaemonDatabaseReplacement };
 
 /**
  * Connect bound for the control connection. The pid file already says a daemon
@@ -28,18 +36,7 @@ import { daemonPathsForKeyDir, isDaemonPidAlive, readDaemonPid } from "./lifecyc
  */
 const CONTROL_CONNECT_TIMEOUT_MS = 1_500;
 
-/**
- * Who replaced the file. `caller` means the daemon did nothing and the caller
- * must act on the files itself:
- * - `no-daemon` — no daemon of this build is running, so no client to drain.
- * - `daemon-unreachable` — its pid is alive but its socket did not accept.
- * - `op-unsupported` — a daemon from an older build without the op.
- */
-export type DaemonDatabaseReplacement =
-  | { handledBy: "daemon"; evicted: boolean }
-  | { handledBy: "caller"; reason: "no-daemon" | "daemon-unreachable" | "op-unsupported" };
-
-export class DaemonDatabaseFileReplacer {
+export class DaemonDatabaseFileReplacer implements CodegraphDatabaseFileReplacer {
   constructor(
     /** The socket of THIS build's daemon; its lifecycle files sit beside it. */
     private readonly socketPath: string,

@@ -12,10 +12,10 @@ import type { CollectionGraphHandle } from "../../../contracts/types/codegraph-p
 import type { GlobalSymbolTable, GraphDbClient } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CollectionInitHook, SymbolTableFactory } from "../collection-init-hook.js";
+import type { CodegraphDaemonClientTarget, CodegraphDaemonRestartWiring } from "../daemon-ports.js";
 import { CodegraphClientBuildTreeGoneError } from "../errors.js";
-import type { CodegraphDaemonRestartWiring, DaemonBuildHandshakeConnector } from "./build-handshake-connector.js";
+import type { DaemonBuildHandshakeConnector } from "./build-handshake-connector.js";
 import type { DaemonGraphDbClient } from "./client.js";
-import type { CodegraphDaemonClientTarget } from "./lifecycle.js";
 
 /** The `GraphDbClientPoolOptions` this cache reads — documented there. */
 export interface DaemonCollectionClientCacheOptions {

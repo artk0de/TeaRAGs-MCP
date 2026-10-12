@@ -41,14 +41,15 @@ import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.j
 import { CodegraphPathLeases } from "./codegraph-path-leases.js";
 import { CollectionIdleEvictionTracker, type GraphDbClientPoolIdleEviction } from "./collection-idle-eviction.js";
 import type { CollectionInitHook, SymbolTableFactory } from "./collection-init-hook.js";
-import {
-  DaemonBuildHandshakeConnector,
-  type CodegraphDaemonRestartWiring,
-} from "./daemon/build-handshake-connector.js";
+import type {
+  CodegraphDaemonClientTarget,
+  CodegraphDaemonRestartWiring,
+  CodegraphDatabaseFileReplacer,
+  DaemonDatabaseReplacement,
+  ForeignBuildLockArbiter,
+} from "./daemon-ports.js";
+import { DaemonBuildHandshakeConnector } from "./daemon/build-handshake-connector.js";
 import { DaemonCollectionClientCache } from "./daemon/collection-client-cache.js";
-import type { DaemonDatabaseFileReplacer, DaemonDatabaseReplacement } from "./daemon/database-file-replacer.js";
-import type { ForeignBuildDaemonLockArbiter } from "./daemon/foreign-build-lock-arbiter.js";
-import type { CodegraphDaemonClientTarget } from "./daemon/lifecycle.js";
 import { CodegraphDatabaseMissingError, DuckDbCloseFailedError, DuckDbOpenFailedError } from "./errors.js";
 import { LockContendedOpenRetry, type LockContendedOpenRetryWindow } from "./lock-contended-open-retry.js";
 import { ReadOnlyGraphFileReaders } from "./read-only-graph-file-readers.js";
@@ -158,7 +159,7 @@ export interface GraphDbClientPoolOptions {
    * of the same collection against that same holder fails at once instead of
    * waiting the window again. Without it every holder gets the plain retry.
    */
-  foreignBuildLockArbiter?: ForeignBuildDaemonLockArbiter;
+  foreignBuildLockArbiter?: ForeignBuildLockArbiter;
   /**
    * Build + capability handshake restart wiring, daemon mode only (bd
    * tea-rags-mcp-ji56r, 39xca.4). A daemon from another build, or one missing a
@@ -750,7 +751,7 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
    * the op) leaves the files to this pool, the pre-r4veq behaviour.
    */
   private async replaceInDaemon(
-    replace: (daemon: DaemonDatabaseFileReplacer) => Promise<DaemonDatabaseReplacement>,
+    replace: (daemon: CodegraphDatabaseFileReplacer) => Promise<DaemonDatabaseReplacement>,
   ): Promise<DaemonDatabaseReplacement | undefined> {
     const socketPath = this.options.daemonClientTarget?.().paths.socketPath ?? this.options.daemonSocketPath;
     if (!socketPath) return undefined;

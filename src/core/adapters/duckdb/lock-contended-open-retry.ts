@@ -7,7 +7,7 @@
 
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import { isDebug } from "../../primitives/diagnostics/index.js";
-import type { ForeignBuildDaemonLockArbiter, ForeignBuildLockSettlement } from "./daemon/foreign-build-lock-arbiter.js";
+import type { ForeignBuildLockArbiter, ForeignBuildLockSettlement } from "./daemon-ports.js";
 import { CodegraphDatabaseHeldByForeignDaemonError, DuckDbOpenFailedError } from "./errors.js";
 
 /** Delay between `openRetry` attempts when the option leaves it unset. */
@@ -25,7 +25,7 @@ export interface LockContendedOpenRetryOptions {
   /** Absent: a held lock fails the open at once. */
   openRetry?: LockContendedOpenRetryWindow;
   /** Absent: every holder gets the plain retry. */
-  foreignBuildLockArbiter?: ForeignBuildDaemonLockArbiter;
+  foreignBuildLockArbiter?: ForeignBuildLockArbiter;
   /** The collection's database path, for the debug line. */
   pathFor: (physicalCollectionName: PhysicalCollectionName) => string;
 }
