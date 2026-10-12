@@ -9,7 +9,7 @@
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type { ProgressCallback } from "../../../../types.js";
-import { pipelineLog } from "../../pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../../pipeline/infra/debug-log/index.js";
 import { BatchDeleteExecutor } from "./batch-executor.js";
 import { createDeletionOutcome, type DeletionOutcome } from "./outcome.js";
 import { DeletionRetryHelper } from "./retry-helper.js";

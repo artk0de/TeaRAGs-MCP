@@ -9,7 +9,7 @@
 export { ChunkPipeline } from "./chunk-pipeline.js";
 export type { ChunkPipelineConfig } from "./chunk-pipeline.js";
 export { BatchAccumulator } from "./infra/batch-accumulator.js";
-export { initDebugLogger, pipelineLog } from "./infra/debug-logger.js";
+export { initDebugLogger, pipelineLog } from "./infra/debug-log/index.js";
 export {
   defaultChunkerPoolSize,
   defaultEnrichmentFilesPerThread,

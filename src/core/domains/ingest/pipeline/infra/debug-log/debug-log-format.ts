@@ -12,7 +12,7 @@ import {
   PIPELINE_STAGE_ORDER,
   type PipelineStage,
   type PipelineStageProfileSummary,
-} from "./pipeline-stage-profiler.js";
+} from "../pipeline-stage-profiler.js";
 import type { FileIngestRecord } from "./slow-file-tracker.js";
 
 /** Filesystem-safe local timestamp: 2026-03-06T01-23-45 */

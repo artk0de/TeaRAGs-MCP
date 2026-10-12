@@ -26,7 +26,7 @@ import type {
   ChunkFinalInput,
   FileFinalInput,
 } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
-import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js";
 
 const PROVIDER_KEYS = ["git", "codegraph.symbols"] as const;
 

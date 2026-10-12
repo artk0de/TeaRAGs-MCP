@@ -8,7 +8,7 @@
  * ingest knot. `import type` counts: the architecture detector judges type
  * edges too.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -147,6 +147,64 @@ describe("ingest/errors is a leaf component of the domain (81bfm decision c)", (
         }
       }
     }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("pipeline/infra/debug-log is a self-contained submodule (6oah1 PI1)", () => {
+  const DEBUG_LOG_DIR = join(PIPELINE_INFRA_DIR, "debug-log");
+  const DEBUG_LOG_FILES = [
+    "debug-logger.ts",
+    "pipeline-log-sink.ts",
+    "debug-log-format.ts",
+    "debug-log-dependencies.ts",
+    "slow-file-tracker.ts",
+  ];
+
+  it("the debug-log cluster lives under pipeline/infra/debug-log/ behind an index.ts facade", () => {
+    expect(existsSync(DEBUG_LOG_DIR)).toBe(true);
+    const files = existsSync(DEBUG_LOG_DIR)
+      ? readdirSync(DEBUG_LOG_DIR)
+          .filter((entry) => entry.endsWith(".ts"))
+          .sort()
+      : [];
+    expect(files).toEqual([...DEBUG_LOG_FILES, "index.ts"].sort());
+  });
+
+  it("nothing outside pipeline/infra/debug-log/ imports a deep debug-log file (consumers go through debug-log/index.js)", () => {
+    // Deep files count at their post-move home AND flat in pipeline/infra/, so
+    // the pin is RED until the cluster actually moves and stays moved.
+    const deepFiles = new Set<string>(DEBUG_LOG_FILES.map((name) => join(DEBUG_LOG_DIR, name)));
+    for (const name of DEBUG_LOG_FILES) deepFiles.add(join(PIPELINE_INFRA_DIR, name));
+
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder(join(ROOT, "src"))) {
+      if (isUnder(file, DEBUG_LOG_DIR)) continue;
+      for (const target of relativeTargets(file)) {
+        if (deepFiles.has(target)) offenders.push(`${rel(file)} -> ${rel(target)}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("ingest/infra exposes the indexing lock through ports (6oah1 I1)", () => {
+  const PORTS_FILE = join(INFRA_DIR, "ports.ts");
+
+  it("ingest/infra/ports.ts exists and declares the CollectionIndexingLock ports", () => {
+    expect(existsSync(PORTS_FILE)).toBe(true);
+    if (!existsSync(PORTS_FILE)) return;
+    const text = readFileSync(PORTS_FILE, "utf-8");
+    expect(text).toMatch(/interface CollectionIndexingLockPort\b/);
+    expect(text).toMatch(/interface HeldCollectionIndexingLockPort\b/);
+  });
+
+  it("ports.ts imports nothing from sibling infra files (vocabulary comes from contracts)", () => {
+    expect(existsSync(PORTS_FILE)).toBe(true);
+    if (!existsSync(PORTS_FILE)) return;
+    const offenders = relativeTargets(PORTS_FILE)
+      .filter((target) => isUnder(target, INFRA_DIR))
+      .map((target) => `${rel(PORTS_FILE)} -> ${rel(target)}`);
     expect(offenders).toEqual([]);
   });
 });

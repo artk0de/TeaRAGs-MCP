@@ -6,7 +6,7 @@ import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { reindexRunSpec } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/run-spec.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
-import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js";
 
 /**
  * bd tea-rags-mcp-71n0p / tea-rags-mcp-u3e77 — a recompute must not open its run

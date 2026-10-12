@@ -36,7 +36,7 @@ import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
-import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js";
 
 const PROVIDER_KEY = "codegraph.symbols";
 

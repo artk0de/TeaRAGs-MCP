@@ -14,7 +14,7 @@ import { fixturePhysicalCollectionName } from "../../../../__helpers__/collectio
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
-import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js";
 
 function buildCtx(overrides: Record<string, unknown> = {}) {
   return {

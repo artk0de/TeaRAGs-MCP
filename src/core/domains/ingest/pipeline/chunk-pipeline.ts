@@ -29,7 +29,7 @@ import {
   type EmbeddingThroughputTuner,
 } from "./embedding-throughput-tuner.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
-import { pipelineLog } from "./infra/debug-logger.js";
+import { pipelineLog } from "./infra/debug-log/index.js";
 import type { Batch, BatchAccumulatorConfig, BatchResult, ChunkItem, WorkerPoolConfig } from "./infra/index.js";
 import { WorkerPool } from "./infra/worker-pool.js";
 import type { PipelineStats } from "./types.js";

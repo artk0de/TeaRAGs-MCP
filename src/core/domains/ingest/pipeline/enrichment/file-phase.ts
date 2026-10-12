@@ -15,7 +15,7 @@ import type { PhysicalCollectionName } from "../../../../contracts/types/collect
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentRunCoverage, FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
-import { pipelineLog } from "../infra/debug-logger.js";
+import { pipelineLog } from "../infra/debug-log/index.js";
 import type { ChunkItem } from "../infra/index.js";
 import type { EnrichmentApplier } from "./applier.js";
 import type { ChunkPhase } from "./chunk-phase.js";

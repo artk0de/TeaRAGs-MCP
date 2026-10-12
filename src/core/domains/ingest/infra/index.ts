@@ -4,10 +4,10 @@ export {
   CollectionIndexingLock,
   HeldCollectionIndexingLock,
   type CollectionIndexingLockOptions,
-  type IndexingLockLiveness,
   type IndexingLockLivenessProbe,
   type IndexingLockRecord,
 } from "./collection-indexing-lock.js";
+export type { CollectionIndexingLockPort, HeldCollectionIndexingLockPort, IndexingLockLiveness } from "./ports.js";
 export {
   ENRICHMENT_STALE_THRESHOLD_MS,
   ENRICHMENT_TERMINAL_STATUSES,

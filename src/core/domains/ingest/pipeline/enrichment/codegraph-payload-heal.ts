@@ -58,7 +58,7 @@
 import { exactMatchOnTextIndexed } from "../../../../adapters/qdrant/filters/text-indexed-exact.js";
 import type { CodegraphSignalDrift } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
-import { pipelineLog } from "../infra/debug-logger.js";
+import { pipelineLog } from "../infra/debug-log/index.js";
 import { batchSetPayloadWithRetry, type BatchPayloadOp } from "./batch-write.js";
 
 /**

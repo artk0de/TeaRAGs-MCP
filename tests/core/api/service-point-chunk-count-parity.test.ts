@@ -23,7 +23,7 @@ import { NotIndexedError } from "../../../src/core/domains/ingest/errors/index.j
 import { EnrichmentCoordinator } from "../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { mapMarkerToHealth } from "../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import type { EnrichmentProvider } from "../../../src/core/domains/ingest/pipeline/enrichment/types.js";
-import { pipelineLog } from "../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js";
 import { resolveCollectionName } from "../../../src/core/primitives/ids/collection-identity.js";
 import {
   cleanupTempDir,

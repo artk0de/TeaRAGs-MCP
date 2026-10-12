@@ -37,8 +37,8 @@ import {
   computeCollectionStats,
   isCollectionIndexingInFlight,
   parseMarkerPayload,
-  type CollectionIndexingLock,
-  type HeldCollectionIndexingLock,
+  type CollectionIndexingLockPort,
+  type HeldCollectionIndexingLockPort,
   type WorktreeSeedPending,
 } from "../../../domains/ingest/infra/index.js";
 import { resolvePhysicalCollection } from "../../../domains/ingest/operations/index.js";
@@ -53,7 +53,7 @@ import {
   readWorktreeSeedPending,
   readWorktreeSeedPendingOrThrow,
 } from "../../../domains/ingest/pipeline/indexing-marker.js";
-import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-log/index.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { advanceChunkSetStamp } from "../../../domains/maintenance/drift/index.js";
 import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/index.js";
@@ -190,7 +190,7 @@ export interface IndexingOpsDeps {
    * Qdrant markers. `IngestFacade` always wires it over the snapshots dir; a
    * direct construction without it keeps only the in-process and Qdrant checks.
    */
-  indexingLock?: CollectionIndexingLock;
+  indexingLock?: CollectionIndexingLockPort;
   /**
    * Seeds a first index from a registered sibling working tree of the same
    * repository (bd tea-rags-mcp-k8gac). Omitted → every first index is an
@@ -299,9 +299,9 @@ export class IndexingOps {
   private readonly indexingSettledAt = new Map<string, number>();
   /** Collection holds still waiting on the enrichment their operation detached. */
   private readonly pendingCollectionReleases = new Set<Promise<void>>();
-  private readonly indexingLock?: CollectionIndexingLock;
+  private readonly indexingLock?: CollectionIndexingLockPort;
   /** Lock files this process's operations hold, keyed like `indexingCollections`. */
-  private readonly heldIndexingLocks = new Map<string, HeldCollectionIndexingLock>();
+  private readonly heldIndexingLocks = new Map<string, HeldCollectionIndexingLockPort>();
   private readonly worktreeSeed?: Pick<WorktreeSeedOps, "seed">;
   private readonly envSnapshot?: Record<string, string>;
   private readonly processBuildFingerprint: ProcessBuildFingerprintSource;

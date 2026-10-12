@@ -24,7 +24,7 @@ import type {
   RepairPassRecomputeDeferral,
 } from "../pipeline/enrichment/recompute-deferral.js";
 import type { DeferredChunkRecoveryHandoff } from "../pipeline/enrichment/recovery.js";
-import { pipelineLog } from "../pipeline/infra/debug-logger.js";
+import { pipelineLog } from "../pipeline/infra/debug-log/index.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import type { DeletionOutcome } from "../sync/deletion/outcome.js";
 import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.js";

@@ -58,7 +58,7 @@ import type {
 } from "../../../../../contracts/index.js";
 import { isDebug } from "../../../../../primitives/diagnostics/index.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
-import { pipelineLog } from "../../infra/debug-logger.js";
+import { pipelineLog } from "../../infra/debug-log/index.js";
 import {
   defaultEnrichmentFilesPerThread,
   defaultEnrichmentWorkerCpuProfileDir,

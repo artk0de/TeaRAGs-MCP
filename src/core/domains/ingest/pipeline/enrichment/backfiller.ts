@@ -18,7 +18,7 @@ import type { PhysicalCollectionName } from "../../../../contracts/types/collect
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
-import { pipelineLog } from "../infra/debug-logger.js";
+import { pipelineLog } from "../infra/debug-log/index.js";
 import type { EnrichmentApplier } from "./applier.js";
 import { batchDeletePayloadWithRetry, batchSetPayloadWithRetry, type BatchPayloadOp } from "./batch-write.js";
 import { OmittedOverlayKeyCollector } from "./omitted-overlay-keys.js";

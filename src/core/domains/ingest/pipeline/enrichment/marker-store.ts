@@ -22,7 +22,7 @@
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import { awaitWriteBarrier, type PayloadWriteBarrierOutcome } from "../../../../adapters/qdrant/write-barrier.js";
 import { DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS, INDEXING_METADATA_ID } from "../../../../contracts/constants.js";
-import { pipelineLog } from "../infra/debug-logger.js";
+import { pipelineLog } from "../infra/debug-log/index.js";
 import type { ChunkFinalInput, FileFinalInput, RecoveryResultInput } from "./types.js";
 
 export type { PayloadWriteBarrierOutcome };
