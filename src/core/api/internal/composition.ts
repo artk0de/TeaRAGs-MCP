@@ -9,8 +9,12 @@
 import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import { readManifestFiles } from "../../adapters/filesystem/dependency-manifests.js";
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
+import type {
+  EmbeddingModelGuardPort,
+  QdrantCollectionCatalog,
+  QdrantCollectionLifecycle,
+  QdrantPointWriter,
+} from "../../adapters/qdrant/ports.js";
 import {
   payloadFieldIndexSchema,
   SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS,
@@ -441,11 +445,11 @@ export function enrichmentAlgorithmVersions(providers: readonly EnrichmentProvid
  * path, and bootstrap passes the same handles explicitly on the DI path.
  */
 export interface AppOpsDeps {
-  qdrant: QdrantManager;
+  qdrant: QdrantCollectionCatalog & QdrantCollectionLifecycle & QdrantPointWriter;
   embeddings: EmbeddingProvider;
   quantizationScalar: boolean;
   turboQuant: boolean;
-  modelGuard?: EmbeddingModelGuard;
+  modelGuard?: EmbeddingModelGuardPort;
   /**
    * Per-collection DuckDB pool — present when codegraph is wired. CollectionOps
    * uses it to delete the per-collection DuckDB file when the Qdrant collection

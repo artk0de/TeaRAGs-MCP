@@ -11,7 +11,7 @@
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
+import type { EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
 import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { PayloadSignalDescriptor, SignalFloors } from "../../../contracts/types/trajectory.js";
@@ -50,7 +50,7 @@ export interface ExploreFacadeDeps {
   driftReporter?: IndexDriftReporter;
   payloadSignals?: PayloadSignalDescriptor[];
   essentialKeys?: string[];
-  modelGuard?: EmbeddingModelGuard;
+  modelGuard?: EmbeddingModelGuardPort;
   /** Per-collection provider + guard from the registry (bd tea-rags-mcp-b91f5), threaded through to ExploreOps. */
   collectionEmbeddings?: CollectionEmbeddingsResolver;
   chunkResolver?: SymbolChunkResolver;

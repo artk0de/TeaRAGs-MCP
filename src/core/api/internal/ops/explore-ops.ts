@@ -21,11 +21,8 @@ import {
 import { isEmbeddingProviderUnavailable } from "../../../adapters/embeddings/errors.js";
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type {
-  EmbeddingModelGuard,
-  EmbeddingModelGuardCallOptions,
-} from "../../../adapters/qdrant/embedding-model-guard.js";
 import { mergeQdrantFilters } from "../../../adapters/qdrant/filters/utils.js";
+import type { EmbeddingModelGuardCallOptions, EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import type { QdrantFilter } from "../../../adapters/qdrant/types.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
 import type { FilterPresetDef, FilterSpec } from "../../../contracts/types/filter-preset.js";
@@ -91,7 +88,7 @@ export interface ExploreOpsDeps {
   driftReporter?: IndexDriftReporter;
   payloadSignals: PayloadSignalDescriptor[];
   essentialKeys: string[];
-  modelGuard?: EmbeddingModelGuard;
+  modelGuard?: EmbeddingModelGuardPort;
   /**
    * The provider and guard that embed on behalf of a collection — its REGISTRY
    * entry's model, not this process's (bd tea-rags-mcp-b91f5). Absent (unit
@@ -218,7 +215,7 @@ export class ExploreOps {
   private readonly driftReporter?: IndexDriftReporter;
   private readonly payloadSignals: PayloadSignalDescriptor[];
   private readonly essentialKeys: string[];
-  private readonly modelGuard?: EmbeddingModelGuard;
+  private readonly modelGuard?: EmbeddingModelGuardPort;
   private readonly collectionEmbeddings?: CollectionEmbeddingsResolver;
   private readonly vectorStrategy: BaseExploreStrategy;
   private readonly hybridStrategy: BaseExploreStrategy;
@@ -700,7 +697,7 @@ export class ExploreOps {
     project: string | undefined,
     embeds: boolean,
     scope?: ExploreRequestScope,
-  ): Promise<ResolvedExploreTarget & { modelGuard?: EmbeddingModelGuard }> {
+  ): Promise<ResolvedExploreTarget & { modelGuard?: EmbeddingModelGuardPort }> {
     // The one existence seam every read tool resolves through (live round-3 D3):
     // a missing index is refused before the overlay measures the tree.
     const workingTree = await resolveIndexedWorkingTree(
@@ -731,7 +728,7 @@ export class ExploreOps {
   private async embeddingBindingOf(
     collectionName: string,
     embeds: boolean,
-  ): Promise<Pick<CollectionEmbeddingBinding, "embeddings"> & { modelGuard?: EmbeddingModelGuard }> {
+  ): Promise<Pick<CollectionEmbeddingBinding, "embeddings"> & { modelGuard?: EmbeddingModelGuardPort }> {
     if (this.collectionEmbeddings) return this.collectionEmbeddings.forCollection(collectionName, { embeds });
     return { embeddings: this.embeddings, modelGuard: this.modelGuard };
   }

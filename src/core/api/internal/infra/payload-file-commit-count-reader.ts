@@ -12,14 +12,14 @@
  * per file.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import type { RelPath } from "../../../contracts/types/codegraph.js";
 
 const FILE_COMMIT_COUNT_PAYLOAD_KEYS = ["relativePath", "git.file.commitCount"];
 
 /** Commit count per file; a file with no numeric `git.file.commitCount` is absent. */
 export async function readPayloadFileCommitCounts(
-  qdrant: Pick<QdrantManager, "scrollPayloadPages">,
+  qdrant: Pick<QdrantPointReader, "scrollPayloadPages">,
   collectionName: string,
 ): Promise<Map<RelPath, number>> {
   const counts = new Map<RelPath, number>();

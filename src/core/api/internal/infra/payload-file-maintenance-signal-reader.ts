@@ -12,7 +12,7 @@
  * same file-scoped git signals, so the first chunk seen stands for its file.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import type { GitFileMaintenanceSignals } from "../../../contracts/types/architecture-report.js";
 import type { RelPath } from "../../../contracts/types/codegraph.js";
 
@@ -25,7 +25,7 @@ const FILE_MAINTENANCE_PAYLOAD_KEYS = [
 
 /** The three readings per file; a file missing any numeric reading is absent. */
 export async function readPayloadFileMaintenanceSignals(
-  qdrant: Pick<QdrantManager, "scrollPayloadPages">,
+  qdrant: Pick<QdrantPointReader, "scrollPayloadPages">,
   collectionName: string,
 ): Promise<Map<RelPath, GitFileMaintenanceSignals>> {
   const signals = new Map<RelPath, GitFileMaintenanceSignals>();

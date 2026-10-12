@@ -18,7 +18,7 @@
  * 5. Register MCP tool in src/mcp/tools/
  */
 
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import type { QdrantPointReader } from "../../adapters/qdrant/ports.js";
 import type { LanguageCapability } from "../../contracts/types/language.js";
 import type {
   CollectionEntry,
@@ -196,7 +196,7 @@ export interface App {
    * paths hold their own Qdrant client rather than the App's.
    */
   isCollectionBuildInFlight: (
-    qdrant: Pick<QdrantManager, "getPoint">,
+    qdrant: Pick<QdrantPointReader, "getPoint">,
     collection: string,
     options?: { deadWriterEvidenceUpTo?: number },
   ) => Promise<boolean>;

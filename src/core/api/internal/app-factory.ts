@@ -21,8 +21,12 @@
 
 import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
+import type {
+  EmbeddingModelGuardPort,
+  QdrantCollectionCatalog,
+  QdrantCollectionLifecycle,
+  QdrantPointWriter,
+} from "../../adapters/qdrant/ports.js";
 import type { RerankerPort } from "../../domains/explore/reranker-port.js";
 import { formatIndexDriftReport, type IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
 // The handler TYPES arrive through the api barrel (`../index.js`), which
@@ -64,7 +68,7 @@ import { reviewSectionIds as reviewSectionIdsValue } from "./ops/review-sections
 // ---------------------------------------------------------------------------
 
 export interface AppDeps {
-  qdrant: QdrantManager;
+  qdrant: QdrantCollectionCatalog & QdrantCollectionLifecycle & QdrantPointWriter;
   embeddings: EmbeddingProvider;
   ingest: IngestFacade;
   /**
@@ -94,7 +98,7 @@ export interface AppDeps {
   projectRegistryOps: ProjectRegistryOps;
   quantizationScalar: boolean;
   turboQuant: boolean;
-  modelGuard?: EmbeddingModelGuard;
+  modelGuard?: EmbeddingModelGuardPort;
   /** Optional — present when CODEGRAPH_DISABLED is unset and DuckDB is wired. */
   graphFacade?: GraphFacade;
   /** Optional — present when codegraph is wired (built in bootstrap alongside graphFacade). */

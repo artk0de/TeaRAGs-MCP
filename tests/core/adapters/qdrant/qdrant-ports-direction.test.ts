@@ -254,6 +254,82 @@ const EXPLORE_CONCRETE_KEPT: Record<string, string> = {
     "hands the spine's port-typed qdrant to scroll.ts's scrollOrderedBy, whose parameter is still concrete (cast seam — narrows when that helper takes QdrantPointReader)",
 };
 
+/**
+ * Q2api pin (bd tea-rags-mcp-89k7k.35, 6oah1 Q2): the api / bootstrap / cli /
+ * mcp slices type their Qdrant dependency against the narrowest `ports.ts`
+ * role they call, not against the 55-method concrete facade. Files where a
+ * port cannot cover the dependency YET stay on the concrete class, and each
+ * carries its reason here — a construction site (`new QdrantManager` / the
+ * guard's), a connection-intent accessor (`aliases` / `url` /
+ * `isEmbedded`), a hand-off to a collaborator whose own signature is still
+ * concrete, the api/public value re-export cli composes through, or a cli
+ * surface that may not import adapters below api/public at all. When one of
+ * those narrows, its entry must be deleted (the second test below refuses a
+ * stale entry).
+ */
+const API_DIRS = [
+  join(ROOT, "src/core/api"),
+  join(ROOT, "src/bootstrap"),
+  join(ROOT, "src/cli"),
+  join(ROOT, "src/mcp"),
+];
+
+const API_CONCRETE_KEPT: Record<string, string> = {
+  "src/core/api/public/index.ts":
+    "value re-export of the manager — the construction actors in cli/ build it through the api surface",
+  "src/core/api/internal/ops/explore-ops.ts":
+    "hands the manager to StatsRecomputeService, whose constructor is still concrete (scroll.ts's scrollAllPoints — narrows when that helper takes QdrantPointReader)",
+  "src/core/api/internal/ops/indexing-ops.ts":
+    "reads the connection-intent accessors aliases / url / isEmbedded — outside every port",
+  "src/core/api/internal/ops/project-registry-ops.ts":
+    "reads the connection-intent accessors url / isEmbedded for the registry's qdrant backend fields — outside every port",
+  "src/core/api/internal/ops/optimizer-recovery-ops.ts":
+    "calls the aliases accessor (resolveActive) — connection intent — beside a bespoke narrow getCollectionInfo shape the CLI mock supplies, both outside every port",
+  "src/core/api/internal/ops/worktree-seed-ops.ts":
+    "calls the aliases accessor (resolveActive) — connection intent, outside every port",
+  "src/core/api/internal/facades/explore-facade.ts":
+    "hands the manager to ExploreOps, whose deps still hold it concrete (StatsRecomputeService forward)",
+  "src/core/api/internal/facades/ingest-facade.ts":
+    "hands the manager to IndexingOps and createIngestDependencies, whose signatures still hold it concrete",
+  "src/core/api/internal/ingest-dependencies.ts":
+    "hands the manager to the Index/Sparse/Stats store adapters and SchemaManager, whose constructors are still concrete",
+  "src/bootstrap/factory.ts":
+    "constructs the manager and reads its connection-intent accessors (aliases.resolveActive, url, checkHealth); IngestFacade's deps still hold it concrete",
+  "src/bootstrap/embedding-binding.ts":
+    "constructs the manager and hands it to EmbeddingModelGuard's concrete constructor — guard ctor and the armed slot are construction sites",
+  "src/bootstrap/footprint-purge.ts":
+    "hands the manager to CollectionFootprintFactory / CollectionFootprintPurger, whose options still hold it concrete (QdrantArtifact aliases)",
+  "src/cli/commands/doctor.ts":
+    "composition actor constructing the manager; its narrow test-injection surfaces stay Pick'd off the api/public re-export — cli may not import adapters below api/public",
+  "src/cli/commands/projects.ts":
+    "composition actor constructing the manager; its narrow test-injection surfaces stay Pick'd off the api/public re-export — cli may not import adapters below api/public",
+  "src/cli/commands/qdrant.ts": "constructs the manager (composition actor) — construction sites keep the concrete",
+};
+
+describe("api/bootstrap/cli/mcp type their qdrant dependency against the ports (6oah1 Q2api)", () => {
+  it("holds no QdrantManager / EmbeddingModelGuard type reference outside the concrete-kept allowlist", () => {
+    const offenders = API_DIRS.flatMap(typescriptFiles)
+      .filter(holdsConcreteFacadeReference)
+      .map(rel)
+      .filter((file) => !(file in API_CONCRETE_KEPT));
+    expect(
+      offenders,
+      "files still binding the concrete facade — narrow them to a ports.ts role, or record in API_CONCRETE_KEPT why they must stay concrete",
+    ).toEqual([]);
+  });
+
+  it("keeps the concrete-kept allowlist honest — every entry still holds a concrete reference", () => {
+    const stale = Object.keys(API_CONCRETE_KEPT).filter((file) => {
+      const absolute = join(ROOT, file);
+      return !existsSync(absolute) || !holdsConcreteFacadeReference(absolute);
+    });
+    expect(
+      stale,
+      "allowlist entries whose file no longer references the concrete facade — delete them so the list tracks the code",
+    ).toEqual([]);
+  });
+});
+
 describe("explore domain types its qdrant dependency against the ports (6oah1 Q2explore)", () => {
   it("holds no QdrantManager / EmbeddingModelGuard type reference outside the concrete-kept allowlist", () => {
     const offenders = typescriptFiles(EXPLORE_DIR)

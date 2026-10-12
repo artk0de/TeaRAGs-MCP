@@ -17,12 +17,13 @@ describe("readPayloadImportSpecifiers", () => {
       "app/Editor.tsx": { imports: ["react", "./Editor.module.css"] },
       "app/NoImports.tsx": {},
     };
-    const scrollFiltered = vi.fn(
-      async (_collection: string, filter: { must: { key: string; match: { value?: string } }[] }) => {
-        const relPath = filter.must.find((c) => c.match.value !== undefined)?.match.value ?? "";
-        return relPath in stored ? [{ id: relPath, payload: stored[relPath] }] : [];
-      },
-    );
+    // The port types scrollFiltered as a property arrow, so the mock takes the
+    // declared Record filter and narrows the `must` arm it reads.
+    const scrollFiltered = vi.fn(async (_collection: string, filter: Record<string, unknown>) => {
+      const { must } = filter as { must: { key: string; match: { value?: string } }[] };
+      const relPath = must.find((c) => c.match.value !== undefined)?.match.value ?? "";
+      return relPath in stored ? [{ id: relPath, payload: stored[relPath] }] : [];
+    });
 
     const specifiers = await readPayloadImportSpecifiers({ scrollFiltered }, "code_x", [
       "app/Editor.tsx",

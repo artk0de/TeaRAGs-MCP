@@ -18,12 +18,12 @@
  */
 
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
-import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
+import type { EmbeddingModelGuardPort } from "../../adapters/qdrant/ports.js";
 
 /** The provider that embeds for a collection, and the guard that holds the collection to its model. */
 export interface CollectionEmbeddingBinding {
   readonly embeddings: EmbeddingProvider;
-  readonly modelGuard: EmbeddingModelGuard;
+  readonly modelGuard: EmbeddingModelGuardPort;
 }
 
 /** What the caller of `CollectionEmbeddingsResolver#forCollection` is about to do. */

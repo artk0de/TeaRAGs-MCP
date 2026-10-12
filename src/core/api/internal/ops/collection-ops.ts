@@ -4,8 +4,12 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
-import type { QdrantCollectionMemoryUsage, QdrantManager, QdrantMemoryUsage } from "../../../adapters/qdrant/client.js";
-import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
+import type { QdrantCollectionMemoryUsage, QdrantMemoryUsage } from "../../../adapters/qdrant/collection-admin.js";
+import type {
+  EmbeddingModelGuardPort,
+  QdrantCollectionCatalog,
+  QdrantCollectionLifecycle,
+} from "../../../adapters/qdrant/ports.js";
 import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import type {
   CollectionInfo,
@@ -21,11 +25,11 @@ import {
 
 export class CollectionOps {
   constructor(
-    private readonly qdrant: QdrantManager,
+    private readonly qdrant: QdrantCollectionCatalog & QdrantCollectionLifecycle,
     private readonly embeddings: EmbeddingProvider,
     private readonly quantizationScalar: boolean,
     private readonly turboQuant: boolean,
-    private readonly modelGuard?: EmbeddingModelGuard,
+    private readonly modelGuard?: EmbeddingModelGuardPort,
     private readonly codegraphPool?: GraphDbClientPool,
     private readonly metadataSchemas: DocumentMetadataSchemaCompiler = new DocumentMetadataSchemaCompiler(),
   ) {}

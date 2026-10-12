@@ -14,8 +14,8 @@
  * exactly on `relativePath` through its index-served pair.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
+import type { QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import type { RelPath } from "../../../contracts/types/codegraph.js";
 import type { IndexedFileImports } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import { TEST_EXCLUSION_FILTER_CONDITIONS } from "../../../domains/trajectory/static/index.js";
@@ -28,7 +28,7 @@ const IMPORT_SPECIFIER_READ_CONCURRENCY = 8;
  * hold, or one that declares no import, is absent from the map.
  */
 export async function readPayloadImportSpecifiers(
-  qdrant: Pick<QdrantManager, "scrollFiltered">,
+  qdrant: Pick<QdrantPointReader, "scrollFiltered">,
   collectionName: string,
   relPaths: readonly RelPath[],
 ): Promise<Map<RelPath, string[]>> {
@@ -65,7 +65,7 @@ export async function readPayloadImportSpecifiers(
  * `readPayloadFileMaintenanceSignals` reads every file.
  */
 export async function readPayloadIndexedFileImports(
-  qdrant: Pick<QdrantManager, "scrollPayloadPages">,
+  qdrant: Pick<QdrantPointReader, "scrollPayloadPages">,
   collectionName: string,
 ): Promise<Map<RelPath, IndexedFileImports>> {
   const files = new Map<RelPath, IndexedFileImports>();

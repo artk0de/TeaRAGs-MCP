@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import { validatePath, validatePathSync } from "../../../adapters/filesystem/path-canonicalization.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { isCollectionBuildInFlight } from "../../../domains/ingest/infra/index.js";
 import {
@@ -532,7 +533,7 @@ export class ProjectRegistryOps {
    * own Qdrant client, not an App.
    */
   async isCollectionBuildInFlight(
-    qdrant: Pick<QdrantManager, "getPoint">,
+    qdrant: Pick<QdrantPointReader, "getPoint">,
     collection: string,
     options: { deadWriterEvidenceUpTo?: number } = {},
   ): Promise<boolean> {
