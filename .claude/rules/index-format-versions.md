@@ -9,6 +9,7 @@ paths:
   - "src/core/domains/trajectory/codegraph/symbols/inheritance-edges.ts"
   - "src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.ts"
   - "src/core/domains/ingest/pipeline/chunker/*.ts"
+  - "src/core/domains/ingest/pipeline/chunker/language-config/*.ts"
   - "src/core/domains/ingest/pipeline/chunker/utils/chunk-id.ts"
   - "src/core/domains/ingest/pipeline/chunker/utils/import-extractor.ts"
   - "src/core/domains/ingest/pipeline/chunker/utils/non-code-text-mask.ts"

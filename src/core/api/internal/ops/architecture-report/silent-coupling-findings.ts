@@ -2,7 +2,10 @@ import { extname } from "node:path";
 
 import type { RelPath, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
 import { silentCouplingGroupSubject } from "../../../../contracts/types/diff-detector-finding.js";
-import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../../domains/ingest/pipeline/chunker/config.js";
+import {
+  DOCUMENTATION_LANGUAGES,
+  LANGUAGE_MAP,
+} from "../../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import {
   computeSplitMergeVerdicts,
   groupSilentCouplingPairs,

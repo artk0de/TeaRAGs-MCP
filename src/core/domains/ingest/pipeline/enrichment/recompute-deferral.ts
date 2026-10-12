@@ -25,7 +25,7 @@
  */
 
 import { anyOfOnTextIndexed, type TextIndexedAnyOf } from "../../../../adapters/qdrant/filters/text-indexed-exact.js";
-import { detectLanguage } from "../chunker/utils/language-detector.js";
+import { detectLanguage } from "../chunker/language-config/index.js";
 
 /**
  * The relative paths a `--force-enrichments` sync leg left to the recompute

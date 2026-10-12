@@ -44,7 +44,7 @@ import {
 import { resolvePhysicalCollection } from "../../../domains/ingest/operations/index.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
-import { CODE_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/config.js";
+import { CODE_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import type { DeferredChunkRecoveryHandoff } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import {

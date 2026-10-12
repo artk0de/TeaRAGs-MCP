@@ -11,7 +11,7 @@ import { extname } from "node:path";
 
 import type { EnrichmentProvider, EnrichmentScope } from "../../../../contracts/types/provider.js";
 import { classify } from "../../../../primitives/paths/index.js";
-import { LANGUAGE_DEFINITIONS, LANGUAGE_MAP } from "../chunker/config.js";
+import { LANGUAGE_DEFINITIONS, LANGUAGE_MAP } from "../chunker/language-config/index.js";
 
 function isDocumentationPath(relPath: string): boolean {
   const lang = LANGUAGE_MAP[extname(relPath).toLowerCase()];

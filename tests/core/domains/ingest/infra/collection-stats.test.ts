@@ -5,7 +5,7 @@ import {
   computeCollectionStats as computeCollectionStatsInjected,
   validateSignalDependencies,
 } from "../../../../../src/core/domains/ingest/infra/collection-stats.js";
-import { CODE_LANGUAGES } from "../../../../../src/core/domains/ingest/pipeline/chunker/config.js";
+import { CODE_LANGUAGES } from "../../../../../src/core/domains/ingest/pipeline/chunker/language-config/index.js";
 import { gitStatsAccumulators } from "../../../../../src/core/domains/trajectory/git/stats/index.js";
 import { staticStatsAccumulators } from "../../../../../src/core/domains/trajectory/static/stats/index.js";
 

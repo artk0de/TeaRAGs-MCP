@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { extensionsForLanguages } from "../../../../../../src/core/domains/ingest/pipeline/chunker/config.js";
+import { extensionsForLanguages } from "../../../../../../src/core/domains/ingest/pipeline/chunker/language-config/index.js";
 
 describe("extensionsForLanguages", () => {
   it("returns every extension a language owns", () => {

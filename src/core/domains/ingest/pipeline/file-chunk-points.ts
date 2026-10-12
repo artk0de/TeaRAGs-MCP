@@ -26,10 +26,10 @@ import { isCompiledJsContent, isJsFamilyPath, isTestPath } from "../../../primit
 import { buildChunkPointPayload } from "./chunk-point-payload.js";
 import { assignNavigationAndDocSymbolId } from "./chunker/chunk-navigation.js";
 import type { ChunkerPoolPort } from "./chunker/infra/pool.js";
+import { detectLanguage } from "./chunker/language-config/index.js";
 import { assignSymbolMass } from "./chunker/symbol-mass.js";
 import { generateChunkId } from "./chunker/utils/chunk-id.js";
 import { extractImportsExports } from "./chunker/utils/import-extractor.js";
-import { detectLanguage } from "./chunker/utils/language-detector.js";
 import { containsSecrets } from "./chunker/utils/secrets-detector.js";
 
 /** Why ingest refuses a file on its CONTENT, before parsing it. */

@@ -3,10 +3,10 @@
  */
 
 import type { CodeChunk } from "../../../../../types.js";
+import { detectLanguage } from "../language-config/index.js";
 import { generateChunkId } from "./chunk-id.js";
 import { calculateComplexity } from "./complexity.js";
 import { extractImportsExports } from "./import-extractor.js";
-import { detectLanguage } from "./language-detector.js";
 import { containsSecrets } from "./secrets-detector.js";
 
 export class MetadataExtractor {
