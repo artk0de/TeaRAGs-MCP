@@ -22,9 +22,14 @@
  */
 
 import { READ_PATH_EMBEDDING_RECOVERY_WAIT_MS, type EmbeddingProvider } from "../../../adapters/embeddings/base.js";
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { QdrantPointNotFoundError } from "../../../adapters/qdrant/errors.js";
 import { toQdrantPointId } from "../../../adapters/qdrant/point-id.js";
+import type {
+  QdrantCollectionCatalog,
+  QdrantPayloadIndexAdmin,
+  QdrantPointReader,
+  QdrantSearchReader,
+} from "../../../adapters/qdrant/ports.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
@@ -53,7 +58,7 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
   readonly type = "similar" as const;
 
   constructor(
-    qdrant: QdrantManager,
+    qdrant: QdrantSearchReader & QdrantPointReader & QdrantPayloadIndexAdmin & QdrantCollectionCatalog,
     reranker: RerankerPort,
     payloadSignals: PayloadSignalDescriptor[],
     essentialKeys: string[],

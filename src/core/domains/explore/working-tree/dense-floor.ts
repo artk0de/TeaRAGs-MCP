@@ -35,7 +35,7 @@
 import { createHash } from "node:crypto";
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import type { ExploreResult } from "../../../contracts/types/search-result.js";
 import type {
   WorkingTreeBasePoint,
@@ -87,7 +87,7 @@ export interface WorkingTreeDenseVectorSourceDeps {
    */
   embeddingsForCollection?: (collectionName: string) => Promise<WorkingTreeDenseEmbeddings>;
   /** Absent → no base-vector reuse. */
-  qdrant?: Pick<QdrantManager, "retrieveDenseVectors">;
+  qdrant?: Pick<QdrantPointReader, "retrieveDenseVectors">;
   /** Absent → vectors are not persisted across processes. */
   store?: Pick<WorkingTreeChunkStore, "getVectors" | "putVectors">;
   /**

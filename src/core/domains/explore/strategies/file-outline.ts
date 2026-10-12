@@ -9,8 +9,13 @@
  * SimilarSearchStrategy.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
+import type {
+  QdrantCollectionCatalog,
+  QdrantPayloadIndexAdmin,
+  QdrantPointReader,
+  QdrantSearchReader,
+} from "../../../adapters/qdrant/ports.js";
 import type { SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { CodeChunkGrouper, DocChunkGrouper } from "../chunk-grouping/index.js";
@@ -37,7 +42,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
   protected override readonly hasChunkFloor = true;
 
   constructor(
-    qdrant: QdrantManager,
+    qdrant: QdrantSearchReader & QdrantPointReader & QdrantPayloadIndexAdmin & QdrantCollectionCatalog,
     reranker: RerankerPort,
     payloadSignals: PayloadSignalDescriptor[],
     essentialKeys: string[],

@@ -7,7 +7,12 @@
  * Concrete strategies implement only `executeExplore()` and `type`.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type {
+  QdrantCollectionCatalog,
+  QdrantPayloadIndexAdmin,
+  QdrantPointReader,
+  QdrantSearchReader,
+} from "../../../adapters/qdrant/ports.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { fileScopeOf, reduceToFileScope, type FileScope, type ScrollChunk } from "../chunk-grouping/index.js";
 import { historyClockRerankOption } from "../history-clock.js";
@@ -73,7 +78,10 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
   private readonly testSetupHydrator: TestSetupHydrator;
 
   constructor(
-    protected readonly qdrant: QdrantManager,
+    protected readonly qdrant: QdrantSearchReader &
+      QdrantPointReader &
+      QdrantPayloadIndexAdmin &
+      QdrantCollectionCatalog,
     protected readonly reranker: RerankerPort,
     protected readonly payloadSignals: PayloadSignalDescriptor[],
     protected readonly essentialKeys: string[],

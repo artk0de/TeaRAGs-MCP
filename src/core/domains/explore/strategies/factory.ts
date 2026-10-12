@@ -2,7 +2,12 @@
  * Explore strategy factory — creates the appropriate strategy for a search type.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type {
+  QdrantCollectionCatalog,
+  QdrantPayloadIndexAdmin,
+  QdrantPointReader,
+  QdrantSearchReader,
+} from "../../../adapters/qdrant/ports.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { InvalidStrategyError } from "../errors/index.js";
 import type { RerankerPort } from "../reranker-port.js";
@@ -15,7 +20,7 @@ export type ExploreStrategyType = "vector" | "hybrid" | "scroll-rank";
 
 export function createExploreStrategy(
   type: ExploreStrategyType,
-  qdrant: QdrantManager,
+  qdrant: QdrantSearchReader & QdrantPointReader & QdrantPayloadIndexAdmin & QdrantCollectionCatalog,
   reranker: RerankerPort,
   payloadSignals: PayloadSignalDescriptor[],
   essentialKeys: string[],
