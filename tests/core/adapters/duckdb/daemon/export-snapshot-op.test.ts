@@ -19,7 +19,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
+import { DaemonBuildHandshakeConnector } from "../../../../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
 import { DaemonGraphDbClient, LEGACY_TOLERATED_OPS } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
+import { DaemonCollectionClientCache } from "../../../../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
+import { DaemonDatabaseFileReplacer } from "../../../../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import { getDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import { DAEMON_OP_COMMANDS } from "../../../../../src/core/adapters/duckdb/daemon/op-commands.js";
@@ -140,7 +143,17 @@ describe("exportSnapshot daemon op", () => {
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: paths.socketPath,
-      daemonRestart: { buildFingerprint: FINGERPRINT },
+      daemonRouting: {
+        clients: new DaemonCollectionClientCache(
+          {
+            symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+            daemonSocketPath: paths.socketPath,
+            daemonRestart: { buildFingerprint: FINGERPRINT },
+          },
+          new DaemonBuildHandshakeConnector({ buildFingerprint: FINGERPRINT }, undefined),
+        ),
+        replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
+      },
     });
     pools.push(session);
     const { graphDb } = await session.acquireWrite(NAME);
@@ -170,6 +183,16 @@ describe("exportSnapshot daemon op", () => {
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: {
+        clients: new DaemonCollectionClientCache(
+          {
+            symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+            daemonSocketPath: socketPath,
+          },
+          new DaemonBuildHandshakeConnector(undefined, undefined),
+        ),
+        replacerFor: (replacerSocketPath) => new DaemonDatabaseFileReplacer(replacerSocketPath),
+      },
     });
     pools.push(session);
 

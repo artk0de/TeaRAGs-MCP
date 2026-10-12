@@ -85,8 +85,18 @@ describe("wireCodegraph — daemon spawn settings (8qzyb)", () => {
     writeFileSync(ctx!.pool.pathFor(collection), "");
 
     await ctx!.pool.acquireReader(collection);
-    const { daemonRestart } = (ctx!.pool as unknown as { options: { daemonRestart: { respawn: () => void } } }).options;
-    daemonRestart.respawn();
+    // The restart wiring moved off the pool options into the routing the
+    // bootstrap factory constructs (H4a2) — same hook, new address.
+    const {
+      options: {
+        daemonRestart: { respawn: respawnHook },
+      },
+    } = (
+      ctx!.pool as unknown as {
+        options: { daemonRouting: { clients: { options: { daemonRestart: { respawn: () => void } } } } };
+      }
+    ).options.daemonRouting.clients;
+    respawnHook();
 
     expect(spawned.envs).toHaveLength(2);
     const [lazySpawn, respawn] = spawned.envs.map((env) => daemonRuntimeOptionsFromEnv(env));

@@ -43,13 +43,11 @@ import { CollectionIdleEvictionTracker, type GraphDbClientPoolIdleEviction } fro
 import type { CollectionInitHook, SymbolTableFactory } from "./collection-init-hook.js";
 import type {
   CodegraphDaemonClientTarget,
-  CodegraphDaemonRestartWiring,
   CodegraphDatabaseFileReplacer,
   DaemonDatabaseReplacement,
+  DaemonRouting,
   ForeignBuildLockArbiter,
 } from "./daemon-ports.js";
-import { DaemonBuildHandshakeConnector } from "./daemon/build-handshake-connector.js";
-import { DaemonCollectionClientCache } from "./daemon/collection-client-cache.js";
 import { CodegraphDatabaseMissingError, DuckDbCloseFailedError, DuckDbOpenFailedError } from "./errors.js";
 import { LockContendedOpenRetry, type LockContendedOpenRetryWindow } from "./lock-contended-open-retry.js";
 import { ReadOnlyGraphFileReaders } from "./read-only-graph-file-readers.js";
@@ -130,16 +128,18 @@ export interface GraphDbClientPoolOptions {
    */
   daemonClientTarget?: () => CodegraphDaemonClientTarget;
   /**
-   * Base daemon lifecycle storage dir (bd tea-rags-mcp-42hno). When set, the
-   * pool checks — once per connect, a couple of `existsSync` in steady state —
-   * for a LEGACY (pre-keying) daemon layout in that dir and migrates it out of
-   * the way: a live legacy daemon is drained through the existing flow (the
-   * zgcmo guard protects its in-flight writers), a dead one is unlinked
-   * directly. The bootstrap factory wires the same dir it passes the spawner;
-   * worker-thread pools omit it (provisioning ran on the main thread before
-   * they forked) and so never touch a legacy layout.
+   * How this pool reaches the daemon in daemon mode (bd tea-rags-mcp-89k7k.35,
+   * H4a2): the cached per-collection clients AND the database-file replacer
+   * factory. The pool consumes it and constructs none of the daemon classes —
+   * the composition root builds it (`createDaemonRouting` in
+   * `daemon/index.ts`, wrapping `DaemonCollectionClientCache` +
+   * `DaemonBuildHandshakeConnector` + `DaemonDatabaseFileReplacer` and carrying
+   * the daemon-construction options that used to sit here: `daemonStorageDir`,
+   * `daemonRestart`). REQUIRED whenever daemon mode is on (`daemonSocketPath`
+   * or `daemonClientTarget` set): a pool wired for the daemon without a way to
+   * reach it is a construction bug and fails at once.
    */
-  daemonStorageDir?: string;
+  daemonRouting?: DaemonRouting;
   /**
    * Bounded retry for the collection OPEN (bd tea-rags-mcp-42hno). When set,
    * a `DuckDbOpenFailedError` from the open is retried every `intervalMs`
@@ -160,16 +160,6 @@ export interface GraphDbClientPoolOptions {
    * waiting the window again. Without it every holder gets the plain retry.
    */
   foreignBuildLockArbiter?: ForeignBuildLockArbiter;
-  /**
-   * Build + capability handshake restart wiring, daemon mode only (bd
-   * tea-rags-mcp-ji56r, 39xca.4). A daemon from another build, or one missing a
-   * required op, is drained, its exit awaited, `respawn` invoked and the
-   * connection retried up to `maxRestartAttempts`. A pre-fingerprint peer
-   * proceeds unchanged, and so does — read-only — a daemon of the build on disk
-   * that this process predates (bd tea-rags-mcp-1wr7p). Without `respawn` the pool never
-   * drains — see `DaemonBuildHandshakeConnector#connectWithBuildHandshake`.
-   */
-  daemonRestart?: CodegraphDaemonRestartWiring;
 }
 
 /**
@@ -208,8 +198,6 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
   private readonly inflight = new Map<string, Promise<PoolEntry>>();
   /** Path leases of in-process replacers — what `acquire` waits out and a pin re-checks. */
   private readonly pathLeases = new CodegraphPathLeases();
-  /** Daemon mode only: the one cached `DaemonGraphDbClient` per collection. */
-  private readonly daemonClients: DaemonCollectionClientCache;
   /** Only when `idleEviction` is wired (bd tea-rags-mcp-nlls). */
   private readonly idleEviction: CollectionIdleEvictionTracker | undefined;
   /** Retries an open that lost the file lock; remembers foreign-build holders. */
@@ -219,10 +207,18 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
 
   constructor(private readonly options: GraphDbClientPoolOptions) {
     this.dbFiles = new CodegraphDbFiles(options.rootDir);
-    this.daemonClients = new DaemonCollectionClientCache(
-      options,
-      new DaemonBuildHandshakeConnector(options.daemonRestart, options.daemonStorageDir),
-    );
+    // Daemon mode without a routing is a construction bug (H4a2): the clients
+    // and the replacer live behind `daemonRouting`, nothing constructs them
+    // here anymore. Programming error, so a plain Error is the right class.
+    if (
+      (options.daemonSocketPath !== undefined || options.daemonClientTarget !== undefined) &&
+      options.daemonRouting === undefined
+    ) {
+      throw new Error(
+        "GraphDbClientPool: daemon mode (daemonSocketPath / daemonClientTarget) requires daemonRouting — " +
+          "build it with createDaemonRouting (adapters/duckdb/daemon)",
+      );
+    }
     this.idleEviction = options.idleEviction
       ? new CollectionIdleEvictionTracker(options.idleEviction, {
           cachedCollections: () => [...this.clients.keys()],
@@ -246,6 +242,19 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
 
   private get codegraphDir(): string {
     return this.dbFiles.dir;
+  }
+
+  /**
+   * The daemon routing — present whenever daemon mode is on (the constructor
+   * refuses anything else), so the throw below is unreachable in practice and
+   * only narrows the type.
+   */
+  private get daemonRouting(): DaemonRouting {
+    const routing = this.options.daemonRouting;
+    if (!routing) {
+      throw new Error("GraphDbClientPool: daemonRouting is required in daemon mode");
+    }
+    return routing;
   }
 
   /**
@@ -445,7 +454,7 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
    * `finally` close must not tear it down under other in-flight callers.
    */
   private async acquireDaemonHandle(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
-    return this.daemonClients.acquireHandle(physicalCollectionName);
+    return this.daemonRouting.clients.acquireHandle(physicalCollectionName);
   }
 
   /**
@@ -755,9 +764,7 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
   ): Promise<DaemonDatabaseReplacement | undefined> {
     const socketPath = this.options.daemonClientTarget?.().paths.socketPath ?? this.options.daemonSocketPath;
     if (!socketPath) return undefined;
-    // Dynamic so direct/test mode never loads the node:net socket code.
-    const { DaemonDatabaseFileReplacer } = await import("./daemon/database-file-replacer.js");
-    const replaced = await replace(new DaemonDatabaseFileReplacer(socketPath));
+    const replaced = await replace(this.daemonRouting.replacerFor(socketPath));
     if (replaced.handledBy === "caller" && isDebug()) {
       process.stderr.write(
         `[tea-rags] codegraph pool: daemon did not replace the database (${replaced.reason}) — this process does\n`,
@@ -809,7 +816,9 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
         await e.graphDb.close().catch(() => undefined);
         this.options.onCollectionClientClosed?.(physicalCollectionName);
       }),
-      this.daemonClients.closeAll(),
+      // Undefined in direct mode — no daemon sockets to close. The routing
+      // always exists in daemon mode (constructor guard).
+      this.options.daemonRouting?.clients.closeAll(),
     ]);
   }
 }

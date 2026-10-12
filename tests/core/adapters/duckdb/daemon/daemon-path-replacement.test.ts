@@ -20,7 +20,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
+import { DaemonBuildHandshakeConnector } from "../../../../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
 import { DaemonGraphDbClient, LEGACY_TOLERATED_OPS } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
+import { DaemonCollectionClientCache } from "../../../../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
+import { DaemonDatabaseFileReplacer } from "../../../../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import {
   daemonPathsForKeyDir,
@@ -73,6 +76,20 @@ function makePool(options: Pick<GraphDbClientPoolOptions, "rootDir"> & Partial<G
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     ...options,
+    ...(options.daemonSocketPath !== undefined
+      ? {
+          daemonRouting: {
+            clients: new DaemonCollectionClientCache(
+              {
+                symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+                daemonSocketPath: options.daemonSocketPath,
+              },
+              new DaemonBuildHandshakeConnector(undefined, undefined),
+            ),
+            replacerFor: (socketPath: string) => new DaemonDatabaseFileReplacer(socketPath),
+          },
+        }
+      : {}),
   });
   pools.push(pool);
   return pool;
@@ -101,7 +118,17 @@ async function startDaemon(): Promise<DaemonFixture> {
   const session = makePool({
     rootDir: dataRoot,
     daemonSocketPath: paths.socketPath,
-    daemonRestart: { buildFingerprint: FINGERPRINT },
+    daemonRouting: {
+      clients: new DaemonCollectionClientCache(
+        {
+          symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+          daemonSocketPath: paths.socketPath,
+          daemonRestart: { buildFingerprint: FINGERPRINT },
+        },
+        new DaemonBuildHandshakeConnector({ buildFingerprint: FINGERPRINT }, undefined),
+      ),
+      replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
+    },
   });
   return { dataRoot, paths, session };
 }

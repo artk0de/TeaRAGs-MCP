@@ -30,7 +30,10 @@ import {
   captureBuildFingerprint,
   type BuildFingerprintCapture,
 } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
+import { DaemonBuildHandshakeConnector } from "../../../../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
+import { DaemonCollectionClientCache } from "../../../../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
+import { DaemonDatabaseFileReplacer } from "../../../../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import {
   getBuildKey,
@@ -127,19 +130,31 @@ function makeFactoryShapedPool(
   client: BuildFingerprintCapture,
   restart: { respawn?: () => void } = {},
 ): GraphDbClientPool {
+  const daemonRestart = {
+    buildFingerprint: client.loaded,
+    readOnDiskBuildFingerprint: client.readOnDisk,
+    pollIntervalMs: 20,
+    restartDelayMs: 5,
+    ...restart,
+  };
   const pool = new GraphDbClientPool({
     rootDir: root as string,
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath: getDaemonPathsForBuild(storageDir, client.loaded).socketPath,
-    daemonStorageDir: storageDir,
     daemonClientTarget: () => resolveDaemonClientTarget(storageDir, sourceOf(client)),
-    daemonRestart: {
-      buildFingerprint: client.loaded,
-      readOnDiskBuildFingerprint: client.readOnDisk,
-      pollIntervalMs: 20,
-      restartDelayMs: 5,
-      ...restart,
+    daemonRouting: {
+      clients: new DaemonCollectionClientCache(
+        {
+          symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+          daemonSocketPath: getDaemonPathsForBuild(storageDir, client.loaded).socketPath,
+          daemonClientTarget: () => resolveDaemonClientTarget(storageDir, sourceOf(client)),
+          daemonStorageDir: storageDir,
+          daemonRestart,
+        },
+        new DaemonBuildHandshakeConnector(daemonRestart, storageDir),
+      ),
+      replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
     },
   });
   pools.push(pool);

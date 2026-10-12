@@ -27,7 +27,10 @@
  * shape the composition root uses today.
  */
 
-import { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import { DaemonBuildHandshakeConnector } from "../../../adapters/duckdb/daemon/build-handshake-connector.js";
+import { DaemonCollectionClientCache } from "../../../adapters/duckdb/daemon/collection-client-cache.js";
+import { DaemonDatabaseFileReplacer } from "../../../adapters/duckdb/daemon/database-file-replacer.js";
+import { GraphDbClientPool, type CollectionInitHook } from "../../../adapters/duckdb/pool.js";
 import { readManifestFiles } from "../../../adapters/filesystem/dependency-manifests.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
 import type {
@@ -245,9 +248,34 @@ export async function createCodegraphProviderRuntime(
     createDatabaseMigrationApplier: () => DatabaseMigrationApplier;
   };
 
+  const symbolTableFactory = (): InMemoryGlobalSymbolTable => new InMemoryGlobalSymbolTable();
+  // Hydrate the per-collection symbol table from disk on first open —
+  // identical to wireCodegraph. Without it an incremental reindex of file A
+  // cannot resolve calls into an unchanged file B.
+  const hydrateSymbolTable: CollectionInitHook = async ({
+    collectionName: physicalCollectionName,
+    graphDb,
+    symbolTable,
+  }) => {
+    try {
+      const persisted = await graphDb.listAllSymbols();
+      if (persisted.length > 0) symbolTable.hydrate(persisted);
+      // …and the files that persisted no symbol at all (bd tea-rags-mcp-o7ifx).
+      // `cg_symbols` has no row for an empty `__init__.py`, so hydrating from
+      // it alone leaves every package marker outside the project until some
+      // later run happens to re-walk it. The file table is the full universe.
+      const files = await graphDb.listFileContentHashes();
+      if (files.length > 0) symbolTable.hydrateFiles?.(files.map((f) => f.relPath));
+    } catch (err) {
+      process.stderr.write(
+        `[tea-rags] codegraph symbol-table hydration failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
+      );
+    }
+  };
+
   const pool = new GraphDbClientPool({
     rootDir: config.rootDir,
-    symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    symbolTableFactory,
     applyMigrations: migrations.createDatabaseMigrationApplier(),
     resources: {
       memoryLimit: config.dbMemoryLimit,
@@ -255,25 +283,28 @@ export async function createCodegraphProviderRuntime(
       preserveInsertionOrder: false,
     },
     daemonSocketPath: config.daemonSocketPath,
-    // Hydrate the per-collection symbol table from disk on first open —
-    // identical to wireCodegraph. Without it an incremental reindex of file A
-    // cannot resolve calls into an unchanged file B.
-    initHook: async ({ collectionName: physicalCollectionName, graphDb, symbolTable }) => {
-      try {
-        const persisted = await graphDb.listAllSymbols();
-        if (persisted.length > 0) symbolTable.hydrate(persisted);
-        // …and the files that persisted no symbol at all (bd tea-rags-mcp-o7ifx).
-        // `cg_symbols` has no row for an empty `__init__.py`, so hydrating from
-        // it alone leaves every package marker outside the project until some
-        // later run happens to re-walk it. The file table is the full universe.
-        const files = await graphDb.listFileContentHashes();
-        if (files.length > 0) symbolTable.hydrateFiles?.(files.map((f) => f.relPath));
-      } catch (err) {
-        process.stderr.write(
-          `[tea-rags] codegraph symbol-table hydration failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
-        );
-      }
-    },
+    // H4a2 intermediate state: the pool no longer constructs the daemon
+    // classes, so this runtime-side factory does until S15 moves the whole
+    // pool construction into the bootstrap-owned worker pool factory. Worker
+    // pools carry no `daemonStorageDir` / `daemonRestart` today (provisioning
+    // ran on the main thread; respawn is wired there), so the routing is built
+    // from the socket alone.
+    ...(config.daemonSocketPath !== undefined
+      ? {
+          daemonRouting: {
+            clients: new DaemonCollectionClientCache(
+              {
+                symbolTableFactory,
+                initHook: hydrateSymbolTable,
+                daemonSocketPath: config.daemonSocketPath,
+              },
+              new DaemonBuildHandshakeConnector(undefined, undefined),
+            ),
+            replacerFor: (socketPath: string) => new DaemonDatabaseFileReplacer(socketPath),
+          },
+        }
+      : {}),
+    initHook: hydrateSymbolTable,
   });
 
   const provider = new CodegraphEnrichmentProvider(

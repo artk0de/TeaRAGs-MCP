@@ -1,13 +1,18 @@
 /**
- * Import-direction pin for adapters/duckdb (bd tea-rags-mcp-89k7k.35, H4a1).
+ * Import-direction pin for adapters/duckdb (bd tea-rags-mcp-89k7k.35, H4a1 +
+ * H4a2).
  *
  * The duckdb root owns the daemon contracts the pool consumes — they live in
  * `daemon-ports.ts`, and the daemon classes under `daemon/` implement them and
  * re-export them (child -> parent, the allowed direction). So no file directly
  * in `adapters/duckdb/` may import one of those TYPES from `./daemon/*` — a
- * root type need resolves to `./daemon-ports.js`. Value imports (the pool's
- * `new Daemon*` constructions, the lazy replacer dynamic import) are NOT this
- * pin's business: they die in H4a2+3.
+ * root type need resolves to `./daemon-ports.js`.
+ *
+ * Since H4a2 the same holds for VALUES in `pool.ts`: it constructs no daemon
+ * class and lazily imports no daemon module — the routing arrives fully built
+ * through `GraphDbClientPoolOptions.daemonRouting`. The root -> daemon
+ * construction edges are gone entirely; whoever needs them builds a
+ * `DaemonRouting` (see `createDaemonRouting` in `daemon/index.ts`).
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -28,6 +33,8 @@ const PORT_TYPES = [
   "ForeignBuildLockSettlement",
   "CodegraphDatabaseFileReplacer",
   "DaemonDatabaseReplacement",
+  "DaemonCollectionClientsPort",
+  "DaemonRouting",
 ] as const;
 
 /**
@@ -97,5 +104,10 @@ describe("adapters/duckdb root consumes daemon contracts through daemon-ports", 
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("pool.ts has no import from ./daemon/* at all — value or type (H4a2)", () => {
+    const text = stripComments(readFileSync(join(DUCKDB_DIR, "pool.ts"), "utf-8"));
+    expect(text).not.toMatch(/["']\.\/daemon\//);
   });
 });

@@ -26,7 +26,10 @@ import {
   captureBuildFingerprint,
   type BuildFingerprintCapture,
 } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
+import { DaemonBuildHandshakeConnector } from "../../../../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
+import { DaemonCollectionClientCache } from "../../../../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
+import { DaemonDatabaseFileReplacer } from "../../../../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import {
@@ -119,12 +122,31 @@ function makePool(
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath: paths.socketPath,
-    daemonRestart: {
-      buildFingerprint: client.loaded,
-      readOnDiskBuildFingerprint: client.readOnDisk,
-      pollIntervalMs: 20,
-      restartDelayMs: 5,
-      ...restart,
+    daemonRouting: {
+      clients: new DaemonCollectionClientCache(
+        {
+          symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+          daemonSocketPath: paths.socketPath,
+          daemonRestart: {
+            buildFingerprint: client.loaded,
+            readOnDiskBuildFingerprint: client.readOnDisk,
+            pollIntervalMs: 20,
+            restartDelayMs: 5,
+            ...restart,
+          },
+        },
+        new DaemonBuildHandshakeConnector(
+          {
+            buildFingerprint: client.loaded,
+            readOnDiskBuildFingerprint: client.readOnDisk,
+            pollIntervalMs: 20,
+            restartDelayMs: 5,
+            ...restart,
+          },
+          undefined,
+        ),
+      ),
+      replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
     },
   });
   pools.push(pool);
@@ -291,14 +313,35 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: paths.socketPath,
-      daemonRestart: {
-        buildFingerprint: "CLIENT-BUILD",
-        readOnDiskBuildFingerprint: () => undefined,
-        pollIntervalMs: 20,
-        respawn: () => {
-          respawns++;
-          void startDaemon(paths, "CLIENT-BUILD");
-        },
+      daemonRouting: {
+        clients: new DaemonCollectionClientCache(
+          {
+            symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+            daemonSocketPath: paths.socketPath,
+            daemonRestart: {
+              buildFingerprint: "CLIENT-BUILD",
+              readOnDiskBuildFingerprint: () => undefined,
+              pollIntervalMs: 20,
+              respawn: () => {
+                respawns++;
+                void startDaemon(paths, "CLIENT-BUILD");
+              },
+            },
+          },
+          new DaemonBuildHandshakeConnector(
+            {
+              buildFingerprint: "CLIENT-BUILD",
+              readOnDiskBuildFingerprint: () => undefined,
+              pollIntervalMs: 20,
+              respawn: () => {
+                respawns++;
+                void startDaemon(paths, "CLIENT-BUILD");
+              },
+            },
+            undefined,
+          ),
+        ),
+        replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
       },
     });
     pools.push(pool);

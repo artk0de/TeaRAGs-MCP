@@ -8,11 +8,13 @@
  * type level: the pool's option fields and callbacks name these ports, never
  * a `daemon/` symbol.
  *
- * The pool still CONSTRUCTS the daemon classes (`new DaemonBuildHandshakeConnector`,
- * `new DaemonCollectionClientCache`, the lazy replacer import) — value wiring
- * that H4a2+3 moves behind a `DaemonRouting` option; this file is type-only.
+ * Since H4a2 the pool consumes the daemon VALUE side the same way: its
+ * `daemonRouting` option names {@link DaemonRouting}, and whoever constructs
+ * the pool builds that routing from the daemon classes (`createDaemonRouting`
+ * in `daemon/index.ts`). The pool itself imports nothing from `daemon/`.
  */
 
+import type { CollectionGraphHandle } from "../../contracts/types/codegraph-pool.js";
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { DuckDbOpenFailedError, ForeignBuildDaemonLockHolder } from "./errors.js";
 
@@ -164,4 +166,36 @@ export interface CodegraphDatabaseFileReplacer {
   removeDatabase: (target: PhysicalCollectionName) => Promise<DaemonDatabaseReplacement>;
   /** Clone `source`'s database over `target` through the daemon's pool. */
   cloneDatabase: (source: PhysicalCollectionName, target: PhysicalCollectionName) => Promise<DaemonDatabaseReplacement>;
+}
+
+/**
+ * The per-collection daemon clients a daemon-mode pool routes its acquires
+ * through — the member set is exactly what `GraphDbClientPool` calls on
+ * `DaemonCollectionClientCache`: the shared handle over the ONE cached
+ * `DaemonGraphDbClient` per collection, and the teardown that closes every
+ * cached socket.
+ */
+export interface DaemonCollectionClientsPort {
+  /**
+   * Handle over the single cached daemon client for the collection (its
+   * `close()` is a no-op — the routing owns the socket, not the caller).
+   */
+  acquireHandle: (physicalCollectionName: PhysicalCollectionName) => Promise<CollectionGraphHandle>;
+  /** Close every cached daemon socket; idempotent, close failures swallowed. */
+  closeAll: () => Promise<void>;
+}
+
+/**
+ * How a daemon-mode `GraphDbClientPool` reaches the daemon (bd
+ * tea-rags-mcp-89k7k.35, H4a2): the cached per-collection clients its
+ * `acquireWrite` / `acquireReader` route through, and the factory for the
+ * short-lived control connection a database-file replacement sends its op
+ * over. The pool CONSUMES this; constructing it from the daemon classes is
+ * the composition root's job (`createDaemonRouting` in `daemon/index.ts`), so
+ * `pool.ts` imports nothing from `daemon/` — value or type.
+ */
+export interface DaemonRouting {
+  clients: DaemonCollectionClientsPort;
+  /** The replacer bound to `socketPath` — this build's daemon, resolved by the pool's addressing options. */
+  replacerFor: (socketPath: string) => CodegraphDatabaseFileReplacer;
 }

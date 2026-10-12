@@ -23,6 +23,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
+import { DaemonBuildHandshakeConnector } from "../../../../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
+import { DaemonCollectionClientCache } from "../../../../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
+import { DaemonDatabaseFileReplacer } from "../../../../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import {
@@ -100,7 +103,17 @@ function makePool(
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath: paths.socketPath,
-    daemonRestart: restart,
+    daemonRouting: {
+      clients: new DaemonCollectionClientCache(
+        {
+          symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+          daemonSocketPath: paths.socketPath,
+          daemonRestart: restart,
+        },
+        new DaemonBuildHandshakeConnector(restart, undefined),
+      ),
+      replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
+    },
   });
 }
 
