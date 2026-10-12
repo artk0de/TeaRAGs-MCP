@@ -21,6 +21,7 @@ import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-i
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import { DaemonGraphDbClient, LEGACY_TOLERATED_OPS } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import { getDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import { DAEMON_OP_COMMANDS } from "../../../../../src/core/adapters/duckdb/daemon/op-commands.js";
 import {
@@ -140,7 +141,11 @@ describe("exportSnapshot daemon op", () => {
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: paths.socketPath,
-      daemonRestart: { buildFingerprint: FINGERPRINT },
+      daemonRouting: createDaemonRouting({
+        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+        daemonSocketPath: paths.socketPath,
+        daemonRestart: { buildFingerprint: FINGERPRINT },
+      }),
     });
     pools.push(session);
     const { graphDb } = await session.acquireWrite(NAME);
@@ -170,6 +175,10 @@ describe("exportSnapshot daemon op", () => {
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: createDaemonRouting({
+        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+        daemonSocketPath: socketPath,
+      }),
     });
     pools.push(session);
 

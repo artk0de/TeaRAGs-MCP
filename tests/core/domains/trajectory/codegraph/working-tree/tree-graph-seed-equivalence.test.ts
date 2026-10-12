@@ -33,6 +33,7 @@ import { fileContentHash } from "../../../../../../src/core/primitives/ids/conte
 import {
   buildTreeGraphFixture,
   cleanupTreeGraphFixtures,
+  CODEGRAPH_POOL_FACTORY_MODULE,
   LANGUAGE_MODULE_PATH,
   MIGRATIONS_MODULE_PATH,
   PHYSICAL,
@@ -120,7 +121,11 @@ async function build(
     treeRoot: fixture.treeRoot,
     changedRelPaths,
     deletedRelPaths,
-    providerConfig: { languageModulePath: LANGUAGE_MODULE_PATH, migrationsModulePath: MIGRATIONS_MODULE_PATH },
+    providerConfig: {
+      languageModulePath: LANGUAGE_MODULE_PATH,
+      migrationsModulePath: MIGRATIONS_MODULE_PATH,
+      poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
+    },
     ...(seed ? { seed } : {}),
   });
 }
@@ -429,7 +434,11 @@ describe("builds through one warm child ≡ cold builds from the base", () => {
         treeRoot: fixture.treeRoot,
         changedRelPaths,
         deletedRelPaths,
-        providerConfig: { languageModulePath: LANGUAGE_MODULE_PATH, migrationsModulePath: MIGRATIONS_MODULE_PATH },
+        providerConfig: {
+          languageModulePath: LANGUAGE_MODULE_PATH,
+          migrationsModulePath: MIGRATIONS_MODULE_PATH,
+          poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
+        },
         ...(seed ? { seed } : {}),
       },
       { timeoutMs: 120_000, heapLimitMb: 2048 },

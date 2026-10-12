@@ -138,8 +138,17 @@ export {
 } from "./symbols/index.js";
 export { buildCodegraphExclusionFilter } from "./exclusion.js";
 export type { CodegraphExclusionOptions } from "./exclusion.js";
-export { createCodegraphEnrichmentProvider } from "./factory.js";
-export type { CodegraphWorkerConfig } from "./factory.js";
+export type {
+  CodegraphPoolBuilder,
+  CodegraphProviderRuntime,
+  CodegraphProviderRuntimeDeps,
+  CodegraphWorkerConfig,
+} from "./factory.js";
+export {
+  createCodegraphEnrichmentProvider,
+  createCodegraphProviderRuntime,
+  createLanguageCrossRunParseCache,
+} from "./factory.js";
 export * from "./working-tree/index.js";
 
 export { CODEGRAPH_FILTER_PRESETS } from "./symbols/filter-presets/index.js";

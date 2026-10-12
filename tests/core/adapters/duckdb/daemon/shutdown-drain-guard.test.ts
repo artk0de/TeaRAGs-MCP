@@ -26,6 +26,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { createConnectionHandler } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import {
   decodeFrames,
@@ -242,7 +243,11 @@ describe("draining pool settles a refused drain with the typed error", () => {
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: paths.socketPath,
-      daemonRestart: { buildFingerprint: "NEW-BUILD", respawn, exitTimeoutMs, pollIntervalMs: 20 },
+      daemonRouting: createDaemonRouting({
+        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+        daemonSocketPath: paths.socketPath,
+        daemonRestart: { buildFingerprint: "NEW-BUILD", respawn, exitTimeoutMs, pollIntervalMs: 20 },
+      }),
     });
     pools.push(pool);
     return pool;

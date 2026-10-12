@@ -22,6 +22,7 @@ import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-i
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import { DaemonGraphDbClient, LEGACY_TOLERATED_OPS } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import {
   daemonPathsForKeyDir,
   getDaemonPaths,
@@ -73,6 +74,14 @@ function makePool(options: Pick<GraphDbClientPoolOptions, "rootDir"> & Partial<G
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     ...options,
+    ...(options.daemonSocketPath !== undefined
+      ? {
+          daemonRouting: createDaemonRouting({
+            symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+            daemonSocketPath: options.daemonSocketPath,
+          }),
+        }
+      : {}),
   });
   pools.push(pool);
   return pool;
@@ -101,7 +110,11 @@ async function startDaemon(): Promise<DaemonFixture> {
   const session = makePool({
     rootDir: dataRoot,
     daemonSocketPath: paths.socketPath,
-    daemonRestart: { buildFingerprint: FINGERPRINT },
+    daemonRouting: createDaemonRouting({
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: paths.socketPath,
+      daemonRestart: { buildFingerprint: FINGERPRINT },
+    }),
   });
   return { dataRoot, paths, session };
 }

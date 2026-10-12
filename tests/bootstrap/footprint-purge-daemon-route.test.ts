@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPurgeCodegraphStore, readCodegraphDaemonLiveness } from "../../src/bootstrap/footprint-purge.js";
 import { DuckDbGraphClient } from "../../src/core/adapters/duckdb/client.js";
 import { runDaemon } from "../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../src/core/adapters/duckdb/daemon/index.js";
 import {
   getDaemonPaths,
   getStorageDir,
@@ -53,6 +54,14 @@ function makePool(rootDir: string, daemonSocketPath?: string): GraphDbClientPool
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath,
+    ...(daemonSocketPath !== undefined
+      ? {
+          daemonRouting: createDaemonRouting({
+            symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+            daemonSocketPath,
+          }),
+        }
+      : {}),
   });
   pools.push(pool);
   return pool;

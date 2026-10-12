@@ -8,27 +8,28 @@
  * then in-thread:
  *   - `await import(config.languageModulePath)` — rebuild the
  *     `LanguageFactoryDescriptor` (mirrors the chunker precedent at
- *     `ChunkerConfig.languageModulePath`).
- *   - `new DaemonGraphDbClient(config.daemonSocketPath)` — connect to the
- *     existing multi-client daemon socket (memory project
- *     `project_codegraph_daemon` — daemon already serialises DuckDB access
- *     across processes).
+ *     `ChunkerConfig.languageModulePath`);
+ *   - the pool through the bootstrap-owned factory module — either
+ *     `runtimeDeps.buildPool` (the bootstrap wrapper passes its own builder)
+ *     or `config.poolFactoryModulePath` dynamic-imported here (bd
+ *     tea-rags-mcp-89k7k.35, S15). In daemon mode the pool routes through the
+ *     multi-client daemon socket (`config.daemonSocketPath`), which already
+ *     serialises DuckDB access across processes.
  *
- * Non-serializable deps (`LanguageFactoryDescriptor`, DuckDB pool / client) are NEVER
+ * Non-serializable deps (`LanguageFactoryDescriptor`, the DuckDB pool) are NEVER
  * carried on the descriptor — only string paths the worker resolves
  * in-thread. This preserves the `.claude/rules/domains-language.md`
  * invariant: the `ingest`-owned worker entry stays domain-internal, with
  * NO static cross-domain import and NO eslint guard exemption.
  *
- * The actual `createCodegraphEnrichmentProvider(config)` factory function
- * — which reads this config, opens the daemon, and constructs the
- * provider — lives in Phase 2 Task 4 alongside the worker entry. This
- * file declares the type seam Task 4 builds on, plus the inline-mode
- * shape the composition root uses today.
+ * The worker-loaded `createCodegraphEnrichmentProvider(config)` wrapper and
+ * the pool construction live in `src/bootstrap/codegraph-worker-pool-factory.ts`
+ * (S15); this file owns the config type, the runtime seam and the cross-run
+ * parse-cache helper.
  */
 
-import { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import { readManifestFiles } from "../../../adapters/filesystem/dependency-manifests.js";
+import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
@@ -37,13 +38,11 @@ import type {
   ManifestFilesReader,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
-import type { DatabaseMigrationApplier } from "../../../contracts/types/migration.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
 import {
   CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
   CODEGRAPH_SYMBOLS_PRESETS,
   CodegraphEnrichmentProvider,
-  InMemoryGlobalSymbolTable,
 } from "./symbols/index.js";
 import { createTemporalCochangeHooks, type TemporalCochangeConfig } from "./temporal/index.js";
 
@@ -105,6 +104,18 @@ export interface CodegraphWorkerConfig {
    */
   rootDir: string;
   /**
+   * Absolute compiled-JS path to the bootstrap-owned module exporting
+   * `createCodegraphWorkerPool` (bd tea-rags-mcp-89k7k.35, S15): the pool a
+   * runtime rebuilt from this config alone reads and writes through. The
+   * domain consumes the pool through the contracts `GraphDbClientPoolPort`
+   * and constructs no duckdb class, so the builder arrives the same way the
+   * language and migration modules do — a plain-data path dynamic-imported
+   * where the runtime is rebuilt (the working-tree graph build child). A
+   * caller that passes `buildPool` through {@link CodegraphProviderRuntimeDeps}
+   * (the bootstrap worker factory, tests) does not need this field.
+   */
+  poolFactoryModulePath?: string;
+  /**
    * DuckDB per-collection memory ceiling (`CODEGRAPH_DB_MEMORY_LIMIT`),
    * threaded so the worker-side pool applies the same resource cap as the
    * main-thread pool. Reads `acquireWrite` through the daemon, so this only
@@ -148,29 +159,27 @@ interface LanguageModule {
 }
 
 /**
+ * Builds the per-collection pool a provider runtime reads and writes through
+ * — the construction that left this domain with S15 (bd tea-rags-mcp-89k7k.35,
+ * H-D2=a): the concrete `GraphDbClientPool` (and, in daemon mode, its
+ * `DaemonRouting`) is a composition decision owned by the bootstrap module
+ * `src/bootstrap/codegraph-worker-pool-factory.ts`. Implementations return the
+ * contracts port; the domain never sees the concrete class.
+ */
+export type CodegraphPoolBuilder = (
+  config: CodegraphWorkerConfig,
+) => GraphDbClientPoolPort | Promise<GraphDbClientPoolPort>;
+
+/**
  * Build a `CodegraphEnrichmentProvider` from a structured-clone-safe config —
  * the named factory export the enrichment worker dynamic-imports in-thread
  * (`WorkerEnrichmentDescriptor.providerFactoryExport`). Also called directly by
  * the composition root for the inline path (descriptor attached, executor still
  * dispatches off-thread for OTHER collections but rebuilds this one in-thread).
  *
- * In-thread reconstruction (the rebuild seam):
- *   1. `await import(config.languageModulePath)` → build `LanguageFactory`
- *      (with `ambiguousResolveMode`) + `DefaultSymbolIdComposer`. A runtime
- *      variable path keeps the `ingest`-owned worker entry free of any static
- *      `domains/language` import (`.claude/rules/domains-language.md` §2).
- *   2. Build a `GraphDbClientPool` rooted at `config.rootDir`, pointed at the
- *      daemon socket (`config.daemonSocketPath`). `acquireWrite` proxies
- *      mutations to the single daemon process that owns the RW DuckDB lock, so
- *      a worker-side connection is safe by construction (multi-client daemon).
- *      The `initHook` hydrates the per-collection symbol table from disk,
- *      identical to `wireCodegraph`.
- *   3. Construct the provider in pool mode with the rebuilt deps.
- *
- * @param config Structured-clone-safe daemon + language + exclusion config.
- * @param descriptor Optional descriptor attached to the provider. Supplied by
- *   the composition root when wiring the worker-pool executor; omitted ⇒
- *   inline-only (no workerDescriptor surfaced).
+ * The pool under the provider is built by the bootstrap-owned factory, reached
+ * through `config.poolFactoryModulePath` (S15) — the worker hands this function
+ * only the plain-data config, so the module-path seam is the one it uses.
  */
 export async function createCodegraphEnrichmentProvider(
   config: CodegraphWorkerConfig,
@@ -180,21 +189,22 @@ export async function createCodegraphEnrichmentProvider(
 }
 
 /**
- * A provider together with the `GraphDbClientPool` it writes through. The pool
- * is otherwise private to the provider, and a caller that OWNS the database
- * files — the working-tree graph build, which must CHECKPOINT and close every
- * client before its output is self-contained — needs it. Long-lived callers
- * keep `createCodegraphEnrichmentProvider`.
+ * A provider together with the pool it writes through, typed at the port the
+ * domain consumes. The pool is otherwise private to the provider, and a caller
+ * that OWNS the database files — the working-tree graph build, which must
+ * CHECKPOINT and close every client before its output is self-contained —
+ * needs it. Callers needing the concrete class build it themselves
+ * (`createCodegraphWorkerPool` in the bootstrap module).
  */
 export interface CodegraphProviderRuntime {
   provider: CodegraphEnrichmentProvider;
-  pool: GraphDbClientPool;
+  pool: GraphDbClientPoolPort;
 }
 
 /**
  * Process-local collaborators a caller may hand {@link createCodegraphProviderRuntime}
- * beside its plain-data config — things that outlive one runtime and so cannot
- * be rebuilt from the config.
+ * beside its plain-data config — things that cannot be rebuilt from the config
+ * or resolved from its module paths.
  */
 export interface CodegraphProviderRuntimeDeps {
   /**
@@ -203,6 +213,13 @@ export interface CodegraphProviderRuntimeDeps {
    * {@link createLanguageCrossRunParseCache}. Absent: the run parses cold.
    */
   crossRunParseCache?: LanguageCrossRunParseCache;
+  /**
+   * Builds the runtime's pool (S15). Absent: the builder is dynamic-imported
+   * from `config.poolFactoryModulePath` — the only channel a runtime rebuilt
+   * from the plain-data config alone (the tree-graph build child) has. One of
+   * the two is required; neither is a construction bug.
+   */
+  buildPool?: CodegraphPoolBuilder;
 }
 
 /**
@@ -217,7 +234,41 @@ export async function createLanguageCrossRunParseCache(
   return new lang.CrossRunParseCache();
 }
 
-/** {@link createCodegraphEnrichmentProvider}, returning the pool the provider was built on as well. */
+/**
+ * Load the pool builder a config-only runtime (the tree-graph build child)
+ * resolves from `poolFactoryModulePath` — the bootstrap module exporting
+ * `createCodegraphWorkerPool`.
+ */
+async function loadCodegraphPoolBuilder(poolFactoryModulePath: string): Promise<CodegraphPoolBuilder> {
+  const module = (await import(poolFactoryModulePath)) as { createCodegraphWorkerPool: CodegraphPoolBuilder };
+  return module.createCodegraphWorkerPool;
+}
+
+/**
+ * Build a `CodegraphEnrichmentProvider` runtime from a structured-clone-safe
+ * config — the rebuild seam the enrichment worker (through the bootstrap
+ * module's `createCodegraphEnrichmentProvider`) and the working-tree graph
+ * build child share.
+ *
+ * In-thread reconstruction (the rebuild seam):
+ *   1. `await import(config.languageModulePath)` → build `LanguageFactory`
+ *      (with `ambiguousResolveMode`) + `DefaultSymbolIdComposer`. A runtime
+ *      variable path keeps the `ingest`-owned worker entry free of any static
+ *      `domains/language` import (`.claude/rules/domains-language.md` §2).
+ *   2. Build the pool through `runtimeDeps.buildPool` or, absent that, the
+ *      builder dynamic-imported from `config.poolFactoryModulePath` — daemon
+ *      routing and symbol-table hydration included, owned by the bootstrap
+ *      module (S15). `acquireWrite` proxies mutations to the single daemon
+ *      process that owns the RW DuckDB lock, so a worker-side connection is
+ *      safe by construction (multi-client daemon).
+ *   3. Construct the provider in pool mode with the rebuilt deps.
+ *
+ * @param config Structured-clone-safe daemon + language + exclusion config.
+ * @param descriptor Optional descriptor attached to the provider. Supplied by
+ *   the composition root when wiring the worker-pool executor; omitted ⇒
+ *   inline-only (no workerDescriptor surfaced).
+ * @param runtimeDeps Process-local collaborators (parse cache, pool builder).
+ */
 export async function createCodegraphProviderRuntime(
   config: CodegraphWorkerConfig,
   descriptor?: WorkerEnrichmentDescriptor,
@@ -241,40 +292,9 @@ export async function createCodegraphProviderRuntime(
   const composer = new lang.DefaultSymbolIdComposer();
   const { collectSymbols } = lang;
 
-  const migrations = (await import(config.migrationsModulePath)) as {
-    createDatabaseMigrationApplier: () => DatabaseMigrationApplier;
-  };
+  const buildPool = runtimeDeps.buildPool ?? (await resolveConfigPoolBuilder(config));
 
-  const pool = new GraphDbClientPool({
-    rootDir: config.rootDir,
-    symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
-    applyMigrations: migrations.createDatabaseMigrationApplier(),
-    resources: {
-      memoryLimit: config.dbMemoryLimit,
-      threads: config.dbThreads,
-      preserveInsertionOrder: false,
-    },
-    daemonSocketPath: config.daemonSocketPath,
-    // Hydrate the per-collection symbol table from disk on first open —
-    // identical to wireCodegraph. Without it an incremental reindex of file A
-    // cannot resolve calls into an unchanged file B.
-    initHook: async ({ collectionName: physicalCollectionName, graphDb, symbolTable }) => {
-      try {
-        const persisted = await graphDb.listAllSymbols();
-        if (persisted.length > 0) symbolTable.hydrate(persisted);
-        // …and the files that persisted no symbol at all (bd tea-rags-mcp-o7ifx).
-        // `cg_symbols` has no row for an empty `__init__.py`, so hydrating from
-        // it alone leaves every package marker outside the project until some
-        // later run happens to re-walk it. The file table is the full universe.
-        const files = await graphDb.listFileContentHashes();
-        if (files.length > 0) symbolTable.hydrateFiles?.(files.map((f) => f.relPath));
-      } catch (err) {
-        process.stderr.write(
-          `[tea-rags] codegraph symbol-table hydration failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
-        );
-      }
-    },
-  });
+  const pool = await buildPool(config);
 
   const provider = new CodegraphEnrichmentProvider(
     {
@@ -293,4 +313,17 @@ export async function createCodegraphProviderRuntime(
     descriptor,
   );
   return { provider, pool };
+}
+
+/** `buildPool` from deps, else from the config's module path — else a construction bug. */
+async function resolveConfigPoolBuilder(config: CodegraphWorkerConfig): Promise<CodegraphPoolBuilder> {
+  if (config.poolFactoryModulePath === undefined) {
+    // Programming error: every caller either injects the builder (bootstrap
+    // worker factory, tests) or ships its module path (tree-graph build).
+    throw new Error(
+      "createCodegraphProviderRuntime: config.poolFactoryModulePath or runtimeDeps.buildPool is required — " +
+        "the pool builder is bootstrap-owned (src/bootstrap/codegraph-worker-pool-factory.ts)",
+    );
+  }
+  return loadCodegraphPoolBuilder(config.poolFactoryModulePath);
 }

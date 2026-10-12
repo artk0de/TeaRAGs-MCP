@@ -27,6 +27,7 @@ import {
   REQUIRED_DAEMON_OPS,
 } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import {
   DAEMON_OP_COMMANDS,
@@ -119,7 +120,12 @@ function makePool(
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath: paths.socketPath,
-    daemonRestart: restart,
+    daemonRouting: createDaemonRouting({
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: paths.socketPath,
+      daemonRestart: restart,
+      ...(initHook ? { initHook } : {}),
+    }),
     ...(initHook ? { initHook } : {}),
   });
   pools.push(pool);

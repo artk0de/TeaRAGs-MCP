@@ -24,6 +24,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import {
   decodeFrames,
@@ -100,7 +101,11 @@ function makePool(
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath: paths.socketPath,
-    daemonRestart: restart,
+    daemonRouting: createDaemonRouting({
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: paths.socketPath,
+      daemonRestart: restart,
+    }),
   });
 }
 

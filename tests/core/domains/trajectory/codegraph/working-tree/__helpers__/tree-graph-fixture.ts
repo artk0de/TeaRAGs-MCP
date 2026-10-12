@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { fixturePhysicalCollectionName } from "../../../../../__helpers__/collection-identity.js";
+import { createCodegraphWorkerPool } from "../../../../../../../src/bootstrap/codegraph-worker-pool-factory.js";
 import { DuckDbGraphClient } from "../../../../../../../src/core/adapters/duckdb/client.js";
 import type { PhysicalCollectionName } from "../../../../../../../src/core/contracts/types/collection-identity.js";
 import { createCodegraphProviderRuntime } from "../../../../../../../src/core/domains/trajectory/codegraph/factory.js";
@@ -22,6 +23,11 @@ export const LANGUAGE_MODULE_PATH = new URL(
 ).pathname;
 export const MIGRATIONS_MODULE_PATH = new URL(
   "../../../../../../../build/core/domains/maintenance/migration/database/index.js",
+  import.meta.url,
+).pathname;
+/** Compiled bootstrap-owned pool factory (S15) — the path the tree-graph child resolves it from. */
+export const CODEGRAPH_POOL_FACTORY_MODULE = new URL(
+  "../../../../../../../build/bootstrap/codegraph-worker-pool-factory.js",
   import.meta.url,
 ).pathname;
 
@@ -73,12 +79,17 @@ export async function buildTreeGraphFixture(files: Record<string, string>): Prom
   const contentHashes = new Map(
     Object.entries(files).map(([rel, src]) => [rel, createHash("sha256").update(src).digest("hex")]),
   );
-  const { provider, pool } = await createCodegraphProviderRuntime({
-    languageModulePath: LANGUAGE_MODULE_PATH,
-    migrationsModulePath: MIGRATIONS_MODULE_PATH,
-    rootDir: storageRoot,
-    collectionName: PHYSICAL,
-  });
+  const { provider, pool } = await createCodegraphProviderRuntime(
+    {
+      languageModulePath: LANGUAGE_MODULE_PATH,
+      migrationsModulePath: MIGRATIONS_MODULE_PATH,
+      rootDir: storageRoot,
+      collectionName: PHYSICAL,
+    },
+    undefined,
+    // The pool builder is bootstrap-owned since S15 — a test hands it directly.
+    { buildPool: async (config) => createCodegraphWorkerPool(config) },
+  );
   try {
     await provider.buildFileSignals(baseRoot, {
       paths: Object.keys(files),

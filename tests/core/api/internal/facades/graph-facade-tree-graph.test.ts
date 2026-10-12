@@ -25,6 +25,7 @@ import { buildWorkingTreeGraph } from "../../../../../src/core/domains/trajector
 import {
   buildTreeGraphFixture,
   cleanupTreeGraphFixtures,
+  CODEGRAPH_POOL_FACTORY_MODULE,
   LANGUAGE_MODULE_PATH,
   MIGRATIONS_MODULE_PATH,
   PHYSICAL,
@@ -104,7 +105,11 @@ describe("graph tools over the tree graph (WTO-7)", { timeout: 120_000 }, () => 
       treeRoot: fixture.treeRoot,
       changedRelPaths: CHANGED,
       deletedRelPaths: [],
-      providerConfig: { languageModulePath: LANGUAGE_MODULE_PATH, migrationsModulePath: MIGRATIONS_MODULE_PATH },
+      providerConfig: {
+        languageModulePath: LANGUAGE_MODULE_PATH,
+        migrationsModulePath: MIGRATIONS_MODULE_PATH,
+        poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
+      },
     });
     treeDbPath = built.dbPath;
   }, 120_000);

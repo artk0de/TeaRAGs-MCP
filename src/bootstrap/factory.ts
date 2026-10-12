@@ -8,13 +8,14 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
+  createDaemonRouting,
   getStorageDir,
   openDaemonLogFd,
   resolveDaemonClientTarget,
   sweepOrphanedDaemonKeyDirs,
   type CodegraphDaemonPaths,
 } from "../core/adapters/duckdb/daemon/index.js";
-import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
+import { GraphDbClientPool, type CollectionInitHook } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import type { OllamaRecoveryWaitEvent } from "../core/adapters/embeddings/ollama.js";
 import {
@@ -180,6 +181,13 @@ export { pkg };
  * InlineEnrichmentExecutor in-process on the composition-root instance.
  */
 const CODEGRAPH_PROVIDER_MODULE_PATH = join(__dirname, "../core/domains/trajectory/codegraph/factory.js");
+/**
+ * Compiled bootstrap-owned pool factory (bd tea-rags-mcp-89k7k.35, S15): the
+ * module whose `createCodegraphWorkerPool` builds the worker-side pool, reached
+ * by module path from the codegraph runtime (`poolFactoryModulePath`) — the
+ * enrichment worker and the tree-graph build child resolve it in-thread.
+ */
+const CODEGRAPH_WORKER_POOL_FACTORY_MODULE_PATH = join(__dirname, "./codegraph-worker-pool-factory.js");
 /**
  * Compiled `domains/language` barrel the codegraph worker-factory imports
  * in-thread to rebuild the `LanguageFactory` (walker + resolver capabilities).
@@ -927,12 +935,15 @@ export function wireCodegraph(
   });
 
   // The tree build reuses the worker's provider config verbatim, minus what
-  // its private clone must not carry (daemon socket, rootDir, temporal).
+  // its private clone must not carry (daemon socket, rootDir, temporal). The
+  // pool factory module path rides along (S15): the build child resolves the
+  // bootstrap-owned pool builder from it.
   const workingTreeGraphRuntime: WorkingTreeGraphCodegraphRuntime = {
     pool,
     providerConfig: {
       languageModulePath: codegraphWorkerConfig.languageModulePath,
       migrationsModulePath: codegraphWorkerConfig.migrationsModulePath,
+      poolFactoryModulePath: CODEGRAPH_WORKER_POOL_FACTORY_MODULE_PATH,
       customExcludePatterns: codegraphWorkerConfig.customExcludePatterns,
       ambiguousResolveMode: codegraphWorkerConfig.ambiguousResolveMode,
       dbMemoryLimit: codegraphWorkerConfig.dbMemoryLimit,
@@ -1017,9 +1028,38 @@ function createCodegraphGraphDbPool(deps: {
   spawnCodegraphDaemon: () => void;
 }): GraphDbClientPool {
   const { codegraph, rootDir, daemonPaths, resolveDaemonTarget, daemonStorageDir, spawnCodegraphDaemon } = deps;
+  const symbolTableFactory = (): InMemoryGlobalSymbolTable => new InMemoryGlobalSymbolTable();
+  // Hydrate the per-collection symbol table from disk on first open.
+  // Without this, an incremental reindex of file A cannot resolve
+  // calls into an unchanged file B — the walker only touches changed
+  // files, so B's symbols would be invisible. After hydration the
+  // in-memory table holds every previously-persisted definition;
+  // the streaming upsert path (sink.finish() → graphDb.upsertSymbols)
+  // keeps it current. Empty result on first run (fresh DB) is the
+  // no-op fast path.
+  const hydrateCodegraphSymbolTable: CollectionInitHook = async ({
+    collectionName: physicalCollectionName,
+    graphDb,
+    symbolTable,
+  }) => {
+    try {
+      const persisted = await graphDb.listAllSymbols();
+      if (persisted.length > 0) symbolTable.hydrate(persisted);
+      // …and the files that persisted no symbol at all (bd tea-rags-mcp-o7ifx).
+      // `cg_symbols` has no row for an empty `__init__.py`, so hydrating from
+      // it alone leaves every package marker outside the project until some
+      // later run happens to re-walk it. The file table is the full universe.
+      const files = await graphDb.listFileContentHashes();
+      if (files.length > 0) symbolTable.hydrateFiles?.(files.map((f) => f.relPath));
+    } catch (err) {
+      process.stderr.write(
+        `[tea-rags] codegraph symbol-table hydration failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
+      );
+    }
+  };
   const pool = new GraphDbClientPool({
     rootDir,
-    symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    symbolTableFactory,
     applyMigrations: createDatabaseMigrationApplier(),
     // Slice 2 resource ceiling — caps per-collection DuckDB memory at
     // CODEGRAPH_DB_MEMORY_LIMIT (default 2GB) with disk spill into
@@ -1042,44 +1082,25 @@ function createCodegraphGraphDbPool(deps: {
     // Re-resolved at every connect, through the same rule as the spawner above
     // (bd tea-rags-mcp-llrja).
     daemonClientTarget: resolveDaemonTarget,
-    // Base lifecycle dir (bd tea-rags-mcp-42hno): the pool's one-time legacy
-    // migration looks for a pre-keying daemon layout here before its first
-    // keyed connect.
-    daemonStorageDir,
-    // Build-version handshake restart (bd tea-rags-mcp-ji56r): when the pool's
-    // handshake finds a daemon from a DIFFERENT build (stale after `npm run
-    // build && npm link`), it drains that daemon gracefully and cold-spawns a
-    // fresh one from THIS build via spawnCodegraphDaemon — the same lazy
-    // spawn path, with the same settings, as the first write (alive-check +
-    // cross-process DaemonLock single-flight make it safe to call again after
-    // the stale exit).
-    daemonRestart: {
-      respawn: spawnCodegraphDaemon,
-    },
-    // Hydrate the per-collection symbol table from disk on first open.
-    // Without this, an incremental reindex of file A cannot resolve
-    // calls into an unchanged file B — the walker only touches changed
-    // files, so B's symbols would be invisible. After hydration the
-    // in-memory table holds every previously-persisted definition;
-    // the streaming upsert path (sink.finish() → graphDb.upsertSymbols)
-    // keeps it current. Empty result on first run (fresh DB) is the
-    // no-op fast path.
-    initHook: async ({ collectionName: physicalCollectionName, graphDb, symbolTable }) => {
-      try {
-        const persisted = await graphDb.listAllSymbols();
-        if (persisted.length > 0) symbolTable.hydrate(persisted);
-        // …and the files that persisted no symbol at all (bd tea-rags-mcp-o7ifx).
-        // `cg_symbols` has no row for an empty `__init__.py`, so hydrating from
-        // it alone leaves every package marker outside the project until some
-        // later run happens to re-walk it. The file table is the full universe.
-        const files = await graphDb.listFileContentHashes();
-        if (files.length > 0) symbolTable.hydrateFiles?.(files.map((f) => f.relPath));
-      } catch (err) {
-        process.stderr.write(
-          `[tea-rags] codegraph symbol-table hydration failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
-        );
-      }
-    },
+    // How the pool reaches the daemon (H4a2): the cached clients + the
+    // database-file replacer, constructed HERE — the pool consumes them and
+    // constructs no daemon class itself. Carries the options that used to be
+    // pool options: the base lifecycle dir (bd tea-rags-mcp-42hno, one-time
+    // legacy-layout migration) and the build-version handshake restart (bd
+    // tea-rags-mcp-ji56r — a stale daemon of another build is drained and
+    // cold-spawned from THIS build via spawnCodegraphDaemon).
+    daemonRouting: createDaemonRouting({
+      symbolTableFactory,
+      initHook: hydrateCodegraphSymbolTable,
+      daemonSocketPath: daemonPaths.socketPath,
+      daemonClientTarget: resolveDaemonTarget,
+      daemonStorageDir,
+      daemonRestart: { respawn: spawnCodegraphDaemon },
+    }),
+    // The pool's own open path never runs in daemon mode (every acquire is
+    // routed), but the hook stays so a future direct-mode use hydrates the
+    // same way the daemon-side clients do.
+    initHook: hydrateCodegraphSymbolTable,
   });
   return pool;
 }
@@ -1150,6 +1171,9 @@ function buildCodegraphWorkerDescriptor(deps: {
   const codegraphWorkerConfig: CodegraphWorkerConfig = {
     languageModulePath: LANGUAGE_MODULE_PATH,
     migrationsModulePath: DATABASE_MIGRATIONS_MODULE_URL,
+    // S15: the worker-side pool is built by the bootstrap-owned factory,
+    // reached by module path — the domain runtime constructs no duckdb class.
+    poolFactoryModulePath: CODEGRAPH_WORKER_POOL_FACTORY_MODULE_PATH,
     daemonSocketPath: daemonPaths.socketPath,
     rootDir,
     customExcludePatterns: codegraph.customExcludePatterns ?? [],

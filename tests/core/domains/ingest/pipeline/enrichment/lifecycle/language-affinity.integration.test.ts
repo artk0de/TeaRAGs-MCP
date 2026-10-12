@@ -27,6 +27,7 @@ import { MockQdrantManager } from "../../../__helpers__/test-helpers.js";
 import { fixturePhysicalCollectionName } from "../../../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../../../src/core/adapters/duckdb/client.js";
 import { runDaemon } from "../../../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../../../src/core/adapters/duckdb/daemon/index.js";
 import { getDaemonPaths } from "../../../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import { GraphDbClientPool } from "../../../../../../../src/core/adapters/duckdb/pool.js";
 import { INDEXING_METADATA_ID } from "../../../../../../../src/core/contracts/constants.js";
@@ -124,6 +125,7 @@ async function recompute(mode: "collection" | "language"): Promise<RecomputeOutc
   const workerConfig: CodegraphWorkerConfig = {
     languageModulePath: LANGUAGE_MODULE,
     migrationsModulePath: pathToFileURL(MIGRATIONS_MODULE).href,
+    poolFactoryModulePath: join(REPO_ROOT, "build/bootstrap/codegraph-worker-pool-factory.js"),
     daemonSocketPath: daemonPaths.socketPath,
     rootDir: dataRoot,
   };
@@ -141,6 +143,10 @@ async function recompute(mode: "collection" | "language"): Promise<RecomputeOutc
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath: daemonPaths.socketPath,
+    daemonRouting: createDaemonRouting({
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: daemonPaths.socketPath,
+    }),
   });
   const provider = new CodegraphEnrichmentProvider(
     { pool: mainPool, languageFactory: new LanguageFactory(), composer: new DefaultSymbolIdComposer(), collectSymbols },

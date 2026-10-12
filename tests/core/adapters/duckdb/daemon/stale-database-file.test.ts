@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import type { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import { getDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import { GraphDbClientPool, type GraphDbClientPoolOptions } from "../../../../../src/core/adapters/duckdb/pool.js";
 import {
@@ -71,7 +72,11 @@ describe("codegraph daemon — a collection rebuilt under a name it still holds 
     const session = makePool({
       rootDir: dataRoot,
       daemonSocketPath: paths.socketPath,
-      daemonRestart: { buildFingerprint: FINGERPRINT },
+      daemonRouting: createDaemonRouting({
+        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+        daemonSocketPath: paths.socketPath,
+        daemonRestart: { buildFingerprint: FINGERPRINT },
+      }),
     });
 
     // 1. Index, then read: the daemon opens and caches a client on the collection.

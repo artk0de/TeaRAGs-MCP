@@ -32,6 +32,7 @@ import {
 } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import {
   getBuildKey,
   getDaemonPaths,
@@ -127,20 +128,26 @@ function makeFactoryShapedPool(
   client: BuildFingerprintCapture,
   restart: { respawn?: () => void } = {},
 ): GraphDbClientPool {
+  const daemonRestart = {
+    buildFingerprint: client.loaded,
+    readOnDiskBuildFingerprint: client.readOnDisk,
+    pollIntervalMs: 20,
+    restartDelayMs: 5,
+    ...restart,
+  };
   const pool = new GraphDbClientPool({
     rootDir: root as string,
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath: getDaemonPathsForBuild(storageDir, client.loaded).socketPath,
-    daemonStorageDir: storageDir,
     daemonClientTarget: () => resolveDaemonClientTarget(storageDir, sourceOf(client)),
-    daemonRestart: {
-      buildFingerprint: client.loaded,
-      readOnDiskBuildFingerprint: client.readOnDisk,
-      pollIntervalMs: 20,
-      restartDelayMs: 5,
-      ...restart,
-    },
+    daemonRouting: createDaemonRouting({
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: getDaemonPathsForBuild(storageDir, client.loaded).socketPath,
+      daemonClientTarget: () => resolveDaemonClientTarget(storageDir, sourceOf(client)),
+      daemonStorageDir: storageDir,
+      daemonRestart,
+    }),
   });
   pools.push(pool);
   return pool;

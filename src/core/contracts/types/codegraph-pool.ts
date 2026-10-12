@@ -5,9 +5,12 @@
  * adapter (DIP — `.claude/rules/domain-boundaries.md`).
  *
  * Only what domain callers actually use lives here: reader/writer acquisition,
- * the collection-name listing, and the two spill-path derivations. Pool
- * lifecycle (`closeAll`, `release`, clone/export, daemon plumbing) stays on the
- * concrete class for the composition root and the api layer.
+ * the collection-name listing, the two spill-path derivations, and — since the
+ * worker-side pool became bootstrap-owned (bd tea-rags-mcp-89k7k.35, S15) — the
+ * runtime-lifecycle members the codegraph provider runtime and the working-tree
+ * graph build drive a pool they did not construct with: the direct-mode
+ * `acquire`, the disk path derivation, and the teardown. Clone/export, release
+ * and daemon plumbing stay on the concrete class for the composition root.
  */
 
 import type { GlobalSymbolTable, GraphDbClient } from "./codegraph.js";
@@ -30,4 +33,14 @@ export interface GraphDbClientPoolPort {
   spillPathFor: (collectionName: string, runId: string) => string;
   /** Deterministic cross-pass input-spill path (one per collection). */
   inputSpillPathFor: (collectionName: string) => string;
+  /**
+   * Direct-mode open of the collection's own database (daemon-mode pools route
+   * through `acquireWrite` instead) — what a runtime that holds the only
+   * client, like the working-tree graph build over its private clone, uses.
+   */
+  acquire: (physicalCollectionName: PhysicalCollectionName) => Promise<CollectionGraphHandle>;
+  /** Disk path of the collection's database file. */
+  pathFor: (physicalCollectionName: PhysicalCollectionName) => string;
+  /** Close every cached client — the runtime teardown at the end of a build. */
+  closeAll: () => Promise<void>;
 }

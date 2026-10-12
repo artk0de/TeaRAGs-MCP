@@ -28,6 +28,7 @@ import {
 } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import {
   DAEMON_OP_COMMANDS,
@@ -119,13 +120,17 @@ function makePool(
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath: paths.socketPath,
-    daemonRestart: {
-      buildFingerprint: client.loaded,
-      readOnDiskBuildFingerprint: client.readOnDisk,
-      pollIntervalMs: 20,
-      restartDelayMs: 5,
-      ...restart,
-    },
+    daemonRouting: createDaemonRouting({
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: paths.socketPath,
+      daemonRestart: {
+        buildFingerprint: client.loaded,
+        readOnDiskBuildFingerprint: client.readOnDisk,
+        pollIntervalMs: 20,
+        restartDelayMs: 5,
+        ...restart,
+      },
+    }),
   });
   pools.push(pool);
   return pool;
@@ -291,15 +296,19 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: paths.socketPath,
-      daemonRestart: {
-        buildFingerprint: "CLIENT-BUILD",
-        readOnDiskBuildFingerprint: () => undefined,
-        pollIntervalMs: 20,
-        respawn: () => {
-          respawns++;
-          void startDaemon(paths, "CLIENT-BUILD");
+      daemonRouting: createDaemonRouting({
+        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+        daemonSocketPath: paths.socketPath,
+        daemonRestart: {
+          buildFingerprint: "CLIENT-BUILD",
+          readOnDiskBuildFingerprint: () => undefined,
+          pollIntervalMs: 20,
+          respawn: () => {
+            respawns++;
+            void startDaemon(paths, "CLIENT-BUILD");
+          },
         },
-      },
+      }),
     });
     pools.push(pool);
 

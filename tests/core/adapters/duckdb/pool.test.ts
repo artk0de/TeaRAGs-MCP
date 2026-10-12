@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
+import { createDaemonRouting } from "../../../../src/core/adapters/duckdb/daemon/index.js";
 import { decodeFrames, encodeFrame, type DaemonRequest } from "../../../../src/core/adapters/duckdb/daemon/protocol.js";
 import {
   CodegraphDatabaseMissingError,
@@ -28,6 +29,18 @@ import {
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
 import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+
+/**
+ * Daemon routing for a daemon-mode pool (H4a2): what the pool used to construct
+ * itself. The test pools carry no restart wiring or storage dir, mirroring the
+ * worker-pool shape.
+ */
+function daemonRoutingFor(socketPath: string) {
+  return createDaemonRouting({
+    symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    daemonSocketPath: socketPath,
+  });
+}
 
 describe("GraphDbClientPool — per-collection isolation", () => {
   let tmp: string;
@@ -679,6 +692,7 @@ describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", ()
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: daemonRoutingFor(socketPath),
     });
     // A reader only attaches to a database that exists; the echo daemon never
     // opens it, so an empty placeholder is enough.
@@ -733,6 +747,7 @@ describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", ()
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: daemonRoutingFor(socketPath),
     });
 
     await expect(pool.acquireReader(fixturePhysicalCollectionName("code_absent_v1"))).rejects.toBeInstanceOf(
@@ -817,6 +832,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: daemonRoutingFor(socketPath),
     });
 
     const handles = [];
@@ -845,6 +861,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: daemonRoutingFor(socketPath),
     });
 
     const h1 = await pool.acquireWrite(fixturePhysicalCollectionName("code_symtab_v1"));
@@ -886,6 +903,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: daemonRoutingFor(socketPath),
     });
 
     const w = await pool.acquireWrite(fixturePhysicalCollectionName("code_rw_symtab_v1"));
@@ -915,6 +933,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: daemonRoutingFor(socketPath),
     });
 
     const w = await pool.acquireWrite(fixturePhysicalCollectionName("code_shared_v1"));
@@ -948,6 +967,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: daemonRoutingFor(socketPath),
     });
 
     const a1 = await pool.acquireWrite(fixturePhysicalCollectionName("alpha_v1"));
@@ -972,6 +992,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: daemonRoutingFor(socketPath),
     });
 
     const handle = await pool.acquireWrite(fixturePhysicalCollectionName("code_noop_v1"));
@@ -1000,6 +1021,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: daemonRoutingFor(socketPath),
     });
 
     // In-process RW client (acquire) + a daemon-mode write client, both cached.
@@ -1030,6 +1052,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: daemonRoutingFor(socketPath),
     });
 
     // Daemon client whose close() rejects, plus an in-process client whose
@@ -1058,6 +1081,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
+      daemonRouting: daemonRoutingFor(socketPath),
     });
 
     // Fire N concurrent acquireWrite calls — only ONE socket connection should

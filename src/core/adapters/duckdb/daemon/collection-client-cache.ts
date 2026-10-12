@@ -17,14 +17,19 @@ import { CodegraphClientBuildTreeGoneError } from "../errors.js";
 import type { DaemonBuildHandshakeConnector } from "./build-handshake-connector.js";
 import type { DaemonGraphDbClient } from "./client.js";
 
-/** The `GraphDbClientPoolOptions` this cache reads — documented there. */
+/**
+ * The daemon-client construction options — since H4a2 what a routing builder
+ * (`createDaemonRouting`) receives; the fields carry the meaning they had on
+ * `GraphDbClientPoolOptions`.
+ */
 export interface DaemonCollectionClientCacheOptions {
   symbolTableFactory: SymbolTableFactory;
   initHook?: CollectionInitHook;
   daemonSocketPath?: string;
   daemonClientTarget?: () => CodegraphDaemonClientTarget;
   daemonStorageDir?: string;
-  daemonRestart?: Pick<CodegraphDaemonRestartWiring, "respawn">;
+  /** Only `respawn` is read here; the rest of the wiring goes to the handshake connector. */
+  daemonRestart?: CodegraphDaemonRestartWiring;
 }
 
 /**

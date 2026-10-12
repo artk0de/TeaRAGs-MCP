@@ -46,6 +46,7 @@ import { buildWorkingTreeGraph } from "../../../../../src/core/domains/trajector
 import {
   buildTreeGraphFixture,
   cleanupTreeGraphFixtures,
+  CODEGRAPH_POOL_FACTORY_MODULE,
   LANGUAGE_MODULE_PATH,
   MIGRATIONS_MODULE_PATH,
   PHYSICAL,
@@ -299,7 +300,11 @@ export function run(): number {
         treeRoot: fixture.treeRoot,
         changedRelPaths: ["src/a.ts"],
         deletedRelPaths: [],
-        providerConfig: { languageModulePath: LANGUAGE_MODULE_PATH, migrationsModulePath: MIGRATIONS_MODULE_PATH },
+        providerConfig: {
+          languageModulePath: LANGUAGE_MODULE_PATH,
+          migrationsModulePath: MIGRATIONS_MODULE_PATH,
+          poolFactoryModulePath: CODEGRAPH_POOL_FACTORY_MODULE,
+        },
       });
       treeDbPath = built.dbPath;
     }, 120_000);
