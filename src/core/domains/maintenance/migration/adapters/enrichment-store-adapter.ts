@@ -5,7 +5,7 @@
  * and tracks migration completion via marker on the indexing metadata point.
  */
 
-import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { QdrantPointReader, QdrantPointWriter } from "../../../../adapters/qdrant/ports.js";
 import { chunkPointsFilter } from "../../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../../contracts/constants.js";
 import type { EnrichmentStore } from "../types.js";
@@ -14,7 +14,7 @@ const SCROLL_LIMIT = 50_000;
 const MIGRATION_KEY = "enrichmentMigrationV1";
 
 export class EnrichmentStoreAdapter implements EnrichmentStore {
-  constructor(private readonly qdrant: QdrantManager) {}
+  constructor(private readonly qdrant: QdrantPointReader & QdrantPointWriter) {}
 
   async isMigrated(collection: string): Promise<boolean> {
     const metadata = await this.qdrant.getPoint(collection, INDEXING_METADATA_ID);

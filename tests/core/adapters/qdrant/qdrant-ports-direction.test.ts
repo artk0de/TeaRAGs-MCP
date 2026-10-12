@@ -11,7 +11,7 @@
  * `embedding-model-guard.ts` (`EmbeddingModelGuard`). The dependency arrow runs
  * one way: concrete class → port.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -22,11 +22,14 @@ const PORTS_FILE = join(QDRANT_DIR, "ports.ts");
 const CLIENT_FILE = join(QDRANT_DIR, "client.ts");
 const GUARD_FILE = join(QDRANT_DIR, "embedding-model-guard.ts");
 
+/** The file with comments removed, so prose mentions of a class name never read as a type reference. */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
 /** Resolved absolute targets of every relative module specifier in a file (static, re-export, dynamic, type). */
 function relativeTargets(file: string): string[] {
-  const text = readFileSync(file, "utf-8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
+  const text = stripComments(readFileSync(file, "utf-8"));
   const targets: string[] = [];
   const pattern = /(?:from\s*|import\s*\(\s*|import\s+)"(\.{1,2}\/[^"]+)"/g;
   for (const match of text.matchAll(pattern)) {
@@ -73,5 +76,72 @@ describe("adapters/qdrant ports are a leaf the concrete facades implement", () =
 
   it("embedding-model-guard.ts imports the ports from ./ports.js", () => {
     expect(relativeTargets(GUARD_FILE)).toContain(PORTS_FILE);
+  });
+});
+
+/**
+ * Q2maint pin (bd tea-rags-mcp-89k7k.35, 6oah1 Q2): the maintenance domain
+ * types its Qdrant dependency against the narrowest `ports.ts` role it calls,
+ * not against the 55-method concrete facade. Files where a port cannot cover
+ * the dependency YET stay on the concrete class, and each carries its reason
+ * here — a connection-intent accessor (`aliases`) or a hand-off to an
+ * `adapters/qdrant` collaborator whose own signature still takes
+ * `QdrantManager`. When one of those collaborators is ported, the file
+ * narrows and its entry must be deleted (the second test below refuses a
+ * stale entry).
+ */
+const MAINTENANCE_DIR = join(ROOT, "src/core/domains/maintenance");
+
+const MAINTENANCE_CONCRETE_KEPT: Record<string, string> = {
+  "src/core/domains/maintenance/footprint/factory.ts":
+    "forwards the manager into QdrantArtifact's concrete constructor (QdrantArtifact needs the aliases accessor)",
+  "src/core/domains/maintenance/footprint/qdrant-artifact.ts":
+    "calls the aliases accessor (createAlias / deleteAlias) — connection intent, outside every port",
+  "src/core/domains/maintenance/migration/adapters/index-store-adapter.ts":
+    "calls aliases.listAliases and hands the manager to SchemaMetadataPointStore, whose constructor is still concrete",
+  "src/core/domains/maintenance/migration/adapters/sparse-store-adapter.ts":
+    "hands the manager to SchemaMetadataPointStore, whose constructor is still concrete",
+  "src/core/domains/maintenance/migration/adapters/stats-store-adapter.ts":
+    "passes the manager to the scroll.ts helpers (scrollAllPoints / sampleVectors), whose parameters are still concrete",
+  "src/core/domains/maintenance/worktree/worktree-provisioner.ts":
+    "calls aliases.resolveActive — connection intent, outside every port",
+};
+
+function typescriptFiles(dir: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const absolute = join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...typescriptFiles(absolute));
+    else if (entry.isFile() && entry.name.endsWith(".ts")) files.push(absolute);
+  }
+  return files;
+}
+
+/** The concrete-facade type references a maintenance file holds, comments excluded. */
+function holdsConcreteFacadeReference(file: string): boolean {
+  return /QdrantManager|EmbeddingModelGuard\b/.test(stripComments(readFileSync(file, "utf-8")));
+}
+
+describe("maintenance domain types its qdrant dependency against the ports (6oah1 Q2maint)", () => {
+  it("holds no QdrantManager / EmbeddingModelGuard type reference outside the concrete-kept allowlist", () => {
+    const offenders = typescriptFiles(MAINTENANCE_DIR)
+      .filter(holdsConcreteFacadeReference)
+      .map(rel)
+      .filter((file) => !(file in MAINTENANCE_CONCRETE_KEPT));
+    expect(
+      offenders,
+      "files still binding the concrete facade — narrow them to a ports.ts role, or record in MAINTENANCE_CONCRETE_KEPT why they must stay concrete",
+    ).toEqual([]);
+  });
+
+  it("keeps the concrete-kept allowlist honest — every entry still holds a concrete reference", () => {
+    const stale = Object.keys(MAINTENANCE_CONCRETE_KEPT).filter((file) => {
+      const absolute = join(ROOT, file);
+      return !existsSync(absolute) || !holdsConcreteFacadeReference(absolute);
+    });
+    expect(
+      stale,
+      "allowlist entries whose file no longer references the concrete facade — delete them so the list tracks the code",
+    ).toEqual([]);
   });
 });
