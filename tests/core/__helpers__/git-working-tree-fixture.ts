@@ -137,11 +137,22 @@ export function prebuildGitWorkingTreeFixture(seed: readonly GitWorkingTreeSeedS
   buildGitRepoTemplate(templateKey(seed), fixtureRecipe(seed));
 }
 
-/** A repository whose main checkout holds one commit with `src/index.ts`, then the `seed` steps. */
+/**
+ * A repository whose main checkout holds one commit with `src/index.ts`, then the `seed` steps.
+ *
+ * The copy skips the per-checkout index refresh: every consumer of this fixture
+ * reads its repository through porcelain git only — the working-tree signal
+ * sources' `status` / `diff` / `log` / `blame` (the scratch-index diff chose
+ * porcelain over `diff-index` precisely because porcelain re-hashes what a
+ * stale stat cache flags) and the tests' own `add -A` / `commit` mutations,
+ * which re-stat everything they touch — so the refresh was one git spawn per
+ * test buying nothing (bd tea-rags-mcp-0qaht.63's rule, applied here).
+ */
 export function createGitWorkingTreeFixture(seed: readonly GitWorkingTreeSeedStep[] = []): GitWorkingTreeFixture {
   const copy = copyGitRepoTemplate(templateKey(seed), fixtureRecipe(seed), {
     prefix: "git-working-tree-",
     env: { ...process.env, ...IDENTITY },
+    refreshIndex: false,
   });
 
   const tempRoot = realpathSync(copy.root);

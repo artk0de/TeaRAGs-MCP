@@ -98,7 +98,7 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
       (root) => {
         buildChangedRepo(root);
       },
-      { prefix: "diff-scope-reader-" },
+      { prefix: "diff-scope-reader-", refreshIndex: false },
     ).root;
     repo = join(dir, "repo");
   });
@@ -254,7 +254,7 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
             { checkout: "feat" },
           ).fork;
         },
-        { prefix: "diff-scope-reader-" },
+        { prefix: "diff-scope-reader-", refreshIndex: false },
       );
       dir = copy.root;
       repo = join(dir, "repo");
@@ -325,7 +325,7 @@ describe("resolveWorkingTree — the tree a review reads", () => {
       (root) => {
         buildOneCommitRepo(root, "src/git", "src/git/base.ts", "export const base = 1;\n");
       },
-      { prefix: "diff-scope-reader-tree-" },
+      { prefix: "diff-scope-reader-tree-", refreshIndex: false },
     ).root;
     repo = join(dir, "repo");
   });
@@ -383,7 +383,7 @@ describe("readTreeLag", () => {
       (root) => {
         buildOneCommitRepo(root, ".", "x.ts", "export const x = 1;\n");
       },
-      { prefix: "diff-scope-reader-lag-" },
+      { prefix: "diff-scope-reader-lag-", refreshIndex: false },
     ).root;
     repo = join(dir, "repo");
   });
