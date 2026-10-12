@@ -38,6 +38,7 @@ import type { IndexingLockRemovalOutcome } from "../../../contracts/types/footpr
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { IndexingLockUnavailableError } from "../errors/index.js";
 import { INDEXING_HEARTBEAT_INTERVAL_MS, STALE_INDEXING_THRESHOLD_MS } from "./indexing-marker-codec.js";
+import type { CollectionIndexingLockPort, HeldCollectionIndexingLockPort, IndexingLockLiveness } from "./ports.js";
 
 /** The lock file's JSON content. */
 export interface IndexingLockRecord {
@@ -49,14 +50,8 @@ export interface IndexingLockRecord {
   operation: string;
 }
 
-/**
- * {@link CollectionIndexingLock#inspectLiveness}: `alive` / `dead` — the lock's
- * holder judged by the takeover rule; `unknown` — no lock to judge.
- */
-export type IndexingLockLiveness = "alive" | "dead" | "unknown";
-
 /** The read-only slice of the lock a status reader is handed. */
-export type IndexingLockLivenessProbe = Pick<CollectionIndexingLock, "inspectLiveness">;
+export type IndexingLockLivenessProbe = Pick<CollectionIndexingLockPort, "inspectLiveness">;
 
 export interface CollectionIndexingLockOptions {
   /** Directory holding the per-collection artifacts (the snapshots dir). Created on the first claim. */
@@ -96,7 +91,7 @@ function lockHoldKey(path: string, record: IndexingLockRecord): string {
   return [path, record.hostname, record.pid, record.startedAt].join("\0");
 }
 
-export class CollectionIndexingLock {
+export class CollectionIndexingLock implements CollectionIndexingLockPort {
   private readonly now: () => number;
   private readonly pid: number;
   private readonly hostname: string;
@@ -230,7 +225,7 @@ export class CollectionIndexingLock {
  * A lock this process holds. Keeps its heartbeat fresh until released; the
  * timer is unref'd, so a held lock never keeps the process alive on its own.
  */
-export class HeldCollectionIndexingLock {
+export class HeldCollectionIndexingLock implements HeldCollectionIndexingLockPort {
   private readonly current: IndexingLockRecord;
   private readonly timer: ReturnType<typeof setInterval>;
   private pendingRefresh: Promise<boolean> | undefined;
