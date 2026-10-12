@@ -39,7 +39,7 @@ import type {
   ManifestFile,
   TestDependencyManifestSource,
 } from "../../contracts/types/language.js";
-import { buildGitChildProcessEnv, resolveGitExecutable } from "../vcs/git/git-executable.js";
+import { buildGitChildProcessEnv, resolveGitExecutable } from "../vcs/index.js";
 
 /**
  * Directories the walk never descends into. Vendored dependency trees
