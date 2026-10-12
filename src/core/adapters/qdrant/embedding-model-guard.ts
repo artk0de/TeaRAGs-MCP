@@ -14,7 +14,7 @@
  * that lack the marker field or the canary.
  */
 
-import type { EmbeddingCallOptions, EmbeddingProvider } from "../../adapters/embeddings/base.js";
+import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import {
   EmbeddingModelMismatchError,
   isEmbeddingProviderUnavailable,
@@ -25,6 +25,7 @@ import { EMBEDDING_CANARY_MIN_COSINE, EMBEDDING_CANARY_TEXT, INDEXING_METADATA_I
 import { isDebug } from "../../primitives/diagnostics/index.js";
 import { cosine } from "../../primitives/math/index.js";
 import type { QdrantManager } from "./client.js";
+import type { EmbeddingModelGuardCallOptions, EmbeddingModelGuardPort } from "./ports.js";
 
 /** Canary as stored in the marker payload: the text embedded, and its vector. */
 interface EmbeddingCanaryRecord {
@@ -58,32 +59,11 @@ interface EmbeddingCanaryEmbed {
 }
 
 /**
- * What one caller of `ensureMatch` needs beyond the verdict.
- * `maxRecoveryWaitMs` bounds the canary embed's wait for a down provider (see
- * `EmbeddingCallOptions`): a search passes `READ_PATH_EMBEDDING_RECOVERY_WAIT_MS`.
+ * What one caller of `ensureMatch` needs beyond the verdict — declared by the
+ * port (ports.ts, the leaf this class implements) and re-exported here so
+ * every existing import of it from this module keeps working unchanged.
  */
-export interface EmbeddingModelGuardCallOptions extends EmbeddingCallOptions {
-  /**
-   * The caller embeds right after this check (indexing, adding documents, a
-   * query-embedding search). A provider that is DOWN — it gave up after
-   * spending its recovery wait on the canary — is then thrown here instead of
-   * swallowed, so the caller fails once instead of paying that wait a second
-   * time on its own embed. So is one the canary found unreachable within a
-   * budget no shorter than the caller's own `maxRecoveryWaitMs`: the caller's
-   * embed would fail the same way. Callers that read the index without
-   * embedding leave it off: an outage does not concern them.
-   */
-  failOnProviderOutage?: boolean;
-  /**
-   * The caller compares no freshly embedded vector against the index
-   * (`rank_chunks`, `find_symbol`): weight drift cannot corrupt its answer, so
-   * only the model NAME is checked — from a cached verdict, else from the
-   * marker. Nothing is embedded, created or cached; the canary waits for the
-   * first caller that embeds. Embedding it here made every cold call of such a
-   * tool wait out the provider's endpoint failover (bd tea-rags-mcp-xi2r9, B3).
-   */
-  nameOnly?: boolean;
-}
+export type { EmbeddingModelGuardCallOptions } from "./ports.js";
 
 /**
  * Cached per-collection outcome. Both mismatch kinds are sticky: the name check
@@ -159,7 +139,7 @@ function parseCanary(raw: unknown): EmbeddingCanaryRecord | undefined {
   return { text, vector: vector as number[] };
 }
 
-export class EmbeddingModelGuard {
+export class EmbeddingModelGuard implements EmbeddingModelGuardPort {
   private readonly cache = new Map<string, EmbeddingModelVerdict>();
 
   /** Checks currently running, one per collection. See `startCheck`. */
