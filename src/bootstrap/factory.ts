@@ -26,7 +26,7 @@ import { StatsCache } from "../core/adapters/filesystem/stats-cache.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
-import type { EmbeddingModelGuard } from "../core/adapters/qdrant/embedding-model-guard.js";
+import type { EmbeddingModelGuardPort } from "../core/adapters/qdrant/ports.js";
 import { reapGitChildProcesses, VcsAdapterFactory } from "../core/adapters/vcs/index.js";
 import {
   buildFileChunkPoints,
@@ -213,7 +213,7 @@ export interface AppContext {
 interface InfraContext {
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
-  modelGuard: EmbeddingModelGuard;
+  modelGuard: EmbeddingModelGuardPort;
   /**
    * The embedding config the process provider was built from, captured before
    * the adaptive batch-size adjustment wrote into it — the identity a project
@@ -1216,7 +1216,7 @@ function buildCodegraphWorkerDescriptor(deps: {
 interface IngestSliceDeps {
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
-  modelGuard: EmbeddingModelGuard;
+  modelGuard: EmbeddingModelGuardPort;
   statsCache: StatsCache;
   collectionRegistry: CollectionRegistry;
   snapshotDir: string;

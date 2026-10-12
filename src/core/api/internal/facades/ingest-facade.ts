@@ -14,7 +14,7 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
+import type { EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import { selectLanguages } from "../../../contracts/language-selector.js";
 import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
@@ -75,7 +75,7 @@ export interface IngestFacadeDeps {
   pipelineTuning?: PipelineTuning;
   syncTuning?: SynchronizerTuning;
   snapshotDir?: string;
-  modelGuard?: EmbeddingModelGuard;
+  modelGuard?: EmbeddingModelGuardPort;
   collectionRegistry?: CollectionRegistry;
   teaRagsVersion?: string;
   /**

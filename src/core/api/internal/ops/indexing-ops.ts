@@ -15,7 +15,7 @@ import { isProviderRecoveryWaitSpent } from "../../../adapters/embeddings/errors
 import { hashCollectionForPath, validatePath } from "../../../adapters/filesystem/path-canonicalization.js";
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
+import type { EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { selectProviderKeys } from "../../../contracts/provider-selector.js";
@@ -104,7 +104,7 @@ export interface IndexingOpsDeps {
   statsAccumulators?: readonly StatsAccumulatorDescriptor[];
   reranker?: RerankerPort;
   gitTimePeriods?: { fileMonths: number; chunkMonths: number };
-  modelGuard?: EmbeddingModelGuard;
+  modelGuard?: EmbeddingModelGuardPort;
   /**
    * Per-collection DuckDB pool. When present, `clear` and force-reindex
    * paths drop the per-collection DuckDB file alongside the Qdrant
@@ -269,7 +269,7 @@ export class IndexingOps {
   private readonly statsAccumulators: readonly StatsAccumulatorDescriptor[];
   private readonly reranker?: RerankerPort;
   private readonly gitTimePeriods?: { fileMonths: number; chunkMonths: number };
-  private readonly modelGuard?: EmbeddingModelGuard;
+  private readonly modelGuard?: EmbeddingModelGuardPort;
   private readonly codegraphPool?: GraphDbClientPool;
   private readonly healthCheckRetryAttempts: number;
   private readonly healthCheckRetryDelayMs: number;

@@ -27,7 +27,7 @@
 import { isProviderRecoveryWaitSpent } from "../../../adapters/embeddings/errors.js";
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
+import type { EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { CollectionAlias } from "../../../contracts/types/collection-identity.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
@@ -59,7 +59,7 @@ export interface WorktreeSeedOpsDeps {
   /** Where per-collection snapshots live — the source's file count is read from its snapshot. */
   snapshotDir: string;
   /** Weights canary; omitted → only the model NAME is compared (by the stamp gate). */
-  modelGuard?: Pick<EmbeddingModelGuard, "ensureMatch">;
+  modelGuard?: Pick<EmbeddingModelGuardPort, "ensureMatch">;
 }
 
 /** Lets go of a claimed sibling. */

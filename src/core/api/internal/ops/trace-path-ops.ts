@@ -29,7 +29,7 @@
  */
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import {
   fileScopedSymbolKey,
   parseFileScopedSymbolKey,
@@ -77,7 +77,7 @@ const HYDRATION_SCROLL_HEADROOM = 8;
 
 export interface TracePathOpsDeps {
   pool: GraphDbClientPool;
-  qdrant: QdrantManager;
+  qdrant: Pick<QdrantPointReader, "scrollBySymbolIds">;
   reranker: RerankerPort;
   collectionRegistry: RegistryLookup;
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
