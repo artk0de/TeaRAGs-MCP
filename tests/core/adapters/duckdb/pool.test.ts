@@ -19,9 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
-import { DaemonBuildHandshakeConnector } from "../../../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
-import { DaemonCollectionClientCache } from "../../../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
-import { DaemonDatabaseFileReplacer } from "../../../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
+import { createDaemonRouting } from "../../../../src/core/adapters/duckdb/daemon/index.js";
 import { decodeFrames, encodeFrame, type DaemonRequest } from "../../../../src/core/adapters/duckdb/daemon/protocol.js";
 import {
   CodegraphDatabaseMissingError,
@@ -38,16 +36,10 @@ import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajecto
  * worker-pool shape.
  */
 function daemonRoutingFor(socketPath: string) {
-  return {
-    clients: new DaemonCollectionClientCache(
-      {
-        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
-        daemonSocketPath: socketPath,
-      },
-      new DaemonBuildHandshakeConnector(undefined, undefined),
-    ),
-    replacerFor: (replacerSocketPath: string) => new DaemonDatabaseFileReplacer(replacerSocketPath),
-  };
+  return createDaemonRouting({
+    symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    daemonSocketPath: socketPath,
+  });
 }
 
 describe("GraphDbClientPool — per-collection isolation", () => {

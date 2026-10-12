@@ -43,11 +43,9 @@ import {
   MockQdrantManager,
 } from "../../../../__helpers__/test-helpers.js";
 import { fixturePhysicalCollectionName } from "../../../../../../__helpers__/collection-identity.js";
-import { DaemonBuildHandshakeConnector } from "../../../../../../../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
 import { DaemonGraphDbClient } from "../../../../../../../../src/core/adapters/duckdb/daemon/client.js";
-import { DaemonCollectionClientCache } from "../../../../../../../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
-import { DaemonDatabaseFileReplacer } from "../../../../../../../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
 import { runDaemon } from "../../../../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../../../../src/core/adapters/duckdb/daemon/index.js";
 import {
   getDaemonPaths,
   type CodegraphDaemonPaths,
@@ -404,16 +402,10 @@ async function startCodegraphFixture(options: CodegraphFixtureOptions): Promise<
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
     applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath: daemonPaths.socketPath,
-    daemonRouting: {
-      clients: new DaemonCollectionClientCache(
-        {
-          symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
-          daemonSocketPath: daemonPaths.socketPath,
-        },
-        new DaemonBuildHandshakeConnector(undefined, undefined),
-      ),
-      replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
-    },
+    daemonRouting: createDaemonRouting({
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: daemonPaths.socketPath,
+    }),
   });
   const provider = new CodegraphEnrichmentProvider(
     {

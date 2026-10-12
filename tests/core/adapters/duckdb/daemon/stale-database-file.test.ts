@@ -17,10 +17,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import type { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
-import { DaemonBuildHandshakeConnector } from "../../../../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
-import { DaemonCollectionClientCache } from "../../../../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
-import { DaemonDatabaseFileReplacer } from "../../../../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import { getDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import { GraphDbClientPool, type GraphDbClientPoolOptions } from "../../../../../src/core/adapters/duckdb/pool.js";
 import {
@@ -74,17 +72,11 @@ describe("codegraph daemon — a collection rebuilt under a name it still holds 
     const session = makePool({
       rootDir: dataRoot,
       daemonSocketPath: paths.socketPath,
-      daemonRouting: {
-        clients: new DaemonCollectionClientCache(
-          {
-            symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
-            daemonSocketPath: paths.socketPath,
-            daemonRestart: { buildFingerprint: FINGERPRINT },
-          },
-          new DaemonBuildHandshakeConnector({ buildFingerprint: FINGERPRINT }, undefined),
-        ),
-        replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
-      },
+      daemonRouting: createDaemonRouting({
+        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+        daemonSocketPath: paths.socketPath,
+        daemonRestart: { buildFingerprint: FINGERPRINT },
+      }),
     });
 
     // 1. Index, then read: the daemon opens and caches a client on the collection.

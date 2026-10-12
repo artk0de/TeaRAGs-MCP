@@ -15,10 +15,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createPurgeCodegraphStore, readCodegraphDaemonLiveness } from "../../src/bootstrap/footprint-purge.js";
 import { DuckDbGraphClient } from "../../src/core/adapters/duckdb/client.js";
-import { DaemonBuildHandshakeConnector } from "../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
-import { DaemonCollectionClientCache } from "../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
-import { DaemonDatabaseFileReplacer } from "../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
 import { runDaemon } from "../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../src/core/adapters/duckdb/daemon/index.js";
 import {
   getDaemonPaths,
   getStorageDir,
@@ -58,16 +56,10 @@ function makePool(rootDir: string, daemonSocketPath?: string): GraphDbClientPool
     daemonSocketPath,
     ...(daemonSocketPath !== undefined
       ? {
-          daemonRouting: {
-            clients: new DaemonCollectionClientCache(
-              {
-                symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
-                daemonSocketPath,
-              },
-              new DaemonBuildHandshakeConnector(undefined, undefined),
-            ),
-            replacerFor: (socketPath: string) => new DaemonDatabaseFileReplacer(socketPath),
-          },
+          daemonRouting: createDaemonRouting({
+            symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+            daemonSocketPath,
+          }),
         }
       : {}),
   });

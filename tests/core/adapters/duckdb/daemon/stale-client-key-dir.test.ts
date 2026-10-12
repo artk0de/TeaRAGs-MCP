@@ -30,11 +30,9 @@ import {
   captureBuildFingerprint,
   type BuildFingerprintCapture,
 } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
-import { DaemonBuildHandshakeConnector } from "../../../../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
-import { DaemonCollectionClientCache } from "../../../../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
-import { DaemonDatabaseFileReplacer } from "../../../../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import {
   getBuildKey,
   getDaemonPaths,
@@ -143,19 +141,13 @@ function makeFactoryShapedPool(
     applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath: getDaemonPathsForBuild(storageDir, client.loaded).socketPath,
     daemonClientTarget: () => resolveDaemonClientTarget(storageDir, sourceOf(client)),
-    daemonRouting: {
-      clients: new DaemonCollectionClientCache(
-        {
-          symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
-          daemonSocketPath: getDaemonPathsForBuild(storageDir, client.loaded).socketPath,
-          daemonClientTarget: () => resolveDaemonClientTarget(storageDir, sourceOf(client)),
-          daemonStorageDir: storageDir,
-          daemonRestart,
-        },
-        new DaemonBuildHandshakeConnector(daemonRestart, storageDir),
-      ),
-      replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
-    },
+    daemonRouting: createDaemonRouting({
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: getDaemonPathsForBuild(storageDir, client.loaded).socketPath,
+      daemonClientTarget: () => resolveDaemonClientTarget(storageDir, sourceOf(client)),
+      daemonStorageDir: storageDir,
+      daemonRestart,
+    }),
   });
   pools.push(pool);
   return pool;

@@ -33,12 +33,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { getBuildFingerprint } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
-import { DaemonBuildHandshakeConnector } from "../../../../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
-import { DaemonCollectionClientCache } from "../../../../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
-import { DaemonDatabaseFileReplacer } from "../../../../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import { ForeignBuildDaemonLockArbiter } from "../../../../../src/core/adapters/duckdb/daemon/foreign-build-lock-arbiter.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import {
   daemonPathsForKeyDir,
   getBuildKey,
@@ -198,16 +196,10 @@ describe("a foreign-build daemon holding the collection file (hw27k)", () => {
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: ownPaths.socketPath,
-      daemonRouting: {
-        clients: new DaemonCollectionClientCache(
-          {
-            symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
-            daemonSocketPath: ownPaths.socketPath,
-          },
-          new DaemonBuildHandshakeConnector(undefined, undefined),
-        ),
-        replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
-      },
+      daemonRouting: createDaemonRouting({
+        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+        daemonSocketPath: ownPaths.socketPath,
+      }),
     });
     cleanups.unshift(async () => pool.closeAll());
 

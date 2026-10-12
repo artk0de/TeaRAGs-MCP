@@ -27,9 +27,7 @@
  * shape the composition root uses today.
  */
 
-import { DaemonBuildHandshakeConnector } from "../../../adapters/duckdb/daemon/build-handshake-connector.js";
-import { DaemonCollectionClientCache } from "../../../adapters/duckdb/daemon/collection-client-cache.js";
-import { DaemonDatabaseFileReplacer } from "../../../adapters/duckdb/daemon/database-file-replacer.js";
+import { createDaemonRouting } from "../../../adapters/duckdb/daemon/index.js";
 import { GraphDbClientPool, type CollectionInitHook } from "../../../adapters/duckdb/pool.js";
 import { readManifestFiles } from "../../../adapters/filesystem/dependency-manifests.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
@@ -283,25 +281,19 @@ export async function createCodegraphProviderRuntime(
       preserveInsertionOrder: false,
     },
     daemonSocketPath: config.daemonSocketPath,
-    // H4a2 intermediate state: the pool no longer constructs the daemon
-    // classes, so this runtime-side factory does until S15 moves the whole
-    // pool construction into the bootstrap-owned worker pool factory. Worker
-    // pools carry no `daemonStorageDir` / `daemonRestart` today (provisioning
-    // ran on the main thread; respawn is wired there), so the routing is built
-    // from the socket alone.
+    // H4a2/H4a3: the pool no longer constructs the daemon classes — the
+    // routing is built by `createDaemonRouting` until S15 moves the whole pool
+    // construction into the bootstrap-owned worker pool factory. Worker pools
+    // carry no `daemonStorageDir` / `daemonRestart` today (provisioning ran on
+    // the main thread; respawn is wired there), so the routing is built from
+    // the socket alone.
     ...(config.daemonSocketPath !== undefined
       ? {
-          daemonRouting: {
-            clients: new DaemonCollectionClientCache(
-              {
-                symbolTableFactory,
-                initHook: hydrateSymbolTable,
-                daemonSocketPath: config.daemonSocketPath,
-              },
-              new DaemonBuildHandshakeConnector(undefined, undefined),
-            ),
-            replacerFor: (socketPath: string) => new DaemonDatabaseFileReplacer(socketPath),
-          },
+          daemonRouting: createDaemonRouting({
+            symbolTableFactory,
+            initHook: hydrateSymbolTable,
+            daemonSocketPath: config.daemonSocketPath,
+          }),
         }
       : {}),
     initHook: hydrateSymbolTable,

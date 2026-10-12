@@ -7,10 +7,8 @@ import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { DaemonBuildHandshakeConnector } from "../core/adapters/duckdb/daemon/build-handshake-connector.js";
-import { DaemonCollectionClientCache } from "../core/adapters/duckdb/daemon/collection-client-cache.js";
-import { DaemonDatabaseFileReplacer } from "../core/adapters/duckdb/daemon/database-file-replacer.js";
 import {
+  createDaemonRouting,
   getStorageDir,
   openDaemonLogFd,
   resolveDaemonClientTarget,
@@ -1081,20 +1079,14 @@ function createCodegraphGraphDbPool(deps: {
     // legacy-layout migration) and the build-version handshake restart (bd
     // tea-rags-mcp-ji56r — a stale daemon of another build is drained and
     // cold-spawned from THIS build via spawnCodegraphDaemon).
-    daemonRouting: {
-      clients: new DaemonCollectionClientCache(
-        {
-          symbolTableFactory,
-          initHook: hydrateCodegraphSymbolTable,
-          daemonSocketPath: daemonPaths.socketPath,
-          daemonClientTarget: resolveDaemonTarget,
-          daemonStorageDir,
-          daemonRestart: { respawn: spawnCodegraphDaemon },
-        },
-        new DaemonBuildHandshakeConnector({ respawn: spawnCodegraphDaemon }, daemonStorageDir),
-      ),
-      replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
-    },
+    daemonRouting: createDaemonRouting({
+      symbolTableFactory,
+      initHook: hydrateCodegraphSymbolTable,
+      daemonSocketPath: daemonPaths.socketPath,
+      daemonClientTarget: resolveDaemonTarget,
+      daemonStorageDir,
+      daemonRestart: { respawn: spawnCodegraphDaemon },
+    }),
     // The pool's own open path never runs in daemon mode (every acquire is
     // routed), but the hook stays so a future direct-mode use hydrates the
     // same way the daemon-side clients do.

@@ -19,10 +19,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
-import { DaemonBuildHandshakeConnector } from "../../../../../src/core/adapters/duckdb/daemon/build-handshake-connector.js";
 import { DaemonGraphDbClient, REQUIRED_DAEMON_OPS } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
-import { DaemonCollectionClientCache } from "../../../../../src/core/adapters/duckdb/daemon/collection-client-cache.js";
-import { DaemonDatabaseFileReplacer } from "../../../../../src/core/adapters/duckdb/daemon/database-file-replacer.js";
+import { createDaemonRouting } from "../../../../../src/core/adapters/duckdb/daemon/index.js";
 import {
   decodeFrames,
   encodeFrame,
@@ -352,32 +350,17 @@ describe("DaemonGraphDbClient — a refused replay releases the connection (f924
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
-      daemonRouting: {
-        clients: new DaemonCollectionClientCache(
-          {
-            symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
-            daemonSocketPath: socketPath,
-            daemonRestart: {
-              buildFingerprint: "fp-A",
-              readOnDiskBuildFingerprint: () => undefined,
-              respawn: () => {
-                void swapDaemon();
-              },
-            },
+      daemonRouting: createDaemonRouting({
+        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+        daemonSocketPath: socketPath,
+        daemonRestart: {
+          buildFingerprint: "fp-A",
+          readOnDiskBuildFingerprint: () => undefined,
+          respawn: () => {
+            void swapDaemon();
           },
-          new DaemonBuildHandshakeConnector(
-            {
-              buildFingerprint: "fp-A",
-              readOnDiskBuildFingerprint: () => undefined,
-              respawn: () => {
-                void swapDaemon();
-              },
-            },
-            undefined,
-          ),
-        ),
-        replacerFor: (socketPath) => new DaemonDatabaseFileReplacer(socketPath),
-      },
+        },
+      }),
     });
     pools.push(pool);
     const collection = fixturePhysicalCollectionName("code_x");
