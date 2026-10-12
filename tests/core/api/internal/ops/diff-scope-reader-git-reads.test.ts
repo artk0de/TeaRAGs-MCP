@@ -61,7 +61,7 @@ describe("readDiffScope — git reads it can answer without git", () => {
           git(built, "add", "-A");
           git(built, "commit", "-q", "-m", "init");
         },
-        { prefix: "diff-scope-reader-git-reads-" },
+        { prefix: "diff-scope-reader-git-reads-", refreshIndex: false },
       ).root,
     );
     repo = join(dir, "repo");

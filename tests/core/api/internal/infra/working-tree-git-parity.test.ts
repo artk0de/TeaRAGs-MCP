@@ -32,6 +32,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { importGitHistory } from "../../../__helpers__/git-history-import.js";
+import { copyGitRepoTemplate } from "../../../__helpers__/git-repo-template.js";
 import { GitCliAdapter } from "../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { BlameLine } from "../../../../../src/core/adapters/vcs/types.js";
 import { fullRegistryPayloadSignalTreeRecompute } from "../../../../../src/core/api/internal/composition.js";
@@ -163,6 +164,34 @@ function commitAll(root: string, commits: readonly ParityCommit[], init = true):
     })),
     { init },
   );
+}
+
+/**
+ * The repository every variant of one case starts from — its history through the
+ * stamp, built ONCE per case and copied per test (`copyGitRepoTemplate`). The
+ * two squash variants run identical stamp-state histories, so the second
+ * variant's `init` + `fast-import` + `unpack-objects` chain was pure repetition
+ * — three spawns per case that bought nothing (the copy is a plain directory
+ * copy). What a test does to its copy afterwards stays live git.
+ */
+function stampStateRepo(
+  caseKey: string,
+  commits: readonly ParityCommit[],
+): { repo: string; shas: Record<string, string>; root: string } {
+  const copy = copyGitRepoTemplate(
+    `wt-git-parity:${caseKey}`,
+    (root) => {
+      const repo = join(root, "main");
+      mkdirSync(repo);
+      return commitAll(repo, commits);
+    },
+    // Read through porcelain git only — no per-copy index refresh spawn.
+    { prefix: "wt-git-parity-", refreshIndex: false },
+  );
+  // `commitAll`'s temp-root guard compares against the SYMLINK-FREE tmpdir, so
+  // the copy's `/var/...` name must go through realpath first.
+  const root = realpathSync(copy.root);
+  return { repo: join(root, "main"), shas: copy.meta, root };
 }
 
 /** What ingest writes for every file of `paths` in the tree at `root`: file blocks by path, chunk blocks by `path::symbol`. */
@@ -384,22 +413,24 @@ describe.each([
   { label: "squash-aware sessions", squashOpts: { squashAwareSessions: true, sessionGapMinutes: 30 } },
 ])("working-tree delta rows carry ingest's git blocks ($label)", ({ squashOpts }) => {
   let scratch: string;
+  /** Root of this test's copy of the case's stamp-state template, if it took one. */
+  let copyRoot: string | undefined;
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(PINNED);
     scratch = realpathSync(mkdtempSync(join(tmpdir(), "wt-git-parity-")));
+    copyRoot = undefined;
   });
 
   afterEach(() => {
     vi.useRealTimers();
     rmSync(scratch, { recursive: true, force: true });
+    if (copyRoot !== undefined) rmSync(copyRoot, { recursive: true, force: true });
   });
 
   it("matches a reindex of a tree with commits since the index and uncommitted edits", async () => {
-    const repo = join(scratch, "main");
-    mkdirSync(repo);
-    const { stamp } = commitAll(repo, [
+    const built = stampStateRepo("commits-since", [
       {
         files: {
           "src/engine.ts": ENGINE_V1,
@@ -427,6 +458,9 @@ describe.each([
         when: at(20),
       },
     ]);
+    copyRoot = built.root;
+    const { stamp } = built.shas;
+    const { repo } = built;
     const indexed = ["src/engine.ts", "src/user.ts", "src/renamer.ts", "src/main.ts", "src/zoo/animal.ts"];
     const basePoints = await indexAt(repo, indexed, squashOpts);
 
@@ -491,9 +525,7 @@ describe.each([
   });
 
   it("matches a reindex of a tree that branched before the stamp", async () => {
-    const repo = join(scratch, "main");
-    mkdirSync(repo);
-    const { branchPoint, stamp } = commitAll(repo, [
+    const built = stampStateRepo("branched-before-stamp", [
       {
         label: "branchPoint",
         files: { "src/engine.ts": ENGINE_V1, "src/cyc/b.ts": "export function bFn(): number {\n  return 1;\n}\n" },
@@ -509,6 +541,9 @@ describe.each([
         when: at(20),
       },
     ]);
+    copyRoot = built.root;
+    const { branchPoint, stamp } = built.shas;
+    const { repo } = built;
     const basePoints = await indexAt(repo, ["src/engine.ts", "src/cyc/b.ts"], squashOpts);
     const tree = join(scratch, "div");
     // The branch commit goes in by import; checking `div` out in its linked worktree stays live.
@@ -536,9 +571,7 @@ describe.each([
   });
 
   it("matches a reindex of a tree with uncommitted edits inside and above symbols", async () => {
-    const repo = join(scratch, "main");
-    mkdirSync(repo);
-    const { stamp } = commitAll(repo, [
+    const built = stampStateRepo("uncommitted-inside-above", [
       { files: { "src/engine.ts": ENGINE_V1 }, message: "init", who: "alice", when: at(40) },
       {
         files: { "src/engine.ts": ENGINE_V1.replace("helperB() + 1", "helperB() + 3") },
@@ -556,6 +589,9 @@ describe.each([
         when: at(20),
       },
     ]);
+    copyRoot = built.root;
+    const { stamp } = built.shas;
+    const { repo } = built;
     const basePoints = await indexAt(repo, ["src/engine.ts"], squashOpts);
 
     // Uncommitted: lines added ABOVE every symbol (shifting all of them), and
@@ -580,8 +616,6 @@ describe.each([
   });
 
   it("matches a reindex of a tree with an uncommitted-only symbol between committed ones", async () => {
-    const repo = join(scratch, "main");
-    mkdirSync(repo);
     const history: ParityCommit[] = [
       { files: { "src/engine.ts": ENGINE_V1 }, message: "init", who: "alice", when: at(40) },
     ];
@@ -595,7 +629,7 @@ describe.each([
         when: at(30 - v),
       });
     }
-    const { stamp } = commitAll(repo, [
+    const built = stampStateRepo("uncommitted-only-symbol", [
       ...history,
       {
         label: "stamp",
@@ -605,6 +639,9 @@ describe.each([
         when: at(20),
       },
     ]);
+    copyRoot = built.root;
+    const { stamp } = built.shas;
+    const { repo } = built;
     const basePoints = await indexAt(repo, ["src/engine.ts"], squashOpts);
 
     // Uncommitted: header lines above every symbol, a line inside helperA, and
@@ -632,9 +669,7 @@ describe.each([
   });
 
   it("matches a reindex of a tree holding a file the file window holds no commit for (bd tea-rags-mcp-i6tkc)", async () => {
-    const repo = join(scratch, "main");
-    mkdirSync(repo);
-    const { stamp } = commitAll(repo, [
+    const built = stampStateRepo("window-misses-file", [
       {
         files: { "src/legacy.ts": ENGINE_V1, "src/engine.ts": ENGINE_V1 },
         message: "init",
@@ -656,6 +691,9 @@ describe.each([
         when: at(20),
       },
     ]);
+    copyRoot = built.root;
+    const { stamp } = built.shas;
+    const { repo } = built;
     const basePoints = await indexAt(repo, ["src/engine.ts", "src/dormant.ts"], squashOpts);
 
     // Uncommitted: an edit inside a symbol of the dormant file.
@@ -680,9 +718,7 @@ describe.each([
   it("stamps a file past the chunk walk's line limit as ingest's policy does", async () => {
     const oversized = (name: string): string =>
       `export function ${name}(): number {\n  let n = 0;\n${"  n += 1;\n".repeat(WINDOWS.maxFileLines + 5)}  return n;\n}\n`;
-    const repo = join(scratch, "main");
-    mkdirSync(repo);
-    const { stamp } = commitAll(repo, [
+    const built = stampStateRepo("oversized-file", [
       {
         files: { "src/engine.ts": ENGINE_V1, "src/big.ts": oversized("bigFunction") },
         message: "init",
@@ -697,6 +733,9 @@ describe.each([
         when: at(20),
       },
     ]);
+    copyRoot = built.root;
+    const { stamp } = built.shas;
+    const { repo } = built;
     const basePoints = await indexAt(repo, ["src/engine.ts", "src/big.ts"], squashOpts);
 
     // Since the index: an oversized file committed; uncommitted: a new symbol in the indexed oversized file.

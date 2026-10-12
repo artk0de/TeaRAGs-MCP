@@ -45,6 +45,21 @@ for (const v of [
   "GIT_COMMON_DIR",
   "GIT_PREFIX",
   "GIT_CONFIG_PARAMETERS",
+  // The committing git also exports its own exec path and the author/committer
+  // clock of the commit being made (probed live 2026-10-12: GIT_EXEC_PATH,
+  // GIT_AUTHOR_DATE, GIT_AUTHOR_NAME/EMAIL leave the hook). GIT_EXEC_PATH of a
+  // Homebrew `git commit` would make every platform-git child in tests load
+  // Homebrew's git-core; the dates stamp every fixture commit the outer
+  // commit's time, so squash-session and age assertions could answer
+  // differently inside the hook than outside it. Tests that want a date set it
+  // explicitly.
+  "GIT_EXEC_PATH",
+  "GIT_AUTHOR_DATE",
+  "GIT_COMMITTER_DATE",
+  "GIT_AUTHOR_NAME",
+  "GIT_AUTHOR_EMAIL",
+  "GIT_COMMITTER_NAME",
+  "GIT_COMMITTER_EMAIL",
 ]) {
   delete process.env[v];
 }

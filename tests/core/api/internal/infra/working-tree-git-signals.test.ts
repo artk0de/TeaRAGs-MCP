@@ -258,7 +258,7 @@ describe("createWorkingTreeGitSignalSource", () => {
       tree,
       write,
     }) => {
-      const indexed = fixture.git(tree, "rev-parse", "HEAD").trim();
+      const indexed = fixture.seeded.commits.at(-1)!;
       fixture.commit(tree, { "src/new.ts": "export const n = 1;\n", "README.md": "# r\n" }, "add new");
       fixture.git(tree, "mv", "src/cyc/c.ts", "src/cyc/moved.ts");
       fixture.git(tree, "commit", "-q", "-m", "move c");
@@ -293,7 +293,7 @@ describe("createWorkingTreeGitSignalSource", () => {
 
     it("asks git once per range, and again once HEAD moves", async ({ fixture, tree }) => {
       const spy = vi.spyOn(gitCli, "readPathCommitsSince");
-      const indexed = fixture.git(tree, "rev-parse", "HEAD").trim();
+      const indexed = fixture.seeded.commits.at(-1)!;
       fixture.commit(tree, { "src/new.ts": "export const n = 1;\n" });
       const source = createWorkingTreeGitSignalSource(DEPS);
 
