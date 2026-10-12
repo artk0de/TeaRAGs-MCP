@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildMcpAutoUpdateTrigger } from "../../../src/bootstrap/auto-update/mcp-hint.js";
 import { spawnDetachedUpdater } from "../../../src/bootstrap/auto-update/spawner.js";
 import { closeAutoUpdateLog, openAutoUpdateLog } from "../../../src/bootstrap/auto-update/updater-log.js";
-import { CollectionRegistry } from "../../../src/core/api/public/index.js";
+import { CollectionRegistry } from "../../../src/core/api/index.js";
 import { resolveCollectionName } from "../../../src/core/primitives/ids/collection-identity.js";
 
 // The default spawn path (no injected impl) really forks a detached CLI and

@@ -4,8 +4,7 @@ import { join } from "node:path";
 import type { Argv, CommandModule } from "yargs";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
-import { listWorktreeInfos, worktreeInfoForPath } from "../../core/api/index.js";
-import { CollectionRegistry } from "../../core/api/public/index.js";
+import { CollectionRegistry, listWorktreeInfos, worktreeInfoForPath } from "../../core/api/index.js";
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");

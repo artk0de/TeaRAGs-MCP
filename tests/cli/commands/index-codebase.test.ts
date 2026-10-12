@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { indexCodebaseCommand } from "../../../src/cli/commands/index-codebase.js";
 import { superviseIndexing } from "../../../src/cli/index-progress/supervisor.js";
 import { main as workerMain } from "../../../src/cli/index-progress/worker.js";
-import { CollectionRegistry, resolveRegistryEnv } from "../../../src/core/api/public/index.js";
+import { CollectionRegistry, resolveRegistryEnv } from "../../../src/core/api/index.js";
 
 // ---------------------------------------------------------------------------
 // Mocks (declared before imports so vi.mock hoisting works)
@@ -55,8 +55,8 @@ vi.mock("../../../src/cli/registry-resolver.js", () => ({
   applyProjectDefaults: vi.fn().mockImplementation((argv: unknown) => argv),
 }));
 
-vi.mock("../../../src/core/api/public/index.js", async () => {
-  const actual = await import("../../../src/core/api/public/index.js");
+vi.mock("../../../src/core/api/index.js", async () => {
+  const actual = await import("../../../src/core/api/index.js");
   return {
     ...actual,
     CollectionRegistry: class {
@@ -65,7 +65,8 @@ vi.mock("../../../src/core/api/public/index.js", async () => {
       findByPath = vi.fn().mockReturnValue(null);
     },
     // Registry env resolution moved into domains/maintenance/registry and now
-    // reaches the CLI through this barrel, so its stubs live here too.
+    // reaches the CLI through this barrel (k7kmu C3 moved it off the contract
+    // surface), so its stubs live here too.
     resolveRegistryEnv: vi.fn().mockReturnValue({}),
     pickRegistryEntry: vi.fn().mockReturnValue(null),
     pickRegistryEnvSeed: vi.fn().mockReturnValue(null),
@@ -192,7 +193,7 @@ describe("indexCodebaseCommand handler — supervisor branch", () => {
   });
 
   it("renders an actionable message and exits 1 when the registry entry's Qdrant backend cannot be resolved", async () => {
-    const { RegistryQdrantBackendUnresolvedError } = await import("../../../src/core/api/public/index.js");
+    const { RegistryQdrantBackendUnresolvedError } = await import("../../../src/core/api/index.js");
     const failure = new RegistryQdrantBackendUnresolvedError({
       name: "octokit",
       collectionName: "code_beef",

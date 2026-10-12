@@ -4,6 +4,7 @@ import type * as NodeFs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
+import { primeRegistryRuntime } from "../../../src/cli/prime/registry-runtime.js";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { available, unavailable, upToDate } from "../../../src/cli/update-check/types.js";
@@ -83,7 +84,7 @@ describe("runPrime — happy path", () => {
       updateService: stubUpdateService(),
     });
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     expect(getStatusMock).toHaveBeenCalledWith("/some/project");
     expect(getMetricsMock).toHaveBeenCalledWith("/some/project");
@@ -124,7 +125,7 @@ describe("runPrime — happy path", () => {
       updateService: stubUpdateService(),
     });
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     expect(cleanupMock).toHaveBeenCalledOnce();
   });
@@ -157,7 +158,7 @@ describe("runPrime — happy path", () => {
       updateService: stubUpdateService(),
     });
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     const ts = new LanguageFactory().capabilities().get("typescript");
     expect(ts).toBeDefined();
@@ -175,7 +176,7 @@ describe("runPrime — failure paths", () => {
     createAppContextMock.mockClear();
     pingMock.mockClear();
 
-    await runPrime({ path: "/missing/dir", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/missing/dir", createPathCollectionResolver });
 
     expect(createAppContextMock).not.toHaveBeenCalled();
     expect(pingMock).not.toHaveBeenCalled();
@@ -188,7 +189,7 @@ describe("runPrime — failure paths", () => {
     pingMock.mockResolvedValue(false);
     createAppContextMock.mockClear();
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     expect(createAppContextMock).not.toHaveBeenCalled();
     expect(writeMock).toHaveBeenCalledTimes(1);
@@ -216,7 +217,7 @@ describe("runPrime — failure paths", () => {
       updateService: stubUpdateService(),
     });
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("warm-up pending");
@@ -252,7 +253,7 @@ describe("runPrime — status failure that is not a cold Qdrant", () => {
     const cleanupMock = vi.fn();
     contextRejecting(new LockedCollectionError(), cleanupMock);
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     const out = writeMock.mock.calls.map((c) => String(c[0])).join("");
     expect(out).not.toContain("warm-up pending");
@@ -268,7 +269,7 @@ describe("runPrime — status failure that is not a cold Qdrant", () => {
     pingMock.mockResolvedValue(true);
     createAppContextMock.mockRejectedValue(new LockedCollectionError());
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     const out = writeMock.mock.calls.map((c) => String(c[0])).join("");
     expect(out).toContain("alias swap in flight (INFRA_ALIAS_OPERATION)");
@@ -279,7 +280,7 @@ describe("runPrime — status failure that is not a cold Qdrant", () => {
     pingMock.mockResolvedValue(true);
     createAppContextMock.mockRejectedValue(new QdrantUnavailableError("http://localhost:6333"));
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     expect(writeMock.mock.calls.map((c) => String(c[0])).join("")).toContain("warm-up pending");
   });
@@ -289,7 +290,7 @@ describe("runPrime — status failure that is not a cold Qdrant", () => {
     pingMock.mockResolvedValue(true);
     contextRejecting(new TypeError("Cannot read properties of undefined (reading 'points')"));
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     const out = writeMock.mock.calls.map((c) => String(c[0])).join("");
     expect(out).not.toContain("warm-up pending");
@@ -326,7 +327,7 @@ describe("runPrime — cwd fallback", () => {
       updateService: stubUpdateService(),
     });
 
-    await runPrime({ createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), createPathCollectionResolver });
 
     expect(getStatusMock).toHaveBeenCalledWith(process.cwd());
   });
@@ -363,7 +364,7 @@ describe("runPrime — update-check integration", () => {
     const ctx = buildFullCtx(vi.fn().mockResolvedValue(available("1.0.0", "1.1.0")));
     createAppContextMock.mockResolvedValue(ctx);
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("## tea-rags package");
@@ -375,7 +376,7 @@ describe("runPrime — update-check integration", () => {
     const ctx = buildFullCtx(vi.fn().mockResolvedValue(upToDate("1.0.0")));
     createAppContextMock.mockResolvedValue(ctx);
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     expect(writeMock.mock.calls[0][0]).not.toContain("## tea-rags package");
   });
@@ -386,7 +387,7 @@ describe("runPrime — update-check integration", () => {
     const ctx = buildFullCtx(vi.fn().mockRejectedValue(new Error("boom")));
     createAppContextMock.mockResolvedValue(ctx);
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("# tea-rags prime");
@@ -399,7 +400,7 @@ describe("runPrime — update-check integration", () => {
     const ctx = buildFullCtx(checkForUpdateMock);
     createAppContextMock.mockResolvedValue(ctx);
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     expect(checkForUpdateMock).toHaveBeenCalledWith({
       allowNetwork: true,
@@ -448,7 +449,7 @@ describe("runPrime — buildUpdateService fallback (yl9tv)", () => {
       // No updateService — forces buildUpdateService() to be called.
     });
 
-    await runPrime({ path: "/some/project", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
 
     // The test passes if runPrime completes without error.
     // buildUpdateService() was invoked on the ?? branch.

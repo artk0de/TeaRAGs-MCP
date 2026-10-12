@@ -3,9 +3,15 @@
  * rendered by both the CLI status block and the MCP `index_codebase` response —
  * the same split `formatIndexDriftReport` makes for drift, so the two surfaces
  * cannot describe one outcome two ways.
+ *
+ * Relocated from `domains/maintenance/worktree/worktree-seed-report.ts`
+ * (bd tea-rags-mcp-k7kmu C3, the `contracts/optimizer-recovery.ts` precedent):
+ * the rule imports only contract types, and the public api barrel re-exporting
+ * it from the domain was a stable→unstable runtime edge. The worktree facade
+ * re-exports it unchanged for the domain's consumers.
  */
 
-import type { WorktreeSeedReport, WorktreeSeedSourceRef } from "../../../contracts/types/worktree.js";
+import type { WorktreeSeedReport, WorktreeSeedSourceRef } from "./types/worktree.js";
 
 /** Lines to show, unindented except the per-sibling refusals; empty when there is nothing worth saying. */
 export function formatWorktreeSeedReport(report: WorktreeSeedReport): string[] {

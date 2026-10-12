@@ -71,6 +71,7 @@ describe("pickRegistryEntry for a linked worktree", () => {
       findByName: (n) => [parent, other].find((e) => e.name === n) ?? null,
       findByPath: (p) => [parent, other].find((e) => e.path === p) ?? null,
       list: () => [parent, other],
+      get: () => null,
     };
   }, TEST_TIMEOUT);
 

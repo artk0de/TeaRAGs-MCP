@@ -50,6 +50,7 @@ import type {
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CaseSplitPathPatterns } from "../../../contracts/types/file-classification.js";
 import type { IdentifierCasing, IdentifierNamingConvention } from "../../../contracts/types/language.js";
+import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import { recordTreeGraphState, type WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import {
   buildMethodVerbGroups,
@@ -73,7 +74,6 @@ import {
   languageTestFileConventions,
   nativeLanguageCapabilities,
 } from "../../../domains/language/capability/native.js";
-import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import {
   buildNonProductionPathFilter,
@@ -246,7 +246,7 @@ export function ontologyReportQuery(
 export interface OntologyReportOpsDeps {
   /** `acquireFileReader` opens the working tree's graph (WTO-7). */
   pool: Pick<GraphDbClientPool, "acquireReader" | "acquireFileReader">;
-  collectionRegistry: CollectionRegistry;
+  collectionRegistry: RegistryLookup;
   /** Alias → active versioned collection (see `GraphFacadeDeps.resolveActiveCollection`). */
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
   languages: readonly OntologyLanguageProfile[];

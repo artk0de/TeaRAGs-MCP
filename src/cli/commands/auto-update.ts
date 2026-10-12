@@ -19,14 +19,13 @@ import type { CommandModule } from "yargs";
 
 import { autoUpdateLogPath } from "../../bootstrap/auto-update/updater-log.js";
 import {
-  detectDefaultBranch,
   IndexFreshnessCheck as FreshnessCheckImpl,
   CollectionRegistry as RegistryImpl,
   resolveRegistryEnv,
-  type CollectionEntry,
   type CollectionRegistry,
   type IndexFreshnessCheck,
-} from "../../core/api/public/index.js";
+} from "../../core/api/index.js";
+import { detectDefaultBranch, type CollectionEntry } from "../../core/api/public/index.js";
 import { runUpdater } from "../auto-update/run-updater.js";
 
 export type AutoUpdateCliAction = "enable" | "disable" | "status" | "run";

@@ -20,8 +20,12 @@
 
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { LanguageCapability } from "../../contracts/types/language.js";
-import type { CollectionEntry, PathCollectionResolver, ProjectInfo } from "../../contracts/types/registry.js";
-import type { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
+import type {
+  CollectionEntry,
+  PathCollectionResolver,
+  ProjectInfo,
+  RegistryLookup,
+} from "../../contracts/types/registry.js";
 import type {
   AddDocumentsRequest,
   CollectionInfo,
@@ -206,14 +210,14 @@ export interface App {
    *
    * @throws the path-validation errors for a bad `path`.
    */
-  resolveBaseIndexEntry: (registry: CollectionRegistry, path: string) => CollectionEntry | null;
+  resolveBaseIndexEntry: (registry: RegistryLookup, path: string) => CollectionEntry | null;
   /**
    * The shared path→collection resolver (`createPathCollectionResolver`): the
    * entry that claims the path wins, the deterministic path hash — pinned to
    * the canonical spelling — is only its fallback (bd tea-rags-mcp-dxa9w).
    * Registry caller-supplied, same as {@link App.resolveBaseIndexEntry}.
    */
-  createPathCollectionResolver: (registry: CollectionRegistry) => PathCollectionResolver;
+  createPathCollectionResolver: (registry: RegistryLookup) => PathCollectionResolver;
 
   // -- Provider availability — sync query used by MCP tool registrars to
   // skip registration when a required trajectory provider is not loaded.

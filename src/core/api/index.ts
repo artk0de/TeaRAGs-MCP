@@ -203,6 +203,40 @@ export {
 } from "../domains/maintenance/migration/database/index.js";
 export { WorktreeProvisioner } from "../domains/maintenance/worktree/index.js";
 
-// Project registry types re-exported from infra (public surface)
-export type { AmbientEnvRole, CollectionEntry, ProjectInfo } from "../domains/maintenance/registry/index.js";
+// ── Project registry runtime (moved off the contract barrel, k7kmu C3) ──
+// The env replay/seed/backend-resolution functions and the registry class are
+// assembly-surface symbols: their consumers are cli commands and bootstrap,
+// both of which import this barrel. The CONTRACT surface (`api/public`) keeps
+// the types and the pure alias regex only (from `contracts/`).
 export { CollectionRegistry } from "../domains/maintenance/registry/index.js";
+export {
+  REGISTRY_ENV_ALLOWLIST,
+  REGISTRY_ENV_GROUPS,
+  canonicalRegistryEnvKeys,
+  registryEnvGroupMembers,
+  editRegistryEnv,
+  outerEnvForRegistryEntry,
+  pickRegistryEntry,
+  pickRegistryEnvSeed,
+  replayableRegistryEnv,
+  replayRegistryEnv,
+  resolveRegistryEnv,
+  RegistryQdrantBackendUnresolvedError,
+  resolveRegistryQdrantBackend,
+} from "../domains/maintenance/registry/index.js";
+export type { AmbientEnvRole, CollectionEntry, ProjectInfo } from "../domains/maintenance/registry/index.js";
+export type { RegistryLookup } from "../contracts/types/registry.js";
+
+// ── Index freshness — auto-update watcher decision surface (hpg2; moved off
+// the contract barrel by k7kmu C3 — a runtime domain edge) ──
+export {
+  AUTO_UPDATE_FAILURE_BACKOFF_MS,
+  AUTO_UPDATE_RUN_TTL_MS,
+  IndexFreshnessCheck,
+} from "../domains/maintenance/freshness/index.js";
+export type { IndexFreshnessVerdict } from "../domains/maintenance/freshness/index.js";
+
+// The auto-update updater tells "the collection is already indexing" apart
+// from a failed run (bd tea-rags-mcp-62pgi; moved off the contract barrel by
+// k7kmu C3 — a runtime domain edge).
+export { IndexingAlreadyInProgressError } from "../domains/ingest/errors/index.js";

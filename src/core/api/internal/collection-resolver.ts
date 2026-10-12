@@ -13,10 +13,14 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 import { validatePathSync } from "../../adapters/filesystem/path-canonicalization.js";
 import { findGitToplevel, resolveGitCommonDir } from "../../adapters/vcs/index.js";
-import type { CollectionEntry, PathCollectionResolver, ResolveInput } from "../../contracts/types/registry.js";
+import type {
+  CollectionEntry,
+  PathCollectionResolver,
+  RegistryLookup,
+  ResolveInput,
+} from "../../contracts/types/registry.js";
 import type { WorkingTree } from "../../contracts/types/working-tree.js";
 import { CollectionNotFoundError } from "../../domains/explore/index.js";
-import type { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
 import { collectionAliasOfRegistryEntry, resolveCollectionName } from "../../primitives/ids/index.js";
 import {
   CollectionNotProvidedError,
@@ -39,7 +43,7 @@ export type { ResolveInput };
  *   4. none — CollectionNotProvidedError.
  */
 export function resolveCollection(
-  registry: CollectionRegistry,
+  registry: RegistryLookup,
   input: ResolveInput,
 ): { collectionName: string; path?: string } {
   if (input.collection) {
@@ -173,7 +177,7 @@ export type IndexExistenceCheck = (collectionName: string) => Promise<boolean>;
  * check wired (unit wiring) → the tree as resolved.
  */
 export async function resolveIndexedWorkingTree(
-  registry: CollectionRegistry,
+  registry: RegistryLookup,
   input: ResolveInput,
   indexExists: IndexExistenceCheck | undefined,
 ): Promise<WorkingTree> {
@@ -183,7 +187,7 @@ export async function resolveIndexedWorkingTree(
   return workingTree;
 }
 
-export function resolveWorkingTree(registry: CollectionRegistry, input: ResolveInput): WorkingTree {
+export function resolveWorkingTree(registry: RegistryLookup, input: ResolveInput): WorkingTree {
   if (input.path !== undefined) {
     const absolutePath = resolve(input.path);
     if (!existsSync(absolutePath) && findGitToplevel(dirname(absolutePath)) !== undefined) {
@@ -235,7 +239,7 @@ export function resolveWorkingTree(registry: CollectionRegistry, input: ResolveI
  *
  * @throws the {@link resolveWorkingTree} validation errors for a bad path.
  */
-export function resolveBaseIndexEntry(registry: CollectionRegistry, path: string): CollectionEntry | null {
+export function resolveBaseIndexEntry(registry: RegistryLookup, path: string): CollectionEntry | null {
   return registry.get(resolveWorkingTree(registry, { path }).baseIndex.collectionName);
 }
 
@@ -293,7 +297,7 @@ interface SameRepositoryCandidate {
  * Entries with an empty `path` (recoverFromQdrant stubs) belong to no tree.
  */
 function selectSameRepositoryEntry(
-  registry: CollectionRegistry,
+  registry: RegistryLookup,
   treeToplevel: string,
   requestPath: string,
 ): SameRepositoryCandidate | null {
@@ -356,7 +360,7 @@ function findEnclosingNestedRepository(
  * repository, so the superproject's index cannot answer for it, and the
  * path-hash fallback would name a collection nobody created.
  */
-function rejectUnindexedSubmodule(registry: CollectionRegistry, path: string, treeToplevel: string): void {
+function rejectUnindexedSubmodule(registry: RegistryLookup, path: string, treeToplevel: string): void {
   const nested = findEnclosingNestedRepository(treeToplevel);
   if (nested === undefined) return;
   const superCommonDir = resolveGitCommonDir(nested.superproject);
@@ -419,7 +423,7 @@ export type { PathCollectionResolver };
  * relative, symlinked or trailing-slash path still finds the entry it belongs
  * to. Async only because its collaborators hold it as one.
  */
-export function createPathCollectionResolver(registry: CollectionRegistry): PathCollectionResolver {
+export function createPathCollectionResolver(registry: RegistryLookup): PathCollectionResolver {
   // A path resolves to the entry that claims it or to the path hash — a project's
   // LOGICAL name either way, never one of its versioned generations.
   return async (path) => collectionAliasOfRegistryEntry(resolveCollection(registry, { path }));

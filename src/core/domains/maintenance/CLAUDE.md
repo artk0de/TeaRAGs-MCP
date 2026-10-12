@@ -22,7 +22,8 @@
   (`IndexFreshnessCheck#check`), written by the detached updater at the end of
   its run. Both layers read the SAME exported `AUTO_UPDATE_RUN_TTL_MS`
   (`freshness/freshness-check.ts`) — the trigger imports it from
-  `core/api/public`. `AUTO_UPDATE_FAILURE_BACKOFF_MS` applies only to the
+  `core/api/index` (the assembly barrel, since k7kmu C3 moved it off the
+  contract surface). `AUTO_UPDATE_FAILURE_BACKOFF_MS` applies only to the
   cross-process failed-run branch. Why: changing the TTL moves BOTH layers at
   once; what is genuinely split is ownership, not tuning — the in-memory map
   lives in `bootstrap`, a layer this domain cannot import, so the in-process

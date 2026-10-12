@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
+import { primeRegistryRuntime } from "../../../src/cli/prime/registry-runtime.js";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
@@ -119,7 +120,7 @@ describe("runPrime — registry-first codegraph enablement override", () => {
       });
       wireApp();
 
-      await runPrime({ project: "cg", createPathCollectionResolver });
+      await runPrime({ registryRuntime: primeRegistryRuntime(), project: "cg", createPathCollectionResolver });
 
       expect(envAtParseTime).toBe("true");
     } finally {
@@ -152,7 +153,7 @@ describe("runPrime — registry-first codegraph enablement override", () => {
       });
       wireApp();
 
-      await runPrime({ project: "legacy", createPathCollectionResolver });
+      await runPrime({ registryRuntime: primeRegistryRuntime(), project: "legacy", createPathCollectionResolver });
 
       expect(envAtParseTime).toBeUndefined();
     } finally {

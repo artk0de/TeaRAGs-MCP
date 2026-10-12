@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AutoUpdateTrigger } from "../../../src/bootstrap/auto-update/trigger.js";
-import type { CollectionEntry, IndexFreshnessVerdict } from "../../../src/core/api/public/index.js";
+import type { CollectionEntry, IndexFreshnessVerdict } from "../../../src/core/api/index.js";
 
 const NOW = 1_700_000_000_000;
 

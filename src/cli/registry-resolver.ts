@@ -2,12 +2,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { resolveRegistryEnvCodeDefaults } from "../bootstrap/config/index.js";
+import { CollectionRegistry, resolveRegistryQdrantBackend } from "../core/api/index.js";
 import {
-  CollectionRegistry,
   EMBEDDED_MARKER,
   ProjectNotRegisteredError,
   ProjectPathMissingError,
-  resolveRegistryQdrantBackend,
   type CollectionEntry,
 } from "../core/api/public/index.js";
 

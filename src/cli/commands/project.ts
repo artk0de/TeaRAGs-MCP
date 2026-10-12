@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import type { CommandModule } from "yargs";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
-import { CollectionRegistry } from "../../core/api/public/index.js";
+import { CollectionRegistry } from "../../core/api/index.js";
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");

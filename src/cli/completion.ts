@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { resolveRegistryEnvCodeDefaults } from "../bootstrap/config/index.js";
-import { CollectionRegistry } from "../core/api/public/index.js";
+import { CollectionRegistry } from "../core/api/index.js";
 import { recallCallToolNames } from "./call/tool-name-cache.js";
 
 /**

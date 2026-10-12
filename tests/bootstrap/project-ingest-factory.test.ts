@@ -38,6 +38,7 @@ interface FakeRegistry {
   findByName: (n: string) => CollectionEntry | null;
   findByPath: (p: string) => CollectionEntry | null;
   list: () => CollectionEntry[];
+  get: (collectionName: string) => CollectionEntry | null;
 }
 
 /** Registry serving one entry per path, with no cross-path fallback. */
@@ -46,6 +47,7 @@ function registryOf(entries: CollectionEntry[]): FakeRegistry {
     findByName: (n) => entries.find((e) => e.name === n) ?? null,
     findByPath: (p) => entries.find((e) => e.path === p) ?? null,
     list: () => entries,
+    get: (c) => entries.find((e) => e.collectionName === c) ?? null,
   };
 }
 

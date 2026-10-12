@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyProjectDefaults, type ProjectAwareArgs } from "../../src/cli/registry-resolver.js";
+import { RegistryQdrantBackendUnresolvedError } from "../../src/core/api/index.js";
 import { ProjectNotRegisteredError } from "../../src/core/api/public/errors.js";
-import { RegistryQdrantBackendUnresolvedError } from "../../src/core/api/public/index.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/collection-registry.js";
 
 // The resolver falls back to `~/.tea-rags` when TEA_RAGS_DATA_DIR is unset, and

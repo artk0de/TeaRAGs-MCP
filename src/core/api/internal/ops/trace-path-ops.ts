@@ -39,6 +39,7 @@ import {
   type SymbolId,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
 import type { DeclaredVisibilityIndex } from "../../../domains/explore/declared-visibility-index.js";
 import {
@@ -51,7 +52,6 @@ import {
   type WorkingTreeView,
 } from "../../../domains/explore/index.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolveInheritedMemberDefiner } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
 import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
@@ -79,7 +79,7 @@ export interface TracePathOpsDeps {
   pool: GraphDbClientPool;
   qdrant: QdrantManager;
   reranker: Reranker;
-  collectionRegistry: CollectionRegistry;
+  collectionRegistry: RegistryLookup;
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
   /** The `workingTree` marker source (bd tea-rags-mcp-xi2r9). Optional: absent (unit wiring), no marker. */
   workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;

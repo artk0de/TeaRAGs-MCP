@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { mergeTunedEnvIntoRegistry, parseTunedEnvFile } from "../../../src/cli/commands/tune-registry-write.js";
-import { CollectionRegistry, replayRegistryEnv } from "../../../src/core/api/public/index.js";
+import { CollectionRegistry, replayRegistryEnv } from "../../../src/core/api/index.js";
 
 const ENV_FILE = `# Tea Rags MCP - Tuned Environment Variables
 # Generated: 2026-07-05T00:00:00.000Z

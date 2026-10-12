@@ -23,9 +23,9 @@ import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters
 import type { GitFileMaintenanceSignals } from "../../../contracts/types/architecture-report.js";
 import type { RelPath } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { WorkingTree } from "../../../contracts/types/working-tree.js";
 import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
-import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import type {
   ReviewChangesRequest,
@@ -48,7 +48,7 @@ import {
 
 export interface ReviewChangesOpsDeps {
   pool: Pick<GraphDbClientPool, "acquireReader" | "hasDatabase">;
-  collectionRegistry: CollectionRegistry;
+  collectionRegistry: RegistryLookup;
   /**
    * Resolve an addressed collection name to the ACTIVE underlying collection
    * (the codegraph pool opens a DuckDB file by literal name; see
