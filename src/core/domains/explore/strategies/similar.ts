@@ -22,15 +22,20 @@
  */
 
 import { READ_PATH_EMBEDDING_RECOVERY_WAIT_MS, type EmbeddingProvider } from "../../../adapters/embeddings/base.js";
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { QdrantPointNotFoundError } from "../../../adapters/qdrant/errors.js";
 import { toQdrantPointId } from "../../../adapters/qdrant/point-id.js";
+import type {
+  QdrantCollectionCatalog,
+  QdrantPayloadIndexAdmin,
+  QdrantPointReader,
+  QdrantSearchReader,
+} from "../../../adapters/qdrant/ports.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { ChunkNotFoundError } from "../errors/index.js";
-import type { Reranker } from "../reranker.js";
+import type { RerankerPort } from "../reranker-port.js";
 import { recommendWorkingTreeScore, type WorkingTreeDenseVectors } from "../working-tree/dense-floor.js";
 import type { WorkingTreeView } from "../working-tree/overlay.js";
 import { fuseWorkingTreeRows, workingTreeRowAdmitted } from "../working-tree/sparse-floor.js";
@@ -53,8 +58,8 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
   readonly type = "similar" as const;
 
   constructor(
-    qdrant: QdrantManager,
-    reranker: Reranker,
+    qdrant: QdrantSearchReader & QdrantPointReader & QdrantPayloadIndexAdmin & QdrantCollectionCatalog,
+    reranker: RerankerPort,
     payloadSignals: PayloadSignalDescriptor[],
     essentialKeys: string[],
     private readonly embeddings: EmbeddingProvider,

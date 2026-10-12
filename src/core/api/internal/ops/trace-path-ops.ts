@@ -51,7 +51,7 @@ import {
   type WorkingTreeOverlay,
   type WorkingTreeView,
 } from "../../../domains/explore/index.js";
-import type { Reranker } from "../../../domains/explore/reranker.js";
+import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
 import { resolveInheritedMemberDefiner } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
 import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
@@ -78,7 +78,7 @@ const HYDRATION_SCROLL_HEADROOM = 8;
 export interface TracePathOpsDeps {
   pool: GraphDbClientPool;
   qdrant: QdrantManager;
-  reranker: Reranker;
+  reranker: RerankerPort;
   collectionRegistry: RegistryLookup;
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
   /** The `workingTree` marker source (bd tea-rags-mcp-xi2r9). Optional: absent (unit wiring), no marker. */

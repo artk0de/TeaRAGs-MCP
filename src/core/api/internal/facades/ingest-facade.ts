@@ -23,7 +23,7 @@ import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { ChunkSetBumpScopes } from "../../../contracts/types/rechunk.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import type { Reranker } from "../../../domains/explore/reranker.js";
+import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
 import type { SynchronizerTuning } from "../../../domains/ingest/index.js";
 import { CollectionIndexingLock } from "../../../domains/ingest/infra/index.js";
 import { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
@@ -70,7 +70,7 @@ export interface IngestFacadeDeps {
   statsCache?: StatsCache;
   allPayloadSignals?: PayloadSignalDescriptor[];
   statsAccumulators?: readonly StatsAccumulatorDescriptor[];
-  reranker?: Reranker;
+  reranker?: RerankerPort;
   deleteConfig?: DeletionConfig;
   pipelineTuning?: PipelineTuning;
   syncTuning?: SynchronizerTuning;

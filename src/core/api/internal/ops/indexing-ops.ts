@@ -26,7 +26,7 @@ import type { CollectionRegistryPort } from "../../../contracts/types/registry.j
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
 import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
-import type { Reranker } from "../../../domains/explore/reranker.js";
+import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
 import {
   IndexingAlreadyInProgressError,
   IndexingProcessBuildStaleError,
@@ -102,7 +102,7 @@ export interface IndexingOpsDeps {
   statsCache?: StatsCache;
   allPayloadSignals?: PayloadSignalDescriptor[];
   statsAccumulators?: readonly StatsAccumulatorDescriptor[];
-  reranker?: Reranker;
+  reranker?: RerankerPort;
   gitTimePeriods?: { fileMonths: number; chunkMonths: number };
   modelGuard?: EmbeddingModelGuard;
   /**
@@ -267,7 +267,7 @@ export class IndexingOps {
   private readonly statsCache?: StatsCache;
   private readonly allPayloadSignals?: PayloadSignalDescriptor[];
   private readonly statsAccumulators: readonly StatsAccumulatorDescriptor[];
-  private readonly reranker?: Reranker;
+  private readonly reranker?: RerankerPort;
   private readonly gitTimePeriods?: { fileMonths: number; chunkMonths: number };
   private readonly modelGuard?: EmbeddingModelGuard;
   private readonly codegraphPool?: GraphDbClientPool;

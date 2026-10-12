@@ -49,7 +49,6 @@
  * the comparison so `updated=` and `updated` remain distinct.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import {
   matchesTextIndexed,
   SYMBOL_SEPARATORS,
@@ -57,6 +56,12 @@ import {
   symbolIdTextToken,
 } from "../../../adapters/qdrant/filters/symbolid-text-token.js";
 import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
+import type {
+  QdrantCollectionCatalog,
+  QdrantPayloadIndexAdmin,
+  QdrantPointReader,
+  QdrantSearchReader,
+} from "../../../adapters/qdrant/ports.js";
 import {
   isCodegraphUnavailableError,
   type CodegraphUnavailableError,
@@ -75,7 +80,8 @@ import { isTestExampleChunk, memberOwnerOf, splitFragmentBase, type ScrollChunk 
 import { historyClockRerankOption } from "../history-clock.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import { applyEssentialSignals, keepPathPatternMatches } from "../post-process.js";
-import type { Reranker, RerankMode } from "../reranker.js";
+import type { RerankerPort } from "../reranker-port.js";
+import type { RerankMode } from "../reranker.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { examplePackMember } from "../test-pack.js";
 import { relativePathOf } from "../working-tree/substitute.js";
@@ -102,8 +108,8 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
   protected override readonly hasChunkFloor = true;
 
   constructor(
-    qdrant: QdrantManager,
-    reranker: Reranker,
+    qdrant: QdrantSearchReader & QdrantPointReader & QdrantPayloadIndexAdmin & QdrantCollectionCatalog,
+    reranker: RerankerPort,
     payloadSignals: PayloadSignalDescriptor[],
     essentialKeys: string[],
     private readonly registry: TrajectoryFilterBuilder,

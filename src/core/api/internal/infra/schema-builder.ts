@@ -12,7 +12,7 @@
 import { z } from "zod";
 
 import { PROJECT_NAME_RE } from "../../../contracts/types/registry.js";
-import type { Reranker } from "../../../domains/explore/reranker.js";
+import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
 import { ConfigValueInvalidError } from "../../../primitives/errors/index.js";
 import type { RerankSchema, SchemaBuilderPort, ScoringWeightsSchema } from "../../public/schema-builder-port.js";
 
@@ -37,7 +37,7 @@ const collectionIdentifierSchema = z.object({
 });
 
 export class SchemaBuilder implements SchemaBuilderPort {
-  constructor(private readonly reranker: Reranker) {}
+  constructor(private readonly reranker: RerankerPort) {}
 
   /**
    * Static — does not depend on instance state.

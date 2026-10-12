@@ -8,7 +8,7 @@
  */
 
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantCollectionCatalog, QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { EnrichmentHealthMapper, EnrichmentMarkerMap } from "../../../contracts/types/enrichment.js";
@@ -20,7 +20,7 @@ import { applySignalFloors, floorsForSignal } from "../signal-floors.js";
 
 export class IndexMetricsQuery {
   constructor(
-    private readonly qdrant: QdrantManager,
+    private readonly qdrant: QdrantCollectionCatalog & QdrantPointReader,
     private readonly statsCache: StatsCache,
     private readonly payloadSignals: PayloadSignalDescriptor[],
     /**

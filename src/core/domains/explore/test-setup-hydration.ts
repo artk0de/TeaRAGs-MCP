@@ -46,9 +46,9 @@
  * so no setup. Untouched files keep the index scroll.
  */
 
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { relativePathExactFilter } from "../../adapters/qdrant/filters/relative-path-exact.js";
 import { exactMatchOnTextIndexed } from "../../adapters/qdrant/filters/text-indexed-exact.js";
+import type { QdrantPointReader } from "../../adapters/qdrant/ports.js";
 import { TEST_SCOPE_PARENT_TYPE } from "../../contracts/types/chunker.js";
 import { isLineRange, slicePack } from "./test-pack.js";
 import type { WorkingTreeView } from "./working-tree/overlay.js";
@@ -83,8 +83,8 @@ interface SetupMember {
 export class TestSetupHydrator {
   /** `servesRelativePathExact` absent → the file set is always named by text+value pairs. */
   constructor(
-    private readonly qdrant: Pick<QdrantManager, "scrollFiltered"> &
-      Partial<Pick<QdrantManager, "servesRelativePathExact">>,
+    private readonly qdrant: Pick<QdrantPointReader, "scrollFiltered"> &
+      Partial<Pick<QdrantPointReader, "servesRelativePathExact">>,
   ) {}
 
   /**

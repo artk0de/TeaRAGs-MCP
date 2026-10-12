@@ -41,12 +41,12 @@
  * against 160 ms.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import {
   relativePathExactFilter,
   relativePathExactGroups,
 } from "../../../adapters/qdrant/filters/relative-path-exact.js";
 import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
+import type { QdrantCollectionCatalog, QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import type {
   WorkingTreeBasePoint,
   WorkingTreeBasePointTier,
@@ -117,8 +117,9 @@ export class WorkingTreeTouchedBasePoints {
 
   constructor(
     /** `servesRelativePathExact` absent → every collection reads per path, as before bd tea-rags-mcp-ejio7. */
-    private readonly qdrant: Pick<QdrantManager, "scrollFiltered" | "getCollectionInfo"> &
-      Partial<Pick<QdrantManager, "servesRelativePathExact">>,
+    private readonly qdrant: Pick<QdrantPointReader, "scrollFiltered"> &
+      Pick<QdrantCollectionCatalog, "getCollectionInfo"> &
+      Partial<Pick<QdrantPointReader, "servesRelativePathExact">>,
     private readonly deps: WorkingTreeTouchedBasePointsDeps = {},
   ) {
     this.now = deps.now ?? Date.now;

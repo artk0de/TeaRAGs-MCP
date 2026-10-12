@@ -8,7 +8,8 @@ import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor, RerankableResult } from "../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import { historyClockRerankOption } from "./history-clock.js";
-import { buildSignalKeyMap, type Reranker } from "./reranker.js";
+import type { RerankerPort } from "./reranker-port.js";
+import { buildSignalKeyMap } from "./reranker.js";
 
 interface OrderByField {
   key: string;
@@ -208,7 +209,7 @@ export class RankModule {
   private readonly orderBy: OrderByFieldResolver;
 
   constructor(
-    private readonly reranker: Reranker,
+    private readonly reranker: RerankerPort,
     descriptors: DerivedSignalDescriptor[],
     /** The payload signal descriptors the reranker reads — see {@link OrderByFieldResolver}. */
     payloadSignals: PayloadSignalDescriptor[],
