@@ -42,7 +42,13 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       `${CHUNKER_ROOT}/character.ts`,
       `${CHUNKER_ROOT}/nesting-line-splitter.ts`,
       `${CHUNKER_ROOT}/ast-symbol-splitter.ts`,
-      `${CHUNKER_ROOT}/config.ts`,
+      // The language tables behind a leaf module: `chunker/config.ts` and
+      // `chunker/utils/language-detector.ts` became `language-config/` (bd
+      // tea-rags-mcp-g7w8f G4). Stated as the whole directory — the shape that
+      // digests a file the moment the rule's `language-config/*.ts` glob
+      // claims it, the exact miss bd tea-rags-mcp-1abzy caught for the moved
+      // three.
+      `${CHUNKER_ROOT}/language-config`,
       `${CHUNKER_ROOT}/materialize.ts`,
       `${CHUNKER_ROOT}/symbol-mass.ts`,
       `${CHUNKER_ROOT}/symbol-id-disambiguator.ts`,
