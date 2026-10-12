@@ -12,7 +12,11 @@
  * window, the two levels, and the partial-outcome assessment.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type {
+  QdrantCollectionCatalog,
+  QdrantOptimizerControl,
+  QdrantPointWriter,
+} from "../../../adapters/qdrant/ports.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import type { ChunkLookupEntry, FileChanges, ProgressCallback } from "../../../types.js";
@@ -25,7 +29,7 @@ import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.
 import type { QuarantineStore } from "../sync/index.js";
 
 export interface ReindexExecutionParams {
-  qdrant: QdrantManager;
+  qdrant: QdrantOptimizerControl & QdrantCollectionCatalog & QdrantPointWriter;
   /** Physical collection the delta is written into. */
   targetCollection: PhysicalCollectionName;
   absolutePath: string;

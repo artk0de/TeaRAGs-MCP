@@ -12,12 +12,12 @@
  * helper's contract iterates per id.
  */
 
-import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import { exactMatchOnTextIndexed } from "../../../../adapters/qdrant/filters/text-indexed-exact.js";
+import type { QdrantPointWriter } from "../../../../adapters/qdrant/ports.js";
 
 export class BatchDeleteExecutor {
   constructor(
-    private readonly qdrant: QdrantManager,
+    private readonly qdrant: QdrantPointWriter,
     private readonly collection: string,
   ) {}
 

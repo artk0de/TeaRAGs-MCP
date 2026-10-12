@@ -6,11 +6,11 @@
  * pause/resume pair is idempotent and heals state on failure.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantOptimizerControl } from "../../../adapters/qdrant/ports.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 
 export class OptimizerLifecycle {
-  constructor(private readonly qdrant: QdrantManager) {}
+  constructor(private readonly qdrant: QdrantOptimizerControl) {}
 
   async with<T>(collection: string, fn: () => Promise<T>): Promise<T> {
     await this.qdrant.pauseOptimizer(collection);

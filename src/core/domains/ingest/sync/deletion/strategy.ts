@@ -6,7 +6,7 @@
  * Level 2: Individual filter-based deletion (slow, last resort)
  */
 
-import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { QdrantCollectionCatalog, QdrantPointWriter } from "../../../../adapters/qdrant/ports.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type { ProgressCallback } from "../../../../types.js";
 import { pipelineLog } from "../../pipeline/infra/debug-log/index.js";
@@ -42,7 +42,7 @@ export interface DeletionConfig {
 export type PreDeleteHook = (paths: string[]) => Promise<void>;
 
 export async function performDeletion(
-  qdrant: QdrantManager,
+  qdrant: QdrantCollectionCatalog & QdrantPointWriter,
   collectionName: string,
   filesToDelete: string[],
   deleteConfig: DeletionConfig,
