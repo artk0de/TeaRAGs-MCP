@@ -1,9 +1,10 @@
 /**
  * MCP-side auto-update trigger (hpg2, spec §3): implements the structural
- * `McpAutoUpdateTrigger` seam from `mcp/tools/explore.ts`. One instance per
- * MCP server process — the AutoUpdateTrigger inside carries the in-memory
- * TTL, so the freshness check itself runs at most once per 120 s per
- * collection regardless of tool-call rate.
+ * `McpAutoUpdateTrigger` port from `core/api/public`
+ * (`auto-update-trigger.ts`). One instance per MCP server process — the
+ * AutoUpdateTrigger inside carries the in-memory TTL, so the freshness check
+ * itself runs at most once per 120 s per collection regardless of tool-call
+ * rate.
  *
  * Request → collection resolution is registry-backed and cheap: `collection`
  * verbatim, `project` via alias lookup, `path` through the shared resolver
@@ -21,7 +22,7 @@ import {
   outerEnvForRegistryEntry,
   resolveCollection,
 } from "../../core/api/index.js";
-import type { McpAutoUpdateTrigger } from "../../mcp/tools/explore.js";
+import type { McpAutoUpdateTrigger } from "../../core/api/public/index.js";
 import { resolveRegistryEnvCodeDefaults } from "../config/index.js";
 import { spawnDetachedUpdater } from "./spawner.js";
 import { AutoUpdateTrigger } from "./trigger.js";

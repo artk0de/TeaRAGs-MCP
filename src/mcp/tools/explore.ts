@@ -5,7 +5,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { ExploreResponse, HybridSearchRequest, SemanticSearchRequest } from "../../core/api/public/dto/explore.js";
-import type { App, SchemaBuilderPort } from "../../core/api/public/index.js";
+import type { App, McpAutoUpdateTrigger, SchemaBuilderPort } from "../../core/api/public/index.js";
 import { appendAutoUpdateHint, formatDenseUnavailable, sanitizeRerank, type McpToolResult } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import { SearchResultOutputSchema } from "./output-schemas.js";
@@ -139,16 +139,6 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       }),
   },
 ];
-
-/**
- * Auto-update trigger seam (hpg2) — implemented in bootstrap (composition
- * root), consumed here structurally so mcp never imports bootstrap. `hintFor`
- * fires the freshness check + detached spawn behind the scenes and returns a
- * one-line hint for the response (or null). Contract: never throws, ~1 ms.
- */
-export interface McpAutoUpdateTrigger {
-  hintFor: (request: { collection?: string; project?: string; path?: string }) => string | null;
-}
 
 export function registerSearchTools(
   server: McpServer,

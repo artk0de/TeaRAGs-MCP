@@ -7,13 +7,13 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App, SchemaBuilderPort } from "../../core/api/public/index.js";
+import type { App, McpAutoUpdateTrigger, SchemaBuilderPort } from "../../core/api/public/index.js";
 import { createRegisterTool, type HealthProbes } from "../middleware/error-handler.js";
 import { registerCodeTools } from "./code.js";
 import { registerCodegraphTools } from "./codegraph.js";
 import { registerCollectionTools } from "./collection.js";
 import { registerDocumentTools } from "./document.js";
-import { registerSearchTools, type McpAutoUpdateTrigger } from "./explore.js";
+import { registerSearchTools } from "./explore.js";
 import { registerProjectTools } from "./list-projects.js";
 import { registerRegisterProjectTool } from "./register-project.js";
 import { registerReviewChangesTool } from "./review-changes.js";

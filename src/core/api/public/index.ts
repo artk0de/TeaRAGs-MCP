@@ -285,6 +285,14 @@ export { formatWorktreeSeedReport } from "../../contracts/worktree-seed-report.j
 // injects it (bd tea-rags-mcp-89k7k.22, tea-rags-mcp-k7kmu C2).
 export type { RerankSchema, SchemaBuilderPort, ScoringWeightsSchema } from "./schema-builder-port.js";
 
+// ── Auto-update trigger port (mcp search tools) ───────────────────────
+// The seam bootstrap implements for the search tools' auto-update hint,
+// moved here from `mcp/tools/explore.ts` so bootstrap's implementation and
+// mcp's consumer both type against the stable contract layer (bd
+// tea-rags-mcp-k7kmu C13). The runtime trigger stays in
+// `bootstrap/auto-update/`.
+export type { McpAutoUpdateTrigger } from "./auto-update-trigger.js";
+
 // ── Index / enrichment runtime metrics (consumed by mcp formatters) ───
 // Defined in core/types.ts (root) for now — relocation into contracts/types
 // is tracked separately.
