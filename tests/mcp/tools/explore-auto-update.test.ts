@@ -3,7 +3,8 @@ import { z } from "zod";
 
 import type { App, SchemaBuilder } from "../../../src/core/api/index.js";
 import type { ExploreResponse } from "../../../src/core/api/public/dto/explore.js";
-import { registerSearchTools, type McpAutoUpdateTrigger } from "../../../src/mcp/tools/explore.js";
+import type { McpAutoUpdateTrigger } from "../../../src/core/api/public/index.js";
+import { registerSearchTools } from "../../../src/mcp/tools/explore.js";
 import { TYPED_FILTER_PARAM_NAMES } from "../../../src/mcp/tools/schemas.js";
 
 type ToolHandler = (
