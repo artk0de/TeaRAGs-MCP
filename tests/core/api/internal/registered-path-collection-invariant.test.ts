@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildMcpAutoUpdateTrigger } from "../../../../src/bootstrap/auto-update/mcp-hint.js";
 import { resolveRegistryEnvCodeDefaults } from "../../../../src/bootstrap/config/registry-env-code-defaults.js";
+import { primeRegistryRuntime } from "../../../../src/cli/prime/registry-runtime.js";
 import { runPrime } from "../../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../../src/cli/update-check/types.js";
@@ -241,7 +242,12 @@ describe("prime at a relocated project's path", () => {
     });
 
     const maybeSpawn = vi.fn().mockReturnValue("disabled");
-    await runPrime({ path: projectDir, createPathCollectionResolver, autoUpdateTrigger: { maybeSpawn } });
+    await runPrime({
+      registryRuntime: primeRegistryRuntime(),
+      path: projectDir,
+      createPathCollectionResolver,
+      autoUpdateTrigger: { maybeSpawn },
+    });
 
     // A null entry skips the trigger entirely — the call itself is the proof
     // the lookup resolved, and the argument is the proof it resolved right.

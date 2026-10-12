@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
+import { primeRegistryRuntime } from "../../../src/cli/prime/registry-runtime.js";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import { createPathCollectionResolver } from "../../../src/core/api/index.js";
 import type { CollectionEntry } from "../../../src/core/contracts/types/registry.js";
@@ -101,7 +102,7 @@ describe("runPrime — registry qdrant backend resolution", () => {
   it("re-resolves the live daemon for a pre-sentinel entry pinning a frozen ephemeral port", async () => {
     register({ qdrantUrl: "http://127.0.0.1:58372", teaRagsVersion: "1.28.0" });
 
-    await runPrime({ project: "marketplace", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), project: "marketplace", createPathCollectionResolver });
 
     expect(pingMock).toHaveBeenCalledTimes(1);
     expect(pingMock).toHaveBeenCalledWith(LIVE_DAEMON_URL);
@@ -110,7 +111,7 @@ describe("runPrime — registry qdrant backend resolution", () => {
   it("re-resolves the live daemon for the embedded sentinel", async () => {
     register({ qdrantUrl: "embedded", qdrantEmbedded: true, teaRagsVersion: "1.44.2" });
 
-    await runPrime({ project: "marketplace", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), project: "marketplace", createPathCollectionResolver });
 
     expect(pingMock).toHaveBeenCalledWith(LIVE_DAEMON_URL);
   });
@@ -118,7 +119,7 @@ describe("runPrime — registry qdrant backend resolution", () => {
   it("pings the recorded address of an external Qdrant", async () => {
     register({ qdrantUrl: "http://qdrant.internal:6333", teaRagsVersion: "1.28.0" });
 
-    await runPrime({ project: "marketplace", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), project: "marketplace", createPathCollectionResolver });
 
     expect(pingMock).toHaveBeenCalledWith("http://qdrant.internal:6333");
   });
@@ -127,7 +128,7 @@ describe("runPrime — registry qdrant backend resolution", () => {
     // 1.33.0-era contradiction: flag says embedded, address says external.
     register({ qdrantUrl: "http://qdrant.internal:6333", qdrantEmbedded: true, teaRagsVersion: "1.33.0" });
 
-    await runPrime({ project: "marketplace", createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), project: "marketplace", createPathCollectionResolver });
 
     expect(pingMock).toHaveBeenCalledWith(LIVE_DAEMON_URL);
     expect(writeMock.mock.calls.map((c) => String(c[0])).join("")).toContain("warm-up pending");

@@ -5,10 +5,9 @@ import { join } from "node:path";
 import type { Argv, CommandModule } from "yargs";
 
 import { assertRegistryEnvValueParses, resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
-import { ProjectRegistryOps } from "../../core/api/index.js";
+import { CollectionRegistry, ProjectRegistryOps } from "../../core/api/index.js";
 import {
   chunkPointsFilter,
-  CollectionRegistry,
   InvalidParameterError,
   PROJECT_NAME_RE,
   QdrantManager,

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { indexCodebaseCommand } from "../../../src/cli/commands/index-codebase.js";
 import { createCli } from "../../../src/cli/create-cli.js";
-import { CollectionRegistry } from "../../../src/core/api/public/index.js";
+import { CollectionRegistry } from "../../../src/core/api/index.js";
 
 // Worker fork + supervisor are stubbed so no real child process spawns.
 // Partial mock: keep the rest of node:child_process (execFile etc. are used

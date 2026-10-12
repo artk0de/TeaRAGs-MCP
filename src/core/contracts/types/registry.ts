@@ -8,6 +8,25 @@ import type { CollectionAlias } from "./collection-identity.js";
 import type { LanguageCodeVersions } from "./language.js";
 
 /**
+ * Valid project-alias regex. Constraints: lowercase letters, digits, dash,
+ * underscore; must start with letter or digit; max 64 chars.
+ *
+ * **Single source of truth** (relocated from
+ * `domains/maintenance/registry/constants.ts`, bd tea-rags-mcp-k7kmu C3: a
+ * pure regex is contract vocabulary, and the contract barrel re-exporting it
+ * from the domain was a stable→unstable runtime edge). Consumed by:
+ * - CollectionRegistry.setName (runtime validation)
+ * - ProjectRegistryOps.register (input validation)
+ * - api/internal/infra/schema-builder.ts (Zod schema)
+ * - mcp/tools/register-project (Zod schema via PROJECT_NAME_RE.source)
+ * - mcp/tools/schemas.ts (Zod schema via PROJECT_NAME_RE.source)
+ * - cli/commands/projects.ts (describe string)
+ *
+ * Do not redeclare locally — import from this file.
+ */
+export const PROJECT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/**
  * Git state the index represents, captured at Index/ReindexPipeline finalize.
  * Written through `record()` on every run (pipeline owns it). Absent when the
  * project path is not a git repository or for pre-existing registry entries.
@@ -401,11 +420,22 @@ export interface RegistryEnvGroup {
 // ── Registry seed-picking port (relocated from
 // domains/maintenance/registry/env-resolution.ts, bd tea-rags-mcp-0qaht.36) ──
 
-/** Structural subset of CollectionRegistry used by env seed picking — keeps tests fake-friendly. */
+/**
+ * The READ surface of the project registry: entry lookups only, no writes.
+ *
+ * Grew out of env seed picking (bd tea-rags-mcp-0qaht.36) and now also backs
+ * the App resolver methods and the read-only registry holders (k7kmu C3+R1,
+ * decision D2 = extend this port rather than invent a new one): the api layer
+ * and the drift monitors name the contract they are handed instead of the
+ * concrete `CollectionRegistry`, so a holder that only reads cannot grow a
+ * write dependency unnoticed. The concrete class in
+ * `domains/maintenance/registry/` satisfies it structurally.
+ */
 export interface RegistryLookup {
   findByName: (name: string) => CollectionEntry | null;
   findByPath: (path: string) => CollectionEntry | null;
   list: () => CollectionEntry[];
+  get: (collectionName: string) => CollectionEntry | null;
 }
 
 // ── Qdrant backend vocabulary (relocated from

@@ -15,8 +15,7 @@ import { join } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { applyCallProjectEnv, resolveCallProjectEntry } from "../../../src/cli/call/project-env.js";
-import { resolveBaseIndexEntry } from "../../../src/core/api/index.js";
-import { CollectionRegistry } from "../../../src/core/api/public/index.js";
+import { CollectionRegistry, resolveBaseIndexEntry, resolveRegistryEnv } from "../../../src/core/api/index.js";
 import {
   createGitWorkingTreeFixture,
   prebuildGitWorkingTreeFixture,
@@ -163,7 +162,7 @@ describe("applyCallProjectEnv", () => {
   it("seeds the project's codegraph flag, endpoints and env snapshot into an unset shell", () => {
     const env: NodeJS.ProcessEnv = {};
 
-    applyCallProjectEnv(entry, env);
+    applyCallProjectEnv(entry, env, resolveRegistryEnv);
 
     expect(env.CODEGRAPH_ENABLED).toBe("true");
     expect(env.EMBEDDING_BASE_URL).toBe("http://gpu:11434");
@@ -174,7 +173,7 @@ describe("applyCallProjectEnv", () => {
   it("keeps an explicit shell value over the registry's", () => {
     const env: NodeJS.ProcessEnv = { CODEGRAPH_ENABLED: "false" };
 
-    applyCallProjectEnv(entry, env);
+    applyCallProjectEnv(entry, env, resolveRegistryEnv);
 
     expect(env.CODEGRAPH_ENABLED).toBe("false");
   });
@@ -182,7 +181,7 @@ describe("applyCallProjectEnv", () => {
   it("leaves the env untouched when no project was resolved", () => {
     const env: NodeJS.ProcessEnv = { FOO: "1" };
 
-    applyCallProjectEnv(null, env);
+    applyCallProjectEnv(null, env, resolveRegistryEnv);
 
     expect(env).toEqual({ FOO: "1" });
   });

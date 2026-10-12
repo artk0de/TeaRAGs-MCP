@@ -28,6 +28,7 @@ interface FakeRegistry {
   findByName: (n: string) => CollectionEntry | null;
   findByPath: (p: string) => CollectionEntry | null;
   list: () => CollectionEntry[];
+  get: (collectionName: string) => CollectionEntry | null;
 }
 
 describe("resolveRegistryEnv", () => {
@@ -294,6 +295,7 @@ describe("pickRegistryEntry", () => {
     findByName: (n) => (n === "alpha" ? named : null),
     findByPath: (p) => (p === "/b" ? byPath : null),
     list: () => [older, newer],
+    get: () => null,
   };
 
   it("resolves by project name when given", () => {
@@ -309,7 +311,7 @@ describe("pickRegistryEntry", () => {
   });
 
   it("returns null when the registry is empty and the path is unknown", () => {
-    const empty: FakeRegistry = { findByName: () => null, findByPath: () => null, list: () => [] };
+    const empty: FakeRegistry = { findByName: () => null, findByPath: () => null, list: () => [], get: () => null };
     expect(pickRegistryEntry(empty, { path: "/x" })).toBeNull();
   });
 });
@@ -334,6 +336,7 @@ describe("pickRegistryEnvSeed", () => {
     findByName: (n) => (n === "own" ? own : null),
     findByPath: (p) => (p === "/own" ? own : null),
     list: () => [foreign],
+    get: () => null,
   };
 
   it("keeps a project's own stamp whole, by name or by path", () => {
@@ -359,7 +362,7 @@ describe("pickRegistryEnvSeed", () => {
       tuning: { TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "777", EMBEDDING_PROVIDER: "onnx" },
     });
     const seed = pickRegistryEnvSeed(
-      { findByName: () => null, findByPath: () => null, list: () => [legacy] },
+      { findByName: () => null, findByPath: () => null, list: () => [legacy], get: () => null },
       {
         path: "/brand-new",
       },

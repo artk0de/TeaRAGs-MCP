@@ -25,15 +25,15 @@
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
-import type { IngestFacade } from "../core/api/index.js";
 import {
   pickRegistryEnvSeed,
   registryEnvGroupMembers,
   resolveRegistryEnv,
   type AmbientEnvRole,
   type CollectionEntry,
+  type IngestFacade,
   type RegistryLookup,
-} from "../core/api/public/index.js";
+} from "../core/api/index.js";
 
 export interface ProjectIngestFactoryDeps {
   /** Project registry the target path is looked up in. */

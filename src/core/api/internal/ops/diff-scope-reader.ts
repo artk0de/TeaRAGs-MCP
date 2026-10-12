@@ -25,7 +25,7 @@ import {
   rebaseGitPathsOntoRoot,
   type AddedLineRange,
 } from "../../../adapters/vcs/index.js";
-import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
+import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import { InvalidParameterError } from "../../public/errors.js";
 import { ontologyNonProductionPathFilter } from "./ontology-report-ops.js";
 
@@ -218,7 +218,7 @@ function byReviewRelevance(
  * unknown or they agree — the verdicts then rest on the tree's own commit.
  */
 export function readTreeLag(
-  collectionRegistry: CollectionRegistry,
+  collectionRegistry: RegistryLookup,
   collectionName: string,
   workTree: string,
 ): DiffTreeLag | undefined {

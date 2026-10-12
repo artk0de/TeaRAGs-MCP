@@ -19,12 +19,12 @@ import {
   type OptimizerRecoveryOutcome,
   type OptimizerRecoveryTarget,
 } from "../../../contracts/optimizer-recovery.js";
+import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import { NotIndexedError } from "../../../domains/ingest/errors/index.js";
-import type { CollectionRegistry } from "../../../domains/maintenance/registry/collection-registry.js";
 import { resolveCollection } from "../collection-resolver.js";
 
 export interface OptimizerRecoveryDeps {
-  registry: CollectionRegistry;
+  registry: RegistryLookup;
   qdrant: Pick<QdrantManager, "reapplyOptimizerConfig" | "collectionExists"> & {
     getCollectionInfo: (name: string) => Promise<{ optimizerStatus: string }>;
     aliases: Pick<QdrantManager["aliases"], "resolveActive">;

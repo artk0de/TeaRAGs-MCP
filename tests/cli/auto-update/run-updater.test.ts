@@ -9,7 +9,7 @@ import {
   CollectionRegistry,
   IndexingAlreadyInProgressError,
   type CollectionEntry,
-} from "../../../src/core/api/public/index.js";
+} from "../../../src/core/api/index.js";
 
 const NOW = 1_700_000_000_000;
 

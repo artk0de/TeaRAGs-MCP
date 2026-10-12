@@ -36,9 +36,9 @@ import type {
   SymbolVisibilityRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { WorkingTreeGraphReader, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import { recordTreeGraphState, type WorkingTreeOverlay } from "../../../domains/explore/index.js";
-import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import {
   resolveInheritedMemberDefiner,
   type InheritedMemberGraph,
@@ -74,7 +74,7 @@ import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js"
 
 export interface GraphFacadeDeps {
   pool: GraphDbClientPool;
-  collectionRegistry: CollectionRegistry;
+  collectionRegistry: RegistryLookup;
   /**
    * Resolve an addressed collection name to the ACTIVE underlying collection.
    * The codegraph DuckDB files are versioned (`code_x_v4.duckdb`) while the

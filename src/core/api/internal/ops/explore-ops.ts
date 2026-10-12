@@ -30,6 +30,7 @@ import type { QdrantFilter } from "../../../adapters/qdrant/types.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
 import type { FilterPresetDef, FilterSpec } from "../../../contracts/types/filter-preset.js";
 import type { FilterLevel } from "../../../contracts/types/provider.js";
+import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type {
   CollectionSignalStats,
@@ -60,7 +61,6 @@ import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
 import { DOCUMENTATION_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import { mapMarkerToHealth } from "../../../domains/ingest/pipeline/enrichment/index.js";
 import { formatIndexDriftReport, type IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
-import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/compiler.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import {
@@ -86,7 +86,7 @@ export interface ExploreOpsDeps {
   embeddings: EmbeddingProvider;
   reranker: Reranker;
   registry: TrajectoryRegistry;
-  collectionRegistry: CollectionRegistry;
+  collectionRegistry: RegistryLookup;
   statsCache?: StatsCache;
   driftReporter?: IndexDriftReporter;
   payloadSignals: PayloadSignalDescriptor[];
@@ -213,7 +213,7 @@ export class ExploreOps {
   private readonly embeddings: EmbeddingProvider;
   private readonly reranker: Reranker;
   private readonly registry: TrajectoryRegistry;
-  private readonly collectionRegistry: CollectionRegistry;
+  private readonly collectionRegistry: RegistryLookup;
   private readonly statsCache?: StatsCache;
   private readonly driftReporter?: IndexDriftReporter;
   private readonly payloadSignals: PayloadSignalDescriptor[];

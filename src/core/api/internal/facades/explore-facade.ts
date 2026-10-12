@@ -13,6 +13,7 @@ import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
+import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { PayloadSignalDescriptor, SignalFloors } from "../../../contracts/types/trajectory.js";
 import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
@@ -22,7 +23,6 @@ import type { ExploreRequestScope } from "../../../domains/explore/request-scope
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { WorkingTreeOverlay } from "../../../domains/explore/working-tree/index.js";
 import type { IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
-import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import type {
   ExploreCodeRequest,
@@ -45,7 +45,7 @@ export interface ExploreFacadeDeps {
   embeddings: EmbeddingProvider;
   reranker: Reranker;
   registry: TrajectoryRegistry;
-  collectionRegistry: CollectionRegistry;
+  collectionRegistry: RegistryLookup;
   statsCache?: StatsCache;
   driftReporter?: IndexDriftReporter;
   payloadSignals?: PayloadSignalDescriptor[];

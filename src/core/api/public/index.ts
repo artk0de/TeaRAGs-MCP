@@ -13,11 +13,15 @@
  * `api/internal/` — runtime or type-only: type-only edges ARE SDP-judged
  * (the component detector has no type-only flag; `domain-boundaries.md`
  * grants no `allowTypeImports` escape hatch — bd tea-rags-mcp-k7kmu C2,
- * pinned by `sdp-runtime-import-direction.test.ts`). RUNTIME classes and
- * assembly functions (ops classes, the path-collection resolver,
- * `SchemaBuilder`, `createApp`, `reviewSectionIds`) are reached through the
- * api root barrel (`core/api/index.js`, the assembly surface); deep
- * `api/internal/` paths stay forbidden.
+ * pinned by `sdp-runtime-import-direction.test.ts`). The same holds for
+ * DOMAINS: no runtime re-export from `domains/**` stays here either (k7kmu
+ * C3) — registry env replay, `QuarantineStore`, the freshness check and the
+ * seed render moved to the api root barrel or to `contracts/` (when pure),
+ * so the stable layer holds no runtime edge into a domain, pinned by the
+ * same test. RUNTIME classes and assembly functions (ops classes, the
+ * path-collection resolver, `SchemaBuilder`, `createApp`, `reviewSectionIds`)
+ * are reached through the api root barrel (`core/api/index.js`, the assembly
+ * surface); deep `api/internal/` paths stay forbidden.
  */
 
 // ── App contract ──────────────────────────────────────────────────────
@@ -159,11 +163,6 @@ export {
 } from "../../primitives/errors/index.js";
 export type { ConfigErrorCode } from "../../primitives/errors/index.js";
 
-// ── Error classes — ingest domain (domains/ingest/errors/ingest-errors.ts) ─────────
-// The auto-update updater tells "the collection is already indexing" apart
-// from a failed run (bd tea-rags-mcp-62pgi).
-export { IndexingAlreadyInProgressError } from "../../domains/ingest/errors/index.js";
-
 // ── Error classes — Qdrant adapter (adapters/qdrant/errors.ts) ────────
 // `tea-rags qdrant recover` renders an optimizer error that survived the
 // recreation (bd tea-rags-mcp-ye5o).
@@ -172,26 +171,14 @@ export { QdrantOptimizerErrorPersistsError } from "../../adapters/qdrant/errors.
 // every other status failure as it is (bd tea-rags-mcp-zqg1i).
 export { isQdrantColdError, QdrantUnavailableError } from "../../adapters/qdrant/errors.js";
 
-// ── Project registry — runtime (domains/maintenance/registry facade),
-// types (contracts/types/registry.js) ──
-export { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
-export { PROJECT_NAME_RE } from "../../domains/maintenance/registry/index.js";
-export { REGISTRY_ENV_ALLOWLIST, REGISTRY_ENV_GROUPS } from "../../domains/maintenance/registry/index.js";
-export { canonicalRegistryEnvKeys, registryEnvGroupMembers } from "../../domains/maintenance/registry/index.js";
-export { editRegistryEnv } from "../../domains/maintenance/registry/index.js";
-export {
-  outerEnvForRegistryEntry,
-  pickRegistryEntry,
-  pickRegistryEnvSeed,
-  replayableRegistryEnv,
-  replayRegistryEnv,
-  resolveRegistryEnv,
-} from "../../domains/maintenance/registry/index.js";
-export type { AmbientEnvRole } from "../../domains/maintenance/registry/index.js";
-export {
-  RegistryQdrantBackendUnresolvedError,
-  resolveRegistryQdrantBackend,
-} from "../../domains/maintenance/registry/index.js";
+// ── Project registry — types (contracts/types/registry.js) ──
+// The registry RUNTIME (the CollectionRegistry class, the env replay/seed/
+// backend-resolution functions) left this barrel for the api root barrel
+// (bd tea-rags-mcp-k7kmu C3): a stable contract surface holds no runtime edge
+// into a domain — the consumers are cli and bootstrap, which import
+// `core/api/index.js` (the assembly surface). What stays here is contract
+// vocabulary only: the types, and the pure alias regex.
+export { PROJECT_NAME_RE } from "../../contracts/types/registry.js";
 export type {
   AutoUpdateRunRecord,
   CollectionEntry,
@@ -204,17 +191,8 @@ export type {
   RegistryQdrantBackendClaim,
   // The registry vocabulary lives in contracts (bd tea-rags-mcp-0qaht.36):
   // this barrel is a stable surface and no longer reaches into the volatile
-  // registry domain for types. Runtime symbols below stay on the domain
-  // facade — api is the composition root and may import domains.
+  // registry domain for types.
 } from "../../contracts/types/registry.js";
-
-// ── Index freshness — auto-update watcher decision surface (hpg2) ─────
-export {
-  AUTO_UPDATE_FAILURE_BACKOFF_MS,
-  AUTO_UPDATE_RUN_TTL_MS,
-  IndexFreshnessCheck,
-} from "../../domains/maintenance/freshness/index.js";
-export type { IndexFreshnessVerdict } from "../../domains/maintenance/freshness/index.js";
 
 // ── Repo git state helpers (infra) — CLI default-branch autodetect ────
 export { detectDefaultBranch } from "../../adapters/vcs/index.js";
@@ -232,10 +210,6 @@ export { validatePath } from "../../adapters/filesystem/path-canonicalization.js
 // tea-rags-mcp-89k7k.22). The resolver TYPES are contract and come from
 // `contracts/` — no edge into api/internal (bd tea-rags-mcp-k7kmu C2).
 export type { PathCollectionResolver, ResolveInput } from "../../contracts/types/registry.js";
-
-// ── Poison-pill quarantine — read surface for `doctor --quarantine` ───
-export { QuarantineStore } from "../../domains/ingest/sync/index.js";
-export type { QuarantineEntry } from "../../domains/ingest/sync/index.js";
 
 // ── Relocated shared types (contracts/types/) ─────────────────────────
 export type {
@@ -300,9 +274,10 @@ export { isOptimizerFailure, renderOptimizerRecoveryCommand } from "../../contra
 export type { OptimizerRecoveryOutcome, OptimizerRecoveryTarget } from "../../contracts/optimizer-recovery.js";
 // The one wording of a first index's worktree seed outcome — CLI status block
 // and MCP `index_codebase` response both render it (bd tea-rags-mcp-k8gac).
-// Through the worktree domain facade, not the deep module (bd
-// tea-rags-mcp-0qaht.36).
-export { formatWorktreeSeedReport } from "../../domains/maintenance/worktree/index.js";
+// The rule is pure and lives in contracts (moved off the worktree domain by
+// k7kmu C3, the `optimizer-recovery` precedent); the worktree facade
+// re-exports it for the domain's consumers.
+export { formatWorktreeSeedReport } from "../../contracts/worktree-seed-report.js";
 
 // ── SchemaBuilderPort (used by mcp tool registration) ─────────────────
 // mcp writes against the PORT; bootstrap constructs the internal

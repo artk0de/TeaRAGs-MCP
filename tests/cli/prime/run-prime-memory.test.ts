@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
+import { primeRegistryRuntime } from "../../../src/cli/prime/registry-runtime.js";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
@@ -102,7 +103,7 @@ describe("runPrime — collection memory report", () => {
     const getCollectionMemory = vi.fn().mockResolvedValue(memory);
     createAppContextMock.mockResolvedValue(appWith(getCollectionMemory));
 
-    await runPrime({ path: projectDir, createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: projectDir, createPathCollectionResolver });
 
     expect(getCollectionMemory).toHaveBeenCalledWith("code_x");
     const out = String(writeMock.mock.calls[0][0]);
@@ -112,7 +113,7 @@ describe("runPrime — collection memory report", () => {
   it("still renders the digest, without the section, when the report read fails", async () => {
     createAppContextMock.mockResolvedValue(appWith(vi.fn().mockRejectedValue(new Error("boom"))));
 
-    await runPrime({ path: projectDir, createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: projectDir, createPathCollectionResolver });
 
     const out = String(writeMock.mock.calls[0][0]);
     expect(out).toContain("## Drift");
@@ -125,7 +126,7 @@ describe("runPrime — collection memory report", () => {
       appWith(getCollectionMemory, { isIndexed: false, status: "not_indexed", collectionName: "code_x" }),
     );
 
-    await runPrime({ path: projectDir, createPathCollectionResolver });
+    await runPrime({ registryRuntime: primeRegistryRuntime(), path: projectDir, createPathCollectionResolver });
 
     expect(getCollectionMemory).not.toHaveBeenCalled();
   });

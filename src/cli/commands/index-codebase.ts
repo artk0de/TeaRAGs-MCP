@@ -6,14 +6,13 @@ import { join, resolve } from "node:path";
 import type { CommandModule } from "yargs";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
-import { ProjectRegistryOps } from "../../core/api/index.js";
 import {
   CollectionRegistry,
   pickRegistryEnvSeed,
+  ProjectRegistryOps,
   resolveRegistryEnv,
-  TeaRagsError,
-  type IndexOptions,
-} from "../../core/api/public/index.js";
+} from "../../core/api/index.js";
+import { TeaRagsError, type IndexOptions } from "../../core/api/public/index.js";
 import { createRenderer } from "../index-progress/renderer.js";
 import { superviseIndexing } from "../index-progress/supervisor.js";
 import { createColorizer, type Colorizer } from "../infra/color.js";

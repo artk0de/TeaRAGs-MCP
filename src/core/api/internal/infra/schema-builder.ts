@@ -11,8 +11,8 @@
 
 import { z } from "zod";
 
+import { PROJECT_NAME_RE } from "../../../contracts/types/registry.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import { PROJECT_NAME_RE } from "../../../domains/maintenance/registry/constants.js";
 import { ConfigValueInvalidError } from "../../../primitives/errors/index.js";
 import type { RerankSchema, SchemaBuilderPort, ScoringWeightsSchema } from "../../public/schema-builder-port.js";
 

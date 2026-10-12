@@ -98,6 +98,7 @@ function setup(entries: CollectionEntry[], markers: Record<string, string> = {})
     registry: {
       findByName: () => null,
       findByPath: (p) => entries.find((e) => e.path === p) ?? null,
+      get: () => null,
       list: () => entries,
     },
     processIngest: {} as never,

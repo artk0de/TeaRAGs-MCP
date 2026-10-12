@@ -51,11 +51,13 @@ describe("primeCommand", () => {
 
     expect(runPrimeMock).toHaveBeenCalledOnce();
     // The command is the composition actor: it also passes the shared
-    // path→collection resolver down (bd tea-rags-mcp-nkstp).
+    // path→collection resolver and the registry runtime down (bd
+    // tea-rags-mcp-nkstp; k7kmu C3 extended the injection).
     expect(runPrimeMock).toHaveBeenCalledWith({
       path: "/projects/demo",
       project: undefined,
       createPathCollectionResolver: expect.any(Function),
+      registryRuntime: expect.anything(),
     });
     exitSpy.mockRestore();
   });

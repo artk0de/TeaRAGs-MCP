@@ -3,21 +3,20 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { spawnDetachedUpdater } from "../../bootstrap/auto-update/spawner.js";
-import { AutoUpdateTrigger, type AutoUpdateTriggerOutcome } from "../../bootstrap/auto-update/trigger.js";
+import {
+  AutoUpdateTrigger,
+  type AutoUpdateTriggerDeps,
+  type AutoUpdateTriggerOutcome,
+} from "../../bootstrap/auto-update/trigger.js";
 import { autoUpdateLogPath, closeAutoUpdateLog, openAutoUpdateLog } from "../../bootstrap/auto-update/updater-log.js";
-import { parseAppConfig, resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
+import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { createAppContext } from "../../bootstrap/factory.js";
 import {
-  CollectionRegistry,
-  IndexFreshnessCheck,
   isQdrantColdError,
-  RegistryQdrantBackendUnresolvedError,
-  replayableRegistryEnv,
-  replayRegistryEnv,
-  resolveRegistryQdrantBackend,
   TeaRagsError,
   type App,
   type CollectionEntry,
+  type RegistryLookup,
 } from "../../core/api/public/index.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
@@ -46,11 +45,34 @@ function resolveDataDir(): string {
  * and holds no edge onto the api assembly barrel; the `prime` command passes
  * the shared resolver, and a wired App satisfies the same type directly.
  */
+/**
+ * The registry runtime the `prime` command injects (k7kmu C3, the nkstp
+ * playbook extended): the leaf constructs no api runtime itself — the registry
+ * class and the env/backend replay functions live on the assembly barrel now
+ * that the contract barrel re-exports no domain runtime, and
+ * `prime/registry-runtime.ts` (the flow's composition fragment) builds this
+ * bundle.
+ */
+export interface PrimeRegistryRuntime {
+  /** A fresh registry over the user's data dir — per call, so a project registered mid-process is seen. */
+  openRegistry: () => RegistryLookup;
+  /** The freshness check the default auto-update trigger consults. */
+  createFreshness: () => AutoUpdateTriggerDeps["freshness"];
+  /**
+   * The entry's external Qdrant URL, or undefined when discovery must answer
+   * (embedded/unaddressed backend, or records that contradict each other).
+   */
+  externalQdrantUrlOf: (entry: CollectionEntry) => string | undefined;
+  /** Seed `env` from the entry's registry env; explicit outer values win. */
+  replayEntryEnv: (entry: CollectionEntry | null, env: NodeJS.ProcessEnv) => void;
+}
+
 async function lookupRegistryEntry(
   input: { path?: string; project?: string },
   createPathCollectionResolver: App["createPathCollectionResolver"],
+  openRegistry: PrimeRegistryRuntime["openRegistry"],
 ): Promise<CollectionEntry | null> {
-  const registry = new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults });
+  const registry = openRegistry();
   if (input.project) {
     return registry.findByName(input.project);
   }
@@ -76,15 +98,12 @@ async function lookupRegistryEntry(
  * (bd tea-rags-mcp-lzynm). An entry that contradicts itself degrades to
  * discovery as well: prime never fails.
  */
-function registryExternalQdrantUrl(entry: CollectionEntry | null): string | undefined {
+function registryExternalQdrantUrl(
+  entry: CollectionEntry | null,
+  externalQdrantUrlOf: PrimeRegistryRuntime["externalQdrantUrlOf"],
+): string | undefined {
   if (!entry) return undefined;
-  try {
-    const backend = resolveRegistryQdrantBackend(entry);
-    return backend.kind === "external" ? backend.url : undefined;
-  } catch (error) {
-    if (error instanceof RegistryQdrantBackendUnresolvedError) return undefined;
-    throw error;
-  }
+  return externalQdrantUrlOf(entry);
 }
 
 /**
@@ -103,11 +122,15 @@ function registryExternalQdrantUrl(entry: CollectionEntry | null): string | unde
  * matched. The spawn is fire-and-forget (~10 ms) — SessionStart latency stays
  * untouched; the parent's log fd is closed right after the child inherits it.
  */
-function buildPrimeAutoUpdateTrigger(entry: CollectionEntry, dataDir: string): AutoUpdateTrigger {
+function buildPrimeAutoUpdateTrigger(
+  entry: CollectionEntry,
+  dataDir: string,
+  registryRuntime: PrimeRegistryRuntime,
+): AutoUpdateTrigger {
   const label = entry.name ?? entry.collectionName;
   return new AutoUpdateTrigger({
-    registry: new CollectionRegistry(dataDir, { envCodeDefaults: resolveRegistryEnvCodeDefaults }),
-    freshness: new IndexFreshnessCheck(),
+    registry: registryRuntime.openRegistry(),
+    freshness: registryRuntime.createFreshness(),
     spawn: (project) => {
       const log = openAutoUpdateLog(dataDir, label);
       spawnDetachedUpdater({ project, logFd: log.fd });
@@ -140,6 +163,12 @@ export async function runPrime(input: {
    * itself.
    */
   createPathCollectionResolver: App["createPathCollectionResolver"];
+  /**
+   * The registry runtime, injected by the `prime` command (k7kmu C3) —
+   * `prime/registry-runtime.ts` constructs it from the assembly barrel; this
+   * leaf constructs no api runtime itself.
+   */
+  registryRuntime: PrimeRegistryRuntime;
   /** Test seam — production builds the real trigger via buildPrimeAutoUpdateTrigger. */
   autoUpdateTrigger?: { maybeSpawn: (collectionName: string) => AutoUpdateTriggerOutcome };
 }): Promise<void> {
@@ -155,6 +184,7 @@ export async function runPrime(input: {
   const registryEntry = await lookupRegistryEntry(
     { path: requestedPath, project: input.project },
     input.createPathCollectionResolver,
+    input.registryRuntime.openRegistry,
   );
   const path = registryEntry?.path ?? requestedPath;
 
@@ -206,9 +236,10 @@ export async function runPrime(input: {
   // envWithFallback. Legacy entries fall back to the deprecated `tuning` map.
   // An unpinned throughput-tuned stamp is left out: in process.env it would read
   // as an explicit setting to everything prime spawns (bd tea-rags-mcp-y1ynz).
-  replayRegistryEnv(replayableRegistryEnv(registryEntry), process.env);
+  input.registryRuntime.replayEntryEnv(registryEntry, process.env);
   const config = parseAppConfig();
-  const qdrantUrl = registryExternalQdrantUrl(registryEntry) ?? discoverQdrantUrl(config);
+  const qdrantUrl =
+    registryExternalQdrantUrl(registryEntry, input.registryRuntime.externalQdrantUrlOf) ?? discoverQdrantUrl(config);
   const reachable = await pingQdrant(qdrantUrl);
   if (!reachable) {
     process.stdout.write(formatPrime({ kind: "qdrant-cold", path }));
@@ -262,9 +293,9 @@ export async function runPrime(input: {
     // Auto-update trigger (hpg2): verdict computed BEFORE render so the
     // digest reflects it; the eligible-path spawn is detached fire-and-forget.
     const autoUpdateOutcome = registryEntry
-      ? (input.autoUpdateTrigger ?? buildPrimeAutoUpdateTrigger(registryEntry, resolveDataDir())).maybeSpawn(
-          registryEntry.collectionName,
-        )
+      ? (
+          input.autoUpdateTrigger ?? buildPrimeAutoUpdateTrigger(registryEntry, resolveDataDir(), input.registryRuntime)
+        ).maybeSpawn(registryEntry.collectionName)
       : null;
 
     const metrics = metricsResult.status === "fulfilled" ? metricsResult.value : null;

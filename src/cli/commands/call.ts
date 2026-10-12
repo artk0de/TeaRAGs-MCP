@@ -9,13 +9,17 @@
  * build (`node build/cli/index.js call …`) with no server reconnect.
  */
 
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { CommandModule } from "yargs";
 import { hideBin } from "yargs/helpers";
 
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import type { InProcessToolSession } from "../../bootstrap/transport/in-memory.js";
 import { openInProcessMcpSession } from "../../bootstrap/transport/in-process-session.js";
-import { resolveBaseIndexEntry } from "../../core/api/index.js";
+import { CollectionRegistry, resolveBaseIndexEntry, resolveRegistryEnv } from "../../core/api/index.js";
 import { CLI_OWNED_TOOLS, cliCommandForTool } from "../call/cli-owned-tools.js";
 import { prepareCallProjectEnv } from "../call/project-env.js";
 import { rememberCallToolNames } from "../call/tool-name-cache.js";
@@ -321,7 +325,13 @@ export const callCommand: CommandModule<object, CallArgs> = {
           // The command is the composition actor (bd tea-rags-mcp-nkstp): it
           // holds the api assembly seam and passes the path→entry capability
           // down; the project-env leaf holds no barrel edge of its own.
-          prepareProjectEnv: async (params) => prepareCallProjectEnv(params, resolveBaseIndexEntry),
+          prepareProjectEnv: async (params) =>
+            prepareCallProjectEnv(params, resolveBaseIndexEntry, {
+              registry: new CollectionRegistry(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), {
+                envCodeDefaults: resolveRegistryEnvCodeDefaults,
+              }),
+              resolveEnv: resolveRegistryEnv,
+            }),
         },
       );
     } finally {

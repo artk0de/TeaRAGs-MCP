@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { formatWorktreeSeedReport } from "../../../../src/core/domains/maintenance/worktree/worktree-seed-report.js";
+import { formatWorktreeSeedReport } from "../../../src/core/contracts/worktree-seed-report.js";
 
 const main = { collectionName: "code_main", project: "tea-rags", path: "/repo/main" };
 

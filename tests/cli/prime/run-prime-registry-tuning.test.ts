@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
+import { primeRegistryRuntime } from "../../../src/cli/prime/registry-runtime.js";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
@@ -127,7 +128,7 @@ describe("runPrime — registry-first tuning env re-apply", () => {
       });
       wireApp();
 
-      await runPrime({ project: "tune", createPathCollectionResolver });
+      await runPrime({ registryRuntime: primeRegistryRuntime(), project: "tune", createPathCollectionResolver });
 
       expect(envAtParseTime).toEqual({
         TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5",
@@ -151,7 +152,7 @@ describe("runPrime — registry-first tuning env re-apply", () => {
       });
       wireApp();
 
-      await runPrime({ project: "tune", createPathCollectionResolver });
+      await runPrime({ registryRuntime: primeRegistryRuntime(), project: "tune", createPathCollectionResolver });
 
       expect(envAtParseTime).toBe("7");
     } finally {
@@ -171,7 +172,7 @@ describe("runPrime — registry-first tuning env re-apply", () => {
       });
       wireApp();
 
-      await runPrime({ project: "tune", createPathCollectionResolver });
+      await runPrime({ registryRuntime: primeRegistryRuntime(), project: "tune", createPathCollectionResolver });
 
       expect(envAtParseTime).toBeUndefined();
     } finally {

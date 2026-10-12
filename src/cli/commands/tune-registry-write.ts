@@ -31,7 +31,7 @@ import {
   editRegistryEnv,
   REGISTRY_ENV_ALLOWLIST,
   type CollectionRegistry,
-} from "../../core/api/public/index.js";
+} from "../../core/api/index.js";
 
 const RECOGNIZED_KEYS = new Set(REGISTRY_ENV_ALLOWLIST);
 

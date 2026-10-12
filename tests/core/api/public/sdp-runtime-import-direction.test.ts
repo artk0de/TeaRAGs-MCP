@@ -24,6 +24,15 @@
  * the api root barrel, and mcp writes against the `SchemaBuilderPort` contract
  * instead of the internal `SchemaBuilder` class.
  *
+ * k7kmu C3 finished the purge for DOMAIN re-exports: every runtime symbol the
+ * barrel re-exported from `domains/**` (the registry facade's env/replay/
+ * backend-resolution functions, `CollectionRegistry`, `QuarantineStore`,
+ * `formatWorktreeSeedReport`, the freshness check, the ingest
+ * `IndexingAlreadyInProgressError`) left for the api root barrel — the
+ * ASSEMBLY surface cli/bootstrap consume — or for `contracts/` when the rule
+ * is pure (`PROJECT_NAME_RE`, the worktree seed render). The stable contract
+ * layer holds no runtime edge into a domain.
+ *
  * This test pins the direction: no file under `src/core/api/public/` may hold
  * a RUNTIME (value) import or re-export whose specifier resolves into
  * `api/internal/**` or `api/errors.js`. A re-export added back through the
@@ -124,6 +133,19 @@ describe("api/public holds only the contract — no runtime import from the unst
         if (!specifier.startsWith(".")) continue;
         if (!resolveSpecifier(file, specifier).startsWith("src/core/api/internal/")) continue;
         offenders.push(`${file}: "${specifier}"`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("no file under src/core/api/public runtime-imports or re-exports from domains/** (k7kmu C3)", () => {
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder(PUBLIC_DIR)) {
+      const text = readFileSync(join(ROOT, file), "utf-8");
+      for (const statement of runtimeNamedStatements(text)) {
+        if (!statement.specifier.startsWith(".")) continue;
+        if (!resolveSpecifier(file, statement.specifier).startsWith("src/core/domains/")) continue;
+        offenders.push(`${file}: ${statement.names.join(", ")} from "${statement.specifier}"`);
       }
     }
     expect(offenders).toEqual([]);

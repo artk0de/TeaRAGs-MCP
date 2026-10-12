@@ -96,6 +96,7 @@ import type {
   IdentifierNamingConvention,
   IdentifierRole,
 } from "../../../contracts/types/language.js";
+import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { WorkingTree } from "../../../contracts/types/working-tree.js";
 import type { WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import {
@@ -141,7 +142,6 @@ import {
   type TypeNameEvidence,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
-import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { Semaphore } from "../../../primitives/concurrency/index.js";
 import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import { cosine } from "../../../primitives/math/index.js";
@@ -271,7 +271,7 @@ export interface NamingLexiconExplore {
 
 export interface NamingLexiconOpsDeps {
   pool: Pick<GraphDbClientPool, "acquireReader">;
-  collectionRegistry: CollectionRegistry;
+  collectionRegistry: RegistryLookup;
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
   explore: NamingLexiconExplore;
   /** `LanguageCapability.naming` per language, from the language factory. */

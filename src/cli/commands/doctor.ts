@@ -5,14 +5,8 @@ import type { Argv, CommandModule } from "yargs";
 
 import type { CodegraphDaemonRestartOutcome } from "../../bootstrap/codegraph-daemon-restart.js";
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
-import { ProjectRegistryOps, resolveCollection } from "../../core/api/index.js";
-import {
-  CollectionRegistry,
-  QdrantManager,
-  QuarantineStore,
-  validatePath,
-  type EmbeddingProvider,
-} from "../../core/api/public/index.js";
+import { CollectionRegistry, ProjectRegistryOps, QuarantineStore, resolveCollection } from "../../core/api/index.js";
+import { QdrantManager, validatePath, type EmbeddingProvider } from "../../core/api/public/index.js";
 import { IndexWorkerRegistry, indexWorkerRegistryDir } from "../index-progress/worker-registry.js";
 import {
   psIndexWorkerProcessProbe,

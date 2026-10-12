@@ -127,14 +127,12 @@ describe("qdrantCommand recover — production wiring", () => {
       resolveRegistryEnvCodeDefaults: vi.fn(),
       parseAppConfig: () => ({ paths: { appData: "/tmp/app" }, qdrantUrl: "http://default:6333", qdrantApiKey: "key" }),
     }));
+    // k7kmu C3: the registry runtime comes from the assembly barrel; the
+    // addressing types stay public.
     vi.doMock("../../../src/core/api/index.js", () => ({
       OptimizerRecoveryOps: class {
         recover = recover;
       },
-    }));
-    vi.doMock("../../../src/core/api/public/index.js", async (importOriginal) => ({
-      ...(await importOriginal<object>()),
-      EMBEDDED_MARKER: "embedded",
       CollectionRegistry: class {
         findByName(name: string): object | undefined {
           lookups.push(`name:${name}`);
@@ -145,12 +143,16 @@ describe("qdrantCommand recover — production wiring", () => {
           return entry;
         }
       },
+      resolveRegistryQdrantBackend: () => backend,
+    }));
+    vi.doMock("../../../src/core/api/public/index.js", async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      EMBEDDED_MARKER: "embedded",
       QdrantManager: class {
         constructor(url: string, apiKey: string) {
           opened.push({ url, apiKey });
         }
       },
-      resolveRegistryQdrantBackend: () => backend,
       resolveQdrantUrl: async (from: string) => {
         resolvedFrom.push(from);
         return from === "embedded"

@@ -15,8 +15,12 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { resolveCollection } from "../../core/api/index.js";
-import { CollectionRegistry, IndexFreshnessCheck, outerEnvForRegistryEntry } from "../../core/api/public/index.js";
+import {
+  CollectionRegistry,
+  IndexFreshnessCheck,
+  outerEnvForRegistryEntry,
+  resolveCollection,
+} from "../../core/api/index.js";
 import type { McpAutoUpdateTrigger } from "../../mcp/tools/explore.js";
 import { resolveRegistryEnvCodeDefaults } from "../config/index.js";
 import { spawnDetachedUpdater } from "./spawner.js";

@@ -23,8 +23,7 @@
  * `FLAG_NOTES` below says why.
  */
 
-import type { CollectionEntry } from "../../../contracts/types/registry.js";
-import type { CollectionRegistry } from "../registry/collection-registry.js";
+import type { CollectionEntry, RegistryLookup } from "../../../contracts/types/registry.js";
 import { REGISTRY_ENV_GROUPS, type EnvConsequence } from "../registry/env-groups.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 import type { IndexDriftRemedy } from "./remedy.js";
@@ -73,7 +72,7 @@ export class EnvDriftMonitor implements IndexDriftMonitor {
   readonly axis = "env" as const;
 
   constructor(
-    private readonly registry: Pick<CollectionRegistry, "get">,
+    private readonly registry: Pick<RegistryLookup, "get">,
     /**
      * Builds the env the next index run on this collection would use, from the
      * stamp. Injected rather than imported because it belongs to `bootstrap/`

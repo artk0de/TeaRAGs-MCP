@@ -9,12 +9,8 @@
  * throws and never blocks — the caller is a serving query path.
  */
 
-import {
-  AUTO_UPDATE_RUN_TTL_MS,
-  type CollectionEntry,
-  type IndexFreshnessCheck,
-  type IndexFreshnessVerdict,
-} from "../../core/api/public/index.js";
+import { AUTO_UPDATE_RUN_TTL_MS, type IndexFreshnessCheck, type IndexFreshnessVerdict } from "../../core/api/index.js";
+import type { CollectionEntry } from "../../core/api/public/index.js";
 
 export interface AutoUpdateTriggerDeps {
   registry: { get: (collectionName: string) => CollectionEntry | null };

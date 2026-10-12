@@ -17,7 +17,7 @@
  */
 
 import { readEnclosingRepoGitState, type RepoGitState } from "../../../adapters/vcs/index.js";
-import type { CollectionRegistry } from "../registry/collection-registry.js";
+import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 
 const short = (sha: string): string => sha.slice(0, 7);
@@ -27,7 +27,7 @@ export class CommitDriftMonitor implements IndexDriftMonitor {
   readonly axis = "commit" as const;
 
   constructor(
-    private readonly registry: Pick<CollectionRegistry, "get">,
+    private readonly registry: Pick<RegistryLookup, "get">,
     private readonly readGitState: (path: string) => RepoGitState | null = readEnclosingRepoGitState,
   ) {}
 

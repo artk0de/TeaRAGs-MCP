@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // and are validated via the worktreeCommand.builder contract test below.
 import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
 import { runWorktreeInfo, runWorktreeList, worktreeCommand } from "../../../src/cli/commands/worktree.js";
-import { CollectionRegistry } from "../../../src/core/api/public/index.js";
+import { CollectionRegistry } from "../../../src/core/api/index.js";
 
 // Mock dynamic bootstrap imports used by runWorktreeCreate / runWorktreeRemove
 vi.mock("../../../src/bootstrap/config/index.js", () => ({

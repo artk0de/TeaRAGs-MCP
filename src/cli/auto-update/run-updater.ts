@@ -20,11 +20,10 @@
 
 import {
   IndexingAlreadyInProgressError,
-  type App,
-  type AutoUpdateRunRecord,
   type CollectionRegistry,
   type IndexFreshnessCheck,
-} from "../../core/api/public/index.js";
+} from "../../core/api/index.js";
+import type { App, AutoUpdateRunRecord } from "../../core/api/public/index.js";
 
 export const AUTO_UPDATE_EXIT = { ok: 0, failed: 1, skipped: 2, lockHeld: 3 } as const;
 
