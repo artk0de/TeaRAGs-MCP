@@ -164,6 +164,53 @@ describe("ingest pipeline types its qdrant dependency against the ports (6oah1 Q
   });
 });
 
+/**
+ * Q2ingestRest pin (bd tea-rags-mcp-89k7k.35, 6oah1 Q2): the rest of the ingest
+ * domain — infra, operations and sync — types its Qdrant dependency against the
+ * narrowest `ports.ts` role it calls, not against the 55-method concrete
+ * facade. Files where a port cannot cover the dependency YET stay on the
+ * concrete class, and each carries its reason here — a connection-intent
+ * accessor (`aliases`) or a hand-off to an `adapters/qdrant` helper whose own
+ * parameter is still concrete. When one of those narrows, its entry must be
+ * deleted (the second test below refuses a stale entry).
+ */
+const INGEST_REST_DIRS = [
+  join(ROOT, "src/core/domains/ingest/infra"),
+  join(ROOT, "src/core/domains/ingest/operations"),
+  join(ROOT, "src/core/domains/ingest/sync"),
+];
+
+const INGEST_REST_CONCRETE_KEPT: Record<string, string> = {
+  "src/core/domains/ingest/infra/alias-cleanup.ts":
+    "calls the aliases accessor (listAliases) — connection intent, outside every port",
+  "src/core/domains/ingest/infra/stats-recompute.ts":
+    "passes the manager to scroll.ts's scrollAllPoints, whose parameter is still concrete",
+};
+
+describe("rest of ingest types its qdrant dependency against the ports (6oah1 Q2ingestRest)", () => {
+  it("holds no QdrantManager / EmbeddingModelGuard type reference outside the concrete-kept allowlist", () => {
+    const offenders = INGEST_REST_DIRS.flatMap(typescriptFiles)
+      .filter(holdsConcreteFacadeReference)
+      .map(rel)
+      .filter((file) => !(file in INGEST_REST_CONCRETE_KEPT));
+    expect(
+      offenders,
+      "files still binding the concrete facade — narrow them to a ports.ts role, or record in INGEST_REST_CONCRETE_KEPT why they must stay concrete",
+    ).toEqual([]);
+  });
+
+  it("keeps the concrete-kept allowlist honest — every entry still holds a concrete reference", () => {
+    const stale = Object.keys(INGEST_REST_CONCRETE_KEPT).filter((file) => {
+      const absolute = join(ROOT, file);
+      return !existsSync(absolute) || !holdsConcreteFacadeReference(absolute);
+    });
+    expect(
+      stale,
+      "allowlist entries whose file no longer references the concrete facade — delete them so the list tracks the code",
+    ).toEqual([]);
+  });
+});
+
 describe("maintenance domain types its qdrant dependency against the ports (6oah1 Q2maint)", () => {
   it("holds no QdrantManager / EmbeddingModelGuard type reference outside the concrete-kept allowlist", () => {
     const offenders = typescriptFiles(MAINTENANCE_DIR)

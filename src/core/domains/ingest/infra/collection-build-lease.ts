@@ -13,8 +13,12 @@
  * so the predicate lives here rather than in either caller.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { CollectionAlreadyExistsError } from "../../../adapters/qdrant/errors.js";
+import type {
+  QdrantCollectionCatalog,
+  QdrantCollectionLifecycle,
+  QdrantPointReader,
+} from "../../../adapters/qdrant/ports.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { CollectionAlias, PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
@@ -39,7 +43,7 @@ import {
  * is worse than the behaviour that preceded the lease being read at all.
  */
 export async function isCollectionBuildInFlight(
-  qdrant: Pick<QdrantManager, "getPoint">,
+  qdrant: Pick<QdrantPointReader, "getPoint">,
   collection: string,
   /**
    * Epoch ms. Heartbeat evidence stamped at or before it does not count — the
@@ -71,7 +75,7 @@ export async function isCollectionBuildInFlight(
  * answer "no", for the same reason as above.
  */
 export async function isCollectionIndexingInFlight(
-  qdrant: QdrantManager,
+  qdrant: QdrantPointReader & QdrantCollectionCatalog,
   collection: string,
   options: { ownRunsSettledAt?: number; now?: number } = {},
 ): Promise<boolean> {
@@ -97,7 +101,7 @@ function isBuildLive(marker: IndexingMarkerPayload, now: number, evidenceAfter: 
 }
 
 async function readIndexingMarker(
-  qdrant: Pick<QdrantManager, "getPoint">,
+  qdrant: Pick<QdrantPointReader, "getPoint">,
   collection: string,
 ): Promise<IndexingMarkerPayload | undefined> {
   try {
@@ -115,7 +119,7 @@ async function readIndexingMarker(
 }
 
 /** Every `<collection>_v<N>` Qdrant reports — the builds a force reindex fills off to the side. */
-async function listVersionsOf(qdrant: QdrantManager, collection: string): Promise<string[]> {
+async function listVersionsOf(qdrant: QdrantCollectionCatalog, collection: string): Promise<string[]> {
   try {
     const prefix = `${collection}_v`;
     return (await qdrant.listCollections()).filter(
@@ -170,7 +174,7 @@ export interface ClaimedCollectionVersion {
  *   alive.
  */
 export async function claimVersionedCollection(args: {
-  qdrant: QdrantManager;
+  qdrant: QdrantCollectionCatalog & QdrantCollectionLifecycle & QdrantPointReader;
   baseCollectionName: CollectionAlias;
   firstVersion: number;
   createLeasedCollection: (physicalCollectionName: PhysicalCollectionName) => Promise<void>;
