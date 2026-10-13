@@ -263,3 +263,44 @@ describe("GraphFacade#getArchitectureReport", () => {
     await expect(facade.getArchitectureReport({ collection: "code_x" })).rejects.toThrow(/lock held/);
   });
 });
+
+describe("GraphFacade#judgePlannedArchitectureEdges (bd tea-rags-mcp-xb669.2)", () => {
+  it("judges planned edges over the addressed collection's indexed graph, reading nothing the detectors need", async () => {
+    const graphDb = {
+      readFileDependencyGraph: vi.fn().mockResolvedValue({ files: [], edges: [] }),
+      readTypeNameRows: vi.fn().mockResolvedValue([]),
+      readNonPublicMemberEdges: vi.fn(),
+      readTemporalCochangeGraph: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const { pool, acquireReader } = readerPool(graphDb);
+    const facade = new GraphFacade({ pool, collectionRegistry: registry });
+
+    const response = await facade.judgePlannedArchitectureEdges({
+      collection: "code_x",
+      plannedEdges: [{ source: "src/a.ts", target: "src/b.ts" }],
+    });
+
+    expect(acquireReader).toHaveBeenCalledWith("code_x");
+    expect(graphDb.readTemporalCochangeGraph).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      mode: "plannedEdges",
+      detectorFamilies: "notRun",
+      plannedEdgeVerdicts: [{ source: "src/a.ts", target: "src/b.ts", verdict: "UNJUDGED", reason: "newFile" }],
+    });
+  });
+
+  it("rejects an over-cap request before any graph read", async () => {
+    const { pool, acquireReader } = readerPool({});
+    const facade = new GraphFacade({ pool, collectionRegistry: registry });
+    const edge = { source: "src/a.ts", target: "src/b.ts" };
+
+    await expect(
+      facade.judgePlannedArchitectureEdges({
+        collection: "code_x",
+        plannedEdges: Array.from({ length: 51 }, () => edge),
+      }),
+    ).rejects.toThrow(/at most 50/);
+    expect(acquireReader).not.toHaveBeenCalled();
+  });
+});

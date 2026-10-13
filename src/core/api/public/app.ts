@@ -41,6 +41,7 @@ import type {
   FindCyclesResponse,
   FindSimilarRequest,
   FindSymbolRequest,
+  GetArchitecturePlannedEdgesResponse,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
   GetCalleesRequest,
@@ -155,6 +156,10 @@ export interface App {
   findCycles: (request: FindCyclesRequest) => Promise<FindCyclesResponse>;
   /** Architecture diagnostics (bd tea-rags-mcp-94hd9) — Stable Dependencies violations, root causes, exclusions. */
   getArchitectureReport: (request: GetArchitectureReportRequest) => Promise<GetArchitectureReportResponse>;
+  /** `get_architecture_report` planned-edges mode (bd tea-rags-mcp-xb669.2) — write-time dependency-norm verdicts. */
+  judgePlannedArchitectureEdges: (
+    request: GetArchitectureReportRequest,
+  ) => Promise<GetArchitecturePlannedEdgesResponse>;
   tracePath: (request: TracePathRequest) => Promise<PathTraceResult>;
   /** Naming lexicon (bd tea-rags-mcp-4p3sb.12) — the project's names per type / callee / concept, verdicts on drafts. */
   getNamingLexicon: (request: NamingLexiconRequest) => Promise<NamingLexiconResult>;

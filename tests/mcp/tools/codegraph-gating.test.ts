@@ -27,6 +27,7 @@ function makeApp(hasCodegraph: boolean): App {
     findCycles: vi.fn(),
     tracePath: vi.fn(),
     getArchitectureReport: vi.fn(),
+    judgePlannedArchitectureEdges: vi.fn(),
     getOntologyReport: vi.fn(),
     findCoChanged: vi.fn(),
   } as unknown as App;
@@ -249,8 +250,10 @@ describe("get_architecture_report", () => {
 
     expect(config.description).toMatch(/MISFIT/);
     expect(config.description).toMatch(/established direction/);
-    // NEW_PATTERN is a diff-time verdict (xb669.3), never a whole-repo one.
-    expect(config.description).not.toMatch(/NEW_PATTERN/);
+    // NEW_PATTERN is never a whole-repo verdict: the description names it only
+    // as a planned-edges answer (bd tea-rags-mcp-xb669.2), never under norms.
+    const normsClause = config.description.slice(config.description.indexOf("norms option"));
+    expect(normsClause.slice(0, normsClause.indexOf("plannedEdges"))).not.toMatch(/NEW_PATTERN/);
     expect(schema.safeParse({ project: "tea-rags", norms: true }).success).toBe(true);
     expect(schema.safeParse({ project: "tea-rags", norms: "yes" }).success).toBe(false);
   });
@@ -294,9 +297,48 @@ describe("get_architecture_report", () => {
         "offset",
         "path",
         "pathPattern",
+        "plannedEdges",
         "project",
       ].sort(),
     );
+  });
+
+  // bd tea-rags-mcp-xb669.2: plannedEdges is the write-time verdict MODE of
+  // the report — capped, file pairs, routed to its own App method so the
+  // answer is the verdicts, never a partial report.
+  it("takes capped plannedEdges and names their verdicts in the description (bd tea-rags-mcp-xb669.2)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+    const edge = { source: "src/a.ts", target: "src/b.ts" };
+
+    expect(config.description).toMatch(/plannedEdges/);
+    expect(config.description).toMatch(/NEW_PATTERN/);
+    expect(config.description).toMatch(/UNJUDGED/);
+    expect(schema.safeParse({ project: "tea-rags", plannedEdges: [edge] }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", plannedEdges: [{ ...edge, reference: "B::Error" }] }).success).toBe(
+      true,
+    );
+    expect(schema.safeParse({ project: "tea-rags", plannedEdges: [] }).success).toBe(false);
+    expect(
+      schema.safeParse({ project: "tea-rags", plannedEdges: Array.from({ length: 51 }, () => edge) }).success,
+    ).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", plannedEdges: [{ source: "src/a.ts" }] }).success).toBe(false);
+  });
+
+  it("routes a plannedEdges call to app.judgePlannedArchitectureEdges, never to the report", async () => {
+    const { app, call } = registered();
+    const verdicts = { mode: "plannedEdges", detectorFamilies: "notRun", plannedEdgeVerdicts: [] };
+    (app.judgePlannedArchitectureEdges as ReturnType<typeof vi.fn>).mockResolvedValue(verdicts);
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+
+    const result = await handler({ project: "tea-rags", plannedEdges: [{ source: "src/a.ts", target: "src/b.ts" }] });
+
+    expect(app.judgePlannedArchitectureEdges).toHaveBeenCalledWith(
+      expect.objectContaining({ plannedEdges: [{ source: "src/a.ts", target: "src/b.ts" }] }),
+    );
+    expect(app.getArchitectureReport).not.toHaveBeenCalled();
+    expect(JSON.parse(result.content[0].text)).toEqual(verdicts);
   });
 
   it("declares the shape↔DTO alignment pin over GetArchitectureReportInputShape (bd tea-rags-mcp-89k7k.25)", () => {

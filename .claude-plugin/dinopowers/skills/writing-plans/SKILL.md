@@ -185,6 +185,10 @@ title/description mentions code generation/modification — heuristic keywords:
    → a `topTerms` / `concept.terms` word if it means the same, else the Task
    carries a one-line justification. Reading: `tea-rags:data-driven-generation`
    Step 5 "Naming (lexicon)".
+6. New cross-component imports the Task adds (codegraph on) → ONE
+   `get_architecture_report(plannedEdges: [{source, target}])` per plan, all
+   Tasks' edges: `MISFIT` → Task routes via `expectedPath` (established
+   direction / `transit`); `NEW_PATTERN` / `UNJUDGED` → keep, Task notes it.
 
 Runs BEFORE Step 4 so per-Task enrichment visible to superpowers:writing-plans
 authoring cycle, surfaces in final plan document.

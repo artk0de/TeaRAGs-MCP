@@ -1,4 +1,11 @@
-export { buildNormLedgers, computeDependencyNorms, judgePlannedEdge } from "./dependency-norms.js";
+export {
+  buildNormLedgers,
+  computeDependencyNorms,
+  judgePlannedEdge,
+  judgePlannedFileEdges,
+  NORM_CALL_EVIDENCE_EXCLUSIONS,
+  normEdgeExclusionResolver,
+} from "./dependency-norms.js";
 export type {
   DependencyNormEstablishedDirection,
   DependencyNormFinding,
@@ -7,12 +14,18 @@ export type {
   DependencyNormsReport,
   DependencyNormsSignificance,
   DependencyNormsSummary,
+  NormEdgeEvidence,
+  NormEdgeExclusion,
   NormFindingKind,
   NormLedgerBook,
   NormLedgers,
   NormLocality,
   NormDirectionTest,
   NormPlannedEdge,
+  NormPlannedEdgeUnjudgedReason,
+  NormPlannedFileEdge,
+  NormPlannedFileEdgeJudgement,
+  NormTransitPath,
   PlannedEdgeVerdict,
   PlannedEdgeVerdictKind,
 } from "./types.js";

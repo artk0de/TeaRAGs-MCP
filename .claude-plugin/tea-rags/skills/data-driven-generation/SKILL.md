@@ -322,6 +322,13 @@ Names come from the Step 5 vocabulary, built by the dominant shape. A word
 outside it is `NEW_TERM` and gets one line in the output:
 `NEW_TERM <term> — <why no project term denotes this>`.
 
+New cross-component import (codegraph on) → BEFORE writing it, ONE
+`get_architecture_report(path, plannedEdges: [{source, target}])` for all such
+imports of the change. `MISFIT` → route via `expectedPath` (established
+direction / `transit` role), not the planned edge. `NEW_PATTERN` / `UNJUDGED` →
+write it, one output line:
+`NEW_PATTERN|UNJUDGED <source> -> <target> — <reason>`.
+
 Tests alongside (CREATE/EXTEND): invoke `tea-rags:tests-as-context` recipe
 `fixture-lookup` (intent = setup you need) — existing setup patterns, not
 invented mocks. SKIP verdict → proceed without.

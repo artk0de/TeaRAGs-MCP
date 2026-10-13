@@ -18,6 +18,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import {
+  ARCHITECTURE_PLANNED_EDGE_LIMIT,
   CODEGRAPH_SYMBOLS_PROVIDER_KEY,
   PROJECT_NAME_RE,
   type App,
@@ -167,6 +168,14 @@ const GetArchitectureReportInputShape = {
     .optional()
     .describe("Component path from drillDown: return its knot view and the findings inside it, paged by limit/offset"),
   offset: z.number().int().min(0).optional().describe("Page start for the knotOf view"),
+  plannedEdges: z
+    .array(z.object({ source: z.string().min(1), target: z.string().min(1), reference: z.string().optional() }))
+    .min(1)
+    .max(ARCHITECTURE_PLANNED_EDGE_LIMIT)
+    .optional()
+    .describe(
+      "File pairs source->target about to be written: verdicts only, no report; other options rejected. reference = name used.",
+    ),
 };
 
 /**
@@ -510,10 +519,20 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "ledger per language family (cross-family edges unjudged) — " +
       "norms violations flag MISFIT edges: against their role pair's established direction (exact sign test of " +
       "n(A->B) vs n(B->A), BH q=0.05 over the pairs; evidence = both counts, p, established direction). Summary " +
-      "counts exclusions with named reasons. Diagnosis, not prescription.",
+      "counts exclusions with named reasons. Diagnosis, not prescription. plannedEdges mode: judge edges BEFORE " +
+      "writing them vs indexed graph's norms, detectors not run (detectorFamilies notRun); per edge CONFORMS | " +
+      "MISFIT (expectedPath.established = reverse direction + support; transit = roles via third role, both legs " +
+      "established) | NEW_PATTERN (pair nobody wrote, no established direction; transit when one exists) | UNJUDGED " +
+      "(reason newFile, nonProduction, untypedFile, weakRole, crossLanguage, constantReference, displacedRole, " +
+      "noCodegraph); exclusionsUnchecked = classes no call data can check yet.",
     schemaKey: "get_architecture_report",
-    invoke: async (app, request) =>
-      formatMcpText(JSON.stringify(await app.getArchitectureReport(request as GetArchitectureReportRequest), null, 2)),
+    invoke: async (app, request) => {
+      const req = request as GetArchitectureReportRequest;
+      const answer = req.plannedEdges
+        ? await app.judgePlannedArchitectureEdges(req)
+        : await app.getArchitectureReport(req);
+      return formatMcpText(JSON.stringify(answer, null, 2));
+    },
   },
   {
     name: "get_ontology_report",

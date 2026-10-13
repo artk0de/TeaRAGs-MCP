@@ -45,6 +45,7 @@ import {
 } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
 import { resolvePhysicalCollection, splitMethodSymbol } from "../../../primitives/ids/index.js";
 import type {
+  GetArchitecturePlannedEdgesResponse,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
   GitFileMaintenanceSignals,
@@ -67,6 +68,7 @@ import {
 } from "../collection-resolver.js";
 import { readWorkingTreeGraph } from "../infra/working-tree-graph-read.js";
 import type { DeclaredTestDependencyLookup, IndexedFileImportLookup } from "../ops/architecture-facts.js";
+import { ArchitecturePlannedEdgeOps } from "../ops/architecture-planned-edge-ops.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
 import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
@@ -210,8 +212,33 @@ function resolvedField(read: SymbolEdgeRead<unknown>): { resolvedSymbolId?: Symb
   return read.resolvedSymbolId === undefined ? {} : { resolvedSymbolId: read.resolvedSymbolId };
 }
 
+/**
+ * The test-support lookups an architecture read takes, bound to the addressed
+ * collection and checkout — the report and the planned-edge verdict read the
+ * same production graph.
+ */
+function addressedTestSupportLookups(
+  deps: GraphFacadeDeps,
+  req: GetArchitectureReportRequest,
+): { indexedFileImports?: IndexedFileImportLookup; declaredTestDependencies?: DeclaredTestDependencyLookup } {
+  const { readIndexedFileImports, readDeclaredTestDependencies } = deps;
+  const addressed = () => resolveWorkingTree(deps.collectionRegistry, req);
+  return {
+    indexedFileImports: readIndexedFileImports
+      ? async () => readIndexedFileImports(addressed().baseIndex.collectionName)
+      : undefined,
+    declaredTestDependencies: readDeclaredTestDependencies
+      ? () => {
+          const { root } = addressed();
+          return root ? readDeclaredTestDependencies(root) : new Set<string>();
+        }
+      : undefined,
+  };
+}
+
 export class GraphFacade {
   private readonly architectureReport = new ArchitectureReportOps();
+  private readonly plannedEdges = new ArchitecturePlannedEdgeOps();
   private readonly cochange = new CochangeOps();
   private readonly fileImports = new FileImportOps();
 
@@ -430,15 +457,8 @@ export class GraphFacade {
   }
 
   async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
-    const {
-      readImportSpecifiers,
-      readFileCommitCounts,
-      readFileMaintenanceSignals,
-      readIndexedFileImports,
-      readDeclaredTestDependencies,
-    } = this.deps;
+    const { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals } = this.deps;
     const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
-    const addressedRoot = () => resolveWorkingTree(this.deps.collectionRegistry, req).root;
     const importSpecifiers = readImportSpecifiers
       ? async (relPaths: readonly RelPath[]) => readImportSpecifiers(addressedCollection(), relPaths)
       : undefined;
@@ -446,15 +466,7 @@ export class GraphFacade {
     const maintenanceSignals = readFileMaintenanceSignals
       ? async () => readFileMaintenanceSignals(addressedCollection())
       : undefined;
-    const indexedFileImports = readIndexedFileImports
-      ? async () => readIndexedFileImports(addressedCollection())
-      : undefined;
-    const declaredTestDependencies = readDeclaredTestDependencies
-      ? () => {
-          const root = addressedRoot();
-          return root ? readDeclaredTestDependencies(root) : new Set<string>();
-        }
-      : undefined;
+    const { indexedFileImports, declaredTestDependencies } = addressedTestSupportLookups(this.deps, req);
     return this.withMarkedReadHandle(
       req,
       async (handle) =>
@@ -468,6 +480,22 @@ export class GraphFacade {
           declaredTestDependencies,
         ),
       ArchitectureReportOps.empty(req),
+    );
+  }
+
+  /**
+   * `get_architecture_report` planned-edges mode (bd tea-rags-mcp-xb669.2):
+   * the verdicts are judged against the INDEXED graph, never the working
+   * tree's — a planned edge must not be its own precedent.
+   */
+  async judgePlannedArchitectureEdges(req: GetArchitectureReportRequest): Promise<GetArchitecturePlannedEdgesResponse> {
+    const fallback = ArchitecturePlannedEdgeOps.unavailable(req);
+    const { indexedFileImports, declaredTestDependencies } = addressedTestSupportLookups(this.deps, req);
+    return this.withMarkedReadHandle(
+      req,
+      async (handle) => this.plannedEdges.judge(handle.graphDb, req, indexedFileImports, declaredTestDependencies),
+      fallback,
+      "index",
     );
   }
 

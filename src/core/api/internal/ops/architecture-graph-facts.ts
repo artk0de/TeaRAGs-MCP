@@ -64,6 +64,21 @@ export interface ArchitectureGraphFacts {
 }
 
 /**
+ * The type rows the dependency norms read roles from — the rows naming's role
+ * layer reads (whole project, production paths). One query for the report's
+ * norms and the planned-edge verdict (bd tea-rags-mcp-xb669.2).
+ */
+export async function readDependencyNormTypeNameRows(
+  graphDb: Pick<GraphDbClient, "readTypeNameRows">,
+): Promise<readonly TypeNameRow[]> {
+  return graphDb.readTypeNameRows({
+    pathPrefixes: [],
+    kinds: TYPE_DRAFT_KINDS,
+    nonProductionPaths: ontologyNonProductionPaths(),
+  });
+}
+
+/**
  * Read every graph fact one report judges. Reads stay as lazy as the report
  * needed them: the type rows only when norms are asked, the hierarchy only
  * when a Python member edge can use the subclass exemption.
@@ -91,14 +106,7 @@ export async function readArchitectureGraphFacts(
       ? await graphDb.loadHierarchySnapshot()
       : undefined;
   const cochange = request.cochange ?? (await graphDb.readTemporalCochangeGraph());
-  // The rows naming's role layer reads (whole project, production paths).
-  const typeNameRows = request.norms
-    ? await graphDb.readTypeNameRows({
-        pathPrefixes: [],
-        kinds: TYPE_DRAFT_KINDS,
-        nonProductionPaths: ontologyNonProductionPaths(),
-      })
-    : undefined;
+  const typeNameRows = request.norms ? await readDependencyNormTypeNameRows(graphDb) : undefined;
   return {
     production,
     memberEdges,

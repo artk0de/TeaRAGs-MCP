@@ -21,6 +21,7 @@
  */
 
 import type { ArchitectureLayerMapOptions } from "../../../contracts/types/architecture-report.js";
+import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 
 export type * from "../../../contracts/types/architecture-report.js";
 
@@ -83,4 +84,86 @@ export interface GetArchitectureReportRequest {
   knotOf?: string;
   /** Page start for the `knotOf` view (default 0). */
   offset?: number;
+  /**
+   * Planned-edges MODE (bd tea-rags-mcp-xb669.2): judge each edge a writer is
+   * about to add against the indexed graph's dependency norms, BEFORE it is
+   * written. File paths only (owner decision 2026-10-11). The detector
+   * families are not run — the answer is a
+   * {@link GetArchitecturePlannedEdgesResponse}, never a partial report — so
+   * no other report option may ride along. At most
+   * {@link ARCHITECTURE_PLANNED_EDGE_LIMIT} edges.
+   */
+  plannedEdges?: ArchitecturePlannedEdge[];
+}
+
+/** Max `GetArchitectureReportRequest.plannedEdges` per call. */
+export const ARCHITECTURE_PLANNED_EDGE_LIMIT = 50;
+
+/** One edge a writer is about to add: `source` will import / call `target`. */
+export interface ArchitecturePlannedEdge {
+  /** Repo-relative path of the file that will depend. */
+  source: string;
+  /** Repo-relative path of the file it will depend on. */
+  target: string;
+  /**
+   * The name `source` will reference `target` by (`Outer::Inner`) — lets the
+   * constant-reference exclusion run; absent, it is listed as unchecked.
+   */
+  reference?: string;
+}
+
+/**
+ * CONFORMS = along a direction the project writes; MISFIT = against its role
+ * pair's established direction; NEW_PATTERN = a direction nobody wrote whose
+ * pair has no established direction; UNJUDGED = no verdict, see `reason`.
+ */
+export type ArchitecturePlannedEdgeVerdictKind = "CONFORMS" | "MISFIT" | "NEW_PATTERN" | "UNJUDGED";
+
+export type ArchitecturePlannedEdgeUnjudgedReason =
+  | "newFile"
+  | "nonProduction"
+  | "untypedFile"
+  | "weakRole"
+  | "crossLanguage"
+  | "constantReference"
+  | "displacedRole"
+  | "noCodegraph";
+
+/** The route the project establishes instead of the planned edge. */
+export interface ArchitecturePlannedEdgeExpectedPath {
+  /** MISFIT: the direction the project established for the pair, with its edge count. */
+  established?: { roleSrc: string; roleDst: string; support: number };
+  /** An established route through a third role: roles = [roleSrc, via, roleDst], one support per leg. */
+  transit?: { roles: [string, string, string]; supportIn: number; supportOut: number };
+}
+
+export interface ArchitecturePlannedEdgeVerdict {
+  source: string;
+  target: string;
+  verdict: ArchitecturePlannedEdgeVerdictKind;
+  roleSrc?: string;
+  roleDst?: string;
+  /** The language family whose ledger judged the edge. */
+  family?: string;
+  locality?: "sameDirectory" | "sameDomain" | "crossDomain";
+  /** Edges roleSrc → roleDst the ledger holds. */
+  pairSupport?: number;
+  /** Edges roleDst → roleSrc the ledger holds. */
+  reverseSupport?: number;
+  /** The pair's two-sided sign-test p (BH-gated in the ledger). */
+  pValue?: number;
+  expectedPath?: ArchitecturePlannedEdgeExpectedPath;
+  /** UNJUDGED only. */
+  reason?: ArchitecturePlannedEdgeUnjudgedReason;
+  /** Exclusion classes a planned edge's evidence cannot evaluate — present with a verdict. */
+  exclusionsUnchecked?: ("constantReference" | "uncalled" | "frameworkRouted")[];
+}
+
+/** `get_architecture_report` in planned-edges mode — the verdicts and nothing else. */
+export interface GetArchitecturePlannedEdgesResponse {
+  workingTree?: WorkingTreeMarker;
+  mode: "plannedEdges";
+  /** The report's detector families are not run in this mode — call without plannedEdges for the report. */
+  detectorFamilies: "notRun";
+  plannedEdgeVerdicts: ArchitecturePlannedEdgeVerdict[];
 }
