@@ -64,6 +64,7 @@ export {
   isConstructorSymbol,
 } from "./identifier-rows.js";
 export { InMemoryGlobalSymbolTable } from "./symbol-table.js";
+export { runtimeImportExtraction, typeOnlyImportExtraction } from "./import-channels.js";
 export { CODEGRAPH_SYMBOLS_FILE_SIGNALS, CODEGRAPH_SYMBOLS_CHUNK_SIGNALS } from "./payload-signals.js";
 export { codegraphFilters } from "./filters.js";
 export { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "./rerank/derived-signals/index.js";

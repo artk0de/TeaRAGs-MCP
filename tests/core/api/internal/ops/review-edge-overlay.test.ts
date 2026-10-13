@@ -17,6 +17,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { DiffDetectorRun } from "../../../../../src/core/api/internal/ops/diff-detector-run.js";
 import {
   readWorkingTreeFileEdges,
   workingTreeExtractionContext,
@@ -27,7 +28,11 @@ import {
   DefaultSymbolIdComposer,
   LanguageFactory,
 } from "../../../../../src/core/domains/language/index.js";
-import { ReviewEdgeOverlay } from "../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
+import {
+  ReviewEdgeOverlay,
+  type LayeringReading,
+} from "../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
+import { catalogOf, graphOf } from "./__helpers__/diff-run-fixtures.js";
 
 /** One temp working tree per test; removed afterwards. */
 let workTree: string | undefined;
@@ -227,6 +232,98 @@ describe("readWorkingTreeFileEdges", () => {
 
     expect(read.edges).toEqual([
       { sourceRelPath: "src/twice.ts", targetRelPath: "src/b.ts", importedExportNames: ["B", "C"] },
+    ]);
+  });
+});
+
+/**
+ * Type-only imports are structural dependencies (bd tea-rags-mcp-89k7k.31): the
+ * index merges their resolved edges into `cg_symbols_edges_file`, so the
+ * review's overlay must carry them too, or a diff judges a smaller graph than
+ * the whole-repo report does (bd tea-rags-mcp-c9a40).
+ */
+describe("readWorkingTreeFileEdges — type-only imports", () => {
+  // The TypeScript walker records a type-only import's specifier and line only
+  // (`typeOnlyImportRef`), so the index's type-only edge carries no export
+  // names — and neither does the overlay's: parity, not a richer read.
+  it("yields the edge the value-import form yields for an `import type`, names unrecorded as in the index", async () => {
+    const tree = freshWorkTree();
+    writeFile("src/deep/internal.ts", "export interface Shape { a: number }\nexport const SHAPE = 1;\n");
+    writeFile("src/value.ts", 'import { Shape } from "./deep/internal";\nexport const v: Shape = { a: 1 };\n');
+    writeFile("src/typed.ts", 'import type { Shape } from "./deep/internal";\nexport const v: Shape = { a: 1 };\n');
+
+    const value = await readWorkingTreeFileEdges(realDeps(), tree, "src/value.ts");
+    const typed = await readWorkingTreeFileEdges(realDeps(), tree, "src/typed.ts");
+
+    expect(value.edges).toEqual([
+      { sourceRelPath: "src/value.ts", targetRelPath: "src/deep/internal.ts", importedExportNames: ["Shape"] },
+    ]);
+    expect(typed.edges).toEqual([{ sourceRelPath: "src/typed.ts", targetRelPath: "src/deep/internal.ts" }]);
+  });
+
+  it("collapses a runtime and a type-only import of one target into one edge, the runtime names kept", async () => {
+    const tree = freshWorkTree();
+    writeFile("src/b.ts", "export interface Shape { a: number }\nexport const B = 1;\n");
+    writeFile("src/c.ts", "export interface Other { c: number }\n");
+    writeFile(
+      "src/both.ts",
+      'import { B } from "./b";\nimport type { Shape } from "./b.js";\nimport type { Other } from "./c";\n' +
+        "export const v: Shape = { a: B };\nexport type O = Other;\n",
+    );
+
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/both.ts");
+
+    expect(read.edges).toEqual([
+      { sourceRelPath: "src/both.ts", targetRelPath: "src/b.ts", importedExportNames: ["B"] },
+      { sourceRelPath: "src/both.ts", targetRelPath: "src/c.ts" },
+    ]);
+  });
+
+  it("an `import type` from a foundation into a higher layer is the layeringBackEdge the value import is", async () => {
+    const tree = freshWorkTree();
+    writeFile("src/app/service.ts", "export interface Service { run(): void }\nexport const SERVICE = 1;\n");
+    writeFile("src/primitives/value.ts", 'import { Service } from "../app/service";\nexport type V = Service;\n');
+    writeFile("src/primitives/typed.ts", 'import type { Service } from "../app/service";\nexport type T = Service;\n');
+    const components: Readonly<Record<string, string>> = {
+      "src/primitives/value.ts": "primitives",
+      "src/primitives/typed.ts": "primitives",
+      "src/app/service.ts": "app",
+    };
+    const levels: Readonly<Record<string, number>> = { primitives: 0, app: 1 };
+    const layering: LayeringReading = {
+      positionOf: (component) =>
+        component in levels ? { level: levels[component] ?? 0, depth: 0, inKnot: false } : undefined,
+      knotClosedBy: () => undefined,
+      isComposition: () => false,
+      filesOf: (component) =>
+        Object.entries(components)
+          .filter(([, name]) => name === component)
+          .map(([relPath]) => relPath),
+    };
+    const catalog = catalogOf(
+      new Map(
+        Object.entries(components).map(([relPath, name]) => [
+          relPath,
+          { name, instability: 0.5, distanceFromMainSequence: 0 },
+        ]),
+      ),
+    );
+    const backEdgeSubjectsOf = async (relPath: string): Promise<string[]> => {
+      const read = await readWorkingTreeFileEdges(realDeps(), tree, relPath);
+      const result = new DiffDetectorRun({ graph: graphOf([]), catalog, layering }).run(
+        { changedFiles: [relPath] },
+        new ReviewEdgeOverlay([read]),
+      );
+      return result.findings
+        .filter((finding) => finding.detector === "layeringBackEdge")
+        .map((finding) => finding.subject);
+    };
+
+    expect(await backEdgeSubjectsOf("src/primitives/value.ts")).toEqual([
+      "src/primitives/value.ts -> src/app/service.ts",
+    ]);
+    expect(await backEdgeSubjectsOf("src/primitives/typed.ts")).toEqual([
+      "src/primitives/typed.ts -> src/app/service.ts",
     ]);
   });
 });

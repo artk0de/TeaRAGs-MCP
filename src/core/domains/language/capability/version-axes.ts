@@ -85,6 +85,10 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       // single per-language file.
       `${LANGUAGE_ROOT}/factory.ts`,
       "src/core/domains/trajectory/codegraph/symbols/resolution-runner.ts",
+      // The runtime / type-only import split the runner resolves file edges
+      // over (bd tea-rags-mcp-c9a40) — moving an import between channels moves
+      // edges exactly as an edit inside the runner would.
+      "src/core/domains/trajectory/codegraph/symbols/import-channels.ts",
       // The type hierarchy every resolver reads (bd tea-rags-mcp-u0t4p): how
       // walker declarations become kind/ordinal rows and a snapshot, the MRO
       // order of the view `ConeDispatchResolver#nearestDefiner` walks, the
