@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import type { LanguageFactoryDescriptor } from "../../../../../src/core/contracts/types/language.js";
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
-import { collectStructuralConformanceDerivers } from "../../../../../src/core/domains/trajectory/codegraph/exclusion.js";
+import { collectStructuralConformanceDerivers } from "../../../../../src/core/domains/trajectory/codegraph/exclusion/index.js";
 
 describe("collectStructuralConformanceDerivers", () => {
   it("is empty without a factory", () => {

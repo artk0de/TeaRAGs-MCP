@@ -5,7 +5,7 @@ import {
   MapHierarchyView,
   MRO_ORDINAL_DIRECTION,
   MRO_RANK,
-} from "../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
+} from "../../../../../src/core/domains/trajectory/codegraph/hierarchy-view/index.js";
 
 function r(
   source: string,

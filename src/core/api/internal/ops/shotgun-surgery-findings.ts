@@ -18,7 +18,7 @@ import type {
   ShotgunSurgeryArchitectureViolation,
   ShotgunSurgeryReportSummary,
 } from "../../public/dto/architecture.js";
-import { FIND_CO_CHANGED_LIMIT_MAX } from "./silent-coupling-group-findings.js";
+import { FIND_CO_CHANGED_LIMIT_MAX } from "./silent-coupling-group-findings/index.js";
 
 /** The shotgun-surgery run: the detector's report, or why there is none. */
 export type ShotgunSurgeryRun =

@@ -13,12 +13,12 @@
 import type {
   SilentCouplingGroupDrillDown,
   SilentCouplingGroupPartner,
-} from "../../../contracts/types/architecture-report.js";
-import type { RelPath } from "../../../contracts/types/codegraph.js";
+} from "../../../../contracts/types/architecture-report.js";
+import type { RelPath } from "../../../../contracts/types/codegraph.js";
 import {
   silentCouplingPartnerOf,
   type SilentCouplingPairGroup,
-} from "../../../domains/trajectory/codegraph/temporal/index.js";
+} from "../../../../domains/trajectory/codegraph/temporal/index.js";
 
 /** Partners a grouped finding's evidence names; the full list rides `partners`. */
 export const SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS = 3;

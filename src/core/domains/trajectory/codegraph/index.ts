@@ -17,7 +17,7 @@ import type {
 } from "../../../contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
 import type { Trajectory } from "../../../contracts/types/trajectory.js";
-import type { CodegraphExclusionOptions } from "./exclusion.js";
+import type { CodegraphExclusionOptions } from "./exclusion/index.js";
 import { createSymbolsTrajectory } from "./symbols/index.js";
 import {
   createTemporalCochangeHooks,
@@ -136,8 +136,8 @@ export {
   type InMemoryExtractionContext,
   type InMemoryExtractionDeps,
 } from "./symbols/index.js";
-export { buildCodegraphExclusionFilter } from "./exclusion.js";
-export type { CodegraphExclusionOptions } from "./exclusion.js";
+export { buildCodegraphExclusionFilter } from "./exclusion/index.js";
+export type { CodegraphExclusionOptions } from "./exclusion/index.js";
 export type {
   CodegraphPoolBuilder,
   CodegraphProviderRuntime,

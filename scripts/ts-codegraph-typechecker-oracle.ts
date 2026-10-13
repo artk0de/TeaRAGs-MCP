@@ -194,7 +194,7 @@ import {
 } from "../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-fallback.js";
 import { findJsxTagName } from "../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-jsx-component.js";
 import { FUNCTION_INVOKER_MEMBERS } from "../src/core/domains/language/typescript/walker/walker.js";
-import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
+import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion/index.js";
 import { extractFileInMemory } from "../src/core/domains/trajectory/codegraph/symbols/in-memory-extraction.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";

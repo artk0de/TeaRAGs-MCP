@@ -91,7 +91,7 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       // self-dispatch templates derived from it, and the host-class alias that
       // shares its comparator. Reordering any of them moves edges with no
       // per-language file touched.
-      "src/core/domains/trajectory/codegraph/hierarchy-view.ts",
+      "src/core/domains/trajectory/codegraph/hierarchy-view",
       "src/core/domains/trajectory/codegraph/inherited-member-definer.ts",
       "src/core/domains/trajectory/codegraph/symbols/inheritance-edges.ts",
       "src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.ts",

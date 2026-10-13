@@ -141,8 +141,8 @@ import {
   RUBY_BLOCK_ITERATOR_METHODS,
 } from "../src/core/domains/language/ruby/walker/type-sources/ast-inference.js";
 import { collectYardParamTypes } from "../src/core/domains/language/ruby/walker/type-sources/yard.js";
-import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
-import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view.js";
+import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion/index.js";
+import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view/index.js";
 import {
   deriveClassFieldTypesFromParams,
   foldKnownTargetParamTypes,

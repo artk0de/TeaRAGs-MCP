@@ -135,7 +135,7 @@ async function snapshot(opts: SnapshotOptions): Promise<void> {
   const { collectDependencyManifestSources } =
     await import("../../src/core/adapters/filesystem/dependency-manifests.js");
   const { collectSchemaColumnSources, collectStructuralConformanceDerivers } =
-    await import("../../src/core/domains/trajectory/codegraph/exclusion.js");
+    await import("../../src/core/domains/trajectory/codegraph/exclusion/index.js");
   const { CODEGRAPH_SUPPORTED_EXTENSIONS, extensionOf } =
     await import("../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js");
   const { normalizeInheritanceEdges } =

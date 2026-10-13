@@ -11,7 +11,7 @@ import type {
   InheritanceEdge,
   InheritanceEdgeRow,
   InheritanceKind,
-} from "../../../contracts/types/codegraph.js";
+} from "../../../../contracts/types/codegraph.js";
 
 // MRO precedence: prepend (highest) ▸ include/extend ▸ implements ▸ super ▸
 // structural (lowest). A structural ancestor is derived, never declared, so it

@@ -4,7 +4,7 @@ paths:
   - "src/core/domains/language/factory.ts"
   - "src/core/domains/language/shared/**"
   - "src/core/domains/trajectory/codegraph/symbols/resolution-runner.ts"
-  - "src/core/domains/trajectory/codegraph/hierarchy-view.ts"
+  - "src/core/domains/trajectory/codegraph/hierarchy-view/**"
   - "src/core/domains/trajectory/codegraph/inherited-member-definer.ts"
   - "src/core/domains/trajectory/codegraph/symbols/inheritance-edges.ts"
   - "src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.ts"

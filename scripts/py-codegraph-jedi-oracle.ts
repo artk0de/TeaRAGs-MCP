@@ -69,7 +69,7 @@ import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/s
 import { PythonAncestorLinearizerCache } from "../src/core/domains/language/python/resolver/strategies/python-ancestor-policy.js";
 import { PythonExternalVocabulary } from "../src/core/domains/language/python/resolver/strategies/python-external-vocabulary.js";
 import { pythonEnclosingClass } from "../src/core/domains/language/python/resolver/strategies/shared.js";
-import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view.js";
+import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view/index.js";
 import {
   deriveClassFieldTypesFromParams,
   foldKnownTargetParamTypes,

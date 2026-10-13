@@ -28,8 +28,8 @@ import type {
   LanguageFactoryDescriptor,
   SchemaColumnAccessorSource,
   StructuralConformanceDeriver,
-} from "../../../contracts/types/language.js";
-import { buildTestPathFilter, GENERATED_PATTERNS, type PathFilter } from "../../../primitives/paths/index.js";
+} from "../../../../contracts/types/language.js";
+import { buildTestPathFilter, GENERATED_PATTERNS, type PathFilter } from "../../../../primitives/paths/index.js";
 
 /**
  * Generated / machine-authored files that look like source but never participate

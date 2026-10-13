@@ -33,7 +33,7 @@ import {
   extractFromRubyFile,
   SUPER_RECEIVER_SENTINEL,
 } from "../../../../../../src/core/domains/language/ruby/walker/walker.js";
-import { MapHierarchyView } from "../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
+import { MapHierarchyView } from "../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view/index.js";
 import {
   buildHierarchySnapshot,
   normalizeInheritanceEdges,

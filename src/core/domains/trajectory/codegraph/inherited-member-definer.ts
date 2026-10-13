@@ -22,7 +22,7 @@
 
 import type { GraphDbClient, SymbolId } from "../../../contracts/types/codegraph.js";
 import { splitMethodSymbol } from "../../../primitives/ids/index.js";
-import { compareMroPosition, type MroPosition } from "./hierarchy-view.js";
+import { compareMroPosition, type MroPosition } from "./hierarchy-view/index.js";
 
 /** The two graph reads the walk needs — direct ancestors and symbol presence. */
 export type InheritedMemberGraph = Pick<GraphDbClient, "getSupertypes" | "getSymbolVisibilities">;

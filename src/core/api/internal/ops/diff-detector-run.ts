@@ -74,7 +74,7 @@ import {
   silentCouplingGroupDrillDown,
   silentCouplingGroupPartners,
   type SilentCouplingGroupedPair,
-} from "./silent-coupling-group-findings.js";
+} from "./silent-coupling-group-findings/index.js";
 
 /**
  * The indexed graph a detector may traverse, with the diff's own files
