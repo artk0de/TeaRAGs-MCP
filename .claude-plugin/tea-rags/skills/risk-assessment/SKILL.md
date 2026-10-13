@@ -389,7 +389,10 @@ registered — skip, note structural risk not assessed (never claim "no cycles" 
   overlap rule as blast-radius hubs) = **structural-violation** — escalate (tag
   Risk Type, sort to top of its tier). Component flagged `compositionRoot`,
   `entryPoint` or `foundationTerminal` does NOT escalate: the position is its
-  job (triage data). A violation alone, without an identified risk candidate, is
+  job (triage data). Violation `tier` orders escalation: critical (change
+  cascades into wide reach) > active (edge co-changes beyond chance) >
+  structural-only; untiered (mainSequence, hubLike) ranks as structural. A
+  violation alone, without an identified risk candidate, is
   `architecture-diagnostics` territory — not a risk row. Zero judged = "not
   judged", never "clean".
 - **Cycles (`find_cycles`).** Run `find_cycles scope=file pathPattern=<scope>`.

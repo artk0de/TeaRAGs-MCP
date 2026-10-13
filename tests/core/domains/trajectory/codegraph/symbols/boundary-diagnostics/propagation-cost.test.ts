@@ -150,3 +150,25 @@ describe("computePropagationCost", () => {
     expect(report.components.map((c) => c.component)).toEqual(["shared/", "core/", "control/", "periph/"]);
   });
 });
+
+describe("computePropagationCost — per-file reach (bd tea-rags-mcp-r8hme.53)", () => {
+  it("exposes each file's visibility fan-in — the files reaching it, itself included", () => {
+    const graph: FileDependencyGraph = {
+      files: ["a.ts", "b.ts", "c.ts"].map(file),
+      edges: [edge("a.ts", "b.ts"), edge("b.ts", "c.ts")],
+    };
+
+    const report = computePropagationCost(graph);
+
+    expect(Object.fromEntries(report.fileVisibilityFanIn)).toEqual({ "a.ts": 1, "b.ts": 2, "c.ts": 3 });
+  });
+
+  it("answers the fan-in cut the core-periphery reading draws: high = at or above the threshold and above the median", () => {
+    const report = computePropagationCost(corePeripheryGraph());
+    const { threshold, method } = report.corePeriphery.visibilityFanIn;
+
+    expect(method).toBe("otsu");
+    expect(report.admitsVisibilityFanIn(threshold)).toBe(true);
+    expect(report.admitsVisibilityFanIn(threshold - 1)).toBe(false);
+  });
+});

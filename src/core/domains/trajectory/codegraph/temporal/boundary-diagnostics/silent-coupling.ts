@@ -113,6 +113,33 @@ export function isVersionManifest(relPath: RelPath): boolean {
 
 type ExclusionReason = keyof SilentCouplingExclusionCounts;
 
+/** The file classes whose co-change is no evidence of coupling between the pair's code. */
+type CochangeEvidenceEndpointExclusion = Extract<
+  ExclusionReason,
+  "testEndpoints" | "generatedEndpoints" | "documentationEndpoints" | "versionManifestEndpoints"
+>;
+
+/**
+ * Why a file pair's co-change says nothing about its code, or `null`: a test,
+ * generated, documentation or version-manifest endpoint changes with the code
+ * for its own reasons (a release bump, a regenerated client, a doc edit). The
+ * one list silent coupling and the violation impact tiers (bd
+ * tea-rags-mcp-r8hme.53) both exclude by.
+ */
+export function cochangeEvidenceEndpointExclusion(
+  relPathA: RelPath,
+  relPathB: RelPath,
+  isDocumentation?: (relPath: RelPath) => boolean,
+): CochangeEvidenceEndpointExclusion | null {
+  const endpoints = [relPathA, relPathB];
+  const classes = endpoints.map((p) => classify(p));
+  if (classes.some((c) => c.isTest)) return "testEndpoints";
+  if (classes.some((c) => c.isGenerated)) return "generatedEndpoints";
+  if (isDocumentation && endpoints.some(isDocumentation)) return "documentationEndpoints";
+  if (endpoints.some(isVersionManifest)) return "versionManifestEndpoints";
+  return null;
+}
+
 interface Candidate {
   edge: TemporalCochangeEdgeWithLinkage;
   strength: number;
@@ -477,11 +504,8 @@ function exclusionReason(
   significance: CochangeSignificance | undefined,
 ): ExclusionReason | null {
   const endpoints = [edge.relPathA, edge.relPathB];
-  const classes = endpoints.map((p) => classify(p));
-  if (classes.some((c) => c.isTest)) return "testEndpoints";
-  if (classes.some((c) => c.isGenerated)) return "generatedEndpoints";
-  if (isDocumentation && endpoints.some(isDocumentation)) return "documentationEndpoints";
-  if (endpoints.some(isVersionManifest)) return "versionManifestEndpoints";
+  const fileClassExclusion = cochangeEvidenceEndpointExclusion(edge.relPathA, edge.relPathB, isDocumentation);
+  if (fileClassExclusion) return fileClassExclusion;
   if (!endpoints.some((p) => symbolCounts.has(p))) return "unwalkedEndpoints";
   const admitted = significance ? significance.admits(edge.relPathA, edge.relPathB) : edge.lift > 1;
   if (!admitted) return "notSignificant";

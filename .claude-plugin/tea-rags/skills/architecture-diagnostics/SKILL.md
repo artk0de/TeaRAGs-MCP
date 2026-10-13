@@ -164,6 +164,18 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
   for the raw reading. `hottestFile` = costliest carrier + churn/bugFix/recency
   positions + raw readings. Lead residual list with highest score. Absent = no
   git readings → detector order.
+- Impact `tier` (bd r8hme.53) on SDP, leakingAbstraction, norms, layering
+  backEdge/knot/abstractionBypass: `structural` = no carrying edge co-changes
+  beyond chance; `active` = ≥1 carrying file-edge pair admitted by co-change
+  gate; `critical` = active + admitted edge's source reach share ≥
+  `summary.impactTiers.reachCut`. `tierEvidence`: admitted/total carrier pairs
+  (full list, not 5-edge sample), ≤3 pairs, `sourceReach`. Family order = tier
+  first (critical > active > structural > untiered), then `maintenanceCost`,
+  before `limit`. Read `summary.impactTiers` first: per-detector counts, cut
+  (`majority` = small-N fallback, weak), `notApplicable` (component/history
+  findings, never tiered). `built: false` = no co-change history → no tier ≠
+  structural. Lead with critical, then active; structural-only = cheap direction
+  fix, low urgency.
 - Every finding carries `detector`: `stableDependencies` (Phases 2–3),
   `leakingAbstraction` (Phase 3b), `silentCoupling` (Phase 3c), `mainSequence`
   (Phase 3d), `hubLikeDependency` (Phase 3d2) or `layering` (Phase 3e). Never
@@ -188,6 +200,9 @@ Ca/Ce count distinct files across component border.
 | `sources`             | the stable dependent components                               |
 | `cycleWithDependents` | target depends on own dependents → instability self-inflicted |
 
+Root cause `tier` = max over member violations. Rank groups critical > active >
+structural before `violationCount` when tiers built.
+
 `cycleWithDependents: true` = strongest finding. Base names its subclasses,
 concern names its includers, registry names its entries. Fix: invert
 back-reference (registry/lookup, DI, move knowledge to dependents) → every
@@ -204,14 +219,15 @@ split stable core (what dependents use) from volatile rest.
 
 Groups with `violationCount: 1`: judge each by `evidence`.
 
-| Evidence                        | Weight                                                            |
-| ------------------------------- | ----------------------------------------------------------------- |
-| `directoryRelation: disjoint`   | crosses into sibling/cousin — the case borders are about; highest |
-| `ancestor`                      | nested component reaching up into its parent; check direction     |
-| `instabilityDelta`              | severity within the list                                          |
-| `callWeight: 0`                 | type/const/re-export only — weaker coupling                       |
-| `fileEdgeCount` 1               | one file carries it — cheap to move                               |
-| Ca+Ce near `minConnectionCount` | thin support; instability can swing — flag as tentative           |
+| Evidence                        | Weight                                                             |
+| ------------------------------- | ------------------------------------------------------------------ |
+| `directoryRelation: disjoint`   | crosses into sibling/cousin — the case borders are about; highest  |
+| `ancestor`                      | nested component reaching up into its parent; check direction      |
+| `instabilityDelta`              | severity within the list                                           |
+| `tier` critical / active        | change cascades across edge (critical: into wide reach); act first |
+| `callWeight: 0`                 | type/const/re-export only — weaker coupling                        |
+| `fileEdgeCount` 1               | one file carries it — cheap to move                                |
+| Ca+Ce near `minConnectionCount` | thin support; instability can swing — flag as tentative            |
 
 `evidence.fileEdges` (top 5 by call weight) = where to act.
 
@@ -681,12 +697,13 @@ cut) — a settled utility, not pain; reason in `exclusionReasons`.
 ```text
 Architecture report: [scope] — [violationCount] SDP violations, [rootCauseCount] root causes
 [componentCount] components ([moduleComponentCount] modules); judged [judgedEdgeCount] of [componentEdgeCount] component deps (excluded: containment N, low support N); tooling excluded: [nonProduction.excludedFileCount] files; test support excluded: [testSupport.excludedFileCount] files
+Impact tiers: SDP critical N / active N / structural N; layering …; leaks …; reach cut [threshold] ([method]) | not built (no co-change history)
 
 ## Root causes
-| # | Target component | I | Dependents | Cycle | Fix direction |
+| # | Target component | Tier | I | Dependents | Cycle | Fix direction |
 
 ## Cross-component violations (disjoint)
-| # | Source → Target | I src → tgt | Δ | file edges (top) | calls |
+| # | Source → Target | Tier (admitted/total pairs) | I src → tgt | Δ | file edges (top) | calls |
 
 ## Local violations
 [count] — list only on request

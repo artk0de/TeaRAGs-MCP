@@ -826,6 +826,50 @@ export interface ArchitectureMaintenanceCostTag {
   maintenanceCost?: ArchitectureMaintenanceCost;
 }
 
+/**
+ * How much a structural violation costs in practice (bd tea-rags-mcp-r8hme.53):
+ * `structural` = wrong direction, no evidence that change crosses it;
+ * `active` = at least one carrying file edge co-changes beyond the
+ * configuration null (the co-change significance gate, BH over the full
+ * family); `critical` = active, and a source file of an admitted edge reaches
+ * a share of the system above the repo's reach cut. Ordered
+ * structural < active < critical.
+ */
+export type ArchitectureViolationImpactTier = "structural" | "active" | "critical";
+
+/** One carrying file edge, by its endpoints. */
+export interface ArchitectureFileEdgeEndpoints {
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+}
+
+/** Why a violation sits in its tier. */
+export interface ArchitectureViolationImpactTierEvidence {
+  /** Carrying file edges whose pair the co-change gate admits — over the FULL carrier list, not the listed sample. */
+  admittedCarrierPairCount: number;
+  /** Carrying file edges judged: every one, minus pairs with a test, generated, documentation or version-manifest endpoint. */
+  carrierPairCount: number;
+  /** Up to 3 admitted carrying edges. */
+  admittedCarrierPairs: ArchitectureFileEdgeEndpoints[];
+  /**
+   * The furthest-reaching source file of an admitted edge: files transitively
+   * depending on it, as a share of the judged graph's other files (3
+   * decimals). Present when some edge is admitted; the cut it is compared to
+   * is `summary.impactTiers.reachCut`.
+   */
+  sourceReach?: { relPath: RelPath; dependentCount: number; share: number };
+}
+
+/**
+ * The impact tier a tierable violation (and the root cause grouping such
+ * violations) carries — absent on a detector the tiers do not apply to, and on
+ * every violation when the co-change history is missing.
+ */
+export interface ArchitectureViolationImpactTierTag {
+  tier?: ArchitectureViolationImpactTier;
+  tierEvidence?: ArchitectureViolationImpactTierEvidence;
+}
+
 export type ArchitectureViolation = (
   | StableDependencyArchitectureViolation
   | LeakingAbstractionArchitectureViolation
@@ -837,7 +881,8 @@ export type ArchitectureViolation = (
   | LayeringArchitectureViolation
   | NormArchitectureViolation
 ) &
-  ArchitectureMaintenanceCostTag;
+  ArchitectureMaintenanceCostTag &
+  ArchitectureViolationImpactTierTag;
 
 /**
  * A file edge running against its role pair's established direction (bd
@@ -974,10 +1019,17 @@ export interface SilentCouplingArchitectureRootCause {
   partners: RelPath[];
 }
 
-export type ArchitectureRootCause =
+/** A root cause's tier: the highest tier among its member violations (bd tea-rags-mcp-r8hme.53). */
+export interface ArchitectureRootCauseImpactTierTag {
+  tier?: ArchitectureViolationImpactTier;
+}
+
+export type ArchitectureRootCause = (
   | StableDependencyArchitectureRootCause
   | LeakingAbstractionArchitectureRootCause
-  | SilentCouplingArchitectureRootCause;
+  | SilentCouplingArchitectureRootCause
+) &
+  ArchitectureRootCauseImpactTierTag;
 
 /**
  * Edges read but not judged, by the first reason that applied: file edges that
@@ -1666,9 +1718,64 @@ export interface PropagationCostReportSummary {
   components: PropagationCostComponentSummary[];
 }
 
+/** Violations per impact tier, over the detector's FULL list (before `limit`). */
+export interface ArchitectureViolationImpactTierCounts {
+  structural: number;
+  active: number;
+  critical: number;
+}
+
+/**
+ * The reach cut CRITICAL compares against: per file, the share of the judged
+ * graph's other files that transitively depend on it; Otsu over those
+ * per-file counts (the propagation-cost visibility fan-in population), floored
+ * at their median. `majority` = the median floor alone (too few files, or no
+ * bimodal split) — no evidence of a high-reach class, reported as such.
+ */
+export interface ArchitectureViolationReachCutSummary {
+  signal: "transitiveDependentShare";
+  method: "otsu" | "majority";
+  /** A source reaches above the cut at share ≥ threshold AND strictly above the median (3 decimals). */
+  threshold: number;
+  /** η of the Otsu split, when one was computed. */
+  separability?: number;
+  /** Files the cut is drawn over. */
+  fileCount: number;
+}
+
+/** The detectors the tiers do not apply to, and why. */
+export interface ArchitectureViolationImpactTierNotApplicable {
+  detectors: string[];
+  reason: string;
+}
+
+/**
+ * Impact tiers (bd tea-rags-mcp-r8hme.53). `built: false` when the codegraph
+ * holds no co-change bundle history: no violation carries a tier then — an
+ * absent tier is no evidence of `structural`.
+ */
+export type ArchitectureViolationImpactTierReportSummary =
+  | { built: false; reason: "noCochangeHistory"; notApplicable: ArchitectureViolationImpactTierNotApplicable }
+  | {
+      built: true;
+      /** The co-change gate ACTIVE reads: the full family, as silent coupling judges it. */
+      cochangeSignificance: CochangeSignificanceSummary;
+      reachCut: ArchitectureViolationReachCutSummary;
+      byDetector: {
+        stableDependencies: ArchitectureViolationImpactTierCounts;
+        leakingAbstraction: ArchitectureViolationImpactTierCounts;
+        /** backEdge, knot (its feedback-arc set) and abstractionBypass findings. */
+        layering: ArchitectureViolationImpactTierCounts;
+        /** Present only when the request asked for norms. */
+        norms?: ArchitectureViolationImpactTierCounts;
+      };
+      notApplicable: ArchitectureViolationImpactTierNotApplicable;
+    };
+
 export interface ArchitectureReportSummary {
   nonProduction: NonProductionExclusionSummary;
   testSupport: TestSupportExclusionSummary;
+  impactTiers: ArchitectureViolationImpactTierReportSummary;
   stableDependencies: StableDependenciesReportSummary;
   leakingAbstraction: LeakingAbstractionReportSummary;
   silentCoupling: SilentCouplingReportSummary;
@@ -1823,12 +1930,16 @@ export interface GetArchitectureReportResponse {
   /**
    * Read these first. Per detector, `stableDependencies`, then
    * `leakingAbstraction`, then `silentCoupling`, each capped at `limit` and
-   * ordered most violations first.
+   * ordered most violations first. `tier` = the highest tier among the root
+   * cause's member violations.
    */
   rootCauses: ArchitectureRootCause[];
   /**
    * Per detector in the same order, then `mainSequence` (one finding per
-   * component, no root cause), each capped at `limit`, most severe first.
+   * component, no root cause), each capped at `limit`. Inside a family:
+   * impact tier first (critical, active, structural, untiered), then
+   * maintenance cost, costliest first — so a critical violation survives the
+   * cap however cheap its files are.
    */
   violations: ArchitectureViolation[];
   /**
