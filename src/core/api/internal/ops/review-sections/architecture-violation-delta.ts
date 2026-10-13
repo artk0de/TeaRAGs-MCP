@@ -132,7 +132,13 @@ export function collapsePersistingFindings(
       carriedKeys.add(key);
       continue;
     }
-    if (!persisting.has(key)) persisting.set(key, { family: findingKeyFamily(key), subject: finding.subject });
+    if (!persisting.has(key)) {
+      persisting.set(key, {
+        family: findingKeyFamily(key),
+        subject: finding.subject,
+        ...(finding.tier === undefined ? {} : { tier: finding.tier }),
+      });
+    }
     persistingByDetector.set(finding.detector, (persistingByDetector.get(finding.detector) ?? 0) + 1);
   }
   const nonLocal = [...delta.introduced]
@@ -177,7 +183,10 @@ function keyedViolations(violations: readonly ArchitectureViolation[]): Map<stri
 const FILE_ENDPOINT_FIELDS = ["sourceRelPath", "targetRelPath", "relPath"] as const;
 
 /** `value` with every renamed file endpoint replaced by its pre-rename path. */
-function withCanonicalPaths<T extends object>(value: T, renamedFrom: ReadonlyMap<string, string> | undefined): T {
+export function withCanonicalPaths<T extends object>(
+  value: T,
+  renamedFrom: ReadonlyMap<string, string> | undefined,
+): T {
   if (renamedFrom === undefined) return value;
   let canonical = value;
   for (const field of FILE_ENDPOINT_FIELDS) {
@@ -188,12 +197,18 @@ function withCanonicalPaths<T extends object>(value: T, renamedFrom: ReadonlyMap
   return canonical;
 }
 
-/** A report violation's compact entry: its own subject when it renders one, else its key's endpoints. */
-function violationChangeSubject(key: string, violation: ArchitectureViolation): ArchitectureChangeSubject {
+/**
+ * A report violation's compact entry: its own subject when it renders one,
+ * else its key's endpoints — with the violation's impact tier when it carries one.
+ */
+export function violationChangeSubject(key: string, violation: ArchitectureViolation): ArchitectureChangeSubject {
   const family = findingKeyFamily(key);
-  if ("subject" in violation && typeof violation.subject === "string") return { family, subject: violation.subject };
+  const tier = violation.tier === undefined ? {} : { tier: violation.tier };
+  if ("subject" in violation && typeof violation.subject === "string") {
+    return { family, subject: violation.subject, ...tier };
+  }
   const endpoints = JSON.parse(key.slice(key.indexOf(":") + 1)) as string[];
-  return { family, subject: endpoints.join(UNORDERED_KEY_FAMILIES.has(family) ? " ~ " : " → ") };
+  return { family, subject: endpoints.join(UNORDERED_KEY_FAMILIES.has(family) ? " ~ " : " → "), ...tier };
 }
 
 /** Families whose key endpoints are a sorted set, not a direction. */

@@ -187,6 +187,12 @@ export interface ArchitectureReportHistoryLookups {
   readImportSpecifiers?: ModuleImportSpecifierLookup;
   readFileCommitCounts?: GitFileCommitCountLookup;
   readFileMaintenanceSignals?: GitFileMaintenanceSignalLookup;
+  /**
+   * The co-change gate silent coupling and the impact tiers read, when the
+   * caller already holds one — a review passes its composed query/full gate
+   * (bd tea-rags-mcp-r8hme.53 T2). Absent = the judgement runs the full family.
+   */
+  cochangeSignificance?: CochangeSignificance;
 }
 
 /** A family's full list — the maintenance-cost ranking caps it, after ordering (bd tea-rags-mcp-r8hme.20). */
@@ -282,7 +288,14 @@ export class ArchitectureReportOps {
       ? async () => new Map([...(await maintenanceSignals())].map(([relPath, s]) => [relPath, s.commitCount]))
       : readFileCommitCounts;
     const scope = this.scopeGraph(facts.production, request);
-    const runs = await this.runDetectors(facts, scope, request, readImportSpecifiers, commitCounts);
+    const runs = await this.runDetectors(
+      facts,
+      scope,
+      request,
+      readImportSpecifiers,
+      commitCounts,
+      lookups.cochangeSignificance,
+    );
     const view = this.projectFindings(runs, request);
     const costModel =
       maintenanceSignals && hasArchitectureFindings(view, runs)
@@ -326,6 +339,7 @@ export class ArchitectureReportOps {
     request: ArchitectureReportScope,
     readImportSpecifiers?: ModuleImportSpecifierLookup,
     readFileCommitCounts?: GitFileCommitCountLookup,
+    givenCochangeSignificance?: CochangeSignificance,
   ): Promise<ArchitectureDetectorRuns> {
     const { graph } = scope;
     // Facade classification + components (bd tea-rags-mcp-r8hme.7): the
@@ -359,7 +373,9 @@ export class ArchitectureReportOps {
     // violation impact tiers (bd tea-rags-mcp-r8hme.53). F₂'s existence check
     // is the build's own liveness — the builder stores only paths tracked at
     // its HEAD and not deleted in the working tree.
-    const cochangeSignificance = assessGraphCochangeSignificance(cochange, { kind: "full" });
+    // A caller-held gate (a review's composed family) replaces it.
+    const cochangeSignificance =
+      givenCochangeSignificance ?? assessGraphCochangeSignificance(cochange, { kind: "full" });
     const silent = await detectSilentCouplingSeeingAssetImports(
       cochange,
       cochangeSignificance,

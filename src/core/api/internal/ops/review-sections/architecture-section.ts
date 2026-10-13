@@ -58,6 +58,7 @@ import {
   detectSilentCoupling,
   linkImportedCochangePairs,
   oneWalkedViolationImporters,
+  type CochangeSignificance,
   type SilentCouplingReport,
 } from "../../../../domains/trajectory/codegraph/temporal/index.js";
 import type { ArchitectureChangeBlock, ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js";
@@ -70,6 +71,8 @@ import {
 } from "../architecture-facts.js";
 import { readArchitectureGraphFacts, type ArchitectureGraphFacts } from "../architecture-graph-facts.js";
 import {
+  architectureViolationCarrierFiles,
+  ComponentEdgeCarrierIndex,
   FileMaintenanceCostModel,
   filesByComponent,
   maintenanceCostFamily,
@@ -104,6 +107,12 @@ import {
   resolvedChangeSubjects,
   type ArchitectureViolationDelta,
 } from "./architecture-violation-delta.js";
+import {
+  ArchitectureViolationTierLookup,
+  composeReviewCochangeSignificance,
+  separateTouchedActiveViolations,
+  stampDiffFindingImpactTiers,
+} from "./architecture-violation-impact-tiers.js";
 import type {
   ReviewSectionBuildContext,
   ReviewSectionContext,
@@ -190,16 +199,9 @@ export async function buildSilentCouplingFacts(
   changedFiles: readonly string[],
   readImportSpecifiers?: ModuleImportSpecifierLookup,
   diffCommits?: readonly string[],
+  significance = assessReviewQueryCochangeSignificance(snapshot, changedFiles, diffCommits),
 ): Promise<DiffDetectorSilentCouplingFacts> {
-  const graph = snapshot ?? { meta: null, edges: [] };
-  // The review's question is the diff's pairs, so the significance family is
-  // the query family (bd tea-rags-mcp-89k7k.1.14): every pair touching the
-  // diff, judged against the history minus the diff's own commits.
-  const significance = assessGraphCochangeSignificance(graph, {
-    kind: "query",
-    diffFiles: changedFiles,
-    ...(diffCommits ? { diffCommits } : {}),
-  });
+  const graph = snapshot ?? EMPTY_COCHANGE;
   const options = {
     isDocumentation: isDocumentationPath,
     fileDependencyEdges: productionEdges,
@@ -215,6 +217,24 @@ export async function buildSilentCouplingFacts(
   if (importers.length === 0) return silentCouplingFactsOf(first);
   const linked = linkImportedCochangePairs(graph, await readImportSpecifiers(importers));
   return silentCouplingFactsOf(detectSilentCoupling(linked, productionFiles, options));
+}
+
+/**
+ * The review's co-change gate over the pairs the diff touches (bd
+ * tea-rags-mcp-89k7k.1.14): the query family — every pair touching the diff,
+ * judged against the history minus the diff's own commits. Undefined when
+ * the snapshot carries no bundle history.
+ */
+export function assessReviewQueryCochangeSignificance(
+  snapshot: TemporalCochangeGraph | null | undefined,
+  changedFiles: readonly string[],
+  diffCommits?: readonly string[],
+): CochangeSignificance | undefined {
+  return assessGraphCochangeSignificance(snapshot ?? EMPTY_COCHANGE, {
+    kind: "query",
+    diffFiles: changedFiles,
+    ...(diffCommits ? { diffCommits } : {}),
+  });
 }
 
 /** The report's violation list and exclusion counters, mapped to the port shape. */
@@ -381,20 +401,42 @@ const EMPTY_COCHANGE: TemporalCochangeGraph = { meta: null, edges: [] };
  * The asset-import specifier read is left out: it relinks silent-coupling
  * pairs identically on both sides, so it cannot move a key, and it would
  * read every one-walked pair of the repository instead of the diff's.
+ *
+ * Impact tiers (bd tea-rags-mcp-r8hme.53 T2): both runs tag their violations
+ * against ONE co-change gate — `querySignificance` (the pass silent coupling
+ * already read) for the pairs the diff touches, so the diff's own commits
+ * cannot make a carrying pair active, and one full pass for every other pair
+ * (`composeReviewCochangeSignificance`). Two passes per review, not one per
+ * judge. No query gate (no bundle history) leaves each judge to its own full
+ * pass, which then finds no history either and claims no tier.
  */
 export async function measureChangeViolationDelta(
   facts: ArchitectureGraphFacts,
   overlay: ReviewEdgeOverlay,
   lookups: Pick<ReviewSectionContext, "scope" | "readFileMaintenanceSignals">,
-): Promise<ArchitectureViolationDelta> {
+  querySignificance?: CochangeSignificance,
+): Promise<{ delta: ArchitectureViolationDelta; tiers: ArchitectureViolationTierLookup }> {
   const ops = new ArchitectureReportOps();
   const request = { limit: Number.POSITIVE_INFINITY };
-  const history = { readFileMaintenanceSignals: lookups.readFileMaintenanceSignals };
+  const fullSignificance = querySignificance && assessGraphCochangeSignificance(facts.cochange, { kind: "full" });
+  const history = {
+    readFileMaintenanceSignals: lookups.readFileMaintenanceSignals,
+    ...(querySignificance && fullSignificance
+      ? {
+          cochangeSignificance: composeReviewCochangeSignificance(
+            fullSignificance,
+            querySignificance,
+            lookups.scope.files,
+          ),
+        }
+      : {}),
+  };
   const [base, overlaid] = await Promise.all([
     ops.judge(facts, request, history),
     ops.judge(applyEdgeOverlay(facts, overlay), request, history),
   ]);
-  return measureArchitectureViolationDelta(base.violations, overlaid.violations, lookups.scope.renamedFrom);
+  const delta = measureArchitectureViolationDelta(base.violations, overlaid.violations, lookups.scope.renamedFrom);
+  return { delta, tiers: new ArchitectureViolationTierLookup(base.violations, delta) };
 }
 
 /**
@@ -473,7 +515,13 @@ export const architectureSectionProvider: ReviewSectionProvider = {
     // tea-rags-mcp-89k7k.1.10) — the run consumes it, never re-judges raw
     // pairs. The asset-import rescue reads the context's payload
     // specifiers for the diff-touching one-walked pairs only (bd
-    // tea-rags-mcp-2wsnt).
+    // tea-rags-mcp-2wsnt). Its query gate is read once and reused by the
+    // impact tiers of the change delta (bd tea-rags-mcp-r8hme.53).
+    const querySignificance = assessReviewQueryCochangeSignificance(
+      context.temporalCochange,
+      scope.files,
+      scope.diffCommits,
+    );
     const silentCouplingFacts = await buildSilentCouplingFacts(
       context.temporalCochange,
       production.graph.files,
@@ -481,6 +529,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       scope.files,
       context.readImportSpecifiers,
       scope.diffCommits,
+      querySignificance,
     );
 
     // The working-tree side: every scope file the extraction can walk, one
@@ -536,8 +585,27 @@ export const architectureSectionProvider: ReviewSectionProvider = {
     // finding a remedy repairs cheaply; the rest collapse into the compact
     // change block. Collapsed AFTER the remedies are stamped (a remedy keeps
     // its finding) and BEFORE ranking and the cap.
-    const delta = await measureChangeViolationDelta(graphFacts, overlay, { ...context, readFileMaintenanceSignals });
-    const collapsed = collapsePersistingFindings(result.findings, delta, scope.renamedFrom);
+    // Each finding carries its report violation's impact tier, stamped
+    // before the collapse so the compact persisting entries keep it (bd
+    // tea-rags-mcp-r8hme.53); a touched active/critical one is lifted out of
+    // `persisting` into `touchedActive`.
+    const { delta, tiers } = await measureChangeViolationDelta(
+      graphFacts,
+      overlay,
+      { ...context, readFileMaintenanceSignals },
+      querySignificance,
+    );
+    const tieredFindings = stampDiffFindingImpactTiers(result.findings, tiers, scope.renamedFrom);
+    const collapsed = collapsePersistingFindings(tieredFindings, delta, scope.renamedFrom);
+    const carriers = new ComponentEdgeCarrierIndex(facts.components.componentOf, facts.components.dependencies);
+    const touched = separateTouchedActiveViolations({
+      persisting: collapsed.persisting,
+      findings: tieredFindings,
+      tiers,
+      changedFiles: scope.files,
+      carrierFilesOf: (violation) => architectureViolationCarrierFiles(violation, carriers),
+      ...(scope.renamedFrom ? { renamedFrom: scope.renamedFrom } : {}),
+    });
     // Ranked by maintenance cost BEFORE the cap (bd tea-rags-mcp-r8hme.20),
     // so a family's slots keep its costliest findings.
     const findings = await rankDiffFindingsByMaintenanceCost(
@@ -568,7 +636,8 @@ export const architectureSectionProvider: ReviewSectionProvider = {
         introducedCount: collapsed.introducedCount,
         nonLocal: collapsed.nonLocal,
         resolved: resolvedChangeSubjects(delta),
-        persisting: collapsed.persisting,
+        persisting: touched.persisting,
+        touchedActive: touched.touchedActive,
         ...(await readIndexLagVerdict(scope, context.indexLag)),
       } satisfies ArchitectureChangeBlock,
     };

@@ -20,6 +20,7 @@ import type {
   FileDependencyGraph,
   FileDependencyGraphFile,
   RelPath,
+  TemporalCochangeGraph,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   collectSymbols,
@@ -202,5 +203,87 @@ describe("architecture section change block (bd tea-rags-mcp-89k7k.1.7)", () => 
     expect(payload.change).toBeDefined();
     expect(payload.change?.indexLag).toBeUndefined();
     expect(payload.change?.maybeAlreadyCommitted).toBeUndefined();
+  });
+});
+
+describe("architecture section impact tiers (bd tea-rags-mcp-r8hme.53 T2)", () => {
+  /**
+   * `pair` co-changing in eight one-commit bundles (commits `p0..p7`) beside
+   * ten solo changes of four other files: the configuration null expects well
+   * under one co-change for any pair, so eight is far beyond it.
+   */
+  function cochangeWith(pair: readonly [string, string]): TemporalCochangeGraph {
+    const bundles: (readonly string[])[] = [];
+    for (let i = 0; i < 8; i++) bundles.push(pair);
+    for (const solo of ["src/dep1/d.ts", "src/dep2/d.ts", "src/ext1/e.ts", "src/ext2/e.ts"]) {
+      for (let i = 0; i < 10; i++) bundles.push([solo]);
+    }
+    return {
+      meta: null,
+      edges: [],
+      bundles: new Map(bundles.map((files, id) => [id, files])),
+      bundleCommits: new Map(bundles.map((_, id) => [id, [id < 8 ? `p${id}` : `s${id}`]])),
+    };
+  }
+
+  const ownCommits = Array.from({ length: 8 }, (_, i) => `p${i}`);
+  const liveTier = (tier: string | undefined) => tier === "active" || tier === "critical";
+
+  it("carries the overlaid run's tier onto the SDP finding the diff introduces", async () => {
+    writeUiTree();
+    writeFile("src/core/k.ts", 'import { V } from "../ui/v";\nexport const K = V;\n');
+
+    const payload = await run(
+      runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"]), {
+        temporalCochange: cochangeWith(["src/core/k.ts", "src/ui/v.ts"]),
+      }),
+    );
+
+    expect(liveTier(payload.findings.find((f) => f.detector === "stableDependencies")?.tier)).toBe(true);
+  });
+
+  it("never lets the diff's own commits make the pair active — the review judges the query family", async () => {
+    writeUiTree();
+    writeFile("src/core/k.ts", 'import { V } from "../ui/v";\nexport const K = V;\n');
+
+    const payload = await run(
+      runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"], { diffCommits: ownCommits }), {
+        temporalCochange: cochangeWith(["src/core/k.ts", "src/ui/v.ts"]),
+      }),
+    );
+
+    expect(payload.findings.find((f) => f.detector === "stableDependencies")?.tier).toBe("structural");
+  });
+
+  it("lifts a persisting active violation the diff touches out of persisting into touchedActive", async () => {
+    writeUiTree();
+    writeFile("src/core/j.ts", 'import { V } from "../ui/v";\nexport const J = 2;\nexport const W = V;\n');
+
+    const graph = stableUnstableGraph([edge("src/core/j.ts", "src/ui/v.ts")], ["src/core/j.ts"]);
+    const payload = await run(
+      runContext(graph, scopeOf(["src/core/j.ts"]), {
+        temporalCochange: cochangeWith(["src/core/j.ts", "src/ui/v.ts"]),
+      }),
+    );
+
+    const touched = payload.change?.touchedActive ?? [];
+    expect(touched).toEqual([expect.objectContaining({ family: "stableDependencies", subject: "src/core → src/ui" })]);
+    expect(liveTier(touched[0]?.tier)).toBe(true);
+    expect(payload.change?.persisting.filter((p) => p.family === "stableDependencies")).toEqual([]);
+  });
+
+  it("keeps a structural persisting violation collapsed", async () => {
+    writeUiTree();
+    writeFile("src/core/j.ts", 'import { V } from "../ui/v";\nexport const J = 2;\nexport const W = V;\n');
+
+    const graph = stableUnstableGraph([edge("src/core/j.ts", "src/ui/v.ts")], ["src/core/j.ts"]);
+    const payload = await run(
+      runContext(graph, scopeOf(["src/core/j.ts"]), {
+        temporalCochange: cochangeWith(["src/dep3/d.ts", "src/ext3/e.ts"]),
+      }),
+    );
+
+    expect(payload.change?.touchedActive).toEqual([]);
+    expect(payload.findings.filter((f) => f.detector === "stableDependencies")).toEqual([]);
   });
 });
