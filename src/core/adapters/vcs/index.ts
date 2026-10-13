@@ -31,6 +31,7 @@ export {
   readAddedLineRangesOfFiles,
   readStatusPorcelain,
   readWorkingTreeChanges,
+  readRenamedFrom,
   readWorkingTreeRenames,
   type AddedLineRange,
 } from "./git/git-cli/working-tree.js";
