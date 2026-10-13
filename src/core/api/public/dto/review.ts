@@ -308,6 +308,8 @@ export interface NormsSectionPayload {
   addedEdgeVerdicts: readonly NormsAddedEdgeVerdict[];
   /** Every added edge's verdict, counted before the cap. */
   verdictCounts: Record<NormsAddedEdgeVerdictKind, number>;
+  /** UNJUDGED edges per reason, counted before the cap; only reasons that occur. */
+  unjudgedReasonCounts: Partial<Record<NormsUnjudgedReason, number>>;
   /** Edges the change removed — counted, never judged. */
   removedEdgeCount: number;
   /** Added edges touching a non-production file (tests, tooling) — not judged. */

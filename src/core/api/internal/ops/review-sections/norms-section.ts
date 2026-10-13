@@ -171,12 +171,19 @@ export function judgeAddedEdgeNorms(input: AddedEdgeNormsInput): NormsSectionRes
     NEW_PATTERN: 0,
     UNJUDGED: 0,
   };
-  for (const row of verdicts) verdictCounts[row.verdict]++;
+  const unjudgedReasonCounts: Partial<Record<NormsUnjudgedReason, number>> = {};
+  for (const row of verdicts) {
+    verdictCounts[row.verdict]++;
+    if (row.verdict === "UNJUDGED" && row.reason !== undefined) {
+      unjudgedReasonCounts[row.reason] = (unjudgedReasonCounts[row.reason] ?? 0) + 1;
+    }
+  }
   const cap = input.cap ?? NORMS_VERDICT_CAP;
   return {
     built: true,
     addedEdgeVerdicts: verdicts.slice(0, cap),
     verdictCounts,
+    unjudgedReasonCounts,
     removedEdgeCount: input.removedEdgeCount,
     ...(nonProductionEdgeCount > 0 ? { nonProductionEdgeCount } : {}),
     ...(verdicts.length > cap ? { truncated: verdicts.length - cap } : {}),
