@@ -60,6 +60,7 @@ import {
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   DIFF_FAMILY_DETECTORS,
+  targetsBeforeChange,
   type DiffDetectorBaseEdgeReader,
   type DiffDetectorCatalog,
   type DiffDetectorContractReader,
@@ -305,10 +306,71 @@ export class DiffDetectorRun {
    * there answers `undefined`: a missing fact is never "already held".
    */
   private heldBeforeChange(edge: OverlayEdge): HeldBeforeChangeEvidence | undefined {
-    const atBase = this.baseEdges?.targetsAtBase(edge.source);
-    if (atBase !== undefined) return atBase.has(edge.target) ? "base" : undefined;
-    return indexedGraphHolds(this.graph, edge) ? "index" : undefined;
+    return edgeHeldBeforeChange(edge, { baseEdges: this.baseEdges, graph: this.graph });
   }
+}
+
+/** The evidence ports the before-the-change predicates read; an absent port is no evidence. */
+export interface DiffEdgeEvidencePorts {
+  baseEdges?: DiffDetectorBaseEdgeReader;
+  graph?: DiffDetectorGraphReader;
+}
+
+/**
+ * {@link DiffDetectorRun}'s `heldBeforeChange` as a function of its ports: the
+ * diff base decides whenever it answers for the source, else the indexed
+ * graph; `undefined` = nothing held the pair.
+ */
+export function edgeHeldBeforeChange(
+  edge: OverlayEdge,
+  { baseEdges, graph }: DiffEdgeEvidencePorts,
+): HeldBeforeChangeEvidence | undefined {
+  const atBase = baseEdges?.targetsAtBase(edge.source);
+  if (atBase !== undefined) return atBase.has(edge.target) ? "base" : undefined;
+  return indexedGraphHolds(graph, edge) ? "index" : undefined;
+}
+
+/**
+ * The (source, target) pairs the change ADDS (bd tea-rags-mcp-xb669.3): the
+ * overlay's unique pairs of the changed files minus every pair held before
+ * the change — the subtraction the run hands its families as `addedEdges`.
+ */
+export function diffAddedEdges(
+  changedFiles: readonly string[],
+  overlay: ReviewEdgeOverlay,
+  ports: DiffEdgeEvidencePorts,
+): readonly OverlayEdge[] {
+  return uniqueOverlayEdges(changedFiles, overlay).filter((edge) => edgeHeldBeforeChange(edge, ports) === undefined);
+}
+
+/**
+ * How many (source, target) pairs the change REMOVES (bd tea-rags-mcp-xb669.3):
+ * per changed file whose tree read succeeded, the targets it held before the
+ * change ({@link targetsBeforeChange}) its overlay no longer holds, plus every
+ * pre-change out-edge of a deleted file. A skipped read (current edges
+ * unknown) and a file no port answers for count nothing — a missing fact is
+ * never a removal.
+ */
+export function diffRemovedEdgeCount(
+  changedFiles: readonly string[],
+  overlay: ReviewEdgeOverlay,
+  ports: DiffEdgeEvidencePorts & { deletedFiles?: readonly string[] },
+): number {
+  const skipped = new Set(overlay.unsupported().map((skip) => skip.relPath));
+  const removedFrom = (relPath: string, current: ReadonlySet<string>): number => {
+    const before = targetsBeforeChange(relPath, ports.baseEdges, ports.graph);
+    if (before === undefined) return 0;
+    let count = 0;
+    for (const target of before) if (target !== relPath && !current.has(target)) count++;
+    return count;
+  };
+  let removed = 0;
+  for (const relPath of new Set(changedFiles)) {
+    if (skipped.has(relPath) || !overlay.masked.has(relPath)) continue;
+    removed += removedFrom(relPath, new Set(overlay.edgesFrom(relPath).map((edge) => edge.targetRelPath)));
+  }
+  for (const relPath of new Set(ports.deletedFiles ?? [])) removed += removedFrom(relPath, new Set());
+  return removed;
 }
 
 /**

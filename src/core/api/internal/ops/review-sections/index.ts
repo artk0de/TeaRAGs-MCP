@@ -12,6 +12,7 @@ import { architectureSectionProvider } from "./architecture-section.js";
 import { cohesionSectionProvider } from "./cohesion-section.js";
 import { incompleteChangeSectionProvider } from "./incomplete-change-section.js";
 import { namingSectionProvider } from "./naming-section.js";
+import { normsSectionProvider } from "./norms-section.js";
 import type {
   ReviewGraphDb,
   ReviewNamingLexicon,
@@ -27,7 +28,13 @@ export type {
   ReviewSectionContext,
   ReviewSectionProvider,
 };
-export { architectureSectionProvider, cohesionSectionProvider, incompleteChangeSectionProvider, namingSectionProvider };
+export {
+  architectureSectionProvider,
+  cohesionSectionProvider,
+  incompleteChangeSectionProvider,
+  namingSectionProvider,
+  normsSectionProvider,
+};
 
 /** Every registered section, in the order a default-all review lists them (they run concurrently). */
 export const REVIEW_SECTION_PROVIDERS: readonly ReviewSectionProvider[] = [
@@ -35,6 +42,7 @@ export const REVIEW_SECTION_PROVIDERS: readonly ReviewSectionProvider[] = [
   incompleteChangeSectionProvider,
   cohesionSectionProvider,
   architectureSectionProvider,
+  normsSectionProvider,
 ];
 
 /**

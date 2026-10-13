@@ -33,6 +33,7 @@ export type {
   HeldBeforeChangeEvidence,
   OverlayEdge,
 } from "./diff-family-detector.js";
+export { targetsBeforeChange } from "./pre-existing.js";
 export { DiffFindingRemedyResolver, stampDiffFindingRemedies } from "./remedy-resolver.js";
 export { WHOLE_MODULE_EXPORT_NAME } from "./shared.js";
 

@@ -226,8 +226,9 @@ describe("ReviewChangesOps", () => {
       "cohesion",
       "incompleteChange",
       "naming",
+      "norms",
     ]);
-    for (const id of ["architecture", "cohesion", "incompleteChange", "naming"] as const) {
+    for (const id of ["architecture", "cohesion", "incompleteChange", "naming", "norms"] as const) {
       expect(result.review.sections[id]?.built, id).toBe(true);
     }
     expect(result.review.workTree).toBe(repo);
@@ -465,7 +466,13 @@ describe("ReviewChangesOps", () => {
     expect(empty.review.sections.naming).toMatchObject({ built: false });
     expect(empty.review.sections.naming?.reason).toMatch(/codegraph/);
     const all = ReviewChangesOps.empty({});
-    expect(Object.keys(all.review.sections).sort()).toEqual(["architecture", "cohesion", "incompleteChange", "naming"]);
+    expect(Object.keys(all.review.sections).sort()).toEqual([
+      "architecture",
+      "cohesion",
+      "incompleteChange",
+      "naming",
+      "norms",
+    ]);
   });
 
   it("a diff over the cap reports skipped and truncated in the envelope", async () => {

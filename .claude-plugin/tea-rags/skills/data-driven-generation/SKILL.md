@@ -360,7 +360,7 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
    = [target file], intent = change description) → run the pinning scenarios.
    SKIP verdict → note behavior unpinned, proceed.
 4. **Fix-at-write review before commit** (codegraph on): ONE
-   `review_changes(changes: {}, sections: ["naming", "incompleteChange", "cohesion", "architecture"])`
+   `review_changes(changes: {}, sections: ["naming", "incompleteChange", "cohesion", "architecture", "norms"])`
    (`{}` = the uncommitted edit just generated; branch-wide review →
    `changes: {base}` with `base` = `git merge-base HEAD main`), then the
    fix-at-write loop below. No commit before the loop ends.
@@ -377,18 +377,23 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
      here, not in review. Partner verdict rule below.
    - **cohesion** (`splitCandidates`) + **architecture** families → triage
      below.
+   - **norms** = dependency-norm verdict per added file edge
+     (`addedEdgeVerdicts`) → triage below.
 
 #### Fix-at-write loop
 
-**Triage** every architecture / cohesion / incompleteChange finding:
+**Triage** every architecture / cohesion / incompleteChange / norms finding:
 
-| Finding                   | Class             | Action                                                              |
-| ------------------------- | ----------------- | ------------------------------------------------------------------- |
-| no `preExisting`          | must-fix          | repair in this diff                                                 |
-| `preExisting` + `remedy`  | cheap-preExisting | apply `remedy` (cheap by construction)                              |
-| `change.nonLocal` entry   | must-fix          | introduced away from diff — repair like no `preExisting`            |
-| `change.touchedActive`    | must-fix priority | edit hits live cascade (`tier` active/critical): repair or ask user |
-| `change.persisting` entry | report-only       | structural; one count line per family, no triage                    |
+| Finding                   | Class             | Action                                                                                |
+| ------------------------- | ----------------- | ------------------------------------------------------------------------------------- |
+| no `preExisting`          | must-fix          | repair in this diff                                                                   |
+| `preExisting` + `remedy`  | cheap-preExisting | apply `remedy` (cheap by construction)                                                |
+| `change.nonLocal` entry   | must-fix          | introduced away from diff — repair like no `preExisting`                              |
+| `change.touchedActive`    | must-fix priority | edit hits live cascade (`tier` active/critical): repair or ask user                   |
+| `change.persisting` entry | report-only       | structural; one count line per family, no triage                                      |
+| norms `MISFIT`            | must-fix          | route edge via `expectedPath`; skip only citing plausible `exclusionsUnchecked` class |
+| norms `NEW_PATTERN`       | report-only       | one-line why                                                                          |
+| norms `UNJUDGED`          | report-only       | count per `reason`                                                                    |
 
 **Base** — `review_changes` base = `git merge-base HEAD main`, the branch's fork
 point on main. Never an integration branch, never a sibling `worktree-agent-*`
