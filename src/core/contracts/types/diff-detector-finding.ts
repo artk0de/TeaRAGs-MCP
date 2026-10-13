@@ -33,7 +33,8 @@ export type DiffDetectorFamily =
   | "silentCoupling"
   | "facadeContract"
   | "splitCandidates"
-  | "layeringBackEdge";
+  | "layeringBackEdge"
+  | "hubLike";
 
 // ── Endpoints ────────────────────────────────────────────────────────────────
 
@@ -83,7 +84,7 @@ export interface DiffFindingFileEndpoints {
   component: string;
 }
 
-/** One component — mainSequence (the touched component), splitCandidates split. */
+/** One component — mainSequence (the touched component), hubLike (the hub), splitCandidates split. */
 export interface DiffFindingComponentEndpoints {
   kind: "component";
   component: string;
@@ -118,6 +119,19 @@ export interface LayeringBackEdgeDiffFindingEvidence {
   targetLevel: number;
   /** Present when the edge closes a knot: the knot's components, sorted. */
   closesKnot?: string[];
+}
+
+/**
+ * The component's Ca and the hub's Ce (edges into the measured foundation left
+ * out) before and after the diff; the whole-repo cuts are held fixed.
+ */
+export interface HubLikeDiffFindingEvidence {
+  afferentBefore: number;
+  efferentBefore: number;
+  afferentAfter: number;
+  efferentAfter: number;
+  /** The diff-added edges that moved the component, source side. */
+  edges: { sourceRelPath: RelPath; targetRelPath: RelPath }[];
 }
 
 export interface LeakingAbstractionDiffFindingEvidence {
@@ -201,11 +215,12 @@ interface DiffDetectorFindingCommon {
    */
   foundationTerminal?: true;
   /**
-   * stableDependencies only (bd tea-rags-mcp-hbceb): the SOURCE component is
-   * a composition root, measured — it holds a module facade nothing in the
+   * stableDependencies (bd tea-rags-mcp-hbceb): the SOURCE component is a
+   * composition root, measured — it holds a module facade nothing in the
    * project imports (bd tea-rags-mcp-r8hme.52.4) — and assembling unstable
-   * concretes is its job. Triage data, never a suppression. Present only when
-   * true.
+   * concretes is its job. hubLike (bd tea-rags-mcp-89k7k.1.19.4): the hub
+   * component itself is one, stamped as the whole-repo hub detector stamps it.
+   * Triage data, never a suppression. Present only when true.
    */
   compositionRoot?: true;
   /**
@@ -229,6 +244,8 @@ interface DiffDetectorFindingCommon {
    *   already past the whole-repo distance threshold.
    * - layeringBackEdge (bd tea-rags-mcp-89k7k.1.19.3): the component pair
    *   was already carried before the change by another file edge.
+   * - hubLike (bd tea-rags-mcp-89k7k.1.19.4): the component was already a
+   *   hub at its counts before the diff.
    * silentCoupling and splitCandidates are history verdicts with no
    * base/after split, and facadeContract is always introduced: those never
    * carry it (spec D9).
@@ -299,6 +316,11 @@ export type DiffDetectorFinding = DiffDetectorFindingCommon &
         detector: "layeringBackEdge";
         endpoints: DiffFindingComponentEdgeEndpoints;
         evidence: LayeringBackEdgeDiffFindingEvidence;
+      }
+    | {
+        detector: "hubLike";
+        endpoints: DiffFindingComponentEndpoints;
+        evidence: HubLikeDiffFindingEvidence;
       }
   );
 

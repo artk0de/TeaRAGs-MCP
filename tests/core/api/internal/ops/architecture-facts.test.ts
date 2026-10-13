@@ -16,6 +16,7 @@ import {
   deriveArchitectureComponentFacts,
   distanceFromMainSequenceByComponent,
   isMarkedlyLessStableBySdpBand,
+  measureLayeringFoundationAndTerminalComponents,
   measureLayeringFoundationFiles,
   measureMainSequenceDistances,
   readProductionArchitectureGraph,
@@ -358,6 +359,28 @@ describe("ArchitectureFactsCatalog", () => {
     expect(catalog.isLayeringFoundation("src/kit/k.ts")).toBe(true);
     expect(catalog.isLayeringFoundation("src/kern/k.ts")).toBe(false);
     expect(catalog.isLayeringFoundation("src/app/a.ts")).toBe(false);
+  });
+
+  // bd tea-rags-mcp-89k7k.1.19.4: the diff run's hub reading leaves the SAME
+  // foundation out of Ce that the catalog's foundation files name.
+  it("measureLayeringFoundationAndTerminalComponents names the components measureLayeringFoundationFiles maps to files", () => {
+    const concrete = { abstractTypeCount: 0, concreteTypeCount: 5 };
+    const graph = graphOf(
+      [
+        file("src/app/a.ts", concrete),
+        file("src/spi/port.ts", { abstractTypeCount: 5, concreteTypeCount: 0 }),
+        file("src/kit/k.ts", concrete),
+      ],
+      [edge("src/kit/k.ts", "src/spi/port.ts"), edge("src/app/a.ts", "src/kit/k.ts")],
+    );
+    const facts = deriveArchitectureComponentFacts(graph);
+
+    const components = measureLayeringFoundationAndTerminalComponents(graph, facts);
+    expect([...components].sort()).toEqual(["src/kit", "src/spi"]);
+    expect([...measureLayeringFoundationFiles(graph, facts, undefined, components)].sort()).toEqual([
+      "src/kit/k.ts",
+      "src/spi/port.ts",
+    ]);
   });
 
   it("isMarkedlyLessStable answers the report's own SDP band", () => {

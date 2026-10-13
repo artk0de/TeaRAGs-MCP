@@ -45,6 +45,7 @@ import {
 import type { InMemoryExtractionContext } from "../../../../domains/trajectory/codegraph/index.js";
 import {
   buildLayeringModel,
+  readHubLikeDependency,
   readLayering,
   ReviewEdgeOverlay,
   type ComponentGraph,
@@ -62,6 +63,7 @@ import type { ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js"
 import {
   ArchitectureFactsCatalog,
   deriveArchitectureComponentFacts,
+  measureLayeringFoundationAndTerminalComponents,
   measureLayeringFoundationFiles,
   measureMainSequenceDistances,
   readProductionArchitectureGraph,
@@ -378,10 +380,13 @@ export const architectureSectionProvider: ReviewSectionProvider = {
     // One layering model over the catalog's partition: the foundation the
     // catalog names and the levels the layeringBackEdge family judges.
     const layeringModel = buildLayeringModel(facts.components);
+    // One foundation measurement: the catalog's foundation files and the
+    // components the hub reading leaves out of Ce (bd tea-rags-mcp-g77p3).
+    const foundationComponents = measureLayeringFoundationAndTerminalComponents(production.graph, facts, layeringModel);
     const catalog = new ArchitectureFactsCatalog(
       facts,
       mainSequence.distanceByComponent,
-      measureLayeringFoundationFiles(production.graph, facts, layeringModel),
+      measureLayeringFoundationFiles(production.graph, facts, layeringModel, foundationComponents),
     );
     const graph = new WiredGraphReader(production.graph.edges);
     const contract = new WiredContractReader(facts.components, production.graph.edges);
@@ -425,6 +430,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       ...splitMerge,
       mainSequenceDistanceThreshold: mainSequence.distanceThreshold,
       layering: readLayering(facts.components, layeringModel),
+      hubLike: readHubLikeDependency(facts.components, { foundationComponents }),
     }).run(
       {
         changedFiles: scope.files,

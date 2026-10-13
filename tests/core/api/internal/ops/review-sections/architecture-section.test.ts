@@ -280,8 +280,11 @@ describe("architectureSectionProvider.run", () => {
       "facadeContract",
       "splitCandidates",
       "layeringBackEdge",
+      "hubLike",
     ]);
     expect(detectors.find((d) => d.detector === "facadeContract")).toMatchObject({ built: true, findingCount: 0 });
+    // The hub-like reading is wired over the same partition (bd tea-rags-mcp-89k7k.1.19.4).
+    expect(detectors.find((d) => d.detector === "hubLike")).toMatchObject({ built: true });
     // The section always wires the layering reading over the report's own
     // component partition (bd tea-rags-mcp-89k7k.1.19.3).
     expect(detectors.find((d) => d.detector === "layeringBackEdge")).toMatchObject({ built: true });

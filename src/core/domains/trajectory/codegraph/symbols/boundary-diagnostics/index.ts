@@ -29,6 +29,9 @@ export {
   HUB_LIKE_DEPENDENCY_EVIDENCE_LIMIT,
   HUB_LIKE_DEPENDENCY_MAX_IMBALANCE,
   HUB_LIKE_DEPENDENCY_OTSU_MIN_POPULATION,
+  readHubLikeDependency,
+  type HubLikeDependencyFanCounts,
+  type HubLikeDependencyReading,
 } from "./hub-like-dependency.js";
 export { computePropagationCost, PROPAGATION_COST_OTSU_MIN_POPULATION } from "./propagation-cost.js";
 export {

@@ -19,6 +19,7 @@ import {
   detectHubLikeDependencies,
   HUB_LIKE_DEPENDENCY_EVIDENCE_LIMIT,
   HUB_LIKE_DEPENDENCY_MAX_IMBALANCE,
+  readHubLikeDependency,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
 function file(relPath: string) {
@@ -275,5 +276,56 @@ describe("detectHubLikeDependencies", () => {
     const [hub] = judge(renamed).violations;
     expect(hub.component).toBe("src/core/api");
     expect("compositionRoot" in hub).toBe(false);
+  });
+});
+
+// bd tea-rags-mcp-89k7k.1.19.4: the diff-scoped hubLike family judges
+// hypothetical counts against the SAME counts and cuts the detector draws.
+describe("readHubLikeDependency", () => {
+  it("serves the detector's own counts, the hub Ce past the foundation included", () => {
+    const components = buildComponentGraph(graph(), []);
+    const reading = readHubLikeDependency(components, { foundationComponents: new Set(["sink1"]) });
+
+    // sink1 the foundation: h11..h40 reach it alone and drop out of Ce.
+    expect(reading.fanCountsOf("hub")).toEqual({ afferentCount: 40, efferentCount: 10, connectionCount: 80 });
+    expect(reading.fanCountsOf("nowhere")).toBeUndefined();
+    expect(reading.isFoundation("sink1")).toBe(true);
+    expect(reading.isFoundation("sink2")).toBe(false);
+  });
+
+  it("agrees with the detector's verdict on every component of the graph", () => {
+    for (const foundationComponents of [new Set<string>(), new Set(["sink1"])]) {
+      const components = buildComponentGraph(graph(), []);
+      const reading = readHubLikeDependency(components, { foundationComponents });
+      const hubs = detectHubLikeDependencies(components, { foundationComponents }).violations.map((v) => v.component);
+
+      const readAsHubs = [...components.components.keys()].filter((component) => {
+        const fan = reading.fanCountsOf(component);
+        return fan !== undefined && reading.isHub(fan);
+      });
+      expect(readAsHubs.sort()).toEqual(hubs.sort());
+    }
+  });
+
+  it("judges counts the graph never held against the fixed cuts", () => {
+    const reading = readHubLikeDependency(buildComponentGraph(graph(), []));
+
+    expect(reading.isHub({ afferentCount: 40, efferentCount: 40, connectionCount: 80 })).toBe(true);
+    // Below the connection floor nothing is a hub, whatever its axes read.
+    expect(
+      reading.isHub({ afferentCount: 40, efferentCount: 40, connectionCount: DEFAULT_SDP_MIN_CONNECTION_COUNT - 1 }),
+    ).toBe(false);
+    // Lopsided: 30/50 = 0.6 imbalance.
+    expect(reading.isHub({ afferentCount: 40, efferentCount: 10, connectionCount: 50 })).toBe(false);
+  });
+
+  it("carries the detector's compositionRoot stamp on an entry-facade component", () => {
+    const components = buildComponentGraph(graph(), []);
+    const hubComponent = components.components.get("hub");
+    if (!hubComponent) throw new Error("fixture: hub component missing");
+    components.components.set("hub", { ...hubComponent, entryFacade: true });
+
+    expect(readHubLikeDependency(components).fanCountsOf("hub")).toMatchObject({ compositionRoot: true });
+    expect(readHubLikeDependency(components).fanCountsOf("mid")).not.toHaveProperty("compositionRoot");
   });
 });

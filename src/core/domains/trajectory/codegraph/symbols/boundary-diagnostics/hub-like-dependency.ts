@@ -67,21 +67,8 @@ export function detectHubLikeDependencies(
   componentGraph: ComponentGraph,
   options: HubLikeDependencyOptions = {},
 ): HubLikeDependencyReport {
-  const minConnectionCount = options.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
-  const judged: ArchitectureComponent[] = [];
-  let lowConnectionCount = 0;
-  for (const component of componentGraph.components.values()) {
-    if (component.connectionCount < minConnectionCount) lowConnectionCount++;
-    else judged.push(component);
-  }
-
-  // Ce reads past the foundation (bd tea-rags-mcp-g77p3); Ca and the
-  // connection floor stay the component's own. The efferent cut is drawn over
-  // the non-leaf components only: a Ce 0 leaf is never a hub, and a mass of
-  // them would drag the median down to where every dependent clears it.
-  const efferentCountOf = hubEfferentCounts(componentGraph, options.foundationComponents);
-  const afferent = resolveAxisCut(judged.map((c) => c.afferentCount));
-  const efferent = resolveAxisCut(judged.map(efferentCountOf).filter((count) => count > 0));
+  const cuts = resolveHubLikeDependencyCuts(componentGraph, options);
+  const { judged, efferentCountOf, afferent, efferent } = cuts;
 
   const pathsOf = componentPaths(componentGraph);
   const inScope = compilePathPatternMatcher(options.sourcePathPattern);
@@ -97,11 +84,9 @@ export function detectHubLikeDependencies(
       scope.outOfScopeComponentCount++;
       continue;
     }
-    const efferentCount = efferentCountOf(component);
-    if (!afferent.admits(component.afferentCount) || !efferent.admits(efferentCount)) continue;
-    if (couplingImbalance(component.afferentCount, efferentCount) < HUB_LIKE_DEPENDENCY_MAX_IMBALANCE) {
-      hubs.push(component);
-    } else imbalanced++;
+    const verdict = classifyHubLikeFan(hubFanCountsOf(component, efferentCountOf), cuts);
+    if (verdict === "hub") hubs.push(component);
+    else if (verdict === "imbalanced") imbalanced++;
   }
 
   const reach = hubs.length > 0 ? new ReverseComponentReach(componentGraph.dependencies) : undefined;
@@ -141,14 +126,126 @@ export function detectHubLikeDependencies(
       componentCount: componentGraph.components.size,
       judgedComponentCount: judged.length,
       violationCount: violations.length,
-      minConnectionCount,
+      minConnectionCount: cuts.minConnectionCount,
       afferent: afferent.summary,
       efferent: efferent.summary,
-      excluded: { lowConnectionCount, imbalanced },
+      excluded: { lowConnectionCount: cuts.lowConnectionCount, imbalanced },
       churnMeasured: options.fileVolatility !== undefined,
       ...(scope ? { scope } : {}),
     },
   };
+}
+
+/**
+ * A component's coupling as the hub verdict reads it: Ca, the hub's Ce (the
+ * files with a dependency outside the measured foundation, bd
+ * tea-rags-mcp-g77p3) and the component's own Ca + Ce the connection floor
+ * judges.
+ */
+export interface HubLikeDependencyFanCounts {
+  afferentCount: number;
+  efferentCount: number;
+  connectionCount: number;
+}
+
+/**
+ * A read-only view over the whole-repo hub-like verdict (bd
+ * tea-rags-mcp-89k7k.1.19.4) for a consumer judging edges the graph never saw
+ * — the diff-scoped `hubLike` family. Counts and cuts are the detector's own,
+ * drawn once over the whole graph; the view never redraws a cut, so a diff
+ * moves a component against the SAME line the report judges it by.
+ */
+export interface HubLikeDependencyReading {
+  /**
+   * The component's counts as the hub verdict reads them, plus the detector's
+   * own `compositionRoot` stamp; undefined when the graph does not hold it.
+   */
+  fanCountsOf: (component: string) => (HubLikeDependencyFanCounts & { compositionRoot?: true }) | undefined;
+  /** Whether a dependency into the component is left out of the hub's Ce (the measured foundation). */
+  isFoundation: (component: string) => boolean;
+  /** The detector's verdict on a component at these counts: connection floor, both cuts, balance. */
+  isHub: (fan: HubLikeDependencyFanCounts) => boolean;
+}
+
+/** The view over `componentGraph`, with the cuts `detectHubLikeDependencies` draws under the same options. */
+export function readHubLikeDependency(
+  componentGraph: ComponentGraph,
+  options: Pick<HubLikeDependencyOptions, "minConnectionCount" | "foundationComponents"> = {},
+): HubLikeDependencyReading {
+  const cuts = resolveHubLikeDependencyCuts(componentGraph, options);
+  const foundation = options.foundationComponents ?? new Set<string>();
+  return {
+    fanCountsOf: (componentDir) => {
+      const component = componentGraph.components.get(componentDir);
+      if (component === undefined) return undefined;
+      return {
+        ...hubFanCountsOf(component, cuts.efferentCountOf),
+        ...(component.entryFacade ? { compositionRoot: true as const } : {}),
+      };
+    },
+    isFoundation: (componentDir) => foundation.has(componentDir),
+    isHub: (fan) => classifyHubLikeFan(fan, cuts) === "hub",
+  };
+}
+
+/** The whole-graph inputs of the hub verdict: the judged population and its two axis cuts. */
+interface HubLikeDependencyCuts {
+  minConnectionCount: number;
+  judged: readonly ArchitectureComponent[];
+  lowConnectionCount: number;
+  efferentCountOf: (component: ArchitectureComponent) => number;
+  afferent: AxisCut;
+  efferent: AxisCut;
+}
+
+function resolveHubLikeDependencyCuts(
+  componentGraph: ComponentGraph,
+  options: Pick<HubLikeDependencyOptions, "minConnectionCount" | "foundationComponents">,
+): HubLikeDependencyCuts {
+  const minConnectionCount = options.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
+  const judged: ArchitectureComponent[] = [];
+  let lowConnectionCount = 0;
+  for (const component of componentGraph.components.values()) {
+    if (component.connectionCount < minConnectionCount) lowConnectionCount++;
+    else judged.push(component);
+  }
+
+  // Ce reads past the foundation (bd tea-rags-mcp-g77p3); Ca and the
+  // connection floor stay the component's own. The efferent cut is drawn over
+  // the non-leaf components only: a Ce 0 leaf is never a hub, and a mass of
+  // them would drag the median down to where every dependent clears it.
+  const efferentCountOf = hubEfferentCounts(componentGraph, options.foundationComponents);
+  return {
+    minConnectionCount,
+    judged,
+    lowConnectionCount,
+    efferentCountOf,
+    afferent: resolveAxisCut(judged.map((c) => c.afferentCount)),
+    efferent: resolveAxisCut(judged.map(efferentCountOf).filter((count) => count > 0)),
+  };
+}
+
+function hubFanCountsOf(
+  component: ArchitectureComponent,
+  efferentCountOf: (component: ArchitectureComponent) => number,
+): HubLikeDependencyFanCounts {
+  return {
+    afferentCount: component.afferentCount,
+    efferentCount: efferentCountOf(component),
+    connectionCount: component.connectionCount,
+  };
+}
+
+/** One component's place against the cuts: below the floor, not busy on an axis, busy but lopsided, or a hub. */
+function classifyHubLikeFan(
+  fan: HubLikeDependencyFanCounts,
+  cuts: HubLikeDependencyCuts,
+): "lowConnection" | "notBusy" | "imbalanced" | "hub" {
+  if (fan.connectionCount < cuts.minConnectionCount) return "lowConnection";
+  if (!cuts.afferent.admits(fan.afferentCount) || !cuts.efferent.admits(fan.efferentCount)) return "notBusy";
+  return couplingImbalance(fan.afferentCount, fan.efferentCount) < HUB_LIKE_DEPENDENCY_MAX_IMBALANCE
+    ? "hub"
+    : "imbalanced";
 }
 
 /** |Ca − Ce| / (Ca + Ce); zero coupling reads as fully lopsided. */

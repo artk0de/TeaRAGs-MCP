@@ -225,15 +225,32 @@ export function measureLayeringFoundationFiles(
   graph: FileDependencyGraph,
   facts: ArchitectureComponentFacts,
   model: LayeringModel = buildLayeringModel(facts.components),
+  foundationComponents: ReadonlySet<string> = measureLayeringFoundationAndTerminalComponents(graph, facts, model),
 ): ReadonlySet<RelPath> {
+  const files = new Set<RelPath>();
+  for (const [relPath, component] of facts.components.componentOf) {
+    if (foundationComponents.has(component)) files.add(relPath);
+  }
+  return files;
+}
+
+/**
+ * The measured layering foundation as COMPONENTS, terminals included — the
+ * set the report's hub detector leaves out of Ce (bd tea-rags-mcp-g77p3,
+ * `summary.foundation.components` + `terminalComponents`), and the set
+ * {@link measureLayeringFoundationFiles} maps to files. One measurement, so the
+ * diff run's hub reading and its foundation-terminal annotation name the same
+ * foundation.
+ */
+export function measureLayeringFoundationAndTerminalComponents(
+  graph: FileDependencyGraph,
+  facts: ArchitectureComponentFacts,
+  model: LayeringModel = buildLayeringModel(facts.components),
+): ReadonlySet<string> {
   const { components } = facts;
   const foundations = measureLayeringFoundationComponents(components, graph.files, model);
   const terminals = measureLayeringFoundationTerminalComponents(components, model, foundations);
-  const files = new Set<RelPath>();
-  for (const [relPath, component] of components.componentOf) {
-    if (foundations.has(component) || terminals.has(component)) files.add(relPath);
-  }
-  return files;
+  return new Set([...foundations, ...terminals]);
 }
 
 /**

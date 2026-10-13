@@ -67,3 +67,19 @@ export function componentPairViolatedAtBase(
 export function pastThresholdBefore(distanceBefore: number, tolerance: number): boolean {
   return distanceBefore > tolerance;
 }
+
+/**
+ * The targets `relPath` imported BEFORE the change, by the evidence order of
+ * the run's `heldBeforeChange`: the diff base whenever it answers for the
+ * file, else the indexed graph; `undefined` when neither port is wired — a
+ * missing fact, never "imported nothing".
+ */
+export function targetsBeforeChange(
+  relPath: string,
+  baseEdges: DiffDetectorBaseEdgeReader | undefined,
+  graph: DiffDetectorGraphReader | undefined,
+): ReadonlySet<string> | undefined {
+  const atBase = baseEdges?.targetsAtBase(relPath);
+  if (atBase !== undefined) return atBase;
+  return graph === undefined ? undefined : new Set(graph.edgesFrom(relPath).map((indexed) => indexed.target));
+}

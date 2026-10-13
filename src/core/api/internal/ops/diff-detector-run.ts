@@ -53,6 +53,7 @@
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../contracts/types/diff-detector-finding.js";
 import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
+  type HubLikeDependencyReading,
   type LayeringReading,
   type ReviewEdgeOverlay,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
@@ -127,6 +128,12 @@ export interface DiffDetectorRunDeps {
    */
   layering?: LayeringReading;
   /**
+   * The whole-repo hub-like verdict over the catalog's component partition
+   * (bd tea-rags-mcp-89k7k.1.19.4); absent = the hubLike family answers
+   * built:false.
+   */
+  hubLike?: HubLikeDependencyReading;
+  /**
    * The endpoint-class facts the silent-coupling family needs to apply the
    * production exclusion taxonomy (bd tea-rags-mcp-89k7k.1.10): the codegraph's
    * walked-file census and the documentation-path predicate — the same inputs
@@ -183,6 +190,7 @@ export class DiffDetectorRun {
   private readonly splitMerge: DiffDetectorSplitMergeReader | undefined;
   private readonly splitMergeAbsentReason: string;
   private readonly layering: LayeringReading | undefined;
+  private readonly hubLike: HubLikeDependencyReading | undefined;
   private readonly maxTraceHops: number;
   private readonly minConnectionCount: number;
   private readonly mainSequenceDistanceThreshold: number | undefined;
@@ -196,6 +204,7 @@ export class DiffDetectorRun {
     this.splitMerge = deps.splitMerge;
     this.splitMergeAbsentReason = deps.splitMergeAbsentReason ?? NO_SPLIT_MERGE_READER_REASON;
     this.layering = deps.layering;
+    this.hubLike = deps.hubLike;
     this.maxTraceHops = deps.maxTraceHops ?? DEFAULT_MAX_TRACE_HOPS;
     this.minConnectionCount = deps.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
     this.mainSequenceDistanceThreshold = deps.mainSequenceDistanceThreshold;
@@ -251,6 +260,7 @@ export class DiffDetectorRun {
       splitMerge: this.splitMerge,
       splitMergeAbsentReason: this.splitMergeAbsentReason,
       layering: this.layering,
+      hubLike: this.hubLike,
       maxTraceHops: this.maxTraceHops,
       minConnectionCount: this.minConnectionCount,
       mainSequenceDistanceThreshold: this.mainSequenceDistanceThreshold,
