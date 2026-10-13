@@ -294,7 +294,7 @@ function applyConventionalDirectoryRoles(
     if (entry.evidence === "inheritance" || entry.role.weakReason !== undefined) continue;
     const dir = ancestorDirectories(relPath).find((d) => conventional.has(d));
     const role = dir === undefined ? undefined : conventional.get(dir);
-    if (role !== undefined && role !== entry.role.role) {
+    if (role !== undefined && (role !== entry.role.role || !entry.role.strong)) {
       entries.set(relPath, { role: { role, strong: true }, evidence: "directory" });
     }
   }

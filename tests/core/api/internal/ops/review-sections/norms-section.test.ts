@@ -66,10 +66,16 @@ function indexedFixture(): { graph: FileDependencyGraph; fileRoles: Map<RelPath,
     fileRoles.set(controller, strong("controller"));
     fileRoles.set(service, strong("service"));
   }
-  files.push(file("src/repositories/r1.ts"), file("src/util/weak.ts"), file("src/util/untyped.ts"));
+  files.push(
+    file("src/repositories/r1.ts"),
+    file("src/util/weak.ts"),
+    file("src/util/weak2.ts"),
+    file("src/util/untyped.ts"),
+  );
   files.push(file("app/models/user.rb", "ruby"));
   fileRoles.set("src/repositories/r1.ts", strong("repository"));
   fileRoles.set("src/util/weak.ts", { role: "helper", strong: false });
+  fileRoles.set("src/util/weak2.ts", { role: "helper", strong: false });
   fileRoles.set("app/models/user.rb", strong("model"));
   return { graph: { files, edges }, fileRoles };
 }
@@ -151,6 +157,16 @@ describe("judgeAddedEdgeNorms", () => {
       { target: "app/models/user.rb", verdict: "UNJUDGED", reason: "crossLanguage" },
     ]);
     expect(addedEdgeVerdicts.every((row) => row.exclusionsUnchecked === undefined)).toBe(true);
+  });
+
+  it("names the weak side of a weakRole row: source, target or both (8up12)", () => {
+    const { addedEdgeVerdicts } = judged([
+      { source: "src/util/weak.ts", target: "src/services/s1.ts" },
+      { source: "src/controllers/c1.ts", target: "src/util/weak.ts" },
+      { source: "src/util/weak.ts", target: "src/util/weak2.ts" },
+      { source: "src/controllers/c1.ts", target: "src/util/untyped.ts" },
+    ]);
+    expect(addedEdgeVerdicts.map((row) => row.weakSide)).toEqual(["source", "target", "both", undefined]);
   });
 
   it("counts UNJUDGED reasons over every added edge, including rows past the cap", () => {

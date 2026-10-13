@@ -278,6 +278,9 @@ export type NormsEdgeExclusionClass = "uncalled" | "frameworkRouted" | "constant
  */
 export type NormsUnjudgedReason = "notIndexed" | "untypedRole" | "weakRole" | "crossLanguage" | NormsEdgeExclusionClass;
 
+/** Which endpoint of an added edge carries the weak (suffix-only) role. */
+export type NormsWeakSide = "source" | "target" | "both";
+
 /** One added file edge and its verdict. */
 export interface NormsAddedEdgeVerdict {
   source: string;
@@ -293,6 +296,8 @@ export interface NormsAddedEdgeVerdict {
   expectedPath?: { roleSrc: string; roleDst: string; support: number };
   /** UNJUDGED only. */
   reason?: NormsUnjudgedReason;
+  /** `reason: "weakRole"` only: the endpoint whose role is weak, the other is strong. */
+  weakSide?: NormsWeakSide;
   /** Judged rows only: exclusion classes not evaluated for this edge. */
   exclusionsUnchecked?: readonly NormsEdgeExclusionClass[];
 }

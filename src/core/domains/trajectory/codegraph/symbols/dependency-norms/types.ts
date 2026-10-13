@@ -154,6 +154,9 @@ export interface NormPlannedFileEdge {
   reference?: string;
 }
 
+/** Which endpoint of an edge carries a weak (suffix-only) role. */
+export type NormWeakSide = "source" | "target" | "both";
+
 /** Why a planned file edge carries no verdict. */
 export type NormPlannedEdgeUnjudgedReason =
   | "newFile"
@@ -188,6 +191,8 @@ export interface NormPlannedFileEdgeJudgement {
   /** MISFIT / insufficient support only: the strongest established route through a third role. */
   transit?: NormTransitPath;
   unjudgedReason?: NormPlannedEdgeUnjudgedReason;
+  /** `weakRole` only: which endpoint's role is suffix-only (weak); the other is strong. */
+  weakSide?: NormWeakSide;
   /** Exclusion classes the planned edge's evidence cannot evaluate — present with a verdict. */
   exclusionsUnchecked?: Exclude<NormEdgeExclusion, "displacedRole">[];
 }
