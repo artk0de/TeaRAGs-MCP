@@ -25,7 +25,6 @@ import {
   overlayOf,
   runWith,
   type ComponentFact,
-  type FixtureEdge,
 } from "./__helpers__/diff-run-fixtures.js";
 
 /**
@@ -1568,8 +1567,9 @@ describe("detectors", () => {
       "facadeContract",
       "splitCandidates",
       "layeringBackEdge",
+      "hubLike",
     ]);
-    const unbuiltHere = new Set(["splitCandidates", "facadeContract", "layeringBackEdge"]);
+    const unbuiltHere = new Set(["splitCandidates", "facadeContract", "layeringBackEdge", "hubLike"]);
     for (const entry of result.detectors) {
       if (unbuiltHere.has(entry.detector)) continue;
       expect(entry.built).toBe(true);
@@ -1595,6 +1595,13 @@ describe("detectors", () => {
       detector: "layeringBackEdge",
       built: false,
       reason: "no layering reading",
+      findingCount: 0,
+    });
+    // Nor a hub-like reading — the fourth.
+    expect(result.detectors.find((entry) => entry.detector === "hubLike")).toEqual({
+      detector: "hubLike",
+      built: false,
+      reason: "no hub-like reading",
       findingCount: 0,
     });
   });

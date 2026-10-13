@@ -19,7 +19,11 @@ import type {
   DiffDetectorFinding,
   DiffDetectorStatus,
 } from "../../../../contracts/types/diff-detector-finding.js";
-import type { LayeringReading, ReviewEdgeOverlay } from "../../../../domains/trajectory/codegraph/symbols/index.js";
+import type {
+  HubLikeDependencyReading,
+  LayeringReading,
+  ReviewEdgeOverlay,
+} from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import type {
   SilentCouplingExclusionCounts,
   SilentCouplingViolation,
@@ -235,6 +239,12 @@ export interface DiffFamilyDetectorContext {
    * serves. Absent = the layeringBackEdge family answers built:false.
    */
   layering: LayeringReading | undefined;
+  /**
+   * The whole-repo hub-like verdict over the same partition (bd
+   * tea-rags-mcp-89k7k.1.19.4): counts, foundation and cuts the report's hub
+   * detector reads. Absent = the hubLike family answers built:false.
+   */
+  hubLike: HubLikeDependencyReading | undefined;
   /** The wiring's reason for an absent split/merge port, defaulted by the run. */
   splitMergeAbsentReason: string;
   /** BFS hop cap for cycle traces, defaulted by the run. */

@@ -9,6 +9,7 @@
 import { cyclesDetector } from "./cycles.js";
 import type { DiffFamilyDetector } from "./diff-family-detector.js";
 import { facadeContractDetector } from "./facade-contract.js";
+import { hubLikeDetector } from "./hub-like.js";
 import { layeringBackEdgeDetector } from "./layering-back-edge.js";
 import { leakingAbstractionDetector } from "./leaking-abstraction.js";
 import { mainSequenceDetector } from "./main-sequence.js";
@@ -39,4 +40,5 @@ export const DIFF_FAMILY_DETECTORS: readonly DiffFamilyDetector[] = Object.freez
   facadeContractDetector,
   splitCandidatesDetector,
   layeringBackEdgeDetector,
+  hubLikeDetector,
 ]);

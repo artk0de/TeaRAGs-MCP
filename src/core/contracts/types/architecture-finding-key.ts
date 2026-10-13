@@ -27,13 +27,14 @@
  * the carrying file edge too, which the key drops), facade leaks
  * (`leakingAbstraction` file edge; bypass vs internal-reach is a
  * classification, not identity), `mainSequence` (component), both
- * `silentCoupling` shapes and `layeringBackEdge` (the component pair the
- * report's `layering` backEdge keys on). Diff-only families, with no report counterpart:
+ * `silentCoupling` shapes, `layeringBackEdge` (the component pair the
+ * report's `layering` backEdge keys on) and `hubLike` (the component the
+ * report's `hubLikeDependency` keys on). Diff-only families, with no report counterpart:
  * `cycles` (a file edge closing a file cycle), `facadeContract` (a facade file
  * dropping consumed names) and `splitCandidates` (split / merge verdicts, which
  * the report carries in its summary, not as violations). Report-only:
- * `conventionPrivacy` leaks, `shotgunSurgery`, `hubLikeDependency`, every
- * `layering` kind and `norms`.
+ * `conventionPrivacy` leaks, `shotgunSurgery`, every `layering` kind and
+ * `norms`.
  */
 
 import type { ArchitectureViolation } from "./architecture-report.js";
@@ -177,6 +178,8 @@ export function diffDetectorFindingKey(finding: DiffDetectorFinding): string {
       return findingKey("facadeContract", [finding.endpoints.relPath]);
     case "layeringBackEdge":
       return findingKey("layering.backEdge", [finding.endpoints.sourceComponent, finding.endpoints.targetComponent]);
+    case "hubLike":
+      return findingKey("hubLikeDependency", [finding.endpoints.component]);
     case "splitCandidates":
       return finding.endpoints.kind === "component"
         ? findingKey("splitCandidates.split", [finding.endpoints.component])

@@ -42,7 +42,8 @@ const REVIEW_CHANGES_DESCRIPTION =
   "no data = notJudged noCohesionData, never zero (cap 50 reports). architecture: the diff's added edges judged by " +
   "the boundary detectors (stableDependencies, leakingAbstraction, cycles, mainSequence delta, silentCoupling, " +
   "facadeContract, layeringBackEdge = added edge from lower inferred level up, evidence levels + closesKnot; " +
-  "parent->own subdir never); a finding = endpoints (typed by kind, get_architecture_report's endpoint fields) + structured " +
+  "parent->own subdir never; hubLike = added edges carry component past get_architecture_report's hub cuts, Ca/Ce " +
+  "before+after, Ce excludes foundation edges); a finding = endpoints (typed by kind, get_architecture_report's endpoint fields) + structured " +
   "evidence + subject (endpoints as text) + detail; each family ranked costliest-first before the cap by maintenanceCost (get_architecture_report's " +
   "shrunken mean over the files the finding names, n0 estimated over this review's findings; <2 measured = 0.5; absent = no git readings); findings cap 100, family-aware — every family keeps >=1 slot; per-family truncated rides each " +
   "detector row, findingCount stays the family's FULL total, rows reconcile findingCount = listed + truncated. " +
@@ -53,7 +54,7 @@ const REVIEW_CHANGES_DESCRIPTION =
   "findingCount counts pairs, groupedFindingCount the findings (= listed + truncated); foundationTerminal:true on a D-delta finding = every contributing edge ends in " +
   "an abstract L0 foundation, entryPoint:true = touched component holds a facade nothing imports (an entry) — placement, not defect, " +
   "preExisting:true on a cycles/leakingAbstraction finding = the index already holds that edge — the diff touches " +
-  "a file on it, did not add it; on layeringBackEdge = another edge already carried the component pair (all triage data, never suppression). scopeSkippedFiles rides section envelopes (incompleteChange, " +
+  "a file on it, did not add it; on layeringBackEdge = another edge already carried the component pair; on hubLike = already a hub before (all triage data, never suppression). scopeSkippedFiles rides section envelopes (incompleteChange, " +
   "cohesion) and architecture detector rows = files the 200-cap skipped while judged; present = verdict PARTIAL — " +
   "a zero findingCount over them is never a clean pass. " +
   "Envelope: workTree, base, mergeBase, changedFiles, skipped+truncated, indexLag, notices (an empty diff names the " +
