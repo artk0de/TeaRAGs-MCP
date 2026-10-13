@@ -74,7 +74,7 @@ Edit `chunker/language-config/config.ts`. Find language entry in
 `LANGUAGE_DEFINITIONS`, add `hooks` property:
 
 ```typescript
-import { <language>Hooks } from "./hooks/<language>/index.js";
+import { <language>Hooks } from "../hooks/<language>/index.js";
 
 // In LANGUAGE_DEFINITIONS:
 <language>: {

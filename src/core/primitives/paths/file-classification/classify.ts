@@ -57,8 +57,9 @@ function hasGeneratedMarker(head: string): boolean {
 /**
  * Classify a repo-relative path. Pattern-based generated/test detection plus
  * optional content-marker scan. `isDocumentation` is passed through (its
- * source of truth is the language layer in ingest/chunker/config.ts). The
- * test shapes are the INSTALLED test-file conventions
+ * source of truth is the language layer in
+ * ingest/pipeline/chunker/language-config/config.ts). The test shapes are the
+ * INSTALLED test-file conventions
  * (`./test-file-conventions.ts`); classifying before a composition root
  * installed them throws.
  */

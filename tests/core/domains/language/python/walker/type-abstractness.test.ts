@@ -107,5 +107,25 @@ describe("Python walker — type-abstractness census", () => {
 
       expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 2 });
     });
+
+    it("counts a class attribute bound to a lambda as behaviour (bd tea-rags-mcp-89k7k.38)", () => {
+      const src = [
+        "class WithLambda:",
+        "    handler = lambda x: x",
+        "class WithAnnotatedLambda:",
+        "    fn: Callable[[], int] = lambda: 0",
+        "class WithChainedLambda:",
+        "    a = b = lambda: None",
+        "",
+      ].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 3 });
+    });
+
+    it("keeps a data attribute computed with a lambda argument as data", () => {
+      const src = ["class Sorted:", "    ORDER = sorted(ITEMS, key=lambda v: v.rank)", ""].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 0 });
+    });
   });
 });

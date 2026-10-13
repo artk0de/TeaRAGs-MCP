@@ -165,7 +165,7 @@ export default defineConfig({
         "**/index.ts",
         // Declarative language-definition config — LANGUAGE_DEFINITIONS is data
         // with lazy `() => import("tree-sitter-x")` thunks, not branching logic.
-        "src/core/domains/ingest/pipeline/chunker/config.ts",
+        "src/core/domains/ingest/pipeline/chunker/language-config/config.ts",
         // Codegraph DuckDB daemon — unix-socket server/client + process
         // lifecycle (I/O-heavy, same category as the qdrant daemon; validated
         // end-to-end via build + integration, not unit-covered). Supersedes the

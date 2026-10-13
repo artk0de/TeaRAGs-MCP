@@ -19,10 +19,13 @@
  *
  * The behaviour-free member rule: `__init__` is the constructor, `@property` /
  * `@cached_property` / `@x.setter`-family accessors are data, and every other
- * def — `@classmethod`, `@staticmethod` included — is behaviour. A statement
- * that is not a def of its own can still hold one (`if` / `try` in a class
- * body conditionally define methods), so the scan recurses into statements,
- * stopping at def and class boundaries: their interiors belong to them.
+ * def — `@classmethod`, `@staticmethod` included — is behaviour, and so is an
+ * attribute bound to a `lambda` (a function-valued property, bd
+ * tea-rags-mcp-89k7k.38); an attribute whose value merely USES a lambda
+ * (`sorted(xs, key=lambda v: v)`) is data. A statement that is not a def of
+ * its own can still hold one (`if` / `try` in a class body conditionally
+ * define methods), so the scan recurses into statements, stopping at def and
+ * class boundaries: their interiors belong to them.
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
@@ -85,6 +88,13 @@ function decoratorIsAccessor(decorator: AstNode): boolean {
   return ACCESSOR_PROPERTY_NAMES.has(name ?? "") || ACCESSOR_TWIN_MEMBERS.has(name ?? "");
 }
 
+/** `handler = lambda x: x`, chained (`a = b = lambda: None`) or annotated: a function-valued attribute. */
+function assignsLambda(assignment: AstNode): boolean {
+  const right = assignment.childForFieldName("right");
+  if (right?.type === "lambda") return true;
+  return right?.type === "assignment" && assignsLambda(right);
+}
+
 /** Whether one class-body statement declares behaviour; see the module doc. */
 function classMemberDeclaresBehaviour(member: AstNode): boolean {
   if (member.type === "function_definition") return member.childForFieldName("name")?.text !== "__init__";
@@ -96,6 +106,7 @@ function classMemberDeclaresBehaviour(member: AstNode): boolean {
     return definition.childForFieldName("name")?.text !== "__init__";
   }
   if (member.type === "class_definition") return false;
+  if (member.type === "assignment") return assignsLambda(member);
   return member.namedChildren.some(classMemberDeclaresBehaviour);
 }
 

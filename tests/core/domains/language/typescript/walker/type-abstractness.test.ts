@@ -104,6 +104,27 @@ describe("TypeScript walker — type-abstractness census", () => {
       expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 4 });
     });
 
+    it("counts an ambient class whose members are method signatures as concrete (bd tea-rags-mcp-89k7k.38)", () => {
+      expect(censusOf("declare class A { foo(): void; static bar(x: number): string; }\n")).toEqual({
+        abstractTypeCount: 0,
+        concreteTypeCount: 1,
+      });
+    });
+
+    it("keeps an ambient class of constructor and accessor signatures out of both buckets", () => {
+      const src = [
+        "declare class Point {",
+        "  constructor(x: number);",
+        "  get x(): number;",
+        "  set x(value: number);",
+        "  readonly y: number;",
+        "}",
+        "",
+      ].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 0 });
+    });
+
     it("keeps an abstract class abstract whatever its members", () => {
       expect(censusOf("export abstract class Shape { constructor(public kind: string) {} }\n")).toEqual({
         abstractTypeCount: 1,

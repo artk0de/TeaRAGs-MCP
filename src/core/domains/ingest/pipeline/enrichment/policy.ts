@@ -4,8 +4,8 @@
  * file-phase and chunk-phase so no DI threading touches the hot coordinator.
  *
  * isDocumentation's source of truth stays in the language layer
- * (chunker/config.ts LANGUAGE_DEFINITIONS) — derived here and passed into
- * classify(), never re-derived in infra.
+ * (chunker/language-config/config.ts LANGUAGE_DEFINITIONS) — derived here and
+ * passed into classify(), never re-derived in infra.
  */
 import { extname } from "node:path";
 
