@@ -21,6 +21,7 @@ import {
   readAddedLineRangesOfFiles,
   readEnclosingRepoGitState,
   readMergeBase,
+  readRenamedFrom,
   readWorkingTreeChanges,
   rebaseGitPathsOntoRoot,
   type AddedLineRange,
@@ -78,6 +79,12 @@ export interface DiffScopeRead {
    * cannot confirm itself. Absent on a scope read without git (a fixture).
    */
   diffCommits?: readonly string[];
+  /**
+   * The change's moves against the merge-base (bd tea-rags-mcp-89k7k.1.7): new
+   * path -> old path, in the same path space as `files` / `touchedFiles`.
+   * Absent when the change moved nothing.
+   */
+  renamedFrom?: ReadonlyMap<string, string>;
 }
 
 /** The evidence corpus's lag behind the tree an answer is about. */
@@ -161,6 +168,9 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
   // `HEAD..HEAD` is empty: a merge-base at HEAD has no commits of its own to list.
   const diffCommits =
     mergeBase === headCommit ? [] : await gitRead(base, async () => listCommitsSince(toplevel, mergeBase));
+  const renamedFrom = await gitRead(base, async () =>
+    readRenamedFrom(toplevel, prefix, mergeBase, changes.untracked, changed, deleted),
+  );
   return {
     workTree,
     base,
@@ -174,6 +184,7 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
     nonProduction,
     skipped: all.length - files.length,
     diffCommits,
+    ...(renamedFrom.size > 0 ? { renamedFrom } : {}),
   };
 }
 

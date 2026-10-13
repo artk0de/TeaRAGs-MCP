@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildGitChildProcessEnv, resolveGitExecutable } from "../git-executable.js";
-import { readRepoGitDir } from "../repo-git-state.js";
+import { readRepoGitDir, rebaseGitPathsOntoRoot } from "../repo-git-state.js";
 import { BULK_LOG_STALL_FLOOR_MS, TREE_LISTING_STALL_MS } from "./exec.js";
 import { splitNulTerminated } from "./parsers.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
@@ -495,4 +495,38 @@ function countLines(text: string): number {
 function intersect(listing: readonly string[], relPaths: readonly string[]): string[] {
   const asked = new Set(relPaths);
   return listing.filter((relPath) => asked.has(relPath));
+}
+
+/**
+ * A change's moves, root-relative: a second, rename-detecting diff run only
+ * when the change both deleted and changed something — no deletion, no move.
+ * Only the change's own untracked files that landed in `changed` are offered to
+ * the diff as move targets, and a pair is kept only when both sides are in the
+ * change (`deleted` holds the old path, `changed` the new one). Keys are new
+ * paths, values old paths, rebased from the toplevel onto the root by `prefix`.
+ */
+export async function readRenamedFrom(
+  gitToplevel: string,
+  prefix: string,
+  commit: string,
+  untracked: readonly string[],
+  changed: readonly string[],
+  deleted: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+  const renamedFrom = new Map<string, string>();
+  if (deleted.length === 0 || changed.length === 0) return renamedFrom;
+  const changedSet = new Set(changed);
+  const deletedSet = new Set(deleted);
+  const candidates = untracked.filter((path) => {
+    const [rootRelative] = rebaseGitPathsOntoRoot([path], prefix);
+    return rootRelative !== undefined && changedSet.has(rootRelative);
+  });
+  for (const { from, to } of await readWorkingTreeRenames(gitToplevel, commit, candidates)) {
+    const [oldPath] = rebaseGitPathsOntoRoot([from], prefix);
+    const [newPath] = rebaseGitPathsOntoRoot([to], prefix);
+    if (oldPath !== undefined && newPath !== undefined && deletedSet.has(oldPath) && changedSet.has(newPath)) {
+      renamedFrom.set(newPath, oldPath);
+    }
+  }
+  return renamedFrom;
 }

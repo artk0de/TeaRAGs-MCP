@@ -30,9 +30,9 @@ import { join } from "node:path";
 import {
   findGitToplevel,
   gitPathPrefix,
+  readRenamedFrom,
   readStatusPorcelain,
   readWorkingTreeChanges,
-  readWorkingTreeRenames,
   rebaseGitPathsOntoRoot,
 } from "../../../adapters/vcs/index.js";
 
@@ -156,40 +156,8 @@ async function measureDelta(
   }
   const changed = rebaseGitPathsOntoRoot(changes.changed, prefix).filter(accepts);
   const deleted = rebaseGitPathsOntoRoot(changes.deleted, prefix).filter(accepts);
-  const renamedFrom = await readRenamePairs(gitToplevel, prefix, indexedCommit, changes.untracked, changed, deleted);
+  const renamedFrom = await readRenamedFrom(gitToplevel, prefix, indexedCommit, changes.untracked, changed, deleted);
   return { kind: "measured", delta: { changed, deleted, renamedFrom, fingerprint } };
-}
-
-/**
- * The delta's moves, root-relative: a second, rename-detecting diff run only
- * when the delta deleted something — no deletion, no move. Only the delta's
- * own untracked files are offered to git as move targets, and a pair is kept
- * only when both sides are in the delta (under the root, admitted by ingest).
- */
-async function readRenamePairs(
-  gitToplevel: string,
-  prefix: string,
-  indexedCommit: string,
-  untracked: readonly string[],
-  changed: readonly string[],
-  deleted: readonly string[],
-): Promise<ReadonlyMap<string, string>> {
-  const renamedFrom = new Map<string, string>();
-  if (deleted.length === 0 || changed.length === 0) return renamedFrom;
-  const changedSet = new Set(changed);
-  const deletedSet = new Set(deleted);
-  const candidates = untracked.filter((path) => {
-    const [rootRelative] = rebaseGitPathsOntoRoot([path], prefix);
-    return rootRelative !== undefined && changedSet.has(rootRelative);
-  });
-  for (const { from, to } of await readWorkingTreeRenames(gitToplevel, indexedCommit, candidates)) {
-    const [oldPath] = rebaseGitPathsOntoRoot([from], prefix);
-    const [newPath] = rebaseGitPathsOntoRoot([to], prefix);
-    if (oldPath !== undefined && newPath !== undefined && deletedSet.has(oldPath) && changedSet.has(newPath)) {
-      renamedFrom.set(newPath, oldPath);
-    }
-  }
-  return renamedFrom;
 }
 
 /** A reader with its own per-tree cache; one per process is the intended use. */

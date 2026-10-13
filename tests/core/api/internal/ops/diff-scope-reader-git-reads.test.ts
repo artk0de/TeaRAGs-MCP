@@ -7,7 +7,7 @@
  * `diff-scope-reader.test.ts`'s, against the same kind of temp repository.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -115,5 +115,40 @@ describe("readDiffScope — git reads it can answer without git", () => {
     expect(read.addedRanges.get("src/new.ts")).toEqual([{ start: 1, end: 1 }]);
     const [, , , , untrackedListing] = vi.mocked(vcs.readAddedLineRangesOfFiles).mock.calls[0];
     expect(untrackedListing).toEqual(["src/new.ts"]);
+  });
+
+  describe("renames against the merge-base", () => {
+    const BODY = `${Array.from({ length: 12 }, (_, n) => `export const line${n} = ${n};`).join("\n")}\n`;
+
+    beforeEach(() => {
+      // A rename needs a body git can match: commit a distinctive file, then work from there.
+      writeFileSync(join(repo, "src/old.ts"), BODY);
+      git(repo, "add", "-A");
+      git(repo, "commit", "-q", "-m", "add old");
+    });
+
+    it("a committed git mv since the merge-base reads new path -> old path", async () => {
+      const base = git(repo, "rev-parse", "HEAD").trim();
+      git(repo, "mv", "src/old.ts", "src/moved.ts");
+      git(repo, "commit", "-q", "-m", "move");
+
+      const read = await readDiffScope(repo, { base });
+
+      expect(read.renamedFrom).toEqual(new Map([["src/moved.ts", "src/old.ts"]]));
+    });
+
+    it("an unstaged rename reads new path -> old path", async () => {
+      renameSync(join(repo, "src/old.ts"), join(repo, "src/moved.ts"));
+
+      const read = await readDiffScope(repo, {});
+
+      expect(read.renamedFrom).toEqual(new Map([["src/moved.ts", "src/old.ts"]]));
+    });
+
+    it("no rename leaves the field absent", async () => {
+      const read = await readDiffScope(repo, {});
+
+      expect(read.renamedFrom).toBeUndefined();
+    });
   });
 });
