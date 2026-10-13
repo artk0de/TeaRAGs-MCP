@@ -84,10 +84,15 @@ import {
   staticStatsAccumulators,
   StaticTrajectory,
 } from "../../domains/trajectory/static/index.js";
-import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../public/dto/architecture.js";
+import type {
+  GetArchitecturePlannedEdgesResponse,
+  GetArchitectureReportRequest,
+  GetArchitectureReportResponse,
+} from "../public/dto/architecture.js";
 import type { FindCoChangedRequest, FindCoChangedResult } from "../public/dto/cochange.js";
 import type { GetOntologyReportRequest, GetOntologyReportResponse } from "../public/dto/ontology.js";
 import type { ReviewChangesRequest, ReviewChangesResult } from "../public/dto/review.js";
+import { ArchitecturePlannedEdgeOps } from "./ops/architecture-planned-edge-ops.js";
 import { ArchitectureReportOps } from "./ops/architecture-report-ops.js";
 import { CochangeOps } from "./ops/cochange-ops.js";
 import { CollectionOps } from "./ops/collection-ops.js";
@@ -497,6 +502,17 @@ export function composeAppOps(deps: AppOpsDeps): AppOpsComposition {
  */
 export function emptyArchitectureReport(request: GetArchitectureReportRequest): GetArchitectureReportResponse {
   return ArchitectureReportOps.empty(request);
+}
+
+/**
+ * The planned-edge verdicts for a collection with no codegraph database:
+ * every edge UNJUDGED `noCodegraph` — `ArchitecturePlannedEdgeOps.unavailable`,
+ * surfaced for the same reason as `emptyArchitectureReport`.
+ */
+export function unjudgedPlannedArchitectureEdges(
+  request: GetArchitectureReportRequest,
+): GetArchitecturePlannedEdgesResponse {
+  return ArchitecturePlannedEdgeOps.unavailable(request);
 }
 
 /**

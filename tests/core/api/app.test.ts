@@ -396,6 +396,7 @@ describe("App interface", () => {
       getCallees: true,
       findCycles: true,
       getArchitectureReport: true,
+      judgePlannedArchitectureEdges: true,
       tracePath: true,
       getNamingLexicon: true,
       getOntologyReport: true,
@@ -408,7 +409,7 @@ describe("App interface", () => {
       createPathCollectionResolver: true,
       hasProvider: true,
     };
-    expect(Object.keys(_methods)).toHaveLength(38);
+    expect(Object.keys(_methods)).toHaveLength(39);
   });
 
   it("method return types are Promises (except getSchemaDescriptors)", () => {

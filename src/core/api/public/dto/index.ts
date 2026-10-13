@@ -23,6 +23,7 @@ export type {
 } from "./explore.js";
 
 export { isEnrichmentRecompute, rechunkSelectorOf } from "./ingest.js";
+export { ARCHITECTURE_PLANNED_EDGE_LIMIT } from "./architecture.js";
 
 export type {
   // Ingest

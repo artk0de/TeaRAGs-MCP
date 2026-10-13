@@ -32,6 +32,7 @@ import {
   buildNormLedgers,
   computeDependencyNorms,
   judgePlannedEdge,
+  judgePlannedFileEdges,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
 import { signTestPValue } from "../../../../../../../src/core/primitives/math/statistics/index.js";
 
@@ -603,5 +604,139 @@ describe("computeDependencyNorms - an edge touching a displaced role is never ju
     const report = computeDependencyNorms({ graph, fileRoles: roles });
 
     expect(report.summary.excluded).toMatchObject({ uncalledEdgeCount: 1, displacedRoleEdgeCount: 0 });
+  });
+});
+
+/**
+ * The write-time verdict over FILE endpoints (bd tea-rags-mcp-xb669.2): the
+ * edge a writer is about to add, judged against the INDEXED graph's ledgers.
+ * Roles, family and the reference-level exclusions are read off the files the
+ * graph already holds; the call-level exclusions need call data a planned edge
+ * does not have yet, so they are named as unchecked instead of assumed away.
+ */
+describe("judgePlannedFileEdges", () => {
+  const CALL_EVIDENCE_UNCHECKED = ["uncalled", "frameworkRouted"];
+
+  it("conforms a planned edge along the established direction, naming roles, family and locality", () => {
+    const { graph, roles } = inversionFixture();
+
+    const [judgement] = judgePlannedFileEdges({ graph, fileRoles: roles }, [
+      { sourceRelPath: "controller/controller3.ts", targetRelPath: "service/service7.ts" },
+    ]);
+
+    expect(judgement).toMatchObject({
+      roleSrc: "controller",
+      roleDst: "service",
+      family: "ecmascript",
+      locality: "crossDomain",
+      verdict: { kind: "conforms", pairSupport: 24 },
+      reverseSupport: 1,
+      exclusionsUnchecked: ["constantReference", ...CALL_EVIDENCE_UNCHECKED],
+    });
+    expect(judgement.unjudgedReason).toBeUndefined();
+  });
+
+  it("calls a planned edge against the established direction a MISFIT and names the direction", () => {
+    const { graph, roles } = inversionFixture();
+
+    const [judgement] = judgePlannedFileEdges({ graph, fileRoles: roles }, [
+      { sourceRelPath: "repository/repository9.ts", targetRelPath: "service/service9.ts" },
+    ]);
+
+    expect(judgement.verdict).toMatchObject({
+      kind: "misfit",
+      pairSupport: 2,
+      pValue: signTestPValue(30, 2),
+      establishedDirection: { roleSrc: "service", roleDst: "repository", support: 30 },
+    });
+    expect(judgement.transit).toBeUndefined();
+  });
+
+  it("answers a pair nobody wrote with insufficient support and the established transit through a third role", () => {
+    const { graph, roles } = inversionFixture();
+
+    const [judgement] = judgePlannedFileEdges({ graph, fileRoles: roles }, [
+      { sourceRelPath: "controller/controller0.ts", targetRelPath: "repository/repository0.ts" },
+    ]);
+
+    expect(judgement.verdict).toMatchObject({ kind: "insufficientSupport", pairSupport: 0 });
+    expect(judgement.transit).toEqual({ viaRole: "service", supportIn: 24, supportOut: 30 });
+  });
+
+  it("never judges an endpoint with a weak role or no role, and says which", () => {
+    const { graph, roles } = inversionFixture();
+    roles.set("service/service1.ts", { role: "service", strong: false });
+    roles.delete("controller/controller1.ts");
+
+    const [weak, untyped] = judgePlannedFileEdges({ graph, fileRoles: roles }, [
+      { sourceRelPath: "service/service1.ts", targetRelPath: "repository/repository1.ts" },
+      { sourceRelPath: "controller/controller1.ts", targetRelPath: "service/service2.ts" },
+    ]);
+
+    expect(weak).toMatchObject({ unjudgedReason: "weakRole", roleSrc: "service", roleDst: "repository" });
+    expect(weak.verdict).toBeUndefined();
+    expect(untyped).toMatchObject({ unjudgedReason: "untypedFile", roleDst: "service" });
+    expect(untyped.verdict).toBeUndefined();
+  });
+
+  it("never judges a planned edge across language families", () => {
+    const { graph, roles } = inversionFixture();
+    graph.files.push({ relPath: "app/services/billing_service.rb", language: "ruby", symbolCount: 1 });
+    roles.set("app/services/billing_service.rb", { role: "service", strong: true });
+
+    const [judgement] = judgePlannedFileEdges({ graph, fileRoles: roles }, [
+      { sourceRelPath: "controller/controller1.ts", targetRelPath: "app/services/billing_service.rb" },
+    ]);
+
+    expect(judgement).toMatchObject({ unjudgedReason: "crossLanguage", roleSrc: "controller", roleDst: "service" });
+    expect(judgement.verdict).toBeUndefined();
+  });
+
+  it("never judges an endpoint the indexed graph does not hold: a new file, or one the production read excluded", () => {
+    const { graph, roles } = inversionFixture();
+
+    const [fresh, excluded] = judgePlannedFileEdges(
+      { graph, fileRoles: roles },
+      [
+        { sourceRelPath: "controller/brand_new.ts", targetRelPath: "service/service1.ts" },
+        { sourceRelPath: "tests/service.test.ts", targetRelPath: "service/service1.ts" },
+      ],
+      { isNonProduction: (relPath) => relPath.startsWith("tests/") },
+    );
+
+    expect(fresh.unjudgedReason).toBe("newFile");
+    expect(excluded.unjudgedReason).toBe("nonProduction");
+  });
+
+  it("applies the report's constant-reference exclusion to a planned reference, and checks it off the unchecked list", () => {
+    const { graph, roles } = inversionFixture();
+    const filePrimaryTypes = new Map([["controller/controller1.ts", "Controller1"]]);
+
+    const [nested, primary] = judgePlannedFileEdges({ graph, fileRoles: roles, filePrimaryTypes }, [
+      {
+        sourceRelPath: "service/service1.ts",
+        targetRelPath: "controller/controller1.ts",
+        reference: "Controller1::RateLimitError",
+      },
+      { sourceRelPath: "service/service1.ts", targetRelPath: "controller/controller1.ts", reference: "Controller1" },
+    ]);
+
+    expect(nested).toMatchObject({ unjudgedReason: "constantReference" });
+    expect(nested.verdict).toBeUndefined();
+    expect(primary.verdict?.kind).toBe("misfit");
+    expect(primary.exclusionsUnchecked).toEqual(CALL_EVIDENCE_UNCHECKED);
+  });
+
+  it("never judges a planned edge touching a displaced role", () => {
+    const { graph, roles } = inversionFixture();
+    roles.set("lib/legacy_controller.ts", { role: "controller", strong: true, displaced: "outsideRoleHome" });
+    graph.files.push({ relPath: "lib/legacy_controller.ts", language: "typescript", symbolCount: 1 });
+
+    const [judgement] = judgePlannedFileEdges({ graph, fileRoles: roles }, [
+      { sourceRelPath: "service/service1.ts", targetRelPath: "lib/legacy_controller.ts" },
+    ]);
+
+    expect(judgement).toMatchObject({ unjudgedReason: "displacedRole" });
+    expect(judgement.verdict).toBeUndefined();
   });
 });

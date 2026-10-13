@@ -58,6 +58,7 @@ import {
   emptyOntologyReport,
   emptyReviewChangesResult,
   resolveLanguageCapabilities as resolveDomainLanguageCapabilities,
+  unjudgedPlannedArchitectureEdges,
 } from "./composition.js";
 import { reviewSectionIds as reviewSectionIdsValue } from "./ops/review-sections/index.js";
 
@@ -277,6 +278,8 @@ export function createApp(deps: AppDeps): App {
     findCycles: async (req) => (deps.graphFacade ? deps.graphFacade.findCycles(req) : { cycles: [] }),
     getArchitectureReport: async (req) =>
       deps.graphFacade ? deps.graphFacade.getArchitectureReport(req) : emptyArchitectureReport(req),
+    judgePlannedArchitectureEdges: async (req) =>
+      deps.graphFacade ? deps.graphFacade.judgePlannedArchitectureEdges(req) : unjudgedPlannedArchitectureEdges(req),
     tracePath: async (req) => (deps.tracePathOps ? deps.tracePathOps.tracePath(req) : { paths: [], truncated: false }),
     getNamingLexicon: async (req) =>
       deps.namingLexiconOps ? deps.namingLexiconOps.getNamingLexicon(req) : { scope: "", byType: [], names: [] },

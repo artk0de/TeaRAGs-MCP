@@ -119,6 +119,79 @@ export interface PlannedEdgeVerdict {
   establishedDirection?: DependencyNormEstablishedDirection;
 }
 
+/**
+ * Why a same-family typed edge carries no verdict. `constantReference` is no
+ * role edge at all — never judged, never precedent. `uncalled` and
+ * `frameworkRouted` ARE precedent (see `buildNormLedgers`) but never a
+ * finding: an inversion is a layering mistake only when the minority edge
+ * runs the target's own logic. `displacedRole` is precedent too: an endpoint's
+ * role is read where that role does not live (bd tea-rags-mcp-4vj2u), so the
+ * edge says nothing about the layer the role names.
+ */
+export type NormEdgeExclusion = "constantReference" | "uncalled" | "frameworkRouted" | "displacedRole";
+
+/**
+ * The edge evidence the exclusion classes read. `callWeight` absent = the edge
+ * has no call data yet (a planned edge, bd tea-rags-mcp-xb669.2): the
+ * call-level classes cannot be evaluated and are skipped, never assumed.
+ */
+export interface NormEdgeEvidence {
+  targetRelPath: RelPath;
+  /** The reference the source names the target by (`Outer::Inner`, `zeitwerk:Name`). */
+  importText?: string | null;
+  callWeight?: number;
+  frameworkRoutedCallWeight?: number;
+}
+
+/**
+ * An edge a writer is about to add, by FILE endpoints (bd tea-rags-mcp-xb669.2,
+ * owner decision 2026-10-11: file-level pairs, consistent with xb669.3).
+ */
+export interface NormPlannedFileEdge {
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  /** The name the source will reference the target by — lets the constant-reference exclusion run. */
+  reference?: string;
+}
+
+/** Why a planned file edge carries no verdict. */
+export type NormPlannedEdgeUnjudgedReason =
+  | "newFile"
+  | "nonProduction"
+  | "untypedFile"
+  | "weakRole"
+  | "crossLanguage"
+  | "constantReference"
+  | "displacedRole";
+
+/**
+ * The established route through a third role: roleSrc → viaRole and
+ * viaRole → roleDst both run along their pair's established direction.
+ */
+export interface NormTransitPath {
+  viaRole: string;
+  supportIn: number;
+  supportOut: number;
+}
+
+/** One planned file edge read against the indexed graph's ledgers. */
+export interface NormPlannedFileEdgeJudgement {
+  planned: NormPlannedFileEdge;
+  roleSrc?: string;
+  roleDst?: string;
+  family?: string;
+  locality?: NormLocality;
+  /** Absent exactly when `unjudgedReason` is present. */
+  verdict?: PlannedEdgeVerdict;
+  /** Edges roleDst → roleSrc, every locality — the other half of the sign test. */
+  reverseSupport?: number;
+  /** MISFIT / insufficient support only: the strongest established route through a third role. */
+  transit?: NormTransitPath;
+  unjudgedReason?: NormPlannedEdgeUnjudgedReason;
+  /** Exclusion classes the planned edge's evidence cannot evaluate — present with a verdict. */
+  exclusionsUnchecked?: Exclude<NormEdgeExclusion, "displacedRole">[];
+}
+
 /** The one verdict the whole-repo report lists; every other edge CONFORMS and is not listed. */
 export type NormFindingKind = "misfit";
 

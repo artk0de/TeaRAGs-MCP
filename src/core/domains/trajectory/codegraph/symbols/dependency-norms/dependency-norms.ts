@@ -1,4 +1,4 @@
-import type { DependencyNormFileRole, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { DependencyNormFileRole, RelPath } from "../../../../../contracts/types/codegraph.js";
 import {
   benjaminiHochbergRejectionCount,
   CONVENTIONAL_FDR_Q,
@@ -14,10 +14,15 @@ import type {
   DependencyNormsSignificance,
   DependencyNormsSummary,
   NormDirectionTest,
+  NormEdgeEvidence,
+  NormEdgeExclusion,
   NormLedgerBook,
   NormLedgers,
   NormLocality,
   NormPlannedEdge,
+  NormPlannedFileEdge,
+  NormPlannedFileEdgeJudgement,
+  NormTransitPath,
   PlannedEdgeVerdict,
 } from "./types.js";
 
@@ -215,17 +220,6 @@ const REFERENCE_CHANNEL_MARKER = /^[A-Za-z_-]+:(?!:)/;
 const NAMESPACE_SEPARATOR = /::|\./;
 
 /**
- * Why a same-family typed edge carries no verdict. `constantReference` is no
- * role edge at all — never judged, never precedent. `uncalled` and
- * `frameworkRouted` ARE precedent (see `buildNormLedgers`) but never a
- * finding: an inversion is a layering mistake only when the minority edge
- * runs the target's own logic. `displacedRole` is precedent too: an endpoint's
- * role is read where that role does not live (bd tea-rags-mcp-4vj2u), so the
- * edge says nothing about the layer the role names.
- */
-type NormEdgeExclusion = "constantReference" | "uncalled" | "frameworkRouted" | "displacedRole";
-
-/**
  * Relative slack when comparing the framework-routed part of an edge's call
  * weight with the whole: both are float sums of the same confidences, so
  * "every call routed" may differ from equality in the last bits.
@@ -233,33 +227,46 @@ type NormEdgeExclusion = "constantReference" | "uncalled" | "frameworkRouted" | 
 const CALL_WEIGHT_RELATIVE_EPSILON = 1e-9;
 
 /**
- * The report walk's exclusion test. The edge's own evidence is named first — a
- * nested constant before a missing call before a framework route — and a
- * displaced endpoint role last, so the edge-level counts do not depend on the
- * role layer.
+ * The ONE exclusion test every norms caller reads — the report walk, the
+ * write-time planned-edge verdict (bd tea-rags-mcp-xb669.2) and the diff-time
+ * verdict (xb669.3). The edge's own evidence is named first — a nested
+ * constant before a missing call before a framework route — and a displaced
+ * endpoint role last, so the edge-level counts do not depend on the role
+ * layer. An edge with no call data (`callWeight` absent) skips the call-level
+ * classes: the caller reports them as unchecked, see
+ * {@link NORM_CALL_EVIDENCE_EXCLUSIONS}.
  */
-function edgeExclusionResolver(input: DependencyNormsInput) {
+export function normEdgeExclusionResolver(input: DependencyNormsInput) {
   const isConstantReference = constantReferenceTest(input);
   return (
-    edge: FileDependencyGraph["edges"][number],
+    edge: NormEdgeEvidence,
     sourceRole: DependencyNormFileRole,
     targetRole: DependencyNormFileRole,
   ): NormEdgeExclusion | undefined => {
     if (isConstantReference(edge)) return "constantReference";
-    // bd tea-rags-mcp-4vj2u: no resolved call — the source names the target,
-    // it never runs the target's logic (a factory `.new`, a subtype registry,
-    // an initializer's config). Measured on the xb669.8 gold set: 13 FALSE,
-    // 0 TRUE among the call-less MISFITs.
-    if (edge.callWeight <= 0) return "uncalled";
-    // bd tea-rags-mcp-4vj2u: every call went through a framework's interface
-    // (`Worker.perform_async` routed to `Worker#perform`) — the source knows
-    // the target's framework contract, not its logic.
-    const routed = edge.frameworkRoutedCallWeight ?? 0;
-    if (routed >= edge.callWeight * (1 - CALL_WEIGHT_RELATIVE_EPSILON)) return "frameworkRouted";
+    const { callWeight } = edge;
+    if (callWeight !== undefined) {
+      // bd tea-rags-mcp-4vj2u: no resolved call — the source names the target,
+      // it never runs the target's logic (a factory `.new`, a subtype registry,
+      // an initializer's config). Measured on the xb669.8 gold set: 13 FALSE,
+      // 0 TRUE among the call-less MISFITs.
+      if (callWeight <= 0) return "uncalled";
+      // bd tea-rags-mcp-4vj2u: every call went through a framework's interface
+      // (`Worker.perform_async` routed to `Worker#perform`) — the source knows
+      // the target's framework contract, not its logic.
+      const routed = edge.frameworkRoutedCallWeight ?? 0;
+      if (routed >= callWeight * (1 - CALL_WEIGHT_RELATIVE_EPSILON)) return "frameworkRouted";
+    }
     if (sourceRole.displaced !== undefined || targetRole.displaced !== undefined) return "displacedRole";
     return undefined;
   };
 }
+
+/** The exclusion classes only call data can evaluate — unchecked on an edge that has none yet. */
+export const NORM_CALL_EVIDENCE_EXCLUSIONS: readonly ("uncalled" | "frameworkRouted")[] = [
+  "uncalled",
+  "frameworkRouted",
+];
 
 /**
  * Whether an edge's only evidence is a constant NESTED in the target's primary
@@ -275,9 +282,9 @@ function edgeExclusionResolver(input: DependencyNormsInput) {
  * provably calls in.
  */
 function constantReferenceTest({ filePrimaryTypes }: DependencyNormsInput) {
-  return (edge: FileDependencyGraph["edges"][number]): boolean => {
+  return (edge: NormEdgeEvidence): boolean => {
     if (filePrimaryTypes === undefined || edge.importText === undefined || edge.importText === null) return false;
-    if (edge.callWeight >= DEFINITE_CALL_WEIGHT) return false;
+    if ((edge.callWeight ?? 0) >= DEFINITE_CALL_WEIGHT) return false;
     const primary = filePrimaryTypes.get(edge.targetRelPath);
     if (primary === undefined) return false;
     const segments = edge.importText.replace(REFERENCE_CHANNEL_MARKER, "").split(NAMESPACE_SEPARATOR);
@@ -320,6 +327,97 @@ export function judgePlannedEdge(ledgers: NormLedgers, planned: NormPlannedEdge)
   return { kind: test.support > 0 ? "conforms" : "insufficientSupport", ...evidence };
 }
 
+/**
+ * The write-time verdict over FILE endpoints (bd tea-rags-mcp-xb669.2): each
+ * planned edge read against the ledgers of `input.graph` — the INDEXED graph,
+ * so a planned edge is never its own precedent. Roles, family and locality
+ * come off the files the graph holds; an endpoint it does not hold is a new
+ * file, or one the production read excluded (`isNonProduction`). The
+ * reference-level exclusions run on the planned `reference` (constant
+ * reference: only when one is given) and the endpoint roles (displaced role);
+ * the call-level ones need call data and are listed as unchecked.
+ */
+export function judgePlannedFileEdges(
+  input: DependencyNormsInput,
+  planned: readonly NormPlannedFileEdge[],
+  options: { isNonProduction?: (relPath: RelPath) => boolean } = {},
+): NormPlannedFileEdgeJudgement[] {
+  const { graph, fileRoles } = input;
+  const languageOf = new Map<RelPath, string>(graph.files.map((f) => [f.relPath, f.language]));
+  const book = buildNormLedgers(input);
+  const localityOf = localityResolver(input);
+  const exclusionOf = normEdgeExclusionResolver(input);
+  const absentReason = (relPath: RelPath) => (options.isNonProduction?.(relPath) ? "nonProduction" : "newFile");
+
+  return planned.map((edge): NormPlannedFileEdgeJudgement => {
+    const { sourceRelPath, targetRelPath } = edge;
+    if (!languageOf.has(sourceRelPath)) return { planned: edge, unjudgedReason: absentReason(sourceRelPath) };
+    if (!languageOf.has(targetRelPath)) return { planned: edge, unjudgedReason: absentReason(targetRelPath) };
+    const sourceRole = fileRoles.get(sourceRelPath);
+    const targetRole = fileRoles.get(targetRelPath);
+    const roles = {
+      ...(sourceRole ? { roleSrc: sourceRole.role } : {}),
+      ...(targetRole ? { roleDst: targetRole.role } : {}),
+    };
+    if (sourceRole === undefined || targetRole === undefined) {
+      return { planned: edge, ...roles, unjudgedReason: "untypedFile" };
+    }
+    if (!sourceRole.strong || !targetRole.strong) return { planned: edge, ...roles, unjudgedReason: "weakRole" };
+    const ledgers = book.forEdge(languageOf.get(sourceRelPath), languageOf.get(targetRelPath));
+    if (ledgers === undefined) return { planned: edge, ...roles, unjudgedReason: "crossLanguage" };
+    const exclusion = exclusionOf({ targetRelPath, importText: edge.reference }, sourceRole, targetRole);
+    if (exclusion === "constantReference" || exclusion === "displacedRole") {
+      return { planned: edge, ...roles, family: ledgers.family, unjudgedReason: exclusion };
+    }
+    const locality = localityOf(sourceRelPath, targetRelPath);
+    const verdict = judgePlannedEdge(ledgers, { roleSrc: sourceRole.role, roleDst: targetRole.role, locality });
+    const transit =
+      verdict.kind === "conforms" ? undefined : establishedTransit(ledgers, sourceRole.role, targetRole.role);
+    return {
+      planned: edge,
+      ...roles,
+      family: ledgers.family,
+      locality,
+      verdict,
+      reverseSupport: ledgers.testDirection(targetRole.role, sourceRole.role).support,
+      ...(transit ? { transit } : {}),
+      exclusionsUnchecked: [
+        ...(edge.reference === undefined ? (["constantReference"] as const) : []),
+        ...NORM_CALL_EVIDENCE_EXCLUSIONS,
+      ],
+    };
+  });
+}
+
+/**
+ * The strongest route roleSrc → via → roleDst whose BOTH legs run along their
+ * pair's established direction — ranked by the weaker leg's support, ties by
+ * role name. Undefined when no third role carries such a route.
+ */
+function establishedTransit(ledgers: NormLedgers, roleSrc: string, roleDst: string): NormTransitPath | undefined {
+  const establishedSupport = (from: string, to: string) => {
+    const test = ledgers.testDirection(from, to);
+    return test.significant && test.support > test.reverseSupport ? test.support : 0;
+  };
+  const roles = new Set<string>();
+  for (const key of ledgers.pairs.keys()) {
+    const [from, to] = key.split("\u0000");
+    roles.add(from);
+    roles.add(to);
+  }
+  let best: NormTransitPath | undefined;
+  for (const viaRole of [...roles].sort(compareCodePoints)) {
+    if (viaRole === roleSrc || viaRole === roleDst) continue;
+    const supportIn = establishedSupport(roleSrc, viaRole);
+    const supportOut = establishedSupport(viaRole, roleDst);
+    if (supportIn === 0 || supportOut === 0) continue;
+    if (best === undefined || Math.min(supportIn, supportOut) > Math.min(best.supportIn, best.supportOut)) {
+      best = { viaRole, supportIn, supportOut };
+    }
+  }
+  return best;
+}
+
 export function computeDependencyNorms(input: DependencyNormsInput): DependencyNormsReport {
   const { graph, fileRoles } = input;
   const roleOf = (relPath: RelPath) => fileRoles.get(relPath);
@@ -339,7 +437,7 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
   const book = buildNormLedgers(input);
   const familyOfEdge = edgeFamilyResolver(graph);
   const localityOf = localityResolver(input);
-  const exclusionOf = edgeExclusionResolver(input);
+  const exclusionOf = normEdgeExclusionResolver(input);
 
   const findings: DependencyNormFinding[] = [];
   let crossLanguageEdgeCount = 0;

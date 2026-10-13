@@ -227,6 +227,20 @@ describe("createApp", () => {
     expect(report.summary.stableDependencies.edgeCount).toBe(0);
   });
 
+  // bd tea-rags-mcp-xb669.2
+  it("judgePlannedArchitectureEdges answers every edge UNJUDGED noCodegraph when no graph backend is wired", async () => {
+    const app = createApp(makeDeps() as never);
+
+    const response = await app.judgePlannedArchitectureEdges({
+      project: "p",
+      plannedEdges: [{ source: "src/a.ts", target: "src/b.ts" }],
+    });
+
+    expect(response.plannedEdgeVerdicts).toEqual([
+      { source: "src/a.ts", target: "src/b.ts", verdict: "UNJUDGED", reason: "noCodegraph" },
+    ]);
+  });
+
   // bd tea-rags-mcp-4p3sb.20
   it("getOntologyReport delegates to OntologyReportOps", async () => {
     const report = { scope: { pathPrefix: "" }, summary: { evidenceRows: 3, genericNameCount: 0, genericNames: [] } };
