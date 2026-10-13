@@ -2444,3 +2444,227 @@ describe("ArchitectureReportOps#build — maintenance cost (bd tea-rags-mcp-r8hm
     expect(read).not.toHaveBeenCalled();
   });
 });
+
+describe("ArchitectureReportOps#build — violation impact tiers (bd tea-rags-mcp-r8hme.53)", () => {
+  /**
+   * Each pair co-changing in `times` one-commit bundles, beside ten solo
+   * changes of four other files — a history whose configuration null expects
+   * well under one co-change for any pair, so 8 is far beyond it.
+   */
+  function tierBundles(
+    pairs: readonly (readonly [string, string])[],
+    times = 8,
+  ): ReadonlyMap<number, readonly string[]> {
+    const bundles: (readonly string[])[] = [];
+    for (const pair of pairs) for (let i = 0; i < times; i++) bundles.push(pair);
+    for (const solo of ["vendor/v.ts", "core/b.ts", "other/o.ts", "users/u1.ts"]) {
+      for (let i = 0; i < 10; i++) bundles.push([solo]);
+    }
+    return new Map(bundles.map((files, id) => [id, files]));
+  }
+
+  const cochangeOf = (bundles: ReadonlyMap<number, readonly string[]>): TemporalCochangeGraph => ({
+    ...cochangeGraph(),
+    edges: [],
+    bundles,
+  });
+
+  /** `graph()` plus 20 `top/` files importing `users/u1.ts`: base/a.ts now reaches 26 of the other 41 files. */
+  function wideReachGraph(): FileDependencyGraph {
+    const g = graph();
+    for (let i = 1; i <= 20; i++) {
+      g.files.push(file(`top/t${i}.ts`));
+      g.edges.push({ sourceRelPath: `top/t${i}.ts`, targetRelPath: "users/u1.ts", callWeight: 1 });
+    }
+    return g;
+  }
+
+  /** `graph()` with base → lib carried by six edges; the lightest one, into `extraTarget`, falls past the 5-edge evidence cap. */
+  function sixCarrierGraph(extraTarget: string): FileDependencyGraph {
+    const g = graph();
+    g.files.push(file(extraTarget));
+    for (const target of ["lib/f1.ts", "lib/f2.ts", "lib/f3.ts", "lib/f5.ts"]) {
+      g.edges.push({ sourceRelPath: "base/a.ts", targetRelPath: target, callWeight: 3 });
+    }
+    g.edges.push({ sourceRelPath: "base/a.ts", targetRelPath: extraTarget, callWeight: 0.5 });
+    return g;
+  }
+
+  const sdpFrom = (report: { violations: ArchitectureViolation[] }, sourceComponent: string) =>
+    report.violations.find(
+      (v) => v.detector === "stableDependencies" && "sourceComponent" in v && v.sourceComponent === sourceComponent,
+    );
+
+  it("tags an SDP violation whose carrying pair co-changes beyond the null active, and one with no admitted pair structural", async () => {
+    const db = graphDb(wideReachGraph(), [], cochangeOf(tierBundles([["core/a.ts", "lib/f1.ts"]])));
+    const report = await new ArchitectureReportOps().build(db, {});
+
+    expect(sdpFrom(report, "core")).toMatchObject({
+      tier: "active",
+      tierEvidence: {
+        admittedCarrierPairCount: 1,
+        carrierPairCount: 2,
+        admittedCarrierPairs: [{ sourceRelPath: "core/a.ts", targetRelPath: "lib/f1.ts" }],
+        // Only lib/f5.ts reaches core/a.ts: 1 of the other 41 files, under the cut the wide graph draws.
+        sourceReach: { relPath: "core/a.ts", dependentCount: 1, share: 0.024 },
+      },
+    });
+    const base = sdpFrom(report, "base");
+    expect(base).toMatchObject({
+      tier: "structural",
+      tierEvidence: { admittedCarrierPairCount: 0, carrierPairCount: 1, admittedCarrierPairs: [] },
+    });
+    expect(base?.tierEvidence).not.toHaveProperty("sourceReach");
+  });
+
+  it("tags an active violation critical when its source reaches above the repo's reach cut", async () => {
+    const db = graphDb(wideReachGraph(), [], cochangeOf(tierBundles([["base/a.ts", "lib/f4.ts"]])));
+    const report = await new ArchitectureReportOps().build(db, {});
+
+    expect(sdpFrom(report, "base")).toMatchObject({
+      tier: "critical",
+      tierEvidence: { sourceReach: { relPath: "base/a.ts", dependentCount: 26, share: 0.634 } },
+    });
+    expect(report.summary.impactTiers).toMatchObject({
+      built: true,
+      cochangeSignificance: { method: "poissonConfigurationNull", family: "full" },
+      reachCut: { signal: "transitiveDependentShare", method: "otsu", fileCount: 42 },
+      byDetector: { stableDependencies: { structural: 1, active: 0, critical: 1 } },
+    });
+  });
+
+  it("reports the majority fallback when too few files support a reach cut", async () => {
+    const tiny: FileDependencyGraph = {
+      files: [file("a/x.ts"), file("b/y.ts"), file("c/z.ts")],
+      edges: [
+        { sourceRelPath: "a/x.ts", targetRelPath: "b/y.ts", callWeight: 1 },
+        { sourceRelPath: "b/y.ts", targetRelPath: "c/z.ts", callWeight: 1 },
+      ],
+    };
+    const report = await new ArchitectureReportOps().build(
+      graphDb(tiny, [], cochangeOf(tierBundles([["a/x.ts", "b/y.ts"]]))),
+      {},
+    );
+
+    expect(report.summary.impactTiers).toMatchObject({
+      built: true,
+      reachCut: { signal: "transitiveDependentShare", method: "majority", fileCount: 3 },
+    });
+  });
+
+  it("leaves component-only and history-only findings untiered and says which detectors those are", async () => {
+    const report = await new ArchitectureReportOps().build(
+      graphDb(graph(), [], cochangeOf(tierBundles([["base/a.ts", "lib/f4.ts"]]))),
+      {},
+    );
+    const untierable = new Set(["mainSequence", "hubLikeDependency", "silentCoupling", "shotgunSurgery"]);
+
+    for (const v of report.violations) {
+      if (untierable.has(v.detector)) expect(v).not.toHaveProperty("tier");
+    }
+    const summary = report.summary.impactTiers;
+    expect(summary.notApplicable.detectors).toEqual([
+      "mainSequence",
+      "hubLikeDependency",
+      "silentCoupling",
+      "shotgunSurgery",
+      "layering.compositionCycle",
+      "layering.island",
+    ]);
+    expect(summary.notApplicable.reason).toEqual(expect.any(String));
+  });
+
+  it("ranks tier before maintenance cost inside a family, so a critical violation survives a cap that cost alone would cut", async () => {
+    const g = wideReachGraph();
+    const hot = ["core/a.ts", "lib/f1.ts", "core/b.ts", "lib/f2.ts"];
+    const signals = () =>
+      vi.fn(
+        async () =>
+          new Map(
+            g.files.map((f) => [
+              f.relPath,
+              hot.includes(f.relPath)
+                ? { commitCount: 40, bugFixRate: 50, ageDays: 1 }
+                : { commitCount: 1, bugFixRate: 0, ageDays: 300 },
+            ]),
+          ),
+      );
+    const sdpSources = (violations: ArchitectureViolation[]) =>
+      violations.flatMap((v) =>
+        v.detector === "stableDependencies" && "sourceComponent" in v ? [v.sourceComponent] : [],
+      );
+
+    // No co-change history: cost alone ranks, and the cap keeps the hot core → lib.
+    const byCost = await new ArchitectureReportOps().build(graphDb(g), { limit: 1 }, undefined, undefined, signals());
+    expect(sdpSources(byCost.violations)).toEqual(["core"]);
+
+    const tiered = await new ArchitectureReportOps().build(
+      graphDb(g, [], cochangeOf(tierBundles([["base/a.ts", "lib/f4.ts"]]))),
+      { limit: 1 },
+      undefined,
+      undefined,
+      signals(),
+    );
+    expect(sdpSources(tiered.violations)).toEqual(["base"]);
+    expect(sdpFrom(tiered, "base")?.tier).toBe("critical");
+  });
+
+  it("counts admitted pairs over every carrying edge, past the 5-edge evidence cap", async () => {
+    const db = graphDb(sixCarrierGraph("lib/f6.ts"), [], cochangeOf(tierBundles([["base/a.ts", "lib/f6.ts"]])));
+    const report = await new ArchitectureReportOps().build(db, {});
+    const base = sdpFrom(report, "base");
+
+    expect(base?.evidence).toMatchObject({ fileEdgeCount: 6 });
+    const listed = (base?.evidence as { fileEdges: { targetRelPath: string }[] }).fileEdges;
+    expect(listed.map((e) => e.targetRelPath)).not.toContain("lib/f6.ts");
+    // Admitted, and base/a.ts's 6 dependents clear this graph's reach cut.
+    expect(base).toMatchObject({
+      tier: "critical",
+      tierEvidence: {
+        admittedCarrierPairCount: 1,
+        carrierPairCount: 6,
+        admittedCarrierPairs: [{ sourceRelPath: "base/a.ts", targetRelPath: "lib/f6.ts" }],
+      },
+    });
+  });
+
+  it("never lets a version-manifest pair make a violation active", async () => {
+    const db = graphDb(
+      sixCarrierGraph("lib/package.json"),
+      [],
+      cochangeOf(tierBundles([["base/a.ts", "lib/package.json"]])),
+    );
+    const report = await new ArchitectureReportOps().build(db, {});
+
+    expect(sdpFrom(report, "base")).toMatchObject({
+      tier: "structural",
+      tierEvidence: { admittedCarrierPairCount: 0, carrierPairCount: 5 },
+    });
+  });
+
+  it("gives a root cause the highest tier among its member violations", async () => {
+    const report = await new ArchitectureReportOps().build(
+      graphDb(wideReachGraph(), [], cochangeOf(tierBundles([["core/a.ts", "lib/f1.ts"]]))),
+      {},
+    );
+
+    const lib = report.rootCauses.find((r) => r.detector === "stableDependencies" && r.targetComponent === "lib");
+    // core → lib is active, base → lib structural.
+    expect(lib?.tier).toBe("active");
+  });
+
+  it("tags nothing and says so when the codegraph holds no co-change history", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(), {});
+
+    expect(report.violations.some((v) => "tier" in v)).toBe(false);
+    expect(report.rootCauses.some((r) => "tier" in r)).toBe(false);
+    expect(report.summary.impactTiers).toMatchObject({ built: false, reason: "noCochangeHistory" });
+  });
+
+  it("is unbuilt in the empty report", () => {
+    expect(ArchitectureReportOps.empty({}).summary.impactTiers).toMatchObject({
+      built: false,
+      reason: "noCochangeHistory",
+    });
+  });
+});

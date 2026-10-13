@@ -452,3 +452,26 @@ describe("architectureViolationCarrierFiles — the files on the edges that make
     expect(architectureViolationCarrierFiles({ component: "nowhere" }, index)).toEqual([]);
   });
 });
+
+describe("ComponentEdgeCarrierIndex#edgesBetween — the full carrier edge list (bd tea-rags-mcp-r8hme.53)", () => {
+  const edge = (sourceRelPath: string, targetRelPath: string, callWeight = 1) => ({
+    sourceRelPath,
+    targetRelPath,
+    callWeight,
+  });
+  // Seven carrying edges — past the 5-edge cap the listed evidence keeps.
+  const carriers = Array.from({ length: 7 }, (_, i) => edge(`core/a${i}.ts`, `lib/c${i}.ts`, 7 - i));
+  const index = new ComponentEdgeCarrierIndex(new Map([["core/a0.ts", "core"]]), [
+    { sourceComponent: "core", targetComponent: "lib", fileEdges: carriers },
+    { sourceComponent: "lib", targetComponent: "core", fileEdges: [edge("lib/c0.ts", "core/a0.ts")] },
+  ]);
+
+  it("returns every file edge from the source component into the target, in the partition's order", () => {
+    expect(index.edgesBetween("core", "lib")).toEqual(carriers);
+  });
+
+  it("is directed, and empty for a pair the partition holds no dependency for", () => {
+    expect(index.edgesBetween("lib", "core")).toEqual([edge("lib/c0.ts", "core/a0.ts")]);
+    expect(index.edgesBetween("core", "app")).toEqual([]);
+  });
+});

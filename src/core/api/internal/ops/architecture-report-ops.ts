@@ -64,13 +64,16 @@ import {
   detectSilentCoupling,
   linkImportedCochangePairs,
   oneWalkedViolationImporters,
+  type CochangeSignificance,
   type SilentCouplingReport,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type {
   ArchitectureDomainBoundaryEdge,
   ArchitectureDomainReport,
   ArchitectureKnotView,
+  ArchitectureRootCause,
   ArchitectureViolation,
+  ArchitectureViolationImpactTierReportSummary,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
 } from "../../public/dto/architecture.js";
@@ -124,6 +127,14 @@ import {
   toLayeringArchitectureViolation,
   type ArchitectureDetectorReports,
 } from "./architecture-report/index.js";
+import {
+  ARCHITECTURE_IMPACT_TIER_NOT_APPLICABLE,
+  ArchitectureViolationImpactTierModel,
+  countImpactTiers,
+  highestImpactTier,
+  impactTierOrder,
+  reachCutSummary,
+} from "./architecture-violation-impact-tier.js";
 import {
   runShotgunSurgery,
   shotgunSurgeryViolations,
@@ -343,7 +354,19 @@ export class ArchitectureReportOps {
     // One co-change read feeds both temporal detectors: silent coupling's
     // pairs and the split/merge verdicts' bundle membership.
     const { cochange } = facts;
-    const silent = await detectSilentCouplingSeeingAssetImports(cochange, graph, request, readImportSpecifiers);
+    // One full-family significance pass serves silent coupling (both of its
+    // runs: relinking asset imports changes no pair's support) and the
+    // violation impact tiers (bd tea-rags-mcp-r8hme.53). F₂'s existence check
+    // is the build's own liveness — the builder stores only paths tracked at
+    // its HEAD and not deleted in the working tree.
+    const cochangeSignificance = assessGraphCochangeSignificance(cochange, { kind: "full" });
+    const silent = await detectSilentCouplingSeeingAssetImports(
+      cochange,
+      cochangeSignificance,
+      graph,
+      request,
+      readImportSpecifiers,
+    );
     // Shotgun surgery (bd tea-rags-mcp-r8hme.50): the same bundles, over the
     // partition split/merge judges and its component graph.
     const shotgun = runShotgunSurgery(cochange, components, request.pathPattern);
@@ -364,6 +387,7 @@ export class ArchitectureReportOps {
       propagationCost,
       privacy,
       cochange,
+      cochangeSignificance,
       silent,
       shotgun,
       layeringModel,
@@ -425,15 +449,28 @@ export class ArchitectureReportOps {
   ): GetArchitectureReportResponse {
     const { production, whole } = scope;
     const { findings, limit, offset, domainKnot } = view;
-    const violations = rankArchitectureViolationsByMaintenanceCost(runs, findings, limit, costModel);
+    const carrierIndex = new ComponentEdgeCarrierIndex(runs.components.componentOf, runs.components.dependencies);
+    const tierModel = buildImpactTierModel(runs, carrierIndex);
+    const violations = rankArchitectureViolationsByMaintenanceCost(
+      runs,
+      findings,
+      limit,
+      costModel,
+      carrierIndex,
+      tierModel,
+    );
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
-      summary: summariseArchitectureDetectors(production, runs, limit),
-      rootCauses: [
-        ...sdpRootCauses(findings.sdp, limit),
-        ...leakRootCauses(findings.leaks, limit),
-        ...silentRootCauses(findings.silent, limit),
-      ],
+      summary: summariseArchitectureDetectors(production, runs, limit, tierModel),
+      rootCauses: tierArchitectureRootCauses(
+        [
+          ...sdpRootCauses(findings.sdp, limit),
+          ...leakRootCauses(findings.leaks, limit),
+          ...silentRootCauses(findings.silent, limit),
+        ],
+        findings,
+        tierModel,
+      ),
       violations,
       // The layer map VIEW only when asked (bd tea-rags-mcp-r8hme.26) — a full
       // map never bloats an unqualified report. Same partition the layering
@@ -468,6 +505,11 @@ export class ArchitectureReportOps {
           excludedEdgeCount: 0,
           testOnlyDependencyCount: 0,
           reason: TEST_SUPPORT_REASON,
+        },
+        impactTiers: {
+          built: false,
+          reason: "noCochangeHistory",
+          notApplicable: ARCHITECTURE_IMPACT_TIER_NOT_APPLICABLE,
         },
         stableDependencies: {
           tolerance: DEFAULT_SDP_TOLERANCE,
@@ -544,6 +586,8 @@ interface ArchitectureDetectorRuns {
   privacy: ConventionPrivacyReport;
   /** One co-change read feeds both temporal detectors: silent coupling's pairs and the split/merge verdicts' bundle membership. */
   cochange: TemporalCochangeGraph;
+  /** The full-family co-change gate over `cochange`; undefined when the read carries no bundle history. */
+  cochangeSignificance: CochangeSignificance | undefined;
   silent: SilentCouplingReport;
   /** Shotgun surgery over the same co-change read (bd tea-rags-mcp-r8hme.50). */
   shotgun: ShotgunSurgeryRun;
@@ -585,16 +629,12 @@ interface ArchitectureFindingsView {
  */
 async function detectSilentCouplingSeeingAssetImports(
   cochange: TemporalCochangeGraph,
+  significance: CochangeSignificance | undefined,
   production: FileDependencyGraph,
   request: ArchitectureReportScope,
   readImportSpecifiers: ModuleImportSpecifierLookup | undefined,
 ): Promise<SilentCouplingReport> {
   const walkedFiles = production.files;
-  // One full-family significance pass serves both detector runs: relinking
-  // asset imports changes no pair's support. F₂'s existence check is the
-  // build's own liveness — the builder stores only paths tracked at its HEAD
-  // and not deleted in the working tree.
-  const significance = assessGraphCochangeSignificance(cochange, { kind: "full" });
   const options = {
     sourcePathPattern: request.pathPattern,
     isDocumentation: isDocumentationPath,
@@ -721,6 +761,8 @@ function rankArchitectureViolationsByMaintenanceCost(
   findings: ArchitectureDetectorReports,
   limit: number,
   costModel: FileMaintenanceCostModel | undefined,
+  carrierIndex: ComponentEdgeCarrierIndex,
+  tierModel: ArchitectureViolationImpactTierModel | undefined,
 ): ArchitectureViolation[] {
   // Each family ranked by maintenance cost (bd tea-rags-mcp-r8hme.20)
   // BEFORE its cap, so the cap keeps the costliest; a family's carriers are
@@ -729,13 +771,22 @@ function rankArchitectureViolationsByMaintenanceCost(
   // population — the shrinkage is estimated over all of the report's
   // violations, uncapped. A new family opts in by adding its full list to
   // `families`.
-  const carrierIndex = costModel
-    ? new ComponentEdgeCarrierIndex(runs.components.componentOf, runs.components.dependencies)
-    : undefined;
+  //
+  // Each violation carries its impact tier (bd tea-rags-mcp-r8hme.53); a
+  // family's ranked list is then ordered tier first — stable, so maintenance
+  // cost still orders each tier — BEFORE the cap, so a critical violation
+  // survives it however cheap its files are.
   const carriersOf = (violation: object): RelPath[] =>
-    carrierIndex ? architectureViolationCarrierFiles(violation, carrierIndex) : [];
+    costModel ? architectureViolationCarrierFiles(violation, carrierIndex) : [];
+  const tiered = (violation: ArchitectureViolation, uncapped?: object): ArchitectureViolation =>
+    tierModel ? { ...violation, ...tierModel.tagOf(violation, uncapped) } : violation;
   const family = (violations: readonly ArchitectureViolation[], options?: MaintenanceCostFamilyOptions) =>
-    maintenanceCostFamily(violations, carriersOf, undefined, options);
+    maintenanceCostFamily(
+      violations.map((v) => tiered(v)),
+      carriersOf,
+      undefined,
+      options,
+    );
   const families: MaintenanceCostFamily<ArchitectureViolation>[] = [
     family(sdpViolations(findings.sdp, UNCAPPED)),
     family(leakViolations(findings.leaks, findings.privacy, UNCAPPED)),
@@ -748,11 +799,94 @@ function rankArchitectureViolationsByMaintenanceCost(
     // Ranked on the layering findings: a knot's whole feedback-arc set and a
     // composition cycle's every nested pair, which the listed form caps.
     ...(findings.layering
-      ? [maintenanceCostFamily(findings.layering.violations, carriersOf, toLayeringArchitectureViolation)]
+      ? [
+          maintenanceCostFamily(findings.layering.violations, carriersOf, (f) =>
+            tiered(toLayeringArchitectureViolation(f), f),
+          ),
+        ]
       : []),
     ...(runs.norms ? [family(normsViolations(runs.norms, UNCAPPED))] : []),
   ];
-  return rankFamiliesByMaintenanceCost(families, costModel).flatMap((ranked) => ranked.slice(0, limit));
+  return rankFamiliesByMaintenanceCost(families, costModel).flatMap((ranked) =>
+    [...ranked].sort((a, b) => impactTierOrder(a) - impactTierOrder(b)).slice(0, limit),
+  );
+}
+
+/**
+ * The impact-tier model over one report's runs (bd tea-rags-mcp-r8hme.53):
+ * the hoisted co-change gate, the partition's full carrier edges, and each
+ * file's exact reach from the propagation-cost closure. Undefined when the
+ * co-change read carries no bundle history — no tier is claimed then.
+ */
+function buildImpactTierModel(
+  runs: ArchitectureDetectorRuns,
+  carrierIndex: ComponentEdgeCarrierIndex,
+): ArchitectureViolationImpactTierModel | undefined {
+  if (runs.cochangeSignificance === undefined) return undefined;
+  const { propagationCost } = runs;
+  return new ArchitectureViolationImpactTierModel(
+    runs.cochangeSignificance,
+    carrierIndex,
+    {
+      fanInOf: propagationCost.fileVisibilityFanIn,
+      admits: propagationCost.admitsVisibilityFanIn,
+      fileCount: propagationCost.fileCount,
+    },
+    isDocumentationPath,
+  );
+}
+
+/** Each SDP and leak root cause tagged with the highest tier among its member violations, over the full lists. */
+function tierArchitectureRootCauses(
+  rootCauses: ArchitectureRootCause[],
+  findings: ArchitectureDetectorReports,
+  tierModel: ArchitectureViolationImpactTierModel | undefined,
+): ArchitectureRootCause[] {
+  if (!tierModel) return rootCauses;
+  const sdp = sdpViolations(findings.sdp, UNCAPPED);
+  const leaks = leakViolations(findings.leaks, findings.privacy, UNCAPPED);
+  return rootCauses.map((rootCause) => {
+    const members =
+      rootCause.detector === "stableDependencies"
+        ? sdp.filter((v) => v.detector === "stableDependencies" && v.targetComponent === rootCause.targetComponent)
+        : rootCause.detector === "leakingAbstraction"
+          ? leaks.filter(
+              (v) =>
+                v.detector === "leakingAbstraction" &&
+                v.kind !== "conventionPrivacy" &&
+                v.evidence.moduleDir === rootCause.moduleDir,
+            )
+          : [];
+    const tier = highestImpactTier(members.map((v) => tierModel.tagOf(v)));
+    return tier === undefined ? rootCause : { ...rootCause, tier };
+  });
+}
+
+/** Tier counts per tierable detector over the unfiltered runs, with the gate and the cut they were judged by. */
+function summariseImpactTiers(
+  runs: ArchitectureDetectorRuns,
+  tierModel: ArchitectureViolationImpactTierModel | undefined,
+): ArchitectureViolationImpactTierReportSummary {
+  if (!tierModel || !runs.cochangeSignificance) {
+    return { built: false, reason: "noCochangeHistory", notApplicable: ARCHITECTURE_IMPACT_TIER_NOT_APPLICABLE };
+  }
+  const counted = (violations: readonly ArchitectureViolation[]) =>
+    countImpactTiers(violations.map((v) => tierModel.tagOf(v)));
+  const { propagationCost } = runs;
+  return {
+    built: true,
+    cochangeSignificance: runs.cochangeSignificance.summary,
+    reachCut: reachCutSummary(propagationCost.corePeriphery.visibilityFanIn, propagationCost.fileCount),
+    byDetector: {
+      stableDependencies: counted(sdpViolations(runs.sdp, UNCAPPED)),
+      leakingAbstraction: counted(leakViolations(runs.leaks, runs.privacy, UNCAPPED)),
+      layering: countImpactTiers(
+        runs.layering.violations.map((f) => tierModel.tagOf(toLayeringArchitectureViolation(f), f)),
+      ),
+      ...(runs.norms ? { norms: counted(normsViolations(runs.norms, UNCAPPED)) } : {}),
+    },
+    notApplicable: ARCHITECTURE_IMPACT_TIER_NOT_APPLICABLE,
+  };
 }
 
 /** The per-detector summaries — each reads its family's unfiltered report, whatever projection the page shows. */
@@ -760,6 +894,7 @@ function summariseArchitectureDetectors(
   production: ProductionArchitectureGraph,
   runs: ArchitectureDetectorRuns,
   limit: number,
+  tierModel: ArchitectureViolationImpactTierModel | undefined,
 ): GetArchitectureReportResponse["summary"] {
   return {
     nonProduction: {
@@ -768,6 +903,7 @@ function summariseArchitectureDetectors(
       reason: NON_PRODUCTION_REASON,
     },
     testSupport: { ...production.testSupport, reason: TEST_SUPPORT_REASON },
+    impactTiers: summariseImpactTiers(runs, tierModel),
     stableDependencies: summariseStableDependencies(runs.sdp),
     leakingAbstraction: summariseLeaks(runs.leaks, runs.privacy, limit),
     silentCoupling: summariseSilentCoupling(runs.silent, limit),

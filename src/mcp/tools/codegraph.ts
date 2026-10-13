@@ -410,7 +410,15 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     description:
       "Architecture diagnostics: is code laid out correctly (NOT is it risky to touch — use risk-assessment). " +
       "Typed violations with per-line evidence, per detector; scripts/spikes/benchmarks/examples/fixtures excluded. " +
-      "Each detector's violations (shotgunSurgery excepted) ranked costliest-first BEFORE limit by maintenanceCost. File cost = " +
+      "Impact tier (stableDependencies, leakingAbstraction, norms, layering backEdge/knot/abstractionBypass; others untiered, " +
+      "summary.impactTiers.notApplicable): structural = no carrying file edge co-changes beyond chance; active = >=1 carrying " +
+      "edge pair admitted by silentCoupling's co-change gate (full family; test/generated/docs/version-manifest pairs never count); " +
+      "critical = active AND an admitted edge's source has transitive-dependent share >= reach cut (Otsu over per-file " +
+      "dependents, median floor; method majority = fallback). tierEvidence = admitted/total carrier pairs over FULL edge list, " +
+      "<=3 pairs, sourceReach; rootCause tier = max of members; summary.impactTiers = counts per detector, reachCut, " +
+      "cochangeSignificance; built false = no co-change history, no tier (not structural). " +
+      "Each family ordered tier first (critical>active>structural>untiered), then maintenanceCost, BEFORE limit. " +
+      "Each detector's violations (shotgunSurgery excepted) ranked costliest-first within tier by maintenanceCost. File cost = " +
       "churn*(1+bugFix+recency)/3, each signal = file's position in collection's own git.file distribution " +
       "(commitCount, bugFixRate, ageDays inverted); costPosition = cost's mid-rank among all files. Carriers = files " +
       "on the edges that make the violation (named files; all file edges of a component edge or knot cut; hub's " +

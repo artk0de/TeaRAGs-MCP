@@ -336,6 +336,7 @@ export interface ComponentDependencyCarrierEdges {
 export class ComponentEdgeCarrierIndex {
   private readonly filesOfComponent = new Map<string, RelPath[]>();
   private readonly pairFiles = new Map<string, RelPath[]>();
+  private readonly pairEdges = new Map<string, readonly ArchitectureFileEdge[]>();
   private readonly afferentFiles = new Map<string, Set<RelPath>>();
   private readonly efferentFiles = new Map<string, Set<RelPath>>();
 
@@ -343,6 +344,7 @@ export class ComponentEdgeCarrierIndex {
     for (const [relPath, component] of componentOf) pushTo(this.filesOfComponent, component, relPath);
     for (const dependency of dependencies) {
       const key = pairKey(dependency.sourceComponent, dependency.targetComponent);
+      this.pairEdges.set(key, dependency.fileEdges);
       for (const edge of dependency.fileEdges) {
         pushTo(this.pairFiles, key, edge.sourceRelPath);
         pushTo(this.pairFiles, key, edge.targetRelPath);
@@ -355,6 +357,15 @@ export class ComponentEdgeCarrierIndex {
   /** Both endpoints of every file edge from `sourceComponent` into `targetComponent`. */
   between(sourceComponent: string, targetComponent: string): RelPath[] {
     return unique(this.pairFiles.get(pairKey(sourceComponent, targetComponent)) ?? []);
+  }
+
+  /**
+   * Every file edge from `sourceComponent` into `targetComponent`, as the
+   * partition holds them — the full list a violation's capped evidence
+   * samples (bd tea-rags-mcp-r8hme.53 tests each one for co-change).
+   */
+  edgesBetween(sourceComponent: string, targetComponent: string): readonly ArchitectureFileEdge[] {
+    return this.pairEdges.get(pairKey(sourceComponent, targetComponent)) ?? [];
   }
 
   /** The component's files some other component's file depends on. */
