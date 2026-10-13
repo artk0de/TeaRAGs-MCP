@@ -88,6 +88,26 @@ describe("bootstrap reaches domain modules only through core/api", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("worker-loaded bootstrap modules import core/api only through core/api/entry-points", () => {
+    // Loaded BY PATH in every codegraph worker thread and tree-graph build
+    // child (`loadCodegraphPoolBuilder`): an edge into the api assembly barrel
+    // pulls the whole api graph into each of them (measured ~4x cold-load time
+    // and ~5x heap per worker).
+    const workerLoadedModules = ["src/bootstrap/codegraph-worker-pool-factory.ts"];
+    const offenders: string[] = [];
+    for (const file of workerLoadedModules) {
+      const text = readFileSync(join(ROOT, file), "utf-8");
+      for (const specifier of moduleSpecifiers(text)) {
+        const resolved = resolveRelative(file, specifier);
+        if (resolved === undefined) continue;
+        if (resolved.startsWith("src/core/api/") && !resolved.startsWith("src/core/api/entry-points/")) {
+          offenders.push(`${file}: "${specifier}"`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it("the scanner sees multi-line, type-only and dynamic imports", () => {
     const text = [
       'import {\n  A,\n  B,\n} from "../core/domains/x/index.js";',
