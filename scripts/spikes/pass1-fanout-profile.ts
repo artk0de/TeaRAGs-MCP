@@ -88,6 +88,8 @@ const BUILD_ROOT = join(REPO_ROOT, "build");
 const WORKER_PATH = join(BUILD_ROOT, "core/domains/ingest/pipeline/enrichment/infra/worker.js");
 const PROVIDER_MODULE_PATH = join(BUILD_ROOT, "core/domains/trajectory/codegraph/factory.js");
 const LANGUAGE_MODULE_PATH = join(BUILD_ROOT, "core/domains/language/index.js");
+/** The bootstrap-owned pool builder the codegraph runtime dynamic-imports in the worker. */
+const POOL_FACTORY_MODULE_PATH = join(BUILD_ROOT, "bootstrap/codegraph-worker-pool-factory.js");
 /**
  * The worker rebuilds itself from COMPILED modules, so the migrations barrel it
  * dynamic-imports has to be the compiled one too — importing the constant from
@@ -307,6 +309,7 @@ async function runFanoutMode(mode: string, root: string, corpus: string[], args:
     {
       languageModulePath: LANGUAGE_MODULE_PATH,
       migrationsModulePath: MIGRATIONS_MODULE_URL,
+      poolFactoryModulePath: POOL_FACTORY_MODULE_PATH,
       rootDir: dataDir,
       customExcludePatterns: [],
     },
@@ -446,6 +449,7 @@ async function runAffinityMode(mode: AffinityMode, root: string, corpus: string[
     {
       languageModulePath: LANGUAGE_MODULE_PATH,
       migrationsModulePath: MIGRATIONS_MODULE_URL,
+      poolFactoryModulePath: POOL_FACTORY_MODULE_PATH,
       daemonSocketPath: daemonPaths.socketPath,
       rootDir: dataRoot,
       customExcludePatterns: [],
