@@ -104,12 +104,14 @@ function namedGraphEdge(
  * drifting from the port silently (the blind spot bd tea-rags-mcp-89k7k.11
  * closes; this file held exactly such a drift).
  */
-type PortMock<K extends keyof ReviewGraphDb> = ReturnType<typeof vi.fn<ReviewGraphDb[K]>>;
+type PortMock<K extends keyof ReviewGraphDb> = ReturnType<typeof vi.fn<NonNullable<ReviewGraphDb[K]>>>;
 
 interface GraphDbStub {
   readFileDependencyGraph: PortMock<"readFileDependencyGraph">;
   readTemporalCochangeGraph: PortMock<"readTemporalCochangeGraph">;
   readTemporalSymbolCommits: PortMock<"readTemporalSymbolCommits">;
+  readNonPublicMemberEdges: PortMock<"readNonPublicMemberEdges">;
+  readTypeNameRows: PortMock<"readTypeNameRows">;
   close: ReturnType<typeof vi.fn>;
 }
 
@@ -137,6 +139,8 @@ function graphDbStub(graph: FileDependencyGraph, cochangeEdges: TemporalCochange
     readFileDependencyGraph: vi.fn(async () => graph),
     readTemporalCochangeGraph: vi.fn(async () => ({ meta: cochangeMeta(), edges: cochangeEdges })),
     readTemporalSymbolCommits: vi.fn(async () => ({ relPath: "", symbols: [] })),
+    readNonPublicMemberEdges: vi.fn(async () => []),
+    readTypeNameRows: vi.fn(async () => []),
     close: vi.fn(async () => undefined),
   };
 }
@@ -211,6 +215,16 @@ function runContext(overrides: Partial<ReviewSectionContext> & { graphDb: GraphD
   };
 }
 
+/**
+ * The subjects the change block collapsed for one key family — where a
+ * finding both runs hold lands (bd tea-rags-mcp-89k7k.1.7). Git-driven pairs
+ * land here by construction: an edge overlay cannot move them.
+ */
+function persistingSubjects(payload: unknown, family: string): string[] {
+  const { change } = payload as { change: { persisting: { family: string; subject: string }[] } };
+  return change.persisting.filter((entry) => entry.family === family).map((entry) => entry.subject);
+}
+
 describe("architectureSectionProvider.isBuilt", () => {
   it("needs the graph reader and the extraction trio — the same substrate conditions its siblings name", () => {
     const graphDb = graphDbStub({ files: [], edges: [] });
@@ -252,13 +266,15 @@ describe("architectureSectionProvider.run", () => {
     // The run judged the overlay edge against the indexed graph and the facts:
     // stableDependencies (indexed lib I=1 markedly above app I=0), cycles (the
     // indexed b→a closes a→b), mainSequence (app's I moves 0→1), silentCoupling
-    // (co-change partner outside the diff, no structural edge either way).
+    // (co-change partner outside the diff, no structural edge either way). The
+    // pair reads git history an edge overlay cannot move, so both runs hold it
+    // and it collapses into the change block (bd tea-rags-mcp-89k7k.1.7).
     const findings = payload.findings as { detector: string; subject: string }[];
     const subjects = (detector: string) => findings.filter((f) => f.detector === detector).map((f) => f.subject);
     expect(subjects("stableDependencies")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
     expect(subjects("cycles")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
     expect(subjects("mainSequence")).toEqual(["src/app"]);
-    expect(subjects("silentCoupling")).toEqual(["src/app/a.ts ~ src/other/c.ts"]);
+    expect(persistingSubjects(payload, "silentCoupling.pair")).toEqual(["src/app/a.ts ~ src/other/c.ts"]);
 
     // Skipped reads are notJudged entries, never edge-free zeros.
     expect(payload.notJudged).toEqual([
@@ -411,10 +427,7 @@ describe("architectureSectionProvider.run", () => {
       }),
     )) as Record<string, unknown>;
 
-    const findings = payload.findings as { detector: string; subject: string }[];
-    expect(findings.filter((f) => f.detector === "silentCoupling").map((f) => f.subject)).toEqual([
-      "src/app/a.ts ~ src/other/c.ts",
-    ]);
+    expect(persistingSubjects(payload, "silentCoupling.pair")).toEqual(["src/app/a.ts ~ src/other/c.ts"]);
     const detectors = payload.detectors as { detector: string; excluded?: Record<string, number> }[];
     expect(detectors.find((d) => d.detector === "silentCoupling")?.excluded).toEqual({
       testEndpoints: 1,
@@ -450,33 +463,34 @@ describe("architectureSectionProvider.run", () => {
       }),
     )) as Record<string, unknown>;
 
-    const findings = payload.findings as { detector: string; subject: string }[];
-    expect(findings.filter((f) => f.detector === "silentCoupling").map((f) => f.subject)).toEqual([
-      "src/app/a.ts ~ src/other/c.ts",
-    ]);
+    expect(persistingSubjects(payload, "silentCoupling.pair")).toEqual(["src/app/a.ts ~ src/other/c.ts"]);
     const detectors = payload.detectors as { detector: string; excluded?: Record<string, number> }[];
     expect(detectors.find((d) => d.detector === "silentCoupling")?.excluded?.versionManifestEndpoints).toBe(2);
   });
 
   it("ranks each family's findings by maintenance cost and tags them — the whole-repo report's ranking (bd tea-rags-mcp-r8hme.20)", async () => {
-    writeFile("src/app/a.ts", "export const A = 1;\n");
-    writeFile("src/hot/x.ts", "export const X = 1;\n");
-    const pairEdges = [strongPair("src/app/a.ts", "src/other/c.ts"), strongPair("src/hot/x.ts", "src/hot/y.ts")];
+    // Two cycles the diff closes (each changed file's new import meets a stale
+    // indexed edge back): introduced findings, so they survive the collapse
+    // of persisting ones (bd tea-rags-mcp-89k7k.1.7) and reach the ranking.
+    writeFile("src/other/c.ts", "export const C = 1;\n");
+    writeFile("src/hot/y.ts", "export const Y = 1;\n");
+    writeFile("src/app/a.ts", 'import { C } from "../other/c";\nexport const A = C;\n');
+    writeFile("src/hot/x.ts", 'import { Y } from "./y";\nexport const X = Y;\n');
     const files = ["src/app/a.ts", "src/other/c.ts", "src/hot/x.ts", "src/hot/y.ts"];
+    const indexedBackEdges = [graphEdge("src/other/c.ts", "src/app/a.ts"), graphEdge("src/hot/y.ts", "src/hot/x.ts")];
     const context = (readFileMaintenanceSignals?: ReviewSectionContext["readFileMaintenanceSignals"]) =>
       runContext({
-        graphDb: graphDbStub({ files: files.map(graphFile), edges: [] }, pairEdges),
+        graphDb: graphDbStub({ files: files.map(graphFile), edges: indexedBackEdges }),
         scope: scopeOf(["src/app/a.ts", "src/hot/x.ts"]),
-        temporalCochange: { meta: cochangeMeta(), edges: pairEdges },
         ...(readFileMaintenanceSignals ? { readFileMaintenanceSignals } : {}),
       });
-    const silentOf = (payload: unknown) =>
+    const cyclesOf = (payload: unknown) =>
       (
         payload as { findings: { detector: string; subject: string; maintenanceCost?: { score: number } }[] }
-      ).findings.filter((f) => f.detector === "silentCoupling");
+      ).findings.filter((f) => f.detector === "cycles");
 
-    const plain = silentOf(await architectureSectionProvider.run(context()));
-    expect(plain.map((f) => f.subject)).toEqual(["src/app/a.ts ~ src/other/c.ts", "src/hot/x.ts ~ src/hot/y.ts"]);
+    const plain = cyclesOf(await architectureSectionProvider.run(context()));
+    expect(plain.map((f) => f.subject)).toEqual(["src/app/a.ts -> src/other/c.ts", "src/hot/x.ts -> src/hot/y.ts"]);
     expect(plain.some((f) => f.maintenanceCost !== undefined)).toBe(false);
 
     const read = vi.fn(
@@ -490,9 +504,9 @@ describe("architectureSectionProvider.run", () => {
           ]),
         ),
     );
-    const ranked = silentOf(await architectureSectionProvider.run(context(read)));
+    const ranked = cyclesOf(await architectureSectionProvider.run(context(read)));
 
-    expect(ranked.map((f) => f.subject)).toEqual(["src/hot/x.ts ~ src/hot/y.ts", "src/app/a.ts ~ src/other/c.ts"]);
+    expect(ranked.map((f) => f.subject)).toEqual(["src/hot/x.ts -> src/hot/y.ts", "src/app/a.ts -> src/other/c.ts"]);
     // The score is the carriers' mean cost position shrunk toward 0.5 by the
     // spread of THIS review's findings around 0.5 (bd tea-rags-mcp-afyku): means
     // 5/6 and 1/6 over 2 carriers each → σ²_prior = 1/9 − 1/24 = 5/72, n₀ = 6/5,
@@ -555,58 +569,60 @@ describe("architectureSectionProvider.run", () => {
   // findings; the concatenated `slice(0, 100)` in family order let 117
   // silentCoupling findings push facadeContract (1) and splitCandidates (2)
   // ENTIRELY into `truncated` — the most diff-native families invisible while
-  // their detector rows still counted them.
-  it("over the findings cap every family with a finding keeps a slot — a silentCoupling flood never starves facadeContract", async () => {
+  // their detector rows still counted them. Silent coupling now collapses into
+  // the change block (git history an edge overlay cannot move, bd
+  // tea-rags-mcp-89k7k.1.7), so the flood here is an introduced family.
+  it("over the findings cap every family with a finding keeps a slot — a stableDependencies flood never starves facadeContract", async () => {
     // The facadeContract fixture (a facade dropping a re-export consumers
-    // import) beside a 110-pair silent-coupling flood: 111 findings > 100.
-    // The flood is 110 DISJOINT pairs (changed fNNN ~ untouched pNNN): pairs
-    // sharing an endpoint list as one grouped finding (bd
-    // tea-rags-mcp-89k7k.1.14), so only disjoint pairs still flood the cap.
+    // import) beside the cap fixture's flood: one changed file importing 110
+    // targets, a stale indexed edge back lifting the targets' instability —
+    // 110 introduced stableDependencies edges (and their layering back-edges).
     writeFile("src/lib/x.ts", "export const a = 1;\nexport const b = 2;\n");
     writeFile("src/lib/y.ts", "export const z = 1;\n");
     writeFile("src/lib/index.ts", 'export { a } from "./x";\nexport { z } from "./y";\n');
     const pad = (i: number) => String(i).padStart(3, "0");
-    const flood = Array.from({ length: 110 }, (_, i) => `src/flood/f${pad(i)}.ts`);
-    for (const relPath of flood) writeFile(relPath, "export const F = 1;\n");
-    const floodPairs = flood.map((relPath, i) => strongPair(relPath, `src/other/p${pad(i)}.ts`));
-    const graph = graphDbStub(
-      {
-        files: [
-          ...flood.map((relPath) => graphFile(relPath)),
-          graphFile("src/lib/index.ts"),
-          graphFile("src/lib/x.ts"),
-          graphFile("src/lib/y.ts"),
-          graphFile("src/app/c1.ts"),
-          graphFile("src/app/c2.ts"),
-          graphFile("src/app/c3.ts"),
-        ],
-        edges: [
-          {
-            sourceRelPath: "src/lib/index.ts",
-            targetRelPath: "src/lib/x.ts",
-            callWeight: 1,
-            reexportedExportNames: ["a", "b"],
-          },
-          {
-            sourceRelPath: "src/lib/index.ts",
-            targetRelPath: "src/lib/y.ts",
-            callWeight: 1,
-            reexportedExportNames: ["z"],
-          },
-          namedGraphEdge("src/app/c1.ts", "src/lib/index.ts", ["a"]),
-          namedGraphEdge("src/app/c2.ts", "src/lib/index.ts", ["a"]),
-          namedGraphEdge("src/app/c3.ts", "src/lib/index.ts", ["a", "b"]),
-        ],
-      },
-      floodPairs,
+    const flood = Array.from({ length: 110 }, (_, i) => `src/flood/t${pad(i)}.ts`);
+    for (const relPath of flood) writeFile(relPath, "export const T = 1;\n");
+    writeFile(
+      "src/sink/a.ts",
+      `${flood.map((_, i) => `import { T${i} } from "../flood/t${pad(i)}";\n`).join("")}export const A = 1;\n`,
     );
+    const lift = floorAfferents("src/sink/a.ts");
+    const graph = graphDbStub({
+      files: [
+        graphFile("src/sink/a.ts"),
+        ...flood.map((relPath) => graphFile(relPath)),
+        ...lift.files,
+        graphFile("src/lib/index.ts"),
+        graphFile("src/lib/x.ts"),
+        graphFile("src/lib/y.ts"),
+        graphFile("src/app/c1.ts"),
+        graphFile("src/app/c2.ts"),
+        graphFile("src/app/c3.ts"),
+      ],
+      edges: [
+        graphEdge("src/flood/t000.ts", "src/sink/a.ts"),
+        ...lift.edges,
+        {
+          sourceRelPath: "src/lib/index.ts",
+          targetRelPath: "src/lib/x.ts",
+          callWeight: 1,
+          reexportedExportNames: ["a", "b"],
+        },
+        {
+          sourceRelPath: "src/lib/index.ts",
+          targetRelPath: "src/lib/y.ts",
+          callWeight: 1,
+          reexportedExportNames: ["z"],
+        },
+        namedGraphEdge("src/app/c1.ts", "src/lib/index.ts", ["a"]),
+        namedGraphEdge("src/app/c2.ts", "src/lib/index.ts", ["a"]),
+        namedGraphEdge("src/app/c3.ts", "src/lib/index.ts", ["a", "b"]),
+      ],
+    });
 
     const payload = (await architectureSectionProvider.run(
-      runContext({
-        graphDb: graph,
-        scope: scopeOf(["src/lib/index.ts", ...flood]),
-        temporalCochange: { meta: cochangeMeta(), edges: floodPairs },
-      }),
+      runContext({ graphDb: graph, scope: scopeOf(["src/lib/index.ts", "src/sink/a.ts"]) }),
     )) as Record<string, unknown>;
 
     // THE live bug: the plain slice kept the first 100 findings in family
@@ -614,16 +630,16 @@ describe("architectureSectionProvider.run", () => {
     const findings = payload.findings as { detector: string }[];
     expect(findings.some((finding) => finding.detector === "facadeContract")).toBe(true);
 
-    // The family-aware policy's invariants, whatever the fixture's family mix.
+    // The family-aware policy's invariants, whatever the fixture's family mix:
+    // a row's findings are listed, truncated, or collapsed as persisting.
     expect(findings).toHaveLength(100);
-    // silentCoupling's findingCount counts PAIRS; its listed findings
-    // reconcile against groupedFindingCount (bd tea-rags-mcp-89k7k.1.14).
     const detectors = (
       payload.detectors as {
         detector: string;
         findingCount: number;
         groupedFindingCount?: number;
         truncated?: number;
+        persistingCount?: number;
       }[]
     ).map((status) => ({ ...status, findingCount: status.groupedFindingCount ?? status.findingCount }));
     const listedByDetector = new Map<string, number>();
@@ -631,14 +647,18 @@ describe("architectureSectionProvider.run", () => {
       listedByDetector.set(finding.detector, (listedByDetector.get(finding.detector) ?? 0) + 1);
     }
     for (const status of detectors) {
-      if (status.findingCount === 0) continue;
+      const listable = status.findingCount - (status.persistingCount ?? 0);
+      if (listable === 0) continue;
       expect(listedByDetector.get(status.detector) ?? 0, `${status.detector} starved under the cap`).toBeGreaterThan(0);
-      expect((status.truncated ?? 0) + (listedByDetector.get(status.detector) ?? 0)).toBe(status.findingCount);
+      expect((status.truncated ?? 0) + (listedByDetector.get(status.detector) ?? 0)).toBe(listable);
     }
-    const totalFindings = detectors.reduce((sum, status) => sum + status.findingCount, 0);
-    expect(payload.truncated).toBe(totalFindings - 100);
+    const totalListable = detectors.reduce(
+      (sum, status) => sum + status.findingCount - (status.persistingCount ?? 0),
+      0,
+    );
+    expect(payload.truncated).toBe(totalListable - 100);
     // The flooding family's cut is counted on its own row, not hidden in the total.
-    expect(detectors.find((status) => status.detector === "silentCoupling")?.truncated).toBeGreaterThan(0);
+    expect(detectors.find((status) => status.detector === "stableDependencies")?.truncated).toBeGreaterThan(0);
   });
 
   // bd tea-rags-mcp-89k7k.1.9: the change closes a -> b -> x -> a, but the
@@ -759,9 +779,12 @@ describe("architectureSectionProvider.run — diff base wiring", () => {
       }),
     );
 
-    const [finding] = cycleFindings(payload);
-    expect(finding?.preExisting).toBe(true);
-    expect(finding?.detail).toContain("diff base");
+    // Held at the merge-base but absent from the index: only a diff-base read
+    // stamps it preExisting, and a preExisting cycle without a remedy collapses
+    // into the change block (bd tea-rags-mcp-89k7k.1.7) — read as added, it
+    // would stay listed.
+    expect(cycleFindings(payload)).toEqual([]);
+    expect(persistingSubjects(payload, "cycles")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
   });
 
   it("a merge-base the repository cannot resolve falls back to the index — never reads every edge as added", async () => {
@@ -773,9 +796,10 @@ describe("architectureSectionProvider.run — diff base wiring", () => {
       runContext({ graphDb: indexedCycle(), scope: scopeAt("0000000000000000000000000000000000000000") }),
     );
 
-    const [finding] = cycleFindings(payload);
-    expect(finding?.preExisting).toBe(true);
-    expect(finding?.detail).toContain("indexed graph already holds it");
+    // The index holds both edges: the fallback stamps the cycle preExisting and
+    // it collapses; reading every edge as added would have listed it.
+    expect(cycleFindings(payload)).toEqual([]);
+    expect(persistingSubjects(payload, "cycles")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
   });
 });
 

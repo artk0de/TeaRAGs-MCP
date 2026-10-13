@@ -47,7 +47,13 @@ const REVIEW_CHANGES_DESCRIPTION =
   "evidence + subject (endpoints as text) + detail + optional remedy (dry-run-verified edge fix: retargetImport [+addExport] | " +
   "restoreExport; absent = no cheap fix); each family ranked costliest-first before the cap by maintenanceCost (get_architecture_report's " +
   "shrunken mean over the files the finding names, n0 estimated over this review's findings; <2 measured = 0.5; absent = no git readings); findings cap 100, family-aware — every family keeps >=1 slot; per-family truncated rides each " +
-  "detector row, findingCount stays the family's FULL total, rows reconcile findingCount = listed + truncated. " +
+  "detector row, findingCount stays the family's FULL total, rows reconcile findingCount = listed + truncated + persistingCount. " +
+  "findings = what the change INTRODUCED + any finding carrying a remedy; the rest collapse into change = {introducedCount, " +
+  "nonLocal (introduced violations no listed finding carries = effect away from the diff, e.g. SDP between untouched " +
+  "components — triage like findings), resolved, persisting ({family, subject}, no evidence — not the change's), indexLag?, " +
+  "maybeAlreadyCommitted (index lacks the merge-base: introduced may hold already-committed edits)} — full detector set " +
+  "judged on index vs index+tree edges, keyed by endpoints, renames canonicalized; silentCoupling, shotgunSurgery, norms " +
+  "read git/type history no edge overlay moves = persisting by construction. " +
   "Detector rows also carry exclusions: mainSequence excludedLowConnectionCount (small-N components below the " +
   "connection floor), silentCoupling excluded block (the production taxonomy's counters) — a zero over excluded " +
   "classes is not a clean pass; silentCoupling pairs sharing an endpoint list as ONE finding (partners[] = every " +
@@ -55,7 +61,7 @@ const REVIEW_CHANGES_DESCRIPTION =
   "findingCount counts pairs, groupedFindingCount the findings (= listed + truncated); foundationTerminal:true on a D-delta finding = every contributing edge ends in " +
   "an abstract L0 foundation, entryPoint:true = touched component holds a facade nothing imports (an entry) — placement, not defect, " +
   "preExisting:true on a cycles/leakingAbstraction finding = the index already holds that edge — the diff touches " +
-  "a file on it, did not add it; on layeringBackEdge = another edge already carried the component pair; on hubLike = already a hub before (all triage data, never suppression). scopeSkippedFiles rides section envelopes (incompleteChange, " +
+  "a file on it, did not add it; on layeringBackEdge = another edge already carried the component pair; on hubLike = already a hub before (listed only with a remedy, else in change.persisting). scopeSkippedFiles rides section envelopes (incompleteChange, " +
   "cohesion) and architecture detector rows = files the 200-cap skipped while judged; present = verdict PARTIAL — " +
   "a zero findingCount over them is never a clean pass. " +
   "Envelope: workTree, base, mergeBase, changedFiles, skipped+truncated, indexLag, notices (an empty diff names the " +

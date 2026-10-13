@@ -70,7 +70,11 @@ export interface ArchitectureGraphFacts {
  */
 export async function readArchitectureGraphFacts(
   graphDb: ArchitectureReportGraphDb,
-  request: { norms?: boolean },
+  request: {
+    norms?: boolean;
+    /** A co-change snapshot the caller already read — taken as is instead of read again. */
+    cochange?: TemporalCochangeGraph;
+  },
   readIndexedFileImports?: IndexedFileImportLookup,
   readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
 ): Promise<ArchitectureGraphFacts> {
@@ -86,7 +90,7 @@ export async function readArchitectureGraphFacts(
     graphDb.loadHierarchySnapshot !== undefined && memberEdges.some((e) => e.targetLanguage === "python")
       ? await graphDb.loadHierarchySnapshot()
       : undefined;
-  const cochange = await graphDb.readTemporalCochangeGraph();
+  const cochange = request.cochange ?? (await graphDb.readTemporalCochangeGraph());
   // The rows naming's role layer reads (whole project, production paths).
   const typeNameRows = request.norms
     ? await graphDb.readTypeNameRows({

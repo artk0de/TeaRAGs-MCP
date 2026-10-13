@@ -13,6 +13,7 @@
  * asking for a section never has to guess whether it ran.
  */
 
+import type { ArchitectureFindingKeyFamily } from "../../../contracts/types/architecture-finding-key.js";
 import type { CochangeSignificanceSummary } from "../../../contracts/types/architecture-report.js";
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../contracts/types/diff-detector-finding.js";
 import type { TemporalCohesionReport } from "../../../domains/trajectory/codegraph/temporal/index.js";
@@ -201,6 +202,39 @@ export interface ArchitectureSectionPayload {
    * total, so row and section reconcile independently.
    */
   truncated?: number;
+  /**
+   * What the change does to the repository's violations (bd
+   * tea-rags-mcp-89k7k.1.7): the full detector set over the index and over
+   * the index with the tree's edges overlaid, compared by stable key.
+   * `findings` keeps only the introduced ones plus pre-existing ones carrying
+   * a `remedy`; the rest are listed here, compact, without evidence.
+   */
+  change?: ArchitectureChangeBlock;
+}
+
+/** One violation named compactly: its identity family and its reviewer-facing subject. */
+export interface ArchitectureChangeSubject {
+  family: ArchitectureFindingKeyFamily;
+  subject: string;
+}
+
+/** The architecture section's `change` block — see {@link ArchitectureSectionPayload.change}. */
+export interface ArchitectureChangeBlock {
+  /** Distinct violations the change introduced — listed in `findings`, or in `nonLocal`. */
+  introducedCount: number;
+  /** Introduced violations no finding carries: effects away from the diff's own edges. */
+  nonLocal: readonly ArchitectureChangeSubject[];
+  /** Violations the index holds and the overlaid tree no longer does. */
+  resolved: readonly ArchitectureChangeSubject[];
+  /**
+   * Findings collapsed out of `findings`: held before the change, history-driven
+   * (silent coupling), or not confirmed as introduced by the full detector run.
+   */
+  persisting: readonly ArchitectureChangeSubject[];
+  /** The index (the base of the comparison) lags the tree. */
+  indexLag?: { indexedCommit: string; treeCommit: string };
+  /** The index lacks commits the merge-base holds, so an introduced violation may already be committed. */
+  maybeAlreadyCommitted?: true;
 }
 
 export type ArchitectureSectionResult = ReviewSectionEnvelope & ArchitectureSectionPayload;

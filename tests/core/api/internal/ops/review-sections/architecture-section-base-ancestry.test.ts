@@ -58,6 +58,8 @@ function graphDbStub(graph: FileDependencyGraph) {
     readFileDependencyGraph: vi.fn(async () => graph),
     readTemporalCochangeGraph: vi.fn(async () => ({ meta: null, edges: [] })),
     readTemporalSymbolCommits: vi.fn(async () => ({ relPath: "", symbols: [] })),
+    readNonPublicMemberEdges: vi.fn(async () => []),
+    readTypeNameRows: vi.fn(async () => []),
     close: vi.fn(async () => undefined),
   };
 }
@@ -100,11 +102,24 @@ function runContext(scope: DiffScopeRead): ReviewSectionContext {
   };
 }
 
-function cycleFindings(payload: unknown): { preExisting?: true }[] {
-  return (payload as { findings: { detector: string; preExisting?: true }[] }).findings.filter(
-    (finding) => finding.detector === "cycles",
-  );
+/**
+ * Where the cycle the merge-base held lands: stamped preExisting from the base
+ * blobs, it carries no remedy, so it collapses out of `findings` into the
+ * change block (bd tea-rags-mcp-89k7k.1.7). Read as added, it would stay
+ * listed in `findings` instead.
+ */
+function cycleLocations(payload: unknown): { listed: number; persisting: string[] } {
+  const { findings, change } = payload as {
+    findings: { detector: string }[];
+    change: { persisting: { family: string; subject: string }[] };
+  };
+  return {
+    listed: findings.filter((finding) => finding.detector === "cycles").length,
+    persisting: change.persisting.filter((entry) => entry.family === "cycles").map((entry) => entry.subject),
+  };
 }
+
+const PRE_EXISTING_CYCLE = { listed: 0, persisting: ["src/app/a.ts -> src/lib/b.ts"] };
 
 describe("architectureSectionProvider.run — diff-base ancestry", () => {
   beforeEach(() => {
@@ -126,7 +141,7 @@ describe("architectureSectionProvider.run — diff-base ancestry", () => {
     const payload = await architectureSectionProvider.run(runContext(scopeAt(git("rev-parse", "HEAD"))));
 
     expect(vcs.isAncestor).not.toHaveBeenCalled();
-    expect(cycleFindings(payload)[0]?.preExisting).toBe(true);
+    expect(cycleLocations(payload)).toEqual(PRE_EXISTING_CYCLE);
   });
 
   it("a merge-base other than HEAD is still checked through git", async () => {
@@ -138,6 +153,6 @@ describe("architectureSectionProvider.run — diff-base ancestry", () => {
     const payload = await architectureSectionProvider.run(runContext(scopeAt(base)));
 
     expect(vcs.isAncestor).toHaveBeenCalledTimes(1);
-    expect(cycleFindings(payload)[0]?.preExisting).toBe(true);
+    expect(cycleLocations(payload)).toEqual(PRE_EXISTING_CYCLE);
   });
 });

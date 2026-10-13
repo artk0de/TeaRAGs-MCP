@@ -201,6 +201,7 @@ export class ReviewChangesOps {
         temporalCochangeError,
         lexiconOps: this.deps.lexiconOps,
         reviewEdgeExtraction: this.deps.reviewEdgeExtraction,
+        ...(indexLag === undefined ? {} : { indexLag }),
         ...(importSpecifiers === undefined ? {} : { readImportSpecifiers: importSpecifiers }),
         ...(maintenanceSignals === undefined ? {} : { readFileMaintenanceSignals: maintenanceSignals }),
         ...(indexedFileImports === undefined ? {} : { readIndexedFileImports: indexedFileImports }),

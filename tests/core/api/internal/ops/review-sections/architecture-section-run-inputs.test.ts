@@ -118,6 +118,8 @@ function graphDbStub(graph: FileDependencyGraph) {
     readFileDependencyGraph: vi.fn(async () => graph),
     readTemporalCochangeGraph: vi.fn(async () => ({ meta: null, edges: [] })),
     readTemporalSymbolCommits: vi.fn(async () => ({ relPath: "", symbols: [] })),
+    readNonPublicMemberEdges: vi.fn(async () => []),
+    readTypeNameRows: vi.fn(async () => []),
     close: vi.fn(async () => undefined),
   };
 }

@@ -93,6 +93,8 @@ interface GraphStub {
   close: ReturnType<typeof vi.fn>;
   readTemporalCochangeGraph: ReturnType<typeof vi.fn>;
   readTemporalSymbolCommits: ReturnType<typeof vi.fn>;
+  readNonPublicMemberEdges: ReturnType<typeof vi.fn>;
+  readTypeNameRows: ReturnType<typeof vi.fn>;
   readFileDependencyGraph: ReturnType<typeof vi.fn>;
 }
 
@@ -126,6 +128,8 @@ function graphDbStub(overrides: Partial<GraphStub> = {}): GraphStub {
     },
     close: vi.fn(async () => undefined),
     readTemporalCochangeGraph: vi.fn(async () => ({ meta: { head: "h" }, edges: stub.cochangeEdges })),
+    readNonPublicMemberEdges: vi.fn(async () => []),
+    readTypeNameRows: vi.fn(async () => []),
     readTemporalSymbolCommits: vi.fn(
       async (relPath: string) => stub.symbolCommits[relPath] ?? { relPath, symbols: [] },
     ),
@@ -241,11 +245,17 @@ describe("ReviewChangesOps", () => {
     // cohesion analyzed the changed file
     expect(result.review.sections.cohesion).toMatchObject({ analyzedFiles: 1, nullReports: 0 });
     // architecture judged the change over an empty indexed graph: the one
-    // finding the fixture can make is silentCoupling (the co-change partner
-    // outside the diff, no structural edge anywhere).
+    // violation the fixture can make is silentCoupling (the co-change partner
+    // outside the diff, no structural edge anywhere) — co-change history no
+    // edge overlay moves, so it collapses into the change block as persisting
+    // (bd tea-rags-mcp-89k7k.1.7).
     expect(result.review.sections.architecture).toMatchObject({
       built: true,
-      findings: [{ detector: "silentCoupling", subject: `${CHANGED} ~ ${PARTNER}` }],
+      findings: [],
+      change: {
+        introducedCount: 0,
+        persisting: [{ family: "silentCoupling.pair", subject: `${CHANGED} ~ ${PARTNER}` }],
+      },
     });
     // the reader is released after the review
     expect(graph.close).toHaveBeenCalledTimes(1);
@@ -295,29 +305,33 @@ describe("ReviewChangesOps", () => {
     // The walked endpoint of the diff-touching one-walked pair — the diff
     // names the stylesheet, so the importer itself is read, not the asset.
     expect(calledRelPaths).toEqual([CHANGED]);
-    const { findings } = result.review.sections.architecture as {
-      findings: { subject: string }[];
+    // Silent coupling persists by construction (bd tea-rags-mcp-89k7k.1.7), so
+    // the rescue's verdict is read off the change block: the linked stylesheet
+    // pair dropped, the unlinked one stayed.
+    const { change } = result.review.sections.architecture as {
+      change: { persisting: { subject: string }[] };
     };
-    const subjects = findings.map((f) => f.subject);
+    const subjects = change.persisting.map((entry) => entry.subject);
     expect(subjects).toContain(`${CHANGED} ~ ${PARTNER}`);
     expect(subjects).not.toContain(`${CHANGED} ~ src/git/theme.css`);
   });
 
   it("threads the maintenance-signal read to the architecture section, bound to the collection (bd tea-rags-mcp-r8hme.20)", async () => {
+    // A cycle the change closes (its new import meets the indexed edge back):
+    // an introduced finding, so it survives the collapse of persisting ones
+    // (bd tea-rags-mcp-89k7k.1.7) and carries the maintenance cost.
+    writeFileSync(
+      join(repo, CHANGED),
+      `import { partner } from "./partner";\n${CHANGED_TEXT}export const P = partner;\n`,
+    );
     const graph = graphDbStub({
-      cochangeEdges: [
-        {
-          relPathA: CHANGED,
-          relPathB: PARTNER,
-          support: 9,
-          confidenceAB: 0.9,
-          confidenceBA: 0.9,
-          lift: 3,
-          lastCoChangeAt: 1_700_000_000,
-          sampleCommits: ["a1b2c3"],
-          structurallyLinked: false,
-        },
-      ],
+      readFileDependencyGraph: vi.fn(async () => ({
+        files: [
+          { relPath: CHANGED, language: "typescript", symbolCount: 1 },
+          { relPath: PARTNER, language: "typescript", symbolCount: 1 },
+        ],
+        edges: [{ sourceRelPath: PARTNER, targetRelPath: CHANGED, callWeight: 1 }],
+      })),
     });
     const readFileMaintenanceSignals = vi.fn().mockResolvedValue(
       new Map([
@@ -332,9 +346,11 @@ describe("ReviewChangesOps", () => {
 
     expect(readFileMaintenanceSignals).toHaveBeenCalledExactlyOnceWith("code_test");
     const { findings } = result.review.sections.architecture as {
-      findings: { subject: string; maintenanceCost?: { score: number } }[];
+      findings: { detector: string; subject: string; maintenanceCost?: { score: number } }[];
     };
-    expect(findings.find((f) => f.subject === `${CHANGED} ~ ${PARTNER}`)?.maintenanceCost?.score).toBe(0.5);
+    const cycle = findings.find((f) => f.detector === "cycles");
+    expect(cycle?.subject).toBe(`${CHANGED} -> ${PARTNER}`);
+    expect(cycle?.maintenanceCost?.score).toBe(0.5);
   });
 
   it("reads the review collection's test imports once, for the architecture section's test-support exclusion (bd tea-rags-mcp-89k7k.35.3)", async () => {
