@@ -32,7 +32,8 @@ export type DiffDetectorFamily =
   | "mainSequence"
   | "silentCoupling"
   | "facadeContract"
-  | "splitCandidates";
+  | "splitCandidates"
+  | "layeringBackEdge";
 
 // ── Endpoints ────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ export interface DiffFindingFileEdgeEndpoints {
 
 /**
  * A component pair judged through the file edge carrying it —
- * stableDependencies. The pair is what the whole-repo SDP violation keys on;
+ * stableDependencies, layeringBackEdge. The pair is what the whole-repo SDP violation keys on;
  * the file edge is the diff's own.
  */
 export interface DiffFindingComponentEdgeEndpoints {
@@ -109,6 +110,14 @@ export type DiffFindingEndpoints =
 export interface StableDependencyDiffFindingEvidence {
   sourceInstability: number;
   targetInstability: number;
+}
+
+/** Inferred layering levels of the two ends (L0 = foundation); the edge runs from the lower level up. */
+export interface LayeringBackEdgeDiffFindingEvidence {
+  sourceLevel: number;
+  targetLevel: number;
+  /** Present when the edge closes a knot: the knot's components, sorted. */
+  closesKnot?: string[];
 }
 
 export interface LeakingAbstractionDiffFindingEvidence {
@@ -218,6 +227,8 @@ interface DiffDetectorFindingCommon {
    *   component pair.
    * - mainSequence (bd tea-rags-mcp-89k7k.1.19.2): `distanceBefore` was
    *   already past the whole-repo distance threshold.
+   * - layeringBackEdge (bd tea-rags-mcp-89k7k.1.19.3): the component pair
+   *   was already carried before the change by another file edge.
    * silentCoupling and splitCandidates are history verdicts with no
    * base/after split, and facadeContract is always introduced: those never
    * carry it (spec D9).
@@ -283,6 +294,11 @@ export type DiffDetectorFinding = DiffDetectorFindingCommon &
         detector: "splitCandidates";
         endpoints: DiffFindingComponentPairEndpoints;
         evidence: MergeCandidateDiffFindingEvidence;
+      }
+    | {
+        detector: "layeringBackEdge";
+        endpoints: DiffFindingComponentEdgeEndpoints;
+        evidence: LayeringBackEdgeDiffFindingEvidence;
       }
   );
 

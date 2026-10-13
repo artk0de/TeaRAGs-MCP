@@ -46,7 +46,7 @@ const rel = (abs: string): string => relative(ROOT, abs);
 const insideFamilies = (abs: string): boolean => abs.startsWith(`${FAMILIES_DIR}/`);
 
 describe("DiffDetectorRun's per-family split", () => {
-  it("registers the seven families in the run's output order", () => {
+  it("registers the eight families in the run's output order", () => {
     expect(DIFF_FAMILY_DETECTORS.map((detector) => detector.family)).toEqual([
       "stableDependencies",
       "leakingAbstraction",
@@ -55,6 +55,7 @@ describe("DiffDetectorRun's per-family split", () => {
       "silentCoupling",
       "facadeContract",
       "splitCandidates",
+      "layeringBackEdge",
     ]);
   });
 

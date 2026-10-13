@@ -25,6 +25,7 @@ import {
   overlayOf,
   runWith,
   type ComponentFact,
+  type FixtureEdge,
 } from "./__helpers__/diff-run-fixtures.js";
 
 /**
@@ -1566,9 +1567,11 @@ describe("detectors", () => {
       "silentCoupling",
       "facadeContract",
       "splitCandidates",
+      "layeringBackEdge",
     ]);
+    const unbuiltHere = new Set(["splitCandidates", "facadeContract", "layeringBackEdge"]);
     for (const entry of result.detectors) {
-      if (entry.detector === "splitCandidates" || entry.detector === "facadeContract") continue;
+      if (unbuiltHere.has(entry.detector)) continue;
       expect(entry.built).toBe(true);
       expect(entry.reason).toBeUndefined();
       expect(entry.findingCount).toBe(result.findings.filter((finding) => finding.detector === entry.detector).length);
@@ -1585,6 +1588,13 @@ describe("detectors", () => {
       detector: "facadeContract",
       built: false,
       reason: "no contract reader",
+      findingCount: 0,
+    });
+    // No layering reading injected either — the third honestly-unbuilt row.
+    expect(result.detectors.find((entry) => entry.detector === "layeringBackEdge")).toEqual({
+      detector: "layeringBackEdge",
+      built: false,
+      reason: "no layering reading",
       findingCount: 0,
     });
   });

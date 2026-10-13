@@ -36,6 +36,7 @@ import {
   resolveUnwalkedImportEdges,
   type ComponentGraph,
   type IndexedFileImports,
+  type LayeringModel,
   type LeakingAbstractionReport,
   type ProductionDependencyGraph,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
@@ -217,14 +218,15 @@ export function measureMainSequenceDistances(
  * foundation-terminal components too (bd tea-rags-mcp-r8hme.52.3,
  * `measureLayeringFoundationTerminalComponents`): exactly the set whose layer
  * skips the whole-repo layering exempts. `graph` is the graph `facts` was
- * derived from.
+ * derived from; `model` is the layering model over `facts.components` when the
+ * caller already built it (the review's diff run reads the same model).
  */
 export function measureLayeringFoundationFiles(
   graph: FileDependencyGraph,
   facts: ArchitectureComponentFacts,
+  model: LayeringModel = buildLayeringModel(facts.components),
 ): ReadonlySet<RelPath> {
   const { components } = facts;
-  const model = buildLayeringModel(components);
   const foundations = measureLayeringFoundationComponents(components, graph.files, model);
   const terminals = measureLayeringFoundationTerminalComponents(components, model, foundations);
   const files = new Set<RelPath>();

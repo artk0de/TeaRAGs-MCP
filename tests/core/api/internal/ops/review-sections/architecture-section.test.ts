@@ -279,8 +279,12 @@ describe("architectureSectionProvider.run", () => {
       "silentCoupling",
       "facadeContract",
       "splitCandidates",
+      "layeringBackEdge",
     ]);
     expect(detectors.find((d) => d.detector === "facadeContract")).toMatchObject({ built: true, findingCount: 0 });
+    // The section always wires the layering reading over the report's own
+    // component partition (bd tea-rags-mcp-89k7k.1.19.3).
+    expect(detectors.find((d) => d.detector === "layeringBackEdge")).toMatchObject({ built: true });
     expect(detectors.find((d) => d.detector === "splitCandidates")).toMatchObject({
       built: false,
       reason: "noBundleMembership",
@@ -490,12 +494,15 @@ describe("architectureSectionProvider.run", () => {
 
     const detectors = payload.detectors as { detector: string; findingCount: number }[];
     const byName = new Map(detectors.map((d) => [d.detector, d.findingCount]));
-    // 105 markedly-less-stable edges + one closed cycle + app's main-sequence move.
+    // 105 markedly-less-stable edges + one closed cycle + app's main-sequence
+    // move + the same 105 edges running up the layering (the stale t000 -> app
+    // edge puts app at L0 under lib, bd tea-rags-mcp-89k7k.1.19.3).
     expect(byName.get("stableDependencies")).toBe(105);
     expect(byName.get("cycles")).toBe(1);
     expect(byName.get("mainSequence")).toBe(1);
+    expect(byName.get("layeringBackEdge")).toBe(105);
     expect(payload.findings as unknown[]).toHaveLength(100);
-    expect(payload.truncated).toBe(7);
+    expect(payload.truncated).toBe(112);
   });
 
   it("an empty diff is a valid review: built, no findings", async () => {

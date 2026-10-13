@@ -53,6 +53,7 @@
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../contracts/types/diff-detector-finding.js";
 import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
+  type LayeringReading,
   type ReviewEdgeOverlay,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
@@ -121,6 +122,11 @@ export interface DiffDetectorRunDeps {
    */
   splitMergeAbsentReason?: string;
   /**
+   * The inferred layering over the catalog's component partition; absent =
+   * the layeringBackEdge family answers built:false.
+   */
+  layering?: LayeringReading;
+  /**
    * The endpoint-class facts the silent-coupling family needs to apply the
    * production exclusion taxonomy (bd tea-rags-mcp-89k7k.1.10): the codegraph's
    * walked-file census and the documentation-path predicate — the same inputs
@@ -176,6 +182,7 @@ export class DiffDetectorRun {
   private readonly contract: DiffDetectorContractReader | undefined;
   private readonly splitMerge: DiffDetectorSplitMergeReader | undefined;
   private readonly splitMergeAbsentReason: string;
+  private readonly layering: LayeringReading | undefined;
   private readonly maxTraceHops: number;
   private readonly minConnectionCount: number;
   private readonly mainSequenceDistanceThreshold: number | undefined;
@@ -188,6 +195,7 @@ export class DiffDetectorRun {
     this.contract = deps.contract;
     this.splitMerge = deps.splitMerge;
     this.splitMergeAbsentReason = deps.splitMergeAbsentReason ?? NO_SPLIT_MERGE_READER_REASON;
+    this.layering = deps.layering;
     this.maxTraceHops = deps.maxTraceHops ?? DEFAULT_MAX_TRACE_HOPS;
     this.minConnectionCount = deps.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
     this.mainSequenceDistanceThreshold = deps.mainSequenceDistanceThreshold;
@@ -242,6 +250,7 @@ export class DiffDetectorRun {
       contract: this.contract,
       splitMerge: this.splitMerge,
       splitMergeAbsentReason: this.splitMergeAbsentReason,
+      layering: this.layering,
       maxTraceHops: this.maxTraceHops,
       minConnectionCount: this.minConnectionCount,
       mainSequenceDistanceThreshold: this.mainSequenceDistanceThreshold,

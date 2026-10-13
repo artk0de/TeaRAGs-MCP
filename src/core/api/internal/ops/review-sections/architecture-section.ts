@@ -44,6 +44,8 @@ import {
 } from "../../../../contracts/types/diff-detector-finding.js";
 import type { InMemoryExtractionContext } from "../../../../domains/trajectory/codegraph/index.js";
 import {
+  buildLayeringModel,
+  readLayering,
   ReviewEdgeOverlay,
   type ComponentGraph,
   type ReviewFileEdgeRead,
@@ -373,10 +375,13 @@ export const architectureSectionProvider: ReviewSectionProvider = {
     );
     const facts = deriveArchitectureComponentFacts(production.graph);
     const mainSequence = measureMainSequenceDistances(facts.components, production.graph.files);
+    // One layering model over the catalog's partition: the foundation the
+    // catalog names and the levels the layeringBackEdge family judges.
+    const layeringModel = buildLayeringModel(facts.components);
     const catalog = new ArchitectureFactsCatalog(
       facts,
       mainSequence.distanceByComponent,
-      measureLayeringFoundationFiles(production.graph, facts),
+      measureLayeringFoundationFiles(production.graph, facts, layeringModel),
     );
     const graph = new WiredGraphReader(production.graph.edges);
     const contract = new WiredContractReader(facts.components, production.graph.edges);
@@ -419,6 +424,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       contract,
       ...splitMerge,
       mainSequenceDistanceThreshold: mainSequence.distanceThreshold,
+      layering: readLayering(facts.components, layeringModel),
     }).run(
       {
         changedFiles: scope.files,
@@ -466,7 +472,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
  *
  * Allocation, stated once:
  * 1. FLOOR — every family with ≥1 finding is guaranteed one slot; a family is
- *    never fully starved, whatever the others' volume (families ≤ 7, cap 100,
+ *    never fully starved, whatever the others' volume (families ≤ 8, cap 100,
  *    so the floor always fits; were it ever exceeded, earlier family order
  *    keeps its slots first).
  * 2. PROPORTIONAL FILL — the remaining budget is split over each family's

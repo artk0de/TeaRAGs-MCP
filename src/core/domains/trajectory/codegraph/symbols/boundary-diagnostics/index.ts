@@ -39,6 +39,7 @@ export {
   measureLayeringFoundationComponents,
   measureLayeringFoundationTerminalComponents,
 } from "./layering.js";
+export { readLayering, type LayeringReading } from "./layering-reading.js";
 export { buildLayerMap, collapseDirectory, nodeMapping } from "./layer-map.js";
 export { condensedPositions, sccKnots, weightedFeedbackArcSet, type SimpleEdge } from "./layer-graph.js";
 export {
