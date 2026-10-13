@@ -175,7 +175,7 @@ export interface CodegraphDatabaseFileReplacer {
  * `DaemonGraphDbClient` per collection, and the teardown that closes every
  * cached socket.
  */
-export interface DaemonCollectionClientsPort {
+export interface DaemonCollectionClientCachePort {
   /**
    * Handle over the single cached daemon client for the collection (its
    * `close()` is a no-op — the routing owns the socket, not the caller).
@@ -195,7 +195,7 @@ export interface DaemonCollectionClientsPort {
  * `pool.ts` imports nothing from `daemon/` — value or type.
  */
 export interface DaemonRouting {
-  clients: DaemonCollectionClientsPort;
+  clients: DaemonCollectionClientCachePort;
   /** The replacer bound to `socketPath` — this build's daemon, resolved by the pool's addressing options. */
   replacerFor: (socketPath: string) => CodegraphDatabaseFileReplacer;
 }

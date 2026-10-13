@@ -12,7 +12,11 @@ import type { CollectionGraphHandle } from "../../../contracts/types/codegraph-p
 import type { GlobalSymbolTable, GraphDbClient } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CollectionInitHook, SymbolTableFactory } from "../collection-init-hook.js";
-import type { CodegraphDaemonClientTarget, CodegraphDaemonRestartWiring } from "../daemon-ports.js";
+import type {
+  CodegraphDaemonClientTarget,
+  CodegraphDaemonRestartWiring,
+  DaemonCollectionClientCachePort,
+} from "../daemon-ports.js";
 import { CodegraphClientBuildTreeGoneError } from "../errors.js";
 import type { DaemonBuildHandshakeConnector } from "./build-handshake-connector.js";
 import type { DaemonGraphDbClient } from "./client.js";
@@ -49,7 +53,7 @@ interface DaemonClientEntry {
   symbolTable: GlobalSymbolTable;
 }
 
-export class DaemonCollectionClientCache {
+export class DaemonCollectionClientCache implements DaemonCollectionClientCachePort {
   /**
    * ONE `DaemonGraphDbClient` (one socket) per (collection, process); the client
    * multiplexes requests by id. Closed in `closeAll` so the daemon's
