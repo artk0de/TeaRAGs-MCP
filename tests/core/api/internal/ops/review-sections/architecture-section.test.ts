@@ -420,10 +420,42 @@ describe("architectureSectionProvider.run", () => {
       testEndpoints: 1,
       generatedEndpoints: 0,
       documentationEndpoints: 1,
+      versionManifestEndpoints: 0,
       unwalkedEndpoints: 1,
       notSignificant: 0,
       explainedByFacadeChain: 0,
     });
+  });
+
+  // A version manifest bumped alongside whatever shipped in the release
+  // (bd tea-rags-mcp-s2nes) — live, `.claude-plugin/**/plugin.json` was reported
+  // as the silent partner of the barrels a diff touched.
+  it("counts a version-manifest partner of a changed file under excluded, never as a finding", async () => {
+    writeFile("src/app/a.ts", "export const A = 1;\n");
+    const pairEdges = [
+      strongPair("src/app/a.ts", ".claude-plugin/tea-rags/.claude-plugin/plugin.json"),
+      strongPair("package.json", "src/app/a.ts"),
+      strongPair("src/app/a.ts", "src/other/c.ts"),
+    ];
+    const graph = graphDbStub(
+      { files: [graphFile("src/app/a.ts"), graphFile("src/other/c.ts")], edges: [] },
+      pairEdges,
+    );
+
+    const payload = (await architectureSectionProvider.run(
+      runContext({
+        graphDb: graph,
+        scope: scopeOf(["src/app/a.ts"]),
+        temporalCochange: { meta: cochangeMeta(), edges: pairEdges },
+      }),
+    )) as Record<string, unknown>;
+
+    const findings = payload.findings as { detector: string; subject: string }[];
+    expect(findings.filter((f) => f.detector === "silentCoupling").map((f) => f.subject)).toEqual([
+      "src/app/a.ts ~ src/other/c.ts",
+    ]);
+    const detectors = payload.detectors as { detector: string; excluded?: Record<string, number> }[];
+    expect(detectors.find((d) => d.detector === "silentCoupling")?.excluded?.versionManifestEndpoints).toBe(2);
   });
 
   it("ranks each family's findings by maintenance cost and tags them — the whole-repo report's ranking (bd tea-rags-mcp-r8hme.20)", async () => {
@@ -942,9 +974,11 @@ describe("architectureSectionProvider.run — splitCandidates wiring", () => {
   }
 
   it("computes the phase-1 verdicts over the snapshot and reports the diff working across the seam", async () => {
-    for (const relPath of ["src/wide/x1.ts", "src/wide/x2.ts", "src/wide/y1.ts", "src/wide/y2.ts"]) {
+    for (const relPath of ["src/wide/x2.ts", "src/wide/y1.ts", "src/wide/y2.ts"]) {
       writeFile(relPath, "export const W = 1;\n");
     }
+    // The diff adds an x1 -> y1 edge across the seam (bd tea-rags-mcp-s2nes).
+    writeFile("src/wide/x1.ts", 'import { W as Y } from "./y1";\nexport const W = Y;\n');
     const graph = graphDbStub({
       files: ["src/wide/x1.ts", "src/wide/x2.ts", "src/wide/y1.ts", "src/wide/y2.ts"].map(graphFile),
       edges: [],
@@ -1095,6 +1129,7 @@ describe("buildSilentCouplingFacts", () => {
       testEndpoints: 0,
       generatedEndpoints: 0,
       documentationEndpoints: 0,
+      versionManifestEndpoints: 0,
       unwalkedEndpoints: 0,
       notSignificant: 0,
       explainedByFacadeChain: 0,

@@ -126,6 +126,12 @@ export interface SilentCouplingExclusionCounts {
   generatedEndpoints: number;
   /** An endpoint is documentation. */
   documentationEndpoints: number;
+  /**
+   * An endpoint is a version manifest — a package manifest, lockfile, version
+   * pin or `.claude-plugin/` `plugin.json` (bd tea-rags-mcp-s2nes): a release
+   * bumps it with whatever shipped, so its co-change is version history.
+   */
+  versionManifestEndpoints: number;
   /** Neither endpoint is walked by the codegraph: nothing structural to compare against. */
   unwalkedEndpoints: number;
   /**

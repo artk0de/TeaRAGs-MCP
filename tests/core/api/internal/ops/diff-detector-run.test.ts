@@ -54,6 +54,7 @@ function factsOf(
       | "testEndpoints"
       | "generatedEndpoints"
       | "documentationEndpoints"
+      | "versionManifestEndpoints"
       | "unwalkedEndpoints"
       | "notSignificant"
       | "explainedByFacadeChain",
@@ -67,6 +68,7 @@ function factsOf(
       testEndpoints: 0,
       generatedEndpoints: 0,
       documentationEndpoints: 0,
+      versionManifestEndpoints: 0,
       unwalkedEndpoints: 0,
       notSignificant: 0,
       explainedByFacadeChain: 0,
@@ -1175,6 +1177,7 @@ describe("silentCoupling", () => {
       testEndpoints: 112,
       generatedEndpoints: 0,
       documentationEndpoints: 24,
+      versionManifestEndpoints: 0,
       unwalkedEndpoints: 4,
       notSignificant: 0,
       explainedByFacadeChain: 0,
@@ -1389,8 +1392,12 @@ describe("splitCandidates", () => {
     ],
   } satisfies Partial<SplitMergeVerdicts>;
 
-  it("fires when the diff touches two clusters of one component's split candidate", () => {
-    const result = runWith({ splitMerge: splitMergeOf(splitVerdicts, WIDE) }, ["src/wide/x1.ts", "src/wide/y1.ts"], []);
+  it("fires when the diff touches two clusters of one component's split candidate and adds an edge across them", () => {
+    const result = runWith(
+      { splitMerge: splitMergeOf(splitVerdicts, WIDE) },
+      ["src/wide/x1.ts", "src/wide/y1.ts"],
+      [["src/wide/x1.ts", "src/wide/y1.ts"]],
+    );
     expect(result.findings.find((f) => f.detector === "splitCandidates")).toEqual({
       detector: "splitCandidates",
       subject: "wide",
@@ -1412,6 +1419,38 @@ describe("splitCandidates", () => {
     expect(subjectsOf(result, "splitCandidates")).toEqual([]);
   });
 
+  // bd tea-rags-mcp-s2nes: the verdict fired on a 2-line wiring diff that
+  // touched both clusters but added no dependency across the seam.
+  it("stays silent when the diff touches two clusters but adds no edge between them", () => {
+    const result = runWith(
+      { splitMerge: splitMergeOf(splitVerdicts, WIDE) },
+      ["src/wide/x1.ts", "src/wide/y1.ts"],
+      [
+        ["src/wide/x1.ts", "src/wide/x2.ts"],
+        ["src/wide/y1.ts", "src/elsewhere.ts"],
+      ],
+    );
+    expect(subjectsOf(result, "splitCandidates")).toEqual([]);
+  });
+
+  it("stays silent when the edge across the clusters already stood before the change", () => {
+    const result = runWith(
+      { splitMerge: splitMergeOf(splitVerdicts, WIDE), graph: graphOf([["src/wide/y1.ts", "src/wide/x1.ts"]]) },
+      ["src/wide/x1.ts", "src/wide/y1.ts"],
+      [["src/wide/y1.ts", "src/wide/x1.ts"]],
+    );
+    expect(subjectsOf(result, "splitCandidates")).toEqual([]);
+  });
+
+  it("fires on an added edge across the clusters in either direction", () => {
+    const result = runWith(
+      { splitMerge: splitMergeOf(splitVerdicts, WIDE) },
+      ["src/wide/x1.ts", "src/wide/y1.ts"],
+      [["src/wide/y1.ts", "src/wide/x1.ts"]],
+    );
+    expect(subjectsOf(result, "splitCandidates")).toEqual(["wide"]);
+  });
+
   it("caps each evidence line's file list at 4 while the counts stay honest", () => {
     const cluster = Array.from({ length: 6 }, (_, i) => `src/wide/c${i}.ts`);
     const wide = new Map([...cluster, "src/wide/other.ts"].map((relPath) => [relPath, "wide"]));
@@ -1427,7 +1466,7 @@ describe("splitCandidates", () => {
         ),
       },
       [...cluster, "src/wide/other.ts"],
-      [],
+      [["src/wide/other.ts", "src/wide/c0.ts"]],
     );
     const finding = result.findings.find((f) => f.detector === "splitCandidates");
     expect(finding?.evidence).toEqual({
@@ -1511,7 +1550,7 @@ describe("splitCandidates", () => {
     const present = runWith(
       { splitMerge: splitMergeOf(splitVerdicts, WIDE) },
       ["src/wide/x1.ts", "src/wide/y1.ts"],
-      [],
+      [["src/wide/x1.ts", "src/wide/y1.ts"]],
     );
     expect(present.detectors.find((entry) => entry.detector === "splitCandidates")).toEqual({
       detector: "splitCandidates",

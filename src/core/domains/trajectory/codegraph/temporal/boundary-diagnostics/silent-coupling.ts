@@ -79,6 +79,38 @@ function isModuleEntryFile(relPath: RelPath): boolean {
   return MODULE_ENTRY_FILES.has(relPath.slice(relPath.lastIndexOf("/") + 1));
 }
 
+/**
+ * Files a release bumps alongside whatever code shipped in it (bd
+ * tea-rags-mcp-s2nes): package manifests, lockfiles and version pins. Their
+ * co-change with code is version history, not coupling the code hides.
+ */
+const VERSION_MANIFEST_FILE_NAMES: ReadonlySet<string> = new Set([
+  "package.json",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "bun.lock",
+  "bun.lockb",
+  "Gemfile.lock",
+  "Cargo.lock",
+  "poetry.lock",
+  "Pipfile.lock",
+  "composer.lock",
+  "go.sum",
+  "version-pins.json",
+]);
+
+/** A Claude Code plugin's manifest — counts only inside a `.claude-plugin/` directory. */
+const PLUGIN_MANIFEST_FILE_NAME = "plugin.json";
+
+/** A version manifest: {@link VERSION_MANIFEST_FILE_NAMES}, or a `plugin.json` under `.claude-plugin/`. */
+function isVersionManifest(relPath: RelPath): boolean {
+  const fileName = relPath.slice(relPath.lastIndexOf("/") + 1);
+  if (VERSION_MANIFEST_FILE_NAMES.has(fileName)) return true;
+  return fileName === PLUGIN_MANIFEST_FILE_NAME && `/${relPath}`.includes("/.claude-plugin/");
+}
+
 type ExclusionReason = keyof SilentCouplingExclusionCounts;
 
 interface Candidate {
@@ -91,8 +123,8 @@ interface Candidate {
 /**
  * Judge every stored co-change pair.
  *
- * A pair is a CANDIDATE when neither endpoint is a test, generated or
- * documentation file, at least one endpoint is walked by the codegraph, and the
+ * A pair is a CANDIDATE when neither endpoint is a test, generated,
+ * documentation or version-manifest file, at least one endpoint is walked by the codegraph, and the
  * co-change significance gate admits it ({@link assessGraphCochangeSignificance},
  * bd tea-rags-mcp-89k7k.1.14): its support beats the configuration null that
  * conditions on both files' change counts, under BH over the a-priori family —
@@ -127,6 +159,7 @@ export function detectSilentCoupling(
     testEndpoints: 0,
     generatedEndpoints: 0,
     documentationEndpoints: 0,
+    versionManifestEndpoints: 0,
     unwalkedEndpoints: 0,
     notSignificant: 0,
     explainedByFacadeChain: 0,
@@ -448,6 +481,7 @@ function exclusionReason(
   if (classes.some((c) => c.isTest)) return "testEndpoints";
   if (classes.some((c) => c.isGenerated)) return "generatedEndpoints";
   if (isDocumentation && endpoints.some(isDocumentation)) return "documentationEndpoints";
+  if (endpoints.some(isVersionManifest)) return "versionManifestEndpoints";
   if (!endpoints.some((p) => symbolCounts.has(p))) return "unwalkedEndpoints";
   const admitted = significance ? significance.admits(edge.relPathA, edge.relPathB) : edge.lift > 1;
   if (!admitted) return "notSignificant";
