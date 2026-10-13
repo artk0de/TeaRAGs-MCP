@@ -1,11 +1,22 @@
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type {
+  QdrantAliasAccess,
+  QdrantCollectionLifecycle,
+  QdrantPointWriter,
+  QdrantSnapshotSource,
+} from "../../../adapters/qdrant/ports.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { CollectionArtifact, FootprintContext } from "./artifact.js";
+
+/** The Qdrant roles a collection's clone / remove touches: snapshot round-trip, marker write, alias, drop. */
+export type QdrantArtifactSurface = QdrantSnapshotSource &
+  Pick<QdrantPointWriter, "setPayload"> &
+  Pick<QdrantCollectionLifecycle, "deleteCollection"> &
+  QdrantAliasAccess;
 
 export class QdrantArtifact implements CollectionArtifact {
   readonly id = "qdrant" as const;
   readonly addressing = "physical" as const;
-  constructor(private readonly qdrant: QdrantManager) {}
+  constructor(private readonly qdrant: QdrantArtifactSurface) {}
 
   async clone(ctx: FootprintContext): Promise<void> {
     const snapshotName = await this.qdrant.createSnapshot(ctx.source.physicalName);

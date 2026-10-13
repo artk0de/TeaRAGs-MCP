@@ -33,7 +33,7 @@ const PORT_TYPES = [
   "ForeignBuildLockSettlement",
   "CodegraphDatabaseFileReplacer",
   "DaemonDatabaseReplacement",
-  "DaemonCollectionClientsPort",
+  "DaemonCollectionClientCachePort",
   "DaemonRouting",
 ] as const;
 
@@ -104,6 +104,11 @@ describe("adapters/duckdb root consumes daemon contracts through daemon-ports", 
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("the single-implementer client-cache port is <Class>Port and its class implements it (bd tea-rags-mcp-89k7k.39)", () => {
+    const text = stripComments(readFileSync(join(DUCKDB_DIR, "daemon/collection-client-cache.ts"), "utf-8"));
+    expect(text).toMatch(/export class DaemonCollectionClientCache implements DaemonCollectionClientCachePort\b/);
   });
 
   it("pool.ts has no import from ./daemon/* at all — value or type (H4a2)", () => {

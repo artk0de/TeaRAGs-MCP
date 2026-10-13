@@ -65,14 +65,23 @@ function typescriptFiles(dir: string): string[] {
 
 const rel = (abs: string): string => relative(ROOT, abs);
 
-/** The concrete-class references a file holds, comments excluded (`RerankerPort`, `RerankMode` etc. do not match). */
+/**
+ * Whether a file binds the concrete module: a `Reranker` class reference
+ * (`RerankerPort`, `RerankMode` etc. do not match), or ANY value or type import
+ * from `reranker.js` — the shared types a holder needs (`RerankMode`,
+ * `RerankOptions`) live in `contracts/types/reranker.js` / `./reranker-port.js`,
+ * and reaching them through `reranker.js` keeps the holder coupled to the
+ * implementation module (bd tea-rags-mcp-89k7k.39). Comments excluded.
+ */
 function holdsConcreteReranker(file: string): boolean {
-  return /\bReranker\b/.test(stripComments(readFileSync(file, "utf-8")));
+  return (
+    /\bReranker\b/.test(stripComments(readFileSync(file, "utf-8"))) || relativeTargets(file).includes(RERANKER_FILE)
+  );
 }
 
 /**
- * Files that must keep the concrete class. When one of these narrows, its
- * entry must be deleted so the list tracks the code.
+ * Files that must keep a reference to the concrete module. When one of these
+ * narrows, its entry must be deleted so the list tracks the code.
  */
 const CONCRETE_KEPT: Record<string, string> = {
   "src/core/domains/explore/reranker.ts":
@@ -80,6 +89,8 @@ const CONCRETE_KEPT: Record<string, string> = {
   "src/core/domains/explore/index.ts":
     "domain barrel re-exports the class for the assembly surface (composition constructs it)",
   "src/core/api/internal/composition.ts": "the one constructor site — news up Reranker and wires registry data into it",
+  "src/core/domains/explore/rank-module.ts":
+    "value import of the buildSignalKeyMap function reranker.ts owns (the payload-key suffix map both build) — not the class, no port member covers it",
 };
 
 describe("explore declares RerankerPort and the holders type against it (6oah1 E1)", () => {

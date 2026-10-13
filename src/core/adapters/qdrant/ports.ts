@@ -14,7 +14,8 @@
  * (catalog read / lifecycle write / optimizer control), the point store splits
  * on the same read/write line the store itself draws, and each of scroller,
  * search executor, payload-index manager, snapshot store and connection keeps
- * one role. Member sets are the facade surface AS DELEGATED — every member is
+ * one role. The alias manager the facade hands out through its `aliases`
+ * accessor gets the alias role, and the accessor its own one-member role. Member sets are the facade surface AS DELEGATED — every member is
  * a `QdrantManager` method that forwards to the collaborator owning that
  * concern; nothing speculative is declared.
  *
@@ -23,7 +24,7 @@
  * from `client.ts` or `embedding-model-guard.ts` — the arrow runs one way,
  * concrete class → port (pinned by tests/core/adapters/qdrant/qdrant-ports-direction.test.ts).
  */
-import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
+import type { CollectionAliasEntry, PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { EmbeddingCallOptions } from "../embeddings/base.js";
 import type { CollectionInfo, QdrantCollectionMemoryUsage } from "./collection-admin.js";
 import type { PayloadFieldIndex } from "./payload-index.js";
@@ -332,6 +333,30 @@ export interface QdrantHealthProbe {
   checkHealth: () => Promise<boolean>;
   /** Reported version of the running server, or `undefined` on ANY failure. */
   getServerVersion: () => Promise<string | undefined>;
+}
+
+/**
+ * Collection aliases: create / repoint / delete, membership, and resolving a
+ * name to the collection it serves — what `QdrantAliasManager` implements
+ * (bd tea-rags-mcp-89k7k.39). Every failure surfaces as `AliasOperationError`.
+ */
+export interface QdrantAliasAdmin {
+  createAlias: (alias: string, collection: string) => Promise<void>;
+  /** Repoint `alias` from `fromCollection` to `toCollection` in one atomic alias update. */
+  switchAlias: (alias: string, fromCollection: string, toCollection: string) => Promise<void>;
+  deleteAlias: (alias: string) => Promise<void>;
+  isAlias: (name: string) => Promise<boolean>;
+  listAliases: () => Promise<CollectionAliasEntry[]>;
+  /** The ACTIVE collection behind `name`: its target when `name` is an alias, else `name` itself. */
+  resolveActive: (name: string) => Promise<PhysicalCollectionName>;
+}
+
+/**
+ * The facade's `aliases` accessor — how a `QdrantManager` holder reaches the
+ * alias role without binding the concrete facade or its alias collaborator.
+ */
+export interface QdrantAliasAccess {
+  readonly aliases: QdrantAliasAdmin;
 }
 
 /** Options for {@link EmbeddingModelGuardPort.ensureMatch} — the port owns its parameter type. */

@@ -73,6 +73,7 @@ import type {
   SymbolLineRange,
   SymbolVisibilityResolver,
 } from "../../../contracts/types/codegraph.js";
+import type { RerankMode } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import type { WorkingTreeGraphReader } from "../../../contracts/types/working-tree.js";
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
@@ -81,7 +82,6 @@ import { historyClockRerankOption } from "../history-clock.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import { applyEssentialSignals, keepPathPatternMatches } from "../post-process.js";
 import type { RerankerPort } from "../reranker-port.js";
-import type { RerankMode } from "../reranker.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { examplePackMember } from "../test-pack.js";
 import { relativePathOf } from "../working-tree/substitute.js";

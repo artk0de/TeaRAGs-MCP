@@ -26,8 +26,12 @@
 
 import { isProviderRecoveryWaitSpent } from "../../../adapters/embeddings/errors.js";
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
+import type {
+  EmbeddingModelGuardPort,
+  QdrantAliasAccess,
+  QdrantCollectionCatalog,
+  QdrantPointReader,
+} from "../../../adapters/qdrant/ports.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { CollectionAlias } from "../../../contracts/types/collection-identity.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
@@ -53,7 +57,7 @@ import { versionedPhysicalCollectionName } from "../../../primitives/ids/index.j
 
 export interface WorktreeSeedOpsDeps {
   registry: { list: () => CollectionEntry[] };
-  qdrant: QdrantManager;
+  qdrant: Pick<QdrantCollectionCatalog, "collectionExists"> & Pick<QdrantPointReader, "getPoint"> & QdrantAliasAccess;
   statsCache: Pick<StatsCache, "load">;
   footprintFactory: Pick<CollectionFootprintFactory, "build">;
   /** Where per-collection snapshots live — the source's file count is read from its snapshot. */

@@ -21,6 +21,7 @@ const QDRANT_DIR = join(ROOT, "src/core/adapters/qdrant");
 const PORTS_FILE = join(QDRANT_DIR, "ports.ts");
 const CLIENT_FILE = join(QDRANT_DIR, "client.ts");
 const GUARD_FILE = join(QDRANT_DIR, "embedding-model-guard.ts");
+const ALIASES_FILE = join(QDRANT_DIR, "aliases.ts");
 
 /** The file with comments removed, so prose mentions of a class name never read as a type reference. */
 function stripComments(text: string): string {
@@ -40,8 +41,13 @@ function relativeTargets(file: string): string[] {
 
 const rel = (abs: string): string => relative(ROOT, abs);
 
-/** The ten port roles Q1 declares (N-4, NAMING.md "6oah1 N4"). */
+/**
+ * The ten port roles Q1 declares (N-4, NAMING.md "6oah1 N4"), plus the alias
+ * role and the facade accessor that hands it out (bd tea-rags-mcp-89k7k.39).
+ */
 const PORT_INTERFACES = [
+  "QdrantAliasAdmin",
+  "QdrantAliasAccess",
   "QdrantCollectionCatalog",
   "QdrantCollectionLifecycle",
   "QdrantPointReader",
@@ -55,7 +61,7 @@ const PORT_INTERFACES = [
 ] as const;
 
 describe("adapters/qdrant ports are a leaf the concrete facades implement", () => {
-  it("declares ports.ts with the ten port roles", () => {
+  it("declares ports.ts with every port role", () => {
     expect(existsSync(PORTS_FILE), "src/core/adapters/qdrant/ports.ts is missing").toBe(true);
     const text = readFileSync(PORTS_FILE, "utf-8");
     for (const name of PORT_INTERFACES) {
@@ -77,6 +83,15 @@ describe("adapters/qdrant ports are a leaf the concrete facades implement", () =
   it("embedding-model-guard.ts imports the ports from ./ports.js", () => {
     expect(relativeTargets(GUARD_FILE)).toContain(PORTS_FILE);
   });
+
+  it("the facade and the alias collaborator implement the alias roles (bd tea-rags-mcp-89k7k.39)", () => {
+    expect(stripComments(readFileSync(CLIENT_FILE, "utf-8"))).toMatch(
+      /implements[\s\S]*?\bQdrantAliasAccess\b[\s\S]*?\{/,
+    );
+    expect(stripComments(readFileSync(ALIASES_FILE, "utf-8"))).toMatch(
+      /export class QdrantAliasManager implements QdrantAliasAdmin\b/,
+    );
+  });
 });
 
 /**
@@ -84,27 +99,20 @@ describe("adapters/qdrant ports are a leaf the concrete facades implement", () =
  * types its Qdrant dependency against the narrowest `ports.ts` role it calls,
  * not against the 55-method concrete facade. Files where a port cannot cover
  * the dependency YET stay on the concrete class, and each carries its reason
- * here — a connection-intent accessor (`aliases`) or a hand-off to an
- * `adapters/qdrant` collaborator whose own signature still takes
- * `QdrantManager`. When one of those collaborators is ported, the file
+ * here — a hand-off to an `adapters/qdrant` collaborator whose own signature
+ * still takes `QdrantManager`. When one of those collaborators is ported, the file
  * narrows and its entry must be deleted (the second test below refuses a
  * stale entry).
  */
 const MAINTENANCE_DIR = join(ROOT, "src/core/domains/maintenance");
 
 const MAINTENANCE_CONCRETE_KEPT: Record<string, string> = {
-  "src/core/domains/maintenance/footprint/factory.ts":
-    "forwards the manager into QdrantArtifact's concrete constructor (QdrantArtifact needs the aliases accessor)",
-  "src/core/domains/maintenance/footprint/qdrant-artifact.ts":
-    "calls the aliases accessor (createAlias / deleteAlias) — connection intent, outside every port",
   "src/core/domains/maintenance/migration/adapters/index-store-adapter.ts":
-    "calls aliases.listAliases and hands the manager to SchemaMetadataPointStore, whose constructor is still concrete",
+    "hands the manager to SchemaMetadataPointStore, whose constructor is still concrete",
   "src/core/domains/maintenance/migration/adapters/sparse-store-adapter.ts":
     "hands the manager to SchemaMetadataPointStore, whose constructor is still concrete",
   "src/core/domains/maintenance/migration/adapters/stats-store-adapter.ts":
     "passes the manager to the scroll.ts helpers (scrollAllPoints / sampleVectors), whose parameters are still concrete",
-  "src/core/domains/maintenance/worktree/worktree-provisioner.ts":
-    "calls aliases.resolveActive — connection intent, outside every port",
 };
 
 function typescriptFiles(dir: string): string[] {
@@ -117,9 +125,13 @@ function typescriptFiles(dir: string): string[] {
   return files;
 }
 
-/** The concrete-facade type references a maintenance file holds, comments excluded. */
+/**
+ * The concrete-facade type references a file holds, comments excluded — the
+ * facade, the guard, and the alias collaborator the facade's `aliases`
+ * accessor returns (a holder types that as `QdrantAliasAdmin`, bd tea-rags-mcp-89k7k.39).
+ */
 function holdsConcreteFacadeReference(file: string): boolean {
-  return /QdrantManager|EmbeddingModelGuard\b/.test(stripComments(readFileSync(file, "utf-8")));
+  return /Qdrant(?:Alias)?Manager\b|EmbeddingModelGuard\b/.test(stripComments(readFileSync(file, "utf-8")));
 }
 
 /**
@@ -127,8 +139,7 @@ function holdsConcreteFacadeReference(file: string): boolean {
  * enrichment half type their Qdrant dependency against the narrowest `ports.ts`
  * role they call, not against the 55-method concrete facade. Files where a port
  * cannot cover the dependency YET stay on the concrete class, and each carries
- * its reason here — a connection-intent accessor (`url` / `isEmbedded` /
- * `aliases`). When one of those narrows, its entry must be deleted (the second
+ * its reason here — a connection-intent accessor (`url` / `isEmbedded`). When one of those narrows, its entry must be deleted (the second
  * test below refuses a stale entry).
  */
 const PIPELINE_DIR = join(ROOT, "src/core/domains/ingest/pipeline");
@@ -136,8 +147,7 @@ const PIPELINE_DIR = join(ROOT, "src/core/domains/ingest/pipeline");
 const PIPELINE_CONCRETE_KEPT: Record<string, string> = {
   "src/core/domains/ingest/pipeline/base.ts":
     "reads the connection-intent accessors isEmbedded / url for the registry's qdrantEmbedded / qdrantUrl — outside every port",
-  "src/core/domains/ingest/pipeline/status-module.ts":
-    "calls the aliases accessor (isAlias / listAliases / deleteAlias) and url — connection intent, outside every port",
+  "src/core/domains/ingest/pipeline/status-module.ts": "reads the connection-intent accessor url — outside every port",
 };
 
 describe("ingest pipeline types its qdrant dependency against the ports (6oah1 Q2pipe)", () => {
@@ -169,9 +179,8 @@ describe("ingest pipeline types its qdrant dependency against the ports (6oah1 Q
  * domain — infra, operations and sync — types its Qdrant dependency against the
  * narrowest `ports.ts` role it calls, not against the 55-method concrete
  * facade. Files where a port cannot cover the dependency YET stay on the
- * concrete class, and each carries its reason here — a connection-intent
- * accessor (`aliases`) or a hand-off to an `adapters/qdrant` helper whose own
- * parameter is still concrete. When one of those narrows, its entry must be
+ * concrete class, and each carries its reason here — a hand-off to an
+ * `adapters/qdrant` helper whose own parameter is still concrete. When one of those narrows, its entry must be
  * deleted (the second test below refuses a stale entry).
  */
 const INGEST_REST_DIRS = [
@@ -181,8 +190,6 @@ const INGEST_REST_DIRS = [
 ];
 
 const INGEST_REST_CONCRETE_KEPT: Record<string, string> = {
-  "src/core/domains/ingest/infra/alias-cleanup.ts":
-    "calls the aliases accessor (listAliases) — connection intent, outside every port",
   "src/core/domains/ingest/infra/stats-recompute.ts":
     "passes the manager to scroll.ts's scrollAllPoints, whose parameter is still concrete",
 };
@@ -249,10 +256,7 @@ describe("maintenance domain types its qdrant dependency against the ports (6oah
  */
 const EXPLORE_DIR = join(ROOT, "src/core/domains/explore");
 
-const EXPLORE_CONCRETE_KEPT: Record<string, string> = {
-  "src/core/domains/explore/strategies/scroll-rank.ts":
-    "hands the spine's port-typed qdrant to scroll.ts's scrollOrderedBy, whose parameter is still concrete (cast seam — narrows when that helper takes QdrantPointReader)",
-};
+const EXPLORE_CONCRETE_KEPT: Record<string, string> = {};
 
 /**
  * Q2api pin (bd tea-rags-mcp-89k7k.35, 6oah1 Q2): the api / bootstrap / cli /
@@ -260,8 +264,7 @@ const EXPLORE_CONCRETE_KEPT: Record<string, string> = {
  * role they call, not against the 55-method concrete facade. Files where a
  * port cannot cover the dependency YET stay on the concrete class, and each
  * carries its reason here — a construction site (`new QdrantManager` / the
- * guard's), a connection-intent accessor (`aliases` / `url` /
- * `isEmbedded`), a hand-off to a collaborator whose own signature is still
+ * guard's), a connection-intent accessor (`url` / `isEmbedded`), a hand-off to a collaborator whose own signature is still
  * concrete, the api/public value re-export cli composes through, or a cli
  * surface that may not import adapters below api/public at all. When one of
  * those narrows, its entry must be deleted (the second test below refuses a
@@ -280,13 +283,9 @@ const API_CONCRETE_KEPT: Record<string, string> = {
   "src/core/api/internal/ops/explore-ops.ts":
     "hands the manager to StatsRecomputeService, whose constructor is still concrete (scroll.ts's scrollAllPoints — narrows when that helper takes QdrantPointReader)",
   "src/core/api/internal/ops/indexing-ops.ts":
-    "reads the connection-intent accessors aliases / url / isEmbedded — outside every port",
+    "reads the connection-intent accessors url / isEmbedded — outside every port",
   "src/core/api/internal/ops/project-registry-ops.ts":
     "reads the connection-intent accessors url / isEmbedded for the registry's qdrant backend fields — outside every port",
-  "src/core/api/internal/ops/optimizer-recovery-ops.ts":
-    "calls the aliases accessor (resolveActive) — connection intent — beside a bespoke narrow getCollectionInfo shape the CLI mock supplies, both outside every port",
-  "src/core/api/internal/ops/worktree-seed-ops.ts":
-    "calls the aliases accessor (resolveActive) — connection intent, outside every port",
   "src/core/api/internal/facades/explore-facade.ts":
     "hands the manager to ExploreOps, whose deps still hold it concrete (StatsRecomputeService forward)",
   "src/core/api/internal/facades/ingest-facade.ts":
@@ -294,11 +293,9 @@ const API_CONCRETE_KEPT: Record<string, string> = {
   "src/core/api/internal/ingest-dependencies.ts":
     "hands the manager to the Index/Sparse/Stats store adapters and SchemaManager, whose constructors are still concrete",
   "src/bootstrap/factory.ts":
-    "constructs the manager and reads its connection-intent accessors (aliases.resolveActive, url, checkHealth); IngestFacade's deps still hold it concrete",
+    "constructs the manager and reads its connection-intent accessor url; IngestFacade's deps still hold it concrete",
   "src/bootstrap/embedding-binding.ts":
     "constructs the manager and hands it to EmbeddingModelGuard's concrete constructor — guard ctor and the armed slot are construction sites",
-  "src/bootstrap/footprint-purge.ts":
-    "hands the manager to CollectionFootprintFactory / CollectionFootprintPurger, whose options still hold it concrete (QdrantArtifact aliases)",
   "src/cli/commands/doctor.ts":
     "composition actor constructing the manager; its narrow test-injection surfaces stay Pick'd off the api/public re-export — cli may not import adapters below api/public",
   "src/cli/commands/projects.ts":

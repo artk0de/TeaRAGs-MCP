@@ -1,5 +1,4 @@
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type {
   CodegraphFootprintStore,
   IndexingLockArtifactStoreFactory,
@@ -9,13 +8,13 @@ import type {
 import type { CollectionArtifact, FootprintContext, ResolvedCollection } from "./artifact.js";
 import { CodegraphArtifact } from "./codegraph-artifact.js";
 import { IndexingLockArtifact } from "./indexing-lock-artifact.js";
-import { QdrantArtifact } from "./qdrant-artifact.js";
+import { QdrantArtifact, type QdrantArtifactSurface } from "./qdrant-artifact.js";
 import { QuarantineArtifact } from "./quarantine-artifact.js";
 import { SnapshotArtifact } from "./snapshot-artifact.js";
 import { StatsArtifact } from "./stats-artifact.js";
 
 export interface FootprintDeps {
-  qdrant: QdrantManager;
+  qdrant: QdrantArtifactSurface;
   /** Structural, not `GraphDbClientPool` — see {@link CodegraphFootprintStore} for why the purge path cannot pass a pool. */
   pool: CodegraphFootprintStore;
   statsCache: StatsCache;

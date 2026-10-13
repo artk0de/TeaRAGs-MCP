@@ -1,7 +1,7 @@
 import { basename, dirname, join, resolve } from "node:path";
 
 import { validatePathSync } from "../../../adapters/filesystem/path-canonicalization.js";
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantAliasAccess } from "../../../adapters/qdrant/ports.js";
 import type { WorktreeCreateInput, WorktreeCreateResult, WorktreeRemoveInput } from "../../../contracts/index.js";
 import {
   collectionAliasOfRegistryEntry,
@@ -23,7 +23,7 @@ import {
 
 export interface WorktreeProvisionerDeps {
   registry: CollectionRegistry;
-  qdrant: QdrantManager;
+  qdrant: QdrantAliasAccess;
   footprintFactory: CollectionFootprintFactory;
   dataDir: string;
   /** Injectable for testing — defaults to the real git-worktree implementation. */

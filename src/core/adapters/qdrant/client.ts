@@ -43,6 +43,7 @@ import { QdrantConnection, type EmbeddedDaemonProbe } from "./connection.js";
 import { QdrantPayloadIndexManager, type PayloadFieldIndex } from "./payload-index.js";
 import { QdrantPointStore } from "./point-store.js";
 import type {
+  QdrantAliasAccess,
   QdrantCollectionCatalog,
   QdrantCollectionLifecycle,
   QdrantHealthProbe,
@@ -78,11 +79,12 @@ export interface QdrantManagerOptions {
 /**
  * The facade implements every role port over itself (ports.ts) — the surface
  * above is what each port slices, so a consumer may hold it as the narrowest
- * role it calls. Members outside any port (the `url` / `isEmbedded` /
- * `aliases` accessors) are connection intent only the composition layers read.
+ * role it calls. Members outside any port (the `url` / `isEmbedded`
+ * accessors) are connection intent only the composition layers read.
  */
 export class QdrantManager
   implements
+    QdrantAliasAccess,
     QdrantCollectionCatalog,
     QdrantCollectionLifecycle,
     QdrantPointReader,

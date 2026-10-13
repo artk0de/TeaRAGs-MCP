@@ -15,8 +15,9 @@ import type { CollectionAliasEntry, PhysicalCollectionName } from "../../contrac
 import { collectionAliasEntryFromQdrant, resolvePhysicalCollection } from "../../primitives/ids/index.js";
 import type { QdrantConnection } from "./connection.js";
 import { AliasOperationError } from "./errors.js";
+import type { QdrantAliasAdmin } from "./ports.js";
 
-export class QdrantAliasManager {
+export class QdrantAliasManager implements QdrantAliasAdmin {
   constructor(private readonly connection: QdrantConnection) {}
 
   async createAlias(alias: string, collection: string): Promise<void> {
