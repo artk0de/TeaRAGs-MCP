@@ -31,10 +31,11 @@ skills (Markdown).
 - TDD: red-first pin, then implementation. Never edit unrelated assertions,
   never lower thresholds, never `eslint-disable`, never raise test timeouts.
 - `DiffDetectorRun` (`src/core/api/internal/ops/diff-detector-run.ts`) is 1083
-  LOC, bugFixRate 55, single owner; `DiffDetectorRun#run` has fanOut 23. New
-  families and the resolver live in their OWN modules under
-  `src/core/api/internal/ops/diff-families/`; `run()` gains one wiring line per
-  family and nothing else.
+  LOC, bugFixRate 55, single owner; `DiffDetectorRun#run` has fanOut 23. Task 0
+  splits it FIRST: every family becomes a `DiffFamilyDetector` module under
+  `src/core/api/internal/ops/diff-families/`, `run()` iterates a registry. After
+  Task 0 a new family = one new module + one registry entry; no task after it
+  adds family logic to `diff-detector-run.ts`.
 - `architecture-section.ts` (bugFixRate 50, 593 LOC) only wires; no logic.
 - Diff-run fixtures: reuse the builders in
   `tests/core/api/internal/ops/diff-detector-run.test.ts` (`graphOf`,
@@ -58,17 +59,112 @@ skills (Markdown).
 
 ## Waves
 
-| Wave | Tasks (parallel)               | Why this grouping                                                                                    |
-| ---- | ------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| 1    | T1, T2, T7                     | T1 touches only the hub detector; T2 only `diff-detector-run.ts` + contract; T7 only plugin Markdown |
-| 2    | T3                             | wires a family into `run()` and the family union                                                     |
-| 3    | T4                             | same files as T3 — serialized                                                                        |
-| 4    | T5                             | resolver over all families' contract                                                                 |
-| 5    | T6, T8                         | T6 server wiring; T8 DDG skill (reads T5 contract)                                                   |
-| 6    | T9                             | arch-diagnostics + risk-assessment + version bump, after T8                                          |
-| —    | live validation (orchestrator) | crafted diff, see Task 6                                                                             |
+| Wave | Tasks (parallel)               | Why this grouping                                                                           |
+| ---- | ------------------------------ | ------------------------------------------------------------------------------------------- |
+| 1    | T0, T1, T7                     | T0 owns `diff-detector-run.ts`; T1 only the hub detector; T7 only plugin Markdown           |
+| 2    | T2, T3                         | after T0: different family modules; both touch the union/registry — second to merge rebases |
+| 3    | T4                             | needs T1 (hub Ce) and the registry                                                          |
+| 4    | T5                             | resolver over all families' contract                                                        |
+| 5    | T6, T8                         | T6 server wiring; T8 DDG skill (reads T5 contract)                                          |
+| 6    | T9                             | arch-diagnostics + risk-assessment + version bump, after T8                                 |
+| —    | live validation (orchestrator) | crafted diff, see Task 6                                                                    |
 
 ---
+
+### Task 0: Split DiffDetectorRun into per-family DiffFamilyDetector modules
+
+Behaviour-preserving refactor (owner ask 2026-10-13). Tests covering business
+logic are immutable: test MOVES are allowed, assertion rewrites are not
+(`feedback_business_logic_tests_immutable`). Relocation inverts TDD: the pin
+that goes red first is a STRUCTURE pin, the behaviour suite stays green
+throughout.
+
+**Files:**
+
+- Create: `src/core/api/internal/ops/diff-families/diff-family-detector.ts`
+  (contract + context type)
+- Create: one module per existing family —
+  `diff-families/{stable-dependencies,leaking-abstraction,cycles,main-sequence,silent-coupling,facade-contract,split-candidates}.ts`
+- Create: `diff-families/index.ts` (facade: the registry in judgement order +
+  the contract; the only thing `diff-detector-run.ts` imports from the
+  directory)
+- Modify: `src/core/api/internal/ops/diff-detector-run.ts` — keeps
+  `DiffDetectorRun` (public API unchanged: constructor, `run`), the shared
+  context building (diff-added subtraction, `heldBeforeChange`, scope/partial
+  stamping), and the loop over the registry. All `judge*` bodies leave.
+- Test (new):
+  `tests/core/api/internal/ops/diff-families/diff-family-registry.test.ts` —
+  structure pin.
+- Test (unchanged, must stay green):
+  `tests/core/api/internal/ops/diff-detector-run.test.ts` (1748 lines),
+  `tests/core/api/internal/ops/review-sections/**`,
+  `tests/core/api/internal/ops/review-changes-ops.test.ts`.
+
+**Interfaces:**
+
+- Produces:
+
+  ```ts
+  // diff-family-detector.ts
+  export interface DiffFamilyDetectorContext {
+    scope: DiffDetectorScope;
+    overlay: ReviewEdgeOverlay;
+    /** Diff-added edges only (the 89k7k.14 subtraction), computed once. */
+    addedEdges: readonly OverlayEdge[];
+    graph: DiffDetectorGraphReader;
+    catalog: DiffDetectorCatalog | undefined;
+    baseEdges: DiffDetectorBaseEdgeReader | undefined;
+    heldBeforeChange: (
+      edge: OverlayEdge,
+    ) => HeldBeforeChangeEvidence | undefined;
+    // …plus every other DiffDetectorRunDeps member a judge* body reads today;
+    // take the exact list from the bodies, add nothing speculative.
+  }
+  export interface DiffFamilyDetector {
+    readonly family: DiffDetectorFamily;
+    judge(context: DiffFamilyDetectorContext): {
+      findings: readonly DiffDetectorFinding[];
+      status: DiffDetectorStatus;
+    };
+  }
+  // index.ts
+  export const DIFF_FAMILY_DETECTORS: readonly DiffFamilyDetector[];
+  ```
+
+  Names lexicon-checked: `DiffFamilyDetectorContext` CONFORMS;
+  `DiffFamilyDetector` NEW_TERM — kept because the surrounding vocabulary is
+  `DiffDetector*` (`DiffDetectorRun`, `DiffDetectorStatus`,
+  `DiffDetectorFamily`); "Judge" was also NEW_TERM with no project precedent.
+
+- Registry order = today's `findings` concatenation order in `run()`
+  (stableDependencies, leakingAbstraction, cycles, mainSequence, silentCoupling,
+  facadeContract, splitCandidates) — the output order is observable and pinned
+  by the existing suite.
+
+- [ ] **Step 1: Structure pin (red).** `diff-family-registry.test.ts` asserts:
+      (a) `DIFF_FAMILY_DETECTORS.map(d => d.family)` equals the seven families
+      in the order above; (b) `diff-detector-run.ts` source has no `judge[A-Z]`
+      method declarations (read the file text, regex
+      `/\bprivate\s+judge[A-Z]\w*\(/`); (c) every module under `diff-families/`
+      except `index.ts` and `diff-family-detector.ts` is imported only through
+      `diff-families/index.ts` from outside the directory. Run: FAIL (module
+      missing).
+- [ ] **Step 2: Move one family** (stableDependencies) into its module behind
+      the contract; `run()` calls it through the registry; run
+      `diff-detector-run.test.ts` — PASS unchanged.
+- [ ] **Step 3: Move the remaining six**, one at a time, running
+      `diff-detector-run.test.ts` after each. Shared private helpers used by ≥ 2
+      families move to `diff-families/` as plain functions in the module of
+      their first user or a `diff-families/shared.ts` — never back-imported from
+      `diff-detector-run.ts`.
+- [ ] **Step 4: Run** the structure pin (PASS) + `diff-detector-run.test.ts` +
+      `tests/core/api/internal/ops/review-sections` +
+      `review-changes-ops.test.ts` + navigator tests — PASS with ZERO assertion
+      edits (`git diff --stat tests/` shows only the new pin file).
+- [ ] **Step 5: Measure** `wc -l src/core/api/internal/ops/diff-detector-run.ts`
+      before/after and the module list; put both in the commit body.
+- [ ] **Step 6: Commit**
+      `refactor(api): split DiffDetectorRun into per-family DiffFamilyDetector modules`.
 
 ### Task 1: g77p3 — hub efferent count excludes edges into contracts
 
@@ -113,8 +209,8 @@ skills (Markdown).
 - Modify: `src/core/contracts/types/diff-detector-finding.ts` (doc of
   `preExisting`)
 - Create: `src/core/api/internal/ops/diff-families/pre-existing.ts`
-- Modify: `src/core/api/internal/ops/diff-detector-run.ts`
-  (`judgeStableDependencies`, `judgeMainSequence` call the new helpers)
+- Modify: `diff-families/stable-dependencies.ts`,
+  `diff-families/main-sequence.ts` (from Task 0) call the new helpers
 - Test: `tests/core/api/internal/ops/diff-families/pre-existing.test.ts`
 
 **Interfaces:**
@@ -170,8 +266,8 @@ skills (Markdown).
 - Modify: `src/core/contracts/types/diff-detector-finding.ts` (family union,
   finding variant, evidence type)
 - Create: `src/core/api/internal/ops/diff-families/layering-back-edge.ts`
-- Modify: `src/core/api/internal/ops/diff-detector-run.ts` (one wiring line in
-  `run`, one status row)
+- Modify: `diff-families/index.ts` (one registry entry; family module implements
+  `DiffFamilyDetector`)
 - Modify: `src/core/api/public/dto/review.ts` and the MCP formatter only if they
   enumerate families
 - Test: `tests/core/api/internal/ops/diff-families/layering-back-edge.test.ts`
@@ -234,8 +330,7 @@ skills (Markdown).
 
 - Modify: `src/core/contracts/types/diff-detector-finding.ts`
 - Create: `src/core/api/internal/ops/diff-families/hub-like.ts`
-- Modify: `src/core/api/internal/ops/diff-detector-run.ts` (wiring line + status
-  row)
+- Modify: `diff-families/index.ts` (one registry entry)
 - Test: `tests/core/api/internal/ops/diff-families/hub-like.test.ts`
 
 **Interfaces:**
