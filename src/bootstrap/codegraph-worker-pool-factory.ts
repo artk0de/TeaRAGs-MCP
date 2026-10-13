@@ -13,14 +13,20 @@
  *
  * The domain (`trajectory/codegraph/factory.ts`) consumes the pool through the
  * contracts `GraphDbClientPoolPort` and constructs no duckdb class; this module
- * imports no domain module directly (the symbol table arrives through the api
- * assembly barrel, per the bootstrap import-direction pin).
+ * imports no domain module directly (the symbol table arrives through the
+ * narrow `core/api/entry-points/codegraph-worker-pool.ts`, never the api
+ * assembly barrel — this module loads in every worker, per the bootstrap
+ * import-direction pin).
  */
 
 import { createDaemonRouting } from "../core/adapters/duckdb/daemon/index.js";
-import { GraphDbClientPool, type CollectionInitHook } from "../core/adapters/duckdb/index.js";
-import { InMemoryGlobalSymbolTable, type CodegraphWorkerConfig } from "../core/api/index.js";
+import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
+import {
+  InMemoryGlobalSymbolTable,
+  type CodegraphWorkerConfig,
+} from "../core/api/entry-points/codegraph-worker-pool.js";
 import type { DatabaseMigrationApplier } from "../core/contracts/types/migration.js";
+import { hydrateCodegraphSymbolTable } from "./codegraph-symbol-table-hydration.js";
 
 /**
  * Build the per-collection pool a codegraph worker runtime reads and writes
@@ -37,29 +43,8 @@ export async function createCodegraphWorkerPool(config: CodegraphWorkerConfig): 
     createDatabaseMigrationApplier: () => DatabaseMigrationApplier;
   };
   const symbolTableFactory = (): InMemoryGlobalSymbolTable => new InMemoryGlobalSymbolTable();
-  // Hydrate the per-collection symbol table from disk on first open —
-  // identical to `wireCodegraph`'s main-thread pool. Without it an incremental
-  // reindex of file A cannot resolve calls into an unchanged file B.
-  const hydrateSymbolTable: CollectionInitHook = async ({
-    collectionName: physicalCollectionName,
-    graphDb,
-    symbolTable,
-  }) => {
-    try {
-      const persisted = await graphDb.listAllSymbols();
-      if (persisted.length > 0) symbolTable.hydrate(persisted);
-      // …and the files that persisted no symbol at all (bd tea-rags-mcp-o7ifx).
-      // `cg_symbols` has no row for an empty `__init__.py`, so hydrating from
-      // it alone leaves every package marker outside the project until some
-      // later run happens to re-walk it. The file table is the full universe.
-      const files = await graphDb.listFileContentHashes();
-      if (files.length > 0) symbolTable.hydrateFiles?.(files.map((f) => f.relPath));
-    } catch (err) {
-      process.stderr.write(
-        `[tea-rags] codegraph symbol-table hydration failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
-      );
-    }
-  };
+  // Hydrate the per-collection symbol table from disk on first open — the same
+  // hook as `wireCodegraph`'s main-thread pool.
   return new GraphDbClientPool({
     rootDir: config.rootDir,
     symbolTableFactory,
@@ -78,11 +63,11 @@ export async function createCodegraphWorkerPool(config: CodegraphWorkerConfig): 
       ? {
           daemonRouting: createDaemonRouting({
             symbolTableFactory,
-            initHook: hydrateSymbolTable,
+            initHook: hydrateCodegraphSymbolTable,
             daemonSocketPath: config.daemonSocketPath,
           }),
         }
       : {}),
-    initHook: hydrateSymbolTable,
+    initHook: hydrateCodegraphSymbolTable,
   });
 }

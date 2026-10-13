@@ -15,7 +15,7 @@ import {
   sweepOrphanedDaemonKeyDirs,
   type CodegraphDaemonPaths,
 } from "../core/adapters/duckdb/daemon/index.js";
-import { GraphDbClientPool, type CollectionInitHook } from "../core/adapters/duckdb/index.js";
+import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import type { OllamaRecoveryWaitEvent } from "../core/adapters/embeddings/ollama.js";
 import {
@@ -127,6 +127,7 @@ import { loadPromptsConfig, registerAllPrompts, type PromptsConfig } from "../mc
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
 import { buildMcpAutoUpdateTrigger } from "./auto-update/mcp-hint.js";
+import { hydrateCodegraphSymbolTable } from "./codegraph-symbol-table-hydration.js";
 import {
   applyEmbeddedDeleteTuning,
   buildAppConfig,
@@ -1029,34 +1030,8 @@ function createCodegraphGraphDbPool(deps: {
 }): GraphDbClientPool {
   const { codegraph, rootDir, daemonPaths, resolveDaemonTarget, daemonStorageDir, spawnCodegraphDaemon } = deps;
   const symbolTableFactory = (): InMemoryGlobalSymbolTable => new InMemoryGlobalSymbolTable();
-  // Hydrate the per-collection symbol table from disk on first open.
-  // Without this, an incremental reindex of file A cannot resolve
-  // calls into an unchanged file B — the walker only touches changed
-  // files, so B's symbols would be invisible. After hydration the
-  // in-memory table holds every previously-persisted definition;
-  // the streaming upsert path (sink.finish() → graphDb.upsertSymbols)
-  // keeps it current. Empty result on first run (fresh DB) is the
-  // no-op fast path.
-  const hydrateCodegraphSymbolTable: CollectionInitHook = async ({
-    collectionName: physicalCollectionName,
-    graphDb,
-    symbolTable,
-  }) => {
-    try {
-      const persisted = await graphDb.listAllSymbols();
-      if (persisted.length > 0) symbolTable.hydrate(persisted);
-      // …and the files that persisted no symbol at all (bd tea-rags-mcp-o7ifx).
-      // `cg_symbols` has no row for an empty `__init__.py`, so hydrating from
-      // it alone leaves every package marker outside the project until some
-      // later run happens to re-walk it. The file table is the full universe.
-      const files = await graphDb.listFileContentHashes();
-      if (files.length > 0) symbolTable.hydrateFiles?.(files.map((f) => f.relPath));
-    } catch (err) {
-      process.stderr.write(
-        `[tea-rags] codegraph symbol-table hydration failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
-      );
-    }
-  };
+  // Hydration on first open: `hydrateCodegraphSymbolTable`, shared with the
+  // worker pool (`codegraph-symbol-table-hydration.ts`).
   const pool = new GraphDbClientPool({
     rootDir,
     symbolTableFactory,

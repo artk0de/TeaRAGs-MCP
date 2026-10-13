@@ -7,6 +7,11 @@
  * its own SDP component, so the stability delta of
  * `bootstrap/config → core/api/entry-points` stays low, unlike an edge into
  * the whole assembly, which churns with every wiring change (H-D3b).
+ *
+ * `codegraph-worker-pool.ts` is deliberately NOT re-exported here: it is a
+ * worker-time entry (imported directly by the bootstrap worker pool factory),
+ * and re-exporting it would load the codegraph symbols facade into config
+ * parsing.
  */
 export { defaultBlamePoolSize, defaultChunkerPoolSize, defaultEnrichmentFilesPerThread } from "./pool-sizing.js";
 export { outerEnvForRegistryStamp, replayRegistryEnv, type AmbientEnvRole } from "./registry-env-replay.js";
