@@ -20,8 +20,14 @@
  * `ArchitectureReportSummary`.
  */
 
-import type { ArchitectureLayerMapOptions } from "../../../contracts/types/architecture-report.js";
+import type { ArchitectureFindingKeyFamily } from "../../../contracts/types/architecture-finding-key.js";
+import type {
+  ArchitectureLayerMapOptions,
+  ArchitectureRestructureCompiledOp,
+  ArchitectureRestructureOp,
+} from "../../../contracts/types/architecture-report.js";
 import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
+import type { ArchitectureChangeSubject } from "./review.js";
 
 export type * from "../../../contracts/types/architecture-report.js";
 
@@ -94,6 +100,53 @@ export interface GetArchitectureReportRequest {
    * {@link ARCHITECTURE_PLANNED_EDGE_LIMIT} edges.
    */
   plannedEdges?: ArchitecturePlannedEdge[];
+  /**
+   * Restructure MODE (bd tea-rags-mcp-r8hme.21): one what-if hypothesis — the
+   * ops compile against the CURRENT component partition, the full detector
+   * set judges the base facts and the relabelled facts, and the answer is the
+   * violation delta ({@link GetArchitectureRestructureResponse}). Only `limit`
+   * (subjects listed per side) may ride along. At most
+   * {@link ARCHITECTURE_RESTRUCTURE_OP_LIMIT} ops.
+   */
+  restructure?: ArchitectureRestructureOp[];
+}
+
+/**
+ * Max `GetArchitectureReportRequest.restructure` ops per call. The delta is
+ * JOINT — no op of a long list can be credited with any part of it — so a
+ * call is one hypothesis, and ranking remedies is one call per remedy. Every
+ * call costs two full uncapped detector runs whatever the op count.
+ */
+export const ARCHITECTURE_RESTRUCTURE_OP_LIMIT = 20;
+
+/** The violation delta of one restructure hypothesis: relabelled run vs base run, by violation key. */
+export interface ArchitectureRestructureDelta {
+  /** Keys only the relabelled run holds. */
+  introducedCount: number;
+  /** Keys only the base run holds. */
+  resolvedCount: number;
+  /** Keys both runs hold — a moved file's file-keyed violations are matched on its base path. */
+  persistingCount: number;
+  /** introducedCount − resolvedCount: negative = the hypothesis removes violations on balance. */
+  net: number;
+  /** Per key family, the families that moved. */
+  byFamily: Partial<Record<ArchitectureFindingKeyFamily, { introduced: number; resolved: number }>>;
+  /** Introduced violations, at most `limit` (default 50). */
+  introduced: ArchitectureChangeSubject[];
+  /** Resolved violations, at most `limit` (default 50). */
+  resolved: ArchitectureChangeSubject[];
+}
+
+/** `get_architecture_report` in restructure mode — the hypothesis as compiled and its delta. */
+export interface GetArchitectureRestructureResponse {
+  workingTree?: WorkingTreeMarker;
+  mode: "restructure";
+  /** Per op: the files it relabels and the component(s) they land in. Empty when unavailable. */
+  hypothesis: ArchitectureRestructureCompiledOp[];
+  /** Absent exactly when `unavailable` is set. */
+  delta?: ArchitectureRestructureDelta;
+  /** No codegraph database to judge — nothing was simulated. */
+  unavailable?: "noCodegraph";
 }
 
 /** Max `GetArchitectureReportRequest.plannedEdges` per call. */

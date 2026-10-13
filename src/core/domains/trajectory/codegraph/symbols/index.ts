@@ -78,4 +78,5 @@ export {
 export * from "./path-tracing/index.js";
 export * from "./boundary-diagnostics/index.js";
 export * from "./edge-overlay/index.js";
+export * from "./restructure/index.js";
 export * from "./dependency-norms/index.js";

@@ -9,13 +9,13 @@ import {
   collapsePersistingFindings,
   measureArchitectureViolationDelta,
   resolvedChangeSubjects,
-} from "../../../../../../src/core/api/internal/ops/review-sections/architecture-violation-delta.js";
+} from "../../../../../src/core/api/internal/ops/architecture-violation-delta.js";
 import type {
   ArchitectureViolation,
   FacadeLeakArchitectureViolation,
   StableDependencyArchitectureViolation,
-} from "../../../../../../src/core/contracts/types/architecture-report.js";
-import type { DiffDetectorFinding } from "../../../../../../src/core/contracts/types/diff-detector-finding.js";
+} from "../../../../../src/core/contracts/types/architecture-report.js";
+import type { DiffDetectorFinding } from "../../../../../src/core/contracts/types/diff-detector-finding.js";
 
 function sdp(source: string, target: string): StableDependencyArchitectureViolation {
   return {

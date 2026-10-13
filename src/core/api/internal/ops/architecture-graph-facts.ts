@@ -17,6 +17,7 @@ import type {
   GraphDbClient,
   HierarchySnapshot,
   NonPublicMemberEdge,
+  RelPath,
   TemporalCochangeGraph,
   TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
@@ -61,6 +62,8 @@ export interface ArchitectureGraphFacts {
   readonly typeNameRows?: readonly TypeNameRow[];
   /** Present on facts `applyEdgeOverlay` derived; absent on the index's own facts. */
   readonly edgeOverlay?: ArchitectureEdgeOverlayState;
+  /** Present on facts `applyArchitectureRestructure` derived: the component each relabelled file is pinned to. */
+  readonly componentRelabel?: ReadonlyMap<RelPath, string>;
 }
 
 /**

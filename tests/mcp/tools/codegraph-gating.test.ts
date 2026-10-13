@@ -28,6 +28,7 @@ function makeApp(hasCodegraph: boolean): App {
     tracePath: vi.fn(),
     getArchitectureReport: vi.fn(),
     judgePlannedArchitectureEdges: vi.fn(),
+    simulateArchitectureRestructure: vi.fn(),
     getOntologyReport: vi.fn(),
     findCoChanged: vi.fn(),
   } as unknown as App;
@@ -299,6 +300,7 @@ describe("get_architecture_report", () => {
         "pathPattern",
         "plannedEdges",
         "project",
+        "restructure",
       ].sort(),
     );
   });
@@ -339,6 +341,43 @@ describe("get_architecture_report", () => {
     );
     expect(app.getArchitectureReport).not.toHaveBeenCalled();
     expect(JSON.parse(result.content[0].text)).toEqual(verdicts);
+  });
+
+  // bd tea-rags-mcp-r8hme.21: restructure is the what-if MODE of the report —
+  // capped ops of three shapes, routed to its own App method so the answer is
+  // the delta, never a partial report.
+  it("takes capped restructure ops of three shapes and names the delta in the description (bd tea-rags-mcp-r8hme.21)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+    const move = { move: { files: ["src/a.ts"], toComponent: "src/b" } };
+    const parse = (restructure: unknown) => schema.safeParse({ project: "tea-rags", restructure }).success;
+
+    expect(config.description).toMatch(/restructure mode/);
+    expect(config.description).toMatch(/introduced\/resolved/);
+    expect(parse([move])).toBe(true);
+    expect(parse([{ merge: { components: ["src/a", "src/b"] } }])).toBe(true);
+    expect(parse([{ split: { component: "src/a", groups: [["src/a/x.ts"], ["src/a/y.ts"]] } }])).toBe(true);
+    expect(parse([])).toBe(false);
+    expect(parse(Array.from({ length: 21 }, () => move))).toBe(false);
+    expect(parse([{ merge: { components: ["src/a"] } }])).toBe(false);
+    expect(parse([{ move: { files: [], toComponent: "src/b" } }])).toBe(false);
+    expect(parse([{ rename: { from: "a", to: "b" } }])).toBe(false);
+  });
+
+  it("routes a restructure call to app.simulateArchitectureRestructure, never to the report", async () => {
+    const { app, call } = registered();
+    const answer = { mode: "restructure", hypothesis: [], unavailable: "noCodegraph" };
+    (app.simulateArchitectureRestructure as ReturnType<typeof vi.fn>).mockResolvedValue(answer);
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+    const restructure = [{ merge: { components: ["src/a", "src/b"] } }];
+
+    const result = await handler({ project: "tea-rags", restructure });
+
+    expect(app.simulateArchitectureRestructure).toHaveBeenCalledWith(expect.objectContaining({ restructure }));
+    expect(app.getArchitectureReport).not.toHaveBeenCalled();
+    expect(app.judgePlannedArchitectureEdges).not.toHaveBeenCalled();
+    expect(JSON.parse(result.content[0].text)).toEqual(answer);
   });
 
   it("declares the shape↔DTO alignment pin over GetArchitectureReportInputShape (bd tea-rags-mcp-89k7k.25)", () => {
