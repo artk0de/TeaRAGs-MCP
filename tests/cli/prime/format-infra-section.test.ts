@@ -36,6 +36,26 @@ function primeWith(embedding: NonNullable<PrimeData["status"]["infraHealth"]>["e
 const at = new Date("2026-05-13T00:00:00Z");
 
 describe("formatPrime — Infra section (embedding endpoints)", () => {
+  it("states why an endpoint is unavailable next to its badge (bd fembu)", () => {
+    const out = formatPrime(
+      primeWith({
+        available: true,
+        provider: "llama-server",
+        url: "http://192.168.1.71:8081",
+        primaryAvailable: false,
+        primaryUnavailableReason: "EHOSTUNREACH: host unreachable",
+        fallbackUrl: "http://127.0.0.1:8080",
+        fallbackAvailable: false,
+        fallbackUnavailableReason: "port 8080 is held by a non-llama-server process",
+      }),
+      at,
+    );
+    expect(out).toContain("primary http://192.168.1.71:8081 (unavailable: EHOSTUNREACH: host unreachable)");
+    expect(out).toContain(
+      "fallback http://127.0.0.1:8080 (unavailable: port 8080 is held by a non-llama-server process)",
+    );
+  });
+
   it("renders a single primary badge when no fallback is configured", () => {
     const out = formatPrime(
       primeWith({

@@ -565,15 +565,16 @@ function formatInfraSection(infra: InfraHealth, recoveryTarget: OptimizerRecover
   }
 
   const e = infra.embedding;
-  const badge = (ok: boolean) => (ok ? "available" : "unavailable");
+  const badge = (ok: boolean, reason?: string) =>
+    ok ? "available" : reason ? `unavailable: ${reason}` : "unavailable";
   if (e.url) {
     // Per-endpoint health: each ollama endpoint carries its OWN status badge,
     // not a single "active endpoint" availability. Primary badge falls back to
     // the overall `available` when the provider does not expose a dedicated
     // primary probe (non-ollama / legacy).
-    const primary = ` · primary ${e.url} (${badge(e.primaryAvailable ?? e.available)})`;
+    const primary = ` · primary ${e.url} (${badge(e.primaryAvailable ?? e.available, e.primaryUnavailableReason)})`;
     const fallback = e.fallbackUrl
-      ? ` · fallback ${e.fallbackUrl} (${e.fallbackAvailable === undefined ? "unknown" : badge(e.fallbackAvailable)})`
+      ? ` · fallback ${e.fallbackUrl} (${e.fallbackAvailable === undefined ? "unknown" : badge(e.fallbackAvailable, e.fallbackUnavailableReason)})`
       : "";
     lines.push(`embedding: ${e.provider}${primary}${fallback}`);
 

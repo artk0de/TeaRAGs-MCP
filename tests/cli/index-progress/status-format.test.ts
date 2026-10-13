@@ -190,6 +190,30 @@ describe("formatIndexStatusJson", () => {
     });
   });
 
+  it("carries the unavailable reasons into the infraHealth JSON (bd fembu)", () => {
+    const status: IndexStatus = {
+      ...baseStatus,
+      infraHealth: {
+        qdrant: { available: true, url: "http://localhost:6333" },
+        embedding: {
+          available: false,
+          provider: "llama-server",
+          url: "http://192.168.1.71:8081",
+          primaryAvailable: false,
+          primaryUnavailableReason: "EHOSTUNREACH: host unreachable",
+          fallbackUrl: "http://127.0.0.1:8080",
+          fallbackAvailable: false,
+          fallbackUnavailableReason: "port 8080 is held by a non-llama-server process",
+        },
+      },
+    };
+    const o = formatIndexStatusJson(status, { path: "/p" }) as {
+      infraHealth: { embedding: Record<string, unknown> };
+    };
+    expect(o.infraHealth.embedding.primaryUnavailableReason).toBe("EHOSTUNREACH: host unreachable");
+    expect(o.infraHealth.embedding.fallbackUnavailableReason).toBe("port 8080 is held by a non-llama-server process");
+  });
+
   it("carries the settled embedding batch size and concurrency into the JSON (bd tea-rags-mcp-7ju66)", () => {
     const throughputTune = {
       batchSize: 64,

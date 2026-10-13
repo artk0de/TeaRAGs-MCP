@@ -138,6 +138,15 @@ export interface EmbeddingProvider {
    * so the prime CLI digest shows BOTH endpoints' health, not just the active one.
    */
   checkPrimaryHealth?: () => Promise<boolean | undefined>;
+  /**
+   * Why the configured primary endpoint read unavailable at the last probe
+   * (a named errno cause, or a foreign process on the port). Undefined when it
+   * is up or the provider keeps no reason. Surfaced via
+   * IndexStatus.infraHealth.embedding.primaryUnavailableReason.
+   */
+  getPrimaryUnavailableReason?: () => string | undefined;
+  /** Same for the configured fallback endpoint (`fallbackUnavailableReason`). */
+  getFallbackUnavailableReason?: () => string | undefined;
   /** Resolve model capabilities (context length, dimensions) from provider API. */
   resolveModelInfo?: () => Promise<{ model: string; contextLength: number; dimensions: number } | undefined>;
   /**

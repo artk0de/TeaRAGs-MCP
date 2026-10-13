@@ -40,6 +40,7 @@ import {
 } from "../base.js";
 import { planEmbeddingMicroBatches } from "../batch-fanout.js";
 import { EmbeddingEndpointPool, parseEmbeddingEndpointList } from "../endpoint-pool.js";
+import { describeConnectFailure } from "../utils/connect-failure.js";
 import { getModelDimensions, resolveStartingDimensions } from "../utils/model-dimensions.js";
 import {
   LlamaServerContextOverflowError,
@@ -131,10 +132,6 @@ function isLlamaServerHealthBody(body: string): boolean {
 function portOf(url: string): string {
   const parsed = new URL(url);
   return parsed.port || (parsed.protocol === "https:" ? "443" : "80");
-}
-
-function describeConnectFailure(error: unknown): string {
-  return errorCode(error) ?? describe(error);
 }
 
 function errorCode(error: unknown): string | undefined {
