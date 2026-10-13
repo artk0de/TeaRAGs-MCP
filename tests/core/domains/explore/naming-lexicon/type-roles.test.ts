@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveTypeRoles,
   expectedRoleFor,
+  isRoleFamilyMember,
   primaryPerFile,
   type TypeNameRow,
 } from "../../../../../src/core/domains/explore/naming-lexicon/type-roles.js";
@@ -62,6 +63,7 @@ describe("deriveTypeRoles / expectedRoleFor", () => {
       role: "preset",
       evidence: "directory",
       examples: ["HotspotsPreset", "OwnershipPreset", "TechDebtPreset"],
+      familyDeclaresBehaviour: true,
     });
 
     // 2 of 11 end in Preset: share 0.18 < 0.2 → no directory role.
@@ -1052,5 +1054,94 @@ describe("deriveTypeRoles — the nearest family decides", () => {
       ["PyStrategy", "SymbolResolutionStrategy"],
       ["TsStrategy", "SymbolResolutionStrategy"],
     ]);
+  });
+});
+
+/**
+ * A directory family declares BEHAVIOUR or a SHAPE (bd tea-rags-mcp-9yhnx): a
+ * `class` / `module` carries operations, an `interface` / `type_alias` / `enum`
+ * describes data. `api/internal/ops/` is a directory of `*Ops` classes, and its
+ * request / result interfaces (`IndexedFileImportLookup`, `ProductionArchitectureGraph`)
+ * were MISFIT → `...Ops`. The family records which group its carriers hold — by
+ * the same majority the directory role itself is defined by — and a type known to
+ * be of the other group is no member. The carrier set is unchanged: the field
+ * judges drafts, never the family's own carriers.
+ */
+describe("deriveTypeRoles — a directory family declares behaviour or a shape (9yhnx)", () => {
+  function k(shortName: string, relPath: string, symbolKind: TypeNameRow["symbolKind"]): TypeNameRow {
+    return { symbolId: shortName, relPath, shortName, symbolKind, ancestors: [] };
+  }
+  const OPS = "src/core/api/internal/ops";
+  const opsOf = (kind: TypeNameRow["symbolKind"], names: string[]) =>
+    names.map((q) => k(`${q}Ops`, `${OPS}/${q.toLowerCase()}-ops.ts`, kind));
+  const directory = (rows: TypeNameRow[]) => deriveTypeRoles(rows).filter((r) => r.evidence === "directory");
+
+  it("a directory of classes declares behaviour: its role carries familyDeclaresBehaviour true", () => {
+    const rows = opsOf("class", ["Collection", "Document", "Indexing"]);
+    expect(directory(rows).map((r) => r.familyDeclaresBehaviour)).toEqual([true, true, true]);
+    expect(expectedRoleFor(deriveTypeRoles(rows), { path: `${OPS}/new-ops.ts` })).toMatchObject({
+      role: "ops",
+      familyDeclaresBehaviour: true,
+    });
+  });
+
+  it("a directory of interfaces and type aliases declares a shape: familyDeclaresBehaviour false", () => {
+    const rows = [...opsOf("interface", ["Collection", "Document"]), ...opsOf("type_alias", ["Indexing"])];
+    expect(expectedRoleFor(deriveTypeRoles(rows), { path: `${OPS}/new-ops.ts` })).toMatchObject({
+      role: "ops",
+      familyDeclaresBehaviour: false,
+    });
+  });
+
+  it("a module declares behaviour with the classes", () => {
+    const rows = [...opsOf("class", ["Collection"]), ...opsOf("module", ["Document", "Indexing"])];
+    expect(directory(rows).every((r) => r.familyDeclaresBehaviour === true)).toBe(true);
+  });
+
+  it("behaviour tied with shapes: no group, the field is absent", () => {
+    const rows = [...opsOf("class", ["Collection", "Document"]), ...opsOf("interface", ["Indexing", "Worktree"])];
+    const roles = directory(rows);
+    expect(roles).toHaveLength(4);
+    expect(roles.some((r) => "familyDeclaresBehaviour" in r)).toBe(false);
+  });
+
+  it("leaves the carrier set unchanged: an interface carrying the role word is still a carrier", () => {
+    const rows = [...opsOf("class", ["Collection", "Document", "Indexing"]), ...opsOf("interface", ["Worktree"])];
+    expect(
+      directory(rows)
+        .map((r) => r.symbolId)
+        .sort(),
+    ).toEqual(["CollectionOps", "DocumentOps", "IndexingOps", "WorktreeOps"]);
+  });
+
+  it("a project-suffix family keeps merging kinds: no familyDeclaresBehaviour", () => {
+    const rows = [
+      k("EdgeStore", "src/s0/edge-store.ts", "class"),
+      k("FileStore", "src/s1/file-store.ts", "class"),
+      k("SymbolStore", "src/s2/symbol-store.ts", "class"),
+      k("CacheStore", "src/cli/cache-store.ts", "interface"),
+    ];
+    const suffix = deriveTypeRoles(rows).filter((r) => r.evidence === "projectSuffix");
+    expect(suffix.length).toBeGreaterThan(0);
+    expect(suffix.some((r) => "familyDeclaresBehaviour" in r)).toBe(false);
+  });
+});
+
+describe("isRoleFamilyMember — a known kind of the other group is no member (9yhnx)", () => {
+  it("a behaviour family rejects an interface, a type alias and an enum", () => {
+    for (const symbolKind of ["interface", "type_alias", "enum"] as const) {
+      expect(isRoleFamilyMember({ familyDeclaresBehaviour: true }, { symbolKind })).toBe(false);
+    }
+  });
+
+  it("a behaviour family keeps a class, a module and a type of unknown kind", () => {
+    expect(isRoleFamilyMember({ familyDeclaresBehaviour: true }, { symbolKind: "class" })).toBe(true);
+    expect(isRoleFamilyMember({ familyDeclaresBehaviour: true }, { symbolKind: "module" })).toBe(true);
+    expect(isRoleFamilyMember({ familyDeclaresBehaviour: true }, {})).toBe(true);
+  });
+
+  it("a shape family rejects a class and keeps an interface", () => {
+    expect(isRoleFamilyMember({ familyDeclaresBehaviour: false }, { symbolKind: "class" })).toBe(false);
+    expect(isRoleFamilyMember({ familyDeclaresBehaviour: false }, { symbolKind: "interface" })).toBe(true);
   });
 });
