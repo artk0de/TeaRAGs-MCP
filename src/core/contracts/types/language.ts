@@ -434,7 +434,8 @@ export type CollectSymbolsFn = (
 // thin facade composing four OPTIONAL capabilities; `LanguageFactoryDescriptor.create`
 // spawns one per language (with its own tree-sitter Parser). The fields below
 // are split between `kernel` and `chunkerHooks` from today's duplicated
-// `LanguageDefinition` (chunker/config.ts) + `LanguageConfig` (provider.ts).
+// `LanguageDefinition` (chunker/language-config/config.ts) + `LanguageConfig`
+// (provider.ts).
 // ─────────────────────────────────────────────────────────────────────────
 
 /**

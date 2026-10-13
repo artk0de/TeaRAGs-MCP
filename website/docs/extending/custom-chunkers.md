@@ -19,7 +19,7 @@ The default path is **tree-sitter + per-language hooks**. Markdown uses **remark
 | `MarkdownChunker` | `isDocumentation: true` + `skipTreeSitter: true` (remark-based) | Heading hierarchy |
 | `CharacterChunker` | Fallback for everything else | Fixed character windows |
 
-Source: `src/core/domains/ingest/pipeline/chunker/config.ts` (`LANGUAGE_DEFINITIONS`, `LANGUAGE_MAP`).
+Source: `src/core/domains/ingest/pipeline/chunker/language-config/config.ts` (`LANGUAGE_DEFINITIONS`, `LANGUAGE_MAP`).
 
 ## The `LanguageDefinition` Contract
 
@@ -51,7 +51,7 @@ Shipping languages (excerpt): TypeScript, JavaScript, Python, Go, Rust, Java, Ru
 Minimum viable entry — add Haskell:
 
 ```ts
-// src/core/domains/ingest/pipeline/chunker/config.ts
+// src/core/domains/ingest/pipeline/chunker/language-config/config.ts
 
 export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
   // ... existing entries ...
@@ -199,7 +199,7 @@ Every chunk must carry:
 
 | Concern | Source |
 |---------|--------|
-| Language definitions (registry) | `src/core/domains/ingest/pipeline/chunker/config.ts` |
+| Language definitions (registry) | `src/core/domains/ingest/pipeline/chunker/language-config/config.ts` |
 | Tree-sitter chunker (default) | `src/core/domains/ingest/pipeline/chunker/tree-sitter.ts` |
 | Markdown chunker (remark-based) | `src/core/domains/ingest/pipeline/chunker/markdown-chunker.ts` |
 | Character chunker (fallback) | `src/core/domains/ingest/pipeline/chunker/character.ts` |

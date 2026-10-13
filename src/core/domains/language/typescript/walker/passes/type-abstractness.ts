@@ -64,13 +64,16 @@ function isFunctionValuedProperty(node: AstNode | null | undefined): boolean {
 /**
  * Whether one class-body member declares behaviour: a method that is neither
  * the constructor nor an accessor, an abstract method signature, or a property
- * holding a function value. Everything else — fields, parameter-property
+ * holding a function value. A method SIGNATURE (an overload, or every method of
+ * an ambient `declare class` / `.d.ts` class) is a method under the same
+ * constructor and accessor exclusions (bd tea-rags-mcp-89k7k.38). Everything else — fields, parameter-property
  * constructors, getters/setters, index signatures, a `static { … }` block — is
  * data or initialization.
  */
 function classMemberDeclaresBehaviour(member: AstNode): boolean {
   switch (member.type) {
     case "method_definition":
+    case "method_signature":
       if (member.childForFieldName("name")?.text === "constructor") return false;
       return !member.children.some((child) => child.type === "get" || child.type === "set");
     case "abstract_method_signature":

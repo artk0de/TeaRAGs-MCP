@@ -5,6 +5,7 @@
  * A component far from the main sequence sits in the zone of pain (stable and
  * concrete, A + I < 1) or the zone of uselessness (unstable and abstract).
  */
+import TsLang from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -12,6 +13,7 @@ import type {
   FileDependencyGraph,
   TypeAbstractnessCensus,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import { TypeScriptLanguage } from "../../../../../../../src/core/domains/language/typescript/index.js";
 import {
   buildComponentGraph,
   DEFAULT_MAIN_SEQUENCE_MIN_TYPE_COUNT,
@@ -20,6 +22,7 @@ import {
   MAIN_SEQUENCE_DISTANCE_FLOOR,
   MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
+import { typeAbstractnessOf } from "../../../../language/__helpers__/type-abstractness.js";
 
 function file(relPath: string, typeAbstractness?: TypeAbstractnessCensus) {
   return { relPath, language: "typescript", symbolCount: 1, ...(typeAbstractness ? { typeAbstractness } : {}) };
@@ -28,6 +31,8 @@ function file(relPath: string, typeAbstractness?: TypeAbstractnessCensus) {
 function edge(sourceRelPath: string, targetRelPath: string): FileDependencyEdge {
   return { sourceRelPath, targetRelPath, callWeight: 1 };
 }
+
+const tsGrammar = (TsLang as unknown as { typescript: unknown }).typescript;
 
 const census = (abstractTypeCount: number, concreteTypeCount: number) => ({ abstractTypeCount, concreteTypeCount });
 
@@ -151,31 +156,38 @@ describe("detectMainSequenceDeviations", () => {
     expect(judge(graph(), { minTypeCount: 7 }).summary.excluded.fewTypes).toBe(4);
   });
 
-  it("moves a component's verdict when its behaviour-free classes leave the census (bd tea-rags-mcp-44cpv, c-1=a)", () => {
-    // `errors/` mirrors `core/` before decision c-1: six concrete types, six
-    // dependents, no dependency — pain at D 1. Its classes are Error
-    // subclasses, and a constructor/fields-only class no longer counts as
-    // concrete, so four of the six leave the census: the component holds two
-    // types, falls below the type floor, and is excluded instead of reported.
-    const before = graph();
-    for (let i = 1; i <= 6; i++) {
-      before.files.push(file(`errors/e${i}.ts`, census(0, 1)));
-      before.edges.push(edge(`app/c${i}.ts`, `errors/e${i}.ts`));
+  it("takes a component's abstractness from the walker census, behaviour-free classes in neither bucket (bd tea-rags-mcp-89k7k.38)", () => {
+    // `domain/` is measured through the composed TypeScript walker, not hand-fed
+    // counts: two exported contracts, four behaviour classes, and a file of six
+    // Error subclasses that declare no behaviour (bd tea-rags-mcp-44cpv, c-1=a).
+    // The errors file stays MEASURED — a 0/0 census, never "unmeasured" — and
+    // adds to neither side of A, so A = 2 / 6, not 2 / 12. Six dependents and no
+    // dependency put I at 0, so D = 2/3 and the component sits in pain.
+    const g = graph();
+    const errorClasses = Array.from(
+      { length: 6 },
+      (_, i) => `export class E${i} extends Error { readonly code = ${i}; constructor(m: string) { super(m); } }`,
+    );
+    const sources: Record<string, string> = {
+      "domain/ports.ts": "export interface Store { load(): void; }\nexport interface Clock { now(): number; }\n",
+      "domain/service.ts": "class A { run() {} }\nclass B { run() {} }\nclass C { run() {} }\nclass D { run() {} }\n",
+      "domain/errors.ts": `${errorClasses.join("\n")}\n`,
+    };
+    for (const [relPath, src] of Object.entries(sources)) {
+      g.files.push(file(relPath, typeAbstractnessOf(new TypeScriptLanguage(), tsGrammar, src, relPath, "typescript")));
     }
-    expect(judge(before).violations.map((v) => v.component)).toContain("errors");
+    for (let i = 1; i <= 6; i++) g.edges.push(edge(`app/c${i}.ts`, "domain/errors.ts"));
 
-    const after = graph();
-    for (let i = 1; i <= 2; i++) {
-      after.files.push(file(`errors/e${i}.ts`, census(0, 1)));
-      after.edges.push(edge(`app/c${i}.ts`, `errors/e${i}.ts`));
-    }
-    for (let i = 3; i <= 6; i++) {
-      after.files.push(file(`errors/e${i}.ts`, census(0, 0)));
-      after.edges.push(edge(`app/c${i}.ts`, `errors/e${i}.ts`));
-    }
-    const report = judge(after);
-    expect(report.violations.map((v) => v.component)).not.toContain("errors");
-    expect(report.summary.excluded.fewTypes).toBe(2);
+    expect(judge(g).violations.find((v) => v.component === "domain")).toMatchObject({
+      zone: "pain",
+      abstractTypeCount: 2,
+      concreteTypeCount: 4,
+      abstractness: 1 / 3,
+      instability: 0,
+      distance: expect.closeTo(2 / 3),
+      fileCount: 3,
+      unmeasuredFileCount: 0,
+    });
   });
 
   it("reports only components holding an in-scope file, judged against the whole graph", () => {
