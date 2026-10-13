@@ -26,6 +26,13 @@ export function withRenderedSubject(draft: DiffDetectorFindingDraft): DiffDetect
   return Object.assign({ detector: draft.detector, subject: renderDiffFindingSubject(draft.endpoints) }, draft);
 }
 
+/**
+ * The whole-module import name (the `WHOLE_MODULE_EXPORT_NAME` precedent the
+ * facade-leak classifier set): an import taking `*` takes whatever the surface
+ * holds — no single name drop breaks it, and no named retarget can carry it.
+ */
+export const WHOLE_MODULE_EXPORT_NAME = "*";
+
 export const HELD_BY_WORDING: Readonly<Record<HeldBeforeChangeEvidence, string>> = {
   base: "the diff base already holds it",
   index: "the indexed graph already holds it",

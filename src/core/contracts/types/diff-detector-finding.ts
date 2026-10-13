@@ -199,6 +199,33 @@ export interface MergeCandidateDiffFindingEvidence {
   sideB: DiffFindingChangedFiles;
 }
 
+// ── Remedy ───────────────────────────────────────────────────────────────────
+
+/**
+ * The cheap repair the server verified for a finding (bd
+ * tea-rags-mcp-89k7k.1.19.5, spec D2/D10): edge edits only, footprint inside
+ * the diff plus at most one facade, and a dry-run re-judgement showed the
+ * finding gone with no finding added. Absent = no cheap repair qualified.
+ */
+export type DiffFindingRemedy =
+  | {
+      /** Point one existing import of `sourceRelPath` at `toRelPath` instead of `fromRelPath`. */
+      kind: "retargetImport";
+      sourceRelPath: RelPath;
+      fromRelPath: RelPath;
+      toRelPath: RelPath;
+      /** The names the import takes — `toRelPath` exports every one (after `addExport`). */
+      importedNames: string[];
+      /** The one export line the retarget needs on `toRelPath`'s facade. */
+      addExport?: { facadeRelPath: RelPath; names: string[] };
+    }
+  | {
+      /** Re-export names the facade dropped while consumers still import them. */
+      kind: "restoreExport";
+      facadeRelPath: RelPath;
+      names: string[];
+    };
+
 // ── Finding ──────────────────────────────────────────────────────────────────
 
 interface DiffDetectorFindingCommon {
@@ -266,6 +293,12 @@ interface DiffDetectorFindingCommon {
    * or none of those files is measured.
    */
   maintenanceCost?: ArchitectureMaintenanceCost;
+  /**
+   * The dry-run-verified cheap repair (bd tea-rags-mcp-89k7k.1.19.5) —
+   * stamped by `DiffFindingRemedyResolver`, never by the run. Absent = none
+   * qualified; silentCoupling and splitCandidates never carry one.
+   */
+  remedy?: DiffFindingRemedy;
 }
 
 /** One diff-scoped judgement: the family, its structured endpoints and evidence, and the reviewer text. */
