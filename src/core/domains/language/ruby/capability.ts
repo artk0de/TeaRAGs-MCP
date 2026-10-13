@@ -85,7 +85,10 @@ export const capability: LanguageCapability = {
   // `initialize` — or that defines none, its body holding only attr accessors
   // and constants — leaves the type-abstractness census. Recompute:
   // `--force-enrichments codegraph --languages ruby`.
-  versions: { chunking: 2, walker: 8, codegraphSchema: 2 },
+  // walker 9: bd tea-rags-mcp-zy6hx — field-access facet pass. The walker
+  // publishes `fieldAccesses` (`@x`, `@@x`, a parameter's `p.x`, read / write)
+  // for `cg_symbols_edges_field`; a walker-8 index has no rows.
+  versions: { chunking: 2, walker: 9, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

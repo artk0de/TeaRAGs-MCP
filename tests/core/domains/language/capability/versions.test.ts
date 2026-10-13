@@ -499,11 +499,13 @@ describe("seeded support versions", () => {
       // typescript 15: bd tea-rags-mcp-zy6hx — the field-access facet pass
       // publishes `fieldAccesses`, so an index built by walker 14 holds no
       // `cg_symbols_edges_field` rows for TypeScript.
+      // ruby 9: bd tea-rags-mcp-zy6hx — the same pass for Ruby; a walker-8
+      // index holds no Ruby field rows.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
         ["python", 11],
-        ["ruby", 8],
+        ["ruby", 9],
         ["java", 4],
         ["rust", 3],
         ["go", 5],
