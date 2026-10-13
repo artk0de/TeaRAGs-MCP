@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DiffScopeRead } from "../../../../../../src/core/api/internal/ops/diff-scope-reader.js";
 import {
+  buildNormsEdgeExclusionCheck,
   judgeAddedEdgeNorms,
   normsSectionProvider,
 } from "../../../../../../src/core/api/internal/ops/review-sections/norms-section.js";
@@ -35,7 +36,8 @@ import {
   LanguageFactory,
 } from "../../../../../../src/core/domains/language/index.js";
 
-const ALL_EXCLUSIONS = ["uncalled", "frameworkRouted", "constantReference", "displacedRole"];
+// Overlay edges carry no call data or reference text: only displacedRole is evaluable.
+const ALL_EXCLUSIONS = ["uncalled", "frameworkRouted", "constantReference"];
 
 function file(relPath: RelPath, language = "typescript"): FileDependencyGraphFile {
   return { relPath, language, symbolCount: 1 };
@@ -77,7 +79,14 @@ function judged(
   extra: Partial<Parameters<typeof judgeAddedEdgeNorms>[0]> = {},
 ) {
   const { graph, fileRoles } = indexedFixture();
-  return judgeAddedEdgeNorms({ addedEdges: added, removedEdgeCount: 0, indexedGraph: graph, fileRoles, ...extra });
+  return judgeAddedEdgeNorms({
+    addedEdges: added,
+    removedEdgeCount: 0,
+    indexedGraph: graph,
+    fileRoles,
+    exclusions: buildNormsEdgeExclusionCheck({ graph, fileRoles }),
+    ...extra,
+  });
 }
 
 describe("judgeAddedEdgeNorms", () => {
@@ -164,6 +173,29 @@ describe("judgeAddedEdgeNorms", () => {
         exclusionsUnchecked: ["uncalled", "frameworkRouted"],
       }),
       expect.objectContaining({ source: "src/controllers/c1.ts", verdict: "UNJUDGED", reason: "constantReference" }),
+    ]);
+  });
+
+  it("reads a displaced role through the shared exclusion resolver: UNJUDGED displacedRole, not a verdict", () => {
+    const { graph, fileRoles } = indexedFixture();
+    fileRoles.set("src/services/s2.ts", { role: "service", strong: true, displaced: "outsideRoleHome" });
+    const result = judgeAddedEdgeNorms({
+      addedEdges: [
+        { source: "src/controllers/c1.ts", target: "src/services/s2.ts" },
+        { source: "src/controllers/c1.ts", target: "src/services/s3.ts" },
+      ],
+      removedEdgeCount: 0,
+      indexedGraph: graph,
+      fileRoles,
+      exclusions: buildNormsEdgeExclusionCheck({ graph, fileRoles }),
+    });
+    expect(result.addedEdgeVerdicts).toEqual([
+      expect.objectContaining({
+        target: "src/services/s3.ts",
+        verdict: "CONFORMS",
+        exclusionsUnchecked: ALL_EXCLUSIONS,
+      }),
+      expect.objectContaining({ target: "src/services/s2.ts", verdict: "UNJUDGED", reason: "displacedRole" }),
     ]);
   });
 
