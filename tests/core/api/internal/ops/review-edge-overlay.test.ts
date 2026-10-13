@@ -22,7 +22,14 @@ import {
   readWorkingTreeFileEdges,
   workingTreeExtractionContext,
   type ReviewEdgeExtractionDeps,
+  type ReviewEdgeReadContext,
 } from "../../../../../src/core/api/internal/ops/review-edge-overlay.js";
+import { readReviewChangeEdges } from "../../../../../src/core/api/internal/ops/review-sections/architecture-section.js";
+import {
+  buildReviewSymbolTable,
+  type IndexedSymbolRows,
+} from "../../../../../src/core/api/internal/ops/review-symbol-table.js";
+import type { SymbolDefinition } from "../../../../../src/core/contracts/types/codegraph.js";
 import {
   collectSymbols,
   DefaultSymbolIdComposer,
@@ -136,17 +143,17 @@ describe("readWorkingTreeFileEdges", () => {
     expect(read.skip?.detail).toBeTruthy();
   });
 
-  it("reports unsupportedLanguage for a language whose import mapper is index-backed", async () => {
+  it("reports indexedSymbolsUnavailable for a language whose file edges read the symbol table, when no table was hydrated", async () => {
     const tree = freshWorkTree();
-    writeFile("app/models/user.rb", 'class User\n  def name = "n"\nend\n');
+    writeFile("app/models/user.rb", 'class User < ApplicationRecord\n  def name = "n"\nend\n');
 
     const read = await readWorkingTreeFileEdges(realDeps(), tree, "app/models/user.rb");
 
-    // The walk succeeds (the Ruby grammar is installed); the gate is the
-    // mapper: Ruby's file edges answer from indexed state slice A cannot hydrate.
+    // The walk succeeds (the Ruby grammar is installed); the resolver reads the
+    // symbol table, and none was hydrated — never read as "the project holds nothing".
     expect(read.language).toBe("ruby");
     expect(read.edges).toEqual([]);
-    expect(read.skip?.reason).toBe("unsupportedLanguage");
+    expect(read.skip?.reason).toBe("indexedSymbolsUnavailable");
   });
 
   it("still extracts a syntax-broken TypeScript file — the walk is error-tolerant, not parseFailed", async () => {
@@ -345,5 +352,165 @@ describe("workingTreeExtractionContext", () => {
     const context = workingTreeExtractionContext(tree, new LanguageFactory({}));
 
     expect(context.declaredDependencies?.size).toBe(0);
+  });
+});
+
+/** A definition row as `cg_symbols` persists it. */
+function indexedDefinition(relPath: string, fqName: string): SymbolDefinition {
+  const shortName = fqName.split(/::|\.|#/).pop()!;
+  return { symbolId: fqName, fqName, shortName, relPath, scope: [] };
+}
+
+/** The review's table over `rows`, the tree untouched by the change. */
+function hydratedTable(tree: string, rows: IndexedSymbolRows): ReviewEdgeReadContext {
+  return {
+    symbolTable: {
+      table: buildReviewSymbolTable(rows, { workTree: tree, touchedFiles: new Set(), treeExtractions: [] }),
+    },
+  };
+}
+
+describe("readWorkingTreeFileEdges — table-backed languages over the hydrated index (bd tea-rags-mcp-vdhjc)", () => {
+  it("resolves a Ruby Zeitwerk constant ref and a superclass to their declaring files", async () => {
+    const tree = freshWorkTree();
+    writeFile("app/models/application_record.rb", "class ApplicationRecord\nend\n");
+    writeFile("app/models/billing/invoice.rb", "module Billing\n  class Invoice\n  end\nend\n");
+    writeFile(
+      "app/models/user.rb",
+      "class User < ApplicationRecord\n  def bill\n    Billing::Invoice.new\n  end\nend\n",
+    );
+    const context = hydratedTable(tree, {
+      definitions: [
+        indexedDefinition("app/models/application_record.rb", "ApplicationRecord"),
+        indexedDefinition("app/models/billing/invoice.rb", "Billing"),
+        indexedDefinition("app/models/billing/invoice.rb", "Billing::Invoice"),
+      ],
+      files: ["app/models/application_record.rb", "app/models/billing/invoice.rb", "app/models/user.rb"],
+    });
+
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "app/models/user.rb", context);
+
+    expect(read.skip).toBeUndefined();
+    expect(read.edges.map((edge) => edge.targetRelPath).sort()).toEqual([
+      "app/models/application_record.rb",
+      "app/models/billing/invoice.rb",
+    ]);
+  });
+
+  it("resolves a JavaScript relative import to the indexed file it names", async () => {
+    const tree = freshWorkTree();
+    writeFile("src/b.js", "export const b = 1;\n");
+    writeFile("src/a.js", 'import { b } from "./b.js";\nexport const a = b;\n');
+    const context = hydratedTable(tree, { definitions: [], files: ["src/a.js", "src/b.js"] });
+
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/a.js", context);
+
+    expect(read.skip).toBeUndefined();
+    expect(read.edges.map((edge) => edge.targetRelPath)).toEqual(["src/b.js"]);
+  });
+
+  it("resolves a Python absolute import to the indexed module file", async () => {
+    const tree = freshWorkTree();
+    writeFile("pkg/__init__.py", "");
+    writeFile("pkg/mod.py", "def f():\n    return 1\n");
+    writeFile("app.py", "from pkg.mod import f\n\nf()\n");
+    const context = hydratedTable(tree, {
+      definitions: [indexedDefinition("pkg/mod.py", "pkg.mod.f")],
+      files: ["pkg/__init__.py", "pkg/mod.py", "app.py"],
+    });
+
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "app.py", context);
+
+    expect(read.skip).toBeUndefined();
+    expect(read.edges.map((edge) => edge.targetRelPath)).toEqual(["pkg/mod.py"]);
+  });
+
+  it("carries the hydration failure as the skip detail", async () => {
+    const tree = freshWorkTree();
+    writeFile("app/models/user.rb", "class User < ApplicationRecord\nend\n");
+
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "app/models/user.rb", {
+      symbolTable: { unavailable: "reading the indexed symbol table failed: daemon down" },
+    });
+
+    expect(read.edges).toEqual([]);
+    expect(read.skip).toEqual({
+      reason: "indexedSymbolsUnavailable",
+      detail: "reading the indexed symbol table failed: daemon down",
+    });
+  });
+
+  it("keeps TypeScript resolving from disk when no table could be hydrated", async () => {
+    const tree = freshWorkTree();
+    writeFile("src/b.ts", "export const B = 1;\n");
+    writeFile("src/a.ts", 'import { B } from "./b";\nexport const A = B;\n');
+
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/a.ts", {
+      symbolTable: { unavailable: "the collection has no codegraph database" },
+    });
+
+    expect(read.skip).toBeUndefined();
+    expect(read.edges.map((edge) => edge.targetRelPath)).toEqual(["src/b.ts"]);
+  });
+
+  it("reports resolvedCallsUnavailable for a language whose file edges derive from resolved calls", async () => {
+    const tree = freshWorkTree();
+    writeFile("Sources/App/main.swift", "import Foundation\nfunc run() { helper() }\n");
+    const context = hydratedTable(tree, { definitions: [], files: ["Sources/App/main.swift"] });
+
+    const read = await readWorkingTreeFileEdges(realDeps(), tree, "Sources/App/main.swift", context);
+
+    // An empty edge list here would mask the file's indexed edges as removed.
+    expect(read.edges).toEqual([]);
+    expect(read.skip?.reason).toBe("resolvedCallsUnavailable");
+  });
+});
+
+describe("readReviewChangeEdges — one hydrated table per review read", () => {
+  it("overlays the tree on the indexed rows: a constant whose file the change adds resolves", async () => {
+    const tree = freshWorkTree();
+    writeFile("app/models/application_record.rb", "class ApplicationRecord\nend\n");
+    writeFile("app/models/ledger.rb", "class Ledger < ApplicationRecord\nend\n");
+    writeFile("app/models/user.rb", "class User < ApplicationRecord\n  def l = Ledger.new\nend\n");
+    const files = ["app/models/user.rb", "app/models/ledger.rb"];
+
+    const { overlay } = await readReviewChangeEdges(
+      { workTree: tree, mergeBase: "0".repeat(40), files, touchedFiles: new Set(files) },
+      realDeps(),
+      {
+        rows: {
+          definitions: [indexedDefinition("app/models/application_record.rb", "ApplicationRecord")],
+          files: ["app/models/application_record.rb", "app/models/user.rb"],
+        },
+      },
+    );
+
+    expect(overlay.unsupported()).toEqual([]);
+    expect(
+      overlay
+        .edgesFrom("app/models/user.rb")
+        .map((edge) => edge.targetRelPath)
+        .sort(),
+    ).toEqual(["app/models/application_record.rb", "app/models/ledger.rb"]);
+  });
+
+  it("skips every table-backed file with the reason when the index rows are unavailable", async () => {
+    const tree = freshWorkTree();
+    writeFile("app/models/user.rb", "class User < ApplicationRecord\nend\n");
+    const files = ["app/models/user.rb"];
+
+    const { overlay } = await readReviewChangeEdges(
+      { workTree: tree, mergeBase: "0".repeat(40), files, touchedFiles: new Set(files) },
+      realDeps(),
+      { unavailable: "the collection has no codegraph database" },
+    );
+
+    expect(overlay.unsupported()).toEqual([
+      {
+        relPath: "app/models/user.rb",
+        reason: "indexedSymbolsUnavailable",
+        detail: "the collection has no codegraph database",
+      },
+    ]);
   });
 });

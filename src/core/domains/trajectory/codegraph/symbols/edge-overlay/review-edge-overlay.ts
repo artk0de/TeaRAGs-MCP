@@ -14,8 +14,20 @@
 
 import type { ReviewFileEdge } from "../../../../../contracts/types/codegraph-storage.js";
 
-/** Why a changed file yielded no edges (upstream renders it as notJudged, never edge-free). */
-export type ReviewEdgeSkipReason = "noCodegraphLanguage" | "unreadable" | "unsupportedLanguage" | "parseFailed";
+/**
+ * Why a changed file yielded no edges (upstream renders it as notJudged, never
+ * edge-free). `indexedSymbolsUnavailable`: the language's file edges read the
+ * symbol table and the review could not hydrate it from the index;
+ * `resolvedCallsUnavailable`: the language derives file edges from resolved
+ * calls, which a review does not resolve.
+ */
+export type ReviewEdgeSkipReason =
+  | "noCodegraphLanguage"
+  | "unreadable"
+  | "unsupportedLanguage"
+  | "parseFailed"
+  | "indexedSymbolsUnavailable"
+  | "resolvedCallsUnavailable";
 
 /** One file's edge read: its edges, or why none could be read. */
 export interface ReviewFileEdgeRead {

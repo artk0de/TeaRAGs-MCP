@@ -96,6 +96,8 @@ interface GraphStub {
   readNonPublicMemberEdges: ReturnType<typeof vi.fn>;
   readTypeNameRows: ReturnType<typeof vi.fn>;
   readFileDependencyGraph: ReturnType<typeof vi.fn>;
+  listAllSymbols?: ReturnType<typeof vi.fn>;
+  listFileContentHashes?: ReturnType<typeof vi.fn>;
 }
 
 function graphDbStub(overrides: Partial<GraphStub> = {}): GraphStub {
@@ -360,6 +362,28 @@ describe("ReviewChangesOps", () => {
     await makeOps(graphDbStub(), {}, { readIndexedFileImports }).reviewChanges(request({ sections: ["architecture"] }));
 
     expect(readIndexedFileImports).toHaveBeenCalledExactlyOnceWith("code_test");
+  });
+
+  it("reads the index's symbol rows once per review, shared by every section that walks the diff (bd tea-rags-mcp-vdhjc)", async () => {
+    const listAllSymbols = vi.fn(async () => []);
+    const listFileContentHashes = vi.fn(async () => [{ relPath: CHANGED, contentHash: null }]);
+    const graph = graphDbStub({ listAllSymbols, listFileContentHashes });
+
+    const result = await makeOps(graph).reviewChanges(request({ sections: ["architecture", "norms"] }));
+
+    expect(result.review.sections.architecture?.built).toBe(true);
+    expect(result.review.sections.norms?.built).toBe(true);
+    expect(listAllSymbols).toHaveBeenCalledTimes(1);
+    expect(listFileContentHashes).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads no symbol rows for a review whose sections walk no diff edges", async () => {
+    const listAllSymbols = vi.fn(async () => []);
+    const graph = graphDbStub({ listAllSymbols });
+
+    await makeOps(graph).reviewChanges(request({ sections: ["cohesion"] }));
+
+    expect(listAllSymbols).not.toHaveBeenCalled();
   });
 
   it("a section allowlist omits the others entirely — absence is not not-built", async () => {
