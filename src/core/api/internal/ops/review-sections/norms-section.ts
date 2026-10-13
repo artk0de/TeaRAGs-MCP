@@ -226,7 +226,11 @@ export const normsSectionProvider: ReviewSectionProvider = {
     );
     const typeNameRows = await readDependencyNormTypeNameRows(graphDb);
     // The change's side, classified by the run's before-the-change evidence.
-    const { overlay, baseEdges } = await readReviewChangeEdges(scope, reviewEdgeExtraction);
+    const { overlay, baseEdges } = await readReviewChangeEdges(
+      scope,
+      reviewEdgeExtraction,
+      await context.readIndexedSymbolRows?.(),
+    );
     const ports = {
       graph: new WiredGraphReader(production.graph.edges),
       ...(baseEdges !== undefined ? { baseEdges } : {}),

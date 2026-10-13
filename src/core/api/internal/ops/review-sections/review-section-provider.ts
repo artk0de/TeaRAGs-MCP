@@ -19,6 +19,7 @@ import type { ArchitectureReportGraphDb } from "../architecture-graph-facts.js";
 import type { DiffScopeRead, DiffScopeRequest, DiffTreeLag } from "../diff-scope-reader.js";
 import type { NamingLexiconOps } from "../naming-lexicon-ops.js";
 import type { ReviewEdgeExtractionDeps } from "../review-edge-overlay.js";
+import type { IndexedSymbolRowsRead } from "../review-symbol-table.js";
 
 /**
  * The indexed graph reads a review section may perform: the temporal
@@ -66,6 +67,13 @@ export interface ReviewSectionBuildContext {
    * wires `createNamingReviewExtractor` uses; `undefined` when not wired.
    */
   reviewEdgeExtraction: ReviewEdgeExtractionDeps | undefined;
+  /**
+   * The index's symbol rows (every definition + every file) the review's
+   * symbol table is hydrated from (bd tea-rags-mcp-vdhjc) — read once per
+   * review on first call and shared by every section that walks the diff.
+   * Absent (unit wiring) → the table-reading languages skip with the reason.
+   */
+  readIndexedSymbolRows?: () => Promise<IndexedSymbolRowsRead>;
   /**
    * The indexed payload's import specifiers per file (bd tea-rags-mcp-2wsnt)
    * — the SAME read the whole-repo report's second silent-coupling pass uses

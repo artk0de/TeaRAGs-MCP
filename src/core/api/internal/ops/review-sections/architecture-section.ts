@@ -42,7 +42,6 @@ import {
   diffFindingEndpointRefs,
   type DiffDetectorFinding,
 } from "../../../../contracts/types/diff-detector-finding.js";
-import type { InMemoryExtractionContext } from "../../../../domains/trajectory/codegraph/index.js";
 import {
   applyEdgeOverlay,
   buildLayeringModel,
@@ -103,10 +102,15 @@ import {
 import type { DiffScopeRead, DiffTreeLag } from "../diff-scope-reader.js";
 import {
   extractReviewFileEdges,
-  readWorkingTreeFileEdges,
+  extractWorkingTreeFile,
+  isWalkedReviewFile,
+  resolveReviewFileEdges,
   workingTreeExtractionContext,
   type ReviewEdgeExtractionDeps,
+  type ReviewEdgeReadContext,
+  type ReviewSymbolTableRead,
 } from "../review-edge-overlay.js";
+import { buildReviewSymbolTable, type IndexedSymbolRowsRead } from "../review-symbol-table.js";
 import {
   ArchitectureViolationTierLookup,
   composeReviewCochangeSignificance,
@@ -363,7 +367,7 @@ export function wireSplitMerge(
 export async function readDiffBaseEdges(
   scope: Pick<DiffScopeRead, "workTree" | "mergeBase" | "files">,
   extraction: ReviewEdgeExtractionDeps,
-  context: InMemoryExtractionContext,
+  context: ReviewEdgeReadContext,
 ): Promise<DiffDetectorBaseEdgeReader | undefined> {
   const toplevel = findGitToplevel(scope.workTree);
   if (toplevel === undefined || scope.files.length === 0) return undefined;
@@ -394,17 +398,35 @@ export async function readDiffBaseEdges(
  * notJudged, never edge-free) as the overlay, and the diff base's edges of the
  * SAME files ({@link readDiffBaseEdges}, bd tea-rags-mcp-89k7k.1.16) — what
  * "added by this change" is measured against, wherever the index sits.
+ *
+ * Both sides resolve against ONE symbol table (bd tea-rags-mcp-vdhjc): the
+ * index's rows overlaid with the tree — every scope file is walked first so
+ * its definitions replace the index's, then each is resolved. Unavailable rows
+ * leave the table-reading languages skipped with the cause.
  */
 export async function readReviewChangeEdges(
-  scope: Pick<DiffScopeRead, "workTree" | "mergeBase" | "files">,
+  scope: Pick<DiffScopeRead, "workTree" | "mergeBase" | "files" | "touchedFiles">,
   deps: ReviewEdgeExtractionDeps,
+  indexedSymbols: IndexedSymbolRowsRead = { unavailable: "no indexed symbol table was read for this review" },
 ): Promise<{ overlay: ReviewEdgeOverlay; baseEdges: DiffDetectorBaseEdgeReader | undefined }> {
   const extractionContext = workingTreeExtractionContext(scope.workTree, deps.languageFactory);
-  const reads: ReviewFileEdgeRead[] = [];
-  for (const relPath of scope.files) {
-    reads.push(await readWorkingTreeFileEdges(deps, scope.workTree, relPath, extractionContext));
-  }
-  const baseEdges = await readDiffBaseEdges(scope, deps, extractionContext);
+  const walked = scope.files.map((relPath) => extractWorkingTreeFile(deps, scope.workTree, relPath, extractionContext));
+  const treeExtractions = walked.filter(isWalkedReviewFile);
+  const symbolTable: ReviewSymbolTableRead =
+    "rows" in indexedSymbols
+      ? {
+          table: buildReviewSymbolTable(indexedSymbols.rows, {
+            workTree: scope.workTree,
+            touchedFiles: scope.touchedFiles,
+            treeExtractions,
+          }),
+        }
+      : { unavailable: indexedSymbols.unavailable };
+  const context: ReviewEdgeReadContext = { ...extractionContext, symbolTable };
+  const reads: ReviewFileEdgeRead[] = walked.map((read) =>
+    isWalkedReviewFile(read) ? resolveReviewFileEdges(deps, scope.workTree, read, context) : read,
+  );
+  const baseEdges = await readDiffBaseEdges(scope, deps, context);
   return { overlay: new ReviewEdgeOverlay(reads), baseEdges };
 }
 
@@ -553,7 +575,11 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       querySignificance,
     );
 
-    const { overlay, baseEdges } = await readReviewChangeEdges(scope, reviewEdgeExtraction);
+    const { overlay, baseEdges } = await readReviewChangeEdges(
+      scope,
+      reviewEdgeExtraction,
+      await context.readIndexedSymbolRows?.(),
+    );
     const run = new DiffDetectorRun({
       graph,
       ...(baseEdges !== undefined ? { baseEdges } : {}),

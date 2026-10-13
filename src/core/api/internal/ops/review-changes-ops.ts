@@ -45,6 +45,7 @@ import {
   type ReviewNamingLexicon,
   type ReviewSectionBuildContext,
 } from "./review-sections/index.js";
+import { readIndexedSymbolRows, type IndexedSymbolRowsRead } from "./review-symbol-table.js";
 
 export interface ReviewChangesOpsDeps {
   pool: Pick<GraphDbClientPool, "acquireReader" | "hasDatabase">;
@@ -194,6 +195,12 @@ export class ReviewChangesOps {
         readDeclaredTestDependencies === undefined || workTree === undefined
           ? undefined
           : () => readDeclaredTestDependencies(workTree);
+      // The index's symbol rows, read on first use and shared: the sections that
+      // walk the diff resolve its edges against one hydrated table (bd
+      // tea-rags-mcp-vdhjc), and a review asking for none of them reads nothing.
+      let indexedSymbolRows: Promise<IndexedSymbolRowsRead> | undefined;
+      const readIndexedSymbolRowsOnce = async (): Promise<IndexedSymbolRowsRead> =>
+        (indexedSymbolRows ??= readIndexedSymbolRows(handle?.graphDb));
       const buildContext: ReviewSectionBuildContext = {
         scope,
         graphDb,
@@ -201,6 +208,7 @@ export class ReviewChangesOps {
         temporalCochangeError,
         lexiconOps: this.deps.lexiconOps,
         reviewEdgeExtraction: this.deps.reviewEdgeExtraction,
+        readIndexedSymbolRows: readIndexedSymbolRowsOnce,
         ...(indexLag === undefined ? {} : { indexLag }),
         ...(importSpecifiers === undefined ? {} : { readImportSpecifiers: importSpecifiers }),
         ...(maintenanceSignals === undefined ? {} : { readFileMaintenanceSignals: maintenanceSignals }),

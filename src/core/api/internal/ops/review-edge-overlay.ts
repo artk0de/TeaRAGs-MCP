@@ -12,17 +12,19 @@
  * (`domains/trajectory/codegraph/symbols/edge-overlay`, bd
  * tea-rags-mcp-89k7k.35.19).
  *
- * Which languages resolve edges here: TypeScript alone in slice A — its
- * import→file mapper (`ts-path-mapper`, reached through the facade the
- * injected factory returns, bound to the working tree via `ctx.projectRoot`)
- * probes the working tree (tsconfig + project file probe), so it needs nothing
- * the index holds. Every other codegraph language's mapper answers from the
- * indexed `GlobalSymbolTable` (`hasFile` membership) or from run-global pass-2
- * state a review cannot provide without DuckDB, so those report
- * `unsupportedLanguage` — upstream renders them as notJudged, never edge-free.
- * Slice B (parent-supervised) adds the per-review temp-table persistence and
- * the indexed-edge masking reads F2's detectors consume; nothing in this file
- * touches DuckDB or any state outside its arguments.
+ * Which languages resolve edges here: every language whose facade forwards
+ * `resolveFileEdges` (bd tea-rags-mcp-vdhjc). A resolver that answers from
+ * the symbol table (import mappers gating on `hasFile`, Ruby's Zeitwerk and
+ * ancestor constants) reads the review's table — the index's rows hydrated and
+ * the working tree overlaid (`review-symbol-table.ts`), handed in through
+ * {@link ReviewEdgeReadContext}. When no table could be hydrated, the context
+ * carries a table that THROWS on every read: a resolver that never reads it
+ * (TypeScript probes disk) still resolves, one that does lands in
+ * `indexedSymbolsUnavailable` with the cause — never read as "the project
+ * holds nothing". Likewise a resolver deriving file edges from its resolved
+ * calls reads method edges a review does not resolve, and lands in
+ * `resolvedCallsUnavailable`. Nothing here decides membership by language
+ * name: what the resolver reads decides it.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -55,37 +57,58 @@ import {
 export type { ReviewFileEdge };
 
 /**
- * The languages whose import→file resolution answers from the WORKING TREE
- * alone. TypeScript today: its path mapper probes disk (tsconfig `paths` +
- * the project file probe) through the resolver the facade binds to
- * `ctx.projectRoot`. The other codegraph languages' mappers are index-backed
- * (`GlobalSymbolTable.hasFile`, or run-global pass-2 state), so a review that
- * cannot hydrate the index must not call them — a half-empty table would read
- * as "the project holds nothing" and silently drop real edges. Slice B lifts
- * a language by hydrating what its mapper reads, then adding it here.
+ * What a review hands every file read: the extraction context the index's
+ * walks get, plus the review's symbol table — hydrated from the index and
+ * overlaid with the working tree, or why it could not be. Absent table = not
+ * hydrated: the table-reading resolvers skip, never resolve against nothing.
  */
-const DISK_RESOLVING_REVIEW_LANGUAGES: ReadonlySet<string> = new Set(["typescript"]);
+export interface ReviewEdgeReadContext extends InMemoryExtractionContext {
+  symbolTable?: ReviewSymbolTableRead;
+}
+
+/** The review's hydrated table, or the reason none could be built. */
+export type ReviewSymbolTableRead = { readonly table: GlobalSymbolTable } | { readonly unavailable: string };
+
+/** Thrown by {@link unavailableSymbolTable} on a read; caught by the file read and turned into a skip. */
+class ReviewSymbolTableUnavailableError extends Error {}
+
+/** Thrown when a resolver reads the resolved method edges a review does not compute. */
+class ReviewResolvedCallsUnavailableError extends Error {}
 
 /**
- * The empty `GlobalSymbolTable` a review's `CallContext` carries. The context
- * type requires a table, but slice A resolves only languages whose
- * `resolveFileEdges` never reads one (TypeScript's ignores the context beyond
- * `projectRoot`); every language whose mapper WOULD consult the table is
- * gated to `unsupportedLanguage` first, so these empty answers can never be
- * mistaken for "the project holds nothing". Same rationale as the daemon's
- * `NoopGlobalSymbolTable`, kept local because that copy lives behind the
- * adapter's daemon seam.
+ * A table that answers no question: every read throws, carrying why the index
+ * rows are missing. Lets the resolver itself say whether it needs the table —
+ * one that never reads it (a disk-probing mapper) resolves as before.
  */
-const EMPTY_REVIEW_SYMBOL_TABLE: GlobalSymbolTable = Object.freeze({
-  upsertFile: () => undefined,
-  removeFile: () => undefined,
-  lookup: () => [],
-  lookupByShortName: () => [],
-  hasFile: () => false,
-  hasFilesUnder: () => false,
-  size: () => 0,
-  hydrate: () => undefined,
-  shortNameDefCounts: () => new Map<string, number>(),
+function unavailableSymbolTable(reason: string): GlobalSymbolTable {
+  const refuse = (): never => {
+    throw new ReviewSymbolTableUnavailableError(reason);
+  };
+  return Object.freeze({
+    upsertFile: refuse,
+    removeFile: refuse,
+    lookup: refuse,
+    lookupByShortName: refuse,
+    hasFile: refuse,
+    hasFilesUnder: refuse,
+    size: refuse,
+    hydrate: refuse,
+    shortNameDefCounts: refuse,
+    listFiles: refuse,
+  });
+}
+
+/**
+ * The resolved method edges a review hands `resolveFileEdges`: none were
+ * resolved (a review resolves no call sites), so any read throws rather than
+ * answering "this file's calls land nowhere" — a language deriving its file
+ * graph from calls would otherwise report the file edge-free and mask its
+ * indexed edges as removed.
+ */
+const UNRESOLVED_METHOD_EDGES: GraphEdges["methodEdges"] = new Proxy([], {
+  get: () => {
+    throw new ReviewResolvedCallsUnavailableError("a review resolves no call sites");
+  },
 });
 
 /** Extracts one working-tree file's import edges. deps = the naming-review-extraction trio. */
@@ -99,39 +122,72 @@ export interface ReviewEdgeExtractionDeps {
  * Reads one file's import edges from the working tree. Never throws: a file
  * that cannot be read, walked or resolved lands in `skip`, so one bad file
  * never kills the review batch. `context` is the run-level context the index
- * path hands every walk — build it once per review with
- * {@link workingTreeExtractionContext} and pass it to every file.
+ * path hands every walk plus the review's symbol table — build it once per
+ * review and pass it to every file.
  */
 export async function readWorkingTreeFileEdges(
   deps: ReviewEdgeExtractionDeps,
   workTree: string,
   relPath: string,
-  context: InMemoryExtractionContext = {},
+  context: ReviewEdgeReadContext = {},
 ): Promise<ReviewFileEdgeRead> {
+  const extracted = extractWorkingTreeFile(deps, workTree, relPath, context);
+  return isWalkedReviewFile(extracted) ? resolveReviewFileEdges(deps, workTree, extracted, context) : extracted;
+}
+
+/**
+ * One working-tree file walked by the index's in-memory extraction, or the
+ * skip read naming why it could not be — the first half of
+ * {@link readWorkingTreeFileEdges}, split out so a review can overlay every
+ * walked file's definitions on its table before resolving any of them.
+ */
+export function extractWorkingTreeFile(
+  deps: ReviewEdgeExtractionDeps,
+  workTree: string,
+  relPath: string,
+  context: InMemoryExtractionContext = {},
+): FileExtraction | ReviewFileEdgeRead {
   let text: string;
   try {
     text = readFileSync(join(workTree, relPath), "utf8");
   } catch (error) {
     return { relPath, edges: [], skip: { reason: "unreadable", detail: messageOf(error) } };
   }
-  return extractReviewFileEdges(deps, workTree, relPath, text, context);
+  return extractReviewFile(deps, relPath, text, context);
 }
 
 /**
  * {@link readWorkingTreeFileEdges} over text the caller already holds — the same
  * walk and resolution, so a revision's blob (the diff base's, bd
  * tea-rags-mcp-89k7k.1.16) extracts exactly as the working-tree file does.
- * Resolution answers from `workTree`'s filesystem: an import is mapped to the
- * file the TREE holds at that path, which is what "the same edge at the base"
- * needs — a pair compared against the tree's own overlay. Never throws.
+ * Resolution answers from `workTree`'s filesystem and from the context's
+ * table: an import is mapped to the file the TREE holds at that path, which is
+ * what "the same edge at the base" needs — a pair compared against the tree's
+ * own overlay. Never throws.
  */
 export function extractReviewFileEdges(
   deps: ReviewEdgeExtractionDeps,
   workTree: string,
   relPath: string,
   text: string,
-  context: InMemoryExtractionContext = {},
+  context: ReviewEdgeReadContext = {},
 ): ReviewFileEdgeRead {
+  const extracted = extractReviewFile(deps, relPath, text, context);
+  return isWalkedReviewFile(extracted) ? resolveReviewFileEdges(deps, workTree, extracted, context) : extracted;
+}
+
+/** Whether {@link extractWorkingTreeFile} walked the file (an extraction), not a skip read. */
+export function isWalkedReviewFile(read: FileExtraction | ReviewFileEdgeRead): read is FileExtraction {
+  return !("edges" in read);
+}
+
+/** One text walked, or why not. */
+function extractReviewFile(
+  deps: ReviewEdgeExtractionDeps,
+  relPath: string,
+  text: string,
+  context: InMemoryExtractionContext,
+): FileExtraction | ReviewFileEdgeRead {
   let extraction: FileExtraction | null;
   try {
     extraction = extractFileInMemory(deps, relPath, text, context);
@@ -144,50 +200,92 @@ export function extractReviewFileEdges(
   if (extraction === null) {
     return { relPath, edges: [], skip: { reason: "noCodegraphLanguage" } };
   }
-  if (!DISK_RESOLVING_REVIEW_LANGUAGES.has(extraction.language)) {
-    return {
-      relPath,
-      language: extraction.language,
-      edges: [],
-      skip: {
-        reason: "unsupportedLanguage",
-        detail: `import→file mapping for ${extraction.language} answers from the indexed symbol table; working-tree resolution arrives with slice B (bd tea-rags-mcp-89k7k.1.2)`,
-      },
-    };
-  }
+  return extraction;
+}
 
-  const { resolver } = deps.languageFactory.create(extraction.language);
+/**
+ * One walked file's edges through its language facade's `resolveFileEdges`,
+ * against the context's table. Never throws: a resolver reading what the
+ * review could not supply lands in the matching skip.
+ */
+export function resolveReviewFileEdges(
+  deps: ReviewEdgeExtractionDeps,
+  workTree: string,
+  extraction: FileExtraction,
+  context: ReviewEdgeReadContext = {},
+): ReviewFileEdgeRead {
+  const { relPath, language } = extraction;
+  const { resolver } = deps.languageFactory.create(language);
   if (resolver?.resolveFileEdges === undefined) {
     return {
       relPath,
-      language: extraction.language,
+      language,
       edges: [],
-      skip: {
-        reason: "unsupportedLanguage",
-        detail: `the ${extraction.language} facade forwards no resolveFileEdges`,
-      },
+      skip: { reason: "unsupportedLanguage", detail: `the ${language} facade forwards no resolveFileEdges` },
     };
   }
   const resolveFileEdges = resolver.resolveFileEdges.bind(resolver);
-  // Runtime channel first, type-only second — the order the index merges them
-  // in (`CallEdgeResolutionRunner#resolve`), so a target both reach keeps the
-  // runtime statement's names first once `reviewEdgesOfFile` collapses it.
-  const fileEdges = [runtimeImportExtraction(extraction), typeOnlyImportExtraction(extraction)].flatMap(
-    (channelExtraction) =>
-      channelExtraction === undefined
+  const tableRead = context.symbolTable ?? { unavailable: "no indexed symbol table was hydrated for this review" };
+  const symbolTable = "table" in tableRead ? tableRead.table : unavailableSymbolTable(tableRead.unavailable);
+  const declaredDependencies = context.declaredDependencies?.get(language);
+  try {
+    // Runtime channel first, type-only second — the order the index merges them
+    // in (`CallEdgeResolutionRunner#resolve`), so a target both reach keeps the
+    // runtime statement's names first once `reviewEdgesOfFile` collapses it. The
+    // type-only channel gets no method edges, as in the index.
+    const runtime = runtimeImportExtraction(extraction);
+    const typeOnly = typeOnlyImportExtraction(extraction);
+    const fileEdges = [
+      ...resolveFileEdges(
+        runtime,
+        reviewFileEdgeContext(runtime, workTree, symbolTable, declaredDependencies),
+        UNRESOLVED_METHOD_EDGES,
+      ),
+      ...(typeOnly === undefined
         ? []
-        : resolveFileEdges(channelExtraction, reviewFileEdgeContext(channelExtraction, workTree), []),
-  );
-  return { relPath, language: extraction.language, edges: reviewEdgesOfFile(relPath, fileEdges, workTree) };
+        : resolveFileEdges(typeOnly, reviewFileEdgeContext(typeOnly, workTree, symbolTable, declaredDependencies), [])),
+    ];
+    return { relPath, language, edges: reviewEdgesOfFile(relPath, fileEdges, workTree) };
+  } catch (error) {
+    if (error instanceof ReviewSymbolTableUnavailableError) {
+      return { relPath, language, edges: [], skip: { reason: "indexedSymbolsUnavailable", detail: error.message } };
+    }
+    if (error instanceof ReviewResolvedCallsUnavailableError) {
+      return {
+        relPath,
+        language,
+        edges: [],
+        skip: {
+          reason: "resolvedCallsUnavailable",
+          detail: `${language} derives file edges from resolved calls; ${error.message}`,
+        },
+      };
+    }
+    throw error;
+  }
 }
 
-/** The `CallContext` one import channel of a review file resolves under: its own imports, the working tree's root. */
-function reviewFileEdgeContext(extraction: FileExtraction, workTree: string): CallContext {
+/**
+ * The `CallContext` one import channel of a review file resolves under — the
+ * fields the index's `CallEdgeResolutionRunner#fileEdgeContext` gives it that a
+ * review can supply: the file's own imports and top-level scope, its
+ * association types, the tree's declared dependencies, the review's table and
+ * the working tree's root. The run-global pass-1 maps are not available to a
+ * review; file-edge targets do not depend on them.
+ */
+function reviewFileEdgeContext(
+  extraction: FileExtraction,
+  workTree: string,
+  symbolTable: GlobalSymbolTable,
+  declaredDependencies: ReadonlySet<string> | undefined,
+): CallContext {
   return {
     callerFile: extraction.relPath,
-    callerScope: [],
+    callerScope: extraction.fileScope,
     imports: extraction.imports,
-    symbolTable: EMPTY_REVIEW_SYMBOL_TABLE,
+    symbolTable,
+    ...(extraction.associationTypes !== undefined ? { associationTypes: extraction.associationTypes } : {}),
+    ...(declaredDependencies !== undefined ? { declaredDependencies } : {}),
     projectRoot: workTree,
   };
 }
