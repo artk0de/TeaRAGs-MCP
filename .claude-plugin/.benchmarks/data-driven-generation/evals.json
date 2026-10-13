@@ -522,13 +522,14 @@
       "prompt": "Код написан, тесты зелёные. Можно коммитить?",
       "expected": {
         "mustDo": [
-          "Step 7: one get_naming_lexicon call with `changes: {}` (working tree against HEAD) before the commit",
+          "Step 7: one review_changes call with `changes: {}` and sections naming + incompleteChange + cohesion + architecture before the commit; naming verdicts read from its naming section",
           "Report review.findings grouped by verdict with relPath:line and the review.conforming / review.novel counts",
           "Rename meta → fileSignals before committing (MISFIT is a fix, not a note)",
           "NEW_TERM with alternatives → reuse ROW_CAP if it denotes the same limit, otherwise keep MAX_ROWS and justify it in one line"
         ],
         "mustNotDo": [
           "Hand-list the written names into names[] for this review",
+          "Run a separate get_naming_lexicon diff review instead of the review_changes naming section",
           "Treat the NEW_TERM alternative as mandatory (it is soft)",
           "Commit with an unresolved MISFIT"
         ]
