@@ -13,15 +13,21 @@ import { detectorStatus, format3, round3, withRenderedSubject } from "./shared.j
  *
  * `preExisting` (bd tea-rags-mcp-89k7k.1.19.2, spec D9): the diff BASE already
  * held another edge of the same component pair — read from the base edges
- * of the source component's changed files, the only files the base reader
- * answers for.
+ * of the source component's changed files, and from the indexed graph for its
+ * unchanged files (the index equals the base there).
  */
 export const stableDependenciesDetector: DiffFamilyDetector = {
   family: "stableDependencies",
-  judge: ({ scope, addedEdges, catalog, baseEdges }) => {
+  judge: ({ scope, addedEdges, catalog, baseEdges, graph }) => {
     const componentNameOf = (relPath: string): string | undefined => catalog.componentOf(relPath)?.name;
     const changedFilesOf = (component: string): readonly string[] =>
       scope.changedFiles.filter((relPath) => componentNameOf(relPath) === component);
+    const changed = new Set(scope.changedFiles);
+    const unchanged = {
+      filesOf: (component: string): readonly string[] =>
+        catalog.filesOf(component).filter((file) => !changed.has(file)),
+      graph,
+    };
     const findings: DiffDetectorFinding[] = [];
     for (const edge of addedEdges) {
       const sourceComponent = catalog.componentOf(edge.source);
@@ -33,6 +39,7 @@ export const stableDependenciesDetector: DiffFamilyDetector = {
         baseEdges,
         componentNameOf,
         changedFilesOf,
+        unchanged,
       );
       findings.push(
         withRenderedSubject({

@@ -8,7 +8,14 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { baseEdgesOf, catalogOf, overlayOf, runWith, type ComponentFact } from "../__helpers__/diff-run-fixtures.js";
+import {
+  baseEdgesOf,
+  catalogOf,
+  graphOf,
+  overlayOf,
+  runWith,
+  type ComponentFact,
+} from "../__helpers__/diff-run-fixtures.js";
 import { DiffDetectorRun } from "../../../../../../src/core/api/internal/ops/diff-detector-run.js";
 import {
   componentPairViolatedAtBase,
@@ -42,6 +49,34 @@ describe("stableDependencies preExisting", () => {
     expect(sdp).toHaveLength(1);
     expect(sdp[0]?.endpoints).toMatchObject({ sourceRelPath: "a/z.ts", targetRelPath: "b/w.ts" });
     expect(sdp[0]?.preExisting).toBe(true);
+  });
+
+  it("stamps preExisting when the pair is held only through an UNCHANGED source file, read from the index", () => {
+    const result = runWith(
+      {
+        catalog: catalogOf(SDP_COMPONENTS),
+        graph: graphOf([["a/x.ts", "b/y.ts"]]),
+        baseEdges: baseEdgesOf({ "a/z.ts": [] }),
+      },
+      ["a/z.ts"],
+      [["a/z.ts", "b/w.ts"]],
+    );
+    const sdp = findingsOf(result.findings, "stableDependencies");
+    expect(sdp).toHaveLength(1);
+    expect(sdp[0]?.preExisting).toBe(true);
+  });
+
+  it("leaves preExisting absent when the unchanged source files hold no edge of the pair", () => {
+    const result = runWith(
+      {
+        catalog: catalogOf(SDP_COMPONENTS),
+        graph: graphOf([["a/x.ts", "c/q.ts"]]),
+        baseEdges: baseEdgesOf({ "a/z.ts": [] }),
+      },
+      ["a/z.ts"],
+      [["a/z.ts", "b/w.ts"]],
+    );
+    expect(findingsOf(result.findings, "stableDependencies")[0]).not.toHaveProperty("preExisting");
   });
 
   it("leaves preExisting absent when the base held no edge of the pair", () => {

@@ -252,6 +252,16 @@ export function isMarkedlyLessStableBySdpBand(leanedOnInstability: number, leani
 /** The detectors' rounding margin on the band; mirrors their private epsilon. */
 const INSTABILITY_BAND_ROUNDING_EPSILON = 1e-9;
 
+function groupFilesByComponent(componentOf: ReadonlyMap<RelPath, string>): ReadonlyMap<string, readonly RelPath[]> {
+  const byComponent = new Map<string, RelPath[]>();
+  for (const [relPath, component] of componentOf) {
+    const files = byComponent.get(component);
+    if (files === undefined) byComponent.set(component, [relPath]);
+    else files.push(relPath);
+  }
+  return byComponent;
+}
+
 /**
  * `DiffDetectorCatalog` over the extracted facts: components, facades and the
  * band exactly as the whole-repo report derived them — consumed by
@@ -271,6 +281,8 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
   private readonly facadeByComponent: ReadonlyMap<string, RelPath>;
   private readonly distances: ReadonlyMap<string, number>;
   private readonly layeringFoundationFiles: ReadonlySet<RelPath>;
+  /** Inverse of `componentOfRelPath`, built on first `filesOf` call. */
+  private filesByComponent: ReadonlyMap<string, readonly RelPath[]> | undefined;
 
   constructor(
     facts: ArchitectureComponentFacts,
@@ -312,6 +324,11 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
       efferentCount: component.efferentCount,
       ...(component.entryFacade ? { entryFacade: true as const } : {}),
     };
+  }
+
+  filesOf(componentName: string): readonly string[] {
+    this.filesByComponent ??= groupFilesByComponent(this.componentOfRelPath);
+    return this.filesByComponent.get(componentName) ?? [];
   }
 
   facadeOf(componentName: string): string | undefined {

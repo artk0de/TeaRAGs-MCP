@@ -8,31 +8,54 @@
  * contract as `heldBeforeChange`: a missing fact is never "already held".
  */
 
-import type { DiffDetectorBaseEdgeReader } from "./diff-family-detector.js";
+import type { DiffDetectorBaseEdgeReader, DiffDetectorGraphReader } from "./diff-family-detector.js";
+
+/**
+ * The source component's files the diff did NOT touch, read from the INDEXED
+ * graph: for an unchanged file the index equals the base. Same split as
+ * `DiffDetectorRun#heldBeforeChange` - base reader for changed sources, index
+ * for the rest.
+ */
+export interface UnchangedSourceFiles {
+  /** The component's UNCHANGED files (the diff's own files excluded by the caller). */
+  filesOf: (component: string) => readonly string[];
+  /** The indexed graph; an absent port is an empty graph, never "already held". */
+  graph: DiffDetectorGraphReader | undefined;
+}
 
 /**
  * Whether the diff BASE already held an edge from `pair.sourceComponent` into
- * `pair.targetComponent`. Only the base reader is asked — the files it reads
- * are the diff's changed sources, so `sourceFilesOf` names the source
- * component's files the reader can answer for; a file it answers `undefined`
- * for (base unknown) and an absent reader contribute nothing. A target that
- * maps to no component never matches.
+ * `pair.targetComponent`. The base reader is asked for the diff's changed
+ * sources (`sourceFilesOf`); a file it answers `undefined` for (base unknown)
+ * and an absent reader contribute nothing. The source component's UNCHANGED
+ * files (`unchanged`) are read from the indexed graph. A target that maps to
+ * no component never matches.
  */
 export function componentPairViolatedAtBase(
   pair: { sourceComponent: string; targetComponent: string },
   baseEdges: DiffDetectorBaseEdgeReader | undefined,
   componentOf: (relPath: string) => string | undefined,
   sourceFilesOf: (component: string) => readonly string[],
+  unchanged?: UnchangedSourceFiles,
 ): boolean {
-  if (baseEdges === undefined) return false;
-  return sourceFilesOf(pair.sourceComponent).some((sourceRelPath) => {
-    const targets = baseEdges.targetsAtBase(sourceRelPath);
-    if (targets === undefined) return false;
+  const leansOnTarget = (targets: Iterable<string>): boolean => {
     for (const target of targets) {
       if (componentOf(target) === pair.targetComponent) return true;
     }
     return false;
-  });
+  };
+  const heldByChangedSource =
+    baseEdges !== undefined &&
+    sourceFilesOf(pair.sourceComponent).some((relPath) => {
+      const targets = baseEdges.targetsAtBase(relPath);
+      return targets !== undefined && leansOnTarget(targets);
+    });
+  if (heldByChangedSource) return true;
+  if (unchanged?.graph === undefined) return false;
+  const { graph } = unchanged;
+  return unchanged
+    .filesOf(pair.sourceComponent)
+    .some((relPath) => leansOnTarget(graph.edgesFrom(relPath).map((edge) => edge.target)));
 }
 
 /**
