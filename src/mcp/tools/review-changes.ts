@@ -69,6 +69,12 @@ const REVIEW_CHANGES_DESCRIPTION =
   "a file on it, did not add it; on layeringBackEdge = another edge already carried the component pair; on hubLike = already a hub before (listed only with a remedy, else in change.persisting). scopeSkippedFiles rides section envelopes (incompleteChange, " +
   "cohesion) and architecture detector rows = files the 200-cap skipped while judged; present = verdict PARTIAL — " +
   "a zero findingCount over them is never a clean pass. " +
+  "norms: each file edge the change ADDS (absent at merge-base) judged by get_architecture_report's dependency-norm " +
+  "ledgers over the INDEXED graph (change's own edges never precedent): MISFIT = against role pair's established " +
+  "direction, expectedPath = that direction + support; CONFORMS; NEW_PATTERN = pair with no history; UNJUDGED + reason " +
+  "(notIndexed = new file, untypedRole, weakRole, crossLanguage). exclusionsUnchecked = report exclusion classes not " +
+  "evaluated (no call data on added edges). MISFIT first, cap 100 + truncated; verdictCounts pre-cap; " +
+  "removedEdgeCount count only; test/tooling edges = nonProductionEdgeCount. " +
   "Envelope: workTree, base, mergeBase, changedFiles, skipped+truncated, indexLag, notices (an empty diff names the " +
   "trees and bases it did not look at).";
 

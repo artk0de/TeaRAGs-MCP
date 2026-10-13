@@ -387,6 +387,27 @@ export async function readDiffBaseEdges(
   return { targetsAtBase: (relPath) => targetsBySource.get(relPath) };
 }
 
+/**
+ * The change's edges on both sides, read once per section run: the working
+ * tree's reads of every scope file (one shared extraction context; a file that
+ * cannot be read or resolved lands in the overlay's unsupported reads —
+ * notJudged, never edge-free) as the overlay, and the diff base's edges of the
+ * SAME files ({@link readDiffBaseEdges}, bd tea-rags-mcp-89k7k.1.16) — what
+ * "added by this change" is measured against, wherever the index sits.
+ */
+export async function readReviewChangeEdges(
+  scope: Pick<DiffScopeRead, "workTree" | "mergeBase" | "files">,
+  deps: ReviewEdgeExtractionDeps,
+): Promise<{ overlay: ReviewEdgeOverlay; baseEdges: DiffDetectorBaseEdgeReader | undefined }> {
+  const extractionContext = workingTreeExtractionContext(scope.workTree, deps.languageFactory);
+  const reads: ReviewFileEdgeRead[] = [];
+  for (const relPath of scope.files) {
+    reads.push(await readWorkingTreeFileEdges(deps, scope.workTree, relPath, extractionContext));
+  }
+  const baseEdges = await readDiffBaseEdges(scope, deps, extractionContext);
+  return { overlay: new ReviewEdgeOverlay(reads), baseEdges };
+}
+
 /** A co-change graph with no build — what an absent or unreadable snapshot judges as. */
 const EMPTY_COCHANGE: TemporalCochangeGraph = { meta: null, edges: [] };
 
@@ -532,22 +553,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       querySignificance,
     );
 
-    // The working-tree side: every scope file the extraction can walk, one
-    // shared run-level context; a file that cannot be read or resolved lands
-    // in the overlay's unsupported reads — notJudged, never edge-free.
-    const extractionContext = workingTreeExtractionContext(scope.workTree, reviewEdgeExtraction.languageFactory);
-    const reads: ReviewFileEdgeRead[] = [];
-    for (const relPath of scope.files) {
-      reads.push(await readWorkingTreeFileEdges(reviewEdgeExtraction, scope.workTree, relPath, extractionContext));
-    }
-
-    // The diff base's side (bd tea-rags-mcp-89k7k.1.16): what "added by
-    // this change" is measured against, read from the merge-base blobs of
-    // the SAME scope files — independent of where the index sits.
-    const baseEdges = await readDiffBaseEdges(scope, reviewEdgeExtraction, extractionContext);
-
-    // The overlay is the judgement's view over the reads.
-    const overlay = new ReviewEdgeOverlay(reads);
+    const { overlay, baseEdges } = await readReviewChangeEdges(scope, reviewEdgeExtraction);
     const run = new DiffDetectorRun({
       graph,
       ...(baseEdges !== undefined ? { baseEdges } : {}),

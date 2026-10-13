@@ -29,7 +29,7 @@ import type { WorkingTreeMarker } from "./working-tree.js";
  * from the live provider registry (`reviewSectionIds`) — so the two lists stay
  * in step by construction, not by hand.
  */
-export type ReviewSectionId = "naming" | "incompleteChange" | "cohesion" | "architecture";
+export type ReviewSectionId = "naming" | "incompleteChange" | "cohesion" | "architecture" | "norms";
 
 /** The change to review: the base to diff against, or an explicit list of files. */
 export interface ReviewChangesRequest extends CollectionRef {
@@ -256,12 +256,75 @@ export interface ArchitectureChangeBlock {
 
 export type ArchitectureSectionResult = ReviewSectionEnvelope & ArchitectureSectionPayload;
 
+/**
+ * An added edge's dependency-norm verdict (bd tea-rags-mcp-xb669.3): CONFORMS
+ * along a direction the indexed ledger holds, MISFIT against its role pair's
+ * established direction, NEW_PATTERN for a direction nobody wrote in a pair
+ * with no established one, UNJUDGED when no ledger can judge the edge.
+ */
+export type NormsAddedEdgeVerdictKind = "CONFORMS" | "MISFIT" | "NEW_PATTERN" | "UNJUDGED";
+
+/**
+ * The exclusion classes the whole-repo norms report applies before judging an
+ * edge. An added edge carries no call data, so a class the review could not
+ * evaluate is listed on the row as `exclusionsUnchecked`.
+ */
+export type NormsEdgeExclusionClass = "uncalled" | "frameworkRouted" | "constantReference" | "displacedRole";
+
+/**
+ * Why an added edge is UNJUDGED: an endpoint absent from the indexed
+ * production graph (a new file), an untyped or weak (suffix-only) role,
+ * endpoints in different language families, or an evaluated exclusion class.
+ */
+export type NormsUnjudgedReason = "notIndexed" | "untypedRole" | "weakRole" | "crossLanguage" | NormsEdgeExclusionClass;
+
+/** One added file edge and its verdict. */
+export interface NormsAddedEdgeVerdict {
+  source: string;
+  target: string;
+  verdict: NormsAddedEdgeVerdictKind;
+  roleSrc?: string;
+  roleDst?: string;
+  /** Indexed edges roleSrc → roleDst, localities pooled. */
+  pairSupport?: number;
+  /** The role pair's two-sided sign-test p. */
+  pValue?: number;
+  /** MISFIT only: the direction the project established for the pair, with its support. */
+  expectedPath?: { roleSrc: string; roleDst: string; support: number };
+  /** UNJUDGED only. */
+  reason?: NormsUnjudgedReason;
+  /** Judged rows only: exclusion classes not evaluated for this edge. */
+  exclusionsUnchecked?: readonly NormsEdgeExclusionClass[];
+}
+
+/**
+ * `norms` payload (bd tea-rags-mcp-xb669.3): every file edge the change ADDS
+ * (absent at the diff base, else in the index) judged against dependency-norm
+ * ledgers built over the INDEXED graph — the change's own edges are never
+ * their own precedent. Read-time only.
+ */
+export interface NormsSectionPayload {
+  /** MISFIT first, then NEW_PATTERN, CONFORMS, UNJUDGED; capped at 100. */
+  addedEdgeVerdicts: readonly NormsAddedEdgeVerdict[];
+  /** Every added edge's verdict, counted before the cap. */
+  verdictCounts: Record<NormsAddedEdgeVerdictKind, number>;
+  /** Edges the change removed — counted, never judged. */
+  removedEdgeCount: number;
+  /** Added edges touching a non-production file (tests, tooling) — not judged. */
+  nonProductionEdgeCount?: number;
+  /** Verdicts past the cap — counted, not listed. */
+  truncated?: number;
+}
+
+export type NormsSectionResult = ReviewSectionEnvelope & NormsSectionPayload;
+
 /** One section's answer: the envelope plus that section's own payload fields. */
 export type ReviewSectionResult =
   | NamingSectionResult
   | IncompleteChangeSectionResult
   | CohesionSectionResult
   | ArchitectureSectionResult
+  | NormsSectionResult
   | ReviewSectionEnvelope;
 
 /** What one read of the change says about itself, beside the sections' answers. */
