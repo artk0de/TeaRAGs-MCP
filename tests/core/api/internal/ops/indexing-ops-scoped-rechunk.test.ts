@@ -48,6 +48,7 @@ function makeDeps(overrides: Partial<IndexingOpsDeps> = {}, reindexResult: Chang
   return {
     qdrant: {
       collectionExists: vi.fn().mockResolvedValue(true),
+      countPoints: vi.fn().mockResolvedValue(1), // language presence guard: every language held
       aliases: { listAliases: vi.fn().mockResolvedValue([]) },
       getPoint: vi.fn().mockResolvedValue(null),
       getPointOrThrow: vi.fn().mockResolvedValue(null),

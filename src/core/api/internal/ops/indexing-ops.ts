@@ -44,7 +44,10 @@ import {
 import { resolvePhysicalCollection } from "../../../domains/ingest/operations/index.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
-import { CODE_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
+import {
+  CODE_LANGUAGES,
+  SELECTABLE_LANGUAGES,
+} from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import type { DeferredChunkRecoveryHandoff } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import {
@@ -71,6 +74,8 @@ import type {
 } from "../../../types.js";
 import { isEnrichmentRecompute, rechunkSelectorOf } from "../../public/dto/index.js";
 import type { PathCollectionResolver } from "../collection-resolver.js";
+import { assertRequestedLanguagesPresent } from "./language-presence-guard.js";
+import { bindLanguagePresencePorts } from "./language-presence-ports.js";
 import type { WorktreeSeedAttempt, WorktreeSeedOps, WorktreeSeedSourceRelease } from "./worktree-seed-ops.js";
 
 type ModelInfo = { model: string; contextLength: number; dimensions: number };
@@ -415,6 +420,7 @@ export class IndexingOps {
     // wiped their measurements.
     pipelineLog.resetProfiler();
     this.enrichment.setEnrichmentProgress(enrichmentProgress);
+    await this.assertSelectedLanguagesPresent(path, options);
     if (isEnrichmentRecompute(options)) {
       return this.recomputeEnrichments(path, options.forceEnrichments, options.languages, progressCallback);
     }
@@ -906,6 +912,35 @@ export class IndexingOps {
    * quietly turning into a first index restricted to the selection would build
    * exactly the partial collection this path exists to avoid.
    */
+  /**
+   * Refuse a `--languages` selection the run cannot reach (bd
+   * tea-rags-mcp-34v57). The recompute reads stored points only, so the index
+   * decides; a scoped force re-chunks from the tree, so a language the index
+   * lacks still passes when the tree holds files of it. No index yet: the
+   * downstream not-indexed error owns that case.
+   */
+  private async assertSelectedLanguagesPresent(path: string, options: IndexOptions | undefined): Promise<void> {
+    const languages = options?.languages;
+    if (!languages || languages.length === 0) return;
+    const recompute = isEnrichmentRecompute(options);
+    if (!recompute && !rechunkSelectorOf(options)) return;
+    const absolutePath = await validatePath(path);
+    const collectionName = await this.resolveCollectionForPath(absolutePath);
+    if (!(await this.qdrant.collectionExists(collectionName))) return;
+    await assertRequestedLanguagesPresent(
+      languages,
+      SELECTABLE_LANGUAGES,
+      bindLanguagePresencePorts({
+        countPoints: async (collection, filter) => this.qdrant.countPoints(collection, filter),
+        collectionName,
+        absolutePath,
+        ignorePatterns: this.config.ignorePatterns,
+        customIgnorePatterns: this.config.customIgnorePatterns,
+      }),
+      { scopeToTree: !recompute },
+    );
+  }
+
   private async scopedRechunk(
     path: string,
     rechunk: RechunkFileSelector,

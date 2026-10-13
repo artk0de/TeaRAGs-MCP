@@ -34,6 +34,7 @@ function makeDeps(overrides: Partial<IndexingOpsDeps> = {}): IndexingOpsDeps {
   return {
     qdrant: {
       collectionExists: vi.fn().mockResolvedValue(true),
+      countPoints: vi.fn().mockResolvedValue(1), // language presence guard: every language held
       aliases: { listAliases: vi.fn().mockResolvedValue([]) },
       // The marker read a recompute makes for a pending worktree seed: none here.
       getPoint: vi.fn().mockResolvedValue(null),
