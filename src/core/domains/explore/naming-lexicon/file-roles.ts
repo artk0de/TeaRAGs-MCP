@@ -180,25 +180,26 @@ function architecturalFamilyRoles(
   primaries: ReadonlyMap<RelPath, TypeNameRow>,
 ): (primary: TypeNameRow, inherited?: TypeRoleAssignment) => string | undefined {
   // Families key on the supertype AS WRITTEN: a bare last segment pools unrelated
-  // bases (`Seed::Base`, `Api::Contracts::Results::Base`) into one "family".
-  const supertypesOf = new Map<string, Set<string>>();
-  for (const row of rows) {
-    const name = typeNameLastSegment(row.shortName);
-    const set = supertypesOf.get(name) ?? new Set<string>();
-    for (const ancestor of row.ancestors) set.add(writtenSupertype(ancestor));
-    supertypesOf.set(name, set);
-  }
+  // bases (`Seed::Base`, `Api::Contracts::Results::Base`) into one "family". The
+  // HOP to the next supertype resolves the written name against its writer (bd
+  // tea-rags-mcp-9okcg) — by last segment, every `*::Base` inherited the
+  // superclass of the one `Base` that declared any.
+  const supertypes = supertypeResolver(rows);
   /** Every supertype `row` reaches, with its hop distance (1 = declared). */
   const reach = (row: TypeNameRow): Map<string, number> => {
     const depths = new Map<string, number>();
-    let frontier = [...new Set(row.ancestors.map(writtenSupertype))];
     const own = typeNameLastSegment(row.shortName);
+    const visited = new Set<string>([row.symbolId]);
+    let frontier = [...new Set(row.ancestors.map(writtenSupertype))].map((name) => ({ name, writer: row.symbolId }));
     for (let depth = 1; frontier.length > 0; depth++) {
-      const next: string[] = [];
-      for (const name of frontier) {
-        if (typeNameLastSegment(name) === own || depths.has(name)) continue;
-        depths.set(name, depth);
-        next.push(...(supertypesOf.get(typeNameLastSegment(name)) ?? []));
+      const next: typeof frontier = [];
+      for (const { name, writer } of frontier) {
+        if (typeNameLastSegment(name) === own) continue;
+        if (!depths.has(name)) depths.set(name, depth);
+        const resolved = supertypes.resolve(name, writer);
+        if (resolved === undefined || visited.has(resolved)) continue;
+        visited.add(resolved);
+        for (const supertype of supertypes.declaredBy(resolved)) next.push({ name: supertype, writer: resolved });
       }
       frontier = next;
     }
@@ -476,6 +477,41 @@ function applyRoleHomes(
 /** A supertype as written, namespace kept (`::Api::Results::Base<T>` → `Api::Results::Base`). */
 function writtenSupertype(typeName: string): string {
   return typeName.replace(/^::/, "").replace(/[<[].*$/, "");
+}
+
+/**
+ * The project type a WRITTEN supertype names, read the way the writer's
+ * language reads a constant (bd tea-rags-mcp-9okcg): `Handlers::Base` written
+ * inside `Billing::Handlers::AccessRestored` is the innermost declared
+ * `<enclosing namespace>::Handlers::Base`, tried from the writer's own
+ * namespace outward to the top level, skipping the writer itself
+ * (`class Risk::Model < Model` names the outer `Model`). No declared match = a type outside the
+ * project (`Dry::Struct`, `ActiveRecord::Base`): an external leaf with no
+ * further hop. Never a match by last segment — that pooled every `*::Base`.
+ * `declaredBy` is a resolved type's declared supertypes, as written.
+ */
+function supertypeResolver(rows: readonly TypeNameRow[]): {
+  resolve: (written: string, writerSymbolId: string) => string | undefined;
+  declaredBy: (symbolId: string) => ReadonlySet<string>;
+} {
+  const declared = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const supertypes = declared.get(row.symbolId) ?? new Set<string>();
+    for (const ancestor of row.ancestors) supertypes.add(writtenSupertype(ancestor));
+    declared.set(row.symbolId, supertypes);
+  }
+  return {
+    resolve: (written, writerSymbolId) => {
+      const scopes = writerSymbolId.split("::");
+      for (let depth = scopes.length - 1; depth >= 0; depth--) {
+        const candidate = [...scopes.slice(0, depth), written].join("::");
+        // A class statement's superclass is read before the class exists — never itself.
+        if (candidate !== writerSymbolId && declared.has(candidate)) return candidate;
+      }
+      return undefined;
+    },
+    declaredBy: (symbolId) => declared.get(symbolId) ?? new Set<string>(),
+  };
 }
 
 /** `relPath`'s directories, nearest first: `a/b/c.rb` → `a/b`, `a`. */
