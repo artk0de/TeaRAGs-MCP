@@ -187,7 +187,24 @@ export function distanceFromMainSequenceByComponent(
   components: ComponentGraph,
   files: readonly FileDependencyGraphFile[],
 ): ReadonlyMap<string, number> {
-  return new Map(detectMainSequenceDeviations(components, files).violations.map((v) => [v.component, v.distance]));
+  return measureMainSequenceDistances(components, files).distanceByComponent;
+}
+
+/**
+ * {@link distanceFromMainSequenceByComponent} plus the detector's own
+ * `summary.distanceThreshold` from the SAME call (bd
+ * tea-rags-mcp-89k7k.1.19.2) — what the diff run's mainSequence `preExisting`
+ * compares D before the diff against.
+ */
+export function measureMainSequenceDistances(
+  components: ComponentGraph,
+  files: readonly FileDependencyGraphFile[],
+): { distanceByComponent: ReadonlyMap<string, number>; distanceThreshold: number } {
+  const report = detectMainSequenceDeviations(components, files);
+  return {
+    distanceByComponent: new Map(report.violations.map((v) => [v.component, v.distance])),
+    distanceThreshold: report.summary.distanceThreshold,
+  };
 }
 
 /**

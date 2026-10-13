@@ -17,6 +17,7 @@ import {
   distanceFromMainSequenceByComponent,
   isMarkedlyLessStableBySdpBand,
   measureLayeringFoundationFiles,
+  measureMainSequenceDistances,
   readProductionArchitectureGraph,
 } from "../../../../../src/core/api/internal/ops/architecture-facts.js";
 import type {
@@ -25,7 +26,10 @@ import type {
   FileDependencyGraphFile,
   RelPath,
 } from "../../../../../src/core/contracts/types/codegraph.js";
-import { DEFAULT_SDP_TOLERANCE } from "../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
+import {
+  DEFAULT_SDP_TOLERANCE,
+  detectMainSequenceDeviations,
+} from "../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
 
 function file(relPath: RelPath, typeAbstractness?: { abstractTypeCount: number; concreteTypeCount: number }) {
   return { relPath, language: "typescript", symbolCount: 1, ...(typeAbstractness ? { typeAbstractness } : {}) };
@@ -200,6 +204,20 @@ describe("distanceFromMainSequenceByComponent", () => {
 
     expect(distances.get("rigid")).toBeCloseTo(1, 10);
     expect(distances.has("flex")).toBe(false);
+  });
+
+  // bd tea-rags-mcp-89k7k.1.19.2: the diff run's mainSequence `preExisting`
+  // compares D before the diff against the report's own threshold — served
+  // from the SAME detector call that produced the distances.
+  it("measureMainSequenceDistances serves the same distances plus the report's distance threshold", () => {
+    const graph = painFixture();
+    const facts = deriveArchitectureComponentFacts(graph);
+    const measured = measureMainSequenceDistances(facts.components, graph.files);
+
+    expect(measured.distanceByComponent).toEqual(distanceFromMainSequenceByComponent(facts.components, graph.files));
+    expect(measured.distanceThreshold).toBe(
+      detectMainSequenceDeviations(facts.components, graph.files).summary.distanceThreshold,
+    );
   });
 });
 

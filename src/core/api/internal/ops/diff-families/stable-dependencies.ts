@@ -1,5 +1,6 @@
 import type { DiffDetectorFinding } from "../../../../contracts/types/diff-detector-finding.js";
 import type { DiffFamilyDetector } from "./diff-family-detector.js";
+import { componentPairViolatedAtBase } from "./pre-existing.js";
 import { detectorStatus, format3, round3, withRenderedSubject } from "./shared.js";
 
 /**
@@ -9,16 +10,30 @@ import { detectorStatus, format3, round3, withRenderedSubject } from "./shared.j
  * indexed graph already holds is the diff NOT adding it. Both ends must map
  * to report components — the band predicate is the report's own, injected;
  * an end without component facts is a silent skip, not a clean verdict.
+ *
+ * `preExisting` (bd tea-rags-mcp-89k7k.1.19.2, spec D9): the diff BASE already
+ * held another edge of the same component pair — read from the base edges
+ * of the source component's changed files, the only files the base reader
+ * answers for.
  */
 export const stableDependenciesDetector: DiffFamilyDetector = {
   family: "stableDependencies",
-  judge: ({ addedEdges, catalog }) => {
+  judge: ({ scope, addedEdges, catalog, baseEdges }) => {
+    const componentNameOf = (relPath: string): string | undefined => catalog.componentOf(relPath)?.name;
+    const changedFilesOf = (component: string): readonly string[] =>
+      scope.changedFiles.filter((relPath) => componentNameOf(relPath) === component);
     const findings: DiffDetectorFinding[] = [];
     for (const edge of addedEdges) {
       const sourceComponent = catalog.componentOf(edge.source);
       const targetComponent = catalog.componentOf(edge.target);
       if (sourceComponent === undefined || targetComponent === undefined) continue;
       if (!catalog.isMarkedlyLessStable(targetComponent.instability, sourceComponent.instability)) continue;
+      const preExisting = componentPairViolatedAtBase(
+        { sourceComponent: sourceComponent.name, targetComponent: targetComponent.name },
+        baseEdges,
+        componentNameOf,
+        changedFilesOf,
+      );
       findings.push(
         withRenderedSubject({
           detector: "stableDependencies",
@@ -40,6 +55,7 @@ export const stableDependenciesDetector: DiffFamilyDetector = {
           // The root assembling unstable concretes is the root's job; the root
           // is the measured entry-facade component: annotated, still reported.
           ...(sourceComponent.entryFacade ? { compositionRoot: true as const } : {}),
+          ...(preExisting ? { preExisting: true as const } : {}),
         }),
       );
     }

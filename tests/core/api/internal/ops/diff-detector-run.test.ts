@@ -10,20 +10,22 @@ import { describe, expect, it } from "vitest";
 
 import {
   DiffDetectorRun,
-  type DiffDetectorBaseEdgeReader,
-  type DiffDetectorCatalog,
   type DiffDetectorContractReader,
   type DiffDetectorFindings,
-  type DiffDetectorGraphReader,
   type DiffDetectorSilentCouplingFacts,
   type DiffDetectorSplitMergeReader,
 } from "../../../../../src/core/api/internal/ops/diff-detector-run.js";
 import type { DiffDetectorFinding } from "../../../../../src/core/contracts/types/diff-detector-finding.js";
 import { ReviewEdgeOverlay } from "../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
 import type { SplitMergeVerdicts } from "../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
-
-/** A file edge as a fixture tuple. */
-type FixtureEdge = readonly [source: string, target: string];
+import {
+  baseEdgesOf,
+  catalogOf,
+  graphOf,
+  overlayOf,
+  runWith,
+  type ComponentFact,
+} from "./__helpers__/diff-run-fixtures.js";
 
 /**
  * A file edge plus the export names its statements recorded — the fixture
@@ -35,55 +37,6 @@ type FixtureNamedEdge = readonly [
   target: string,
   names: { imported?: readonly string[]; reexported?: readonly string[] },
 ];
-
-/** The report's markedly-less-stable band, stubbed at a 0.3 tolerance. */
-const MARKEDLY_LESS_STABLE_TOLERANCE = 0.3;
-
-/** Indexed-graph reader over plain edge tuples: forward and reverse indices. */
-function graphOf(edges: readonly FixtureEdge[]): DiffDetectorGraphReader {
-  const outgoing = new Map<string, { source: string; target: string }[]>();
-  const incoming = new Map<string, { source: string; target: string }[]>();
-  for (const [source, target] of edges) {
-    pushTo(outgoing, source, { source, target });
-    pushTo(incoming, target, { source, target });
-  }
-  return {
-    edgesFrom: (relPath) => outgoing.get(relPath) ?? [],
-    edgesTo: (relPath) => incoming.get(relPath) ?? [],
-  };
-}
-
-/** One component's facts as the catalog serves them — the port's own shape, so fixtures cannot drift from it. */
-type ComponentFact = NonNullable<ReturnType<DiffDetectorCatalog["componentOf"]>>;
-
-/**
- * The `connectionCount` a fixture carries when it states none — above the SDP
- * floor (`DEFAULT_SDP_MIN_CONNECTION_COUNT`), so an existing fixture's verdict
- * rests on its instability alone; the below-floor cases state their own.
- */
-const ABOVE_CONNECTION_FLOOR = 10;
-
-/** Report-derived component/facade facts keyed the way the catalog serves them. */
-function catalogOf(
-  components: ReadonlyMap<
-    string,
-    Omit<ComponentFact, "connectionCount"> & Partial<Pick<ComponentFact, "connectionCount">>
-  >,
-  facades: ReadonlyMap<string, string> = new Map(),
-  layeringFoundationFiles: ReadonlySet<string> = new Set(),
-): DiffDetectorCatalog {
-  return {
-    componentOf: (relPath) => {
-      const fact = components.get(relPath);
-      return fact === undefined
-        ? undefined
-        : { ...fact, connectionCount: fact.connectionCount ?? ABOVE_CONNECTION_FLOOR };
-    },
-    facadeOf: (componentName) => facades.get(componentName),
-    isMarkedlyLessStable: (leanOn, leanedOn) => leanOn - leanedOn >= MARKEDLY_LESS_STABLE_TOLERANCE,
-    isLayeringFoundation: (relPath) => layeringFoundationFiles.has(relPath),
-  };
-}
 
 /** The measured layering foundation the report would name for these fixtures' contracts file. */
 const CONTRACTS_FOUNDATION = new Set(["src/core/contracts/types/x.ts"]);
@@ -165,55 +118,6 @@ function splitMergeOf(
   };
 }
 
-/** The review's overlay: one read per changed file, its edges picked from the tuples. */
-function overlayOf(edges: readonly FixtureEdge[], changed: readonly string[]): ReviewEdgeOverlay {
-  return new ReviewEdgeOverlay(
-    changed.map((relPath) => ({
-      relPath,
-      edges: edges
-        .filter(([source]) => source === relPath)
-        .map(([sourceRelPath, targetRelPath]) => ({ sourceRelPath, targetRelPath })),
-    })),
-  );
-}
-
-function runWith(
-  deps: {
-    graph?: DiffDetectorGraphReader;
-    catalog?: DiffDetectorCatalog;
-    silentCouplingFacts?: DiffDetectorSilentCouplingFacts;
-    splitMerge?: DiffDetectorSplitMergeReader;
-    splitMergeAbsentReason?: string;
-    maxTraceHops?: number;
-    baseEdges?: DiffDetectorBaseEdgeReader;
-  },
-  changedFiles: readonly string[],
-  overlayEdges: readonly FixtureEdge[],
-): DiffDetectorFindings {
-  const run = new DiffDetectorRun({
-    graph: deps.graph ?? graphOf([]),
-    catalog: deps.catalog ?? catalogOf(new Map()),
-    ...(deps.silentCouplingFacts !== undefined ? { silentCouplingFacts: deps.silentCouplingFacts } : {}),
-    ...(deps.splitMerge !== undefined ? { splitMerge: deps.splitMerge } : {}),
-    ...(deps.splitMergeAbsentReason !== undefined ? { splitMergeAbsentReason: deps.splitMergeAbsentReason } : {}),
-    ...(deps.maxTraceHops !== undefined ? { maxTraceHops: deps.maxTraceHops } : {}),
-    ...(deps.baseEdges !== undefined ? { baseEdges: deps.baseEdges } : {}),
-  });
-  return run.run({ changedFiles }, overlayOf(overlayEdges, changedFiles));
-}
-
-/**
- * The diff base's edges per changed source, as the wiring reads them from the
- * merge-base blobs: a listed source maps to the targets it imported AT THE
- * BASE (empty = absent or import-free there); an unlisted source answers
- * undefined — base unknown, the index decides.
- */
-function baseEdgesOf(bySource: Readonly<Record<string, readonly string[]>>): DiffDetectorBaseEdgeReader {
-  return {
-    targetsAtBase: (relPath) => (relPath in bySource ? new Set(bySource[relPath]) : undefined),
-  };
-}
-
 /** Subjects of one detector's findings, in emission order. */
 function subjectsOf(result: DiffDetectorFindings, detector: DiffDetectorFinding["detector"]): string[] {
   return result.findings.filter((finding) => finding.detector === detector).map((finding) => finding.subject);
@@ -250,12 +154,6 @@ function runWithContract(
     ...(contract !== undefined ? { contract } : {}),
   });
   return run.run({ changedFiles }, namedOverlayOf(overlayEdges, changedFiles));
-}
-
-function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
-  const list = map.get(key);
-  if (list === undefined) map.set(key, [value]);
-  else list.push(value);
 }
 
 describe("stableDependencies", () => {

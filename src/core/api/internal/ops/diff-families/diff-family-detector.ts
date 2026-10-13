@@ -215,6 +215,12 @@ export interface DiffFamilyDetectorContext {
    */
   inChange: ReadonlySet<string>;
   graph: DiffDetectorGraphReader | undefined;
+  /**
+   * The diff base's edges of the changed sources — read directly only by the
+   * pair families' `preExisting` (bd tea-rags-mcp-89k7k.1.19.2); per-edge
+   * evidence goes through `heldBeforeChange`.
+   */
+  baseEdges: DiffDetectorBaseEdgeReader | undefined;
   catalog: DiffDetectorCatalog;
   /** Which evidence held the pair before the change; undefined = the diff adds it. */
   heldBeforeChange: (edge: OverlayEdge) => HeldBeforeChangeEvidence | undefined;
@@ -227,6 +233,12 @@ export interface DiffFamilyDetectorContext {
   maxTraceHops: number;
   /** Minimum component `connectionCount` the main-sequence family judges, defaulted by the run. */
   minConnectionCount: number;
+  /**
+   * The whole-repo report's main-sequence distance threshold
+   * (`summary.distanceThreshold`); undefined = not served, and no mainSequence
+   * finding is attributed `preExisting`.
+   */
+  mainSequenceDistanceThreshold: number | undefined;
 }
 
 /** One detector family: judges the shared context, answers its findings and its (unstamped) status row. */
