@@ -14,7 +14,7 @@ export {
   defaultChunkerPoolSize,
   defaultEnrichmentFilesPerThread,
   defaultEnrichmentWorkerMemoryLimitMb,
-} from "./infra/pool-defaults.js";
+} from "./infra/worker-dispatch/index.js";
 export { ChunkerPool } from "./chunker/infra/pool.js";
 export { detectLanguage } from "./chunker/language-config/index.js";
 export { WorkerPoolEnrichmentExecutor } from "./enrichment/executor/index.js";

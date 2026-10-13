@@ -58,7 +58,7 @@ const DEFAULT_STALL_DEADLINE_MS = 15 * 60 * 1000; // 15 minutes — in_progress 
  * `ENRICHMENT_STALL_DEADLINE_MS` env var (positive integer ms; invalid or
  * non-positive values fall back to the default), mirroring how
  * `CHUNKER_WORKER_TIMEOUT_MS` tunes the chunker pool in
- * `pipeline/infra/pool-defaults.ts`.
+ * `pipeline/infra/worker-dispatch/pool-defaults.ts`.
  */
 function stallDeadlineMs(): number {
   const raw = process.env.ENRICHMENT_STALL_DEADLINE_MS;

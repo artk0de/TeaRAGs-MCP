@@ -1,20 +1,24 @@
 /**
  * Public surface of the ingest pipeline's shared infra subdomain.
  *
- * Two distinct executors live here under deliberately distinct names:
+ * What lives here is the in-process batching side: the work-item vocabulary
+ * (`ChunkItem`, `Batch<T>`, …), `BatchAccumulator`, and `WorkerPool` — the
+ * in-process bounded-concurrency executor with retry/backoff for `Batch<T>`
+ * (consumed by the embedding pipeline).
  *
- *   - `WorkerPool` — in-process bounded-concurrency executor with retry/backoff
- *     for `Batch<T>` (consumed by the embedding pipeline).
- *   - `WorkerDispatchPool<Req, Res>` — generic transport-backed worker pool with
- *     round-robin + routingKey affinity (consumed by `ChunkerPool` and the
- *     enrichment executor). Consumers inject a `WorkerTransport` (thread or
- *     process) — the pool's distribution mechanics are transport-agnostic.
+ * Two sub-components carry their own facades and are NOT re-exported here
+ * beyond `pipelineLog`:
+ *
+ *   - `worker-dispatch/index.js` — the worker thread/process dispatch runtime
+ *     (`WorkerDispatchPool<Req, Res>`, the transports, the worker-side runtime,
+ *     pool sizing defaults), consumed by `ChunkerPool` and the enrichment
+ *     executor. Despite the similar name it shares nothing with `WorkerPool`.
+ *   - `debug-log/index.js` — the pipeline debug logger.
  *
  * Cross-subdomain consumers SHOULD import through this barrel (per
- * `.claude/rules/barrel-files.md`). Existing deep imports from `runtime.ts` /
- * `parallel.ts` are kept working — re-exported below — and the debug-log
- * cluster re-exports through its own `debug-log/index.js` facade, so the
- * barrel addition is non-breaking and incrementally adoptable.
+ * `.claude/rules/barrel-files.md`). Existing deep imports from `parallel.ts`
+ * are kept working — re-exported below — so the barrel addition is
+ * non-breaking and incrementally adoptable.
  */
 
 export { BatchAccumulator } from "./batch-accumulator.js";
@@ -36,7 +40,4 @@ export type {
 export { pipelineLog } from "./debug-log/index.js";
 export { parallelLimit } from "./parallel.js";
 export { isDebug, setDebug } from "../../../../primitives/diagnostics/index.js";
-export { WorkerDispatchPool } from "./worker-dispatch-pool.js";
 export { WorkerPool } from "./worker-pool.js";
-export { ThreadTransport } from "./thread-transport.js";
-export type { WorkerTransport, WorkerHandle } from "./worker-transport.js";

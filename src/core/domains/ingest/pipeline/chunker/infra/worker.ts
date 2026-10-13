@@ -45,8 +45,7 @@ import type {
   SymbolIdComposer,
 } from "../../../../../contracts/types/language.js";
 import type { ChunkerConfig } from "../../../../../types.js";
-import { applyWorkerDebug } from "../../infra/worker-debug.js";
-import { createWorkerRuntime } from "../../infra/worker-runtime.js";
+import { applyWorkerDebug, createWorkerRuntime } from "../../infra/worker-dispatch/index.js";
 import { TreeSitterChunker } from "../tree-sitter.js";
 import { extractFromChunkerParse, type ChunkerEngine } from "./cross-pass-extraction.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";

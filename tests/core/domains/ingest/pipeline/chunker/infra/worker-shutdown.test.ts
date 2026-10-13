@@ -23,7 +23,7 @@ vi.mock("node:worker_threads", () => ({
   workerData: undefined,
 }));
 
-vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-runtime.js", () => ({
+vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js", () => ({
   createWorkerRuntime: () => ({
     // Never resolves: the engine build is irrelevant to shutdown ownership.
     init: async () => new Promise(() => undefined),

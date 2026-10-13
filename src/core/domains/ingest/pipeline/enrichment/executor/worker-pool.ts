@@ -69,9 +69,9 @@ import {
   defaultExtractionFanoutShardSize,
   defaultExtractionFanoutWorkers,
   defaultLanguageAffinityEnabled,
-} from "../../infra/pool-defaults.js";
-import { ThreadTransport } from "../../infra/thread-transport.js";
-import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
+  ThreadTransport,
+  WorkerDispatchPool,
+} from "../../infra/worker-dispatch/index.js";
 import { ExtractionFanoutDispatcher } from "./extraction-fanout.js";
 import { InlineEnrichmentExecutor } from "./inline.js";
 import { LanguageAffinityDispatcher } from "./language-affinity-dispatch.js";

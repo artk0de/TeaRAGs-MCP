@@ -2,7 +2,7 @@
  * ChunkerPool - Worker thread pool for parallel AST parsing
  *
  * Thin wrapper around the generic `WorkerDispatchPool<Req, Res>` (sibling at
- * `pipeline/infra/worker-dispatch-pool.ts`). All distribution mechanics — worker
+ * `pipeline/infra/worker-dispatch/`). All distribution mechanics — worker
  * lifecycle, free-worker selection, round-robin, overflow queue, graceful
  * shutdown — live in `WorkerDispatchPool`. `ChunkerPool` only knows the chunker's
  * compiled worker path, its init shape (`ChunkerConfig` +
@@ -16,8 +16,7 @@ import { fileURLToPath } from "node:url";
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import { isDebug } from "../../../../../primitives/diagnostics/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../../types.js";
-import { ProcessTransport } from "../../infra/process-transport.js";
-import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
+import { ProcessTransport, WorkerDispatchPool } from "../../infra/worker-dispatch/index.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
 
 /**

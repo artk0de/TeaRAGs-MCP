@@ -2,7 +2,7 @@
  * Kill-surviving CPU profile of an enrichment worker thread
  * (bd tea-rags-mcp-6aytq).
  *
- * `ENRICHMENT_WORKER_CPU_PROFILE_DIR` (see `../../infra/pool-defaults.ts`)
+ * `ENRICHMENT_WORKER_CPU_PROFILE_DIR` (see `../../infra/worker-dispatch/pool-defaults.ts`)
  * passes `--cpu-prof` on the worker's `execArgv`, and V8 writes that
  * `.cpuprofile` only when the thread exits CLEANLY. A codegraph force-resolve
  * that is killed at a wall-clock budget — the exact run worth profiling —

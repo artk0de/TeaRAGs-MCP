@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { WorkerDispatchPool } from "../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch-pool.js";
+import { WorkerDispatchPool } from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-dispatch-pool.js";
 import { FakeWorkerTransport } from "./__helpers__/fake-worker-transport.js";
 
 interface Req {

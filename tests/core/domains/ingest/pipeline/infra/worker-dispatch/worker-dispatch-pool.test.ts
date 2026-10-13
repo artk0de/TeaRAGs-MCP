@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { WorkerTimeoutError } from "../../../../../../src/core/domains/ingest/errors/index.js";
-import { WorkerDispatchPool } from "../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch-pool.js";
+import { WorkerTimeoutError } from "../../../../../../../src/core/domains/ingest/errors/index.js";
+import { WorkerDispatchPool } from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-dispatch-pool.js";
 /**
  * Custom WorkerTransport that supports HANG (never replies) semantics needed by
  * the affinity-steal and queue-drain tests. FakeWorkerTransport always fires
@@ -10,7 +10,7 @@ import { WorkerDispatchPool } from "../../../../../../src/core/domains/ingest/pi
 import type {
   WorkerHandle,
   WorkerTransport,
-} from "../../../../../../src/core/domains/ingest/pipeline/infra/worker-transport.js";
+} from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-transport.js";
 import { FakeWorkerTransport } from "./__helpers__/fake-worker-transport.js";
 
 /**

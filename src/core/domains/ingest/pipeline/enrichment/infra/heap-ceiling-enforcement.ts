@@ -3,7 +3,7 @@
  * (bd tea-rags-mcp-6aytq)
  *
  * `ENRICHMENT_WORKER_MEMORY_LIMIT_MB` reaches a worker thread as
- * `resourceLimits.maxOldGenerationSizeMb` (`../../infra/thread-transport.ts`),
+ * `resourceLimits.maxOldGenerationSizeMb` (`../../infra/worker-dispatch/thread-transport.ts`),
  * and with the enrichment pool's liveness timeout disabled it is the ONLY bound
  * standing between a runaway provider and the machine's memory. That bound has a
  * silent failure mode: a process-wide `NODE_OPTIONS=--max_old_space_size=...`
