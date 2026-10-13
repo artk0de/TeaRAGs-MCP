@@ -6,6 +6,7 @@ import { validatePath, validatePathSync } from "../../../adapters/filesystem/pat
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
+import { PROJECT_NAME_RE } from "../../../contracts/types/registry.js";
 import { isCollectionBuildInFlight } from "../../../domains/ingest/infra/index.js";
 import {
   applyOperatorEnvPinEdit,
@@ -13,7 +14,6 @@ import {
   canonicalRegistryEnvKeys,
   isIndexRecordedEnvKey,
   parseRegistryEnvBoolean,
-  PROJECT_NAME_RE,
   REGISTRY_ENV_ALLOWLIST,
   registryQdrantBackendFields,
   type CollectionEntry,

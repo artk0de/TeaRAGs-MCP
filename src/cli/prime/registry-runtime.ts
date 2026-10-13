@@ -12,9 +12,6 @@
  * path→collection resolver already follows. Tests inject the same bundle.
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import {
   CollectionRegistry,
@@ -24,15 +21,11 @@ import {
   replayRegistryEnv,
   resolveRegistryQdrantBackend,
 } from "../../core/api/index.js";
-import type { PrimeRegistryRuntime } from "./run-prime.js";
-
-function defaultDataDir(): string {
-  return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
-}
+import { resolveDataDir, type PrimeRegistryRuntime } from "./run-prime.js";
 
 export function primeRegistryRuntime(): PrimeRegistryRuntime {
   return {
-    openRegistry: () => new CollectionRegistry(defaultDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults }),
+    openRegistry: () => new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults }),
     createFreshness: () => new IndexFreshnessCheck(),
     // The entry's backend is `resolveRegistryQdrantBackend`'s call, not a local
     // reading of `qdrantUrl` — see `run-prime.ts`'s lookup docs (bd

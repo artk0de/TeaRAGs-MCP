@@ -1,12 +1,14 @@
-import os from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
-import { defaultChunkerPoolSize, defaultEnrichmentFilesPerThread } from "../../core/api/entry-points/index.js";
+import {
+  defaultBlamePoolSize,
+  defaultChunkerPoolSize,
+  defaultEnrichmentFilesPerThread,
+} from "../../core/api/entry-points/index.js";
 import { DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS } from "../../core/contracts/constants.js";
-import { defaultIoBoundPoolSize } from "../../core/primitives/concurrency/index.js";
 import { DEFAULT_MINIFIED_LINE_LENGTH } from "../../core/primitives/paths/index.js";
 import {
   booleanFromEnv,
@@ -187,7 +189,7 @@ export const trajectoryGitSchema = z.object({
   // native `git blame` (async child process); N workers = N concurrent blames.
   // Default 10 (capped cpus-1); parallel git blame is not EDR-capped. The
   // chunk-walk pool is decoupled (capped at 4). Env: TRAJECTORY_GIT_BLAME_POOL_SIZE.
-  blamePoolSize: intWithDefault(defaultIoBoundPoolSize(os.cpus().length)),
+  blamePoolSize: intWithDefault(defaultBlamePoolSize()),
   chunkMaxAgeMonths: floatWithDefault(6),
   chunkTimeoutMs: intWithDefault(120000),
   // Files above it keep git.file.* but get git.chunk.skippedAs "oversized"

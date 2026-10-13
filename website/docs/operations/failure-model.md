@@ -14,12 +14,12 @@ Every runtime error is a concrete subclass of `TeaRagsError`. The MCP server nev
 ```
 TeaRagsError (abstract)                    src/core/primitives/errors/tea-rags-error.ts
   ├─ UnknownError                          src/core/primitives/errors/tea-rags-error.ts
-  ├─ InputValidationError (abstract)       src/core/api/errors.ts
+  ├─ InputValidationError (abstract)       src/core/api/public/errors.ts
   ├─ InfraError (abstract)                 src/core/adapters/errors.ts
-  ├─ IngestError (abstract)                src/core/domains/ingest/errors.ts
-  ├─ ExploreError (abstract)               src/core/domains/explore/errors.ts
+  ├─ IngestError (abstract)                src/core/domains/ingest/errors/ingest-errors.ts
+  ├─ ExploreError (abstract)               src/core/domains/explore/errors/explore-errors.ts
   ├─ TrajectoryError (abstract)            src/core/domains/trajectory/errors.ts
-  └─ ConfigError (abstract)                src/bootstrap/errors.ts
+  └─ ConfigError (abstract)                src/core/primitives/errors/tea-rags-error.ts
 ```
 
 Every response from a failing tool follows the same shape:
