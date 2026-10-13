@@ -181,8 +181,12 @@ export function isWalkedReviewFile(read: FileExtraction | ReviewFileEdgeRead): r
   return !("edges" in read);
 }
 
-/** One text walked, or why not. */
-function extractReviewFile(
+/**
+ * One text walked, or why not — walk only, nothing resolved, so the text may
+ * be a revision's blob named by any path (the diff base's second read hands a
+ * touched target's base blob under its tree path, bd tea-rags-mcp-slsia).
+ */
+export function extractReviewFile(
   deps: ReviewEdgeExtractionDeps,
   relPath: string,
   text: string,

@@ -35,6 +35,8 @@ import {
 import type {
   FileDependencyEdge,
   FileDependencyGraphFile,
+  FileExtraction,
+  GlobalSymbolTable,
   RelPath,
   TemporalCochangeGraph,
 } from "../../../../contracts/types/codegraph.js";
@@ -101,6 +103,7 @@ import {
 } from "../diff-detector-run.js";
 import type { DiffScopeRead, DiffTreeLag } from "../diff-scope-reader.js";
 import {
+  extractReviewFile,
   extractReviewFileEdges,
   extractWorkingTreeFile,
   isWalkedReviewFile,
@@ -110,7 +113,7 @@ import {
   type ReviewEdgeReadContext,
   type ReviewSymbolTableRead,
 } from "../review-edge-overlay.js";
-import { buildReviewSymbolTable, type IndexedSymbolRowsRead } from "../review-symbol-table.js";
+import { buildReviewSymbolTable, type IndexedSymbolRows, type IndexedSymbolRowsRead } from "../review-symbol-table.js";
 import {
   ArchitectureViolationTierLookup,
   composeReviewCochangeSignificance,
@@ -363,11 +366,17 @@ export function wireSplitMerge(
  * Undefined as a whole — the index decides everywhere — when the merge-base
  * is not a commit the tree's HEAD descends from (no repository, an unknown
  * sha): an unreadable base is never "nothing existed before".
+ *
+ * A file the change MOVED is read at the path the merge-base held it
+ * (`renamedFrom`, bd tea-rags-mcp-slsia) — the move's own references are not
+ * added by the move. With `rename`, a tree edge the base read lacks to a
+ * touched target gets a second read: see {@link holdRenamedTargets}.
  */
 export async function readDiffBaseEdges(
-  scope: Pick<DiffScopeRead, "workTree" | "mergeBase" | "files">,
+  scope: Pick<DiffScopeRead, "workTree" | "mergeBase" | "files" | "touchedFiles" | "renamedFrom">,
   extraction: ReviewEdgeExtractionDeps,
   context: ReviewEdgeReadContext,
+  rename?: DiffBaseRenameReading,
 ): Promise<DiffDetectorBaseEdgeReader | undefined> {
   const toplevel = findGitToplevel(scope.workTree);
   if (toplevel === undefined || scope.files.length === 0) return undefined;
@@ -376,19 +385,96 @@ export async function readDiffBaseEdges(
   const atHead = readEnclosingRepoGitState(toplevel)?.commit === scope.mergeBase;
   if (!atHead && !(await isAncestor(toplevel, scope.mergeBase, "HEAD"))) return undefined;
   const prefix = gitPathPrefix(toplevel, scope.workTree);
-  const targetsBySource = new Map<string, ReadonlySet<string>>();
+  const targetsBySource = new Map<string, Set<string>>();
+  const baseTexts = new Map<string, { basePath: string; text: string }>();
   const blobs = createCatFileBatch(toplevel);
+  const readBaseBlob = async (basePath: string): Promise<string> =>
+    blobs.read(scope.mergeBase, gitPathFromRoot(basePath, prefix));
   try {
     for (const relPath of scope.files) {
-      const text = await blobs.read(scope.mergeBase, gitPathFromRoot(relPath, prefix));
-      const read = extractReviewFileEdges(extraction, scope.workTree, relPath, text, context);
+      const basePath = scope.renamedFrom?.get(relPath) ?? relPath;
+      const text = await readBaseBlob(basePath);
+      const read = extractReviewFileEdges(extraction, scope.workTree, basePath, text, context);
       if (read.skip !== undefined) continue;
       targetsBySource.set(relPath, new Set(read.edges.map((edge) => edge.targetRelPath)));
+      baseTexts.set(relPath, { basePath, text });
+    }
+    if (rename !== undefined) {
+      await holdRenamedTargets({ scope, extraction, context, rename, targetsBySource, baseTexts, readBaseBlob });
     }
   } finally {
     await blobs.close();
   }
   return { targetsAtBase: (relPath) => targetsBySource.get(relPath) };
+}
+
+/**
+ * What the base read needs to see a rename's base side (bd tea-rags-mcp-slsia):
+ * the tree's targets of a scope file, and the review's table rebuilt with some
+ * touched files carrying their BASE definitions.
+ */
+export interface DiffBaseRenameReading {
+  /** The tree read's targets of one scope file; `undefined` = its read was skipped. */
+  treeTargetsOf: (relPath: string) => ReadonlySet<string> | undefined;
+  /** The review's table, these extractions' definitions replacing their files' tree definitions. */
+  tableWithBaseDefinitions: (baseExtractions: readonly FileExtraction[]) => GlobalSymbolTable;
+}
+
+/**
+ * The base side of a rename (bd tea-rags-mcp-slsia). Both sides resolve against
+ * the TREE's table, so a base text naming a constant the change renamed — taxdome
+ * `include Platform::Concerns::AuthMethods` → `include Platform::AuthMethods`,
+ * same file — resolves nowhere and the tree's edge to that file read as added.
+ * For every tree edge the first read lacks whose target the change touched,
+ * the target's BASE blob (at its pre-move path) is walked, and the source's base
+ * text is resolved again against the table with those base definitions: a
+ * target it now reaches is held before the change. A target the base text never
+ * named stays added — the second read only adds the base world's definitions of
+ * touched files, never a looser match. Untouched targets are skipped: their
+ * definitions are the same on both sides.
+ */
+async function holdRenamedTargets(baseRead: {
+  scope: Pick<DiffScopeRead, "workTree" | "touchedFiles" | "renamedFrom">;
+  extraction: ReviewEdgeExtractionDeps;
+  context: ReviewEdgeReadContext;
+  rename: DiffBaseRenameReading;
+  targetsBySource: Map<string, Set<string>>;
+  baseTexts: ReadonlyMap<string, { basePath: string; text: string }>;
+  readBaseBlob: (basePath: string) => Promise<string>;
+}): Promise<void> {
+  const { scope, extraction, context, rename, targetsBySource } = baseRead;
+  const unheldBySource = new Map<string, string[]>();
+  for (const [relPath, atBase] of targetsBySource) {
+    const unheld = [...(rename.treeTargetsOf(relPath) ?? [])].filter(
+      (target) => !atBase.has(target) && scope.touchedFiles.has(target),
+    );
+    if (unheld.length > 0) unheldBySource.set(relPath, unheld);
+  }
+  const baseExtractions: FileExtraction[] = [];
+  for (const target of new Set([...unheldBySource.values()].flat())) {
+    const text = await baseRead.readBaseBlob(scope.renamedFrom?.get(target) ?? target);
+    if (text === "") continue;
+    const walked = extractReviewFile(extraction, target, text, context);
+    if (isWalkedReviewFile(walked)) baseExtractions.push(walked);
+  }
+  if (baseExtractions.length === 0) return;
+  const baseWorld: ReviewEdgeReadContext = {
+    ...context,
+    symbolTable: { table: rename.tableWithBaseDefinitions(baseExtractions) },
+  };
+  for (const [relPath, unheld] of unheldBySource) {
+    const sourceAtBase = baseRead.baseTexts.get(relPath);
+    if (sourceAtBase === undefined) continue;
+    const reread = extractReviewFileEdges(
+      extraction,
+      scope.workTree,
+      sourceAtBase.basePath,
+      sourceAtBase.text,
+      baseWorld,
+    );
+    const reached = new Set(reread.edges.map((edge) => edge.targetRelPath));
+    for (const target of unheld) if (reached.has(target)) targetsBySource.get(relPath)?.add(target);
+  }
 }
 
 /**
@@ -402,31 +488,44 @@ export async function readDiffBaseEdges(
  * Both sides resolve against ONE symbol table (bd tea-rags-mcp-vdhjc): the
  * index's rows overlaid with the tree — every scope file is walked first so
  * its definitions replace the index's, then each is resolved. Unavailable rows
- * leave the table-reading languages skipped with the cause.
+ * leave the table-reading languages skipped with the cause. The base side's
+ * second read (bd tea-rags-mcp-slsia) rebuilds the same table with touched
+ * targets' BASE definitions — only when rows were read.
  */
 export async function readReviewChangeEdges(
-  scope: Pick<DiffScopeRead, "workTree" | "mergeBase" | "files" | "touchedFiles">,
+  scope: Pick<DiffScopeRead, "workTree" | "mergeBase" | "files" | "touchedFiles" | "renamedFrom">,
   deps: ReviewEdgeExtractionDeps,
   indexedSymbols: IndexedSymbolRowsRead = { unavailable: "no indexed symbol table was read for this review" },
 ): Promise<{ overlay: ReviewEdgeOverlay; baseEdges: DiffDetectorBaseEdgeReader | undefined }> {
   const extractionContext = workingTreeExtractionContext(scope.workTree, deps.languageFactory);
   const walked = scope.files.map((relPath) => extractWorkingTreeFile(deps, scope.workTree, relPath, extractionContext));
   const treeExtractions = walked.filter(isWalkedReviewFile);
+  const tableOver = (rows: IndexedSymbolRows, baseExtractions?: readonly FileExtraction[]): GlobalSymbolTable =>
+    buildReviewSymbolTable(rows, {
+      workTree: scope.workTree,
+      touchedFiles: scope.touchedFiles,
+      treeExtractions,
+      ...(baseExtractions !== undefined ? { baseExtractions } : {}),
+    });
   const symbolTable: ReviewSymbolTableRead =
-    "rows" in indexedSymbols
-      ? {
-          table: buildReviewSymbolTable(indexedSymbols.rows, {
-            workTree: scope.workTree,
-            touchedFiles: scope.touchedFiles,
-            treeExtractions,
-          }),
-        }
-      : { unavailable: indexedSymbols.unavailable };
+    "rows" in indexedSymbols ? { table: tableOver(indexedSymbols.rows) } : { unavailable: indexedSymbols.unavailable };
   const context: ReviewEdgeReadContext = { ...extractionContext, symbolTable };
   const reads: ReviewFileEdgeRead[] = walked.map((read) =>
     isWalkedReviewFile(read) ? resolveReviewFileEdges(deps, scope.workTree, read, context) : read,
   );
-  const baseEdges = await readDiffBaseEdges(scope, deps, context);
+  const treeTargets = new Map(
+    reads
+      .filter((read) => read.skip === undefined)
+      .map((read) => [read.relPath, new Set(read.edges.map((edge) => edge.targetRelPath))] as const),
+  );
+  const rename: DiffBaseRenameReading | undefined =
+    "rows" in indexedSymbols
+      ? {
+          treeTargetsOf: (relPath) => treeTargets.get(relPath),
+          tableWithBaseDefinitions: (baseExtractions) => tableOver(indexedSymbols.rows, baseExtractions),
+        }
+      : undefined;
+  const baseEdges = await readDiffBaseEdges(scope, deps, context, rename);
   return { overlay: new ReviewEdgeOverlay(reads), baseEdges };
 }
 
