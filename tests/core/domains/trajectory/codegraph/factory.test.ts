@@ -159,4 +159,18 @@ describe("createCodegraphEnrichmentProvider", () => {
       await provider.onRelease?.();
     });
   });
+
+  it("rejects a config with neither poolFactoryModulePath nor an injected buildPool", async () => {
+    // The pool builder is bootstrap-owned (S15 H-D2): a runtime that can reach
+    // neither the builder nor its module path is a construction bug, and the
+    // message names both ways to supply it.
+    const config: CodegraphWorkerConfig = {
+      languageModulePath: LANGUAGE_MODULE_PATH,
+      migrationsModulePath: MIGRATIONS_MODULE_PATH,
+      rootDir: "/tmp/tea-rags-test-root",
+    };
+    await expect(createCodegraphEnrichmentProvider(config)).rejects.toThrow(
+      /poolFactoryModulePath or runtimeDeps\.buildPool is required/,
+    );
+  });
 });
