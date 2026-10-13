@@ -414,7 +414,8 @@ repair file's procedure decides. A family with `built: false` or
   token → fix or ask.
 - **Flap** — metric crosses the tolerance by ≤ 0.02 → ordinary introduced
   finding: fix if cheap, else report metric before/after, threshold and the diff
-  edge that moved it; user decides.
+  edge that moved it; user decides. mainSequence detector drops |ΔD| ≤ 0.02
+  itself (`excludedFlapCount`).
 
 **Repair file:** per family with a must-fix or cheap finding, load exactly
 `../../repair/<family>.md` (incompleteChange → `silentCoupling.md`, cohesion →
