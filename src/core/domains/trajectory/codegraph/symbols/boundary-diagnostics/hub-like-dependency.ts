@@ -57,6 +57,7 @@ export const HUB_LIKE_DEPENDENCY_OTSU_MIN_POPULATION = MAIN_SEQUENCE_OTSU_MIN_PO
  * tea-rags-mcp-g77p3): an edge into the pure-types foundation is no efferent
  * coupling, and counting it made every busy contracts consumer read balanced.
  * Ca, the connection floor and the reported instability stay the component's.
+ * The efferent cut is drawn over the judged components with Ce > 0.
  *
  * `sourcePathPattern` only decides which judged components are reported; the
  * cuts are whole-graph. `fileVolatility` attaches churn to every hub and never
@@ -75,10 +76,12 @@ export function detectHubLikeDependencies(
   }
 
   // Ce reads past the foundation (bd tea-rags-mcp-g77p3); Ca and the
-  // connection floor stay the component's own.
+  // connection floor stay the component's own. The efferent cut is drawn over
+  // the non-leaf components only: a Ce 0 leaf is never a hub, and a mass of
+  // them would drag the median down to where every dependent clears it.
   const efferentCountOf = hubEfferentCounts(componentGraph, options.foundationComponents);
   const afferent = resolveAxisCut(judged.map((c) => c.afferentCount));
-  const efferent = resolveAxisCut(judged.map(efferentCountOf));
+  const efferent = resolveAxisCut(judged.map(efferentCountOf).filter((count) => count > 0));
 
   const pathsOf = componentPaths(componentGraph);
   const inScope = compilePathPatternMatcher(options.sourcePathPattern);

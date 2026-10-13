@@ -139,6 +139,37 @@ describe("detectHubLikeDependencies", () => {
     expect(hub).toMatchObject({ component: "hub", afferentCount: 40, efferentCount: 40 });
   });
 
+  // bd tea-rags-mcp-g77p3 (owner decision): the efferent cut is drawn over
+  // the components that depend on something — a Ce 0 leaf can never be a hub,
+  // and a mass of them must not drag the median down.
+  it("draws the efferent cut over non-leaf components only, so leaves never depress it", () => {
+    // z1..z4: leaves (Ce 0). a, b, c: 12 files each into a leaf (Ce 12, Ca 0).
+    // x: 9 files into z2 (Ce 9), imported by a1..a10 (Ca 10) — balanced, and
+    // above the median of all judged Ce (4.5) but not the non-leaf one (12).
+    const files = [...["z1", "z2", "z3", "z4"].map((z) => file(`${z}/z.ts`))];
+    const edges: FileDependencyEdge[] = [];
+    for (const [dir, leaf] of [
+      ["a", "z1"],
+      ["b", "z3"],
+      ["c", "z4"],
+    ]) {
+      for (let i = 1; i <= 12; i++) {
+        files.push(file(`${dir}/${dir}${i}.ts`));
+        edges.push(edge(`${dir}/${dir}${i}.ts`, `${leaf}/z.ts`));
+      }
+    }
+    for (let i = 1; i <= 9; i++) {
+      files.push(file(`x/x${i}.ts`));
+      edges.push(edge(`x/x${i}.ts`, "z2/z.ts"));
+    }
+    for (let i = 1; i <= 10; i++) edges.push(edge(`a/a${i}.ts`, `x/x${((i - 1) % 9) + 1}.ts`));
+
+    const report = judge({ files, edges });
+    expect(report.summary.judgedComponentCount).toBe(8);
+    expect(report.summary.efferent).toMatchObject({ median: 12, threshold: 12 });
+    expect(report.violations).toEqual([]);
+  });
+
   it("does not flag a balanced component (I near 0.5) that is no busier than the typical component", () => {
     const report = judge(graph());
     expect(report.violations.some((v) => v.component === "mid")).toBe(false);
@@ -184,8 +215,11 @@ describe("detectHubLikeDependencies", () => {
     expect(report.summary.judgedComponentCount).toBe(4);
     expect(report.summary.afferent.thresholdMethod).toBe("median");
     expect(report.summary.afferent.separability).toBeUndefined();
-    // h: Ca 6 Ce 6; s: Ca 6 Ce 5 — both above the medians (Ca 5.5, Ce 5.5) only for h.
-    expect(report.violations.map((v) => v.component)).toEqual(["h"]);
+    // INVARIANT CHANGED (bd tea-rags-mcp-g77p3): the Ce median is drawn over
+    // the non-leaf a, h, s (6, 6, 5 → 6), not with leaf z (→ 5.5) — h's Ce 6
+    // no longer clears it.
+    expect(report.summary.efferent).toMatchObject({ thresholdMethod: "median", median: 6 });
+    expect(report.violations).toEqual([]);
   });
 
   it("judges nothing and reports nothing when every component is below the floor", () => {

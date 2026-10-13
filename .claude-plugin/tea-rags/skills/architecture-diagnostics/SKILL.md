@@ -424,8 +424,9 @@ with no `volatility` = no git reading for its files, hedge.
 past adaptive cut AND balanced (|Ca − Ce| / (Ca + Ce) < 1/4, Arcan) — many
 depend on it, it depends on many. I near 0.5 → SDP silent, main sequence may
 read healthy. Ce counts edges to non-foundation components; edges into contracts
-are not efferent coupling. Fix direction: split by dependent cluster
-(`topDependents`) or by dependency cluster (`topDependencies`).
+are not efferent coupling. Ce cut drawn over Ce > 0 components only (leaves
+never depress it). Fix direction: split by dependent cluster (`topDependents`)
+or by dependency cluster (`topDependencies`).
 
 | Summary field (`summary.hubLikeDependency`) | Read as                                                                                                                                                        |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
