@@ -36,6 +36,8 @@ function makeDeps(overrides: Partial<IndexingOpsDeps> = {}): IndexingOpsDeps {
       // The marker read a recompute makes for a pending worktree seed: none here.
       getPoint: vi.fn().mockResolvedValue(null),
       getPointOrThrow: vi.fn().mockResolvedValue(null),
+      // Language presence guard (bd tea-rags-mcp-34v57): every language is held.
+      countPoints: vi.fn().mockResolvedValue(1),
     } as never,
     embeddings: {
       embed: vi.fn().mockResolvedValue([0]),
@@ -124,6 +126,27 @@ describe("IndexingOps — forceEnrichments", () => {
       modelInfo: undefined,
       recomputeDeferral: { selectors: ["codegraph"], languages: [], handedOverRelPaths: new Set() },
     });
+  });
+
+  it("refuses --languages naming a language the index lacks, before any sync or recompute (bd tea-rags-mcp-34v57)", async () => {
+    const countPoints = vi.fn(async (_collection: string, filter?: Record<string, unknown>) => {
+      const language = JSON.stringify(filter).match(/"value":"(\w+)"/)?.[1];
+      return language === "typescript" ? 7 : 0;
+    });
+    const deps = makeDeps({
+      qdrant: {
+        collectionExists: vi.fn().mockResolvedValue(true),
+        aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+        countPoints,
+      } as never,
+    });
+    const ops = new IndexingOps(deps);
+
+    await expect(ops.run("/repo", { forceEnrichments: ["codegraph"], languages: ["ruby"] })).rejects.toThrow(
+      /no files of ruby in the index.*holds: typescript/,
+    );
+    expect(deps.reindex.reindexChanges).not.toHaveBeenCalled();
+    expect(deps.enrichment.recomputeEnrichments).not.toHaveBeenCalled();
   });
 
   it("hands --languages to the recompute, which owns the scoping (bd tea-rags-mcp-df1rn)", async () => {

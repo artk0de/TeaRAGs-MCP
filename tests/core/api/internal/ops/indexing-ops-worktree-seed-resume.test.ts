@@ -86,6 +86,7 @@ function sharedStores() {
     isEmbedded: true,
     url: "http://127.0.0.1:6333",
     collectionExists: vi.fn(async (name: string) => collections.has(name)),
+    countPoints: vi.fn().mockResolvedValue(1), // language presence guard: every language held
     aliases: {
       listAliases: vi.fn(async () => [...collections].map((a) => ({ aliasName: a, collectionName: `${a}_v1` }))),
     },
