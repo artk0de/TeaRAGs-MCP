@@ -104,3 +104,20 @@ export class LlamaServerContextOverflowError extends LlamaServerResponseError {
     });
   }
 }
+
+/**
+ * A health probe could not call the endpoint a healthy llama-server. The
+ * message is the operator-facing reason (it reaches `get_index_status` and
+ * prime); the raw network or HTTP detail rides in `cause`.
+ */
+export class LlamaServerProbeError extends EmbeddingError {
+  constructor(url: string, reason: string, cause?: unknown) {
+    super({
+      code: "INFRA_LLAMA_SERVER_PROBE_FAILED",
+      message: reason,
+      hint: `Check what listens at ${url} (lsof -nP -iTCP:<port> -sTCP:LISTEN) and start llama-server there: tea-rags llama-server command`,
+      httpStatus: 503,
+      cause: cause instanceof Error ? cause : undefined,
+    });
+  }
+}

@@ -332,6 +332,41 @@ describe("IngestFacade", () => {
     });
   });
 
+  it("carries the provider's per-endpoint unavailable reasons into infraHealth.embedding (bd fembu)", async () => {
+    const qdrant = {
+      collectionExists: vi.fn().mockResolvedValue(false),
+      checkHealth: vi.fn().mockResolvedValue(true),
+      getCollectionInfo: vi.fn(),
+      aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+      url: "http://localhost:6333",
+      getServerVersion: vi.fn().mockResolvedValue(undefined),
+      getCollectionDiskBytes: vi.fn().mockResolvedValue(undefined),
+    };
+    const facade = new IngestFacade({
+      qdrant: qdrant as any,
+      embeddings: {
+        embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+        checkHealth: vi.fn().mockResolvedValue(false),
+        checkPrimaryHealth: vi.fn().mockResolvedValue(false),
+        checkFallbackHealth: vi.fn().mockResolvedValue(false),
+        getPrimaryUnavailableReason: vi.fn().mockReturnValue("EHOSTUNREACH: host unreachable"),
+        getFallbackUnavailableReason: vi.fn().mockReturnValue("port 8080 is held by a non-llama-server process"),
+        getProviderName: vi.fn().mockReturnValue("llama-server"),
+        getBaseUrl: vi.fn().mockReturnValue("http://192.168.1.71:8081"),
+        getFallbackBaseUrl: vi.fn().mockReturnValue("http://127.0.0.1:8080"),
+      } as any,
+      config: {} as any,
+      trajectoryConfig: { enableGitMetadata: false },
+    });
+
+    const status = await facade.getIndexStatus("/tmp/test-project");
+
+    expect(status.infraHealth?.embedding.primaryUnavailableReason).toBe("EHOSTUNREACH: host unreachable");
+    expect(status.infraHealth?.embedding.fallbackUnavailableReason).toBe(
+      "port 8080 is held by a non-llama-server process",
+    );
+  });
+
   it("omits embedding.fallbackUrl when getFallbackBaseUrl returns undefined", async () => {
     // Backward compatibility: providers that don't expose a fallback (ONNX,
     // Voyage, Ollama without EMBEDDING_FALLBACK_URL) must not emit the field

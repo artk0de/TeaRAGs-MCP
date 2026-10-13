@@ -188,11 +188,17 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
         ...(status.infraHealth.embedding.primaryAvailable !== undefined
           ? { primaryAvailable: status.infraHealth.embedding.primaryAvailable }
           : {}),
+        ...(status.infraHealth.embedding.primaryUnavailableReason !== undefined
+          ? { primaryUnavailableReason: status.infraHealth.embedding.primaryUnavailableReason }
+          : {}),
         ...(status.infraHealth.embedding.fallbackUrl !== undefined
           ? { fallbackUrl: status.infraHealth.embedding.fallbackUrl }
           : {}),
         ...(status.infraHealth.embedding.fallbackAvailable !== undefined
           ? { fallbackAvailable: status.infraHealth.embedding.fallbackAvailable }
+          : {}),
+        ...(status.infraHealth.embedding.fallbackUnavailableReason !== undefined
+          ? { fallbackUnavailableReason: status.infraHealth.embedding.fallbackUnavailableReason }
           : {}),
         // The batch size and concurrency the throughput tuner settled on for
         // the active endpoint (bd tea-rags-mcp-7ju66) — the other half of

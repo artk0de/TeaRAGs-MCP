@@ -26,6 +26,10 @@ type EmbedOutcome = "refused" | "reset" | Response;
 /** One fake llama-server. Every field is mutable so a test can flip it mid-run. */
 interface FakeLlamaServer {
   health: boolean;
+  /** Override the `/health` answer (a foreign process on the port); undefined → llama-server's `{status:"ok"}`. */
+  healthResponse?: () => Response;
+  /** Fail the connection itself with this errno code (EHOSTUNREACH, ETIMEDOUT, ...). */
+  connectError?: string;
   /** `/props` body, or 404 when undefined. */
   props?: Record<string, unknown>;
   /** Override the `/v1/embeddings` answer; undefined → embed every text. */
@@ -73,8 +77,14 @@ function fakeCluster(servers: Record<string, FakeLlamaServer>) {
     const body = typeof init?.body === "string" ? (JSON.parse(init.body) as { input?: string[]; model?: string }) : {};
     requests.push({ url: base, path: target.pathname, method, headers, input: body.input, model: body.model });
     if (!server) throw refused();
+    if (server.connectError) {
+      throw Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(new Error(`connect ${server.connectError}`), { code: server.connectError }),
+      });
+    }
     if (target.pathname === "/health") {
       if (!server.health) throw refused();
+      if (server.healthResponse) return server.healthResponse();
       return Response.json({ status: "ok" });
     }
     if (!server.health) throw refused();
@@ -821,6 +831,100 @@ describe("LlamaServerEmbeddings", () => {
       const provider = makeProvider(fakeCluster({}), { fallbacks: FALLBACK });
 
       expect(await provider.checkHealth()).toBe(false);
+    });
+    describe("foreign process on the port (bd 1xnmd)", () => {
+      const anycable = (): FakeLlamaServer => ({
+        health: true,
+        healthResponse: () => new Response("OK", { status: 200, headers: { "content-type": "text/plain" } }),
+      });
+
+      it("never counts a /health 200 that is not llama-server-shaped as healthy", async () => {
+        const provider = makeProvider(fakeCluster({ [FALLBACK]: anycable() }), { peers: PEER_A, fallbacks: FALLBACK });
+
+        expect(await provider.checkFallbackHealth()).toBe(false);
+      });
+
+      it("names the foreign holder, the port and what it answered - not a llama 404", async () => {
+        const provider = makeProvider(fakeCluster({ [FALLBACK]: anycable() }), { peers: PEER_A, fallbacks: FALLBACK });
+
+        await provider.checkFallbackHealth();
+        const reason = provider.getFallbackUnavailableReason();
+
+        expect(reason).toContain("port 8080 is held by a non-llama-server process");
+        expect(reason).toContain("200");
+        expect(reason).toContain("OK");
+        expect(reason).not.toContain("404");
+      });
+
+      it("treats a /health 404 as a foreign server too", async () => {
+        const server: FakeLlamaServer = { health: true, healthResponse: () => new Response("nope", { status: 404 }) };
+        const provider = makeProvider(fakeCluster({ [FALLBACK]: server }), { peers: PEER_A, fallbacks: FALLBACK });
+
+        await provider.checkFallbackHealth();
+
+        expect(provider.getFallbackUnavailableReason()).toContain("non-llama-server process");
+      });
+
+      it("leaves a healthy llama-server without a reason", async () => {
+        const provider = makeProvider(fakeCluster({ [FALLBACK]: healthy() }), { peers: PEER_A, fallbacks: FALLBACK });
+
+        expect(await provider.checkFallbackHealth()).toBe(true);
+        expect(provider.getFallbackUnavailableReason()).toBeUndefined();
+      });
+    });
+    describe("why an unreachable endpoint is unavailable (bd fembu)", () => {
+      const reasonFor = async (connectError: string) => {
+        const server: FakeLlamaServer = { health: true, connectError };
+        const provider = makeProvider(fakeCluster({ [FALLBACK]: server }), { peers: PEER_A, fallbacks: FALLBACK });
+        await provider.checkFallbackHealth();
+        return provider.getFallbackUnavailableReason();
+      };
+
+      it("EHOSTUNREACH names the macOS Local Network permission", async () => {
+        const reason = await reasonFor("EHOSTUNREACH");
+
+        expect(reason).toContain("EHOSTUNREACH");
+        expect(reason).toContain("host unreachable");
+        expect(reason).toContain("Local Network permission");
+      });
+
+      it("ECONNREFUSED says nothing is listening", async () => {
+        expect(await reasonFor("ECONNREFUSED")).toMatch(/ECONNREFUSED.*nothing listening/);
+      });
+
+      it("ETIMEDOUT says the connection timed out", async () => {
+        expect(await reasonFor("ETIMEDOUT")).toMatch(/ETIMEDOUT.*timed out/);
+      });
+
+      it("ENOTFOUND says the host name does not resolve", async () => {
+        expect(await reasonFor("ENOTFOUND")).toMatch(/ENOTFOUND.*not resolve/);
+      });
+
+      it("keeps an unmapped errno code visible", async () => {
+        expect(await reasonFor("EPIPE")).toContain("EPIPE");
+      });
+
+      it("reports an aborted probe (AbortSignal.timeout) as a timeout", async () => {
+        const fetch = async () => {
+          throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+        };
+        const provider = new LlamaServerEmbeddings(
+          MODEL,
+          undefined,
+          { failoverConsecutiveFailures: 3 },
+          PEER_A,
+          FALLBACK,
+          undefined,
+          {
+            fetch: fetch as unknown as typeof globalThis.fetch,
+            ...fakeTime().deps,
+          },
+        );
+
+        await provider.checkFallbackHealth();
+
+        expect(provider.getFallbackUnavailableReason()).toContain("timed out");
+      });
     });
   });
 });

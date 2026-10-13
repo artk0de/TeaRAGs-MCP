@@ -725,6 +725,11 @@ export class IndexingOps {
     // would otherwise lose the primary's true status under failover. Only when
     // a primary url is known and the provider exposes the probe.
     const primaryAvailable = primaryUrl !== undefined ? await this.embeddings.checkPrimaryHealth?.() : undefined;
+    // The reason is read AFTER the probes above - it is what they just recorded.
+    const primaryUnavailableReason =
+      primaryAvailable === false ? this.embeddings.getPrimaryUnavailableReason?.() : undefined;
+    const fallbackUnavailableReason =
+      fallbackAvailable === false ? this.embeddings.getFallbackUnavailableReason?.() : undefined;
     // Best-effort probe of the RUNNING daemon's reported version. getServerVersion
     // swallows all errors → undefined, so this never blocks or fails get_index_status.
     const qdrantVersion = await this.qdrant.getServerVersion();
@@ -755,8 +760,10 @@ export class IndexingOps {
         ...(primaryUrl !== undefined ? { url: primaryUrl } : {}),
         ...(activeUrl !== undefined ? { activeUrl } : {}),
         ...(primaryAvailable !== undefined ? { primaryAvailable } : {}),
+        ...(primaryUnavailableReason !== undefined ? { primaryUnavailableReason } : {}),
         ...(fallbackUrl !== undefined ? { fallbackUrl } : {}),
         ...(fallbackAvailable !== undefined ? { fallbackAvailable } : {}),
+        ...(fallbackUnavailableReason !== undefined ? { fallbackUnavailableReason } : {}),
         ...(throughputTune !== undefined ? { throughputTune } : {}),
         ...(producerStarvation !== undefined ? { producerStarvation } : {}),
       },

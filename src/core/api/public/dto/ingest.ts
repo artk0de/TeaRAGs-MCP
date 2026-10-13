@@ -328,9 +328,13 @@ export interface IndexStatus {
       activeUrl?: string;
       /** Live reachability of the CONFIGURED primary endpoint, independent of failover. */
       primaryAvailable?: boolean;
+      /** Why the primary read unavailable (errno cause / foreign process); only when it did. */
+      primaryUnavailableReason?: string;
       fallbackUrl?: string;
       /** Live reachability of the fallback endpoint. Omitted when no fallback configured. */
       fallbackAvailable?: boolean;
+      /** Why the fallback read unavailable; only when it did. */
+      fallbackUnavailableReason?: string;
       /**
        * Embed batch size and concurrency the throughput tuner last settled on
        * for the ACTIVE endpoint + model (bd tea-rags-mcp-7ju66), read from the

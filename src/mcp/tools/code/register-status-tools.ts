@@ -198,10 +198,12 @@ export function formatInfraHealth(
  * back to the bare overall availability for providers without a url (onnx).
  */
 function formatEmbeddingEndpoints(e: NonNullable<IndexStatus["infraHealth"]>["embedding"]): string {
-  const badge = (ok: boolean) => (ok ? "available" : "unavailable");
+  const badge = (ok: boolean, reason?: string) =>
+    ok ? "available" : reason ? `unavailable: ${reason}` : "unavailable";
   if (!e.url) return badge(e.available);
-  const primary = `primary ${e.url} (${badge(e.primaryAvailable ?? e.available)})`;
+  const primary = `primary ${e.url} (${badge(e.primaryAvailable ?? e.available, e.primaryUnavailableReason)})`;
   if (!e.fallbackUrl) return primary;
-  const fallbackBadge = e.fallbackAvailable === undefined ? "unknown" : badge(e.fallbackAvailable);
+  const fallbackBadge =
+    e.fallbackAvailable === undefined ? "unknown" : badge(e.fallbackAvailable, e.fallbackUnavailableReason);
   return `${primary}, fallback ${e.fallbackUrl} (${fallbackBadge})`;
 }

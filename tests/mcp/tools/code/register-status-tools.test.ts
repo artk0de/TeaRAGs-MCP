@@ -30,6 +30,23 @@ describe("formatInfraHealth — embedding endpoints", () => {
     );
   });
 
+  it("states why an endpoint is unavailable next to its badge (bd fembu)", () => {
+    const out = formatInfraHealth({
+      qdrant,
+      embedding: {
+        available: true,
+        provider: "llama-server",
+        url: "http://192.168.1.71:8081",
+        primaryAvailable: false,
+        primaryUnavailableReason: "EHOSTUNREACH: host unreachable",
+        fallbackUrl: "http://127.0.0.1:8080",
+        fallbackAvailable: true,
+      },
+    });
+    expect(out).toContain("primary http://192.168.1.71:8081 (unavailable: EHOSTUNREACH: host unreachable)");
+    expect(out).toContain("fallback http://127.0.0.1:8080 (available)");
+  });
+
   it("shows primary (unavailable) and fallback (available) under failover", () => {
     const out = formatInfraHealth({
       qdrant,
