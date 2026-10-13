@@ -40,7 +40,11 @@ import type {
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
 import { extractFileInMemory, type InMemoryExtractionContext } from "../../../domains/trajectory/codegraph/index.js";
-import type { ReviewFileEdgeRead } from "../../../domains/trajectory/codegraph/symbols/index.js";
+import {
+  runtimeImportExtraction,
+  typeOnlyImportExtraction,
+  type ReviewFileEdgeRead,
+} from "../../../domains/trajectory/codegraph/symbols/index.js";
 
 /**
  * One working-tree file edge: the changed file imports/knows the target file.
@@ -164,15 +168,28 @@ export function extractReviewFileEdges(
       },
     };
   }
-  const ctx: CallContext = {
-    callerFile: relPath,
+  const resolveFileEdges = resolver.resolveFileEdges.bind(resolver);
+  // Runtime channel first, type-only second — the order the index merges them
+  // in (`CallEdgeResolutionRunner#resolve`), so a target both reach keeps the
+  // runtime statement's names first once `reviewEdgesOfFile` collapses it.
+  const fileEdges = [runtimeImportExtraction(extraction), typeOnlyImportExtraction(extraction)].flatMap(
+    (channelExtraction) =>
+      channelExtraction === undefined
+        ? []
+        : resolveFileEdges(channelExtraction, reviewFileEdgeContext(channelExtraction, workTree), []),
+  );
+  return { relPath, language: extraction.language, edges: reviewEdgesOfFile(relPath, fileEdges, workTree) };
+}
+
+/** The `CallContext` one import channel of a review file resolves under: its own imports, the working tree's root. */
+function reviewFileEdgeContext(extraction: FileExtraction, workTree: string): CallContext {
+  return {
+    callerFile: extraction.relPath,
     callerScope: [],
     imports: extraction.imports,
     symbolTable: EMPTY_REVIEW_SYMBOL_TABLE,
     projectRoot: workTree,
   };
-  const fileEdges = resolver.resolveFileEdges(extraction, ctx, []);
-  return { relPath, language: extraction.language, edges: reviewEdgesOfFile(relPath, fileEdges, workTree) };
 }
 
 /**
@@ -205,9 +222,11 @@ export function workingTreeExtractionContext(
  * statements' names in first-seen order, each list absent when no statement
  * recorded one — the facade-contract detector judges the tree's re-export
  * surface against the indexed demand, and "not recorded" must never reach it
- * as "names nothing". Only the RUNTIME `fileEdges` channel is read: F2's
- * detectors judge the same table `cg_symbols_edges_file` persists, so
- * type-only imports stay out.
+ * as "names nothing". `fileEdges` holds BOTH import channels — runtime, then
+ * type-only: F2's detectors judge the same graph `cg_symbols_edges_file`
+ * persists, and since bd tea-rags-mcp-89k7k.31 a type-only import's resolved
+ * edge joins that table (bd tea-rags-mcp-c9a40). A target both channels reach
+ * is one edge carrying both statements' names.
  */
 function reviewEdgesOfFile(
   relPath: string,

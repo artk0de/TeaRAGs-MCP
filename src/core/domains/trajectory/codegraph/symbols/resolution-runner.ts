@@ -31,6 +31,7 @@ import type {
 } from "../../../../contracts/types/language.js";
 import { mergeDerivedClassFieldTypes, paramTypesOfChunk, seedParamLocalBindings } from "./call-arg-param-types.js";
 import { descendantNamesOf, HierarchyDependencyRecorder } from "./hierarchy-dependencies.js";
+import { runtimeImportExtraction, typeOnlyImportExtraction } from "./import-channels.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { buildPass1Aggregates } from "./pass1-aggregates.js";
 import { classifyReceiverKind, type ReceiverKind } from "./receiver-kind.js";
@@ -645,12 +646,8 @@ export class CallEdgeResolutionRunner {
     resolvedMethodEdges: MethodEdges,
   ): GraphEdges["fileEdges"] {
     // An import flagged `typeOnly` (Python `if TYPE_CHECKING:`) loads nothing at
-    // runtime, so the runtime file graph is built without it. The same object
-    // is handed on when nothing is flagged — the common case, and the only one
-    // for a language that derives file edges from more than its imports.
-    const runtime = extraction.imports.some((imp) => imp.typeOnly)
-      ? { ...extraction, imports: extraction.imports.filter((imp) => !imp.typeOnly) }
-      : extraction;
+    // runtime, so the runtime file graph is built without it.
+    const runtime = runtimeImportExtraction(extraction);
     const fileEdgeCtx = this.fileEdgeContext(runtime, symbolTable, inputs);
     const candidates = resolver.resolveFileEdges
       ? resolver.resolveFileEdges(runtime, fileEdgeCtx, resolvedMethodEdges)
@@ -682,12 +679,8 @@ export class CallEdgeResolutionRunner {
     inputs: ResolverInputs,
     runtimeFileEdges: GraphEdges["fileEdges"],
   ): GraphEdges["fileEdges"] {
-    const typeOnlyImports = [
-      ...extraction.imports.filter((imp) => imp.typeOnly),
-      ...(extraction.typeOnlyImports ?? []),
-    ];
-    if (typeOnlyImports.length === 0) return [];
-    const typeOnlyExtraction: FileExtraction = { ...extraction, imports: typeOnlyImports };
+    const typeOnlyExtraction = typeOnlyImportExtraction(extraction);
+    if (typeOnlyExtraction === undefined) return [];
     const ctx = this.fileEdgeContext(typeOnlyExtraction, symbolTable, inputs);
     const candidates = resolver.resolveFileEdges
       ? resolver.resolveFileEdges(typeOnlyExtraction, ctx, [])
