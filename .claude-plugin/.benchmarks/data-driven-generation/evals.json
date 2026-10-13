@@ -556,7 +556,7 @@
     {
       "id": "session-reuse-unedited",
       "category": "session-context-reuse",
-      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). Earlier in this conversation the agent ran find_symbol(relativePath: src/core/domains/explore/rerank/reranker.ts) (outline) and find_symbol(symbol: Reranker#rerank) (full body). Nothing has edited reranker.ts since.",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). Earlier in this conversation the agent ran find_symbol(relativePath: src/core/domains/explore/rerank/reranker.ts) (outline) and find_symbol(symbol: Reranker#rerank) (full body); both answers carried rankingOverlay labels (rerank preset) for the file and the method. Nothing has edited reranker.ts since.",
       "prompt": "Добавь в Reranker метод, который возвращает топ-N без overlay.",
       "expected": {
         "mustDo": [
