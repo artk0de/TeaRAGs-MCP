@@ -30,6 +30,13 @@ risk-assessment scan needed. If missing, invoke `/tea-rags:explore` for target
 area — explore detects pre-generation intent, gathers context automatically. If
 explore output already exists this conversation, use it.
 
+**Session-context reuse:** outlines, symbol bodies and search hits already
+fetched in this conversation are the source of truth for their file until that
+file is edited. Before any search or `find_symbol`, check the conversation for
+the file; reuse what is there. Re-fetch ONLY a file edited after it was fetched
+(by you or a tool). Re-searching an unedited file spends tokens and adds
+nothing.
+
 ## Reading Overlay Labels
 
 Labels live in `rankingOverlay.file.<signal>` and
@@ -114,6 +121,10 @@ Read `## When` section. Custom conditions evaluated before hard rules.
 
 ### Step 2: TEMPLATE — CREATE / EXTEND
 
+Session-context reuse (Prerequisites): a candidate chunk, outline or body
+already in the conversation feeds `positiveIds` / `positiveCode` as is — no
+re-search of an unedited file.
+
 Delegate to `tea-rags:extract-project-patterns` with:
 
 <!-- extract-project-patterns applies filter:{presets:"battleTested"} internally;
@@ -180,6 +191,11 @@ same as implementation.
 Output: **reuse manifest** (helpers to call) → Step 6.
 
 ### Step 5: STYLE
+
+Session-context reuse (Prerequisites): the container, template and symbol bodies
+fetched in Steps 0–4 are the style source — read them from the conversation; a
+file is re-fetched only when edited since. Same for naming: types, anchors and
+signatures already in context feed `get_naming_lexicon` without new lookups.
 
 Source per mode: CREATE → blame-owner table below. EXTEND → match the container
 file itself. MODIFY → match the symbol itself; blame table = review routing
@@ -336,19 +352,84 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
 3. **MODIFY:** `tea-rags:tests-as-context` recipe `tests-at-risk` (affectedFiles
    = [target file], intent = change description) → run the pinning scenarios.
    SKIP verdict → note behavior unpinned, proceed.
-4. **Naming review before commit** (codegraph on): GENERATE writes names Step 5
-   never judged (helpers, locals, constants, types). ONE
-   `review_changes(changes: {}, sections: ["naming", "incompleteChange"])` (`{}`
-   = the uncommitted edit just generated; branch-wide review →
-   `changes: {base}`) — the naming section judges every name the added lines
-   declare vs HEAD (same findings shape the old `get_naming_lexicon changes`
-   returned: `MISFIT` → rename to `suggestion` before commit; `COLLISION` →
-   rename; `NEW_TERM` → take an `alternatives` word, else keep + justify (soft);
-   `genericName` → rename; `novel` = no action). incompleteChange = co-change
-   partners the change ignores (`support`/`confidence` attached) — a forgotten
-   sibling edit is caught here, not in review. Skip naming when every added
-   declaration was a Step 5 draft. Tests not judged (`notJudged`). Never
-   hand-list written names into `names[]`.
+4. **Fix-at-write review before commit** (codegraph on): ONE
+   `review_changes(changes: {}, sections: ["naming", "incompleteChange", "cohesion", "architecture"])`
+   (`{}` = the uncommitted edit just generated; branch-wide review →
+   `changes: {base}`), then the fix-at-write loop below. No commit before the
+   loop ends.
+   - **naming** — GENERATE writes names Step 5 never judged (helpers, locals,
+     constants, types); the section judges every name the added lines declare vs
+     HEAD: `MISFIT` → rename to `suggestion` before commit; `COLLISION` →
+     rename; `NEW_TERM` → take an `alternatives` word, else keep + justify
+     (soft); `genericName` → rename; `novel` = no action. Skip naming when every
+     added declaration was a Step 5 draft. Tests not judged (`notJudged`). Never
+     hand-list written names into `names[]`.
+   - **incompleteChange** = co-change partners the change ignores
+     (`support`/`confidence` attached) — a forgotten sibling edit is caught
+     here, not in review. Partner verdict rule below.
+   - **cohesion** (`splitCandidates`) + **architecture** families → triage
+     below.
+
+#### Fix-at-write loop
+
+**Triage** every architecture / cohesion / incompleteChange finding:
+
+| Finding                    | Class             | Action                                    |
+| -------------------------- | ----------------- | ----------------------------------------- |
+| no `preExisting`           | must-fix          | repair in this diff                       |
+| `preExisting` + `remedy`   | cheap-preExisting | apply `remedy` (cheap by construction)    |
+| `preExisting`, no `remedy` | report-only       | one report line + bead suggestion, no fix |
+
+incompleteChange / `silentCoupling` and `splitCandidates` are history verdicts
+with no `preExisting` split — their repair file's procedure decides. A family
+with `built: false` or `scopeSkippedFiles` → report "not judged" / "partial",
+never a clean pass.
+
+**Shared rules** (repair files refer here):
+
+- **Cheap** = ALL of: edge edits only — retarget an existing import (internal
+  file → component facade; parent facade → declaring file; declared type → an
+  EXISTING contract); symbol set unchanged except ≤ 1 export line in one facade;
+  no new files, interfaces or moves. Footprint ⊆ diff files + ≤ 1 facade. Re-run
+  shows finding gone, no new finding, tests green and untouched. No line-count
+  limit. A server `remedy` = cheap, already dry-run-verified.
+- **Evidence** — a finding stays unfixed ONLY with: a detector flag
+  (`compositionRoot`, `entryPoint`, `foundationTerminal`), a cited project rule
+  (file + quoted line), or a known-noise class from the family's repair file
+  with the evidence that file names. Bare "by design" / "not needed" is not
+  evidence → fix or ask.
+- **Flap** — metric crosses the tolerance by ≤ 0.02 → ordinary introduced
+  finding: fix if cheap, else report metric before/after, threshold and the diff
+  edge that moved it; user decides.
+
+**Repair file:** per family with a must-fix or cheap finding, load exactly
+`../../repair/<family>.md` (incompleteChange → `silentCoupling.md`, cohesion →
+`splitCandidates.md`). ONLY families that have a finding — never preload the
+directory.
+
+**Round** (≤ 2):
+
+1. Per finding: `remedy` present → apply it verbatim. `retargetImport`: in
+   `sourceRelPath` point the import of `importedNames` from `fromRelPath` to
+   `toRelPath`; `addExport` → add that one export line of `names` to
+   `facadeRelPath`. `restoreExport`: re-export `names` from `facadeRelPath`.
+   Else the repair file's `## No remedy` procedure. Else accept by evidence.
+2. Re-run the same `review_changes` + targeted tests.
+3. Round added a finding or reddened a test → revert the WHOLE round.
+4. Must-fix left after round 2 → AskUserQuestion: the finding, what was tried,
+   why reverted; options: fix this way / accept with a reason / bead. No commit
+   without the answer — never commit around an introduced finding.
+
+**Co-change partner verdict** (incompleteChange / `silentCoupling`): inspect
+each untouched partner (`find_symbol` outline/body — reuse it if already in
+context). Depends on the changed contract (test, doc, registry, mirror) → edit
+it in this diff. Else one line `not touched because <reason>` with a CHECKABLE
+reason citing the symbol: a named test that already pins the seam, or why the
+file cannot change with this edit. "Not needed" / "unrelated" without evidence =
+fail → edit it or ask.
+
+**Report:** per class — fixed (remedy / procedure), accepted (evidence),
+report-only (line + bead suggestion), families not judged / partial.
 
 Step 7 is the extension point for post-generation structural checks — add them
 here, not as a second verification step.
