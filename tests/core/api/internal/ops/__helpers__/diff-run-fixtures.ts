@@ -116,7 +116,7 @@ export function baseEdgesOf(bySource: Readonly<Record<string, readonly string[]>
   };
 }
 
-function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+export function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);
   if (list === undefined) map.set(key, [value]);
   else list.push(value);

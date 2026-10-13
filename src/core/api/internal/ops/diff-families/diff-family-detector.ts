@@ -19,7 +19,7 @@ import type {
   DiffDetectorFinding,
   DiffDetectorStatus,
 } from "../../../../contracts/types/diff-detector-finding.js";
-import type { ReviewEdgeOverlay } from "../../../../domains/trajectory/codegraph/symbols/index.js";
+import type { LayeringReading, ReviewEdgeOverlay } from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import type {
   SilentCouplingExclusionCounts,
   SilentCouplingViolation,
@@ -227,6 +227,12 @@ export interface DiffFamilyDetectorContext {
   silentCouplingFacts: DiffDetectorSilentCouplingFacts | undefined;
   contract: DiffDetectorContractReader | undefined;
   splitMerge: DiffDetectorSplitMergeReader | undefined;
+  /**
+   * The whole-repo inferred layering over the report's component partition
+   * (bd tea-rags-mcp-89k7k.1.19.3) — the SAME component names the catalog
+   * serves. Absent = the layeringBackEdge family answers built:false.
+   */
+  layering: LayeringReading | undefined;
   /** The wiring's reason for an absent split/merge port, defaulted by the run. */
   splitMergeAbsentReason: string;
   /** BFS hop cap for cycle traces, defaulted by the run. */
