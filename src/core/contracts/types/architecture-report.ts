@@ -20,7 +20,7 @@
  * `ArchitectureReportSummary`.
  */
 
-import type { CochangeBurstWindowMethod, RelPath } from "./codegraph.js";
+import type { ChangeReasonsUnavailable, CochangeBurstWindowMethod, ModuleChangeReasons, RelPath } from "./codegraph.js";
 import type { WorkingTreeMarker } from "./working-tree.js";
 
 /** How the layer map view picks its nodes (bd tea-rags-mcp-r8hme.26). */
@@ -1429,6 +1429,41 @@ export interface SplitMergeReportSummary {
   verdicts?: SplitMergeVerdictsSummary;
 }
 
+/**
+ * Why a `changeReasons` view is not built: the split/merge reasons, plus a
+ * build that predates the bundles' task ids (migration 045).
+ */
+export type ChangeReasonsAbsentReason = SplitMergeAbsentReason | "noTaskIdRecord";
+
+/**
+ * The change-reasons VIEW (bd tea-rags-mcp-psh3j), present only when the
+ * request carried `changeReasons`: per component, the distinct domains of the
+ * tickets that changed it — a ticket's domain is the dominant component of
+ * every file its commits touched, the measured component excluded from the
+ * vote. Read off the co-change build's admitted commits (its window, its
+ * per-commit file cap), over the report's own component partition.
+ */
+export interface ArchitectureChangeReasonsReport {
+  /** `false` when the co-change substrate is absent — no reasons, never zeros posing as single-reason modules. */
+  built: boolean;
+  /** Present only when not built: which substrate was absent. */
+  reason?: ChangeReasonsAbsentReason;
+  /** HEAD the co-change build read; present whenever a build exists. */
+  head?: string;
+  /** Unix seconds of the build; present whenever a build exists. */
+  builtAt?: number;
+  /** Present when built: `false` = the repo's ticket discipline is too thin to read domains from. */
+  available?: boolean;
+  /** Present when built but unavailable. */
+  unavailable?: ChangeReasonsUnavailable;
+  /** Present when available: share of the admitted commits naming a task id. */
+  taskIdCommitShare?: number;
+  /** Present when available: components with at least one commit, before `limit`. */
+  moduleCount?: number;
+  /** Present when available: most distinct reasons first, capped by `limit`. */
+  modules?: ModuleChangeReasons[];
+}
+
 /** Why a `shotgunSurgery` block is not built — the split/merge block's reasons: the same substrate. */
 export type ShotgunSurgeryAbsentReason = SplitMergeAbsentReason;
 
@@ -1954,4 +1989,6 @@ export interface GetArchitectureReportResponse {
   domain?: ArchitectureDomainReport;
   /** The dependency-norms view (bd tea-rags-mcp-rpx0v), present only when the request carried `norms`. */
   norms?: ArchitectureNormsReport;
+  /** The change-reasons view (bd tea-rags-mcp-psh3j), present only when the request carried `changeReasons`. */
+  changeReasons?: ArchitectureChangeReasonsReport;
 }

@@ -260,3 +260,37 @@ export interface TemporalSymbolCommitBuffer {
   /** Every buffered file snapshot, insertion order; empties the buffer. */
   drainFiles: () => TemporalSymbolCommitFileSnapshot[];
 }
+
+/**
+ * One reason a module has historically changed for (bd tea-rags-mcp-psh3j): a
+ * DOMAIN — the dominant component of every file a ticket's commits touched,
+ * the measured module excluded from the vote.
+ */
+export interface ChangeReason {
+  /** The component the tickets' work was dominated by. */
+  domain: string;
+  /** Distinct tickets whose domain this is and whose commits touched the module. */
+  tickets: number;
+  /** Distinct commits of those tickets that touched the module. */
+  commits: number;
+}
+
+/** The change reasons of one module (a component), most-ticketed reason first. */
+export interface ModuleChangeReasons {
+  module: string;
+  /** Distinct domains of the tickets that changed the module; a tie puts a ticket under every tied domain. */
+  reasons: ChangeReason[];
+  /** Commits touching the module whose message names no ticket — counted, never a reason. */
+  untrackedCommits: number;
+  /** Every commit touching the module. */
+  commits: number;
+}
+
+/** Why change reasons are not reported: too few commits name a ticket to read domains from. */
+export interface ChangeReasonsUnavailable {
+  reason: "noTicketDiscipline";
+  /** Share of commits whose message names at least one task id. */
+  taskIdCommitShare: number;
+  /** The share the extraction requires. */
+  minTaskIdCommitShare: number;
+}

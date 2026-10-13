@@ -284,6 +284,7 @@ describe("get_architecture_report", () => {
 
     expect(Object.keys(config.inputSchema).sort()).toEqual(
       [
+        "changeReasons",
         "collection",
         "domain",
         "knotOf",
