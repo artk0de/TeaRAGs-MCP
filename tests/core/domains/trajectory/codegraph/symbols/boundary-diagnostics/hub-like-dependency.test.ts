@@ -122,6 +122,23 @@ describe("detectHubLikeDependencies", () => {
     expect(HUB_LIKE_DEPENDENCY_MAX_IMBALANCE).toBe(0.25);
   });
 
+  // bd tea-rags-mcp-g77p3: a dependency into the measured foundation (the
+  // pure-types kernel `foundationComponents` names) is not efferent coupling.
+  // Ce counts the files with an edge into a NON-foundation component.
+  it("does not count a file whose every dependency lands in the foundation toward the hub's Ce", () => {
+    // sink1 the foundation: h11..h40 reach it alone and drop out → Ce 10,
+    // Ca 40 → 30/50 = 0.6, lopsided.
+    const report = judge(graph(), { foundationComponents: new Set(["sink1"]) });
+    expect(report.violations).toEqual([]);
+    expect(report.summary.excluded.imbalanced).toBe(1);
+  });
+
+  it("keeps a file in the hub's Ce while it still reaches one non-foundation component", () => {
+    // sink8 the foundation: h1..h10 still reach sink1..sink7, h11..h40 sink1.
+    const [hub] = judge(graph(), { foundationComponents: new Set(["sink8"]) }).violations;
+    expect(hub).toMatchObject({ component: "hub", afferentCount: 40, efferentCount: 40 });
+  });
+
   it("does not flag a balanced component (I near 0.5) that is no busier than the typical component", () => {
     const report = judge(graph());
     expect(report.violations.some((v) => v.component === "mid")).toBe(false);

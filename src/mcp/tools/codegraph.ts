@@ -468,7 +468,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "counted as stableConcreteCalm; evidence entryPoint:true = component holds a facade nothing imports (an entry) — its distance is " +
       "placement, not defect (triage data, never suppression). hubLikeDependency: component with BOTH Ca and Ce " +
       "above adaptive cuts (per axis: > median and >= log-scale Otsu cut when bimodal; Ca+Ce floor as SDP) AND " +
-      "balanced (|Ca-Ce|/(Ca+Ce) < 1/4, Arcan; lopsided = excluded.imbalanced) — I near 0.5, so SDP misses it; evidence = top dependents/dependencies, transitiveImpact (components reaching it), " +
+      "balanced (|Ca-Ce|/(Ca+Ce) < 1/4, Arcan; lopsided = excluded.imbalanced) — I near 0.5, so SDP misses it; " +
+      "Ce skips edges into layering foundation (summary.layering.foundation); evidence = top dependents/dependencies, transitiveImpact (components reaching it), " +
       "churn (mean git.file.commitCount), compositionRoot:true = triage data. summary.propagationCost (aggregate, " +
       "no violations; MacCormack DSM): reachable file pairs / N^2 = mean share of the system one change reaches; " +
       "corePeriphery classes files by visibility fan-in/out cuts (Otsu, else median) — core = high both AND in a " +

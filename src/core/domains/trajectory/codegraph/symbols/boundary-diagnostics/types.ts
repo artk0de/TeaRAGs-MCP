@@ -699,6 +699,13 @@ export interface HubLikeDependencyOptions {
    * keyed by path. Given, every hub carries its churn; it never changes a verdict.
    */
   fileVolatility?: ReadonlyMap<RelPath, number>;
+  /**
+   * The measured layering foundation — `LayeringFoundationSummary`'s components
+   * and terminal components (bd tea-rags-mcp-g77p3). A dependency into it is
+   * not efferent coupling: Ce counts the files with an edge into a component
+   * outside it. Absent, every dependency counts.
+   */
+  foundationComponents?: ReadonlySet<string>;
 }
 
 /** A dependent or dependency of a hub — the report's `HubLikeDependencyNeighbourEvidence` under its domain name. */

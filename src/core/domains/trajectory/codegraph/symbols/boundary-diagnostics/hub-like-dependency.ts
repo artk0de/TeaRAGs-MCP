@@ -53,6 +53,11 @@ export const HUB_LIKE_DEPENDENCY_OTSU_MIN_POPULATION = MAIN_SEQUENCE_OTSU_MIN_PO
  * in `summary.excluded.imbalanced`. Without it the median floors flagged 16 of
  * 60 tea-rags components, infra (I 0.06) and language (I 0.97) among them.
  *
+ * Ce counts only dependencies outside `foundationComponents` (bd
+ * tea-rags-mcp-g77p3): an edge into the pure-types foundation is no efferent
+ * coupling, and counting it made every busy contracts consumer read balanced.
+ * Ca, the connection floor and the reported instability stay the component's.
+ *
  * `sourcePathPattern` only decides which judged components are reported; the
  * cuts are whole-graph. `fileVolatility` attaches churn to every hub and never
  * changes a verdict.
@@ -69,8 +74,11 @@ export function detectHubLikeDependencies(
     else judged.push(component);
   }
 
+  // Ce reads past the foundation (bd tea-rags-mcp-g77p3); Ca and the
+  // connection floor stay the component's own.
+  const efferentCountOf = hubEfferentCounts(componentGraph, options.foundationComponents);
   const afferent = resolveAxisCut(judged.map((c) => c.afferentCount));
-  const efferent = resolveAxisCut(judged.map((c) => c.efferentCount));
+  const efferent = resolveAxisCut(judged.map(efferentCountOf));
 
   const pathsOf = componentPaths(componentGraph);
   const inScope = compilePathPatternMatcher(options.sourcePathPattern);
@@ -86,9 +94,11 @@ export function detectHubLikeDependencies(
       scope.outOfScopeComponentCount++;
       continue;
     }
-    if (!afferent.admits(component.afferentCount) || !efferent.admits(component.efferentCount)) continue;
-    if (couplingImbalance(component) < HUB_LIKE_DEPENDENCY_MAX_IMBALANCE) hubs.push(component);
-    else imbalanced++;
+    const efferentCount = efferentCountOf(component);
+    if (!afferent.admits(component.afferentCount) || !efferent.admits(efferentCount)) continue;
+    if (couplingImbalance(component.afferentCount, efferentCount) < HUB_LIKE_DEPENDENCY_MAX_IMBALANCE) {
+      hubs.push(component);
+    } else imbalanced++;
   }
 
   const reach = hubs.length > 0 ? new ReverseComponentReach(componentGraph.dependencies) : undefined;
@@ -103,7 +113,7 @@ export function detectHubLikeDependencies(
       kind: hub.kind,
       facadeRelPath: hub.facadeRelPath,
       afferentCount: hub.afferentCount,
-      efferentCount: hub.efferentCount,
+      efferentCount: efferentCountOf(hub),
       instability: hub.instability,
       fileCount: hub.fileCount,
       dependentComponentCount: dependents.length,
@@ -138,10 +148,31 @@ export function detectHubLikeDependencies(
   };
 }
 
-/** |Ca − Ce| / (Ca + Ce); a judged component has Ca + Ce ≥ the connection floor, so the ratio is defined. */
-function couplingImbalance(component: ArchitectureComponent): number {
-  const total = component.afferentCount + component.efferentCount;
-  return total === 0 ? 1 : Math.abs(component.afferentCount - component.efferentCount) / total;
+/** |Ca − Ce| / (Ca + Ce); zero coupling reads as fully lopsided. */
+function couplingImbalance(afferentCount: number, efferentCount: number): number {
+  const total = afferentCount + efferentCount;
+  return total === 0 ? 1 : Math.abs(afferentCount - efferentCount) / total;
+}
+
+/**
+ * The hub's Ce per component: the distinct files carrying a dependency into a
+ * component outside `foundationComponents` — the component graph's own Ce
+ * (distinct source files) with the foundation's dependencies left out. A file
+ * reaching the foundation AND anything else still counts once.
+ */
+function hubEfferentCounts(
+  componentGraph: ComponentGraph,
+  foundationComponents: ReadonlySet<string> | undefined,
+): (component: ArchitectureComponent) => number {
+  if (!foundationComponents || foundationComponents.size === 0) return (component) => component.efferentCount;
+  const sourceFiles = new Map<string, Set<RelPath>>();
+  for (const dependency of componentGraph.dependencies) {
+    if (foundationComponents.has(dependency.targetComponent)) continue;
+    const files = sourceFiles.get(dependency.sourceComponent) ?? new Set<RelPath>();
+    for (const edge of dependency.fileEdges) files.add(edge.sourceRelPath);
+    sourceFiles.set(dependency.sourceComponent, files);
+  }
+  return (component) => sourceFiles.get(component.componentDir)?.size ?? 0;
 }
 
 interface AxisCut {
