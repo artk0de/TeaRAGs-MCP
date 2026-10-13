@@ -11,7 +11,9 @@
  * - a touched code file the tree holds is a member, one it lost is not (its
  *   definitions leave with it);
  * - a reviewed file's definitions are the ones its tree text declares, not the
- *   index's.
+ *   index's;
+ * - on the base side's second read only, a touched file's definitions are the
+ *   ones its BASE blob declared (bd tea-rags-mcp-slsia).
  *
  * The read goes through the review's `GraphDbClient` handle, so a daemon-held
  * database answers through the daemon like every other review read.
@@ -78,6 +80,14 @@ export interface ReviewSymbolTableTreeOverlay {
   touchedFiles: ReadonlySet<string>;
   /** The reviewed files as the tree holds them — their definitions replace the index's. */
   treeExtractions: readonly FileExtraction[];
+  /**
+   * Touched files as the diff BASE held them (bd tea-rags-mcp-slsia), each
+   * extraction carrying the TREE path its base blob became — their definitions
+   * replace the tree's. Only the base side's second read passes them: a base
+   * text naming a constant the change renamed resolves to the file that
+   * defined it at the base.
+   */
+  baseExtractions?: readonly FileExtraction[];
 }
 
 /** The index's rows hydrated into a fresh table, the working tree overlaid on it. */
@@ -92,7 +102,7 @@ export function buildReviewSymbolTable(
     if (!existsSync(join(overlay.workTree, relPath))) table.removeFile(relPath);
     else if (isCodegraphPath(relPath)) table.hydrateFiles([relPath]);
   }
-  for (const extraction of overlay.treeExtractions) {
+  for (const extraction of [...overlay.treeExtractions, ...(overlay.baseExtractions ?? [])]) {
     table.upsertFile(extraction.relPath, symbolDefinitionsOf(extraction));
   }
   return table;

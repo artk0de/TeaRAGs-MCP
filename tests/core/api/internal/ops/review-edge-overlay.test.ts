@@ -11,13 +11,14 @@
  * answer from the indexed symbol table and report `unsupportedLanguage` until
  * slice B hydrates it.
  */
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { DiffDetectorRun } from "../../../../../src/core/api/internal/ops/diff-detector-run.js";
+import { diffAddedEdges, DiffDetectorRun } from "../../../../../src/core/api/internal/ops/diff-detector-run.js";
 import {
   readWorkingTreeFileEdges,
   workingTreeExtractionContext,
@@ -512,5 +513,134 @@ describe("readReviewChangeEdges — one hydrated table per review read", () => {
         detail: "the collection has no codegraph database",
       },
     ]);
+  });
+});
+
+/** Runs git in the temp tree with a fixed identity — the fixture never reads the user's config. */
+function gitIn(tree: string, ...args: string[]): string {
+  return execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", ...args], {
+    cwd: tree,
+    encoding: "utf8",
+  }).trim();
+}
+
+/** Commits the temp tree as the diff base; returns its sha. */
+function commitBase(tree: string): string {
+  gitIn(tree, "init", "-q");
+  gitIn(tree, "add", "-A");
+  gitIn(tree, "commit", "-q", "--no-verify", "-m", "base");
+  return gitIn(tree, "rev-parse", "HEAD");
+}
+
+// bd tea-rags-mcp-slsia: both sides resolve against ONE table built from the
+// index + the tree, so a base text naming a constant the tree has since renamed
+// resolved nowhere and the tree's edge to the SAME file read as added. The
+// index below has caught up to the tree, as it had on taxdome.
+describe("readReviewChangeEdges — the base side of a rename (bd tea-rags-mcp-slsia)", () => {
+  const CONTROLLER = "app/controllers/app_controller.rb";
+  const AUTH = "lib/platform/concerns/auth_methods.rb";
+  const INVOICE = "app/models/billing/invoice.rb";
+
+  async function addedEdges(
+    tree: string,
+    scope: { mergeBase: string; files: string[]; touchedFiles: string[]; renamedFrom?: Map<string, string> },
+    definitions: SymbolDefinition[],
+  ): Promise<string[]> {
+    const { overlay, baseEdges } = await readReviewChangeEdges(
+      { workTree: tree, ...scope, touchedFiles: new Set(scope.touchedFiles) },
+      realDeps(),
+      { rows: { definitions, files: [...new Set(definitions.map((def) => def.relPath))] } },
+    );
+    expect(overlay.unsupported()).toEqual([]);
+    expect(baseEdges).toBeDefined();
+    return diffAddedEdges(scope.files, overlay, { baseEdges }).map((edge) => `${edge.source} -> ${edge.target}`);
+  }
+
+  it("a module constant renamed inside its file is no added edge — the base names the same file", async () => {
+    const tree = freshWorkTree();
+    writeFile(AUTH, "module Platform\n  module Concerns\n    module AuthMethods\n    end\n  end\nend\n");
+    writeFile(CONTROLLER, "class AppController\n  include Platform::Concerns::AuthMethods\nend\n");
+    const mergeBase = commitBase(tree);
+    writeFile(AUTH, "module Platform\n  module AuthMethods\n  end\nend\n");
+    writeFile(CONTROLLER, "class AppController\n  include Platform::AuthMethods\nend\n");
+
+    const added = await addedEdges(tree, { mergeBase, files: [CONTROLLER], touchedFiles: [CONTROLLER, AUTH] }, [
+      indexedDefinition(AUTH, "Platform"),
+      indexedDefinition(AUTH, "Platform::AuthMethods"),
+      indexedDefinition(CONTROLLER, "AppController"),
+    ]);
+
+    expect(added).toEqual([]);
+  });
+
+  it("a constant the base text never named stays added, though its file's definitions changed too", async () => {
+    const tree = freshWorkTree();
+    writeFile(INVOICE, "module Billing\n  class Bill\n  end\nend\n");
+    writeFile(CONTROLLER, "class AppController\nend\n");
+    const mergeBase = commitBase(tree);
+    writeFile(INVOICE, "module Billing\n  class Invoice\n  end\nend\n");
+    writeFile(CONTROLLER, "class AppController\n  def show = Billing::Invoice.new\nend\n");
+
+    const added = await addedEdges(tree, { mergeBase, files: [CONTROLLER], touchedFiles: [CONTROLLER, INVOICE] }, [
+      indexedDefinition(INVOICE, "Billing"),
+      indexedDefinition(INVOICE, "Billing::Invoice"),
+      indexedDefinition(CONTROLLER, "AppController"),
+    ]);
+
+    expect(added).toEqual([`${CONTROLLER} -> ${INVOICE}`]);
+  });
+
+  it("a moved source file is read at the path the base held it — its unchanged references are not added", async () => {
+    const tree = freshWorkTree();
+    const oldChannel = "app/channels/v1/messages_channel.rb";
+    const newChannel = "app/channels/communication/v1/messages_channel.rb";
+    const channelText = "class MessagesChannel\n  def typing = Billing::Invoice.new\nend\n";
+    writeFile(INVOICE, "module Billing\n  class Invoice\n  end\nend\n");
+    writeFile(oldChannel, channelText);
+    const mergeBase = commitBase(tree);
+    rmSync(join(tree, oldChannel));
+    writeFile(newChannel, channelText);
+
+    const added = await addedEdges(
+      tree,
+      {
+        mergeBase,
+        files: [newChannel],
+        touchedFiles: [newChannel, oldChannel],
+        renamedFrom: new Map([[newChannel, oldChannel]]),
+      },
+      [
+        indexedDefinition(INVOICE, "Billing"),
+        indexedDefinition(INVOICE, "Billing::Invoice"),
+        indexedDefinition(newChannel, "MessagesChannel"),
+      ],
+    );
+
+    expect(added).toEqual([]);
+  });
+
+  it("a target moved with its namespace is no added edge — the base named it under its old constant", async () => {
+    const tree = freshWorkTree();
+    const oldSerializer = "app/serializers/api/show_serializer.rb";
+    const newSerializer = "app/serializers/tech/api/show_serializer.rb";
+    writeFile(oldSerializer, "class Api::ShowSerializer\nend\n");
+    writeFile(CONTROLLER, "class AppController\n  def show = Api::ShowSerializer.new\nend\n");
+    const mergeBase = commitBase(tree);
+    rmSync(join(tree, oldSerializer));
+    writeFile(newSerializer, "class Tech::Api::ShowSerializer\nend\n");
+    writeFile(CONTROLLER, "class AppController\n  def show = Tech::Api::ShowSerializer.new\nend\n");
+
+    const added = await addedEdges(
+      tree,
+      {
+        mergeBase,
+        files: [CONTROLLER],
+        touchedFiles: [CONTROLLER, oldSerializer, newSerializer],
+        renamedFrom: new Map([[newSerializer, oldSerializer]]),
+      },
+      [indexedDefinition(newSerializer, "Tech::Api::ShowSerializer"), indexedDefinition(CONTROLLER, "AppController")],
+    );
+
+    expect(added).toEqual([]);
   });
 });
