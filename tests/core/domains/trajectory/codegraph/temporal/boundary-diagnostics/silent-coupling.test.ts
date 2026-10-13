@@ -25,6 +25,7 @@ import type {
   TemporalCochangeGraph,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
+  cochangeEvidenceEndpointExclusion,
   detectSilentCoupling,
   linkImportedCochangePairs,
   oneWalkedViolationImporters,
@@ -581,5 +582,19 @@ describe("detectSilentCoupling — facade-chain explanation (bd tea-rags-mcp-89k
 
     expect(report.violations).toHaveLength(1);
     expect(report.summary.excluded.explainedByFacadeChain).toBe(0);
+  });
+});
+
+describe("cochangeEvidenceEndpointExclusion — the file classes whose co-change is no coupling evidence (bd tea-rags-mcp-r8hme.53)", () => {
+  it("names the first class an endpoint falls in, either order", () => {
+    expect(cochangeEvidenceEndpointExclusion("src/a.ts", "tests/a.test.ts")).toBe("testEndpoints");
+    expect(cochangeEvidenceEndpointExclusion("package.json", "src/a.ts")).toBe("versionManifestEndpoints");
+    expect(cochangeEvidenceEndpointExclusion("src/a.ts", "docs/a.md", (p) => p.endsWith(".md"))).toBe(
+      "documentationEndpoints",
+    );
+  });
+
+  it("is null for two code files", () => {
+    expect(cochangeEvidenceEndpointExclusion("src/a.ts", "src/b.ts")).toBeNull();
   });
 });

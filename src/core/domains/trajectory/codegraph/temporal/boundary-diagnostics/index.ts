@@ -16,6 +16,7 @@ export type {
   CochangeSignificanceOptions,
 } from "./cochange-significance.js";
 export {
+  cochangeEvidenceEndpointExclusion,
   cochangeStrength,
   detectSilentCoupling,
   isVersionManifest,

@@ -74,6 +74,14 @@ interface PropagationCostReport {
   };
   /** Per component of `options.componentOf`, by `meanReach` desc then name; empty without a partition. */
   components: PropagationCostComponent[];
+  /**
+   * Per walked file, the files reaching it — itself included — the population
+   * `corePeriphery.visibilityFanIn` is cut over. Exact, never depth-capped
+   * (bd tea-rags-mcp-r8hme.53 reads it as a file's reach).
+   */
+  fileVisibilityFanIn: ReadonlyMap<RelPath, number>;
+  /** Whether a visibility fan-in clears `corePeriphery.visibilityFanIn`'s cut — at or above the threshold AND above the median. */
+  admitsVisibilityFanIn: (fanIn: number) => boolean;
 }
 
 interface PropagationCostOptions {
@@ -133,6 +141,8 @@ export function computePropagationCost(
     components: options.componentOf
       ? componentBreakdown(adjacency, options.componentOf, visibility.fanIn, classOf)
       : [],
+    fileVisibilityFanIn: visibility.fanIn,
+    admitsVisibilityFanIn: fanInCut.admits,
   };
 }
 

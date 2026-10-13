@@ -6,6 +6,8 @@ export function summarisePropagationCost(
   report: ReturnType<typeof computePropagationCost>,
   limit: number,
 ): PropagationCostReportSummary {
-  const { components, ...aggregate } = report;
+  // The per-file reach and its cut predicate feed the impact tiers (bd
+  // tea-rags-mcp-r8hme.53); the summary stays the aggregate.
+  const { components, fileVisibilityFanIn: _fanIn, admitsVisibilityFanIn: _admits, ...aggregate } = report;
   return { ...aggregate, componentCount: components.length, components: components.slice(0, limit) };
 }
