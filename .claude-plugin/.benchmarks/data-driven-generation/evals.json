@@ -1,7 +1,7 @@
 {
   "skill": "tea-rags:data-driven-generation",
   "skillPath": ".claude-plugin/tea-rags/skills/data-driven-generation/SKILL.md",
-  "objective": "Agent runs the data-driven generation workflow as SKILL.md prescribes — prerequisites (explore first), Step 0 MODE, Step 1 STRATEGY hard rules + custom-strategy discovery, Step 2 TEMPLATE via extract-project-patterns and its quality gate, Step 5 STYLE blame-owner table plus ONE get_naming_lexicon call (project names reused, new term only for a new concept, convention read from shapes; semantic_search concept fallback when codegraph is off), Step 7 VERIFY symbol risks via find_symbol(criticalPath) + N-th-way + tests-at-risk (no identifier-existence sweep), Step 8 IMPACT. Eval prompts use neutral user framing (no rule vocabulary leakage). Cases with status 'superseded' are kept as history and not scored.",
+  "objective": "Agent runs the data-driven generation workflow as SKILL.md prescribes — prerequisites (explore first), Step 0 MODE, Step 1 STRATEGY hard rules + custom-strategy discovery, Step 2 TEMPLATE via extract-project-patterns and its quality gate, Step 5 STYLE blame-owner table plus ONE get_naming_lexicon call (project names reused, new term only for a new concept, convention read from shapes; semantic_search concept fallback when codegraph is off), Step 7 VERIFY symbol risks via find_symbol(criticalPath) + N-th-way + tests-at-risk (no identifier-existence sweep) + the fix-at-write loop (review_changes naming/incompleteChange/cohesion/architecture, must-fix vs cheap-preExisting vs report-only, remedy applied, ≤2 rounds with revert, escalation, evidence-only dismissals, only the matching repair file loaded), Step 8 IMPACT. Session-context reuse: no re-search of a file already in context unless edited since. Eval prompts use neutral user framing (no rule vocabulary leakage). Cases with status 'superseded' are kept as history and not scored.",
   "runs": [
     {
       "date": "2026-04-21",
@@ -551,6 +551,289 @@
         ]
       },
       "failureMode": "Agent names a new type off the family's role"
+    },
+    {
+      "id": "session-reuse-unedited",
+      "category": "session-context-reuse",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). Earlier in this conversation the agent ran find_symbol(relativePath: src/core/domains/explore/rerank/reranker.ts) (outline) and find_symbol(symbol: Reranker#rerank) (full body). Nothing has edited reranker.ts since.",
+      "prompt": "Добавь в Reranker метод, который возвращает топ-N без overlay.",
+      "expected": {
+        "mustDo": [
+          "Use the Reranker outline and Reranker#rerank body already in the conversation as the container / style source (Step 0, Step 2, Step 5)",
+          "State that reranker.ts is unedited since it was fetched, so the in-context copy stands"
+        ],
+        "mustNotDo": [
+          "Re-run find_symbol on reranker.ts or Reranker#rerank",
+          "Run hybrid_search / semantic_search to re-locate code already in context"
+        ]
+      },
+      "failureMode": "Agent re-searches a file whose outline and body are already in the conversation"
+    },
+    {
+      "id": "session-reuse-edited",
+      "category": "session-context-reuse",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). The agent fetched the outline and body of src/core/domains/explore/rerank/reranker.ts earlier, then edited Reranker#rerank in this conversation (Edit tool). Now a second change in the same file is requested.",
+      "prompt": "Теперь в том же Reranker поправь сортировку при равных score.",
+      "expected": {
+        "mustDo": [
+          "Re-fetch Reranker#rerank (find_symbol) because reranker.ts was edited after it was fetched",
+          "Reuse in-context copies of other, unedited files"
+        ],
+        "mustNotDo": [
+          "Work from the pre-edit body of Reranker#rerank",
+          "Re-fetch unrelated files that were not edited"
+        ]
+      },
+      "failureMode": "Agent trusts a stale in-context copy of a file it edited, or re-fetches everything"
+    },
+    {
+      "id": "step7-fix-remedy-applied",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). Code generated. review_changes returns architecture leakingAbstraction finding (no preExisting) with remedy { kind: \"retargetImport\", sourceRelPath: src/core/domains/explore/foo.ts, fromRelPath: src/core/domains/trajectory/git/stats/percentile.ts, toRelPath: src/core/domains/trajectory/git/index.ts, importedNames: [\"percentileOf\"] }.",
+      "prompt": "Код написан, тесты зелёные. Можно коммитить?",
+      "expected": {
+        "mustDo": [
+          "Step 7 review_changes with sections naming, incompleteChange, cohesion, architecture",
+          "Classify the finding as must-fix (no preExisting)",
+          "Load only repair/leakingAbstraction.md",
+          "Apply the remedy verbatim: retarget foo.ts's import of percentileOf to git/index.ts",
+          "Re-run review_changes + targeted tests; finding gone, none new, then commit"
+        ],
+        "mustNotDo": [
+          "Commit with the introduced finding",
+          "Invent a different repair while a verified remedy is present"
+        ]
+      },
+      "failureMode": "Agent commits an introduced violation or ignores the server's verified remedy"
+    },
+    {
+      "id": "step7-fix-preexisting-remedy",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript. review_changes architecture: stableDependencies finding with preExisting: true and a remedy { kind: \"retargetImport\", ... } inside the diff files. No other findings.",
+      "prompt": "Готово, тесты проходят. Коммить.",
+      "expected": {
+        "mustDo": [
+          "Classify as cheap-preExisting (preExisting + remedy)",
+          "Apply the remedy, re-run review_changes and targeted tests before committing"
+        ],
+        "mustNotDo": [
+          "Skip the fix because the finding is pre-existing although a remedy is present"
+        ]
+      },
+      "failureMode": "Agent leaves a cheap, server-verified pre-existing repair undone"
+    },
+    {
+      "id": "step7-fix-preexisting-report",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript. review_changes architecture: mainSequence finding with preExisting: true, no remedy; distanceBefore already past threshold. No introduced findings.",
+      "prompt": "Код готов. Финализируй.",
+      "expected": {
+        "mustDo": [
+          "Classify as report-only: one report line naming the finding",
+          "Suggest a bead for the pre-existing violation",
+          "Commit is allowed (no introduced finding left)"
+        ],
+        "mustNotDo": [
+          "Refactor the component to bring D under threshold in this diff",
+          "Silently drop the finding from the report"
+        ]
+      },
+      "failureMode": "Agent either expands the diff into an unrelated refactor or hides the pre-existing finding"
+    },
+    {
+      "id": "step7-fix-round-reverted",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript. Round 1: the agent repaired an introduced stableDependencies finding (no remedy) by moving an import to another module. The re-run of review_changes shows the SDP finding gone but a new cycles finding.",
+      "prompt": "Что дальше?",
+      "expected": {
+        "mustDo": [
+          "Revert the whole round 1 (the new cycles finding means the round regressed)",
+          "Try a different repair in round 2, re-running review_changes and tests"
+        ],
+        "mustNotDo": [
+          "Keep the round and start fixing the new cycles finding on top",
+          "Revert only part of the round"
+        ]
+      },
+      "failureMode": "Agent stacks repairs on a regressing round instead of reverting it"
+    },
+    {
+      "id": "step7-fix-escalate-after-two",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript. Two repair rounds for an introduced layeringBackEdge finding (no remedy) were both reverted: round 1 added a hubLike finding, round 2 broke a test. The finding remains.",
+      "prompt": "Ну что, коммитим?",
+      "expected": {
+        "mustDo": [
+          "AskUserQuestion: the finding, what each round tried, why each was reverted",
+          "Offer options: fix this way / accept with a reason / bead",
+          "Hold the commit until the user answers"
+        ],
+        "mustNotDo": [
+          "Commit with the introduced finding",
+          "Run a third repair round"
+        ]
+      },
+      "failureMode": "Agent commits around an unresolved introduced violation or loops past the bound"
+    },
+    {
+      "id": "step7-fix-false-positive-flag",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript. review_changes architecture: introduced stableDependencies finding from src/bootstrap (source component) carrying compositionRoot: true.",
+      "prompt": "Тесты зелёные, коммить.",
+      "expected": {
+        "mustDo": [
+          "Accept the finding unfixed citing the compositionRoot flag as evidence",
+          "Report it as accepted with that evidence"
+        ],
+        "mustNotDo": ["Restructure the composition root to satisfy SDP"]
+      },
+      "failureMode": "Agent rewrites wiring code to silence a flagged false positive"
+    },
+    {
+      "id": "step7-fix-by-design-no-evidence",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript. review_changes architecture: introduced leakingAbstraction finding, no remedy, no detector flag. The agent believes the deep import is intentional.",
+      "prompt": "Это же нормально так импортировать, коммить.",
+      "expected": {
+        "mustDo": [
+          "Either repair per repair/leakingAbstraction.md or ask the user",
+          "Accept unfixed only when a cited project rule (file + quoted line) supports it"
+        ],
+        "mustNotDo": [
+          "Accept the finding with a bare 'by design' justification",
+          "Commit without fixing or asking"
+        ]
+      },
+      "failureMode": "Agent waves off an introduced violation as 'by design' without evidence"
+    },
+    {
+      "id": "step7-fix-flap",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript. review_changes architecture: mainSequence finding, no preExisting: distanceBefore 0.49, distanceAfter 0.51, threshold 0.50; one diff edge moved it; no remedy.",
+      "prompt": "Там же копейки, коммить.",
+      "expected": {
+        "mustDo": [
+          "Treat the flap as an ordinary introduced finding",
+          "Fix it if cheap; otherwise report distance before/after, the threshold and the diff edge that moved it, and let the user decide"
+        ],
+        "mustNotDo": ["Ignore the finding because the delta is tiny"]
+      },
+      "failureMode": "Agent dismisses a threshold flap as noise"
+    },
+    {
+      "id": "step7-fix-cohesion-own-vs-preexisting",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript. review_changes cohesion returns two splitCandidates in src/core/domains/explore/foo.ts: cluster A = 3 functions this diff added; cluster B = 4 pre-existing functions. Diff touches neither cluster's edges for B.",
+      "prompt": "Код написан. Перед коммитом что-то надо?",
+      "expected": {
+        "mustDo": [
+          "Load only repair/splitCandidates.md",
+          "Move cluster A (own new code) to a neighbouring file with fitting vocabulary or a new file per the folder convention; re-run review",
+          "Cluster B: one report line + bead suggestion, no split"
+        ],
+        "mustNotDo": [
+          "Split the pre-existing cluster B in this feature diff",
+          "Leave own cluster A in place without reason"
+        ]
+      },
+      "failureMode": "Agent splits pre-existing code in a feature diff or leaves its own low-cohesion cluster"
+    },
+    {
+      "id": "step7-fix-cochange-verdict",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript. MODIFY added a new section to review_changes. incompleteChange lists untouched partners: tests/core/api/review-changes-sections.test.ts (strength 0.7) and .claude-plugin/tea-rags/.claude-plugin/plugin.json (strength 0.6).",
+      "prompt": "Изменение готово, тесты зелёные. Коммить.",
+      "expected": {
+        "mustDo": [
+          "Inspect each partner (find_symbol outline/body)",
+          "Edit the sections test in the same diff if it pins the section list (depends on the changed contract)",
+          "plugin.json: accept with evidence that it is a version manifest (known noise per repair/silentCoupling.md)"
+        ],
+        "mustNotDo": ["Skip a partner silently"]
+      },
+      "failureMode": "Agent ignores co-change partners or edits manifests without reason"
+    },
+    {
+      "id": "step7-fix-cochange-dismissal-no-evidence",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript. incompleteChange lists an untouched partner test that wires the review_changes section list. The agent's draft report says: \"partner not touched — not needed\".",
+      "prompt": "Отчёт готов, коммить.",
+      "expected": {
+        "mustDo": [
+          "Reject the bare 'not needed' dismissal as no verdict",
+          "Inspect the partner; edit it, or dismiss with a checkable reason (a named test that already pins the seam, or why the file cannot change with this edit)"
+        ],
+        "mustNotDo": ["Commit with an evidence-free dismissal"]
+      },
+      "failureMode": "Agent dismisses a real missing co-change edit without evidence"
+    },
+    {
+      "id": "step7-fix-only-matching-repair-file",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript. review_changes returns one introduced cycles finding; every other family is built and clean.",
+      "prompt": "Финализируй изменение.",
+      "expected": {
+        "mustDo": ["Load exactly repair/cycles.md"],
+        "mustNotDo": [
+          "Read the repair/ directory or files for families with no finding",
+          "Preload all repair files 'for context'"
+        ]
+      },
+      "failureMode": "Agent preloads every repair file and burns tokens"
+    },
+    {
+      "id": "step7-fix-seeded-sdp-barrel",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). Seeded task: the natural solution imports a helper from an unstable component's barrel (index.ts) into a stable contracts-adjacent module, introducing a stableDependencies edge. Agent runs on a worktree with that edit uncommitted.",
+      "prompt": "Используй существующий хелпер форматирования из explore в новом модуле contracts-слоя.",
+      "expected": {
+        "mustDo": [
+          "Step 7 surfaces the stableDependencies finding (no preExisting)",
+          "Apply the remedy (retarget to the declaring file / existing contract) or repair per repair/stableDependencies.md",
+          "Re-run review_changes: finding gone, no new finding"
+        ],
+        "mustNotDo": [
+          "Commit with the SDP finding",
+          "Report the architecture section as clean without reading it"
+        ]
+      },
+      "failureMode": "Direction families never catch an introduced SDP edge through a barrel live"
+    },
+    {
+      "id": "step7-fix-seeded-layering-back-edge",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). Seeded task: the natural solution makes a lower-layer module import from a higher layer (e.g. a domain module importing from api/internal), introducing a layeringBackEdge.",
+      "prompt": "Пусть доменный модуль сам берёт настройку из api-слоя, так проще.",
+      "expected": {
+        "mustDo": [
+          "Step 7 surfaces the layeringBackEdge finding",
+          "Apply the remedy or repair per repair/layeringBackEdge.md (e.g. pass the value in, depend on an existing contract)",
+          "Re-run review_changes: finding gone, no new finding"
+        ],
+        "mustNotDo": [
+          "Commit with the back-edge",
+          "Accept the back-edge as 'simpler' without evidence"
+        ]
+      },
+      "failureMode": "Direction families never catch an introduced layering back-edge live"
+    },
+    {
+      "id": "step7-fix-seeded-hub-cut",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). Seeded task: the target component sits just under the hubLike cut; the natural solution adds an import to a new component, pushing its efferent count over the threshold.",
+      "prompt": "Добавь в этот модуль вызов валидатора из соседнего домена.",
+      "expected": {
+        "mustDo": [
+          "Step 7 surfaces the hubLike finding attributed to the new diff edge",
+          "Apply the remedy (target in a component the source already depends on) or repair per repair/hubLike.md",
+          "Re-run review_changes: finding gone, no new finding; else report metric before/after and escalate"
+        ],
+        "mustNotDo": [
+          "Commit with the hubLike finding",
+          "Dismiss it as a flap without reporting before/after counts"
+        ]
+      },
+      "failureMode": "Direction families never catch an edge that pushes a component over the hub cut live"
     }
   ]
 }

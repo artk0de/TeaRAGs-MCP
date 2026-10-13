@@ -25,6 +25,10 @@ Check who owns the cluster.
   example a generated or table-like block).
 - A file whose project convention is to keep helpers together. Cite the rule
   file and quote it.
+- On a small diff, a split verdict drawn from history alone, with no edge in the
+  diff, names old clusters rather than the change. Accept it, citing that no
+  diff edge joins the cluster. Never split pre-existing clusters in a feature
+  diff.
 
 ## Escalate when
 
