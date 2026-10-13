@@ -13,6 +13,9 @@
  *   4. type declarations (bd tea-rags-mcp-vi0wx, spec §1b) — one
  *      `FileExtraction.typeDeclarations` fact per module-level type, namespace
  *      and non-function `const`, for the naming lexicon.
+ *   5. field accesses (bd tea-rags-mcp-zy6hx) — one `FileExtraction.fieldAccesses`
+ *      fact per site a class member reads or writes a field of `this`, its class
+ *      or a parameter, for `cg_symbols_edges_field`.
  *
  * A new TypeScript extraction facet is added HERE, one `ExtractionFacetPass` at a
  * time, rather than by growing the monolith. What a pass can and cannot express —
@@ -24,6 +27,7 @@
 import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { tsNameOf } from "./name-of.js";
 import { typescriptDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
+import { typescriptFieldAccessFacetPass } from "./passes/field-accesses.js";
 import { TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
 import { ecmascriptSymbolKindFacetPass } from "./passes/symbol-kind.js";
 import { typescriptTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
@@ -35,4 +39,5 @@ export const TYPESCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   createIdentifierDeclarationFacetPass(TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX),
   ecmascriptSymbolKindFacetPass(tsNameOf),
   ecmascriptTypeDeclarationFacetPass(tsNameOf),
+  typescriptFieldAccessFacetPass,
 ];
