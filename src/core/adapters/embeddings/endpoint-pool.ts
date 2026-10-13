@@ -24,6 +24,8 @@ export interface EmbeddingEndpointState {
   tier: EmbeddingEndpointTier;
   healthy: boolean;
   consecutiveFailures: number;
+  /** Why the last probe failed; set only while a probe is the thing that failed it. */
+  probeFailureReason?: string;
   /** EWMA of measured throughput; undefined until the first timed success. */
   charsPerSecond?: number;
 }
@@ -35,7 +37,7 @@ export interface EmbeddingEndpointPoolConfig {
   failoverConsecutiveFailures: number;
   /** Minimum gap between two probes of the same failed endpoint. */
   probeIntervalMs: number;
-  /** Health check for one endpoint (e.g. GET /health). A throw counts as a failed probe. */
+  /** Health check for one endpoint (e.g. GET /health). A throw counts as a failed probe; its message is the reported reason. */
   probe: (url: string) => Promise<boolean>;
   now?: () => number;
   /** EWMA smoothing factor for throughput samples. Default 0.3. */
@@ -184,7 +186,7 @@ export class EmbeddingEndpointPool {
     await Promise.all(
       due.map(async (endpoint) => {
         endpoint.lastProbeAt = now;
-        if (await this.safeProbe(endpoint.url)) this.markHealthy(endpoint);
+        if (await this.safeProbe(endpoint)) this.markHealthy(endpoint);
       }),
     );
   }
@@ -208,7 +210,7 @@ export class EmbeddingEndpointPool {
     const members = this.endpoints.filter((e) => e.tier === tier && !e.retired);
     const results = await Promise.all(
       members.map(async (endpoint) => {
-        const ok = await this.safeProbe(endpoint.url);
+        const ok = await this.safeProbe(endpoint);
         if (ok) this.markHealthy(endpoint);
         else this.markFailed(endpoint);
         return ok;
@@ -217,12 +219,24 @@ export class EmbeddingEndpointPool {
     return results.some(Boolean);
   }
 
-  private async safeProbe(url: string): Promise<boolean> {
+  private async safeProbe(endpoint: TrackedEmbeddingEndpoint): Promise<boolean> {
     try {
-      return await this.probe(url);
-    } catch {
+      const ok = await this.probe(endpoint.url);
+      endpoint.probeFailureReason = undefined;
+      return ok;
+    } catch (error) {
+      endpoint.probeFailureReason = error instanceof Error ? error.message : String(error);
       return false;
     }
+  }
+
+  /** Probe-failure reasons of the unhealthy members of one tier; `url: reason` once the tier has several members. */
+  unavailableReason(tier: EmbeddingEndpointTier): string | undefined {
+    const members = this.endpoints.filter((e) => e.tier === tier);
+    const reasons = members
+      .filter((e) => !e.healthy && e.probeFailureReason !== undefined)
+      .map((e) => (members.length > 1 ? `${e.url}: ${e.probeFailureReason}` : e.probeFailureReason));
+    return reasons.length > 0 ? reasons.join("; ") : undefined;
   }
 
   private markFailed(endpoint: TrackedEmbeddingEndpoint): void {
@@ -256,6 +270,7 @@ function toState(endpoint: TrackedEmbeddingEndpoint): EmbeddingEndpointState {
     healthy: endpoint.healthy,
     consecutiveFailures: endpoint.consecutiveFailures,
   };
+  if (endpoint.probeFailureReason !== undefined) state.probeFailureReason = endpoint.probeFailureReason;
   if (endpoint.charsPerSecond !== undefined) state.charsPerSecond = endpoint.charsPerSecond;
   return state;
 }

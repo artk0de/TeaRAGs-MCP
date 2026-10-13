@@ -44,6 +44,7 @@ import { getModelDimensions, resolveStartingDimensions } from "../utils/model-di
 import {
   LlamaServerContextOverflowError,
   LlamaServerModelMismatchError,
+  LlamaServerProbeError,
   LlamaServerResponseError,
   LlamaServerUnavailableError,
   type LlamaServerServedModel,
@@ -116,6 +117,24 @@ class BatchSizeFailure extends Error {
 
 function describe(value: unknown): string {
   return value instanceof Error ? value.message : String(value);
+}
+
+function isLlamaServerHealthBody(body: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    return typeof parsed === "object" && parsed !== null && typeof (parsed as { status?: unknown }).status === "string";
+  } catch {
+    return false;
+  }
+}
+
+function portOf(url: string): string {
+  const parsed = new URL(url);
+  return parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+}
+
+function describeConnectFailure(error: unknown): string {
+  return errorCode(error) ?? describe(error);
 }
 
 function errorCode(error: unknown): string | undefined {
@@ -559,13 +578,40 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
     }
   }
 
+  /**
+   * `/health` of a real llama-server answers `{"status": "ok"}` (200), or 503
+   * while the model loads. Any other responder on the port — a 404, a plain
+   * "OK" — is a foreign process (bd tea-rags-mcp-1xnmd): it throws a reason
+   * naming it instead of passing as healthy.
+   */
   private async probeHealth(url: string): Promise<boolean> {
-    const response = await this.fetchFn(`${url}/health`, {
-      method: "GET",
-      headers: this.authHeaders(),
-      signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS),
-    });
-    return response.ok;
+    let response: Response;
+    try {
+      response = await this.fetchFn(`${url}/health`, {
+        method: "GET",
+        headers: this.authHeaders(),
+        signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS),
+      });
+    } catch (error) {
+      throw new LlamaServerProbeError(url, `${url} is unreachable: ${describeConnectFailure(error)}`, error);
+    }
+    const body = await response.text().catch(() => "");
+    if (response.status === 503) {
+      throw new LlamaServerProbeError(url, `llama-server at ${url} answered 503 on /health (still loading the model?)`);
+    }
+    if (response.ok && isLlamaServerHealthBody(body)) return true;
+    const seen = `GET ${url}/health answered ${response.status} ${response.headers.get("content-type") ?? "no content-type"} ${JSON.stringify(body.slice(0, 80))}`;
+    throw new LlamaServerProbeError(url, `port ${portOf(url)} is held by a non-llama-server process (${seen})`);
+  }
+
+  /** Why the configured peers read unavailable at the last probe; undefined when none failed a probe. */
+  getPrimaryUnavailableReason(): string | undefined {
+    return this.pool.unavailableReason("peer");
+  }
+
+  /** Why the configured fallbacks read unavailable at the last probe. */
+  getFallbackUnavailableReason(): string | undefined {
+    return this.pool.unavailableReason("fallback");
   }
 
   private authHeaders(): Record<string, string> {
