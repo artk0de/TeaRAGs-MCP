@@ -53,7 +53,7 @@ const REVIEW_CHANGES_DESCRIPTION =
   "components — triage like findings), resolved, persisting ({family, subject}, no evidence — not the change's), indexLag?, " +
   "maybeAlreadyCommitted (index lacks the merge-base: introduced may hold already-committed edits)} — full detector set " +
   "judged on index vs index+tree edges, keyed by endpoints, renames canonicalized; silentCoupling, shotgunSurgery, norms " +
-  "read git/type history no edge overlay moves = persisting by construction. " +
+  "read git/type history no edge overlay moves, splitCandidates merge verdicts too = persisting by construction. " +
   "Detector rows also carry exclusions: mainSequence excludedLowConnectionCount (small-N components below the " +
   "connection floor), silentCoupling excluded block (the production taxonomy's counters) — a zero over excluded " +
   "classes is not a clean pass; silentCoupling pairs sharing an endpoint list as ONE finding (partners[] = every " +
