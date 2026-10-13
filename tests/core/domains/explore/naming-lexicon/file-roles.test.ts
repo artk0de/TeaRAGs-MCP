@@ -395,3 +395,139 @@ describe("buildDependencyNormFileRoles — conventional directory promotes an al
     expect(roles.get("app/helpers/w/sync_worker.rb")).toEqual({ role: "worker", strong: true });
   });
 });
+
+describe("buildDependencyNormFileRoles — ancestor-confirmed conventional directories (8up12 part 2)", () => {
+  /** A class row: `superclass` is its kind; every other ancestor is a mixin / implemented interface. */
+  function declared(
+    relPath: string,
+    shortName: string,
+    { mixins = [], superclass }: { mixins?: string[]; superclass?: string } = {},
+    symbolKind: TypeNameRow["symbolKind"] = "class",
+  ): TypeNameRow {
+    return {
+      symbolId: shortName,
+      relPath,
+      shortName,
+      symbolKind,
+      ancestors: [...(superclass ? [superclass] : []), ...mixins],
+      ...(superclass ? { superclass } : {}),
+    };
+  }
+  const service = { mixins: ["KindOfService"] };
+  const services = [
+    declared("app/services/a/create_invoice.rb", "CreateInvoice", service),
+    declared("app/services/a/update_client.rb", "UpdateClient", service),
+    declared("app/services/b/create_task.rb", "CreateTask", service),
+    declared("app/services/b/archive_job.rb", "ArchiveJob", service),
+  ];
+
+  it("confirms a directory whose name is a majority mixin's head: its carriers, untyped ones included, take the role strong", () => {
+    const untyped = declared("app/services/b/qux.rb", "Qux", service);
+    const roles = buildDependencyNormFileRoles([...services, untyped]);
+
+    for (const { relPath } of [...services, untyped]) {
+      expect(roles.get(relPath), relPath).toEqual({ role: "service", strong: true });
+    }
+  });
+
+  it("gives the role to the confirming ancestor's carriers only — a file without it keeps its own role", () => {
+    const outsider = declared("app/services/a/report_builder.rb", "ReportBuilder");
+    const without = buildDependencyNormFileRoles([outsider]).get(outsider.relPath);
+    const roles = buildDependencyNormFileRoles([...services, outsider]);
+
+    expect(roles.get(outsider.relPath)).toEqual(without);
+    expect(roles.get(services[0]?.relPath ?? "")).toEqual({ role: "service", strong: true });
+  });
+
+  it("never confirms a directory whose name is not the mixin's head", () => {
+    const domains = ["sms", "chat", "seats", "billing"];
+    const clients = domains.map((d) =>
+      declared(`app/services/${d}/api/${d}_client.rb`, `${d.toUpperCase()}Client`, {
+        mixins: ["Api::Contracts::Enforcement"],
+      }),
+    );
+    const roles = buildDependencyNormFileRoles(clients);
+
+    for (const { relPath } of clients) expect(roles.get(relPath)?.role, relPath).not.toBe("api");
+  });
+
+  it("lets a domain-noun subdirectory inherit the confirmed role from its ancestor directory, never its own name", () => {
+    const billing = [
+      declared("app/services/growth_billing/charge_card.rb", "ChargeCard", service),
+      declared("app/services/growth_billing/refund_payment.rb", "RefundPayment", service),
+      declared(
+        "app/services/growth_billing/subscription_payment_date_update_service.rb",
+        "SubscriptionPaymentDateUpdate",
+        service,
+      ),
+    ];
+    const roles = buildDependencyNormFileRoles([...services, ...billing]);
+
+    for (const { relPath } of billing) expect(roles.get(relPath), relPath).toEqual({ role: "service", strong: true });
+  });
+
+  it("does not confirm a directory where the ancestor's carriers are under the directory share", () => {
+    const rows = [
+      declared("app/services/a/create_invoice.rb", "CreateInvoice", service),
+      declared("app/services/b/create_task.rb", "CreateTask", service),
+      declared("app/services/a/report_builder.rb", "ReportBuilder"),
+      declared("app/services/b/invoice_presenter.rb", "InvoicePresenter"),
+      declared("app/services/c/payment_gateway.rb", "PaymentGateway"),
+    ];
+    const roles = buildDependencyNormFileRoles(rows);
+
+    expect(roles.get("app/services/a/create_invoice.rb")?.role).not.toBe("service");
+    expect(roles.get("app/services/b/create_task.rb")?.role).not.toBe("service");
+  });
+
+  it("leaves an inheritance-family file under a confirmed directory with its family role", () => {
+    const widget = { mixins: ["BaseWidget"] };
+    const rows = [
+      declared("app/widgets/a/sales_chart.rb", "SalesChart", widget),
+      declared("app/widgets/a/team_list.rb", "TeamList", widget),
+      declared("app/widgets/b/inbox_feed.rb", "InboxFeed", widget),
+      declared("app/widgets/b/stored_layout.rb", "StoredLayout", {
+        superclass: "ApplicationRecord",
+        mixins: ["BaseWidget"],
+      }),
+      declared("app/models/invoice.rb", "Invoice", { superclass: "ApplicationRecord" }),
+      declared("app/models/client.rb", "Client", { superclass: "ApplicationRecord" }),
+      declared("app/models/firm.rb", "Firm", { superclass: "ApplicationRecord" }),
+    ];
+    const roles = buildDependencyNormFileRoles(rows);
+
+    expect(roles.get("app/widgets/a/sales_chart.rb")).toEqual({ role: "widget", strong: true });
+    expect(roles.get("app/widgets/b/stored_layout.rb")).toEqual({ role: "record", strong: true });
+  });
+
+  it("keeps an ioShape entry weak under a confirmed directory", () => {
+    const props = declared("app/services/b/foo.ts", "FooProps", service, "type_alias");
+    const roles = buildDependencyNormFileRoles(
+      [...services, props],
+      [
+        ...services.map((r) => assignment(r.symbolId, r.relPath, "service", "projectSuffix")),
+        assignment("FooProps", props.relPath, "props", "directory"),
+      ],
+    );
+
+    expect(roles.get(props.relPath)).toMatchObject({ strong: false, weakReason: "ioShape" });
+  });
+
+  it("confirms a directory from an implemented interface: implementers take its role, a sibling without it keeps its own", () => {
+    const migration = { mixins: ["Migration"] };
+    const rows = [
+      declared("src/maintenance/migration/steps/add-index.ts", "AddIndexStep", migration),
+      declared("src/maintenance/migration/steps/drop-field.ts", "DropLegacyField", migration),
+      declared("src/maintenance/migration/steps/rename-key.ts", "RenamePayloadKey", migration),
+      declared("src/maintenance/migration/schema-migrator.ts", "SchemaMigrator"),
+      declared("src/ingest/snapshot-migrator.ts", "SnapshotMigrator"),
+      declared("src/explore/stats-migrator.ts", "StatsMigrator"),
+    ];
+    const roles = buildDependencyNormFileRoles(rows);
+
+    for (const { relPath } of rows.slice(0, 3)) {
+      expect(roles.get(relPath), relPath).toEqual({ role: "migration", strong: true });
+    }
+    expect(roles.get("src/maintenance/migration/schema-migrator.ts")?.role).toBe("migrator");
+  });
+});
