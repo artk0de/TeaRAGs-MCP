@@ -114,7 +114,7 @@ function collectYardMethodDirectives(code: string): {
   return { claimedLines, directives };
 }
 
-function collectYardRawParamBrackets(code: string): Map<number, Record<string, string>> {
+export function collectYardRawParamBrackets(code: string): Map<number, Record<string, string>> {
   const lines = code.split(/\r?\n/);
   const out = new Map<number, Record<string, string>>();
   let pending: Record<string, string> | null = null;

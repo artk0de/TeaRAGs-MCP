@@ -63,8 +63,8 @@
       "digest": "sha256:816f6a8bc8de1d1cb6d7fca5a0b2c2d256530ac4c8db262e687230ec5fbc3484"
     },
     "walker": {
-      "version": 8,
-      "digest": "sha256:f35b644dce978d874273c945daf7a588257cad70a1fa628db498e5c572cb65d7"
+      "version": 9,
+      "digest": "sha256:12df437d9f6016bc94cc0fa9fb78d28c5c8ef07356e70e2b399cd8fcfffae61b"
     }
   },
   "rust": {
