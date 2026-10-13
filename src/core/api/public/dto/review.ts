@@ -175,8 +175,9 @@ export interface ArchitectureSectionPayload {
    * Detector findings over the diff's overlay edges, listed under the
    * family-aware cap of 100 (bd tea-rags-mcp-35v4v): every family keeps at
    * least one slot, and each family's cut is counted on its own detector row —
-   * never silently dropped. `foundationTerminal` and `preExisting` ride these
-   * rows (see {@link DiffDetectorFinding}).
+   * never silently dropped. `foundationTerminal`, `preExisting` and the
+   * dry-run-verified `remedy` (bd tea-rags-mcp-89k7k.1.19.6) ride these rows
+   * (see {@link DiffDetectorFinding}).
    */
   findings: readonly DiffDetectorFinding[];
   /**

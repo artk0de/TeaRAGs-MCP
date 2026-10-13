@@ -14,7 +14,12 @@
  */
 
 import { diffDetectorFindingKey } from "../../../../contracts/types/architecture-finding-key.js";
-import type { DiffDetectorFinding, DiffFindingRemedy } from "../../../../contracts/types/diff-detector-finding.js";
+import type {
+  DiffDetectorFamily,
+  DiffDetectorFinding,
+  DiffDetectorStatus,
+  DiffFindingRemedy,
+} from "../../../../contracts/types/diff-detector-finding.js";
 import type { ReviewEdgeOverlay } from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import type { DiffEdgeEdit, DiffRejudge, ExportTableReader } from "./diff-family-detector.js";
 import { WHOLE_MODULE_EXPORT_NAME } from "./shared.js";
@@ -156,6 +161,44 @@ export class DiffFindingRemedyResolver {
     const after = this.deps.rejudge(editsOf(remedy)).findings.map(diffDetectorFindingKey);
     return !after.includes(diffDetectorFindingKey(finding)) && after.every((key) => before.has(key));
   }
+}
+
+/** The families the resolver never repairs — the agent decides by the family's repair file (spec D2). */
+const AGENT_DECIDED_FAMILIES: ReadonlySet<DiffDetectorFamily> = new Set(["silentCoupling", "splitCandidates"]);
+
+/**
+ * One run's findings with the resolver's `remedy` stamped on (bd
+ * tea-rags-mcp-89k7k.1.19.6). Only findings of a family that can carry a
+ * remedy reach the resolver, so the dry-run cost stays bounded by the
+ * repairable findings. A resolver throw never fails the pass: the finding
+ * keeps no remedy and its family's status row carries the `reason`.
+ */
+export function stampDiffFindingRemedies(
+  result: { findings: readonly DiffDetectorFinding[]; detectors: readonly DiffDetectorStatus[] },
+  resolver: Pick<DiffFindingRemedyResolver, "resolve">,
+): { findings: DiffDetectorFinding[]; detectors: DiffDetectorStatus[] } {
+  const failures = new Map<DiffDetectorFamily, string>();
+  const findings = result.findings.map((finding) => {
+    if (AGENT_DECIDED_FAMILIES.has(finding.detector)) return finding;
+    try {
+      const remedy = resolver.resolve(finding, result.findings);
+      return remedy === undefined ? finding : { ...finding, remedy };
+    } catch (error) {
+      if (!failures.has(finding.detector)) {
+        failures.set(
+          finding.detector,
+          `remedy resolver failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      return finding;
+    }
+  });
+  const detectors = result.detectors.map((status) => {
+    const failure = failures.get(status.detector);
+    if (failure === undefined) return status;
+    return { ...status, reason: status.reason === undefined ? failure : `${status.reason}; ${failure}` };
+  });
+  return { findings, detectors };
 }
 
 function retarget(source: string, from: string, to: string, names: string[]): RetargetImportRemedy {

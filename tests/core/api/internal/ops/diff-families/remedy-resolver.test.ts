@@ -18,8 +18,15 @@ import type {
   DiffRejudge,
   ExportTableReader,
 } from "../../../../../../src/core/api/internal/ops/diff-families/index.js";
-import { DiffFindingRemedyResolver } from "../../../../../../src/core/api/internal/ops/diff-families/remedy-resolver.js";
-import type { DiffDetectorFinding } from "../../../../../../src/core/contracts/types/diff-detector-finding.js";
+import {
+  DiffFindingRemedyResolver,
+  stampDiffFindingRemedies,
+} from "../../../../../../src/core/api/internal/ops/diff-families/remedy-resolver.js";
+import type {
+  DiffDetectorFinding,
+  DiffDetectorStatus,
+  DiffFindingRemedy,
+} from "../../../../../../src/core/contracts/types/diff-detector-finding.js";
 import {
   ReviewEdgeOverlay,
   type HubLikeDependencyFanCounts,
@@ -338,5 +345,65 @@ describe("DiffFindingRemedyResolver", () => {
     expect(resolver.resolve(coupling, [coupling, split])).toBeUndefined();
     expect(resolver.resolve(split, [coupling, split])).toBeUndefined();
     expect(rejudge).not.toHaveBeenCalled();
+  });
+});
+
+// bd tea-rags-mcp-89k7k.1.19.6: the section's stamping pass over one run.
+describe("stampDiffFindingRemedies", () => {
+  const leak: DiffDetectorFinding = {
+    detector: "leakingAbstraction",
+    subject: "src/app/a.ts -> src/lib/x.ts",
+    detail: "leak",
+    endpoints: { kind: "fileEdge", sourceRelPath: "src/app/a.ts", targetRelPath: "src/lib/x.ts" },
+    evidence: { facadeRelPath: "src/lib/index.ts" },
+  };
+  const coupling: DiffDetectorFinding = {
+    detector: "silentCoupling",
+    subject: "src/a.ts ~ src/b.ts",
+    detail: "co-change",
+    endpoints: { kind: "filePair", sourceRelPath: "src/a.ts", targetRelPath: "src/b.ts" },
+    evidence: { support: 5, strength: 0.8 },
+  };
+  const remedy: DiffFindingRemedy = {
+    kind: "retargetImport",
+    sourceRelPath: "src/app/a.ts",
+    fromRelPath: "src/lib/x.ts",
+    toRelPath: "src/lib/index.ts",
+    importedNames: ["X"],
+  };
+  const statuses: DiffDetectorStatus[] = [
+    { detector: "leakingAbstraction", built: true, findingCount: 1 },
+    { detector: "silentCoupling", built: true, findingCount: 1 },
+  ];
+
+  it("stamps the resolver's remedy on a finding that can carry one and never asks for the others", () => {
+    const resolve = vi.fn((finding: DiffDetectorFinding) => (finding === leak ? remedy : undefined));
+
+    const stamped = stampDiffFindingRemedies({ findings: [leak, coupling], detectors: statuses }, { resolve });
+
+    expect(stamped.findings).toEqual([{ ...leak, remedy }, coupling]);
+    expect(stamped.detectors).toEqual(statuses);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith(leak, [leak, coupling]);
+  });
+
+  it("a resolver throw never fails the pass: the finding goes out without a remedy, its family's row says why", () => {
+    const resolve = vi.fn((): DiffFindingRemedy | undefined => {
+      throw new Error("export table read failed");
+    });
+
+    const stamped = stampDiffFindingRemedies({ findings: [leak, coupling], detectors: statuses }, { resolve });
+
+    expect(stamped.findings).toEqual([leak, coupling]);
+    expect(stamped.findings[0]).not.toHaveProperty("remedy");
+    expect(stamped.detectors).toEqual([
+      {
+        detector: "leakingAbstraction",
+        built: true,
+        findingCount: 1,
+        reason: "remedy resolver failed: export table read failed",
+      },
+      statuses[1],
+    ]);
   });
 });

@@ -44,7 +44,8 @@ const REVIEW_CHANGES_DESCRIPTION =
   "facadeContract, layeringBackEdge = added edge from lower inferred level up, evidence levels + closesKnot; " +
   "parent->own subdir never; hubLike = added edges carry component past get_architecture_report's hub cuts, Ca/Ce " +
   "before+after, Ce excludes foundation edges); a finding = endpoints (typed by kind, get_architecture_report's endpoint fields) + structured " +
-  "evidence + subject (endpoints as text) + detail; each family ranked costliest-first before the cap by maintenanceCost (get_architecture_report's " +
+  "evidence + subject (endpoints as text) + detail + optional remedy (dry-run-verified edge fix: retargetImport [+addExport] | " +
+  "restoreExport; absent = no cheap fix); each family ranked costliest-first before the cap by maintenanceCost (get_architecture_report's " +
   "shrunken mean over the files the finding names, n0 estimated over this review's findings; <2 measured = 0.5; absent = no git readings); findings cap 100, family-aware — every family keeps >=1 slot; per-family truncated rides each " +
   "detector row, findingCount stays the family's FULL total, rows reconcile findingCount = listed + truncated. " +
   "Detector rows also carry exclusions: mainSequence excludedLowConnectionCount (small-N components below the " +

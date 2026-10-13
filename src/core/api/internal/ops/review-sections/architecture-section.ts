@@ -77,6 +77,8 @@ import {
 import { isDocumentationPath, type ModuleImportSpecifierLookup } from "../architecture-report-ops.js";
 import {
   DiffDetectorRun,
+  DiffFindingRemedyResolver,
+  stampDiffFindingRemedies,
   type DiffDetectorBaseEdgeReader,
   type DiffDetectorContractReader,
   type DiffDetectorGraphReader,
@@ -91,6 +93,7 @@ import {
   type ReviewEdgeExtractionDeps,
 } from "../review-edge-overlay.js";
 import type { ReviewSectionBuildContext, ReviewSectionProvider } from "./review-section-provider.js";
+import { WiredExportTableReader } from "./wired-export-table-reader.js";
 
 /** Findings the section lists; the rest are counted in `truncated`. */
 export const ARCHITECTURE_FINDING_CAP = 100;
@@ -421,7 +424,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
 
     // The overlay is the judgement's view over the reads.
     const overlay = new ReviewEdgeOverlay(reads);
-    const result = new DiffDetectorRun({
+    const run = new DiffDetectorRun({
       graph,
       ...(baseEdges !== undefined ? { baseEdges } : {}),
       catalog,
@@ -431,18 +434,27 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       mainSequenceDistanceThreshold: mainSequence.distanceThreshold,
       layering: readLayering(facts.components, layeringModel),
       hubLike: readHubLikeDependency(facts.components, { foundationComponents }),
-    }).run(
-      {
-        changedFiles: scope.files,
-        // Presence is the whole change, the cap limits only the sources (bd
-        // tea-rags-mcp-lxbrr).
-        touchedFiles: scope.touchedFiles,
-        // A truncated scope marks every built family partial (bd
-        // tea-rags-mcp-89k7k.1.9): the cap's skipped files never reach the
-        // overlay, so a family's zero can rest on edges it never saw.
-        ...(scope.skipped > 0 ? { skippedFiles: scope.skipped } : {}),
-      },
-      overlay,
+    });
+    const runScope = {
+      changedFiles: scope.files,
+      // Presence is the whole change, the cap limits only the sources (bd
+      // tea-rags-mcp-lxbrr).
+      touchedFiles: scope.touchedFiles,
+      // A truncated scope marks every built family partial (bd
+      // tea-rags-mcp-89k7k.1.9): the cap's skipped files never reach the
+      // overlay, so a family's zero can rest on edges it never saw.
+      ...(scope.skipped > 0 ? { skippedFiles: scope.skipped } : {}),
+    };
+    // Each finding carries its dry-run-verified repair (bd
+    // tea-rags-mcp-89k7k.1.19.6), stamped before ranking and the cap; the
+    // what-if re-runs the SAME run over the edited overlay.
+    const result = stampDiffFindingRemedies(
+      run.run(runScope, overlay),
+      new DiffFindingRemedyResolver({
+        overlay,
+        exports: new WiredExportTableReader(contract, production.graph.edges),
+        rejudge: (edits) => run.rejudge(runScope, overlay, edits),
+      }),
     );
     // Ranked by maintenance cost BEFORE the cap (bd tea-rags-mcp-r8hme.20),
     // so a family's slots keep its costliest findings.

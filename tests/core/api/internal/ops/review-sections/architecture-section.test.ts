@@ -796,6 +796,8 @@ describe("architectureSectionProvider.run — facadeContract wiring", () => {
         endpoints: { kind: "file", relPath: "src/lib/index.ts", component: "src/lib" },
         evidence: { droppedNames: [{ name: "b", consumers: ["src/app/c3.ts"] }] },
         detail: expect.stringContaining("stops re-exporting"),
+        // The dry-run put `b` back on the surface and the break was gone (bd tea-rags-mcp-89k7k.1.19.6).
+        remedy: { kind: "restoreExport", facadeRelPath: "src/lib/index.ts", names: ["b"] },
       },
     ]);
     const detectors = payload.detectors as { detector: string; built: boolean; findingCount: number }[];
@@ -824,6 +826,74 @@ describe("architectureSectionProvider.run — facadeContract wiring", () => {
       built: true,
       findingCount: 0,
     });
+  });
+});
+
+// bd tea-rags-mcp-89k7k.1.19.6: findings carry the dry-run-verified remedy.
+describe("architectureSectionProvider.run — remedy wiring", () => {
+  const SOURCE = "src/app/a.ts";
+  const FACADE = "src/lib/index.ts";
+  const INTERNAL = "src/lib/x.ts";
+
+  /**
+   * A measured `src/lib` module (three external importers, all through the
+   * facade) and a source that already imports the facade; the tree adds a
+   * deep import of `b` straight from the internal file. `named` = whether the
+   * indexed edges recorded their export names (the export table).
+   */
+  function facadeBypassFixture(named: boolean): GraphDbStub {
+    writeFile(INTERNAL, "export const a = 1;\nexport const b = 2;\n");
+    writeFile("src/lib/y.ts", "export const z = 1;\n");
+    writeFile(FACADE, 'export { a, b } from "./x";\nexport { z } from "./y";\n');
+    writeFile(SOURCE, 'import { a } from "../lib/index";\nimport { b } from "../lib/x";\nexport const A = a + b;\n');
+    const names = (imported: string[], reexported?: string[]) =>
+      named ? { importedExportNames: imported, ...(reexported ? { reexportedExportNames: reexported } : {}) } : {};
+    const edgeOf = (source: RelPath, target: RelPath, imported: string[], reexported?: string[]) => ({
+      sourceRelPath: source,
+      targetRelPath: target,
+      callWeight: 1,
+      ...names(imported, reexported),
+    });
+    return graphDbStub({
+      files: [FACADE, INTERNAL, "src/lib/y.ts", SOURCE, "src/app/c1.ts", "src/app/c2.ts", "src/app/c3.ts"].map(
+        graphFile,
+      ),
+      edges: [
+        edgeOf(FACADE, INTERNAL, [], ["a", "b"]),
+        edgeOf(FACADE, "src/lib/y.ts", [], ["z"]),
+        edgeOf("src/app/c1.ts", FACADE, ["a"]),
+        edgeOf("src/app/c2.ts", FACADE, ["a"]),
+        edgeOf("src/app/c3.ts", FACADE, ["a", "b"]),
+        edgeOf(SOURCE, FACADE, ["a"]),
+      ],
+    });
+  }
+
+  const leakOf = async (graphDb: GraphDbStub) => {
+    const payload = (await architectureSectionProvider.run(runContext({ graphDb, scope: scopeOf([SOURCE]) }))) as {
+      findings: { detector: string; remedy?: unknown }[];
+    };
+    const leaks = payload.findings.filter((finding) => finding.detector === "leakingAbstraction");
+    expect(leaks).toHaveLength(1);
+    return leaks[0];
+  };
+
+  it("a facade-bypassing import carries the verified retarget to the facade", async () => {
+    const leak = await leakOf(facadeBypassFixture(true));
+
+    expect(leak.remedy).toEqual({
+      kind: "retargetImport",
+      sourceRelPath: SOURCE,
+      fromRelPath: INTERNAL,
+      toRelPath: FACADE,
+      importedNames: ["b"],
+    });
+  });
+
+  it("no export table for the names — the finding goes out without a remedy", async () => {
+    const leak = await leakOf(facadeBypassFixture(false));
+
+    expect(leak).not.toHaveProperty("remedy");
   });
 });
 

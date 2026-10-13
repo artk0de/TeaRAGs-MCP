@@ -50,12 +50,13 @@
  * again from a reverse or duplicated read.
  */
 
+import type { ReviewFileEdge } from "../../../contracts/types/codegraph-storage.js";
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../contracts/types/diff-detector-finding.js";
 import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
+  ReviewEdgeOverlay,
   type HubLikeDependencyReading,
   type LayeringReading,
-  type ReviewEdgeOverlay,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   DIFF_FAMILY_DETECTORS,
@@ -66,6 +67,7 @@ import {
   type DiffDetectorScope,
   type DiffDetectorSilentCouplingFacts,
   type DiffDetectorSplitMergeReader,
+  type DiffEdgeEdit,
   type DiffFamilyDetectorContext,
   type HeldBeforeChangeEvidence,
   type OverlayEdge,
@@ -81,6 +83,14 @@ export type {
   DiffDetectorScope,
   DiffDetectorSilentCouplingFacts,
   DiffDetectorSplitMergeReader,
+  ExportTableReader,
+} from "./diff-families/index.js";
+// The remedy pass over a run's findings (bd tea-rags-mcp-89k7k.1.19.6) — its
+// consumers reach it where they reach the run and its `rejudge` seam.
+export {
+  DiffFindingRemedyResolver,
+  stampDiffFindingRemedies,
+  WHOLE_MODULE_EXPORT_NAME,
 } from "./diff-families/index.js";
 
 export interface DiffDetectorRunDeps {
@@ -234,6 +244,17 @@ export class DiffDetectorRun {
     };
   }
 
+  /**
+   * The what-if seam (bd tea-rags-mcp-89k7k.1.19.6): {@link run} over the
+   * overlay with `edits` applied — same scope, same ports, same families. It
+   * knows edges and export lines, never remedies (89k7k.1.7 and r8hme.21
+   * reuse it); `overlay` itself is left as read. See
+   * {@link editedReviewEdgeOverlay} for how each edit lands.
+   */
+  rejudge(scope: DiffDetectorScope, overlay: ReviewEdgeOverlay, edits: readonly DiffEdgeEdit[]): DiffDetectorFindings {
+    return this.run(scope, editedReviewEdgeOverlay(overlay, edits));
+  }
+
   /** The one context every family judges — the subtraction and `heldBeforeChange` computed here, once. */
   private familyContext(scope: DiffDetectorScope, overlay: ReviewEdgeOverlay): DiffFamilyDetectorContext {
     // Presence in the change (bd tea-rags-mcp-lxbrr) — never the capped set:
@@ -288,6 +309,68 @@ export class DiffDetectorRun {
     if (atBase !== undefined) return atBase.has(edge.target) ? "base" : undefined;
     return indexedGraphHolds(this.graph, edge) ? "index" : undefined;
   }
+}
+
+/**
+ * The overlay after `edits`, rebuilt from its own reads (masked set and
+ * unsupported reads unchanged — an edit never widens what the review read):
+ *
+ * - `replace` points `source`'s edge to `from` at `to`, names kept; when
+ *   `source` already holds an edge to `to`, the two merge into one edge with
+ *   both edges' names unioned (one row per target, as the reader builds it).
+ * - `addExport` is one re-export line on a facade. Its names join the facade's
+ *   re-export surface on a SELF-edge (facade → facade): the line adds supply,
+ *   and the dependency it would add (facade → declarer) stays inside the
+ *   facade's own module — so the self-edge, which `uniqueOverlayEdges` drops
+ *   before any per-edge family, changes only what facadeContract reads. A
+ *   facade the review did not read is a no-op: its indexed surface is no
+ *   family's input, and masking it would hide its indexed edges.
+ */
+function editedReviewEdgeOverlay(overlay: ReviewEdgeOverlay, edits: readonly DiffEdgeEdit[]): ReviewEdgeOverlay {
+  const edgesBySource = new Map([...overlay.masked].map((relPath) => [relPath, [...overlay.edgesFrom(relPath)]]));
+  for (const { replace, addExport } of edits) {
+    if (replace !== undefined) {
+      const edges = edgesBySource.get(replace.source);
+      if (edges !== undefined) edgesBySource.set(replace.source, retargetedEdges(edges, replace.from, replace.to));
+    }
+    if (addExport !== undefined) {
+      const { facadeRelPath, names } = addExport;
+      edgesBySource
+        .get(facadeRelPath)
+        ?.push({ sourceRelPath: facadeRelPath, targetRelPath: facadeRelPath, reexportedExportNames: [...names] });
+    }
+  }
+  const skips = new Map(overlay.unsupported().map(({ relPath, ...skip }) => [relPath, skip]));
+  return new ReviewEdgeOverlay(
+    [...edgesBySource].map(([relPath, edges]) => {
+      const skip = skips.get(relPath);
+      return { relPath, edges, ...(skip !== undefined ? { skip } : {}) };
+    }),
+  );
+}
+
+/** `edges` with the edge to `from` now pointing at `to`, merged into an existing edge to `to`. */
+function retargetedEdges(edges: readonly ReviewFileEdge[], from: string, to: string): ReviewFileEdge[] {
+  const moved = edges.find((edge) => edge.targetRelPath === from);
+  if (moved === undefined) return [...edges];
+  const kept = edges.filter((edge) => edge !== moved);
+  const into = kept.find((edge) => edge.targetRelPath === to);
+  if (into === undefined) return [...kept, { ...moved, targetRelPath: to }];
+  return kept.map((edge) => (edge === into ? mergedEdge(into, moved) : edge));
+}
+
+/** One edge carrying both edges' recorded names; a list stays absent only when neither recorded it. */
+function mergedEdge(into: ReviewFileEdge, moved: ReviewFileEdge): ReviewFileEdge {
+  const union = (a?: readonly string[], b?: readonly string[]) =>
+    a === undefined && b === undefined ? undefined : [...new Set([...(a ?? []), ...(b ?? [])])];
+  const imported = union(into.importedExportNames, moved.importedExportNames);
+  const reexported = union(into.reexportedExportNames, moved.reexportedExportNames);
+  return {
+    sourceRelPath: into.sourceRelPath,
+    targetRelPath: into.targetRelPath,
+    ...(imported !== undefined ? { importedExportNames: imported } : {}),
+    ...(reexported !== undefined ? { reexportedExportNames: reexported } : {}),
+  };
 }
 
 /**

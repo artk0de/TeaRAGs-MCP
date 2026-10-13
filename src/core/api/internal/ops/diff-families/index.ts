@@ -33,7 +33,8 @@ export type {
   HeldBeforeChangeEvidence,
   OverlayEdge,
 } from "./diff-family-detector.js";
-export { DiffFindingRemedyResolver } from "./remedy-resolver.js";
+export { DiffFindingRemedyResolver, stampDiffFindingRemedies } from "./remedy-resolver.js";
+export { WHOLE_MODULE_EXPORT_NAME } from "./shared.js";
 
 export const DIFF_FAMILY_DETECTORS: readonly DiffFamilyDetector[] = Object.freeze([
   stableDependenciesDetector,

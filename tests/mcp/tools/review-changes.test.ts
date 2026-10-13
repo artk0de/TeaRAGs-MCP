@@ -80,4 +80,34 @@ describe("review_changes handler", () => {
     expect(app.reviewChanges).toHaveBeenCalledWith(args);
     expect(JSON.parse(result.content[0].text)).toEqual(answer);
   });
+
+  // bd tea-rags-mcp-89k7k.1.19.6: the verified repair reaches the agent, and the contract names it.
+  it("an architecture finding's remedy survives the formatter and the description names it", async () => {
+    const { handler, app, config } = registered()!;
+    const remedy = {
+      kind: "retargetImport",
+      sourceRelPath: "src/app/a.ts",
+      fromRelPath: "src/lib/x.ts",
+      toRelPath: "src/lib/index.ts",
+      importedNames: ["b"],
+    };
+    const answer = {
+      review: {
+        workTree: "/w",
+        sections: {
+          architecture: {
+            built: true,
+            findings: [{ detector: "leakingAbstraction", subject: "src/app/a.ts -> src/lib/x.ts", remedy }],
+            detectors: [],
+          },
+        },
+      },
+    };
+    (app.reviewChanges as ReturnType<typeof vi.fn>).mockResolvedValue(answer);
+
+    const result = await handler({ sections: ["architecture"] });
+
+    expect(JSON.parse(result.content[0].text).review.sections.architecture.findings[0].remedy).toEqual(remedy);
+    expect(config.description).toContain("remedy");
+  });
 });
