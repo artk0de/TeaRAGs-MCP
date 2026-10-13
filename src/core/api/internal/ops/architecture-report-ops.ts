@@ -329,7 +329,13 @@ export class ArchitectureReportOps {
       request.pathPattern,
       commitCounts,
     );
-    const hubLikeDependency = await detectHubLikeDependenciesWithChurn(components, request.pathPattern, commitCounts);
+    const { layeringModel, layering, knotLookup } = runArchitectureLayering(components, graph.files, request);
+    const hubLikeDependency = await detectHubLikeDependenciesWithChurn(
+      components,
+      request.pathPattern,
+      commitCounts,
+      layering.summary.foundation,
+    );
     // An aggregate over the same graph and partition (bd tea-rags-mcp-r8hme.49),
     // not a violation family: nothing in it is ranked or capped by finding.
     const propagationCost = computePropagationCost(graph, { componentOf: components.componentOf });
@@ -341,7 +347,6 @@ export class ArchitectureReportOps {
     // Shotgun surgery (bd tea-rags-mcp-r8hme.50): the same bundles, over the
     // partition split/merge judges and its component graph.
     const shotgun = runShotgunSurgery(cochange, components, request.pathPattern);
-    const { layeringModel, layering, knotLookup } = runArchitectureLayering(components, graph.files, request);
     // Dependency norms (bd tea-rags-mcp-rpx0v), read-time only when asked:
     // roles from each file's primary type, ledgers and verdicts off the graph
     // already in memory. The same partition decides sameDomain locality.
@@ -628,15 +633,18 @@ async function detectHubLikeDependenciesWithChurn(
   components: ComponentGraph,
   pathPattern: ArchitectureReportScope["pathPattern"],
   commitCounts: GitFileCommitCountLookup | undefined,
+  foundation: LayeringReport["summary"]["foundation"],
 ): Promise<HubLikeDependencyReport> {
   // Same components, both Ca and Ce past adaptive cuts (bd tea-rags-mcp-r8hme.47);
-  // churn rides along as evidence, read only when a hub exists.
-  const ungatedHubs = detectHubLikeDependencies(components, { sourcePathPattern: pathPattern });
+  // churn rides along as evidence, read only when a hub exists. Ce leaves out
+  // the layering's measured foundation, terminals included (bd tea-rags-mcp-g77p3).
+  const hubOptions = {
+    sourcePathPattern: pathPattern,
+    foundationComponents: new Set([...(foundation?.components ?? []), ...(foundation?.terminalComponents ?? [])]),
+  };
+  const ungatedHubs = detectHubLikeDependencies(components, hubOptions);
   return commitCounts && ungatedHubs.summary.violationCount > 0
-    ? detectHubLikeDependencies(components, {
-        sourcePathPattern: pathPattern,
-        fileVolatility: await commitCounts(),
-      })
+    ? detectHubLikeDependencies(components, { ...hubOptions, fileVolatility: await commitCounts() })
     : ungatedHubs;
 }
 

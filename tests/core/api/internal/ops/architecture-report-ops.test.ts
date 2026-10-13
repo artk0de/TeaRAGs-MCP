@@ -2264,6 +2264,21 @@ describe("ArchitectureReportOps#build — hubLikeDependency (bd tea-rags-mcp-r8h
     expect(report.summary.hubLikeDependency.churnSignal).toBeUndefined();
   });
 
+  // bd tea-rags-mcp-g77p3: the hub detector reads the layering's measured
+  // foundation. sink1/ declares abstract types only, so it IS the foundation:
+  // h11..h40 reach nothing else and leave Ce — Ca 40, Ce 10, lopsided.
+  it("does not count file edges into the measured foundation toward a hub's Ce", async () => {
+    const g = hubGraph();
+    const typeAbstractness = { abstractTypeCount: 5, concreteTypeCount: 0 };
+    const files = g.files.map((f) => (f.relPath === "sink1/s.ts" ? { ...f, typeAbstractness } : f));
+
+    const report = await new ArchitectureReportOps().build(graphDb({ files, edges: g.edges }), {});
+
+    expect(report.summary.layering.foundation?.components).toContain("sink1");
+    expect(report.violations.filter((v) => v.detector === "hubLikeDependency")).toEqual([]);
+    expect(report.summary.hubLikeDependency.excluded.imbalanced).toBe(1);
+  });
+
   it("attaches the hub's churn from git.file.commitCount", async () => {
     const read = vi.fn(
       async () => new Map(hubGraph().files.map((f) => [f.relPath, f.relPath.startsWith("hub/") ? 7 : 1])),
