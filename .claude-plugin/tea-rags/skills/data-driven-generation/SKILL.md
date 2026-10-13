@@ -393,7 +393,7 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
 | `change.persisting` entry | report-only       | structural; one count line per family, no triage                                      |
 | norms `MISFIT`            | must-fix          | route edge via `expectedPath`; skip only citing plausible `exclusionsUnchecked` class |
 | norms `NEW_PATTERN`       | report-only       | one-line why                                                                          |
-| norms `UNJUDGED`          | report-only       | count per `reason`                                                                    |
+| norms `UNJUDGED`          | report-only       | read `unjudgedReasonCounts` (pre-cap count per reason)                                |
 
 **Base** — `review_changes` base = `git merge-base HEAD main`, the branch's fork
 point on main. Never an integration branch, never a sibling `worktree-agent-*`

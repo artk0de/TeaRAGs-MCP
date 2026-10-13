@@ -153,6 +153,27 @@ describe("judgeAddedEdgeNorms", () => {
     expect(addedEdgeVerdicts.every((row) => row.exclusionsUnchecked === undefined)).toBe(true);
   });
 
+  it("counts UNJUDGED reasons over every added edge, including rows past the cap", () => {
+    const result = judged(
+      [
+        { source: "src/controllers/c1.ts", target: "src/brand-new.ts" },
+        { source: "src/controllers/c1.ts", target: "src/brand-new2.ts" },
+        { source: "src/controllers/c1.ts", target: "src/util/untyped.ts" },
+        { source: "src/controllers/c1.ts", target: "src/util/weak.ts" },
+        { source: "src/controllers/c1.ts", target: "src/services/s1.ts" },
+      ],
+      { cap: 1 },
+    );
+    expect(result.addedEdgeVerdicts).toHaveLength(1);
+    expect(result.unjudgedReasonCounts).toEqual({ notIndexed: 2, untypedRole: 1, weakRole: 1 });
+    expect(result.verdictCounts.UNJUDGED).toBe(4);
+  });
+
+  it("reports an empty unjudgedReasonCounts when every edge is judged", () => {
+    const result = judged([{ source: "src/controllers/c1.ts", target: "src/services/s2.ts" }]);
+    expect(result.unjudgedReasonCounts).toEqual({});
+  });
+
   it("applies an injected exclusion check: its class is UNJUDGED, its classes leave exclusionsUnchecked", () => {
     const { addedEdgeVerdicts } = judged(
       [
