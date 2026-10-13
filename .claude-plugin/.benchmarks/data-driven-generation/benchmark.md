@@ -105,3 +105,37 @@ neutral user framing.
 Run deferred: the with-rule vs baseline measurement waits until
 `get_naming_lexicon` ships (heavy-measurement phase at the end of the epic). No
 `runs[]` entry yet.
+
+## Run 2026-10-13 — Step 7 fix-at-write loop + session-context reuse (bd 89k7k.1.19.8)
+
+18 cases: 17 new (`step7-fix-*`, `session-reuse-*`) + rewritten
+`naming-review-before-commit`. Subject model opus; with-skill arm read
+SKILL.md + only the repair files its scenario loads; baseline arm saw the tool
+list only. Neither arm saw `expected`.
+
+| Metric                  | Value       |
+| ----------------------- | ----------- |
+| With-skill (first pass) | 89% (16/18) |
+| Baseline                | 67% (12/18) |
+| Delta                   | +22pp       |
+
+Baseline (opus) already reverts regressing rounds, escalates after two rounds,
+accepts a `compositionRoot` flag and refuses "by design" without evidence. The
+skill's delta sits in: cheap-fixing `preExisting` + `remedy` (baseline only
+reports), loading exactly the matching repair file (baseline loads none), one
+four-section `review_changes` call, and applying the server `remedy` instead of
+moving code (seeded SDP case).
+
+With-skill failures and fixes:
+
+- `naming-review-before-commit` — renamed `MAX_ROWS` to the `alternatives` word
+  unconditionally. Step 7 naming bullet now says the alternative is soft (same
+  meaning only, else keep + justify).
+- `session-reuse-unedited` — planned a conditional label lookup on `Reranker`;
+  the case context did not say whether the earlier fetch carried labels. Context
+  now states both answers carried `rankingOverlay`.
+
+After the two fixes the with-skill arm re-ran both cases (opus, same blind
+protocol): both PASS — NEW_TERM alternative adopted only on same meaning, no
+re-fetch of the unedited file. Final: with-skill 100% (18/18), baseline 67%
+(12/18), delta +33pp.

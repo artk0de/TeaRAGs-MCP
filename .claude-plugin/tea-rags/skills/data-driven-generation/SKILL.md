@@ -360,10 +360,11 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
    - **naming** — GENERATE writes names Step 5 never judged (helpers, locals,
      constants, types); the section judges every name the added lines declare vs
      HEAD: `MISFIT` → rename to `suggestion` before commit; `COLLISION` →
-     rename; `NEW_TERM` → take an `alternatives` word, else keep + justify
-     (soft); `genericName` → rename; `novel` = no action. Skip naming when every
-     added declaration was a Step 5 draft. Tests not judged (`notJudged`). Never
-     hand-list written names into `names[]`.
+     rename; `NEW_TERM` → soft: `alternatives` word only if same meaning, else
+     keep + one-line why (never default-rename); `genericName` → rename; `novel`
+     = no action. Skip naming when every added declaration was a Step 5 draft.
+     Tests not judged (`notJudged`). Never hand-list written names into
+     `names[]`.
    - **incompleteChange** = co-change partners the change ignores
      (`support`/`confidence` attached) — a forgotten sibling edit is caught
      here, not in review. Partner verdict rule below.
