@@ -34,6 +34,8 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 7. Phase 3d — MAIN SEQUENCE (`detector: "mainSequence"`), then 3d2 — HUB-LIKE
    DEPENDENCY (`detector: "hubLikeDependency"`)
 8. Phase 3e — LAYERING (`detector: "layering"`)
+   - Phase 3h — DIFF-TIME FINDINGS (only for `review_changes` architecture
+     findings: `preExisting`, `remedy`, repair files)
 9. Phase 3f — LAYER MAP (only when the request carried `layerMap`)
 10. Phase 4 — EXCLUSIONS: say what not judged
 11. Phase 5 — OUTPUT
@@ -68,9 +70,19 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 - **`entryPoint: true` distance read as placement defect.** Declared cli/mcp
   entry surface — unstable end of main sequence is where it BELONGS; nothing
   imports it. Triage data, never suppression.
-- **`preExisting: true` cycle / leak read as diff-introduced.** The index
-  already holds that edge — the diff touches a file on it, did not add it. Still
-  a real cycle / leak; triage data, never suppression.
+- **`preExisting: true` finding read as diff-introduced.** The base already
+  holds the violation — the diff touches it, did not add it. Real finding;
+  triage data, never suppression. Meaning per family: cycles /
+  leakingAbstraction = the edge already exists; stableDependencies = base held
+  another edge of the same component pair (base, or index for unchanged files);
+  mainSequence = `distanceBefore` already past the threshold; layeringBackEdge =
+  component pair already carried by another file edge; hubLike = already a hub
+  before the diff. facadeContract / silentCoupling / splitCandidates never carry
+  it.
+- **`remedy` ignored or paraphrased.** `remedy` (`retargetImport` /
+  `restoreExport`) is a dry-run-verified cheap repair — quote it verbatim in the
+  recommendation (file, names, target), never reword it into a vague "use the
+  facade". Absent = none qualified, not "none exists".
 - **`layerMap` expected in a bare report.** `response.layerMap` appears ONLY
   when the request carried `layerMap` — absent = not asked, never "no layers".
 - **`island` / `compositionCycle` read as violations.** Informational findings —
@@ -579,6 +591,36 @@ judged. Edge-level reasons (constant, uncalled, framework-routed) count first.
 `pathPattern` scopes the FINDINGS by source — ledgers and the test stay
 whole-graph. Findings it drops count in `summary.outOfScopeFindingCount`, never
 silently lost.
+
+## Phase 3h — DIFF-TIME FINDINGS
+
+Applies to `review_changes` architecture findings (families
+`stableDependencies`, `leakingAbstraction`, `cycles`, `mainSequence`,
+`silentCoupling`, `facadeContract`, `splitCandidates`, `layeringBackEdge`,
+`hubLike`) — not to the whole-repo report. Read per finding:
+
+| Field                                                   | Read as                                                                                                                                                                              |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `preExisting: true`                                     | held before the diff (meaning per family: Top Anti-patterns) — absent = the diff introduced it                                                                                       |
+| `remedy`                                                | cheap repair, dry-run-verified: `retargetImport` (`sourceRelPath`, `fromRelPath` → `toRelPath`, `importedNames`, optional `addExport`) or `restoreExport` (`facadeRelPath`, `names`) |
+| `compositionRoot` / `entryPoint` / `foundationTerminal` | detector flags — evidence a finding stays unfixed; triage data, never suppression                                                                                                    |
+
+Classes (same triage as `tea-rags:data-driven-generation` Step 7 "Fix-at-write
+loop" — do not restate it):
+
+- no `preExisting` → introduced: recommend the repair in this change.
+- `preExisting` + `remedy` → cheap: quote the `remedy` in the recommendation.
+- `preExisting`, no `remedy` → report-only: one line, no fix.
+
+Recommendation loads `../../repair/<family>.md` ONLY for families present among
+the findings (`## Apply remedy` when `remedy` exists, else `## No remedy`;
+`## Known false positives` before accepting). Never preload the directory.
+
+Evidence rule: a finding stays unfixed ONLY with a detector flag, a cited
+project rule (file + quoted line), or a known-noise class from the family's
+repair file with its named evidence. Bare "by design" is not evidence. A family
+with `built: false` or `scopeSkippedFiles` = "not judged" / "partial", never a
+clean pass.
 
 ## Phase 4 — EXCLUSIONS
 

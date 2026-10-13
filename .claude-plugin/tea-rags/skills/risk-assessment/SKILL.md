@@ -383,6 +383,15 @@ registered — skip, note structural risk not assessed (never claim "no cycles" 
   (tag Risk Type, sort to top of its tier): change there ripples across many
   dependents. Amplifier on already-identified risk, NOT a 5th MERGE preset —
   clean high-fanIn hub with healthy git signals is backbone, not risk.
+- **Structural-violation amplifier (`get_architecture_report`).** Run once with
+  `pathPattern` = same scope. Candidate inside a component with an SDP,
+  mainSequence or hubLike violation (match on the component's files, same
+  overlap rule as blast-radius hubs) = **structural-violation** — escalate (tag
+  Risk Type, sort to top of its tier). Component flagged `compositionRoot`,
+  `entryPoint` or `foundationTerminal` does NOT escalate: the position is its
+  job (triage data). A violation alone, without an identified risk candidate, is
+  `architecture-diagnostics` territory — not a risk row. Zero judged = "not
+  judged", never "clean".
 - **Cycles (`find_cycles`).** Run `find_cycles scope=file pathPattern=<scope>`.
   Circular dependencies = structural risk churn presets cannot see. Noise guard:
   > 20 cycles unscoped → narrow by subdomain. Empty result with codegraph ON =
@@ -401,6 +410,13 @@ extra calls.
 | tests (step 2 result)   | present          | absent    | —        |
 
 Sum → 0-2 `cheap`, 3-4 `moderate`, 5+ `expensive`.
+
+Structural violation present → read `../../repair/<family>.md`
+(`stableDependencies`, `mainSequence`, `hubLike`; only families found, never the
+directory). A violation whose repair file has a `remedy`-style cheap path (edge
+edits only: retarget an import or restore one facade export) → `cheap`
+regardless of the sum; no cheap path (`## No remedy` ends in split / move) → at
+least `moderate`. Tests and the overlay inputs still decide the rest.
 
 Missing tests feeds BOTH risk (defect likelihood) AND cost (refactor safety).
 Intentional: one input, two different quantities.
@@ -500,6 +516,9 @@ not assessed — codegraph off") when prime has no `codegraph.symbols`.
 
 - **Blast-radius hubs** — Critical/High candidates that are also `isHub` /
   high-`fanIn`: `symbol() file.ts:line — fanIn:N, blast-radius`.
+- **Structural violations** — Critical/High candidates in a component with an
+  SDP / mainSequence / hubLike violation:
+  `symbol() file.ts:line — SDP|mainSequence|hubLike, <component>, fix: cheap|…`.
 - **Cycles** — from `find_cycles`: `a.ts → b.ts → a.ts` (or "no cycles — DAG").
 
 ## Structural debt (independent of git risk)

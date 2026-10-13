@@ -109,6 +109,24 @@
       "baseline_grade": "N/A",
       "before_grade": "N/A",
       "after_grade": "PASS"
+    },
+    {
+      "id": 13,
+      "prompt": "Risk-assess the ingest domain; codegraph is on and get_architecture_report shows a stableDependencies violation on component src/core/domains/ingest/pipeline whose files hold a High churn candidate.",
+      "expected": "Phase 4 structural-violation amplifier: candidate overlaps the violating component -> escalated, Risk Type tagged, sorted to top of tier. Fix cost reads repair/stableDependencies.md, loaded only for the family present.",
+      "audit_finding": [],
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 14,
+      "prompt": "Risk-assess src/core/bootstrap; the only flagged hubLike component is marked compositionRoot: true and holds a High candidate.",
+      "expected": "Component flagged compositionRoot/entryPoint/foundationTerminal does NOT escalate; reported as triage data. No structural-violation tag.",
+      "audit_finding": [],
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PASS"
     }
   ]
 }
