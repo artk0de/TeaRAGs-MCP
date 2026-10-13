@@ -1,5 +1,6 @@
 import type { DiffDetectorFinding } from "../../../../contracts/types/diff-detector-finding.js";
 import type { DiffFamilyDetector, OverlayEdge } from "./diff-family-detector.js";
+import { pastThresholdBefore } from "./pre-existing.js";
 import { detectorStatus, format3, round3, withRenderedSubject } from "./shared.js";
 
 /** Below this |deltaD| a touched component's main-sequence move reads as no move. */
@@ -52,10 +53,16 @@ const MAIN_SEQUENCE_EPSILON = 0.001;
  * pre-existing imports do not dilute the annotation. The D still moved, so
  * the finding stands, annotated as data for triage; one diff-added edge
  * outside the foundation is enough to leave it unannotated.
+ *
+ * `preExisting` (bd tea-rags-mcp-89k7k.1.19.2, spec D9): the component's D
+ * BEFORE the diff was already past the whole-repo distance threshold — the
+ * diff moved a component that was already a violation. A diff that carries
+ * D across the threshold (the D5 flap) is the diff's own finding; an unserved
+ * threshold attributes nothing.
  */
 export const mainSequenceDetector: DiffFamilyDetector = {
   family: "mainSequence",
-  judge: ({ scope, addedEdges, catalog, minConnectionCount }) => {
+  judge: ({ scope, addedEdges, catalog, minConnectionCount, mainSequenceDistanceThreshold }) => {
     const touched = new Map<
       string,
       {
@@ -135,6 +142,10 @@ export const mainSequenceDetector: DiffFamilyDetector = {
           // belongs (the measured entry-facade component): annotated, still
           // reported.
           ...(fact.entryFacade ? { entryPoint: true as const } : {}),
+          ...(mainSequenceDistanceThreshold !== undefined &&
+          pastThresholdBefore(fact.distanceFromMainSequence, mainSequenceDistanceThreshold)
+            ? { preExisting: true as const }
+            : {}),
         }),
       );
     }

@@ -60,8 +60,8 @@ import type { ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js"
 import {
   ArchitectureFactsCatalog,
   deriveArchitectureComponentFacts,
-  distanceFromMainSequenceByComponent,
   measureLayeringFoundationFiles,
+  measureMainSequenceDistances,
   readProductionArchitectureGraph,
 } from "../architecture-facts.js";
 import {
@@ -372,9 +372,10 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       context.readDeclaredTestDependencies,
     );
     const facts = deriveArchitectureComponentFacts(production.graph);
+    const mainSequence = measureMainSequenceDistances(facts.components, production.graph.files);
     const catalog = new ArchitectureFactsCatalog(
       facts,
-      distanceFromMainSequenceByComponent(facts.components, production.graph.files),
+      mainSequence.distanceByComponent,
       measureLayeringFoundationFiles(production.graph, facts),
     );
     const graph = new WiredGraphReader(production.graph.edges);
@@ -417,6 +418,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       silentCouplingFacts,
       contract,
       ...splitMerge,
+      mainSequenceDistanceThreshold: mainSequence.distanceThreshold,
     }).run(
       {
         changedFiles: scope.files,

@@ -144,6 +144,13 @@ export interface DiffDetectorRunDeps {
    * the two cannot drift apart.
    */
   minConnectionCount?: number;
+  /**
+   * The whole-repo main-sequence distance threshold (the report's
+   * `summary.distanceThreshold`) — what a mainSequence finding's
+   * `distanceBefore` must already exceed to be `preExisting` (bd
+   * tea-rags-mcp-89k7k.1.19.2). Absent = never attributed.
+   */
+  mainSequenceDistanceThreshold?: number;
 }
 
 export interface DiffDetectorFindings {
@@ -171,6 +178,7 @@ export class DiffDetectorRun {
   private readonly splitMergeAbsentReason: string;
   private readonly maxTraceHops: number;
   private readonly minConnectionCount: number;
+  private readonly mainSequenceDistanceThreshold: number | undefined;
 
   constructor(deps: DiffDetectorRunDeps) {
     this.graph = deps.graph;
@@ -182,6 +190,7 @@ export class DiffDetectorRun {
     this.splitMergeAbsentReason = deps.splitMergeAbsentReason ?? NO_SPLIT_MERGE_READER_REASON;
     this.maxTraceHops = deps.maxTraceHops ?? DEFAULT_MAX_TRACE_HOPS;
     this.minConnectionCount = deps.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
+    this.mainSequenceDistanceThreshold = deps.mainSequenceDistanceThreshold;
   }
 
   /**
@@ -226,6 +235,7 @@ export class DiffDetectorRun {
       addedEdges: overlayEdges.filter((edge) => heldBeforeChange(edge) === undefined),
       inChange,
       graph: this.graph,
+      baseEdges: this.baseEdges,
       catalog: this.catalog,
       heldBeforeChange,
       silentCouplingFacts: this.silentCouplingFacts,
@@ -234,6 +244,7 @@ export class DiffDetectorRun {
       splitMergeAbsentReason: this.splitMergeAbsentReason,
       maxTraceHops: this.maxTraceHops,
       minConnectionCount: this.minConnectionCount,
+      mainSequenceDistanceThreshold: this.mainSequenceDistanceThreshold,
     };
   }
 

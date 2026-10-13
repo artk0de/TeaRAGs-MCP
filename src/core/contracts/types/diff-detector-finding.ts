@@ -208,10 +208,19 @@ interface DiffDetectorFindingCommon {
    */
   entryPoint?: true;
   /**
-   * cycles and leakingAbstraction only (bd tea-rags-mcp-89k7k.1.13): the
-   * judged pair is one the base or the indexed graph ALREADY holds — the diff
-   * touches a file on it, it did not add it. Triage data, never a
-   * suppression. Present only when true.
+   * The violation already held before the change — the diff touches it, it
+   * did not introduce it. Triage data, never a suppression. Present only when
+   * true. Per family:
+   * - cycles, leakingAbstraction (bd tea-rags-mcp-89k7k.1.13): the judged
+   *   edge is one the base or the indexed graph ALREADY holds.
+   * - stableDependencies (bd tea-rags-mcp-89k7k.1.19.2): the diff-added edge
+   *   is new, but the diff base already held another edge of the same
+   *   component pair.
+   * - mainSequence (bd tea-rags-mcp-89k7k.1.19.2): `distanceBefore` was
+   *   already past the whole-repo distance threshold.
+   * silentCoupling and splitCandidates are history verdicts with no
+   * base/after split, and facadeContract is always introduced: those never
+   * carry it (spec D9).
    */
   preExisting?: true;
   /**
