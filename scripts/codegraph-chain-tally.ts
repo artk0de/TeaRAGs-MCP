@@ -109,7 +109,7 @@ import {
   collectKnownTargetCalleeLocators,
   collectSchemaColumnSources,
   collectStructuralConformanceDerivers,
-} from "../src/core/domains/trajectory/codegraph/exclusion.js";
+} from "../src/core/domains/trajectory/codegraph/exclusion/index.js";
 import { absorbPass1FileState } from "../src/core/domains/trajectory/codegraph/symbols/extraction-sink.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { RECEIVER_KINDS, type ReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";

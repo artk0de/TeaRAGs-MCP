@@ -17,7 +17,7 @@ import {
   TSGlobalShortNameSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
-import { MapHierarchyView } from "../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
+import { MapHierarchyView } from "../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view/index.js";
 import { buildHierarchySnapshot } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 

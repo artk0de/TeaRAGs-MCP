@@ -54,7 +54,7 @@ import type {
 } from "../../../../contracts/types/language.js";
 import type { FileExtractionAbsorbRole, ProviderRunMetrics } from "../../../../contracts/types/provider.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
-import { MapHierarchyView } from "../hierarchy-view.js";
+import { MapHierarchyView } from "../hierarchy-view/index.js";
 import {
   deriveClassFieldTypesFromParams,
   foldKnownTargetParamTypes,

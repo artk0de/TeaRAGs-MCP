@@ -21,7 +21,7 @@ import {
 import { collectDependencyManifestSources } from "../../src/core/adapters/filesystem/dependency-manifests.js";
 import type { FileExtraction } from "../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
-import { collectSchemaColumnSources } from "../../src/core/domains/trajectory/codegraph/exclusion.js";
+import { collectSchemaColumnSources } from "../../src/core/domains/trajectory/codegraph/exclusion/index.js";
 import { absorbPass1FileState } from "../../src/core/domains/trajectory/codegraph/symbols/extraction-sink.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import type { ReceiverKind } from "../../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";

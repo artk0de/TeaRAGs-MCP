@@ -12,7 +12,7 @@ import {
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import { PythonLanguage } from "../../../../../../../src/core/domains/language/python/index.js";
 import { PythonCallResolver } from "../../../../../../../src/core/domains/language/python/resolver/index.js";
-import { MapHierarchyView } from "../../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
+import { MapHierarchyView } from "../../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view/index.js";
 import { buildHierarchySnapshot } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 

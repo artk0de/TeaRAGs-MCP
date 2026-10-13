@@ -632,7 +632,7 @@
 
 - **Tests and generated files are unconditionally out of the graph while staying
   in the index — and say so in the payload.** `buildCodegraphExclusionFilter`
-  (`exclusion.ts`) adds `GENERATED_PATTERNS` + the installed test-file
+  (`exclusion/exclusion.ts`) adds `GENERATED_PATTERNS` + the installed test-file
   conventions (owned by `domains/language`, bd tea-rags-mcp-vjz6s) after the
   FileScanner ignore filter with no env opt-out (bd tea-rags-mcp-6xxh5), then
   each language's `codegraphExclusionGlobs` and `CODEGRAPH_CUSTOM_EXCLUDE`.

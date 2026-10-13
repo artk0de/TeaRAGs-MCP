@@ -90,7 +90,7 @@ import {
   collectInstantiationSiteResolvers,
   collectSchemaColumnSources,
   collectStructuralConformanceDerivers,
-} from "../../src/core/domains/trajectory/codegraph/exclusion.js";
+} from "../../src/core/domains/trajectory/codegraph/exclusion/index.js";
 import { absorbPass1FileState } from "../../src/core/domains/trajectory/codegraph/symbols/extraction-sink.js";
 import { buildPass1Aggregates } from "../../src/core/domains/trajectory/codegraph/symbols/pass1-aggregates.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";

@@ -4,7 +4,7 @@ import type { LanguageFactoryDescriptor, LanguageProvider } from "../../../../..
 import {
   buildCodegraphExclusionFilter,
   CODEGRAPH_GENERATED_PATTERNS,
-} from "../../../../../src/core/domains/trajectory/codegraph/exclusion.js";
+} from "../../../../../src/core/domains/trajectory/codegraph/exclusion/index.js";
 import {
   installedTestFileConventions,
   testPathPatterns,

@@ -68,7 +68,7 @@ import {
   collectSchemaColumnSources,
   collectStructuralConformanceDerivers,
   type CodegraphExclusionOptions,
-} from "../exclusion.js";
+} from "../exclusion/index.js";
 import { CodegraphChunkSignalPass } from "./chunk-signal-pass.js";
 import {
   createCodegraphExtractionSink,

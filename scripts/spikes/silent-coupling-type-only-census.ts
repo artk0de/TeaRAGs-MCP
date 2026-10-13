@@ -42,7 +42,7 @@ import {
 } from "../../src/core/domains/ingest/pipeline/chunker/language-config/index.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { SQL_037_CG_TYPE_ONLY_FILE_EDGES } from "../../src/core/domains/maintenance/migration/database/migrations/037-cg-type-only-file-edges.js";
-import { collectSchemaColumnSources } from "../../src/core/domains/trajectory/codegraph/exclusion.js";
+import { collectSchemaColumnSources } from "../../src/core/domains/trajectory/codegraph/exclusion/index.js";
 import { excludeNonProductionFiles } from "../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/production-graph.js";
 import { absorbPass1FileState } from "../../src/core/domains/trajectory/codegraph/symbols/extraction-sink.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";

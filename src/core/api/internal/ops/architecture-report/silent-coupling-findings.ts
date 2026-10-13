@@ -27,7 +27,7 @@ import {
   SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
   silentCouplingGroupDrillDown,
   silentCouplingGroupPartners,
-} from "../silent-coupling-group-findings.js";
+} from "../silent-coupling-group-findings/index.js";
 import { round3 } from "./architecture-report-value-format.js";
 
 /**
