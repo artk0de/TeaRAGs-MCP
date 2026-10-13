@@ -1661,3 +1661,83 @@ describe("detector statuses over a truncated diff scope", () => {
     expect(result.detectors.every((status) => status.scopeSkippedFiles !== 0)).toBe(true);
   });
 });
+
+// bd tea-rags-mcp-89k7k.1.19.6: the what-if seam — the same families over the
+// overlay with the edits applied, the review's own overlay untouched.
+describe("rejudge", () => {
+  const FACADE = "src/lib/index.ts";
+  const INTERNAL = "src/lib/internal.ts";
+  const SOURCE = "src/app/a.ts";
+  const leakRun = () =>
+    new DiffDetectorRun({
+      graph: graphOf([[SOURCE, FACADE]]),
+      catalog: catalogOf(
+        new Map([[INTERNAL, { name: "lib", instability: 0.3, distanceFromMainSequence: 0.3 }]]),
+        new Map([["lib", FACADE]]),
+      ),
+    });
+  const facadeRun = (consumedNames: string[]) =>
+    new DiffDetectorRun({
+      graph: graphOf([]),
+      catalog: catalogOf(new Map()),
+      contract: contractOf(
+        new Map([[FACADE, "src/lib"]]),
+        new Map([[FACADE, [{ source: SOURCE, importedNames: consumedNames }]]]),
+      ),
+    });
+
+  it("a replace edit points the source's import at the new target — the leak is gone, the overlay kept", () => {
+    const overlay = namedOverlayOf([[SOURCE, INTERNAL, { imported: ["X"] }]], [SOURCE]);
+    const run = leakRun();
+    expect(subjectsOf(run.run({ changedFiles: [SOURCE] }, overlay), "leakingAbstraction")).toHaveLength(1);
+
+    const rejudged = run.rejudge({ changedFiles: [SOURCE] }, overlay, [
+      { replace: { source: SOURCE, from: INTERNAL, to: FACADE } },
+    ]);
+
+    expect(rejudged.findings).toEqual([]);
+    expect(overlay.edgesFrom(SOURCE).map((edge) => edge.targetRelPath)).toEqual([INTERNAL]);
+  });
+
+  it("a replace onto a target the source already holds merges both edges' names into one edge", () => {
+    // The facade re-exports `a` from x and `z` from y; moving the y edge onto x
+    // must keep `z` on the surface — a dropped name would read as a contract break.
+    const overlay = namedOverlayOf(
+      [
+        [FACADE, "src/lib/x.ts", { reexported: ["a"] }],
+        [FACADE, "src/lib/y.ts", { reexported: ["z"] }],
+      ],
+      [FACADE],
+    );
+
+    const rejudged = facadeRun(["a", "z"]).rejudge({ changedFiles: [FACADE] }, overlay, [
+      { replace: { source: FACADE, from: "src/lib/y.ts", to: "src/lib/x.ts" } },
+    ]);
+
+    expect(rejudged.findings).toEqual([]);
+  });
+
+  it("an addExport edit on a facade the diff changes puts the names back on its re-export surface", () => {
+    const overlay = namedOverlayOf([[FACADE, "src/lib/x.ts", { reexported: ["a"] }]], [FACADE]);
+    const run = facadeRun(["a", "b"]);
+    expect(subjectsOf(run.run({ changedFiles: [FACADE] }, overlay), "facadeContract")).toEqual([FACADE]);
+
+    const rejudged = run.rejudge({ changedFiles: [FACADE] }, overlay, [
+      { addExport: { facadeRelPath: FACADE, names: ["b"] } },
+    ]);
+
+    expect(rejudged.findings).toEqual([]);
+  });
+
+  it("an addExport edit on a facade outside the diff changes nothing the families judge", () => {
+    const overlay = namedOverlayOf([[SOURCE, INTERNAL, { imported: ["X"] }]], [SOURCE]);
+    const run = leakRun();
+    const before = run.run({ changedFiles: [SOURCE] }, overlay);
+
+    const rejudged = run.rejudge({ changedFiles: [SOURCE] }, overlay, [
+      { addExport: { facadeRelPath: FACADE, names: ["X"] } },
+    ]);
+
+    expect(rejudged).toEqual(before);
+  });
+});
