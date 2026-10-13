@@ -1,6 +1,7 @@
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../../contracts/types/diff-detector-finding.js";
 import type { LayeringReading } from "../../../../domains/trajectory/codegraph/symbols/index.js";
-import type { DiffFamilyDetector, DiffFamilyDetectorContext, OverlayEdge } from "./diff-family-detector.js";
+import type { DiffFamilyDetector, OverlayEdge } from "./diff-family-detector.js";
+import { componentPairHeldBeforeChange, targetsBeforeChange } from "./pre-existing.js";
 import { detectorStatus, withRenderedSubject } from "./shared.js";
 
 /** The layeringBackEdge family's verdict when no layering reading was injected. */
@@ -41,11 +42,20 @@ export const layeringBackEdgeDetector: DiffFamilyDetector = {
       };
     }
     const componentOf = (relPath: string): string | undefined => catalog.componentOf(relPath)?.name;
+    const { baseEdges, graph } = context;
+    // preExisting (spec D9): some file of the source component already carried
+    // the pair before the change — the base where it answers, else the index.
     const findings = judgeLayeringBackEdges({
       addedEdges,
       componentOf,
       layering,
-      heldAtBase: (pair) => componentPairHeldBeforeChange(pair, context, layering, componentOf),
+      heldAtBase: (pair) =>
+        componentPairHeldBeforeChange(
+          pair,
+          (relPath) => targetsBeforeChange(relPath, baseEdges, graph),
+          componentOf,
+          layering.filesOf,
+        ),
     });
     return { findings, status: detectorStatus("layeringBackEdge", findings.length) };
   },
@@ -95,31 +105,4 @@ export function judgeLayeringBackEdges(input: {
     );
   }
   return findings;
-}
-
-/**
- * Whether some file of the source component already carried an edge into the
- * target component before the change — the pair check behind `preExisting`
- * (spec D9). Candidates are each source file's indexed and tree-read targets;
- * the run's `heldBeforeChange` decides each (the diff base where it answers,
- * else the index), so a fact nobody holds is never "already held".
- */
-function componentPairHeldBeforeChange(
-  pair: LayeringBackEdgeComponentPair,
-  context: DiffFamilyDetectorContext,
-  layering: LayeringReading,
-  componentOf: (relPath: string) => string | undefined,
-): boolean {
-  const { graph, overlay, heldBeforeChange } = context;
-  for (const source of layering.filesOf(pair.sourceComponent)) {
-    const targets = new Set([
-      ...(graph?.edgesFrom(source) ?? []).map((indexed) => indexed.target),
-      ...overlay.edgesFrom(source).map((treeEdge) => treeEdge.targetRelPath),
-    ]);
-    for (const target of targets) {
-      if (componentOf(target) !== pair.targetComponent) continue;
-      if (heldBeforeChange({ source, target }) !== undefined) return true;
-    }
-  }
-  return false;
 }

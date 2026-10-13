@@ -38,24 +38,48 @@ export function componentPairViolatedAtBase(
   sourceFilesOf: (component: string) => readonly string[],
   unchanged?: UnchangedSourceFiles,
 ): boolean {
-  const leansOnTarget = (targets: Iterable<string>): boolean => {
+  const heldByChangedSource =
+    baseEdges !== undefined &&
+    componentPairHeldBeforeChange(
+      pair,
+      (sourceRelPath) => baseEdges.targetsAtBase(sourceRelPath),
+      componentOf,
+      sourceFilesOf,
+    );
+  if (heldByChangedSource) return true;
+  if (unchanged?.graph === undefined) return false;
+  const { graph } = unchanged;
+  return componentPairHeldBeforeChange(
+    pair,
+    (sourceRelPath) => new Set(graph.edgesFrom(sourceRelPath).map((edge) => edge.target)),
+    componentOf,
+    unchanged.filesOf,
+  );
+}
+
+/**
+ * The pair check every pair family's `preExisting` runs: whether some file of
+ * `pair.sourceComponent` (as `sourceFilesOf` names them) imported a file of
+ * `pair.targetComponent` before the change, by whatever evidence
+ * `targetsBefore` reads — the base alone ({@link componentPairViolatedAtBase})
+ * or the base-else-index order of {@link targetsBeforeChange}. A file it
+ * answers `undefined` for contributes nothing; a target that maps to no
+ * component never matches.
+ */
+export function componentPairHeldBeforeChange(
+  pair: { sourceComponent: string; targetComponent: string },
+  targetsBefore: (relPath: string) => ReadonlySet<string> | undefined,
+  componentOf: (relPath: string) => string | undefined,
+  sourceFilesOf: (component: string) => readonly string[],
+): boolean {
+  return sourceFilesOf(pair.sourceComponent).some((sourceRelPath) => {
+    const targets = targetsBefore(sourceRelPath);
+    if (targets === undefined) return false;
     for (const target of targets) {
       if (componentOf(target) === pair.targetComponent) return true;
     }
     return false;
-  };
-  const heldByChangedSource =
-    baseEdges !== undefined &&
-    sourceFilesOf(pair.sourceComponent).some((relPath) => {
-      const targets = baseEdges.targetsAtBase(relPath);
-      return targets !== undefined && leansOnTarget(targets);
-    });
-  if (heldByChangedSource) return true;
-  if (unchanged?.graph === undefined) return false;
-  const { graph } = unchanged;
-  return unchanged
-    .filesOf(pair.sourceComponent)
-    .some((relPath) => leansOnTarget(graph.edgesFrom(relPath).map((edge) => edge.target)));
+  });
 }
 
 /**
