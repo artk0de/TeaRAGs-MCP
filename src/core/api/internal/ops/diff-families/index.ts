@@ -25,11 +25,15 @@ export type {
   DiffDetectorScope,
   DiffDetectorSilentCouplingFacts,
   DiffDetectorSplitMergeReader,
+  DiffEdgeEdit,
   DiffFamilyDetector,
   DiffFamilyDetectorContext,
+  DiffRejudge,
+  ExportTableReader,
   HeldBeforeChangeEvidence,
   OverlayEdge,
 } from "./diff-family-detector.js";
+export { DiffFindingRemedyResolver } from "./remedy-resolver.js";
 
 export const DIFF_FAMILY_DETECTORS: readonly DiffFamilyDetector[] = Object.freeze([
   stableDependenciesDetector,

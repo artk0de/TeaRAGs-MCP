@@ -1,15 +1,9 @@
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../../contracts/types/diff-detector-finding.js";
 import type { DiffFamilyDetector } from "./diff-family-detector.js";
-import { detectorStatus, withRenderedSubject } from "./shared.js";
+import { detectorStatus, WHOLE_MODULE_EXPORT_NAME, withRenderedSubject } from "./shared.js";
 
 /** The facade-contract family's verdict when no contract port was injected. */
 const NO_CONTRACT_READER_REASON = "no contract reader";
-/**
- * The whole-module import name (the `WHOLE_MODULE_EXPORT_NAME` precedent the
- * facade-leak classifier set): a consumer taking `*` re-imports whatever the
- * surface holds, so no single name drop can break it.
- */
-const WHOLE_MODULE_EXPORT_NAME = "*";
 
 /**
  * Facade-contract breaks: a changed file that IS a measured module's facade

@@ -153,6 +153,32 @@ export interface DiffDetectorContractReader {
 }
 
 /**
+ * The export table a remedy reads (bd tea-rags-mcp-89k7k.1.19.5): the
+ * re-export surface is the facade-contract port's own `indexedSurfaceOf` — one
+ * reading, never a second — plus where a name is DECLARED.
+ */
+export interface ExportTableReader extends Pick<DiffDetectorContractReader, "indexedSurfaceOf"> {
+  /** Every file declaring `name`; undefined = the language keeps no export table. */
+  declarersOf: (name: string) => readonly string[] | undefined;
+}
+
+/**
+ * One hypothetical change to the diff's edge set: an existing import pointed
+ * elsewhere, and/or names added to a facade's re-export surface.
+ */
+export interface DiffEdgeEdit {
+  replace?: { source: string; from: string; to: string };
+  addExport?: { facadeRelPath: string; names: string[] };
+}
+
+/**
+ * The what-if seam: re-runs the diff judgement over the overlay with the
+ * edits applied. Knows nothing of remedies — any caller asking "what would
+ * the run say if" uses it (bd tea-rags-mcp-89k7k.1.7, r8hme.21).
+ */
+export type DiffRejudge = (edits: readonly DiffEdgeEdit[]) => { readonly findings: readonly DiffDetectorFinding[] };
+
+/**
  * The phase-1 split/merge verdict facts (bd tea-rags-mcp-c3v6o, A5): the
  * verdicts `computeSplitMergeVerdicts` already drew over the diff's components
  * — this layer JUDGES THE DIFF against them, it never re-draws thresholds or
