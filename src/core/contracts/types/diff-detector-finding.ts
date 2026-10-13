@@ -404,6 +404,13 @@ export interface DiffDetectorStatus {
    */
   excludedLowConnectionCount?: number;
   /**
+   * mainSequence only (bd tea-rags-mcp-odhsp): touched components whose
+   * main-sequence distance moved by no more than the flap tolerance (0.02, the
+   * DDG skill's rule D5) — judged, then not emitted. Present when > 0, so a
+   * zero over suppressed flaps never reads as a clean pass.
+   */
+  excludedFlapCount?: number;
+  /**
    * Co-change pairs read but not judged, by the production exclusion
    * taxonomy's classes (bd tea-rags-mcp-89k7k.1.10) — the
    * `summary.silentCoupling.excluded` vocabulary. silentCoupling row only,

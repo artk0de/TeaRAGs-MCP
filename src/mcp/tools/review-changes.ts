@@ -55,7 +55,7 @@ const REVIEW_CHANGES_DESCRIPTION =
   "judged on index vs index+tree edges, keyed by endpoints, renames canonicalized; silentCoupling, shotgunSurgery, norms " +
   "read git/type history no edge overlay moves, splitCandidates merge verdicts too = persisting by construction. " +
   "Detector rows also carry exclusions: mainSequence excludedLowConnectionCount (small-N components below the " +
-  "connection floor), silentCoupling excluded block (the production taxonomy's counters) — a zero over excluded " +
+  "connection floor), mainSequence excludedFlapCount (|ΔD| ≤ 0.02 moves, not findings), silentCoupling excluded block (the production taxonomy's counters) — a zero over excluded " +
   "classes is not a clean pass; silentCoupling pairs sharing an endpoint list as ONE finding (partners[] = every " +
   "pair, evidence.topPartners = 3 strongest with expected support λ, drillDown = ready find_co_changed call) — its row's " +
   "findingCount counts pairs, groupedFindingCount the findings (= listed + truncated); foundationTerminal:true on a D-delta finding = every contributing edge ends in " +

@@ -567,6 +567,54 @@ describe("mainSequence", () => {
     expect("entryPoint" in (finding ?? {})).toBe(false);
   });
 
+  // bd tea-rags-mcp-odhsp: the DDG skill's flap rule D5 (|dD| <= 0.02) lives in
+  // the detector — a move within tolerance is no finding, counted on the row.
+  describe("flap tolerance", () => {
+    /** One new edge moves I by Ca/(n(n+1)) over a component of n = Ca + Ce connections. */
+    function flapFixture(afferentCount: number, efferentCount: number): Map<string, ComponentFact> {
+      return new Map<string, ComponentFact>([
+        [
+          "src/api/barrel.ts",
+          {
+            name: "api",
+            instability: efferentCount / (afferentCount + efferentCount),
+            distanceFromMainSequence: 0.1,
+            connectionCount: afferentCount + efferentCount,
+            afferentCount,
+            efferentCount,
+          },
+        ],
+        ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 24 }],
+      ]);
+    }
+    const runFlap = (fixture: Map<string, ComponentFact>) =>
+      runWith({ catalog: catalogOf(fixture) }, ["src/api/barrel.ts"], [["src/api/barrel.ts", "src/lib/b.ts"]]);
+
+    it("emits no finding for a 0.014 move and counts it on the family row", () => {
+      // Ca 13, Ce 17: dI = 13/930 = 0.01398.
+      const result = runFlap(flapFixture(13, 17));
+      expect(subjectsOf(result, "mainSequence")).toEqual([]);
+      expect(result.detectors.find((d) => d.detector === "mainSequence")).toMatchObject({
+        findingCount: 0,
+        excludedFlapCount: 1,
+      });
+    });
+
+    it("emits a finding for a 0.089 move and leaves the flap counter absent", () => {
+      // Ca 8, Ce 1: dI = 8/90 = 0.0889.
+      const result = runFlap(flapFixture(8, 1));
+      expect(subjectsOf(result, "mainSequence")).toEqual(["api"]);
+      expect(result.detectors.find((d) => d.detector === "mainSequence")).not.toHaveProperty("excludedFlapCount");
+    });
+
+    it("treats a move exactly at the tolerance as a flap — only a move past it is a finding", () => {
+      // Ca 12, Ce 12: dI = 12/600 = 0.02 (0.020000000000000018 unrounded).
+      const result = runFlap(flapFixture(12, 12));
+      expect(subjectsOf(result, "mainSequence")).toEqual([]);
+      expect(result.detectors.find((d) => d.detector === "mainSequence")).toMatchObject({ excludedFlapCount: 1 });
+    });
+  });
+
   // bd tea-rags-mcp-89k7k.19: the 89k7k.14 replay residual — one GENUINELY-new
   // edge on a 24-connection low-I component (the api/public barrel class) read
   // as a full-scale instability step, D 0.000 -> 0.946, because the +1-per-edge

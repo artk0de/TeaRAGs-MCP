@@ -7,6 +7,16 @@ import { detectorStatus, format3, round3, withRenderedSubject } from "./shared.j
 const MAIN_SEQUENCE_EPSILON = 0.001;
 
 /**
+ * Flap tolerance (bd tea-rags-mcp-odhsp): the DDG skill's rule D5 reads a
+ * main-sequence distance move of |dD| <= 0.02 as a flap, never a defect. The
+ * detector holds the rule itself, so a move within tolerance is no finding —
+ * it is counted on the family row (`excludedFlapCount`). Compared on the
+ * three-decimal evidence precision, so a move AT the tolerance suppresses
+ * instead of tripping on float noise.
+ */
+const MAIN_SEQUENCE_FLAP_TOLERANCE = 0.02;
+
+/**
  * Main-sequence DELTAS for the components of changed files only — untouched
  * components never appear, and a touched component that does not move does
  * not either.
@@ -103,6 +113,7 @@ export const mainSequenceDetector: DiffFamilyDetector = {
     }
 
     const findings: DiffDetectorFinding[] = [];
+    let excludedFlapCount = 0;
     for (const [name, fact] of touched) {
       const edgesOut = crossingEdges.get(name);
       if (edgesOut === undefined) continue;
@@ -121,6 +132,10 @@ export const mainSequenceDetector: DiffFamilyDetector = {
       if (Math.abs(instabilityDelta) <= MAIN_SEQUENCE_EPSILON) continue;
       const abstractness = 1 - fact.instability + fact.distanceFromMainSequence;
       const newDistance = Math.abs(abstractness + newInstability - 1);
+      if (round3(Math.abs(newDistance - fact.distanceFromMainSequence)) <= MAIN_SEQUENCE_FLAP_TOLERANCE) {
+        excludedFlapCount++;
+        continue;
+      }
       const foundationTerminal = edgesOut.every((edge) => catalog.isLayeringFoundation(edge.target));
       // The exact-recompute clause names the arithmetic only when its inputs were served.
       const recomputeClause = fans !== undefined ? ` — I' = (Ce+k)/(Ca+Ce+k) over the report's fan counts` : "";
@@ -149,14 +164,15 @@ export const mainSequenceDetector: DiffFamilyDetector = {
         }),
       );
     }
+    const excluded = {
+      ...(excludedLowConnectionCount > 0 ? { excludedLowConnectionCount } : {}),
+      ...(excludedFlapCount > 0 ? { excludedFlapCount } : {}),
+    };
     return {
       findings,
       status:
-        excludedLowConnectionCount > 0
-          ? Object.freeze({
-              ...detectorStatus("mainSequence", findings.length),
-              excludedLowConnectionCount,
-            })
+        Object.keys(excluded).length > 0
+          ? Object.freeze({ ...detectorStatus("mainSequence", findings.length), ...excluded })
           : detectorStatus("mainSequence", findings.length),
     };
   },
