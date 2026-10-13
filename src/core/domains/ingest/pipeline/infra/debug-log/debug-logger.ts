@@ -24,21 +24,21 @@
  */
 
 import { isDebug } from "../../../../../primitives/diagnostics/index.js";
+import { readConcurrencyLimits } from "./debug-log-dependencies.js";
+import { formatElapsed, renderSlowFilesBlock, renderStageProfilingBlock } from "./debug-log-format.js";
+import { PipelineLogSink } from "./pipeline-log-sink.js";
 import {
   buildStageConcurrency,
   PipelineStageProfiler,
   type PipelineStage,
   type PipelineStageProfileSummary,
-} from "../pipeline-stage-profiler.js";
-import { readConcurrencyLimits } from "./debug-log-dependencies.js";
-import { formatElapsed, renderSlowFilesBlock, renderStageProfilingBlock } from "./debug-log-format.js";
-import { PipelineLogSink } from "./pipeline-log-sink.js";
+} from "./pipeline-stage-profiler.js";
 import { SlowFileTracker, type FileIngestRecord } from "./slow-file-tracker.js";
 
 export { initDebugLogger } from "./debug-log-dependencies.js";
 export { SlowFileTracker };
 export type { FileIngestRecord, PipelineStage };
-export type { PipelineConcurrencyLimits } from "../pipeline-stage-profiler.js";
+export type { PipelineConcurrencyLimits } from "./pipeline-stage-profiler.js";
 
 export interface LogContext {
   component: string;

@@ -110,6 +110,25 @@ function resolveSpecifier(fileRel: string, specifier: string): string {
   return resolved.join("/");
 }
 
+/**
+ * Specifiers of every RUNTIME module edge in a file, in ANY syntactic form the
+ * named-form scanner misses: `export * from`, `export * as ns from`,
+ * `import * as ns from`, default imports, side-effect imports and dynamic
+ * `import()`. `import type` / `export type` forms are erased and skipped.
+ */
+function runtimeSpecifiersAnyForm(text: string): string[] {
+  const stripped = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const specifiers: string[] = [];
+  const staticForm =
+    /(?:import|export)\s+(type\s+)?(?:\*(?:\s+as\s+\w+)?|\w+(?:\s*,\s*\{[^}]*\})?|\{[^}]*\})\s*from\s*"([^"]+)"/g;
+  for (const match of stripped.matchAll(staticForm)) {
+    if (match[1] === undefined) specifiers.push(match[2]);
+  }
+  for (const match of stripped.matchAll(/(?:^|[\s;])import\s*"([^"]+)"/gm)) specifiers.push(match[1]);
+  for (const match of stripped.matchAll(/\bimport\s*\(\s*"([^"]+)"\s*\)/g)) specifiers.push(match[1]);
+  return specifiers;
+}
+
 describe("api/public holds only the contract — no runtime import from the unstable api component", () => {
   it("no file under src/core/api/public runtime-imports or re-exports from api/internal or api/errors", () => {
     const offenders: string[] = [];
@@ -149,6 +168,38 @@ describe("api/public holds only the contract — no runtime import from the unst
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("no file under src/core/api/public holds ANY runtime edge into domains/** — export *, import * as, default and dynamic import() included (89k7k.40)", () => {
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder(PUBLIC_DIR)) {
+      for (const specifier of runtimeSpecifiersAnyForm(readFileSync(join(ROOT, file), "utf-8"))) {
+        if (!specifier.startsWith(".")) continue;
+        if (resolveSpecifier(file, specifier).startsWith("src/core/domains/")) {
+          offenders.push(`${file}: "${specifier}"`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("the any-form scanner sees the forms the named scanner misses", () => {
+    const sample = [
+      'export * from "./a.js";',
+      'export * as ns from "./b.js";',
+      'import * as ns2 from "./c.js";',
+      'import dflt from "./d.js";',
+      'import dflt2, { x } from "./e.js";',
+      'import "./f.js";',
+      'const m = await import("./g.js");',
+      'import type { T } from "./skip1.js";',
+      'export type { T } from "./skip2.js";',
+    ].join("\n");
+    expect(runtimeSpecifiersAnyForm(sample)).toEqual(
+      expect.arrayContaining(["./a.js", "./b.js", "./c.js", "./d.js", "./e.js", "./f.js", "./g.js"]),
+    );
+    expect(runtimeSpecifiersAnyForm(sample)).not.toContain("./skip1.js");
+    expect(runtimeSpecifiersAnyForm(sample)).not.toContain("./skip2.js");
   });
 
   it("the App factory lives in the composition root, not in the contract layer", () => {

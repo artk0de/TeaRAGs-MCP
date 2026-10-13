@@ -18,7 +18,7 @@ import type { RerankSchema, SchemaBuilderPort, ScoringWeightsSchema } from "../.
 
 /**
  * Zod schema for an optional project name. Sourced from PROJECT_NAME_RE
- * (`src/core/domains/maintenance/registry/constants.ts`) — the single source of truth.
+ * (`src/core/contracts/types/registry.ts`) — the single source of truth.
  */
 const projectNameSchema = z
   .string()

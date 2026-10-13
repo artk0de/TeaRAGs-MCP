@@ -31,20 +31,10 @@ function buildUpdateService(): UpdateCheckService {
   return new UpdateCheckService(new PackageJsonVersionSource(), new NpmRegistryClient(), new FileCacheStore());
 }
 
-function resolveDataDir(): string {
+export function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
 }
 
-/**
- * Look up a registry entry by project name (alias) or by path. Project alias
- * wins when both are provided. Returns null when the registry has no matching
- * entry — caller falls back to heuristic discovery.
- *
- * The path→collection capability arrives as an injection typed by the App
- * method (bd tea-rags-mcp-nkstp — the 89k7k.9 playbook): this module is a leaf
- * and holds no edge onto the api assembly barrel; the `prime` command passes
- * the shared resolver, and a wired App satisfies the same type directly.
- */
 /**
  * The registry runtime the `prime` command injects (k7kmu C3, the nkstp
  * playbook extended): the leaf constructs no api runtime itself — the registry
@@ -67,6 +57,16 @@ export interface PrimeRegistryRuntime {
   replayEntryEnv: (entry: CollectionEntry | null, env: NodeJS.ProcessEnv) => void;
 }
 
+/**
+ * Look up a registry entry by project name (alias) or by path. Project alias
+ * wins when both are provided. Returns null when the registry has no matching
+ * entry — caller falls back to heuristic discovery.
+ *
+ * The path→collection capability arrives as an injection typed by the App
+ * method (bd tea-rags-mcp-nkstp — the 89k7k.9 playbook): this module is a leaf
+ * and holds no edge onto the api assembly barrel; the `prime` command passes
+ * the shared resolver, and a wired App satisfies the same type directly.
+ */
 async function lookupRegistryEntry(
   input: { path?: string; project?: string },
   createPathCollectionResolver: App["createPathCollectionResolver"],

@@ -71,3 +71,17 @@ describe("explore/errors is a leaf component", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("explore children reach the error vocabulary only through errors/index.js", () => {
+  it("no file outside errors/ imports a file under errors/ other than its index", () => {
+    const barrel = join(ERRORS_DIR, "index.ts");
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder(EXPLORE_DIR)) {
+      if (file.startsWith(`${ERRORS_DIR}/`)) continue;
+      for (const target of relativeTargets(file)) {
+        if (target.startsWith(`${ERRORS_DIR}/`) && target !== barrel) offenders.push(`${rel(file)} -> ${rel(target)}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

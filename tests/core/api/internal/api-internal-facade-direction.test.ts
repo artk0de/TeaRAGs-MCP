@@ -32,7 +32,7 @@ const COMPONENT_BARRELS = [
   "src/core/domains/trajectory/static/index.ts",
 ] as const;
 
-const CONSUMER_DIRS = ["", "infra", "ops"] as const;
+const CONSUMER_DIRS = ["", "facades", "infra", "ops"] as const;
 
 function consumerFiles(): string[] {
   const files: string[] = [];

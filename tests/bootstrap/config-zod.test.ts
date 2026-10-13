@@ -778,6 +778,18 @@ describe("parseAppConfigZod — trajectoryGit", () => {
     expect(trajectoryGit.blamePoolSize).toBeLessThanOrEqual(10);
   });
 
+  it("blamePoolSize default is the git trajectory's defaultBlamePoolSize, one source of truth (bd tea-rags-mcp-89k7k.40)", async () => {
+    vi.resetModules();
+    const leaf = "../../src/core/domains/trajectory/git/infra/churn-walk/blame-pool-defaults.js";
+    vi.doMock(leaf, () => ({ defaultBlamePoolSize: () => 42 }));
+    try {
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      expect(parseAppConfigZod().trajectoryGit.blamePoolSize).toBe(42);
+    } finally {
+      vi.doUnmock(leaf);
+    }
+  });
+
   it("TRAJECTORY_GIT_ANCHOR defaults to now, accepts head, and rejects anything else (bd tea-rags-mcp-i6tkc)", async () => {
     const { parseAppConfigZod } = await freshImport();
     expect(parseAppConfigZod().trajectoryGit.anchor).toBe("now");

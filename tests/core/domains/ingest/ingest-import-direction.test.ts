@@ -159,6 +159,7 @@ describe("pipeline/infra/debug-log is a self-contained submodule (6oah1 PI1)", (
     "debug-log-format.ts",
     "debug-log-dependencies.ts",
     "slow-file-tracker.ts",
+    "pipeline-stage-profiler.ts",
   ];
 
   it("the debug-log cluster lives under pipeline/infra/debug-log/ behind an index.ts facade", () => {
