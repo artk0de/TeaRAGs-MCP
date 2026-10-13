@@ -3,6 +3,7 @@ import type { DependencyNormFileRole, RelPath } from "../../../contracts/types/c
 import type { TypeRoleEvidence } from "../../../contracts/types/naming-lexicon.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../primitives/graph/index.js";
 import { singularizeIdentifierWord, splitIdentifierWords, typeNameLastSegment, typeNameWords } from "./casing.js";
+import type { TypeNameParser } from "./name-slots.js";
 import {
   deriveTypeRoles,
   filePrimaryDeclaration,
@@ -40,8 +41,10 @@ const SHAPE_KINDS: ReadonlySet<TypeNameRow["symbolKind"]> = new Set(["interface"
  *      family's role — its majority head, else its base's own head
  *      (`ApplicationRecord` → `record`); the NEAREST such family decides;
  *   2. a CONVENTIONAL directory — one whose name is the role most of the
- *      role-bearing files beneath it carry — gives that role to a file beneath
- *      it whose role is only a head noun (directory / suffix evidence);
+ *      role-bearing files beneath it carry, or the head of a supertype most of
+ *      its primaries declare (mixins included) — gives that role to a file
+ *      beneath it whose role is only a head noun (directory / suffix evidence;
+ *      for the supertype reading, only to that supertype's carriers);
  *   3. a primary that only shapes the I/O of the function the file is named
  *      for (`UseXParams` in `useX.ts`, `XProps` in `X.tsx`) asserts no role:
  *      weak, with `weakReason: "ioShape"`;
@@ -89,7 +92,12 @@ export function buildDependencyNormFileRoles(
     });
   }
 
-  const conventional = applyConventionalDirectoryRoles(entries);
+  const conventional = applyConventionalDirectoryRoles(
+    entries,
+    primaries,
+    declaredAncestorsOf(rows, primaries),
+    typeNameParser(kindRows),
+  );
   applyRoleHomes(entries, primaries, conventional);
   return new Map([...entries].map(([relPath, { role }]) => [relPath, role]));
 }
@@ -111,7 +119,8 @@ export function buildDependencyNormFilePrimaryTypes(rows: readonly TypeNameRow[]
  * a type is. A mixin (`include Api::Contracts::Enforcement` in 86 API
  * modules) or an implemented interface is a capability shared across kinds —
  * as a family it would pull every includer into one role and hide the
- * directory role (`api`) they really carry.
+ * directory role (`api`) they really carry. A mixin may still CONFIRM a
+ * directory's own role (rule 2, bd tea-rags-mcp-8up12) — it never names one.
  */
 function superclassOnly(row: TypeNameRow): TypeNameRow {
   return { ...row, ancestors: row.superclass === undefined ? [] : [row.superclass] };
@@ -261,16 +270,49 @@ function architecturalFamilyRoles(
 }
 
 /**
+ * Each primary's DECLARED supertypes as written — superclass, mixins and
+ * implemented interfaces alike, read off the raw rows before
+ * {@link superclassOnly} narrows them for families.
+ */
+function declaredAncestorsOf(
+  rows: readonly TypeNameRow[],
+  primaries: ReadonlyMap<RelPath, TypeNameRow>,
+): Map<RelPath, ReadonlySet<string>> {
+  const declared = new Map<RelPath, ReadonlySet<string>>();
+  for (const row of rows) {
+    if (primaries.get(row.relPath)?.symbolId !== row.symbolId) continue;
+    declared.set(row.relPath, new Set(row.ancestors.map(writtenSupertype)));
+  }
+  return declared;
+}
+
+/** The role a directory's own name states: its last word, singular (`app/services` → `service`). */
+function directoryNameRole(dir: string): string {
+  return singularizeIdentifierWord(splitIdentifierWords(dir.slice(dir.lastIndexOf("/") + 1)).at(-1) ?? "");
+}
+
+/**
  * Rule 2 of {@link buildDependencyNormFileRoles}: a directory is CONVENTIONAL
- * for role R when its own name's last word (singular) is R and R is the role a
- * majority (`directoryShare`) of the strongly-roled files beneath it carry —
- * `app/services` once its `KindOfService` family reads `service`. A file
- * beneath it whose role is only a head noun (directory or suffix evidence)
- * takes R from the NEAREST such directory; inheritance evidence and I/O shapes
- * keep theirs.
+ * for role R — R being its own name's last word, singular — when either
+ *   a. R is the role a majority (`directoryShare`) of the strongly-roled files
+ *      beneath it carry; a file beneath it whose role is only a head noun
+ *      (directory or suffix evidence) takes R; or
+ *   b. a supertype its primaries DECLARE — superclass, mixin or implemented
+ *      interface — is headed by R and declared by ≥ {@link MIN_ROLE_MEMBERS}
+ *      and a majority (`directoryShare`) of its non-ioShape primaries
+ *      (bd tea-rags-mcp-8up12: `app/services`, where most service objects
+ *      only `include KindOfService` and are named by a verb). Only that
+ *      supertype's CARRIERS take R, untyped ones included; every other file
+ *      keeps its own role. A mixin still forms no family — it confirms the
+ *      role the directory name states, it never names one.
+ * The NEAREST conventional directory decides; inheritance evidence and I/O
+ * shapes keep theirs.
  */
 function applyConventionalDirectoryRoles(
   entries: Map<RelPath, { role: DependencyNormFileRole; evidence: TypeRoleEvidence }>,
+  primaries: ReadonlyMap<RelPath, TypeNameRow>,
+  declaredAncestors: ReadonlyMap<RelPath, ReadonlySet<string>>,
+  parse: TypeNameParser,
 ): ReadonlyMap<string, string> {
   const tallies = new Map<string, Map<string, number>>();
   for (const [relPath, { role }] of entries) {
@@ -283,22 +325,75 @@ function applyConventionalDirectoryRoles(
   }
   const conventional = new Map<string, string>();
   for (const [dir, tally] of tallies) {
-    const named = singularizeIdentifierWord(splitIdentifierWords(dir.slice(dir.lastIndexOf("/") + 1)).at(-1) ?? "");
+    const named = directoryNameRole(dir);
     const carriers = tally.get(named) ?? 0;
     const total = [...tally.values()].reduce((sum, n) => sum + n, 0);
     if (carriers >= MIN_ROLE_MEMBERS && carriers / total >= TYPE_ROLE_THRESHOLDS.directoryShare) {
       conventional.set(dir, named);
     }
   }
-  for (const [relPath, entry] of entries) {
-    if (entry.evidence === "inheritance" || entry.role.weakReason !== undefined) continue;
-    const dir = ancestorDirectories(relPath).find((d) => conventional.has(d));
+  const confirmedBy = ancestorConfirmedDirectories(primaries, declaredAncestors, conventional, parse);
+  for (const [dir, { role }] of confirmedBy) conventional.set(dir, role);
+
+  for (const [relPath, primary] of primaries) {
+    const entry = entries.get(relPath);
+    const keepsOwn =
+      entry === undefined
+        ? isIoShape(primary)
+        : entry.evidence === "inheritance" || entry.role.weakReason !== undefined;
+    const dir = keepsOwn ? undefined : ancestorDirectories(relPath).find((d) => conventional.has(d));
     const role = dir === undefined ? undefined : conventional.get(dir);
-    if (role !== undefined && (role !== entry.role.role || !entry.role.strong)) {
+    if (dir === undefined || role === undefined) continue;
+    const confirming = confirmedBy.get(dir)?.ancestor;
+    // A strong-carrier directory relabels typed files only; an ancestor-confirmed one its carriers only.
+    const takesRole =
+      confirming === undefined ? entry !== undefined : declaredAncestors.get(relPath)?.has(confirming) === true;
+    if (takesRole && (role !== entry?.role.role || entry.role.strong !== true)) {
       entries.set(relPath, { role: { role, strong: true }, evidence: "directory" });
     }
   }
   return conventional;
+}
+
+/**
+ * Rule 2b of {@link applyConventionalDirectoryRoles}: each directory not
+ * already conventional whose name's role heads a supertype declared by
+ * ≥ {@link MIN_ROLE_MEMBERS} and ≥ `directoryShare` of its non-ioShape
+ * primaries — mapped to that role and its confirming supertype (the most
+ * carried one when several qualify).
+ */
+function ancestorConfirmedDirectories(
+  primaries: ReadonlyMap<RelPath, TypeNameRow>,
+  declaredAncestors: ReadonlyMap<RelPath, ReadonlySet<string>>,
+  conventional: ReadonlyMap<string, string>,
+  parse: TypeNameParser,
+): Map<string, { role: string; ancestor: string }> {
+  const tallies = new Map<string, { primaries: number; carriers: Map<string, number> }>();
+  for (const [relPath, primary] of primaries) {
+    if (isIoShape(primary)) continue;
+    const declared = declaredAncestors.get(relPath) ?? new Set<string>();
+    for (const dir of ancestorDirectories(relPath)) {
+      if (conventional.has(dir)) continue;
+      const tally = tallies.get(dir) ?? { primaries: 0, carriers: new Map<string, number>() };
+      tally.primaries++;
+      for (const ancestor of declared) tally.carriers.set(ancestor, (tally.carriers.get(ancestor) ?? 0) + 1);
+      tallies.set(dir, tally);
+    }
+  }
+  const confirmed = new Map<string, { role: string; ancestor: string }>();
+  for (const [dir, tally] of tallies) {
+    const named = directoryNameRole(dir);
+    let best: { ancestor: string; carriers: number } | undefined;
+    for (const [ancestor, carriers] of tally.carriers) {
+      if (carriers < MIN_ROLE_MEMBERS || carriers / tally.primaries < TYPE_ROLE_THRESHOLDS.directoryShare) continue;
+      if (parse(ancestor).head !== named) continue;
+      const beats =
+        best === undefined || carriers > best.carriers || (carriers === best.carriers && ancestor < best.ancestor);
+      if (beats) best = { ancestor, carriers };
+    }
+    if (best !== undefined) confirmed.set(dir, { role: named, ancestor: best.ancestor });
+  }
+  return confirmed;
 }
 
 /** How a primary's callables are called: on instances, on the type only, or unknown. */
