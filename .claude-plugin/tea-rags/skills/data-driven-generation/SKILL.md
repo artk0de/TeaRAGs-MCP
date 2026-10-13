@@ -355,8 +355,8 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
 4. **Fix-at-write review before commit** (codegraph on): ONE
    `review_changes(changes: {}, sections: ["naming", "incompleteChange", "cohesion", "architecture"])`
    (`{}` = the uncommitted edit just generated; branch-wide review →
-   `changes: {base}`), then the fix-at-write loop below. No commit before the
-   loop ends.
+   `changes: {base}` with `base` = `git merge-base HEAD main`), then the
+   fix-at-write loop below. No commit before the loop ends.
    - **naming** — GENERATE writes names Step 5 never judged (helpers, locals,
      constants, types); the section judges every name the added lines declare vs
      HEAD: `MISFIT` → rename to `suggestion` before commit; `COLLISION` →
@@ -375,11 +375,17 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
 
 **Triage** every architecture / cohesion / incompleteChange finding:
 
-| Finding                    | Class             | Action                                    |
-| -------------------------- | ----------------- | ----------------------------------------- |
-| no `preExisting`           | must-fix          | repair in this diff                       |
-| `preExisting` + `remedy`   | cheap-preExisting | apply `remedy` (cheap by construction)    |
-| `preExisting`, no `remedy` | report-only       | one report line + bead suggestion, no fix |
+| Finding                    | Class             | Action                                                     |
+| -------------------------- | ----------------- | ---------------------------------------------------------- |
+| no `preExisting`           | must-fix          | repair in this diff                                        |
+| `preExisting` + `remedy`   | cheap-preExisting | apply `remedy` (cheap by construction)                     |
+| `preExisting`, no `remedy` | report-only       | one summary line per family (count), no per-finding triage |
+
+**Base** — `review_changes` base = `git merge-base HEAD main`, the branch's fork
+point on main. Never an integration branch, never a sibling `worktree-agent-*`
+branch: sibling code enters scope and its findings (naming, cycle edges) look
+introduced. Stacked work → base STILL main's merge-base; findings from the stack
+below belong to the stack owner — cite the owning commit, do not fix or triage.
 
 incompleteChange / `silentCoupling` and `splitCandidates` are history verdicts
 with no `preExisting` split — their repair file's procedure decides. A family
@@ -395,10 +401,16 @@ never a clean pass.
   shows finding gone, no new finding, tests green and untouched. No line-count
   limit. A server `remedy` = cheap, already dry-run-verified.
 - **Evidence** — a finding stays unfixed ONLY with: a detector flag
-  (`compositionRoot`, `entryPoint`, `foundationTerminal`), a cited project rule
-  (file + quoted line), or a known-noise class from the family's repair file
-  with the evidence that file names. Bare "by design" / "not needed" is not
-  evidence → fix or ask.
+  (`preExisting: true` with `remedy` absent, `compositionRoot`, `entryPoint`,
+  `foundationTerminal`), a symbolId / file read THIS session, a cited project
+  rule (file + quoted line), or a known-noise class from the family's repair
+  file with the evidence that file names. Each introduced / non-`preExisting`
+  finding left unrepaired gets its OWN triage line citing one such token. Banned
+  as reasons: "I believe", "by design", "budget", "out of scope", "fair nit",
+  "not needed", group dismissal (one reason for N findings). Finding conceded
+  valid → repaired, not dropped. A real incompleteChange gap (partner test with
+  high `support` the diff should have touched) → fixed in the same round. No
+  token → fix or ask.
 - **Flap** — metric crosses the tolerance by ≤ 0.02 → ordinary introduced
   finding: fix if cheap, else report metric before/after, threshold and the diff
   edge that moved it; user decides.

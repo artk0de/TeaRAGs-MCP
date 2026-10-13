@@ -835,6 +835,25 @@
         ]
       },
       "failureMode": "Direction families never catch an edge that pushes a component over the hub cut live"
+    },
+    {
+      "id": "step7-fix-stacked-base-unevidenced-acceptance",
+      "category": "step7-fix-at-write",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes available). TypeScript (tea-rags). Agent works on a branch stacked on a sibling `worktree-agent-*` branch (or `integration-wave2`). Its Step 7 `review_changes` used that branch as base and returned a naming finding plus a cycle edge from the sibling's code, and one unrepaired introduced architecture finding from its own diff; the agent proposes to accept it as 'by design'.",
+      "prompt": "Finish the change and commit; the remaining Step 7 findings are by design, I think.",
+      "expected": {
+        "mustDo": [
+          "Re-run review_changes with base = `git merge-base HEAD main`, not the sibling or integration branch",
+          "Drop findings that came from the stack below (owned by the stack owner) without triage",
+          "For the introduced finding: repair it, or give one triage line citing evidence (detector flag, symbolId/file read this session, or rule path)"
+        ],
+        "mustNotDo": [
+          "Use an integration or sibling worktree branch as the review base",
+          "Accept a finding with 'by design', 'I believe', 'budget', 'out of scope' or 'fair nit'",
+          "Commit around an unrepaired introduced finding without evidence"
+        ]
+      },
+      "failureMode": "Stacked bases pull sibling code into scope and unevidenced acceptance lets introduced findings through (audit of 28 Step 7 runs)"
     }
   ]
 }
