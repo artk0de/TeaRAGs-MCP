@@ -61,6 +61,8 @@ export function catalogOf(
         ? undefined
         : { ...fact, connectionCount: fact.connectionCount ?? ABOVE_CONNECTION_FLOOR };
     },
+    filesOf: (componentName) =>
+      [...components].filter(([, fact]) => fact.name === componentName).map(([relPath]) => relPath),
     facadeOf: (componentName) => facades.get(componentName),
     isMarkedlyLessStable: (leanOn, leanedOn) => leanOn - leanedOn >= MARKEDLY_LESS_STABLE_TOLERANCE,
     isLayeringFoundation: (relPath) => layeringFoundationFiles.has(relPath),

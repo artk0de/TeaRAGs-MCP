@@ -88,6 +88,8 @@ export interface DiffDetectorCatalog {
         entryFacade?: true;
       }
     | undefined;
+  /** The files the report's partition assigns to the component; empty for an unknown name. */
+  filesOf: (componentName: string) => readonly string[];
   /** The component's facade (undefined = no facade / not adopted). */
   facadeOf: (componentName: string) => string | undefined;
   /** Instability judged markedly greater — the report's own band comparison as a predicate. */

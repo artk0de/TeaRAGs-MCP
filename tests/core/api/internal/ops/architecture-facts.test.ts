@@ -285,6 +285,25 @@ describe("ArchitectureFactsCatalog", () => {
     expect(catalog.facadeOf("no/such")).toBeUndefined();
   });
 
+  // bd tea-rags-mcp-89k7k.1.19.11: the SDP preExisting read needs a component's
+  // files; the catalog serves them off the same partition componentOf reads.
+  it("filesOf answers the files the partition assigns to a component", () => {
+    const graph = graphOf(
+      [
+        file("src/app/a.ts", { abstractTypeCount: 0, concreteTypeCount: 1 }),
+        file("src/app/b.ts", { abstractTypeCount: 0, concreteTypeCount: 1 }),
+        file("src/lib/c.ts", { abstractTypeCount: 0, concreteTypeCount: 1 }),
+      ],
+      [edge("src/app/a.ts", "src/lib/c.ts")],
+    );
+    const facts = deriveArchitectureComponentFacts(graph);
+    const catalog = new ArchitectureFactsCatalog(facts, new Map(), new Set());
+    const appComponent = catalog.componentOf("src/app/a.ts")?.name ?? "";
+
+    expect([...catalog.filesOf(appComponent)].sort()).toEqual(["src/app/a.ts", "src/app/b.ts"]);
+    expect(catalog.filesOf("no/such")).toEqual([]);
+  });
+
   // bd tea-rags-mcp-89k7k.35.11: the diff run's foundationTerminal reads the
   // SAME measured foundation the whole-repo layering reports in summary.foundation —
   // abstractness 1 at L0 of the domain partition, never a directory name.
