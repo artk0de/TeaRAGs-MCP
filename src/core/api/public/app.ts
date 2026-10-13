@@ -44,6 +44,7 @@ import type {
   GetArchitecturePlannedEdgesResponse,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  GetArchitectureRestructureResponse,
   GetCalleesRequest,
   GetCalleesResponse,
   GetCallersRequest,
@@ -160,6 +161,10 @@ export interface App {
   judgePlannedArchitectureEdges: (
     request: GetArchitectureReportRequest,
   ) => Promise<GetArchitecturePlannedEdgesResponse>;
+  /** `get_architecture_report` restructure mode (bd tea-rags-mcp-r8hme.21) — violation delta of a what-if move / merge / split. */
+  simulateArchitectureRestructure: (
+    request: GetArchitectureReportRequest,
+  ) => Promise<GetArchitectureRestructureResponse>;
   tracePath: (request: TracePathRequest) => Promise<PathTraceResult>;
   /** Naming lexicon (bd tea-rags-mcp-4p3sb.12) — the project's names per type / callee / concept, verdicts on drafts. */
   getNamingLexicon: (request: NamingLexiconRequest) => Promise<NamingLexiconResult>;

@@ -1992,3 +1992,23 @@ export interface GetArchitectureReportResponse {
   /** The change-reasons view (bd tea-rags-mcp-psh3j), present only when the request carried `changeReasons`. */
   changeReasons?: ArchitectureChangeReasonsReport;
 }
+
+/**
+ * One declarative op of a what-if restructuring (bd tea-rags-mcp-r8hme.21),
+ * named against the report's CURRENT component partition: `move` relocates
+ * files into an existing component, `merge` folds every later component into
+ * the first, `split` carves file groups out of a component (an A5 split
+ * candidate's `files` fit `groups` as is).
+ */
+export type ArchitectureRestructureOp =
+  | { move: { files: RelPath[]; toComponent: string } }
+  | { merge: { components: string[] } }
+  | { split: { component: string; groups: RelPath[][] } };
+
+/** One op as compiled: how many files it relabels and the component(s) they land in. */
+export interface ArchitectureRestructureCompiledOp {
+  op: "move" | "merge" | "split";
+  relabelledFiles: number;
+  /** The receiving component; for a split, the new sibling components in group order. */
+  components: string[];
+}

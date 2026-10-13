@@ -164,14 +164,16 @@ export interface ArchitectureComponentFacts {
  * REPORT's violations, never the partition — the same asymmetry
  * `detectLeakingAbstractions` documents. Moved verbatim from
  * `ArchitectureReportOps#build`; the report passes its request's
- * `pathPattern`, the diff run passes none.
+ * `pathPattern`, the diff run passes none. `componentRelabel` is a what-if
+ * restructuring's component pins (bd tea-rags-mcp-r8hme.21).
  */
 export function deriveArchitectureComponentFacts(
   graph: FileDependencyGraph,
   sourcePathPattern?: string,
+  componentRelabel?: ReadonlyMap<RelPath, string>,
 ): ArchitectureComponentFacts {
   const leaks = detectLeakingAbstractions(graph, { sourcePathPattern });
-  return { leaks, components: buildComponentGraph(graph, leaks.modules) };
+  return { leaks, components: buildComponentGraph(graph, leaks.modules, componentRelabel) };
 }
 
 /**

@@ -35,7 +35,11 @@ export type { App } from "./app.js";
 // ── DTOs ─────────────────────────────────────────────────────────────
 // The one runtime symbol among them: the recompute-path predicate both
 // `IndexingOps#run` and the CLI index worker branch on.
-export { ARCHITECTURE_PLANNED_EDGE_LIMIT, isEnrichmentRecompute } from "./dto/index.js";
+export {
+  ARCHITECTURE_PLANNED_EDGE_LIMIT,
+  ARCHITECTURE_RESTRUCTURE_OP_LIMIT,
+  isEnrichmentRecompute,
+} from "./dto/index.js";
 
 // ── Codegraph resolve rate — miss definition + rendering rule ─────────
 // `tea-rags prime` renders the per-receiver-kind rows of the resolve DTO with
@@ -149,6 +153,8 @@ export {
   InvalidDocumentMetadataSchemaError,
   DocumentMetadataSchemaViolationError,
   UnknownArchitectureComponentError,
+  UnknownRestructureComponentError,
+  UnknownRestructureFileError,
 } from "./errors.js";
 export type { InputErrorCode, DocumentMetadataViolation } from "./errors.js";
 

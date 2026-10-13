@@ -241,6 +241,18 @@ describe("createApp", () => {
     ]);
   });
 
+  // bd tea-rags-mcp-r8hme.21
+  it("simulateArchitectureRestructure simulates nothing when no graph backend is wired", async () => {
+    const app = createApp(makeDeps() as never);
+
+    const response = await app.simulateArchitectureRestructure({
+      project: "p",
+      restructure: [{ merge: { components: ["src/a", "src/b"] } }],
+    });
+
+    expect(response).toEqual({ mode: "restructure", hypothesis: [], unavailable: "noCodegraph" });
+  });
+
   // bd tea-rags-mcp-4p3sb.20
   it("getOntologyReport delegates to OntologyReportOps", async () => {
     const report = { scope: { pathPrefix: "" }, summary: { evidenceRows: 3, genericNameCount: 0, genericNames: [] } };

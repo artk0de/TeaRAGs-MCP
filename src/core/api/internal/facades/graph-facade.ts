@@ -48,6 +48,7 @@ import type {
   GetArchitecturePlannedEdgesResponse,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  GetArchitectureRestructureResponse,
   GitFileMaintenanceSignals,
 } from "../../public/dto/architecture.js";
 import type { FindCoChangedRequest, FindCoChangedResult } from "../../public/dto/cochange.js";
@@ -70,6 +71,7 @@ import { readWorkingTreeGraph } from "../infra/working-tree-graph-read.js";
 import type { DeclaredTestDependencyLookup, IndexedFileImportLookup } from "../ops/architecture-facts.js";
 import { ArchitecturePlannedEdgeOps } from "../ops/architecture-planned-edge-ops.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
+import { ArchitectureRestructureOps } from "../ops/architecture-restructure-ops.js";
 import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
 import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
@@ -239,6 +241,7 @@ function addressedTestSupportLookups(
 export class GraphFacade {
   private readonly architectureReport = new ArchitectureReportOps();
   private readonly plannedEdges = new ArchitecturePlannedEdgeOps();
+  private readonly restructure = new ArchitectureRestructureOps();
   private readonly cochange = new CochangeOps();
   private readonly fileImports = new FileImportOps();
 
@@ -496,6 +499,32 @@ export class GraphFacade {
       async (handle) => this.plannedEdges.judge(handle.graphDb, req, indexedFileImports, declaredTestDependencies),
       fallback,
       "index",
+    );
+  }
+
+  /**
+   * `get_architecture_report` restructure mode (bd tea-rags-mcp-r8hme.21):
+   * the hypothesis is judged over the same graph the report reads, so its
+   * base run is the report the caller is looking at.
+   */
+  async simulateArchitectureRestructure(
+    req: GetArchitectureReportRequest,
+  ): Promise<GetArchitectureRestructureResponse> {
+    const fallback = ArchitectureRestructureOps.unavailable(req);
+    const { readFileMaintenanceSignals } = this.deps;
+    const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
+    const { indexedFileImports, declaredTestDependencies } = addressedTestSupportLookups(this.deps, req);
+    return this.withMarkedReadHandle(
+      req,
+      async (handle) =>
+        this.restructure.simulate(handle.graphDb, req, {
+          readIndexedFileImports: indexedFileImports,
+          readDeclaredTestDependencies: declaredTestDependencies,
+          readFileMaintenanceSignals: readFileMaintenanceSignals
+            ? async () => readFileMaintenanceSignals(addressedCollection())
+            : undefined,
+        }),
+      fallback,
     );
   }
 

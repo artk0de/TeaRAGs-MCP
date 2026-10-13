@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { measureArchitectureViolationDelta } from "../../../../../../src/core/api/internal/ops/review-sections/architecture-violation-delta.js";
+import { measureArchitectureViolationDelta } from "../../../../../../src/core/api/internal/ops/architecture-violation-delta.js";
 import {
   ArchitectureViolationTierLookup,
   composeReviewCochangeSignificance,

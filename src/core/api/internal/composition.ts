@@ -88,12 +88,14 @@ import type {
   GetArchitecturePlannedEdgesResponse,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  GetArchitectureRestructureResponse,
 } from "../public/dto/architecture.js";
 import type { FindCoChangedRequest, FindCoChangedResult } from "../public/dto/cochange.js";
 import type { GetOntologyReportRequest, GetOntologyReportResponse } from "../public/dto/ontology.js";
 import type { ReviewChangesRequest, ReviewChangesResult } from "../public/dto/review.js";
 import { ArchitecturePlannedEdgeOps } from "./ops/architecture-planned-edge-ops.js";
 import { ArchitectureReportOps } from "./ops/architecture-report-ops.js";
+import { ArchitectureRestructureOps } from "./ops/architecture-restructure-ops.js";
 import { CochangeOps } from "./ops/cochange-ops.js";
 import { CollectionOps } from "./ops/collection-ops.js";
 import { DocumentMetadataSchemaCompiler } from "./ops/document-metadata-schema.js";
@@ -513,6 +515,17 @@ export function unjudgedPlannedArchitectureEdges(
   request: GetArchitectureReportRequest,
 ): GetArchitecturePlannedEdgesResponse {
   return ArchitecturePlannedEdgeOps.unavailable(request);
+}
+
+/**
+ * The restructure answer for a collection with no codegraph database:
+ * nothing simulated — `ArchitectureRestructureOps.unavailable`, surfaced for
+ * the same reason as `emptyArchitectureReport`.
+ */
+export function unsimulatedArchitectureRestructure(
+  request: GetArchitectureReportRequest,
+): GetArchitectureRestructureResponse {
+  return ArchitectureRestructureOps.unavailable(request);
 }
 
 /**

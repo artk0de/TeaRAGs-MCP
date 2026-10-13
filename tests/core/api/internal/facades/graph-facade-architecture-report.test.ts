@@ -304,3 +304,48 @@ describe("GraphFacade#judgePlannedArchitectureEdges (bd tea-rags-mcp-xb669.2)", 
     expect(acquireReader).not.toHaveBeenCalled();
   });
 });
+
+describe("GraphFacade#simulateArchitectureRestructure (bd tea-rags-mcp-r8hme.21)", () => {
+  it("simulates over the addressed collection's graph and answers the restructure delta", async () => {
+    const file = (relPath: string) => ({ relPath, language: "typescript", symbolCount: 1 });
+    const graphDb = {
+      readFileDependencyGraph: vi.fn().mockResolvedValue({
+        files: [file("src/a/x.ts"), file("src/b/y.ts")],
+        edges: [{ sourceRelPath: "src/a/x.ts", targetRelPath: "src/b/y.ts", callWeight: 1 }],
+      }),
+      readTypeNameRows: vi.fn().mockResolvedValue([]),
+      readNonPublicMemberEdges: vi.fn().mockResolvedValue([]),
+      readTemporalCochangeGraph: vi.fn().mockResolvedValue({ meta: null, edges: [] }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const { pool, acquireReader } = readerPool(graphDb);
+    const readFileMaintenanceSignals = vi.fn().mockResolvedValue(new Map());
+    const facade = new GraphFacade({ pool, collectionRegistry: registry, readFileMaintenanceSignals });
+
+    const response = await facade.simulateArchitectureRestructure({
+      collection: "code_x",
+      restructure: [{ move: { files: ["src/b/y.ts"], toComponent: "src/a" } }],
+    });
+
+    expect(acquireReader).toHaveBeenCalledWith("code_x");
+    expect(response).toMatchObject({
+      mode: "restructure",
+      hypothesis: [{ op: "move", relabelledFiles: 1, components: ["src/a"] }],
+      delta: { introducedCount: expect.any(Number), resolvedCount: expect.any(Number) },
+    });
+  });
+
+  it("rejects an over-cap request before any graph read", async () => {
+    const { pool, acquireReader } = readerPool({});
+    const facade = new GraphFacade({ pool, collectionRegistry: registry });
+    const move = { move: { files: ["src/a.ts"], toComponent: "src/b" } };
+
+    await expect(
+      facade.simulateArchitectureRestructure({
+        collection: "code_x",
+        restructure: Array.from({ length: 21 }, () => move),
+      }),
+    ).rejects.toThrow(/at most 20/);
+    expect(acquireReader).not.toHaveBeenCalled();
+  });
+});

@@ -19,6 +19,7 @@ import { z } from "zod";
 
 import {
   ARCHITECTURE_PLANNED_EDGE_LIMIT,
+  ARCHITECTURE_RESTRUCTURE_OP_LIMIT,
   CODEGRAPH_SYMBOLS_PROVIDER_KEY,
   PROJECT_NAME_RE,
   type App,
@@ -176,6 +177,20 @@ const GetArchitectureReportInputShape = {
     .describe(
       "File pairs source->target about to be written: verdicts only, no report; other options rejected. reference = name used.",
     ),
+  restructure: z
+    .array(
+      z.union([
+        z.object({ move: z.object({ files: z.array(z.string().min(1)).min(1), toComponent: z.string() }) }),
+        z.object({ merge: z.object({ components: z.array(z.string()).min(2) }) }),
+        z.object({
+          split: z.object({ component: z.string(), groups: z.array(z.array(z.string().min(1)).min(1)).min(1) }),
+        }),
+      ]),
+    )
+    .min(1)
+    .max(ARCHITECTURE_RESTRUCTURE_OP_LIMIT)
+    .optional()
+    .describe("One what-if hypothesis: violation delta vs current partition, no report; only limit may ride along."),
 };
 
 /**
@@ -524,13 +539,18 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "MISFIT (expectedPath.established = reverse direction + support; transit = roles via third role, both legs " +
       "established) | NEW_PATTERN (pair nobody wrote, no established direction; transit when one exists) | UNJUDGED " +
       "(reason newFile, nonProduction, untypedFile, weakRole, crossLanguage, constantReference, displacedRole, " +
-      "noCodegraph); exclusionsUnchecked = classes no call data can check yet.",
+      "noCodegraph); exclusionsUnchecked = classes no call data can check yet. restructure mode: what-if " +
+      "move{files,toComponent} | merge{components; later fold into first} | split{component,groups} vs current " +
+      "partition; full detectors on base vs relabelled facts, delta by violation key: introduced/resolved subjects, " +
+      "counts, net, byFamily. One hypothesis per call — rank remedies one call each.",
     schemaKey: "get_architecture_report",
     invoke: async (app, request) => {
       const req = request as GetArchitectureReportRequest;
-      const answer = req.plannedEdges
-        ? await app.judgePlannedArchitectureEdges(req)
-        : await app.getArchitectureReport(req);
+      const answer = req.restructure
+        ? await app.simulateArchitectureRestructure(req)
+        : req.plannedEdges
+          ? await app.judgePlannedArchitectureEdges(req)
+          : await app.getArchitectureReport(req);
       return formatMcpText(JSON.stringify(answer, null, 2));
     },
   },

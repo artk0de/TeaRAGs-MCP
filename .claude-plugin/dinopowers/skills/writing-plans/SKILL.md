@@ -189,6 +189,15 @@ title/description mentions code generation/modification — heuristic keywords:
    `get_architecture_report(plannedEdges: [{source, target}])` per plan, all
    Tasks' edges: `MISFIT` → Task routes via `expectedPath` (established
    direction / `transit`); `NEW_PATTERN` / `UNJUDGED` → keep, Task notes it.
+7. Restructuring plan (Tasks move files between components, split or merge
+   components; codegraph on) → per such Task ONE
+   `get_architecture_report(restructure: [<that Task's ops>])` —
+   `move {files, toComponent}` / `split {component, groups}` /
+   `merge {components}`, names as the report spells them. Task carries the
+   simulated delta: `net`, resolved / introduced counts per `byFamily`,
+   introduced subjects verbatim. `net ≥ 0` or introduced critical/active → Task
+   states why it still ships, or plan drops it. Delta is joint: never one call
+   for several Tasks. Reading: `tea-rags:architecture-diagnostics` Phase 3i.
 
 Runs BEFORE Step 4 so per-Task enrichment visible to superpowers:writing-plans
 authoring cycle, surfaces in final plan document.

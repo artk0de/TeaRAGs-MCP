@@ -452,3 +452,28 @@ describe("entry facades do not own a subtree (bd tea-rags-mcp-r8hme.52.4)", () =
     }
   });
 });
+
+describe("buildComponentGraph componentRelabel (bd tea-rags-mcp-r8hme.21)", () => {
+  it("pins relabelled files ahead of the module walk, so a group inside a module becomes its own component", () => {
+    const graph: FileDependencyGraph = {
+      files: [file("lib/index.ts"), file("lib/a.ts"), file("lib/b.ts"), file("app/x.ts")],
+      edges: [edge("lib/a.ts", "lib/b.ts"), edge("app/x.ts", "lib/b.ts")],
+    };
+    const modules = [module("lib", "active")];
+
+    const base = buildComponentGraph(graph, modules);
+    const relabelled = buildComponentGraph(graph, modules, new Map([["lib/b.ts", "lib~split1"]]));
+
+    expect(base.componentOf.get("lib/b.ts")).toBe("lib");
+    expect(relabelled.componentOf.get("lib/b.ts")).toBe("lib~split1");
+    expect(relabelled.components.get("lib~split1")).toMatchObject({
+      kind: "directory",
+      fileCount: 1,
+      afferentCount: 2,
+    });
+    expect(relabelled.dependencies.map((d) => `${d.sourceComponent}->${d.targetComponent}`).sort()).toEqual([
+      "app->lib~split1",
+      "lib->lib~split1",
+    ]);
+  });
+});

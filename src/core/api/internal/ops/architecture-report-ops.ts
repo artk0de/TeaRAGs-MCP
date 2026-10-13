@@ -345,7 +345,7 @@ export class ArchitectureReportOps {
     const { graph } = scope;
     // Facade classification + components (bd tea-rags-mcp-r8hme.7): the
     // report-owned derivation in `architecture-facts.ts`.
-    const { leaks, components } = deriveArchitectureComponentFacts(graph, request.pathPattern);
+    const { leaks, components } = deriveArchitectureComponentFacts(graph, request.pathPattern, facts.componentRelabel);
     const sdp = detectComponentStableDependencyViolations(components, { sourcePathPattern: request.pathPattern });
     // One commit-count read, shared by every detector that asks for it.
     const commitCounts = readFileCommitCounts ? readOnce(readFileCommitCounts) : undefined;

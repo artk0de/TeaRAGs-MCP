@@ -59,10 +59,16 @@ export const COMPONENT_CONTAINMENT_REASON =
  * component nested inside the source's directory (containment) still counts
  * here: the child's volatility is the parent's all the same; whether to JUDGE
  * it is the detector's call.
+ *
+ * RELABEL. `componentRelabel` pins files to a component ahead of the walk
+ * above — the what-if restructuring's relabelled facts (bd
+ * tea-rags-mcp-r8hme.21), where a split group carved out of a module stays in
+ * the module's directory and only the pin makes it a component of its own.
  */
 export function buildComponentGraph(
   graph: FileDependencyGraph,
   modules: readonly FacadeModuleAssessment[],
+  componentRelabel?: ReadonlyMap<RelPath, string>,
 ): ComponentGraph {
   // Entries are measured over EVERY module: the predicate reads the graph,
   // not the adoption verdict (bd tea-rags-mcp-r8hme.52.4).
@@ -78,7 +84,8 @@ export function buildComponentGraph(
   const componentOf = new Map<RelPath, string>();
   const members = new Map<string, number>();
   for (const f of graph.files) {
-    const component = owningComponent(f.relPath, componentModules, entryModules, namespaceOf);
+    const component =
+      componentRelabel?.get(f.relPath) ?? owningComponent(f.relPath, componentModules, entryModules, namespaceOf);
     componentOf.set(f.relPath, component);
     members.set(component, (members.get(component) ?? 0) + 1);
   }

@@ -38,7 +38,7 @@ import {
   violationChangeSubject,
   withCanonicalPaths,
   type ArchitectureViolationDelta,
-} from "./architecture-violation-delta.js";
+} from "../architecture-violation-delta.js";
 
 /** The tier each report violation key carries in the run that holds it. */
 export class ArchitectureViolationTierLookup {

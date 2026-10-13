@@ -85,6 +85,12 @@ import {
   type ModuleImportSpecifierLookup,
 } from "../architecture-report-ops.js";
 import {
+  collapsePersistingFindings,
+  measureArchitectureViolationDelta,
+  resolvedChangeSubjects,
+  type ArchitectureViolationDelta,
+} from "../architecture-violation-delta.js";
+import {
   DiffDetectorRun,
   DiffFindingRemedyResolver,
   stampDiffFindingRemedies,
@@ -101,12 +107,6 @@ import {
   workingTreeExtractionContext,
   type ReviewEdgeExtractionDeps,
 } from "../review-edge-overlay.js";
-import {
-  collapsePersistingFindings,
-  measureArchitectureViolationDelta,
-  resolvedChangeSubjects,
-  type ArchitectureViolationDelta,
-} from "./architecture-violation-delta.js";
 import {
   ArchitectureViolationTierLookup,
   composeReviewCochangeSignificance,

@@ -9,6 +9,10 @@
  * component's edges, so a diff can introduce an SDP violation between two
  * components it never touched.
  *
+ * The keyed comparison is shared with `get_architecture_report` restructure
+ * mode (bd tea-rags-mcp-r8hme.21), which diffs base facts against relabelled
+ * ones — hence its home beside the report ops, not inside review-sections.
+ *
  * Renames: the diff's rename detection (`DiffScopeRead.renamedFrom`, new path
  * → old path) canonicalizes every file-keyed endpoint of the OVERLAID side to
  * its old path before keying, so a `git mv` reads as persisting, never as
@@ -37,10 +41,10 @@ import {
   architectureViolationKey,
   diffDetectorFindingKey,
   type ArchitectureFindingKeyFamily,
-} from "../../../../contracts/types/architecture-finding-key.js";
-import type { ArchitectureViolation } from "../../../../contracts/types/architecture-report.js";
-import type { DiffDetectorFamily, DiffDetectorFinding } from "../../../../contracts/types/diff-detector-finding.js";
-import type { ArchitectureChangeSubject } from "../../../public/dto/review.js";
+} from "../../../contracts/types/architecture-finding-key.js";
+import type { ArchitectureViolation } from "../../../contracts/types/architecture-report.js";
+import type { DiffDetectorFamily, DiffDetectorFinding } from "../../../contracts/types/diff-detector-finding.js";
+import type { ArchitectureChangeSubject } from "../../public/dto/review.js";
 
 /** The keyed comparison of a base and an overlaid violation set. */
 export interface ArchitectureViolationDelta {

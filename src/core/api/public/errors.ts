@@ -23,7 +23,9 @@ export type InputErrorCode =
   | "INPUT_PATH_IN_UNINDEXED_SUBMODULE"
   | "INPUT_INVALID_DOCUMENT_METADATA_SCHEMA"
   | "INPUT_DOCUMENT_METADATA_SCHEMA_VIOLATION"
-  | "INPUT_UNKNOWN_ARCHITECTURE_COMPONENT";
+  | "INPUT_UNKNOWN_ARCHITECTURE_COMPONENT"
+  | "INPUT_UNKNOWN_RESTRUCTURE_COMPONENT"
+  | "INPUT_UNKNOWN_RESTRUCTURE_FILE";
 
 /**
  * Abstract base for all input validation errors (httpStatus 400).
@@ -294,6 +296,36 @@ export class UnknownArchitectureComponentError extends InputValidationError {
       code: "INPUT_UNKNOWN_ARCHITECTURE_COMPONENT",
       message: `Unknown architecture component "${component}": no component of the layering graph has this path.`,
       hint: "Take the component from a knot finding's evidence.drillDown.knotOf, or from any finding's component names.",
+    });
+  }
+}
+
+/**
+ * Thrown by `get_architecture_report` restructure mode (bd
+ * tea-rags-mcp-r8hme.21) when an op names a component the report's component
+ * partition does not hold — simulating it would be a silent no-op.
+ */
+export class UnknownRestructureComponentError extends InputValidationError {
+  constructor(component: string, opIndex: number) {
+    super({
+      code: "INPUT_UNKNOWN_RESTRUCTURE_COMPONENT",
+      message: `restructure[${opIndex}] names unknown architecture component "${component}".`,
+      hint: "Take component names from the report's findings (sourceComponent, targetComponent, component).",
+    });
+  }
+}
+
+/**
+ * Thrown by `get_architecture_report` restructure mode (bd
+ * tea-rags-mcp-r8hme.21) when an op names files the production graph does not
+ * hold — unindexed, test, generated or non-production paths cannot be moved.
+ */
+export class UnknownRestructureFileError extends InputValidationError {
+  constructor(files: readonly string[], opIndex: number) {
+    super({
+      code: "INPUT_UNKNOWN_RESTRUCTURE_FILE",
+      message: `restructure[${opIndex}] names files outside the production graph: ${files.join(", ")}.`,
+      hint: "Use repo-relative paths of indexed production files, as findings' evidence names them.",
     });
   }
 }

@@ -37,8 +37,10 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
    - Phase 3h — DIFF-TIME FINDINGS (only for `review_changes` architecture
      findings: `preExisting`, `remedy`, repair files)
 9. Phase 3f — LAYER MAP (only when the request carried `layerMap`)
-10. Phase 4 — EXCLUSIONS: say what not judged
-11. Phase 5 — OUTPUT
+10. Phase 3i — REMEDY SIMULATION: each recommended move / split / merge →
+    `restructure` call, remedies ranked by delta
+11. Phase 4 — EXCLUSIONS: say what not judged
+12. Phase 5 — OUTPUT
 
 ## Top Anti-patterns
 
@@ -641,6 +643,37 @@ repair file with its named evidence. Bare "by design" is not evidence. A family
 with `built: false` or `scopeSkippedFiles` = "not judged" / "partial", never a
 clean pass.
 
+## Phase 3i — REMEDY SIMULATION
+
+Every recommendation that MOVES code (file move, layer-map move candidate, split
+candidate, merge candidate, extraction into another component) gets simulated
+before it is ranked. One `get_architecture_report` call per remedy,
+`restructure` = that remedy alone (delta is joint — never batch rival remedies):
+
+| Remedy                        | `restructure` op                                           |
+| ----------------------------- | ---------------------------------------------------------- |
+| move files X into component Y | `{move: {files: [X…], toComponent: Y}}`                    |
+| A5 split candidate            | `{split: {component, groups: <candidate files[] as is>}}`  |
+| A5 merge candidate / fold B→A | `{merge: {components: [A, B]}}` (later fold into first)    |
+| combined plan step            | ops of ONE step in one call (≤ 20); each step its own call |
+
+Names: components as findings spell them (`sourceComponent`, `component`,
+`componentDir`), files repo-relative production paths — else typed error
+(`INPUT_UNKNOWN_RESTRUCTURE_*`), fix the name, never drop the remedy.
+
+Read `delta`: `net` (introduced − resolved; negative = removes violations),
+`byFamily`, `introduced` / `resolved` subjects (capped by `limit`, counts
+whole). Rank remedies by `net`, then fewest `introduced` of tier
+critical/active. Remedy with `introducedCount > 0` → name what it introduces
+next to what it resolves; never present it as pure win. `net ≥ 0` → not a remedy
+for these detectors, say so. Moved file's file-keyed findings match their base
+path (persist, not resolved+introduced); split groups appear as
+`<component>~split<k>`. `unavailable: "noCodegraph"` → simulation not run, rank
+unsimulated.
+
+Output row per remedy:
+`| # | Remedy | ops | net | resolved (by family) | introduced (subjects) |`.
+
 ## Phase 4 — EXCLUSIONS
 
 `summary.stableDependencies.excluded` — edges read, NOT judged:
@@ -745,6 +778,9 @@ boundary-out N (heaviest → [externalComponent] at L[externalLevel]), boundary-
 ## Dependency norms — [violationCount] MISFIT; per family [family]: [significantPairCount]/[familySize] pairs directed ([oneWayPairCount] one-way); [roleFileCount] typed files
 excluded constant-reference N, cross-language N, uncalled N, framework-routed N, displaced-role N; typed [typedEdgeCount] of graph edges
 | # | Family | Edge (src → dst) | Roles | Locality | Against (established → support) | Minority | p |
+
+## Remedies — simulated (restructure), ranked by net
+| # | Remedy | ops | net | resolved (by family) | introduced (subjects) |
 ```
 
 Every line cites evidence numbers from report. No evidence → no claim.
