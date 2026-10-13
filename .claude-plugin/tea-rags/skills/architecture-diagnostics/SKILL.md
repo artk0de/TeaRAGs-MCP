@@ -610,7 +610,10 @@ loop" — do not restate it):
 
 - no `preExisting` → introduced: recommend the repair in this change.
 - `preExisting` + `remedy` → cheap: quote the `remedy` in the recommendation.
-- `preExisting`, no `remedy` → report-only: one line, no fix.
+- `preExisting`, no `remedy` → collapsed into `change.persisting` (not in
+  findings): one count line, no fix.
+- `change.nonLocal` → introduced away from the diff: recommend repair like
+  introduced.
 
 Recommendation loads `../../repair/<family>.md` ONLY for families present among
 the findings (`## Apply remedy` when `remedy` exists, else `## No remedy`;
