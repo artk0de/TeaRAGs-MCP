@@ -7,7 +7,7 @@
  * rerank of the request reads it through this helper.
  */
 
-import type { RerankOptions } from "./reranker.js";
+import type { RerankOptions } from "./reranker-port.js";
 
 /**
  * The `now` a request's rerank reads: its history clock when one was resolved,

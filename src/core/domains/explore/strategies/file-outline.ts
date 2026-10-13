@@ -17,13 +17,13 @@ import type {
   QdrantSearchReader,
 } from "../../../adapters/qdrant/ports.js";
 import type { SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
+import type { RerankMode } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { CodeChunkGrouper, DocChunkGrouper } from "../chunk-grouping/index.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import { historyClockRerankOption } from "../history-clock.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import type { RerankerPort } from "../reranker-port.js";
-import type { RerankMode } from "../reranker.js";
 import { recordingTreeGraphReader } from "../working-tree/tree-graph-marker.js";
 import { BaseExploreStrategy } from "./base.js";
 import type { ExploreContext, ExploreResult } from "./types.js";

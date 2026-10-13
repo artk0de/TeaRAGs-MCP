@@ -11,11 +11,10 @@
  */
 
 import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
-import type { RankingOverlay } from "../../contracts/types/reranker.js";
+import type { RankingOverlay, RerankMode } from "../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher, type PathPatternMatcher } from "../../primitives/paths/index.js";
 import type { RerankerPort } from "./reranker-port.js";
-import type { RerankMode } from "./reranker.js";
 
 // ---------------------------------------------------------------------------
 // Types
