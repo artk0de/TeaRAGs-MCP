@@ -15,10 +15,11 @@
  *
  * Exclusions: the report never judges an edge whose evidence is a nested
  * constant, a call-less reference, a framework-routed call, or a displaced
- * role. An overlay edge carries no call data, so `uncalled` and
- * `frameworkRouted` are never evaluated here; the other classes are evaluated
- * only through an injected {@link NormsEdgeExclusionCheck}. Every class not
- * evaluated is listed on each judged row as `exclusionsUnchecked`.
+ * role. The test is the report's own (`normEdgeExclusionResolver`), wired by
+ * {@link buildNormsEdgeExclusionCheck}. An overlay edge carries neither call
+ * data nor the reference text, so `uncalled`, `frameworkRouted` and
+ * `constantReference` are never evaluated here; only `displacedRole` is. Every
+ * class not evaluated is listed on each judged row as `exclusionsUnchecked`.
  */
 
 import { existsSync } from "node:fs";
@@ -29,7 +30,12 @@ import {
   buildDependencyNormFilePrimaryTypes,
   buildDependencyNormFileRoles,
 } from "../../../../domains/explore/naming-lexicon/index.js";
-import { buildNormLedgers, judgePlannedEdge } from "../../../../domains/trajectory/codegraph/symbols/index.js";
+import {
+  buildNormLedgers,
+  judgePlannedEdge,
+  normEdgeExclusionResolver,
+  type DependencyNormsInput,
+} from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import type {
   NormsAddedEdgeVerdict,
   NormsAddedEdgeVerdictKind,
@@ -71,6 +77,26 @@ interface NormsAddedEdge {
 export interface NormsEdgeExclusionCheck {
   classes: readonly NormsEdgeExclusionClass[];
   classify: (edge: NormsAddedEdge) => NormsEdgeExclusionClass | undefined;
+}
+
+/**
+ * The exclusion check over the report's single definition. The edge handed to
+ * the resolver is evidence-free (no `callWeight`, no `importText` — an overlay
+ * edge has neither), so the resolver can only answer `displacedRole`, and that
+ * is the only class this check claims to cover.
+ */
+export function buildNormsEdgeExclusionCheck(input: DependencyNormsInput): NormsEdgeExclusionCheck {
+  const exclusionOf = normEdgeExclusionResolver(input);
+  return {
+    classes: ["displacedRole"],
+    classify: ({ source, target }) => {
+      const sourceRole = input.fileRoles.get(source);
+      const targetRole = input.fileRoles.get(target);
+      if (sourceRole === undefined || targetRole === undefined) return undefined;
+      const exclusion = exclusionOf({ targetRelPath: target }, sourceRole, targetRole);
+      return exclusion === "displacedRole" ? exclusion : undefined;
+    },
+  };
 }
 
 export interface AddedEdgeNormsInput {
@@ -195,12 +221,14 @@ export const normsSectionProvider: ReviewSectionProvider = {
       ...(baseEdges !== undefined ? { baseEdges } : {}),
     };
     const deletedFiles = [...scope.touchedFiles].filter((relPath) => !existsSync(join(scope.workTree, relPath)));
+    const fileRoles = buildDependencyNormFileRoles(typeNameRows);
     const result = judgeAddedEdgeNorms({
       addedEdges: diffAddedEdges(scope.files, overlay, ports),
       removedEdgeCount: diffRemovedEdgeCount(scope.files, overlay, { ...ports, deletedFiles }),
       indexedGraph: production.graph,
-      fileRoles: buildDependencyNormFileRoles(typeNameRows),
+      fileRoles,
       filePrimaryTypes: buildDependencyNormFilePrimaryTypes(typeNameRows),
+      exclusions: buildNormsEdgeExclusionCheck({ graph: production.graph, fileRoles }),
       isNonProduction: (relPath) => production.nonProduction.ignores(relPath),
     });
     const notJudged: ReviewSectionNotJudgedEntry[] = overlay.unsupported().map((skip) => ({
