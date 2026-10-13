@@ -177,7 +177,10 @@ export const capability: LanguageCapability = {
   // constructor, fields and accessors — an Error subclass, a data-only shape —
   // leaves the type-abstractness census (member kinds, never a base-list
   // spelling). Recompute: `--force-enrichments codegraph --languages typescript`.
-  versions: { chunking: 2, walker: 14, codegraphSchema: 2 },
+  // walker 15: bd tea-rags-mcp-zy6hx — field-access facet pass. The walker
+  // publishes `fieldAccesses` (`this.x`, static `Cls.x`, a parameter's `p.x`,
+  // read / write) for `cg_symbols_edges_field`; a walker-14 index has no rows.
+  versions: { chunking: 2, walker: 15, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties
   // lowerCamelCase; a namespace-like module binding lowerCamelCase or

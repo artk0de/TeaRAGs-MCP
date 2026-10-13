@@ -1606,7 +1606,7 @@ function collectClassExtends(root: AstNode): ReadonlyMap<string, string> {
  * {@link extractTypeNameFromAnnotation} to answer with what an annotation
  * MEANS rather than which local name it was written with.
  */
-function collectTypeAliases(root: AstNode): ReadonlyMap<string, AstNode> {
+export function collectTypeAliases(root: AstNode): ReadonlyMap<string, AstNode> {
   const aliases = new Map<string, AstNode>();
   walk(root, (node) => {
     if (node.type !== "type_alias_declaration") return;
@@ -1637,7 +1637,7 @@ function collectTypeAliases(root: AstNode): ReadonlyMap<string, AstNode> {
  * One hop only: chasing `type A = B; type B = C` would need cycle detection,
  * and no measured call site needs it.
  */
-function extractTypeNameFromAnnotation(
+export function extractTypeNameFromAnnotation(
   annotation: AstNode | undefined,
   typeAliases: ReadonlyMap<string, AstNode>,
 ): string | null {

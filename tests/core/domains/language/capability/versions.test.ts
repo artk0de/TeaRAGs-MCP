@@ -496,8 +496,11 @@ describe("seeded support versions", () => {
       // exactly those components. go and rust read member kinds across sibling
       // nodes (methods live outside the type declaration) and keep their
       // reading.
+      // typescript 15: bd tea-rags-mcp-zy6hx — the field-access facet pass
+      // publishes `fieldAccesses`, so an index built by walker 14 holds no
+      // `cg_symbols_edges_field` rows for TypeScript.
       const WALKER_BUMPED = new Map([
-        ["typescript", 14],
+        ["typescript", 15],
         ["javascript", 5],
         ["python", 11],
         ["ruby", 8],
