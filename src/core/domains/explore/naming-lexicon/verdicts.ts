@@ -1759,7 +1759,11 @@ function judgeTypeDraftTerms(
   gate: MeaningGate | undefined,
 ): NamingVerdict {
   const { words, draftCasing, namespace, expected, kind, parts } = draft;
-  const lexical = termAlternatives(input, words, gate);
+  // A head that IS the expected role is right by construction: no spelling variant replaces it
+  // (bd tea-rags-mcp-9yhnx — `CollectionOps` drew `ops` → `options`). Qualifier alternatives stay.
+  const lexical = termAlternatives(input, words, gate).filter(
+    (alternative) => !(expected && alternative.slot === "head" && parts.head === expected.role),
+  );
   // The name carries its expected role: its head is right by construction — and the role is its evidence.
   if (lexical.length === 0 && expected) return { verdict: "CONFORMS", role: namedRole(expected, draftCasing) };
   // The family fixes no head: any name conforms to it, and the verdict says what the type is.

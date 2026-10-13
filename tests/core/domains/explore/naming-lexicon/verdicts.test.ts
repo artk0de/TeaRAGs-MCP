@@ -1828,6 +1828,84 @@ describe("judgeTypeDraft — a namespace module is no member of the directory's 
 });
 
 /**
+ * A directory of behaviour declares no role for a shape (bd tea-rags-mcp-9yhnx).
+ * Live on the self-index: `api/internal/ops/` holds `*Ops` classes, and the
+ * interfaces / type aliases declared as their files' primaries
+ * (`IndexedFileImportLookup`, `ProductionArchitectureGraph`) were MISFIT →
+ * `...Ops`. A draft of KNOWN kind in the other group is no member of the
+ * family; a class draft, or one whose kind is unknown, still is.
+ */
+describe("judgeTypeDraft — a directory of classes demands no role of an interface", () => {
+  const OPS = "src/core/api/internal/ops";
+  const row = (shortName: string, relPath: string, symbolKind: TypeNameRow["symbolKind"] = "class"): TypeNameRow => ({
+    symbolId: shortName,
+    relPath,
+    shortName,
+    symbolKind,
+    ancestors: [],
+  });
+  const ROWS = [
+    row("CollectionOps", `${OPS}/collection-ops.ts`),
+    row("DocumentOps", `${OPS}/document-ops.ts`),
+    row("IndexingOps", `${OPS}/indexing-ops.ts`),
+    row("WorktreeOps", `${OPS}/worktree-ops.ts`),
+  ];
+  const judge = (
+    draft: { name: string; path: string; symbolKind?: TypeNameRow["symbolKind"] },
+    rows: TypeNameRow[] = ROWS,
+  ) => judgeTypeDraft({ ...draft, casing: "pascal", evidence: typeNameEvidence(rows, "type"), conceptNames: [] });
+
+  it("an interface or a type alias draft → no directory MISFIT", () => {
+    for (const symbolKind of ["interface", "type_alias", "enum"] as const) {
+      const verdict = judge({ name: "ProductionArchitectureGraph", path: `${OPS}/architecture-graph.ts`, symbolKind });
+      expect(verdict.verdict).not.toBe("MISFIT");
+    }
+  });
+
+  it("a class draft is still held to the role", () => {
+    expect(
+      judge({ name: "ReviewChangesService", path: `${OPS}/review-changes.ts`, symbolKind: "class" }),
+    ).toMatchObject({ verdict: "MISFIT", suggestion: "ReviewChangesServiceOps", role: { word: "ops" } });
+  });
+
+  it("a draft of unknown kind is still held to the role", () => {
+    expect(judge({ name: "ReviewChangesService", path: `${OPS}/review-changes.ts` })).toMatchObject({
+      verdict: "MISFIT",
+    });
+  });
+
+  it("an existing interface's own declaration is the known kind", () => {
+    const path = `${OPS}/architecture-graph.ts`;
+    const rows = [...ROWS, row("ProductionArchitectureGraph", path, "interface")];
+    expect(judge({ name: "ProductionArchitectureGraph", path }, rows).verdict).not.toBe("MISFIT");
+  });
+
+  /**
+   * A head that IS the expected role is right by construction: the project's
+   * more frequent spelling variant of it is no alternative. Live: eight `*Ops`
+   * classes under `api/internal/ops/` (`CollectionOps`, `ExploreOps`, …) were
+   * NEW_TERM with `ops` → `options`, the project's `*Options` DTOs.
+   */
+  describe("a head equal to the expected role is not replaced by its spelling variant", () => {
+    const OPTIONS = ["Search", "Index", "Chunker", "Embedding", "Reindex", "Collection"].map((q, i) =>
+      row(`${q}Options`, `src/dto/d${i}/${q.toLowerCase()}-options.ts`, "interface"),
+    );
+    const rows = [...ROWS, ...OPTIONS];
+
+    it("a class `FooOps` in the ops directory → CONFORMS, no `options` alternative", () => {
+      const verdict = judge({ name: "ExploreOps", path: `${OPS}/explore-ops.ts`, symbolKind: "class" }, rows);
+      expect(verdict).toMatchObject({ verdict: "CONFORMS", role: { word: "ops", evidence: "directory" } });
+      expect(JSON.stringify(verdict)).not.toMatch(/options/);
+    });
+
+    it("the same head where no role expects it still gets the variant: NEW_TERM", () => {
+      const verdict = judge({ name: "ExploreOps", path: "src/elsewhere/explore-ops.ts", symbolKind: "class" }, rows);
+      expect(verdict).toMatchObject({ verdict: "NEW_TERM", alternatives: [{ word: "options", slot: "head" }] });
+    });
+  });
+});
+
+/**
  * Project-suffix membership (bd tea-rags-mcp-49fsr): a suffix confirms only a draft that
  * belongs to its family, by the same test the derivation applies to an existing type —
  * the family's dominant declaration form, and its dominant supertype when the family is
@@ -2015,7 +2093,8 @@ describe("judgeTypeDraft — a directory's role holds its files' primaries only"
   });
 
   it("diff mode says whether the draft is its file's primary: a secondary is not held", () => {
-    const draft = { name: "IndexDriftResetter", path: "src/ops/index-drift.ts", symbolKind: "interface" as const };
+    // A class: an interface draft is no member of this class family at all (bd tea-rags-mcp-9yhnx).
+    const draft = { name: "IndexDriftResetter", path: "src/ops/index-drift.ts", symbolKind: "class" as const };
     expect(judge({ ...draft, filePrimary: false }).verdict).not.toBe("MISFIT");
     expect(judge({ ...draft, filePrimary: true }).verdict).toBe("MISFIT");
   });

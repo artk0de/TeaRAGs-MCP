@@ -90,12 +90,14 @@ describe("get_naming_lexicon", () => {
     expect(JSON.parse(result.content[0].text)).toEqual(answer);
   });
 
-  it("stays within the schema budget: description ≤ 300 chars, input schema ≤ 1.5 KB serialized", () => {
+  it("stays within the schema budget: description ≤ 300 chars, input schema ≤ 1.625 KB serialized", () => {
     const { config } = registered();
     expect(config.description.length).toBeLessThanOrEqual(300);
-    // Converted the way the SDK lists a tool to clients.
+    // Converted the way the SDK lists a tool to clients. 1536 → 1664 (bd tea-rags-mcp-9yhnx): the
+    // type draft's `symbolKind` enum (100 bytes) — a field the DTO declared and the handler applied
+    // all along, which the schema stripped; every existing hint carries a gotcha and stays.
     const inputSchema = toJsonSchemaCompat(config.inputSchema, { strictUnions: true, pipeStrategy: "input" });
-    expect(JSON.stringify(inputSchema).length).toBeLessThanOrEqual(1536);
+    expect(JSON.stringify(inputSchema).length).toBeLessThanOrEqual(1664);
   });
 
   // bd tea-rags-mcp-433d2: CONFORMS is read as "the name is right" unless the contract says otherwise.
@@ -145,6 +147,16 @@ describe("get_naming_lexicon", () => {
       }).success,
     ).toBe(true);
     expect(inputSchema.safeParse({ project: "p", names: [{ name: "Commit", kind: "type" }] }).success).toBe(false);
+  });
+
+  // bd tea-rags-mcp-9yhnx: the draft's declaration kind decides directory-family membership —
+  // the default strip dropped it, so an interface draft was judged as a class.
+  it("keeps a type draft's symbolKind and rejects a kind no type draft declares", () => {
+    const { inputSchema } = registered().config;
+    const draft = { name: "ImportLookup", kind: "type", path: "src/x/ops/lookup.ts", symbolKind: "interface" };
+    const parsed = inputSchema.parse({ project: "p", names: [draft] }) as { names: unknown[] };
+    expect(parsed.names).toEqual([draft]);
+    expect(inputSchema.safeParse({ project: "p", names: [{ ...draft, symbolKind: "method" }] }).success).toBe(false);
   });
 
   it("tells an agent the type-draft verdicts and fields", () => {

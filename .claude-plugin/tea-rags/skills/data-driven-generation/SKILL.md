@@ -255,8 +255,10 @@ while writing, so misfits are prevented, not detected:
   when known. Type unknown but bound from a call →
   `callee: { member, receiver? }`. A new class, module, interface, enum or
   constant →
-  `{ name, kind: "type", path: <its file>, extends?: <planned ancestor> }`: the
-  ancestor's family and the directory set the expected role suffix.
+  `{ name, kind: "type", path: <its file>, symbolKind: <class|module|interface|enum|type_alias|constant>, extends?: <planned ancestor> }`:
+  the ancestor's family and the directory set the expected role suffix;
+  `symbolKind` keeps interface/type_alias/enum out of a class directory's role,
+  class out of a shape directory's.
 - A `return` draft with no known `type` is judged too — never invent a type to
   force a verdict. A verb the project uses → CONFORMS; a rare one → NEW_TERM
   (`topTerms`); never a MISFIT toward another verb of the same noun (`find_user`

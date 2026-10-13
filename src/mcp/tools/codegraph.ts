@@ -306,6 +306,7 @@ function buildNamingLexiconInputSchema() {
     callee: z.object({ member: z.string().min(1), receiver: z.string().optional() }).optional(),
     path: z.string().optional(),
     extends: z.string().optional(),
+    symbolKind: z.enum(["class", "module", "interface", "enum", "type_alias", "constant"]).optional(),
   });
   return (
     z

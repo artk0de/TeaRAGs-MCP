@@ -80,6 +80,8 @@ export interface TypeRoleAssignment {
    * Absent when the carriers share no supertype (`*Args`, `*Options`).
    */
   familySupertypes?: readonly string[];
+  /** A directory role: whether its family declares behaviour ({@link RoleFamilyMembership.familyDeclaresBehaviour}). */
+  familyDeclaresBehaviour?: boolean;
   /**
    * `false` on an inheritance role its family does NOT carry in names — a
    * dispersed family's kind ({@link deriveTypeRoles}): what the type IS, never a
@@ -116,16 +118,37 @@ function declaresSupertypes(kind: TypeNameRow["symbolKind"] | undefined): boolea
   return kind !== SUPERTYPELESS_KIND;
 }
 
-/** What makes a type a member of a non-inheritance role family: its form and its supertypes. */
+/**
+ * Whether a declaration kind carries BEHAVIOUR (bd tea-rags-mcp-9yhnx): a
+ * `class` or a `module` holds operations; an `interface`, a `type_alias` or an
+ * `enum` describes a shape. `api/internal/ops/` holds `*Ops` classes, and the
+ * request / result interfaces beside them are no `*Ops`. `undefined` for an
+ * unknown kind.
+ */
+function declaresBehaviour(kind: TypeNameRow["symbolKind"] | undefined): boolean | undefined {
+  if (kind === null || kind === undefined) return undefined;
+  return kind === "class" || kind === NAMESPACE_KIND;
+}
+
+/** What makes a type a member of a non-inheritance role family: its form, its behaviour and its supertypes. */
 export interface RoleFamilyMembership {
   familySupertypes?: readonly string[];
   familyForm?: DeclarationForm;
+  /**
+   * A directory family's group ({@link declaresBehaviour}): `true` when at
+   * least the directory's share of its carriers are classes / modules, `false`
+   * when they are interfaces / type aliases / enums. Absent on a tie, below the
+   * share, and for a project suffix — Ruby classes and TS type aliases share
+   * tail words across a project.
+   */
+  familyDeclaresBehaviour?: boolean;
 }
 
 /**
  * Whether a type belongs to a role family (bd tea-rags-mcp-49fsr): its form is
- * the family's, and — when the family is cohesive — its supertypes (by last
- * namespace segment) include one the family shares. What is not KNOWN about the
+ * the family's, it declares behaviour when a directory family does and a shape
+ * when it does not (bd tea-rags-mcp-9yhnx), and — when the family is cohesive —
+ * its supertypes (by last namespace segment) include one the family shares. What is not KNOWN about the
  * type (`symbolKind` / `supertypes` undefined) never excludes it, and neither do
  * the supertypes of a kind that declares none (a type alias). Callers pass
  * `supertypes` only for a type that DECLARES at least one: `BatchAccumulator`
@@ -140,6 +163,11 @@ export function isRoleFamilyMember(
 ): boolean {
   const form = type.symbolKind === undefined ? undefined : declarationForm(type.symbolKind);
   if (family.familyForm !== undefined && form !== undefined && form !== family.familyForm) return false;
+  const behaviour = declaresBehaviour(type.symbolKind);
+  const { familyDeclaresBehaviour } = family;
+  if (familyDeclaresBehaviour !== undefined && behaviour !== undefined && behaviour !== familyDeclaresBehaviour) {
+    return false;
+  }
   const { familySupertypes } = family;
   const { supertypes } = type;
   if (familySupertypes === undefined || supertypes === undefined || !declaresSupertypes(type.symbolKind)) return true;
@@ -411,12 +439,18 @@ function assign(
   }));
 }
 
-/** A cohesive family's supertypes on each assignment; the form is read back off the carriers ({@link projectSuffixRole}). */
+/**
+ * A cohesive family's supertypes and a directory family's behaviour on each
+ * assignment; the form is read back off the carriers ({@link projectSuffixRole}).
+ */
 function withFamily(assignments: TypeRoleAssignment[], family: RoleFamilyMembership): TypeRoleAssignment[] {
-  const { familySupertypes } = family;
-  return familySupertypes === undefined
-    ? assignments
-    : assignments.map((assignment) => ({ ...assignment, familySupertypes }));
+  const { familySupertypes, familyDeclaresBehaviour } = family;
+  if (familySupertypes === undefined && familyDeclaresBehaviour === undefined) return assignments;
+  return assignments.map((assignment) => ({
+    ...assignment,
+    ...(familySupertypes !== undefined ? { familySupertypes } : {}),
+    ...(familyDeclaresBehaviour !== undefined ? { familyDeclaresBehaviour } : {}),
+  }));
 }
 
 /**
@@ -457,6 +491,19 @@ function dominantForm(carriers: readonly { row: TypeNameRow }[], share: number):
     } else if (count === best.count) tied = true;
   }
   return best && !tied && best.count / carriers.length >= share ? best.form : undefined;
+}
+
+/**
+ * Whether at least `share` of the carriers of known kind declare behaviour
+ * ({@link declaresBehaviour}), or at least `share` declare a shape; `undefined`
+ * on a tie, below the share, or with no kind known — like {@link dominantForm}.
+ */
+function dominantBehaviour(carriers: readonly { row: TypeNameRow }[], share: number): boolean | undefined {
+  const known = carriers.map(({ row }) => declaresBehaviour(row.symbolKind)).filter((b) => b !== undefined);
+  const behaviour = known.filter(Boolean).length;
+  const shape = known.length - behaviour;
+  if (known.length === 0 || behaviour === shape) return undefined;
+  return Math.max(behaviour, shape) / known.length >= share ? behaviour > shape : undefined;
 }
 
 /**
@@ -816,6 +863,9 @@ function rolesFrom(rows: readonly TypeNameRow[], t: TypeRoleThresholds, parse: T
     // file there is the file's subject, held to the directory's role (bd tea-rags-mcp-59q9c).
     // Forms mix across a PROJECT suffix — Ruby classes and TS type aliases share tail words.
     const family = roleFamily(carriers, t.directoryShare, false);
+    // The behaviour group judges DRAFTS only (bd tea-rags-mcp-9yhnx): the carrier set is decided
+    // without it, so the file roles built on these carriers do not move.
+    const familyDeclaresBehaviour = dominantBehaviour(carriers, t.directoryShare);
     assignments.push(
       ...withFamily(
         assign(
@@ -824,7 +874,7 @@ function rolesFrom(rows: readonly TypeNameRow[], t: TypeRoleThresholds, parse: T
           "directory",
           dir,
         ),
-        family,
+        familyDeclaresBehaviour === undefined ? family : { ...family, familyDeclaresBehaviour },
       ),
     );
   }
@@ -874,6 +924,7 @@ function pickRole(
     evidence,
     examples,
     ...(best.familySupertypes ? { familySupertypes: best.familySupertypes } : {}),
+    ...(best.familyDeclaresBehaviour !== undefined ? { familyDeclaresBehaviour: best.familyDeclaresBehaviour } : {}),
     ...(best.carriedInName === false ? { carriedInName: false } : {}),
     ...(best.tail ? { tail: best.tail } : {}),
   };
