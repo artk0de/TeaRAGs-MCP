@@ -22,6 +22,7 @@ import type {
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import { MODULE_ENTRY_FILE_NAMES } from "../../../../../../../src/core/domains/trajectory/codegraph/component-geometry/index.js";
 import {
+  createFacadeLeakEdgeJudge,
   detectLeakingAbstractions,
   FACADE_ADOPTION_MAJORITY,
   FACADE_MIN_EXTERNAL_IMPORTERS,
@@ -960,6 +961,141 @@ describe("detectLeakingAbstractions — de-facto surface children (bd tea-rags-m
     expect(report.summary.deFactoSurfaces.map((s) => s.child)).toEqual(["dto"]);
     expect(report.violations.map((v) => v.kind)).toEqual(Array.from({ length: 8 }, () => "bypass"));
     expect(report.summary.excludedModules.deFactoSurfaceEdges).toBe(0);
+  });
+});
+
+/**
+ * The report's facade-leak rule as an edge predicate (bd tea-rags-mcp-hv38q):
+ * the diff run judges edges the indexed graph may not hold yet, so it asks
+ * the SAME rule — module statuses and de-facto surfaces read off the report,
+ * innermost active module, intra-parent consumers, the kind — for one
+ * (source, target) pair. Parity is the contract: over the graph's own edges
+ * the judge answers exactly where the report lists a violation.
+ */
+describe("createFacadeLeakEdgeJudge (bd tea-rags-mcp-hv38q)", () => {
+  function twoSeam(): FileDependencyGraph {
+    return {
+      files: [
+        walked("api/public/index.ts"),
+        walked("api/public/errors.ts"),
+        walked("api/internal/x.ts"),
+        walked("api/index.ts"),
+        ...["s1", "s2", "s3", "s4"].map((s) => walked(`app/${s}.ts`)),
+      ],
+      edges: [
+        edge("api/public/index.ts", "api/public/errors.ts"),
+        edge("api/internal/x.ts", "api/public/errors.ts"),
+        edge("api/index.ts", "api/public/errors.ts"),
+        ...["s1", "s2", "s3"].map((s) => edge(`app/${s}.ts`, "api/public/index.ts")),
+        edge("app/s4.ts", "api/public/errors.ts"),
+      ],
+    };
+  }
+
+  /** `lib/m/` adopted by 20 facade importers, 8 more reaching `dto/x.ts` — a measured de-facto surface. */
+  function surface(): FileDependencyGraph {
+    const files = [walked("lib/m/index.ts"), walked("lib/m/dto/x.ts"), walked("lib/m/core.ts")];
+    const edges: FileDependencyEdge[] = [edge("lib/m/index.ts", "lib/m/core.ts")];
+    for (let i = 0; i < 20; i++) {
+      files.push(walked(`app/f${i}.ts`));
+      edges.push(edge(`app/f${i}.ts`, "lib/m/index.ts"));
+    }
+    for (let i = 0; i < 8; i++) {
+      files.push(walked(`app/d${i}.ts`));
+      edges.push(edge(`app/d${i}.ts`, "lib/m/dto/x.ts"));
+    }
+    return { files, edges };
+  }
+
+  it.each([
+    ["the module fixture", fixture],
+    ["the two-seam parent component", twoSeam],
+    ["a module with a de-facto surface", surface],
+  ])("answers for a graph edge exactly when the report lists it as a violation — %s", (_name, build) => {
+    const graph = build();
+    const report = detectLeakingAbstractions(graph);
+    const judge = createFacadeLeakEdgeJudge(graph, report);
+    const expected = new Map(report.violations.map((v) => [`${v.sourceRelPath} -> ${v.targetRelPath}`, v]));
+
+    for (const e of graph.edges) {
+      const verdict = judge(e.sourceRelPath, e.targetRelPath);
+      const violation = expected.get(`${e.sourceRelPath} -> ${e.targetRelPath}`);
+      expect(verdict).toEqual(
+        violation === undefined
+          ? undefined
+          : { moduleDir: violation.moduleDir, facadeRelPath: violation.facadeRelPath, kind: violation.kind },
+      );
+    }
+    // The fixture exercises the rule: a leak listed, or one spared by a de-facto surface.
+    expect(report.violations.length + report.summary.excludedModules.deFactoSurfaceEdges).toBeGreaterThan(0);
+  });
+
+  it("judges an edge the graph does not hold yet: a first deep import past an adopted facade, by the file rule", () => {
+    const graph = fixture();
+    const judge = createFacadeLeakEdgeJudge(graph, detectLeakingAbstractions(graph));
+
+    // app/u1.ts never imported lib/sync/b.ts; the facade does not import it → internal reach.
+    expect(judge("app/u1.ts", "lib/sync/b.ts")).toEqual({
+      moduleDir: "lib/sync",
+      facadeRelPath: "lib/sync/index.ts",
+      kind: "internal-reach",
+    });
+    // The facade imports a.ts → a new deep import of it is a bypass.
+    expect(judge("app/u2.ts", "lib/sync/a.ts")).toEqual({
+      moduleDir: "lib/sync",
+      facadeRelPath: "lib/sync/index.ts",
+      kind: "bypass",
+    });
+    // A source the graph has never seen is an ordinary external consumer.
+    expect(judge("app/new.ts", "lib/sync/b.ts")?.moduleDir).toBe("lib/sync");
+  });
+
+  it("stays silent where the report judges nothing: the facade itself, inactive modules, inside the module, self-edges", () => {
+    const graph = fixture();
+    const judge = createFacadeLeakEdgeJudge(graph, detectLeakingAbstractions(graph));
+
+    expect(judge("app/u1.ts", "lib/sync/index.ts")).toBeUndefined(); // the facade is the adoption
+    expect(judge("app/u4.ts", "lib/contracts/t.ts")).toBeUndefined(); // facade-not-adopted
+    expect(judge("app/u4.ts", "lib/tiny/x.ts")).toBeUndefined(); // too-few-importers
+    expect(judge("cmd/main.go", "pkg/store/store.go")).toBeUndefined(); // language-enforced
+    expect(judge("lib/sync/a.ts", "lib/sync/b.ts")).toBeUndefined(); // inside the module
+    expect(judge("app/u1.ts", "app/u1.ts")).toBeUndefined();
+    expect(judge("app/u1.ts", "elsewhere/z.ts")).toBeUndefined(); // no module at all
+  });
+
+  it("never judges an edge with an endpoint the graph excluded by policy (tests, tooling) — the report never sees one", () => {
+    const graph = fixture();
+    const excluded = { ignores: (relPath: string) => relPath.startsWith("tests/") };
+    const judge = createFacadeLeakEdgeJudge(graph, detectLeakingAbstractions(graph), excluded);
+
+    expect(judge("tests/app/u1.test.ts", "lib/sync/b.ts")).toBeUndefined();
+    expect(judge("app/new.ts", "lib/sync/b.ts")?.moduleDir).toBe("lib/sync");
+  });
+
+  it("never judges an intra-parent consumer, and still judges the true external one", () => {
+    const graph = twoSeam();
+    const judge = createFacadeLeakEdgeJudge(graph, detectLeakingAbstractions(graph));
+
+    expect(judge("api/internal/y.ts", "api/public/errors.ts")).toBeUndefined();
+    expect(judge("app/s1.ts", "api/public/errors.ts")).toEqual({
+      moduleDir: "api/public",
+      facadeRelPath: "api/public/index.ts",
+      kind: "bypass",
+    });
+  });
+
+  it("spares an internal reach into a measured de-facto surface, never a bypass into it", () => {
+    const graph = surface();
+    const report = detectLeakingAbstractions(graph);
+    expect(report.summary.deFactoSurfaces.map((s) => s.child)).toEqual(["dto"]);
+    const judge = createFacadeLeakEdgeJudge(graph, report);
+
+    expect(judge("app/f0.ts", "lib/m/dto/x.ts")).toBeUndefined();
+    expect(judge("app/f0.ts", "lib/m/core.ts")).toEqual({
+      moduleDir: "lib/m",
+      facadeRelPath: "lib/m/index.ts",
+      kind: "bypass",
+    });
   });
 });
 

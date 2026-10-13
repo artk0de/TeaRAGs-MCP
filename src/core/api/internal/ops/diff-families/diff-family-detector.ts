@@ -20,6 +20,7 @@ import type {
   DiffDetectorStatus,
 } from "../../../../contracts/types/diff-detector-finding.js";
 import type {
+  FacadeLeakEdgeVerdict,
   HubLikeDependencyReading,
   LayeringReading,
   ReviewEdgeOverlay,
@@ -94,8 +95,21 @@ export interface DiffDetectorCatalog {
     | undefined;
   /** The files the report's partition assigns to the component; empty for an unknown name. */
   filesOf: (componentName: string) => readonly string[];
-  /** The component's facade (undefined = no facade / not adopted). */
+  /**
+   * The facade of a MEASURED module component, whatever its adoption status
+   * (undefined = a directory component, which has no facade). Not an adoption
+   * verdict — {@link facadeLeakOf} is.
+   */
   facadeOf: (componentName: string) => string | undefined;
+  /**
+   * The whole-repo report's facade-leak rule over one file edge (bd
+   * tea-rags-mcp-hv38q): the module `source → target` leaks past — innermost
+   * ACTIVE (adopted) module, intra-parent consumers and de-facto surfaces
+   * spared, exactly as `detectLeakingAbstractions` lists violations — or
+   * undefined. Optional: absent, leakingAbstraction judges by pre-existing
+   * facade usage alone.
+   */
+  facadeLeakOf?: (source: string, target: string) => FacadeLeakEdgeVerdict | undefined;
   /** Instability judged markedly greater — the report's own band comparison as a predicate. */
   isMarkedlyLessStable: (leanOn: number, leanedOn: number) => boolean;
   /**

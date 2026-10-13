@@ -332,6 +332,20 @@ export interface LeakingAbstractionReport {
   summary: LeakingAbstractionSummary;
 }
 
+/** The module one file edge leaks past, as the report would list it (bd tea-rags-mcp-hv38q). */
+export interface FacadeLeakEdgeVerdict {
+  moduleDir: string;
+  /** The module's facade the report names — `FacadeModuleAssessment.facadeRelPath`. */
+  facadeRelPath: RelPath;
+  kind: FacadeLeakKind;
+}
+
+/**
+ * The report's facade-leak rule as an edge predicate: `undefined` where the
+ * report would list no violation for `source → target`.
+ */
+export type FacadeLeakEdgeJudge = (source: RelPath, target: RelPath) => FacadeLeakEdgeVerdict | undefined;
+
 /**
  * Which convention a convention-privacy leak broke (bd tea-rags-mcp-r8hme.1) —
  * defined once in the finding contract (bd tea-rags-mcp-0e4vf):

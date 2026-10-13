@@ -637,7 +637,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
     const { production } = graphFacts;
     const readFileMaintenanceSignals =
       context.readFileMaintenanceSignals === undefined ? undefined : readOnce(context.readFileMaintenanceSignals);
-    const facts = deriveArchitectureComponentFacts(production.graph);
+    const facts = deriveArchitectureComponentFacts(production.graph, undefined, undefined, production.nonProduction);
     const mainSequence = measureMainSequenceDistances(facts.components, production.graph.files);
     // One layering model over the catalog's partition: the foundation the
     // catalog names and the levels the layeringBackEdge family judges.

@@ -26,6 +26,7 @@ import {
   buildComponentGraph,
   buildLayeringModel,
   classifyTestSupportFiles,
+  createFacadeLeakEdgeJudge,
   DEFAULT_SDP_TOLERANCE,
   detectLeakingAbstractions,
   detectMainSequenceDeviations,
@@ -35,6 +36,8 @@ import {
   resolveExternalImports,
   resolveUnwalkedImportEdges,
   type ComponentGraph,
+  type FacadeLeakEdgeJudge,
+  type FacadeLeakEdgeVerdict,
   type IndexedFileImports,
   type LayeringModel,
   type LeakingAbstractionReport,
@@ -155,6 +158,12 @@ export interface ArchitectureComponentFacts {
   leaks: LeakingAbstractionReport;
   /** The component map (bd tea-rags-mcp-r8hme.7): every module A4 assessed, namespaces or plain directories elsewhere — the one partition every component detector judges (bd tea-rags-mcp-r8hme.52.7). */
   components: ComponentGraph;
+  /**
+   * The leaks report's facade-leak rule as an edge predicate (bd
+   * tea-rags-mcp-hv38q) — what the diff run's leakingAbstraction asks of an
+   * edge the graph may not hold, so both pipelines name the same leaks.
+   */
+  facadeLeakJudge: FacadeLeakEdgeJudge;
 }
 
 /**
@@ -166,14 +175,22 @@ export interface ArchitectureComponentFacts {
  * `ArchitectureReportOps#build`; the report passes its request's
  * `pathPattern`, the diff run passes none. `componentRelabel` is a what-if
  * restructuring's component pins (bd tea-rags-mcp-r8hme.21).
+ * `excludedFromGraph` is the filter the production graph was cut by
+ * (`ProductionArchitectureGraph.nonProduction`): the facade-leak judge never
+ * answers for an edge the report's graph could not hold (bd tea-rags-mcp-hv38q).
  */
 export function deriveArchitectureComponentFacts(
   graph: FileDependencyGraph,
   sourcePathPattern?: string,
   componentRelabel?: ReadonlyMap<RelPath, string>,
+  excludedFromGraph?: PathFilter,
 ): ArchitectureComponentFacts {
   const leaks = detectLeakingAbstractions(graph, { sourcePathPattern });
-  return { leaks, components: buildComponentGraph(graph, leaks.modules, componentRelabel) };
+  return {
+    leaks,
+    components: buildComponentGraph(graph, leaks.modules, componentRelabel),
+    facadeLeakJudge: createFacadeLeakEdgeJudge(graph, leaks, excludedFromGraph),
+  };
 }
 
 /**
@@ -285,7 +302,8 @@ function groupFilesByComponent(componentOf: ReadonlyMap<RelPath, string>): Reado
  * `DiffDetectorCatalog` over the extracted facts: components, facades and the
  * band exactly as the whole-repo report derived them — consumed by
  * `DiffDetectorRun`, never recomputed there. `facadeOf` answers only for a
- * MEASURED module component (a directory component has no facade); an absent
+ * MEASURED module component (a directory component has no facade);
+ * `facadeLeakOf` is the leaks report's own rule over one edge; an absent
  * main-sequence distance reads 0 (see
  * {@link distanceFromMainSequenceByComponent}). `componentOf` also serves the
  * component's `connectionCount` — the count the diff run's small-N guard
@@ -300,6 +318,7 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
   private readonly facadeByComponent: ReadonlyMap<string, RelPath>;
   private readonly distances: ReadonlyMap<string, number>;
   private readonly layeringFoundationFiles: ReadonlySet<RelPath>;
+  private readonly facadeLeakJudge: FacadeLeakEdgeJudge;
   /** Inverse of `componentOfRelPath`, built on first `filesOf` call. */
   private filesByComponent: ReadonlyMap<string, readonly RelPath[]> | undefined;
 
@@ -317,6 +336,7 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
         .filter((entry): entry is readonly [string, RelPath] => entry[1] !== null),
     );
     this.distances = distances;
+    this.facadeLeakJudge = facts.facadeLeakJudge;
   }
 
   componentOf(relPath: string):
@@ -352,6 +372,10 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
 
   facadeOf(componentName: string): string | undefined {
     return this.facadeByComponent.get(componentName);
+  }
+
+  facadeLeakOf(source: string, target: string): FacadeLeakEdgeVerdict | undefined {
+    return this.facadeLeakJudge(source, target);
   }
 
   isMarkedlyLessStable(leanOn: number, leanedOn: number): boolean {
