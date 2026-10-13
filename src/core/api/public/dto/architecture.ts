@@ -178,6 +178,7 @@ export type ArchitecturePlannedEdgeUnjudgedReason =
   | "untypedFile"
   | "weakRole"
   | "crossLanguage"
+  | "inheritance"
   | "constantReference"
   | "displacedRole"
   | "noCodegraph";

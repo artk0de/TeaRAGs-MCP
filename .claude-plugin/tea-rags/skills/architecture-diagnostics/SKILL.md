@@ -580,6 +580,10 @@ contested convention — read before calling it a mistake. `locality` = where TH
 edge sits (`sameDirectory` / `sameDomain` / `crossDomain`); test pools
 localities, so it never changes the verdict.
 
+`summary.excluded.inheritanceEdgeCount` — typed edges from a file whose primary
+type subclasses the target's primary type (STI subclass → own base record):
+"is-a", not a role dependency — never judged, in no ledger.
+
 `summary.excluded.constantReferenceEdgeCount` — typed edges whose only evidence
 is a constant NESTED in the target's primary type
 (`BaseAdapter::RateLimitError`, no definite call): a dependency on an error

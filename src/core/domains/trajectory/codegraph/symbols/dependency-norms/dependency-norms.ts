@@ -74,6 +74,7 @@ export function buildNormLedgers(input: DependencyNormsInput): NormLedgerBook {
   const roleOf = (relPath: RelPath) => fileRoles.get(relPath);
   const familyOfEdge = edgeFamilyResolver(graph);
   const localityOf = localityResolver(input);
+  const isInheritance = inheritanceTest(input);
   const isConstantReference = constantReferenceTest(input);
   const tallies = new Map<string, NormLedgerTally>();
   for (const edge of graph.edges) {
@@ -84,9 +85,10 @@ export function buildNormLedgers(input: DependencyNormsInput): NormLedgerBook {
     // A call-less edge stays precedent (bd tea-rags-mcp-4vj2u): the direction
     // of KNOWLEDGE is set by every reference — a query naming the records it
     // reads through the framework's finders runs no in-project call, yet it is
-    // exactly what establishes query → record. Only a nested constant is no
+    // exactly what establishes query → record. Only a nested constant, or a
+    // subclass naming its own superclass (bd tea-rags-mcp-ptkwf), is no
     // reference to the target's role at all.
-    if (family === undefined || isConstantReference(edge)) continue;
+    if (family === undefined || isInheritance(edge) || isConstantReference(edge)) continue;
     let tally = tallies.get(family);
     if (tally === undefined) {
       tally = { pairs: new Map(), byLocality: new Map() };
@@ -230,20 +232,24 @@ const CALL_WEIGHT_RELATIVE_EPSILON = 1e-9;
 /**
  * The ONE exclusion test every norms caller reads — the report walk, the
  * write-time planned-edge verdict (bd tea-rags-mcp-xb669.2) and the diff-time
- * verdict (xb669.3). The edge's own evidence is named first — a nested
- * constant before a missing call before a framework route — and a displaced
- * endpoint role last, so the edge-level counts do not depend on the role
- * layer. An edge with no call data (`callWeight` absent) skips the call-level
- * classes: the caller reports them as unchecked, see
+ * verdict (xb669.3). The endpoints' type relation is named first — a
+ * subclass reaching its own superclass is "is-a" whatever it calls (bd
+ * tea-rags-mcp-ptkwf) — then the edge's own evidence — a nested constant
+ * before a missing call before a framework route — and a displaced endpoint
+ * role last, so the edge-level counts do not depend on the role layer. An
+ * edge with no call data (`callWeight` absent) skips the call-level classes:
+ * the caller reports them as unchecked, see
  * {@link NORM_CALL_EVIDENCE_EXCLUSIONS}.
  */
 export function normEdgeExclusionResolver(input: DependencyNormsInput) {
+  const isInheritance = inheritanceTest(input);
   const isConstantReference = constantReferenceTest(input);
   return (
     edge: NormEdgeEvidence,
     sourceRole: DependencyNormFileRole,
     targetRole: DependencyNormFileRole,
   ): NormEdgeExclusion | undefined => {
+    if (isInheritance(edge)) return "inheritance";
     if (isConstantReference(edge)) return "constantReference";
     const { callWeight } = edge;
     if (callWeight !== undefined) {
@@ -292,6 +298,17 @@ function constantReferenceTest({ filePrimaryTypes }: DependencyNormsInput) {
     const named = segments.pop();
     return named !== primary && segments.includes(primary);
   };
+}
+
+/**
+ * Whether the edge's source primary type declares the target's primary type
+ * as its superclass (bd tea-rags-mcp-ptkwf) — an STI subclass reaching its
+ * base record says "is-a", not "depends on a record". Resolved by the caller
+ * against the subclass's namespace, never matched by last segment.
+ */
+function inheritanceTest({ fileSuperclassFiles }: DependencyNormsInput) {
+  return ({ sourceRelPath, targetRelPath }: NormEdgeEvidence): boolean =>
+    fileSuperclassFiles?.get(sourceRelPath)?.has(targetRelPath) === true;
 }
 
 function localityResolver({ componentOf }: DependencyNormsInput) {
@@ -346,7 +363,8 @@ export function weakSideOf(source: { strong: boolean }, target: { strong: boolea
  * come off the files the graph holds; an endpoint it does not hold is a new
  * file, or one the production read excluded (`isNonProduction`). The
  * reference-level exclusions run on the planned `reference` (constant
- * reference: only when one is given) and the endpoint roles (displaced role);
+ * reference: only when one is given), the endpoints' types (inheritance) and
+ * the endpoint roles (displaced role);
  * the call-level ones need call data and are listed as unchecked.
  */
 export function judgePlannedFileEdges(
@@ -378,8 +396,8 @@ export function judgePlannedFileEdges(
     if (weakSide !== undefined) return { planned: edge, ...roles, unjudgedReason: "weakRole", weakSide };
     const ledgers = book.forEdge(languageOf.get(sourceRelPath), languageOf.get(targetRelPath));
     if (ledgers === undefined) return { planned: edge, ...roles, unjudgedReason: "crossLanguage" };
-    const exclusion = exclusionOf({ targetRelPath, importText: edge.reference }, sourceRole, targetRole);
-    if (exclusion === "constantReference" || exclusion === "displacedRole") {
+    const exclusion = exclusionOf({ sourceRelPath, targetRelPath, importText: edge.reference }, sourceRole, targetRole);
+    if (exclusion === "inheritance" || exclusion === "constantReference" || exclusion === "displacedRole") {
       return { planned: edge, ...roles, family: ledgers.family, unjudgedReason: exclusion };
     }
     const locality = localityOf(sourceRelPath, targetRelPath);
@@ -454,6 +472,7 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
 
   const findings: DependencyNormFinding[] = [];
   let crossLanguageEdgeCount = 0;
+  let inheritanceEdgeCount = 0;
   let constantReferenceEdgeCount = 0;
   let uncalledEdgeCount = 0;
   let frameworkRoutedEdgeCount = 0;
@@ -471,11 +490,13 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
       crossLanguageEdgeCount++;
       continue;
     }
-    // bd tea-rags-mcp-xb669.6 / 4vj2u: a nested constant or a call-less
-    // reference is no role edge — counted, never judged.
+    // bd tea-rags-mcp-xb669.6 / 4vj2u / ptkwf: a subclass naming its own
+    // superclass, a nested constant or a call-less reference is no role edge
+    // — counted, never judged.
     const exclusion = exclusionOf(edge, sourceRole, targetRole);
     if (exclusion !== undefined) {
-      if (exclusion === "constantReference") constantReferenceEdgeCount++;
+      if (exclusion === "inheritance") inheritanceEdgeCount++;
+      else if (exclusion === "constantReference") constantReferenceEdgeCount++;
       else if (exclusion === "uncalled") uncalledEdgeCount++;
       else if (exclusion === "frameworkRouted") frameworkRoutedEdgeCount++;
       else displacedRoleEdgeCount++;
@@ -524,6 +545,7 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     judgedEdgeCount:
       typedEdgeCount -
       crossLanguageEdgeCount -
+      inheritanceEdgeCount -
       constantReferenceEdgeCount -
       uncalledEdgeCount -
       frameworkRoutedEdgeCount -
@@ -533,6 +555,7 @@ export function computeDependencyNorms(input: DependencyNormsInput): DependencyN
     ...(inScope ? { outOfScopeFindingCount: findings.length - scopedFindings.length } : {}),
     excluded: {
       crossLanguageEdgeCount,
+      inheritanceEdgeCount,
       constantReferenceEdgeCount,
       uncalledEdgeCount,
       frameworkRoutedEdgeCount,

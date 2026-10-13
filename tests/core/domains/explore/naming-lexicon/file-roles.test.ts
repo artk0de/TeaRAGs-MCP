@@ -11,6 +11,7 @@ import type { TypeNameRow } from "../../../../../src/core/contracts/types/codegr
 import {
   buildDependencyNormFilePrimaryTypes,
   buildDependencyNormFileRoles,
+  buildDependencyNormFileSuperclassFiles,
 } from "../../../../../src/core/domains/explore/naming-lexicon/file-roles.js";
 import type { TypeRoleAssignment } from "../../../../../src/core/domains/explore/naming-lexicon/type-roles.js";
 
@@ -255,6 +256,51 @@ describe("buildDependencyNormFilePrimaryTypes (xb669.6)", () => {
       row("s2", "app/lib/ai/adapters/base_adapter.rb", "RateLimitError"),
     ];
     expect(buildDependencyNormFilePrimaryTypes(rows).get("app/lib/ai/adapters/base_adapter.rb")).toBe("BaseAdapter");
+  });
+});
+
+/**
+ * The inheritance exclusion's input (bd tea-rags-mcp-ptkwf): for each file,
+ * the files whose PRIMARY type is its primary's declared superclass — resolved
+ * against the subclass's namespace the way the role families resolve it
+ * (9okcg), never matched by last segment.
+ */
+describe("buildDependencyNormFileSuperclassFiles (ptkwf)", () => {
+  const declaredClass = (relPath: string, symbolId: string, superclass?: string): TypeNameRow => ({
+    symbolId,
+    relPath,
+    shortName: symbolId.slice(symbolId.lastIndexOf("::") + 2),
+    symbolKind: "class",
+    ancestors: superclass === undefined ? [] : [superclass],
+    ...(superclass === undefined ? {} : { superclass }),
+  });
+
+  it("maps a subclass file to the file its resolved superclass is the primary of, never a namesake's", () => {
+    const rows = [
+      declaredClass("app/models/inbox/notification.rb", "Inbox::Notification", "ApplicationRecord"),
+      declaredClass("app/models/notification.rb", "Notification", "ApplicationRecord"),
+      declaredClass("app/models/inbox/new_mention_notification.rb", "Inbox::NewMentionNotification", "Notification"),
+      declaredClass("app/models/digest_notification.rb", "DigestNotification", "Notification"),
+    ];
+    const superclassFiles = buildDependencyNormFileSuperclassFiles(rows);
+
+    expect(superclassFiles.get("app/models/inbox/new_mention_notification.rb")).toEqual(
+      new Set(["app/models/inbox/notification.rb"]),
+    );
+    expect(superclassFiles.get("app/models/digest_notification.rb")).toEqual(new Set(["app/models/notification.rb"]));
+  });
+
+  it("has no entry for a superclass outside the project or a file whose primary names none", () => {
+    const rows = [
+      declaredClass("app/models/application_record.rb", "ApplicationRecord", "ActiveRecord::Base"),
+      declaredClass("app/lib/base.rb", "Base"),
+      declaredClass("app/models/user.rb", "User", "ApplicationRecord"),
+    ];
+    const superclassFiles = buildDependencyNormFileSuperclassFiles(rows);
+
+    expect(superclassFiles.has("app/models/application_record.rb")).toBe(false);
+    expect(superclassFiles.has("app/lib/base.rb")).toBe(false);
+    expect(superclassFiles.get("app/models/user.rb")).toEqual(new Set(["app/models/application_record.rb"]));
   });
 });
 

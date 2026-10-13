@@ -1927,6 +1927,9 @@ export interface ArchitectureNormsReport {
     outOfScopeFindingCount?: number;
     /**
      * `crossLanguageEdgeCount`: typed edges between two language families — no ledger judges them.
+     * `inheritanceEdgeCount`: typed edges from a file whose primary type subclasses the target's
+     * primary type (an STI subclass reaching its base record) — "is-a", no role edge: never
+     * judged, never precedent (bd tea-rags-mcp-ptkwf).
      * `constantReferenceEdgeCount`: typed edges whose only evidence is a constant nested in the
      * target's primary type (`BaseAdapter::RateLimitError`) — no role edge (bd tea-rags-mcp-xb669.6).
      * `uncalledEdgeCount`: typed edges carrying no resolved call (`callWeight` 0) — the source
@@ -1938,6 +1941,7 @@ export interface ArchitectureNormsReport {
      */
     excluded: {
       crossLanguageEdgeCount: number;
+      inheritanceEdgeCount: number;
       constantReferenceEdgeCount: number;
       uncalledEdgeCount: number;
       frameworkRoutedEdgeCount: number;

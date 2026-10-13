@@ -539,7 +539,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "writing them vs indexed graph's norms, detectors not run (detectorFamilies notRun); per edge CONFORMS | " +
       "MISFIT (expectedPath.established = reverse direction + support; transit = roles via third role, both legs " +
       "established) | NEW_PATTERN (pair nobody wrote, no established direction; transit when one exists) | UNJUDGED " +
-      "(reason newFile, nonProduction, untypedFile, weakRole + weakSide source|target|both, crossLanguage, constantReference, displacedRole, " +
+      "(reason newFile, nonProduction, untypedFile, weakRole + weakSide source|target|both, crossLanguage, inheritance, constantReference, displacedRole, " +
       "noCodegraph); exclusionsUnchecked = classes no call data can check yet. restructure mode: what-if " +
       "move{files,toComponent} | merge{components; later fold into first} | split{component,groups} vs current " +
       "partition; full detectors on base vs relabelled facts, delta by violation key: introduced/resolved subjects, " +

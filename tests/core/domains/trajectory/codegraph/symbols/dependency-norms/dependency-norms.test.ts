@@ -608,6 +608,49 @@ describe("computeDependencyNorms - an edge touching a displaced role is never ju
 });
 
 /**
+ * A subclass's edge to the file of its own superclass says "is-a", not
+ * "depends on a role" (bd tea-rags-mcp-ptkwf): measured on taxdome, 48 of the
+ * 54 notification → record edges were STI subclasses reaching their own base
+ * record, and two of them surfaced as MISFITs once the struct family stopped
+ * hiding the pair. Such an edge is neither precedent nor judged.
+ */
+describe("computeDependencyNorms - a subclass's edge to its own superclass file is no role edge", () => {
+  // service1's primary type declares controller1's primary type as its superclass.
+  const fileSuperclassFiles = new Map([["service/service1.ts", new Set(["controller/controller1.ts"])]]);
+
+  it("counts the edge under its own reason, lists no finding, and keeps it out of the ledger", () => {
+    const { graph, roles } = inversionFixture();
+    graph.edges.push({
+      sourceRelPath: "service/service1.ts",
+      targetRelPath: "controller/controller1.ts",
+      callWeight: 1,
+    });
+
+    const report = computeDependencyNorms({ graph, fileRoles: roles, fileSuperclassFiles });
+
+    expect(report.summary.excluded.inheritanceEdgeCount).toBe(1);
+    expect(report.summary.judgedEdgeCount).toBe(FIXTURE_EDGE_COUNT);
+    expect(report.findings.some((f) => f.sourceRelPath === "service/service1.ts")).toBe(false);
+    const ledger = buildNormLedgers({ graph, fileRoles: roles, fileSuperclassFiles }).forLanguage("typescript");
+    expect(ledger.pairs.get("service\u0000controller\u0000crossDomain")).toBe(1);
+  });
+
+  it("still judges an edge into the same file from a source that does not inherit from it", () => {
+    const { graph, roles } = inversionFixture();
+    graph.edges.push({
+      sourceRelPath: "service/service2.ts",
+      targetRelPath: "controller/controller1.ts",
+      callWeight: 1,
+    });
+
+    const report = computeDependencyNorms({ graph, fileRoles: roles, fileSuperclassFiles });
+
+    expect(report.summary.excluded.inheritanceEdgeCount).toBe(0);
+    expect(report.findings.some((f) => f.sourceRelPath === "service/service2.ts")).toBe(true);
+  });
+});
+
+/**
  * The write-time verdict over FILE endpoints (bd tea-rags-mcp-xb669.2): the
  * edge a writer is about to add, judged against the INDEXED graph's ledgers.
  * Roles, family and the reference-level exclusions are read off the files the
@@ -754,5 +797,19 @@ describe("judgePlannedFileEdges", () => {
 
     expect(judgement).toMatchObject({ unjudgedReason: "displacedRole" });
     expect(judgement.verdict).toBeUndefined();
+  });
+
+  it("never judges a planned edge from a subclass to its own superclass file", () => {
+    const { graph, roles } = inversionFixture();
+    const fileSuperclassFiles = new Map([["service/service1.ts", new Set(["controller/controller1.ts"])]]);
+
+    const [inherits, other] = judgePlannedFileEdges({ graph, fileRoles: roles, fileSuperclassFiles }, [
+      { sourceRelPath: "service/service1.ts", targetRelPath: "controller/controller1.ts" },
+      { sourceRelPath: "service/service2.ts", targetRelPath: "controller/controller1.ts" },
+    ]);
+
+    expect(inherits).toMatchObject({ unjudgedReason: "inheritance" });
+    expect(inherits.verdict).toBeUndefined();
+    expect(other.verdict?.kind).toBe("misfit");
   });
 });

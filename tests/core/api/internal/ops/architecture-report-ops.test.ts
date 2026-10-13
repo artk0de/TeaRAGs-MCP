@@ -1602,6 +1602,32 @@ describe("ArchitectureReportOps#build — dependency norms (bd tea-rags-mcp-rpx0
     expect(report.violations.some((v) => v.detector === "norms")).toBe(false);
   });
 
+  // bd tea-rags-mcp-ptkwf: the report reads superclass files off the same type
+  // rows — a subclass's edge to its own superclass file is excluded, not judged.
+  it("excludes an edge from a subclass to its own superclass file and counts it", async () => {
+    const graph = normsGraph();
+    graph.files.push(file("ui/listAudit.ts"));
+    graph.edges.push({ sourceRelPath: "ui/listAudit.ts", targetRelPath: "ui/list.ts", callWeight: 1 });
+    // The superclass is declared under its bare name, as a walker records a top-level class.
+    const rows = [
+      ...typeRows().map((row) => (row.shortName === "UiListController" ? { ...row, symbolId: row.shortName } : row)),
+      {
+        symbolId: "UiListAuditController",
+        relPath: "ui/listAudit.ts",
+        shortName: "UiListAuditController",
+        symbolKind: "class" as const,
+        ancestors: ["UiListController"],
+        superclass: "UiListController",
+      },
+    ];
+    const report = await new ArchitectureReportOps().build(graphDb(graph, [], { meta: null, edges: [] }, rows), {
+      norms: true,
+    });
+
+    expect(report.norms?.summary.excluded.inheritanceEdgeCount).toBe(1);
+    expect(report.norms?.findings.some((f) => f.sourceRelPath === "ui/listAudit.ts")).toBe(false);
+  });
+
   // bd tea-rags-mcp-mv8yv: the request's pathPattern scopes the norms FINDINGS
   // by source, the way it scopes every other detector — dropped findings are
   // counted in the summary, not silently mixed into the scoped answer.

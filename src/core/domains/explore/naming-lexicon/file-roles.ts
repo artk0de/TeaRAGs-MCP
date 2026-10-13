@@ -114,6 +114,33 @@ export function buildDependencyNormFilePrimaryTypes(rows: readonly TypeNameRow[]
 }
 
 /**
+ * For each file, the files whose PRIMARY type is its own primary's declared
+ * superclass (bd tea-rags-mcp-ptkwf) — the edges the norms read as "is-a",
+ * not as a dependency on a role. The written superclass resolves against the
+ * subclass's namespace exactly as the role families resolve it
+ * ({@link supertypeResolver}); a superclass outside the project, or one no
+ * file names as its primary, leaves the file without an entry.
+ */
+export function buildDependencyNormFileSuperclassFiles(rows: readonly TypeNameRow[]): Map<RelPath, Set<RelPath>> {
+  const primaries = primaryRowPerFile(rows);
+  const filesOfPrimary = new Map<string, RelPath[]>();
+  for (const [relPath, primary] of primaries) {
+    const files = filesOfPrimary.get(primary.symbolId) ?? [];
+    files.push(relPath);
+    filesOfPrimary.set(primary.symbolId, files);
+  }
+  const supertypes = supertypeResolver(rows);
+  const superclassFiles = new Map<RelPath, Set<RelPath>>();
+  for (const [relPath, primary] of primaries) {
+    if (primary.superclass === undefined) continue;
+    const superclass = supertypes.resolve(writtenSupertype(primary.superclass), primary.symbolId);
+    const files = (superclass === undefined ? [] : (filesOfPrimary.get(superclass) ?? [])).filter((f) => f !== relPath);
+    if (files.length > 0) superclassFiles.set(relPath, new Set(files));
+  }
+  return superclassFiles;
+}
+
+/**
  * `row` with its SUPERCLASS as its only ancestor (bd tea-rags-mcp-xb669.6,
  * owner decision): a role family is a KIND, and only the superclass says what
  * a type is. A mixin (`include Api::Contracts::Enforcement` in 86 API
