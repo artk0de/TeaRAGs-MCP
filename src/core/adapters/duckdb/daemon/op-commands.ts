@@ -263,6 +263,8 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   replaceIdentifiersBulk: write(async (graphDb, p) => graphDb.replaceIdentifiersBulk(p.entries)),
   // bd tea-rags-mcp-vi0wx — the naming lexicon's per-file type-declaration rows.
   replaceTypeDeclarationsBulk: write(async (graphDb, p) => graphDb.replaceTypeDeclarationsBulk(p.entries)),
+  // bd tea-rags-mcp-zy6hx — the per-file field-access edges.
+  replaceFieldAccessesBulk: write(async (graphDb, p) => graphDb.replaceFieldAccessesBulk(p.entries)),
 
   // ── full-proxy reads (the daemon owns the sole DuckDB connection, so
   //    every read routes through its own RW connection) ──
@@ -356,6 +358,9 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   ),
   // Type-level symbols + ancestors for type roles (bd tea-rags-mcp-vi0wx).
   readTypeNameRows: read(async (graphDb, p) => graphDb.readTypeNameRows(p.query)),
+  // Field-access edges per method / per file (bd tea-rags-mcp-zy6hx).
+  readFieldAccessesBySymbols: read(async (graphDb, p) => graphDb.readFieldAccessesBySymbols(p.symbolIds)),
+  readFieldAccessesByFiles: read(async (graphDb, p) => graphDb.readFieldAccessesByFiles(p.relPaths)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getSymbolLineRangesBulk: read(async (graphDb, p) => [
     ...(await graphDb.getSymbolLineRangesBulk(p.relPaths)).entries(),

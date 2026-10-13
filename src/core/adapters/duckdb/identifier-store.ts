@@ -59,6 +59,7 @@ import type {
   RelPath,
   SymbolId,
 } from "../../contracts/types/codegraph.js";
+import { replaceFileScopedRows, type FileScopedRowTable } from "./file-scoped-row-replace.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 import { compileNonProductionPathPredicate } from "./non-production-path-sql.js";
 import { escapeLikeLiteral, placeholders } from "./sql-binding.js";
@@ -337,24 +338,15 @@ function toWriteRow(relPath: RelPath, row: IdentifierRow): unknown[] {
 }
 
 /**
- * One row as a comparable string, identical for the caller's JS values and the
- * driver's read-back: NULL and `undefined` share a marker no string value can
- * produce, and `line` compares as text either way.
+ * `cg_identifiers` as a file-scoped table: every column is VARCHAR, INTEGER or
+ * BOOLEAN, which is what {@link replaceFileScopedRows} compares as text.
  */
-function rowFingerprint(cells: readonly unknown[]): string {
-  return JSON.stringify(cells.map(fingerprintCell));
-}
-
-/** Every `cg_identifiers` column is VARCHAR, INTEGER or BOOLEAN, so a cell is a string, a number, a boolean or NULL. */
-function fingerprintCell(cell: unknown): string | null {
-  if (typeof cell === "string") return cell;
-  if (typeof cell === "number" || typeof cell === "bigint" || typeof cell === "boolean") return cell.toString();
-  return null;
-}
-
-function fileFingerprint(rowFingerprints: string[]): string {
-  return rowFingerprints.sort().join("\n");
-}
+const CG_IDENTIFIERS_FILE_SCOPED_TABLE: FileScopedRowTable<IdentifierRow> = {
+  table: "cg_identifiers",
+  fileColumn: "rel_path",
+  columns: CG_IDENTIFIERS_COLUMNS,
+  cells: toWriteRow,
+};
 
 /**
  * `cg_identifiers` with every untyped row that is bound to a single-target
@@ -459,41 +451,7 @@ export class DuckDbIdentifierStore implements Omit<
   constructor(private readonly session: DuckDbGraphSession) {}
 
   async replaceIdentifiersBulk(entries: readonly IdentifierReplaceEntry[]): Promise<void> {
-    if (entries.length === 0) return;
-    const lastByRelPath = new Map<RelPath, readonly IdentifierRow[]>();
-    for (const { relPath, rows } of entries) lastByRelPath.set(relPath, rows);
-    const relPaths = [...lastByRelPath.keys()];
-
-    return this.session.transaction(async () => {
-      const stored = new Map<RelPath, string[]>();
-      for (const chunk of chunked(relPaths)) {
-        const found = await this.session.queryAll<Record<string, unknown>>(
-          `SELECT ${CG_IDENTIFIERS_COLUMNS.join(", ")} FROM cg_identifiers WHERE rel_path IN (${placeholders(chunk)})`,
-          chunk,
-        );
-        for (const row of found) {
-          const relPath = row.rel_path as RelPath;
-          const list = stored.get(relPath) ?? [];
-          list.push(rowFingerprint(CG_IDENTIFIERS_COLUMNS.map((c) => row[c])));
-          stored.set(relPath, list);
-        }
-      }
-
-      const changed: RelPath[] = [];
-      const inserts: unknown[][] = [];
-      for (const [relPath, rows] of lastByRelPath) {
-        const writeRows = rows.map((r) => toWriteRow(relPath, r));
-        const incoming = fileFingerprint(writeRows.map(rowFingerprint));
-        if (incoming === fileFingerprint(stored.get(relPath) ?? [])) continue;
-        changed.push(relPath);
-        inserts.push(...writeRows);
-      }
-
-      for (const chunk of chunked(changed)) {
-        await this.session.run(`DELETE FROM cg_identifiers WHERE rel_path IN (${placeholders(chunk)})`, chunk);
-      }
-      await this.session.insertBatched("cg_identifiers", CG_IDENTIFIERS_COLUMNS, inserts);
-    });
+    return replaceFileScopedRows(this.session, CG_IDENTIFIERS_FILE_SCOPED_TABLE, entries);
   }
 
   async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {

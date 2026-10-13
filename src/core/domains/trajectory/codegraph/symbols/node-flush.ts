@@ -30,6 +30,8 @@
 
 import type {
   BulkSymbolUpsertEntry,
+  FieldAccessReplaceEntry,
+  FieldAccessRow,
   GraphDbClient,
   IdentifierReplaceEntry,
   IdentifierRow,
@@ -48,14 +50,16 @@ export type GraphDbResolver = (physicalCollectionName?: PhysicalCollectionName) 
 
 /**
  * One buffered file: its symbol defs and, when the caller built them, its
- * `cg_identifiers` rows (bd tea-rags-mcp-4p3sb.9) and `cg_type_declarations`
- * rows (bd tea-rags-mcp-vi0wx). `undefined` means "this caller does not write
- * them" and leaves the file's rows alone; `[]` means "the file declares
- * nothing" and clears them.
+ * `cg_identifiers` rows (bd tea-rags-mcp-4p3sb.9), `cg_type_declarations`
+ * rows (bd tea-rags-mcp-vi0wx) and `cg_symbols_edges_field` rows (bd
+ * tea-rags-mcp-zy6hx). `undefined` means "this caller does not write them" and
+ * leaves the file's rows alone; `[]` means "the file declares nothing" and
+ * clears them.
  */
 interface SymbolNodeFlushEntry extends BulkSymbolUpsertEntry {
   identifiers?: IdentifierRow[];
   typeDeclarations?: TypeDeclarationRow[];
+  fieldAccesses?: FieldAccessRow[];
 }
 
 export class SymbolNodeFlushQueue {
@@ -79,8 +83,8 @@ export class SymbolNodeFlushQueue {
    * share. Appends to the per-collection buffer and enqueues a flush at the
    * cadence. Order-independent: `upsertSymbolsBulk` is last-wins per relPath.
    * `identifiers` rides the same entry into `replaceIdentifiersBulk`, and
-   * `typeDeclarations` into `replaceTypeDeclarationsBulk`, also last-wins per
-   * relPath.
+   * `typeDeclarations` into `replaceTypeDeclarationsBulk` and `fieldAccesses`
+   * into `replaceFieldAccessesBulk`, also last-wins per relPath.
    */
   buffer(
     relPath: BulkSymbolUpsertEntry["relPath"],
@@ -89,6 +93,7 @@ export class SymbolNodeFlushQueue {
     physicalCollectionName?: PhysicalCollectionName,
     identifiers?: IdentifierRow[],
     typeDeclarations?: TypeDeclarationRow[],
+    fieldAccesses?: FieldAccessRow[],
   ): void {
     const buf = this.pending.get(key) ?? [];
     buf.push({
@@ -96,6 +101,7 @@ export class SymbolNodeFlushQueue {
       definitions: defs,
       ...(identifiers === undefined ? {} : { identifiers }),
       ...(typeDeclarations === undefined ? {} : { typeDeclarations }),
+      ...(fieldAccesses === undefined ? {} : { fieldAccesses }),
     });
     this.pending.set(key, buf);
     if (buf.length >= this.flushFiles) this.chainFlush(buf.splice(0, buf.length), key, physicalCollectionName);
@@ -197,7 +203,8 @@ export class SymbolNodeFlushQueue {
    * batch's identifier rows through `replaceIdentifiersBulk` for every file
    * buffered WITH identifiers — an empty list included, so a file that lost its
    * declarations is cleared — then the type-declaration rows through
-   * `replaceTypeDeclarationsBulk` under the same rule. Records the flushed relPaths per collection
+   * `replaceTypeDeclarationsBulk` and the field-access rows through
+   * `replaceFieldAccessesBulk` under the same rule. Records the flushed relPaths per collection
    * (once-per-file invariant + honest cumulative count) and emits a DEBUG-gated
    * flush log.
    */
@@ -221,6 +228,11 @@ export class SymbolNodeFlushQueue {
       }
     }
     if (typeDeclarationEntries.length > 0) await graphDb.replaceTypeDeclarationsBulk(typeDeclarationEntries);
+    const fieldAccessEntries: FieldAccessReplaceEntry[] = [];
+    for (const e of batch) {
+      if (e.fieldAccesses !== undefined) fieldAccessEntries.push({ relPath: e.relPath, rows: e.fieldAccesses });
+    }
+    if (fieldAccessEntries.length > 0) await graphDb.replaceFieldAccessesBulk(fieldAccessEntries);
     const flushed = this.flushedFiles.get(key) ?? new Set<string>();
     for (const e of batch) flushed.add(e.relPath);
     this.flushedFiles.set(key, flushed);

@@ -1291,6 +1291,49 @@ describe("CodegraphDaemonServer.handle — type-name rows", () => {
   });
 });
 
+// bd tea-rags-mcp-zy6hx: the field-access edges are written and read through the daemon.
+describe("CodegraphDaemonServer.handle — cg_symbols_edges_field ops", () => {
+  it("writes through the governed write path and reads back what the in-process store answers", async () => {
+    const { server, pool } = makeServer();
+    const c = fixturePhysicalCollectionName("code_field_access_v1");
+    expect((await server.handle({ id: 1, op: "handshake", params: { collection: c } })).ok).toBe(true);
+    const row = {
+      sourceSymbolId: "Order#total",
+      ownerKind: "self" as const,
+      ownerType: "Order",
+      fieldName: "@items",
+      accessKind: "read" as const,
+      accessCount: 2,
+      firstLine: 4,
+    };
+
+    const write = await server.handle({
+      id: 2,
+      op: "replaceFieldAccessesBulk",
+      params: { collection: c, entries: [{ relPath: "app/order.rb", rows: [row] }] },
+    });
+    const bySymbols = await server.handle({
+      id: 3,
+      op: "readFieldAccessesBySymbols",
+      params: { collection: c, symbolIds: ["Order#total"] },
+    });
+    const byFiles = await server.handle({
+      id: 4,
+      op: "readFieldAccessesByFiles",
+      params: { collection: c, relPaths: ["app/order.rb"] },
+    });
+    const { graphDb } = await pool.acquire(c);
+
+    expect(write.ok).toBe(true);
+    expect(DAEMON_OP_COMMANDS.replaceFieldAccessesBulk.access).toBe("write");
+    expect(DAEMON_OP_COMMANDS.readFieldAccessesBySymbols.access).toBe("read");
+    expect(DAEMON_OP_COMMANDS.readFieldAccessesByFiles.access).toBe("read");
+    expect((bySymbols as { result: unknown }).result).toEqual([{ relPath: "app/order.rb", ...row }]);
+    expect((byFiles as { result: unknown }).result).toEqual(await graphDb.readFieldAccessesByFiles(["app/order.rb"]));
+    await pool.closeAll();
+  });
+});
+
 // bd tea-rags-mcp-vi0wx (spec §6.4): the daemon ops hand excludePaths to the store.
 describe("CodegraphDaemonServer.handle — excludePaths on the naming evidence reads", () => {
   it("drops the excluded file's rows from every identifier read", async () => {

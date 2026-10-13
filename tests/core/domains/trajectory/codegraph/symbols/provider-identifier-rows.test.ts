@@ -164,3 +164,69 @@ describe("CodegraphEnrichmentProvider — cg_identifiers write wiring", () => {
     ]);
   });
 });
+
+describe("CodegraphEnrichmentProvider — cg_symbols_edges_field write wiring (bd tea-rags-mcp-zy6hx)", () => {
+  it("the cross-pass acceptExtraction path persists the field accesses it buffered", async () => {
+    const client = await makeClient();
+    const provider = makeProvider(client);
+    const collectionName = fixturePhysicalCollectionName(`field_${randomUUID().replace(/-/g, "")}`);
+    const tmp = mkdtempSync(join(tmpdir(), "cg-field-xpass-"));
+    cleanups.push(() => {
+      rmSync(tmp, { recursive: true, force: true });
+    });
+    const extraction: FileExtraction = {
+      relPath: "src/order.ts",
+      language: "typescript",
+      imports: [],
+      fileScope: [],
+      chunks: [{ symbolId: "Order#merge", scope: ["Order"], calls: [], startLine: 1, endLine: 6 }],
+      fieldAccesses: [
+        {
+          symbolId: "Order#merge",
+          ownerKind: "param",
+          ownerType: "Order",
+          receiver: "other",
+          fieldName: "items",
+          accessKind: "read",
+          line: 3,
+        },
+        {
+          symbolId: "Order#merge",
+          ownerKind: "self",
+          ownerType: "Order",
+          fieldName: "#total",
+          accessKind: "read",
+          line: 4,
+        },
+        {
+          symbolId: "Order#merge",
+          ownerKind: "self",
+          ownerType: "Order",
+          fieldName: "#total",
+          accessKind: "write",
+          line: 4,
+        },
+      ],
+    };
+
+    provider.beginExtractionRun(collectionName);
+    provider.acceptExtraction(extraction, { collectionName });
+    await provider.streamFileBatch(tmp, [extraction.relPath], { crossPass: true, collectionName });
+    await provider.finalizeSignals(tmp, { crossPass: true, paths: [extraction.relPath], collectionName });
+
+    expect(
+      (await client.readFieldAccessesBySymbols(["Order#merge"])).map((r) => [
+        r.ownerKind,
+        r.receiver ?? null,
+        r.fieldName,
+        r.accessKind,
+        r.accessCount,
+        r.firstLine,
+      ]),
+    ).toEqual([
+      ["self", null, "#total", "read", 1, 4],
+      ["self", null, "#total", "write", 1, 4],
+      ["param", "other", "items", "read", 1, 3],
+    ]);
+  });
+});

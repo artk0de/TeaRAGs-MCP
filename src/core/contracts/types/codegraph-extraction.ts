@@ -443,6 +443,67 @@ export interface FileExtraction {
    * declaring nothing, and for languages whose passes do not collect it.
    */
   identifierDeclarations?: readonly IdentifierDeclaration[];
+  /**
+   * Every field read or write a method makes, one fact per access site, in
+   * source order (bd tea-rags-mcp-zy6hx, D0) — the input of
+   * `cg_symbols_edges_field`, aggregated at sink time.
+   *
+   * Filled by a language's facet pass (`ExtractionFacetPass`, appended through
+   * `mergeExtraction`). Undefined = not collected: a language without the pass,
+   * or a file whose methods access no field — the sink builds no rows from
+   * either, so the file's stored rows are replaced by none. Plain array (NOT
+   * Map) for NDJSON-spill round-trip.
+   *
+   * Honesty rule, the one call resolution follows: an owner the pass cannot
+   * type is recorded as `unknown`, never guessed — and `unknown` is admitted
+   * only for `this` / `self` and declared parameters, never for an arbitrary
+   * local (see {@link FieldAccessOwnerKind}).
+   */
+  fieldAccesses?: readonly FieldAccessFact[];
+}
+
+/**
+ * Who owns an accessed field ({@link FieldAccessFact.ownerKind}):
+ *
+ * - `self` — the method's own instance (`this.x`, `@x`, TS `#x`);
+ * - `class` — class-level state (a static TS field, a Ruby `@@x` or a
+ *   class-level ivar);
+ * - `param` — a declared parameter of the method whose type the pass knows;
+ * - `unknown` — `this` / `self` or a declared parameter whose owning type the
+ *   pass cannot resolve. An access on an arbitrary local is not a fact at all.
+ */
+export type FieldAccessOwnerKind = "self" | "class" | "param" | "unknown";
+
+/**
+ * How a field is accessed ({@link FieldAccessFact.accessKind}). A compound
+ * assignment (`+=`, `||=`) is two facts, one `read` and one `write`; `unknown`
+ * is an access the pass cannot classify.
+ */
+export type FieldAccessKind = "read" | "write" | "unknown";
+
+/** One field access site (`FileExtraction.fieldAccesses`). */
+export interface FieldAccessFact {
+  /**
+   * The accessing method's symbolId — the id `cg_symbols.symbol_id` holds, as
+   * the walker composes it. A split method's `#partN` chunk fragments are
+   * chunker artifacts and never appear here: their accesses belong to this id.
+   */
+  readonly symbolId: string;
+  readonly ownerKind: FieldAccessOwnerKind;
+  /**
+   * The owning type's raw NAME as the source states it: the enclosing class
+   * for `self` / `class`, the parameter's bound type for `param`. Absent when
+   * unknown. A name, not a resolved id — a reader joins it to
+   * `cg_type_declarations` when it needs the declaring file.
+   */
+  readonly ownerType?: string;
+  /** The parameter name the field is read through, for a `param` owner only. */
+  readonly receiver?: string;
+  /** The field name with its sigil kept: TS `#x`, Ruby `@x` / `@@x`. */
+  readonly fieldName: string;
+  readonly accessKind: FieldAccessKind;
+  /** 1-based source line of the access. */
+  readonly line: number;
 }
 
 /**

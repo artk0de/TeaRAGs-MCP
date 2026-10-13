@@ -12,6 +12,8 @@
  */
 
 import type {
+  FieldAccessKind,
+  FieldAccessOwnerKind,
   IdentifierBoundCallee,
   IdentifierDeclarationKind,
   IdentifierTypeMultiplicity,
@@ -164,6 +166,38 @@ export interface TypeDeclarationRow {
 export interface TypeDeclarationReplaceEntry {
   relPath: RelPath;
   rows: readonly TypeDeclarationRow[];
+}
+
+/**
+ * One `cg_symbols_edges_field` row (migration 049, bd tea-rags-mcp-zy6hx): the
+ * `FieldAccessFact`s of one method sharing (owner kind, owner type, receiver,
+ * field, access kind), counted. Built at sink time; the file is implied by the
+ * entry carrying it.
+ */
+export interface FieldAccessRow {
+  sourceSymbolId: SymbolId;
+  ownerKind: FieldAccessOwnerKind;
+  /** The owning type's raw name; absent when unknown (NULL column). */
+  ownerType?: string;
+  /** The parameter name for a `param` owner; absent otherwise (NULL column). */
+  receiver?: string;
+  fieldName: string;
+  accessKind: FieldAccessKind;
+  /** How many access sites the row aggregates — at least 1. */
+  accessCount: number;
+  /** The smallest 1-based line among them. */
+  firstLine: number;
+}
+
+/** One file's field-access rows, as consumed by `GraphDbClient.replaceFieldAccessesBulk`. */
+export interface FieldAccessReplaceEntry {
+  relPath: RelPath;
+  rows: readonly FieldAccessRow[];
+}
+
+/** A {@link FieldAccessRow} read back with the file it was written for. */
+export interface StoredFieldAccessRow extends FieldAccessRow {
+  relPath: RelPath;
 }
 
 /**
@@ -1566,6 +1600,31 @@ export interface CodegraphIdentifierStore {
 }
 
 /**
+ * Field-access edges (`cg_symbols_edges_field`, bd tea-rags-mcp-zy6hx): which
+ * method reads or writes which field. Part of {@link GraphDbClient}.
+ */
+export interface CodegraphFieldAccessStore {
+  /**
+   * Make `cg_symbols_edges_field` EQUAL each entry's rows for every file the
+   * entries name, in one transaction — the `replaceIdentifiersBulk` contract:
+   * last-wins per relPath, an entry with no rows clears its file, a file no
+   * entry names is untouched, empty entries is a no-op.
+   */
+  replaceFieldAccessesBulk: (entries: readonly FieldAccessReplaceEntry[]) => Promise<void>;
+
+  /**
+   * Every row whose accessing method is one of `symbolIds` — each method's whole
+   * access set in one query. A bare symbolId names every namesake, so the rows
+   * carry `relPath` for the caller to tell them apart. Ordered by method, file,
+   * field, owner, access kind. Empty `symbolIds` reads nothing.
+   */
+  readFieldAccessesBySymbols: (symbolIds: readonly SymbolId[]) => Promise<StoredFieldAccessRow[]>;
+
+  /** Every row written for one of `relPaths`, in the {@link readFieldAccessesBySymbols} order. */
+  readFieldAccessesByFiles: (relPaths: readonly RelPath[]) => Promise<StoredFieldAccessRow[]>;
+}
+
+/**
  * The ontology report's SQL reads (summary and per-section rows). Part of
  * {@link GraphDbClient}.
  */
@@ -1655,5 +1714,6 @@ export interface GraphDbClient
     CodegraphGraphReadStore,
     CodegraphGraphAnalyticsStore,
     CodegraphIdentifierStore,
+    CodegraphFieldAccessStore,
     CodegraphOntologyReportStore,
     CodegraphTemporalStore {}

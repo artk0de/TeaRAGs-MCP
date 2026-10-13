@@ -12,6 +12,7 @@ import type {
   CycleEntry,
   CycleScope,
   EdgeKindCount,
+  FieldAccessReplaceEntry,
   FileDependencyGraph,
   FileGraphMetrics,
   FileImportLookup,
@@ -51,6 +52,7 @@ import type {
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
+  StoredFieldAccessRow,
   SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
   SymbolDefinition,
@@ -69,6 +71,7 @@ import type { DaemonClientOptions, StaleClientBuilds } from "./connection-lifecy
 import { DaemonOpChannel } from "./op-channel.js";
 import type { DaemonHandshakeResult } from "./protocol.js";
 import {
+  DaemonFieldAccessStoreProxy,
   DaemonGraphAnalyticsStoreProxy,
   DaemonGraphReadStoreProxy,
   DaemonIdentifierStoreProxy,
@@ -114,6 +117,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
   private readonly graphReads: DaemonGraphReadStoreProxy;
   private readonly analytics: DaemonGraphAnalyticsStoreProxy;
   private readonly identifiers: DaemonIdentifierStoreProxy;
+  private readonly fieldAccesses: DaemonFieldAccessStoreProxy;
   private readonly ontology: DaemonOntologyReportStoreProxy;
   private readonly temporal: DaemonTemporalStoreProxy;
 
@@ -124,6 +128,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     this.graphReads = new DaemonGraphReadStoreProxy(this.channel);
     this.analytics = new DaemonGraphAnalyticsStoreProxy(this.channel);
     this.identifiers = new DaemonIdentifierStoreProxy(this.channel);
+    this.fieldAccesses = new DaemonFieldAccessStoreProxy(this.channel);
     this.ontology = new DaemonOntologyReportStoreProxy(this.channel);
     this.temporal = new DaemonTemporalStoreProxy(this.channel);
   }
@@ -218,6 +223,18 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getSymbolVisibilities(symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
     return this.symbolFiles.getSymbolVisibilities(symbolIds);
+  }
+
+  async replaceFieldAccessesBulk(entries: readonly FieldAccessReplaceEntry[]): Promise<void> {
+    return this.fieldAccesses.replaceFieldAccessesBulk(entries);
+  }
+
+  async readFieldAccessesBySymbols(symbolIds: readonly SymbolId[]): Promise<StoredFieldAccessRow[]> {
+    return this.fieldAccesses.readFieldAccessesBySymbols(symbolIds);
+  }
+
+  async readFieldAccessesByFiles(relPaths: readonly RelPath[]): Promise<StoredFieldAccessRow[]> {
+    return this.fieldAccesses.readFieldAccessesByFiles(relPaths);
   }
 
   async replaceIdentifiersBulk(entries: readonly IdentifierReplaceEntry[]): Promise<void> {
