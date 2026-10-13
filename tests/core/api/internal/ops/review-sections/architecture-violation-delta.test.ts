@@ -83,6 +83,20 @@ function leakFinding(source: string, target: string, preExisting = true): DiffDe
   };
 }
 
+function mergeFinding(): DiffDetectorFinding {
+  return {
+    subject: "src/core/api ~ src/mcp/tools",
+    detail: "d",
+    detector: "splitCandidates",
+    endpoints: { kind: "componentPair", componentA: "src/core/api", componentB: "src/mcp/tools" },
+    evidence: {
+      strength: 0.7,
+      sideA: { changedFileCount: 1, changedFiles: ["src/core/api/a.ts"] },
+      sideB: { changedFileCount: 0, changedFiles: [] },
+    },
+  };
+}
+
 function cycleFinding(source: string, target: string, flags: { preExisting?: boolean; remedy?: boolean } = {}) {
   const finding: DiffDetectorFinding = {
     subject: `${source} → ${target}`,
@@ -246,6 +260,55 @@ describe("collapsePersistingFindings", () => {
     expect(collapsed.kept).toEqual([]);
     expect(collapsed.persisting).toEqual([{ family: "silentCoupling.pair", subject: "src/a.ts ~ src/b.ts" }]);
     expect(collapsed.introducedCount).toBe(0);
+  });
+
+  it("collapses a splitCandidates merge verdict as persisting — pure co-change history a diff cannot move", () => {
+    const delta = measureArchitectureViolationDelta([], []);
+
+    const collapsed = collapsePersistingFindings([mergeFinding()], delta);
+
+    expect(collapsed.kept).toEqual([]);
+    expect(collapsed.persisting).toEqual([
+      { family: "splitCandidates.merge", subject: "src/core/api ~ src/mcp/tools" },
+    ]);
+    expect(collapsed.persistingByDetector.get("splitCandidates")).toBe(1);
+    expect(collapsed.introducedCount).toBe(0);
+  });
+
+  it("keeps a splitCandidates split verdict — it is gated by a diff-added inter-cluster edge", () => {
+    const delta = measureArchitectureViolationDelta([], []);
+    const split: DiffDetectorFinding = {
+      subject: "src/core/api",
+      detail: "d",
+      detector: "splitCandidates",
+      endpoints: { kind: "component", component: "src/core/api" },
+      evidence: { clusterCount: 2, touchedClusters: [] },
+    };
+
+    const collapsed = collapsePersistingFindings([split], delta);
+
+    expect(collapsed.kept).toEqual([split]);
+    expect(collapsed.persisting).toEqual([]);
+    expect(collapsed.introducedCount).toBe(1);
+  });
+
+  it("keeps a splitCandidates merge verdict carrying a remedy — any remedy stays", () => {
+    const delta = measureArchitectureViolationDelta([], []);
+    const withRemedy: DiffDetectorFinding = {
+      ...mergeFinding(),
+      remedy: {
+        kind: "retargetImport",
+        sourceRelPath: "src/a.ts",
+        fromRelPath: "src/b.ts",
+        toRelPath: "src/lib/index.ts",
+        importedNames: ["X"],
+      },
+    };
+
+    const collapsed = collapsePersistingFindings([withRemedy], delta);
+
+    expect(collapsed.kept).toEqual([withRemedy]);
+    expect(collapsed.persisting).toEqual([]);
   });
 
   it("canonicalizes a renamed finding endpoint before keying it against the delta", () => {

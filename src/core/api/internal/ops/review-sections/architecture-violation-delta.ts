@@ -27,7 +27,9 @@
  * run did not mark them `preExisting`. Families an edge overlay cannot move (silent coupling and
  * shotgun surgery read git history, norms read the indexed type rows — see
  * `ARCHITECTURE_FACTS_NOT_REFRESHED_BY_EDGE_OVERLAY`) are never introduced,
- * so they persist by construction.
+ * so they persist by construction. So do splitCandidates MERGE verdicts (key
+ * family `splitCandidates.merge`): pure co-change history, which a diff cannot
+ * move. SPLIT verdicts stay — a diff-added inter-cluster edge gates them.
  */
 
 import {
@@ -99,6 +101,14 @@ const DIFF_ONLY_FAMILIES: ReadonlySet<DiffDetectorFamily> = new Set(["cycles", "
  */
 const GIT_DRIVEN_FAMILIES: ReadonlySet<DiffDetectorFamily> = new Set(["silentCoupling"]);
 
+/**
+ * Co-change-history verdicts of a detector that also emits diff-gated ones, so
+ * the detector name cannot classify them: a splitCandidates MERGE verdict is
+ * pure co-change history, while a SPLIT verdict is gated by a diff-added
+ * inter-cluster edge (s2nes) and stays judged by its own `preExisting` flag.
+ */
+const GIT_DRIVEN_KEY_FAMILIES: ReadonlySet<ArchitectureFindingKeyFamily> = new Set(["splitCandidates.merge"]);
+
 /** Collapse every finding the change did not introduce out of the findings list. */
 export function collapsePersistingFindings(
   findings: readonly DiffDetectorFinding[],
@@ -143,7 +153,7 @@ export function collapsePersistingFindings(
  * diff-only families, and a key neither run holds — by the run's own flag.
  */
 function isIntroducedFinding(finding: DiffDetectorFinding, key: string, delta: ArchitectureViolationDelta): boolean {
-  if (GIT_DRIVEN_FAMILIES.has(finding.detector)) return false;
+  if (GIT_DRIVEN_FAMILIES.has(finding.detector) || GIT_DRIVEN_KEY_FAMILIES.has(findingKeyFamily(key))) return false;
   const judgedByDelta =
     !DIFF_ONLY_FAMILIES.has(finding.detector) && (delta.introduced.has(key) || delta.persisting.has(key));
   return judgedByDelta ? delta.introduced.has(key) : finding.preExisting !== true;

@@ -25,6 +25,8 @@ Check who owns the cluster.
   example a generated or table-like block).
 - A file whose project convention is to keep helpers together. Cite the rule
   file and quote it.
+- Merge verdict: never reaches agent. Co-change history, diff cannot move →
+  server collapses to change.persisting.
 - History-only split verdict (diff adds no edge between clusters): detector
   suppresses it — split finding fires only when diff ADDS a dependency edge
   across two clusters. Never split pre-existing clusters in feature diff.
