@@ -188,6 +188,57 @@ describe("pipeline/infra/debug-log is a self-contained submodule (6oah1 PI1)", (
   });
 });
 
+describe("pipeline/infra/worker-dispatch is the worker thread/process dispatch runtime (6oah1 PI1)", () => {
+  const WORKER_DISPATCH_DIR = join(PIPELINE_INFRA_DIR, "worker-dispatch");
+  const WORKER_DISPATCH_FILES = [
+    "pool-defaults.ts",
+    "process-transport.ts",
+    "thread-transport.ts",
+    "worker-debug.ts",
+    "worker-dispatch-pool.ts",
+    "worker-runtime.ts",
+    "worker-transport.ts",
+  ];
+
+  it("the dispatch runtime lives under pipeline/infra/worker-dispatch/ behind an index.ts facade", () => {
+    expect(existsSync(WORKER_DISPATCH_DIR)).toBe(true);
+    const files = existsSync(WORKER_DISPATCH_DIR)
+      ? readdirSync(WORKER_DISPATCH_DIR)
+          .filter((entry) => entry.endsWith(".ts"))
+          .sort()
+      : [];
+    expect(files).toEqual([...WORKER_DISPATCH_FILES, "index.ts"].sort());
+  });
+
+  it("nothing outside pipeline/infra/worker-dispatch/ imports a deep dispatch file (consumers go through worker-dispatch/index.js)", () => {
+    // Deep files count at their post-move home AND flat in pipeline/infra/, so
+    // the pin is RED until the cluster actually moves and stays moved.
+    const deepFiles = new Set<string>(WORKER_DISPATCH_FILES.map((name) => join(WORKER_DISPATCH_DIR, name)));
+    for (const name of WORKER_DISPATCH_FILES) deepFiles.add(join(PIPELINE_INFRA_DIR, name));
+
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder(join(ROOT, "src"))) {
+      if (isUnder(file, WORKER_DISPATCH_DIR)) continue;
+      for (const target of relativeTargets(file)) {
+        if (deepFiles.has(target)) offenders.push(`${rel(file)} -> ${rel(target)}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("the batching side of pipeline/infra and the dispatch runtime do not import each other", () => {
+    const offenders: string[] = [];
+    for (const file of tsFilesUnder(PIPELINE_INFRA_DIR)) {
+      const inDispatch = isUnder(file, WORKER_DISPATCH_DIR);
+      for (const target of relativeTargets(file)) {
+        if (!isUnder(target, PIPELINE_INFRA_DIR)) continue;
+        if (inDispatch !== isUnder(target, WORKER_DISPATCH_DIR)) offenders.push(`${rel(file)} -> ${rel(target)}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("pipeline/chunker/language-config is the enrichment-facing language-table leaf (g7w8f-2 G4)", () => {
   const CHUNKER_DIR = join(PIPELINE_DIR, "chunker");
   const LANGUAGE_CONFIG_DIR = join(CHUNKER_DIR, "language-config");

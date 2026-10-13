@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { ThreadTransport } from "../../../../../../src/core/domains/ingest/pipeline/infra/thread-transport.js";
+import { ThreadTransport } from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/thread-transport.js";
 
 // A trivial worker that echoes { n } -> { doubled } and exits on shutdown.
 const WORKER_SRC = `

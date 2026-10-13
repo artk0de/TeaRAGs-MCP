@@ -6,7 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SHUTDOWN_MESSAGE } from "../../../../../../src/core/domains/ingest/pipeline/infra/worker-transport.js";
+import { SHUTDOWN_MESSAGE } from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-transport.js";
 
 // --- Mock node:worker_threads ---
 // isMainThread=false → ThreadWorkerRuntime is selected by createWorkerRuntime().
@@ -75,7 +75,7 @@ describe("ThreadWorkerRuntime (mocked worker_threads)", () => {
   it("init() returns workerData synchronously", async () => {
     // Must re-import after vi.mock to get the mocked module
     const { createWorkerRuntime } =
-      await import("../../../../../../src/core/domains/ingest/pipeline/infra/worker-runtime.js");
+      await import("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js");
     state.workerData = { base: 99 };
     const rt = createWorkerRuntime<{ base: number }, unknown>();
     const result = await rt.init();
@@ -84,7 +84,7 @@ describe("ThreadWorkerRuntime (mocked worker_threads)", () => {
 
   it("onRequest() delivers non-shutdown messages to the handler", async () => {
     const { createWorkerRuntime } =
-      await import("../../../../../../src/core/domains/ingest/pipeline/infra/worker-runtime.js");
+      await import("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js");
     const rt = createWorkerRuntime<unknown, { val: number }>();
     const received: unknown[] = [];
     rt.onRequest((req) => received.push(req));
@@ -97,7 +97,7 @@ describe("ThreadWorkerRuntime (mocked worker_threads)", () => {
 
   it("respond() calls parentPort.postMessage", async () => {
     const { createWorkerRuntime } =
-      await import("../../../../../../src/core/domains/ingest/pipeline/infra/worker-runtime.js");
+      await import("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js");
     const rt = createWorkerRuntime<unknown, unknown>();
     rt.respond({ answer: 7 });
     expect(state.port!.postMessageCalls).toEqual([{ answer: 7 }]);
@@ -105,7 +105,7 @@ describe("ThreadWorkerRuntime (mocked worker_threads)", () => {
 
   it("onShutdown() closes the port and fires the callback", async () => {
     const { createWorkerRuntime } =
-      await import("../../../../../../src/core/domains/ingest/pipeline/infra/worker-runtime.js");
+      await import("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js");
     const rt = createWorkerRuntime<unknown, unknown>();
     const fired = vi.fn();
     rt.onShutdown(fired);
@@ -118,7 +118,7 @@ describe("ThreadWorkerRuntime (mocked worker_threads)", () => {
 
   it("onShutdown() does not fire for non-shutdown messages", async () => {
     const { createWorkerRuntime } =
-      await import("../../../../../../src/core/domains/ingest/pipeline/infra/worker-runtime.js");
+      await import("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js");
     const rt = createWorkerRuntime<unknown, unknown>();
     const fired = vi.fn();
     rt.onShutdown(fired);

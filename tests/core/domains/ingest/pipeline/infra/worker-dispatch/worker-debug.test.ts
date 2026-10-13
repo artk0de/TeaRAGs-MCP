@@ -14,8 +14,8 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 
-import { applyWorkerDebug } from "../../../../../../src/core/domains/ingest/pipeline/infra/worker-debug.js";
-import { isDebug, setDebug } from "../../../../../../src/core/primitives/diagnostics/debug-flag.js";
+import { applyWorkerDebug } from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-debug.js";
+import { isDebug, setDebug } from "../../../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
 describe("applyWorkerDebug", () => {
   afterEach(() => {

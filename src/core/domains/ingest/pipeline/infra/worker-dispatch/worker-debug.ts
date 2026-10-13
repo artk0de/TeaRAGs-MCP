@@ -13,7 +13,7 @@
  * here. Kept as a separate function, not inlined into the entry, so the
  * adoption rule is unit-testable without spawning a thread.
  */
-import { setDebug } from "../../../../primitives/diagnostics/index.js";
+import { setDebug } from "../../../../../primitives/diagnostics/index.js";
 
 /**
  * Adopt `debug` from a worker's init payload. Anything that is not an explicit

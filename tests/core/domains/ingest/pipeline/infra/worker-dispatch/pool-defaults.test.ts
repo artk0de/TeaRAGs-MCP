@@ -9,7 +9,7 @@ import {
   defaultEnrichmentWorkerMemoryLimitMb,
   defaultEnrichmentWorkerStackSizeMb,
   defaultWorkerDispatchTimeoutMs,
-} from "../../../../../../src/core/domains/ingest/pipeline/infra/pool-defaults.js";
+} from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/pool-defaults.js";
 
 describe("defaultChunkerPoolSize", () => {
   it("defaults the chunker pool to min(4, cpus-1), at least 1", () => {

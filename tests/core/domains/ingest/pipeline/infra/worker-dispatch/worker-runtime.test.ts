@@ -8,13 +8,13 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   createWorkerRuntime,
   INIT_KEY,
-} from "../../../../../../src/core/domains/ingest/pipeline/infra/worker-runtime.js";
-import { SHUTDOWN_MESSAGE } from "../../../../../../src/core/domains/ingest/pipeline/infra/worker-transport.js";
+} from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js";
+import { SHUTDOWN_MESSAGE } from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-transport.js";
 
 // A worker that uses createWorkerRuntime under the PROCESS transport: it is
 // forked, so isMainThread is true -> ProcessWorkerRuntime is selected.
 const WORKER_SRC = `
-import { createWorkerRuntime } from "${join(process.cwd(), "build/core/domains/ingest/pipeline/infra/worker-runtime.js")}";
+import { createWorkerRuntime } from "${join(process.cwd(), "build/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js")}";
 const rt = createWorkerRuntime();
 const init = await rt.init();
 rt.onShutdown(() => process.exit(0));

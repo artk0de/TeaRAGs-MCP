@@ -41,7 +41,7 @@ import { reindexRunSpec, type EnrichmentRunSpec, type StreamedEnrichmentRunInput
 import { ChunkPipeline } from "./index.js";
 import { storeIndexingMarker, updateHeartbeat } from "./indexing-marker.js";
 import { pipelineLog } from "./infra/debug-log/index.js";
-import { defaultChunkerPoolSize } from "./infra/pool-defaults.js";
+import { defaultChunkerPoolSize } from "./infra/worker-dispatch/index.js";
 import { FileScanner } from "./scanner.js";
 import type { PipelineConfig } from "./types.js";
 

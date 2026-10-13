@@ -10,7 +10,7 @@
  * - `--heap-prof` writes its `.heapprofile` only on a CLEAN thread exit, so the
  *   run that died of the heap is exactly the run that produces nothing.
  * - `ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR` (`--heapsnapshot-near-heap-limit`, see
- *   `../../infra/pool-defaults.ts`) writes ONE full, non-sampling snapshot at the
+ *   `../../infra/worker-dispatch/pool-defaults.ts`) writes ONE full, non-sampling snapshot at the
  *   ceiling: multi-gigabyte, minutes to write, frequently cut short by the very
  *   kill it anticipates, and with no view of how the heap got there.
  *

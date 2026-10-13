@@ -1,7 +1,7 @@
 import type {
   WorkerHandle,
   WorkerTransport,
-} from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-transport.js";
+} from "../../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-transport.js";
 
 /**
  * In-memory transport for pool unit tests — no real threads/processes. Each

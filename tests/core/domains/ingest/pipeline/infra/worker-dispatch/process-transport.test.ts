@@ -4,10 +4,10 @@ import { join } from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { ProcessTransport } from "../../../../../../src/core/domains/ingest/pipeline/infra/process-transport.js";
+import { ProcessTransport } from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/process-transport.js";
 
 const WORKER_SRC = `
-import { createWorkerRuntime } from "${join(process.cwd(), "build/core/domains/ingest/pipeline/infra/worker-runtime.js")}";
+import { createWorkerRuntime } from "${join(process.cwd(), "build/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js")}";
 const rt = createWorkerRuntime();
 const init = await rt.init();
 rt.onShutdown(() => process.exit(0));

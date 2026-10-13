@@ -18,9 +18,9 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import {
   INIT_KEY,
   ProcessWorkerRuntime,
-} from "../../../../../../src/core/domains/ingest/pipeline/infra/worker-runtime.js";
+} from "../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js";
 
-const RUNTIME_PATH = join(process.cwd(), "build/core/domains/ingest/pipeline/infra/worker-runtime.js");
+const RUNTIME_PATH = join(process.cwd(), "build/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js");
 
 /** Answers each request after `init.delayMs`, reporting receipt on stdout first. */
 const SLOW_WORKER_SRC = `

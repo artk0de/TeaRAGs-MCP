@@ -36,7 +36,7 @@ import { getHeapStatistics } from "node:v8";
 import { parentPort, resourceLimits, workerData } from "node:worker_threads";
 
 import type { EnrichmentProvider } from "../../../../../contracts/types/provider.js";
-import { applyWorkerDebug } from "../../infra/worker-debug.js";
+import { applyWorkerDebug } from "../../infra/worker-dispatch/index.js";
 import type { EnrichmentReleaseRequest, EnrichmentWorkerRequest, EnrichmentWorkerResponse } from "../executor/index.js";
 import { chunkedCpuProfilerConfigFromEnv, startChunkedCpuProfiler } from "./chunked-cpu-profiler.js";
 import { chunkedHeapProfilerConfigFromEnv, startChunkedHeapProfiler } from "./chunked-heap-profiler.js";

@@ -20,7 +20,7 @@ const state = vi.hoisted(() => {
   return initial;
 });
 
-vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-runtime.js", () => ({
+vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-runtime.js", () => ({
   createWorkerRuntime: () => ({
     init: async () => state.init,
     onRequest: () => undefined,
@@ -29,7 +29,7 @@ vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-runt
   }),
 }));
 
-vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch-pool.js", () => ({
+vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-dispatch-pool.js", () => ({
   WorkerDispatchPool: class {
     constructor(_size: number, _transport: unknown, init: unknown) {
       state.poolInit = init;
@@ -37,7 +37,7 @@ vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-disp
   },
 }));
 
-vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/process-transport.js", () => ({
+vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/process-transport.js", () => ({
   ProcessTransport: class {},
 }));
 

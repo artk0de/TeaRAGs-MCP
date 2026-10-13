@@ -1,6 +1,6 @@
 /**
  * The sending half of debug-flag inheritance (the reading half lives in
- * `pipeline/infra/worker-debug.test.ts`).
+ * `pipeline/infra/worker-dispatch/worker-debug.test.ts`).
  *
  * Worker threads do not inherit the module-level debug flag, so the executor
  * has to put it in the pool's init payload — which `ThreadTransport` hands to
@@ -13,7 +13,7 @@ import { setDebug } from "../../../../../../../src/core/primitives/diagnostics/d
 
 const { poolSpy } = vi.hoisted(() => ({ poolSpy: vi.fn() }));
 
-vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch-pool.js", () => ({
+vi.mock("../../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch/worker-dispatch-pool.js", () => ({
   WorkerDispatchPool: vi.fn(function (...args: unknown[]) {
     poolSpy(...args);
     return { dispatch: vi.fn(), releaseAffinity: vi.fn(), shutdown: vi.fn() };
