@@ -54,6 +54,11 @@ const REVIEW_CHANGES_DESCRIPTION =
   "maybeAlreadyCommitted (index lacks the merge-base: introduced may hold already-committed edits)} — full detector set " +
   "judged on index vs index+tree edges, keyed by endpoints, renames canonicalized; silentCoupling, shotgunSurgery, norms " +
   "read git/type history no edge overlay moves, splitCandidates merge verdicts too = persisting by construction. " +
+  "tier (get_architecture_report's impact tier: structural | active | critical) rides findings and change entries — " +
+  "introduced = overlaid run's, else base run's; absent = family untierable or no co-change history; pairs touching " +
+  "the diff judged without the diff's own commits. change.touchedActive ({family, subject, tier}) = persisting " +
+  "active/critical violations the diff touches (finding names it or changed file on a carrying edge) — lifted out " +
+  "of persisting (a lifted finding stays in its row's persistingCount): edit lands on a live cascade. " +
   "Detector rows also carry exclusions: mainSequence excludedLowConnectionCount (small-N components below the " +
   "connection floor), mainSequence excludedFlapCount (|ΔD| ≤ 0.02 moves, not findings), silentCoupling excluded block (the production taxonomy's counters) — a zero over excluded " +
   "classes is not a clean pass; silentCoupling pairs sharing an endpoint list as ONE finding (partners[] = every " +

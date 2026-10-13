@@ -14,7 +14,10 @@
  */
 
 import type { ArchitectureFindingKeyFamily } from "../../../contracts/types/architecture-finding-key.js";
-import type { CochangeSignificanceSummary } from "../../../contracts/types/architecture-report.js";
+import type {
+  ArchitectureViolationImpactTier,
+  CochangeSignificanceSummary,
+} from "../../../contracts/types/architecture-report.js";
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../contracts/types/diff-detector-finding.js";
 import type { TemporalCohesionReport } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type { CollectionRef } from "./explore.js";
@@ -216,6 +219,13 @@ export interface ArchitectureSectionPayload {
 export interface ArchitectureChangeSubject {
   family: ArchitectureFindingKeyFamily;
   subject: string;
+  /** The violation's impact tier (bd tea-rags-mcp-r8hme.53); absent when not tierable or no co-change history. */
+  tier?: ArchitectureViolationImpactTier;
+}
+
+/** A persisting violation the diff touches that carries live cascading change. */
+export interface ArchitectureTouchedActiveSubject extends ArchitectureChangeSubject {
+  tier: "active" | "critical";
 }
 
 /** The architecture section's `change` block — see {@link ArchitectureSectionPayload.change}. */
@@ -231,6 +241,13 @@ export interface ArchitectureChangeBlock {
    * (silent coupling), or not confirmed as introduced by the full detector run.
    */
   persisting: readonly ArchitectureChangeSubject[];
+  /**
+   * Persisting violations the diff touches (a changed file sits on a carrying
+   * edge, or a finding names it) whose tier is active or critical (bd
+   * tea-rags-mcp-r8hme.53): the edit lands on a live cascade, so they are not
+   * collapsed into `persisting`.
+   */
+  touchedActive: readonly ArchitectureTouchedActiveSubject[];
   /** The index (the base of the comparison) lags the tree. */
   indexLag?: { indexedCommit: string; treeCommit: string };
   /** The index lacks commits the merge-base holds, so an introduced violation may already be committed. */

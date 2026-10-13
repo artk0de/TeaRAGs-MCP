@@ -17,6 +17,7 @@
 
 import type {
   ArchitectureMaintenanceCost,
+  ArchitectureViolationImpactTier,
   CochangeSignificanceSummary,
   SilentCouplingGroupDrillDown,
   SilentCouplingGroupPartner,
@@ -299,6 +300,13 @@ interface DiffDetectorFindingCommon {
    * qualified; silentCoupling and splitCandidates never carry one.
    */
   remedy?: DiffFindingRemedy;
+  /**
+   * The impact tier of the whole-repo report violation this finding is (bd
+   * tea-rags-mcp-r8hme.53) — the overlaid run's for an introduced finding,
+   * the base run's otherwise. Stamped by the section; absent when the family
+   * has no report counterpart, is not tierable, or no co-change history exists.
+   */
+  tier?: ArchitectureViolationImpactTier;
 }
 
 /** One diff-scoped judgement: the family, its structured endpoints and evidence, and the reviewer text. */

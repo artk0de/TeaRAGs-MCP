@@ -132,4 +132,26 @@ describe("review_changes handler", () => {
       expect(config.description).toContain(term);
     }
   });
+
+  it("the impact tiers survive the formatter and the description names touchedActive (bd tea-rags-mcp-r8hme.53)", async () => {
+    const { handler, app, config } = registered()!;
+    const change = {
+      introducedCount: 0,
+      nonLocal: [],
+      resolved: [],
+      persisting: [{ family: "stableDependencies", subject: "src/m -> src/n", tier: "structural" }],
+      touchedActive: [{ family: "stableDependencies", subject: "src/p -> src/q", tier: "critical" }],
+    };
+    const findings = [{ detector: "stableDependencies", subject: "src/a -> src/b", tier: "active" }];
+    (app.reviewChanges as ReturnType<typeof vi.fn>).mockResolvedValue({
+      review: { workTree: "/w", sections: { architecture: { built: true, findings, detectors: [], change } } },
+    });
+
+    const { architecture } = JSON.parse((await handler({ sections: ["architecture"] })).content[0].text).review
+      .sections;
+
+    expect(architecture.change).toEqual(change);
+    expect(architecture.findings[0].tier).toBe("active");
+    for (const term of ["touchedActive", "tier", "critical"]) expect(config.description).toContain(term);
+  });
 });

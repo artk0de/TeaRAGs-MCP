@@ -375,12 +375,13 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
 
 **Triage** every architecture / cohesion / incompleteChange finding:
 
-| Finding                   | Class             | Action                                                   |
-| ------------------------- | ----------------- | -------------------------------------------------------- |
-| no `preExisting`          | must-fix          | repair in this diff                                      |
-| `preExisting` + `remedy`  | cheap-preExisting | apply `remedy` (cheap by construction)                   |
-| `change.nonLocal` entry   | must-fix          | introduced away from diff — repair like no `preExisting` |
-| `change.persisting` entry | report-only       | not in findings; one count line per family, no triage    |
+| Finding                   | Class             | Action                                                              |
+| ------------------------- | ----------------- | ------------------------------------------------------------------- |
+| no `preExisting`          | must-fix          | repair in this diff                                                 |
+| `preExisting` + `remedy`  | cheap-preExisting | apply `remedy` (cheap by construction)                              |
+| `change.nonLocal` entry   | must-fix          | introduced away from diff — repair like no `preExisting`            |
+| `change.touchedActive`    | must-fix priority | edit hits live cascade (`tier` active/critical): repair or ask user |
+| `change.persisting` entry | report-only       | structural; one count line per family, no triage                    |
 
 **Base** — `review_changes` base = `git merge-base HEAD main`, the branch's fork
 point on main. Never an integration branch, never a sibling `worktree-agent-*`
