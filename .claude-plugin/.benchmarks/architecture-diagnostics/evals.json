@@ -1,0 +1,24 @@
+{
+  "skill_name": "architecture-diagnostics",
+  "optimized_skills": ["architecture-diagnostics"],
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "review_changes architecture section returned a stableDependencies finding with preExisting: true and a remedy {kind: retargetImport, sourceRelPath, fromRelPath, toRelPath, importedNames}. Recommend a fix.",
+      "expected": "Quotes the remedy verbatim (source file, from -> to, names), classes it cheap-preExisting, loads only repair/stableDependencies.md (Apply remedy). Does not read preExisting as diff-introduced, does not paraphrase to 'use the facade'.",
+      "audit_finding": [],
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 2,
+      "prompt": "review_changes returned a mainSequence finding with preExisting: true, no remedy, and a hubLike finding without preExisting.",
+      "expected": "mainSequence preExisting = distanceBefore already past threshold -> report-only line, no fix. hubLike without preExisting = introduced -> must-fix, loads repair/hubLike.md only; compositionRoot flag counts as evidence, bare 'by design' does not. Loads only the two repair files for families present.",
+      "audit_finding": [],
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PASS"
+    }
+  ]
+}
