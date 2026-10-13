@@ -986,6 +986,43 @@ describe("DaemonGraphDbClient — type-name rows op (bd tea-rags-mcp-vi0wx)", ()
   });
 });
 
+describe("DaemonGraphDbClient — cg_symbols_edges_field ops (bd tea-rags-mcp-zy6hx)", () => {
+  it("proxies the field-access write and both reads through the daemon socket", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const row = {
+      sourceSymbolId: "Order#total",
+      ownerKind: "self" as const,
+      ownerType: "Order",
+      fieldName: "@items",
+      accessKind: "read" as const,
+      accessCount: 2,
+      firstLine: 4,
+    };
+    const stored = [{ relPath: "app/order.rb", ...row }];
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "readFieldAccessesBySymbols" || r.op === "readFieldAccessesByFiles" ? stored : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
+    await client.init();
+    const entries = [{ relPath: "app/order.rb", rows: [row] }];
+    await client.replaceFieldAccessesBulk(entries);
+    const bySymbols = await client.readFieldAccessesBySymbols(["Order#total"]);
+    const byFiles = await client.readFieldAccessesByFiles(["app/order.rb"]);
+    await client.close();
+
+    const params = (op: string) => seen.find((r) => r.op === op)?.params;
+    expect(params("replaceFieldAccessesBulk")).toEqual({ collection: "code_x_v1", entries });
+    expect(params("readFieldAccessesBySymbols")).toEqual({ collection: "code_x_v1", symbolIds: ["Order#total"] });
+    expect(params("readFieldAccessesByFiles")).toEqual({ collection: "code_x_v1", relPaths: ["app/order.rb"] });
+    expect(bySymbols).toEqual(stored);
+    expect(byFiles).toEqual(stored);
+  });
+});
+
 describe("DaemonGraphDbClient — ontology report op (bd tea-rags-mcp-4p3sb.20)", () => {
   it("proxies both ontology report reads through the daemon socket with the whole query and the excluded names", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));

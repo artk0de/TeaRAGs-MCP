@@ -52,6 +52,7 @@ import { SQL_045_CG_TEMPORAL_BUNDLE_TASK_IDS } from "./045-cg-temporal-bundle-ta
 import { SQL_046_CG_TEMPORAL_BUNDLE_FILE_LINES } from "./046-cg-temporal-bundle-file-lines.js";
 import { SQL_047_CG_TEMPORAL_BUNDLE_COMMITTED_AT } from "./047-cg-temporal-bundle-committed-at.js";
 import { dropLegacyReviewEdgeTables } from "./048-cg-drop-legacy-review-edge-tables.js";
+import { SQL_049_CG_SYMBOLS_EDGES_FIELD } from "./049-cg-symbols-edges-field.js";
 
 export type { DatabaseMigration } from "../runner.js";
 
@@ -105,4 +106,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "047-cg-temporal-bundle-committed-at.sql", sql: SQL_047_CG_TEMPORAL_BUNDLE_COMMITTED_AT },
   // Procedural (no `.sql` twin): the ledger key ends in `.ts` because the module IS the migration.
   { filename: "048-cg-drop-legacy-review-edge-tables.ts", run: dropLegacyReviewEdgeTables },
+  { filename: "049-cg-symbols-edges-field.sql", sql: SQL_049_CG_SYMBOLS_EDGES_FIELD },
 ];

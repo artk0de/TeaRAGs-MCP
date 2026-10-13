@@ -12,6 +12,8 @@ import { describe, expect, it } from "vitest";
 
 import type {
   BulkSymbolUpsertEntry,
+  FieldAccessReplaceEntry,
+  FieldAccessRow,
   GraphDbClient,
   IdentifierReplaceEntry,
   TypeDeclarationReplaceEntry,
@@ -199,6 +201,71 @@ describe("SymbolNodeFlushQueue — type-declaration rows", () => {
       1000,
     );
     queue.buffer("Sources/A.swift", [], "coll", undefined, []);
+
+    await queue.flushRemainder("coll");
+
+    expect(calls).toBe(0);
+  });
+
+  const fieldRow: FieldAccessRow = {
+    sourceSymbolId: "Order#total",
+    ownerKind: "self",
+    ownerType: "Order",
+    fieldName: "@items",
+    accessKind: "read",
+    accessCount: 1,
+    firstLine: 3,
+  };
+
+  it("hands buffered field accesses to replaceFieldAccessesBulk after the type declarations, an empty list included", async () => {
+    const order: string[] = [];
+    const replaced: FieldAccessReplaceEntry[][] = [];
+    const queue = new SymbolNodeFlushQueue(
+      makeResolver({
+        upsertSymbolsBulk: async () => {
+          order.push("symbols");
+        },
+        replaceIdentifiersBulk: async () => {
+          order.push("identifiers");
+        },
+        replaceTypeDeclarationsBulk: async () => {
+          order.push("typeDeclarations");
+        },
+        replaceFieldAccessesBulk: async (entries: readonly FieldAccessReplaceEntry[]) => {
+          order.push("fieldAccesses");
+          replaced.push([...entries]);
+        },
+      }),
+      1000,
+    );
+    queue.buffer("app/order.rb", [], "coll", undefined, [], [], [fieldRow]);
+    queue.buffer("app/empty.rb", [], "coll", undefined, [], [], []);
+
+    await queue.flushRemainder("coll");
+
+    expect(order).toEqual(["symbols", "identifiers", "typeDeclarations", "fieldAccesses"]);
+    expect(replaced).toEqual([
+      [
+        { relPath: "app/order.rb", rows: [fieldRow] },
+        { relPath: "app/empty.rb", rows: [] },
+      ],
+    ]);
+  });
+
+  it("does not write field accesses for files buffered without any", async () => {
+    let calls = 0;
+    const queue = new SymbolNodeFlushQueue(
+      makeResolver({
+        upsertSymbolsBulk: async () => undefined,
+        replaceIdentifiersBulk: async () => undefined,
+        replaceTypeDeclarationsBulk: async () => undefined,
+        replaceFieldAccessesBulk: async () => {
+          calls += 1;
+        },
+      }),
+      1000,
+    );
+    queue.buffer("app/order.rb", [], "coll", undefined, [], []);
 
     await queue.flushRemainder("coll");
 

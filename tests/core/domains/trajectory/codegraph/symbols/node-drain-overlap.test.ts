@@ -112,6 +112,7 @@ describe("codegraph node-drain / pass-2 overlap", () => {
           },
           replaceIdentifiersBulk: async () => undefined,
           replaceTypeDeclarationsBulk: async () => undefined,
+          replaceFieldAccessesBulk: async () => undefined,
         } as unknown as GraphDbClient,
       }),
       // Cadence high enough that `write` never auto-flushes: the drain under

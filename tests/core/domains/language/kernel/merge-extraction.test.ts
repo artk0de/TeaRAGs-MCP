@@ -111,6 +111,21 @@ describe("mergeExtraction — arrays concat, base first", () => {
     });
     expect(merged.identifierDeclarations?.map((d) => d.name)).toEqual(["a", "b"]);
   });
+
+  it("concatenates fieldAccesses base-first, and a pass's empty list leaves the channel absent (bd tea-rags-mcp-zy6hx)", () => {
+    const fact = (fieldName: string, line: number) => ({
+      symbolId: "A#m",
+      ownerKind: "self" as const,
+      fieldName,
+      accessKind: "read" as const,
+      line,
+    });
+    const merged = mergeExtraction(baseExtraction({ fieldAccesses: [fact("#a", 1)] }), {
+      fieldAccesses: [fact("#b", 2)],
+    });
+    expect(merged.fieldAccesses?.map((f) => f.fieldName)).toEqual(["#a", "#b"]);
+    expect("fieldAccesses" in mergeExtraction(baseExtraction({}), { fieldAccesses: [] })).toBe(false);
+  });
 });
 
 describe("mergeExtraction — set-like arrays dedupe on the FIRST occurrence", () => {

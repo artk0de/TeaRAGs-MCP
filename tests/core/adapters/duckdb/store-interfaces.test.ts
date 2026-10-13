@@ -13,6 +13,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { DuckDbFieldAccessStore } from "../../../../src/core/adapters/duckdb/field-access-store.js";
 import { DuckDbFileGraphStore } from "../../../../src/core/adapters/duckdb/file-graph-store.js";
 import { DuckDbFileMetricsReader } from "../../../../src/core/adapters/duckdb/file-metrics-reader.js";
 import { DuckDbGraphAnalyticsStore } from "../../../../src/core/adapters/duckdb/graph-analytics-store.js";
@@ -31,6 +32,7 @@ import { DuckDbTemporalStoreFacade } from "../../../../src/core/adapters/duckdb/
 import { DuckDbTemporalSymbolCommitStore } from "../../../../src/core/adapters/duckdb/temporal-symbol-commit-store.js";
 import { DuckDbTypeNameStore } from "../../../../src/core/adapters/duckdb/type-name-store.js";
 import type {
+  CodegraphFieldAccessStore,
   CodegraphGraphAnalyticsStore,
   CodegraphGraphReadStore,
   CodegraphIdentifierStore,
@@ -79,6 +81,7 @@ describe("DuckDB stores answer the codegraph storage sub-interfaces", () => {
         "replaceTypeDeclarationsBulk" | "readTypeNameRows"
       >,
       ontology: new DuckDbOntologyReportStore(session) satisfies CodegraphOntologyReportStore,
+      fieldAccesses: new DuckDbFieldAccessStore(session) satisfies CodegraphFieldAccessStore,
       fileMetrics: new DuckDbFileMetricsReader(session) satisfies Pick<
         CodegraphGraphReadStore,
         "getFanIn" | "getFanOut" | "getFanInP95" | "getTransitiveImpact" | "getFileMetricsBulk"

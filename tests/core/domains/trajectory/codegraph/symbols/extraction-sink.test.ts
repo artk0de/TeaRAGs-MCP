@@ -100,6 +100,53 @@ describe("createCodegraphExtractionSink", () => {
     }
   });
 
+  it("buffers the file's field-access rows beside its defs, and an empty list for a file with none (bd tea-rags-mcp-zy6hx)", async () => {
+    const deps = makeDeps();
+    const sink = createCodegraphExtractionSink(deps, "run-field-accesses");
+    await sink.write({
+      ...extraction("src/order.ts"),
+      fieldAccesses: [
+        {
+          symbolId: "Order#total",
+          ownerKind: "self",
+          ownerType: "Order",
+          fieldName: "#items",
+          accessKind: "read",
+          line: 5,
+        },
+        {
+          symbolId: "Order#total",
+          ownerKind: "self",
+          ownerType: "Order",
+          fieldName: "#items",
+          accessKind: "read",
+          line: 3,
+        },
+      ],
+    });
+    await sink.write(extraction("src/plain.ts"));
+    await sink.finish();
+
+    const buffered = vi.mocked(deps.nodeFlush.buffer).mock.calls.map((call) => [call[0], call[6]]);
+    expect(buffered).toEqual([
+      [
+        "src/order.ts",
+        [
+          {
+            sourceSymbolId: "Order#total",
+            ownerKind: "self",
+            ownerType: "Order",
+            fieldName: "#items",
+            accessKind: "read",
+            accessCount: 2,
+            firstLine: 3,
+          },
+        ],
+      ],
+      ["src/plain.ts", []],
+    ]);
+  });
+
   it("cleanupSpill swallows a failing fs.rm during finish() so the sink still resolves cleanly", async () => {
     vi.mocked(rm).mockRejectedValueOnce(new Error("EACCES: permission denied"));
 

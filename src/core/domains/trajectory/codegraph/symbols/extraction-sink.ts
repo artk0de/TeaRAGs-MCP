@@ -41,6 +41,7 @@ import type { PhysicalCollectionName } from "../../../../contracts/types/collect
 import type { FileExtractionAbsorbRole } from "../../../../contracts/types/provider.js";
 import { CodegraphMetricsError } from "../../errors.js";
 import { CodegraphExtractionSpillWriter } from "./extraction-spill-writer.js";
+import { buildFieldAccessRows } from "./field-access-rows.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import type { SymbolNodeFlushQueue } from "./node-flush.js";
 import type { CodegraphRunState } from "./run-state.js";
@@ -309,6 +310,7 @@ async function persistOwnedPass1State(
       physicalCollectionName,
       deps.buildIdentifierRows(extraction),
       buildTypeDeclarationRows(extraction),
+      buildFieldAccessRows(extraction),
     );
   }
   deps.indexChunkSymbolsByLine(physicalCollectionName, extraction);

@@ -76,6 +76,7 @@ import {
   type CodegraphExtractionSink,
   type CodegraphSinkDeps,
 } from "./extraction-sink.js";
+import { buildFieldAccessRows } from "./field-access-rows.js";
 import { CodegraphFileExtractor } from "./file-extractor.js";
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
 import { selectHierarchyDependents, typeDeclaredByAnyOf } from "./hierarchy-dependencies.js";
@@ -1004,6 +1005,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       options?.collectionName,
       this.buildIdentifierRows(extraction),
       buildTypeDeclarationRows(extraction),
+      buildFieldAccessRows(extraction),
     );
   };
 

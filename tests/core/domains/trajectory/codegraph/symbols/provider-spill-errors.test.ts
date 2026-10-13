@@ -63,6 +63,7 @@ function makeStubGraphDb(flags: ThrowFlags = {}): GraphDbClient {
     },
     replaceIdentifiersBulk: async () => undefined,
     replaceTypeDeclarationsBulk: async () => undefined,
+    replaceFieldAccessesBulk: async () => undefined,
     upsertFile: async (_meta: { relPath: string; language: string }, _edges: GraphEdges) => {
       if (flags.upsertFile) throw flags.upsertFile;
     },

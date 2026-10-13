@@ -9,6 +9,8 @@ import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintena
 import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const MIGRATION = "048-cg-drop-legacy-review-edge-tables.ts";
+/** The schema 048 leaves — later migrations add tables of their own, which this suite does not judge. */
+const THROUGH_048 = DATABASE_MIGRATIONS.slice(0, DATABASE_MIGRATIONS.findIndex((m) => m.filename === MIGRATION) + 1);
 
 /**
  * bd tea-rags-mcp-bdnfu — builds older than bd xi2r9 D4 created one PERSISTENT
@@ -58,7 +60,7 @@ describe("048 drops legacy persistent review edge tables", () => {
     await db.exec("CREATE TABLE cg_review_unrelated (id INTEGER)");
     const before = await mainTables();
 
-    const outcome = await runMigrations(db, DATABASE_MIGRATIONS);
+    const outcome = await runMigrations(db, THROUGH_048);
 
     expect(outcome.applied).toEqual([MIGRATION]);
     const after = await mainTables();
@@ -75,7 +77,7 @@ describe("048 drops legacy persistent review edge tables", () => {
   it("is a no-op on a database that carries none", async () => {
     const before = await mainTables();
 
-    const outcome = await runMigrations(db, DATABASE_MIGRATIONS);
+    const outcome = await runMigrations(db, THROUGH_048);
 
     expect(outcome.applied).toEqual([MIGRATION]);
     expect(await mainTables()).toEqual(before);

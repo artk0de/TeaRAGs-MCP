@@ -4,6 +4,7 @@
  * `DaemonOpCaller`. `DaemonGraphDbClient` composes them.
  */
 export { DaemonGraphAnalyticsStoreProxy, UnsupportedDaemonReadError } from "./graph-analytics-store-proxy.js";
+export { DaemonFieldAccessStoreProxy } from "./field-access-store-proxy.js";
 export { DaemonGraphReadStoreProxy } from "./graph-read-store-proxy.js";
 export { DaemonIdentifierStoreProxy } from "./identifier-store-proxy.js";
 export { DaemonOntologyReportStoreProxy } from "./ontology-report-store-proxy.js";

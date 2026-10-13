@@ -149,6 +149,7 @@ const FILE_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<FileExtraction> = 
   typeDeclarations: (base, pass) => [...(base ?? []), ...pass],
   typeMemberCensus: (base, pass) => [...(base ?? []), ...pass],
   identifierDeclarations: (base, pass) => [...(base ?? []), ...pass],
+  fieldAccesses: (base, pass) => [...(base ?? []), ...pass],
   // Set-like arrays: concat, then drop repeats KEEPING THE FIRST occurrence
   // (`Set` preserves insertion order; it never leaves this function, so the
   // NDJSON spill still sees a plain array).

@@ -12,6 +12,7 @@ import type {
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CycleScope,
+  FieldAccessReplaceEntry,
   FileResolveStatsWrite,
   FileScopedSymbolRef,
   GraphEdges,
@@ -110,6 +111,9 @@ export const DAEMON_OPS = [
   // Per-file replace of the naming lexicon's type-declaration rows (bd
   // tea-rags-mcp-vi0wx). REQUIRED: an older daemon is restarted at handshake.
   "replaceTypeDeclarationsBulk",
+  // Per-file replace of the field-access edges (bd tea-rags-mcp-zy6hx).
+  // REQUIRED: an older daemon is restarted at handshake.
+  "replaceFieldAccessesBulk",
   // ── reads (the daemon owns the sole DuckDB connection, so all reads route
   //    through its own RW connection instead of a conflicting cross-process
   //    READ_ONLY attach) ──
@@ -210,6 +214,10 @@ export const DAEMON_OPS = [
   // Type-level cg_symbols rows + ancestors for type roles (bd tea-rags-mcp-vi0wx).
   // REQUIRED: an older daemon's empty answer would read as a project with no roles.
   "readTypeNameRows",
+  // Field-access edges per method / per file (bd tea-rags-mcp-zy6hx). REQUIRED:
+  // an older daemon's empty answer would read as methods touching no field.
+  "readFieldAccessesBySymbols",
+  "readFieldAccessesByFiles",
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
   "getSupertypes",
   "getSubtypes",
@@ -311,6 +319,7 @@ export interface DaemonOpParamsMap {
   compactStorage: NoDaemonOpParams;
   replaceIdentifiersBulk: { entries: IdentifierReplaceEntry[] };
   replaceTypeDeclarationsBulk: { entries: TypeDeclarationReplaceEntry[] };
+  replaceFieldAccessesBulk: { entries: FieldAccessReplaceEntry[] };
   // ── reads ──
   exportSnapshot: { targetPath: string };
   getFanIn: { relPath: RelPath };
@@ -366,6 +375,8 @@ export interface DaemonOpParamsMap {
   readOntologyReportSummary: { query: OntologyReportQuery };
   readOntologyReportSections: { query: OntologyReportQuery; excludedGenericNames: string[] };
   readTypeNameRows: { query: TypeNameQuery };
+  readFieldAccessesBySymbols: { symbolIds: SymbolId[] };
+  readFieldAccessesByFiles: { relPaths: RelPath[] };
   getSupertypes: { fqName: string };
   getSubtypes: { fqName: string };
   getTransitiveSubtypes: { fqName: string };

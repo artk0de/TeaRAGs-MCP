@@ -8,7 +8,7 @@
  * driver-specific concerns (prepared-statement reuse, BEGIN/COMMIT, value
  * binding) and the contract owns the SQL-agnostic shape.
  *
- * This file is the FACADE only. `GraphDbClient` is the intersection of seven
+ * This file is the FACADE only. `GraphDbClient` is the intersection of eight
  * storage sub-interfaces (contracts/types/codegraph-storage.ts); every member
  * here is a one-line delegation to the collaborator typed against the slice of
  * the sub-interface it answers, all over one shared {@link DuckDbGraphSession}:
@@ -30,6 +30,7 @@
  * | `DuckDbIdentifierStore`      | `CodegraphIdentifierStore` slice | `cg_identifiers` (naming lexicon)               |
  * | `DuckDbTypeNameStore`        | `CodegraphIdentifierStore` slice | type-level `cg_symbols` rows + their ancestors  |
  * | `DuckDbOntologyReportStore`  | `CodegraphOntologyReportStore`   | `cg_identifiers` ontology audit reads           |
+ * | `DuckDbFieldAccessStore`     | `CodegraphFieldAccessStore`      | `cg_symbols_edges_field` (field-access edges)   |
  *
  * Concurrency: methods run sequentially on a single shared connection owned by
  * the session; a transactional write holds the queue for its whole BEGIN/COMMIT
@@ -52,6 +53,7 @@ import type {
   CycleEntry,
   CycleScope,
   EdgeKindCount,
+  FieldAccessReplaceEntry,
   FileDependencyGraph,
   FileGraphMetrics,
   FileImportLookup,
@@ -91,6 +93,7 @@ import type {
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
+  StoredFieldAccessRow,
   SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
   SymbolDefinition,
@@ -104,6 +107,7 @@ import type {
   TypeNameQuery,
   TypeNameRow,
 } from "../../contracts/types/codegraph.js";
+import { DuckDbFieldAccessStore } from "./field-access-store.js";
 import { DuckDbFileGraphStore } from "./file-graph-store.js";
 import { DuckDbFileMetricsReader } from "./file-metrics-reader.js";
 import { DuckDbGraphAnalyticsStore } from "./graph-analytics-store.js";
@@ -149,6 +153,7 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly identifiers: DuckDbIdentifierStore;
   private readonly ontology: DuckDbOntologyReportStore;
   private readonly typeNames: DuckDbTypeNameStore;
+  private readonly fieldAccesses: DuckDbFieldAccessStore;
 
   constructor(options: DuckDbGraphClientOptions) {
     this.session = new DuckDbGraphSession(options);
@@ -167,6 +172,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.identifiers = new DuckDbIdentifierStore(this.session);
     this.ontology = new DuckDbOntologyReportStore(this.session);
     this.typeNames = new DuckDbTypeNameStore(this.session);
+    this.fieldAccesses = new DuckDbFieldAccessStore(this.session);
   }
 
   // ── Lifecycle + durability ──
@@ -320,6 +326,20 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
     return this.symbolFiles.getSymbolLineRangesBulk(relPaths);
+  }
+
+  // ── Field-access edges ──
+
+  async replaceFieldAccessesBulk(entries: readonly FieldAccessReplaceEntry[]): Promise<void> {
+    return this.fieldAccesses.replaceFieldAccessesBulk(entries);
+  }
+
+  async readFieldAccessesBySymbols(symbolIds: readonly SymbolId[]): Promise<StoredFieldAccessRow[]> {
+    return this.fieldAccesses.readFieldAccessesBySymbols(symbolIds);
+  }
+
+  async readFieldAccessesByFiles(relPaths: readonly RelPath[]): Promise<StoredFieldAccessRow[]> {
+    return this.fieldAccesses.readFieldAccessesByFiles(relPaths);
   }
 
   // ── Identifier declarations (naming lexicon) ──
