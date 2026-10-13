@@ -34,6 +34,7 @@ import {
   buildNormLedgers,
   judgePlannedEdge,
   normEdgeExclusionResolver,
+  weakSideOf,
   type DependencyNormsInput,
 } from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import type {
@@ -42,6 +43,7 @@ import type {
   NormsEdgeExclusionClass,
   NormsSectionResult,
   NormsUnjudgedReason,
+  NormsWeakSide,
   ReviewSectionNotJudgedEntry,
 } from "../../../public/dto/review.js";
 import { readProductionArchitectureGraph } from "../architecture-facts.js";
@@ -129,11 +131,12 @@ export function judgeAddedEdgeNorms(input: AddedEdgeNormsInput): NormsSectionRes
   const exclusionsUnchecked = NORMS_EXCLUSION_CLASSES.filter((exclusion) => !checked.has(exclusion));
 
   const judgeOne = (edge: NormsAddedEdge): NormsAddedEdgeVerdict => {
-    const unjudged = (reason: NormsUnjudgedReason, roles = {}): NormsAddedEdgeVerdict => ({
+    const unjudged = (reason: NormsUnjudgedReason, roles = {}, weakSide?: NormsWeakSide): NormsAddedEdgeVerdict => ({
       ...edge,
       verdict: "UNJUDGED",
       ...roles,
       reason,
+      ...(weakSide !== undefined ? { weakSide } : {}),
     });
     const sourceLanguage = languageOf.get(edge.source);
     const targetLanguage = languageOf.get(edge.target);
@@ -141,7 +144,8 @@ export function judgeAddedEdgeNorms(input: AddedEdgeNormsInput): NormsSectionRes
     const sourceRole = fileRoles.get(edge.source);
     const targetRole = fileRoles.get(edge.target);
     if (sourceRole === undefined || targetRole === undefined) return unjudged("untypedRole");
-    if (!sourceRole.strong || !targetRole.strong) return unjudged("weakRole");
+    const weakSide = weakSideOf(sourceRole, targetRole);
+    if (weakSide !== undefined) return unjudged("weakRole", {}, weakSide);
     const roles = { roleSrc: sourceRole.role, roleDst: targetRole.role };
     const ledgers = book.forEdge(sourceLanguage, targetLanguage);
     if (ledgers === undefined) return unjudged("crossLanguage", roles);

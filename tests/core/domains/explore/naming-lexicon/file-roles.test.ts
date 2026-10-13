@@ -339,3 +339,59 @@ describe("buildDependencyNormFileRoles — role homes (4vj2u)", () => {
     expect(roles.get("app/helpers/legacy_helper.rb")).toEqual({ role: "helper", strong: true });
   });
 });
+
+describe("buildDependencyNormFileRoles — conventional directory promotes an already-matching weak role (8up12)", () => {
+  const dirRows = ["a", "b", "c"].map((d) => ({
+    symbolId: `${d}Helper`,
+    relPath: `app/helpers/${d}/${d}_helper.rb`,
+    shortName: `${d.toUpperCase()}Helper`,
+    symbolKind: "module" as const,
+    ancestors: [],
+  }));
+  const carriers = dirRows.map((r) => assignment(r.symbolId, r.relPath, "helper", "directory"));
+
+  it("promotes a projectSuffix role equal to the conventional role to strong, evidence directory", () => {
+    const rows = [
+      ...dirRows,
+      { ...dirRows[0], symbolId: "xHelper", relPath: "app/helpers/x/foo_helper.rb", shortName: "FooHelper" },
+    ];
+    const roles = buildDependencyNormFileRoles(rows, [
+      ...carriers,
+      assignment("xHelper", "app/helpers/x/foo_helper.rb", "helper", "projectSuffix"),
+    ]);
+
+    expect(roles.get("app/helpers/x/foo_helper.rb")).toEqual({ role: "helper", strong: true });
+  });
+
+  it("keeps an ioShape-weakened entry weak under a conventional directory", () => {
+    const rows = [
+      ...dirRows,
+      {
+        symbolId: "FooProps",
+        relPath: "app/helpers/foo.ts",
+        shortName: "FooProps",
+        symbolKind: "type_alias" as const,
+        ancestors: [],
+      },
+    ];
+    const roles = buildDependencyNormFileRoles(rows, [
+      ...carriers,
+      assignment("FooProps", "app/helpers/foo.ts", "props", "directory"),
+    ]);
+
+    expect(roles.get("app/helpers/foo.ts")).toMatchObject({ strong: false, weakReason: "ioShape" });
+  });
+
+  it("leaves an inheritance entry unchanged", () => {
+    const rows = [
+      ...dirRows,
+      { ...dirRows[0], symbolId: "wWorker", relPath: "app/helpers/w/sync_worker.rb", shortName: "SyncWorker" },
+    ];
+    const roles = buildDependencyNormFileRoles(rows, [
+      ...carriers,
+      assignment("wWorker", "app/helpers/w/sync_worker.rb", "worker", "inheritance"),
+    ]);
+
+    expect(roles.get("app/helpers/w/sync_worker.rb")).toEqual({ role: "worker", strong: true });
+  });
+});

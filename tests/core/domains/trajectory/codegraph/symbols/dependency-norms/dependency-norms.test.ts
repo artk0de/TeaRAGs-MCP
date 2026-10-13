@@ -679,6 +679,22 @@ describe("judgePlannedFileEdges", () => {
     expect(untyped.verdict).toBeUndefined();
   });
 
+  it("names the weak side of a weakRole verdict: source, target or both (8up12)", () => {
+    const { graph, roles } = inversionFixture();
+    roles.set("service/service1.ts", { role: "service", strong: false });
+    roles.set("service/service2.ts", { role: "service", strong: false });
+
+    const [source, target, both] = judgePlannedFileEdges({ graph, fileRoles: roles }, [
+      { sourceRelPath: "service/service1.ts", targetRelPath: "repository/repository1.ts" },
+      { sourceRelPath: "controller/controller1.ts", targetRelPath: "service/service2.ts" },
+      { sourceRelPath: "service/service1.ts", targetRelPath: "service/service2.ts" },
+    ]);
+
+    expect(source).toMatchObject({ unjudgedReason: "weakRole", weakSide: "source" });
+    expect(target).toMatchObject({ unjudgedReason: "weakRole", weakSide: "target" });
+    expect(both).toMatchObject({ unjudgedReason: "weakRole", weakSide: "both" });
+  });
+
   it("never judges a planned edge across language families", () => {
     const { graph, roles } = inversionFixture();
     graph.files.push({ relPath: "app/services/billing_service.rb", language: "ruby", symbolCount: 1 });

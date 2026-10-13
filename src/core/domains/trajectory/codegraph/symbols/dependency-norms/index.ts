@@ -5,6 +5,7 @@ export {
   judgePlannedFileEdges,
   NORM_CALL_EVIDENCE_EXCLUSIONS,
   normEdgeExclusionResolver,
+  weakSideOf,
 } from "./dependency-norms.js";
 export type {
   DependencyNormEstablishedDirection,
@@ -26,6 +27,7 @@ export type {
   NormPlannedFileEdge,
   NormPlannedFileEdgeJudgement,
   NormTransitPath,
+  NormWeakSide,
   PlannedEdgeVerdict,
   PlannedEdgeVerdictKind,
 } from "./types.js";

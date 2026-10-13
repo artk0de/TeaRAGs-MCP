@@ -23,6 +23,7 @@ import type {
   NormPlannedFileEdge,
   NormPlannedFileEdgeJudgement,
   NormTransitPath,
+  NormWeakSide,
   PlannedEdgeVerdict,
 } from "./types.js";
 
@@ -328,6 +329,17 @@ export function judgePlannedEdge(ledgers: NormLedgers, planned: NormPlannedEdge)
 }
 
 /**
+ * Which endpoint of an edge carries a weak (suffix-only) role, or undefined
+ * when both are strong. The one place the "weakRole" verdict is decided, so the
+ * planned-edge and review-norms paths cannot disagree on the side (bd
+ * tea-rags-mcp-8up12: a weak service end read as a weak controller end).
+ */
+export function weakSideOf(source: { strong: boolean }, target: { strong: boolean }): NormWeakSide | undefined {
+  if (!source.strong) return target.strong ? "source" : "both";
+  return target.strong ? undefined : "target";
+}
+
+/**
  * The write-time verdict over FILE endpoints (bd tea-rags-mcp-xb669.2): each
  * planned edge read against the ledgers of `input.graph` — the INDEXED graph,
  * so a planned edge is never its own precedent. Roles, family and locality
@@ -362,7 +374,8 @@ export function judgePlannedFileEdges(
     if (sourceRole === undefined || targetRole === undefined) {
       return { planned: edge, ...roles, unjudgedReason: "untypedFile" };
     }
-    if (!sourceRole.strong || !targetRole.strong) return { planned: edge, ...roles, unjudgedReason: "weakRole" };
+    const weakSide = weakSideOf(sourceRole, targetRole);
+    if (weakSide !== undefined) return { planned: edge, ...roles, unjudgedReason: "weakRole", weakSide };
     const ledgers = book.forEdge(languageOf.get(sourceRelPath), languageOf.get(targetRelPath));
     if (ledgers === undefined) return { planned: edge, ...roles, unjudgedReason: "crossLanguage" };
     const exclusion = exclusionOf({ targetRelPath, importText: edge.reference }, sourceRole, targetRole);

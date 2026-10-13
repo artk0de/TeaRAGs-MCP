@@ -137,6 +137,7 @@ function toPlannedEdgeVerdict(judgement: NormPlannedFileEdgeJudgement): Architec
       verdict: "UNJUDGED",
       ...(family !== undefined ? { family } : {}),
       ...(judgement.unjudgedReason !== undefined ? { reason: judgement.unjudgedReason } : {}),
+      ...(judgement.weakSide !== undefined ? { weakSide: judgement.weakSide } : {}),
     };
   }
   const { establishedDirection } = verdict;

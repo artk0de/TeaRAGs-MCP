@@ -72,7 +72,7 @@ const REVIEW_CHANGES_DESCRIPTION =
   "norms: each file edge the change ADDS (absent at merge-base) judged by get_architecture_report's dependency-norm " +
   "ledgers over the INDEXED graph (change's own edges never precedent): MISFIT = against role pair's established " +
   "direction, expectedPath = that direction + support; CONFORMS; NEW_PATTERN = pair with no history; UNJUDGED + reason " +
-  "(notIndexed = new file, untypedRole, weakRole, crossLanguage). exclusionsUnchecked = report exclusion classes not " +
+  "(notIndexed = new file, untypedRole, weakRole + weakSide source|target|both, crossLanguage). exclusionsUnchecked = report exclusion classes not " +
   "evaluated (no call data on added edges). MISFIT first, cap 100 + truncated; verdictCounts + unjudgedReasonCounts pre-cap; " +
   "removedEdgeCount count only; test/tooling edges = nonProductionEdgeCount. " +
   "Envelope: workTree, base, mergeBase, changedFiles, skipped+truncated, indexLag, notices (an empty diff names the " +

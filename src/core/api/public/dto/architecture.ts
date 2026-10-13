@@ -208,6 +208,8 @@ export interface ArchitecturePlannedEdgeVerdict {
   expectedPath?: ArchitecturePlannedEdgeExpectedPath;
   /** UNJUDGED only. */
   reason?: ArchitecturePlannedEdgeUnjudgedReason;
+  /** `reason: "weakRole"` only: the endpoint whose role is weak, the other is strong. */
+  weakSide?: "source" | "target" | "both";
   /** Exclusion classes a planned edge's evidence cannot evaluate — present with a verdict. */
   exclusionsUnchecked?: ("constantReference" | "uncalled" | "frameworkRouted")[];
 }
