@@ -15,19 +15,20 @@ import type { GitFileMaintenanceSignals } from "../../../../contracts/types/arch
 import type { GraphDbClient, RelPath, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
 import type { ReviewSectionId } from "../../../public/dto/review.js";
 import type { DeclaredTestDependencyLookup, IndexedFileImportLookup } from "../architecture-facts.js";
-import type { DiffScopeRead, DiffScopeRequest } from "../diff-scope-reader.js";
+import type { ArchitectureReportGraphDb } from "../architecture-graph-facts.js";
+import type { DiffScopeRead, DiffScopeRequest, DiffTreeLag } from "../diff-scope-reader.js";
 import type { NamingLexiconOps } from "../naming-lexicon-ops.js";
 import type { ReviewEdgeExtractionDeps } from "../review-edge-overlay.js";
 
 /**
  * The indexed graph reads a review section may perform: the temporal
- * sub-graph's two reads and the whole file dependency graph (the
- * `architecture` section's indexed side).
+ * sub-graph's two reads, plus every read the whole-repo report judges from
+ * (`ArchitectureReportGraphDb` — the `architecture` section runs the full
+ * detector set over the index and over the overlaid tree, bd
+ * tea-rags-mcp-89k7k.1.7).
  */
-export type ReviewGraphDb = Pick<
-  GraphDbClient,
-  "readTemporalCochangeGraph" | "readTemporalSymbolCommits" | "readFileDependencyGraph"
->;
+export type ReviewGraphDb = Pick<GraphDbClient, "readTemporalCochangeGraph" | "readTemporalSymbolCommits"> &
+  ArchitectureReportGraphDb;
 
 /** The naming lexicon operations, as a review section needs them. */
 export type ReviewNamingLexicon = Pick<NamingLexiconOps, "getNamingLexicon">;
@@ -41,6 +42,12 @@ export type ReviewNamingLexicon = Pick<NamingLexiconOps, "getNamingLexicon">;
 export interface ReviewSectionBuildContext {
   /** The change under review, as the F0 reader read it. */
   scope: DiffScopeRead;
+  /**
+   * The index's lag behind the reviewed tree's HEAD (`readTreeLag`), absent
+   * when they agree or either is unknown — the `architecture` section's base
+   * IS the index, so a lag can put already-committed changes in "introduced".
+   */
+  indexLag?: DiffTreeLag;
   /** The acquired indexed-graph reader; `undefined` when the collection has no codegraph database. */
   graphDb: ReviewGraphDb | undefined;
   /**

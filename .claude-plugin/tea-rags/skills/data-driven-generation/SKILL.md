@@ -375,11 +375,12 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
 
 **Triage** every architecture / cohesion / incompleteChange finding:
 
-| Finding                    | Class             | Action                                                     |
-| -------------------------- | ----------------- | ---------------------------------------------------------- |
-| no `preExisting`           | must-fix          | repair in this diff                                        |
-| `preExisting` + `remedy`   | cheap-preExisting | apply `remedy` (cheap by construction)                     |
-| `preExisting`, no `remedy` | report-only       | one summary line per family (count), no per-finding triage |
+| Finding                   | Class             | Action                                                   |
+| ------------------------- | ----------------- | -------------------------------------------------------- |
+| no `preExisting`          | must-fix          | repair in this diff                                      |
+| `preExisting` + `remedy`  | cheap-preExisting | apply `remedy` (cheap by construction)                   |
+| `change.nonLocal` entry   | must-fix          | introduced away from diff — repair like no `preExisting` |
+| `change.persisting` entry | report-only       | not in findings; one count line per family, no triage    |
 
 **Base** — `review_changes` base = `git merge-base HEAD main`, the branch's fork
 point on main. Never an integration branch, never a sibling `worktree-agent-*`
@@ -387,10 +388,10 @@ branch: sibling code enters scope and its findings (naming, cycle edges) look
 introduced. Stacked work → base STILL main's merge-base; findings from the stack
 below belong to the stack owner — cite the owning commit, do not fix or triage.
 
-incompleteChange / `silentCoupling` and `splitCandidates` are history verdicts
-with no `preExisting` split — their repair file's procedure decides. A family
-with `built: false` or `scopeSkippedFiles` → report "not judged" / "partial",
-never a clean pass.
+`silentCoupling` = git history → always `change.persisting`. incompleteChange
+and `splitCandidates` are history verdicts with no `preExisting` split — their
+repair file's procedure decides. A family with `built: false` or
+`scopeSkippedFiles` → report "not judged" / "partial", never a clean pass.
 
 **Shared rules** (repair files refer here):
 

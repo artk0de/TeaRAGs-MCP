@@ -110,4 +110,26 @@ describe("review_changes handler", () => {
     expect(JSON.parse(result.content[0].text).review.sections.architecture.findings[0].remedy).toEqual(remedy);
     expect(config.description).toContain("remedy");
   });
+
+  it("the architecture change block survives the formatter and the description names its contract (bd tea-rags-mcp-89k7k.1.7)", async () => {
+    const { handler, app, config } = registered()!;
+    const change = {
+      introducedCount: 1,
+      nonLocal: [{ family: "stableDependencies", subject: "src/far -> src/away" }],
+      resolved: [],
+      persisting: [{ family: "silentCoupling.pair", subject: "src/a.ts ~ src/b.ts" }],
+      indexLag: { indexedCommit: "abc", treeCommit: "def" },
+      maybeAlreadyCommitted: true,
+    };
+    (app.reviewChanges as ReturnType<typeof vi.fn>).mockResolvedValue({
+      review: { workTree: "/w", sections: { architecture: { built: true, findings: [], detectors: [], change } } },
+    });
+
+    const result = await handler({ sections: ["architecture"] });
+
+    expect(JSON.parse(result.content[0].text).review.sections.architecture.change).toEqual(change);
+    for (const term of ["introducedCount", "nonLocal", "resolved", "persisting", "maybeAlreadyCommitted"]) {
+      expect(config.description).toContain(term);
+    }
+  });
 });

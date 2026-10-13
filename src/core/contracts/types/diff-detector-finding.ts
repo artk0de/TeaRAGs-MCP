@@ -382,6 +382,13 @@ export interface DiffDetectorStatus {
    */
   truncated?: number;
   /**
+   * This family's findings the change did not introduce (bd
+   * tea-rags-mcp-89k7k.1.7), collapsed out of the section's findings into
+   * `change.persisting`. Stamped by the section, not by the run; the row
+   * reconciles `findingCount = listed + truncated + persistingCount`.
+   */
+  persistingCount?: number;
+  /**
    * Changed files the diff's file cap skipped while this family judged (bd
    * tea-rags-mcp-89k7k.1.9). Present = the verdict is PARTIAL: a zero
    * findingCount over files the run never saw is never a clean pass. Absent

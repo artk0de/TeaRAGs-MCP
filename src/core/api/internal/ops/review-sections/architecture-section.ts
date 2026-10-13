@@ -44,6 +44,7 @@ import {
 } from "../../../../contracts/types/diff-detector-finding.js";
 import type { InMemoryExtractionContext } from "../../../../domains/trajectory/codegraph/index.js";
 import {
+  applyEdgeOverlay,
   buildLayeringModel,
   readHubLikeDependency,
   readLayering,
@@ -59,22 +60,27 @@ import {
   oneWalkedViolationImporters,
   type SilentCouplingReport,
 } from "../../../../domains/trajectory/codegraph/temporal/index.js";
-import type { ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js";
+import type { ArchitectureChangeBlock, ReviewSectionNotJudgedEntry } from "../../../public/dto/review.js";
 import {
   ArchitectureFactsCatalog,
   deriveArchitectureComponentFacts,
   measureLayeringFoundationAndTerminalComponents,
   measureLayeringFoundationFiles,
   measureMainSequenceDistances,
-  readProductionArchitectureGraph,
 } from "../architecture-facts.js";
+import { readArchitectureGraphFacts, type ArchitectureGraphFacts } from "../architecture-graph-facts.js";
 import {
   FileMaintenanceCostModel,
   filesByComponent,
   maintenanceCostFamily,
   rankFamiliesByMaintenanceCost,
 } from "../architecture-maintenance-cost.js";
-import { isDocumentationPath, type ModuleImportSpecifierLookup } from "../architecture-report-ops.js";
+import {
+  ArchitectureReportOps,
+  isDocumentationPath,
+  readOnce,
+  type ModuleImportSpecifierLookup,
+} from "../architecture-report-ops.js";
 import {
   DiffDetectorRun,
   DiffFindingRemedyResolver,
@@ -85,14 +91,24 @@ import {
   type DiffDetectorRunDeps,
   type DiffDetectorSilentCouplingFacts,
 } from "../diff-detector-run.js";
-import type { DiffScopeRead } from "../diff-scope-reader.js";
+import type { DiffScopeRead, DiffTreeLag } from "../diff-scope-reader.js";
 import {
   extractReviewFileEdges,
   readWorkingTreeFileEdges,
   workingTreeExtractionContext,
   type ReviewEdgeExtractionDeps,
 } from "../review-edge-overlay.js";
-import type { ReviewSectionBuildContext, ReviewSectionProvider } from "./review-section-provider.js";
+import {
+  collapsePersistingFindings,
+  measureArchitectureViolationDelta,
+  resolvedChangeSubjects,
+  type ArchitectureViolationDelta,
+} from "./architecture-violation-delta.js";
+import type {
+  ReviewSectionBuildContext,
+  ReviewSectionContext,
+  ReviewSectionProvider,
+} from "./review-section-provider.js";
 import { WiredExportTableReader } from "./wired-export-table-reader.js";
 
 /** Findings the section lists; the rest are counted in `truncated`. */
@@ -351,6 +367,58 @@ export async function readDiffBaseEdges(
   return { targetsAtBase: (relPath) => targetsBySource.get(relPath) };
 }
 
+/** A co-change graph with no build — what an absent or unreadable snapshot judges as. */
+const EMPTY_COCHANGE: TemporalCochangeGraph = { meta: null, edges: [] };
+
+/**
+ * The full detector set over the index's facts and over the same facts with
+ * the tree's edges overlaid (bd tea-rags-mcp-89k7k.1.7), compared by key.
+ * Both runs are UNCAPPED — the report's per-family `limit` would cut
+ * violations from one side and fabricate introduced / resolved — and share
+ * one set of history lookups, so only the edges differ between them. The
+ * families an edge overlay cannot move (silent coupling and shotgun surgery
+ * read git history; norms are not requested) answer alike on both sides.
+ * The asset-import specifier read is left out: it relinks silent-coupling
+ * pairs identically on both sides, so it cannot move a key, and it would
+ * read every one-walked pair of the repository instead of the diff's.
+ */
+export async function measureChangeViolationDelta(
+  facts: ArchitectureGraphFacts,
+  overlay: ReviewEdgeOverlay,
+  lookups: Pick<ReviewSectionContext, "scope" | "readFileMaintenanceSignals">,
+): Promise<ArchitectureViolationDelta> {
+  const ops = new ArchitectureReportOps();
+  const request = { limit: Number.POSITIVE_INFINITY };
+  const history = { readFileMaintenanceSignals: lookups.readFileMaintenanceSignals };
+  const [base, overlaid] = await Promise.all([
+    ops.judge(facts, request, history),
+    ops.judge(applyEdgeOverlay(facts, overlay), request, history),
+  ]);
+  return measureArchitectureViolationDelta(base.violations, overlaid.violations, lookups.scope.renamedFrom);
+}
+
+/**
+ * The change block's lag fields. The comparison's base is the INDEX, not the
+ * merge-base: when the index lacks commits the merge-base holds, a scope
+ * file's edits from those commits sit in the overlay but not in the base, so
+ * "introduced" may hold changes already committed — flagged, never withheld
+ * (owner decision 2026-10-11). An index that contains the merge-base (it is
+ * the merge-base or descends from it) cannot put base commits in introduced.
+ * No repository, or an indexed commit the repository does not know, cannot
+ * be cleared.
+ */
+export async function readIndexLagVerdict(
+  scope: Pick<DiffScopeRead, "workTree" | "mergeBase">,
+  indexLag: DiffTreeLag | undefined,
+): Promise<Pick<ArchitectureChangeBlock, "indexLag" | "maybeAlreadyCommitted">> {
+  if (indexLag === undefined) return {};
+  if (indexLag.indexedCommit === scope.mergeBase) return { indexLag };
+  const toplevel = findGitToplevel(scope.workTree);
+  const indexHoldsMergeBase =
+    toplevel !== undefined && (await isAncestor(toplevel, scope.mergeBase, indexLag.indexedCommit));
+  return indexHoldsMergeBase ? { indexLag } : { indexLag, maybeAlreadyCommitted: true };
+}
+
 export const architectureSectionProvider: ReviewSectionProvider = {
   id: "architecture",
   consumesTemporalCochange: true,
@@ -371,13 +439,20 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       return { built: false, reason: "architecture substrate vanished between isBuilt and run" };
     }
 
-    // The indexed side, read once: the graph rows the traversal serves and
-    // the report-derived facts the catalogue answers from.
-    const production = await readProductionArchitectureGraph(
+    // The indexed side, read once: the whole report's graph facts (the
+    // production graph rows the traversal serves, the member edges and the
+    // co-change snapshot the full detector set judges, bd
+    // tea-rags-mcp-89k7k.1.7) and the report-derived facts the catalogue
+    // answers from. The pre-read snapshot is reused, never read again.
+    const graphFacts = await readArchitectureGraphFacts(
       graphDb,
+      { cochange: context.temporalCochange ?? EMPTY_COCHANGE },
       context.readIndexedFileImports,
       context.readDeclaredTestDependencies,
     );
+    const { production } = graphFacts;
+    const readFileMaintenanceSignals =
+      context.readFileMaintenanceSignals === undefined ? undefined : readOnce(context.readFileMaintenanceSignals);
     const facts = deriveArchitectureComponentFacts(production.graph);
     const mainSequence = measureMainSequenceDistances(facts.components, production.graph.files);
     // One layering model over the catalog's partition: the foundation the
@@ -456,11 +531,18 @@ export const architectureSectionProvider: ReviewSectionProvider = {
         rejudge: (edits) => run.rejudge(runScope, overlay, edits),
       }),
     );
+    // What the change does to the whole repository's violations (bd
+    // tea-rags-mcp-89k7k.1.7): findings keep what it introduced plus any
+    // finding a remedy repairs cheaply; the rest collapse into the compact
+    // change block. Collapsed AFTER the remedies are stamped (a remedy keeps
+    // its finding) and BEFORE ranking and the cap.
+    const delta = await measureChangeViolationDelta(graphFacts, overlay, { ...context, readFileMaintenanceSignals });
+    const collapsed = collapsePersistingFindings(result.findings, delta, scope.renamedFrom);
     // Ranked by maintenance cost BEFORE the cap (bd tea-rags-mcp-r8hme.20),
     // so a family's slots keep its costliest findings.
     const findings = await rankDiffFindingsByMaintenanceCost(
-      result.findings,
-      context.readFileMaintenanceSignals,
+      collapsed.kept,
+      readFileMaintenanceSignals,
       facts.components.componentOf,
     );
     const { kept, truncatedByDetector } = capFindingsByFamily(findings, ARCHITECTURE_FINDING_CAP);
@@ -473,10 +555,22 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       findings: kept,
       detectors: result.detectors.map((status) => {
         const truncated = truncatedByDetector.get(status.detector);
-        return truncated === undefined ? status : { ...status, truncated };
+        const persistingCount = collapsed.persistingByDetector.get(status.detector);
+        return {
+          ...status,
+          ...(truncated === undefined ? {} : { truncated }),
+          ...(persistingCount === undefined ? {} : { persistingCount }),
+        };
       }),
       ...(findings.length > kept.length ? { truncated: findings.length - kept.length } : {}),
       ...(notJudged.length > 0 ? { notJudged } : {}),
+      change: {
+        introducedCount: collapsed.introducedCount,
+        nonLocal: collapsed.nonLocal,
+        resolved: resolvedChangeSubjects(delta),
+        persisting: collapsed.persisting,
+        ...(await readIndexLagVerdict(scope, context.indexLag)),
+      } satisfies ArchitectureChangeBlock,
     };
   },
 };

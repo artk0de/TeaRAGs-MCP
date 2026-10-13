@@ -182,7 +182,7 @@ export interface ArchitectureReportHistoryLookups {
 const UNCAPPED = Number.POSITIVE_INFINITY;
 
 /** The lookup, read at most once however many consumers ask. */
-function readOnce<T>(read: () => Promise<T>): () => Promise<T> {
+export function readOnce<T>(read: () => Promise<T>): () => Promise<T> {
   let pending: Promise<T> | undefined;
   return async () => (pending ??= read());
 }
