@@ -1879,6 +1879,30 @@ describe("judgeTypeDraft — a directory of classes demands no role of an interf
     const rows = [...ROWS, row("ProductionArchitectureGraph", path, "interface")];
     expect(judge({ name: "ProductionArchitectureGraph", path }, rows).verdict).not.toBe("MISFIT");
   });
+
+  /**
+   * A head that IS the expected role is right by construction: the project's
+   * more frequent spelling variant of it is no alternative. Live: eight `*Ops`
+   * classes under `api/internal/ops/` (`CollectionOps`, `ExploreOps`, …) were
+   * NEW_TERM with `ops` → `options`, the project's `*Options` DTOs.
+   */
+  describe("a head equal to the expected role is not replaced by its spelling variant", () => {
+    const OPTIONS = ["Search", "Index", "Chunker", "Embedding", "Reindex", "Collection"].map((q, i) =>
+      row(`${q}Options`, `src/dto/d${i}/${q.toLowerCase()}-options.ts`, "interface"),
+    );
+    const rows = [...ROWS, ...OPTIONS];
+
+    it("a class `FooOps` in the ops directory → CONFORMS, no `options` alternative", () => {
+      const verdict = judge({ name: "ExploreOps", path: `${OPS}/explore-ops.ts`, symbolKind: "class" }, rows);
+      expect(verdict).toMatchObject({ verdict: "CONFORMS", role: { word: "ops", evidence: "directory" } });
+      expect(JSON.stringify(verdict)).not.toMatch(/options/);
+    });
+
+    it("the same head where no role expects it still gets the variant: NEW_TERM", () => {
+      const verdict = judge({ name: "ExploreOps", path: "src/elsewhere/explore-ops.ts", symbolKind: "class" }, rows);
+      expect(verdict).toMatchObject({ verdict: "NEW_TERM", alternatives: [{ word: "options", slot: "head" }] });
+    });
+  });
 });
 
 /**
