@@ -1,5 +1,6 @@
 import type { QdrantManager } from "./client.js";
 import { denseVectorOf } from "./dense-vector.js";
+import type { QdrantPointReader } from "./ports.js";
 
 const PAGE_SIZE = 1000;
 
@@ -81,9 +82,9 @@ export async function sampleVectors(
   return vectors;
 }
 
-/** Scroll points ordered by a payload field. Delegates to QdrantManager.scrollOrdered. */
+/** Scroll points ordered by a payload field. Delegates to {@link QdrantPointReader.scrollOrdered}, the one member it needs. */
 export async function scrollOrderedBy(
-  qdrant: QdrantManager,
+  qdrant: Pick<QdrantPointReader, "scrollOrdered">,
   collectionName: string,
   orderBy: { key: string; direction: "asc" | "desc" },
   limit: number,

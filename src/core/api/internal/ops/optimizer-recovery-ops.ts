@@ -12,8 +12,12 @@
  * currently points at.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { QdrantOptimizerErrorPersistsError } from "../../../adapters/qdrant/errors.js";
+import type {
+  QdrantAliasAdmin,
+  QdrantCollectionCatalog,
+  QdrantOptimizerControl,
+} from "../../../adapters/qdrant/ports.js";
 import {
   isOptimizerFailure,
   type OptimizerRecoveryOutcome,
@@ -25,10 +29,11 @@ import { resolveCollection } from "../collection-resolver.js";
 
 export interface OptimizerRecoveryDeps {
   registry: RegistryLookup;
-  qdrant: Pick<QdrantManager, "reapplyOptimizerConfig" | "collectionExists"> & {
-    getCollectionInfo: (name: string) => Promise<{ optimizerStatus: string }>;
-    aliases: Pick<QdrantManager["aliases"], "resolveActive">;
-  };
+  qdrant: Pick<QdrantOptimizerControl, "reapplyOptimizerConfig"> &
+    Pick<QdrantCollectionCatalog, "collectionExists"> & {
+      getCollectionInfo: (name: string) => Promise<{ optimizerStatus: string }>;
+      aliases: Pick<QdrantAliasAdmin, "resolveActive">;
+    };
 }
 
 export class OptimizerRecoveryOps {

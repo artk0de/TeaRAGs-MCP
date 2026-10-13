@@ -21,7 +21,13 @@ import {
   resolveDaemonClientTarget,
 } from "../core/adapters/duckdb/daemon/lifecycle.js";
 import { StatsCache } from "../core/adapters/filesystem/stats-cache.js";
-import type { QdrantManager } from "../core/adapters/qdrant/client.js";
+import type {
+  QdrantAliasAccess,
+  QdrantCollectionCatalog,
+  QdrantCollectionLifecycle,
+  QdrantPointWriter,
+  QdrantSnapshotSource,
+} from "../core/adapters/qdrant/ports.js";
 import {
   CollectionFootprintFactory,
   CollectionFootprintPurger,
@@ -34,7 +40,12 @@ import {
 import type { CodegraphFootprintStore } from "../core/contracts/types/footprint.js";
 
 export interface FootprintPurgeDeps {
-  qdrant: QdrantManager;
+  /** The artifact saga's roles (snapshot round-trip, marker write, alias, drop) plus the purge's generation listing. */
+  qdrant: QdrantSnapshotSource &
+    Pick<QdrantPointWriter, "setPayload"> &
+    Pick<QdrantCollectionLifecycle, "deleteCollection"> &
+    Pick<QdrantCollectionCatalog, "listCollections"> &
+    QdrantAliasAccess;
   /** Read-only here — used to name worktree clones the purge deliberately keeps. */
   registry: CollectionRegistry;
   /** `~/.tea-rags` or `$TEA_RAGS_DATA_DIR`; snapshots default to `<appData>/snapshots`. */

@@ -1,7 +1,21 @@
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type {
+  QdrantAliasAccess,
+  QdrantCollectionCatalog,
+  QdrantCollectionLifecycle,
+  QdrantPointReader,
+} from "../../../adapters/qdrant/ports.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { isCollectionBuildInFlight } from "./collection-build-lease.js";
+
+/**
+ * The Qdrant roles an orphan sweep touches: read the aliases, enumerate / probe
+ * collections, read a build-lease marker point, drop the orphans.
+ */
+type AliasCleanupQdrantSurface = QdrantAliasAccess &
+  Pick<QdrantCollectionCatalog, "listCollections" | "collectionExists"> &
+  Pick<QdrantPointReader, "getPoint"> &
+  Pick<QdrantCollectionLifecycle, "deleteCollection">;
 
 /**
  * Drops the per-version codegraph DuckDB file (and its WAL sidecar) for a
@@ -34,7 +48,7 @@ export type CodegraphDbLister = (baseCollectionName: string) => PhysicalCollecti
  * @returns Number of orphaned collections deleted.
  */
 export async function cleanupOrphanedVersions(
-  qdrant: QdrantManager,
+  qdrant: AliasCleanupQdrantSurface,
   collectionName: string,
   removeCodegraphDb?: CodegraphDbRemover,
   /**
@@ -131,7 +145,7 @@ export async function cleanupOrphanedVersions(
  * @returns true when the collection was discarded.
  */
 export async function discardFailedCollectionBuild(
-  qdrant: QdrantManager,
+  qdrant: AliasCleanupQdrantSurface,
   collectionName: string,
   targetPhysicalCollectionName: PhysicalCollectionName,
   removeCodegraphDb?: CodegraphDbRemover,
@@ -191,7 +205,7 @@ export async function discardFailedCollectionBuild(
  * @returns Number of codegraph DBs successfully removed.
  */
 export async function sweepCodegraphOrphans(
-  qdrant: QdrantManager,
+  qdrant: AliasCleanupQdrantSurface,
   collectionName: string,
   listCodegraphDbs: CodegraphDbLister,
   removeCodegraphDb: CodegraphDbRemover,

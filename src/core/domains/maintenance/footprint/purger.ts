@@ -1,5 +1,4 @@
-import type { QdrantAliasManager } from "../../../adapters/qdrant/aliases.js";
-import type { QdrantCollectionCatalog } from "../../../adapters/qdrant/ports.js";
+import type { QdrantAliasAdmin, QdrantCollectionCatalog } from "../../../adapters/qdrant/ports.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
 import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
@@ -22,7 +21,7 @@ export interface CodegraphDaemonLiveness {
 
 /** The narrow Qdrant surface a purge needs: enumerate generations, resolve the alias. */
 export type PurgeQdrantSurface = Pick<QdrantCollectionCatalog, "listCollections"> & {
-  aliases: Pick<QdrantAliasManager, "listAliases">;
+  aliases: Pick<QdrantAliasAdmin, "listAliases">;
 };
 
 export interface CollectionFootprintPurgerDeps {

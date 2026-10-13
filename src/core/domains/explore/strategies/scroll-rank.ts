@@ -5,7 +5,6 @@
  * and postProcess (offset slicing, own limit logic — no overfetch).
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { payloadFieldIndexSchema, type PayloadFieldIndexSchema } from "../../../adapters/qdrant/schema-manager.js";
 import { scrollOrderedBy } from "../../../adapters/qdrant/scroll.js";
 import { toPhysicalPayloadKey } from "../../../contracts/signal-utils.js";
@@ -109,9 +108,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       lim: number,
       f?: Record<string, unknown>,
     ) => {
-      // The spine's qdrant is port-typed; scrollOrderedBy still takes the
-      // concrete manager (see EXPLORE_CONCRETE_KEPT in the direction pin).
-      const points = await scrollOrderedBy(this.qdrant as QdrantManager, col, orderBy, lim, f);
+      const points = await scrollOrderedBy(this.qdrant, col, orderBy, lim, f);
       if (!matcher) return points;
       if (points.length >= lim) scrollWindow.exhausted = false;
       return keepPathPatternMatches(points, matcher);
