@@ -18,6 +18,7 @@ export type {
 export {
   cochangeStrength,
   detectSilentCoupling,
+  isVersionManifest,
   linkImportedCochangePairs,
   oneWalkedViolationImporters,
   SILENT_COUPLING_EXPLAINED_REASON,

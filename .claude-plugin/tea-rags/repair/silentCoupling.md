@@ -27,10 +27,10 @@ with evidence:
   shared contract.
 - Partner pairs where the history is old and the shared code was since split.
 - Version manifests (`.claude-plugin/**/plugin.json`, `package.json`, lockfiles,
-  `version-pins.json`): detector drops them as silentCoupling partners, counted
-  in `excluded.versionManifestEndpoints`. No dismissal needed. incompleteChange
-  still lists them — missing manifest = version-bump question (project
-  versioning rule), not coupling.
+  `version-pins.json`): detector drops them on either side of the pair —
+  silentCoupling counts `excluded.versionManifestEndpoints`, incompleteChange
+  counts `versionManifestPairs`. No dismissal needed. Version bump = project
+  versioning rule, not coupling.
 - "Not built" is not a clean result: no co-change data means no verdict.
 - A dismissal needs a checkable reason: a named test that already pins the seam,
   or why the partner cannot change with this edit. "Not needed" without evidence

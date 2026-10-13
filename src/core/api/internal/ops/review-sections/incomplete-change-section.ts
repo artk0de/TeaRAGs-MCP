@@ -32,7 +32,9 @@
  * first-class finding here, not an exclusion: partner KIND tiers the ranking
  * — test first, source on its evidence, documentation last — while a
  * generated artefact (`version-pins.json` shapes) is excluded as a partner
- * outright, on either side of the pair.
+ * outright, on either side of the pair. So is a version manifest
+ * (`isVersionManifest`, silent-coupling's predicate — bd tea-rags-mcp-s2nes),
+ * counted in `versionManifestPairs`.
  *
  * Relevance to the CHANGED CODE ranks within a tier: a partner the structural
  * graph links to the diff file (`structurallyLinked` — an import/call/
@@ -62,6 +64,7 @@ import type { RelPath } from "../../../../contracts/types/codegraph.js";
 import {
   assessGraphCochangeSignificance,
   cochangeStrength,
+  isVersionManifest,
   SILENT_COUPLING_OTSU_MIN_POPULATION,
   SILENT_COUPLING_STRENGTH_MAJORITY,
 } from "../../../../domains/trajectory/codegraph/temporal/index.js";
@@ -128,6 +131,7 @@ export const incompleteChangeSectionProvider: ReviewSectionProvider = {
       ...(scope.diffCommits ? { diffCommits: scope.diffCommits } : {}),
     });
     let notSignificant = 0;
+    let versionManifestPairs = 0;
 
     const findings: IncompleteChangePartner[] = [];
     for (const edge of graph.edges) {
@@ -142,6 +146,12 @@ export const incompleteChangeSectionProvider: ReviewSectionProvider = {
         : [edge.relPathB, edge.relPathA, edge.confidenceBA];
       // A generated artefact on either side is release noise, not a missing update.
       if (isGenerated(file) || isGenerated(missingPartner)) continue;
+      // A version manifest on either side is version-bump history, not a
+      // missing update (bd tea-rags-mcp-s2nes) — silent-coupling's predicate.
+      if (isVersionManifest(file) || isVersionManifest(missingPartner)) {
+        versionManifestPairs++;
+        continue;
+      }
       // Pairs the history explains by the two files' change counts are not
       // findings: the hub's raw support dies here, before the Wilson floor.
       if (!(significance ? significance.admits(file, missingPartner) : edge.lift > 1)) {
@@ -170,6 +180,7 @@ export const incompleteChangeSectionProvider: ReviewSectionProvider = {
       strengthThresholdMethod: policy.method,
       ...(policy.separability === undefined ? {} : { strengthSeparability: policy.separability }),
       ...(significance ? { cochangeSignificance: significance.summary, notSignificant } : {}),
+      ...(versionManifestPairs > 0 ? { versionManifestPairs } : {}),
       ...truncatedScope,
       ...(findings.length > partners.length ? { truncated: findings.length - partners.length } : {}),
     };

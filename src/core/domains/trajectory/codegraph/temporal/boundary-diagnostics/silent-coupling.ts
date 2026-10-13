@@ -105,7 +105,7 @@ const VERSION_MANIFEST_FILE_NAMES: ReadonlySet<string> = new Set([
 const PLUGIN_MANIFEST_FILE_NAME = "plugin.json";
 
 /** A version manifest: {@link VERSION_MANIFEST_FILE_NAMES}, or a `plugin.json` under `.claude-plugin/`. */
-function isVersionManifest(relPath: RelPath): boolean {
+export function isVersionManifest(relPath: RelPath): boolean {
   const fileName = relPath.slice(relPath.lastIndexOf("/") + 1);
   if (VERSION_MANIFEST_FILE_NAMES.has(fileName)) return true;
   return fileName === PLUGIN_MANIFEST_FILE_NAME && `/${relPath}`.includes("/.claude-plugin/");
