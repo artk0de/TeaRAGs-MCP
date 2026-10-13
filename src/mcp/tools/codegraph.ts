@@ -138,6 +138,13 @@ const GetArchitectureReportInputShape = {
       "Role-pair norms: response.norms + violations for edges against their role pair's established " +
         "direction (MISFIT).",
     ),
+  changeReasons: z
+    .boolean()
+    .optional()
+    .describe(
+      "response.changeReasons: per component, distinct domains of tickets that changed it; " +
+        "ticket domain = dominant OTHER component touched.",
+    ),
   limit: z
     .number()
     .int()

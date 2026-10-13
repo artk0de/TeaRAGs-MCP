@@ -54,6 +54,13 @@ export interface GetArchitectureReportRequest {
    * edges touching an untyped or suffix-only file are never judged.
    */
   norms?: boolean;
+  /**
+   * Ask for the change-reasons view (bd tea-rags-mcp-psh3j): per component,
+   * the distinct domains of the tickets that changed it — `response.changeReasons`,
+   * modules capped by `limit`. Unavailable on a repo whose commits rarely
+   * name a task id.
+   */
+  changeReasons?: boolean;
   /** Max violations and max root causes returned per detector (default 50); the summary keeps the totals. */
   limit?: number;
   /**

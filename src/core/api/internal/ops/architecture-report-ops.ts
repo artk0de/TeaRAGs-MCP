@@ -101,6 +101,7 @@ import {
 } from "./architecture-maintenance-cost.js";
 import {
   buildArchitectureKnotMembership,
+  changeReasonsView,
   compareCodePoints,
   findingsInKnot,
   hubLikeDependencyViolations,
@@ -157,7 +158,7 @@ export const DEFAULT_ARCHITECTURE_REPORT_LIMIT = 50;
 
 type ArchitectureReportScope = Pick<
   GetArchitectureReportRequest,
-  "pathPattern" | "domain" | "norms" | "limit" | "layerMap" | "knotOf" | "offset"
+  "pathPattern" | "domain" | "norms" | "limit" | "layerMap" | "knotOf" | "offset" | "changeReasons"
 >;
 
 /**
@@ -503,6 +504,11 @@ export class ArchitectureReportOps {
       // The norms view only when asked (bd tea-rags-mcp-rpx0v) — the
       // project's own dependency precedents, judged per typed file edge.
       ...(runs.norms ? { norms: normsDto(runs.norms) } : {}),
+      // The change-reasons view only when asked (bd tea-rags-mcp-psh3j) — the
+      // same co-change read and partition every temporal detector judges.
+      ...(request.changeReasons
+        ? { changeReasons: changeReasonsView(runs.cochange, runs.components.componentOf, limit) }
+        : {}),
     };
   }
 

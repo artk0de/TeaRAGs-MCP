@@ -984,6 +984,94 @@ describe("ArchitectureReportOps#build — splitMerge (bd tea-rags-mcp-c3v6o)", (
   });
 });
 
+describe("ArchitectureReportOps#build — changeReasons view (bd tea-rags-mcp-psh3j)", () => {
+  /**
+   * The default `graph()` partition (plain directories). TD-1 touched core and
+   * two lib files, TD-2 core and app; one commit names no ticket — 2/3 of the
+   * commits are ticketed, above the floor.
+   */
+  function ticketedCochange(taskIds: readonly (readonly string[])[]): TemporalCochangeGraph {
+    return {
+      ...cochangeGraph(),
+      edges: [],
+      bundles: new Map([
+        [0, ["core/a.ts", "lib/f1.ts", "lib/f2.ts"]],
+        [1, ["app/c1.ts", "core/a.ts"]],
+        [2, ["core/b.ts"]],
+      ]),
+      bundleTaskIds: new Map(taskIds.map((ids, id) => [id, ids] as const)),
+    };
+  }
+
+  it("is absent unless asked for", async () => {
+    const report = await new ArchitectureReportOps().build(
+      graphDb(graph(), [], ticketedCochange([["TD-1"], ["TD-2"], []])),
+      {},
+    );
+    expect(report.changeReasons).toBeUndefined();
+  });
+
+  it("lists each component's reasons — tickets' dominant other component — capped by limit", async () => {
+    const report = await new ArchitectureReportOps().build(
+      graphDb(graph(), [], ticketedCochange([["TD-1"], ["TD-2"], []])),
+      { changeReasons: true, limit: 1 },
+    );
+    expect(report.changeReasons).toEqual({
+      built: true,
+      head: "abc123",
+      builtAt: 1_700_000_100,
+      available: true,
+      taskIdCommitShare: 0.667,
+      moduleCount: 3,
+      modules: [
+        {
+          module: "core",
+          reasons: [
+            { domain: "app", tickets: 1, commits: 1 },
+            { domain: "lib", tickets: 1, commits: 1 },
+          ],
+          untrackedCommits: 1,
+          commits: 3,
+        },
+      ],
+    });
+  });
+
+  it("is unavailable, naming the share, when too few commits name a ticket", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(graph(), [], ticketedCochange([["TD-1"], [], []])), {
+      changeReasons: true,
+    });
+    expect(report.changeReasons).toEqual({
+      built: true,
+      head: "abc123",
+      builtAt: 1_700_000_100,
+      available: false,
+      unavailable: { reason: "noTicketDiscipline", taskIdCommitShare: 0.333, minTaskIdCommitShare: 0.5 },
+    });
+  });
+
+  it("degrades to built:false when the substrate is absent", async () => {
+    const noBuild = (await new ArchitectureReportOps().build(graphDb(), { changeReasons: true })).changeReasons;
+    expect(noBuild).toEqual({ built: false, reason: "noCochangeBuild" });
+
+    const noMembership = (
+      await new ArchitectureReportOps().build(graphDb(graph(), [], cochangeGraph()), { changeReasons: true })
+    ).changeReasons;
+    expect(noMembership).toEqual({
+      built: false,
+      reason: "noBundleMembership",
+      head: "abc123",
+      builtAt: 1_700_000_100,
+    });
+
+    // A build before migration 045 stored no task ids: silence, never "no tickets".
+    const { bundleTaskIds: _dropped, ...pre045 } = ticketedCochange([["TD-1"], ["TD-2"], []]);
+    const noTaskIds = (await new ArchitectureReportOps().build(graphDb(graph(), [], pre045), { changeReasons: true }))
+      .changeReasons;
+    expect(noTaskIds).toEqual({ built: false, reason: "noTaskIdRecord", head: "abc123", builtAt: 1_700_000_100 });
+  });
+});
+
 describe("ArchitectureReportOps#build — shotgunSurgery (bd tea-rags-mcp-r8hme.50)", () => {
   /**
    * The default `graph()` partition: app, users and other share no import and

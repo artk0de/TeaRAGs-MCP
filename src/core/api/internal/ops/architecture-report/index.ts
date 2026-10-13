@@ -7,6 +7,7 @@
  */
 
 export { compareCodePoints, round3 } from "./architecture-report-value-format.js";
+export { changeReasonsView } from "./change-reasons-view.js";
 export { normsDto, normsViolations } from "./dependency-norms-findings.js";
 export { hubLikeDependencyViolations, summariseHubLikeDependency } from "./hub-like-dependency-findings.js";
 export {
