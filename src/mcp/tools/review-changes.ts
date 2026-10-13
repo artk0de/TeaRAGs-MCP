@@ -37,7 +37,7 @@ const REVIEW_CHANGES_DESCRIPTION =
   "co-change significance gate (Poisson test vs configuration null n_p*n_q*Qs/M^2, BH q=0.05 over every pair " +
   "touching the diff, history minus the diff's own commits; summary cochangeSignificance + notSignificant), then " +
   "Wilson strength and the majority-floored Otsu cut over the corpus; partnerKind " +
-  "test-first, generated excluded; structurallyLinked ranks above history-only; cap 50). cohesion: per changed " +
+  "test-first, generated + version manifests excluded (versionManifestPairs); structurallyLinked ranks above history-only; cap 50). cohesion: per changed " +
   "file, symbol co-change clusters + split candidates; a file with " +
   "no data = notJudged noCohesionData, never zero (cap 50 reports). architecture: the diff's added edges judged by " +
   "the boundary detectors (stableDependencies, leakingAbstraction, cycles, mainSequence delta, silentCoupling, " +

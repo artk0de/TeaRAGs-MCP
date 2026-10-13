@@ -188,11 +188,39 @@ describe("detectSilentCoupling", () => {
       testEndpoints: 1,
       generatedEndpoints: 1,
       documentationEndpoints: 1,
+      versionManifestEndpoints: 0,
       unwalkedEndpoints: 1,
       notSignificant: 1,
       explainedByFacadeChain: 0,
     });
     expect(report.summary.candidateCount).toBe(0);
+  });
+
+  it("counts a version-manifest partner under versionManifestEndpoints, never as a violation (bd tea-rags-mcp-s2nes)", () => {
+    // A version bump co-changes a manifest with whatever code shipped in the
+    // release: version history, not code coupling.
+    const report = detectSilentCoupling(
+      built([
+        pair(".claude-plugin/tea-rags/.claude-plugin/plugin.json", "src/a.ts"),
+        pair("src/a.ts", "package.json"),
+        pair("src/a.ts", "package-lock.json"),
+        pair("tools/yarn.lock", "src/a.ts"),
+        pair("src/a.ts", "version-pins.json"),
+        pair("src/a.ts", "src/b.ts"),
+      ]),
+      files("src/a.ts", "src/b.ts"),
+    );
+
+    expect(report.violations.map((v) => `${v.relPathA}|${v.relPathB}`)).toEqual(["src/a.ts|src/b.ts"]);
+    expect(report.summary.excluded.versionManifestEndpoints).toBe(5);
+    expect(report.summary.candidateCount).toBe(1);
+  });
+
+  it("judges a plugin.json outside a .claude-plugin directory like any other file", () => {
+    const report = detectSilentCoupling(built([pair("config/plugin.json", "src/a.ts")]), files("src/a.ts"));
+
+    expect(report.violations.map((v) => `${v.relPathA}|${v.relPathB}`)).toEqual(["config/plugin.json|src/a.ts"]);
+    expect(report.summary.excluded.versionManifestEndpoints).toBe(0);
   });
 
   it("judges a pair with a no-symbol endpoint: a type-only import links it, no import at all is silent (bd tea-rags-mcp-r8hme.12)", () => {
@@ -495,6 +523,7 @@ describe("detectSilentCoupling — facade-chain explanation (bd tea-rags-mcp-89k
       testEndpoints: 0,
       generatedEndpoints: 0,
       documentationEndpoints: 0,
+      versionManifestEndpoints: 0,
       unwalkedEndpoints: 0,
       notSignificant: 0,
       explainedByFacadeChain: 1,

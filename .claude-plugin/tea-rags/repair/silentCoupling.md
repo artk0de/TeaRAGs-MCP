@@ -26,9 +26,11 @@ with evidence:
 - Co-change from bulk commits (renames, formatting, releases) rather than from a
   shared contract.
 - Partner pairs where the history is old and the shared code was since split.
-- Version manifests (`plugin.json`, the `package.json` version line) co-change
-  with almost every commit. A finding whose only partner is a manifest is
-  accepted, citing that the partner is a version manifest.
+- Version manifests (`.claude-plugin/**/plugin.json`, `package.json`, lockfiles,
+  `version-pins.json`): detector drops them on either side of the pair —
+  silentCoupling counts `excluded.versionManifestEndpoints`, incompleteChange
+  counts `versionManifestPairs`. No dismissal needed. Version bump = project
+  versioning rule, not coupling.
 - "Not built" is not a clean result: no co-change data means no verdict.
 - A dismissal needs a checkable reason: a named test that already pins the seam,
   or why the partner cannot change with this edit. "Not needed" without evidence

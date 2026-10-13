@@ -272,6 +272,49 @@ describe("incompleteChangeSectionProvider — the coupling-statistics gate (bd t
     expect(payload.partners.map((p) => p.missingPartner)).toEqual(["src/real.ts"]);
   });
 
+  // bd tea-rags-mcp-s2nes: a release bumps a version manifest with whatever
+  // shipped — measured, plugin.json <-> ~22 skill/rule docs on half the
+  // review runs of one session, every one dismissed as version-bump noise.
+  it("a version-manifest partner is excluded and counted, never listed", async () => {
+    const context = makeContext(
+      [
+        edge("src/a.ts", ".claude-plugin/tea-rags/.claude-plugin/plugin.json", 30, 0.95, {
+          confidenceBA: 0.9,
+          lift: 5,
+        }),
+        edge("package.json", "src/a.ts", 30, 0.9, { confidenceBA: 0.95, lift: 5 }),
+        edge("src/a.ts", "src/real.ts", 20, 0.95, { confidenceBA: 0.9, lift: 3 }),
+      ],
+      ["src/a.ts"],
+    );
+    const payload = (await incompleteChangeSectionProvider.run(context)) as {
+      partners: IncompleteChangePartner[];
+      versionManifestPairs?: number;
+    };
+    expect(payload.partners.map((p) => p.missingPartner)).toEqual(["src/real.ts"]);
+    expect(payload.versionManifestPairs).toBe(2);
+  });
+
+  it("a changed version manifest's own partners are excluded and counted, never listed", async () => {
+    const context = makeContext(
+      [
+        edge(".claude-plugin/tea-rags/.claude-plugin/plugin.json", "docs/skill.md", 30, 0.95, {
+          confidenceBA: 0.9,
+          lift: 5,
+        }),
+        edge("src/b.ts", "package-lock.json", 30, 0.5, { confidenceBA: 0.95, lift: 5 }),
+        edge("src/b.ts", "src/real.ts", 20, 0.95, { confidenceBA: 0.9, lift: 3 }),
+      ],
+      [".claude-plugin/tea-rags/.claude-plugin/plugin.json", "package-lock.json", "src/b.ts"],
+    );
+    const payload = (await incompleteChangeSectionProvider.run(context)) as {
+      partners: IncompleteChangePartner[];
+      versionManifestPairs?: number;
+    };
+    expect(payload.partners.map((p) => `${p.file} -> ${p.missingPartner}`)).toEqual(["src/b.ts -> src/real.ts"]);
+    expect(payload.versionManifestPairs).toBe(1);
+  });
+
   it("a missing TEST update is the first-class signal — it ranks above a stronger source partner", async () => {
     const context = makeContext(
       [

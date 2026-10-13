@@ -3,7 +3,7 @@ import type {
   DiffDetectorStatus,
   DiffFindingChangedFiles,
 } from "../../../../contracts/types/diff-detector-finding.js";
-import type { DiffFamilyDetector } from "./diff-family-detector.js";
+import type { DiffFamilyDetector, OverlayEdge } from "./diff-family-detector.js";
 import { detectorStatus, round3, withRenderedSubject } from "./shared.js";
 
 /**
@@ -18,7 +18,10 @@ const SPLIT_MERGE_EVIDENCE_FILE_CAP = 4;
  * re-draw. SPLIT: changed files land in ≥ 2 clusters of one split candidate,
  * so the change works across the seam history already draws inside that
  * component; one cluster touched is the history's own grouping, never a
- * finding. Cluster membership is the verdict's own per-cluster file list,
+ * finding. Touching two clusters is not enough on its own: the diff must
+ * also ADD a dependency edge between two of them, in either direction
+ * (bd tea-rags-mcp-s2nes) — a wiring edit that touches both sides and links
+ * neither leaves the seam where it was. Cluster membership is the verdict's own per-cluster file list,
  * so "N of M" counts against that list. MERGE: changed files on both sides
  * of a merge candidate — the diff bridges two components whose bundles
  * already move as one. A changed file the partition does not hold is
@@ -27,7 +30,7 @@ const SPLIT_MERGE_EVIDENCE_FILE_CAP = 4;
  */
 export const splitCandidatesDetector: DiffFamilyDetector = {
   family: "splitCandidates",
-  judge: ({ scope, splitMerge, splitMergeAbsentReason }) => {
+  judge: ({ scope, addedEdges, splitMerge, splitMergeAbsentReason }) => {
     if (splitMerge === undefined) {
       return {
         findings: [],
@@ -50,6 +53,7 @@ export const splitCandidatesDetector: DiffFamilyDetector = {
         })
         .filter((cluster) => cluster.hit.length > 0);
       if (touched.length < 2) continue;
+      if (!addsEdgeAcrossClusters(candidate.files, addedEdges)) continue;
       findings.push(
         withRenderedSubject({
           detector: "splitCandidates",
@@ -96,6 +100,23 @@ export const splitCandidatesDetector: DiffFamilyDetector = {
     return { findings, status: detectorStatus("splitCandidates", findings.length) };
   },
 };
+
+/**
+ * Whether a diff-added edge joins two DIFFERENT clusters of one split
+ * candidate — the only change that works across its seam. Edges with an
+ * endpoint outside the candidate's clusters say nothing about the seam.
+ */
+function addsEdgeAcrossClusters(clusters: readonly (readonly string[])[], addedEdges: readonly OverlayEdge[]): boolean {
+  const clusterOf = new Map<string, number>();
+  clusters.forEach((files, index) => {
+    for (const relPath of files) clusterOf.set(relPath, index);
+  });
+  return addedEdges.some((edge) => {
+    const sourceCluster = clusterOf.get(edge.source);
+    const targetCluster = clusterOf.get(edge.target);
+    return sourceCluster !== undefined && targetCluster !== undefined && sourceCluster !== targetCluster;
+  });
+}
 
 /**
  * Changed files capped at {@link SPLIT_MERGE_EVIDENCE_FILE_CAP} exemplars;

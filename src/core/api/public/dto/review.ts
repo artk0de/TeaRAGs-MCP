@@ -141,6 +141,12 @@ export interface IncompleteChangeSectionPayload {
   cochangeSignificance?: CochangeSignificanceSummary;
   /** Diff-touching partner pairs the significance gate did not admit. */
   notSignificant?: number;
+  /**
+   * Diff-touching pairs with a version manifest on either side (package
+   * manifest, lockfile, version pin, `.claude-plugin/` `plugin.json`) —
+   * version-bump history, excluded before the gates. Absent when none.
+   */
+  versionManifestPairs?: number;
   /** Findings past the cap of 50 — counted, not listed. */
   truncated?: number;
 }

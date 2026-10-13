@@ -1264,6 +1264,8 @@ export interface SilentCouplingReportSummary {
     testEndpoints: number;
     generatedEndpoints: number;
     documentationEndpoints: number;
+    /** A package manifest, lockfile, version pin or `.claude-plugin/` `plugin.json`: version history, not coupling. */
+    versionManifestEndpoints: number;
     /** Neither file is walked by the codegraph. */
     unwalkedEndpoints: number;
     /**
