@@ -7,5 +7,6 @@ export { poissonUpperTail } from "./poisson.js";
 export { binomialLowerTail, binomialUpperTail, poissonBinomialUpperTail, signTestPValue } from "./binomial.js";
 export { mulberry32, seedFromKey } from "./seeded-random.js";
 export { benjaminiHochbergRejectionCount, CONVENTIONAL_FDR_Q } from "./benjamini-hochberg.js";
+export { geometricUpperTail } from "./geometric.js";
 export { hypergeometricUpperTail } from "./hypergeometric.js";
 export { sidakCorrectedMinimumPValue } from "./sidak.js";

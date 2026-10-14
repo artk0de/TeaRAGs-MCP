@@ -533,20 +533,22 @@ export interface ComponentNamespaceGrouping {
 }
 
 /**
- * The cut over the callWeight-0 files' distinct-component fan-out: Otsu over
- * log(1 + count), floored at the median count. `none` = the population was too
- * small, too uniform or not bimodal enough (the shared η gate) — no file is
- * flagged.
+ * The cut over the callWeight-0 files' distinct-component fan-out: each
+ * file's count − 1 against a geometric null fitted to the population's mean
+ * excess, Benjamini–Hochberg at `q` over the population. `none` = the
+ * population was too small for the mean to be a fit — no file is flagged.
  */
 export interface CompositionTableCut {
-  thresholdMethod: "otsu" | "none";
-  /** On the count scale; present under `otsu` only. */
-  threshold?: number;
-  /** η of the Otsu split, whenever one was computed — the rejection evidence under `none`. */
-  separability?: number;
+  thresholdMethod: "geometricTailBH" | "none";
+  /** The false-discovery rate BH ran at; under `geometricTailBH` only. */
+  q?: number;
+  /** The null's fitted mean of count − 1 (its MLE); under `geometricTailBH` only. */
+  nullMean?: number;
   median: number;
-  /** callWeight-0 files with at least one dependency onto another component. */
+  /** callWeight-0 files with at least one dependency onto another component — BH's family. */
   population: number;
+  /** Files whose fan-out exceeds 1, the only p-values below 1; under `geometricTailBH` only. */
+  testedCount?: number;
   /** Files flagged as composition tables. */
   fileCount: number;
 }

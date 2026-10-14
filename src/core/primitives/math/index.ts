@@ -12,6 +12,7 @@ export {
   binomialLowerTail,
   binomialUpperTail,
   CONVENTIONAL_FDR_Q,
+  geometricUpperTail,
   hypergeometricUpperTail,
   mulberry32,
   poissonBinomialUpperTail,

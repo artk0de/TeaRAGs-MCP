@@ -6,9 +6,10 @@
  *
  * - `compositionTable`: a FILE whose every dependency edge carries no call
  *   (registration / table wiring) and that fans out to an outlier number of
- *   distinct components — Otsu over the per-file distinct-component counts of
- *   those files, gated by the shared separability gate; a failed gate flags
- *   no file.
+ *   distinct components — each file's count − 1 tested against a geometric
+ *   null fitted to the population's mean, Benjamini–Hochberg at the
+ *   conventional q over the population; too small a population flags no
+ *   file.
  * - `parentSurface`: a COMPONENT whose afferent files mostly sit outside its
  *   parent namespace / directory while its efferent targets mostly sit inside
  *   it — the parent's surface onto its own internals.
@@ -62,16 +63,19 @@ function registryWiringGraph(plainFileCount = 10): FileDependencyGraph {
 }
 
 describe("compositionTable — a callWeight-0 file fanning out to an outlier number of components", () => {
-  it("flags the outlier wiring file and reports the Otsu cut it was judged by", () => {
+  it("flags the outlier wiring file and reports the significance cut it was judged by", () => {
     const tables = buildComponentGraph(registryWiringGraph(), []).compositionTables;
 
     expect([...(tables?.files ?? [])]).toEqual(["registry/table.ts"]);
     expect(tables?.cut).toMatchObject({
-      thresholdMethod: "otsu",
+      thresholdMethod: "geometricTailBH",
+      q: 0.05,
       median: 1,
       population: 11,
+      testedCount: 1,
       fileCount: 1,
     });
+    expect(tables?.cut.nullMean).toBeCloseTo(7 / 11, 12);
   });
 
   it("leaves a callWeight-0 file with a typical fan-out unflagged", () => {
@@ -103,7 +107,7 @@ describe("compositionTable — a callWeight-0 file fanning out to an outlier num
     expect(fromRegistry).toHaveLength(7);
     expect(fromRegistry.every((v) => v.compositionTable === true)).toBe(true);
     expect(report.summary.violationCount).toBe(report.violations.length);
-    expect(report.summary.compositionTableCut).toMatchObject({ thresholdMethod: "otsu", fileCount: 1 });
+    expect(report.summary.compositionTableCut).toMatchObject({ thresholdMethod: "geometricTailBH", fileCount: 1 });
   });
 
   it("leaves the flag absent on a violation one calling file carries", () => {
@@ -115,6 +119,63 @@ describe("compositionTable — a callWeight-0 file fanning out to an outlier num
     const toC2 = report.violations.find((v) => v.sourceComponent === "registry" && v.targetComponent === "c2");
     expect(toC2).toBeDefined();
     expect("compositionTable" in (toC2 ?? {})).toBe(false);
+  });
+});
+
+/**
+ * callWeight-0 files `t<i>/f.ts`, file i wiring `fanOuts[i]` distinct
+ * components `c1`..`cK` (each `cK/x.ts` calls `vendor/`, so it is never in the
+ * population itself).
+ */
+function fanOutGraph(fanOuts: readonly number[]): FileDependencyGraph {
+  const maxFanOut = Math.max(...fanOuts);
+  const files = [file("vendor/v.ts")];
+  const edges: FileDependencyEdge[] = [];
+  for (let k = 1; k <= maxFanOut; k++) {
+    files.push(file(`c${k}/x.ts`));
+    edges.push(edge(`c${k}/x.ts`, "vendor/v.ts"));
+  }
+  fanOuts.forEach((fanOut, i) => {
+    files.push(file(`t${i}/f.ts`));
+    for (let k = 1; k <= fanOut; k++) edges.push(edge(`t${i}/f.ts`, `c${k}/x.ts`, 0));
+  });
+  return { files, edges };
+}
+
+describe("compositionTable cut — geometric null on count − 1, BH over the population", () => {
+  it("flags only the far tail of a point mass at 1 with a heavy tail", () => {
+    const fanOuts = [...Array<number>(40).fill(1), ...Array<number>(5).fill(2), 3, 3, 12];
+    const tables = buildComponentGraph(fanOutGraph(fanOuts), []).compositionTables;
+
+    expect([...(tables?.files ?? [])]).toEqual([`t${fanOuts.length - 1}/f.ts`]);
+    expect(tables?.cut).toMatchObject({
+      thresholdMethod: "geometricTailBH",
+      population: 48,
+      testedCount: 8,
+      fileCount: 1,
+    });
+  });
+
+  it("flags nothing when the counts are uniformly small", () => {
+    const fanOuts = Array.from({ length: 30 }, (_, i) => 1 + (i % 3));
+    const tables = buildComponentGraph(fanOutGraph(fanOuts), []).compositionTables;
+
+    expect(tables?.files.size).toBe(0);
+    expect(tables?.cut).toMatchObject({ thresholdMethod: "geometricTailBH", population: 30, fileCount: 0 });
+  });
+
+  it("flags nothing when every file wires a single component — no excess to test", () => {
+    const tables = buildComponentGraph(fanOutGraph(Array<number>(20).fill(1)), []).compositionTables;
+
+    expect(tables?.files.size).toBe(0);
+    expect(tables?.cut).toMatchObject({ testedCount: 0, fileCount: 0, nullMean: 0 });
+  });
+
+  it("does not run the test on a population below the minimum", () => {
+    const tables = buildComponentGraph(fanOutGraph([1, 1, 1, 12]), []).compositionTables;
+
+    expect(tables?.files.size).toBe(0);
+    expect(tables?.cut).toEqual({ thresholdMethod: "none", median: 1, population: 4, fileCount: 0 });
   });
 });
 

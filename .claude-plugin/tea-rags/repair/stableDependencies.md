@@ -33,8 +33,9 @@ Otherwise escalate.
 - Edge from a declared composition root: flagged `compositionRoot`. Wiring
   concrete implementations is that component's job.
 - Edge carried only by registration / routing tables: flagged `compositionTable`
-  (every carrying file wires an outlier number of components with no call).
-  Listing concretes is the table's job.
+  (every carrying file wires, with no call, more components than the corpus's
+  callWeight-0 files plausibly reach — a significance test, not a size). Listing
+  concretes is the table's job.
 - Edge from a parent's own surface into the parent's internals: flagged
   `parentSurface` (used mostly from outside its parent, using mostly the
   parent's internals). A domain API depending on its own domain is its job.

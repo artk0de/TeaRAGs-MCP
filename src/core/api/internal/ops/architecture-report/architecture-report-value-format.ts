@@ -16,10 +16,11 @@ export function compareCodePoints(a: string, b: string): number {
 export function roundCompositionTableCut(cut: CompositionTableCutSummary): CompositionTableCutSummary {
   return {
     thresholdMethod: cut.thresholdMethod,
-    ...(cut.threshold === undefined ? {} : { threshold: round3(cut.threshold) }),
-    ...(cut.separability === undefined ? {} : { separability: round3(cut.separability) }),
+    ...(cut.q === undefined ? {} : { q: cut.q }),
+    ...(cut.nullMean === undefined ? {} : { nullMean: round3(cut.nullMean) }),
     median: cut.median,
     population: cut.population,
+    ...(cut.testedCount === undefined ? {} : { testedCount: cut.testedCount }),
     fileCount: cut.fileCount,
   };
 }

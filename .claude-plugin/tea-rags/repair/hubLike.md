@@ -28,7 +28,8 @@ component the source already depends on, so efferent coupling does not grow.
 
 - `compositionRoot`: a composition root is meant to depend on many components.
 - `compositionTable`: the hub holds a registration / routing table — a file
-  wiring an outlier number of components with no call.
+  wiring, with no call, significantly more components than the corpus's
+  callWeight-0 files reach.
 - `parentSurface`: the hub is its parent's surface — used mostly from outside
   its parent, using mostly the parent's internals.
 - Contracts edges counted before the contracts exclusion fix: re-check the edge
