@@ -5,11 +5,13 @@
  * groups them by file, and calls the provider to re-enrich.
  */
 
-import type { QdrantPointReader } from "../../../../adapters/qdrant/ports.js";
+import type { QdrantCollectionCatalog, QdrantPointReader } from "../../../../adapters/qdrant/ports.js";
 import { servicePointExclusions } from "../../../../adapters/qdrant/service-points.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
+import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
+import { pipelineLog } from "../infra/debug-log/index.js";
 import type { ChunkItem } from "../infra/index.js";
 import { bareStampableChunkIds, type EnrichmentApplier } from "./applier.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
@@ -148,7 +150,7 @@ export class EnrichmentRecovery {
   private readonly executor: EnrichmentExecutor;
 
   constructor(
-    private readonly qdrant: QdrantPointReader,
+    private readonly qdrant: QdrantPointReader & Partial<Pick<QdrantCollectionCatalog, "getCollectionInfo">>,
     private readonly applier: EnrichmentApplier,
     options?: RecoveryOptions,
   ) {
@@ -473,6 +475,61 @@ export class EnrichmentRecovery {
   }
 
   /**
+   * DEBUG-only attribution line for a marker that settled with unenriched points
+   * (bd tea-rags-mcp-2d5o1): which points the unenriched filter still matches,
+   * and whether the collection's reported `points_count` agrees with an exact
+   * count — a mismatch is the stale-copy signature. Read-only: one bounded
+   * scroll, one exact count, one info read; never touches the count, the
+   * threshold or the marker. No-op unless DEBUG and `count > 0`; every read
+   * failure degrades to a missing field so a diagnostic never fails completion.
+   */
+  async logUnenrichedSample(
+    collectionName: string,
+    provider: EnrichmentProvider,
+    level: "file" | "chunk",
+    count: number,
+    languages?: readonly string[],
+  ): Promise<void> {
+    if (count <= 0 || !isDebug()) return;
+    const enrichedAtKey = `${provider.key}.${level}.enrichedAt`;
+    const skippedAsKey = `${provider.key}.${level}.skippedAs`;
+    try {
+      const filter = this.buildUnenrichedFilter(provider.key, level, "unenriched", languages);
+      const [points, exactCount, info] = await Promise.all([
+        this.qdrant
+          .scrollFiltered(collectionName, filter, UNENRICHED_SAMPLE_SIZE, UNENRICHED_SAMPLE_SIZE, [
+            "relativePath",
+            "chunkType",
+            "language",
+            enrichedAtKey,
+            skippedAsKey,
+          ])
+          .catch(() => []),
+        this.qdrant.countPoints(collectionName).catch(() => null),
+        this.qdrant.getCollectionInfo?.(collectionName).catch(() => null) ?? Promise.resolve(null),
+      ]);
+      const samples = points.slice(0, UNENRICHED_SAMPLE_SIZE).map((point) => ({
+        id: point.id,
+        relativePath: point.payload.relativePath,
+        chunkType: point.payload.chunkType,
+        language: point.payload.language,
+        enrichedAt: readNestedPayload(point.payload, enrichedAtKey),
+        skippedAs: readNestedPayload(point.payload, skippedAsKey),
+      }));
+      pipelineLog.enrichmentPhase("UNENRICHED_SAMPLE", {
+        provider: provider.key,
+        level,
+        count,
+        samples,
+        pointsCount: info?.pointsCount ?? null,
+        exactCount,
+      });
+    } catch {
+      // Diagnostics only: never let attribution fail the completion it explains.
+    }
+  }
+
+  /**
    * Build the Qdrant filter for chunks missing `{providerKey}.{level}.enrichedAt`.
    */
   private buildUnenrichedFilter(
@@ -593,6 +650,19 @@ export class EnrichmentRecovery {
       );
     }
   }
+}
+
+/** Sample points named by the `UNENRICHED_SAMPLE` debug line. */
+const UNENRICHED_SAMPLE_SIZE = 10;
+
+/** Read `a.b.c` from a payload that Qdrant returns nested (`{a:{b:{c}}}`). */
+function readNestedPayload(payload: Record<string, unknown>, dottedKey: string): unknown {
+  let node: unknown = payload;
+  for (const part of dottedKey.split(".")) {
+    if (typeof node !== "object" || node === null) return undefined;
+    node = (node as Record<string, unknown>)[part];
+  }
+  return node;
 }
 
 /** Take the batch of unique paths starting at `offset`, with their points. */
