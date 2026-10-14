@@ -91,8 +91,15 @@ const rustChunkerHooks: LanguageChunkerHooks = {
     "mod_item",
     "macro_definition",
   ],
-  childChunkTypes: ["function_item", "macro_definition"],
+  // Keep impl blocks in the child-container walk so methods retain the
+  // implementing header when they are nested below a module. The impl name
+  // still composes through the kernel scope separator; it is not emitted as
+  // an extra standalone leaf.
+  childChunkTypes: ["function_item", "macro_definition", "impl_item"],
   alwaysExtractChildren: true,
+  // Rust function items are searchable symbols even when their bodies are
+  // shorter than the generic 50-character noise floor.
+  keepShortChildChunkTypes: ["function_item"],
   nameExtractor: (node: AstNode, code: string): string | undefined => {
     if (node.type !== "impl_item") return undefined;
     const ty = node.childForFieldName("type");

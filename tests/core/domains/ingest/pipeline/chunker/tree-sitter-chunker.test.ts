@@ -962,6 +962,94 @@ impl Printer {
       // The literal "(part N/M)" suffix must NOT appear on this symbolId.
       expect(chunkMethod?.metadata.symbolId).not.toMatch(/part\s*\d+\s*\/\s*\d+/);
     });
+
+    it("should retain outer attributes with the following Rust item", async () => {
+      const code = `
+#[derive(Clone)]
+#[repr(C)]
+struct Wrapper {
+    value: u32,
+    marker: bool,
+    checksum: u64,
+}
+      `;
+      const chunks = await chunker.chunk(code, "wrapper.rs", "rust");
+      const wrapper = chunks.find((c) => c.metadata.symbolId === "Wrapper");
+      expect(wrapper).toBeDefined();
+      expect(wrapper?.content).toContain("#[derive(Clone)]");
+      expect(wrapper?.content).toContain("#[repr(C)]");
+      expect(wrapper?.startLine).toBe(2);
+      expect(wrapper?.endLine).toBe(8);
+    });
+
+    it("should preserve impl header context for methods nested in a module", async () => {
+      const code = `
+mod outer {
+    impl Worker {
+        pub fn run(&self) -> bool {
+            self.ready()
+        }
+    }
+}
+      `;
+      const chunks = await chunker.chunk(code, "outer.rs", "rust");
+      const run = chunks.find((c) => c.metadata.symbolId === "outer::Worker#run");
+      expect(run).toBeDefined();
+      expect(run?.content).toContain("impl Worker");
+      expect(run?.content).toContain("pub fn run");
+      expect(run?.metadata.parentSymbolId).toBe("outer::Worker");
+    });
+
+    it("should retain an outer attribute with a Rust impl method", async () => {
+      const code = `
+impl Worker {
+    #[inline]
+    fn run(&self) -> u32 { 1 }
+    fn fallback(&self) -> u32 { self.run() }
+}
+      `;
+      const chunks = await chunker.chunk(code, "worker.rs", "rust");
+      const run = chunks.find((c) => c.metadata.symbolId === "Worker#run");
+      expect(run).toBeDefined();
+      expect(run?.content).toContain("#[inline]");
+      expect(run?.content).toContain("fn run");
+      expect(run?.startLine).toBe(3);
+    });
+
+    it("should emit short Rust function items instead of applying the generic child floor", async () => {
+      const code = `
+impl Pair {
+    fn get(&self) -> u32 { 1 }
+    fn set(&mut self, value: u32) { self.value = value; }
+}
+      `;
+      const chunks = await chunker.chunk(code, "pair.rs", "rust");
+      const methods = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methods.map((c) => c.metadata.symbolId)).toEqual(["Pair#get", "Pair#set"]);
+    });
+
+    it("should keep associated const, static, and type items in the impl remainder", async () => {
+      const code = `
+impl Config {
+    const LIMIT: usize = 10;
+    static NAME: &str = "config";
+    type Item = usize;
+
+    fn run(&self) -> usize {
+        Self::LIMIT
+    }
+}
+      `;
+      const chunks = await chunker.chunk(code, "config.rs", "rust");
+      expect(chunks.some((c) => c.metadata.symbolId === "Config::LIMIT")).toBe(false);
+      expect(chunks.some((c) => c.metadata.symbolId === "Config::NAME")).toBe(false);
+      expect(chunks.some((c) => c.metadata.symbolId === "Config::Item")).toBe(false);
+      const remainder = chunks.find((c) => c.metadata.symbolId === "Config");
+      expect(remainder).toBeDefined();
+      expect(remainder?.content).toContain("const LIMIT");
+      expect(remainder?.content).toContain("static NAME");
+      expect(remainder?.content).toContain("type Item");
+    });
   });
 
   describe("chunk - JavaScript", () => {

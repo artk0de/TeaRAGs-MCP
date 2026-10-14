@@ -267,6 +267,23 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private readonly languages: LanguageFactoryDescriptor;
 
+  /**
+   * Rust attributes are sibling nodes rather than part of an item's range.
+   * Carry a contiguous attribute prefix with the item so metadata and indexed
+   * content preserve the source declaration as written. The node shape is
+   * shared by grammars that expose `attribute_item`; languages without it keep
+   * their existing range unchanged.
+   */
+  private leadingAttributeStart(node: AstNode): { startIndex: number; startLine: number } {
+    let first = node;
+    let previous = node.previousNamedSibling;
+    while (previous?.type === "attribute_item") {
+      first = previous;
+      previous = previous.previousNamedSibling;
+    }
+    return { startIndex: first.startIndex, startLine: first.startPosition.row + 1 };
+  }
+
   constructor(
     private readonly config: ChunkerConfig,
     symbolIds: SymbolIdComposer,
@@ -845,7 +862,8 @@ export class TreeSitterChunker implements CodeChunker {
     chunks: CodeChunk[],
     decision: ChunkDecision,
   ): void {
-    const content = code.substring(node.startIndex, node.endIndex);
+    const attributePrefix = this.leadingAttributeStart(node);
+    const content = code.substring(attributePrefix.startIndex, node.endIndex);
 
     if (decision.kind === "skip") return;
 
@@ -878,7 +896,7 @@ export class TreeSitterChunker implements CodeChunker {
       decision.chunks.forEach((c, i) => {
         chunks.push({
           content: content.trim(),
-          startLine: node.startPosition.row + 1,
+          startLine: attributePrefix.startLine,
           endLine: this.computeEndLine(node),
           metadata: {
             filePath,
@@ -944,7 +962,7 @@ export class TreeSitterChunker implements CodeChunker {
     }
     chunks.push({
       content: content.trim(),
-      startLine: node.startPosition.row + 1,
+      startLine: attributePrefix.startLine,
       endLine: this.computeEndLine(node),
       metadata: {
         filePath,
@@ -1396,12 +1414,28 @@ export class TreeSitterChunker implements CodeChunker {
     const semanticNode = this.unwrapDecoratedDefinition(childNode);
     const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
     const methodKind = classifyMethod(semanticNode);
+    const scopeSeparator = langConfig.scopeSeparator ?? ".";
     const intermediateScopes = [
       ...this.collectIntermediateScopes(childNode, langConfig, code),
       ...enclosingClassScopeNames(semanticNode, pass.container),
       ...enclosingFactoryScopeNames(semanticNode, pass.container),
     ];
-    const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
+    // When a nested container has already extended `parentName` with its own
+    // scope segment, the ancestor walk sees that same container again. Do not
+    // join it twice (`outer::Worker::Worker#run`). Keep later segments: a
+    // deeper `outer::Worker::Inner` chain still needs `Inner`.
+    const effectiveIntermediateScopes = [...intermediateScopes];
+    if (parentName && effectiveIntermediateScopes.length > 0) {
+      const first = effectiveIntermediateScopes[0];
+      if (parentName === first || parentName.endsWith(`${scopeSeparator}${first}`)) {
+        effectiveIntermediateScopes.shift();
+      }
+    }
+    const effectiveParent = this.composeParentSymbol(
+      parentName,
+      effectiveIntermediateScopes,
+      langConfig.scopeSeparator,
+    );
     // bd tea-rags-mcp-a466 — disambiguate overloads BEFORE deciding
     // the chunk's symbolId so oversized-method splits inherit the
     // already-suffixed id (each split shares the composed method id;
@@ -1579,8 +1613,9 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private emitLeafChild(childNode: AstNode, ci: number, childContent: string, pass: ChildChunkEmissionPass): void {
     const { ctx, langConfig, code, filePath, language, parentName, parentType, chunks, hierarchyHeaders } = pass;
-    let finalContent = childContent.trim();
-    let startLine = childNode.startPosition.row + 1;
+    const attributePrefix = this.leadingAttributeStart(childNode);
+    let finalContent = code.substring(attributePrefix.startIndex, childNode.endIndex).trim();
+    let { startLine } = attributePrefix;
 
     const prefix = ctx.methodPrefixes.get(ci);
     if (prefix) {
@@ -1635,12 +1670,24 @@ export class TreeSitterChunker implements CodeChunker {
     // bd tea-rags-mcp-39xca.19 — and the declarator-bound factory whose returned
     // literal declares the member (`Store#build.make#read`), which is never a
     // container of its own; it sits below every such class, so it goes last.
+    const scopeSeparator = langConfig.scopeSeparator ?? ".";
     const intermediateScopes = [
       ...this.collectIntermediateScopes(childNode, langConfig, code),
       ...enclosingClassScopeNames(semanticNode, pass.container),
       ...enclosingFactoryScopeNames(semanticNode, pass.container),
     ];
-    const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
+    const effectiveIntermediateScopes = [...intermediateScopes];
+    if (parentName && effectiveIntermediateScopes.length > 0) {
+      const first = effectiveIntermediateScopes[0];
+      if (parentName === first || parentName.endsWith(`${scopeSeparator}${first}`)) {
+        effectiveIntermediateScopes.shift();
+      }
+    }
+    const effectiveParent = this.composeParentSymbol(
+      parentName,
+      effectiveIntermediateScopes,
+      langConfig.scopeSeparator,
+    );
     // bd tea-rags-mcp-a466 — disambiguate per-overload. The first occurrence
     // under a given (parent, name) keeps its symbolId; subsequent occurrences
     // get a `~N` suffix.
