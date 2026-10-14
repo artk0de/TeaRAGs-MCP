@@ -95,7 +95,42 @@ describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)
       bundleTaskIds: new Map(),
       bundleFileLines: new Map(),
       bundleTimestamps: new Map(),
+      bundleRenameSweeps: new Map(),
     });
+  });
+
+  // bd tea-rags-mcp-v2525: each assessed bundle's identifier-rename-sweep verdict rides beside its commits.
+  it("round-trips each assessed bundle's rename-sweep verdict, keyed by bundle id", async () => {
+    await db.replaceTemporalCochange({
+      ...snapshot([edge("a.ts", "b.ts")]),
+      bundles: [["a.ts", "b.ts"], ["a.ts"]],
+      bundleCommits: [["s2"], ["s1"]],
+      bundleRenameSweeps: [true, false],
+    });
+
+    const graph = await db.readTemporalCochangeGraph();
+    expect(graph.bundleRenameSweeps).toEqual(
+      new Map([
+        [0, true],
+        [1, false],
+      ]),
+    );
+  });
+
+  it("reads a file a pre-052 build wrote — no rename-sweep column — as verdicts not assessed", async () => {
+    const old = new DuckDbGraphClient({ path: join(dir, "pre052.duckdb") });
+    await old.init();
+    await runMigrations(
+      old,
+      DATABASE_MIGRATIONS.filter((m) => m.filename < "052"),
+    );
+    await old.run("INSERT INTO cg_temporal_bundle_commits (bundle_id, commit_shas) VALUES (0, '[\"s1\"]')");
+
+    const graph = await old.readTemporalCochangeGraph();
+    await old.close();
+
+    expect(graph.bundleCommits).toEqual(new Map([[0, ["s1"]]]));
+    expect(graph.bundleRenameSweeps).toEqual(new Map());
   });
 
   // bd tea-rags-mcp-zf9yz: each admitted bundle's commit time rides beside its commits — the lifecycle chronology.

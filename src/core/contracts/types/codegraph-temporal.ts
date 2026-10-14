@@ -135,6 +135,13 @@ export interface TemporalCochangeSnapshot {
    * `bundles`. Absent = not recorded (bd tea-rags-mcp-zf9yz).
    */
   bundleTimestamps?: readonly number[];
+  /**
+   * Whether each admitted bundle's commit is an identifier rename sweep — one
+   * commit-wide identifier substitution turns everything it removed into
+   * everything it added — aligned with `bundles` (bd tea-rags-mcp-v2525).
+   * Absent = not assessed (the history source reads no diff text).
+   */
+  bundleRenameSweeps?: readonly boolean[];
 }
 
 /** The lines one commit added to and deleted from one file — git's numstat pair (bd tea-rags-mcp-dm61n). */
@@ -200,6 +207,12 @@ export interface TemporalCochangeGraph {
    * Absent or empty = the build predates migration 047.
    */
   bundleTimestamps?: ReadonlyMap<number, number>;
+  /**
+   * Each assessed bundle's identifier-rename-sweep verdict, keyed by bundle id
+   * (bd tea-rags-mcp-v2525). Absent or empty = not assessed — a build
+   * predating migration 052, or one whose history read no diff text.
+   */
+  bundleRenameSweeps?: ReadonlyMap<number, boolean>;
 }
 
 /** One partner of the queried file, from the queried file's perspective. */

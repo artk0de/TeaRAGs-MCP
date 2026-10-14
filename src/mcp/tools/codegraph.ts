@@ -500,7 +500,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "tags only), islands, exemplarFiles, drillDown = find_co_changed; findings maximal — one inside another " +
       "rides in its evidence.nested (summary.nestedFindingCount); summary mechanicalCommitCount / " +
       "echoPairCount / lifecyclePairCount / retiredSpreadCount absent = line counts or commit timestamps not " +
-      "recorded; built false = same " +
+      "recorded; renameSweepCommitCount = identifier-rename sweeps dropped, absent = not assessed; built false = same " +
       "reasons as splitMerge. mainSequence " +
       "(Stable Abstractions Principle): component far from A+I=1 — pain = stable+concrete, uselessness = " +
       "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +

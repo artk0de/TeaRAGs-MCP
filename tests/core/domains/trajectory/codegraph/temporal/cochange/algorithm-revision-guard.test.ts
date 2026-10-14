@@ -19,7 +19,7 @@ import { isSqlDatabaseMigration } from "../../../../../../../src/core/domains/ma
 import { COCHANGE_ALGORITHM_REVISION } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/cochange/index.js";
 
 const PINNED = {
-  revision: 4,
+  revision: 5,
   temporalMigrations: [
     "031-cg-temporal-init.sql",
     "041-cg-temporal-symbol-commits.sql",
@@ -29,6 +29,7 @@ const PINNED = {
     "045-cg-temporal-bundle-task-ids.sql",
     "046-cg-temporal-bundle-file-lines.sql",
     "047-cg-temporal-bundle-committed-at.sql",
+    "052-cg-temporal-bundle-rename-sweep.sql",
   ],
 } as const;
 

@@ -518,3 +518,89 @@ describe("TemporalCochangeBuilder — a revision-3 snapshot rebuilds", () => {
     expect(writes[0].meta.fingerprint).not.toBe(stale.fingerprint);
   });
 });
+
+describe("TemporalCochangeBuilder — identifier rename sweeps (bd tea-rags-mcp-v2525)", () => {
+  const NUL = String.fromCharCode(0);
+  type Patch = Record<string, readonly [string, string]>;
+
+  function counted(sha: string, timestamp: number, files: Record<string, [number, number]>): GitCommitDiscoveryEntry {
+    const base = entry(sha, `author-${sha}`, timestamp, []);
+    return {
+      ...base,
+      changedFiles: Object.entries(files).map(([path, [added, deleted]]) => ({ path, added, deleted })),
+    };
+  }
+
+  function patch(sha: string, files: Patch): string {
+    const body = Object.entries(files).flatMap(([path, [from, to]]) => [
+      `diff --git a/${path} b/${path}`,
+      `--- a/${path}`,
+      `+++ b/${path}`,
+      "@@ -1 +1 @@",
+      `-${from}`,
+      `+${to}`,
+    ]);
+    return [`${NUL}${sha}`, "", ...body].join("\n");
+  }
+
+  const SWEEP: Patch = {
+    "a.ts": ["new FooImpl();", "new Foo();"],
+    "b.ts": ["x(FooImpl)", "x(Foo)"],
+    "c.ts": ["FooImpl", "Foo"],
+  };
+  const EDIT: Patch = {
+    "a.ts": ["new FooImpl();", "new Foo();"],
+    "b.ts": ["x(FooImpl, 1)", "x(Foo, 2)"],
+    "c.ts": ["FooImpl", "Foo"],
+  };
+  const history = [
+    counted("sweep", 5 * STEP, { "a.ts": [1, 1], "b.ts": [1, 1], "c.ts": [1, 1] }),
+    counted("edit", 4 * STEP, { "a.ts": [1, 1], "b.ts": [1, 1], "c.ts": [1, 1] }),
+    counted("added", 3 * STEP, { "a.ts": [1, 1], "b.ts": [1, 1], "c.ts": [4, 0] }),
+    counted("narrow", 2 * STEP, { "a.ts": [1, 1], "b.ts": [1, 1] }),
+  ];
+
+  function source(diffText?: (shas: readonly string[]) => Promise<string>) {
+    const asked: string[][] = [];
+    const src: TemporalCochangeHistorySource = {
+      open: async () => ({
+        repoRoot: "/repo",
+        head: "h1",
+        worktreeDeletions: [],
+        trackedPaths: async () => ["a.ts", "b.ts", "c.ts"],
+        entries: async () => history,
+        ...(diffText
+          ? {
+              commitDiffText: async (shas: readonly string[]) => {
+                asked.push([...shas]);
+                return diffText(shas);
+              },
+            }
+          : {}),
+      }),
+    };
+    return { asked, src };
+  }
+
+  const verdictBySha = (snapshot: TemporalCochangeSnapshot) =>
+    Object.fromEntries((snapshot.bundleCommits ?? []).map((shas, i) => [shas[0], snapshot.bundleRenameSweeps?.[i]]));
+
+  it("records each admitted bundle's verdict, reading diff text only for its candidates", async () => {
+    const { graphDb, writes } = fakeGraphDb();
+    const { src, asked } = source(async () => [patch("sweep", SWEEP), patch("edit", EDIT)].join("\n"));
+
+    await builder(src).onCollectionComplete({ projectRoot: "/repo", graphDb });
+
+    // "added" holds an add-only file and "narrow" too few files: neither can be a sweep, so neither is read.
+    expect(asked.flat().sort()).toEqual(["edit", "sweep"]);
+    expect(verdictBySha(writes[0])).toEqual({ sweep: true, edit: false, added: false, narrow: false });
+  });
+
+  it("records no verdicts when the history source cannot read diff text", async () => {
+    const { graphDb, writes } = fakeGraphDb();
+
+    await builder(source().src).onCollectionComplete({ projectRoot: "/repo", graphDb });
+
+    expect(writes[0].bundleRenameSweeps).toBeUndefined();
+  });
+});

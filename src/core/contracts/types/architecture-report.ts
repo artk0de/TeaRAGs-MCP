@@ -1630,6 +1630,8 @@ export interface ShotgunSurgeryReportSummary {
   mechanicalTestedCount?: number;
   /** Commits called mechanical (sweeps), left out of the whole history. Absent = line counts not recorded. */
   mechanicalCommitCount?: number;
+  /** Bundles the co-change build called identifier rename sweeps (bd tea-rags-mcp-v2525), left out of the history like mechanical commits. Absent = not assessed (a build predating migration 052). */
+  renameSweepCommitCount?: number;
   /** Non-mechanical wide commit pairs sharing ≥ 3 components — the echo test's BH family. Absent = line counts not recorded. */
   echoCandidatePairCount?: number;
   /** Echo pairs (a revert / flag removal and its original) joined into one logical change. Absent = line counts not recorded. */

@@ -490,7 +490,11 @@
   them before burst indexing, so degrees, opportunities, units and umbrella
   breadth all drop them and the configuration null stays the null of the counted
   population — a 0-weight unit would still clear the support gate and inflate
-  the opportunities. `findShotgunSurgeryEchoPairs` pairs feed
+  the opportunities. An identifier rename sweep joins the same set from the
+  build's diff-text verdict (`assessRenameSweepBundles`,
+  `cg_temporal_bundle_commits.rename_sweep`, migration 052), because a reflowed
+  rename leaves no line-count pattern; a type-only refactor is never one (bd
+  tea-rags-mcp-v2525). `findShotgunSurgeryEchoPairs` pairs feed
   `joinLogicalChanges` as unions: zeroing a revert drops its original's evidence
   too (echo-zero lost TRUE recall on taxdome). Permutation p-values seed from
   the pair's SHAs (`seedFromKey`), never from evaluation order. An empty

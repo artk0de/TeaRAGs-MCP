@@ -201,6 +201,34 @@ export async function readCommitPathChanges(repoRoot: string, timeoutMs?: number
 }
 
 /**
+ * The zero-context patch text of the named commits, in the order named, each
+ * headed by a NUL and its full SHA (`--format=%x00%H`) — one spawn (bd
+ * tea-rags-mcp-v2525). `-M` pins rename detection, so a moved file prints its
+ * edits and not a delete plus an add; `--no-ext-diff` / `--no-textconv` keep a
+ * user's diff drivers out of the text. A merge prints no patch. No SHAs → "".
+ */
+export async function readCommitDiffText(
+  repoRoot: string,
+  shas: readonly string[],
+  timeoutMs?: number,
+): Promise<string> {
+  if (shas.length === 0) return "";
+  const args = [
+    "log",
+    "--no-walk=unsorted",
+    "-p",
+    "-U0",
+    "-M",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--format=%x00%H",
+    ...shas,
+  ];
+  return execFileForPathspec(repoRoot, args, timeoutMs ?? 30000);
+}
+
+/**
  * `git log HEAD --numstat -- <paths>` kept per commit, with the rename rows a
  * pathspec hides put back (bd tea-rags-mcp-aikfk).
  *

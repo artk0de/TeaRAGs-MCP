@@ -128,6 +128,10 @@ export class EsGitAdapter extends VcsGitAdapter {
     return this.cliHistory.readCommitPathChanges(timeoutMs);
   }
 
+  async readCommitDiffText(shas: readonly string[], timeoutMs?: number): Promise<string> {
+    return this.cliHistory.readCommitDiffText(shas, timeoutMs);
+  }
+
   async readBlobAsString(commitOid: string, filepath: string): Promise<string> {
     try {
       const blobOid = this.repo.revparseSingle(`${commitOid}:${filepath}`);

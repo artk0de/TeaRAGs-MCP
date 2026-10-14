@@ -41,18 +41,33 @@ export class DaemonTemporalStoreProxy implements CodegraphTemporalStore {
     // The server serialises the bundle Map as `[id, paths][]` entries — rebuild
     // it here (same pattern as getFileMetricsBulk). An older daemon's reply
     // carries no `bundles` at all: absence stays absence, never "no bundles".
-    const { bundles, bundleCommits, bundleBursts, bundleTaskIds, bundleFileLines, bundleTimestamps, ...rest } =
-      (await this.ops.call("readTemporalCochangeGraph", {})) as Omit<
-        TemporalCochangeGraph,
-        "bundles" | "bundleCommits" | "bundleBursts" | "bundleTaskIds" | "bundleFileLines" | "bundleTimestamps"
-      > & {
-        bundles?: [number, readonly RelPath[]][];
-        bundleCommits?: [number, readonly string[]][];
-        bundleBursts?: [number, number][];
-        bundleTaskIds?: [number, readonly string[]][];
-        bundleFileLines?: [number, [RelPath, CochangeFileLineCounts][]][];
-        bundleTimestamps?: [number, number][];
-      };
+    const {
+      bundles,
+      bundleCommits,
+      bundleBursts,
+      bundleTaskIds,
+      bundleFileLines,
+      bundleTimestamps,
+      bundleRenameSweeps,
+      ...rest
+    } = (await this.ops.call("readTemporalCochangeGraph", {})) as Omit<
+      TemporalCochangeGraph,
+      | "bundles"
+      | "bundleCommits"
+      | "bundleBursts"
+      | "bundleTaskIds"
+      | "bundleFileLines"
+      | "bundleTimestamps"
+      | "bundleRenameSweeps"
+    > & {
+      bundles?: [number, readonly RelPath[]][];
+      bundleCommits?: [number, readonly string[]][];
+      bundleBursts?: [number, number][];
+      bundleTaskIds?: [number, readonly string[]][];
+      bundleFileLines?: [number, [RelPath, CochangeFileLineCounts][]][];
+      bundleTimestamps?: [number, number][];
+      bundleRenameSweeps?: [number, boolean][];
+    };
     return {
       ...rest,
       ...(bundles ? { bundles: new Map(bundles) } : {}),
@@ -63,6 +78,7 @@ export class DaemonTemporalStoreProxy implements CodegraphTemporalStore {
         ? { bundleFileLines: new Map(bundleFileLines.map(([bundleId, files]) => [bundleId, new Map(files)])) }
         : {}),
       ...(bundleTimestamps ? { bundleTimestamps: new Map(bundleTimestamps) } : {}),
+      ...(bundleRenameSweeps ? { bundleRenameSweeps: new Map(bundleRenameSweeps) } : {}),
     };
   }
 

@@ -26,6 +26,7 @@ import {
   getCommitsByPathspec,
   getCommitsInRange,
   getCommitsSince,
+  readCommitDiffText,
   readCommitFileNumstat,
   readCommitFileNumstatForPaths,
   readCommitPathChanges,
@@ -102,6 +103,10 @@ export class GitCliAdapter extends VcsGitAdapter {
 
   async readCommitPathChanges(timeoutMs?: number): Promise<CommitPathChanges[]> {
     return readCommitPathChanges(this.repoRoot, timeoutMs);
+  }
+
+  async readCommitDiffText(shas: readonly string[], timeoutMs?: number): Promise<string> {
+    return readCommitDiffText(this.repoRoot, shas, timeoutMs);
   }
 
   async readBlobAsString(commitOid: string, filepath: string): Promise<string> {

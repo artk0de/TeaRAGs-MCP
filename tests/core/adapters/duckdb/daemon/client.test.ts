@@ -1235,6 +1235,22 @@ describe("DaemonGraphDbClient — readTemporalCochangeGraph", () => {
     expect(graph.bundleTimestamps).toEqual(new Map([[0, 1_760_000_000]]));
   });
 
+  // bd tea-rags-mcp-v2525: rename-sweep verdicts travel as `[id, verdict][]` entries.
+  it("rebuilds the per-bundle rename-sweep Map from the daemon's entry tuples", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    await echoServer(socketPath, (r) =>
+      r.op === "readTemporalCochangeGraph" ? { meta, edges, bundleRenameSweeps: [[0, true]] } : null,
+    );
+
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
+    await client.init();
+    const graph = await client.readTemporalCochangeGraph();
+    await client.close();
+
+    expect(graph.bundleRenameSweeps).toEqual(new Map([[0, true]]));
+  });
+
   // bd tea-rags-mcp-dm61n: per-file line counts are a Map of Maps — nested entry tuples on the wire.
   it("rebuilds the per-bundle file line-count Maps from the daemon's nested entry tuples", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
