@@ -207,6 +207,25 @@ describe("EmbeddingProviderFactory", () => {
         expect(provider).toBeInstanceOf(OllamaEmbeddings);
       });
 
+      it("rejects a comma-separated EMBEDDING_FALLBACK_URL list for ollama, naming variable and provider", () => {
+        const create = () =>
+          EmbeddingProviderFactory.create(
+            makeConfig({ provider: "ollama", fallbackBaseUrl: "http://localhost:8085,http://localhost:8086" }),
+          );
+
+        expect(create).toThrow(ConfigValueInvalidError);
+        expect(create).toThrow(/EMBEDDING_FALLBACK_URL/);
+        expect(create).toThrow(/ollama/);
+      });
+
+      it("accepts a single EMBEDDING_FALLBACK_URL for ollama", () => {
+        const provider = EmbeddingProviderFactory.create(
+          makeConfig({ provider: "ollama", fallbackBaseUrl: "http://localhost:11435" }),
+        );
+
+        expect(provider).toBeInstanceOf(OllamaEmbeddings);
+      });
+
       it("should use custom base URL", () => {
         const provider = EmbeddingProviderFactory.create(
           makeConfig({ provider: "ollama", baseUrl: "http://custom:11434" }),

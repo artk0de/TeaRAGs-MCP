@@ -79,6 +79,16 @@ export class EmbeddingProviderFactory {
         );
 
       case "ollama":
+        // Ollama failover holds exactly one fallback endpoint (usingFallback is a
+        // boolean flip); only the llama-server pool parses a comma list. Passing
+        // the raw list on surfaced as a silent ERR_INVALID_URL (bd fembu follow-up).
+        if (config.fallbackBaseUrl?.includes(",")) {
+          throw new ConfigValueInvalidError(
+            "EMBEDDING_FALLBACK_URL (provider: ollama)",
+            config.fallbackBaseUrl,
+            "a single URL - the ollama provider supports one fallback endpoint; comma-separated lists are llama-server only",
+          );
+        }
         return new OllamaEmbeddings(
           model || "unclemusclez/jina-embeddings-v2-base-code:latest",
           dimensions,
