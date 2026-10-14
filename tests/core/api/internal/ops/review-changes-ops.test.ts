@@ -7,6 +7,7 @@
  * the selection contract (allowlist, default-all, unknown id fails loud),
  * absence-vs-not-built, and the envelope.
  */
+import * as childProcess from "node:child_process";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,6 +20,7 @@ import {
   prebuildGitWorkingTreeFixture,
   type GitWorkingTreeSeedStep,
 } from "../../../__helpers__/git-working-tree-fixture.js";
+import { readDeclaredTestDependencies } from "../../../../../src/core/adapters/filesystem/dependency-manifests.js";
 import {
   ReviewChangesOps,
   type ReviewChangesOpsDeps,
@@ -30,7 +32,13 @@ import {
   DefaultSymbolIdComposer,
   LanguageFactory,
 } from "../../../../../src/core/domains/language/index.js";
+import { PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST } from "../../../../../src/core/domains/language/typescript/package-manifest.js";
 import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof childProcess>();
+  return { ...actual, execFileSync: vi.fn(actual.execFileSync) };
+});
 
 const CHANGED = "src/git/file-reader.ts";
 const PARTNER = "src/git/partner.ts";
@@ -416,6 +424,27 @@ describe("ReviewChangesOps", () => {
     expect(graph.readFileDependencyGraph).toHaveBeenCalledTimes(1);
     expect(readIndexedFileImports).toHaveBeenCalledTimes(1);
     expect(readDeclaredTestDependencies).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists the work tree once per review: the declared and test-dependency reads share one listing (bd tea-rags-mcp-uqkn5)", async () => {
+    const graph = graphDbStub();
+    const lsFilesSpawns = (): number =>
+      vi
+        .mocked(childProcess.execFileSync)
+        .mock.calls.filter(([, args]) => (args as string[]).includes("--exclude-standard")).length;
+    const before = lsFilesSpawns();
+
+    await makeOps(
+      graph,
+      {},
+      {
+        readIndexedFileImports: vi.fn().mockResolvedValue(new Map()),
+        readDeclaredTestDependencies: (root: string) =>
+          readDeclaredTestDependencies(root, [PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST]),
+      },
+    ).reviewChanges(request({ sections: ["architecture", "norms"] }));
+
+    expect(lsFilesSpawns() - before).toBe(1);
   });
 
   it("keeps the symbol rows across reviews until a write moves the database stamp (bd tea-rags-mcp-nehn5)", async () => {
