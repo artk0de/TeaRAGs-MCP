@@ -474,11 +474,12 @@ describe("detectComponentStableDependencyViolations — re-export shim component
     expect(report.summary.excluded.reexportShimEdges).toBe(6);
   });
 
-  it("judges an edge through the shim against the ULTIMATE target component, with the real file edges as evidence", () => {
+  it("judges an edge through the shim against the ULTIMATE target of the names it takes, with the real file edge as evidence", () => {
     const report = judge(preMoveEntryPoints());
 
+    // schemas.ts takes defaultBlamePoolSize: index.ts -> pool-sizing.ts -> trajectory/git only.
     const throughShim = report.violations.find(
-      (v) => v.sourceComponent === "src/bootstrap/config" && v.targetComponent === PIPELINE,
+      (v) => v.sourceComponent === "src/bootstrap/config" && v.targetComponent === GIT,
     );
     expect(throughShim).toMatchObject({
       sourceInstability: 2 / 8,
@@ -487,11 +488,13 @@ describe("detectComponentStableDependencyViolations — re-export shim component
       directoryRelation: "disjoint",
     });
     expect(throughShim?.fileEdges.map((e) => `${e.sourceRelPath} -> ${e.targetRelPath}`)).toEqual([
-      `src/bootstrap/config/env-snapshot.ts -> ${EP}/index.ts`,
       `src/bootstrap/config/schemas.ts -> ${EP}/index.ts`,
     ]);
-    // The stable ultimate target is judged too, and passes.
+    // Nothing config takes reaches ingest/pipeline; the stable registry is judged and passes.
+    expect(pairsOf(report)).not.toContain(`src/bootstrap/config -> ${PIPELINE}`);
     expect(pairsOf(report)).not.toContain(`src/bootstrap/config -> ${REGISTRY}`);
+    // The worker-pool factory's edge records no names: the one per-file fallback.
+    expect(report.summary.reexportShimNameUnknownEdges).toBe(1);
   });
 
   it("keeps a component holding one real declaration among its re-exports opaque", () => {
@@ -516,5 +519,69 @@ describe("detectComponentStableDependencyViolations — re-export shim component
     // lib -> shim (resolves back into lib) and shim -> lib; only app -> lib is judged.
     expect(report.summary.excluded.reexportShimEdges).toBe(2);
     expect(report.summary.judgedEdgeCount).toBe(1);
+  });
+
+  /**
+   * Name-level resolution: an importer is linked only to the targets that
+   * re-export the names it takes. Where the names cannot settle it — no names
+   * on the importer edge, or a name no re-export of the shim forwards (an
+   * alias: the walker records the SOURCE-side name) — the edge falls back to
+   * every target behind the shim file, counted.
+   */
+  describe("follows the chain by the names the importer takes", () => {
+    /** `core/` (Ca 6, Ce 1 → I 1/7) imports `shim/index.ts`, which re-exports `a` from x/ and `b` from y/ (both I 5/6). */
+    function shimOverTwoTargets(importer: FileDependencyEdge, extraShimEdges: FileDependencyEdge[] = []) {
+      return merge(
+        {
+          files: [file("core/c.ts"), shimFile("shim/index.ts"), file("vendor/v.ts")],
+          edges: [
+            importer,
+            reexport("shim/index.ts", "x/index.ts", ["a"]),
+            reexport("shim/index.ts", "y/index.ts", ["b"]),
+            ...extraShimEdges,
+          ],
+        },
+        files("app", 6, (p) => edge(p, "core/c.ts")),
+        volatileDomain("x", 5),
+        volatileDomain("y", 5),
+        { files: [file("z/index.ts")], edges: [] },
+      );
+    }
+    const targetsOf = (report: ReturnType<typeof judge>) =>
+      report.violations.filter((v) => v.sourceComponent === "core").map((v) => v.targetComponent);
+
+    it("links an importer taking only `a` to the target re-exporting `a`, not to the one re-exporting `b`", () => {
+      const report = judge(shimOverTwoTargets(edge("core/c.ts", "shim/index.ts", 1, { importedExportNames: ["a"] })));
+
+      expect(targetsOf(report)).toEqual(["x"]);
+      expect(report.summary.reexportShimNameUnknownEdges).toBe(0);
+    });
+
+    it("passes a name through `export *` when no named re-export claims it", () => {
+      const report = judge(
+        shimOverTwoTargets(edge("core/c.ts", "shim/index.ts", 1, { importedExportNames: ["c"] }), [
+          reexport("shim/index.ts", "z/index.ts", ["*"]),
+        ]),
+      );
+
+      expect(report.violations.filter((v) => v.sourceComponent === "core")).toEqual([]);
+      expect(report.summary.reexportShimNameUnknownEdges).toBe(0);
+    });
+
+    it("falls back to every target, counted, when the importer edge records no names", () => {
+      const report = judge(shimOverTwoTargets(edge("core/c.ts", "shim/index.ts", 1)));
+
+      expect(targetsOf(report).sort()).toEqual(["x", "y"]);
+      expect(report.summary.reexportShimNameUnknownEdges).toBe(1);
+    });
+
+    it("falls back to every target, counted, when a taken name is forwarded by no re-export (an alias)", () => {
+      const report = judge(
+        shimOverTwoTargets(edge("core/c.ts", "shim/index.ts", 1, { importedExportNames: ["aAlias"] })),
+      );
+
+      expect(targetsOf(report).sort()).toEqual(["x", "y"]);
+      expect(report.summary.reexportShimNameUnknownEdges).toBe(1);
+    });
   });
 });

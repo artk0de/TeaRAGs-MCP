@@ -33,7 +33,12 @@ export function summariseStableDependencies(
     rootCauseCount: report.rootCauses.length,
     excluded: { ...summary.excluded },
     exclusionReasons: STABLE_DEPENDENCIES_EXCLUSION_REASONS,
-    ...(summary.reexportShimComponents.length > 0 ? { reexportShimComponents: summary.reexportShimComponents } : {}),
+    ...(summary.reexportShimComponents.length > 0
+      ? {
+          reexportShimComponents: summary.reexportShimComponents,
+          reexportShimNameUnknownEdges: summary.reexportShimNameUnknownEdges,
+        }
+      : {}),
     ...(summary.scope ? { outOfScopeEdgeCount: summary.scope.outOfScopeEdgeCount } : {}),
   };
 }

@@ -1,6 +1,7 @@
 import type { FileDependencyEdge } from "../../../../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import { classifyComponentRelation } from "./constant-namespace.js";
+import { resolveReexportShimTargets } from "./reexport-shim.js";
 import { DEFAULT_SDP_MIN_CONNECTION_COUNT, DEFAULT_SDP_TOLERANCE } from "./stable-dependencies.js";
 import type {
   ComponentDependency,
@@ -77,7 +78,8 @@ export function detectComponentStableDependencyViolations(
   const violations: ComponentStableDependencyViolation[] = [];
   let judgedEdgeCount = 0;
 
-  for (const dependency of routeThroughReexportShims(componentGraph, excluded)) {
+  const shimRouting = routeThroughReexportShims(componentGraph, excluded);
+  for (const dependency of shimRouting.dependencies) {
     const source = componentGraph.components.get(dependency.sourceComponent);
     const target = componentGraph.components.get(dependency.targetComponent);
     if (!source || !target) continue;
@@ -131,6 +133,7 @@ export function detectComponentStableDependencyViolations(
       violationCount: violations.length,
       excluded,
       reexportShimComponents: [...(componentGraph.reexportShims?.componentDirs ?? [])].sort(compareCodePoints),
+      reexportShimNameUnknownEdges: shimRouting.nameUnknownEdges,
       ...(scope ? { scope } : {}),
     },
   };
@@ -143,9 +146,12 @@ export function detectComponentStableDependencyViolations(
  *
  * - a dependency OUT of a shim is not judged;
  * - a dependency INTO a shim becomes one onto each component its file edges'
- *   ultimate targets sit in, carried by the same real file edges (the edge a
- *   reader can open), merged with any direct dependency on that component;
- *   one resolving back into the source is dropped.
+ *   ultimate targets sit in — followed by the names each edge takes
+ *   (`resolveReexportShimTargets`), the per-file link only where the names
+ *   cannot settle it, counted in `nameUnknownEdges` — carried by the same
+ *   real file edges (the edge a reader can open), merged with any direct
+ *   dependency on that component; one resolving back into the source is
+ *   dropped.
  *
  * Both count once per original dependency under `reexportShimEdges`.
  * Instability stays the component graph's: a neighbour's Ca / Ce are counted
@@ -156,9 +162,12 @@ export function detectComponentStableDependencyViolations(
 function routeThroughReexportShims(
   componentGraph: ComponentGraph,
   excluded: ComponentStableDependenciesExclusionCounts,
-): ComponentDependency[] {
+): { dependencies: ComponentDependency[]; nameUnknownEdges: number } {
   const shims = componentGraph.reexportShims;
-  if (!shims || shims.componentDirs.size === 0) return componentGraph.dependencies;
+  if (!shims || shims.componentDirs.size === 0) {
+    return { dependencies: componentGraph.dependencies, nameUnknownEdges: 0 };
+  }
+  let nameUnknownEdges = 0;
   const routed = new Map<string, ComponentDependency>();
   const carry = (sourceComponent: string, targetComponent: string, edge: FileDependencyEdge) => {
     const key = `${sourceComponent}\u0000${targetComponent}`;
@@ -184,7 +193,9 @@ function routeThroughReexportShims(
     } else if (shims.componentDirs.has(targetComponent)) {
       excluded.reexportShimEdges++;
       for (const edge of dependency.fileEdges) {
-        for (const target of shims.ultimateTargetsOf.get(edge.targetRelPath) ?? []) {
+        const resolution = resolveReexportShimTargets(shims, edge.targetRelPath, edge.importedExportNames);
+        if (!resolution.nameResolved) nameUnknownEdges++;
+        for (const target of resolution.targets) {
           const ultimate = componentGraph.componentOf.get(target);
           if (ultimate !== undefined && ultimate !== sourceComponent) carry(sourceComponent, ultimate, edge);
         }
@@ -193,11 +204,12 @@ function routeThroughReexportShims(
       for (const edge of dependency.fileEdges) carry(sourceComponent, targetComponent, edge);
     }
   }
-  return [...routed.values()].sort(
+  const dependencies = [...routed.values()].sort(
     (a, b) =>
       compareCodePoints(a.sourceComponent, b.sourceComponent) ||
       compareCodePoints(a.targetComponent, b.targetComponent),
   );
+  return { dependencies, nameUnknownEdges };
 }
 
 /** Heaviest call weight first, then path; capped at {@link COMPONENT_EVIDENCE_FILE_EDGE_LIMIT}. */

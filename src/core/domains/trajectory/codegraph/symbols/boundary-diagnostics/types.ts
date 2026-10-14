@@ -508,6 +508,18 @@ export interface ReexportShimComponents {
    * one the walk never extracted. Sorted.
    */
   ultimateTargetsOf: ReadonlyMap<RelPath, readonly RelPath[]>;
+  /**
+   * Each file of such a component → what each of its edges forwards: the
+   * target and the names, in the TARGET's spelling (`*` = the whole module).
+   * The per-name chain `resolveReexportShimTargets` walks.
+   */
+  forwardsOf: ReadonlyMap<RelPath, readonly ReexportShimForward[]>;
+}
+
+/** One re-export edge of a shim file: where it points and which names it forwards. */
+export interface ReexportShimForward {
+  targetRelPath: RelPath;
+  names: readonly string[];
 }
 
 export interface ComponentStableDependenciesOptions {
@@ -601,6 +613,13 @@ export interface ComponentStableDependenciesSummary {
   excluded: ComponentStableDependenciesExclusionCounts;
   /** The components judged transparent as pure re-export shims, by path. */
   reexportShimComponents: string[];
+  /**
+   * File edges into a shim whose taken names could not settle the chain — the
+   * importer recorded no names, or took one no re-export of the chain
+   * forwards (an alias) — and were linked to every target behind the shim
+   * file instead.
+   */
+  reexportShimNameUnknownEdges: number;
   /** Present when scoped; `outOfScopeEdgeCount` counts COMPONENT dependencies. */
   scope?: StableDependenciesScope;
 }

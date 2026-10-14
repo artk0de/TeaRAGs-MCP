@@ -1,6 +1,9 @@
 import type { FileDependencyEdge, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { carriesReexport } from "./facade-aggregation.js";
-import type { ReexportShimComponents } from "./types.js";
+import { carriesReexport, forwardedExportNames } from "./facade-aggregation.js";
+import type { ReexportShimComponents, ReexportShimForward } from "./types.js";
+
+/** `ImportRef`'s spelling of the whole module: a namespace import, `export *`. */
+const WHOLE_MODULE_EXPORT_NAME = "*";
 
 /** What the re-export shim exclusion takes out of SDP judgement, named for a report (bd tea-rags-mcp-ciq4d). */
 export const REEXPORT_SHIM_REASON =
@@ -17,10 +20,9 @@ export const REEXPORT_SHIM_REASON =
  *
  * A shim file's ULTIMATE targets are the targets of its edges, followed
  * through every file that itself sits in a shim component, to the first file
- * that does not (or that the walk never extracted). Following is per file
- * edge, never by export name: an aliased re-export spells the name the source
- * module knows, not the one its importer imports, so a name filter would drop
- * real paths.
+ * that does not (or that the walk never extracted) — the per-file link. Its
+ * FORWARDS keep each edge's names, so an importer can be followed by the
+ * names it takes instead (`resolveReexportShimTargets`).
  */
 export function deriveReexportShimComponents(
   graph: FileDependencyGraph,
@@ -47,12 +49,77 @@ export function deriveReexportShimComponents(
   const componentDirs = new Set([...members.keys()].filter((c) => !opaque.has(c)));
 
   const ultimateTargetsOf = new Map<RelPath, RelPath[]>();
+  const forwardsOf = new Map<RelPath, ReexportShimForward[]>();
   for (const component of componentDirs) {
     for (const relPath of members.get(component) ?? []) {
       ultimateTargetsOf.set(relPath, ultimateTargets(relPath, outgoing, componentOf, componentDirs));
+      forwardsOf.set(
+        relPath,
+        (outgoing.get(relPath) ?? []).map((e) => ({ targetRelPath: e.targetRelPath, names: forwardedExportNames(e) })),
+      );
     }
   }
-  return { componentDirs, ultimateTargetsOf };
+  return { componentDirs, ultimateTargetsOf, forwardsOf };
+}
+
+/** Where an importer edge into a shim file lands, and whether its names settled it. */
+export interface ReexportShimResolution {
+  targets: readonly RelPath[];
+  /** False when the names could not settle the chain and `targets` is the per-file link. */
+  nameResolved: boolean;
+}
+
+/**
+ * The files an importer edge into shim file `relPath` reaches through the
+ * shim chain, followed by the names it takes (bd tea-rags-mcp-ciq4d). A
+ * forward naming a taken name carries that name on; a name no named forward
+ * claims passes through every `export *` forward. A namespace import (`*`)
+ * takes the whole surface — the per-file link, exactly.
+ *
+ * The names cannot settle it — the importer recorded none, or took a name no
+ * forward of the chain claims and no `export *` can carry (an aliased
+ * re-export: the walker records the SOURCE-side name, and no fact names the
+ * alias) — and the answer is the per-file link with `nameResolved: false`.
+ */
+export function resolveReexportShimTargets(
+  shims: ReexportShimComponents,
+  relPath: RelPath,
+  importedExportNames: readonly string[] | undefined,
+): ReexportShimResolution {
+  const perFile = shims.ultimateTargetsOf.get(relPath) ?? [];
+  if (!importedExportNames || importedExportNames.length === 0) return { targets: perFile, nameResolved: false };
+  if (importedExportNames.includes(WHOLE_MODULE_EXPORT_NAME)) return { targets: perFile, nameResolved: true };
+  const targets = new Set<RelPath>();
+  const visited = new Set<string>();
+  const frontier: { relPath: RelPath; names: ReadonlySet<string> }[] = [
+    { relPath, names: new Set(importedExportNames) },
+  ];
+  for (let next = frontier.pop(); next !== undefined; next = frontier.pop()) {
+    const forwards = shims.forwardsOf.get(next.relPath) ?? [];
+    const unclaimed = new Set(next.names);
+    const carried: { targetRelPath: RelPath; names: ReadonlySet<string> }[] = [];
+    for (const forward of forwards) {
+      const hit = forward.names.filter((n) => next.names.has(n));
+      for (const n of hit) unclaimed.delete(n);
+      if (hit.length > 0) carried.push({ targetRelPath: forward.targetRelPath, names: new Set(hit) });
+    }
+    if (unclaimed.size > 0) {
+      const stars = forwards.filter((f) => f.names.includes(WHOLE_MODULE_EXPORT_NAME));
+      if (stars.length === 0) return { targets: perFile, nameResolved: false };
+      for (const star of stars) carried.push({ targetRelPath: star.targetRelPath, names: unclaimed });
+    }
+    for (const step of carried) {
+      if (!shims.forwardsOf.has(step.targetRelPath)) {
+        targets.add(step.targetRelPath);
+        continue;
+      }
+      const key = `${step.targetRelPath}\u0000${[...step.names].sort().join(",")}`;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      frontier.push({ relPath: step.targetRelPath, names: step.names });
+    }
+  }
+  return { targets: [...targets].sort(compareCodePoints), nameResolved: true };
 }
 
 function isPureReexportFile(symbolCount: number, edges: readonly FileDependencyEdge[]): boolean {
@@ -80,5 +147,11 @@ function ultimateTargets(
       }
     }
   }
-  return [...targets].sort((a, b) => (a === b ? 0 : a < b ? -1 : 1));
+  return [...targets].sort(compareCodePoints);
+}
+
+/** Locale-independent, so the order is the same on every machine. */
+function compareCodePoints(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 }

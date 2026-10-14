@@ -1076,6 +1076,12 @@ export interface StableDependenciesReportSummary {
   exclusionReasons: { facadeAggregations: string; containment: string; reexportShims: string };
   /** Components judged transparent as pure re-export shims, by path; present only when any. */
   reexportShimComponents?: string[];
+  /**
+   * File edges into a shim the taken names could not settle (no names
+   * recorded, or a name only an alias explains), linked to every target behind
+   * the shim file instead; present with `reexportShimComponents`.
+   */
+  reexportShimNameUnknownEdges?: number;
   /** Component dependencies none of whose file edges has a source matching `pathPattern`; present only when scoped. */
   outOfScopeEdgeCount?: number;
 }
