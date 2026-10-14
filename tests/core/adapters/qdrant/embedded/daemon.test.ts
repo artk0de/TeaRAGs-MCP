@@ -1,11 +1,13 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  adoptOrphanedDaemon,
   buildDaemonEnv,
+  cleanupDaemonFilesOwnedBy,
   computeStartupPhase,
   EMBEDDED_MARKER,
   evictStaleDaemon,
@@ -15,6 +17,7 @@ import {
   isPidAlive,
   makeReconnect,
   probeDaemonVersion,
+  scheduleIdleWatcher,
   waitForDaemonReady,
   type EvictStaleDaemonDeps,
 } from "../../../../../src/core/adapters/qdrant/embedded/daemon.js";
@@ -446,5 +449,166 @@ describe("evictStaleDaemon", () => {
     expect(result).toBe(true);
     expect(killPid).toHaveBeenCalledWith(PID, "SIGTERM");
     expect(killPid).toHaveBeenCalledWith(PID, "SIGKILL");
+  });
+});
+
+describe("daemon-file cleanup never wipes a daemon recorded by another process (k6sy2)", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "qdrant-foreign-files-"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const DEAD_PID = 999_999_999;
+
+  it("evictStaleDaemon keeps files a respawning process wrote while the stale daemon exited", async () => {
+    const paths = getDaemonPaths(tempDir);
+    writeFileSync(paths.pidFile, String(DEAD_PID), "utf-8");
+    const killPid = vi.fn(() => {
+      // Another process sees the dead pid, cold-spawns, records its daemon.
+      writeFileSync(paths.pidFile, String(process.pid), "utf-8");
+      writeFileSync(paths.portFile, "7001", "utf-8");
+    });
+
+    const evicted = await evictStaleDaemon(paths, DEAD_PID, "http://127.0.0.1:6333", undefined, {
+      probeVersion: async () => "0.0.1",
+      killPid,
+      isAlive: () => false,
+      sleep: async () => {},
+      binaryUpToDate: () => true,
+    });
+
+    expect(evicted).toBe(true);
+    expect(readFileSync(paths.pidFile, "utf-8")).toBe(String(process.pid));
+    expect(readFileSync(paths.portFile, "utf-8")).toBe("7001");
+  });
+
+  it("the idle watcher of a dead daemon keeps files that name another live daemon", () => {
+    vi.useFakeTimers();
+    const paths = getDaemonPaths(tempDir);
+    writeFileSync(paths.pidFile, String(process.pid), "utf-8");
+    writeFileSync(paths.portFile, "7001", "utf-8");
+
+    scheduleIdleWatcher(paths, DEAD_PID);
+    vi.advanceTimersByTime(5000);
+
+    expect(readFileSync(paths.pidFile, "utf-8")).toBe(String(process.pid));
+    expect(readFileSync(paths.portFile, "utf-8")).toBe("7001");
+  });
+
+  it("the idle watcher of a dead daemon removes files that still name it", () => {
+    vi.useFakeTimers();
+    const paths = getDaemonPaths(tempDir);
+    writeFileSync(paths.pidFile, String(DEAD_PID), "utf-8");
+    writeFileSync(paths.portFile, "7001", "utf-8");
+
+    scheduleIdleWatcher(paths, DEAD_PID);
+    vi.advanceTimersByTime(5000);
+
+    expect(existsSync(paths.pidFile)).toBe(false);
+    expect(existsSync(paths.portFile)).toBe(false);
+  });
+});
+
+describe("adoptOrphanedDaemon", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "qdrant-adopt-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("re-records the pid and port of a live daemon whose files were lost (k6sy2)", async () => {
+    const paths = getDaemonPaths(tempDir);
+    const discover = vi.fn(async () => ({ pid: process.pid, port: 50779 }));
+
+    const adopted = await adoptOrphanedDaemon(paths, "/bin/qdrant", discover);
+
+    expect(adopted).toEqual({ pid: process.pid, port: 50779 });
+    expect(discover).toHaveBeenCalledWith(tempDir, "/bin/qdrant");
+    expect(readFileSync(paths.pidFile, "utf-8")).toBe(String(process.pid));
+    expect(readFileSync(paths.portFile, "utf-8")).toBe("50779");
+    // The recorded files are what the attach fast path reads.
+    expect(isDaemonAlive(paths)).toBe(true);
+  });
+
+  it("writes nothing and returns undefined when no live daemon serves the storage", async () => {
+    const paths = getDaemonPaths(tempDir);
+
+    const adopted = await adoptOrphanedDaemon(paths, "/bin/qdrant", async () => undefined);
+
+    expect(adopted).toBeUndefined();
+    expect(existsSync(paths.pidFile)).toBe(false);
+    expect(existsSync(paths.portFile)).toBe(false);
+  });
+
+  it("degrades to undefined (cold spawn) when discovery itself throws", async () => {
+    const paths = getDaemonPaths(tempDir);
+
+    const adopted = await adoptOrphanedDaemon(paths, "/bin/qdrant", async () => {
+      throw new Error("ps missing");
+    });
+
+    expect(adopted).toBeUndefined();
+    expect(existsSync(paths.pidFile)).toBe(false);
+  });
+});
+
+describe("cleanupDaemonFilesOwnedBy", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "qdrant-cleanup-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function writeDaemonFiles(pid: number, port: number): ReturnType<typeof getDaemonPaths> {
+    const paths = getDaemonPaths(tempDir);
+    writeFileSync(paths.pidFile, String(pid));
+    writeFileSync(paths.portFile, String(port));
+    writeFileSync(paths.refsFile, "1");
+    writeFileSync(paths.startedAtFile, String(Date.now()));
+    return paths;
+  }
+
+  it("removes the daemon files when they still name the failed pid", () => {
+    const paths = writeDaemonFiles(4242, 6000);
+
+    cleanupDaemonFilesOwnedBy(paths, 4242);
+
+    for (const f of [paths.pidFile, paths.portFile, paths.refsFile, paths.startedAtFile]) {
+      expect(existsSync(f)).toBe(false);
+    }
+  });
+
+  it("leaves files another process rewrote for a different pid untouched", () => {
+    const paths = writeDaemonFiles(5151, 7000);
+
+    cleanupDaemonFilesOwnedBy(paths, 4242);
+
+    expect(readFileSync(paths.pidFile, "utf-8")).toBe("5151");
+    expect(readFileSync(paths.portFile, "utf-8")).toBe("7000");
+    expect(readFileSync(paths.refsFile, "utf-8")).toBe("1");
+    expect(existsSync(paths.startedAtFile)).toBe(true);
+  });
+
+  it("is a no-op when the pid file is already gone", () => {
+    const paths = getDaemonPaths(tempDir);
+    writeFileSync(paths.portFile, "7000");
+
+    cleanupDaemonFilesOwnedBy(paths, 4242);
+
+    expect(existsSync(paths.portFile)).toBe(true);
   });
 });
