@@ -16,6 +16,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
+import type * as DiffScopeReader from "../../../../../src/core/api/internal/ops/diff-scope-reader.js";
+import { readDiffScope } from "../../../../../src/core/api/internal/ops/diff-scope-reader.js";
 import {
   NamingLexiconOps,
   type NamingLexiconEmbeddings,
@@ -38,6 +40,12 @@ import {
 import { capability as typescriptCapability } from "../../../../../src/core/domains/language/typescript/capability.js";
 import { DATABASE_MIGRATIONS } from "../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../../src/core/domains/maintenance/migration/database/runner.js";
+
+// A pass-through spy: the review path reads the change once (bd tea-rags-mcp-wijz7).
+vi.mock("../../../../../src/core/api/internal/ops/diff-scope-reader.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof DiffScopeReader>();
+  return { ...actual, readDiffScope: vi.fn(actual.readDiffScope) };
+});
 
 const NAMING = new Map<string, IdentifierNamingConvention>([
   ["typescript", typescriptCapability.naming as IdentifierNamingConvention],
@@ -865,6 +873,16 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
           }),
         ]),
       );
+    });
+
+    it("reads the change once — the lexicon judges the review's own read", async () => {
+      writeFileSync(join(repo, "src/git/commit.ts"), "export class Commit {}\n");
+      vi.mocked(readDiffScope).mockClear();
+
+      const result = await reviewOps().reviewChanges({ collection: "c", path: repo, sections: ["naming"] });
+
+      expect(result.review.sections.naming?.built).toBe(true);
+      expect(readDiffScope).toHaveBeenCalledTimes(1);
     });
   });
 

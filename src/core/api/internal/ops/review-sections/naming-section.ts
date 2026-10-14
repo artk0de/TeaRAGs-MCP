@@ -6,11 +6,9 @@
  * (its notices, its `notJudged*` accounting) is the answer rather than a
  * re-derivation here.
  *
- * DOUBLE READ, accepted for this slice: the orchestration read the diff once
- * (F0) and the lexicon re-reads it itself — `getNamingLexicon` cannot consume
- * a pre-read `DiffScopeRead` yet. The cost is one extra `git diff` per
- * `review_changes` call; removable when the lexicon accepts a scope directly
- * (tracked with the endpoint diff-mode removal, after F4).
+ * The change is read once per review (bd tea-rags-mcp-wijz7): the section
+ * hands the orchestration's read (`scope`) to the lexicon, which judges it
+ * instead of reading the same diff again.
  */
 
 import type { ReviewSectionProvider } from "./review-section-provider.js";
@@ -26,11 +24,14 @@ export const namingSectionProvider: ReviewSectionProvider = {
   run: async (context) => {
     const { lexiconOps } = context;
     if (lexiconOps === undefined) return { built: false, reason: "naming lexicon not wired (codegraph disabled)" };
-    const result = await lexiconOps.getNamingLexicon({
-      ...context.addressing,
-      changes: context.diffRequest.base !== undefined ? { base: context.diffRequest.base } : {},
-      ...(context.diffRequest.files !== undefined ? { files: [...context.diffRequest.files] } : {}),
-    });
+    const result = await lexiconOps.getNamingLexicon(
+      {
+        ...context.addressing,
+        changes: context.diffRequest.base !== undefined ? { base: context.diffRequest.base } : {},
+        ...(context.diffRequest.files !== undefined ? { files: [...context.diffRequest.files] } : {}),
+      },
+      { diff: context.scope },
+    );
     const { review } = result;
     if (review === undefined) return { built: false, reason: "the naming lexicon returned no review" };
     return { ...review };
