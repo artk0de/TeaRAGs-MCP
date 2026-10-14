@@ -52,10 +52,8 @@ export function collectionPathFields() {
       .string()
       .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
       .optional()
-      .describe(
-        "[RECOMMENDED] Registered project alias; survives path moves. Resolution priority: collection > project > path.",
-      ),
-    collection: z.string().optional().describe("Raw Qdrant collection name — lowest-level handle; prefer 'project'."),
+      .describe("[RECOMMENDED] Project alias; survives path moves. Priority: collection>project>path."),
+    collection: z.string().optional().describe("Qdrant collection; prefer project."),
     path: z.string().optional().describe(WORKING_TREE_PATH_HINT),
   };
 }
