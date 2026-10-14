@@ -32,9 +32,26 @@ export function isFacadeAggregationEdge(edge: FileDependencyEdge): boolean {
   const sourceDir = directoryOf(edge.sourceRelPath);
   const targetDir = directoryOf(edge.targetRelPath);
   const descendant = sourceDir === "" ? targetDir !== "" : targetDir.startsWith(`${sourceDir}/`);
-  if (!descendant) return false;
-  if ((edge.reexportedExportNames?.length ?? 0) > 0) return true;
-  return IMPORTS_ARE_EXPORTS_ENTRY_NAMES.has(sourceName) && (edge.importedExportNames?.length ?? 0) > 0;
+  return descendant && carriesReexport(edge);
+}
+
+/**
+ * The edge forwards the target's exports as the source's own: it records a
+ * re-export (`export … from`), or it leaves a Python `__init__.py`, where the
+ * imports are the exports. An edge with no recorded names cannot show one.
+ */
+export function carriesReexport(edge: FileDependencyEdge): boolean {
+  return forwardedExportNames(edge).length > 0;
+}
+
+/**
+ * The names the edge forwards, in the TARGET's spelling (`*` for a
+ * whole-module re-export): its re-export names, or a Python `__init__.py`'s
+ * imported names. Empty when the edge forwards nothing it recorded.
+ */
+export function forwardedExportNames(edge: FileDependencyEdge): readonly string[] {
+  if ((edge.reexportedExportNames?.length ?? 0) > 0) return edge.reexportedExportNames ?? [];
+  return IMPORTS_ARE_EXPORTS_ENTRY_NAMES.has(baseName(edge.sourceRelPath)) ? (edge.importedExportNames ?? []) : [];
 }
 
 function directoryOf(relPath: string): string {

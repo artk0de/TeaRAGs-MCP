@@ -297,11 +297,14 @@ describe("ArchitectureReportOps#build", () => {
         facadeAggregations: 0,
         containment: 0,
         lowConnectionCount: 1,
+        reexportShimEdges: 0,
       },
       exclusionReasons: {
         facadeAggregations: "facade aggregation: a module facade re-exporting a descendant module's facade",
         containment:
           "containment: a component depending on a component nested inside its directory - composition, not a peer dependency",
+        reexportShims:
+          "re-export shim: a component whose every file only re-exports other modules has no volatility of its own - edges into it are judged against the components it re-exports, its own edges are not judged",
       },
     });
     expect(report.pathPattern).toBeUndefined();

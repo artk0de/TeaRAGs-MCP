@@ -488,6 +488,38 @@ export interface ComponentGraph {
   facadeAggregations: ComponentFacadeAggregation[];
   /** Every file edge read. */
   fileEdgeCount: number;
+  /**
+   * The pure re-export components and where their files' re-exports land
+   * (`deriveReexportShimComponents`, bd tea-rags-mcp-ciq4d). Read by SDP
+   * only; no coupling count above depends on it. Absent on a hand-built graph.
+   */
+  reexportShims?: ReexportShimComponents;
+}
+
+/**
+ * Components whose every file is a pure re-export (bd tea-rags-mcp-ciq4d):
+ * no declaration of their own, so no volatility of their own.
+ */
+export interface ReexportShimComponents {
+  componentDirs: ReadonlySet<string>;
+  /**
+   * Each file of such a component → the files its re-exports finally reach,
+   * through any other shim file; a target outside every shim component, or
+   * one the walk never extracted. Sorted.
+   */
+  ultimateTargetsOf: ReadonlyMap<RelPath, readonly RelPath[]>;
+  /**
+   * Each file of such a component → what each of its edges forwards: the
+   * target and the names, in the TARGET's spelling (`*` = the whole module).
+   * The per-name chain `resolveReexportShimTargets` walks.
+   */
+  forwardsOf: ReadonlyMap<RelPath, readonly ReexportShimForward[]>;
+}
+
+/** One re-export edge of a shim file: where it points and which names it forwards. */
+export interface ReexportShimForward {
+  targetRelPath: RelPath;
+  names: readonly string[];
 }
 
 export interface ComponentStableDependenciesOptions {
@@ -556,6 +588,13 @@ export interface ComponentStableDependenciesExclusionCounts extends ComponentGra
   containment: number;
   /** Component dependencies with an end below `minConnectionCount`. */
   lowConnectionCount: number;
+  /**
+   * Component dependencies into or out of a re-export shim component
+   * (`REEXPORT_SHIM_REASON`): out of one is never judged, into one is judged
+   * as a dependency on the components it re-exports — or not at all when
+   * those resolve back into the source.
+   */
+  reexportShimEdges: number;
 }
 
 export interface ComponentStableDependenciesSummary {
@@ -572,6 +611,15 @@ export interface ComponentStableDependenciesSummary {
   judgedEdgeCount: number;
   violationCount: number;
   excluded: ComponentStableDependenciesExclusionCounts;
+  /** The components judged transparent as pure re-export shims, by path. */
+  reexportShimComponents: string[];
+  /**
+   * File edges into a shim whose taken names could not settle the chain — the
+   * importer recorded no names, or took one no re-export of the chain
+   * forwards (an alias) — and were linked to every target behind the shim
+   * file instead.
+   */
+  reexportShimNameUnknownEdges: number;
   /** Present when scoped; `outOfScopeEdgeCount` counts COMPONENT dependencies. */
   scope?: StableDependenciesScope;
 }

@@ -552,6 +552,7 @@ export class ArchitectureReportOps {
             facadeAggregations: 0,
             containment: 0,
             lowConnectionCount: 0,
+            reexportShimEdges: 0,
           },
           exclusionReasons: STABLE_DEPENDENCIES_EXCLUSION_REASONS,
         },

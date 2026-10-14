@@ -1,4 +1,7 @@
+import type { FileDependencyEdge } from "../../../../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
+import { classifyComponentRelation } from "./constant-namespace.js";
+import { resolveReexportShimTargets } from "./reexport-shim.js";
 import { DEFAULT_SDP_MIN_CONNECTION_COUNT, DEFAULT_SDP_TOLERANCE } from "./stable-dependencies.js";
 import type {
   ComponentDependency,
@@ -39,6 +42,10 @@ const INSTABILITY_DELTA_EPSILON = 1e-9;
  *    / 12 left 13 / 12 / 11 / 8 violations — the floor trims the tail, it does
  *    not decide the list.
  *
+ * A pure re-export component is transparent before either rule runs
+ * (`routeThroughReexportShims`, bd tea-rags-mcp-ciq4d): a dependency into it
+ * is judged against the components it re-exports, one out of it is not judged.
+ *
  * Coupling is counted over the whole graph; `sourcePathPattern` only decides
  * which dependencies are judged. File-level exclusions (self, unwalked,
  * intra-component, facade aggregation) come from the component graph and are
@@ -66,11 +73,13 @@ export function detectComponentStableDependencyViolations(
     ...componentGraph.excluded,
     containment: 0,
     lowConnectionCount: 0,
+    reexportShimEdges: 0,
   };
   const violations: ComponentStableDependencyViolation[] = [];
   let judgedEdgeCount = 0;
 
-  for (const dependency of componentGraph.dependencies) {
+  const shimRouting = routeThroughReexportShims(componentGraph, excluded);
+  for (const dependency of shimRouting.dependencies) {
     const source = componentGraph.components.get(dependency.sourceComponent);
     const target = componentGraph.components.get(dependency.targetComponent);
     if (!source || !target) continue;
@@ -123,9 +132,84 @@ export function detectComponentStableDependencyViolations(
       judgedEdgeCount,
       violationCount: violations.length,
       excluded,
+      reexportShimComponents: [...(componentGraph.reexportShims?.componentDirs ?? [])].sort(compareCodePoints),
+      reexportShimNameUnknownEdges: shimRouting.nameUnknownEdges,
       ...(scope ? { scope } : {}),
     },
   };
+}
+
+/**
+ * The dependencies SDP judges once re-export shim components are transparent
+ * (bd tea-rags-mcp-ciq4d). A shim has no volatility of its own — it changes
+ * when its targets do — so:
+ *
+ * - a dependency OUT of a shim is not judged;
+ * - a dependency INTO a shim becomes one onto each component its file edges'
+ *   ultimate targets sit in — followed by the names each edge takes
+ *   (`resolveReexportShimTargets`), the per-file link only where the names
+ *   cannot settle it, counted in `nameUnknownEdges` — carried by the same
+ *   real file edges (the edge a reader can open), merged with any direct
+ *   dependency on that component; one resolving back into the source is
+ *   dropped.
+ *
+ * Both count once per original dependency under `reexportShimEdges`.
+ * Instability stays the component graph's: a neighbour's Ca / Ce are counted
+ * over the files that really import it — a shim file is an afferent of the
+ * component it re-exports, a source importing the shim is efferent of its own
+ * component — so SDP reads the same numbers mainSequence and hubLike read.
+ */
+function routeThroughReexportShims(
+  componentGraph: ComponentGraph,
+  excluded: ComponentStableDependenciesExclusionCounts,
+): { dependencies: ComponentDependency[]; nameUnknownEdges: number } {
+  const shims = componentGraph.reexportShims;
+  if (!shims || shims.componentDirs.size === 0) {
+    return { dependencies: componentGraph.dependencies, nameUnknownEdges: 0 };
+  }
+  let nameUnknownEdges = 0;
+  const routed = new Map<string, ComponentDependency>();
+  const carry = (sourceComponent: string, targetComponent: string, edge: FileDependencyEdge) => {
+    const key = `${sourceComponent}\u0000${targetComponent}`;
+    let dependency = routed.get(key);
+    if (!dependency) {
+      dependency = {
+        sourceComponent,
+        targetComponent,
+        directoryRelation: classifyComponentRelation(sourceComponent, targetComponent),
+        callWeight: 0,
+        fileEdges: [],
+      };
+      routed.set(key, dependency);
+    }
+    if (dependency.fileEdges.includes(edge)) return;
+    dependency.fileEdges.push(edge);
+    dependency.callWeight += edge.callWeight;
+  };
+  for (const dependency of componentGraph.dependencies) {
+    const { sourceComponent, targetComponent } = dependency;
+    if (shims.componentDirs.has(sourceComponent)) {
+      excluded.reexportShimEdges++;
+    } else if (shims.componentDirs.has(targetComponent)) {
+      excluded.reexportShimEdges++;
+      for (const edge of dependency.fileEdges) {
+        const resolution = resolveReexportShimTargets(shims, edge.targetRelPath, edge.importedExportNames);
+        if (!resolution.nameResolved) nameUnknownEdges++;
+        for (const target of resolution.targets) {
+          const ultimate = componentGraph.componentOf.get(target);
+          if (ultimate !== undefined && ultimate !== sourceComponent) carry(sourceComponent, ultimate, edge);
+        }
+      }
+    } else {
+      for (const edge of dependency.fileEdges) carry(sourceComponent, targetComponent, edge);
+    }
+  }
+  const dependencies = [...routed.values()].sort(
+    (a, b) =>
+      compareCodePoints(a.sourceComponent, b.sourceComponent) ||
+      compareCodePoints(a.targetComponent, b.targetComponent),
+  );
+  return { dependencies, nameUnknownEdges };
 }
 
 /** Heaviest call weight first, then path; capped at {@link COMPONENT_EVIDENCE_FILE_EDGE_LIMIT}. */
