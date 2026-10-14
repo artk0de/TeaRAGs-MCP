@@ -218,6 +218,23 @@ describe("EmbeddingProviderFactory", () => {
         expect(create).toThrow(/ollama/);
       });
 
+      it("rejects a comma-separated EMBEDDING_BASE_URL for ollama, naming variable and provider", () => {
+        const create = () =>
+          EmbeddingProviderFactory.create(makeConfig({ provider: "ollama", baseUrl: "http://box:8081,8082" }));
+
+        expect(create).toThrow(ConfigValueInvalidError);
+        expect(create).toThrow(/EMBEDDING_BASE_URL/);
+        expect(create).toThrow(/ollama/);
+      });
+
+      it("keeps the llama-server comma list form for EMBEDDING_BASE_URL", () => {
+        const provider = EmbeddingProviderFactory.create(
+          makeConfig({ provider: "llama-server", baseUrl: "http://box:8081,8082" }),
+        );
+
+        expect(provider).toBeInstanceOf(LlamaServerEmbeddings);
+      });
+
       it("accepts a single EMBEDDING_FALLBACK_URL for ollama", () => {
         const provider = EmbeddingProviderFactory.create(
           makeConfig({ provider: "ollama", fallbackBaseUrl: "http://localhost:11435" }),
