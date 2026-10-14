@@ -185,7 +185,7 @@ describe("Ruby walker — field accesses", () => {
       "  # @param [Array<Order>] orders",
       "  def deliver(order, orders, retries = 1, notify:)",
       "    order.email",
-      "    orders.first",
+      "    orders.latest",
       "    retries.zero",
       "    notify.channel",
       "  end",
@@ -193,7 +193,7 @@ describe("Ruby walker — field accesses", () => {
     );
     expect(facts.map((f) => [f.ownerKind, f.ownerType, f.receiver, f.fieldName])).toEqual([
       ["unknown", undefined, "order", "email"],
-      ["unknown", undefined, "orders", "first"],
+      ["unknown", undefined, "orders", "latest"],
       ["unknown", undefined, "retries", "zero"],
       ["unknown", undefined, "notify", "channel"],
     ]);
@@ -236,6 +236,40 @@ describe("Ruby walker — field accesses", () => {
       "end",
     );
     expect(facts.map((f) => [f.receiver, f.fieldName])).toEqual([["p", "body"]]);
+  });
+
+  it("skips a pure read of a core Object/Kernel/Enumerable member on a parameter, keeps user attributes and core-named writes", () => {
+    const facts = accessesOf(
+      "class Svc",
+      "  # @param order [Order]",
+      "  def run(path, options, order, list)",
+      "    path.to_s",
+      "    options.dup",
+      "    order.class",
+      "    options.freeze",
+      "    list.size",
+      "    path.nil?",
+      "    order.total",
+      "    options.timeout",
+      "    list.size = 1",
+      "    list.count += 1",
+      "    local = Thing.new",
+      "    local.to_s",
+      "  end",
+      "end",
+    );
+    expect(facts.map((f) => [f.receiver, f.fieldName, f.accessKind])).toEqual([
+      ["order", "total", "read"],
+      ["options", "timeout", "read"],
+      ["list", "size", "write"],
+      ["list", "count", "read"],
+      ["list", "count", "write"],
+    ]);
+  });
+
+  it("keeps id and errors reads on a parameter, which are real attributes rather than core members", () => {
+    const facts = accessesOf("class Svc", "  def run(record)", "    record.id", "    record.errors", "  end", "end");
+    expect(facts.map((f) => f.fieldName)).toEqual(["id", "errors"]);
   });
 
   it("keeps a block's ivars on the enclosing method and lets a block parameter shadow a method parameter", () => {

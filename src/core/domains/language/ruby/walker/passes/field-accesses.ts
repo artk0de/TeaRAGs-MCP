@@ -18,7 +18,9 @@
  * `p.x` is a method call in Ruby; it counts as an attribute access only on a
  * declared plain / optional / keyword parameter, with no arguments (not even
  * `()`), no block, and a name that is not a predicate or bang (`?` / `!`).
- * `self.x` and a bare `x` stay method edges, and nothing is recorded for a
+ * A pure read whose name is a core Ruby member (`RUBY_CORE_MEMBERS`: `to_s`, `dup`,
+ * `class`, `size`, …) is a core method call, not an attribute, and records nothing; a
+ * write to such a name is still an attribute writer. `self.x` and a bare `x` stay method edges, and nothing is recorded for a
  * local or a splat / block parameter. Only a bare-constant YARD `@param` types
  * the owner: `[Array<Order>]` names what the collection holds, not the receiver.
  *
@@ -40,6 +42,7 @@ import { isSameAstNode, type AstNode } from "../../../../../contracts/types/ast.
 import type { FieldAccessFact, FieldAccessKind, FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type { WalkContext } from "../../../../../contracts/types/language.js";
 import { innermostChunkSymbolId, symbolIdNames, type ExtractionFacetPass } from "../../../kernel/index.js";
+import { RUBY_CORE_MEMBERS } from "../../dsl/core-members.js";
 import { collectYardRawParamBrackets, YARD_CONST } from "../type-sources/yard.js";
 
 /** The method whose body is being read: its id, who `self` is, and which parameters it declares. */
@@ -283,7 +286,12 @@ class RubyFieldAccessCollector {
       ? { ownerKind: "param", ownerType: type, receiver: receiver.text }
       : { ownerKind: "unknown", receiver: receiver.text };
     const line = method.startPosition.row + 1;
-    for (const kind of accessKindsOf(call)) this.facts.push(fact(scope, owner, method.text, kind, line));
+    const kinds = accessKindsOf(call);
+    // `p.to_s` / `p.dup` / `p.size` read a core Object/Kernel/Enumerable method, not an
+    // attribute — Ruby cannot tell the two apart syntactically. A write (`p.size = 1`) can
+    // only be an attribute writer, so it stays.
+    if (RUBY_CORE_MEMBERS.has(method.text) && !kinds.includes("write")) return;
+    for (const kind of kinds) this.facts.push(fact(scope, owner, method.text, kind, line));
   }
 }
 
