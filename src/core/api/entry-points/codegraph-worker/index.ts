@@ -11,5 +11,5 @@
  * so bootstrap still reaches the domain through `core/api`
  * (`domain-boundaries.md`).
  */
-export { InMemoryGlobalSymbolTable } from "../../domains/trajectory/codegraph/symbols/index.js";
-export type { CodegraphWorkerConfig } from "../../domains/trajectory/codegraph/index.js";
+export { InMemoryGlobalSymbolTable } from "../../../domains/trajectory/codegraph/symbols/index.js";
+export type { CodegraphWorkerConfig } from "../../../domains/trajectory/codegraph/index.js";
