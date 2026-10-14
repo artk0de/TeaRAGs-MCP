@@ -24,3 +24,4 @@ export type {
 export * from "./signal-utils.js";
 export * from "./provider-selector.js";
 export * from "./codegraph-payload.js";
+export type { RegistryEnvCanonicalKey } from "./registry-env-groups.js";
