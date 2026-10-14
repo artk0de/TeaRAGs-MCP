@@ -41,7 +41,7 @@ function makeOps(getSymbolVisibilities: (ids: readonly string[]) => Promise<Symb
   const qdrant = { scrollBySymbolIds: vi.fn(async () => []) };
   const ops = new TracePathOps({
     pool: { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) } as never,
-    qdrant: qdrant as never,
+    qdrant,
     reranker: {} as never,
     collectionRegistry: {} as never,
     resolveActiveCollection: async (n: string) => n,

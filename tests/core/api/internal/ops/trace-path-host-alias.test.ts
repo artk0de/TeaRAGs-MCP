@@ -77,7 +77,7 @@ function makeOps() {
   };
   const ops = new TracePathOps({
     pool: { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) } as never,
-    qdrant: { scrollBySymbolIds: vi.fn(async () => []) } as never,
+    qdrant: { scrollBySymbolIds: vi.fn(async () => []) },
     reranker: {} as never,
     collectionRegistry: {} as never,
     resolveActiveCollection: async (n: string) => n,

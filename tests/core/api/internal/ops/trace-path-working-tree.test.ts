@@ -55,7 +55,7 @@ function makeOps(options: { graph: boolean }) {
   const qdrant = { scrollBySymbolIds: vi.fn().mockResolvedValue([]) };
   const ops = new TracePathOps({
     pool: pool as never,
-    qdrant: qdrant as never,
+    qdrant,
     reranker: { rerank: vi.fn() } as never,
     collectionRegistry: {} as never,
     resolveActiveCollection: async (n: string) => n as never,

@@ -39,7 +39,7 @@ function makeOps(historyAnchorSec: number | undefined) {
       scrollBySymbolIds: vi.fn(async (_c: string, ids: string[]) =>
         ids.map((id) => ({ id, payload: { symbolId: id, relativePath: `${id}.ts`, startLine: 1, endLine: 9 } })),
       ),
-    } as never,
+    },
     reranker: reranker as never,
     collectionRegistry: {} as never,
     resolveActiveCollection: async (n: string) => n as never,

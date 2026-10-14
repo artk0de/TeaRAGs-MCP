@@ -15,7 +15,7 @@ function chunkItem(relPath: string, chunkId: string): ChunkItem {
       endLine: 5,
       metadata: { filePath: `/r/${relPath}` },
     },
-  } as unknown as ChunkItem;
+  };
 }
 
 describe("payload file↔chunk isolation", () => {
