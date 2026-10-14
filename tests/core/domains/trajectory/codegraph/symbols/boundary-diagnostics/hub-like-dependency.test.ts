@@ -140,6 +140,34 @@ describe("detectHubLikeDependencies", () => {
     expect(hub).toMatchObject({ component: "hub", afferentCount: 40, efferentCount: 40 });
   });
 
+  // bd tea-rags-mcp-r8hme.52.18 (owner decision, mirror of g77p3): a file
+  // whose every non-foundation edge lands on a file declaring one of its
+  // supertypes inherits, it does not couple — on taxdome a Rails controller
+  // namespace read Ce 23 from subclassing `::TaxPreparation::Base`,
+  // `::GettingPaid::Base` and `::Base` alone. The unit stays files.
+  it("does not count a file whose every dependency lands on its supertypes' files toward the hub's Ce", () => {
+    const g = graph();
+    const heritage = (relPath: string) => ({
+      ...file(relPath),
+      typeHeritage: [{ typeName: "H", supertypes: [{ name: "Base", declaringRelPaths: ["sink1/s.ts"] }] }],
+    });
+    // h11..h40 reach sink1 alone, which declares their supertype; h1..h10
+    // subclass the same base but also reach sink2..sink8.
+    g.files = g.files.map((f) => (f.relPath.startsWith("hub/") ? heritage(f.relPath) : f));
+    const components = buildComponentGraph(g, []);
+
+    const report = detectHubLikeDependencies(components, { typeHeritageFiles: g.files });
+    // Ce 10, Ca 40 → 30/50 = 0.6, lopsided.
+    expect(report.violations).toEqual([]);
+    expect(report.summary.excluded.imbalanced).toBe(1);
+    const reading = readHubLikeDependency(components, { typeHeritageFiles: g.files });
+    expect(reading.fanCountsOf("hub")).toMatchObject({ afferentCount: 40, efferentCount: 10 });
+    expect(reading.isInheritance("hub/h11.ts", "sink1/s.ts")).toBe(true);
+    expect(reading.isInheritance("hub/h11.ts", "sink2/s.ts")).toBe(false);
+    // Without the heritage the same graph reads a hub.
+    expect(detectHubLikeDependencies(components).violations.map((v) => v.component)).toEqual(["hub"]);
+  });
+
   // bd tea-rags-mcp-g77p3 (owner decision): the efferent cut is drawn over
   // the components that depend on something — a Ce 0 leaf can never be a hub,
   // and a mass of them must not drag the median down.
@@ -204,8 +232,29 @@ describe("detectHubLikeDependencies", () => {
   it("does not flag a balanced component (I near 0.5) that is no busier than the typical component", () => {
     const report = judge(graph());
     expect(report.violations.some((v) => v.component === "mid")).toBe(false);
-    // mid's Ca equals the median Ca: the floor is strict.
-    expect(report.summary.afferent.median).toBe(3);
+    // INVARIANT CHANGED (bd tea-rags-mcp-nxikh): the Ca median is drawn over
+    // the components something depends on — mid 3, sinks 10..43, hub 40 → 10
+    // — not with the eleven Ca 0 entries (→ 3, mid's own Ca).
+    expect(report.summary.afferent.median).toBe(10);
+  });
+
+  // bd tea-rags-mcp-nxikh (owner decision): the afferent cut mirrors the
+  // efferent one (g77p3) — drawn over the components something depends on.
+  // A Ca 0 entry can never be a hub, and a mass of them (containment edges
+  // left out since j5gti) must not drag the median down to admit marginal hubs.
+  it("draws the afferent cut over depended-on components only, so entries never depress it", () => {
+    const g = graph();
+    // marg: 6 files into sinks (Ce 6), each imported by one feeder file (Ca 6).
+    for (let i = 1; i <= 6; i++) {
+      g.files.push(file(`marg/m${i}.ts`), file(`feeder/f${i}.ts`));
+      g.edges.push(edge(`marg/m${i}.ts`, `sink${i}/s.ts`), edge(`feeder/f${i}.ts`, `marg/m${i}.ts`));
+    }
+    const report = judge(g);
+    // Over every judged component the Ca median is 3 (ten entries at 0) and
+    // marg's 6 clears it; over the depended-on ones (marg's edges lift
+    // sink3..sink6 to 11) it is 11.
+    expect(report.summary.afferent.median).toBe(11);
+    expect(report.violations.map((v) => v.component)).toEqual(["hub"]);
   });
 
   it("never judges a component below the SDP connection floor", () => {

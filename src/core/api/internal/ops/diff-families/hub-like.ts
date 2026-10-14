@@ -25,7 +25,9 @@ interface HubLikeComponentMove {
  * edge `s -> t` between components S and T moves:
  * - S's Ce by one file when `t` is outside the measured foundation (bd
  *   tea-rags-mcp-g77p3) and `s` carried no edge out of S past the foundation
- *   before the change — a file already counted never counts twice;
+ *   before the change — a file already counted never counts twice; an edge
+ *   onto a file declaring one of `s`'s supertypes moves no Ce and made `s`
+ *   no Ce file before (bd tea-rags-mcp-r8hme.52.18);
  * - T's Ca by one file when `s` carried no edge into T before the change.
  * An edge between a component and one nested in it moves neither (bd
  * tea-rags-mcp-j5gti): containment is on neither axis of the detector.
@@ -90,10 +92,13 @@ export function judgeHubLike(input: {
     // Containment is on neither axis (bd tea-rags-mcp-j5gti).
     if (hubLike.isContainment(sourceComponent, targetComponent)) continue;
     const reachedBefore = targetComponentsBefore(edge.source);
-    if (!hubLike.isFoundation(targetComponent)) {
+    // An edge onto a file declaring a supertype of the source's types is
+    // inheritance, on the Ca axis only (bd tea-rags-mcp-r8hme.52.18).
+    if (!hubLike.isFoundation(targetComponent) && !hubLike.isInheritance(edge.source, edge.target)) {
       const alreadyEfferent = wasEfferentBeforeChange(edge.source, sourceComponent, before, componentOf, {
         excludesTargetComponent: (component) =>
           hubLike.isFoundation(component) || hubLike.isContainment(sourceComponent, component),
+        excludesTargetFile: (target) => hubLike.isInheritance(edge.source, target),
       });
       if (!alreadyEfferent) {
         const move = moveOf(sourceComponent);

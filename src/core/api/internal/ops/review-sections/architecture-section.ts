@@ -700,7 +700,10 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       ...splitMerge,
       mainSequenceDistanceThreshold: mainSequence.distanceThreshold,
       layering: readLayering(facts.components, layeringModel),
-      hubLike: readHubLikeDependency(facts.components, { foundationComponents }),
+      hubLike: readHubLikeDependency(facts.components, {
+        foundationComponents,
+        typeHeritageFiles: production.graph.files,
+      }),
     });
     const runScope = {
       changedFiles: scope.files,

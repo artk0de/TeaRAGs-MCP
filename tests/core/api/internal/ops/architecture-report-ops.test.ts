@@ -2394,7 +2394,9 @@ describe("ArchitectureReportOps#build — hubLikeDependency (bd tea-rags-mcp-r8h
     });
     expect(report.summary.hubLikeDependency).toMatchObject({
       violationCount: 1,
-      afferent: { median: 3 },
+      // INVARIANT CHANGED (bd tea-rags-mcp-nxikh): the Ca median is drawn over
+      // the depended-on components only, as the Ce one over the non-leaf ones.
+      afferent: { median: 10 },
       efferent: { median: 5 },
       excluded: { lowConnectionCount: 0, imbalanced: 0 },
     });
@@ -2412,6 +2414,20 @@ describe("ArchitectureReportOps#build — hubLikeDependency (bd tea-rags-mcp-r8h
     const report = await new ArchitectureReportOps().build(graphDb({ files, edges: g.edges }), {});
 
     expect(report.summary.layering.foundation?.components).toContain("sink1");
+    expect(report.violations.filter((v) => v.detector === "hubLikeDependency")).toEqual([]);
+    expect(report.summary.hubLikeDependency.excluded.imbalanced).toBe(1);
+  });
+
+  // bd tea-rags-mcp-r8hme.52.18: the report hands the walked files' typeHeritage
+  // to the hub detector. h11..h40 subclass a type sink1/s.ts declares and reach
+  // nothing else, so they inherit rather than couple — Ca 40, Ce 10, lopsided.
+  it("does not count a file whose every edge lands on its supertype's file toward a hub's Ce", async () => {
+    const g = hubGraph();
+    const typeHeritage = [{ typeName: "H", supertypes: [{ name: "Base", declaringRelPaths: ["sink1/s.ts"] }] }];
+    const files = g.files.map((f) => (/^hub\/h(1[1-9]|[2-4]\d)\.ts$/.test(f.relPath) ? { ...f, typeHeritage } : f));
+
+    const report = await new ArchitectureReportOps().build(graphDb({ files, edges: g.edges }), {});
+
     expect(report.violations.filter((v) => v.detector === "hubLikeDependency")).toEqual([]);
     expect(report.summary.hubLikeDependency.excluded.imbalanced).toBe(1);
   });

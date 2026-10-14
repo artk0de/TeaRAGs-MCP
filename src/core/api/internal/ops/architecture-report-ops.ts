@@ -359,6 +359,7 @@ export class ArchitectureReportOps {
     const { layeringModel, layering, knotLookup } = runArchitectureLayering(components, graph.files, request);
     const hubLikeDependency = await detectHubLikeDependenciesWithChurn(
       components,
+      graph.files,
       request.pathPattern,
       commitCounts,
       layering.summary.foundation,
@@ -695,15 +696,18 @@ async function detectVolatilityGatedMainSequence(
 /** The hub-like dependency family over the report's components, churn attached as evidence. */
 async function detectHubLikeDependenciesWithChurn(
   components: ComponentGraph,
+  files: FileDependencyGraph["files"],
   pathPattern: ArchitectureReportScope["pathPattern"],
   commitCounts: GitFileCommitCountLookup | undefined,
   foundation: LayeringReport["summary"]["foundation"],
 ): Promise<HubLikeDependencyReport> {
   // Same components, both Ca and Ce past adaptive cuts (bd tea-rags-mcp-r8hme.47);
   // churn rides along as evidence, read only when a hub exists. Ce leaves out
-  // the layering's measured foundation, terminals included (bd tea-rags-mcp-g77p3).
+  // the layering's measured foundation, terminals included (bd tea-rags-mcp-g77p3),
+  // and the files that only inherit (bd tea-rags-mcp-r8hme.52.18).
   const hubOptions = {
     sourcePathPattern: pathPattern,
+    typeHeritageFiles: files,
     foundationComponents: new Set([...(foundation?.components ?? []), ...(foundation?.terminalComponents ?? [])]),
   };
   const ungatedHubs = detectHubLikeDependencies(components, hubOptions);
