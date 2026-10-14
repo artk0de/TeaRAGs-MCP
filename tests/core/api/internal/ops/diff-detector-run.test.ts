@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DiffDetectorRun,
+  type DiffDetectorCatalog,
   type DiffDetectorContractReader,
   type DiffDetectorFindings,
   type DiffDetectorSilentCouplingFacts,
@@ -319,6 +320,63 @@ describe("leakingAbstraction", () => {
       [["src/app/a.ts", "src/lib/internal.ts"]],
     );
     expect(noFacade.findings).toEqual([]);
+  });
+});
+
+// bd tea-rags-mcp-hv38q: the family agrees with the report's facade-leak rule.
+// A first deep import from a file that never used the facade is a leak when
+// the report's own predicate (catalog.facadeLeakOf) says so; the pre-existing
+// facade-usage branch stays as it was.
+describe("leakingAbstraction — the report's facade-leak rule", () => {
+  const SOURCE = "src/app/a.ts";
+  const INTERNAL = "src/lib/deep/internal.ts";
+  const MODULE_FACADE = "src/lib/deep/index.ts";
+  const judged = new Map([[`${SOURCE} -> ${INTERNAL}`, MODULE_FACADE]]);
+  const catalog: DiffDetectorCatalog = {
+    ...catalogOf(new Map([[INTERNAL, { name: "src/lib", instability: 0.3, distanceFromMainSequence: 0.3 }]])),
+    facadeLeakOf: (source, target) => {
+      const facadeRelPath = judged.get(`${source} -> ${target}`);
+      return facadeRelPath === undefined ? undefined : { moduleDir: "src/lib/deep", facadeRelPath, kind: "bypass" };
+    },
+  };
+
+  it("fires on a diff-added deep import the report would flag, though the source never imported the facade", () => {
+    const result = runWith({ graph: graphOf([]), catalog }, [SOURCE], [[SOURCE, INTERNAL]]);
+    expect(subjectsOf(result, "leakingAbstraction")).toEqual([`${SOURCE} -> ${INTERNAL}`]);
+    const finding = result.findings[0];
+    expect(finding?.evidence).toEqual({ facadeRelPath: MODULE_FACADE });
+    expect(finding?.endpoints).toEqual({ kind: "fileEdge", sourceRelPath: SOURCE, targetRelPath: INTERNAL });
+    expect("preExisting" in (finding ?? {})).toBe(false);
+    expect(finding?.detail).toContain(MODULE_FACADE);
+  });
+
+  it("marks the finding preExisting when the edge was held before the change", () => {
+    const result = runWith(
+      { graph: graphOf([[SOURCE, INTERNAL]]), catalog, baseEdges: baseEdgesOf({ [SOURCE]: [INTERNAL] }) },
+      [SOURCE],
+      [[SOURCE, INTERNAL]],
+    );
+    expect(result.findings.find((f) => f.detector === "leakingAbstraction")?.preExisting).toBe(true);
+  });
+
+  it("stays silent where the report's rule does not answer", () => {
+    const result = runWith({ graph: graphOf([]), catalog }, [SOURCE], [[SOURCE, "src/lib/other.ts"]]);
+    expect(subjectsOf(result, "leakingAbstraction")).toEqual([]);
+  });
+
+  it("reports an edge once when both the facade-usage branch and the report's rule answer, with the facade-usage evidence", () => {
+    const both: DiffDetectorCatalog = {
+      ...catalog,
+      facadeOf: (name) => (name === "src/lib" ? "src/lib/index.ts" : undefined),
+    };
+    const result = runWith(
+      { graph: graphOf([[SOURCE, "src/lib/index.ts"]]), catalog: both },
+      [SOURCE],
+      [[SOURCE, INTERNAL]],
+    );
+    const findings = result.findings.filter((f) => f.detector === "leakingAbstraction");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.evidence).toEqual({ facadeRelPath: "src/lib/index.ts" });
   });
 });
 

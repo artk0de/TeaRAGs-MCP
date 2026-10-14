@@ -222,6 +222,51 @@ describe("distanceFromMainSequenceByComponent", () => {
   });
 });
 
+// bd tea-rags-mcp-hv38q: the diff run's leakingAbstraction asks the report's
+// own facade-leak rule — the predicate is derived with the facts, from the
+// SAME leaks report, never a second copy of the rule.
+describe("ArchitectureFactsCatalog#facadeLeakOf", () => {
+  function adoptedModuleGraph(): FileDependencyGraph {
+    return graphOf(
+      [
+        file("src/lib/m/index.ts"),
+        file("src/lib/m/core.ts"),
+        file("src/lib/m/hidden.ts"),
+        ...["u1", "u2", "u3"].map((u) => file(`src/app/${u}.ts`)),
+        file("src/app/x.ts"),
+      ],
+      [
+        edge("src/lib/m/index.ts", "src/lib/m/core.ts"),
+        ...["u1", "u2", "u3"].map((u) => edge(`src/app/${u}.ts`, "src/lib/m/index.ts")),
+      ],
+    );
+  }
+
+  it("answers the report's verdict for an edge the graph does not hold — a first deep import past an adopted facade", () => {
+    const graph = adoptedModuleGraph();
+    const facts = deriveArchitectureComponentFacts(graph);
+    const catalog = new ArchitectureFactsCatalog(facts, new Map(), new Set());
+
+    expect(catalog.facadeLeakOf("src/app/x.ts", "src/lib/m/core.ts")).toEqual({
+      moduleDir: "src/lib/m",
+      facadeRelPath: "src/lib/m/index.ts",
+      kind: "bypass",
+    });
+    expect(catalog.facadeLeakOf("src/app/x.ts", "src/lib/m/hidden.ts")?.kind).toBe("internal-reach");
+    expect(catalog.facadeLeakOf("src/app/x.ts", "src/lib/m/index.ts")).toBeUndefined();
+  });
+
+  it("never answers for an endpoint the production graph was cut by — a test the report never judges", () => {
+    const graph = adoptedModuleGraph();
+    const nonProduction = { ignores: (relPath: string) => relPath.startsWith("tests/") };
+    const facts = deriveArchitectureComponentFacts(graph, undefined, undefined, nonProduction);
+    const catalog = new ArchitectureFactsCatalog(facts, new Map(), new Set());
+
+    expect(catalog.facadeLeakOf("tests/app/x.test.ts", "src/lib/m/core.ts")).toBeUndefined();
+    expect(catalog.facadeLeakOf("src/app/x.ts", "src/lib/m/core.ts")?.moduleDir).toBe("src/lib/m");
+  });
+});
+
 describe("ArchitectureFactsCatalog", () => {
   function catalogFixture() {
     const graph = graphOf(

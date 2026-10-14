@@ -8,6 +8,7 @@ export { FACADE_AGGREGATION_REASON, isFacadeAggregationEdge } from "./facade-agg
 export { computeFileInstabilities } from "./file-instability.js";
 export { domainBoundaryFileEdges, inducedDomainGraph, type DomainBoundaryFileEdges } from "./induced-domain-graph.js";
 export {
+  createFacadeLeakEdgeJudge,
   detectLeakingAbstractions,
   FACADE_ADOPTION_MAJORITY,
   FACADE_MIN_EXTERNAL_IMPORTERS,
@@ -132,6 +133,8 @@ export type {
   MainSequenceVolatilityLabel,
   MainSequenceVolatilitySummary,
   MainSequenceZone,
+  FacadeLeakEdgeJudge,
+  FacadeLeakEdgeVerdict,
   FacadeLeakViolation,
   FacadeModuleAssessment,
   FacadeModuleExclusionReason,

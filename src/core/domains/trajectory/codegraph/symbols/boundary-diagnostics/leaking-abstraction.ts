@@ -8,10 +8,11 @@ import {
   binomialUpperTail,
   CONVENTIONAL_FDR_Q,
 } from "../../../../../primitives/math/index.js";
-import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
+import { compilePathPatternMatcher, type PathFilter } from "../../../../../primitives/paths/index.js";
 import { MODULE_ENTRY_FILE_NAMES, RE_EXPORT_CYCLE_PATH_CAP } from "../../component-geometry/index.js";
 import type {
   FacadeDeFactoSurface,
+  FacadeLeakEdgeJudge,
   FacadeLeakKind,
   FacadeLeakRootCause,
   FacadeLeakViolation,
@@ -179,7 +180,12 @@ export function detectLeakingAbstractions(
   }
 
   const deFactoSurfaces = measureDeFactoSurfaces(graph, candidates, assessments);
-  const surfaceKeys = new Set(deFactoSurfaces.map((s) => edgeKey(s.moduleDir, s.child)));
+  const rule: FacadeLeakRule = {
+    candidates,
+    assessments,
+    edgesByKey,
+    surfaceKeys: new Set(deFactoSurfaces.map((s) => edgeKey(s.moduleDir, s.child))),
+  };
 
   const violations: FacadeLeakViolation[] = [];
   let judgedEdgeCount = 0;
@@ -190,21 +196,12 @@ export function detectLeakingAbstractions(
       continue;
     }
     if (edge.sourceRelPath === edge.targetRelPath) continue;
-    const { judged, owner } = judgeFacadeEdge(edge, candidates, assessments);
+    const { judged, leak, spared } = judgeFacadeLeak(edge, rule);
     if (judged) judgedEdgeCount++;
-    if (!owner) continue;
+    if (spared) deFactoSurfaceEdges++;
+    if (!leak) continue;
+    const { owner, classification } = leak;
     const { module, assessment } = owner;
-    const classification = classifyFacadeLeak(edge, module.entries, edgesByKey);
-    // Reaching a measured de-facto surface is how the module is used, not a
-    // leak — counted, never silently dropped (bd tea-rags-mcp-r8hme.52.16). A
-    // bypass stays: the facade already offers what the edge takes.
-    if (
-      classification.kind === "internal-reach" &&
-      surfaceKeys.has(edgeKey(module.moduleDir, childSegment(module.moduleDir, edge.targetRelPath)))
-    ) {
-      deFactoSurfaceEdges++;
-      continue;
-    }
     const facadeRelPath = assessment.facadeRelPath as RelPath;
     const cyclePath = firstImportPath(importsFrom, facadeRelPath, edge.sourceRelPath);
     violations.push({
@@ -283,6 +280,86 @@ function judgeFacadeEdge(
     return { judged, owner: { module, assessment } };
   }
   return { judged };
+}
+
+/** What the facade-leak rule reads beside the edge: the modules, their statuses, the graph's edges and de-facto surfaces. */
+interface FacadeLeakRule {
+  candidates: Map<string, ModuleCandidate>;
+  assessments: ReadonlyMap<string, FacadeModuleAssessment>;
+  edgesByKey: ReadonlyMap<string, FileDependencyEdge>;
+  /** `edgeKey(moduleDir, child)` of every measured de-facto surface. */
+  surfaceKeys: ReadonlySet<string>;
+}
+
+/**
+ * The facade-leak rule over one edge — the ONE copy both the report and
+ * {@link createFacadeLeakEdgeJudge} run: the owning module
+ * ({@link judgeFacadeEdge}), the kind ({@link classifyFacadeLeak}), and the
+ * de-facto surface exemption. Reaching a measured de-facto surface is how the
+ * module is used, not a leak — `spared`, counted by the report, never silently
+ * dropped (bd tea-rags-mcp-r8hme.52.16). A bypass stays: the facade already
+ * offers what the edge takes.
+ */
+function judgeFacadeLeak(
+  edge: FileDependencyEdge,
+  rule: FacadeLeakRule,
+): { judged: boolean; spared: boolean; leak?: { owner: FacadeLeakOwner; classification: FacadeLeakClassification } } {
+  const { judged, owner } = judgeFacadeEdge(edge, rule.candidates, rule.assessments);
+  if (!owner) return { judged, spared: false };
+  const { moduleDir } = owner.module;
+  const classification = classifyFacadeLeak(edge, owner.module.entries, rule.edgesByKey);
+  if (
+    classification.kind === "internal-reach" &&
+    rule.surfaceKeys.has(edgeKey(moduleDir, childSegment(moduleDir, edge.targetRelPath)))
+  ) {
+    return { judged, spared: true };
+  }
+  return { judged, spared: false, leak: { owner, classification } };
+}
+
+/**
+ * The report's facade-leak rule as an edge predicate (bd tea-rags-mcp-hv38q):
+ * the diff-scoped review judges edges the indexed graph may not hold yet, and
+ * must name exactly what the report would. Module statuses come from
+ * `report.modules` and the de-facto surfaces from `summary.deFactoSurfaces` —
+ * the report over the SAME `graph` — so adoption is never re-measured; the
+ * edge is judged by {@link judgeFacadeLeak}, the report's own rule. An edge
+ * the graph holds is classified with its recorded export names; one it does
+ * not hold has none, so its kind falls to the file rule. Parity: over the
+ * graph's edges the judge answers exactly where `report.violations` lists one
+ * (a report built with `sourcePathPattern` scopes its violations; the judge
+ * does not). `excludedFromGraph` names the files the graph was cut down by —
+ * tests, test support, tooling: an edge with such an endpoint is never in the
+ * report's graph, so the judge never answers for it either; a file merely
+ * absent (new in a diff) is judged.
+ */
+export function createFacadeLeakEdgeJudge(
+  graph: FileDependencyGraph,
+  report: Pick<LeakingAbstractionReport, "modules" | "summary">,
+  excludedFromGraph?: PathFilter,
+): FacadeLeakEdgeJudge {
+  const rule: FacadeLeakRule = {
+    candidates: collectModuleCandidates(graph),
+    assessments: new Map(report.modules.map((m) => [m.moduleDir, m])),
+    edgesByKey: new Map(graph.edges.map((e) => [edgeKey(e.sourceRelPath, e.targetRelPath), e])),
+    surfaceKeys: new Set(report.summary.deFactoSurfaces.map((s) => edgeKey(s.moduleDir, s.child))),
+  };
+  return (source, target) => {
+    if (source === target) return undefined;
+    if (excludedFromGraph?.ignores(source) || excludedFromGraph?.ignores(target)) return undefined;
+    const edge = rule.edgesByKey.get(edgeKey(source, target)) ?? {
+      sourceRelPath: source,
+      targetRelPath: target,
+      callWeight: 0,
+    };
+    const { leak } = judgeFacadeLeak(edge, rule);
+    if (!leak) return undefined;
+    return {
+      moduleDir: leak.owner.module.moduleDir,
+      facadeRelPath: leak.owner.assessment.facadeRelPath as RelPath,
+      kind: leak.classification.kind,
+    };
+  };
 }
 
 /** One (module, child) unit of the de-facto surface test. */

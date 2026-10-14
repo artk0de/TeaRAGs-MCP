@@ -9,19 +9,21 @@ import { describe, expect, it, vi } from "vitest";
 
 import { baseEdgesOf, catalogOf, graphOf, type ComponentFact } from "../__helpers__/diff-run-fixtures.js";
 import {
+  ArchitectureFactsCatalog,
+  deriveArchitectureComponentFacts,
+} from "../../../../../../src/core/api/internal/ops/architecture-facts.js";
+import {
   DiffDetectorRun,
   type DiffDetectorContractReader,
   type DiffDetectorRunDeps,
 } from "../../../../../../src/core/api/internal/ops/diff-detector-run.js";
-import type {
-  DiffEdgeEdit,
-  DiffRejudge,
-  ExportTableReader,
-} from "../../../../../../src/core/api/internal/ops/diff-families/index.js";
 import {
   DiffFindingRemedyResolver,
   stampDiffFindingRemedies,
-} from "../../../../../../src/core/api/internal/ops/diff-families/remedy-resolver.js";
+  type DiffEdgeEdit,
+  type DiffRejudge,
+  type ExportTableReader,
+} from "../../../../../../src/core/api/internal/ops/diff-families/index.js";
 import type {
   DiffDetectorFinding,
   DiffDetectorStatus,
@@ -160,6 +162,49 @@ describe("DiffFindingRemedyResolver", () => {
         toRelPath: FACADE,
         importedNames: ["X"],
         addExport: { facadeRelPath: FACADE, names: ["X"] },
+      });
+    });
+  });
+
+  // bd tea-rags-mcp-hv38q: a finding the report's facade-leak rule raised —
+  // the source never imported the facade — still carries a verified remedy,
+  // judged against the REAL catalog the review wires.
+  describe("leakingAbstraction from the report's facade-leak rule", () => {
+    const SOURCE = "src/app/x.ts";
+    const FACADE = "src/lib/m/index.ts";
+    const INTERNAL = "src/lib/m/core.ts";
+    const graph = {
+      files: [FACADE, INTERNAL, SOURCE, ...["u1", "u2", "u3"].map((u) => `src/app/${u}.ts`)].map((relPath) => ({
+        relPath,
+        language: "typescript",
+        symbolCount: 1,
+      })),
+      edges: [
+        { sourceRelPath: FACADE, targetRelPath: INTERNAL, callWeight: 1, reexportedExportNames: ["Core"] },
+        ...["u1", "u2", "u3"].map((u) => ({ sourceRelPath: `src/app/${u}.ts`, targetRelPath: FACADE, callWeight: 1 })),
+      ],
+    };
+    const deps: DiffDetectorRunDeps = {
+      catalog: new ArchitectureFactsCatalog(deriveArchitectureComponentFacts(graph), new Map(), new Set()),
+      baseEdges: baseEdgesOf({ [SOURCE]: [] }),
+    };
+
+    it("retargets the first deep import to the module's facade, verified by the dry-run", () => {
+      const diff = diffOf(deps, [SOURCE], [[SOURCE, INTERNAL, { imported: ["Core"] }]]);
+      const finding = only(diff.findings, "leakingAbstraction");
+      expect(finding.evidence).toEqual({ facadeRelPath: FACADE });
+      const resolver = new DiffFindingRemedyResolver({
+        overlay: diff.overlay,
+        exports: exportsOf({ Core: [INTERNAL] }, { [FACADE]: ["Core"] }),
+        rejudge: diff.rejudge,
+      });
+
+      expect(resolver.resolve(finding, diff.findings)).toEqual({
+        kind: "retargetImport",
+        sourceRelPath: SOURCE,
+        fromRelPath: INTERNAL,
+        toRelPath: FACADE,
+        importedNames: ["Core"],
       });
     });
   });
