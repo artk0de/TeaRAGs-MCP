@@ -501,7 +501,10 @@ describe("detectSilentCoupling — shared-neighbour explanation (bd tea-rags-mcp
 
   it("drops explained pairs from root causes, which count silent partners only", () => {
     const { walked, edges, cochange } = explanationFixture();
-    const withSecondPartner = built([...cochange.edges, pair("a/client.ts", "z/f0.ts")]);
+    // One hub pair makes room for the second partner: the family stays at nine
+    // tested pairs, so the server stays explained under the Šidák-corrected
+    // chance (bd tea-rags-mcp-v4279) and the invariant under test is root causes.
+    const withSecondPartner = built([...cochange.edges.slice(0, -1), pair("a/client.ts", "z/f0.ts")]);
 
     const report = detectSilentCoupling(withSecondPartner, walked, { fileDependencyEdges: edges });
 
@@ -553,6 +556,80 @@ describe("detectSilentCoupling — shared-neighbour explanation (bd tea-rags-mcp
 
     expect(report.violations.map((v) => `${v.relPathA}|${v.relPathB}`)).toContain("u/a.ts|u/b.ts");
     expect(report.explained.map((v) => `${v.relPathA}|${v.relPathB}`)).not.toContain("u/a.ts|u/b.ts");
+  });
+
+  /**
+   * bd tea-rags-mcp-v4279: the pair's p is the MIN over its shared neighbours,
+   * a hidden multiple comparison, so it is Šidák-corrected — p = 1 − (1 − p_min)^k,
+   * k = the neighbours the smaller endpoint could share: the distinct files it
+   * imports or is imported by, the pair's own endpoints excluded (every arm's
+   * candidate is one of them). Twenty families explained by their own protocol
+   * raise BH's step-up threshold to q at the last rank. `hub/a.ts` and
+   * `hub/b.ts` each import 5 private leaves and `lib/hub.ts`, which 30 of the
+   * 100 fillers import too: sharing it has raw chance ≈ 0.024 — under that
+   * raised threshold — but one of k = 6 draws finds it ≈ 14% of the time.
+   * `rare/a.ts` and `rare/b.ts` share a protocol only they import, with the
+   * same k: explained before and after the correction.
+   */
+  function hubLeakageFixture(): {
+    walked: FileDependencyGraphFile[];
+    edges: FileDependencyEdge[];
+    cochange: TemporalCochangeGraph;
+  } {
+    const edge = (sourceRelPath: string, targetRelPath: string): FileDependencyEdge => ({
+      sourceRelPath,
+      targetRelPath,
+      callWeight: 1,
+    });
+    const families = Array.from(
+      { length: 20 },
+      (_, i) => [`fam${i}/a.ts`, `fam${i}/b.ts`, `fam${i}/proto.ts`] as const,
+    );
+    const leaves = (owner: string): string[] => Array.from({ length: 5 }, (_, i) => `${owner}-leaf${i}.ts`);
+    const fillers = Array.from({ length: 100 }, (_, i) => `z/f${i}.ts`);
+    const sinks = Array.from({ length: 50 }, (_, i) => `s/s${i}.ts`);
+    const edges: FileDependencyEdge[] = [
+      ...families.flatMap(([a, b, proto]) => [edge(a, proto), edge(b, proto)]),
+      ...["hub/a", "hub/b", "rare/a", "rare/b"].flatMap((owner) => leaves(owner).map((l) => edge(`${owner}.ts`, l))),
+      edge("hub/a.ts", "lib/hub.ts"),
+      edge("hub/b.ts", "lib/hub.ts"),
+      edge("rare/a.ts", "rare/proto.ts"),
+      edge("rare/b.ts", "rare/proto.ts"),
+      ...fillers.flatMap((f, i) => Array.from({ length: 10 }, (_, j) => edge(f, sinks[(i * 10 + j) % sinks.length]))),
+      ...fillers.slice(0, 30).map((f) => edge(f, "lib/hub.ts")),
+    ];
+    const walked = files(
+      ...families.flat(),
+      ...["hub/a", "hub/b", "rare/a", "rare/b"].flatMap((owner) => [`${owner}.ts`, ...leaves(owner)]),
+      "lib/hub.ts",
+      "rare/proto.ts",
+      ...fillers,
+      ...sinks,
+    );
+    const cochange = built([
+      ...families.map(([a, b]) => pair(a, b)),
+      pair("hub/a.ts", "hub/b.ts"),
+      pair("rare/a.ts", "rare/b.ts"),
+    ]);
+    return { walked, edges, cochange };
+  }
+
+  it("keeps a pair flagged when its least likely neighbour is one of many the smaller endpoint could share (Šidák)", () => {
+    const { walked, edges, cochange } = hubLeakageFixture();
+
+    const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    expect(report.violations.map((v) => `${v.relPathA}|${v.relPathB}`)).toEqual(["hub/a.ts|hub/b.ts"]);
+    expect(report.summary.sharedNeighbourSignificance).toMatchObject({ testedPairCount: 22, explainedPairCount: 21 });
+  });
+
+  it("still explains a pair sharing a rare neighbour after the Šidák correction", () => {
+    const { walked, edges, cochange } = hubLeakageFixture();
+
+    const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    const explained = Object.fromEntries(report.explained.map((v) => [`${v.relPathA}|${v.relPathB}`, v.explainedBy]));
+    expect(explained["rare/a.ts|rare/b.ts"]).toMatchObject({ relPath: "rare/proto.ts" });
   });
 });
 
