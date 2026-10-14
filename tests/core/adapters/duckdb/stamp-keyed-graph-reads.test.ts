@@ -23,6 +23,9 @@ function stubClient() {
   return {
     name: "client",
     readFileDependencyGraph: vi.fn(async () => ({ files: [{ relPath: "a.ts" }], edges: [] })),
+    readFileReexportEdges: vi.fn(async () => [
+      { sourceRelPath: "i.ts", targetRelPath: "a.ts", reexportedExportNames: ["A"] },
+    ]),
     readTemporalCochangeGraph: vi.fn(async () => ({ meta: null, edges: [] })),
     readNonPublicMemberEdges: vi.fn(async (languages: readonly string[]) => languages.map((l) => ({ l }))),
     loadHierarchySnapshot: vi.fn(async () => ({ ancestorsBySource: {}, descendantsByAncestor: {} })),
@@ -50,6 +53,7 @@ describe("withStampKeyedGraphReads (bd tea-rags-mcp-lnor0)", () => {
       Promise.all([
         graphDb.readFileDependencyGraph(),
         graphDb.readTemporalCochangeGraph(),
+        graphDb.readFileReexportEdges(),
         graphDb.readNonPublicMemberEdges(["python"]),
         graphDb.loadHierarchySnapshot(),
         graphDb.readTypeNameRows(WHOLE_PROJECT),
@@ -66,6 +70,7 @@ describe("withStampKeyedGraphReads (bd tea-rags-mcp-lnor0)", () => {
     for (const read of [
       client.readFileDependencyGraph,
       client.readTemporalCochangeGraph,
+      client.readFileReexportEdges,
       client.readNonPublicMemberEdges,
       client.loadHierarchySnapshot,
       client.readTypeNameRows,

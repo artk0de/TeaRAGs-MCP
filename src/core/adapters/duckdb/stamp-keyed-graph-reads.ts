@@ -21,6 +21,7 @@ import { deepFreeze, type StampKeyedReadCache } from "../../primitives/collectio
 /** The `GraphDbClient` reads served from the cache. */
 type StampKeyedGraphRead =
   | "readFileDependencyGraph"
+  | "readFileReexportEdges"
   | "readTemporalCochangeGraph"
   | "readNonPublicMemberEdges"
   | "loadHierarchySnapshot"
@@ -44,6 +45,8 @@ export function withStampKeyedGraphReads(
   const held: Pick<GraphDbClient, StampKeyedGraphRead> = {
     readFileDependencyGraph: async () =>
       hold("readFileDependencyGraph", undefined, async () => graphDb.readFileDependencyGraph()),
+    readFileReexportEdges: async () =>
+      hold("readFileReexportEdges", undefined, async () => graphDb.readFileReexportEdges()),
     readTemporalCochangeGraph: async () =>
       hold("readTemporalCochangeGraph", undefined, async () => graphDb.readTemporalCochangeGraph()),
     readNonPublicMemberEdges: async (languages) =>

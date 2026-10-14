@@ -1143,7 +1143,9 @@ export interface ReexportTwins {
 }
 
 /** The re-export joins among the file graph's edges, read once per request. */
-export function reexportTwins(edges: readonly FileDependencyEdge[]): ReexportTwins {
+export function reexportTwins(
+  edges: readonly Pick<FileDependencyEdge, "sourceRelPath" | "targetRelPath" | "reexportedExportNames">[],
+): ReexportTwins {
   const names = new Map<string, Set<string>>();
   const key = (a: string, b: string): string => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`);
   for (const edge of edges) {

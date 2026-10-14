@@ -29,6 +29,7 @@ import {
   type CycleScope,
   type FileDependencyGraph,
   type FileImportLookup,
+  type FileReexportEdge,
   type FileTypeHeritage,
   type NonPublicMemberEdge,
   type RelPath,
@@ -374,6 +375,30 @@ export class DuckDbGraphAnalyticsStore implements Omit<
    * narrows the candidate set; which edge is a convention-privacy leak is the
    * boundary diagnostics' call.
    */
+  /**
+   * The file edges that forward export names (bd tea-rags-mcp-lnor0): the
+   * `reexported_export_names` projection of `readFileDependencyGraph`'s edges.
+   * NULL is "not recorded" and an empty value decodes to nothing, so both stay out.
+   */
+  async readFileReexportEdges(): Promise<FileReexportEdge[]> {
+    const rows = await this.session.queryAll<{
+      source_rel_path: string;
+      target_rel_path: string;
+      reexported_export_names: string | null;
+    }>(
+      `SELECT source_rel_path, target_rel_path, reexported_export_names
+       FROM cg_symbols_edges_file
+       WHERE reexported_export_names IS NOT NULL
+       ORDER BY source_rel_path, target_rel_path`,
+    );
+    return rows.flatMap((r) => {
+      const reexportedExportNames = decodeFileEdgeExportNames(r.reexported_export_names);
+      return reexportedExportNames === undefined
+        ? []
+        : [{ sourceRelPath: r.source_rel_path, targetRelPath: r.target_rel_path, reexportedExportNames }];
+    });
+  }
+
   async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {
     if (languages.length === 0) return [];
     const rows = await this.session.queryAll<{

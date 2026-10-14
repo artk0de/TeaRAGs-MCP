@@ -5,6 +5,7 @@ import type {
   CycleScope,
   FileDependencyGraph,
   FileImportLookup,
+  FileReexportEdge,
   NonPublicMemberEdge,
   RelPath,
   SymbolId,
@@ -101,6 +102,10 @@ export class DaemonGraphAnalyticsStoreProxy implements CodegraphGraphAnalyticsSt
 
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
     return (await this.ops.call("readFileDependencyGraph", {})) as FileDependencyGraph;
+  }
+
+  async readFileReexportEdges(): Promise<FileReexportEdge[]> {
+    return (await this.ops.call("readFileReexportEdges", {})) as FileReexportEdge[];
   }
 
   async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {
