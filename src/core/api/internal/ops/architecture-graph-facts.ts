@@ -31,6 +31,7 @@ import {
   type DeclaredTestDependencyLookup,
   type IndexedFileImportLookup,
   type ProductionArchitectureGraph,
+  type TreeFileTextLookup,
 } from "./architecture-facts.js";
 import { ontologyNonProductionPaths } from "./ontology-report-ops.js";
 
@@ -100,13 +101,14 @@ export async function readArchitectureGraphFacts(
   },
   readIndexedFileImports?: IndexedFileImportLookup,
   readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
+  readTreeFileText?: TreeFileTextLookup,
 ): Promise<ArchitectureGraphFacts> {
   // The read and the exclusions live in `architecture-facts.ts`, shared with
   // the diff-scoped run (bd tea-rags-mcp-89k7k.1.4). The member edges are
   // read beside the production graph, not after it (bd tea-rags-mcp-pqdw4).
   const [production, memberEdges] = await Promise.all([
     request.production ??
-      readProductionArchitectureGraph(graphDb, readIndexedFileImports, readDeclaredTestDependencies),
+      readProductionArchitectureGraph(graphDb, readIndexedFileImports, readDeclaredTestDependencies, readTreeFileText),
     graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]),
   ]);
   const classHierarchy =

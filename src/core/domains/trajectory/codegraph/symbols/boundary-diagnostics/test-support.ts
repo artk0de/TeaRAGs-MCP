@@ -5,7 +5,7 @@ import type { FileDependencyGraph, RelPath } from "../../../../../contracts/type
 
 /** What the test-support exclusion takes out, named for a report (bd tea-rags-mcp-89k7k.35.3). */
 export const TEST_SUPPORT_REASON =
-  "test support: imported only by test files or by other test support, and named after a test importing it, importing a test-only dependency (one tests import and no production file does, or one the manifests declare for development only), importing other test support, or sitting in a directory that holds a test and nothing but tests and test support; also a file nothing imports that imports a dependency the manifests declare for development only (a story, a bundler config), with what only it reaches";
+  "test support: imported only by test files or by other test support, and named after a test importing it, importing a test-only dependency (one tests import and no production file does, or one the manifests declare for development only), importing other test support, or sitting in a directory that holds a test and nothing but tests and test support; also a file nothing imports that imports a dependency the manifests declare for development only (a story, a bundler config), or a file of a directory such a file or what only it reaches names by a path literal after its own name (a separate build's tree), with what only it reaches";
 
 /** The module specifiers one indexed file declares (`payload.imports`), and whether it is a test file. */
 export interface IndexedFileImports {
@@ -49,6 +49,12 @@ export interface TestSupportClassification {
    */
   developmentRoots: ReadonlySet<RelPath>;
 }
+
+/**
+ * A walked file's source text in the addressed tree (bd
+ * tea-rags-mcp-r8hme.52.19); `undefined` when it cannot be read.
+ */
+export type TreeFileTextLookup = (relPath: RelPath) => string | undefined;
 
 const RELATIVE_SPECIFIER = /^\.\.?(\/|$)/;
 
@@ -336,6 +342,14 @@ const SEPARATOR = /[^\p{L}\p{N}]/u;
  * for the test, and its manifest evidence for (b). Importers are the
  * graph's edges plus `unwalkedImportEdges`; an unwalked importer that is not
  * a test (a generated file, say) counts as production.
+ *
+ * With `readTreeFileText`, a root or follower also names development roots by
+ * a path literal (bd tea-rags-mcp-r8hme.52.19): a directory of walked files
+ * whose basename is a segment of the holder's own name
+ * (`indexNameRelatedDirectories` — a separate build's config naming its
+ * tree) contributes every file under it that nothing outside it but a test
+ * imports. A file production imports from outside stays production, and so,
+ * through the closure, does what it reaches.
  */
 export function classifyTestSupportFiles(
   graph: FileDependencyGraph,
@@ -343,6 +357,7 @@ export function classifyTestSupportFiles(
   externalImports: readonly UnwalkedDependencyImport[],
   declaredTestDependencies: ReadonlySet<string> = NO_DECLARED_TEST_DEPENDENCIES,
   indexedFiles: ReadonlyMap<RelPath, Pick<IndexedFileImports, "isTest">> = NO_INDEXED_FILES,
+  readTreeFileText?: TreeFileTextLookup,
 ): TestSupportClassification {
   const walked = new Set(graph.files.map((f) => f.relPath));
   const importers = new Map<RelPath, Set<RelPath>>();
@@ -445,17 +460,130 @@ export function classifyTestSupportFiles(
 
   // What only the development roots (with tests and support) reach follows
   // them through (a); their manifest evidence stands in for (b).
-  const developmentReached = new Set([...developmentRoots].flatMap((root) => [...(imported.get(root) ?? [])]));
-  const followers = closeAndGround(
-    new Set([...importers.keys()].filter((relPath) => !support.has(relPath))),
-    (relPath) => isNonProduction(relPath) || support.has(relPath),
-    developmentReached,
-  );
+  const developmentFollowers = (): Set<RelPath> =>
+    closeAndGround(
+      new Set([...importers.keys()].filter((relPath) => !support.has(relPath) && !developmentRoots.has(relPath))),
+      (relPath) => isNonProduction(relPath) || support.has(relPath),
+      new Set([...developmentRoots].flatMap((root) => [...(imported.get(root) ?? [])])),
+    );
+  let followers = developmentFollowers();
+  // A directory a root or follower names by a path literal related to its own
+  // name (r8hme.52.19: vite.prototypes.config.ts → 'app/x/prototypes') is a
+  // separate build's tree: its entries become roots, and the closure above
+  // carries what only they reach. A root gained here may hold literals too.
+  if (readTreeFileText !== undefined) {
+    const namedDirectories = indexNameRelatedDirectories(walked, readTreeFileText, dependenciesOf);
+    for (;;) {
+      const fresh = [...developmentRoots, ...followers]
+        .flatMap((holder) => namedDirectories.entriesNamedBy(holder, importers, isTestFile))
+        .filter((relPath) => !developmentRoots.has(relPath) && !support.has(relPath));
+      if (fresh.length === 0) break;
+      for (const relPath of fresh) developmentRoots.add(relPath);
+      followers = developmentFollowers();
+    }
+  }
   return {
     files: new Set([...support, ...developmentRoots, ...followers]),
     testOnlyDependencies: testOnly,
     developmentRoots,
   };
+}
+
+/** The directories holding walked files, and which of them a holder's path literals name after the holder. */
+interface NameRelatedDirectoryIndex {
+  /**
+   * The walked files under each directory `holder` names (r8hme.52.19) that
+   * nothing outside the directory imports but tests.
+   */
+  entriesNamedBy: (
+    holder: RelPath,
+    importers: ReadonlyMap<RelPath, ReadonlySet<RelPath>>,
+    isTestFile: (relPath: RelPath) => boolean,
+  ) => RelPath[];
+}
+
+/**
+ * Indexes every directory holding a walked file (bd tea-rags-mcp-r8hme.52.19).
+ * A holder names a directory when one of its path string literals — alone, or
+ * a comma-separated run joined as `path.join` / `resolve(__dirname, …)`
+ * would — resolves, against the holder's directory or the repo root, to such
+ * a directory whose basename is a segment of the holder's own name split on
+ * `.`, `-`, `_` (`vite.prototypes.config.ts` → vite, prototypes, config). The
+ * name relation is what separates a separate build's tree from a tool's
+ * scope: `vitest.config.ts` naming `app/javascript` names no part of itself.
+ * A holder no directory basename matches is never read. A literal naming a
+ * package or unwalked file the holder imports is a module specifier, not a
+ * path (`'vite'` in `vite.config.ts` beside a repo's `vite/` directory).
+ */
+function indexNameRelatedDirectories(
+  walked: ReadonlySet<RelPath>,
+  readTreeFileText: TreeFileTextLookup,
+  dependenciesOf: ReadonlyMap<RelPath, ReadonlySet<string>>,
+): NameRelatedDirectoryIndex {
+  const directories = new Set<string>();
+  const directoryBasenames = new Set<string>();
+  for (const relPath of walked) {
+    for (let dir = posix.dirname(relPath); dir !== "." && !directories.has(dir); dir = posix.dirname(dir)) {
+      directories.add(dir);
+      directoryBasenames.add(posix.basename(dir));
+    }
+  }
+  const namedBy = new Map<RelPath, string[]>();
+  const directoriesNamedBy = (holder: RelPath): string[] => {
+    const cached = namedBy.get(holder);
+    if (cached !== undefined) return cached;
+    const segments = new Set(stripExtension(posix.basename(holder)).split(NAME_SEGMENT_SEPARATOR));
+    const named: string[] = [];
+    if ([...segments].some((segment) => directoryBasenames.has(segment))) {
+      const imports = dependenciesOf.get(holder);
+      for (const literal of pathLiteralsOf(readTreeFileText(holder) ?? "")) {
+        if (imports?.has(literal)) continue;
+        for (const candidate of [posix.join(posix.dirname(holder), literal), literal]) {
+          const dir = posix.normalize(candidate).replace(/\/+$/, "");
+          if (directories.has(dir) && segments.has(posix.basename(dir)) && !named.includes(dir)) named.push(dir);
+        }
+      }
+    }
+    namedBy.set(holder, named);
+    return named;
+  };
+  return {
+    entriesNamedBy: (holder, importers, isTestFile) =>
+      directoriesNamedBy(holder).flatMap((dir) =>
+        [...walked].filter(
+          (relPath) =>
+            relPath.startsWith(`${dir}/`) &&
+            [...(importers.get(relPath) ?? [])].every((i) => i.startsWith(`${dir}/`) || isTestFile(i)),
+        ),
+      ),
+  };
+}
+
+const NAME_SEGMENT_SEPARATOR = /[.\-_]/;
+
+const STRING_LITERAL = /'([^'\n]*)'|"([^"\n]*)"|`([^`$\n]*)`/g;
+
+/**
+ * The quoted strings of a source text, each alone and every comma-separated
+ * run of them joined as a path (`resolve(ROOT, 'app', 'prototypes')`).
+ */
+function pathLiteralsOf(text: string): string[] {
+  const literals: string[] = [];
+  let run: string[] = [];
+  let runEnd = -1;
+  for (const match of text.matchAll(STRING_LITERAL)) {
+    const value = match[1] ?? match[2] ?? match[3] ?? "";
+    const start = match.index;
+    if (runEnd < 0 || !/^\s*,\s*$/.test(text.slice(runEnd, start))) {
+      if (run.length > 1) literals.push(posix.join(...run));
+      run = [];
+    }
+    run.push(value);
+    runEnd = start + match[0].length;
+    if (value !== "") literals.push(value);
+  }
+  if (run.length > 1) literals.push(posix.join(...run));
+  return literals;
 }
 
 /** Drops every member with an importer that is neither non-production nor a member, until none is left. */

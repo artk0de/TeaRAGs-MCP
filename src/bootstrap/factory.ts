@@ -23,6 +23,7 @@ import {
   readDeclaredTestDependencies,
 } from "../core/adapters/filesystem/dependency-manifests.js";
 import { StatsCache } from "../core/adapters/filesystem/stats-cache.js";
+import { readTreeFileText } from "../core/adapters/filesystem/tree-file-text.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
@@ -930,6 +931,9 @@ export function wireCodegraph(
     ...(readFileMaintenanceSignals ? { readFileMaintenanceSignals } : {}),
     ...(readIndexedFileImports ? { readIndexedFileImports } : {}),
     ...(readDeclaredTestDependencies ? { readDeclaredTestDependencies } : {}),
+    // The development roots' path literals, read from the addressed tree (bd
+    // tea-rags-mcp-r8hme.52.19) — the same exclusion the manifests feed.
+    ...(readIndexedFileImports ? { readTreeFileText } : {}),
     ...(withinRequest ? { withinRequest } : {}),
     ...(workingTreeOverlay ? { workingTreeOverlay } : {}),
     ...(indexExists ? { indexExists } : {}),
@@ -2266,6 +2270,7 @@ function createExploreSection(deps: {
           // tea-rags-mcp-89k7k.35.3).
           readIndexedFileImports: async (collectionName) => requestFileFacts.readIndexedFileImports(collectionName),
           readDeclaredTestDependencies: readTreeDeclaredTestDependencies,
+          readTreeFileText,
         })
       : undefined;
   const reviewFacade = reviewChangesOps

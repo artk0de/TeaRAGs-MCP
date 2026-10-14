@@ -155,7 +155,11 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
   - `developmentRootCount`: file nothing imports + imports manifest dev-only dep
     (value or `import type`) → non-production root (story, bundler/lint config);
     subtree only it reaches follows. Story-only component = excluded too (dead
-    in production).
+    in production). Root/follower path literal naming a dir whose basename is a
+    segment of its own name (`vite.prototypes.config.ts` → `'app/x/prototypes'`)
+    → that dir's files nothing outside it imports (tests aside) = roots too
+    (separate build's tree). Unrelated literal (`vitest.config.ts` →
+    `'app/javascript'`) or imported package name → ignored.
 - `limit` caps `violations` + `rootCauses` PER DETECTOR; each
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.

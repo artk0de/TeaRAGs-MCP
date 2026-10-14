@@ -650,6 +650,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       },
       context.readIndexedFileImports,
       context.readDeclaredTestDependencies,
+      context.readTreeFileText,
     );
     const { production } = graphFacts;
     const facts = deriveArchitectureComponentFacts(production.graph, undefined, undefined, production.nonProduction);

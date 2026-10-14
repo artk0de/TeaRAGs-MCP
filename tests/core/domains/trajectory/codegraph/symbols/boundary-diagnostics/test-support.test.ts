@@ -498,6 +498,132 @@ describe("classifyTestSupportFiles", () => {
     });
   });
 
+  describe("a directory a development root or follower names by a path literal related to its own name (r8hme.52.19)", () => {
+    // taxdome: the prototype gallery app/javascript/prototypes is reached
+    // only by vite.prototypes.config.ts's resolve(ROOT, 'app/javascript/prototypes')
+    // — a follower of the vite scripts, never an import. Owner decision: read
+    // path literals in development roots and their followers, accept one only
+    // when the directory's basename is a name segment of the holding file.
+    const VITE = "vite";
+    const BUILD_SCRIPT = "scripts/build-prototypes.ts";
+    const CONFIG = "vite.prototypes.config.ts";
+    const GALLERY = "app/x/prototypes/Gallery.tsx";
+    const GALLERY_STATE = "app/x/prototypes/state/store.ts";
+    const GALLERY_PAGE = "app/x/prototypes/pages/Tour.tsx";
+    const SHARED = "app/x/components/Button.tsx";
+    const PAGE = "app/pages/Page.tsx";
+    const DECLARED = new Set([VITE]);
+    const TEXT = new Map([
+      [
+        CONFIG,
+        "const GALLERY_SRC = resolve(ROOT, 'app/x/prototypes');\nconst OUT = resolve(ROOT, 'public/prototypes');",
+      ],
+    ]);
+    const readText = (relPath: string): string | undefined => TEXT.get(relPath);
+    const galleryGraph = (...extra: ReturnType<typeof edge>[]): FileDependencyGraph => ({
+      files: [
+        file(BUILD_SCRIPT),
+        file(CONFIG),
+        file(GALLERY),
+        file(GALLERY_STATE),
+        file(GALLERY_PAGE),
+        file(SHARED),
+        file(PAGE),
+      ],
+      edges: [
+        edge(BUILD_SCRIPT, CONFIG),
+        edge(GALLERY, GALLERY_STATE),
+        edge(GALLERY, GALLERY_PAGE),
+        edge(GALLERY_PAGE, GALLERY_STATE),
+        edge(GALLERY_PAGE, SHARED),
+        edge(PAGE, SHARED),
+        ...extra,
+      ],
+    });
+
+    it("names the directory's entries non-production when a follower's literal names it after the follower", () => {
+      const classification = classifyTestSupportFiles(
+        galleryGraph(),
+        [],
+        [uses(BUILD_SCRIPT, VITE), uses(CONFIG, VITE), uses(PAGE, "react")],
+        DECLARED,
+        new Map(),
+        readText,
+      );
+
+      expect([...classification.files].sort()).toEqual(
+        [BUILD_SCRIPT, CONFIG, GALLERY, GALLERY_STATE, GALLERY_PAGE].sort(),
+      );
+      expect(classification.developmentRoots.has(GALLERY)).toBe(true);
+    });
+
+    it("ignores a root's literal naming a directory with no name relation to the root", () => {
+      const vitestConfig = "vitest.config.ts";
+      const graph: FileDependencyGraph = {
+        files: [file(vitestConfig), file(GALLERY), file(PAGE)],
+        edges: [],
+      };
+
+      const classification = classifyTestSupportFiles(
+        graph,
+        [],
+        [uses(vitestConfig, VITE), uses(PAGE, "react")],
+        DECLARED,
+        new Map(),
+        (relPath) => (relPath === vitestConfig ? "export default { root: 'app/x' };" : undefined),
+      );
+
+      expect([...classification.files]).toEqual([vitestConfig]);
+    });
+
+    it("ignores a literal that is a package the holder imports, whatever directory shares its name", () => {
+      // taxdome: .storybook/vite.config.ts imports 'vite', and the repo has a
+      // vite/ directory of build plugins — a module specifier is not a path.
+      const storybookConfig = "app/.storybook/vite.config.ts";
+      const plugin = "vite/plugins/plugin.cjs";
+      const graph: FileDependencyGraph = { files: [file(storybookConfig), file(plugin), file(PAGE)], edges: [] };
+
+      const classification = classifyTestSupportFiles(
+        graph,
+        [],
+        [uses(storybookConfig, VITE), uses(PAGE, "react")],
+        DECLARED,
+        new Map(),
+        (relPath) => (relPath === storybookConfig ? "import { defineConfig } from 'vite';" : undefined),
+      );
+
+      expect([...classification.files]).toEqual([storybookConfig]);
+    });
+
+    it("ignores a name-related literal in a production file — only a development root or follower holds one", () => {
+      const classification = classifyTestSupportFiles(
+        galleryGraph(),
+        [],
+        [uses(PAGE, "react")],
+        DECLARED,
+        new Map(),
+        readText,
+      );
+
+      expect(classification.files.size).toBe(0);
+    });
+
+    it("keeps a directory entry a production file also imports in production", () => {
+      const classification = classifyTestSupportFiles(
+        galleryGraph(edge(PAGE, GALLERY_STATE)),
+        [],
+        [uses(BUILD_SCRIPT, VITE), uses(CONFIG, VITE), uses(PAGE, "react")],
+        DECLARED,
+        new Map(),
+        readText,
+      );
+
+      expect(classification.files.has(GALLERY)).toBe(true);
+      expect(classification.files.has(GALLERY_STATE)).toBe(false);
+      expect(classification.files.has(SHARED)).toBe(false);
+    });
+  });
+
   describe("a file only tests and their support import, in a directory of tests and test support (r8hme.52.14 b)", () => {
     // taxdome specs/mocks.ts: imported by its directory's spec and the spec's
     // presets companion, importing only production modules — no test-only

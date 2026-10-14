@@ -38,6 +38,7 @@ import {
   readProductionArchitectureGraph,
   type DeclaredTestDependencyLookup,
   type IndexedFileImportLookup,
+  type TreeFileTextLookup,
 } from "./architecture-facts.js";
 import { readDependencyNormTypeNameRows, type ArchitectureReportGraphDb } from "./architecture-graph-facts.js";
 import { normalizeRelativePath } from "./file-import-ops.js";
@@ -60,12 +61,14 @@ export class ArchitecturePlannedEdgeOps {
     request: GetArchitectureReportRequest,
     readIndexedFileImports?: IndexedFileImportLookup,
     readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
+    readTreeFileText?: TreeFileTextLookup,
   ): Promise<GetArchitecturePlannedEdgesResponse> {
     const planned = validatePlannedEdges(request);
     const production = await readProductionArchitectureGraph(
       graphDb,
       readIndexedFileImports,
       readDeclaredTestDependencies,
+      readTreeFileText,
     );
     const rows = await readDependencyNormTypeNameRows(graphDb);
     const { components } = deriveArchitectureComponentFacts(production.graph);

@@ -41,6 +41,7 @@ import {
   deriveArchitectureComponentFacts,
   type DeclaredTestDependencyLookup,
   type IndexedFileImportLookup,
+  type TreeFileTextLookup,
 } from "./architecture-facts.js";
 import { readArchitectureGraphFacts, type ArchitectureReportGraphDb } from "./architecture-graph-facts.js";
 import type { GitFileMaintenanceSignalLookup } from "./architecture-maintenance-cost.js";
@@ -69,6 +70,7 @@ const DEFAULT_SUBJECT_LIMIT = 50;
 export interface ArchitectureRestructureLookups {
   readIndexedFileImports?: IndexedFileImportLookup;
   readDeclaredTestDependencies?: DeclaredTestDependencyLookup;
+  readTreeFileText?: TreeFileTextLookup;
   readFileMaintenanceSignals?: GitFileMaintenanceSignalLookup;
 }
 
@@ -86,6 +88,7 @@ export class ArchitectureRestructureOps {
       {},
       lookups.readIndexedFileImports,
       lookups.readDeclaredTestDependencies,
+      lookups.readTreeFileText,
     );
     const { components } = deriveArchitectureComponentFacts(facts.production.graph);
     const compilation = compileArchitectureRestructure(ops, { componentOf: components.componentOf });

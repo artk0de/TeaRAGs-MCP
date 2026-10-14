@@ -40,6 +40,7 @@ import {
   readProductionArchitectureGraph,
   type DeclaredTestDependencyLookup,
   type IndexedFileImportLookup,
+  type TreeFileTextLookup,
 } from "./architecture-facts.js";
 import { readOnce } from "./architecture-report-ops.js";
 import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
@@ -113,6 +114,12 @@ export interface ReviewChangesOpsDeps {
    * before a section sees it. Absent → the manifests add nothing.
    */
   readDeclaredTestDependencies?: (root: string) => ReturnType<DeclaredTestDependencyLookup>;
+  /**
+   * One file's text under the reviewed tree (bd tea-rags-mcp-r8hme.52.19),
+   * bound to the review's work tree like the manifests — the development
+   * roots' path literals. Absent → no literal names a directory.
+   */
+  readTreeFileText?: (root: string, relPath: RelPath) => ReturnType<TreeFileTextLookup>;
   /**
    * The given files' chunk rows as the reviewed working tree holds them (bd
    * tea-rags-mcp-89k7k.34) — the composition root binds the working-tree
@@ -250,6 +257,11 @@ export class ReviewChangesOps {
         readDeclaredTestDependencies === undefined || workTree === undefined
           ? undefined
           : () => readDeclaredTestDependencies(workTree);
+      const { readTreeFileText } = this.deps;
+      const treeFileText: TreeFileTextLookup | undefined =
+        readTreeFileText === undefined || workTree === undefined
+          ? undefined
+          : (relPath) => readTreeFileText(workTree, relPath);
       // The production graph, read on first use and shared by architecture and
       // norms (bd tea-rags-mcp-pqdw4): the whole-graph and whole-index reads
       // run once per review, not once per section.
@@ -257,7 +269,7 @@ export class ReviewChangesOps {
         graphDb === undefined
           ? undefined
           : readOnce(async () =>
-              readProductionArchitectureGraph(graphDb, indexedFileImports, declaredTestDependencies),
+              readProductionArchitectureGraph(graphDb, indexedFileImports, declaredTestDependencies, treeFileText),
             );
       // The change's edges, read on first use and shared (bd tea-rags-mcp-nehn5):
       // every section that walks the diff resolves against one hydrated table
@@ -284,6 +296,7 @@ export class ReviewChangesOps {
         ...(maintenanceSignals === undefined ? {} : { readFileMaintenanceSignals: maintenanceSignals }),
         ...(indexedFileImports === undefined ? {} : { readIndexedFileImports: indexedFileImports }),
         ...(declaredTestDependencies === undefined ? {} : { readDeclaredTestDependencies: declaredTestDependencies }),
+        ...(treeFileText === undefined ? {} : { readTreeFileText: treeFileText }),
         ...(readProductionGraphOnce === undefined ? {} : { readProductionGraph: readProductionGraphOnce }),
         ...(treeChunks === undefined ? {} : { readTreeChunks: treeChunks }),
       };

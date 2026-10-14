@@ -68,7 +68,11 @@ import {
   type IndexExistenceCheck,
 } from "../collection-resolver.js";
 import { readWorkingTreeGraph } from "../infra/working-tree-graph-read.js";
-import type { DeclaredTestDependencyLookup, IndexedFileImportLookup } from "../ops/architecture-facts.js";
+import type {
+  DeclaredTestDependencyLookup,
+  IndexedFileImportLookup,
+  TreeFileTextLookup,
+} from "../ops/architecture-facts.js";
 import { ArchitecturePlannedEdgeOps } from "../ops/architecture-planned-edge-ops.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
 import { ArchitectureRestructureOps } from "../ops/architecture-restructure-ops.js";
@@ -136,6 +140,12 @@ export interface GraphFacadeDeps {
    * exclusion. Optional: absent, the manifests add nothing.
    */
   readDeclaredTestDependencies?: (root: string) => ReturnType<DeclaredTestDependencyLookup>;
+  /**
+   * One file's text under a tree root (bd tea-rags-mcp-r8hme.52.19) — the
+   * development roots' path literals, for the same exclusion. Optional:
+   * absent, no literal names a directory.
+   */
+  readTreeFileText?: (root: string, relPath: RelPath) => ReturnType<TreeFileTextLookup>;
   /**
    * The `workingTree` marker source (bd tea-rags-mcp-xi2r9) for get_callers,
    * get_callees, find_cycles and get_architecture_report — and, through the
@@ -229,8 +239,12 @@ function resolvedField(read: SymbolEdgeRead<unknown>): { resolvedSymbolId?: Symb
 function addressedTestSupportLookups(
   deps: GraphFacadeDeps,
   req: GetArchitectureReportRequest,
-): { indexedFileImports?: IndexedFileImportLookup; declaredTestDependencies?: DeclaredTestDependencyLookup } {
-  const { readIndexedFileImports, readDeclaredTestDependencies } = deps;
+): {
+  indexedFileImports?: IndexedFileImportLookup;
+  declaredTestDependencies?: DeclaredTestDependencyLookup;
+  treeFileText?: TreeFileTextLookup;
+} {
+  const { readIndexedFileImports, readDeclaredTestDependencies, readTreeFileText } = deps;
   const addressed = () => resolveWorkingTree(deps.collectionRegistry, req);
   return {
     indexedFileImports: readIndexedFileImports
@@ -240,6 +254,12 @@ function addressedTestSupportLookups(
       ? () => {
           const { root } = addressed();
           return root ? readDeclaredTestDependencies(root) : new Set<string>();
+        }
+      : undefined,
+    treeFileText: readTreeFileText
+      ? (relPath) => {
+          const { root } = addressed();
+          return root ? readTreeFileText(root, relPath) : undefined;
         }
       : undefined,
   };
@@ -476,7 +496,7 @@ export class GraphFacade {
     const maintenanceSignals = readFileMaintenanceSignals
       ? async () => readFileMaintenanceSignals(addressedCollection())
       : undefined;
-    const { indexedFileImports, declaredTestDependencies } = addressedTestSupportLookups(this.deps, req);
+    const { indexedFileImports, declaredTestDependencies, treeFileText } = addressedTestSupportLookups(this.deps, req);
     return this.inRequestWindow(async () =>
       this.withMarkedReadHandle(
         req,
@@ -489,6 +509,7 @@ export class GraphFacade {
             maintenanceSignals,
             indexedFileImports,
             declaredTestDependencies,
+            treeFileText,
           ),
         ArchitectureReportOps.empty(req),
       ),
@@ -502,10 +523,11 @@ export class GraphFacade {
    */
   async judgePlannedArchitectureEdges(req: GetArchitectureReportRequest): Promise<GetArchitecturePlannedEdgesResponse> {
     const fallback = ArchitecturePlannedEdgeOps.unavailable(req);
-    const { indexedFileImports, declaredTestDependencies } = addressedTestSupportLookups(this.deps, req);
+    const { indexedFileImports, declaredTestDependencies, treeFileText } = addressedTestSupportLookups(this.deps, req);
     return this.withMarkedReadHandle(
       req,
-      async (handle) => this.plannedEdges.judge(handle.graphDb, req, indexedFileImports, declaredTestDependencies),
+      async (handle) =>
+        this.plannedEdges.judge(handle.graphDb, req, indexedFileImports, declaredTestDependencies, treeFileText),
       fallback,
       "index",
     );
@@ -522,7 +544,7 @@ export class GraphFacade {
     const fallback = ArchitectureRestructureOps.unavailable(req);
     const { readFileMaintenanceSignals } = this.deps;
     const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
-    const { indexedFileImports, declaredTestDependencies } = addressedTestSupportLookups(this.deps, req);
+    const { indexedFileImports, declaredTestDependencies, treeFileText } = addressedTestSupportLookups(this.deps, req);
     return this.inRequestWindow(async () =>
       this.withMarkedReadHandle(
         req,
@@ -530,6 +552,7 @@ export class GraphFacade {
           this.restructure.simulate(handle.graphDb, req, {
             readIndexedFileImports: indexedFileImports,
             readDeclaredTestDependencies: declaredTestDependencies,
+            readTreeFileText: treeFileText,
             readFileMaintenanceSignals: readFileMaintenanceSignals
               ? async () => readFileMaintenanceSignals(addressedCollection())
               : undefined,
