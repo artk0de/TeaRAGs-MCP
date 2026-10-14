@@ -315,8 +315,6 @@ export interface NamingReviewResult {
   notJudgedBy?: Partial<Record<string, Partial<Record<NamingReviewNotJudgedReason, number>>>>;
   /** The first 50 of `notJudgedBy`, in path and line order — what a reviewer still has to read. */
   notJudgedNames?: NamingReviewNotJudgedEntry[];
-  /** Set when more files changed than one call reviews (200): the files past the cap, in path order, are skipped. */
-  truncated?: { cap: number; skipped: number };
 }
 
 /**

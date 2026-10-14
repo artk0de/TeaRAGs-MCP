@@ -429,9 +429,9 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
      and every `change.nonLocal` entry (= `change.introducedCount`) repaired per
      `repair/<family>.md`, or accepted false positive with QUOTED evidence
      (detector flag / cited rule) + filed detector bead; (ii) verdict not
-     PARTIAL — any `scopeSkippedFiles` or `truncated` (envelope or detector row)
-     = PARTIAL ≠ pass → re-run with `files: [...]` batches until every changed
-     file judged; (iii) triage table must-fix rows repaired.
+     PARTIAL — any detector row `built: false` or `truncated` (envelope or
+     detector row) = PARTIAL ≠ pass → re-run with `files: [...]` batches until
+     every finding is listed; (iii) triage table must-fix rows repaired.
    - `preExisting: true` = not yours: cheap repair optional (triage table),
      never blocks gate.
    - **Gate line** — final report quotes the last run verbatim:
@@ -500,8 +500,8 @@ below belong to the stack owner — cite the owning commit, do not fix or triage
 
 `silentCoupling` = git history → always `change.persisting`. incompleteChange
 and `splitCandidates` are history verdicts with no `preExisting` split — their
-repair file's procedure decides. A family with `built: false` or
-`scopeSkippedFiles` → report "not judged" / "partial", never a clean pass.
+repair file's procedure decides. A family with `built: false` → report "not
+judged", never a clean pass.
 
 **Shared rules** (repair files refer here):
 

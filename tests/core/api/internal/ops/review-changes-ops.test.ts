@@ -244,9 +244,9 @@ describe("ReviewChangesOps", () => {
     expect(result.review.workTree).toBe(repo);
     expect(result.review.mergeBase).toBe(git(repo, "rev-parse", "HEAD").trim());
     expect(result.review.changedFiles).toBe(1);
-    expect(result.review.skipped).toBe(0);
+    expect(result.review).not.toHaveProperty("skipped");
     expect(result.review.notices).toBeUndefined();
-    expect(result.review.truncated).toBeUndefined();
+    expect(result.review).not.toHaveProperty("truncated");
     // naming spread the lexicon's review verbatim
     expect(result.review.sections.naming).toMatchObject({ checked: 2, conforming: 2 });
     // incompleteChange found the partner outside the diff
@@ -618,12 +618,24 @@ describe("ReviewChangesOps", () => {
     ]);
   });
 
-  it("a diff over the cap reports skipped and truncated in the envelope", async () => {
-    mkdirSync(join(repo, "notes"));
-    for (let i = 0; i < 202; i++) writeFileSync(join(repo, `notes/n${String(i).padStart(3, "0")}.md`), "x\n");
-    const result = await makeOps(graphDbStub()).reviewChanges(request());
-    expect(result.review.skipped).toBe(3);
-    expect(result.review.truncated).toEqual({ cap: 200, skipped: 3 });
+  // bd tea-rags-mcp-89k7k.1.8 (owner decision 2026-10-14): a review judges the
+  // whole change. The old 200-file cap kept the files with the most added
+  // lines, so the one-line CHANGED edit fell past it behind 200 larger
+  // production files and its missing co-change partner was never looked for.
+  it("a diff over 200 files judges every file — a finding in the smallest edit is reported, nothing is skipped", async () => {
+    const bulk = Array.from({ length: 30 }, (_, line) => `export const b${line} = ${line};`).join("\n");
+    for (let i = 0; i < 201; i++) {
+      writeFileSync(join(repo, `src/git/bulk${String(i).padStart(3, "0")}.ts`), `${bulk}\n`);
+    }
+    const result = await makeOps(graphDbStub()).reviewChanges(request({ sections: ["incompleteChange"] }));
+    expect(result.review.changedFiles).toBe(202);
+    expect(result.review).not.toHaveProperty("skipped");
+    expect(result.review).not.toHaveProperty("truncated");
+    expect(result.review.sections.incompleteChange).not.toHaveProperty("scopeSkippedFiles");
+    expect(result.review.sections.incompleteChange).toMatchObject({
+      built: true,
+      partners: [{ file: CHANGED, missingPartner: PARTNER }],
+    });
   });
 
   // bd tea-rags-mcp-xi2r9: a subagent knows only its working directory. `path` alone at a

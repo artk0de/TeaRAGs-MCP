@@ -3,8 +3,8 @@
  * tea-rags-mcp-89k7k.1.19.10): every family `DiffDetectorRun#run` reports is a
  * `DiffFamilyDetector` that judges ONE shared `DiffFamilyDetectorContext` and
  * answers its findings plus its status row. The run builds the context once
- * (the diff-added subtraction, `heldBeforeChange`) and stamps scope partiality
- * on the rows; a family never re-derives either.
+ * (the diff-added subtraction, `heldBeforeChange`); a family never re-derives
+ * it.
  *
  * The ports below are what the families read — the run's deps hand them over
  * unchanged. They live here, not beside the run, so the families never import
@@ -230,29 +230,18 @@ export interface DiffDetectorSplitMergeReader {
 
 /**
  * The change to judge: the files the diff touches, as the scope reader (F0)
- * read them. `skippedFiles` says the read was TRUNCATED (bd
- * tea-rags-mcp-89k7k.1.9) — changed files fell past the reader's file cap, so
- * the overlay below carries no edge of theirs and a family's zero rests on
- * files it never saw.
+ * read them — the whole change, uncapped (bd tea-rags-mcp-89k7k.1.8).
  */
 export interface DiffDetectorScope {
-  /** The scanned (capped) changed files — the sources every family judges. */
+  /** The scanned changed files — the sources every family judges. */
   changedFiles: readonly string[];
   /**
-   * Every path the change touches, uncapped and deletions included (bd
+   * Every path the change touches, deletions included (bd
    * tea-rags-mcp-lxbrr) — what "the diff also changes it" is asked of
    * (silentCoupling's partner, facadeContract's consumer). Absent =
    * `changedFiles` is the whole change.
    */
   touchedFiles?: ReadonlySet<string>;
-  /**
-   * Changed files the reader's cap skipped; `0`/absent = the scope is whole.
-   * When > 0 every built family's status is marked partial
-   * (`scopeSkippedFiles`) — a clean pass is never claimed over a truncated
-   * diff, because a cycle's or a leak's closing edge can live ONLY in a
-   * skipped file.
-   */
-  skippedFiles?: number;
 }
 
 /** One overlay edge the diff adds, as every per-edge detector judges it. */

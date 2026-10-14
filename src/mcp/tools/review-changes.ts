@@ -28,7 +28,7 @@ import { collectionPathFields } from "./codegraph.js";
 
 const REVIEW_CHANGES_DESCRIPTION =
   "Review one working-tree change: every diff-scoped report in one call, sections keyed by id. " +
-  "Reads the change once — files under cap 200, untracked included; changes.base (default HEAD) resolved to its " +
+  "Reads the change once — every changed file (no cap), untracked included; changes.base (default HEAD) resolved to its " +
   "merge-base with HEAD = what THIS branch changed; path beside project = linked worktree of the same repo. " +
   "sections = ALLOWLIST, default all registered; unknown id = error; a section NOT requested is OMITTED from the " +
   "map, a requested one whose substrate is missing answers built:false+reason — absence is not not-built. " +
@@ -68,16 +68,14 @@ const REVIEW_CHANGES_DESCRIPTION =
   "findingCount counts pairs, groupedFindingCount the findings (= listed + truncated); foundationTerminal:true on a D-delta finding = every contributing edge ends in " +
   "an abstract L0 foundation, entryPoint:true = touched component holds a facade nothing imports (an entry) — placement, not defect, " +
   "preExisting:true on a cycles/leakingAbstraction finding = the index already holds that edge — the diff touches " +
-  "a file on it, did not add it; on layeringBackEdge = another edge already carried the component pair; on hubLike = already a hub before (listed only with a remedy, else in change.persisting). scopeSkippedFiles rides section envelopes (incompleteChange, " +
-  "cohesion) and architecture detector rows = files the 200-cap skipped while judged; present = verdict PARTIAL — " +
-  "a zero findingCount over them is never a clean pass. " +
+  "a file on it, did not add it; on layeringBackEdge = another edge already carried the component pair; on hubLike = already a hub before (listed only with a remedy, else in change.persisting). " +
   "norms: each file edge the change ADDS (absent at merge-base) judged by get_architecture_report's dependency-norm " +
   "ledgers over the INDEXED graph (change's own edges never precedent): MISFIT = against role pair's established " +
   "direction, expectedPath = that direction + support; CONFORMS; NEW_PATTERN = pair with no history; UNJUDGED + reason " +
   "(notIndexed = new file, untypedRole, weakRole + weakSide source|target|both, crossLanguage). exclusionsUnchecked = report exclusion classes not " +
   "evaluated (no call data on added edges). MISFIT first, cap 100 + truncated; verdictCounts + unjudgedReasonCounts pre-cap; " +
   "removedEdgeCount count only; test/tooling edges = nonProductionEdgeCount. " +
-  "Envelope: workTree, base, mergeBase, changedFiles, skipped+truncated, indexLag, notices (an empty diff names the " +
+  "Envelope: workTree, base, mergeBase, changedFiles, indexLag, notices (an empty diff names the " +
   "trees and bases it did not look at).";
 
 const reviewChangesInputShape = (sectionIds: readonly [ReviewSectionId, ...ReviewSectionId[]]) => ({

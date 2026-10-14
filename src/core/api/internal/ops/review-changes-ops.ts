@@ -43,7 +43,7 @@ import {
   type TreeFileTextLookup,
 } from "./architecture-facts.js";
 import { readOnce } from "./architecture-report-ops.js";
-import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
+import { readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import type { ReviewEdgeExtractionDeps } from "./review-edge-overlay.js";
 import {
   readReviewChangeEdges,
@@ -165,7 +165,6 @@ export class ReviewChangesOps {
         base: request.changes?.base ?? "HEAD",
         mergeBase: "",
         changedFiles: 0,
-        skipped: 0,
         sections,
       },
     };
@@ -338,8 +337,6 @@ export class ReviewChangesOps {
           base: scope.base,
           mergeBase: scope.mergeBase,
           changedFiles: scope.changedFiles,
-          skipped: scope.skipped,
-          ...(scope.skipped > 0 ? { truncated: { cap: DIFF_FILE_CAP, skipped: scope.skipped } } : {}),
           ...(indexLag !== undefined ? { indexLag } : {}),
           ...(scope.notices.length > 0 ? { notices: [...scope.notices] } : {}),
           sections,

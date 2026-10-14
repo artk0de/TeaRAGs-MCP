@@ -275,13 +275,13 @@ declare \`kind: "field"\` rows, same as \`@ivar =\`.
   uncommitted work, however far base moved on; no merge-base (unrelated / shallow clone) → error.
   files=[...] → those files only: a file with a diff by its added hunks, one with no diff (committed,
   clean tree) WHOLE — every declaration it holds, counted in wholeFiles.
-  Only added hunks judged; changed files excluded from evidence; cap 200 files (truncated reports rest).
+  Only added hunks judged; changed files excluded from evidence; every changed file read (no cap).
   project alone → MAIN checkout's tree. Change in a git worktree → project + path="<abs worktree path>"
   (same repo, else error): project = index, path = tree; diff read there, judged vs project index
   (collection + path already split so). Empty diff (no files) → notice naming committed-work
   (changes.base) and worktree (path) exits + repo's other trees — never trust changedFiles: 0 alone.
   Answer → review { workTree, base, mergeBase, changedFiles, wholeFiles?, checked, conforming, novel, findings, notes?,
-  notJudged, notJudgedBy?, notJudgedNames?, truncated? }; changedFiles = files differing from mergeBase
+  notJudged, notJudgedBy?, notJudgedNames? }; changedFiles = files differing from mergeBase
   (with files: of the listed); notJudgedBy = kind (file) → reason → count — only files go unjudged;
   a method with no known return type is never skipped — it is an untyped return draft, judged by
   the project's method vocabulary: a lexicon verb the project uses → CONFORMS, a rare one →

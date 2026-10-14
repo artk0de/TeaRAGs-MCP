@@ -47,30 +47,28 @@ function edge(
   };
 }
 
-function scopeOf(files: string[], skipped = 0, pastCap: string[] = []): DiffScopeRead {
+function scopeOf(files: string[], touchedUnscanned: string[] = []): DiffScopeRead {
   return {
     workTree: "/w",
     base: "HEAD",
     mergeBase: "mb",
     notices: [],
-    changedFiles: files.length + pastCap.length,
+    changedFiles: files.length + touchedUnscanned.length,
     wholeFiles: 0,
     files,
-    touchedFiles: new Set([...files, ...pastCap]),
+    touchedFiles: new Set([...files, ...touchedUnscanned]),
     addedRanges: new Map(),
     nonProduction: new Set(),
-    skipped,
   };
 }
 
 function makeContext(
   edges: TemporalCochangeEdgeWithLinkage[],
   files: string[],
-  skipped = 0,
-  pastCap: string[] = [],
+  touchedUnscanned: string[] = [],
 ): ReviewSectionContext {
   return {
-    scope: scopeOf(files, skipped, pastCap),
+    scope: scopeOf(files, touchedUnscanned),
     graphDb: { readTemporalCochangeGraph: async () => undefined, readTemporalSymbolCommits: async () => undefined },
     temporalCochange: { meta: { head: "h" }, edges },
     temporalCochangeError: undefined,
@@ -185,50 +183,26 @@ describe("incompleteChangeSectionProvider — run", () => {
     expect(payload.partners).toEqual([]);
   });
 
-  // bd tea-rags-mcp-89k7k.7: a file past the reader's cap is not in the diff
-  // set, so neither side of its pairs reads as "in the diff" — its missing
-  // partners are never considered. The section-level `scopeSkippedFiles` is
-  // the only signal that the listed findings are partial.
-  it("a scope over the file cap marks the section partial — a skipped file's partners are never considered", async () => {
-    const context = makeContext(
-      [
-        edge("src/a.ts", "src/reported.ts", 7), // the verdict the section does answer stays
-        edge("src/past-cap.ts", "src/ghost.ts", 9), // skipped side: never considered, never reported
-      ],
-      ["src/a.ts"],
-      1,
-    );
-    const payload = (await incompleteChangeSectionProvider.run(context)) as {
-      partners: { file: string; missingPartner: string }[];
-      scopeSkippedFiles?: number;
-    };
-    expect(payload.partners).toMatchObject([{ file: "src/a.ts", missingPartner: "src/reported.ts" }]);
-    expect(payload.scopeSkippedFiles).toBe(1);
-  });
-
   // bd tea-rags-mcp-lxbrr: live, 23 of 29 "missing" partners were files the
-  // change touches but the cap did not scan. The cap limits the SOURCES; the
-  // present set is the whole change.
-  it("a partner the change touches past the cap is never missing; a partner outside the change still is", async () => {
+  // change touches but the review did not scan. The scanned files are the
+  // SOURCES; the present set is the whole change.
+  it("a partner the change touches outside the scanned files is never missing; a partner outside the change still is", async () => {
     const context = makeContext(
       [
-        edge("src/a.ts", "src/skipped.ts", 7), // partner changed, past the cap
+        edge("src/a.ts", "src/skipped.ts", 7), // partner changed, not scanned (a `files` list left it out)
         edge("src/deleted.ts", "src/a.ts", 7), // partner deleted by the change
         edge("src/a.ts", "src/untouched.ts", 7), // partner outside the change
       ],
       ["src/a.ts"],
-      2,
       ["src/skipped.ts", "src/deleted.ts"],
     );
     const payload = (await incompleteChangeSectionProvider.run(context)) as {
       partners: { file: string; missingPartner: string }[];
-      scopeSkippedFiles?: number;
     };
     expect(payload.partners.map((p) => [p.file, p.missingPartner])).toEqual([["src/a.ts", "src/untouched.ts"]]);
-    expect(payload.scopeSkippedFiles).toBe(2);
   });
 
-  it("an untruncated scope claims no partial marker — the findings are then whole", async () => {
+  it("the scope is never truncated, so the section claims no partial marker (bd tea-rags-mcp-89k7k.1.8)", async () => {
     const payload = (await incompleteChangeSectionProvider.run(
       makeContext([edge("src/a.ts", "src/p.ts", 3)], ["src/a.ts"]),
     )) as { scopeSkippedFiles?: number };

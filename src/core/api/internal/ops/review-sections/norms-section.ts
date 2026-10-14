@@ -265,7 +265,6 @@ export const normsSectionProvider: ReviewSectionProvider = {
     return {
       ...result,
       ...(notJudged.length > 0 ? { notJudged } : {}),
-      ...(scope.skipped > 0 ? { scopeSkippedFiles: scope.skipped } : {}),
     };
   },
 };
