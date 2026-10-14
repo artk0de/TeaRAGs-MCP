@@ -103,7 +103,7 @@ describe("DuckDbGraphClient — readFileDependencyGraph", () => {
     ]);
   });
 
-  it("carries each file's distinct outermost symbol scopes — the constants it declares members in (bd tea-rags-mcp-r8hme.11)", async () => {
+  it("carries each file's distinct enclosing scopes, fully qualified — the constants it declares members in (bd tea-rags-mcp-r8hme.11, r8hme.54)", async () => {
     await db.upsertFile(
       { relPath: "app/models/billing/invoice.rb", language: "ruby" },
       { fileEdges: [], methodEdges: [] },
@@ -120,8 +120,47 @@ describe("DuckDbGraphClient — readFileDependencyGraph", () => {
       relPath: "app/models/billing/invoice.rb",
       language: "ruby",
       symbolCount: 3,
-      outerScopeNames: ["Billing::Invoice"],
+      enclosingScopeNames: ["Billing::Invoice", "Billing::Invoice::Line"],
     });
+  });
+
+  it("spells a nested declaration's scope as the same constant a compact one records (bd tea-rags-mcp-r8hme.54)", async () => {
+    const nested = "app/services/communication/api/chat_thread.rb";
+    const compact = "app/services/communication/api/automations.rb";
+    for (const relPath of [nested, compact]) {
+      await db.upsertFile({ relPath, language: "ruby" }, { fileEdges: [], methodEdges: [] });
+    }
+    // `module Communication; module Api; module ChatThread; def self.create`
+    await db.upsertSymbols(nested, [
+      def(nested, "Communication"),
+      { ...def(nested, "Communication::Api"), scope: ["Communication"] },
+      { ...def(nested, "Communication::Api::ChatThread"), scope: ["Communication", "Api"] },
+      { ...def(nested, "Communication::Api::ChatThread.create"), scope: ["Communication", "Api", "ChatThread"] },
+    ]);
+    // `module Communication::Api::Automations; def self.run`
+    await db.upsertSymbols(compact, [
+      def(compact, "Communication::Api::Automations"),
+      { ...def(compact, "Communication::Api::Automations.run"), scope: ["Communication::Api::Automations"] },
+    ]);
+
+    const { files } = await db.readFileDependencyGraph();
+
+    expect(files.map((f) => [f.relPath, f.enclosingScopeNames])).toEqual([
+      [compact, ["Communication::Api::Automations"]],
+      [nested, ["Communication", "Communication::Api", "Communication::Api::ChatThread"]],
+    ]);
+  });
+
+  it("keeps the language's own separator and ignores an overload suffix when qualifying a scope", async () => {
+    await db.upsertFile({ relPath: "src/outer.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+    await db.upsertSymbols("src/outer.ts", [
+      { ...def("src/outer.ts", "Outer.Inner#run"), scope: ["Outer", "Inner"] },
+      { ...def("src/outer.ts", "Outer.load~2"), scope: ["Outer"] },
+    ]);
+
+    const [file] = (await db.readFileDependencyGraph()).files;
+
+    expect(file.enclosingScopeNames).toEqual(["Outer", "Outer.Inner"]);
   });
 
   it("reads an empty graph as empty", async () => {

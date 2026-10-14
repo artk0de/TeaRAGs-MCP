@@ -251,14 +251,9 @@ export class DuckDbGraphAnalyticsStore implements Omit<
       symbol_count: number | string;
       abstract_type_count: number | string | null;
       concrete_type_count: number | string | null;
-      outer_scope_names: string[] | null;
     }>(
-      // bd tea-rags-mcp-r8hme.11 — the outermost scope per symbol, distinct per
-      // file; `list` skips the NULLs a scopeless symbol yields.
       `SELECT f.rel_path, f.language, f.abstract_type_count, f.concrete_type_count,
-              COUNT(s.symbol_id) AS symbol_count,
-              list(DISTINCT json_extract_string(s.scope_json, '$[0]') ORDER BY json_extract_string(s.scope_json, '$[0]'))
-                FILTER (WHERE json_extract_string(s.scope_json, '$[0]') IS NOT NULL) AS outer_scope_names
+              COUNT(s.symbol_id) AS symbol_count
        FROM cg_symbols_files f
        LEFT JOIN cg_symbols s ON s.rel_path = f.rel_path
        GROUP BY f.rel_path, f.language, f.abstract_type_count, f.concrete_type_count
@@ -289,6 +284,7 @@ export class DuckDbGraphAnalyticsStore implements Omit<
        ORDER BY e.source_rel_path, e.target_rel_path`,
     );
     const heritageByFile = await this.readFileTypeHeritage();
+    const enclosingScopesByFile = await this.readFileEnclosingScopeNames();
     return {
       files: fileRows.map((r) => ({
         relPath: r.rel_path,
@@ -303,7 +299,9 @@ export class DuckDbGraphAnalyticsStore implements Omit<
               },
             }
           : {}),
-        ...(r.outer_scope_names && r.outer_scope_names.length > 0 ? { outerScopeNames: [...r.outer_scope_names] } : {}),
+        ...(enclosingScopesByFile.has(r.rel_path)
+          ? { enclosingScopeNames: enclosingScopesByFile.get(r.rel_path) }
+          : {}),
         ...(heritageByFile.has(r.rel_path) ? { typeHeritage: heritageByFile.get(r.rel_path) } : {}),
       })),
       edges: edgeRows.map((r) => {
@@ -370,6 +368,33 @@ export class DuckDbGraphAnalyticsStore implements Omit<
       supertype.declaringRelPaths.push(row.declaring_rel_path);
     }
     return byFile;
+  }
+
+  /**
+   * `enclosingScopeNames` per file (bd tea-rags-mcp-r8hme.11, r8hme.54): one
+   * row per distinct (file, scope stack), each with a symbol id declared in it,
+   * qualified by {@link qualifiedEnclosingScope}. The whole stack, not its first
+   * entry: Ruby records a compact `module A::B::C` as ONE scope entry and the
+   * nested `module A; module B; module C` as three, so the first entry alone
+   * named the nested file `A` and dropped it from the namespace its compact
+   * sibling spells.
+   */
+  private async readFileEnclosingScopeNames(): Promise<Map<RelPath, string[]>> {
+    const rows = await this.session.queryAll<{ rel_path: string; scope_json: string; fq_name: string }>(
+      `SELECT rel_path, scope_json, min(fq_name) AS fq_name
+         FROM cg_symbols
+        WHERE json_array_length(scope_json) > 0
+        GROUP BY rel_path, scope_json
+        ORDER BY rel_path`,
+    );
+    const byFile = new Map<RelPath, Set<string>>();
+    for (const row of rows) {
+      const scope = JSON.parse(row.scope_json) as string[];
+      const names = byFile.get(row.rel_path) ?? new Set<string>();
+      names.add(qualifiedEnclosingScope(row.fq_name, scope));
+      byFile.set(row.rel_path, names);
+    }
+    return new Map([...byFile].map(([relPath, names]) => [relPath, [...names].sort()]));
   }
 
   /**
@@ -691,4 +716,25 @@ export class DuckDbGraphAnalyticsStore implements Omit<
     const raw = rows[0]?.page_rank;
     return raw === undefined || raw === null ? 0 : Number(raw);
   }
+}
+
+/**
+ * The qualified name of the scope a symbol is declared in, spelled the way the
+ * symbol's own id spells it: the prefix of `fqName` that carries every `scope`
+ * entry in order (`Communication::Api::ChatThread` for
+ * `Communication::Api::ChatThread.create` under
+ * `["Communication", "Api", "ChatThread"]`, `Outer.Inner` for `Outer.Inner#run`).
+ * The id composer joins scope entries with the language's own separator, so
+ * reading the prefix off the id keeps that separator without this adapter
+ * knowing it — a TypeScript scope never turns into a `::` constant path. An id
+ * that does not spell its scope falls back to the outermost entry.
+ */
+function qualifiedEnclosingScope(fqName: string, scope: readonly string[]): string {
+  let end = 0;
+  for (const entry of scope) {
+    const at = fqName.indexOf(entry, end);
+    if (at < 0 || (end === 0 ? at !== 0 : at === end)) return scope[0];
+    end = at + entry.length;
+  }
+  return fqName.slice(0, end);
 }

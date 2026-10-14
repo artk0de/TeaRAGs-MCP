@@ -56,13 +56,15 @@ export interface FileDependencyGraphFile {
    */
   typeAbstractness?: TypeAbstractnessCensus;
   /**
-   * The distinct OUTERMOST scopes of the file's symbols — each `cg_symbols`
-   * row's first `scope` entry, the qualified name the file declares members in
-   * (`Billing::Invoice` for a Ruby `Billing::Invoice#total`). What the
-   * component partition reads a constant namespace off (bd
-   * tea-rags-mcp-r8hme.11). Absent when no symbol of the file has a scope.
+   * The distinct ENCLOSING scopes of the file's symbols, fully qualified — each
+   * `cg_symbols` row's whole `scope` stack, spelled as the symbol id spells it
+   * (`Billing::Invoice` for a Ruby `Billing::Invoice#total`, whether the file
+   * writes `class Billing::Invoice` or nests `module Billing; class Invoice`).
+   * What the component partition reads a constant namespace off (bd
+   * tea-rags-mcp-r8hme.11, r8hme.54). Absent when no symbol of the file has a
+   * scope.
    */
-  outerScopeNames?: string[];
+  enclosingScopeNames?: string[];
   /**
    * The types this file declares that name an in-project supertype, each with
    * the files declaring every such supertype (bd tea-rags-mcp-r8hme.52.6) —
