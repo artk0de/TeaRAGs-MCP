@@ -24,20 +24,27 @@ The server found no cheap target. Look for one by hand:
   a more stable component and import that.
 - Do not create files, interfaces or moves to satisfy this family.
 
-Nothing found: if the edge runs from a declared composition root, the
-`compositionRoot` flag on the finding is the evidence, so record it as a false
-positive. Otherwise escalate.
+Nothing found: if the finding carries `compositionRoot`, `compositionTable` or
+`parentSurface`, that flag is the evidence, so record it as a false positive.
+Otherwise escalate.
 
 ## Known false positives
 
 - Edge from a declared composition root: flagged `compositionRoot`. Wiring
   concrete implementations is that component's job.
+- Edge carried only by registration / routing tables: flagged `compositionTable`
+  (every carrying file wires an outlier number of components with no call).
+  Listing concretes is the table's job.
+- Edge from a parent's own surface into the parent's internals: flagged
+  `parentSurface` (used mostly from outside its parent, using mostly the
+  parent's internals). A domain API depending on its own domain is its job.
 - A project rule that permits the direction. Cite the project rule file and
   quote the line, for example a domain-boundaries rule naming this pair.
 - A bare "by design" is not evidence.
 
 ## Escalate when
 
-- No remedy, no `compositionRoot` flag and no citable project rule.
+- No remedy, no `compositionRoot` / `compositionTable` / `parentSurface` flag
+  and no citable project rule.
 - The retarget would need a new file, interface or move.
 - Two repair rounds left the finding introduced.

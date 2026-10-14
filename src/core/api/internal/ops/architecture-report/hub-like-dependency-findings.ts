@@ -1,6 +1,6 @@
 import type { HubLikeDependencyReport } from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import type { ArchitectureViolation, HubLikeDependencyReportSummary } from "../../../public/dto/architecture.js";
-import { round3 } from "./architecture-report-value-format.js";
+import { round3, roundCompositionTableCut } from "./architecture-report-value-format.js";
 
 /** The per-file reading a hub's churn averages — named in the summary. */
 const HUB_LIKE_DEPENDENCY_CHURN_SIGNAL = "git.file.commitCount";
@@ -23,6 +23,9 @@ export function summariseHubLikeDependency(report: HubLikeDependencyReport): Hub
     excluded: { ...summary.excluded },
     ...(summary.churnMeasured ? { churnSignal: HUB_LIKE_DEPENDENCY_CHURN_SIGNAL } : {}),
     ...(summary.scope ? { outOfScopeComponentCount: summary.scope.outOfScopeComponentCount } : {}),
+    ...(summary.compositionTableCut
+      ? { compositionTableCut: roundCompositionTableCut(summary.compositionTableCut) }
+      : {}),
   };
 }
 
@@ -45,6 +48,8 @@ export function hubLikeDependencyViolations(report: HubLikeDependencyReport, lim
         transitiveImpact: v.transitiveImpact,
         ...(v.churn ? { churn: { value: round3(v.churn.value), measuredFileCount: v.churn.measuredFileCount } } : {}),
         ...(v.compositionRoot ? { compositionRoot: v.compositionRoot } : {}),
+        ...(v.compositionTable ? { compositionTable: v.compositionTable } : {}),
+        ...(v.parentSurface ? { parentSurface: v.parentSurface } : {}),
       },
     }),
   );

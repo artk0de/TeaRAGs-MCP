@@ -62,6 +62,10 @@ export const stableDependenciesDetector: DiffFamilyDetector = {
           // The root assembling unstable concretes is the root's job; the root
           // is the measured entry-facade component: annotated, still reported.
           ...(sourceComponent.entryFacade ? { compositionRoot: true as const } : {}),
+          // Measured composition evidence (bd tea-rags-mcp-r8hme.52.17): the
+          // report's own flags, annotated, still reported.
+          ...(catalog.isCompositionTable?.(edge.source) ? { compositionTable: true as const } : {}),
+          ...(sourceComponent.parentSurface ? { parentSurface: true as const } : {}),
           ...(preExisting ? { preExisting: true as const } : {}),
         }),
       );

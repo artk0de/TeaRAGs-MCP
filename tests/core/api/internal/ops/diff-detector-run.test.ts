@@ -238,6 +238,29 @@ describe("stableDependencies", () => {
     expect(finding?.compositionRoot).toBe(true);
   });
 
+  // bd tea-rags-mcp-r8hme.52.17: the report's measured composition table
+  // (the edge's source file) and parent surface (the source component) ride
+  // the diff finding the same way — annotated, never suppressed.
+  it("stamps compositionTable and parentSurface from the report's own measurements", () => {
+    const surfaceOnVolatile = new Map<string, ComponentFact>([
+      [
+        "billing/api/a.ts",
+        {
+          name: "billing/api",
+          instability: 0.2,
+          distanceFromMainSequence: 0.4,
+          connectionCount: 10,
+          parentSurface: true,
+        },
+      ],
+      ["src/lib/b.ts", { name: "lib", instability: 0.9, distanceFromMainSequence: 0.2, connectionCount: 10 }],
+    ]);
+    const catalog = { ...catalogOf(surfaceOnVolatile), isCompositionTable: (p: string) => p === "billing/api/a.ts" };
+    const result = runWith({ catalog }, ["billing/api/a.ts"], [["billing/api/a.ts", "src/lib/b.ts"]]);
+    const finding = result.findings.find((f) => f.detector === "stableDependencies");
+    expect(finding).toMatchObject({ compositionTable: true, parentSurface: true });
+  });
+
   it("names no root by path: a source under the retired declared root's dir stays unannotated", () => {
     const nested = new Map([
       [

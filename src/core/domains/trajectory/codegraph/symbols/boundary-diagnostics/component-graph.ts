@@ -1,5 +1,6 @@
 import type { FileDependencyEdge, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { isNamespaceComponent } from "../../component-geometry/index.js";
+import { measureCompositionTables, measureParentSurfaces } from "./composition-evidence.js";
 import { classifyComponentRelation, deriveConstantNamespaceComponents } from "./constant-namespace.js";
 import { isFacadeAggregationEdge } from "./facade-aggregation.js";
 import { deriveReexportShimComponents } from "./reexport-shim.js";
@@ -154,6 +155,13 @@ export function buildComponentGraph(
         compareCodePoints(a.targetComponent, b.targetComponent),
     );
 
+  // Measured composition evidence (bd tea-rags-mcp-r8hme.52.17) — annotation
+  // only: no count above depends on it.
+  for (const componentDir of measureParentSurfaces(dependencies, componentOf)) {
+    const component = components.get(componentDir);
+    if (component) components.set(componentDir, { ...component, parentSurface: true });
+  }
+
   const facadeAggregations = [...aggregations.values()].sort(
     (a, b) =>
       compareCodePoints(a.parentComponent, b.parentComponent) ||
@@ -169,6 +177,7 @@ export function buildComponentGraph(
     fileEdgeCount: graph.edges.length,
     // Read by SDP only (bd tea-rags-mcp-ciq4d): no count above depends on it.
     reexportShims: deriveReexportShimComponents(graph, componentOf),
+    compositionTables: measureCompositionTables(graph.edges, componentOf, dependencies),
   };
 }
 

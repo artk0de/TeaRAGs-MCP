@@ -533,6 +533,34 @@ describe("ArchitectureFactsCatalog — entry facade", () => {
 });
 
 /**
+ * The measured composition evidence (bd tea-rags-mcp-r8hme.52.17): the diff
+ * run annotates `parentSurface` / `compositionTable` from the catalog, so the
+ * catalog serves the report's own facts — never a re-measurement.
+ */
+describe("ArchitectureFactsCatalog — composition evidence", () => {
+  it("serves parentSurface and the composition-table files of the report's component graph", () => {
+    const graph = graphOf(
+      [file("web/w.ts"), file("billing/api/a.ts"), file("billing/ledger.ts")],
+      [edge("web/w.ts", "billing/api/a.ts"), edge("billing/api/a.ts", "billing/ledger.ts")],
+    );
+    const facts = deriveArchitectureComponentFacts(graph);
+    const tables = facts.components.compositionTables;
+    if (!tables) throw new Error("fixture: composition tables not measured");
+    facts.components.compositionTables = { ...tables, files: new Set(["web/w.ts"]) };
+    const catalog = new ArchitectureFactsCatalog(
+      facts,
+      distanceFromMainSequenceByComponent(facts.components, graph.files),
+      measureLayeringFoundationFiles(graph, facts),
+    );
+
+    expect(catalog.componentOf("billing/api/a.ts")?.parentSurface).toBe(true);
+    expect(catalog.componentOf("web/w.ts")).not.toHaveProperty("parentSurface");
+    expect(catalog.isCompositionTable("web/w.ts")).toBe(true);
+    expect(catalog.isCompositionTable("billing/api/a.ts")).toBe(false);
+  });
+});
+
+/**
  * One partition (bd tea-rags-mcp-r8hme.52.7): the diff run's catalog answers
  * on the same DOMAIN partition the whole-repo report's detectors judge — a
  * facade too few files import still owns its subtree there.

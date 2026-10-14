@@ -110,6 +110,10 @@ export function detectComponentStableDependencyViolations(
           // The root assembling unstable concretes is the root's job; the root
           // is the measured entry-facade component: annotated, still reported.
           ...(source.entryFacade ? { compositionRoot: true as const } : {}),
+          // Measured composition evidence (bd tea-rags-mcp-r8hme.52.17):
+          // annotated, still reported.
+          ...(carriedByCompositionTables(dependency, componentGraph) ? { compositionTable: true as const } : {}),
+          ...(source.parentSurface ? { parentSurface: true as const } : {}),
         });
       }
     }
@@ -135,8 +139,16 @@ export function detectComponentStableDependencyViolations(
       reexportShimComponents: [...(componentGraph.reexportShims?.componentDirs ?? [])].sort(compareCodePoints),
       reexportShimNameUnknownEdges: shimRouting.nameUnknownEdges,
       ...(scope ? { scope } : {}),
+      ...(componentGraph.compositionTables ? { compositionTableCut: componentGraph.compositionTables.cut } : {}),
     },
   };
+}
+
+/** Every file edge carrying the dependency leaves a composition-table file. */
+function carriedByCompositionTables(dependency: ComponentDependency, componentGraph: ComponentGraph): boolean {
+  const tables = componentGraph.compositionTables?.files;
+  if (!tables || tables.size === 0) return false;
+  return dependency.fileEdges.every((edge) => tables.has(edge.sourceRelPath));
 }
 
 /**

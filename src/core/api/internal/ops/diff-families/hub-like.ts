@@ -143,6 +143,8 @@ export function judgeHubLike(input: {
           ...(preExisting ? [`${component} was already a hub before the change`] : []),
         ].join("; "),
         ...(fan.compositionRoot ? { compositionRoot: true as const } : {}),
+        ...(fan.compositionTable ? { compositionTable: true as const } : {}),
+        ...(fan.parentSurface ? { parentSurface: true as const } : {}),
         ...(preExisting ? { preExisting: true as const } : {}),
       }),
     );

@@ -511,7 +511,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "above adaptive cuts (per axis: > median and >= log-scale Otsu cut when bimodal; Ca+Ce floor as SDP) AND " +
       "balanced (|Ca-Ce|/(Ca+Ce) < 1/4, Arcan; lopsided = excluded.imbalanced) — I near 0.5, so SDP misses it; " +
       "Ce skips edges into layering foundation (summary.layering.foundation), Ce cut over Ce>0 components; evidence = top dependents/dependencies, transitiveImpact (components reaching it), " +
-      "churn (mean git.file.commitCount), compositionRoot:true = triage data. summary.propagationCost (aggregate, " +
+      "churn (mean git.file.commitCount), compositionRoot/compositionTable/parentSurface:true = triage data. summary.propagationCost (aggregate, " +
       "no violations; MacCormack DSM): reachable file pairs / N^2 = mean share of the system one change reaches; " +
       "corePeriphery classes files by visibility fan-in/out cuts (Otsu, else median) — core = high both AND in a " +
       "cycle, shared = in only, control = out only; shape = indeterminate when either cut fell back to the median " +

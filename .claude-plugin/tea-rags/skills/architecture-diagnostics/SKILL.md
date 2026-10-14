@@ -469,7 +469,9 @@ Evidence per line: Ca/Ce, `instability`, `dependentComponentCount` /
 `dependencyComponentCount`, top-5 each side (`fileEdgeCount`, `callWeight`),
 `transitiveImpact` (components reaching hub transitively), `churn`.
 `compositionRoot: true` = declared composition root — wiring many to many is its
-job; triage data, never suppression.
+job; `compositionTable: true` = the hub holds a registration / routing table;
+`parentSurface: true` = the hub is its parent's surface onto the parent's
+internals. Triage data, never suppression.
 
 ## Phase 3d3 — PROPAGATION COST
 
@@ -623,11 +625,11 @@ Applies to `review_changes` architecture findings (families
 `silentCoupling`, `facadeContract`, `splitCandidates`, `layeringBackEdge`,
 `hubLike`) — not to the whole-repo report. Read per finding:
 
-| Field                                                   | Read as                                                                                                                                                                              |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `preExisting: true`                                     | held before the diff (meaning per family: Top Anti-patterns) — absent = the diff introduced it                                                                                       |
-| `remedy`                                                | cheap repair, dry-run-verified: `retargetImport` (`sourceRelPath`, `fromRelPath` → `toRelPath`, `importedNames`, optional `addExport`) or `restoreExport` (`facadeRelPath`, `names`) |
-| `compositionRoot` / `entryPoint` / `foundationTerminal` | detector flags — evidence a finding stays unfixed; triage data, never suppression                                                                                                    |
+| Field                                                                                          | Read as                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `preExisting: true`                                                                            | held before the diff (meaning per family: Top Anti-patterns) — absent = the diff introduced it                                                                                                                                                                                                                                     |
+| `remedy`                                                                                       | cheap repair, dry-run-verified: `retargetImport` (`sourceRelPath`, `fromRelPath` → `toRelPath`, `importedNames`, optional `addExport`) or `restoreExport` (`facadeRelPath`, `names`)                                                                                                                                               |
+| `compositionRoot` / `compositionTable` / `parentSurface` / `entryPoint` / `foundationTerminal` | detector flags — evidence a finding stays unfixed; triage data, never suppression. `compositionTable` = carried by registration / routing tables (callWeight-0 wiring to an outlier number of components, `summary.*.compositionTableCut`); `parentSurface` = the source / hub is its parent's surface onto the parent's internals |
 
 Classes (same triage as `tea-rags:data-driven-generation` Step 7 "Fix-at-write
 loop" — do not restate it):

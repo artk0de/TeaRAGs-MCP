@@ -122,6 +122,7 @@ export function detectHubLikeDependencies(
       transitiveImpact: reach?.countReaching(hub.componentDir) ?? 0,
       ...(churn ? { churn } : {}),
       ...(hub.entryFacade ? { compositionRoot: true as const } : {}),
+      ...compositionEvidenceOf(hub, componentGraph, pathsOf.get(hub.componentDir) ?? []),
     };
   });
   violations.sort(
@@ -143,7 +144,25 @@ export function detectHubLikeDependencies(
       excluded: { lowConnectionCount: cuts.lowConnectionCount, imbalanced },
       churnMeasured: options.fileVolatility !== undefined,
       ...(scope ? { scope } : {}),
+      ...(componentGraph.compositionTables ? { compositionTableCut: componentGraph.compositionTables.cut } : {}),
     },
+  };
+}
+
+/**
+ * The measured composition flags a hub carries (bd tea-rags-mcp-r8hme.52.17):
+ * it holds a composition-table file; it is its parent's surface. Annotation,
+ * never suppression.
+ */
+function compositionEvidenceOf(
+  component: ArchitectureComponent,
+  componentGraph: ComponentGraph,
+  relPaths: readonly RelPath[],
+): { compositionTable?: true; parentSurface?: true } {
+  const tables = componentGraph.compositionTables?.files;
+  return {
+    ...(tables && relPaths.some((relPath) => tables.has(relPath)) ? { compositionTable: true as const } : {}),
+    ...(component.parentSurface ? { parentSurface: true as const } : {}),
   };
 }
 
@@ -169,9 +188,14 @@ export interface HubLikeDependencyFanCounts {
 export interface HubLikeDependencyReading {
   /**
    * The component's counts as the hub verdict reads them, plus the detector's
-   * own `compositionRoot` stamp; undefined when the graph does not hold it.
+   * own `compositionRoot`, `compositionTable` and `parentSurface` stamps;
+   * undefined when the graph does not hold it.
    */
-  fanCountsOf: (component: string) => (HubLikeDependencyFanCounts & { compositionRoot?: true }) | undefined;
+  fanCountsOf: (
+    component: string,
+  ) =>
+    | (HubLikeDependencyFanCounts & { compositionRoot?: true; compositionTable?: true; parentSurface?: true })
+    | undefined;
   /** Whether a dependency into the component is left out of the hub's Ce (the measured foundation). */
   isFoundation: (component: string) => boolean;
   /** Whether a dependency between the two is containment (one nested in the other), left out of both axes. */
@@ -189,13 +213,16 @@ export function readHubLikeDependency(
 ): HubLikeDependencyReading {
   const cuts = resolveHubLikeDependencyCuts(componentGraph, options);
   const foundation = options.foundationComponents ?? new Set<string>();
+  let pathsOf: Map<string, RelPath[]> | undefined;
   return {
     fanCountsOf: (componentDir) => {
       const component = componentGraph.components.get(componentDir);
       if (component === undefined) return undefined;
+      pathsOf ??= componentPaths(componentGraph);
       return {
         ...cuts.fanCountsOf(component),
         ...(component.entryFacade ? { compositionRoot: true as const } : {}),
+        ...compositionEvidenceOf(component, componentGraph, pathsOf.get(componentDir) ?? []),
       };
     },
     isFoundation: (componentDir) => foundation.has(componentDir),
