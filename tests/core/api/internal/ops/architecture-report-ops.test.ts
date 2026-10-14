@@ -2394,7 +2394,9 @@ describe("ArchitectureReportOps#build — hubLikeDependency (bd tea-rags-mcp-r8h
     });
     expect(report.summary.hubLikeDependency).toMatchObject({
       violationCount: 1,
-      afferent: { median: 3 },
+      // INVARIANT CHANGED (bd tea-rags-mcp-nxikh): the Ca median is drawn over
+      // the depended-on components only, as the Ce one over the non-leaf ones.
+      afferent: { median: 10 },
       efferent: { median: 5 },
       excluded: { lowConnectionCount: 0, imbalanced: 0 },
     });

@@ -62,7 +62,8 @@ export const HUB_LIKE_DEPENDENCY_OTSU_MIN_POPULATION = MAIN_SEQUENCE_OTSU_MIN_PO
  * into parent (bd tea-rags-mcp-j5gti): a component only its own child uses,
  * or that only uses its own parent, is composition, not a hub. The connection
  * floor and the reported instability stay the component's. The efferent cut
- * is drawn over the judged components with Ce > 0.
+ * is drawn over the judged components with Ce > 0, the afferent cut over those
+ * with Ca > 0 (bd tea-rags-mcp-nxikh).
  *
  * `sourcePathPattern` only decides which judged components are reported; the
  * cuts are whole-graph. `fileVolatility` attaches churn to every hub and never
@@ -222,9 +223,10 @@ function resolveHubLikeDependencyCuts(
 
   // Both axes read past containment (bd tea-rags-mcp-j5gti), Ce past the
   // foundation too (bd tea-rags-mcp-g77p3); the connection floor stays the
-  // component's own. The efferent cut is drawn over the non-leaf components
-  // only: a Ce 0 leaf is never a hub, and a mass of them would drag the median
-  // down to where every dependent clears it.
+  // component's own. Each cut is drawn over the components with a non-zero
+  // count on its axis only: a Ce 0 leaf or a Ca 0 entry is never a hub, and a
+  // mass of them would drag the median down to where every busy component
+  // clears it (efferent g77p3, afferent bd tea-rags-mcp-nxikh).
   const fanCountsOf = hubFanCounts(componentGraph, options.foundationComponents);
   const judgedFans = judged.map(fanCountsOf);
   return {
@@ -232,7 +234,7 @@ function resolveHubLikeDependencyCuts(
     judged,
     lowConnectionCount,
     fanCountsOf,
-    afferent: resolveAxisCut(judgedFans.map((fan) => fan.afferentCount)),
+    afferent: resolveAxisCut(judgedFans.map((fan) => fan.afferentCount).filter((count) => count > 0)),
     efferent: resolveAxisCut(judgedFans.map((fan) => fan.efferentCount).filter((count) => count > 0)),
   };
 }
