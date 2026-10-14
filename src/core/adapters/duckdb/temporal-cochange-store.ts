@@ -98,6 +98,7 @@ export class DuckDbTemporalCochangeStore {
       bundleTaskIds,
       bundleFileLines,
       bundleTimestamps,
+      bundleRenameSweeps,
     } = snapshot;
     await this.session.transaction(async () => {
       await this.session.recreateEmptyTable("cg_temporal_files");
@@ -123,7 +124,7 @@ export class DuckDbTemporalCochangeStore {
       );
       await this.session.insertBatched(
         "cg_temporal_bundle_commits",
-        ["bundle_id", "commit_shas", "burst_id", "task_ids", "committed_at"],
+        ["bundle_id", "commit_shas", "burst_id", "task_ids", "committed_at", "rename_sweep"],
         (bundleCommits ?? []).map((shas, bundleId) => {
           const taskIds = bundleTaskIds?.[bundleId];
           return [
@@ -132,6 +133,7 @@ export class DuckDbTemporalCochangeStore {
             bundleBursts?.[bundleId] ?? null,
             taskIds === undefined ? null : JSON.stringify(taskIds),
             bundleTimestamps?.[bundleId] ?? null,
+            bundleRenameSweeps?.[bundleId] ?? null,
           ];
         }),
       );
@@ -270,6 +272,7 @@ export class DuckDbTemporalCochangeStore {
       bundleTaskIds: await this.readBundleTaskIds(),
       bundleFileLines: await this.readBundleFileLines(),
       bundleTimestamps: await this.readBundleTimestamps(),
+      bundleRenameSweeps: await this.readBundleRenameSweeps(),
     };
   }
 
@@ -381,6 +384,19 @@ export class DuckDbTemporalCochangeStore {
       "SELECT bundle_id, committed_at FROM cg_temporal_bundle_commits WHERE committed_at IS NOT NULL ORDER BY bundle_id",
     );
     return new Map(rows.map((row) => [Number(row.bundle_id), Number(row.committed_at)]));
+  }
+
+  /**
+   * Each assessed bundle's identifier-rename-sweep verdict, keyed by bundle id
+   * (bd tea-rags-mcp-v2525). Empty on a build that predates migration 052 or
+   * read no diff text: a NULL or missing column reads as not assessed.
+   */
+  async readBundleRenameSweeps(): Promise<ReadonlyMap<number, boolean>> {
+    if (!(await this.columnsOf("cg_temporal_bundle_commits", ["rename_sweep"])).has("rename_sweep")) return new Map();
+    const rows = await this.session.queryAll<{ bundle_id: number; rename_sweep: boolean }>(
+      "SELECT bundle_id, rename_sweep FROM cg_temporal_bundle_commits WHERE rename_sweep IS NOT NULL ORDER BY bundle_id",
+    );
+    return new Map(rows.map((row) => [Number(row.bundle_id), Boolean(row.rename_sweep)]));
   }
 
   /** Which of `columns` the table holds - the guard for columns a later migration added. */

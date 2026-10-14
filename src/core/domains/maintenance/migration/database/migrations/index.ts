@@ -55,6 +55,7 @@ import { dropLegacyReviewEdgeTables } from "./048-cg-drop-legacy-review-edge-tab
 import { SQL_049_CG_SYMBOLS_EDGES_FIELD } from "./049-cg-symbols-edges-field.js";
 import { SQL_050_CG_TYPE_DECLARATIONS_ASYNC_METHOD_COUNT } from "./050-cg-type-declarations-async-method-count.js";
 import { SQL_051_CG_FILE_EDGE_REEXPORT_BINDINGS } from "./051-cg-file-edge-reexport-bindings.js";
+import { SQL_052_CG_TEMPORAL_BUNDLE_RENAME_SWEEP } from "./052-cg-temporal-bundle-rename-sweep.js";
 
 export type { DatabaseMigration } from "../runner.js";
 
@@ -114,4 +115,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
     sql: SQL_050_CG_TYPE_DECLARATIONS_ASYNC_METHOD_COUNT,
   },
   { filename: "051-cg-file-edge-reexport-bindings.sql", sql: SQL_051_CG_FILE_EDGE_REEXPORT_BINDINGS },
+  { filename: "052-cg-temporal-bundle-rename-sweep.sql", sql: SQL_052_CG_TEMPORAL_BUNDLE_RENAME_SWEEP },
 ];

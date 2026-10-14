@@ -1023,6 +1023,26 @@ describe("detectShotgunSurgery — mechanical commits", () => {
     expect(report.findings).toEqual([]);
   });
 
+  // bd tea-rags-mcp-v2525: a rename sweep's line counts carry no pattern; the build's diff-text verdict names it.
+  it("drops identifier rename sweeps the build named, with no line counts recorded", () => {
+    const input = withoutLines(
+      lineHistory(background(SPREAD), [
+        { sha: "change", rows: SPREAD.map((c, i) => [c, "f", [i + 1, 0]] as const) },
+        { sha: "rename1", rows: SPREAD.map((c) => [c, "s", [1, 1]] as const) },
+        { sha: "rename2", rows: SPREAD.map((c) => [c, "s", [1, 1]] as const) },
+      ]),
+    );
+    const idOf = (sha: string) => [...(input.bundleCommits ?? [])].find(([, shas]) => shas[0] === sha)?.[0] as number;
+    const verdicts = new Map([...(input.bundleCommits ?? []).keys()].map((id) => [id, false]));
+    verdicts.set(idOf("rename1"), true);
+    verdicts.set(idOf("rename2"), true);
+
+    expect(detectShotgunSurgery(input).summary.renameSweepCommitCount).toBeUndefined();
+    const report = detectShotgunSurgery({ ...input, bundleRenameSweeps: verdicts });
+    expect(report.summary.renameSweepCommitCount).toBe(2);
+    expect(report.findings).toEqual([]);
+  });
+
   it("keeps the null of the counted history: sweeps elsewhere leave an unrelated spread's expectation unchanged", () => {
     const spreads = [0, 1, 2].map((s) => ({
       sha: `spread${s}`,

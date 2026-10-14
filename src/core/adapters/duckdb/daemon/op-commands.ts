@@ -430,6 +430,7 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
           }
         : {}),
       ...(graph.bundleTimestamps ? { bundleTimestamps: [...graph.bundleTimestamps.entries()] } : {}),
+      ...(graph.bundleRenameSweeps ? { bundleRenameSweeps: [...graph.bundleRenameSweeps.entries()] } : {}),
     };
   }),
   readTemporalBundleFiles: read(async (graphDb) => [...(await graphDb.readTemporalBundleFiles()).entries()]),

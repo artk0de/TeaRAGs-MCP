@@ -46,6 +46,7 @@ import { bundleCochangeCommits, compareCodePoints } from "./commit-bundles.js";
 import { scopeCochangeHistory } from "./history-scope.js";
 import { computeMassChangeCut, MASS_CHANGE_CEILING } from "./mass-change-cut.js";
 import { extractCochangeGraph } from "./pair-extractor.js";
+import { assessRenameSweepBundles } from "./rename-sweep.js";
 
 /**
  * Pairs seen fewer times are not stored. Two is the definitional minimum of a
@@ -72,12 +73,14 @@ export const TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE = 20;
  * release. 4 (bd tea-rags-mcp-hzm7g): migration 047's `committed_at` landed
  * after builds had already stamped 3, so those snapshots were reused with the
  * column NULL (and any pre-046 one with NULL line counts); 4 rebuilds them.
+ * 5 (bd tea-rags-mcp-v2525): each bundle's identifier-rename-sweep verdict
+ * (migration 052's `rename_sweep`).
  *
  * Bump on EVERY migration that adds a persisted `cg_temporal_*` field — a
  * reused snapshot never fills it. `algorithm-revision-guard.test.ts` pins the
  * revision to the derived set of those migrations and fails when one is added.
  */
-export const COCHANGE_ALGORITHM_REVISION = 4;
+export const COCHANGE_ALGORITHM_REVISION = 5;
 
 /** The git trajectory's `chunkTimeoutMs` default. */
 const DEFAULT_GIT_TIMEOUT_MS = 120_000;
@@ -112,6 +115,11 @@ export interface TemporalCochangeHistory {
    * tea-rags-mcp-8rcox). Absent = no remote known. Only read when a rebuild is due.
    */
   remoteUrls?: () => Promise<readonly string[]>;
+  /**
+   * The named commits' `-U0` patch text, each headed by a NUL and its SHA
+   * (`VcsGitAdapter#readCommitDiffText`). Absent = no rename-sweep verdicts.
+   */
+  commitDiffText?: (shas: readonly string[]) => Promise<string>;
 }
 
 /** Opens a project's history; the default reads git through the discovery matrix. */
@@ -156,6 +164,7 @@ export class GitTemporalCochangeHistorySource implements TemporalCochangeHistory
           store: new GitCommitDiscoveryStore(),
         }).allEntries(),
       remoteUrls: async () => adapter.readRemoteUrls(this.options.timeoutMs),
+      commitDiffText: async (shas) => adapter.readCommitDiffText(shas, this.options.timeoutMs),
     };
   }
 }
@@ -226,6 +235,17 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       maxFilesPerBundle,
     });
     const t3 = this.now();
+    const bundleRenameSweeps = history.commitDiffText
+      ? await assessRenameSweepBundles(
+          graph.admittedBundleCommits.map((shas, index) => ({
+            shas,
+            fileLines: graph.admittedBundleFileLines[index],
+          })),
+          history.commitDiffText,
+        )
+      : undefined;
+    // Only an assessment reads the clock again, so a history without diff text times exactly as before.
+    const t4 = bundleRenameSweeps ? this.now() : t3;
     const meta: TemporalCochangeBuildMeta = {
       head: history.head,
       fingerprint,
@@ -251,16 +271,20 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       bundleTaskIds: graph.admittedBundleTaskIds,
       bundleFileLines: graph.admittedBundleFileLines,
       bundleTimestamps: graph.admittedBundleTimestamps,
+      ...(bundleRenameSweeps ? { bundleRenameSweeps } : {}),
     });
     await this.flushSymbolCommits(graphDb, live, projectPrefix);
-    const t4 = this.now();
+    const t5 = this.now();
     this.emitTiming({
       status: "built",
-      totalMs: t4 - t0,
+      totalMs: t5 - t0,
       skipCheckMs: t1 - t0,
       historyMs: t2 - t1,
       extractMs: t3 - t2,
-      writeMs: t4 - t3,
+      ...(bundleRenameSweeps
+        ? { renameSweepMs: t4 - t3, renameSweepCount: bundleRenameSweeps.filter(Boolean).length }
+        : {}),
+      writeMs: t5 - t4,
       commitCount: commits.length,
       bundleCount: bundles.length,
       admittedBundleCount: graph.admittedBundleCount,

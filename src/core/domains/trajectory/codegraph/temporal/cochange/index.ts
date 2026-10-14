@@ -31,3 +31,10 @@ export {
   type CochangeGraphExtraction,
 } from "./pair-extractor.js";
 export { InMemoryTemporalSymbolCommitBuffer } from "./symbol-commit-buffer.js";
+export {
+  COMMIT_DIFF_HEADER,
+  isIdentifierRenameSweep,
+  parseCommitDiffs,
+  type RenameSweepDiffFile,
+  type RenameSweepDiffHunk,
+} from "./rename-sweep.js";

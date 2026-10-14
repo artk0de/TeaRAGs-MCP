@@ -221,6 +221,14 @@ export interface ShotgunSurgeryInput {
    * id is the newest commit (bd tea-rags-mcp-dlvyi).
    */
   bundleTimestamps?: ReadonlyMap<number, number>;
+  /**
+   * Each assessed bundle's identifier-rename-sweep verdict, keyed by bundle id
+   * (bd tea-rags-mcp-v2525): `true` = one commit-wide identifier substitution
+   * explains the whole commit, and the bundle is mechanical. The whole map
+   * absent or empty = not assessed (a build predating migration 052): no
+   * bundle is a rename sweep and `renameSweepCommitCount` is absent.
+   */
+  bundleRenameSweeps?: ReadonlyMap<number, boolean>;
   /** Picomatch glob: a spread is in scope when an exemplar file of one of its components matches. */
   sourcePathPattern?: string;
 }
@@ -303,6 +311,8 @@ export interface ShotgunSurgerySummary {
   mechanicalTestedCount?: number;
   /** Commits BH called mechanical, left out of the whole history (degrees, units, umbrella breadth). Absent = line counts not recorded. */
   mechanicalCommitCount?: number;
+  /** Bundles the build called identifier rename sweeps, left out of the whole history like the mechanical ones. Absent = not assessed. */
+  renameSweepCommitCount?: number;
   /** Non-mechanical wide commit pairs sharing ≥ 3 components — the echo BH family m. Absent = line counts not recorded. */
   echoCandidatePairCount?: number;
   /** Pairs BH called echoes (a revert or flag removal and its original), joined into one logical change. Absent = line counts not recorded. */
@@ -435,9 +445,10 @@ interface AdmittedSpread {
 /** Judge the history's wide changes. See the module docblock for every contract. */
 export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgeryReport {
   const mechanical = lineCountsRecorded(input) ? classifyShotgunSurgeryMechanicalBundles(input) : undefined;
+  const renameSweeps = renameSweepBundleIds(input);
   const { units, burstCount, changes, burstWidths, umbrella, echo, lifecycle, chronology } = buildHistory(
     input,
-    mechanical?.bundleIds ?? new Set(),
+    new Set([...(mechanical?.bundleIds ?? []), ...(renameSweeps ?? [])]),
   );
   const widths = units.map((unit) => unit.components.size);
   const widthPolicy = resolveMajorityFlooredOtsuThreshold(widths, {
@@ -541,6 +552,7 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
       ...(mechanical === undefined
         ? {}
         : { mechanicalTestedCount: mechanical.testedCount, mechanicalCommitCount: mechanical.bundleIds.size }),
+      ...(renameSweeps === undefined ? {} : { renameSweepCommitCount: renameSweeps.size }),
       ...(echo === undefined
         ? {}
         : { echoCandidatePairCount: echo.candidatePairCount, echoPairCount: echo.pairs.length }),
@@ -881,6 +893,17 @@ function bundleSortKey(input: Pick<ShotgunSurgeryInput, "bundleCommits">, bundle
  */
 function lineCountsRecorded(input: Pick<ShotgunSurgeryInput, "bundleFileLines">): boolean {
   return (input.bundleFileLines?.size ?? 0) > 0;
+}
+
+/**
+ * The bundles the build called identifier rename sweeps (bd
+ * tea-rags-mcp-v2525) — mechanical exactly like a line-count sweep, so they
+ * leave the whole history. Undefined when the build assessed none: the map
+ * absent or empty is a build predating migration 052.
+ */
+function renameSweepBundleIds(input: Pick<ShotgunSurgeryInput, "bundleRenameSweeps">): Set<number> | undefined {
+  if ((input.bundleRenameSweeps?.size ?? 0) === 0) return undefined;
+  return new Set([...(input.bundleRenameSweeps ?? [])].filter(([, sweep]) => sweep).map(([bundleId]) => bundleId));
 }
 
 /** Whether the build recorded commit timestamps: absent OR empty is a build predating migration 047 — no lifecycle stage. */

@@ -57,6 +57,7 @@ export function runShotgunSurgery(
       ...(cochange.bundleTaskIds ? { bundleTaskIds: cochange.bundleTaskIds } : {}),
       ...(cochange.bundleFileLines ? { bundleFileLines: cochange.bundleFileLines } : {}),
       ...(cochange.bundleTimestamps ? { bundleTimestamps: cochange.bundleTimestamps } : {}),
+      ...(cochange.bundleRenameSweeps ? { bundleRenameSweeps: cochange.bundleRenameSweeps } : {}),
       ...(sourcePathPattern ? { sourcePathPattern } : {}),
     }),
   };
@@ -72,6 +73,7 @@ export function summariseShotgunSurgery(run: ShotgunSurgeryRun): ShotgunSurgeryR
     burstCount: summary.burstCount,
     ...(summary.mechanicalTestedCount === undefined ? {} : { mechanicalTestedCount: summary.mechanicalTestedCount }),
     ...(summary.mechanicalCommitCount === undefined ? {} : { mechanicalCommitCount: summary.mechanicalCommitCount }),
+    ...(summary.renameSweepCommitCount === undefined ? {} : { renameSweepCommitCount: summary.renameSweepCommitCount }),
     ...(summary.echoCandidatePairCount === undefined ? {} : { echoCandidatePairCount: summary.echoCandidatePairCount }),
     ...(summary.echoPairCount === undefined ? {} : { echoPairCount: summary.echoPairCount }),
     ...(summary.lifecycleCandidatePairCount === undefined

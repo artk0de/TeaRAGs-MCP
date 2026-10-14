@@ -54,6 +54,12 @@ export abstract class VcsGitAdapter implements VcsAdapter {
    * `{ path, previousPath }`, merges contributing no rows, no line counts.
    */
   abstract readCommitPathChanges(timeoutMs?: number): Promise<CommitPathChanges[]>;
+  /**
+   * The named commits' zero-context patch text, one spawn, each commit headed
+   * by a NUL and its full SHA; "" for none. Rename detection on, merges print
+   * no patch.
+   */
+  abstract readCommitDiffText(shas: readonly string[], timeoutMs?: number): Promise<string>;
   abstract readBlobAsString(commitOid: string, filepath: string): Promise<string>;
   abstract blameFile(filePath: string, timeoutMs?: number, historyDepthHint?: number): Promise<BlameLine[]>;
   /** Every path `commitOid`'s tree tracks, repo-relative. Untracked and ignored files are not in it. */
