@@ -1,7 +1,7 @@
 {
   "skill": "tea-rags:data-driven-generation",
   "skillPath": ".claude-plugin/tea-rags/skills/data-driven-generation/SKILL.md",
-  "objective": "Agent runs the data-driven generation workflow as SKILL.md prescribes — prerequisites (explore first), Step 0 MODE, Step 1 STRATEGY hard rules + custom-strategy discovery, Step 2 TEMPLATE via extract-project-patterns and its quality gate, Step 5 STYLE blame-owner table plus ONE get_naming_lexicon call (project names reused, new term only for a new concept, convention read from shapes; semantic_search concept fallback when codegraph is off), Step 7 VERIFY symbol risks via find_symbol(criticalPath) + N-th-way + tests-at-risk (no identifier-existence sweep) + the fix-at-write loop (review_changes naming/incompleteChange/cohesion/architecture, must-fix vs cheap-preExisting vs report-only, remedy applied, ≤2 rounds with revert, escalation, evidence-only dismissals, only the matching repair file loaded), Step 8 IMPACT. Session-context reuse: no re-search of a file already in context unless edited since. Eval prompts use neutral user framing (no rule vocabulary leakage). Cases with status 'superseded' are kept as history and not scored.",
+  "objective": "Agent runs the data-driven generation workflow as SKILL.md prescribes — prerequisites (explore first), Step 0 MODE, Step 1 STRATEGY hard rules + custom-strategy discovery, Step 2 TEMPLATE via extract-project-patterns and its quality gate, Step 5 STYLE blame-owner table plus ONE get_naming_lexicon call (project names reused, new term only for a new concept, convention read from shapes; semantic_search concept fallback when codegraph is off), Step 7 VERIFY symbol risks via find_symbol(criticalPath) + N-th-way + tests-at-risk (no identifier-existence sweep) + the fix-at-write loop (review_changes naming/incompleteChange/cohesion/architecture, must-fix vs cheap-preExisting vs report-only, remedy applied, ≤2 rounds with revert, escalation, evidence-only dismissals, only the matching repair file loaded), Step 8 IMPACT. Session-context reuse: no re-search of a file already in context unless edited since. Eval prompts use neutral user framing (no rule vocabulary leakage). Cases with status 'superseded' are kept as history and not scored. Step 6 RED->GREEN->REFACTOR via tea-rags:test-first (red for the right reason before code, spec tests verbatim, tests never edited to pass, baseline for MODIFY/refactor, reproduction first for bug fixes) and Step 7 verify-first triage (findings presumed real; false positive only with counter-evidence and a filed detector issue).",
   "runs": [
     {
       "date": "2026-04-21",
@@ -34,6 +34,32 @@
         "eval-15 (custom strategy discovery)": "baseline doesn't scan .claude/skills/strategy-* before applying hard rules"
       },
       "note": "CRITICAL: evals 6 and 12 validate the impact-analysis idiom weights {imports:0.5, churn:0.3, ownership:0.2} that 5 dinopowers wrappers depend on. If this skill's weights drift, those wrappers silently lose protection."
+    },
+    {
+      "date": "2026-10-14",
+      "iteration": 0,
+      "scope": "13 new cases: step7-confirm-* (5, category step7-verify-first) + tdd-* (8, category step6-tdd); bd tea-rags-mcp-mrlb9",
+      "method": "Blind two-arm run. Subjects: sonnet subagents, one per arm per category (4 total), answering every scenario of the category from context + prompt only (no tool calls, no codebase reads). With-rule arm read data-driven-generation SKILL.md, test-first SKILL.md (TDD) and only the repair files its findings load (triage). Without-rule arm read the scenario packet only. Neither arm saw expected. Grading by the orchestrator, strict: every mustDo met and no mustNotDo hit.",
+      "withRule": {
+        "pass": 13,
+        "fail": 0,
+        "total": 13,
+        "passRate": "100%"
+      },
+      "withoutRule": {
+        "pass": 9,
+        "fail": 4,
+        "total": 13,
+        "passRate": "69%"
+      },
+      "delta": "+31pp",
+      "failureMap": {
+        "step7-confirm-flag-inferred": "baseline inferred compositionRoot from the src/bootstrap path and planned to commit if the file was pure wiring",
+        "tdd-red-before-code": "baseline wrote tests first and reached a real red, but invoked no test-first protocol and no fixture-lookup (behaviour pass, protocol fail)",
+        "tdd-refactor-baseline": "baseline planned a new characterization test before the move when no direct test exists",
+        "tdd-bugfix-repro-first": "baseline wrote the reproduction first but ran the existing tests only after the fix, so no green baseline before the edit"
+      },
+      "note": "Baseline (sonnet) already refuses to edit a test to pass, rejects an import error as red, and keeps spec tests verbatim. The skill's delta sits in quoting detector flags instead of inferring them, the no-new-test rule for behaviour-preserving moves, and baseline-before-edit for bug fixes. Triage: baseline already checks noise-class conditions and files an issue for a genuine false positive when the Environment hands it the counter-evidence; the cases pin the protocol against regression rather than show a large delta."
     }
   ],
   "cases": [
@@ -854,6 +880,225 @@
         ]
       },
       "failureMode": "Stacked bases pull sibling code into scope and unevidenced acceptance lets introduced findings through (audit of 28 Step 7 runs)"
+    },
+    {
+      "id": "step7-confirm-noise-class-unchecked",
+      "category": "step7-verify-first",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). The agent added an import in src/core/domains/explore/rerank/score-blend.ts of `chunkAgeLabel` from src/core/domains/trajectory/git/rerank/derived-signals/age.ts. review_changes architecture: introduced leakingAbstraction finding, no remedy, no detector flag, evidence: source component `domains/explore`, target component `domains/trajectory/git`, facade `domains/trajectory/git/index.ts` not used. repair/leakingAbstraction.md lists as known false positive: 'Imports inside the same component (siblings of the facade) are not leaks.'",
+      "prompt": "Это по сути соседний модуль, детектор шумит. Коммить.",
+      "expected": {
+        "mustDo": [
+          "Check the known-false-positive CONDITION against the finding's evidence (source and target component differ, so 'same component' does not hold)",
+          "Treat the finding as real: retarget through the facade per repair/leakingAbstraction.md, or ask the user"
+        ],
+        "mustNotDo": [
+          "Accept the finding by naming the 'same component' known-noise class without showing its condition holds",
+          "Commit with the finding unrepaired and no user answer"
+        ]
+      },
+      "failureMode": "Agent dismisses a real violation by naming a noise class whose condition it never checked"
+    },
+    {
+      "id": "step7-confirm-looks-false-but-real",
+      "category": "step7-verify-first",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). Diff adds `import type { SignalStats } from \"../../../domains/ingest/infra/collection-stats.js\"` in src/core/contracts/types/index-metrics.ts. review_changes architecture: introduced stableDependencies finding, no preExisting, no remedy, evidence edge contracts/types/index-metrics.ts -> domains/ingest/infra/collection-stats.ts, instability source 0.12, target 0.81. The agent's first impression: a type-only import cannot create a dependency, so the detector must be wrong.",
+      "prompt": "Там же только тип, это ложное срабатывание? Если да — коммить.",
+      "expected": {
+        "mustDo": [
+          "Confirm the edge exists in the diff and is the edge in the finding's evidence",
+          "Conclude the finding is real (a type import is a dependency edge) and repair per repair/stableDependencies.md (e.g. move the type to contracts / retarget to an existing contract) or ask the user"
+        ],
+        "mustNotDo": [
+          "Declare a false positive because the import is type-only",
+          "Commit with the finding"
+        ]
+      },
+      "failureMode": "Agent argues away a real finding that merely looks implausible"
+    },
+    {
+      "id": "step7-confirm-genuine-false-positive",
+      "category": "step7-verify-first",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). review_changes architecture: introduced layeringBackEdge finding, no remedy, no flag, evidence edge src/core/domains/explore/strategies/hybrid.ts -> src/core/domains/ingest/pipeline/chunker/index.ts. The diff hunk for hybrid.ts adds only `import { tokenize } from \"../../../primitives/text/index.js\"`; find_symbol on hybrid.ts (read this session) shows no import from the chunker anywhere in the file. Tests green. The project tracks issues in beads (bd).",
+      "prompt": "Тесты зелёные, коммить.",
+      "expected": {
+        "mustDo": [
+          "Show counter-evidence: the named edge does not exist (quote the diff hunk / find_symbol result)",
+          "File a detector issue (project tracker, or tea-rags:report-issue) carrying the finding fields and the counter-evidence",
+          "Report a false-positive line with the counter-evidence and the issue id"
+        ],
+        "mustNotDo": [
+          "Accept silently without filing an issue",
+          "Restructure hybrid.ts to silence a finding about an edge that does not exist"
+        ]
+      },
+      "failureMode": "Genuine detector defect is either silently accepted or 'fixed' by pointless code churn"
+    },
+    {
+      "id": "step7-confirm-touched-active",
+      "category": "step7-verify-first",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). review_changes architecture: cycles family, `change.touchedActive` entry with tier `critical`: the diff adds a call inside an existing live cycle domains/explore <-> domains/trajectory. No remedy. The cycle predates the branch.",
+      "prompt": "Цикл же старый, не наш. Коммить.",
+      "expected": {
+        "mustDo": [
+          "Treat touchedActive as must-fix priority: repair the edit per repair/cycles.md or ask the user (with what was tried)"
+        ],
+        "mustNotDo": [
+          "Classify it as report-only because the cycle pre-existed",
+          "Commit without a repair or a user answer"
+        ]
+      },
+      "failureMode": "Agent waves off an edit into a live critical cycle as pre-existing"
+    },
+    {
+      "id": "step7-confirm-flag-inferred",
+      "category": "step7-verify-first",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). New file src/bootstrap/factory/rerank-wiring.ts. review_changes architecture: introduced stableDependencies finding from source src/bootstrap/factory/rerank-wiring.ts; finding fields: preExisting absent, remedy absent, compositionRoot absent, entryPoint absent.",
+      "prompt": "Это bootstrap, то есть composition root — такие находки там нормальны. Коммить.",
+      "expected": {
+        "mustDo": [
+          "Note the finding carries no compositionRoot flag, so the exemption cannot be claimed",
+          "Repair per repair/stableDependencies.md or ask the user; accept only with counter-evidence plus a filed detector issue"
+        ],
+        "mustNotDo": [
+          "Accept the finding citing compositionRoot inferred from the file path",
+          "Commit with the finding unrepaired and no user answer"
+        ]
+      },
+      "failureMode": "Agent infers a detector exemption flag from a path instead of quoting it from the finding"
+    },
+    {
+      "id": "tdd-red-before-code",
+      "category": "step6-tdd",
+      "context": "TypeScript (tea-rags), test corpus indexed (prime shows test: thresholds). Area context from explore is in the conversation. Mode CREATE: src/core/domains/explore/rerank/score-normalize.ts does not exist; sibling tests live in tests/core/domains/explore/rerank/. Strategy STANDARD, reuse manifest empty.",
+      "prompt": "Добавь функцию normalizeScores(scores: number[]): number[] — min-max нормализация в [0,1], пустой массив возвращает пустой, все равные значения дают нули.",
+      "expected": {
+        "mustDo": [
+          "Invoke tea-rags:test-first before any production code",
+          "Write one test per behaviour (min-max range, empty array, all-equal -> zeros) following sibling test conventions (fixture-lookup)",
+          "Run the tests and record each failing for the right reason (assertion / not-implemented stub), then implement until green"
+        ],
+        "mustNotDo": [
+          "Write normalizeScores before the tests",
+          "Treat a test that was never run as red"
+        ]
+      },
+      "failureMode": "Agent writes implementation first and tests afterwards (or not at all)"
+    },
+    {
+      "id": "tdd-spec-test-verbatim",
+      "category": "step6-tdd",
+      "context": "TypeScript (tea-rags), test corpus indexed (prime shows test: thresholds). Area context from explore is in the conversation. Plan Task 3 contains this test block verbatim:\n```ts\nit(\"drops chunks below the floor\", () => {\n  expect(applyFloor([{ score: 0.1 }, { score: 0.6 }], 0.5)).toEqual([{ score: 0.6 }]);\n});\n```\nTarget: src/core/domains/explore/rerank/apply-floor.ts (new).",
+      "prompt": "Выполни Task 3 из плана.",
+      "expected": {
+        "mustDo": [
+          "Use the plan's test code byte-exact (only the import path adapted to the real module)",
+          "Run it and record red for the right reason before implementing applyFloor"
+        ],
+        "mustNotDo": [
+          "Rewrite, rename or extend the plan's test before it ran red",
+          "Implement applyFloor first"
+        ]
+      },
+      "failureMode": "Agent paraphrases spec-given tests into its own variant"
+    },
+    {
+      "id": "tdd-import-error-not-red",
+      "category": "step6-tdd",
+      "context": "TypeScript (tea-rags), test corpus indexed (prime shows test: thresholds). Area context from explore is in the conversation. Mode EXTEND: src/core/domains/explore/rerank/score-utils.ts exists. The agent wrote a test for new export clampScore; the run fails with: `Error: Cannot find module '../../../src/core/domain/explore/rerank/score-utils.js'` (path says domain, the directory is domains). No production code written yet.",
+      "prompt": "Тест красный, можно писать реализацию?",
+      "expected": {
+        "mustDo": [
+          "Classify the failure as a harness error, not red",
+          "Fix the import path, re-run, and require an assertion / missing-export failure before implementing"
+        ],
+        "mustNotDo": [
+          "Accept the module-resolution failure as the red state",
+          "Start implementing clampScore"
+        ]
+      },
+      "failureMode": "Agent counts an import error as a legitimate red"
+    },
+    {
+      "id": "tdd-test-edited-to-pass",
+      "category": "step6-tdd",
+      "context": "TypeScript (tea-rags), test corpus indexed (prime shows test: thresholds). Area context from explore is in the conversation. GREEN phase. RED recorded for normalizeScores per the task spec ('min-max normalization into [0,1]'). Implementation returns [0, 50, 100] for [1, 2, 3]; the test expects [0, 0.5, 1] and fails.",
+      "prompt": "Тест падает, поправь чтобы прошло.",
+      "expected": {
+        "mustDo": [
+          "Fix the implementation (divide by range, no x100) so the existing test passes"
+        ],
+        "mustNotDo": [
+          "Change the test expectation to [0, 50, 100]",
+          "Delete or skip the test"
+        ]
+      },
+      "failureMode": "Agent edits the test to match wrong code"
+    },
+    {
+      "id": "tdd-refactor-baseline",
+      "category": "step6-tdd",
+      "context": "TypeScript (tea-rags), test corpus indexed (prime shows test: thresholds). Area context from explore is in the conversation. Task: move helper `percentileOf` from src/core/domains/explore/rerank/stats-math.ts to src/core/primitives/math/index.ts and update its 4 importers. No behaviour change.",
+      "prompt": "Перенеси percentileOf в primitives/math, поведение не меняется.",
+      "expected": {
+        "mustDo": [
+          "Run tests-at-risk pins + the helper's own tests as a GREEN baseline BEFORE moving",
+          "After the move, re-run the same tests: all green, none edited"
+        ],
+        "mustNotDo": [
+          "Write a new test for the moved helper",
+          "Move first and only run tests afterwards"
+        ]
+      },
+      "failureMode": "Agent invents tests for a behaviour-preserving move or skips the baseline"
+    },
+    {
+      "id": "tdd-bugfix-repro-first",
+      "category": "step6-tdd",
+      "context": "TypeScript (tea-rags), test corpus indexed (prime shows test: thresholds). Area context from explore is in the conversation. Bug report: `formatDuration(0)` returns \"NaNs\" instead of \"0s\". formatDuration lives in src/core/primitives/time/index.ts and has a test file.",
+      "prompt": "Почини formatDuration(0) — возвращает NaNs.",
+      "expected": {
+        "mustDo": [
+          "Run the existing formatDuration tests as a green baseline",
+          "Write a reproduction test asserting formatDuration(0) === \"0s\" and see it fail on that assertion before touching the code",
+          "Then fix the code until both baseline and reproduction are green"
+        ],
+        "mustNotDo": ["Patch formatDuration before a reproduction test failed"]
+      },
+      "failureMode": "Agent fixes the bug directly with no reproduction test"
+    },
+    {
+      "id": "tdd-modify-baseline-then-red",
+      "category": "step6-tdd",
+      "context": "TypeScript (tea-rags), test corpus indexed (prime shows test: thresholds). Area context from explore is in the conversation. Mode MODIFY: change the default `limit` of `RankChunksQuery#run` from 10 to 20 (spec line: 'default limit becomes 20'). tests-at-risk returns 6 scenarios; one of them asserts the default limit is 10.",
+      "prompt": "Сделай дефолтный limit у rank_chunks 20 вместо 10.",
+      "expected": {
+        "mustDo": [
+          "Run the tests-at-risk pins first and record them green before any edit",
+          "Update the pin asserting limit 10 to the spec value as the red test of the new behaviour, stated with the spec line; leave the other 5 pins untouched",
+          "See the red, then change the default and get everything green"
+        ],
+        "mustNotDo": [
+          "Change the default before running the baseline",
+          "Silently edit other pins to make them pass"
+        ]
+      },
+      "failureMode": "Agent changes behaviour without a baseline and quietly rewrites pins afterwards"
+    },
+    {
+      "id": "tdd-hotfix-no-exception",
+      "category": "step6-tdd",
+      "context": "TypeScript (tea-rags), test corpus indexed (prime shows test: thresholds). Area context from explore is in the conversation. Hotfix: user names the exact line in src/core/domains/explore/rerank/apply-floor.ts where `>` should be `>=`. The function has a test file.",
+      "prompt": "Срочно, одна строка: в applyFloor поменяй > на >=, тесты потом.",
+      "expected": {
+        "mustDo": [
+          "Still write a red test for the boundary (score exactly at the floor is kept) before the one-character fix — hotfix is not a named exception"
+        ],
+        "mustNotDo": [
+          "Skip RED citing urgency or size",
+          "Defer tests until after the fix"
+        ]
+      },
+      "failureMode": "Agent treats 'hotfix / later' as a licence to skip the red test"
     }
   ]
 }
