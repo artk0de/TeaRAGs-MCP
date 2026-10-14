@@ -223,9 +223,51 @@ describe("renderLlamaServerCommands — macos", () => {
   it("writes a launchd plist and bootstraps it", () => {
     const lines = section(sheet, "5.");
     const plist = "~/Library/LaunchAgents/com.tea-rags.llama-server.8081.plist";
-    expect(lines).toContain(`cat > ${plist} <<'EOF'`);
+    expect(lines).toContain(`cat > ${plist} <<EOF`);
     expect(lines).toContain(`launchctl bootstrap gui/$(id -u) ${plist}`);
     expect(lines.some((l) => l.includes("<string>com.tea-rags.llama-server.8081</string>"))).toBe(true);
+  });
+
+  // bd n18nj: BTM names a background item after its first ProgramArguments entry; a /bin/sh wrapper shows up as 'sh'.
+  it("execs llama-server directly: the binary first, each argument its own <string>, no shell", () => {
+    const lines = section(sheet, "5.");
+    const start = lines.indexOf("  <key>ProgramArguments</key>");
+    const end = lines.indexOf("  </array>", start);
+    const strings = lines.slice(start + 2, end).map((l) => l.trim());
+    expect(lines.some((l) => l.includes("/bin/sh") || l.includes("exec "))).toBe(false);
+    expect(strings[0]).toBe("<string>/opt/homebrew/bin/llama-server</string>");
+    expect(strings).toContain("<string>--port</string>");
+    expect(strings).toContain("<string>8081</string>");
+    expect(strings).toContain("<string>--device</string>");
+    expect(strings).toContain("<string>MTL0</string>");
+    expect(strings.every((l) => /^<string>[^ ]*<\/string>$/.test(l))).toBe(true);
+  });
+
+  it("resolves ~/ in arguments to $HOME, which launchd would not expand", () => {
+    const lines = section(sheet, "5.");
+    expect(lines).toContain(`    <string>$HOME/llama-models/${GGUF.fileName}</string>`);
+    expect(lines.some((l) => l.includes("<string>~"))).toBe(false);
+  });
+
+  it("logs stdout and stderr to an absolute ~/.tea-rags/logs/llama-server-<port>.log", () => {
+    const lines = section(sheet, "5.");
+    const log = "$HOME/.tea-rags/logs/llama-server-8081.log";
+    expect(lines).toContain("mkdir -p ~/Library/LaunchAgents ~/.tea-rags/logs");
+    expect(lines).toContain(`  <key>StandardOutPath</key><string>${log}</string>`);
+    expect(lines).toContain(`  <key>StandardErrorPath</key><string>${log}</string>`);
+  });
+
+  it("keeps a literal $ or backtick in an argument from expanding inside the unquoted heredoc", () => {
+    const risky = renderLlamaServerCommands(
+      options({ os: "macos", devices: ["MTL0"], autostart: true, apiKey: "a$b`c&d" }),
+    );
+    expect(section(risky, "4.")).toContain("    <string>a\\$b\\`c&amp;d</string>");
+  });
+
+  it("tells the operator to allow it in the background and how to check", () => {
+    const lines = section(sheet, "5.");
+    expect(lines.some((l) => l.startsWith("#") && l.includes("Allow in the Background"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("#") && l.includes("sfltool dumpbtm | grep -A3 llama-server"))).toBe(true);
   });
 });
 
