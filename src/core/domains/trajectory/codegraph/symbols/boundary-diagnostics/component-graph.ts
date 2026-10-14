@@ -2,6 +2,7 @@ import type { FileDependencyEdge, FileDependencyGraph, RelPath } from "../../../
 import { isNamespaceComponent } from "../../component-geometry/index.js";
 import { classifyComponentRelation, deriveConstantNamespaceComponents } from "./constant-namespace.js";
 import { isFacadeAggregationEdge } from "./facade-aggregation.js";
+import { deriveReexportShimComponents } from "./reexport-shim.js";
 import type {
   ArchitectureComponent,
   ComponentDependency,
@@ -159,7 +160,16 @@ export function buildComponentGraph(
       compareCodePoints(a.nestedComponent, b.nestedComponent),
   );
 
-  return { components, componentOf, dependencies, excluded, facadeAggregations, fileEdgeCount: graph.edges.length };
+  return {
+    components,
+    componentOf,
+    dependencies,
+    excluded,
+    facadeAggregations,
+    fileEdgeCount: graph.edges.length,
+    // Read by SDP only (bd tea-rags-mcp-ciq4d): no count above depends on it.
+    reexportShims: deriveReexportShimComponents(graph, componentOf),
+  };
 }
 
 /**

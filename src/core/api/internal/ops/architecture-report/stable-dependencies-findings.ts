@@ -1,6 +1,7 @@
 import {
   COMPONENT_CONTAINMENT_REASON,
   FACADE_AGGREGATION_REASON,
+  REEXPORT_SHIM_REASON,
   type ComponentStableDependenciesReport,
 } from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import type {
@@ -12,6 +13,7 @@ import type {
 export const STABLE_DEPENDENCIES_EXCLUSION_REASONS = {
   facadeAggregations: FACADE_AGGREGATION_REASON,
   containment: COMPONENT_CONTAINMENT_REASON,
+  reexportShims: REEXPORT_SHIM_REASON,
 } as const;
 
 export function summariseStableDependencies(
@@ -31,6 +33,7 @@ export function summariseStableDependencies(
     rootCauseCount: report.rootCauses.length,
     excluded: { ...summary.excluded },
     exclusionReasons: STABLE_DEPENDENCIES_EXCLUSION_REASONS,
+    ...(summary.reexportShimComponents.length > 0 ? { reexportShimComponents: summary.reexportShimComponents } : {}),
     ...(summary.scope ? { outOfScopeEdgeCount: summary.scope.outOfScopeEdgeCount } : {}),
   };
 }

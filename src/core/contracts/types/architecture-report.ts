@@ -1048,6 +1048,8 @@ export interface StableDependenciesExclusionSummary {
   containment: number;
   /** Component dependencies with an end whose Ca + Ce is below `minConnectionCount`. */
   lowConnectionCount: number;
+  /** Component dependencies into or out of a pure re-export component — see `exclusionReasons.reexportShims`. */
+  reexportShimEdges: number;
 }
 
 export interface StableDependenciesReportSummary {
@@ -1071,7 +1073,9 @@ export interface StableDependenciesReportSummary {
   rootCauseCount: number;
   excluded: StableDependenciesExclusionSummary;
   /** Human-readable meaning of the exclusions a reader is most likely to question. */
-  exclusionReasons: { facadeAggregations: string; containment: string };
+  exclusionReasons: { facadeAggregations: string; containment: string; reexportShims: string };
+  /** Components judged transparent as pure re-export shims, by path; present only when any. */
+  reexportShimComponents?: string[];
   /** Component dependencies none of whose file edges has a source matching `pathPattern`; present only when scoped. */
   outOfScopeEdgeCount?: number;
 }

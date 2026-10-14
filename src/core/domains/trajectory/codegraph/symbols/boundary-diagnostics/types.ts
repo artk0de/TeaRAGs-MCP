@@ -488,6 +488,26 @@ export interface ComponentGraph {
   facadeAggregations: ComponentFacadeAggregation[];
   /** Every file edge read. */
   fileEdgeCount: number;
+  /**
+   * The pure re-export components and where their files' re-exports land
+   * (`deriveReexportShimComponents`, bd tea-rags-mcp-ciq4d). Read by SDP
+   * only; no coupling count above depends on it. Absent on a hand-built graph.
+   */
+  reexportShims?: ReexportShimComponents;
+}
+
+/**
+ * Components whose every file is a pure re-export (bd tea-rags-mcp-ciq4d):
+ * no declaration of their own, so no volatility of their own.
+ */
+export interface ReexportShimComponents {
+  componentDirs: ReadonlySet<string>;
+  /**
+   * Each file of such a component → the files its re-exports finally reach,
+   * through any other shim file; a target outside every shim component, or
+   * one the walk never extracted. Sorted.
+   */
+  ultimateTargetsOf: ReadonlyMap<RelPath, readonly RelPath[]>;
 }
 
 export interface ComponentStableDependenciesOptions {
@@ -556,6 +576,13 @@ export interface ComponentStableDependenciesExclusionCounts extends ComponentGra
   containment: number;
   /** Component dependencies with an end below `minConnectionCount`. */
   lowConnectionCount: number;
+  /**
+   * Component dependencies into or out of a re-export shim component
+   * (`REEXPORT_SHIM_REASON`): out of one is never judged, into one is judged
+   * as a dependency on the components it re-exports — or not at all when
+   * those resolve back into the source.
+   */
+  reexportShimEdges: number;
 }
 
 export interface ComponentStableDependenciesSummary {
@@ -572,6 +599,8 @@ export interface ComponentStableDependenciesSummary {
   judgedEdgeCount: number;
   violationCount: number;
   excluded: ComponentStableDependenciesExclusionCounts;
+  /** The components judged transparent as pure re-export shims, by path. */
+  reexportShimComponents: string[];
   /** Present when scoped; `outOfScopeEdgeCount` counts COMPONENT dependencies. */
   scope?: StableDependenciesScope;
 }

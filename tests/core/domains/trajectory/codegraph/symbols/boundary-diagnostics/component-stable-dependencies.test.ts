@@ -373,3 +373,148 @@ describe("detectComponentStableDependencyViolations — one partition (bd tea-ra
     expect(report.violations.map((v) => v.targetComponent)).not.toContain("lang");
   });
 });
+
+/**
+ * A component whose every file is a pure re-export (bd tea-rags-mcp-ciq4d) has
+ * no volatility of its own — it changes when its targets do. SDP judges an
+ * edge INTO it as an edge into the ultimate target component, never judges
+ * its own edges, and counts what it took out.
+ */
+describe("detectComponentStableDependencyViolations — re-export shim components are transparent (bd tea-rags-mcp-ciq4d)", () => {
+  const EP = "src/core/api/entry-points";
+  const PIPELINE = "src/core/domains/ingest/pipeline";
+  const GIT = "src/core/domains/trajectory/git";
+  const REGISTRY = "src/core/domains/maintenance/registry";
+  const SYMBOLS = "src/core/domains/trajectory/codegraph/symbols";
+
+  function shimFile(relPath: string) {
+    return { relPath, language: "typescript", symbolCount: 0 };
+  }
+
+  function reexport(sourceRelPath: string, targetRelPath: string, names: string[]): FileDependencyEdge {
+    return edge(sourceRelPath, targetRelPath, 0, { reexportedExportNames: names });
+  }
+
+  /** `dir/index.ts` plus `count - 1` siblings, each importing `vendor/v.ts`: Ce = count. */
+  function volatileDomain(dir: string, count: number): FileDependencyGraph {
+    const relPaths = [`${dir}/index.ts`, ...Array.from({ length: count - 1 }, (_, i) => `${dir}/f${i + 1}.ts`)];
+    return { files: relPaths.map(file), edges: relPaths.map((p) => edge(p, "vendor/v.ts")) };
+  }
+
+  /** `dir/index.ts`, imported by `consumers/<name>/f{1..5}.ts`: Ce 0 → I 0. */
+  function stableDomain(dir: string, name: string): FileDependencyGraph {
+    return merge(
+      { files: [file(`${dir}/index.ts`)], edges: [] },
+      files(`consumers/${name}`, 5, (p) => edge(p, `${dir}/index.ts`)),
+    );
+  }
+
+  /**
+   * The pre-move `api/entry-points` shape (g3oo1, arch report a7075fbae): four
+   * pure re-export files between `bootstrap/config` (Ca 6, Ce 2 → I 0.25)
+   * plus the worker-pool factory, and four domain facades. entry-points: Ca 3,
+   * Ce 3 → I 0.5; ingest/pipeline and trajectory/git: Ca 1, Ce 5 → I 5/6.
+   * `poolSizingFile` builds `pool-sizing.ts` — a declaration there makes the
+   * component opaque.
+   */
+  function preMoveEntryPoints(poolSizingFile: (relPath: string) => FileDependencyGraph["files"][number] = shimFile) {
+    return merge(
+      {
+        files: [
+          file("src/bootstrap/config/env-snapshot.ts"),
+          file("src/bootstrap/config/schemas.ts"),
+          file("src/bootstrap/codegraph-worker-pool-factory.ts"),
+          shimFile(`${EP}/index.ts`),
+          poolSizingFile(`${EP}/pool-sizing.ts`),
+          shimFile(`${EP}/registry-env-replay.ts`),
+          shimFile(`${EP}/codegraph-worker-pool.ts`),
+          file("vendor/v.ts"),
+        ],
+        edges: [
+          edge("src/bootstrap/config/env-snapshot.ts", `${EP}/index.ts`, 1, {
+            importedExportNames: ["replayRegistryEnv"],
+          }),
+          edge("src/bootstrap/config/schemas.ts", `${EP}/index.ts`, 1, {
+            importedExportNames: ["defaultBlamePoolSize"],
+          }),
+          edge("src/bootstrap/codegraph-worker-pool-factory.ts", `${EP}/codegraph-worker-pool.ts`, 1),
+          reexport(`${EP}/index.ts`, `${EP}/pool-sizing.ts`, ["defaultBlamePoolSize"]),
+          reexport(`${EP}/index.ts`, `${EP}/registry-env-replay.ts`, ["replayRegistryEnv"]),
+          reexport(`${EP}/pool-sizing.ts`, `${PIPELINE}/index.ts`, ["defaultChunkerPoolSize"]),
+          reexport(`${EP}/pool-sizing.ts`, `${GIT}/index.ts`, ["defaultBlamePoolSize"]),
+          reexport(`${EP}/registry-env-replay.ts`, `${REGISTRY}/index.ts`, ["replayRegistryEnv"]),
+          reexport(`${EP}/codegraph-worker-pool.ts`, `${SYMBOLS}/index.ts`, ["createCodegraphWorkerPool"]),
+        ],
+      },
+      files("app", 6, (p) => edge(p, "src/bootstrap/config/schemas.ts")),
+      volatileDomain(PIPELINE, 5),
+      volatileDomain(GIT, 5),
+      stableDomain(REGISTRY, "registry"),
+      stableDomain(SYMBOLS, "symbols"),
+    );
+  }
+
+  const pairsOf = (report: ReturnType<typeof judge>) =>
+    report.violations.map((v) => `${v.sourceComponent} -> ${v.targetComponent}`);
+
+  it("reports the pre-move shape's three entry-points findings while the component is opaque (control)", () => {
+    const report = judge(preMoveEntryPoints(file));
+
+    expect(pairsOf(report)).toEqual(
+      expect.arrayContaining([`src/bootstrap/config -> ${EP}`, `${EP} -> ${PIPELINE}`, `${EP} -> ${GIT}`]),
+    );
+  });
+
+  it("drops the three entry-points findings and counts the shim's dependencies as re-export shim exclusions", () => {
+    const report = judge(preMoveEntryPoints());
+
+    expect(pairsOf(report).filter((p) => p.includes(EP))).toEqual([]);
+    expect(report.summary.reexportShimComponents).toEqual([EP]);
+    // In: config -> ep, bootstrap -> ep. Out: ep -> pipeline / git / registry / symbols.
+    expect(report.summary.excluded.reexportShimEdges).toBe(6);
+  });
+
+  it("judges an edge through the shim against the ULTIMATE target component, with the real file edges as evidence", () => {
+    const report = judge(preMoveEntryPoints());
+
+    const throughShim = report.violations.find(
+      (v) => v.sourceComponent === "src/bootstrap/config" && v.targetComponent === PIPELINE,
+    );
+    expect(throughShim).toMatchObject({
+      sourceInstability: 2 / 8,
+      targetInstability: 5 / 6,
+      instabilityDelta: 5 / 6 - 2 / 8,
+      directoryRelation: "disjoint",
+    });
+    expect(throughShim?.fileEdges.map((e) => `${e.sourceRelPath} -> ${e.targetRelPath}`)).toEqual([
+      `src/bootstrap/config/env-snapshot.ts -> ${EP}/index.ts`,
+      `src/bootstrap/config/schemas.ts -> ${EP}/index.ts`,
+    ]);
+    // The stable ultimate target is judged too, and passes.
+    expect(pairsOf(report)).not.toContain(`src/bootstrap/config -> ${REGISTRY}`);
+  });
+
+  it("keeps a component holding one real declaration among its re-exports opaque", () => {
+    const report = judge(preMoveEntryPoints(file));
+
+    expect(report.summary.reexportShimComponents).toEqual([]);
+    expect(report.summary.excluded.reexportShimEdges).toBe(0);
+  });
+
+  it("skips an edge that would resolve back into the source's own component", () => {
+    const graph = merge(
+      {
+        files: [file("lib/a.ts"), file("lib/b.ts"), shimFile("shim/index.ts")],
+        edges: [edge("lib/a.ts", "shim/index.ts"), reexport("shim/index.ts", "lib/b.ts", ["b"])],
+      },
+      files("app", 6, (p) => edge(p, "lib/a.ts")),
+    );
+
+    const report = judge(graph);
+
+    expect(report.violations).toEqual([]);
+    // lib -> shim (resolves back into lib) and shim -> lib; only app -> lib is judged.
+    expect(report.summary.excluded.reexportShimEdges).toBe(2);
+    expect(report.summary.judgedEdgeCount).toBe(1);
+  });
+});
