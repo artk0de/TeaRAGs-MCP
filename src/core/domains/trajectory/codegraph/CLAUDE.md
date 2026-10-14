@@ -591,8 +591,14 @@
   component's parent in its OWN tree, `componentAncestry`, and Ce into it —
   never a namespace-only reading, since the partition kind may change). Those
   two fields are the only source of the `compositionTable` / `parentSurface`
-  flags in either pipeline. All of these ANNOTATE: a flagged finding stays in
-  `violationCount` and the impact tiers (owner decision 2026-10-14, r8hme.51).
+  flags in either pipeline. The partition is path-based in every language; a
+  Ruby constant namespace is only `ComponentGraph.namespaceGrouping`, which
+  shotgun surgery reads instead of `componentOf` (bd tea-rags-mcp-r8hme.52.15).
+  Why: a Zeitwerk namespace spans Rails layers, and as a component it put
+  `app/policies → ::AbstractPolicy` and Ruby+JS directories into one 5954-member
+  taxdome knot the file flow does not have. All of these ANNOTATE: a flagged
+  finding stays in `violationCount` and the impact tiers (owner decision
+  2026-10-14, r8hme.51).
 
 ## Gotchas
 

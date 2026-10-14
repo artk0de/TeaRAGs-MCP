@@ -187,10 +187,12 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
 
 SDP unit = COMPONENT: facade directory, adoption notwithstanding (any A4 status
 — owns its directory subtree minus nested modules; ONE partition for SDP,
-mainSequence, hubLike, shotgun, layering), else constant namespace path spells
-(`componentKind: "namespace"`, `::Billing` — Zeitwerk autoload:
-`app/models/billing/*` + `app/services/billing/*` = one), else plain directory.
-Ca/Ce count distinct files across component border.
+mainSequence, hubLike, layering, silentCoupling), else plain directory — Ruby
+included (`app/models/billing` and `app/services/billing` are two components).
+Shotgun alone groups by constant namespace path spells (`::Billing` — Zeitwerk
+autoload: `app/models/billing/*` + `app/services/billing/*` = one), so its
+spreads name `::X` components. Ca/Ce count distinct files across component
+border.
 
 `rootCauses[]` ordered by `violationCount` desc, then `maxInstabilityDelta`.
 
