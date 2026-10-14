@@ -442,6 +442,13 @@ export interface ArchitectureComponent {
    * `compositionRoot` / `entryPoint` annotations. Absent otherwise.
    */
   entryFacade?: true;
+  /**
+   * The component is its parent's surface (`measureParentSurfaces`, bd
+   * tea-rags-mcp-r8hme.52.17): most of its afferent files sit outside its
+   * parent namespace / directory and most of its efferent targets inside it.
+   * The one source of the `parentSurface` annotation. Absent otherwise.
+   */
+  parentSurface?: true;
 }
 
 /**
@@ -499,6 +506,37 @@ export interface ComponentGraph {
    * only; no coupling count above depends on it. Absent on a hand-built graph.
    */
   reexportShims?: ReexportShimComponents;
+  /**
+   * The composition-table files and the cut that named them
+   * (`measureCompositionTables`, bd tea-rags-mcp-r8hme.52.17) — the one source
+   * of the `compositionTable` annotation. Absent on a hand-built graph.
+   */
+  compositionTables?: CompositionTables;
+}
+
+/**
+ * The cut over the callWeight-0 files' distinct-component fan-out: Otsu over
+ * log(1 + count), floored at the median count. `none` = the population was too
+ * small, too uniform or not bimodal enough (the shared η gate) — no file is
+ * flagged.
+ */
+export interface CompositionTableCut {
+  thresholdMethod: "otsu" | "none";
+  /** On the count scale; present under `otsu` only. */
+  threshold?: number;
+  /** η of the Otsu split, whenever one was computed — the rejection evidence under `none`. */
+  separability?: number;
+  median: number;
+  /** callWeight-0 files with at least one dependency onto another component. */
+  population: number;
+  /** Files flagged as composition tables. */
+  fileCount: number;
+}
+
+/** Files that wire an outlier number of components without calling any. */
+export interface CompositionTables {
+  files: ReadonlySet<RelPath>;
+  cut: CompositionTableCut;
 }
 
 /**
@@ -576,6 +614,14 @@ export interface ComponentStableDependencyViolation {
    * contract-side meaning. Present only when true.
    */
   compositionRoot?: true;
+  /**
+   * Every file edge carrying the dependency leaves a composition-table file
+   * (`ComponentGraph.compositionTables`, bd tea-rags-mcp-r8hme.52.17).
+   * Annotation, never exclusion. Present only when true.
+   */
+  compositionTable?: true;
+  /** The source component is its parent's surface (`ArchitectureComponent.parentSurface`). Present only when true. */
+  parentSurface?: true;
 }
 
 /** Every violation into one unstable target component, as one finding. */
@@ -630,6 +676,8 @@ export interface ComponentStableDependenciesSummary {
   reexportShimNameUnknownEdges: number;
   /** Present when scoped; `outOfScopeEdgeCount` counts COMPONENT dependencies. */
   scope?: StableDependenciesScope;
+  /** The cut that named the composition tables the `compositionTable` flags read; absent on a hand-built graph. */
+  compositionTableCut?: CompositionTableCut;
 }
 
 export interface ComponentStableDependenciesReport {
@@ -818,6 +866,10 @@ export interface HubLikeDependencyViolation {
   churn?: HubLikeDependencyChurn;
   /** The hub holds an entry facade — a composition root by measurement. Present only when true. */
   compositionRoot?: true;
+  /** The hub holds a composition-table file (bd tea-rags-mcp-r8hme.52.17). Present only when true. */
+  compositionTable?: true;
+  /** The hub is its parent's surface (`ArchitectureComponent.parentSurface`). Present only when true. */
+  parentSurface?: true;
 }
 
 /** One axis cut: Otsu over log(1 + count), floored at the median count. */
@@ -847,6 +899,8 @@ export interface HubLikeDependencySummary {
   /** True when `fileVolatility` was given — every hub then carries churn if any of its files has a reading. */
   churnMeasured: boolean;
   scope?: HubLikeDependencyScope;
+  /** The cut that named the composition tables the `compositionTable` flags read; absent on a hand-built graph. */
+  compositionTableCut?: CompositionTableCut;
 }
 
 export interface HubLikeDependencyReport {

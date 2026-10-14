@@ -102,6 +102,24 @@ export interface StableDependencyViolationEvidence {
    * suppression (the `foundationTerminal` spirit). Present only when true.
    */
   compositionRoot?: true;
+  /**
+   * Every file edge carrying the dependency leaves a composition TABLE (bd
+   * tea-rags-mcp-r8hme.52.17), measured: a file whose dependency edges all
+   * carry no call (registration / routing wiring) and that reaches an outlier
+   * number of distinct components — Otsu over the callWeight-0 files'
+   * distinct-component counts, gated by the shared separability gate
+   * (`summary.compositionTableCut`). Triage data, never a suppression.
+   * Present only when true.
+   */
+  compositionTable?: true;
+  /**
+   * The source component is its parent's SURFACE (bd tea-rags-mcp-r8hme.52.17),
+   * measured: most of its afferent files sit outside its parent namespace /
+   * directory and most of its efferent targets inside it — a domain's own API
+   * over the domain's internals. Triage data, never a suppression. Present
+   * only when true.
+   */
+  parentSurface?: true;
 }
 
 /**
@@ -438,6 +456,18 @@ export interface HubLikeDependencyViolationEvidence {
    * never a suppression. Present only when true.
    */
   compositionRoot?: true;
+  /**
+   * The hub holds a composition TABLE file (bd tea-rags-mcp-r8hme.52.17) —
+   * see `StableDependencyViolationEvidence.compositionTable`. Triage data,
+   * never a suppression. Present only when true.
+   */
+  compositionTable?: true;
+  /**
+   * The hub is its parent's SURFACE (bd tea-rags-mcp-r8hme.52.17) — see
+   * `StableDependencyViolationEvidence.parentSurface`. Triage data, never a
+   * suppression. Present only when true.
+   */
+  parentSurface?: true;
 }
 
 /**
@@ -1088,6 +1118,27 @@ export interface StableDependenciesReportSummary {
   reexportShimNameUnknownEdges?: number;
   /** Component dependencies none of whose file edges has a source matching `pathPattern`; present only when scoped. */
   outOfScopeEdgeCount?: number;
+  /** The cut that named the composition tables `compositionTable` flags read (bd tea-rags-mcp-r8hme.52.17). */
+  compositionTableCut?: CompositionTableCutSummary;
+}
+
+/**
+ * The cut over the callWeight-0 files' distinct-component fan-out (bd
+ * tea-rags-mcp-r8hme.52.17): Otsu over log(1 + count), floored at the median
+ * count. `none` = the population was too small, too uniform or not bimodal
+ * enough for the shared separability gate — no file is flagged.
+ */
+export interface CompositionTableCutSummary {
+  thresholdMethod: "otsu" | "none";
+  /** On the count scale; present under `otsu` only. */
+  threshold?: number;
+  /** η of the Otsu split whenever one was computed — the rejection evidence under `none`. */
+  separability?: number;
+  median: number;
+  /** callWeight-0 files with at least one dependency onto another component. */
+  population: number;
+  /** Files flagged as composition tables. */
+  fileCount: number;
 }
 
 /** Why a module's boundary is not judged by the leaking-abstraction detector. */
@@ -1741,6 +1792,8 @@ export interface HubLikeDependencyReportSummary {
   churnSignal?: "git.file.commitCount";
   /** Judged components with no file matching `pathPattern`; present only when scoped. */
   outOfScopeComponentCount?: number;
+  /** The cut that named the composition tables `compositionTable` flags read (bd tea-rags-mcp-r8hme.52.17). */
+  compositionTableCut?: CompositionTableCutSummary;
 }
 
 /** One visibility axis's cut: Otsu over the per-file counts when bimodal, the median otherwise. */

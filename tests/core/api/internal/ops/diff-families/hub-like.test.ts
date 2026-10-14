@@ -50,7 +50,9 @@ const isHubPastStubCuts = (fan: HubLikeDependencyFanCounts): boolean =>
   fan.afferentCount >= 8 && fan.efferentCount >= 11;
 
 /** A hand-built reading: `core` at the given counts, every other component quiet, `contracts` the foundation, `core/inner` nested in `core`, `a.ts` subclassing `base.ts`. */
-function hubLikeOf(core: HubLikeDependencyFanCounts & { compositionRoot?: true }): HubLikeDependencyReading {
+function hubLikeOf(
+  core: HubLikeDependencyFanCounts & { compositionRoot?: true; compositionTable?: true; parentSurface?: true },
+): HubLikeDependencyReading {
   const quiet: HubLikeDependencyFanCounts = { afferentCount: 1, efferentCount: 1, connectionCount: 2 };
   return {
     fanCountsOf: (component) => (component === "core" ? core : component in COMPONENTS ? quiet : undefined),
@@ -203,6 +205,21 @@ describe("hubLike diff family", () => {
     );
 
     expect(hubFindingsOf(result).map((finding) => finding.compositionRoot)).toEqual([true]);
+  });
+
+  // bd tea-rags-mcp-r8hme.52.17: the report's measured composition flags ride
+  // the diff finding as the whole-repo hub detector stamps them.
+  it("stamps compositionTable and parentSurface as the whole-repo hub detector does", () => {
+    const result = runWith(
+      {
+        hubLike: hubLikeOf({ ...BELOW_CUT, compositionTable: true, parentSurface: true }),
+        baseEdges: baseEdgesOf({ "src/core/a.ts": [] }),
+      },
+      ["src/core/a.ts"],
+      [["src/core/a.ts", "src/app/b.ts"]],
+    );
+
+    expect(hubFindingsOf(result)[0]).toMatchObject({ compositionTable: true, parentSurface: true });
   });
 
   it("answers built:false with a reason when no hub reading was wired", () => {

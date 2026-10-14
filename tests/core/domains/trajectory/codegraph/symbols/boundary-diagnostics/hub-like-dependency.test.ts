@@ -342,6 +342,27 @@ describe("detectHubLikeDependencies", () => {
     expect(hub).toMatchObject({ component: "hub", compositionRoot: true });
   });
 
+  // bd tea-rags-mcp-r8hme.52.17: the two measured composition flags ride the
+  // hub the same way — annotated, never suppressed.
+  it("marks a hub that holds a composition-table file and a hub that is a parent surface, without suppressing either", () => {
+    const components = buildComponentGraph(graph(), []);
+    const hubComponent = components.components.get("hub");
+    if (!hubComponent || !components.compositionTables) throw new Error("fixture: hub component missing");
+    components.components.set("hub", { ...hubComponent, parentSurface: true });
+    components.compositionTables = { ...components.compositionTables, files: new Set(["hub/h1.ts"]) };
+
+    const report = detectHubLikeDependencies(components);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0]).toMatchObject({ component: "hub", compositionTable: true, parentSurface: true });
+    expect(report.summary.compositionTableCut).toEqual(components.compositionTables.cut);
+  });
+
+  it("leaves both composition flags absent on a hub that measures neither", () => {
+    const [hub] = judge(graph()).violations;
+    expect("compositionTable" in hub).toBe(false);
+    expect("parentSurface" in hub).toBe(false);
+  });
+
   it("names no hub a composition root by path: the retired declared root's dir carries no annotation", () => {
     const g = graph();
     const renamed: FileDependencyGraph = {

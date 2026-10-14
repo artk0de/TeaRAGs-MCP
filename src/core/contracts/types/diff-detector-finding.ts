@@ -262,6 +262,21 @@ interface DiffDetectorFindingCommon {
    */
   compositionRoot?: true;
   /**
+   * stableDependencies / hubLike (bd tea-rags-mcp-r8hme.52.17): the edge's
+   * source file (stableDependencies) or a file of the hub (hubLike) is a
+   * composition TABLE, measured by the whole-repo report — it wires an outlier
+   * number of components with no call. Triage data, never a suppression.
+   * Present only when true.
+   */
+  compositionTable?: true;
+  /**
+   * stableDependencies / hubLike (bd tea-rags-mcp-r8hme.52.17): the source /
+   * hub component is its parent's SURFACE, measured by the whole-repo report —
+   * used mostly from outside its parent, using mostly the parent's internals.
+   * Triage data, never a suppression. Present only when true.
+   */
+  parentSurface?: true;
+  /**
    * mainSequence only (bd tea-rags-mcp-zh3l0): the touched component is an
    * entry surface, measured — it holds a module facade nothing in the project
    * imports (bd tea-rags-mcp-r8hme.52.4) — and the unstable end of the main

@@ -578,7 +578,17 @@
   52-member knot that hid the real ingest, explore/dto and bootstrap knots; and
   the path lists that preceded the mark named this repo's directories in a
   generic detector (bd tea-rags-mcp-r8hme.52.4). Never reintroduce a list — a
-  component the measurement misses stays unannotated.
+  component the measurement misses stays unannotated. The same graph build
+  measures the other composition evidence (symbols/boundary-diagnostics/
+  composition-evidence.ts, bd tea-rags-mcp-r8hme.52.17):
+  `ComponentGraph.compositionTables` (callWeight-0 files whose distinct-
+  component fan-out clears a gated Otsu cut; a refused cut flags nothing) and
+  `ArchitectureComponent.parentSurface` (strict-majority Ca from outside the
+  component's parent in its OWN tree, `componentAncestry`, and Ce into it —
+  never a namespace-only reading, since the partition kind may change). Those
+  two fields are the only source of the `compositionTable` / `parentSurface`
+  flags in either pipeline. All of these ANNOTATE: a flagged finding stays in
+  `violationCount` and the impact tiers (owner decision 2026-10-14, r8hme.51).
 
 ## Gotchas
 

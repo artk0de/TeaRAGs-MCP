@@ -321,6 +321,7 @@ function groupFilesByComponent(componentOf: ReadonlyMap<RelPath, string>): Reado
 export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
   private readonly componentOfRelPath: ReadonlyMap<RelPath, string>;
   private readonly componentsByName: ComponentGraph["components"];
+  private readonly compositionTableFiles: ReadonlySet<RelPath>;
   private readonly facadeByComponent: ReadonlyMap<string, RelPath>;
   private readonly distances: ReadonlyMap<string, number>;
   private readonly layeringFoundationFiles: ReadonlySet<RelPath>;
@@ -336,6 +337,7 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
     this.layeringFoundationFiles = layeringFoundationFiles;
     this.componentOfRelPath = facts.components.componentOf;
     this.componentsByName = facts.components.components;
+    this.compositionTableFiles = facts.components.compositionTables?.files ?? new Set<RelPath>();
     this.facadeByComponent = new Map(
       [...facts.components.components]
         .map(([name, component]) => [name, component.facadeRelPath] as const)
@@ -354,6 +356,7 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
         afferentCount?: number;
         efferentCount?: number;
         entryFacade?: true;
+        parentSurface?: true;
       }
     | undefined {
     const name = this.componentOfRelPath.get(relPath);
@@ -368,7 +371,12 @@ export class ArchitectureFactsCatalog implements DiffDetectorCatalog {
       afferentCount: component.afferentCount,
       efferentCount: component.efferentCount,
       ...(component.entryFacade ? { entryFacade: true as const } : {}),
+      ...(component.parentSurface ? { parentSurface: true as const } : {}),
     };
+  }
+
+  isCompositionTable(relPath: string): boolean {
+    return this.compositionTableFiles.has(relPath);
   }
 
   filesOf(componentName: string): readonly string[] {

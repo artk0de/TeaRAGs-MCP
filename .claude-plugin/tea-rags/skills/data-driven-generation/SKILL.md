@@ -432,10 +432,11 @@ real: fix it, do not argue it away.
   whose CONDITION is shown to hold on THIS edge — cite the condition and the
   fact that meets it. Naming the class is not evidence.
 
-Detector flags (`compositionRoot`, `entryPoint`, `foundationTerminal`,
-`preExisting` without `remedy`) are detector-sanctioned exemptions, not false
-positives: valid only QUOTED from the finding's fields, never inferred from a
-file's path or role ("it's the bootstrap folder" ≠ `compositionRoot: true`).
+Detector flags (`compositionRoot`, `compositionTable`, `parentSurface`,
+`entryPoint`, `foundationTerminal`, `preExisting` without `remedy`) are
+detector-sanctioned exemptions, not false positives: valid only QUOTED from the
+finding's fields, never inferred from a file's path or role ("it's the bootstrap
+folder" ≠ `compositionRoot: true`).
 
 **Every accepted false positive files a detector issue** — the detector is
 wrong, that is a defect, never a silent accept. Session has an issue tracker
@@ -479,15 +480,15 @@ repair file's procedure decides. A family with `built: false` or
   limit. A server `remedy` = cheap, already dry-run-verified.
 - **Evidence** — a finding stays unfixed ONLY with: a detector flag QUOTED from
   the finding (`preExisting: true` with `remedy` absent, `compositionRoot`,
-  `entryPoint`, `foundationTerminal`), a symbolId / file read THIS session, a
-  cited project rule (file + quoted line), or a false positive per **Confirm
-  first** (counter-evidence + filed issue). Each introduced / non-`preExisting`
-  finding left unrepaired gets its OWN triage line citing one such token. Banned
-  as reasons: "I believe", "by design", "budget", "out of scope", "fair nit",
-  "not needed", group dismissal (one reason for N findings). Finding conceded
-  valid → repaired, not dropped. A real incompleteChange gap (partner test with
-  high `support` the diff should have touched) → fixed in the same round. No
-  token → fix or ask.
+  `compositionTable`, `parentSurface`, `entryPoint`, `foundationTerminal`), a
+  symbolId / file read THIS session, a cited project rule (file + quoted line),
+  or a false positive per **Confirm first** (counter-evidence + filed issue).
+  Each introduced / non-`preExisting` finding left unrepaired gets its OWN
+  triage line citing one such token. Banned as reasons: "I believe", "by
+  design", "budget", "out of scope", "fair nit", "not needed", group dismissal
+  (one reason for N findings). Finding conceded valid → repaired, not dropped. A
+  real incompleteChange gap (partner test with high `support` the diff should
+  have touched) → fixed in the same round. No token → fix or ask.
 - **Flap** — metric crosses the tolerance by ≤ 0.02 → ordinary introduced
   finding: fix if cheap, else report metric before/after, threshold and the diff
   edge that moved it; user decides. mainSequence detector drops |ΔD| ≤ 0.02

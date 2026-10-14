@@ -290,6 +290,8 @@ describe("ArchitectureReportOps#build", () => {
       judgedEdgeCount: 6,
       violationCount: 2,
       rootCauseCount: 1,
+      // bd tea-rags-mcp-r8hme.52.17: no callWeight-0 file here, so no cut.
+      compositionTableCut: { thresholdMethod: "none", median: 0, population: 0, fileCount: 0 },
       excluded: {
         selfEdges: 0,
         unwalkedEndpoints: 0,

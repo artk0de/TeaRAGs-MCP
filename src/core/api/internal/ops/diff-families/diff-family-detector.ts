@@ -92,8 +92,20 @@ export interface DiffDetectorCatalog {
          * surface the SDP and mainSequence findings annotate. Absent otherwise.
          */
         entryFacade?: true;
+        /**
+         * The component is its parent's surface (the report's own
+         * `ArchitectureComponent.parentSurface`, bd tea-rags-mcp-r8hme.52.17).
+         * Absent otherwise.
+         */
+        parentSurface?: true;
       }
     | undefined;
+  /**
+   * The file is a composition table by the report's own measurement
+   * (`ComponentGraph.compositionTables`, bd tea-rags-mcp-r8hme.52.17).
+   * Optional: absent, no stableDependencies finding carries the flag.
+   */
+  isCompositionTable?: (relPath: string) => boolean;
   /** The files the report's partition assigns to the component; empty for an unknown name. */
   filesOf: (componentName: string) => readonly string[];
   /**

@@ -9,6 +9,7 @@ import type {
   ArchitectureViolation,
   StableDependenciesReportSummary,
 } from "../../../public/dto/architecture.js";
+import { roundCompositionTableCut } from "./architecture-report-value-format.js";
 
 export const STABLE_DEPENDENCIES_EXCLUSION_REASONS = {
   facadeAggregations: FACADE_AGGREGATION_REASON,
@@ -40,6 +41,9 @@ export function summariseStableDependencies(
         }
       : {}),
     ...(summary.scope ? { outOfScopeEdgeCount: summary.scope.outOfScopeEdgeCount } : {}),
+    ...(summary.compositionTableCut
+      ? { compositionTableCut: roundCompositionTableCut(summary.compositionTableCut) }
+      : {}),
   };
 }
 
@@ -75,6 +79,8 @@ export function sdpViolations(report: ComponentStableDependenciesReport, limit: 
         directoryRelation: v.directoryRelation,
         fileEdgeCount: v.fileEdgeCount,
         ...(v.compositionRoot ? { compositionRoot: v.compositionRoot } : {}),
+        ...(v.compositionTable ? { compositionTable: v.compositionTable } : {}),
+        ...(v.parentSurface ? { parentSurface: v.parentSurface } : {}),
         fileEdges: v.fileEdges,
       },
     }),
