@@ -123,8 +123,30 @@ export interface IncompleteChangePartner {
   lastCoChangeAt: number;
 }
 
+/**
+ * A missing test partner the change covers another way (bd
+ * tea-rags-mcp-89k7k.34): a test the change touches has the source as its
+ * SUBJECT — the leading identifier of its top-level scope names a symbol the
+ * source declares — and imports the source, both read from the working tree.
+ * A note, not a finding: a test that only REACHES the source (a test of
+ * another component calling it as a sub-step) never covers it.
+ */
+export interface IncompleteChangeCoveredPartner {
+  file: string;
+  missingPartner: string;
+  /** The touched test whose subject is `file`. */
+  coveredBy: string;
+  /** The symbol `file` declares that the covering test's top scope names. */
+  subject: string;
+}
+
 export interface IncompleteChangeSectionPayload {
   partners: readonly IncompleteChangePartner[];
+  /**
+   * Missing test partners demoted to notes — a touched test's subject is the
+   * source ({@link IncompleteChangeCoveredPartner}). Absent when none.
+   */
+  coveredPartners?: readonly IncompleteChangeCoveredPartner[];
   /**
    * The strength cut every listed finding cleared: Otsu's over the corpus's
    * candidate strengths when that population is bimodal enough, the strict

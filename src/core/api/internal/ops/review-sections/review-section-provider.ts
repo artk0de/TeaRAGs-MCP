@@ -122,7 +122,28 @@ export interface ReviewSectionBuildContext {
    * never mutate it. Absent (unit wiring) → each section reads its own.
    */
   readProductionGraph?: () => Promise<ProductionArchitectureGraph>;
+  /**
+   * The given files' chunk rows as the reviewed WORKING TREE holds them (bd
+   * tea-rags-mcp-89k7k.34) — the tree-side re-chunk find_symbol's `chunks`
+   * floor reads (`WorkingTreeChunkLayer`), so a test file the diff adds or
+   * edits answers with its current scopes and imports, never the index's copy.
+   * A file that could not be read or parsed has no entry. Absent (unit
+   * wiring) → no file is read from the tree.
+   */
+  readTreeChunks?: ReviewTreeChunkReader;
 }
+
+/** One working-tree chunk row, as a review section reads it: its id, test flag and module specifiers. */
+export interface ReviewTreeChunkRow {
+  symbolId?: string;
+  isTest?: boolean;
+  imports?: readonly string[];
+}
+
+/** Reads files' chunk rows from the reviewed working tree, by path. */
+export type ReviewTreeChunkReader = (
+  relPaths: readonly RelPath[],
+) => Promise<ReadonlyMap<RelPath, readonly ReviewTreeChunkRow[]>>;
 
 /**
  * The change's edges on both sides: the working tree's reads of the scope

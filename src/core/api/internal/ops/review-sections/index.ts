@@ -20,6 +20,8 @@ import type {
   ReviewSectionBuildContext,
   ReviewSectionContext,
   ReviewSectionProvider,
+  ReviewTreeChunkReader,
+  ReviewTreeChunkRow,
 } from "./review-section-provider.js";
 
 export type {
@@ -29,6 +31,8 @@ export type {
   ReviewSectionBuildContext,
   ReviewSectionContext,
   ReviewSectionProvider,
+  ReviewTreeChunkReader,
+  ReviewTreeChunkRow,
 };
 export {
   architectureSectionProvider,

@@ -272,6 +272,55 @@ describe("ReviewChangesOps", () => {
     expect(graph.close).toHaveBeenCalledTimes(1);
   });
 
+  // bd tea-rags-mcp-89k7k.34: the tree chunk read rides the deps to the
+  // incompleteChange section, bound to the reviewed working tree — a test the
+  // diff ADDS (untracked, never indexed) answers with its tree rows.
+  it("threads the working-tree chunk read to incompleteChange: a new test whose subject is the source covers its missing test partner", async () => {
+    const HISTORICAL_TEST = "tests/git/file-reader.test.ts";
+    const NEW_TEST = "tests/git/file-reader-load.test.ts";
+    mkdirSync(join(repo, "tests/git"), { recursive: true });
+    writeFileSync(join(repo, NEW_TEST), 'describe("load — from the tree", () => {});\n');
+    const graph = graphDbStub({
+      cochangeEdges: [
+        {
+          relPathA: CHANGED,
+          relPathB: HISTORICAL_TEST,
+          support: 9,
+          confidenceAB: 0.9,
+          confidenceBA: 0.9,
+          lift: 3,
+          lastCoChangeAt: 1_700_000_000,
+          sampleCommits: ["a1b2c3"],
+          structurallyLinked: false,
+        },
+      ],
+    });
+    const treeRows: Record<string, { payload: Record<string, unknown> }[]> = {
+      [CHANGED]: [{ payload: { symbolId: "load" } }],
+      [NEW_TEST]: [
+        {
+          payload: {
+            symbolId: 'load — from the tree.describe "load — from the tree"',
+            isTest: true,
+            imports: ["../../src/git/file-reader.js"],
+          },
+        },
+      ],
+    };
+    const readTreeChunks = vi.fn(async (_tree: { root: string }, relPaths: readonly string[]) => {
+      return new Map(relPaths.flatMap((relPath) => (treeRows[relPath] ? [[relPath, treeRows[relPath]] as const] : [])));
+    });
+    const result = await makeOps(graph, {}, { readTreeChunks }).reviewChanges(
+      request({ sections: ["incompleteChange"] }),
+    );
+    expect(readTreeChunks).toHaveBeenCalledTimes(1);
+    expect(readTreeChunks.mock.calls[0][0].root).toBe(repo);
+    expect(result.review.sections.incompleteChange).toMatchObject({
+      partners: [],
+      coveredPartners: [{ file: CHANGED, missingPartner: HISTORICAL_TEST, coveredBy: NEW_TEST, subject: "load" }],
+    });
+  });
+
   // bd tea-rags-mcp-2wsnt: the payload specifier read rides the deps to the
   // architecture section, bound to the review's collection — the same read
   // the whole-repo report's asset-import rescue uses. A diff-touching
