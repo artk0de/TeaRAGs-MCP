@@ -84,6 +84,7 @@ import {
   type DeclaredTestDependencyLookup,
   type IndexedFileImportLookup,
   type ProductionArchitectureGraph,
+  type TreeFileTextLookup,
 } from "./architecture-facts.js";
 import {
   readArchitectureGraphFacts,
@@ -261,12 +262,14 @@ export class ArchitectureReportOps {
     readFileMaintenanceSignals?: GitFileMaintenanceSignalLookup,
     readIndexedFileImports?: IndexedFileImportLookup,
     readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
+    readTreeFileText?: TreeFileTextLookup,
   ): Promise<GetArchitectureReportResponse> {
     const facts = await readArchitectureGraphFacts(
       graphDb,
       request,
       readIndexedFileImports,
       readDeclaredTestDependencies,
+      readTreeFileText,
     );
     return this.judge(facts, request, { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals });
   }

@@ -42,6 +42,7 @@ import {
   type LayeringModel,
   type LeakingAbstractionReport,
   type ProductionDependencyGraph,
+  type TreeFileTextLookup,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import { buildNonProductionPathFilter, type PathFilter } from "../../../primitives/paths/index.js";
 import type { DiffDetectorCatalog } from "./diff-detector-run.js";
@@ -61,6 +62,8 @@ export type IndexedFileImportLookup = () => Promise<ReadonlyMap<RelPath, Indexed
  * read from the working tree by the composition root.
  */
 export type DeclaredTestDependencyLookup = () => ReadonlySet<string>;
+
+export type { TreeFileTextLookup };
 
 /** What the test-support exclusion took out of the production graph. */
 export interface TestSupportExclusionCounts {
@@ -106,12 +109,15 @@ export interface ProductionArchitectureGraph extends ProductionDependencyGraph {
  * packages and unwalked files (`resolveExternalImports`). It is classified over the
  * graph BEFORE the non-production cut, so a script importing a file still
  * counts as a non-test importer. Without `readIndexedFileImports` no test
- * importer is known and nothing is classified.
+ * importer is known and nothing is classified. `readTreeFileText` lets the
+ * development roots name a separate build's tree by a path literal (bd
+ * tea-rags-mcp-r8hme.52.19).
  */
 export async function readProductionArchitectureGraph(
   graphDb: Pick<GraphDbClient, "readFileDependencyGraph">,
   readIndexedFileImports?: IndexedFileImportLookup,
   readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
+  readTreeFileText?: TreeFileTextLookup,
 ): Promise<ProductionArchitectureGraph> {
   // Both whole-index reads start together, and the synchronous manifest read
   // runs while they are in flight (bd tea-rags-mcp-pqdw4); the no-op catch
@@ -127,6 +133,7 @@ export async function readProductionArchitectureGraph(
     indexed,
     importsByFile,
     declaredTestDependencies,
+    readTreeFileText,
   );
   const testSupportPaths: PathFilter = { ignores: (relPath) => testSupport.has(relPath) };
   const production = excludeNonProductionFiles(withoutTooling.graph, testSupportPaths);
@@ -153,6 +160,7 @@ function classifyIndexedTestSupport(
   indexed: FileDependencyGraph,
   importsByFile: ReadonlyMap<RelPath, IndexedFileImports> | undefined,
   declaredTestDependencies: ReadonlySet<string> | undefined,
+  readTreeFileText: TreeFileTextLookup | undefined,
 ): { testSupport: ReadonlySet<RelPath>; testOnlyDependencyCount: number; developmentRootCount: number } {
   if (!importsByFile) return { testSupport: new Set(), testOnlyDependencyCount: 0, developmentRootCount: 0 };
   const walkedFiles = indexed.files.map((f) => f.relPath);
@@ -162,6 +170,7 @@ function classifyIndexedTestSupport(
     resolveExternalImports(importsByFile, walkedFiles),
     declaredTestDependencies,
     importsByFile,
+    readTreeFileText,
   );
   return {
     testSupport: files,

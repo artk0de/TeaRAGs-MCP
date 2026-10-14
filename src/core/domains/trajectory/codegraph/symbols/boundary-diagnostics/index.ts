@@ -60,6 +60,7 @@ export {
   TEST_SUPPORT_REASON,
   type IndexedFileImports,
   type TestSupportClassification,
+  type TreeFileTextLookup,
   type UnwalkedDependencyImport,
   type UnwalkedFileImportEdge,
 } from "./test-support.js";

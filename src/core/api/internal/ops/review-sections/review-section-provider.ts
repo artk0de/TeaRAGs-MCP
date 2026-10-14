@@ -19,6 +19,7 @@ import type {
   DeclaredTestDependencyLookup,
   IndexedFileImportLookup,
   ProductionArchitectureGraph,
+  TreeFileTextLookup,
 } from "../architecture-facts.js";
 import type { ArchitectureReportGraphDb } from "../architecture-graph-facts.js";
 import type { DiffDetectorBaseEdgeReader } from "../diff-families/diff-family-detector.js";
@@ -114,6 +115,12 @@ export interface ReviewSectionBuildContext {
    * Absent → the manifests add nothing.
    */
   readDeclaredTestDependencies?: DeclaredTestDependencyLookup;
+  /**
+   * One file's text in the reviewed tree (bd tea-rags-mcp-r8hme.52.19) — the
+   * development roots' path literals, for the same exclusion. Absent → no
+   * literal names a directory.
+   */
+  readTreeFileText?: TreeFileTextLookup;
   /**
    * The production graph (`readProductionArchitectureGraph` over this review's
    * `graphDb` and the two lookups above), read on first use and shared by the
