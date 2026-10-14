@@ -1,5 +1,9 @@
 import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { resolveMajorityFlooredOtsuThreshold } from "../../../../../primitives/graph/index.js";
+import {
+  benjaminiHochbergRejectionCount,
+  CONVENTIONAL_FDR_Q,
+  geometricUpperTail,
+} from "../../../../../primitives/math/index.js";
 import { componentAncestry, isNamespaceComponent } from "../../component-geometry/index.js";
 import { MAIN_SEQUENCE_OTSU_MIN_POPULATION } from "./main-sequence.js";
 import type { ComponentDependency, CompositionTableCut, CompositionTables } from "./types.js";
@@ -10,14 +14,19 @@ import type { ComponentDependency, CompositionTableCut, CompositionTables } from
  * module registry. Measured, never named: the population is every file whose
  * walked dependency edges (self-edges aside) ALL carry callWeight 0 and at
  * least one of which crosses into another component; a file's value is the
- * number of distinct components its crossing edges reach. The cut is the hub
- * detector's: Otsu's split over log(1 + count), floored at the median count,
- * trusted on at least {@link MAIN_SEQUENCE_OTSU_MIN_POPULATION} files and
- * gated by the shared η separability gate. Unlike the hub axes, a refused cut
- * falls to NO flag (`thresholdMethod: "none"`): "outlier" has no meaning
- * where the population shows no second mode, and the median floor alone would
- * flag half the population. Annotation evidence only — no detector excludes on
- * it (owner decision 2026-10-14; r8hme.51 stands).
+ * number of distinct components its crossing edges reach.
+ *
+ * The cut is a significance test, not a split (owner decision 2026-10-14):
+ * the population is a point mass at 1 with a decaying tail, never bimodal, so
+ * Otsu's η gate refused it on every corpus and a quartile fence collapses
+ * (IQR 0). Each file's excess, count − 1, is tested against a geometric null
+ * whose parameter is the population's own mean excess (the MLE); its upper
+ * tail P(X ≥ count − 1) is the file's p, and Benjamini–Hochberg at
+ * {@link CONVENTIONAL_FDR_Q} over the whole population flags the files whose
+ * fan-out the null cannot produce. Below
+ * {@link MAIN_SEQUENCE_OTSU_MIN_POPULATION} files the mean is not a fit and no
+ * file is flagged (`thresholdMethod: "none"`). Annotation evidence only — no
+ * detector excludes on it (owner decision 2026-10-14; r8hme.51 stands).
  */
 export function measureCompositionTables(
   edges: readonly FileDependencyEdge[],
@@ -43,20 +52,29 @@ export function measureCompositionTables(
   const fanOuts = [...reachedComponents].map(([relPath, reached]) => ({ relPath, count: reached.size }));
   const counts = fanOuts.map((f) => f.count);
   const median = medianOf(counts);
-  const cut = resolveMajorityFlooredOtsuThreshold(counts.map(Math.log1p), {
-    majority: Math.log1p(median),
-    minPopulation: MAIN_SEQUENCE_OTSU_MIN_POPULATION,
-  });
-  const files =
-    cut.method === "otsu"
-      ? new Set(fanOuts.filter((f) => cut.admits(Math.log1p(f.count))).map((f) => f.relPath))
-      : new Set<RelPath>();
+  if (counts.length < MAIN_SEQUENCE_OTSU_MIN_POPULATION) {
+    const unfitted: CompositionTableCut = { thresholdMethod: "none", median, population: counts.length, fileCount: 0 };
+    return { files: new Set<RelPath>(), cut: unfitted };
+  }
+
+  const nullMean = counts.reduce((sum, count) => sum + (count - 1), 0) / counts.length;
+  const tested = fanOuts
+    .filter((f) => f.count > 1)
+    .map((f) => ({ relPath: f.relPath, p: geometricUpperTail(f.count - 1, nullMean) }))
+    .sort((x, y) => x.p - y.p || (x.relPath < y.relPath ? -1 : x.relPath > y.relPath ? 1 : 0));
+  const rejected = benjaminiHochbergRejectionCount(
+    tested.map((t) => t.p),
+    counts.length,
+    CONVENTIONAL_FDR_Q,
+  );
+  const files = new Set(tested.slice(0, rejected).map((t) => t.relPath));
   const summary: CompositionTableCut = {
-    thresholdMethod: cut.method === "otsu" ? "otsu" : "none",
-    ...(cut.method === "otsu" ? { threshold: Math.expm1(cut.threshold) } : {}),
-    ...(cut.separability !== undefined ? { separability: cut.separability } : {}),
+    thresholdMethod: "geometricTailBH",
+    q: CONVENTIONAL_FDR_Q,
+    nullMean,
     median,
     population: counts.length,
+    testedCount: tested.length,
     fileCount: files.size,
   };
   return { files, cut: summary };

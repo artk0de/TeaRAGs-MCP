@@ -586,7 +586,8 @@
   measures the other composition evidence (symbols/boundary-diagnostics/
   composition-evidence.ts, bd tea-rags-mcp-r8hme.52.17):
   `ComponentGraph.compositionTables` (callWeight-0 files whose distinct-
-  component fan-out clears a gated Otsu cut; a refused cut flags nothing) and
+  component fan-out a geometric null fitted to their mean cannot produce, BH
+  over the population; too small a population flags nothing) and
   `ArchitectureComponent.parentSurface` (strict-majority Ca from outside the
   component's parent in its OWN tree, `componentAncestry`, and Ce into it —
   never a namespace-only reading, since the partition kind may change). Those
