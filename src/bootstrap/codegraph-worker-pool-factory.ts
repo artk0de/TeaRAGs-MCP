@@ -14,7 +14,7 @@
  * The domain (`trajectory/codegraph/factory.ts`) consumes the pool through the
  * contracts `GraphDbClientPoolPort` and constructs no duckdb class; this module
  * imports no domain module directly (the symbol table arrives through the
- * narrow `core/api/entry-points/codegraph-worker-pool.ts`, never the api
+ * narrow `core/api/entry-points/codegraph-worker/index.ts`, never the api
  * assembly barrel — this module loads in every worker, per the bootstrap
  * import-direction pin).
  */
@@ -24,7 +24,7 @@ import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import {
   InMemoryGlobalSymbolTable,
   type CodegraphWorkerConfig,
-} from "../core/api/entry-points/codegraph-worker-pool.js";
+} from "../core/api/entry-points/codegraph-worker/index.js";
 import type { DatabaseMigrationApplier } from "../core/contracts/types/migration.js";
 import { hydrateCodegraphSymbolTable } from "./codegraph-symbol-table-hydration.js";
 
