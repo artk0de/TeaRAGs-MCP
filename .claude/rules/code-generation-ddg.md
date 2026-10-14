@@ -22,13 +22,22 @@ session and every subagent alike.
   re-search a file whose outline or body is already in the conversation unless
   it was edited since), proven templates, naming through `get_naming_lexicon`,
   then write.
-- DDG Step 7 (VERIFY) is not optional. It runs `review_changes` and acts on the
-  findings before the commit: introduced architecture findings are repaired (the
-  per-family procedure lives in `.claude-plugin/tea-rags/repair/<family>.md`,
-  loaded only for a family that has a finding), pre-existing ones are repaired
-  only when cheap, false positives are accepted only with evidence (a detector
-  flag or a cited rule). After two repair rounds with introduced findings left,
-  stop and ask the user — never commit around them.
+- DDG Step 7 (VERIFY) is a gate, not optional. `review_changes` runs before
+  every commit and acts on the findings: introduced architecture findings are
+  repaired (the per-family procedure lives in
+  `.claude-plugin/tea-rags/repair/<family>.md`, loaded only for a family that
+  has a finding), pre-existing ones are repaired only when cheap, false
+  positives are accepted only with evidence (a detector flag or a cited rule)
+  plus a filed detector bead. A PARTIAL review is not a pass. After two repair
+  rounds with introduced findings left, stop and ask the user — never commit
+  around them. The hand-back quotes the gate line
+  (`GATE review_changes: introduced=0, partial=false`); no gate line, task not
+  done.
+- Inside this repo, run `review_changes` (and the pre-write
+  `get_architecture_report` simulation) from your own checkout's build:
+  `node build/cli/index.js call review_changes '<json params>'` — the global MCP
+  server process may run older extraction and report false findings (bd
+  tea-rags-mcp-2plk2). MCP only when the checkout has no build.
 - TDD still applies inside DDG: the red-first test is the first thing DDG writes
   for a behaviour change.
 
@@ -38,10 +47,11 @@ Subagents do not inherit rules. Every implementation subagent prompt carries
 this line verbatim:
 
 ```
-Write all code through /tea-rags:data-driven-generation (invoke the skill
-before the first edit; its Step 7 review_changes fix-at-write loop runs before
-every commit). Reuse tea-rags results already in your context instead of
-re-searching.
+Write all code through /tea-rags:data-driven-generation (invoke it before the
+first edit). Its Step 7 GATE runs before every commit: review_changes from your
+own build (node build/cli/index.js call review_changes '<json>'; MCP only with
+no build), repair introduced findings, quote the GATE line in your report.
+Reuse tea-rags results already in your context instead of re-searching.
 ```
 
 ## Not covered

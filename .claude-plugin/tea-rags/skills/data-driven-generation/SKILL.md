@@ -66,18 +66,18 @@ Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
 
 **Step matrix** — mode selects steps + signal sources:
 
-| Step        | CREATE                      | EXTEND                         | MODIFY                                      |
-| ----------- | --------------------------- | ------------------------------ | ------------------------------------------- |
-| 1 STRATEGY  | area labels                 | container labels               | symbol's own labels                         |
-| 2 TEMPLATE  | run                         | run                            | skip                                        |
-| 3 PLACEMENT | run                         | fixed = container; guard fires | skip                                        |
-| 4 REUSE     | run                         | run                            | run — for introduced logic                  |
-| 5 STYLE     | blame-owner + lexicon       | container file + lexicon       | symbol itself + lexicon                     |
-| 6a RED      | test-first: new red tests   | same                           | tests-at-risk green baseline, then red      |
-| 6b GREEN    | strategy + style + manifest | same                           | find_co_changed + minimal diff per strategy |
-| 6c REFACTOR | under green                 | same                           | same                                        |
-| 7 VERIFY    | symbol risks + N-th-way     | same                           | + re-run 6a baseline pins                   |
-| 8 IMPACT    | blastRadius of new code     | container fanIn                | `get_callers` — MANDATORY                   |
+| Step        | CREATE                         | EXTEND                         | MODIFY                                      |
+| ----------- | ------------------------------ | ------------------------------ | ------------------------------------------- |
+| 1 STRATEGY  | area labels                    | container labels               | symbol's own labels                         |
+| 2 TEMPLATE  | run                            | run                            | skip                                        |
+| 3 PLACEMENT | run                            | fixed = container; guard fires | skip                                        |
+| 4 REUSE     | run                            | run                            | run — for introduced logic                  |
+| 5 STYLE     | blame-owner + lexicon          | container file + lexicon       | symbol itself + lexicon                     |
+| 6a RED      | test-first: new red tests      | same                           | tests-at-risk green baseline, then red      |
+| 6b GREEN    | strategy + style + manifest    | same                           | find_co_changed + minimal diff per strategy |
+| 6c REFACTOR | under green                    | same                           | same                                        |
+| 7 VERIFY    | symbol risks + N-th-way + gate | same                           | + re-run 6a baseline pins                   |
+| 8 IMPACT    | blastRadius of new code        | container fanIn                | `get_callers` — MANDATORY                   |
 
 - **Hotfix** (user gives exact location) = MODIFY, additionally skip STRATEGY
   and the blame part of STYLE. REUSE still applies to introduced logic; the
@@ -171,7 +171,8 @@ god-module → do NOT grow it. Propose sibling module or extraction, surface
 choice to user. EXTEND: guard fires on the container.
 
 New file where a home module exists = structural N-th way. Placement converges
-same as implementation.
+same as implementation. Chosen placement → Step 6b pre-write simulation before
+the file is written.
 
 ### Step 4: REUSE — all modes
 
@@ -349,12 +350,28 @@ Names come from the Step 5 vocabulary, built by the dominant shape. A word
 outside it is `NEW_TERM` and gets one line in the output:
 `NEW_TERM <term> — <why no project term denotes this>`.
 
-New cross-component import (codegraph on) → BEFORE writing it, ONE
-`get_architecture_report(path, plannedEdges: [{source, target}])` for all such
-imports of the change. `MISFIT` → route via `expectedPath` (established
-direction / `transit` role), not the planned edge. `NEW_PATTERN` / `UNJUDGED` →
-write it, one output line:
-`NEW_PATTERN|UNJUDGED <source> -> <target> — <reason>`.
+**Pre-write simulation** (codegraph on) — prevent, not repair. Runs BEFORE the
+first production edit iff task (a) adds new production file, (b) adds import
+edge crossing component boundary, or (c) moves / merges / splits files. Else —
+in-file edit, no new file, no cross-component edge — skip, zero calls.
+
+- **Edge-only** (no file added, no move) → cheap check: ONE
+  `get_architecture_report(path, plannedEdges: [{source, target}])` for all such
+  imports. `MISFIT` → route via `expectedPath` (established direction /
+  `transit` role), not planned edge. `NEW_PATTERN` / `UNJUDGED` → write it, one
+  line: `NEW_PATTERN|UNJUDGED <source> -> <target> — <reason>`.
+- **New file / move / merge / split** → planned change as ONE
+  `get_architecture_report(path, restructure: [...])` hypothesis:
+  `addFile{file,component?,abstract?}` + `addEdge{from,to}` per planned import
+  (+ `removeEdge{from,to}` per dropped / retargeted one),
+  `move{files,toComponent}`, `merge{components}`, `split{component,groups}`.
+  Delta `introduced` non-empty → choose other placement / edge per
+  `../../repair/<family>.md` `## Ops recipe` (absent → `## Apply remedy`; that
+  family only), re-simulate. Write when `introduced` empty, or each left entry
+  meets Step 7 evidence rules. Edge ops move structural detectors only —
+  co-change families answer at the Step 7 gate.
+- **Multi-step restructuring** (several remedies, order matters) →
+  `tea-rags:refactoring-planning`, not this step.
 
 #### 6c REFACTOR
 
@@ -387,11 +404,12 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
 3. **MODIFY:** re-run the 6a baseline pins (`tests-at-risk` scenarios) + RED
    tests — all green, none edited except `PIN-UPDATED`. Baseline was "unpinned"
    → note behavior unpinned, proceed.
-4. **Fix-at-write review before commit** (codegraph on): ONE
+4. **GATE — `review_changes` before EVERY commit** (codegraph on): ONE
    `review_changes(changes: {}, sections: ["naming", "incompleteChange", "cohesion", "architecture", "norms"])`
-   (`{}` = the uncommitted edit just generated; branch-wide review →
-   `changes: {base}` with `base` = `git merge-base HEAD main`), then the
-   fix-at-write loop below. No commit before the loop ends.
+   (`{}` = the uncommitted edit about to be committed; every commit passes the
+   gate → branch covered by construction), then the fix-at-write loop below.
+   Gate fails → no commit, no "done". Edits left uncommitted at hand-back → run
+   it once more.
    - **naming** — GENERATE writes names Step 5 never judged (helpers, locals,
      constants, types); the section judges every name the added lines declare vs
      HEAD: `MISFIT` → rename to `suggestion` before commit; `COLLISION` →
@@ -407,6 +425,21 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
      below.
    - **norms** = dependency-norm verdict per added file edge
      (`addedEdgeVerdicts`) → triage below.
+   - **Pass** = ALL: (i) every architecture finding with `preExisting` not true
+     and every `change.nonLocal` entry (= `change.introducedCount`) repaired per
+     `repair/<family>.md`, or accepted false positive with QUOTED evidence
+     (detector flag / cited rule) + filed detector bead; (ii) verdict not
+     PARTIAL — any `scopeSkippedFiles` or `truncated` (envelope or detector row)
+     = PARTIAL ≠ pass → re-run with `files: [...]` batches until every changed
+     file judged; (iii) triage table must-fix rows repaired.
+   - `preExisting: true` = not yours: cheap repair optional (triage table),
+     never blocks gate.
+   - **Gate line** — final report quotes the last run verbatim:
+     `GATE review_changes: introduced=<n>, partial=<true|false>` (`n` =
+     introduced left unrepaired and not accepted) + one `FALSE-POSITIVE …` line
+     per accepted entry. Pass = `introduced=0, partial=false`. Codegraph off →
+     `GATE review_changes: architecture not judged (codegraph off)`. **No gate
+     line = task not done.**
 
 #### Fix-at-write loop
 
@@ -508,9 +541,10 @@ directory.
    Else the repair file's `## No remedy` procedure. Else accept by evidence.
 2. Re-run the same `review_changes` + targeted tests.
 3. Round added a finding or reddened a test → revert the WHOLE round.
-4. Must-fix left after round 2 → AskUserQuestion: the finding, what was tried,
-   why reverted; options: fix this way / accept with a reason / bead. No commit
-   without the answer — never commit around an introduced finding.
+4. Must-fix left after round 2 → STOP, escalate: AskUserQuestion (subagent →
+   hand back to orchestrator) with the finding, what was tried, why reverted;
+   options: fix this way / accept with a reason / bead. No commit without the
+   answer — never commit around an introduced finding.
 
 **Co-change partner verdict** (incompleteChange / `silentCoupling`): inspect
 each untouched partner (`find_symbol` outline/body — reuse it if already in
@@ -520,9 +554,9 @@ reason citing the symbol: a named test that already pins the seam, or why the
 file cannot change with this edit. "Not needed" / "unrelated" without evidence =
 fail → edit it or ask.
 
-**Report:** per class — fixed (remedy / procedure), accepted (evidence), false
-positive (counter-evidence + issue), report-only (line + bead suggestion),
-families not judged / partial.
+**Report:** gate line first, then per class — fixed (remedy / procedure),
+accepted (evidence), false positive (counter-evidence + issue), report-only
+(line + bead suggestion), families not judged / partial.
 
 Step 7 is the extension point for post-generation structural checks — add them
 here, not as a second verification step.
