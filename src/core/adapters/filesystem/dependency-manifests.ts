@@ -28,6 +28,7 @@
  * vendored trees are skipped. Any other root, or a failed listing, walks.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -282,6 +283,10 @@ function readRootFileNames(root: string): string[] {
  * top of the shared set — Go's module map names `vendor/`, where `go mod
  * vendor` leaves dependencies' go.mod files. Total: an unreadable directory or
  * file is skipped, never thrown.
+ *
+ * Like the test-dependency read it takes the work-tree listing and refuses to
+ * enter a nested checkout (bd tea-rags-mcp-uqkn5): a `.claude/worktrees/*`
+ * checkout's `go.mod` declares another tree's module, not this project's.
  */
 export function readManifestFiles(
   root: string,
@@ -289,7 +294,14 @@ export function readManifestFiles(
   extraIgnoredDirs: ReadonlySet<string> = NO_EXTRA_IGNORED_DIRS,
 ): ManifestFile[] {
   const found: ManifestFile[] = [];
-  walkManifestFiles(root, matchesManifestFile, collectManifestFile(found), extraIgnoredDirs);
+  walkManifestFiles(
+    root,
+    matchesManifestFile,
+    collectManifestFile(found),
+    extraIgnoredDirs,
+    workTreeListingOnce(root)(),
+    isOwnDirectory,
+  );
   return found;
 }
 
@@ -326,6 +338,35 @@ const WORK_TREE_LISTING_TIMEOUT_MS = 30_000;
 const WORK_TREE_LISTING_MAX_BUFFER = 512 * 1024 * 1024;
 
 function workTreeListingOnce(root: string): WorkTreeListing {
+  const shared = sharedListings.getStore();
+  if (shared === undefined) return memoizedListing(root);
+  let listing = shared.get(root);
+  if (listing === undefined) {
+    listing = memoizedListing(root);
+    shared.set(root, listing);
+  }
+  return listing;
+}
+
+/**
+ * The listings one scope shares, per root. A scope is one REVIEW (bd
+ * tea-rags-mcp-uqkn5): its declared-dependency and test-dependency reads see the
+ * same work tree and need one `git ls-files` between them. The sharing is
+ * scoped, never process-wide, because the tree changes between reviews and no
+ * cheap fingerprint tells an untracked file's arrival.
+ */
+const sharedListings = new AsyncLocalStorage<Map<string, WorkTreeListing>>();
+
+/**
+ * Runs `run` — sync or async — with every manifest read inside it (and inside
+ * what it awaits) sharing one work-tree listing per root. A nested call opens
+ * its own scope.
+ */
+export function withSharedWorkTreeListings<T>(run: () => T): T {
+  return sharedListings.run(new Map(), run);
+}
+
+function memoizedListing(root: string): WorkTreeListing {
   let listed: { paths: readonly string[] | undefined } | undefined;
   return () => (listed ??= { paths: listWorkTreeFiles(root) }).paths;
 }
