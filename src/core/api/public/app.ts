@@ -44,6 +44,7 @@ import type {
   GetArchitecturePlannedEdgesResponse,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  GetArchitectureRestructurePlanResponse,
   GetArchitectureRestructureResponse,
   GetCalleesRequest,
   GetCalleesResponse,
@@ -165,6 +166,10 @@ export interface App {
   simulateArchitectureRestructure: (
     request: GetArchitectureReportRequest,
   ) => Promise<GetArchitectureRestructureResponse>;
+  /** `get_architecture_report` restructurePlan mode (bd tea-rags-mcp-cm9gt.2) — greedy ordered plan over candidate hypotheses. */
+  planArchitectureRestructure: (
+    request: GetArchitectureReportRequest,
+  ) => Promise<GetArchitectureRestructurePlanResponse>;
   tracePath: (request: TracePathRequest) => Promise<PathTraceResult>;
   /** Naming lexicon (bd tea-rags-mcp-4p3sb.12) — the project's names per type / callee / concept, verdicts on drafts. */
   getNamingLexicon: (request: NamingLexiconRequest) => Promise<NamingLexiconResult>;

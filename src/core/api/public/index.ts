@@ -38,6 +38,7 @@ export type { App } from "./app.js";
 export {
   ARCHITECTURE_PLANNED_EDGE_LIMIT,
   ARCHITECTURE_RESTRUCTURE_OP_LIMIT,
+  ARCHITECTURE_RESTRUCTURE_PLAN_CANDIDATE_LIMIT,
   isEnrichmentRecompute,
 } from "./dto/index.js";
 

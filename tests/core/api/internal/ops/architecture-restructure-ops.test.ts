@@ -128,6 +128,15 @@ describe("ArchitectureRestructureOps#simulate", () => {
     }
   });
 
+  it("rejects a restructurePlan riding along — the plan is its own mode (bd tea-rags-mcp-cm9gt.2)", async () => {
+    await expect(
+      new ArchitectureRestructureOps().simulate(graphDb(), {
+        restructure: MOVE_INTO_BASE,
+        restructurePlan: { candidates: [{ id: "c", ops: MOVE_INTO_BASE }] },
+      }),
+    ).rejects.toBeInstanceOf(InvalidParameterError);
+  });
+
   it("caps the op list — one hypothesis per call", async () => {
     const tooMany = Array.from({ length: 21 }, () => MOVE_INTO_BASE[0]);
     await expect(new ArchitectureRestructureOps().simulate(graphDb(), { restructure: tooMany })).rejects.toBeInstanceOf(

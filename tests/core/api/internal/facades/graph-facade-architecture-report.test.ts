@@ -349,3 +349,57 @@ describe("GraphFacade#simulateArchitectureRestructure (bd tea-rags-mcp-r8hme.21)
     expect(acquireReader).not.toHaveBeenCalled();
   });
 });
+
+describe("GraphFacade#planArchitectureRestructure (bd tea-rags-mcp-cm9gt.2)", () => {
+  it("plans over the addressed collection's graph, reading blast radius from the graph's file metrics", async () => {
+    const file = (relPath: string) => ({ relPath, language: "typescript", symbolCount: 1 });
+    const graphDb = {
+      readFileDependencyGraph: vi.fn().mockResolvedValue({
+        files: [file("src/a/x.ts"), file("src/b/y.ts")],
+        edges: [{ sourceRelPath: "src/a/x.ts", targetRelPath: "src/b/y.ts", callWeight: 1 }],
+      }),
+      readTypeNameRows: vi.fn().mockResolvedValue([]),
+      readNonPublicMemberEdges: vi.fn().mockResolvedValue([]),
+      readTemporalCochangeGraph: vi.fn().mockResolvedValue({ meta: null, edges: [] }),
+      getFileMetricsBulk: vi.fn().mockResolvedValue(
+        new Map([
+          ["src/a/x.ts", { fanIn: 0, fanOut: 1, transitiveImpact: 3 }],
+          ["src/b/y.ts", { fanIn: 1, fanOut: 0, transitiveImpact: 4 }],
+        ]),
+      ),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const { pool, acquireReader } = readerPool(graphDb);
+    const facade = new GraphFacade({ pool, collectionRegistry: registry });
+
+    const response = await facade.planArchitectureRestructure({
+      collection: "code_x",
+      restructurePlan: {
+        candidates: [{ id: "cut", ops: [{ removeEdge: { from: "src/a/x.ts", to: "src/b/y.ts" } }] }],
+        includeReportCandidates: false,
+      },
+    });
+
+    expect(acquireReader).toHaveBeenCalledWith("code_x");
+    expect(graphDb.getFileMetricsBulk).toHaveBeenCalledWith(["src/a/x.ts", "src/b/y.ts"]);
+    expect(response.mode).toBe("restructurePlan");
+    const listed = [...response.steps, ...response.unselected];
+    expect(listed.map((entry) => entry.candidateId)).toEqual(["cut"]);
+    expect(response.timing.judgeCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("rejects a plan riding with restructure before any graph read", async () => {
+    const { pool, acquireReader } = readerPool({});
+    const facade = new GraphFacade({ pool, collectionRegistry: registry });
+    const move = { move: { files: ["src/a.ts"], toComponent: "src/b" } };
+
+    await expect(
+      facade.planArchitectureRestructure({
+        collection: "code_x",
+        restructure: [move],
+        restructurePlan: { candidates: [{ id: "c", ops: [move] }] },
+      }),
+    ).rejects.toThrow(/drop restructure/);
+    expect(acquireReader).not.toHaveBeenCalled();
+  });
+});

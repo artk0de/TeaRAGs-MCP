@@ -56,7 +56,7 @@ Otherwise escalate.
 Inversion for the code remedy: A (stable) must stop depending on B (unstable).
 
 - `removeEdge {from: A, to: B}`
-- `addFile {file: I, component: <foundation>}`
+- `addFile {file: I, component: <foundation>, abstract: true}`
 - `addEdge {from: A, to: I}`
 - `addEdge {from: B, to: I}`
 
@@ -67,8 +67,8 @@ recipe, escalate. Never hard-code a directory.
 
 Example, finding fields `sourceRelPath: A`, `toRelPath: B`,
 `importedNames: [N]`:
-`removeEdge A→B · addFile I (N declared there) · addEdge A→I · addEdge B→I`. A
-still gets N, now through the stable I.
+`removeEdge A→B · addFile I (abstract, N declared there) · addEdge A→I · addEdge B→I`.
+A still gets N, now through the stable I.
 
 Simulate with `get_architecture_report restructure` before writing; the skill
 `tea-rags:refactoring-planning` orders several.

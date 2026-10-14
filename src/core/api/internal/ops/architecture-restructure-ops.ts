@@ -30,6 +30,8 @@ import {
   architectureRestructureEdgeKey,
   compileArchitectureRestructure,
   type ArchitectureRestructureCompilation,
+  type ArchitectureRestructureEdgeBase,
+  type ArchitectureRestructurePartition,
   type ArchitectureRestructureRelabel,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
@@ -51,7 +53,11 @@ import {
   type IndexedFileImportLookup,
   type TreeFileTextLookup,
 } from "./architecture-facts.js";
-import { readArchitectureGraphFacts, type ArchitectureReportGraphDb } from "./architecture-graph-facts.js";
+import {
+  readArchitectureGraphFacts,
+  type ArchitectureGraphFacts,
+  type ArchitectureReportGraphDb,
+} from "./architecture-graph-facts.js";
 import type { GitFileMaintenanceSignalLookup } from "./architecture-maintenance-cost.js";
 import { ArchitectureReportOps, readOnce } from "./architecture-report-ops.js";
 import {
@@ -61,7 +67,7 @@ import {
 } from "./architecture-violation-delta.js";
 
 /** Report options that shape a report view — meaningless for a delta. `limit` caps the listed subjects instead. */
-const REPORT_ONLY_OPTIONS = [
+export const REPORT_ONLY_OPTIONS = [
   "pathPattern",
   "domain",
   "norms",
@@ -72,7 +78,7 @@ const REPORT_ONLY_OPTIONS = [
   "plannedEdges",
 ] as const;
 
-const DEFAULT_SUBJECT_LIMIT = 50;
+export const DEFAULT_SUBJECT_LIMIT = 50;
 
 /** The reads a restructure simulation takes besides the graph DB. */
 export interface ArchitectureRestructureLookups {
@@ -80,7 +86,12 @@ export interface ArchitectureRestructureLookups {
   readDeclaredTestDependencies?: DeclaredTestDependencyLookup;
   readTreeFileText?: TreeFileTextLookup;
   readFileMaintenanceSignals?: GitFileMaintenanceSignalLookup;
+  /** Codegraph `transitiveImpact` of the named files — a restructure plan's blast radius. Absent: every file reads 0. */
+  readFileTransitiveImpacts?: FileTransitiveImpactLookup;
 }
+
+/** Each named file's codegraph transitive impact; a file the codegraph has no reading for is omitted. */
+export type FileTransitiveImpactLookup = (relPaths: readonly RelPath[]) => Promise<ReadonlyMap<RelPath, number>>;
 
 export class ArchitectureRestructureOps {
   private readonly report = new ArchitectureReportOps();
@@ -98,15 +109,8 @@ export class ArchitectureRestructureOps {
       lookups.readDeclaredTestDependencies,
       lookups.readTreeFileText,
     );
-    const { components } = deriveArchitectureComponentFacts(facts.production.graph);
-    const edgeBase = {
-      fileEdges: new Set(
-        facts.production.graph.edges.map((edge) =>
-          architectureRestructureEdgeKey(edge.sourceRelPath, edge.targetRelPath),
-        ),
-      ),
-    };
-    const compilation = compileArchitectureRestructure(ops, { componentOf: components.componentOf }, edgeBase);
+    const { partition, edgeBase } = deriveArchitectureRestructureBase(facts);
+    const compilation = compileArchitectureRestructure(ops, partition, edgeBase);
     if (compilation.kind !== "compiled") throwArchitectureRestructureCompileFailure(compilation);
     const { relabel } = compilation;
     const baseSignals = lookups.readFileMaintenanceSignals && readOnce(lookups.readFileMaintenanceSignals);
@@ -132,6 +136,24 @@ export class ArchitectureRestructureOps {
     validateRestructureRequest(request);
     return { mode: "restructure", hypothesis: [], unavailable: "noCodegraph" };
   }
+}
+
+/** What every restructure op compiles against: the base component partition and the base file edges. */
+export function deriveArchitectureRestructureBase(facts: ArchitectureGraphFacts): {
+  partition: ArchitectureRestructurePartition;
+  edgeBase: ArchitectureRestructureEdgeBase;
+} {
+  const { components } = deriveArchitectureComponentFacts(facts.production.graph);
+  return {
+    partition: { componentOf: components.componentOf },
+    edgeBase: {
+      fileEdges: new Set(
+        facts.production.graph.edges.map((edge) =>
+          architectureRestructureEdgeKey(edge.sourceRelPath, edge.targetRelPath),
+        ),
+      ),
+    },
+  };
 }
 
 /** The typed input error a failed compile answers with — every failure names its op index. */
@@ -164,7 +186,7 @@ function validateRestructureRequest(request: GetArchitectureReportRequest) {
       `at most ${ARCHITECTURE_RESTRUCTURE_OP_LIMIT} ops per call (one hypothesis), got ${ops.length}`,
     );
   }
-  const riding = REPORT_ONLY_OPTIONS.filter((option) => request[option] !== undefined);
+  const riding = [...REPORT_ONLY_OPTIONS, "restructurePlan" as const].filter((option) => request[option] !== undefined);
   if (riding.length > 0) {
     throw new InvalidParameterError(
       "restructure",
@@ -175,7 +197,7 @@ function validateRestructureRequest(request: GetArchitectureReportRequest) {
 }
 
 /** The base read keyed by the relabelled paths — a moved file keeps its history. */
-function relabelledSignals(
+export function relabelledSignals(
   baseSignals: GitFileMaintenanceSignalLookup,
   relabel: ArchitectureRestructureRelabel,
 ): GitFileMaintenanceSignalLookup {
@@ -184,7 +206,7 @@ function relabelledSignals(
     new Map([...(await baseSignals())].map(([relPath, signals]) => [renamedTo.get(relPath) ?? relPath, signals]));
 }
 
-function restructureDelta(
+export function restructureDelta(
   introduced: ArchitectureChangeSubject[],
   resolved: ArchitectureChangeSubject[],
   persistingCount: number,

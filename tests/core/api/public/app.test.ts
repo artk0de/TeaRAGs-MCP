@@ -253,6 +253,24 @@ describe("createApp", () => {
     expect(response).toEqual({ mode: "restructure", hypothesis: [], unavailable: "noCodegraph" });
   });
 
+  // bd tea-rags-mcp-cm9gt.2
+  it("planArchitectureRestructure plans nothing when no graph backend is wired", async () => {
+    const app = createApp(makeDeps() as never);
+
+    const response = await app.planArchitectureRestructure({
+      project: "p",
+      restructurePlan: { candidates: [{ id: "m", ops: [{ merge: { components: ["src/a", "src/b"] } }] }] },
+    });
+
+    expect(response).toMatchObject({
+      mode: "restructurePlan",
+      steps: [],
+      tradeOffs: [],
+      unselected: [],
+      unavailable: "noCodegraph",
+    });
+  });
+
   // bd tea-rags-mcp-4p3sb.20
   it("getOntologyReport delegates to OntologyReportOps", async () => {
     const report = { scope: { pathPrefix: "" }, summary: { evidenceRows: 3, genericNameCount: 0, genericNames: [] } };

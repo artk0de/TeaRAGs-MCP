@@ -29,6 +29,7 @@ function makeApp(hasCodegraph: boolean): App {
     getArchitectureReport: vi.fn(),
     judgePlannedArchitectureEdges: vi.fn(),
     simulateArchitectureRestructure: vi.fn(),
+    planArchitectureRestructure: vi.fn(),
     getOntologyReport: vi.fn(),
     findCoChanged: vi.fn(),
   } as unknown as App;
@@ -301,6 +302,7 @@ describe("get_architecture_report", () => {
         "plannedEdges",
         "project",
         "restructure",
+        "restructurePlan",
       ].sort(),
     );
   });
@@ -398,6 +400,40 @@ describe("get_architecture_report", () => {
     expect(app.simulateArchitectureRestructure).toHaveBeenCalledWith(expect.objectContaining({ restructure }));
     expect(app.getArchitectureReport).not.toHaveBeenCalled();
     expect(app.judgePlannedArchitectureEdges).not.toHaveBeenCalled();
+    expect(JSON.parse(result.content[0].text)).toEqual(answer);
+  });
+
+  // bd tea-rags-mcp-cm9gt.2: restructurePlan is the ordering MODE of the report.
+  it("takes restructurePlan candidates of the restructure op union, capped, and names the plan in the description", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+    const cut = { removeEdge: { from: "src/a.ts", to: "src/b.ts" } };
+    const parse = (restructurePlan: unknown) => schema.safeParse({ project: "tea-rags", restructurePlan }).success;
+
+    expect(config.description).toMatch(/restructurePlan mode/);
+    expect(config.description).toMatch(/trade-offs/);
+    expect(parse({ candidates: [{ id: "c", rationale: "why", ops: [cut] }] })).toBe(true);
+    expect(parse({ candidates: [], includeReportCandidates: true })).toBe(true);
+    expect(parse({ candidates: [{ id: "c", ops: [] }] })).toBe(false);
+    expect(parse({ candidates: [{ id: "c", ops: Array.from({ length: 21 }, () => cut) }] })).toBe(false);
+    expect(parse({ candidates: Array.from({ length: 51 }, (_, k) => ({ id: `c${k}`, ops: [cut] })) })).toBe(false);
+    expect(parse({ candidates: [{ id: "", ops: [cut] }] })).toBe(false);
+    expect(parse({ candidates: [{ id: "c", ops: [{ rename: { from: "a", to: "b" } }] }] })).toBe(false);
+  });
+
+  it("routes a restructurePlan call to app.planArchitectureRestructure, never to the report", async () => {
+    const { app, call } = registered();
+    const answer = { mode: "restructurePlan", steps: [], tradeOffs: [], unselected: [], unavailable: "noCodegraph" };
+    (app.planArchitectureRestructure as ReturnType<typeof vi.fn>).mockResolvedValue(answer);
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+    const restructurePlan = { candidates: [{ id: "m", ops: [{ merge: { components: ["src/a", "src/b"] } }] }] };
+
+    const result = await handler({ project: "tea-rags", restructurePlan });
+
+    expect(app.planArchitectureRestructure).toHaveBeenCalledWith(expect.objectContaining({ restructurePlan }));
+    expect(app.simulateArchitectureRestructure).not.toHaveBeenCalled();
+    expect(app.getArchitectureReport).not.toHaveBeenCalled();
     expect(JSON.parse(result.content[0].text)).toEqual(answer);
   });
 
