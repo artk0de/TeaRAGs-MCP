@@ -49,3 +49,25 @@ Otherwise escalate.
   and no citable project rule.
 - The retarget would need a new file, interface or move.
 - Two repair rounds left the finding introduced.
+
+## Ops recipe
+
+Inversion for the code remedy: A (stable) must stop depending on B (unstable).
+
+- `removeEdge {from: A, to: B}`
+- `addFile {file: I, component: <foundation>}`
+- `addEdge {from: A, to: I}`
+- `addEdge {from: B, to: I}`
+
+New file path: I sits in the component `summary.foundation` names, in the
+sub-tree nearest to both A and B (longest shared path prefix). No foundation
+named: component of the contracts-kind file both already import. None: no
+recipe, escalate. Never hard-code a directory.
+
+Example, finding fields `sourceRelPath: A`, `toRelPath: B`,
+`importedNames: [N]`:
+`removeEdge A→B · addFile I (N declared there) · addEdge A→I · addEdge B→I`. A
+still gets N, now through the stable I.
+
+Simulate with `get_architecture_report restructure` before writing; the skill
+`tea-rags:refactoring-planning` orders several.

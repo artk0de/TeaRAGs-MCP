@@ -34,3 +34,21 @@ Apply the finding's `remedy`.
 - The facade would need more than one added export line in one file.
 - Retargeting creates a cycle (see cycles.md).
 - Two repair rounds left the leak introduced.
+
+## Ops recipe
+
+- `removeEdge {from: importer, to: deepFile}`
+- `addEdge {from: importer, to: facade}`
+
+Facade = `evidence.facadeRelPath`. It must already exist and re-export the
+names. A relabel never creates an entry file: never `addFile` a facade. Names
+not exported yet: add the one export line first (see Apply remedy), then the two
+ops. No existing facade: no recipe, escalate.
+
+No new file, so no path rule.
+
+Example, finding fields `sourceRelPath: importer`, `fromRelPath: deepFile`,
+`toRelPath: facade`: `removeEdge importer→deepFile · addEdge importer→facade`.
+
+Simulate with `get_architecture_report restructure` before writing; the skill
+`tea-rags:refactoring-planning` orders several.
