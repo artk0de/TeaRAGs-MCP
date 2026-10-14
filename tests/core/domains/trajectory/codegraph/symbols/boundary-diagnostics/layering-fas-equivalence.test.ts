@@ -358,12 +358,27 @@ function randomStackedKnotGraph(random: () => number): FileDependencyGraph {
  * Scale case: 200 knots of 20 chained through a 6000-component DAG, ~67k
  * edges. The whole-graph recompute per knot (O(K·E)) took 6.8 s on it; the
  * member-local recompute ~0.1 s.
+ *
+ * The budget is CPU time of this process, not wall clock (bd
+ * tea-rags-mcp-9gyvg): `buildLayeringModel` is synchronous, so the CPU the
+ * process spends across the call is the work the algorithm does, while wall
+ * clock also counts the time the scheduler gives to other processes — under a
+ * parallel pre-commit at load 40–60 that alone broke the budget. A complexity
+ * regression still costs CPU and still fails.
  */
 const SCALE_KNOT_COUNT = 200;
 const SCALE_KNOT_SIZE = 20;
 const SCALE_DAG_SIZE = 6000;
 const SCALE_CROSS_EDGE_COUNT = 60_000;
 const SCALE_BUDGET_MS = 1_500;
+
+/** CPU milliseconds (user + system) this process spent running `work`. */
+function cpuMillisecondsOf<T>(work: () => T): { result: T; cpuMs: number } {
+  const started = process.cpuUsage();
+  const result = work();
+  const spent = process.cpuUsage(started);
+  return { result, cpuMs: (spent.user + spent.system) / 1_000 };
+}
 
 describe("layering knot levelsAfterCut", () => {
   it("matches the whole-graph recompute on 200 seeded graphs of stacked knots and DAG parts", () => {
@@ -411,11 +426,9 @@ describe("layering knot levelsAfterCut", () => {
       [],
     );
 
-    const started = performance.now();
-    const model = buildLayeringModel(componentGraph);
-    const elapsed = performance.now() - started;
+    const { result: model, cpuMs } = cpuMillisecondsOf(() => buildLayeringModel(componentGraph));
 
     expect(model.knots.filter((knot) => knot.components.length === SCALE_KNOT_SIZE)).toHaveLength(SCALE_KNOT_COUNT);
-    expect(elapsed).toBeLessThan(SCALE_BUDGET_MS);
+    expect(cpuMs).toBeLessThan(SCALE_BUDGET_MS);
   }, 120_000);
 });
