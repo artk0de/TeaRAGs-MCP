@@ -52,6 +52,23 @@ export interface EmbeddingConfig {
   tune: EmbeddingTuneConfig;
 }
 
+/**
+ * The code defaults the owning domains apply to config values bootstrap passes
+ * through raw — `undefined` when the env leaves them unset (bd
+ * tea-rags-mcp-umixb). Built by the core composition root
+ * (`resolveDomainEnvCodeDefaults`) and injected wherever bootstrap has to STATE
+ * a default it does not own: the registry env snapshot materializes the
+ * effective value of every key it holds.
+ */
+export interface DomainEnvCodeDefaults {
+  /** `INGEST_TUNE_CHUNKER_POOL_SIZE` — owned by the ingest pipeline. */
+  chunkerPoolSize: number;
+  /** `INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD` — owned by the ingest pipeline. */
+  enrichmentFilesPerThread: number;
+  /** `TRAJECTORY_GIT_BLAME_POOL_SIZE` — owned by the git trajectory. */
+  blamePoolSize: number;
+}
+
 export interface TrajectoryGitConfig {
   enabled: boolean;
   logMaxAgeMonths: number;
@@ -60,8 +77,12 @@ export interface TrajectoryGitConfig {
   chunkMaxAgeMonths: number;
   chunkTimeoutMs: number;
   chunkMaxFileLines: number;
-  /** FILE-phase off-main-thread blame worker-pool size (bd tea-rags-mcp-dog1v). */
-  blamePoolSize: number;
+  /**
+   * FILE-phase off-main-thread blame worker-pool size (bd tea-rags-mcp-dog1v).
+   * Unset = the git provider applies its own `defaultBlamePoolSize` (bd
+   * tea-rags-mcp-umixb).
+   */
+  blamePoolSize?: number;
   squashAwareSessions: boolean;
   sessionGapMinutes: number;
   /**

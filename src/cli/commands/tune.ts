@@ -7,7 +7,12 @@ import { fileURLToPath } from "node:url";
 import type { CommandModule } from "yargs";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
-import { CollectionRegistry, replayableRegistryEnv, replayRegistryEnv } from "../../core/api/index.js";
+import {
+  CollectionRegistry,
+  replayableRegistryEnv,
+  replayRegistryEnv,
+  resolveDomainEnvCodeDefaults,
+} from "../../core/api/index.js";
 import { InputValidationError } from "../../core/api/public/index.js";
 import { createColorizer } from "../infra/color.js";
 import { resolveTuneQdrantUrl } from "../qdrant-url-resolver.js";
@@ -142,7 +147,7 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
     // shell env wins — replayRegistryEnv only fills unset alias groups.
     if (resolved.project) {
       const entry = new CollectionRegistry(resolveDataDir(), {
-        envCodeDefaults: resolveRegistryEnvCodeDefaults,
+        envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
       }).findByName(resolved.project);
       // An unpinned throughput-tuned stamp stays out, as in every replay: it was
       // measured against whatever backend served an earlier run (y1ynz).
@@ -166,7 +171,7 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
             const envFilePath = join(resolved.path as string, "tuned_environment_variables.env");
             if (!existsSync(envFilePath)) return;
             const registry = new CollectionRegistry(resolveDataDir(), {
-              envCodeDefaults: resolveRegistryEnvCodeDefaults,
+              envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
             });
             const applied = mergeTunedEnvIntoRegistry(
               registry,

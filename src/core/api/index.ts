@@ -192,6 +192,9 @@ export {
 export { InMemoryTemporalSymbolCommitBuffer } from "../domains/trajectory/codegraph/temporal/index.js";
 export { StaticPayloadBuilder } from "../domains/trajectory/static/index.js";
 
+// Domain-owned code defaults bootstrap passes through raw and must still state (umixb)
+export { resolveDomainEnvCodeDefaults } from "./internal/domain-env-code-defaults.js";
+
 // maintenance — footprint, database migrations, worktree provisioning
 export {
   CollectionFootprintFactory,
@@ -217,6 +220,7 @@ export {
   registryEnvGroupMembers,
   editRegistryEnv,
   outerEnvForRegistryEntry,
+  outerEnvForRegistryStamp,
   pickRegistryEntry,
   pickRegistryEnvSeed,
   replayableRegistryEnv,

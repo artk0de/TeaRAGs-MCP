@@ -9,8 +9,9 @@ import { defaultIoBoundPoolSize } from "../../../../../primitives/concurrency/in
  * pool, sized by the shared `defaultIoBoundPoolSize` primitive
  * (bd tea-rags-mcp-k7kmu C10). Lives here — NOT in ingest/pool-defaults.ts —
  * because `domains/trajectory` may not import `domains/ingest`
- * (domain-boundaries). Overridable via `TRAJECTORY_GIT_BLAME_POOL_SIZE`
- * (wired by the config schema).
+ * (domain-boundaries). Overridable via `TRAJECTORY_GIT_BLAME_POOL_SIZE`: config
+ * passes it through raw and `GitEnrichmentProvider` applies this default when
+ * it is unset (bd tea-rags-mcp-umixb).
  */
 export function defaultBlamePoolSize(): number {
   return defaultIoBoundPoolSize(os.cpus().length);

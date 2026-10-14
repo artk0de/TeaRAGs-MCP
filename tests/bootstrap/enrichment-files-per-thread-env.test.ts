@@ -17,6 +17,8 @@ import {
   trajectoryGitSchema,
   vcsSchema,
 } from "../../src/bootstrap/config/schemas.js";
+import { resolveDomainEnvCodeDefaults } from "../../src/core/api/internal/domain-env-code-defaults.js";
+import { defaultEnrichmentFilesPerThread } from "../../src/core/domains/ingest/pipeline/index.js";
 import { REGISTRY_ENV_GROUPS } from "../../src/core/domains/maintenance/registry/env-groups.js";
 
 const KEY = "INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD";
@@ -54,10 +56,11 @@ describe(KEY, () => {
     else delete process.env[KEY];
   });
 
-  it("defaults to 400 files per extraction thread", async () => {
+  it("defaults to 400 files per extraction thread, applied by the pipeline (umixb)", async () => {
     const { parseAppConfigZod } = await freshImport();
 
-    expect(parseAppConfigZod().ingest.tune.enrichmentFilesPerThread).toBe(400);
+    expect(parseAppConfigZod().ingest.tune.enrichmentFilesPerThread).toBeUndefined();
+    expect(defaultEnrichmentFilesPerThread()).toBe(400);
   });
 
   it("takes the operator's value from the env", async () => {
@@ -75,6 +78,6 @@ describe(KEY, () => {
   });
 
   it("is materialized into the registry env snapshot at its code default", () => {
-    expect(buildRegistryEnvSnapshot(bareConfig())[KEY]).toBe("400");
+    expect(buildRegistryEnvSnapshot(bareConfig(), resolveDomainEnvCodeDefaults())[KEY]).toBe("400");
   });
 });

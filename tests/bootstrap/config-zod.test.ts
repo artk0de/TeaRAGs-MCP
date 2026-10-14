@@ -2,6 +2,9 @@ import os from "node:os";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { defaultChunkerPoolSize } from "../../src/core/domains/ingest/pipeline/index.js";
+import { defaultBlamePoolSize } from "../../src/core/domains/trajectory/git/index.js";
+
 // Helper: dynamic import with cache-busting to get fresh module state per test
 async function freshImport() {
   vi.resetModules();
@@ -663,7 +666,9 @@ describe("parseAppConfigZod — ingest", () => {
     expect(ingest.enableHybrid).toBe(true);
     expect(ingest.tune.pipelineConcurrency).toBe(1);
     // process isolation (yl9tv): parallel parse is safe, default is min(4, cpus-1).
-    expect(ingest.tune.chunkerPoolSize).toBe(Math.max(1, Math.min(4, os.cpus().length - 1)));
+    // Config passes the unset value raw; the pipeline owns the default (umixb).
+    expect(ingest.tune.chunkerPoolSize).toBeUndefined();
+    expect(defaultChunkerPoolSize()).toBe(Math.max(1, Math.min(4, os.cpus().length - 1)));
     expect(ingest.tune.fileConcurrency).toBe(50);
     expect(ingest.tune.ioConcurrency).toBe(50);
   });
@@ -774,17 +779,21 @@ describe("parseAppConfigZod — trajectoryGit", () => {
     expect(trajectoryGit.chunkMaxFileLines).toBe(5000);
     expect(trajectoryGit.squashAwareSessions).toBe(false);
     expect(trajectoryGit.sessionGapMinutes).toBe(30);
-    expect(trajectoryGit.blamePoolSize).toBeGreaterThanOrEqual(1);
-    expect(trajectoryGit.blamePoolSize).toBeLessThanOrEqual(10);
+    // Config passes the unset value raw; the git provider owns the default (umixb).
+    expect(trajectoryGit.blamePoolSize).toBeUndefined();
+    expect(defaultBlamePoolSize()).toBeGreaterThanOrEqual(1);
+    expect(defaultBlamePoolSize()).toBeLessThanOrEqual(10);
   });
 
-  it("blamePoolSize default is the git trajectory's defaultBlamePoolSize, one source of truth (bd tea-rags-mcp-89k7k.40)", async () => {
+  it("blamePoolSize default is the git trajectory's defaultBlamePoolSize, one source of truth (bd tea-rags-mcp-89k7k.40, umixb)", async () => {
     vi.resetModules();
     const leaf = "../../src/core/domains/trajectory/git/infra/churn-walk/blame-pool-defaults.js";
     vi.doMock(leaf, () => ({ defaultBlamePoolSize: () => 42 }));
     try {
-      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
-      expect(parseAppConfigZod().trajectoryGit.blamePoolSize).toBe(42);
+      const { buildAppConfig, parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const { GitEnrichmentProvider } = await import("../../src/core/domains/trajectory/git/index.js");
+      const provider = new GitEnrichmentProvider(buildAppConfig(parseAppConfigZod()).trajectoryIngest.trajectoryGit);
+      expect((provider as unknown as { config: { blamePoolSize: number } }).config.blamePoolSize).toBe(42);
     } finally {
       vi.doUnmock(leaf);
     }

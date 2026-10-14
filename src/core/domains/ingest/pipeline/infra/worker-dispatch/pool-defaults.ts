@@ -175,9 +175,10 @@ export function defaultExtractionFanoutWorkers(poolSize: number): number {
  * corpora are unaffected — taxdome's ~19,000 files reach the ceiling on the
  * first comparison, which is the fan-out bd tea-rags-mcp-6aytq measured.
  *
- * The value is the ZOD schema's default (`INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD`
- * overrides it), the same way `defaultChunkerPoolSize` backs
- * `INGEST_TUNE_CHUNKER_POOL_SIZE` — so the knob is read in ONE place, not here.
+ * `INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD` overrides it. Config parses that
+ * knob and passes it through raw — `undefined` when unset — and the enrichment
+ * executor applies this default, the same way `defaultChunkerPoolSize` backs
+ * `INGEST_TUNE_CHUNKER_POOL_SIZE` (bd tea-rags-mcp-umixb).
  */
 export function defaultEnrichmentFilesPerThread(): number {
   return 400;

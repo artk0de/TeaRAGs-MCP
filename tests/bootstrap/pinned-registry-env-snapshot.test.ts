@@ -17,21 +17,25 @@ import { describe, expect, it } from "vitest";
 
 import { buildPinnedRegistryEnvSnapshot, buildRegistryEnvSnapshot } from "../../src/bootstrap/config/env-snapshot.js";
 import { parseAppConfigZod } from "../../src/bootstrap/config/parse.js";
+import { resolveDomainEnvCodeDefaults } from "../../src/core/api/internal/domain-env-code-defaults.js";
 
 describe("buildPinnedRegistryEnvSnapshot", () => {
   it("pins nothing a bare run left at its code default", () => {
-    const pinned = buildPinnedRegistryEnvSnapshot(parseAppConfigZod({}));
+    const pinned = buildPinnedRegistryEnvSnapshot(parseAppConfigZod({}), resolveDomainEnvCodeDefaults());
 
     expect(pinned).not.toHaveProperty("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES");
     expect(pinned).not.toHaveProperty("INGEST_CHUNK_OVERLAP");
     expect(pinned).not.toHaveProperty("EMBEDDING_PROVIDER");
     // The comparison snapshot still materializes the default.
-    expect(buildRegistryEnvSnapshot(parseAppConfigZod({}))).toHaveProperty("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES");
+    expect(buildRegistryEnvSnapshot(parseAppConfigZod({}), resolveDomainEnvCodeDefaults())).toHaveProperty(
+      "TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES",
+    );
   });
 
   it("pins an explicitly set key at its parsed value", () => {
     const pinned = buildPinnedRegistryEnvSnapshot(
       parseAppConfigZod({ TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "777", EMBEDDING_PROVIDER: "ollama" }),
+      resolveDomainEnvCodeDefaults(),
     );
 
     expect(pinned).toMatchObject({ TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "777", EMBEDDING_PROVIDER: "ollama" });
@@ -39,7 +43,10 @@ describe("buildPinnedRegistryEnvSnapshot", () => {
   });
 
   it("pins under the canonical name when the env used a deprecated spelling", () => {
-    const pinned = buildPinnedRegistryEnvSnapshot(parseAppConfigZod({ GIT_CHUNK_MAX_FILE_LINES: "777" }));
+    const pinned = buildPinnedRegistryEnvSnapshot(
+      parseAppConfigZod({ GIT_CHUNK_MAX_FILE_LINES: "777" }),
+      resolveDomainEnvCodeDefaults(),
+    );
 
     expect(pinned).toEqual({ TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "777" });
   });
@@ -47,13 +54,19 @@ describe("buildPinnedRegistryEnvSnapshot", () => {
   it("keeps an existing project's replayed pin — even one equal to a default — so no entry loses what it recorded", () => {
     // The registry replays a project's stamp into the run's env, which is what
     // makes it explicit here: an entry pinned at the old 10000 stays at 10000.
-    const pinned = buildPinnedRegistryEnvSnapshot(parseAppConfigZod({ TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "10000" }));
+    const pinned = buildPinnedRegistryEnvSnapshot(
+      parseAppConfigZod({ TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "10000" }),
+      resolveDomainEnvCodeDefaults(),
+    );
 
     expect(pinned).toEqual({ TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "10000" });
   });
 
   it("ignores an empty value, which the parser treats as unset", () => {
-    const pinned = buildPinnedRegistryEnvSnapshot(parseAppConfigZod({ TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "" }));
+    const pinned = buildPinnedRegistryEnvSnapshot(
+      parseAppConfigZod({ TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "" }),
+      resolveDomainEnvCodeDefaults(),
+    );
 
     expect(pinned).not.toHaveProperty("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES");
   });

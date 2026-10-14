@@ -3,11 +3,6 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
-import {
-  defaultBlamePoolSize,
-  defaultChunkerPoolSize,
-  defaultEnrichmentFilesPerThread,
-} from "../../core/api/entry-points/index.js";
 import { DEFAULT_PAYLOAD_WRITE_BARRIER_BUDGET_MS } from "../../core/contracts/constants.js";
 import { DEFAULT_MINIFIED_LINE_LENGTH } from "../../core/primitives/paths/index.js";
 import {
@@ -133,11 +128,12 @@ export const ingestTuneSchema = z.object({
   /**
    * Parse worker count. Workers now run as child processes (ProcessTransport),
    * so concurrent tree-sitter parsing is safe — the native parse runs in an
-   * isolated process memory space (yl9tv). Default: min(4, cpus-1), floor 1.
-   * Operators can still override via `INGEST_TUNE_CHUNKER_POOL_SIZE` /
-   * `CHUNKER_POOL_SIZE`.
+   * isolated process memory space (yl9tv). Operators override via
+   * `INGEST_TUNE_CHUNKER_POOL_SIZE` / `CHUNKER_POOL_SIZE`. Unset stays
+   * `undefined`: the ingest pipeline applies its own `defaultChunkerPoolSize`
+   * where it builds the pool (bd tea-rags-mcp-umixb).
    */
-  chunkerPoolSize: intWithDefault(defaultChunkerPoolSize()),
+  chunkerPoolSize: optionalInt,
   fileConcurrency: intWithDefault(50),
   ioConcurrency: intWithDefault(50),
   /**
@@ -157,10 +153,11 @@ export const ingestTuneSchema = z.object({
    * spins that thread up. `enrichmentPoolSize` stays the CEILING; this says how
    * much work has to exist to reach it, so a small project stops paying for
    * isolates it cannot keep busy. Override via
-   * `INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD`; see
-   * `defaultEnrichmentFilesPerThread` for the measurement behind the default.
+   * `INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD`. Unset stays `undefined`: the
+   * enrichment executor applies `defaultEnrichmentFilesPerThread`, which
+   * carries the measurement behind the default (bd tea-rags-mcp-umixb).
    */
-  enrichmentFilesPerThread: intWithDefault(defaultEnrichmentFilesPerThread()),
+  enrichmentFilesPerThread: optionalInt,
 });
 
 const commaSeparatedList = z
@@ -187,9 +184,10 @@ export const trajectoryGitSchema = z.object({
   chunkConcurrency: intWithDefault(10),
   // Git-blame CONCURRENCY = size of the FILE-phase blame worker pool. Blame is
   // native `git blame` (async child process); N workers = N concurrent blames.
-  // Default 10 (capped cpus-1); parallel git blame is not EDR-capped. The
-  // chunk-walk pool is decoupled (capped at 4). Env: TRAJECTORY_GIT_BLAME_POOL_SIZE.
-  blamePoolSize: intWithDefault(defaultBlamePoolSize()),
+  // Parallel git blame is not EDR-capped. The chunk-walk pool is decoupled
+  // (capped at 4). Env: TRAJECTORY_GIT_BLAME_POOL_SIZE. Unset stays undefined:
+  // the git provider applies `defaultBlamePoolSize` (bd tea-rags-mcp-umixb).
+  blamePoolSize: optionalInt,
   chunkMaxAgeMonths: floatWithDefault(6),
   chunkTimeoutMs: intWithDefault(120000),
   // Files above it keep git.file.* but get git.chunk.skippedAs "oversized"

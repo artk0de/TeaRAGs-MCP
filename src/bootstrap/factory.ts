@@ -79,6 +79,7 @@ import {
   readPayloadFileCommitCounts,
   readPayloadImportSpecifiers,
   RequestScopedFileFactsReader,
+  resolveDomainEnvCodeDefaults,
   ReviewChangesOps,
   ReviewFacade,
   scheduleWorkingTreeBasePointSweep,
@@ -130,7 +131,6 @@ import { hydrateCodegraphSymbolTable } from "./codegraph-symbol-table-hydration.
 import {
   applyEmbeddedDeleteTuning,
   buildAppConfig,
-  buildEffectiveIndexEnvSnapshot,
   buildPinnedRegistryEnvSnapshot,
   buildRunningIndexEnvSnapshot,
   checkExternalQdrantVersion,
@@ -144,6 +144,7 @@ import {
   type AppConfig,
   type TurboMigrationListener,
 } from "./config/index.js";
+import { buildEffectiveIndexEnvSnapshot } from "./effective-index-env-snapshot.js";
 import { buildEmbeddingBinding } from "./embedding-binding.js";
 import { ProjectIngestFactory } from "./project-ingest-factory.js";
 import {
@@ -272,7 +273,8 @@ async function resolveInfrastructure(
     },
     getConcurrency: () => ({
       pipelineConcurrency: zodConfig.ingest.tune.pipelineConcurrency,
-      chunkerPoolSize: zodConfig.ingest.tune.chunkerPoolSize,
+      // Config passes it raw; the pipeline owns the default (umixb).
+      chunkerPoolSize: zodConfig.ingest.tune.chunkerPoolSize ?? resolveDomainEnvCodeDefaults().chunkerPoolSize,
       gitChunkConcurrency: zodConfig.trajectoryGit.chunkConcurrency,
     }),
   });
@@ -1305,7 +1307,7 @@ function createIngestFacade(
     // Built AFTER the adaptive adjustments in resolveInfrastructure
     // (GPU-calibrated batch size, embedded delete tuning) so user-set values
     // reflect what actually ran.
-    envSnapshot: buildPinnedRegistryEnvSnapshot(zodConfig),
+    envSnapshot: buildPinnedRegistryEnvSnapshot(zodConfig, resolveDomainEnvCodeDefaults()),
     enrichmentProviders,
     codegraphPool: shared.codegraphPool,
     indexRunDaemonGuard: shared.indexRunDaemonGuard,
@@ -1360,7 +1362,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // is deferred until later — registry construction alone is side-effect
   // free, so creating it early costs nothing.
   const collectionRegistry = new CollectionRegistry(config.paths.appData, {
-    envCodeDefaults: resolveRegistryEnvCodeDefaults,
+    envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
   });
   const resolveActiveCollection = async (name: string): Promise<PhysicalCollectionName> =>
     infra.qdrant.aliases.resolveActive(name);
@@ -1645,7 +1647,10 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
   const stopWorkingTreeBasePointSweep = scheduleWorkingTreeBasePointSweep(workingTreeBasePointStore);
   // The delta has no file cap (WTO unbounded delta), so the layer's pool is
   // ingest's chunker pool size, and a call chunks that many files at once.
-  const workingTreeChunkerPoolSize = Math.max(1, zodConfig.ingest.tune.chunkerPoolSize);
+  const workingTreeChunkerPoolSize = Math.max(
+    1,
+    zodConfig.ingest.tune.chunkerPoolSize ?? resolveDomainEnvCodeDefaults().chunkerPoolSize,
+  );
   const workingTreeChunkLayer = createWorkingTreeChunkLayer({
     createPool: (chunkerConfig) => new ChunkerPool(workingTreeChunkerPoolSize, chunkerConfig),
     chunkFile: async (pool, file) => buildFileChunkPoints(pool, file, workingTreePayloadBuilder),
@@ -1919,7 +1924,7 @@ function createIndexDriftReporter(deps: {
   const envDriftMonitor = new EnvDriftMonitor(
     collectionRegistry,
     (stored, collectionName) => buildEffectiveIndexEnvSnapshot(stored, collectionName, process.env, ambientEnvRole),
-    buildRunningIndexEnvSnapshot(zodConfig),
+    buildRunningIndexEnvSnapshot(zodConfig, resolveDomainEnvCodeDefaults()),
   );
   // One reporter over every axis, built HERE — ahead of the ingest slice —
   // because every index run has to re-arm the collection it just rewrote, and

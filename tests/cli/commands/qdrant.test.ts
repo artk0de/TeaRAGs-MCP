@@ -133,6 +133,8 @@ describe("qdrantCommand recover — production wiring", () => {
       OptimizerRecoveryOps: class {
         recover = recover;
       },
+      // umixb: the registry's envCodeDefaults provider reads the domain-owned defaults here.
+      resolveDomainEnvCodeDefaults: () => ({ chunkerPoolSize: 1, enrichmentFilesPerThread: 400, blamePoolSize: 1 }),
       CollectionRegistry: class {
         findByName(name: string): object | undefined {
           lookups.push(`name:${name}`);

@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import type { CommandModule } from "yargs";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
-import { CollectionRegistry } from "../../core/api/index.js";
+import { CollectionRegistry, resolveDomainEnvCodeDefaults } from "../../core/api/index.js";
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
@@ -18,7 +18,9 @@ export interface ProjectExistArgs {
 }
 
 export function runProjectExist(args: ProjectExistArgs): void {
-  const registry = new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults });
+  const registry = new CollectionRegistry(resolveDataDir(), {
+    envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+  });
   const entry = args.path ? registry.findByPath(resolve(args.path)) : registry.findByName(args.name ?? "");
   const exists = entry !== null;
   if (args.json) {

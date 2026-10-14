@@ -24,6 +24,7 @@ import type {
   ChunkerPoolFactory,
   ChunkerPoolPort,
 } from "../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
+import { defaultChunkerPoolSize } from "../../../../../src/core/domains/ingest/pipeline/index.js";
 
 const { constructedPools } = vi.hoisted(() => ({ constructedPools: [] as unknown[][] }));
 
@@ -101,5 +102,35 @@ describe("BaseIndexingPipeline chunker-pool factory seam", () => {
 
     expect(constructedPools).toHaveLength(1);
     expect(constructedPools[0][1]).toMatchObject({ chunkSize: 500, chunkOverlap: 50, maxChunkSize: 500 });
+  });
+
+  // bd tea-rags-mcp-umixb: config hands the chunker pool size through raw, so
+  // an unset env reaches the pipeline as `undefined` and the pipeline owns the default.
+  it.each([
+    { configured: undefined, expected: defaultChunkerPoolSize() },
+    { configured: 3, expected: 3 },
+  ])("sizes the pool $expected when tuning carries $configured", async ({ configured, expected }) => {
+    const createChunkerPool = vi.fn<ChunkerPoolFactory>(() => fakeChunkerPort());
+    const ingest = new IngestFacade({
+      qdrant: new MockQdrantManager() as never,
+      embeddings: new MockEmbeddingProvider(),
+      config: defaultTestConfig(),
+      trajectoryConfig: defaultTrajectoryConfig(),
+      createChunkerPool,
+      pipelineTuning: {
+        pipelineConfig: {
+          workerPool: { concurrency: 1, maxRetries: 3, retryBaseDelayMs: 100, retryMaxDelayMs: 5000 },
+          deleteWorkerPool: { concurrency: 8, maxRetries: 3, retryBaseDelayMs: 100, retryMaxDelayMs: 5000 },
+          upsertAccumulator: { batchSize: 1024, flushTimeoutMs: 2000, maxQueueSize: 2 },
+          deleteAccumulator: { batchSize: 500, flushTimeoutMs: 1000, maxQueueSize: 16 },
+        },
+        chunkerPoolSize: configured,
+        fileConcurrency: 50,
+      },
+    });
+
+    await ingest.indexCodebase(codebaseDir);
+
+    expect(createChunkerPool.mock.calls[0]?.[0]).toBe(expected);
   });
 });

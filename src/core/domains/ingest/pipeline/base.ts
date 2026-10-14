@@ -88,7 +88,12 @@ export interface IndexingRunSealSpec {
 
 export interface PipelineTuning {
   pipelineConfig: PipelineConfig;
-  chunkerPoolSize: number;
+  /**
+   * Parse worker count as configured, `undefined` when the env leaves it unset:
+   * the pipeline applies `defaultChunkerPoolSize` where it builds the pool (bd
+   * tea-rags-mcp-umixb).
+   */
+  chunkerPoolSize: number | undefined;
   fileConcurrency: number;
 }
 
@@ -100,9 +105,7 @@ const DEFAULT_TUNING: PipelineTuning = {
     upsertAccumulator: { batchSize: 1024, flushTimeoutMs: 2000, maxQueueSize: 2 },
     deleteAccumulator: { batchSize: 500, flushTimeoutMs: 1000, maxQueueSize: 16 },
   },
-  // Workers run as child processes (ProcessTransport), so concurrent parsing
-  // is safe — each process owns its own tree-sitter native heap (yl9tv).
-  chunkerPoolSize: defaultChunkerPoolSize(),
+  chunkerPoolSize: undefined,
   fileConcurrency: 50,
 };
 
@@ -508,7 +511,9 @@ export abstract class BaseIndexingPipeline {
     // Injected factory (tests lease warm pools, bd tea-rags-mcp-bbo1h.1) or a
     // fresh forked pool per run — the production composition injects nothing.
     const build = this.deps.createChunkerPool ?? ((poolSize, config) => new ChunkerPool(poolSize, config));
-    return build(this.tuning.chunkerPoolSize, {
+    // Workers run as child processes (ProcessTransport), so concurrent parsing
+    // is safe — each process owns its own tree-sitter native heap (yl9tv).
+    return build(this.tuning.chunkerPoolSize ?? defaultChunkerPoolSize(), {
       chunkSize,
       chunkOverlap: this.config.chunkOverlap,
       // Hard cap = chunkSize. The chunker MUST emit chunks <= maxChunkSize so

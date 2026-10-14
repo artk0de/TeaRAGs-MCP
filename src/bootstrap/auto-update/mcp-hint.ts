@@ -21,6 +21,7 @@ import {
   IndexFreshnessCheck,
   outerEnvForRegistryEntry,
   resolveCollection,
+  resolveDomainEnvCodeDefaults,
 } from "../../core/api/index.js";
 import type { McpAutoUpdateTrigger } from "../../core/api/public/index.js";
 import { resolveRegistryEnvCodeDefaults } from "../config/index.js";
@@ -58,7 +59,9 @@ export function buildMcpAutoUpdateTrigger(
   dataDir: string = resolveDataDir(),
   spawnImpl?: (project: string) => void,
 ): McpAutoUpdateTrigger {
-  const registry = new CollectionRegistry(dataDir, { envCodeDefaults: resolveRegistryEnvCodeDefaults });
+  const registry = new CollectionRegistry(dataDir, {
+    envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+  });
   // The MCP server is LONG-LIVED and CollectionRegistry caches registry.json
   // in memory — without the watcher, `tea-rags auto-update` config written
   // AFTER server start stays invisible until the next reconnect. The watcher

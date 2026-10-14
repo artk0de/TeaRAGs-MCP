@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { resolveRegistryEnvCodeDefaults } from "../bootstrap/config/index.js";
-import { CollectionRegistry } from "../core/api/index.js";
+import { CollectionRegistry, resolveDomainEnvCodeDefaults } from "../core/api/index.js";
 import { recallCallToolNames } from "./call/tool-name-cache.js";
 
 /**
@@ -20,7 +20,9 @@ const NAME_FLAG_EXISTS_SUBCOMMANDS = new Set(["unregister", "info", "set-env", "
 export function listProjectNames(): string[] {
   try {
     const dataDir = process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
-    return new CollectionRegistry(dataDir, { envCodeDefaults: resolveRegistryEnvCodeDefaults })
+    return new CollectionRegistry(dataDir, {
+      envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+    })
       .list()
       .map((e) => e.name)
       .filter((n): n is string => typeof n === "string" && n.length > 0);
