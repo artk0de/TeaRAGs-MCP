@@ -23,7 +23,7 @@ import type {
   TemporalCochangeGraph,
 } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../primitives/graph/index.js";
-import { hypergeometricUpperTail } from "../../../../../primitives/math/index.js";
+import { hypergeometricUpperTail, sidakCorrectedMinimumPValue } from "../../../../../primitives/math/index.js";
 import { classify, compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import {
   classifyDirectoryRelation,
@@ -77,7 +77,8 @@ export const SILENT_COUPLING_SHARED_NEIGHBOUR_WEIGHT_FLOOR = 0;
 export const SILENT_COUPLING_EXPLAINED_REASON =
   "strong unlinked pair explained by a specific shared neighbour: both files import it, one reaches the other " +
   "through it, or it consumes both, as a registry does its siblings — and sharing it is unlikely by chance " +
-  "given both files' import counts (hypergeometric over the corpus's import endpoints, Benjamini–Hochberg " +
+  "given both files' import counts (hypergeometric over the corpus's import endpoints, Šidák-corrected for " +
+  "the neighbours the pair could share, Benjamini–Hochberg " +
   "over every tested pair) — coupling through a shared contract, not hidden coupling";
 
 /** The module entry files — a re-export/facade chain may run through nothing else. */
@@ -309,6 +310,12 @@ export function detectSilentCoupling(
  * tested pair names the explained ones. Per pair, not one corpus-wide cut: a
  * family of siblings explained by its own registry needs no other family's
  * neighbour weights to separate from the hubs.
+ *
+ * The least likely neighbour is the min over every neighbour the pair shares —
+ * a hidden multiple comparison that let a hub's ~0.02 chance pass once BH's
+ * step-up threshold rose (bd tea-rags-mcp-v4279). So the pair's p is that
+ * min Šidák-corrected, p = 1 − (1 − p_min)^k, k =
+ * {@link SilentCouplingNeighbourIndex#shareableNeighbourCount}.
  */
 function explainBySharedNeighbourChance(
   tested: readonly Candidate[],
@@ -319,16 +326,18 @@ function explainBySharedNeighbourChance(
 } {
   const sharing = tested.flatMap(({ edge }) => {
     const neighbour = neighbours.leastLikelySharedNeighbour(edge.relPathA, edge.relPathB);
-    return neighbour ? [{ edge, neighbour }] : [];
+    if (!neighbour) return [];
+    const comparisons = neighbours.shareableNeighbourCount(edge.relPathA, edge.relPathB);
+    return [{ edge, neighbour, p: sidakCorrectedMinimumPValue(neighbour.chance, comparisons) }];
   });
   sharing.sort(
     (x, y) =>
-      x.neighbour.chance - y.neighbour.chance ||
+      x.p - y.p ||
       compareCodePoints(x.edge.relPathA, y.edge.relPathA) ||
       compareCodePoints(x.edge.relPathB, y.edge.relPathB),
   );
   const rejected = benjaminiHochbergRejectionCount(
-    sharing.map((s) => s.neighbour.chance),
+    sharing.map((s) => s.p),
     tested.length,
     COCHANGE_SIGNIFICANCE_FDR_Q,
   );
@@ -469,6 +478,27 @@ export class SilentCouplingNeighbourIndex {
       byConsumes,
     );
     return best;
+  }
+
+  /**
+   * k of the Šidák correction (bd tea-rags-mcp-v4279): how many neighbours the
+   * pair could have shared, read off its SMALLER endpoint. A shared neighbour
+   * is always one of each endpoint's neighbours — per arm, "both import C" and
+   * the chain arms draw C from the files the endpoint imports or is imported
+   * by, the consumer arm from its consumers, a subset of its importers — so
+   * the candidates are the distinct files the endpoint imports or is imported
+   * by, the pair's own endpoints excluded, and the endpoint with fewer of them
+   * bounds the tests the min ran over.
+   */
+  shareableNeighbourCount(a: RelPath, b: RelPath): number {
+    return Math.min(this.neighbourCountExcluding(a, a, b), this.neighbourCountExcluding(b, a, b));
+  }
+
+  private neighbourCountExcluding(relPath: RelPath, a: RelPath, b: RelPath): number {
+    const neighbours = new Set([...(this.imports.get(relPath) ?? []), ...(this.importers.get(relPath) ?? [])]);
+    neighbours.delete(a);
+    neighbours.delete(b);
+    return neighbours.size;
   }
 
   /** The chance `source` imports `target`: its fanOut draws, of which `target` holds fanIn endpoints. */

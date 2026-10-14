@@ -17,5 +17,6 @@ export {
   poissonBinomialUpperTail,
   poissonUpperTail,
   seedFromKey,
+  sidakCorrectedMinimumPValue,
   signTestPValue,
 } from "./statistics/index.js";
