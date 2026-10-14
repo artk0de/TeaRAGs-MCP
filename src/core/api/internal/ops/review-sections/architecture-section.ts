@@ -632,6 +632,13 @@ export const architectureSectionProvider: ReviewSectionProvider = {
     // co-change snapshot the full detector set judges, bd
     // tea-rags-mcp-89k7k.1.7) and the report-derived facts the catalogue
     // answers from. The pre-read snapshot is reused, never read again.
+    // The maintenance readings are fetched while the graph facts are read
+    // (bd tea-rags-mcp-pqdw4) — the ranking awaits them only when it has
+    // findings. The no-op catch keeps an early failure from going unhandled;
+    // the ranking's await still sees it.
+    const readFileMaintenanceSignals =
+      context.readFileMaintenanceSignals === undefined ? undefined : readOnce(context.readFileMaintenanceSignals);
+    readFileMaintenanceSignals?.().catch(() => undefined);
     const graphFacts = await readArchitectureGraphFacts(
       graphDb,
       {
@@ -642,8 +649,6 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       context.readDeclaredTestDependencies,
     );
     const { production } = graphFacts;
-    const readFileMaintenanceSignals =
-      context.readFileMaintenanceSignals === undefined ? undefined : readOnce(context.readFileMaintenanceSignals);
     const facts = deriveArchitectureComponentFacts(production.graph, undefined, undefined, production.nonProduction);
     const mainSequence = measureMainSequenceDistances(facts.components, production.graph.files);
     // One layering model over the catalog's partition: the foundation the

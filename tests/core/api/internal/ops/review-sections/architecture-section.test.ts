@@ -521,6 +521,45 @@ describe("architectureSectionProvider.run", () => {
     expect(read).toHaveBeenCalledTimes(1);
   });
 
+  it("starts the maintenance read before the graph facts resolve — it overlaps the graph read (bd tea-rags-mcp-pqdw4)", async () => {
+    const graphDb = graphDbStub({ files: [], edges: [] });
+    let settle!: () => void;
+    graphDb.readFileDependencyGraph.mockImplementation(
+      async () =>
+        new Promise<FileDependencyGraph>((resolve) => {
+          settle = () => {
+            resolve({ files: [], edges: [] });
+          };
+        }),
+    );
+    const read = vi.fn(async () => new Map());
+
+    const pending = architectureSectionProvider.run(runContext({ graphDb, readFileMaintenanceSignals: read }));
+    await Promise.resolve();
+
+    expect(read).toHaveBeenCalledTimes(1);
+    settle();
+    await pending;
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("an early maintenance-read failure fails the section once findings need it, and is never an unhandled rejection (bd tea-rags-mcp-pqdw4)", async () => {
+    writeFile("src/other/c.ts", "export const C = 1;\n");
+    writeFile("src/app/a.ts", 'import { C } from "../other/c";\nexport const A = C;\n');
+    const files = ["src/app/a.ts", "src/other/c.ts"];
+    const read = vi.fn(async () => Promise.reject(new Error("qdrant down")));
+    const context = (changed: string[]) =>
+      runContext({
+        graphDb: graphDbStub({ files: files.map(graphFile), edges: [graphEdge("src/other/c.ts", "src/app/a.ts")] }),
+        scope: scopeOf(changed),
+        readFileMaintenanceSignals: read,
+      });
+
+    await expect(architectureSectionProvider.run(context(["src/app/a.ts"]))).rejects.toThrow("qdrant down");
+    // No finding to rank: the prefetched failure is read by nobody and stays handled.
+    await expect(architectureSectionProvider.run(context([]))).resolves.toMatchObject({ findings: [] });
+  });
+
   it("caps findings at 100 and counts the rest in truncated", async () => {
     const targets = Array.from({ length: 105 }, (_, i) => `src/lib/t${String(i).padStart(3, "0")}.ts`);
     for (const target of targets) writeFile(target, `export const T = 1;\n`);
