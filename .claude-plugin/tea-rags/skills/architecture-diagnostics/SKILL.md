@@ -511,6 +511,8 @@ layering edge sits at level 0, depth 0.
 | `coverage`                         | share of components outside multi-component knots — low = knot(s) dominate                                           |
 | `coherence`                        | rank correlation level vs instability — high = low layers really are the stable ones                                 |
 | `foundation`                       | `{components, terminalComponents?}` — L0 components with measured abstractness 1 (≥5 types); absent = none qualifies |
+| `violationCount`                   | knots + backEdges + abstractionBypasses only — the layering debt                                                     |
+| `informationalCount`               | compositionCycles + islands — findings, never debt                                                                   |
 
 Violations first, informational last, in `violations` order:
 

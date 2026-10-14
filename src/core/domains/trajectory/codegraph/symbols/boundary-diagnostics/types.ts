@@ -1060,8 +1060,10 @@ export interface LayeringSummary {
   abstractionBypassCount: number;
   compositionCycleCount: number;
   islandCount: number;
-  /** Every finding, violations and informational alike. */
+  /** Violation findings only: knots, back-edges and abstraction bypasses. */
   violationCount: number;
+  /** Informational findings: composition cycles and detached islands (bd tea-rags-mcp-wzq9i). */
+  informationalCount: number;
   scope?: LayeringScope;
   /** The measured foundation; present only when the graph holds one (bd tea-rags-mcp-89k7k.35.11). */
   foundation?: LayeringFoundationSummary;

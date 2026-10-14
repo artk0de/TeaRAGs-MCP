@@ -163,6 +163,9 @@ export function detectLayeringViolations(
       : undefined;
 
   const count = (kind: LayeringViolation["kind"]) => violations.filter((v) => v.kind === kind).length;
+  // Composition cycles and islands are informational (bd tea-rags-mcp-wzq9i):
+  // they stay findings, but never inflate the violation count.
+  const informationalCount = count("compositionCycle") + count("island");
   const summary: LayeringSummary = {
     componentCount: componentGraph.components.size,
     componentEdgeCount: componentGraph.dependencies.length,
@@ -174,7 +177,8 @@ export function detectLayeringViolations(
     abstractionBypassCount: count("abstractionBypass"),
     compositionCycleCount: count("compositionCycle"),
     islandCount: count("island"),
-    violationCount: violations.length,
+    violationCount: violations.length - informationalCount,
+    informationalCount,
     ...(scope ? { scope } : {}),
     ...(foundations.size > 0 || terminals.size > 0
       ? {
