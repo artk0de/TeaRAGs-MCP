@@ -184,7 +184,8 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
  * (bd tea-rags-mcp-r8hme.12): they load nothing at runtime, so they stay out of
  * the runtime channel (bd tea-rags-mcp-m19a), yet they are structure — a
  * protocol consumed only through `import type` is still declared coupling.
- * They carry the specifier and line only: no local binding a call can reach.
+ * They carry the specifier, line and the export names they take or forward
+ * (bd tea-rags-mcp-dourd) — but no local binding a call can reach.
  */
 function collectImports(root: AstNode): { imports: ImportRef[]; typeOnlyImports: ImportRef[] } {
   const out: ImportRef[] = [];
@@ -201,9 +202,16 @@ function collectImports(root: AstNode): { imports: ImportRef[]; typeOnlyImports:
   return { imports: out, typeOnlyImports: typeOnly };
 }
 
-/** The type-only form of a module reference: where it points, and nothing it binds. */
-function typeOnlyImportRef(node: AstNode, src: AstNode): ImportRef {
-  return { importText: stringLiteralText(src), startLine: node.startPosition.row + 1 };
+/**
+ * The type-only form of a module reference: where it points and which of the
+ * target's exports it names, but nothing it binds. The names are the same ones
+ * the runtime form records (bd tea-rags-mcp-dourd) — a type-only import still
+ * takes `A` off the target's surface, and every name-matching consumer of the
+ * file edge (shim resolution, facade leak, the wired export table) needs them
+ * to settle the edge instead of falling back to the file link.
+ */
+function typeOnlyImportRef(node: AstNode, src: AstNode, exportNames: Partial<ImportRef>): ImportRef {
+  return { importText: stringLiteralText(src), startLine: node.startPosition.row + 1, ...exportNames };
 }
 
 /**
@@ -259,7 +267,7 @@ function collectEsmImport(node: AstNode, out: ImportRef[], typeOnly: ImportRef[]
   // form. Per-specifier `import { type X, Y }` is NOT filtered — the
   // statement is still a runtime import that loads `Y`.
   if (hasTypeOnlyModifier(node, "import")) {
-    typeOnly.push(typeOnlyImportRef(node, src));
+    typeOnly.push(typeOnlyImportRef(node, src, exportNamesField("importedExportNames", esmImportExportNames(node))));
     return;
   }
   // bd tea-rags-mcp-2v16 — capture the LOCAL binding names this import
@@ -313,7 +321,9 @@ function collectReexport(node: AstNode, out: ImportRef[], typeOnly: ImportRef[])
   const src = node.childForFieldName("source");
   if (src?.type !== "string") return;
   if (hasTypeOnlyModifier(node, "export")) {
-    typeOnly.push(typeOnlyImportRef(node, src));
+    typeOnly.push(
+      typeOnlyImportRef(node, src, exportNamesField("reexportedExportNames", esmReexportExportNames(node))),
+    );
     return;
   }
   // bd tea-rags-mcp-r8hme.2 — the names it FORWARDS are recorded on their own

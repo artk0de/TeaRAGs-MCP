@@ -395,6 +395,53 @@ describe("CallEdgeResolutionRunner.resolve — type-only file edges (bd tea-rags
     expect(edges).not.toHaveProperty("typeOnlyFileEdges");
   });
 
+  // bd tea-rags-mcp-dourd — one edge per target takes every statement's names,
+  // exactly as two value imports of one file do: `import { run } from` beside
+  // `import type { Options } from` the same file is one edge taking both.
+  it("unions a type-only import's export names onto the runtime edge of the same target", () => {
+    const namedResolver = {
+      resolve: () => null,
+      resolveFileEdges: (ext: FileExtraction) =>
+        ext.imports.map((imp) => ({
+          targetRelPath: `src/${imp.importText.slice(2)}.ts`,
+          importText: imp.importText,
+          ...(imp.importedExportNames ? { importedExportNames: imp.importedExportNames } : {}),
+          ...(imp.reexportedExportNames ? { reexportedExportNames: imp.reexportedExportNames } : {}),
+        })),
+    };
+    const namedRunner = new CallEdgeResolutionRunner(
+      {
+        supported: () => ["typescript"],
+        create: () => ({ resolver: namedResolver }),
+      } as unknown as LanguageFactoryDescriptor,
+      new CodegraphRunState(),
+    );
+    const edges = namedRunner.resolve(
+      {
+        relPath: "src/server.ts",
+        language: "typescript",
+        imports: [{ importText: "./runner", startLine: 1, importedExportNames: ["run"] }],
+        typeOnlyImports: [
+          { importText: "./runner", startLine: 2, importedExportNames: ["Options", "run"] },
+          { importText: "./runner", startLine: 3, reexportedExportNames: ["Shape"] },
+        ],
+        fileScope: [],
+        chunks: [],
+      },
+      {} as GlobalSymbolTable,
+    );
+
+    expect(edges.fileEdges).toEqual([
+      {
+        targetRelPath: "src/runner.ts",
+        importText: "./runner",
+        importedExportNames: ["run", "Options"],
+        reexportedExportNames: ["Shape"],
+      },
+    ]);
+    expect(edges).not.toHaveProperty("typeOnlyFileEdges");
+  });
+
   it("routes an import flagged typeOnly on imports[] (Python `if TYPE_CHECKING:`) to fileEdges and typeOnlyFileEdges", () => {
     const seenImports: string[][] = [];
     const recordingResolver = {

@@ -275,12 +275,17 @@ function dedupeFileEdgesByTarget(edges: GraphEdges["fileEdges"]): GraphEdges["fi
       byTarget.set(edge.targetRelPath, { ...edge });
       continue;
     }
-    const imported = unionExportNames(first.importedExportNames, edge.importedExportNames);
-    const reexported = unionExportNames(first.reexportedExportNames, edge.reexportedExportNames);
-    if (imported) first.importedExportNames = imported;
-    if (reexported) first.reexportedExportNames = reexported;
+    unionExportNamesInto(first, edge);
   }
   return [...byTarget.values()];
+}
+
+/** Union `other`'s export names onto `into`, an edge of the same target. */
+function unionExportNamesInto(into: GraphEdges["fileEdges"][number], other: GraphEdges["fileEdges"][number]): void {
+  const imported = unionExportNames(into.importedExportNames, other.importedExportNames);
+  const reexported = unionExportNames(into.reexportedExportNames, other.reexportedExportNames);
+  if (imported) into.importedExportNames = imported;
+  if (reexported) into.reexportedExportNames = reexported;
 }
 
 export class CallEdgeResolutionRunner {
@@ -661,8 +666,10 @@ export class CallEdgeResolutionRunner {
    * `imports[]` entry flagged `typeOnly`. That list is resolved by the very
    * import→file path the runtime list takes — handed to the same resolver as if
    * it were the file's imports — so a specifier maps to the same file either
-   * way. A target a runtime import already reaches is dropped (the runtime edge
-   * says more), and so is a self-edge. No resolved method edges are passed: a
+   * way. A target a runtime import already reaches yields no second edge, but
+   * its export names are unioned onto that runtime edge (bd tea-rags-mcp-dourd)
+   * — one edge per target takes every statement's names, exactly as two value
+   * imports of one file do; a self-edge is dropped. No resolved method edges are passed: a
    * language that derives file edges from calls would otherwise hand the
    * runtime answer back.
    *
@@ -685,10 +692,15 @@ export class CallEdgeResolutionRunner {
     const candidates = resolver.resolveFileEdges
       ? resolver.resolveFileEdges(typeOnlyExtraction, ctx, [])
       : defaultImportFileEdges(typeOnlyExtraction, resolver, ctx);
-    const runtimeTargets = new Set(runtimeFileEdges.map((e) => e.targetRelPath));
-    return dedupeFileEdgesByTarget(candidates).filter(
-      (e) => e.targetRelPath !== extraction.relPath && !runtimeTargets.has(e.targetRelPath),
-    );
+    const runtimeByTarget = new Map(runtimeFileEdges.map((e) => [e.targetRelPath, e]));
+    const typeOnlyEdges: GraphEdges["fileEdges"] = [];
+    for (const edge of dedupeFileEdgesByTarget(candidates)) {
+      if (edge.targetRelPath === extraction.relPath) continue;
+      const runtimeEdge = runtimeByTarget.get(edge.targetRelPath);
+      if (runtimeEdge === undefined) typeOnlyEdges.push(edge);
+      else unionExportNamesInto(runtimeEdge, edge);
+    }
+    return typeOnlyEdges;
   }
 
   private fileEdgeContext(
