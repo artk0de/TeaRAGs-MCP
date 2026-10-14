@@ -14,19 +14,11 @@
 import { InfraError } from "../errors.js";
 import type { QdrantConnection } from "./connection.js";
 import { QdrantOperationError, QdrantUnavailableError } from "./errors.js";
+import type { PayloadFieldIndex } from "./types.js";
 import { foldUpdateStatus } from "./write-barrier.js";
 
-/**
- * One payload field index as Qdrant reports it in a collection's
- * `payload_schema`. `points` counts the points whose payload carries a value
- * under the key — zero for an index nothing writes into, which is NOT the same
- * as an index nothing needs (`git.file.skippedAs` is legitimately empty).
- */
-export interface PayloadFieldIndex {
-  field: string;
-  dataType: string;
-  points: number;
-}
+// Declared in types.ts so ports.ts stays a leaf off the connection/alias graph.
+export type { PayloadFieldIndex } from "./types.js";
 
 export class QdrantPayloadIndexManager {
   /**

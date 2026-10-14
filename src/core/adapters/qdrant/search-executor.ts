@@ -37,9 +37,10 @@ import {
 } from "./errors.js";
 import { toQdrantPointId } from "./point-id.js";
 import { withServicePointExclusions } from "./service-points.js";
-import type { SparseVector } from "./types.js";
+import type { SearchResult, SparseVector } from "./types.js";
 
-type QdrantPayload = Record<string, unknown>;
+// Declared in types.ts so ports.ts stays a leaf off the connection/alias graph.
+export type { SearchResult } from "./types.js";
 
 /**
  * How the executor learns a collection's vector layout. Injected as a function
@@ -49,12 +50,6 @@ type QdrantPayload = Record<string, unknown>;
  * the same dispatch the methods had when they lived on that class.
  */
 export type CollectionInfoLookup = (collectionName: string) => Promise<CollectionInfo>;
-
-export interface SearchResult {
-  id: string | number;
-  score: number;
-  payload?: QdrantPayload;
-}
 
 /**
  * Search-time quantization params applied to every dense/quantized query so
