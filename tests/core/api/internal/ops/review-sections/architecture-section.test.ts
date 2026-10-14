@@ -264,15 +264,17 @@ describe("architectureSectionProvider.run", () => {
 
     // The run judged the overlay edge against the indexed graph and the facts:
     // stableDependencies (indexed lib I=1 markedly above app I=0), cycles (the
-    // indexed b→a closes a→b), mainSequence (app's I moves 0→1), silentCoupling
+    // indexed b→a closes a→b), silentCoupling
     // (co-change partner outside the diff, no structural edge either way). The
     // pair reads git history an edge overlay cannot move, so both runs hold it
     // and it collapses into the change block (bd tea-rags-mcp-89k7k.1.7).
+    // app's main-sequence rise (D 0 -> 0.167) ends below the served 0.5
+    // threshold: counted on the row, not listed (bd tea-rags-mcp-x6y75).
     const findings = payload.findings as { detector: string; subject: string }[];
     const subjects = (detector: string) => findings.filter((f) => f.detector === detector).map((f) => f.subject);
     expect(subjects("stableDependencies")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
     expect(subjects("cycles")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
-    expect(subjects("mainSequence")).toEqual(["src/app"]);
+    expect(subjects("mainSequence")).toEqual([]);
     expect(persistingSubjects(payload, "silentCoupling.pair")).toEqual(["src/app/a.ts ~ src/other/c.ts"]);
 
     // Skipped reads are notJudged entries, never edge-free zeros.
@@ -298,6 +300,7 @@ describe("architectureSectionProvider.run", () => {
       "hubLike",
     ]);
     expect(detectors.find((d) => d.detector === "facadeContract")).toMatchObject({ built: true, findingCount: 0 });
+    expect(detectors.find((d) => d.detector === "mainSequence")).toMatchObject({ excludedBelowThresholdCount: 1 });
     // The hub-like reading is wired over the same partition (bd tea-rags-mcp-89k7k.1.19.4).
     expect(detectors.find((d) => d.detector === "hubLike")).toMatchObject({ built: true });
     // The section always wires the layering reading over the report's own
@@ -581,15 +584,16 @@ describe("architectureSectionProvider.run", () => {
 
     const detectors = payload.detectors as { detector: string; findingCount: number }[];
     const byName = new Map(detectors.map((d) => [d.detector, d.findingCount]));
-    // 105 markedly-less-stable edges + one closed cycle + app's main-sequence
-    // move + the same 105 edges running up the layering (the stale t000 -> app
-    // edge puts app at L0 under lib, bd tea-rags-mcp-89k7k.1.19.3).
+    // 105 markedly-less-stable edges + one closed cycle + the same 105 edges
+    // running up the layering (the stale t000 -> app edge puts app at L0 under
+    // lib, bd tea-rags-mcp-89k7k.1.19.3); app's main-sequence rise ends below
+    // the served threshold, so it is counted, not listed (bd tea-rags-mcp-x6y75).
     expect(byName.get("stableDependencies")).toBe(105);
     expect(byName.get("cycles")).toBe(1);
-    expect(byName.get("mainSequence")).toBe(1);
+    expect(byName.get("mainSequence")).toBe(0);
     expect(byName.get("layeringBackEdge")).toBe(105);
     expect(payload.findings as unknown[]).toHaveLength(100);
-    expect(payload.truncated).toBe(112);
+    expect(payload.truncated).toBe(111);
   });
 
   it("an empty diff is a valid review: built, no findings", async () => {
