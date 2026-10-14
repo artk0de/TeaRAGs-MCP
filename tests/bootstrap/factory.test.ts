@@ -289,6 +289,7 @@ function makeConfig(): AppConfig {
       models: "/tmp/test-tea-rags/models",
       daemonSocket: "/tmp/test-tea-rags/onnx.sock",
       daemonPid: "/tmp/test-tea-rags/onnx-daemon.pid",
+      embeddingEndpointHealth: "/tmp/test-tea-rags/embedding-endpoint-health.json",
     },
   };
 }

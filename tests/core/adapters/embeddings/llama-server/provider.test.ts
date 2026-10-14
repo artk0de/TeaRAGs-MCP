@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { RateLimitConfig } from "../../../../../src/core/adapters/embeddings/base.js";
+import {
+  EMBEDDING_ENDPOINT_DOWN_VERDICT_TTL_MS,
+  EmbeddingEndpointDownVerdictStore,
+} from "../../../../../src/core/adapters/embeddings/endpoint-down-verdicts.js";
 import {
   isEmbeddingProviderUnavailable,
   isProviderRecoveryWaitSpent,
@@ -175,6 +183,7 @@ function makeProvider(
     dimensions?: number;
     time?: ReturnType<typeof fakeTime>;
     log?: string[];
+    verdicts?: EmbeddingEndpointDownVerdictStore;
   } = {},
 ): LlamaServerEmbeddings {
   const time = options.time ?? fakeTime();
@@ -191,6 +200,7 @@ function makeProvider(
       log: (line) => {
         (options.log ?? []).push(line);
       },
+      endpointDownVerdicts: options.verdicts,
     },
   );
 }
@@ -925,6 +935,221 @@ describe("LlamaServerEmbeddings", () => {
 
         expect(provider.getFallbackUnavailableReason()).toContain("timed out");
       });
+    });
+  });
+
+  describe("cross-process endpoint-down verdict (bd w1bz7)", () => {
+    const dirs: string[] = [];
+    afterEach(() => {
+      for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+    });
+
+    /** A verdict file shared by every provider of one test — each provider stands for a fresh process. */
+    function sharedVerdicts(time: ReturnType<typeof fakeTime>) {
+      const dir = mkdtempSync(join(tmpdir(), "llama-verdicts-"));
+      dirs.push(dir);
+      const file = join(dir, "embedding-endpoint-health.json");
+      return { file, open: () => new EmbeddingEndpointDownVerdictStore(file, { now: time.deps.now }) };
+    }
+
+    const unreachable = (): FakeLlamaServer => ({ health: true, connectError: "EHOSTUNREACH" });
+    const requestsTo = (cluster: ReturnType<typeof fakeCluster>, url: string) =>
+      cluster.requests.filter((r) => r.url === url);
+
+    it("a connect-class failure leaves a verdict, and a fresh provider skips that primary within the TTL", async () => {
+      const time = fakeTime();
+      const verdicts = sharedVerdicts(time);
+      const cluster = fakeCluster({ [PEER_A]: unreachable(), [FALLBACK]: healthy() });
+
+      await makeProvider(cluster, { peers: PEER_A, fallbacks: FALLBACK, time, verdicts: verdicts.open() }).embedBatch(
+        texts(3),
+      );
+      expect(
+        verdicts
+          .open()
+          .liveVerdicts()
+          .map((v) => v.url),
+      ).toEqual([PEER_A]);
+
+      const before = requestsTo(cluster, PEER_A).length;
+      time.advance(EMBEDDING_ENDPOINT_DOWN_VERDICT_TTL_MS - 1_000);
+      const fresh = makeProvider(cluster, { peers: PEER_A, fallbacks: FALLBACK, time, verdicts: verdicts.open() });
+      const results = await fresh.embedBatch(texts(3));
+
+      expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2]);
+      expect(requestsTo(cluster, PEER_A).length).toBe(before);
+      expect(fresh.getBaseUrl()).toBe(FALLBACK);
+    });
+
+    it("a fresh provider re-probes the primary once the TTL has passed", async () => {
+      const time = fakeTime();
+      const verdicts = sharedVerdicts(time);
+      verdicts.open().markDown(PEER_A, "EHOSTUNREACH");
+      const cluster = fakeCluster({ [PEER_A]: healthy(), [FALLBACK]: healthy() });
+
+      time.advance(EMBEDDING_ENDPOINT_DOWN_VERDICT_TTL_MS);
+      await makeProvider(cluster, { peers: PEER_A, fallbacks: FALLBACK, time, verdicts: verdicts.open() }).embedBatch(
+        texts(2),
+      );
+
+      expect(cluster.embeddedTexts(PEER_A)).toEqual(["t0", "t1"]);
+      expect(cluster.embedCalls(FALLBACK)).toEqual([]);
+    });
+
+    it("a down-marked primary is still probed in the background and served again once it answers", async () => {
+      const time = fakeTime();
+      const verdicts = sharedVerdicts(time);
+      verdicts.open().markDown(PEER_A, "EHOSTUNREACH");
+      const cluster = fakeCluster({ [PEER_A]: healthy(), [FALLBACK]: healthy() });
+      const provider = makeProvider(cluster, { peers: PEER_A, fallbacks: FALLBACK, time, verdicts: verdicts.open() });
+
+      expect(provider.getBaseUrl()).toBe(FALLBACK);
+      time.advance(30_000);
+      await time.fireProbe();
+
+      expect(requestsTo(cluster, PEER_A).map((r) => r.path)).toEqual(["/health"]);
+      expect(provider.getBaseUrl()).toBe(PEER_A);
+      // The healthy probe withdraws the verdict for every other process too.
+      expect(verdicts.open().liveVerdicts()).toEqual([]);
+    });
+
+    it.each([
+      ["HTTP 503", () => new Response("overloaded", { status: 503 })],
+      ["HTTP 500", () => new Response("internal", { status: 500 })],
+      ["HTTP 429", () => new Response("slow down", { status: 429 })],
+      ["a malformed body", () => Response.json({ data: [] })],
+    ])("%s never marks the endpoint down", async (_label, answer) => {
+      const time = fakeTime();
+      const verdicts = sharedVerdicts(time);
+      const cluster = fakeCluster({ [PEER_A]: { health: true, embed: answer }, [PEER_B]: healthy() });
+
+      await makeProvider(cluster, { time, verdicts: verdicts.open() }).embedBatch(texts(4));
+
+      expect(cluster.embedCalls(PEER_A).length).toBeGreaterThan(0);
+      expect(verdicts.open().liveVerdicts()).toEqual([]);
+    });
+
+    it("a caller error (HTTP 4xx) and a model mismatch never mark the endpoint down", async () => {
+      const time = fakeTime();
+      const verdicts = sharedVerdicts(time);
+      const cluster = fakeCluster({
+        [PEER_A]: { health: true, embed: () => new Response("bad key", { status: 401 }) },
+        [PEER_B]: healthy({ model_path: "/models/some-other-model.gguf" }),
+      });
+
+      await expect(
+        makeProvider(cluster, { peers: PEER_A, time, verdicts: verdicts.open() }).embedBatch(texts(2)),
+      ).rejects.toThrow();
+      await expect(
+        makeProvider(cluster, { peers: PEER_B, time, verdicts: verdicts.open() }).embedBatch(texts(2)),
+      ).rejects.toThrow();
+
+      expect(verdicts.open().liveVerdicts()).toEqual([]);
+    });
+
+    it("a /props timeout marks the endpoint down", async () => {
+      const time = fakeTime();
+      const verdicts = sharedVerdicts(time);
+      // The post fails too (without a connect error), so no success withdraws the verdict.
+      const cluster = fakeCluster({
+        [PEER_A]: { health: true, embed: () => new Response("busy", { status: 503 }) },
+        [PEER_B]: healthy(),
+      });
+      const fetchFn = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        const target = input instanceof Request ? input.url : input.toString();
+        if (target === `${PEER_A}/props`) {
+          throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+        }
+        return cluster.fetch(input, init);
+      };
+      const provider = new LlamaServerEmbeddings(
+        MODEL,
+        undefined,
+        { failoverConsecutiveFailures: 3, unavailableRetryMaxWaitMs: 0 },
+        `${PEER_A},${PEER_B}`,
+        undefined,
+        undefined,
+        { fetch: fetchFn, ...time.deps, log: () => {}, endpointDownVerdicts: verdicts.open() },
+      );
+
+      await provider.embedBatch(texts(4));
+
+      expect(
+        verdicts
+          .open()
+          .liveVerdicts()
+          .map((v) => v.url),
+      ).toEqual([PEER_A]);
+    });
+
+    it("when every endpoint, fallback included, is marked down, every one is still tried", async () => {
+      const time = fakeTime();
+      const verdicts = sharedVerdicts(time);
+      const store = verdicts.open();
+      for (const url of [PEER_A, PEER_B, FALLBACK]) store.markDown(url, "EHOSTUNREACH");
+      const cluster = fakeCluster({ [PEER_A]: healthy(), [PEER_B]: healthy(), [FALLBACK]: healthy() });
+      const provider = makeProvider(cluster, { fallbacks: FALLBACK, time, verdicts: verdicts.open() });
+
+      const results = await provider.embedBatch(texts(8));
+
+      expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+      expect(cluster.embedCalls(PEER_A).length).toBeGreaterThan(0);
+      expect(cluster.embedCalls(PEER_B).length).toBeGreaterThan(0);
+    });
+
+    it("a lone endpoint marked down is still tried", async () => {
+      const time = fakeTime();
+      const verdicts = sharedVerdicts(time);
+      verdicts.open().markDown(PEER_A, "EHOSTUNREACH");
+      const cluster = fakeCluster({ [PEER_A]: healthy() });
+
+      await makeProvider(cluster, { peers: PEER_A, time, verdicts: verdicts.open() }).embedBatch(texts(2));
+
+      expect(cluster.embeddedTexts(PEER_A)).toEqual(["t0", "t1"]);
+    });
+
+    it("a corrupt verdict file is ignored", async () => {
+      const time = fakeTime();
+      const verdicts = sharedVerdicts(time);
+      writeFileSync(verdicts.file, "garbage{", "utf-8");
+      const cluster = fakeCluster({ [PEER_A]: healthy(), [FALLBACK]: healthy() });
+
+      await makeProvider(cluster, { peers: PEER_A, fallbacks: FALLBACK, time, verdicts: verdicts.open() }).embedBatch(
+        texts(2),
+      );
+
+      expect(cluster.embeddedTexts(PEER_A)).toEqual(["t0", "t1"]);
+    });
+
+    it("a status probe still reports a down-marked primary unavailable, with its live reason", async () => {
+      const time = fakeTime();
+      const verdicts = sharedVerdicts(time);
+      verdicts.open().markDown(PEER_A, "EHOSTUNREACH");
+      const cluster = fakeCluster({ [PEER_A]: unreachable(), [FALLBACK]: healthy() });
+      const provider = makeProvider(cluster, { peers: PEER_A, fallbacks: FALLBACK, time, verdicts: verdicts.open() });
+
+      expect(await provider.checkPrimaryHealth()).toBe(false);
+      expect(provider.getPrimaryUnavailableReason()).toContain("EHOSTUNREACH");
+    });
+
+    it("a status probe that finds the primary unreachable leaves a verdict for the next process", async () => {
+      const time = fakeTime();
+      const verdicts = sharedVerdicts(time);
+      const cluster = fakeCluster({ [PEER_A]: unreachable(), [FALLBACK]: healthy() });
+
+      await makeProvider(cluster, {
+        peers: PEER_A,
+        fallbacks: FALLBACK,
+        time,
+        verdicts: verdicts.open(),
+      }).checkPrimaryHealth();
+
+      expect(
+        verdicts
+          .open()
+          .liveVerdicts()
+          .map((v) => v.url),
+      ).toEqual([PEER_A]);
     });
   });
 });

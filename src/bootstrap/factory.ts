@@ -285,6 +285,7 @@ async function resolveInfrastructure(
         models: config.paths.models,
         daemonSocket: config.paths.daemonSocket,
         daemonPid: config.paths.daemonPid,
+        endpointDownVerdicts: config.paths.embeddingEndpointHealth,
       },
       onRecoveryWait: onEmbeddingRecoveryWait,
     });

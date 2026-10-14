@@ -27,6 +27,11 @@ export function daemonPidFile(): string {
   return join(appDataDir(), "onnx-daemon.pid");
 }
 
+/** Cross-process "embedding endpoint down" verdicts (bd w1bz7). */
+export function embeddingEndpointHealthPath(): string {
+  return join(appDataDir(), "embedding-endpoint-health.json");
+}
+
 export function calibrationCachePath(): string {
   return join(appDataDir(), "onnx-calibration.json");
 }

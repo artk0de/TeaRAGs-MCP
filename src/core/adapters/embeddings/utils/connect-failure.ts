@@ -48,6 +48,31 @@ function innermostMessage(chain: unknown[]): string | undefined {
   return undefined;
 }
 
+/**
+ * Errno codes of a connection that never got established: the endpoint is not
+ * reachable at all, as opposed to one that answered badly (HTTP 4xx/5xx), was
+ * reset mid-request, or was slow on a request it accepted.
+ */
+const CONNECT_CLASS_CODES: ReadonlySet<string> = new Set([
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "EHOSTDOWN",
+  "ENETUNREACH",
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+/** Did the connection itself fail (refused, unreachable, connect timeout)? A request-level abort is not one. */
+export function isConnectClassFailure(error: unknown): boolean {
+  const code = errnoCode(causeChain(error));
+  return code !== undefined && CONNECT_CLASS_CODES.has(code);
+}
+
+/** An `AbortSignal.timeout` abort: the request's own deadline ran out. */
+export function isTimeoutAbort(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
+}
+
 export function describeConnectFailure(error: unknown): string {
   const chain = causeChain(error);
   const code = errnoCode(chain);
@@ -55,6 +80,6 @@ export function describeConnectFailure(error: unknown): string {
     const known = KNOWN_CAUSES[code];
     return known ? `${code}: ${known}` : code;
   }
-  if (error instanceof Error && error.name === "TimeoutError") return "ETIMEDOUT: request timed out";
+  if (isTimeoutAbort(error)) return "ETIMEDOUT: request timed out";
   return innermostMessage(chain) ?? String(error);
 }

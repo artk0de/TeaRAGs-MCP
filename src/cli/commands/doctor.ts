@@ -420,6 +420,7 @@ async function defaultDeps(): Promise<DoctorDeps> {
     models: config.paths.models,
     daemonSocket: config.paths.daemonSocket,
     daemonPid: config.paths.daemonPid,
+    endpointDownVerdicts: config.paths.embeddingEndpointHealth,
   });
   return { qdrant, embeddings };
 }

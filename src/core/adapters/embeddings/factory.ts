@@ -8,6 +8,7 @@ import type { EmbeddingConfig } from "../../contracts/types/config.js";
 import { ConfigValueInvalidError, ConfigValueMissingError } from "../../primitives/errors/index.js";
 import type { EmbeddingProvider } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
+import { EmbeddingEndpointDownVerdictStore } from "./endpoint-down-verdicts.js";
 import { LLAMA_SERVER_DEFAULT_URL, LlamaServerEmbeddings } from "./llama-server/provider.js";
 import { OllamaEmbeddings } from "./ollama.js";
 import { DEFAULT_ONNX_MODEL, OnnxEmbeddings } from "./onnx.js";
@@ -20,6 +21,8 @@ export interface EmbeddingPaths {
   models: string;
   daemonSocket: string;
   daemonPid: string;
+  /** Cross-process endpoint-down verdict file (llama-server); absent → no verdicts are shared. */
+  endpointDownVerdicts?: string;
 }
 
 /* v8 ignore start -- fallback for backward compat when DI paths not provided */
@@ -29,6 +32,7 @@ function fallbackPaths(): EmbeddingPaths {
     models: join(appData, "models"),
     daemonSocket: join(appData, "onnx.sock"),
     daemonPid: join(appData, "onnx-daemon.pid"),
+    endpointDownVerdicts: join(appData, "embedding-endpoint-health.json"),
   };
 }
 /* v8 ignore stop */
@@ -40,6 +44,11 @@ function rejectOllamaEndpointList(variable: string, value: string | undefined): 
     value,
     "a single URL - the ollama provider supports one endpoint per role; comma-separated lists are llama-server only",
   );
+}
+
+function endpointDownVerdictStore(paths: EmbeddingPaths | undefined): EmbeddingEndpointDownVerdictStore | undefined {
+  const file = (paths ?? fallbackPaths()).endpointDownVerdicts;
+  return file === undefined ? undefined : new EmbeddingEndpointDownVerdictStore(file);
 }
 
 export class EmbeddingProviderFactory {
@@ -111,6 +120,7 @@ export class EmbeddingProviderFactory {
           baseUrl || LLAMA_SERVER_DEFAULT_URL,
           config.fallbackBaseUrl,
           config.apiKey,
+          { endpointDownVerdicts: endpointDownVerdictStore(paths) },
         );
 
       case "onnx": {
