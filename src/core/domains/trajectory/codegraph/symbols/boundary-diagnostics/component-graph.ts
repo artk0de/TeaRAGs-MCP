@@ -9,6 +9,7 @@ import type {
   ComponentDependency,
   ComponentFacadeAggregation,
   ComponentGraph,
+  ComponentNamespaceGrouping,
   FacadeModuleAssessment,
 } from "./types.js";
 
@@ -31,11 +32,15 @@ export const COMPONENT_CONTAINMENT_REASON =
  * drew. A narrower adoption-only partition for SDP / main-sequence / hub /
  * shotgun once judged a too-few-importers kernel as part of its
  * facade-not-adopted parent and flagged the parent for the kernel's edges
- * (`ts/walker → language` on the self-index). A file outside every such module whose
- * path spells the constant it declares belongs to that constant's NAMESPACE
- * (bd tea-rags-mcp-r8hme.11, `deriveConstantNamespaceComponents`):
- * `app/models/billing/*` and `app/services/billing/*` are one `::Billing`.
- * Every other file belongs to its OWN directory — no roll-up into a parent:
+ * (`ts/walker → language` on the self-index). Every other file belongs to its
+ * OWN directory, in every language (bd tea-rags-mcp-r8hme.52.15, owner
+ * decision 2026-10-11): a Zeitwerk constant namespace spans Rails layers —
+ * one `::Billing` held controllers, services and models, and on taxdome the
+ * namespace partition put `app/policies → ::AbstractPolicy` and
+ * `Firm < ApplicationRecord` into layering knots and back-edges the
+ * file-level flow does not have. The namespace survives as a secondary
+ * grouping (`ComponentGraph.namespaceGrouping`) for the co-change reading.
+ * No roll-up into a parent:
  * rolling small directories up into the nearest ancestor with
  * enough files mixed unrelated namespaces into one component (on taxdome it
  * raised the judged component edges from 8962 to 13768 and the violations
@@ -82,12 +87,11 @@ export function buildComponentGraph(
     if (!entryModules.has(m.moduleDir)) componentModules.set(m.moduleDir, m);
   }
 
-  const namespaceOf = deriveConstantNamespaceComponents(graph.files);
   const componentOf = new Map<RelPath, string>();
   const members = new Map<string, number>();
   for (const f of graph.files) {
     const component =
-      componentRelabel?.get(f.relPath) ?? owningComponent(f.relPath, componentModules, entryModules, namespaceOf);
+      componentRelabel?.get(f.relPath) ?? owningComponent(f.relPath, componentModules, entryModules, NO_NAMESPACES);
     componentOf.set(f.relPath, component);
     members.set(component, (members.get(component) ?? 0) + 1);
   }
@@ -178,7 +182,50 @@ export function buildComponentGraph(
     // Read by SDP only (bd tea-rags-mcp-ciq4d): no count above depends on it.
     reexportShims: deriveReexportShimComponents(graph, componentOf),
     compositionTables: measureCompositionTables(graph.edges, componentOf, dependencies),
+    ...namespaceGroupingOf(graph, componentModules, entryModules, componentRelabel),
   };
+}
+
+const NO_NAMESPACES: ReadonlyMap<RelPath, string> = new Map();
+
+/**
+ * The constant-namespace grouping (bd tea-rags-mcp-r8hme.52.15): the walk
+ * above with the namespace a file's path spells taking the place of its own
+ * directory — exactly the partition every detector read before option A, kept
+ * for the co-change reading that needs it. Its dependencies are aggregated
+ * over the raw file edges with the partition's exclusions, so two namespaces
+ * inside one directory (`::User` → `app/models`) still join. Absent when no
+ * file spells a namespace.
+ */
+function namespaceGroupingOf(
+  graph: FileDependencyGraph,
+  componentModules: ReadonlyMap<string, FacadeModuleAssessment>,
+  entryModules: ReadonlyMap<string, FacadeModuleAssessment>,
+  componentRelabel: ReadonlyMap<RelPath, string> | undefined,
+): { namespaceGrouping?: ComponentNamespaceGrouping } {
+  const namespaceOf = deriveConstantNamespaceComponents(graph.files);
+  if (namespaceOf.size === 0) return {};
+  const componentOf = new Map<RelPath, string>();
+  for (const f of graph.files) {
+    componentOf.set(
+      f.relPath,
+      componentRelabel?.get(f.relPath) ?? owningComponent(f.relPath, componentModules, entryModules, namespaceOf),
+    );
+  }
+  const pairs = new Map<string, { sourceComponent: string; targetComponent: string }>();
+  for (const edge of graph.edges) {
+    const source = componentOf.get(edge.sourceRelPath);
+    const target = componentOf.get(edge.targetRelPath);
+    if (edge.sourceRelPath === edge.targetRelPath || source === undefined || target === undefined) continue;
+    if (source === target || isFacadeAggregationEdge(edge)) continue;
+    pairs.set(`${source}\u0000${target}`, { sourceComponent: source, targetComponent: target });
+  }
+  const dependencies = [...pairs.values()].sort(
+    (a, b) =>
+      compareCodePoints(a.sourceComponent, b.sourceComponent) ||
+      compareCodePoints(a.targetComponent, b.targetComponent),
+  );
+  return { namespaceGrouping: { componentOf, dependencies } };
 }
 
 /**
@@ -203,7 +250,8 @@ function importedFileSet(edges: readonly FileDependencyEdge[]): ReadonlySet<RelP
 
 /**
  * The innermost component module containing `relPath`, else the constant
- * namespace its path spells, else the file's own directory. An entry module
+ * namespace its path spells (the namespace grouping only — the partition
+ * passes none), else the file's own directory. An entry module
  * (bd tea-rags-mcp-r8hme.52.4) owns only the files of its own directory: the
  * walk stops at it, so a file below it that no nearer module claims falls to
  * its namespace or own directory, never to the entry and never past it to an

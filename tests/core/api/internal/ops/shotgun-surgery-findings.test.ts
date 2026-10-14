@@ -84,6 +84,49 @@ describe("runShotgunSurgery — per-file line counts reach the detector (bd tea-
   });
 });
 
+describe("runShotgunSurgery — reads the constant-namespace grouping (bd tea-rags-mcp-r8hme.52.15)", () => {
+  beforeEach(() => {
+    detectorInputs.length = 0;
+  });
+
+  it("judges spreads over the namespace grouping and its dependencies, not the path partition", () => {
+    const namespaceGrouping = {
+      componentOf: new Map([
+        ["app/models/billing/invoice.rb", "::Billing"],
+        ["app/services/billing/charge.rb", "::Billing"],
+      ]),
+      dependencies: [{ sourceComponent: "::Billing", targetComponent: "::User" }],
+    };
+    const components = {
+      componentOf: new Map([
+        ["app/models/billing/invoice.rb", "app/models/billing"],
+        ["app/services/billing/charge.rb", "app/services/billing"],
+      ]),
+      dependencies: [],
+      namespaceGrouping,
+    } as unknown as ComponentGraph;
+    const cochange: TemporalCochangeGraph = {
+      meta: META,
+      edges: [],
+      bundles: new Map([[0, ["app/models/billing/invoice.rb", "app/services/billing/charge.rb"]]]),
+    };
+
+    runShotgunSurgery(cochange, components, undefined);
+
+    expect(detectorInputs[0].componentOf).toBe(namespaceGrouping.componentOf);
+    expect(detectorInputs[0].componentDependencies).toBe(namespaceGrouping.dependencies);
+  });
+
+  it("falls back to the partition when the graph carries no grouping", () => {
+    const cochange: TemporalCochangeGraph = { meta: META, edges: [], bundles: new Map([[0, ["a.ts", "b.ts"]]]) };
+
+    runShotgunSurgery(cochange, COMPONENTS, undefined);
+
+    expect(detectorInputs[0].componentOf).toBe(COMPONENTS.componentOf);
+    expect(detectorInputs[0].componentDependencies).toBe(COMPONENTS.dependencies);
+  });
+});
+
 describe("summariseShotgunSurgery — mechanical and echo counts (bd tea-rags-mcp-dm61n)", () => {
   it("reports the four stage counts when line counts were recorded", () => {
     const bundleFileLines = new Map([[0, new Map([["a.ts", { added: 3, deleted: 1 }]])]]);

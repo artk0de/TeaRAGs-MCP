@@ -512,6 +512,24 @@ export interface ComponentGraph {
    * of the `compositionTable` annotation. Absent on a hand-built graph.
    */
   compositionTables?: CompositionTables;
+  /**
+   * The constant-namespace grouping (`deriveConstantNamespaceComponents`, bd
+   * tea-rags-mcp-r8hme.11) — a SECONDARY reading, never the partition (bd
+   * tea-rags-mcp-r8hme.52.15, owner decision 2026-10-11): `app/models/billing`
+   * and `app/services/billing` stay two components for every structural
+   * detector, while the co-change reading (shotgun surgery) groups them as
+   * the one `::Billing` Zeitwerk autoloads. Absent when no file's path spells
+   * a namespace.
+   */
+  namespaceGrouping?: ComponentNamespaceGrouping;
+}
+
+/** Files grouped by the constant namespace their path spells, else by their partition component. */
+export interface ComponentNamespaceGrouping {
+  /** Which group holds each file: its namespace (`::Billing`), else its component in the partition. */
+  componentOf: ReadonlyMap<RelPath, string>;
+  /** The distinct group pairs a file edge joins — the same exclusions as the partition's dependencies. */
+  dependencies: readonly { sourceComponent: string; targetComponent: string }[];
 }
 
 /**

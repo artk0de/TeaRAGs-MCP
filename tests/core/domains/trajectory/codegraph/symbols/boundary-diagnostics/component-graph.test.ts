@@ -212,7 +212,7 @@ describe("buildComponentGraph — the domain partition", () => {
  * `app/services/billing/*` are one `Billing`. Derived from the declared
  * constants alone: no directory list, no language list.
  */
-describe("buildComponentGraph — constant-namespace partition", () => {
+describe("buildComponentGraph — Ruby components are path-based; the constant namespace is a grouping (bd tea-rags-mcp-r8hme.52.15)", () => {
   function rubyFile(relPath: string, enclosingScopeNames: string[]) {
     return { relPath, language: "ruby", symbolCount: 1, enclosingScopeNames };
   }
@@ -240,19 +240,39 @@ describe("buildComponentGraph — constant-namespace partition", () => {
         edge("app/models/billing/refunds/refund.rb", "app/models/user.rb"),
         edge("clock.rb", "app/models/billing/invoice.rb"),
         edge("app/models/account.rb", "app/models/session.rb"),
+        // One directory, two namespaces: intra-component for the partition,
+        // a dependency for the grouping.
+        edge("app/models/user.rb", "app/models/account.rb"),
       ],
     };
   }
 
-  it("joins the files that spell one constant namespace into one component, across directories", () => {
+  it("partitions Ruby files by directory like every other language — a namespace never spans Rails layers", () => {
     const { componentOf, components } = buildComponentGraph(zeitwerkGraph(), []);
 
-    expect(componentOf.get("app/models/billing/invoice.rb")).toBe("::Billing");
-    expect(componentOf.get("app/services/billing/charge_service.rb")).toBe("::Billing");
-    expect(componentOf.get("app/models/billing/refunds/refund.rb")).toBe("::Billing::Refunds");
-    expect(componentOf.get("app/services/billing/refunds/request.rb")).toBe("::Billing::Refunds");
-    expect(components.get("::Billing")).toMatchObject({ componentDir: "::Billing", kind: "namespace", fileCount: 2 });
-    expect(components.get("::Billing::Refunds")).toMatchObject({ kind: "namespace", fileCount: 2 });
+    expect(componentOf.get("app/models/billing/invoice.rb")).toBe("app/models/billing");
+    expect(componentOf.get("app/services/billing/charge_service.rb")).toBe("app/services/billing");
+    expect(componentOf.get("app/models/user.rb")).toBe("app/models");
+    expect(componentOf.get("app/models/user/profile.rb")).toBe("app/models/user");
+    expect([...components.values()].filter((c) => c.kind === "namespace")).toEqual([]);
+  });
+
+  it("reads Ruby component dependencies by directory nesting", () => {
+    const { dependencies } = buildComponentGraph(zeitwerkGraph(), []);
+    const relation = (source: string, target: string) =>
+      dependencies.find((d) => d.sourceComponent === source && d.targetComponent === target)?.directoryRelation;
+
+    expect(relation("app/models/billing", "app/models/billing/refunds")).toBe("descendant");
+    expect(relation("app/models/billing", "app/services/billing")).toBe("disjoint");
+  });
+
+  it("groups the files that spell one constant namespace across directories, for the co-change reading", () => {
+    const grouping = buildComponentGraph(zeitwerkGraph(), []).namespaceGrouping;
+
+    expect(grouping?.componentOf.get("app/models/billing/invoice.rb")).toBe("::Billing");
+    expect(grouping?.componentOf.get("app/services/billing/charge_service.rb")).toBe("::Billing");
+    expect(grouping?.componentOf.get("app/models/billing/refunds/refund.rb")).toBe("::Billing::Refunds");
+    expect(grouping?.componentOf.get("app/services/billing/refunds/request.rb")).toBe("::Billing::Refunds");
   });
 
   it("places a nested-module file in the namespace its compact sibling spells (bd tea-rags-mcp-r8hme.54)", () => {
@@ -270,38 +290,44 @@ describe("buildComponentGraph — constant-namespace partition", () => {
       edges: [],
     };
 
-    const { componentOf } = buildComponentGraph(graph, []);
+    const grouping = buildComponentGraph(graph, []).namespaceGrouping;
 
-    expect(componentOf.get("app/services/communication/api/chat_thread.rb")).toBe("::Communication::Api");
-    expect(componentOf.get("app/services/communication/api/automations.rb")).toBe("::Communication::Api");
+    expect(grouping?.componentOf.get("app/services/communication/api/chat_thread.rb")).toBe("::Communication::Api");
+    expect(grouping?.componentOf.get("app/services/communication/api/automations.rb")).toBe("::Communication::Api");
   });
 
-  it("puts a top-level constant with its own nested constants, and leaves a lone one in its directory", () => {
-    const { componentOf } = buildComponentGraph(zeitwerkGraph(), []);
+  it("groups a top-level constant with its own nested constants, and leaves a lone one in its directory", () => {
+    const grouping = buildComponentGraph(zeitwerkGraph(), []).namespaceGrouping;
 
-    expect(componentOf.get("app/models/user.rb")).toBe("::User");
-    expect(componentOf.get("app/models/user/profile.rb")).toBe("::User");
-    expect(componentOf.get("app/models/account.rb")).toBe("app/models");
-    expect(componentOf.get("app/models/session.rb")).toBe("app/models");
+    expect(grouping?.componentOf.get("app/models/user.rb")).toBe("::User");
+    expect(grouping?.componentOf.get("app/models/user/profile.rb")).toBe("::User");
+    expect(grouping?.componentOf.get("app/models/account.rb")).toBe("app/models");
+    expect(grouping?.componentOf.get("app/models/session.rb")).toBe("app/models");
   });
 
-  it("keeps the directory where the path does not spell the constant, or nothing is namespaced", () => {
-    const { componentOf } = buildComponentGraph(zeitwerkGraph(), []);
+  it("keeps the directory in the grouping where the path does not spell the constant, or nothing is namespaced", () => {
+    const grouping = buildComponentGraph(zeitwerkGraph(), []).namespaceGrouping;
 
-    expect(componentOf.get("config/initializers/string_ext.rb")).toBe("config/initializers");
-    expect(componentOf.get("clock.rb")).toBe("");
-    expect(componentOf.get("src/reranker.ts")).toBe("src");
+    expect(grouping?.componentOf.get("config/initializers/string_ext.rb")).toBe("config/initializers");
+    expect(grouping?.componentOf.get("clock.rb")).toBe("");
+    expect(grouping?.componentOf.get("src/reranker.ts")).toBe("src");
   });
 
-  it("reads a nested namespace as containment and a namespace beside a directory as disjoint", () => {
-    const { dependencies } = buildComponentGraph(zeitwerkGraph(), []);
-    const relation = (source: string, target: string) =>
-      dependencies.find((d) => d.sourceComponent === source && d.targetComponent === target)?.directoryRelation;
+  it("aggregates the grouping's own dependencies, edges inside one directory included", () => {
+    const pairs = buildComponentGraph(zeitwerkGraph(), []).namespaceGrouping?.dependencies.map(
+      (d) => `${d.sourceComponent} -> ${d.targetComponent}`,
+    );
 
-    expect(relation("::Billing", "::Billing::Refunds")).toBe("descendant");
-    expect(relation("::Billing::Refunds", "::User")).toBe("disjoint");
-    // The repository root is not an ancestor of a namespace.
-    expect(relation("", "::Billing")).toBe("disjoint");
+    expect(pairs).toEqual([
+      " -> ::Billing",
+      "::Billing -> ::Billing::Refunds",
+      "::Billing::Refunds -> ::User",
+      "::User -> app/models",
+    ]);
+  });
+
+  it("has no grouping when no file's path spells a namespace", () => {
+    expect(buildComponentGraph(graph(), []).namespaceGrouping).toBeUndefined();
   });
 
   it("lets a judged facade module keep the files under it", () => {
@@ -314,7 +340,9 @@ describe("buildComponentGraph — constant-namespace partition", () => {
       edges: [],
     };
 
-    expect(buildComponentGraph(g, [module("lib", "active")]).componentOf.get("lib/billing/invoice.rb")).toBe("lib");
+    const built = buildComponentGraph(g, [module("lib", "active")]);
+    expect(built.componentOf.get("lib/billing/invoice.rb")).toBe("lib");
+    expect(built.namespaceGrouping?.componentOf.get("lib/billing/invoice.rb") ?? "lib").toBe("lib");
   });
 });
 

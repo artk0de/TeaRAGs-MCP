@@ -49,8 +49,11 @@ export function runShotgunSurgery(
     head: meta.head,
     builtAt: meta.builtAt,
     report: detectShotgunSurgery({
-      componentOf: components.componentOf,
-      componentDependencies: components.dependencies,
+      // The co-change reading groups by constant namespace where a path spells
+      // one (bd tea-rags-mcp-r8hme.52.15); the structural detectors keep the
+      // path partition.
+      componentOf: components.namespaceGrouping?.componentOf ?? components.componentOf,
+      componentDependencies: components.namespaceGrouping?.dependencies ?? components.dependencies,
       bundles: cochange.bundles,
       ...(cochange.bundleBursts ? { bundleBursts: cochange.bundleBursts } : {}),
       ...(cochange.bundleCommits ? { bundleCommits: cochange.bundleCommits } : {}),
