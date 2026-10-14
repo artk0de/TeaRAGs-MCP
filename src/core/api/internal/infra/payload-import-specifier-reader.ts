@@ -68,13 +68,33 @@ export async function readPayloadIndexedFileImports(
   qdrant: Pick<QdrantPointReader, "scrollPayloadPages">,
   collectionName: string,
 ): Promise<Map<RelPath, IndexedFileImports>> {
-  const files = new Map<RelPath, IndexedFileImports>();
-  for await (const page of qdrant.scrollPayloadPages(collectionName, indexedFileImportPayloadKeys())) {
+  const accumulator = new IndexedFileImportsAccumulator();
+  for await (const page of qdrant.scrollPayloadPages(collectionName, IndexedFileImportsAccumulator.payloadKeys())) {
+    accumulator.accept(page);
+  }
+  return accumulator.files;
+}
+
+/**
+ * The indexed-imports reduction, fed one scroll page at a time (bd
+ * tea-rags-mcp-i2zr8): the first chunk of a file with a NON-EMPTY `imports`
+ * answers for it. Pages arrive in scroll order, so the shared scan
+ * (`readPayloadFileFacts`) answers exactly what this reader's own scroll does.
+ */
+export class IndexedFileImportsAccumulator {
+  readonly files = new Map<RelPath, IndexedFileImports>();
+
+  /** Read per call, never at module load — the conditions belong to another domain's barrel. */
+  static payloadKeys(): string[] {
+    return ["relativePath", "imports", ...TEST_EXCLUSION_FILTER_CONDITIONS.map((condition) => condition.key)];
+  }
+
+  accept(page: readonly { payload: Record<string, unknown> }[]): void {
     for (const { payload } of page) {
       const { relativePath, imports } = payload;
-      if (typeof relativePath !== "string" || files.has(relativePath)) continue;
+      if (typeof relativePath !== "string" || this.files.has(relativePath)) continue;
       if (!Array.isArray(imports) || imports.length === 0) continue;
-      files.set(relativePath, {
+      this.files.set(relativePath, {
         isTest: TEST_EXCLUSION_FILTER_CONDITIONS.some(
           (condition) => readPayloadPath(payload, condition.key) === condition.match.value,
         ),
@@ -82,12 +102,6 @@ export async function readPayloadIndexedFileImports(
       });
     }
   }
-  return files;
-}
-
-/** Read per call, never at module load — the conditions belong to another domain's barrel. */
-function indexedFileImportPayloadKeys(): string[] {
-  return ["relativePath", "imports", ...TEST_EXCLUSION_FILTER_CONDITIONS.map((condition) => condition.key)];
 }
 
 /** A dotted payload path read off the nested payload object. */
