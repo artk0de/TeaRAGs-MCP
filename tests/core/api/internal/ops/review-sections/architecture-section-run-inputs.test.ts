@@ -136,7 +136,6 @@ function runContext(graph: FileDependencyGraph): ReviewSectionContext {
     touchedFiles: new Set(["src/app/a.ts"]),
     addedRanges: new Map(),
     nonProduction: new Set(),
-    skipped: 0,
   };
   return {
     scope,

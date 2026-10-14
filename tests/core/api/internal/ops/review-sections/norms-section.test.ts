@@ -319,7 +319,6 @@ function scopeOf(files: readonly string[], touched: readonly string[] = files): 
     touchedFiles: new Set(touched),
     addedRanges: new Map(),
     nonProduction: new Set(),
-    skipped: 0,
   };
 }
 

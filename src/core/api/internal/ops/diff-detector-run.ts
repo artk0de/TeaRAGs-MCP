@@ -238,15 +238,9 @@ export class DiffDetectorRun {
    */
   run(scope: DiffDetectorScope, overlay: ReviewEdgeOverlay): DiffDetectorFindings {
     const verdicts = DIFF_FAMILY_DETECTORS.map((detector) => detector.judge(this.familyContext(scope, overlay)));
-    // Partial over a truncated diff (bd tea-rags-mcp-89k7k.1.9): stamped on
-    // BUILT rows only — an unbuilt row's built:false + reason already denies
-    // the clean pass.
-    const skippedFiles = scope.skippedFiles ?? 0;
-    const partial = (status: DiffDetectorStatus): DiffDetectorStatus =>
-      skippedFiles > 0 && status.built ? Object.freeze({ ...status, scopeSkippedFiles: skippedFiles }) : status;
     return {
       findings: Object.freeze(verdicts.flatMap((verdict) => verdict.findings)),
-      detectors: Object.freeze(verdicts.map((verdict) => partial(verdict.status))),
+      detectors: Object.freeze(verdicts.map((verdict) => verdict.status)),
     };
   }
 

@@ -75,7 +75,6 @@ function scopeOf(files: readonly string[], extra: Partial<DiffScopeRead> = {}): 
     touchedFiles: new Set(files),
     addedRanges: new Map(),
     nonProduction: new Set(),
-    skipped: 0,
     ...extra,
   };
 }

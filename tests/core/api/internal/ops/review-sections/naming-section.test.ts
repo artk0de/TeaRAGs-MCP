@@ -23,7 +23,6 @@ const scope: DiffScopeRead = {
   touchedFiles: new Set(["src/a.ts", "src/b.ts"]),
   addedRanges: new Map(),
   nonProduction: new Set(),
-  skipped: 0,
 };
 
 function makeContext(overrides: Partial<ReviewSectionContext> = {}): ReviewSectionContext {

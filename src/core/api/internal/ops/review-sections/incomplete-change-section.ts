@@ -47,17 +47,14 @@
  * Read: the wholesale temporal co-change snapshot
  * (`GraphDbClient#readTemporalCochangeGraph`) the whole-repo
  * `get_architecture_report`'s silent-coupling detector reads, filtered in
- * memory — 200-file diffs × ≤20 partners each is small, and per-file reads of
- * an undirected pair table would answer half the question. The build context
- * receives it pre-read (`temporalCochange`), so `isBuilt` stays a pure
- * decision. The reader's file cap limits the SOURCES: only a scanned file's
- * partners are considered, and a scope the cap truncated stamps the envelope
- * `scopeSkippedFiles` (bd tea-rags-mcp-89k7k.7) — a past-cap file's own
- * missing partners are never looked for, so the findings are partial, never a
- * clean pass. Whether a partner is MISSING is asked of the whole change
+ * memory — per-file reads of an undirected pair table would answer half the
+ * question. The build context receives it pre-read (`temporalCochange`), so
+ * `isBuilt` stays a pure decision. The SOURCES are the scanned files — every
+ * changed file, or the listed ones (no scope cap, bd tea-rags-mcp-89k7k.1.8).
+ * Whether a partner is MISSING is asked of the whole change
  * (`scope.touchedFiles`, bd tea-rags-mcp-lxbrr): a partner the change touches
- * past the cap, or deletes, is carried by the change and never a finding —
- * live, 23 of 29 reported partners were such files.
+ * outside the scanned files, or deletes, is carried by the change and never a
+ * finding.
  *
  * A missing TEST partner is demoted to `coveredPartners` when a test the
  * change touches has the source as its subject and imports it (bd
@@ -117,12 +114,9 @@ export const incompleteChangeSectionProvider: ReviewSectionProvider = {
 
   run: async (context) => {
     const { scope } = context;
-    // The never-a-clean-pass stamp (bd tea-rags-mcp-89k7k.7): a past-cap file
-    // is not a source, so its own missing partners are unjudged below.
-    const truncatedScope = scope.skipped > 0 ? { scopeSkippedFiles: scope.skipped } : {};
     const graph = context.temporalCochange;
-    if (graph === undefined || graph === null) return { partners: [], ...truncatedScope };
-    // Sources are the scanned (capped) files; presence is the whole change.
+    if (graph === undefined || graph === null) return { partners: [] };
+    // Sources are the scanned files; presence is the whole change.
     const isSource = new Set(scope.files);
     const inChange = scope.touchedFiles;
     const isGenerated = generatedPathMemo();
@@ -208,7 +202,6 @@ export const incompleteChangeSectionProvider: ReviewSectionProvider = {
       ...(policy.separability === undefined ? {} : { strengthSeparability: policy.separability }),
       ...(significance ? { cochangeSignificance: significance.summary, notSignificant } : {}),
       ...(versionManifestPairs > 0 ? { versionManifestPairs } : {}),
-      ...truncatedScope,
       ...(uncovered.length > partners.length ? { truncated: uncovered.length - partners.length } : {}),
     };
   },

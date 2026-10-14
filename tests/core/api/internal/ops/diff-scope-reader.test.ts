@@ -107,18 +107,21 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("caps the changed files at 200 per call", async () => {
+  // bd tea-rags-mcp-89k7k.1.8 (owner decision 2026-10-14): no file cap — a
+  // review judges the whole change, so every changed file is read.
+  it("reads every changed file — no cap, nothing skipped", async () => {
     mkdirSync(join(repo, "notes"));
     for (let i = 0; i < 201; i++) writeFileSync(join(repo, `notes/n${String(i).padStart(3, "0")}.md`), "x\n");
     const read = await readDiffScope(repo, {});
-    expect(read.files).toHaveLength(200);
-    expect(read.skipped).toBe(2);
+    expect(read.files).toHaveLength(202);
+    expect(read.files).toContain(CHANGED);
+    expect(read.addedRanges.get("notes/n200.md")).toEqual([{ start: 1, end: 1 }]);
+    expect(read).not.toHaveProperty("skipped");
   });
 
-  // bd tea-rags-mcp-lxbrr: the cap limits which files are SCANNED, never what
-  // the change touches — a section asking "is this partner in the change?"
-  // reads the whole change, past-cap and deleted paths included.
-  it("touchedFiles is the whole change: past-cap files and deletions included, uncapped", async () => {
+  // bd tea-rags-mcp-lxbrr: a section asking "is this partner in the change?"
+  // reads the whole change, deleted paths included — those are never scanned.
+  it("touchedFiles is the whole change: every scanned file plus deletions", async () => {
     writeFileSync(join(repo, "src/gone.ts"), "export const gone = 1;\n");
     // Commit only the soon-deleted file — CHANGED stays an uncommitted edit.
     git(repo, "add", "src/gone.ts");
@@ -127,36 +130,17 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
     mkdirSync(join(repo, "notes"));
     for (let i = 0; i < 201; i++) writeFileSync(join(repo, `notes/n${String(i).padStart(3, "0")}.md`), "x\n");
     const read = await readDiffScope(repo, {});
-    expect(read.files).toHaveLength(200);
+    expect(read.files).toHaveLength(202);
     expect(read.files).not.toContain("src/gone.ts");
     expect(read.touchedFiles.size).toBe(203);
     expect(read.touchedFiles.has(CHANGED)).toBe(true);
     expect(read.touchedFiles.has("src/gone.ts")).toBe(true);
     for (const relPath of read.files) expect(read.touchedFiles.has(relPath)).toBe(true);
-    const pastCap = [...read.touchedFiles].filter(
-      (relPath) => !read.files.includes(relPath) && relPath !== "src/gone.ts",
-    );
-    expect(pastCap).toHaveLength(read.skipped);
   });
 
-  // bd tea-rags-mcp-89k7k.1.9: files past the cap used to be whatever sorts
-  // last in git's order — a production change was dropped while non-production
-  // notes survived it. The cap now drops by a stated relevance order instead.
-  it("over the cap drops non-production files first — the production change is never what sorts last", async () => {
-    mkdirSync(join(repo, "spikes"));
-    for (let i = 0; i < 200; i++) writeFileSync(join(repo, `spikes/s${String(i).padStart(3, "0")}.md`), "x\n");
-    // 200 masked spike files + the modified production file = 201 changed; the
-    // production file sorts AFTER every spikes/ path.
-    const read = await readDiffScope(repo, {});
-    expect(read.skipped).toBe(1);
-    expect(read.files).toHaveLength(200);
-    expect(read.files).toContain(CHANGED);
-    // All spikes tie at one added line; the tie breaks by path ascending, so
-    // the LAST spike path is the one dropped.
-    expect(read.files).not.toContain("spikes/s199.md");
-  });
-
-  it("over the cap drops the production files with the fewest added lines — ties by path, deterministic", async () => {
+  // bd tea-rags-mcp-89k7k.1.9 dropped the zero-added-lines file first when the
+  // cap bit; uncapped, a diff over 200 files reads it like any other.
+  it("a diff over 200 files reads the file with zero added lines too", async () => {
     // A clean base, then a 201-file working-tree change where every z file
     // gains one line and `aaa-deletion.ts` only loses one: zero added lines.
     git(repo, "add", "-A");
@@ -176,10 +160,9 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
     writeFileSync(join(repo, "src/git/aaa-deletion.ts"), "export const A = 1;\n");
 
     const read = await readDiffScope(repo, {});
-    expect(read.skipped).toBe(1);
-    // Zero added lines = the least review surface: dropped first, however
-    // early the path sorts.
-    expect(read.files).not.toContain("src/git/aaa-deletion.ts");
+    expect(read.files).toHaveLength(201);
+    expect(read.files).toContain("src/git/aaa-deletion.ts");
+    expect(read.addedRanges.get("src/git/aaa-deletion.ts")).toEqual([]);
     expect(read.files).toContain("src/git/z000.ts");
   });
 

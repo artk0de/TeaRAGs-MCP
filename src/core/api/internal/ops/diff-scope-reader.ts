@@ -1,6 +1,6 @@
 /**
  * The shared diff-scope reader (bd tea-rags-mcp-89k7k.1.1): one read of a
- * working-tree change — the files under the cap, their added line ranges, the
+ * working-tree change — every changed file, its added line ranges, the
  * merge-base the change is read against, and the bookkeeping (notices, counts,
  * the non-production files) every diff-scoped report consumes. The review sections of
  * `get_naming_lexicon` are its first consumer; the naming-specific half
@@ -30,8 +30,6 @@ import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import { InvalidParameterError } from "../../public/errors.js";
 import { ontologyNonProductionPathFilter } from "./ontology-report-ops.js";
 
-/** Diff mode: changed files one call reviews; the rest are reported as `skipped`. */
-export const DIFF_FILE_CAP = 200;
 /** Diff mode's base when the request names none: the working tree against HEAD (spec §6). */
 const DIFF_DEFAULT_BASE = "HEAD";
 /** A listed file with no diff is reviewed whole — every line reads as added. */
@@ -56,23 +54,21 @@ export interface DiffScopeRead {
   changedFiles: number;
   /** How many listed files had no diff and are read whole. */
   wholeFiles: number;
-  /** The files under the cap — what evidence exclusion carries. */
+  /** Every reviewed file (listed or changed) — what evidence exclusion carries. */
   files: readonly string[];
   /**
-   * Every path the change touches, UNCAPPED (bd tea-rags-mcp-lxbrr): the
-   * reviewed files (listed or changed), every path changed against the
-   * merge-base (committed range + working tree, untracked included) and every
-   * path it deleted. The cap limits which files are SCANNED as sources; a
-   * section asking "is this partner in the change?" asks this set — a
-   * past-cap or deleted partner is in the change, never missing.
+   * Every path the change touches (bd tea-rags-mcp-lxbrr): the reviewed files
+   * (listed or changed), every path changed against the merge-base (committed
+   * range + working tree, untracked included) and every path it deleted. A
+   * section asking "is this partner in the change?" asks this set — a deleted
+   * partner, or a changed one a `files` list did not name, is in the change,
+   * never missing.
    */
   touchedFiles: ReadonlySet<string>;
   /** Per reviewed file its added line ranges; a whole-file read is one range over every line. */
   addedRanges: ReadonlyMap<string, readonly AddedLineRange[]>;
   /** The read files the ontology's non-production masks cover — a report skips them, not judges them. */
   nonProduction: ReadonlySet<string>;
-  /** How many changed files fell over the cap. */
-  skipped: number;
   /**
    * The change's own commits, `mergeBase..HEAD` (bd tea-rags-mcp-89k7k.1.14) —
    * a co-change test drops the history bundles they formed, so the change
@@ -96,9 +92,9 @@ export interface DiffTreeLag {
 /**
  * One read of a working-tree change (spec §6.1–6.3): the changed files against
  * the base resolved to its merge-base with HEAD (bd tea-rags-mcp-y33ee) —
- * `files` when given, else `git diff --name-only` plus untracked files — capped
- * at {@link DIFF_FILE_CAP} by the relevance order `byReviewRelevance` states
- * (bd tea-rags-mcp-89k7k.1.9); per file its added line ranges. A listed file
+ * `files` when given, else `git diff --name-only` plus untracked files — every
+ * one of them, uncapped (bd tea-rags-mcp-89k7k.1.8: a review judges the whole
+ * change); per file its added line ranges. A listed file
  * with no diff is read whole: on a clean tree `files` names committed code to
  * review, and an empty answer would read as "all conforms".
  *
@@ -129,33 +125,20 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
   const changed = rebaseGitPathsOntoRoot(changes.changed, prefix);
   const deleted = rebaseGitPathsOntoRoot(changes.deleted, prefix);
   const listed = req.files ? unique(req.files) : undefined;
-  const all = listed ?? changed;
+  const files = listed ?? changed;
   const changedSet = new Set(changed);
   const nonProductionFilter = ontologyNonProductionPathFilter();
-  // Added-line ranges are read for EVERY candidate file, not the capped few
-  // (bd tea-rags-mcp-89k7k.1.9): the cap's relevance order below needs each
-  // file's added lines BEFORE choosing which fall over it, and the kept
-  // files' ranges come from the same single read. The extra cost over the old
-  // capped read is the diff body of the files that get skipped — one git diff
-  // invocation either way.
+  // One git diff invocation reads every file's added-line ranges.
   const ranges = await gitRead(base, async () =>
     readAddedLineRangesOfFiles(
       toplevel,
       mergeBase,
-      all.map((relPath) => gitPathFromRoot(relPath, prefix)),
+      files.map((relPath) => gitPathFromRoot(relPath, prefix)),
       undefined,
       // The change's own untracked listing — the same whole-tree read, not a second spawn.
       changes.untracked,
     ),
   );
-  const addedLinesOf = (relPath: string): number =>
-    (ranges.get(gitPathFromRoot(relPath, prefix)) ?? []).reduce((sum, range) => sum + (range.end - range.start + 1), 0);
-  // Over the cap, WHICH files survive is a stated relevance order, not
-  // git's listing order (bd tea-rags-mcp-89k7k.1.9) — see the comparator.
-  const files =
-    all.length > DIFF_FILE_CAP
-      ? [...all].sort(byReviewRelevance(addedLinesOf, changedSet, nonProductionFilter)).slice(0, DIFF_FILE_CAP)
-      : all.slice(0, DIFF_FILE_CAP);
   const whole = new Set(listed ? files.filter((relPath) => !changedSet.has(relPath)) : []);
   const addedRanges = new Map<string, readonly AddedLineRange[]>(
     files.map((relPath) => [
@@ -179,46 +162,11 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
     changedFiles: listed ? listed.filter((relPath) => changedSet.has(relPath)).length : changed.length,
     wholeFiles: whole.size,
     files,
-    touchedFiles: new Set([...all, ...changed, ...deleted]),
+    touchedFiles: new Set([...files, ...changed, ...deleted]),
     addedRanges,
     nonProduction,
-    skipped: all.length - files.length,
     diffCommits,
     ...(renamedFrom.size > 0 ? { renamedFrom } : {}),
-  };
-}
-
-/**
- * The file cap's relevance order (bd tea-rags-mcp-89k7k.1.9): files past the
- * cap used to be whatever sorted last in git's listing order — on a live diff
- * the one production change was dropped while 200 non-production notes
- * survived it, and graph-based sections then read a clean pass over files
- * they never saw. Which files SURVIVE the cap, most relevant first:
- *
- * 1. PRODUCTION before non-production (the ontology's masks) — a report skips
- *    non-production files anyway, so they carry the least review surface.
- * 2. A listed whole-file read before diff-read files — the caller named it
- *    explicitly and its review surface is the entire file.
- * 3. Otherwise MORE added lines first — the file that grew most carries the
- *    most judgement; the fewest-added-lines file is dropped first.
- * 4. Ties break by path ascending, so the kept set is deterministic for a
- *    given diff whatever git's listing order was.
- */
-function byReviewRelevance(
-  addedLinesOf: (relPath: string) => number,
-  changedSet: ReadonlySet<string>,
-  nonProductionFilter: { ignores: (relPath: string) => boolean },
-): (left: string, right: string) => number {
-  return (left, right) => {
-    const leftNonProduction = nonProductionFilter.ignores(left) ? 1 : 0;
-    const rightNonProduction = nonProductionFilter.ignores(right) ? 1 : 0;
-    if (leftNonProduction !== rightNonProduction) return leftNonProduction - rightNonProduction;
-    const leftWhole = changedSet.has(left) ? 0 : 1;
-    const rightWhole = changedSet.has(right) ? 0 : 1;
-    if (leftWhole !== rightWhole) return leftWhole - rightWhole;
-    const addedLines = addedLinesOf(right) - addedLinesOf(left);
-    if (addedLines !== 0) return addedLines;
-    return left < right ? -1 : left > right ? 1 : 0;
   };
 }
 

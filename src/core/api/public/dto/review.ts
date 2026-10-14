@@ -61,21 +61,12 @@ export interface ReviewSectionEnvelope {
   /** When not built: the substrate that was missing or failed. */
   reason?: string;
   notJudged?: readonly ReviewSectionNotJudgedEntry[];
-  /**
-   * Changed files the diff's file cap skipped while this section judged (bd
-   * tea-rags-mcp-89k7k.7) — the section-level form of
-   * `DiffDetectorStatus.scopeSkippedFiles`, for the sections whose findings
-   * are per-file or per-pair rows and cannot carry it. Present = the verdict
-   * is PARTIAL: a truncated scope never yields a clean pass. Absent on a
-   * not-built section — `built: false` + `reason` already denies the pass.
-   */
-  scopeSkippedFiles?: number;
 }
 
 /**
  * `naming` payload: the `get_naming_lexicon` diff review (`NamingReviewResult`)
- * verbatim — findings, checked, conforming, novel, notJudgedBy, notJudgedNames,
- * truncated — field parity for free until the lexicon endpoint's own diff mode
+ * verbatim — findings, checked, conforming, novel, notJudgedBy, notJudgedNames
+ * — field parity for free until the lexicon endpoint's own diff mode
  * is removed after F4.
  */
 export type NamingSectionResult = ReviewSectionEnvelope & NamingReviewResult;
@@ -214,10 +205,9 @@ export interface ArchitectureSectionPayload {
   findings: readonly DiffDetectorFinding[];
   /**
    * Per-detector verdict row — the `splitCandidates` family is `built: false`
-   * until its substrate ships. Rows carry the family's own `truncated` count,
-   * the `scopeSkippedFiles` partial marker, and the family's exclusion
-   * counters; the per-field semantics live on {@link DiffDetectorStatus} —
-   * this envelope does not restate them.
+   * until its substrate ships. Rows carry the family's own `truncated` count
+   * and exclusion counters; the per-field semantics live on
+   * {@link DiffDetectorStatus} — this envelope does not restate them.
    */
   detectors: readonly DiffDetectorStatus[];
   /**
@@ -371,9 +361,6 @@ export interface ReviewChangesReviewBlock {
   mergeBase: string;
   /** Files that differ from what the change was read against, untracked included; with `files`, those of the listed ones. */
   changedFiles: number;
-  /** Changed files past the cap of 200 — reviewed by neither the envelope nor any section. */
-  skipped: number;
-  truncated?: { cap: number; skipped: number };
   /** The evidence corpus's lag behind the tree the answer is about; absent when they agree or either is unknown. */
   indexLag?: { indexedCommit: string; treeCommit: string };
   /** Non-fatal observations — an empty diff is one, never a bare `changedFiles: 0`. */

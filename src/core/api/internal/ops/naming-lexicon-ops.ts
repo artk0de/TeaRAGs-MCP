@@ -167,7 +167,7 @@ import type {
 } from "../../public/dto/naming-lexicon.js";
 import { InputValidationError, InvalidParameterError, MissingArgumentError } from "../../public/errors.js";
 import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
-import { DIFF_FILE_CAP, readDiffScope, readTreeLag, type DiffScopeRead } from "./diff-scope-reader.js";
+import { readDiffScope, readTreeLag, type DiffScopeRead } from "./diff-scope-reader.js";
 import { readUntypedMethodEvidence, type MethodHeadWordMemo } from "./naming-lexicon-method-evidence.js";
 import type {
   NamingReviewExtractor,
@@ -333,12 +333,11 @@ interface DiffRead {
   mergeBase: string;
   changedFiles: number;
   wholeFiles: number;
-  /** The files under the cap — what `excludePaths` carries. */
+  /** Every reviewed file — what `excludePaths` carries. */
   files: string[];
   judged: DiffFile[];
   /** Files not judged, and the callables of judged files no draft carries. */
   notJudged: NamingReviewNotJudgedEntry[];
-  skipped: number;
   /** What the read could not see: an empty diff names the trees and bases it did not look at. */
   notices: string[];
 }
@@ -692,7 +691,6 @@ export class NamingLexiconOps {
       files: [...read.files],
       judged,
       notJudged,
-      skipped: read.skipped,
     };
   }
 
@@ -729,7 +727,6 @@ export class NamingLexiconOps {
         ...(notes.length > 0 ? { notes } : {}),
         notJudged: diff.notJudged.filter((entry) => entry.kind === "file").length,
         ...notJudgedBreakdown(diff.notJudged),
-        ...(diff.skipped > 0 ? { truncated: { cap: DIFF_FILE_CAP, skipped: diff.skipped } } : {}),
       },
       notices,
     };

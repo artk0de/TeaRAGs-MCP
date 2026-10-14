@@ -29,7 +29,6 @@ function makeContext(
   reads: Record<string, TemporalSymbolCommitFileSnapshot>,
   files: string[],
   windowMonths = 6,
-  skipped = 0,
 ): ReviewSectionContext {
   return {
     scope: {
@@ -43,7 +42,6 @@ function makeContext(
       touchedFiles: new Set(files),
       addedRanges: new Map(),
       nonProduction: new Set(),
-      skipped,
     } satisfies DiffScopeRead,
     graphDb: { readTemporalSymbolCommits: vi.fn(async (relPath: string) => reads[relPath] ?? snapshot(relPath, [])) },
     temporalCochange: undefined,
@@ -112,31 +110,7 @@ describe("cohesionSectionProvider — run", () => {
     expect(payload.nullReports).toBe(0);
   });
 
-  // bd tea-rags-mcp-89k7k.7: a file past the reader's cap never reaches the
-  // read loop, so it can never appear as a report NOR as noCohesionData —
-  // the section-level `scopeSkippedFiles` count is the only honest signal.
-  it("a scope over the file cap marks the section partial — skipped-file silence is never a clean pass", async () => {
-    const context = makeContext({ "src/a.ts": RICH }, ["src/a.ts"], 6, 2);
-    const payload = (await cohesionSectionProvider.run(context)) as {
-      reports: unknown[];
-      analyzedFiles: number;
-      nullReports: number;
-      scopeSkippedFiles?: number;
-    };
-    expect(payload.scopeSkippedFiles).toBe(2);
-    expect(payload.analyzedFiles).toBe(1);
-  });
-
-  it("a truncated scope answers partial even when every kept file is noCohesionData", async () => {
-    const payload = (await cohesionSectionProvider.run(makeContext({}, ["src/b.ts"], 6, 3))) as {
-      nullReports: number;
-      scopeSkippedFiles?: number;
-    };
-    expect(payload.nullReports).toBe(1);
-    expect(payload.scopeSkippedFiles).toBe(3);
-  });
-
-  it("an untruncated scope claims no partial marker — the counts are then whole", async () => {
+  it("the scope is never truncated, so the section claims no partial marker (bd tea-rags-mcp-89k7k.1.8)", async () => {
     const payload = (await cohesionSectionProvider.run(makeContext({ "src/a.ts": RICH }, ["src/a.ts"]))) as {
       scopeSkippedFiles?: number;
     };

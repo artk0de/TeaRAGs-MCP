@@ -19,7 +19,6 @@ const ANSWER: ReviewChangesResult = {
     base: "HEAD",
     mergeBase: "mb",
     changedFiles: 0,
-    skipped: 0,
     sections: {},
   },
 };

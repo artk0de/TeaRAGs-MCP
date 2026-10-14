@@ -661,8 +661,7 @@ the findings (`## Apply remedy` when `remedy` exists, else `## No remedy`;
 Evidence rule: a finding stays unfixed ONLY with a detector flag, a cited
 project rule (file + quoted line), or a known-noise class from the family's
 repair file with its named evidence. Bare "by design" is not evidence. A family
-with `built: false` or `scopeSkippedFiles` = "not judged" / "partial", never a
-clean pass.
+with `built: false` = "not judged", never a clean pass.
 
 ## Phase 3i — REMEDY SIMULATION
 

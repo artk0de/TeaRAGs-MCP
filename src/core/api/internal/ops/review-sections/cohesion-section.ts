@@ -6,14 +6,10 @@
  * the cluster boundary runs, whether the file is a split candidate.
  *
  * Reads are per file (`GraphDbClient#readTemporalSymbolCommits`) — sequential:
- * the client multiplexes by request id, and 200 files is a bounded batch, so
- * v1 keeps the read simple rather than concurrent. A file whose read yields
- * no report is a `notJudged` entry with reason `noCohesionData`: absence is
- * never a zero. A scope the reader's file cap truncated stamps the envelope
- * `scopeSkippedFiles` (bd tea-rags-mcp-89k7k.7): a past-cap file never
- * reaches this loop, so it can appear neither as a report nor as
- * `noCohesionData` — the section-level count is the only honest signal, and
- * a truncated scope never reads as a clean pass.
+ * the client multiplexes by request id, so v1 keeps the read simple rather
+ * than concurrent. Every changed file reaches the loop (no scope cap, bd
+ * tea-rags-mcp-89k7k.1.8). A file whose read yields no report is a
+ * `notJudged` entry with reason `noCohesionData`: absence is never a zero.
  */
 
 import {
@@ -38,10 +34,7 @@ export const cohesionSectionProvider: ReviewSectionProvider = {
 
   run: async (context) => {
     const { graphDb, scope } = context;
-    // The never-a-clean-pass stamp (bd tea-rags-mcp-89k7k.7): a past-cap file
-    // is invisible to every path below, whatever the substrate does.
-    const truncatedScope = scope.skipped > 0 ? { scopeSkippedFiles: scope.skipped } : {};
-    if (graphDb === undefined) return { reports: [], analyzedFiles: 0, nullReports: 0, ...truncatedScope };
+    if (graphDb === undefined) return { reports: [], analyzedFiles: 0, nullReports: 0 };
     const reports: TemporalCohesionReport[] = [];
     const notJudged: ReviewSectionNotJudgedEntry[] = [];
     for (const relPath of scope.files) {
@@ -58,7 +51,6 @@ export const cohesionSectionProvider: ReviewSectionProvider = {
       reports: kept,
       analyzedFiles: reports.length,
       nullReports: notJudged.length,
-      ...truncatedScope,
       ...(reports.length > kept.length ? { truncated: reports.length - kept.length } : {}),
       ...(notJudged.length > 0 ? { notJudged } : {}),
     };

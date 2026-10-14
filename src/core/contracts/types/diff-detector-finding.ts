@@ -422,13 +422,6 @@ export interface DiffDetectorStatus {
    */
   persistingCount?: number;
   /**
-   * Changed files the diff's file cap skipped while this family judged (bd
-   * tea-rags-mcp-89k7k.1.9). Present = the verdict is PARTIAL: a zero
-   * findingCount over files the run never saw is never a clean pass. Absent
-   * on unbuilt rows — `built: false` + `reason` already denies the pass.
-   */
-  scopeSkippedFiles?: number;
-  /**
    * mainSequence only (bd tea-rags-mcp-r8hme.45): touched components the
    * connection-count floor excluded — the small-N class whose instability
    * moves in steps of 1/n. Present when > 0, so a zero over below-floor
