@@ -28,6 +28,16 @@
  * A parameter's type is read exactly as the walker's typed-parameter binding
  * reads it (`extractTypeNameFromAnnotation`, one `type` alias hop), so the
  * owner name agrees with the `localBindings` the resolver sees.
+ *
+ * The pass is ECMAScript's, not TypeScript's alone (bd tea-rags-mcp-p1w1c):
+ * the class-member, `this`, member-expression and pattern node shapes are
+ * shared by both grammars, so JavaScript runs this same collector through
+ * `ecmascriptFieldAccessFacetPass` with its own `EcmascriptParameterTypeReader`.
+ * What differs is how a parameter is spelled and typed — TypeScript wraps it in
+ * `required_parameter` / `optional_parameter` with an annotation, JavaScript
+ * writes a bare `identifier` or a default-valued `assignment_pattern` and never
+ * a type — and that a JavaScript class-property arrow owns no chunk (see
+ * `memberFunction`).
  */
 
 import { isSameAstNode, type AstNode } from "../../../../../contracts/types/ast.js";
@@ -49,6 +59,20 @@ interface FieldAccessMemberScope {
 }
 
 type FieldAccessOwner = Pick<FieldAccessFact, "ownerKind" | "ownerType" | "receiver">;
+
+/** A plainly named parameter and its written type, `null` when untyped. */
+export interface EcmascriptDeclaredParameter {
+  readonly name: string;
+  readonly type: string | null;
+}
+
+/**
+ * Per file, a reader of one parameter node: its plain name and written type, or
+ * `undefined` for a destructured / rest parameter, which names no receiver.
+ */
+export type EcmascriptParameterTypeReader = (
+  root: AstNode,
+) => (param: AstNode) => EcmascriptDeclaredParameter | undefined;
 
 const CLASS_NODE_TYPES: ReadonlySet<string> = new Set(["class_declaration", "abstract_class_declaration", "class"]);
 
@@ -90,24 +114,39 @@ function boundParameterNames(fn: AstNode): string[] {
   });
 }
 
+/** TypeScript: a bare or annotated parameter, its type read through one `type` alias hop. */
+const readTypescriptParameterType: EcmascriptParameterTypeReader = (root) => {
+  const typeAliases = collectTypeAliases(root);
+  return (param) => {
+    if (param.type === "identifier") return { name: param.text, type: null };
+    if (param.type !== "required_parameter" && param.type !== "optional_parameter") return undefined;
+    const pattern = param.childForFieldName("pattern");
+    if (pattern?.type !== "identifier") return undefined;
+    const annotation = param.children.find((child) => child.type === "type_annotation");
+    return { name: pattern.text, type: extractTypeNameFromAnnotation(annotation, typeAliases) };
+  };
+};
+
 /** Each plainly named parameter with its written type; destructured parameters name no receiver. */
-function declaredParameterTypes(fn: AstNode, typeAliases: ReadonlyMap<string, AstNode>): Map<string, string | null> {
+function declaredParameterTypes(
+  fn: AstNode,
+  readParameter: (param: AstNode) => EcmascriptDeclaredParameter | undefined,
+): Map<string, string | null> {
   const params = new Map<string, string | null>();
   for (const param of parameterNodes(fn)) {
-    if (param.type === "identifier") {
-      params.set(param.text, null);
-      continue;
-    }
-    if (param.type !== "required_parameter" && param.type !== "optional_parameter") continue;
-    const pattern = param.childForFieldName("pattern");
-    if (pattern?.type !== "identifier") continue;
-    const annotation = param.children.find((child) => child.type === "type_annotation");
-    params.set(pattern.text, extractTypeNameFromAnnotation(annotation, typeAliases));
+    const declared = readParameter(param);
+    if (declared !== undefined) params.set(declared.name, declared.type);
   }
   return params;
 }
 
-/** The function a class member's accesses live in: the method itself, or a property's arrow value. */
+/**
+ * The function a class member's accesses live in: the method itself, or a
+ * property's arrow value. JavaScript's `field_definition` is not read: no chunk
+ * carries a JS class-property function (`classPropertyFunction` answers only
+ * TypeScript's `public_field_definition`), so there is no member id to own its
+ * accesses, and the field is walked like any other initializer.
+ */
 function memberFunction(member: AstNode): AstNode | null {
   if (member.type === "method_definition") return member;
   if (member.type !== "public_field_definition") return null;
@@ -129,7 +168,7 @@ function memberScope(
   member: AstNode,
   fn: AstNode,
   chunks: WalkContext["chunks"],
-  typeAliases: ReadonlyMap<string, AstNode>,
+  readParameter: (param: AstNode) => EcmascriptDeclaredParameter | undefined,
 ): FieldAccessMemberScope | undefined {
   const symbolId = memberSymbolId(member, chunks);
   if (symbolId === undefined) return undefined;
@@ -141,7 +180,7 @@ function memberScope(
     className,
     isStatic: member.children.some((child) => child.type === "static"),
     thisBound: true,
-    params: declaredParameterTypes(fn, typeAliases),
+    params: declaredParameterTypes(fn, readParameter),
   };
 }
 
@@ -235,7 +274,7 @@ class FieldAccessCollector {
 
   constructor(
     private readonly chunks: WalkContext["chunks"],
-    private readonly typeAliases: ReadonlyMap<string, AstNode>,
+    private readonly readParameter: (param: AstNode) => EcmascriptDeclaredParameter | undefined,
   ) {}
 
   visit(node: AstNode, scope: FieldAccessMemberScope | undefined): void {
@@ -262,7 +301,7 @@ class FieldAccessCollector {
   private visitClassBody(body: AstNode): void {
     for (const member of body.children) {
       const fn = memberFunction(member);
-      const scope = fn === null ? undefined : memberScope(member, fn, this.chunks, this.typeAliases);
+      const scope = fn === null ? undefined : memberScope(member, fn, this.chunks, this.readParameter);
       const fnBody = fn?.childForFieldName("body");
       if (scope !== undefined && fnBody) this.visit(fnBody, scope);
       else if (fn === null) this.visit(member, undefined);
@@ -291,11 +330,17 @@ class FieldAccessCollector {
   }
 }
 
-export const typescriptFieldAccessFacetPass: ExtractionFacetPass = {
-  run: (root, ctx): Partial<FileExtraction> => {
-    if (ctx.chunks.length === 0) return {};
-    const collector = new FieldAccessCollector(ctx.chunks, collectTypeAliases(root));
-    collector.visit(root, undefined);
-    return collector.facts.length > 0 ? { fieldAccesses: collector.facts } : {};
-  },
-};
+/** The field-access pass for an ECMAScript grammar, typing parameters through `readParameterType`. */
+export function ecmascriptFieldAccessFacetPass(readParameterType: EcmascriptParameterTypeReader): ExtractionFacetPass {
+  return {
+    run: (root, ctx): Partial<FileExtraction> => {
+      if (ctx.chunks.length === 0) return {};
+      const collector = new FieldAccessCollector(ctx.chunks, readParameterType(root));
+      collector.visit(root, undefined);
+      return collector.facts.length > 0 ? { fieldAccesses: collector.facts } : {};
+    },
+  };
+}
+
+export const typescriptFieldAccessFacetPass: ExtractionFacetPass =
+  ecmascriptFieldAccessFacetPass(readTypescriptParameterType);
