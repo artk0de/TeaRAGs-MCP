@@ -43,10 +43,10 @@ import type {
   DomainEnvCodeDefaults,
   EmbeddingConfig,
   QdrantTuneConfig,
+  RegistryEnvCanonicalKey,
   TrajectoryGitConfig,
   VcsConfig,
 } from "../../core/contracts/index.js";
-import type { RegistryEnvCanonicalKey } from "../../core/contracts/registry-env-groups.js";
 import type { CodegraphConfig, IngestConfig } from "./schemas.js";
 
 export interface RegistryEnvSnapshotSource {

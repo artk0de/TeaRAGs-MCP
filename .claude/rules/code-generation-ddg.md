@@ -10,18 +10,22 @@ paths:
 
 # All code is written through data-driven-generation (MANDATORY)
 
-Owner decision 2026-10-13 (bd tea-rags-mcp-89k7k.1.19). Every code change in
-this repository — new code, modification, refactor, bug fix, test code — is
-written through `/tea-rags:data-driven-generation` (DDG). This binds the main
-session and every subagent alike.
+Owner decision 2026-10-13 (bd tea-rags-mcp-89k7k.1.19), scoped 2026-10-14. Code
+is written through `/tea-rags:data-driven-generation` (DDG) at three points: at
+the start of a session, before a bug fix once the defect is located, and before
+every new task. This binds the main session and every subagent alike.
+
+One-line and few-line mechanical edits (applying a detector remedy, a retarget,
+a rename) skip the DDG workflow. They do NOT skip the gate: `review_changes`
+still runs before the commit and its findings are repaired.
 
 ## What that means in practice
 
-- Before the first edit of a task, invoke the DDG skill and follow its steps:
-  context from tea-rags (reuse what this session already fetched — never
-  re-search a file whose outline or body is already in the conversation unless
-  it was edited since), proven templates, naming through `get_naming_lexicon`,
-  then write.
+- Before the first edit of a task (the three points above), invoke the DDG skill
+  and follow its steps: context from tea-rags (reuse what this session already
+  fetched — never re-search a file whose outline or body is already in the
+  conversation unless it was edited since), proven templates, naming through
+  `get_naming_lexicon`, then write.
 - DDG Step 7 (VERIFY) is a gate, not optional. `review_changes` runs before
   every commit and acts on the findings: introduced architecture findings are
   repaired (the per-family procedure lives in
