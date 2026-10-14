@@ -17,12 +17,19 @@
  * Both runs share one maintenance-signal read (renamed for the relabelled
  * side), so history differs between them only through the relabel. The
  * asset-import specifier read is left out of both, as in the review run.
+ *
+ * Edge ops (bd tea-rags-mcp-cm9gt.1) compile against the base file edges read
+ * here, so a `removeEdge` of a pair the graph does not hold fails instead of
+ * simulating nothing. `throwArchitectureRestructureCompileFailure` is the one
+ * failure → typed-error mapping every restructure runner shares.
  */
 
 import type { RelPath } from "../../../contracts/types/codegraph.js";
 import {
   applyArchitectureRestructure,
+  architectureRestructureEdgeKey,
   compileArchitectureRestructure,
+  type ArchitectureRestructureCompilation,
   type ArchitectureRestructureRelabel,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
@@ -35,6 +42,7 @@ import type { ArchitectureChangeSubject } from "../../public/dto/review.js";
 import {
   InvalidParameterError,
   UnknownRestructureComponentError,
+  UnknownRestructureEdgeError,
   UnknownRestructureFileError,
 } from "../../public/errors.js";
 import {
@@ -91,17 +99,15 @@ export class ArchitectureRestructureOps {
       lookups.readTreeFileText,
     );
     const { components } = deriveArchitectureComponentFacts(facts.production.graph);
-    const compilation = compileArchitectureRestructure(ops, { componentOf: components.componentOf });
-    switch (compilation.kind) {
-      case "unknownFile":
-        throw new UnknownRestructureFileError(compilation.files, compilation.opIndex);
-      case "unknownComponent":
-        throw new UnknownRestructureComponentError(compilation.component, compilation.opIndex);
-      case "invalidOp":
-        throw new InvalidParameterError(`restructure[${compilation.opIndex}]`, compilation.detail);
-      case "compiled":
-        break;
-    }
+    const edgeBase = {
+      fileEdges: new Set(
+        facts.production.graph.edges.map((edge) =>
+          architectureRestructureEdgeKey(edge.sourceRelPath, edge.targetRelPath),
+        ),
+      ),
+    };
+    const compilation = compileArchitectureRestructure(ops, { componentOf: components.componentOf }, edgeBase);
+    if (compilation.kind !== "compiled") throwArchitectureRestructureCompileFailure(compilation);
     const { relabel } = compilation;
     const baseSignals = lookups.readFileMaintenanceSignals && readOnce(lookups.readFileMaintenanceSignals);
     const uncapped = { limit: Number.POSITIVE_INFINITY };
@@ -128,9 +134,30 @@ export class ArchitectureRestructureOps {
   }
 }
 
+/** The typed input error a failed compile answers with — every failure names its op index. */
+export function throwArchitectureRestructureCompileFailure(
+  compilation: Exclude<ArchitectureRestructureCompilation, { kind: "compiled" }>,
+): never {
+  switch (compilation.kind) {
+    case "unknownFile":
+      throw new UnknownRestructureFileError(compilation.files, compilation.opIndex);
+    case "unknownComponent":
+      throw new UnknownRestructureComponentError(compilation.component, compilation.opIndex);
+    case "unknownEdge":
+      throw new UnknownRestructureEdgeError(compilation.from, compilation.to, compilation.opIndex);
+    case "invalidOp":
+      throw new InvalidParameterError(`restructure[${compilation.opIndex}]`, compilation.detail);
+  }
+}
+
 function validateRestructureRequest(request: GetArchitectureReportRequest) {
   const ops = request.restructure ?? [];
-  if (ops.length === 0) throw new InvalidParameterError("restructure", "name at least one move, merge or split");
+  if (ops.length === 0) {
+    throw new InvalidParameterError(
+      "restructure",
+      "name at least one op (move, merge, split, addFile, addEdge, removeEdge)",
+    );
+  }
   if (ops.length > ARCHITECTURE_RESTRUCTURE_OP_LIMIT) {
     throw new InvalidParameterError(
       "restructure",

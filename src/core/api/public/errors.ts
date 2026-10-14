@@ -26,7 +26,8 @@ export type InputErrorCode =
   | "INPUT_DOCUMENT_METADATA_SCHEMA_VIOLATION"
   | "INPUT_UNKNOWN_ARCHITECTURE_COMPONENT"
   | "INPUT_UNKNOWN_RESTRUCTURE_COMPONENT"
-  | "INPUT_UNKNOWN_RESTRUCTURE_FILE";
+  | "INPUT_UNKNOWN_RESTRUCTURE_FILE"
+  | "INPUT_UNKNOWN_RESTRUCTURE_EDGE";
 
 /**
  * Abstract base for all input validation errors (httpStatus 400).
@@ -327,6 +328,22 @@ export class UnknownRestructureFileError extends InputValidationError {
       code: "INPUT_UNKNOWN_RESTRUCTURE_FILE",
       message: `restructure[${opIndex}] names files outside the production graph: ${files.join(", ")}.`,
       hint: "Use repo-relative paths of indexed production files, as findings' evidence names them.",
+    });
+  }
+}
+
+/**
+ * Thrown by `get_architecture_report` restructure mode (bd
+ * tea-rags-mcp-cm9gt.1) when a `removeEdge` names a file pair the production
+ * graph holds no edge for, or one an earlier op already removed — cutting it
+ * would be a silent no-op.
+ */
+export class UnknownRestructureEdgeError extends InputValidationError {
+  constructor(from: string, to: string, opIndex: number) {
+    super({
+      code: "INPUT_UNKNOWN_RESTRUCTURE_EDGE",
+      message: `restructure[${opIndex}] removes an edge the production graph does not hold: ${from} → ${to}.`,
+      hint: "Name a file edge as findings' evidence names it (base paths, source → target), each at most once.",
     });
   }
 }

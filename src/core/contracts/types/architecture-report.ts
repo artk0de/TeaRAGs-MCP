@@ -2108,16 +2108,36 @@ export interface GetArchitectureReportResponse {
  * files into an existing component, `merge` folds every later component into
  * the first, `split` carves file groups out of a component (an A5 split
  * candidate's `files` fit `groups` as is).
+ *
+ * Edge ops (bd tea-rags-mcp-cm9gt.1) model a code remedy that changes edges,
+ * not file homes, on BASE paths: `addFile` adds a file that does not exist yet
+ * (pinned to `component` when given, else derived from its path; one type,
+ * abstract when `abstract` — an extracted interface — else concrete), `addEdge`
+ * adds a file edge of call weight 1, `removeEdge` drops every edge of a file
+ * pair. They move structural detectors only; co-change reads history.
  */
 export type ArchitectureRestructureOp =
   | { move: { files: RelPath[]; toComponent: string } }
   | { merge: { components: string[] } }
-  | { split: { component: string; groups: RelPath[][] } };
+  | { split: { component: string; groups: RelPath[][] } }
+  | { addFile: { file: RelPath; component?: string; abstract?: boolean } }
+  | { addEdge: { from: RelPath; to: RelPath } }
+  | { removeEdge: { from: RelPath; to: RelPath } };
 
 /** One op as compiled: how many files it relabels and the component(s) they land in. */
 export interface ArchitectureRestructureCompiledOp {
-  op: "move" | "merge" | "split";
+  op: "move" | "merge" | "split" | "addFile" | "addEdge" | "removeEdge";
+  /** 0 for edge ops — they never relabel. */
   relabelledFiles: number;
-  /** The receiving component; for a split, the new sibling components in group order. */
+  /**
+   * The receiving component; for a split, the new sibling components in group
+   * order; for `addFile`, the component it names (`[]` when none is named —
+   * the judge derives it from the path); `[]`
+   * for `addEdge` / `removeEdge`.
+   */
   components: string[];
+  /** The file pair an `addEdge` / `removeEdge` names. */
+  edge?: { from: RelPath; to: RelPath };
+  /** The file an `addFile` adds. */
+  file?: RelPath;
 }
