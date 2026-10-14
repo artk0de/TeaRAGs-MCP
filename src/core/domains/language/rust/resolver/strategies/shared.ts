@@ -163,8 +163,8 @@ export function rustImportCandidateSuffix(importText: string, receiver: string):
 export function rustImportCandidatePaths(importText: string, receiver: string, callerFile: string): string[] | null {
   const parsed = parseRustImport(importText, receiver);
   if (!parsed?.receiverMatches) return parsed ? [] : null;
-  const segments = [...parsed.moduleSegments, ...(parsed.groupImport ? [receiver] : [])];
-  const suffix = segments.join("/");
+  const suffix = parsed.moduleSegments.join("/");
+  const groupMemberSuffix = parsed.groupImport ? `${suffix}/${receiver}` : null;
   const callerDir = callerFile.includes("/") ? callerFile.slice(0, callerFile.lastIndexOf("/")) : "";
   const callerSegments = callerFile.split("/");
   const srcIndex = callerSegments.indexOf("src");
@@ -180,5 +180,11 @@ export function rustImportCandidatePaths(importText: string, receiver: string, c
           ? parentRoot
           : "";
   const candidate = candidateRoot ? `${candidateRoot}/${suffix}` : suffix;
-  return [`${candidate}.rs`, `${candidate}/mod.rs`];
+  const groupMemberCandidate =
+    groupMemberSuffix === null ? null : candidateRoot ? `${candidateRoot}/${groupMemberSuffix}` : groupMemberSuffix;
+  return [
+    `${candidate}.rs`,
+    `${candidate}/mod.rs`,
+    ...(groupMemberCandidate === null ? [] : [`${groupMemberCandidate}.rs`, `${groupMemberCandidate}/mod.rs`]),
+  ];
 }
