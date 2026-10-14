@@ -20,6 +20,7 @@ import { z } from "zod";
 import {
   ARCHITECTURE_PLANNED_EDGE_LIMIT,
   ARCHITECTURE_RESTRUCTURE_OP_LIMIT,
+  ARCHITECTURE_RESTRUCTURE_PLAN_CANDIDATE_LIMIT,
   CODEGRAPH_SYMBOLS_PROVIDER_KEY,
   PROJECT_NAME_RE,
   type App,
@@ -115,6 +116,29 @@ const FindCyclesInputShape = {
     ),
 };
 
+/** One restructure hypothesis' op list — restructure mode takes one, each restructurePlan candidate carries one. */
+const ArchitectureRestructureOpListSchema = z
+  .array(
+    z.union([
+      z.object({ move: z.object({ files: z.array(z.string().min(1)).min(1), toComponent: z.string() }) }),
+      z.object({ merge: z.object({ components: z.array(z.string()).min(2) }) }),
+      z.object({
+        split: z.object({ component: z.string(), groups: z.array(z.array(z.string().min(1)).min(1)).min(1) }),
+      }),
+      z.object({
+        addFile: z.object({
+          file: z.string().min(1),
+          component: z.string().optional(),
+          abstract: z.boolean().optional(),
+        }),
+      }),
+      z.object({ addEdge: z.object({ from: z.string().min(1), to: z.string().min(1) }) }),
+      z.object({ removeEdge: z.object({ from: z.string().min(1), to: z.string().min(1) }) }),
+    ]),
+  )
+  .min(1)
+  .max(ARCHITECTURE_RESTRUCTURE_OP_LIMIT);
+
 const GetArchitectureReportInputShape = {
   ...collectionPathFields(),
   pathPattern: z
@@ -175,29 +199,26 @@ const GetArchitectureReportInputShape = {
     .describe(
       "File pairs source->target about to be written: verdicts only, no report; other options rejected. reference = name used.",
     ),
-  restructure: z
-    .array(
-      z.union([
-        z.object({ move: z.object({ files: z.array(z.string().min(1)).min(1), toComponent: z.string() }) }),
-        z.object({ merge: z.object({ components: z.array(z.string()).min(2) }) }),
-        z.object({
-          split: z.object({ component: z.string(), groups: z.array(z.array(z.string().min(1)).min(1)).min(1) }),
-        }),
-        z.object({
-          addFile: z.object({
-            file: z.string().min(1),
-            component: z.string().optional(),
-            abstract: z.boolean().optional(),
+  restructure: ArchitectureRestructureOpListSchema.optional().describe(
+    "One what-if hypothesis: violation delta vs current partition, no report; only limit may ride along.",
+  ),
+  restructurePlan: z
+    .object({
+      candidates: z
+        .array(
+          z.object({
+            id: z.string().min(1),
+            rationale: z.string().optional(),
+            ops: ArchitectureRestructureOpListSchema,
           }),
-        }),
-        z.object({ addEdge: z.object({ from: z.string().min(1), to: z.string().min(1) }) }),
-        z.object({ removeEdge: z.object({ from: z.string().min(1), to: z.string().min(1) }) }),
-      ]),
-    )
-    .min(1)
-    .max(ARCHITECTURE_RESTRUCTURE_OP_LIMIT)
+        )
+        .max(ARCHITECTURE_RESTRUCTURE_PLAN_CANDIDATE_LIMIT),
+      includeReportCandidates: z.boolean().optional(),
+    })
     .optional()
-    .describe("One what-if hypothesis: violation delta vs current partition, no report; only limit may ride along."),
+    .describe(
+      "Order candidate hypotheses greedily; ids unique, not report:-prefixed; report split/merge added unless false.",
+    ),
 };
 
 /**
@@ -555,15 +576,19 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "partition; full detectors on base vs relabelled facts, delta by violation key: introduced/resolved subjects, " +
       "counts, net, byFamily. Edge ops addFile{file,component?,abstract?} | addEdge{from,to} | removeEdge{from,to} (base " +
       "paths) move structural detectors only; co-change detectors read history and do not respond. One hypothesis " +
-      "per call — rank remedies one call each.",
+      "per call. restructurePlan mode: greedy ordered plan over candidate hypotheses {id,rationale?,ops} (+ report " +
+      "split/merge candidates); per round judges prefix+candidate, picks by net critical > active > structural > " +
+      "blast radius; trade-offs (introduce critical/active) never selected.",
     schemaKey: "get_architecture_report",
     invoke: async (app, request) => {
       const req = request as GetArchitectureReportRequest;
-      const answer = req.restructure
-        ? await app.simulateArchitectureRestructure(req)
-        : req.plannedEdges
-          ? await app.judgePlannedArchitectureEdges(req)
-          : await app.getArchitectureReport(req);
+      const answer = req.restructurePlan
+        ? await app.planArchitectureRestructure(req)
+        : req.restructure
+          ? await app.simulateArchitectureRestructure(req)
+          : req.plannedEdges
+            ? await app.judgePlannedArchitectureEdges(req)
+            : await app.getArchitectureReport(req);
       return formatMcpText(JSON.stringify(answer, null, 2));
     },
   },

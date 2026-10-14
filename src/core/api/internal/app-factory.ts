@@ -59,6 +59,7 @@ import {
   emptyReviewChangesResult,
   resolveLanguageCapabilities as resolveDomainLanguageCapabilities,
   unjudgedPlannedArchitectureEdges,
+  unplannedArchitectureRestructure,
   unsimulatedArchitectureRestructure,
 } from "./composition.js";
 import { reviewSectionIds as reviewSectionIdsValue } from "./ops/review-sections/index.js";
@@ -285,6 +286,8 @@ export function createApp(deps: AppDeps): App {
       deps.graphFacade
         ? deps.graphFacade.simulateArchitectureRestructure(req)
         : unsimulatedArchitectureRestructure(req),
+    planArchitectureRestructure: async (req) =>
+      deps.graphFacade ? deps.graphFacade.planArchitectureRestructure(req) : unplannedArchitectureRestructure(req),
     tracePath: async (req) => (deps.tracePathOps ? deps.tracePathOps.tracePath(req) : { paths: [], truncated: false }),
     getNamingLexicon: async (req) =>
       deps.namingLexiconOps ? deps.namingLexiconOps.getNamingLexicon(req) : { scope: "", byType: [], names: [] },

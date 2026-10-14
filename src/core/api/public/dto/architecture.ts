@@ -25,6 +25,7 @@ import type {
   ArchitectureLayerMapOptions,
   ArchitectureRestructureCompiledOp,
   ArchitectureRestructureOp,
+  ArchitectureViolationImpactTier,
 } from "../../../contracts/types/architecture-report.js";
 import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import type { ArchitectureChangeSubject } from "./review.js";
@@ -109,6 +110,21 @@ export interface GetArchitectureReportRequest {
    * {@link ARCHITECTURE_RESTRUCTURE_OP_LIMIT} ops.
    */
   restructure?: ArchitectureRestructureOp[];
+  /**
+   * Restructure PLAN mode (bd tea-rags-mcp-cm9gt.2): a greedy ordered plan
+   * over candidate hypotheses — each round judges prefix ∪ candidate for every
+   * remaining candidate and appends the best by net resolved critical, then
+   * active, then structural, then smaller blast radius, then id
+   * ({@link GetArchitectureRestructurePlanResponse}). Only `limit` (subjects
+   * listed per delta side) may ride along. At most
+   * {@link ARCHITECTURE_RESTRUCTURE_PLAN_CANDIDATE_LIMIT} caller candidates;
+   * an empty list needs the report's own split/merge candidates included.
+   */
+  restructurePlan?: {
+    candidates: ArchitectureRestructurePlanCandidate[];
+    /** Add one candidate per report split / merge verdict (`report:split:<n>`, `report:merge:<n>`). Default true. */
+    includeReportCandidates?: boolean;
+  };
 }
 
 /**
@@ -146,6 +162,78 @@ export interface GetArchitectureRestructureResponse {
   /** Absent exactly when `unavailable` is set. */
   delta?: ArchitectureRestructureDelta;
   /** No codegraph database to judge — nothing was simulated. */
+  unavailable?: "noCodegraph";
+}
+
+/** Max caller candidates per `restructurePlan` call. Each round judges every remaining candidate once. */
+export const ARCHITECTURE_RESTRUCTURE_PLAN_CANDIDATE_LIMIT = 50;
+
+/** One caller hypothesis the plan may order: 1..{@link ARCHITECTURE_RESTRUCTURE_OP_LIMIT} ops. */
+export interface ArchitectureRestructurePlanCandidate {
+  /** Unique within the request; never prefixed `report:` (the report's own candidates own that prefix). */
+  id: string;
+  rationale?: string;
+  ops: ArchitectureRestructureOp[];
+}
+
+/** Per impact tier, the violations a delta resolved and introduced. An untiered violation counts as `structural`. */
+export type ArchitectureRestructureTierTally = Record<
+  ArchitectureViolationImpactTier,
+  { resolved: number; introduced: number }
+>;
+
+/** A restructure delta with its per-tier tally — the plan's objective reads `byTier`. */
+export interface ArchitectureRestructurePlanDelta extends ArchitectureRestructureDelta {
+  byTier: ArchitectureRestructureTierTally;
+}
+
+/** Where a plan candidate came from: the request, or the base report's split/merge verdicts. */
+export type ArchitectureRestructurePlanCandidateSource = "caller" | "report";
+
+/** One selected step, in plan order. */
+export interface ArchitectureRestructurePlanStep {
+  candidateId: string;
+  source: ArchitectureRestructurePlanCandidateSource;
+  rationale?: string;
+  ops: ArchitectureRestructureCompiledOp[];
+  /** Versus the prefix before this step, not versus the base. */
+  delta: ArchitectureRestructurePlanDelta;
+  /** Base paths the ops name, code-point sorted. */
+  touchedFiles: string[];
+  /** Σ codegraph transitiveImpact of touchedFiles; a file with no reading (an added file) adds 0. */
+  blastRadius: number;
+}
+
+/** A candidate that introduces a critical or active violation — reported, never selected. */
+export interface ArchitectureRestructurePlanTradeOff {
+  candidateId: string;
+  source: ArchitectureRestructurePlanCandidateSource;
+  rationale?: string;
+  /** Versus the prefix it was judged against. */
+  delta: ArchitectureRestructurePlanDelta;
+}
+
+/** A candidate the plan left out: nothing gained over the final prefix, or its ops no longer compile on it. */
+export interface ArchitectureRestructurePlanUnselected {
+  candidateId: string;
+  source: ArchitectureRestructurePlanCandidateSource;
+  reason: "noImprovement" | "conflictsWithPrefix";
+  /** The compile failure, for `conflictsWithPrefix`. */
+  detail?: string;
+}
+
+/** `get_architecture_report` in restructurePlan mode — the ordered steps and what was left out. */
+export interface GetArchitectureRestructurePlanResponse {
+  workingTree?: WorkingTreeMarker;
+  mode: "restructurePlan";
+  steps: ArchitectureRestructurePlanStep[];
+  tradeOffs: ArchitectureRestructurePlanTradeOff[];
+  unselected: ArchitectureRestructurePlanUnselected[];
+  /** Base vs the final prefix. */
+  total: ArchitectureRestructurePlanDelta;
+  /** `judgeCount` counts every full detector run, the base included. */
+  timing: { factsMs: number; judgeCount: number; totalMs: number };
+  /** No codegraph database to judge — nothing was planned. */
   unavailable?: "noCodegraph";
 }
 

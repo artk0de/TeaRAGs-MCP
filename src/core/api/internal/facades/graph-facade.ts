@@ -48,6 +48,7 @@ import type {
   GetArchitecturePlannedEdgesResponse,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  GetArchitectureRestructurePlanResponse,
   GetArchitectureRestructureResponse,
   GitFileMaintenanceSignals,
 } from "../../public/dto/architecture.js";
@@ -75,7 +76,11 @@ import type {
 } from "../ops/architecture-facts.js";
 import { ArchitecturePlannedEdgeOps } from "../ops/architecture-planned-edge-ops.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
-import { ArchitectureRestructureOps } from "../ops/architecture-restructure-ops.js";
+import {
+  ArchitectureRestructureOps,
+  type ArchitectureRestructureLookups,
+} from "../ops/architecture-restructure-ops.js";
+import { ArchitectureRestructurePlanOps } from "../ops/architecture-restructure-plan-ops.js";
 import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
 import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
@@ -232,6 +237,31 @@ function resolvedField(read: SymbolEdgeRead<unknown>): { resolvedSymbolId?: Symb
 }
 
 /**
+ * The reads a restructure simulation or plan takes besides the graph DB, bound
+ * to the addressed collection; the plan's blast radius reads the same graph's
+ * per-file transitive impact.
+ */
+function addressedRestructureLookups(
+  deps: GraphFacadeDeps,
+  request: GetArchitectureReportRequest,
+  graphDb: Pick<CollectionGraphHandle["graphDb"], "getFileMetricsBulk">,
+): ArchitectureRestructureLookups {
+  const { readFileMaintenanceSignals } = deps;
+  const { indexedFileImports, declaredTestDependencies, treeFileText } = addressedTestSupportLookups(deps, request);
+  return {
+    readIndexedFileImports: indexedFileImports,
+    readDeclaredTestDependencies: declaredTestDependencies,
+    readTreeFileText: treeFileText,
+    readFileMaintenanceSignals: readFileMaintenanceSignals
+      ? async () =>
+          readFileMaintenanceSignals(resolveWorkingTree(deps.collectionRegistry, request).baseIndex.collectionName)
+      : undefined,
+    readFileTransitiveImpacts: async (relPaths) =>
+      new Map([...(await graphDb.getFileMetricsBulk(relPaths))].map(([relPath, m]) => [relPath, m.transitiveImpact])),
+  };
+}
+
+/**
  * The test-support lookups an architecture read takes, bound to the addressed
  * collection and checkout — the report and the planned-edge verdict read the
  * same production graph.
@@ -269,6 +299,7 @@ export class GraphFacade {
   private readonly architectureReport = new ArchitectureReportOps();
   private readonly plannedEdges = new ArchitecturePlannedEdgeOps();
   private readonly restructure = new ArchitectureRestructureOps();
+  private readonly restructurePlan = new ArchitectureRestructurePlanOps();
   private readonly cochange = new CochangeOps();
   private readonly fileImports = new FileImportOps();
 
@@ -542,21 +573,33 @@ export class GraphFacade {
     req: GetArchitectureReportRequest,
   ): Promise<GetArchitectureRestructureResponse> {
     const fallback = ArchitectureRestructureOps.unavailable(req);
-    const { readFileMaintenanceSignals } = this.deps;
-    const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
-    const { indexedFileImports, declaredTestDependencies, treeFileText } = addressedTestSupportLookups(this.deps, req);
     return this.inRequestWindow(async () =>
       this.withMarkedReadHandle(
         req,
         async (handle) =>
-          this.restructure.simulate(handle.graphDb, req, {
-            readIndexedFileImports: indexedFileImports,
-            readDeclaredTestDependencies: declaredTestDependencies,
-            readTreeFileText: treeFileText,
-            readFileMaintenanceSignals: readFileMaintenanceSignals
-              ? async () => readFileMaintenanceSignals(addressedCollection())
-              : undefined,
-          }),
+          this.restructure.simulate(handle.graphDb, req, addressedRestructureLookups(this.deps, req, handle.graphDb)),
+        fallback,
+      ),
+    );
+  }
+
+  /**
+   * `get_architecture_report` restructurePlan mode (bd tea-rags-mcp-cm9gt.2):
+   * candidates ordered greedily over the same graph the report reads.
+   */
+  async planArchitectureRestructure(
+    request: GetArchitectureReportRequest,
+  ): Promise<GetArchitectureRestructurePlanResponse> {
+    const fallback = ArchitectureRestructurePlanOps.unavailable(request);
+    return this.inRequestWindow(async () =>
+      this.withMarkedReadHandle(
+        request,
+        async (handle) =>
+          this.restructurePlan.plan(
+            handle.graphDb,
+            request,
+            addressedRestructureLookups(this.deps, request, handle.graphDb),
+          ),
         fallback,
       ),
     );
