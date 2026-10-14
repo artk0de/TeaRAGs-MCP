@@ -1282,6 +1282,22 @@ export interface CochangeSignificanceSummary {
   diffHistory?: { excludedBundleCount: number; bundleCommitsAvailable: boolean };
 }
 
+/**
+ * How silent coupling decides that a shared neighbour explains a pair (bd
+ * tea-rags-mcp-gj45h): per pair, the chance of sharing its least likely
+ * neighbour given both files' import counts — a hypergeometric draw over the
+ * corpus's import endpoints — under Benjamini–Hochberg over every tested pair.
+ */
+export interface SilentCouplingSharedNeighbourSignificanceSummary {
+  method: "hypergeometricChance";
+  /** The false-discovery rate BH controls — the co-change gate's. */
+  q: number;
+  /** m — strong, unlinked, in-scope pairs tested; a pair sharing no neighbour counts with p = 1. */
+  testedPairCount: number;
+  /** Pairs BH rejects: their shared neighbour is no chance overlap. */
+  explainedPairCount: number;
+}
+
 export interface SilentCouplingReportSummary {
   /**
    * `false` when the codegraph has no co-change build yet (git trajectory off,
@@ -1318,14 +1334,10 @@ export interface SilentCouplingReportSummary {
   /** η of the Otsu cut, 3 decimals; absent under `majority`. */
   strengthSeparability?: number;
   /**
-   * Otsu's split over every candidate's heaviest shared-neighbour weight
-   * ln(N / fanIn), 3 decimals (bd tea-rags-mcp-r8hme.13); absent under `none`.
+   * The shared-neighbour explanation gate (bd tea-rags-mcp-gj45h); absent
+   * when no dependency edges were read, and then no pair is explained.
    */
-  sharedNeighbourThreshold?: number;
-  /** `otsu` when ≥ 8 candidates share a neighbour and their weights split; `none` = no pair is explained. */
-  sharedNeighbourThresholdMethod: "otsu" | "none";
-  /** η of the shared-neighbour cut, 3 decimals; absent under `none`. */
-  sharedNeighbourSeparability?: number;
+  sharedNeighbourSignificance?: SilentCouplingSharedNeighbourSignificanceSummary;
   /**
    * The pair admission gate (bd tea-rags-mcp-89k7k.1.14); absent when the
    * co-change read carried no bundle membership to test against.

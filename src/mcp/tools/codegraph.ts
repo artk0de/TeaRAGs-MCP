@@ -471,7 +471,9 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "structuralVisibility); a pair is judged only when it beats the configuration null n_p*n_q*Qs/M^2 " +
       "(Poisson tail, BH q=0.05 over all pairs of files changed in >=2 bundles; summary.silentCoupling." +
       "cochangeSignificance, excluded.notSignificant) — hub files (locales, version manifests) die there; " +
-      "strong = >0.5 and >= adaptive cut (Otsu when strengths split bimodally, else the floor); rootCauses = file with >=2 silent " +
+      "strong = >0.5 and >= adaptive cut (Otsu when strengths split bimodally, else the floor); strong pair sharing a neighbour " +
+      "unlikely by chance given both import counts (hypergeometric, BH q=0.05; summary.silentCoupling.sharedNeighbourSignificance) " +
+      "= explainedPairs, not violation; rootCauses = file with >=2 silent " +
       "partners; violations: pairs sharing an endpoint list as ONE kind:group finding (greedy, most pairs first) — " +
       "partners[] = every pair (support, expectedSupport = null λ, strength), evidence.topPartners = 3 strongest, " +
       "evidence.drillDown = ready find_co_changed call; limit caps findings, violationCount stays pairs, " +

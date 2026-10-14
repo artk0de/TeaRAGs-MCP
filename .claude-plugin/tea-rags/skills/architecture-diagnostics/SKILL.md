@@ -292,7 +292,7 @@ from codegraph co-change sub-graph (git window, mass-change commits dropped).
 | `strengthThreshold`                      | cut this codebase got; strength must ALSO be > 0.5                                                                   |
 | `strengthThresholdMethod`                | `otsu` = split over candidate strengths; `majority` = too few candidates (< 8) or strengths not bimodal (η < 0.8)    |
 | `strongLinkedCount`                      | strong pairs code DOES link — declared coupling, context for `violationCount`                                        |
-| `sharedNeighbourThreshold`               | Otsu cut over pairs' best shared-neighbour weight ln(N / fanIn); `none` = off (< 8 weights, or not bimodal, η < 0.8) |
+| `sharedNeighbourSignificance`            | per-pair chance of sharing a neighbour given both import counts (hypergeometric), BH q; absent = no dependency edges |
 | `explainedPairs`                         | pairs a specific shared neighbour explains; `evidence.explainedBy` names it                                          |
 
 `rootCauses` with `detector: "silentCoupling"` = file with ≥ 2 silent partners:
@@ -721,10 +721,11 @@ file walked), `notSignificant` (support no more than the configuration null
 predicts from the two files' change counts —
 `summary.silentCoupling.cochangeSignificance` gives method, family, q,
 familySize m, tested/admitted counts; a hub file that changes with everything
-dies here), `explainedBySharedNeighbour` (both import a low-fanIn file, or A→C→B
-— shared contract, not hidden coupling; hub neighbour explains nothing). A
-barrel / type-only / object-literal module IS judged — its `import type` deps
-are edges, so a missing edge is evidence.
+dies here), `explainedBySharedNeighbour` (both import a file, A→C→B, or a
+registry consumes both — and sharing it is unlikely by chance given both files'
+import counts; shared contract, not hidden coupling). A barrel / type-only /
+object-literal module IS judged — its `import type` deps are edges, so a missing
+edge is evidence.
 
 `summary.mainSequence.excluded` — components NOT judged: `lowConnectionCount`
 (SDP floor), `unmeasured` (no census — recompute), `fewTypes` (< `minTypeCount`
