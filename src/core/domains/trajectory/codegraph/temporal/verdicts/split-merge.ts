@@ -18,6 +18,21 @@
  * under-represent internal pairs, which makes splits conservative (harder to
  * find), the documented direction.
  *
+ * A split also has to be SEPARABLE and to DESCRIBE the component (bd
+ * tea-rags-mcp-755bj). Separable: clusters a stored internal pair links at
+ * least as often (support) as the weaker cluster's own weakest spanning link
+ * are one chain, not two groups — the strength cut only kept the bridge out
+ * because its rate was diluted, while the history co-changed across it as
+ * often as inside. Describing: the clusters must hold a strict majority of the
+ * component's co-changing files (endpoints of its stored internal pairs); two
+ * strong pairs in a corner of a wide component say nothing about its border.
+ *
+ * MERGE never judges a NESTED pair — one component inside the other's own tree
+ * (`componentAncestry`): the two already are one subtree, so a merge names no
+ * border between them, and a parent co-changes with its descendants by
+ * construction. Nested pairs leave the draw's population too: only judged
+ * strengths set the bar.
+ *
  * ONE DRAW. Internal pair strengths and component-pair strengths enter ONE
  * population for the majority-floored Otsu draw — silent coupling's own
  * mechanism (`resolveMajorityFlooredOtsuThreshold`,
@@ -41,6 +56,7 @@ import {
   weightThresholdComponents,
   type WeightedNodeEdge,
 } from "../../../../../primitives/graph/index.js";
+import { componentAncestry } from "../../component-geometry/index.js";
 import {
   cochangeStrength,
   SILENT_COUPLING_OTSU_MIN_POPULATION,
@@ -141,14 +157,14 @@ export function computeSplitMergeVerdicts(input: SplitMergeInput): SplitMergeVer
     };
   }
 
-  // Internal pairs per component, weighted by strength — SPLIT's input.
-  const internalByComponent = new Map<string, WeightedNodeEdge[]>();
+  // Internal pairs per component — SPLIT's input.
+  const internalByComponent = new Map<string, TemporalCochangeEdge[]>();
   for (const edge of input.edges) {
     const component = componentOf.get(edge.relPathA);
     if (component === undefined || componentOf.get(edge.relPathB) !== component) continue;
     const list = internalByComponent.get(component);
-    if (list) list.push({ a: edge.relPathA, b: edge.relPathB, weight: cochangeStrength(edge) });
-    else internalByComponent.set(component, [{ a: edge.relPathA, b: edge.relPathB, weight: cochangeStrength(edge) }]);
+    if (list) list.push(edge);
+    else internalByComponent.set(component, [edge]);
   }
 
   // Component-level bundle counts — MERGE's input. A bundle touches a
@@ -175,10 +191,11 @@ export function computeSplitMergeVerdicts(input: SplitMergeInput): SplitMergeVer
 
   // Component pairs as synthetic edges: support and changes make the two
   // directed confidences, cochangeStrength the Wilson-bound severity.
-  const componentPairs = [...supportByPair].map(([key, support]) => {
+  const componentPairs = [...supportByPair].flatMap(([key, support]) => {
     const separator = key.indexOf("\u0000");
     const componentA = key.slice(0, separator);
     const componentB = key.slice(separator + 1);
+    if (isNestedComponentPair(componentA, componentB)) return [];
     const changesA = changesByComponent.get(componentA) ?? 0;
     const changesB = changesByComponent.get(componentB) ?? 0;
     return {
@@ -198,7 +215,7 @@ export function computeSplitMergeVerdicts(input: SplitMergeInput): SplitMergeVer
   // ONE draw over every judged strength — internal pairs and component pairs.
   const policy = resolveMajorityFlooredOtsuThreshold(
     [
-      ...[...internalByComponent.values()].flatMap((edges) => edges.map((edge) => edge.weight)),
+      ...[...internalByComponent.values()].flatMap((edges) => edges.map((edge) => cochangeStrength(edge))),
       ...componentPairs.map((pair) => pair.strength),
     ],
     { majority: SILENT_COUPLING_STRENGTH_MAJORITY, minPopulation: SILENT_COUPLING_OTSU_MIN_POPULATION },
@@ -206,19 +223,25 @@ export function computeSplitMergeVerdicts(input: SplitMergeInput): SplitMergeVer
 
   const splitCandidates: SplitCandidate[] = [];
   for (const [component, edges] of internalByComponent) {
+    const admitted = edges.filter((edge) => policy.admits(cochangeStrength(edge)));
     const analysis = weightThresholdComponents(
-      edges.filter((edge) => policy.admits(edge.weight)),
-      {
-        minWeight: policy.threshold,
-      },
+      admitted.map((edge) => ({ a: edge.relPathA, b: edge.relPathB, weight: cochangeStrength(edge) })),
+      { minWeight: policy.threshold },
     );
     if (analysis.components.length < 2) continue;
-    if (analysis.largestWeightShare >= TEMPORAL_COHESION_SPLIT_MAX_SHARE) continue;
+    const clusters = joinInseparableClusters(analysis.components, admitted, edges);
+    if (clusters.length < 2) continue;
+    const totalWeight = clusters.reduce((sum, cluster) => sum + cluster.internalWeight, 0);
+    const largestWeightShare = clusters[0].internalWeight / totalWeight;
+    if (largestWeightShare >= TEMPORAL_COHESION_SPLIT_MAX_SHARE) continue;
+    const coChangingFiles = new Set(edges.flatMap((edge) => [edge.relPathA, edge.relPathB])).size;
+    const clusteredFiles = clusters.reduce((sum, cluster) => sum + cluster.nodes.length, 0);
+    if (clusteredFiles * 2 <= coChangingFiles) continue;
     splitCandidates.push({
       component,
-      clusters: analysis.components.length,
-      largestWeightShare: analysis.largestWeightShare,
-      files: analysis.components.map((cluster) => cluster.nodes.slice(0, SPLIT_CLUSTER_EXEMPLAR_FILES)),
+      clusters: clusters.length,
+      largestWeightShare,
+      files: clusters.map((cluster) => cluster.nodes.slice(0, SPLIT_CLUSTER_EXEMPLAR_FILES)),
     });
   }
   splitCandidates.sort(
@@ -245,6 +268,76 @@ export function computeSplitMergeVerdicts(input: SplitMergeInput): SplitMergeVer
     thresholdMethod: policy.method,
     excluded,
   };
+}
+
+/** One co-change cluster inside a component: its files and admitted weight. */
+interface SplitCluster {
+  nodes: readonly RelPath[];
+  internalWeight: number;
+}
+
+/**
+ * Join the clusters the history does not separate: a stored pair across two
+ * clusters whose support reaches the weaker cluster's bottleneck — the
+ * smallest support the cluster needs to stay connected — chains them. Joined
+ * clusters keep the primitive's order: heaviest first, files code-point ordered.
+ */
+function joinInseparableClusters(
+  clusters: readonly SplitCluster[],
+  admitted: readonly TemporalCochangeEdge[],
+  internal: readonly TemporalCochangeEdge[],
+): SplitCluster[] {
+  const clusterOf = new Map<RelPath, number>();
+  clusters.forEach((cluster, index) => {
+    for (const node of cluster.nodes) clusterOf.set(node, index);
+  });
+  const bottlenecks = clusters.map((cluster, index) =>
+    clusterBottleneckSupport(
+      cluster.nodes.length,
+      admitted.filter((edge) => clusterOf.get(edge.relPathA) === index),
+    ),
+  );
+  const links: WeightedNodeEdge[] = [];
+  for (const edge of internal) {
+    const a = clusterOf.get(edge.relPathA);
+    const b = clusterOf.get(edge.relPathB);
+    if (a === undefined || b === undefined || a === b) continue;
+    if (edge.support >= Math.min(bottlenecks[a], bottlenecks[b])) links.push({ a: String(a), b: String(b), weight: 1 });
+  }
+  const joined = new Set<number>();
+  const splitClusters: SplitCluster[] = [];
+  for (const group of weightThresholdComponents(links, { minWeight: 1 }).components) {
+    const joinedIndices = group.nodes.map(Number);
+    for (const member of joinedIndices) joined.add(member);
+    splitClusters.push({
+      nodes: joinedIndices.flatMap((member) => clusters[member].nodes).sort(compareCodePoints),
+      internalWeight: joinedIndices.reduce((sum, member) => sum + clusters[member].internalWeight, 0),
+    });
+  }
+  clusters.forEach((cluster, index) => {
+    if (!joined.has(index)) splitClusters.push(cluster);
+  });
+  return splitClusters.sort((x, y) => y.internalWeight - x.internalWeight || compareCodePoints(x.nodes[0], y.nodes[0]));
+}
+
+/**
+ * The largest support level at which a cluster's admitted pairs still connect
+ * all its files — the weakest link of its maximum-support spanning tree.
+ */
+function clusterBottleneckSupport(fileCount: number, intra: readonly TemporalCochangeEdge[]): number {
+  const bySupport = intra.map((edge) => ({ a: edge.relPathA, b: edge.relPathB, weight: edge.support }));
+  const levels = [...new Set(bySupport.map((edge) => edge.weight))].sort((x, y) => y - x);
+  for (const level of levels) {
+    const { components } = weightThresholdComponents(bySupport, { minWeight: level });
+    if (components.length === 1 && components[0].nodes.length === fileCount) return level;
+  }
+  // Unreachable for a cluster the primitive built from these pairs.
+  return levels.at(-1) ?? 0;
+}
+
+/** One component lies in the other's own tree (directory or constant namespace). */
+function isNestedComponentPair(componentA: string, componentB: string): boolean {
+  return componentAncestry(componentB).includes(componentA) || componentAncestry(componentA).includes(componentB);
 }
 
 /** The stored pairs no verdict judged, by the first reason that applied. */
