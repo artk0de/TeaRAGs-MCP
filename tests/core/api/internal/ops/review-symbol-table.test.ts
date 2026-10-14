@@ -10,10 +10,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildReviewSymbolTable,
+  IndexedSymbolRowsCache,
   readIndexedSymbolRows,
   type IndexedSymbolRows,
 } from "../../../../../src/core/api/internal/ops/review-symbol-table.js";
@@ -159,5 +160,87 @@ describe("buildReviewSymbolTable", () => {
     expect(table.lookup("Account")).toEqual([]);
     expect(table.lookup("Ledger").map((def) => def.relPath)).toEqual(["app/models/account.rb"]);
     expect(table.lookup("Invoice").map((def) => def.relPath)).toEqual(["app/models/invoice.rb"]);
+  });
+});
+
+describe("IndexedSymbolRowsCache", () => {
+  function countingGraph(files: string[] = ["app/models/user.rb"]) {
+    return {
+      listAllSymbols: vi.fn(async () => [definition("app/models/user.rb", "User")]),
+      listFileContentHashes: vi.fn(async () => files.map((relPath) => ({ relPath, contentHash: null }))),
+    };
+  }
+
+  it("serves a second review of an unchanged database without reading it again", async () => {
+    const cache = new IndexedSymbolRowsCache();
+    const graph = countingGraph();
+
+    const first = await cache.read("code_a", () => "gen-1", graph);
+    const second = await cache.read("code_a", () => "gen-1", graph);
+
+    expect(second).toBe(first);
+    expect(graph.listAllSymbols).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads again once a write moved the stamp — an index run or a recompute alike", async () => {
+    const cache = new IndexedSymbolRowsCache();
+    const graph = countingGraph();
+    let stamp = "gen-1";
+
+    await cache.read("code_a", () => stamp, graph);
+    stamp = "gen-2";
+    await cache.read("code_a", () => stamp, graph);
+
+    expect(graph.listAllSymbols).toHaveBeenCalledTimes(2);
+  });
+
+  it("takes the stamp BEFORE the read, so a write racing the read is re-read next time", async () => {
+    const cache = new IndexedSymbolRowsCache();
+    let stamp = "gen-1";
+    const graph = countingGraph();
+    graph.listAllSymbols.mockImplementationOnce(async () => {
+      stamp = "gen-2"; // a write committed while the rows were in flight
+      return [definition("app/models/user.rb", "User")];
+    });
+
+    await cache.read("code_a", () => stamp, graph);
+    await cache.read("code_a", () => stamp, graph);
+
+    expect(graph.listAllSymbols).toHaveBeenCalledTimes(2);
+  });
+
+  it("holds one entry per collection: another collection's read never evicts it", async () => {
+    const cache = new IndexedSymbolRowsCache();
+    const a = countingGraph();
+    const b = countingGraph();
+
+    await cache.read("code_a", () => "gen-1", a);
+    await cache.read("code_b", () => "gen-1", b);
+    await cache.read("code_a", () => "gen-1", a);
+
+    expect(a.listAllSymbols).toHaveBeenCalledTimes(1);
+    expect(b.listAllSymbols).toHaveBeenCalledTimes(1);
+  });
+
+  it("never caches an unavailable read, nor reads cached without a stamp", async () => {
+    const cache = new IndexedSymbolRowsCache();
+    const empty = countingGraph([]);
+    const unstamped = countingGraph();
+
+    await cache.read("code_a", () => "gen-1", empty);
+    await cache.read("code_a", () => "gen-1", empty);
+    await cache.read("code_b", () => undefined, unstamped);
+    await cache.read("code_b", () => undefined, unstamped);
+
+    expect(empty.listAllSymbols).toHaveBeenCalledTimes(2);
+    expect(unstamped.listAllSymbols).toHaveBeenCalledTimes(2);
+  });
+
+  it("answers unavailable for a collection with no codegraph database", async () => {
+    const cache = new IndexedSymbolRowsCache();
+
+    expect(await cache.read("code_a", () => "gen-1", undefined)).toEqual({
+      unavailable: expect.stringContaining("no codegraph database"),
+    });
   });
 });

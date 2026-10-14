@@ -210,6 +210,7 @@ function directoryLocality({ source, target }: NormsAddedEdge): "sameDirectory" 
 
 export const normsSectionProvider: ReviewSectionProvider = {
   id: "norms",
+  consumesReviewChangeEdges: true,
 
   isBuilt: (context) => {
     if (context.graphDb === undefined) {
@@ -235,11 +236,8 @@ export const normsSectionProvider: ReviewSectionProvider = {
     );
     const typeNameRows = await readDependencyNormTypeNameRows(graphDb);
     // The change's side, classified by the run's before-the-change evidence.
-    const { overlay, baseEdges } = await readReviewChangeEdges(
-      scope,
-      reviewEdgeExtraction,
-      await context.readIndexedSymbolRows?.(),
-    );
+    const { overlay, baseEdges } = await (context.readReviewChangeEdges?.() ??
+      readReviewChangeEdges(scope, reviewEdgeExtraction));
     const ports = {
       graph: new WiredGraphReader(production.graph.edges),
       ...(baseEdges !== undefined ? { baseEdges } : {}),

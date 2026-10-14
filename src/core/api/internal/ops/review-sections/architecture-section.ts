@@ -122,6 +122,7 @@ import {
   stampDiffFindingImpactTiers,
 } from "./architecture-violation-impact-tiers.js";
 import type {
+  ReviewChangeEdges,
   ReviewSectionBuildContext,
   ReviewSectionContext,
   ReviewSectionProvider,
@@ -497,7 +498,7 @@ export async function readReviewChangeEdges(
   scope: Pick<DiffScopeRead, "workTree" | "mergeBase" | "files" | "touchedFiles" | "renamedFrom">,
   deps: ReviewEdgeExtractionDeps,
   indexedSymbols: IndexedSymbolRowsRead = { unavailable: "no indexed symbol table was read for this review" },
-): Promise<{ overlay: ReviewEdgeOverlay; baseEdges: DiffDetectorBaseEdgeReader | undefined }> {
+): Promise<ReviewChangeEdges> {
   const extractionContext = workingTreeExtractionContext(scope.workTree, deps.languageFactory);
   const walked = scope.files.map((relPath) => extractWorkingTreeFile(deps, scope.workTree, relPath, extractionContext));
   const treeExtractions = walked.filter(isWalkedReviewFile);
@@ -608,6 +609,7 @@ export async function readIndexLagVerdict(
 export const architectureSectionProvider: ReviewSectionProvider = {
   id: "architecture",
   consumesTemporalCochange: true,
+  consumesReviewChangeEdges: true,
 
   isBuilt: (context) => {
     if (context.graphDb === undefined) {
@@ -676,11 +678,8 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       querySignificance,
     );
 
-    const { overlay, baseEdges } = await readReviewChangeEdges(
-      scope,
-      reviewEdgeExtraction,
-      await context.readIndexedSymbolRows?.(),
-    );
+    const { overlay, baseEdges } = await (context.readReviewChangeEdges?.() ??
+      readReviewChangeEdges(scope, reviewEdgeExtraction));
     const run = new DiffDetectorRun({
       graph,
       ...(baseEdges !== undefined ? { baseEdges } : {}),

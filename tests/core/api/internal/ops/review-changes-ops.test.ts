@@ -377,6 +377,53 @@ describe("ReviewChangesOps", () => {
     expect(listFileContentHashes).toHaveBeenCalledTimes(1);
   });
 
+  it("walks the diff once per review: architecture and norms share one change-edge read (bd tea-rags-mcp-nehn5)", async () => {
+    const walksFor = async (sections: ReviewChangesRequest["sections"]): Promise<number> => {
+      const walk = vi.fn(collectSymbols);
+      const ops = makeOps(
+        graphDbStub(),
+        {},
+        {
+          reviewEdgeExtraction: {
+            languageFactory: new LanguageFactory({}),
+            collectSymbols: walk,
+            composer: new DefaultSymbolIdComposer(),
+          },
+        },
+      );
+      await ops.reviewChanges(request({ sections }));
+      return walk.mock.calls.length;
+    };
+
+    const alone = await walksFor(["architecture"]);
+    const both = await walksFor(["architecture", "norms"]);
+
+    expect(alone).toBeGreaterThan(0);
+    expect(both).toBe(alone);
+  });
+
+  it("keeps the symbol rows across reviews until a write moves the database stamp (bd tea-rags-mcp-nehn5)", async () => {
+    const listAllSymbols = vi.fn(async () => []);
+    const listFileContentHashes = vi.fn(async () => [{ relPath: CHANGED, contentHash: null }]);
+    const graph = graphDbStub({ listAllSymbols, listFileContentHashes });
+    let stamp = "gen-1";
+    const ops = makeOps(graph, {}, {
+      pool: {
+        acquireReader: vi.fn(async () => ({ graphDb: graph, symbolTable: {} })),
+        hasDatabase: vi.fn(() => true),
+        databaseWriteStamp: vi.fn(() => stamp),
+      },
+    } as Partial<ReviewChangesOpsDeps>);
+
+    const first = await ops.reviewChanges(request({ sections: ["architecture", "norms"] }));
+    const second = await ops.reviewChanges(request({ sections: ["architecture", "norms"] }));
+    stamp = "gen-2";
+    await ops.reviewChanges(request({ sections: ["architecture", "norms"] }));
+
+    expect(second.review.sections).toEqual(first.review.sections);
+    expect(listAllSymbols).toHaveBeenCalledTimes(2);
+  });
+
   it("reads no symbol rows for a review whose sections walk no diff edges", async () => {
     const listAllSymbols = vi.fn(async () => []);
     const graph = graphDbStub({ listAllSymbols });
