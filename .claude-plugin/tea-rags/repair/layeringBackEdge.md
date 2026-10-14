@@ -43,7 +43,7 @@ Back-edge A→B, A in a lower layer, B in a higher one. Pick by A's other edges.
 Inversion, as in stableDependencies:
 
 - `removeEdge {from: A, to: B}`
-- `addFile {file: I, component: <lower-layer component>}`
+- `addFile {file: I, component: <lower-layer component>, abstract: true}`
 - `addEdge {from: A, to: I}`
 - `addEdge {from: B, to: I}`
 
@@ -58,7 +58,7 @@ hard-coded directory.
 
 Example, finding fields `sourceRelPath: A`, `toRelPath: B`, layer map `A: L1`,
 `B: L3`:
-`removeEdge A→B · addFile I in an L1 component · addEdge A→I · addEdge B→I`.
+`removeEdge A→B · addFile I (abstract) in an L1 component · addEdge A→I · addEdge B→I`.
 
 Simulate with `get_architecture_report restructure` before writing; the skill
 `tea-rags:refactoring-planning` orders several.

@@ -50,7 +50,7 @@ consumers importing the same subset of `importedNames` from the hub H.
 
 Per cluster C with interface I:
 
-- `addFile {file: I, component: <H's component>}`
+- `addFile {file: I, component: <H's component>, abstract: true}`
 - `removeEdge {from: c, to: H}` for each c in C
 - `addEdge {from: c, to: I}` for each c in C
 - `addEdge {from: H, to: I}`
@@ -62,7 +62,7 @@ report's tree has one H already imports.
 
 Example, finding fields `component: H`, consumers `[c1, c2]`,
 `importedNames: [N]`:
-`addFile H-dir/I · removeEdge c1→H · removeEdge c2→H · addEdge c1→I · addEdge c2→I · addEdge H→I`.
+`addFile H-dir/I (abstract) · removeEdge c1→H · removeEdge c2→H · addEdge c1→I · addEdge c2→I · addEdge H→I`.
 Ca of H drops by 2; Ce gains one local edge.
 
 Simulate with `get_architecture_report restructure` before writing; the skill
