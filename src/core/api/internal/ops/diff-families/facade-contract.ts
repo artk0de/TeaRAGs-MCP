@@ -12,7 +12,8 @@ const NO_CONTRACT_READER_REASON = "no contract reader";
  * import — the SUPPLY side of the export surface (the demand side, a new
  * deep import past a facade, is leakingAbstraction's). The tree's re-export
  * surface is the overlay's own recorded names; the pre-diff demand is the
- * indexed graph's. Judged only when the tree recorded a re-export surface
+ * indexed graph's, kept to the names the base blob itself re-exported
+ * (`reexportSurfaceAtBase`, bd tea-rags-mcp-2plk2). Judged only when the tree recorded a re-export surface
  * at all — "not recorded" must never read as "exports nothing" (the same
  * guard `classifyFacadeLeak`'s `facadeNamesRecorded` makes on the report
  * side). A consumer the diff also changes (`inChange` — the whole change,
@@ -21,7 +22,7 @@ const NO_CONTRACT_READER_REASON = "no contract reader";
  */
 export const facadeContractDetector: DiffFamilyDetector = {
   family: "facadeContract",
-  judge: ({ scope, overlay, inChange, contract }) => {
+  judge: ({ scope, overlay, inChange, contract, baseEdges }) => {
     if (contract === undefined) {
       return {
         findings: [],
@@ -49,7 +50,13 @@ export const facadeContractDetector: DiffFamilyDetector = {
       if (!reexportsRecorded) continue;
       const indexedSurface = contract.indexedSurfaceOf(relPath);
       if (indexedSurface === undefined || indexedSurface.length === 0) continue;
-      const dropped = new Set(indexedSurface.filter((name) => !treeExposed.has(name)));
+      // A name counts as dropped only if the base exposed it, read by the same
+      // walk as the tree — the index may have been written by an extraction
+      // that records more (bd tea-rags-mcp-2plk2). Base unknown: the index decides.
+      const baseSurface = baseEdges?.reexportSurfaceAtBase(relPath);
+      const dropped = new Set(
+        indexedSurface.filter((name) => !treeExposed.has(name) && (baseSurface === undefined || baseSurface.has(name))),
+      );
       if (dropped.size === 0) continue;
 
       const consumersByDroppedName = new Map<string, Set<string>>();

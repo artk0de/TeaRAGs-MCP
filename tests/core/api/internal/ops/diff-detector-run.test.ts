@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DiffDetectorRun,
+  type DiffDetectorBaseEdgeReader,
   type DiffDetectorCatalog,
   type DiffDetectorContractReader,
   type DiffDetectorFindings,
@@ -157,11 +158,13 @@ function runWithContract(
   contract: DiffDetectorContractReader | undefined,
   changedFiles: readonly string[],
   overlayEdges: readonly FixtureNamedEdge[],
+  baseEdges?: DiffDetectorBaseEdgeReader,
 ): DiffDetectorFindings {
   const run = new DiffDetectorRun({
     graph: graphOf([]),
     catalog: catalogOf(new Map()),
     ...(contract !== undefined ? { contract } : {}),
+    ...(baseEdges !== undefined ? { baseEdges } : {}),
   });
   return run.run({ changedFiles }, namedOverlayOf(overlayEdges, changedFiles));
 }
@@ -1377,6 +1380,32 @@ describe("facadeContract", () => {
       [[FACADE, "src/lib/x.ts", { reexported: ["a"], reexportBindings: { b: "a" } }]],
     );
     expect(result.findings).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-2plk2: the indexed surface is whatever the extraction that
+  // built the index recorded; a tree read by an extraction that records less
+  // (an older build's, which missed type-only re-exports) reported a one-line
+  // additive barrel edit as dropping two dozen names. The diff drops only what
+  // its own base exposed, read by the same extraction as the tree.
+  it("judges a drop against the base's own re-export surface — a name the base never exposed is no drop", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["a", "b"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+      baseEdgesOf({ [FACADE]: ["src/lib/x.ts"] }, { [FACADE]: ["a"] }),
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("reports a name the base exposed and the tree no longer does", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["a", "b"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"] }]],
+      baseEdgesOf({ [FACADE]: ["src/lib/x.ts"] }, { [FACADE]: ["a", "b"] }),
+    );
+    const finding = result.findings.find((f) => f.detector === "facadeContract");
+    expect(finding?.evidence).toEqual({ droppedNames: [{ name: "b", consumers: ["src/app/a.ts"] }] });
   });
 
   it("stays silent when every consumed name is still re-exported", () => {

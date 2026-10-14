@@ -110,11 +110,17 @@ export function runWith(
  * The diff base's edges per changed source, as the wiring reads them from the
  * merge-base blobs: a listed source maps to the targets it imported AT THE
  * BASE (empty = absent or import-free there); an unlisted source answers
- * undefined — base unknown, the index decides.
+ * undefined — base unknown, the index decides. `surfaces` is the same map for
+ * the names each source re-exported at the base (bd tea-rags-mcp-2plk2); an
+ * unlisted source's surface is unknown.
  */
-export function baseEdgesOf(bySource: Readonly<Record<string, readonly string[]>>): DiffDetectorBaseEdgeReader {
+export function baseEdgesOf(
+  bySource: Readonly<Record<string, readonly string[]>>,
+  surfaces: Readonly<Record<string, readonly string[]>> = {},
+): DiffDetectorBaseEdgeReader {
   return {
     targetsAtBase: (relPath) => (relPath in bySource ? new Set(bySource[relPath]) : undefined),
+    reexportSurfaceAtBase: (relPath) => (relPath in surfaces ? new Set(surfaces[relPath]) : undefined),
   };
 }
 

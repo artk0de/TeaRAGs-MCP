@@ -391,6 +391,7 @@ export async function readDiffBaseEdges(
   if (!atHead && !(await isAncestor(toplevel, scope.mergeBase, "HEAD"))) return undefined;
   const prefix = gitPathPrefix(toplevel, scope.workTree);
   const targetsBySource = new Map<string, Set<string>>();
+  const reexportSurfaceBySource = new Map<string, ReadonlySet<string>>();
   const baseTexts = new Map<string, { basePath: string; text: string }>();
   const blobs = createCatFileBatch(toplevel);
   const readBaseBlob = async (basePath: string): Promise<string> =>
@@ -399,7 +400,10 @@ export async function readDiffBaseEdges(
     for (const relPath of scope.files) {
       const basePath = scope.renamedFrom?.get(relPath) ?? relPath;
       const text = await readBaseBlob(basePath);
-      const read = extractReviewFileEdges(extraction, scope.workTree, basePath, text, context);
+      const walked = extractReviewFile(extraction, basePath, text, context);
+      if (!isWalkedReviewFile(walked)) continue;
+      reexportSurfaceBySource.set(relPath, reexportSurfaceOf(walked));
+      const read = resolveReviewFileEdges(extraction, scope.workTree, walked, context);
       if (read.skip !== undefined) continue;
       targetsBySource.set(relPath, new Set(read.edges.map((edge) => edge.targetRelPath)));
       baseTexts.set(relPath, { basePath, text });
@@ -410,7 +414,23 @@ export async function readDiffBaseEdges(
   } finally {
     await blobs.close();
   }
-  return { targetsAtBase: (relPath) => targetsBySource.get(relPath) };
+  return {
+    targetsAtBase: (relPath) => targetsBySource.get(relPath),
+    reexportSurfaceAtBase: (relPath) => reexportSurfaceBySource.get(relPath),
+  };
+}
+
+/**
+ * The names one walked file exposes through its re-exports, over both import
+ * channels and before resolution (bd tea-rags-mcp-2plk2) — the base side of
+ * facadeContract, read by the same walk as the tree's overlay.
+ */
+function reexportSurfaceOf(extraction: FileExtraction): ReadonlySet<string> {
+  const surface = new Set<string>();
+  for (const imp of [...extraction.imports, ...(extraction.typeOnlyImports ?? [])]) {
+    for (const name of exposedReexportNames(imp) ?? []) surface.add(name);
+  }
+  return surface;
 }
 
 /**
