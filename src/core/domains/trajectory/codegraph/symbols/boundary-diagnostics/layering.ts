@@ -2,6 +2,7 @@ import type { FileDependencyEdge, FileDependencyGraphFile } from "../../../../..
 import { tarjanScc } from "../../../../../primitives/graph/index.js";
 import { compilePathPatternMatcher, type PathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import { COMPONENT_EVIDENCE_FILE_EDGE_LIMIT } from "./component-stable-dependencies.js";
+import { measureConventionDispatchedFiles } from "./convention-dispatched-entries.js";
 import { DEFAULT_MAIN_SEQUENCE_MIN_TYPE_COUNT } from "./main-sequence.js";
 import type {
   ComponentDependency,
@@ -149,7 +150,7 @@ export function detectLayeringViolations(
         nestedPairs: nestedPairs(componentGraph, knot.components),
       }),
     ),
-    ...islands(componentGraph, model),
+    ...islands(componentGraph, files, model),
   ];
 
   const inScope = compilePathPatternMatcher(options.sourcePathPattern);
@@ -1089,15 +1090,28 @@ function nestedPairs(
  * parent facade re-exports — the aggregation is excluded from the levels, but
  * the component is reached through the parent's surface — and one holding an
  * entry facade, a composition root by measurement wherever it sits.
+ *
+ * Nor is one holding a member of a convention-dispatched subtype family (bd
+ * tea-rags-mcp-r8hme.52.13, `measureConventionDispatchedFiles`): a framework
+ * reaches it by convention — routes, a constantized name — not by an edge.
  */
-function islands(componentGraph: ComponentGraph, model: LayeringModel): LayeringIslandViolation[] {
+function islands(
+  componentGraph: ComponentGraph,
+  files: readonly FileDependencyGraphFile[],
+  model: LayeringModel,
+): LayeringIslandViolation[] {
   const aggregated = new Set(componentGraph.facadeAggregations.map((a) => a.nestedComponent));
+  const dispatchedComponents = new Set<string>();
+  for (const relPath of measureConventionDispatchedFiles(componentGraph, files)) {
+    const component = componentGraph.componentOf.get(relPath);
+    if (component !== undefined) dispatchedComponents.add(component);
+  }
   const findings: LayeringIslandViolation[] = [];
   for (const [component, position] of model.positions) {
     if (position.inKnot || position.depth !== 0) continue;
     if (position.level >= model.levelCount - 1) continue;
     const c = componentGraph.components.get(component);
-    if (!c || c.entryFacade || aggregated.has(component)) continue;
+    if (!c || c.entryFacade || aggregated.has(component) || dispatchedComponents.has(component)) continue;
     findings.push({
       kind: "island",
       component,

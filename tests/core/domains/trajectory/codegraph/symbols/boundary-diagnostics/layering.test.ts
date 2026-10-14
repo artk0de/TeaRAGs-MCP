@@ -1175,3 +1175,74 @@ describe("detectLayeringViolations — abstractionBypass needs implementation ev
     expect(bypasses(g)).toEqual([]);
   });
 });
+
+/**
+ * Convention-dispatched entry points (bd tea-rags-mcp-r8hme.52.13): a framework
+ * reaches a family of subtypes by convention — a route table, a string that is
+ * constantized — so no file edge names them. `web/base.ts` declares `Base`;
+ * four intermediate bases in `web/` each have two endpoints `ep<i>`, every
+ * endpoint its own component that nothing reaches. Twenty `model/m<i>.ts`
+ * extend `Record` and are reached through `svc`. The corpus rate of unreached
+ * subtypes is low (the models), while `Base`'s transitive family is mostly
+ * unreached — a dispatch contract, so its endpoints are entries, not dead
+ * code. Each intermediate family alone holds two endpoints, too few to tell
+ * from chance; only the transitive family carries the evidence.
+ * `old/legacy.ts` extends `Record` and nothing reaches it: `Record`'s family is
+ * reached as a rule, so it stays an island, as does `proto`, which declares no
+ * subtype at all.
+ */
+describe("detectLayeringViolations — convention-dispatched entry points (bd tea-rags-mcp-r8hme.52.13)", () => {
+  const heritage = (typeName: string, supertype: string, declaringRelPath: string) => ({
+    typeHeritage: [{ typeName, supertypes: [{ name: supertype, declaringRelPaths: [declaringRelPath] }] }],
+  });
+  const intermediates = ["a", "b", "c", "d"];
+  const endpoints = intermediates.flatMap((x, i) => [0, 1].map((k) => ({ base: x, relPath: `ep${i * 2 + k}/h.ts` })));
+
+  function dispatched(): FileDependencyGraph {
+    const models = Array.from({ length: 20 }, (_, i) => `model/m${i}.ts`);
+    const files = [
+      file("core/c.ts"),
+      file("model/record.ts"),
+      ...models.map((relPath, i) => ({ ...file(relPath), ...heritage(`M${i}`, "Record", "model/record.ts") })),
+      file("svc/s.ts"),
+      file("app/a.ts"),
+      file("web/base.ts"),
+      ...intermediates.map((x) => ({ ...file(`web/${x}.ts`), ...heritage(x.toUpperCase(), "Base", "web/base.ts") })),
+      ...endpoints.map(({ base, relPath }, i) => ({
+        ...file(relPath),
+        ...heritage(`H${i}`, base.toUpperCase(), `web/${base}.ts`),
+      })),
+      { ...file("old/legacy.ts"), ...heritage("Legacy", "Record", "model/record.ts") },
+      file("proto/p.ts"),
+    ];
+    const edges = [
+      edge("model/record.ts", "core/c.ts"),
+      ...models.map((m) => edge(m, "model/record.ts")),
+      ...models.map((m) => edge("svc/s.ts", m)),
+      edge("app/a.ts", "svc/s.ts"),
+      edge("web/base.ts", "core/c.ts"),
+      ...intermediates.map((x) => edge(`web/${x}.ts`, "web/base.ts")),
+      ...endpoints.map(({ base, relPath }) => edge(relPath, `web/${base}.ts`)),
+      edge("old/legacy.ts", "model/record.ts"),
+      edge("proto/p.ts", "core/c.ts"),
+    ];
+    return { files, edges };
+  }
+
+  const islandsOf = (g: FileDependencyGraph) =>
+    detectLayeringViolations(buildComponentGraph(g, []), g.files)
+      .violations.flatMap((v) => (v.kind === "island" ? [v.component] : []))
+      .sort();
+
+  it("does not report a component holding a member of a convention-dispatched family as an island", () => {
+    expect(islandsOf(dispatched())).toEqual(["old", "proto"]);
+  });
+
+  it("reports the same endpoints as islands when their files name no supertype", () => {
+    // Control: with the heritage stripped the endpoints are plain Ca-0
+    // components — the exemption comes from the family, nothing else.
+    const g = dispatched();
+    const bare = { ...g, files: g.files.map((f) => (f.relPath.startsWith("ep") ? file(f.relPath) : f)) };
+    expect(islandsOf(bare)).toEqual([...endpoints.map((e) => e.relPath.split("/")[0]), "old", "proto"].sort());
+  });
+});
