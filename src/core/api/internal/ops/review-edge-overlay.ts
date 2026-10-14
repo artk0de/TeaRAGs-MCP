@@ -176,6 +176,14 @@ export function extractReviewFileEdges(
   return isWalkedReviewFile(extracted) ? resolveReviewFileEdges(deps, workTree, extracted, context) : extracted;
 }
 
+/**
+ * The paths the change deleted: every touched path the working tree no longer
+ * holds — a deletion, or the old side of a move.
+ */
+export function deletedReviewPaths(workTree: string, touchedFiles: Iterable<string>): readonly string[] {
+  return [...touchedFiles].filter((relPath) => !existsSync(join(workTree, relPath)));
+}
+
 /** Whether {@link extractWorkingTreeFile} walked the file (an extraction), not a skip read. */
 export function isWalkedReviewFile(read: FileExtraction | ReviewFileEdgeRead): read is FileExtraction {
   return !("edges" in read);

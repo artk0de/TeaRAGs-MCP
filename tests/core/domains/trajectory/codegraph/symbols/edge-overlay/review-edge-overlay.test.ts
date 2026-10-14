@@ -76,4 +76,27 @@ describe("ReviewEdgeOverlay", () => {
     expect(Object.isFrozen(overlay.edgesFrom("src/a.ts"))).toBe(true);
     expect(Object.isFrozen(overlay.edgesFrom("src/empty.ts"))).toBe(true);
   });
+
+  it("answers a file's tree edges: re-read, indexed, skipped-keeps-indexed, deleted-has-none (bd tea-rags-mcp-ah66x)", () => {
+    const overlay = new ReviewEdgeOverlay(
+      [
+        { relPath: "src/a.ts", edges: [{ sourceRelPath: "src/a.ts", targetRelPath: "src/b.ts" }] },
+        { relPath: "src/s.ts", edges: [], skip: { reason: "parseFailed" } },
+      ],
+      { deleted: ["src/gone.ts"] },
+    );
+    const indexed: Record<string, { targetRelPath: string }[]> = {
+      "src/a.ts": [{ targetRelPath: "src/stale.ts" }],
+      "src/u.ts": [{ targetRelPath: "src/b.ts" }, { targetRelPath: "src/gone.ts" }],
+      "src/s.ts": [{ targetRelPath: "src/c.ts" }],
+      "src/gone.ts": [{ targetRelPath: "src/a.ts" }],
+    };
+    const targetsOf = (relPath: string): string[] =>
+      overlay.treeEdgesFrom(relPath, (source) => indexed[source] ?? []).map((edge) => edge.targetRelPath);
+    expect(targetsOf("src/a.ts")).toEqual(["src/b.ts"]);
+    expect(targetsOf("src/u.ts")).toEqual(["src/b.ts"]);
+    expect(targetsOf("src/s.ts")).toEqual(["src/c.ts"]);
+    expect(targetsOf("src/gone.ts")).toEqual([]);
+    expect([...overlay.deleted]).toEqual(["src/gone.ts"]);
+  });
 });

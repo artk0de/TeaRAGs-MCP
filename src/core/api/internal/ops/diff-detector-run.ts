@@ -33,8 +33,9 @@
  *
  * Masking contract: the overlay is the source of truth for a changed file's
  * CURRENT out-edges; the indexed graph behind `DiffDetectorGraphReader` is
- * what the BFS and the reverse-direction checks read, and the cycle BFS never
- * EXPANDS a changed file's node (its stale rows are the overlay's to replace).
+ * what the reverse-direction checks read, and the cycle BFS expands a re-read
+ * changed file through its OVERLAY edges, never its stale indexed rows (bd
+ * tea-rags-mcp-ah66x).
  * TWO predicates deliberately read a changed file's INDEXED out-edges — the
  * only places such rows are read at all: leakingAbstraction's facade evidence
  * ("the facade A already imports" is the pre-diff usage the diff did not add)
@@ -374,7 +375,7 @@ export function diffRemovedEdgeCount(
 }
 
 /**
- * The overlay after `edits`, rebuilt from its own reads (masked set and
+ * The overlay after `edits`, rebuilt from its own reads (masked set, deleted set and
  * unsupported reads unchanged — an edit never widens what the review read):
  *
  * - `replace` points `source`'s edge to `from` at `to`, names kept; when
@@ -408,6 +409,7 @@ function editedReviewEdgeOverlay(overlay: ReviewEdgeOverlay, edits: readonly Dif
       const skip = skips.get(relPath);
       return { relPath, edges, ...(skip !== undefined ? { skip } : {}) };
     }),
+    { deleted: overlay.deleted },
   );
 }
 

@@ -13,6 +13,7 @@ import type {
   NonPublicMemberEdge,
   TemporalCochangeGraph,
 } from "../../../../../src/core/contracts/types/codegraph.js";
+import { buildComponentGraph } from "../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 import {
   applyEdgeOverlay,
   ARCHITECTURE_FACTS_NOT_REFRESHED_BY_EDGE_OVERLAY,
@@ -193,6 +194,48 @@ describe("applyEdgeOverlay", () => {
     expect(overlaid.edgeOverlay?.notRefreshed).toBe(ARCHITECTURE_FACTS_NOT_REFRESHED_BY_EDGE_OVERLAY);
     expect(overlaid.memberEdges).toBe(base.memberEdges);
     expect(overlaid.cochange).toBe(base.cochange);
+  });
+
+  it("drops a deleted file from the overlaid graph — no edge from or to it, Ca/Ce as if it never existed (bd tea-rags-mcp-ah66x)", async () => {
+    const DELETED = "lib/f5.ts";
+    const base = await readArchitectureGraphFacts(graphDb(), {});
+    const overlaid = applyEdgeOverlay(base, new ReviewEdgeOverlay([], { deleted: [DELETED] }));
+
+    const { files, edges } = overlaid.production.graph;
+    expect(edges.filter((e) => e.sourceRelPath === DELETED || e.targetRelPath === DELETED)).toEqual([]);
+    expect(files.map((f) => f.relPath)).not.toContain(DELETED);
+
+    const g = graph();
+    const without = await readArchitectureGraphFacts(
+      graphDb({
+        files: g.files.filter((f) => f.relPath !== DELETED),
+        edges: g.edges.filter((e) => e.sourceRelPath !== DELETED && e.targetRelPath !== DELETED),
+      }),
+      {},
+    );
+    const coupling = (facts: typeof base): Record<string, [number, number]> =>
+      Object.fromEntries(
+        [...buildComponentGraph(facts.production.graph, []).components].map(([name, c]) => [
+          name,
+          [c.afferentCount, c.efferentCount],
+        ]),
+      );
+    expect(coupling(overlaid)).toEqual(coupling(without));
+  });
+
+  it("moves a moved file's row to its new path — the old path leaves, the component stays (bd tea-rags-mcp-ah66x)", async () => {
+    const base = await readArchitectureGraphFacts(graphDb(), {});
+    const overlay = new ReviewEdgeOverlay(
+      [{ relPath: "lib/g5.ts", edges: [{ sourceRelPath: "lib/g5.ts", targetRelPath: "vendor/v.ts" }] }],
+      { deleted: ["lib/f5.ts"] },
+    );
+
+    const overlaid = applyEdgeOverlay(base, overlay, { renamedFrom: new Map([["lib/g5.ts", "lib/f5.ts"]]) });
+
+    const paths = overlaid.production.graph.files.map((f) => f.relPath);
+    expect(paths).toContain("lib/g5.ts");
+    expect(paths).not.toContain("lib/f5.ts");
+    expect(overlaid.production.graph.files.find((f) => f.relPath === "lib/g5.ts")).toEqual(file("lib/g5.ts"));
   });
 });
 

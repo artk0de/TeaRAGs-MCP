@@ -38,8 +38,9 @@ import type {
  * leakingAbstraction's facade evidence and the diff-added subtraction's
  * indexed pairs. Absent from the run's deps, every indexed-graph predicate
  * reads as "no evidence": the subtraction judges every overlay pair as
- * diff-added (never zero), the facade evidence and the cycle BFS find
- * nothing, and the reverse-edge check cannot suppress.
+ * diff-added (never zero), the facade evidence finds nothing, the cycle BFS
+ * walks the re-read files' overlay edges alone, and the reverse-edge check
+ * cannot suppress.
  */
 export interface DiffDetectorGraphReader {
   /** Outgoing file edges of one relPath from the INDEXED graph (excluding type-only). */

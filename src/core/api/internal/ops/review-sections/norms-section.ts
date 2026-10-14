@@ -25,8 +25,7 @@
  * class not evaluated is listed on each judged row as `exclusionsUnchecked`.
  */
 
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 
 import type { DependencyNormFileRole, FileDependencyGraph, RelPath } from "../../../../contracts/types/codegraph.js";
 import {
@@ -245,7 +244,7 @@ export const normsSectionProvider: ReviewSectionProvider = {
       graph: new WiredGraphReader(production.graph.edges),
       ...(baseEdges !== undefined ? { baseEdges } : {}),
     };
-    const deletedFiles = [...scope.touchedFiles].filter((relPath) => !existsSync(join(scope.workTree, relPath)));
+    const deletedFiles = [...overlay.deleted];
     const fileRoles = buildDependencyNormFileRoles(typeNameRows);
     const fileSuperclassFiles = buildDependencyNormFileSuperclassFiles(typeNameRows);
     const result = judgeAddedEdgeNorms({
