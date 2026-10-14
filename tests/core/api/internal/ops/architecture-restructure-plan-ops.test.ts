@@ -146,6 +146,39 @@ describe("ArchitectureRestructurePlanOps#plan", () => {
     });
   });
 
+  it("a merge's blast radius counts the files it relabels: the merge relabelling more files loses the tie", async () => {
+    // every relabelled run resolves the whole base: both candidates net the same vector
+    const real = new ArchitectureReportOps();
+    const judge = vi.fn(async (...args: Parameters<ArchitectureReportOps["judge"]>) => {
+      const response = await real.judge(...args);
+      return args[0].componentRelabel === undefined ? response : { ...response, violations: [] };
+    });
+    const readFileTransitiveImpacts = vi.fn(
+      async (relPaths: readonly string[]) => new Map(relPaths.map((relPath) => [relPath, 1])),
+    );
+    const answer = await new ArchitectureRestructurePlanOps({ judge }).plan(
+      graphDb(),
+      planRequest([
+        { id: "a-merge", ops: [{ merge: { components: ["vendor", "app"] } }] },
+        { id: "b-move", ops: [{ move: { files: ["other/o.ts"], toComponent: "vendor" } }] },
+      ]),
+      { readFileTransitiveImpacts },
+    );
+
+    expect(answer.steps[0]).toMatchObject({ candidateId: "b-move", touchedFiles: ["other/o.ts"], blastRadius: 1 });
+    expect(answer.unselected).toEqual([{ candidateId: "a-merge", source: "caller", reason: "noImprovement" }]);
+
+    const mergeOnly = await new ArchitectureRestructurePlanOps({ judge }).plan(
+      graphDb(),
+      planRequest([{ id: "a-merge", ops: [{ merge: { components: ["vendor", "app"] } }] }]),
+      { readFileTransitiveImpacts },
+    );
+    expect(mergeOnly.steps[0]).toMatchObject({
+      touchedFiles: ["app/c1.ts", "app/c2.ts", "app/c3.ts", "app/c4.ts", "app/c5.ts", "app/c6.ts"],
+      blastRadius: 6,
+    });
+  });
+
   it("never selects a trade-off — a candidate introducing an active violation lands in tradeOffs", async () => {
     const ops = new ArchitectureRestructurePlanOps(
       tieredJudge((key) => (key.startsWith('stableDependencies@1:["vendor"') ? "active" : undefined)),

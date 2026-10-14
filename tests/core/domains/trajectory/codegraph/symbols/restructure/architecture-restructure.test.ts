@@ -103,8 +103,131 @@ describe("compileArchitectureRestructure", () => {
     expect(invalid([{ split: { component: "app", groups: [["app/c1.ts", "app/c2.ts", "app/c3.ts"]] } }])).toBe(
       "invalidOp",
     );
+  });
+});
+
+/**
+ * bd tea-rags-mcp-cm9gt: ops apply IN ORDER — each against the partition the
+ * ops before it produced — so report merges sharing a component chain, and a
+ * file's final path and component are the composition of its relabels.
+ */
+describe("compileArchitectureRestructure — ops compose in order", () => {
+  it("chains merges: a later merge names the component an earlier merge produced", () => {
+    const result = compiled([{ merge: { components: ["core", "lib"] } }, { merge: { components: ["core", "app"] } }]);
+    expect([...result.relabel.renamedFrom.values()].sort()).toEqual([
+      "app/c1.ts",
+      "app/c2.ts",
+      "app/c3.ts",
+      "lib/b.ts",
+      "lib/f1.ts",
+      "lib/f2.ts",
+      "lib/index.ts",
+    ]);
+    expect(new Set(result.relabel.componentOf.values())).toEqual(new Set(["core"]));
+    expect(result.ops).toEqual([
+      { op: "merge", relabelledFiles: 4, components: ["core"] },
+      { op: "merge", relabelledFiles: 3, components: ["core"] },
+    ]);
+  });
+
+  it("chains merges: a later merge folds the component an earlier merge produced", () => {
+    const result = compiled([{ merge: { components: ["core", "lib"] } }, { merge: { components: ["app", "core"] } }]);
+    expect([...result.relabel.renamedFrom.values()].sort()).toEqual([
+      "core/a.ts",
+      "core/b.ts",
+      "core/index.ts",
+      "lib/b.ts",
+      "lib/f1.ts",
+      "lib/f2.ts",
+      "lib/index.ts",
+    ]);
+    expect(result.relabel.renamedFrom.get("app/f1.ts")).toBe("lib/f1.ts");
+    expect(result.relabel.renamedFrom.get("app/a.ts")).toBe("core/a.ts");
+    expect([...result.relabel.renamedFrom.keys()].every((relPath) => relPath.startsWith("app/"))).toBe(true);
+    expect(new Set(result.relabel.componentOf.values())).toEqual(new Set(["app"]));
+    expect(result.ops).toEqual([
+      { op: "merge", relabelledFiles: 4, components: ["core"] },
+      { op: "merge", relabelledFiles: 7, components: ["app"] },
+    ]);
+  });
+
+  it("a folded component is gone from the current partition: naming it again is unknownComponent", () => {
     expect(
-      invalid([{ move: { files: ["lib/f1.ts"], toComponent: "core" } }, { merge: { components: ["app", "lib"] } }]),
+      compileArchitectureRestructure(
+        [{ merge: { components: ["core", "lib"] } }, { merge: { components: ["app", "lib"] } }],
+        partition(),
+      ),
+    ).toEqual({ kind: "unknownComponent", opIndex: 1, component: "lib" });
+  });
+
+  it("a move after a merge maps the FINAL path to the BASE path through both renames", () => {
+    const result = compiled([
+      { merge: { components: ["core", "lib"] } },
+      { move: { files: ["core/f1.ts"], toComponent: "app" } },
+    ]);
+    expect(result.relabel.renamedFrom.get("app/f1.ts")).toBe("lib/f1.ts");
+    expect(result.relabel.renamedFrom.has("core/f1.ts")).toBe(false);
+    expect(result.relabel.componentOf.get("app/f1.ts")).toBe("app");
+    expect(result.relabel.componentOf.has("core/f1.ts")).toBe(false);
+  });
+
+  it("a later op may name a moved file by its base path", () => {
+    const result = compiled([
+      { merge: { components: ["core", "lib"] } },
+      { move: { files: ["lib/f2.ts"], toComponent: "app" } },
+    ]);
+    expect(result.relabel.renamedFrom.get("app/f2.ts")).toBe("lib/f2.ts");
+  });
+
+  it("a file moved back to its base home carries no rename", () => {
+    const result = compiled([
+      { move: { files: ["lib/f1.ts"], toComponent: "core" } },
+      { move: { files: ["core/f1.ts"], toComponent: "lib" } },
+    ]);
+    expect(result.relabel.renamedFrom.size).toBe(0);
+    expect([...result.relabel.componentOf]).toEqual([["lib/f1.ts", "lib"]]);
+  });
+
+  it("a merge after a move folds only what the move left behind", () => {
+    const result = compiled([
+      { move: { files: ["lib/f1.ts"], toComponent: "core" } },
+      { merge: { components: ["app", "lib"] } },
+    ]);
+    expect(result.relabel.renamedFrom.get("core/f1.ts")).toBe("lib/f1.ts");
+    expect(result.relabel.componentOf.get("core/f1.ts")).toBe("core");
+    expect(result.ops[1]).toEqual({ op: "merge", relabelledFiles: 3, components: ["app"] });
+  });
+
+  it("splits a component a merge produced, and keeps the rename of its moved files", () => {
+    const result = compiled([
+      { merge: { components: ["core", "lib"] } },
+      { split: { component: "core", groups: [["core/f1.ts"]] } },
+    ]);
+    expect(result.relabel.renamedFrom.get("core/f1.ts")).toBe("lib/f1.ts");
+    expect(result.relabel.componentOf.get("core/f1.ts")).toBe("core~split1");
+  });
+
+  it("a second split of one component names fresh parts", () => {
+    const result = compiled([
+      { split: { component: "app", groups: [["app/c1.ts"]] } },
+      { split: { component: "app", groups: [["app/c2.ts"]] } },
+    ]);
+    expect(result.ops.map((op) => op.components)).toEqual([["app~split1"], ["app~split2"]]);
+  });
+
+  it("keeps the rules that still hold against the current partition", () => {
+    const kind = (ops: Parameters<typeof compileArchitectureRestructure>[0]) =>
+      compileArchitectureRestructure(ops, partition()).kind;
+    // a move into the component the file is already in — after the merge put it there
+    expect(
+      kind([{ merge: { components: ["core", "lib"] } }, { move: { files: ["core/f1.ts"], toComponent: "core" } }]),
+    ).toBe("invalidOp");
+    // a split part is a label, not a directory: nothing relocates into it
+    expect(
+      kind([
+        { split: { component: "app", groups: [["app/c1.ts"]] } },
+        { move: { files: ["lib/f1.ts"], toComponent: "app~split1" } },
+      ]),
     ).toBe("invalidOp");
   });
 });

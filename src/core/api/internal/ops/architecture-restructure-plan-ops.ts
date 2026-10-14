@@ -11,7 +11,8 @@
  * own run, and the best candidate is appended by a lexicographic vector —
  * net resolved critical, then active, then structural (an untiered violation
  * counts as structural) — ties by the smaller blast radius (Σ codegraph
- * transitiveImpact of the files the ops name), then by id. No weights, no
+ * transitiveImpact of the files the ops name or relabel — a merge touches every
+ * file of the components it folds), then by id. No weights, no
  * constants, no step cap: the loop stops when the best vector is not
  * positive.
  *
@@ -29,6 +30,7 @@ import {
   applyArchitectureRestructure,
   compileArchitectureRestructure,
   type ArchitectureRestructureCompilation,
+  type ArchitectureRestructureRelabel,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   ARCHITECTURE_RESTRUCTURE_OP_LIMIT,
@@ -143,6 +145,7 @@ export class ArchitectureRestructurePlanOps {
         ...candidates.map((candidate) => ({ ...candidate, source: "caller" as const })),
         ...(includeReportCandidates ? reportPlanCandidates(base) : []),
       ],
+      (ops) => compileArchitectureRestructure(ops, partition, edgeBase),
       lookups.readFileTransitiveImpacts,
     );
     const limit = request.limit ?? DEFAULT_SUBJECT_LIMIT;
@@ -287,9 +290,13 @@ async function planPool(
   candidates: readonly (ArchitectureRestructurePlanCandidate & {
     source: ArchitectureRestructurePlanCandidateSource;
   })[],
+  compileOnBase: (ops: readonly ArchitectureRestructureOp[]) => ArchitectureRestructureCompilation,
   readFileTransitiveImpacts: FileTransitiveImpactLookup | undefined,
 ): Promise<PlanPoolCandidate[]> {
-  const touched = candidates.map((candidate) => touchedFilesOf(candidate.ops));
+  const touched = candidates.map((candidate) => {
+    const compilation = compileOnBase(candidate.ops);
+    return touchedFilesOf(candidate.ops, compilation.kind === "compiled" ? compilation.relabel : undefined);
+  });
   const impacts = readFileTransitiveImpacts
     ? await readFileTransitiveImpacts([...new Set(touched.flat())].sort(compareCodePoints))
     : new Map<RelPath, number>();
@@ -302,9 +309,17 @@ async function planPool(
     .sort(compareById);
 }
 
-/** The base paths the ops name, code-point sorted. A merge names components, not files. */
-function touchedFilesOf(ops: readonly ArchitectureRestructureOp[]): RelPath[] {
+/**
+ * The base paths the ops name plus every base file the base-compiled relabel
+ * relabels, code-point sorted: a merge names components, not files, and still
+ * moves every file of the components it folds.
+ */
+function touchedFilesOf(
+  ops: readonly ArchitectureRestructureOp[],
+  relabel: ArchitectureRestructureRelabel | undefined,
+): RelPath[] {
   const files = new Set<RelPath>();
+  for (const relPath of relabel?.componentOf.keys() ?? []) files.add(relabel?.renamedFrom.get(relPath) ?? relPath);
   for (const op of ops) {
     if ("move" in op) op.move.files.forEach((relPath) => files.add(relPath));
     else if ("split" in op) op.split.groups.flat().forEach((relPath) => files.add(relPath));
