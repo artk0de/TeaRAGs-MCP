@@ -437,6 +437,14 @@ export interface DiffDetectorStatus {
    */
   excludedFlapCount?: number;
   /**
+   * mainSequence only (bd tea-rags-mcp-x6y75): touched components whose rise
+   * in main-sequence distance ends on or below the served whole-repo
+   * `distanceThreshold` — a distance the whole-repo detector never names, so
+   * not emitted. Absent when no threshold is served (every rise past the flap
+   * tolerance is then judged). Present when > 0.
+   */
+  excludedBelowThresholdCount?: number;
+  /**
    * Co-change pairs read but not judged, by the production exclusion
    * taxonomy's classes (bd tea-rags-mcp-89k7k.1.10) — the
    * `summary.silentCoupling.excluded` vocabulary. silentCoupling row only,

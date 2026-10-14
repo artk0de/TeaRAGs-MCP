@@ -22,6 +22,11 @@ const MAIN_SEQUENCE_EPSILON = 0.001;
  */
 const MAIN_SEQUENCE_FLAP_TOLERANCE = 0.02;
 
+// Below-threshold rises (bd tea-rags-mcp-x6y75): with the whole-repo
+// `distanceThreshold` served, a rise whose distance after stays on or below
+// it is counted on the family row (`excludedBelowThresholdCount`), not
+// emitted — the whole-repo detector would never name that component.
+
 /** One touched component's diff-added cross-component edges and the files they make efferent for the first time. */
 interface CrossingEdges {
   edges: OverlayEdge[];
@@ -185,6 +190,7 @@ export const mainSequenceDetector: DiffFamilyDetector = {
 
     const findings: DiffDetectorFinding[] = [];
     let excludedFlapCount = 0;
+    let excludedBelowThresholdCount = 0;
     for (const [name, fact] of touched) {
       const crossing = crossingEdges.get(name);
       if (crossing === undefined) continue;
@@ -209,6 +215,13 @@ export const mainSequenceDetector: DiffFamilyDetector = {
       if (newDistance < fact.distanceFromMainSequence) continue;
       if (round3(Math.abs(newDistance - fact.distanceFromMainSequence)) <= MAIN_SEQUENCE_FLAP_TOLERANCE) {
         excludedFlapCount++;
+        continue;
+      }
+      // A rise the whole-repo detector would never name — D ends on or short
+      // of its served threshold, strict as `pastThresholdBefore` — is no
+      // finding (bd tea-rags-mcp-x6y75).
+      if (mainSequenceDistanceThreshold !== undefined && newDistance <= mainSequenceDistanceThreshold) {
+        excludedBelowThresholdCount++;
         continue;
       }
       const foundationTerminal = edgesOut.every((edge) => catalog.isLayeringFoundation(edge.target));
@@ -242,6 +255,7 @@ export const mainSequenceDetector: DiffFamilyDetector = {
     const excluded = {
       ...(excludedLowConnectionCount > 0 ? { excludedLowConnectionCount } : {}),
       ...(excludedFlapCount > 0 ? { excludedFlapCount } : {}),
+      ...(excludedBelowThresholdCount > 0 ? { excludedBelowThresholdCount } : {}),
     };
     return {
       findings,

@@ -31,8 +31,11 @@ does the edge point from a stable component to a less stable one?
 
 - `entryPoint: true`: a declared entry surface belongs at the unstable end and
   nothing imports it.
-- `foundationTerminal`: a terminal foundation component near the stable end is
-  placed correctly.
+- `foundationTerminal: true` = every added edge ends in a layering foundation
+  component. Triage data, not automatic FP: edge direction SDP-legal — judge it
+  via No remedy, cite the rule it passes.
+- Rise ending on or below served whole-repo `distanceThreshold`: detector drops
+  it itself (`excludedBelowThresholdCount` on mainSequence row) — never listed.
 - Unmeasured or unobservable abstractness (a language that rarely declares
   abstractions) is not a verdict.
 - A project rule that places the component. Cite file and quote.
