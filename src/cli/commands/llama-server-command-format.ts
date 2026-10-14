@@ -298,13 +298,26 @@ function linuxAutostart(launches: LlamaServerLaunch[]): string[] {
   return lines;
 }
 
+/**
+ * One `<string>` of a plist written through an UNQUOTED heredoc: XML-escaped,
+ * a leading `~/` becomes `$HOME/` (launchd never expands `~`; the shell that
+ * writes the file does expand `$HOME`), and every other `\`, `$` or backtick is
+ * escaped so the heredoc leaves it literal.
+ */
+function launchdString(raw: string): string {
+  const home = raw.startsWith("~/");
+  const body = xmlEscape(home ? raw.slice(2) : raw).replace(/[\\$`]/g, "\\$&");
+  return home ? `$HOME/${body}` : body;
+}
+
 function macosAutostart(launches: LlamaServerLaunch[]): string[] {
-  const lines = ["mkdir -p ~/Library/LaunchAgents"];
+  const lines = ["mkdir -p ~/Library/LaunchAgents ~/.tea-rags/logs"];
   for (const l of launches) {
     const label = `com.tea-rags.llama-server.${l.port}`;
     const plist = `~/Library/LaunchAgents/${label}.plist`;
+    const log = `<string>$HOME/.tea-rags/logs/llama-server-${l.port}.log</string>`;
     lines.push(
-      `cat > ${plist} <<'EOF'`,
+      `cat > ${plist} <<EOF`,
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
       '<plist version="1.0">',
@@ -312,18 +325,23 @@ function macosAutostart(launches: LlamaServerLaunch[]): string[] {
       `  <key>Label</key><string>${label}</string>`,
       "  <key>ProgramArguments</key>",
       "  <array>",
-      "    <string>/bin/sh</string>",
-      "    <string>-c</string>",
-      `    <string>${xmlEscape(`exec ${posixCommand(l.argv)}`)}</string>`,
+      ...l.argv.map((arg) => `    <string>${launchdString(arg)}</string>`),
       "  </array>",
       "  <key>RunAtLoad</key><true/>",
       "  <key>KeepAlive</key><true/>",
+      `  <key>StandardOutPath</key>${log}`,
+      `  <key>StandardErrorPath</key>${log}`,
       "</dict>",
       "</plist>",
       "EOF",
       `launchctl bootstrap gui/$(id -u) ${plist}`,
     );
   }
+  lines.push(
+    "# launchd execs llama-server directly, so macOS lists each agent as 'llama-server'. Enable it under",
+    "# System Settings > General > Login Items > Allow in the Background, or it never starts at login.",
+    "# Check:  sfltool dumpbtm | grep -A3 llama-server",
+  );
   return lines;
 }
 

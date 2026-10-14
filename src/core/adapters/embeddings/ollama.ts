@@ -41,6 +41,7 @@ import {
   type OllamaQuantizationLevel,
 } from "./ollama/model-quantization.js";
 import { withRateLimitRetry } from "./retry.js";
+import { describeConnectFailure } from "./utils/connect-failure.js";
 import { resolveStartingDimensions } from "./utils/model-dimensions.js";
 
 /** Full request timeout for single embed calls (connect + model load + inference).
@@ -106,6 +107,22 @@ async function fetchWithTimeout(
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+/**
+ * One `GET <url>/` health probe. A failure carries its operator-facing cause
+ * (bd tea-rags-mcp-fembu) through the shared `describeConnectFailure`; the
+ * probe's own timeout aborts the request, which surfaces as an `AbortError`.
+ */
+async function probeOllamaEndpoint(url: string): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    const response = await fetchWithTimeout(`${url}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
+    return response.ok ? { ok: true } : { ok: false, reason: `${url} answered HTTP ${response.status}` };
+  } catch (error) {
+    const aborted = error instanceof Error && error.name === "AbortError";
+    const cause = aborted ? Object.assign(new Error("probe timed out"), { name: "TimeoutError" }) : error;
+    return { ok: false, reason: describeConnectFailure(cause) };
   }
 }
 
@@ -221,6 +238,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private readonly serverBatchFailureObservers = new Set<(event: EmbeddingServerBatchFailure) => void>();
   private lastHealthResult?: boolean;
   private lastHealthAt = 0;
+  private primaryUnavailableReason: string | undefined;
+  private fallbackUnavailableReason: string | undefined;
 
   /** Optional callback for fallback switch observability. Set by pipeline wiring. */
   onFallbackSwitch?: (event: FallbackSwitchEvent) => void;
@@ -1074,12 +1093,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    */
   async checkFallbackHealth(): Promise<boolean | undefined> {
     if (!this.fallbackBaseUrl) return undefined;
-    try {
-      const response = await fetchWithTimeout(`${this.fallbackBaseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
-      return response.ok;
-    } catch {
-      return false;
-    }
+    const probe = await probeOllamaEndpoint(this.fallbackBaseUrl);
+    this.fallbackUnavailableReason = probe.reason;
+    return probe.ok;
   }
 
   /**
@@ -1091,11 +1107,18 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * `checkFallbackHealth`.
    */
   async checkPrimaryHealth(): Promise<boolean> {
-    try {
-      const response = await fetchWithTimeout(`${this.baseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
-      return response.ok;
-    } catch {
-      return false;
-    }
+    const probe = await probeOllamaEndpoint(this.baseUrl);
+    this.primaryUnavailableReason = probe.reason;
+    return probe.ok;
+  }
+
+  /** Why the configured primary read unavailable at the last `checkPrimaryHealth`; undefined when it answered. */
+  getPrimaryUnavailableReason(): string | undefined {
+    return this.primaryUnavailableReason;
+  }
+
+  /** Why the configured fallback read unavailable at the last `checkFallbackHealth`. */
+  getFallbackUnavailableReason(): string | undefined {
+    return this.fallbackUnavailableReason;
   }
 }

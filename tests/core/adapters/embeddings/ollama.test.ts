@@ -1718,6 +1718,70 @@ describe("OllamaEmbeddings", () => {
     });
   });
 
+  // bd fembu: the probe's failure cause survives to infraHealth via the same describeConnectFailure mapping.
+  describe("why an unreachable endpoint is unavailable (bd fembu)", () => {
+    const PRIMARY = "http://primary:11434";
+    const FALLBACK = "http://fallback:11434";
+    const flush = async () => new Promise<void>((r) => setTimeout(r, 0));
+    const connectError = (code: string) => Object.assign(new TypeError("fetch failed"), { cause: { code } });
+
+    it.each([
+      ["EHOSTUNREACH", "Local Network permission"],
+      ["ECONNREFUSED", "nothing listening"],
+      ["ETIMEDOUT", "timed out"],
+    ])("primary %s is named in getPrimaryUnavailableReason", async (code, hint) => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true);
+      mockFetch.mockRejectedValueOnce(connectError(code));
+
+      expect(await provider.checkPrimaryHealth()).toBe(false);
+
+      expect(provider.getPrimaryUnavailableReason()).toContain(code);
+      expect(provider.getPrimaryUnavailableReason()).toContain(hint);
+    });
+
+    it("fallback EHOSTUNREACH is named in getFallbackUnavailableReason", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      void provider.resolveEndpoint();
+      await flush();
+      mockFetch.mockRejectedValueOnce(connectError("EHOSTUNREACH"));
+
+      expect(await provider.checkFallbackHealth()).toBe(false);
+
+      expect(provider.getFallbackUnavailableReason()).toContain("Local Network permission");
+      expect(provider.getPrimaryUnavailableReason()).toBeUndefined();
+    });
+
+    it("names a non-ok answer by its status", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true);
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
+
+      await provider.checkPrimaryHealth();
+
+      expect(provider.getPrimaryUnavailableReason()).toContain("503");
+    });
+
+    it("reports the probe's own abort as a timeout", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true);
+      mockFetch.mockRejectedValueOnce(new DOMException("This operation was aborted", "AbortError"));
+
+      await provider.checkPrimaryHealth();
+
+      expect(provider.getPrimaryUnavailableReason()).toContain("timed out");
+    });
+
+    it("clears the reason once the endpoint answers", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true);
+      mockFetch.mockRejectedValueOnce(connectError("ECONNREFUSED"));
+      await provider.checkPrimaryHealth();
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+      expect(await provider.checkPrimaryHealth()).toBe(true);
+
+      expect(provider.getPrimaryUnavailableReason()).toBeUndefined();
+    });
+  });
+
   describe("getProviderName", () => {
     it("should return 'ollama'", () => {
       expect(embeddings.getProviderName()).toBe("ollama");
