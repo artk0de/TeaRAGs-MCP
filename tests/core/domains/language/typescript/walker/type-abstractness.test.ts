@@ -132,4 +132,99 @@ describe("TypeScript walker — type-abstractness census", () => {
       });
     });
   });
+
+  // bd tea-rags-mcp-mqaj7: a strategy object — a top-level `const` typed by a
+  // named contract whose literal supplies the behaviour — implements that
+  // contract exactly as a class would. Cut V2 (measured): behaviour members are
+  // at least half of the non-spread members, and at least one.
+  describe("object-literal implementations (bd tea-rags-mcp-mqaj7)", () => {
+    it("counts an exported const typed by a named contract whose literal holds methods as concrete", () => {
+      const src = [
+        "export interface Detector { family: string; judge(x: number): boolean }",
+        'export const sizeDetector: Detector = { family: "size", judge(x) { return x > 1; } };',
+        "",
+      ].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 1, concreteTypeCount: 1 });
+    });
+
+    it("counts a pair whose value is an arrow or a function expression as behaviour", () => {
+      const src = [
+        'export const a: Detector = { family: "a", judge: (x: number) => x > 1 };',
+        'export const b: Detector = { family: "b", judge: function (x: number) { return x > 1; } };',
+        "",
+      ].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 2 });
+    });
+
+    it("counts a literal that `satisfies` a named contract", () => {
+      expect(censusOf("export const hook = { run() {} } satisfies ChunkingHook;\n")).toEqual({
+        abstractTypeCount: 0,
+        concreteTypeCount: 1,
+      });
+    });
+
+    it("counts a file-local const too, as it counts a file-local class", () => {
+      expect(censusOf("const pass: Pass = { run() {} };\n")).toEqual({ abstractTypeCount: 0, concreteTypeCount: 1 });
+    });
+
+    it("leaves a literal whose behaviour members are fewer than half out (a props or options object)", () => {
+      expect(
+        censusOf("export const props: ButtonProps = { label: 'x', disabled: false, onClick: () => {} };\n"),
+      ).toEqual({
+        abstractTypeCount: 0,
+        concreteTypeCount: 0,
+      });
+    });
+
+    it("reads accessors as data and leaves spreads out of the member count", () => {
+      const src = [
+        "export const view: View = { get size() { return 1; }, set size(v) {}, name: 'v' };",
+        "export const extended: Pass = { ...base, ...other, run() {} };",
+        "",
+      ].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 1 });
+    });
+
+    it("does not read a TypeScript utility generic as a named contract, but does a project generic", () => {
+      const src = [
+        "export const handlers: Record<string, Handler> = { a: () => 1, b: () => 2 };",
+        "export const partial: Partial<Port> = { send() {} };",
+        "export const typed: Handler<Event> = { handle() {} };",
+        "export const nested: ns.Port = { send() {} };",
+        "",
+      ].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 2 });
+    });
+
+    it("leaves an unannotated literal out — nothing names the contract it implements", () => {
+      expect(censusOf("export const registry = { run() {}, stop() {} };\n")).toEqual({
+        abstractTypeCount: 0,
+        concreteTypeCount: 0,
+      });
+    });
+
+    it("leaves a function initializer out — a typed function is a value, not a type", () => {
+      const src = [
+        "export const handle: Handler = () => {};",
+        "export const make: Factory = function () { return 1; };",
+        "",
+      ].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 0 });
+    });
+
+    it("counts only a top-level const: neither a nested declaration nor a let", () => {
+      const src = [
+        "export function build() { const pass: Pass = { run() {} }; return pass; }",
+        "export let current: Pass = { run() {} };",
+        "",
+      ].join("\n");
+
+      expect(censusOf(src)).toEqual({ abstractTypeCount: 0, concreteTypeCount: 0 });
+    });
+  });
 });

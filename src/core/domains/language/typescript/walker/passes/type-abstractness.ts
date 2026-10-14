@@ -10,6 +10,9 @@
  *   | function-typed properties                                         |           |
  *   | `class` that declares behaviour of its own — a method, a static  | concrete  |
  *   | method, an abstract method signature, a function-valued property |           |
+ *   | top-level `const` typed by (or `satisfies`) a named contract —    | concrete  |
+ *   | never a utility generic like `Record<…>` — whose object literal  |           |
+ *   | is at least half behaviour (methods, function-valued pairs)      |           |
  *   | `class` whose members are only a constructor, property fields    | neither   |
  *   | and accessors (bd tea-rags-mcp-44cpv c-1=a: an Error subclass,   |           |
  *   | a data-only shape; an empty class is the degenerate case)        |           |
@@ -49,6 +52,7 @@ import {
   type ExtractionFacetPass,
   type TypeAbstractnessReader,
 } from "../../../kernel/index.js";
+import { TS_UTILITY_TYPES } from "../../utility-types.js";
 
 const BEHAVIOUR_SIGNATURE_TYPES: ReadonlySet<string> = new Set([
   "method_signature",
@@ -117,8 +121,79 @@ function declaresBehaviour(body: AstNode | null | undefined): boolean {
 /** Declared under `export` — the only way a dependent can program against it. */
 const exported = (node: AstNode) => node.parent?.type === "export_statement";
 
+/** Type nodes that spell a named type: `Foo`, `ns.Foo`, `Foo<T>`. */
+const NAMED_TYPE_NODE_TYPES: ReadonlySet<string> = new Set([
+  "type_identifier",
+  "nested_type_identifier",
+  "generic_type",
+]);
+
+/**
+ * Whether a type node names a contract a value can implement: a named type
+ * (`Detector`, `ns.Port`, `Handler<Event>`) that is not one of TypeScript's
+ * own type-level operators (`Record<…>`, `Partial<…>` — {@link TS_UTILITY_TYPES}),
+ * which describe a transformation and name no contract.
+ */
+function namesContract(type: AstNode | null | undefined): boolean {
+  if (!type || !NAMED_TYPE_NODE_TYPES.has(type.type)) return false;
+  const name = type.type === "generic_type" ? type.childForFieldName("name") : type;
+  return !TS_UTILITY_TYPES.has(name?.text ?? "");
+}
+
+/**
+ * Whether an object literal supplies behaviour (bd tea-rags-mcp-mqaj7, cut V2):
+ * at least one member, and at least half of the non-spread members, is a
+ * method that is not an accessor or a property holding a function value. A
+ * spread carries members nobody can see here and counts on neither side.
+ */
+function objectLiteralDeclaresBehaviour(literal: AstNode): boolean {
+  let members = 0;
+  let behaviourMembers = 0;
+  for (const member of literal.namedChildren) {
+    if (member.type === "comment" || member.type === "spread_element") continue;
+    members++;
+    const isBehaviour =
+      member.type === "method_definition"
+        ? !member.children.some((child) => child.type === "get" || child.type === "set")
+        : member.type === "pair" && isFunctionValuedProperty(member.childForFieldName("value"));
+    if (isBehaviour) behaviourMembers++;
+  }
+  return behaviourMembers > 0 && behaviourMembers * 2 >= members;
+}
+
+/** A `const` declared at the top of the file, exported or not. */
+function isTopLevelConst(declarator: AstNode): boolean {
+  const declaration = declarator.parent;
+  if (declaration?.type !== "lexical_declaration" || declaration.children[0]?.type !== "const") return false;
+  const container = declaration.parent?.type === "export_statement" ? declaration.parent.parent : declaration.parent;
+  return container?.type === "program";
+}
+
+/**
+ * Whether a variable declarator is an object-literal implementation of a named
+ * contract (bd tea-rags-mcp-mqaj7): a top-level `const` whose literal value is
+ * typed by a contract — `const d: Detector = { … }` or
+ * `const d = { … } satisfies Detector` — and supplies behaviour. It is the
+ * strategy-object form of `class SizeDetector implements Detector`, and counts
+ * as that class would. A function initializer is a value, not a type, and an
+ * unannotated literal names nothing it implements.
+ */
+function implementsContractAsObjectLiteral(declarator: AstNode): boolean {
+  if (!isTopLevelConst(declarator)) return false;
+  let value = declarator.childForFieldName("value");
+  let contractNamed = namesContract(declarator.childForFieldName("type")?.namedChildren[0]);
+  if (value?.type === "satisfies_expression") {
+    const [satisfied, satisfiedType] = [value.namedChildren[0], value.namedChildren.at(-1)];
+    contractNamed ||= namesContract(satisfiedType);
+    value = satisfied;
+  }
+  return contractNamed && value?.type === "object" && objectLiteralDeclaresBehaviour(value);
+}
+
 export const readTypescriptTypeAbstractness: TypeAbstractnessReader = (node) => {
   switch (node.type) {
+    case "variable_declarator":
+      return implementsContractAsObjectLiteral(node) ? "concrete" : null;
     case "abstract_class_declaration":
       return "abstract";
     case "class_declaration":

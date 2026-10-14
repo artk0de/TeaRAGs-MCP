@@ -180,6 +180,11 @@ export const capability: LanguageCapability = {
   // walker 15: bd tea-rags-mcp-zy6hx — field-access facet pass. The walker
   // publishes `fieldAccesses` (`this.x`, static `Cls.x`, a parameter's `p.x`,
   // read / write) for `cg_symbols_edges_field`; a walker-14 index has no rows.
+  // Same walker 15 (one bump per release cycle, already taken since v1.47.0),
+  // bd tea-rags-mcp-mqaj7: a top-level `const` typed by (or `satisfies`) a
+  // named contract whose object literal is at least half behaviour counts as a
+  // concrete type in the abstractness census. Recompute:
+  // `--force-enrichments codegraph --languages typescript`.
   versions: { chunking: 2, walker: 15, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties
