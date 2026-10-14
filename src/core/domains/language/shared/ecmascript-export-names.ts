@@ -11,9 +11,8 @@
  */
 
 import type { AstNode } from "../../../contracts/types/ast.js";
+import { WHOLE_MODULE_EXPORT_NAME } from "../../../contracts/types/codegraph-extraction.js";
 
-/** Name of the whole-module import / re-export. */
-export const WHOLE_MODULE_EXPORT_NAME = "*";
 /** Name of the default export. */
 export const DEFAULT_EXPORT_NAME = "default";
 

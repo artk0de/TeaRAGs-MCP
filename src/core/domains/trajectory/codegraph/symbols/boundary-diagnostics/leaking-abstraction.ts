@@ -1,4 +1,9 @@
-import type { FileDependencyEdge, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
+import {
+  WHOLE_MODULE_EXPORT_NAME,
+  type FileDependencyEdge,
+  type FileDependencyGraph,
+  type RelPath,
+} from "../../../../../contracts/types/codegraph.js";
 import {
   resolveMajorityFlooredOtsuThreshold,
   type MajorityFlooredOtsuThreshold,
@@ -534,9 +539,6 @@ function getOrCreate<K, V>(map: Map<K, V>, key: K, create: () => V): V {
   }
   return value;
 }
-
-/** Name of the whole-module import / re-export on a file edge. */
-const WHOLE_MODULE_EXPORT_NAME = "*";
 
 /** Entry files whose imported names ARE the module's exports (Python has no re-export syntax). */
 const IMPORTS_ARE_EXPORTS_ENTRY_NAMES: ReadonlySet<string> = new Set(MODULE_ENTRY_FILE_NAMES.python);

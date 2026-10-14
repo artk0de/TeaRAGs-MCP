@@ -27,11 +27,11 @@ export function withRenderedSubject(draft: DiffDetectorFindingDraft): DiffDetect
 }
 
 /**
- * The whole-module import name (the `WHOLE_MODULE_EXPORT_NAME` precedent the
- * facade-leak classifier set): an import taking `*` takes whatever the surface
- * holds — no single name drop breaks it, and no named retarget can carry it.
+ * The whole-module import name, re-exported for the diff families: an import
+ * taking it takes whatever the surface holds — no single name drop breaks it,
+ * and no named retarget can carry it.
  */
-export const WHOLE_MODULE_EXPORT_NAME = "*";
+export { WHOLE_MODULE_EXPORT_NAME } from "../../../../contracts/types/codegraph.js";
 
 export const HELD_BY_WORDING: Readonly<Record<HeldBeforeChangeEvidence, string>> = {
   base: "the diff base already holds it",

@@ -1,9 +1,11 @@
-import type { FileDependencyEdge, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
+import {
+  WHOLE_MODULE_EXPORT_NAME,
+  type FileDependencyEdge,
+  type FileDependencyGraph,
+  type RelPath,
+} from "../../../../../contracts/types/codegraph.js";
 import { carriesReexport, forwardedExportNames } from "./facade-aggregation.js";
 import type { ReexportShimComponents, ReexportShimForward } from "./types.js";
-
-/** `ImportRef`'s spelling of the whole module: a namespace import, `export *`. */
-const WHOLE_MODULE_EXPORT_NAME = "*";
 
 /** What the re-export shim exclusion takes out of SDP judgement, named for a report (bd tea-rags-mcp-ciq4d). */
 export const REEXPORT_SHIM_REASON =
