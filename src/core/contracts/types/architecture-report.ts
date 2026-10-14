@@ -1539,6 +1539,13 @@ export interface ShotgunSurgeryArchitectureViolation {
      * tea-rags-mcp-09c4m) — most recent first.
      */
     sampleChanges: string[][];
+    /**
+     * Findings this one contains, absorbed into it rather than reported beside
+     * it (bd tea-rags-mcp-k556p): components, support (≥ this finding's — every
+     * change holding it holds them) and family evidence (3 decimals), most
+     * surprising first. Absent when none nests.
+     */
+    nested?: { components: string[]; support: number; familyEvidence: number }[];
     /** `find_co_changed` over the exemplar files — the file-level partners behind the spread. */
     drillDown: SilentCouplingGroupDrillDown;
   };
@@ -1600,8 +1607,10 @@ export interface ShotgunSurgeryReportSummary {
   explainedCount?: number;
   /** Explained spreads only a dependency chain a → x → b joins, x a component a genuine supporting change touched — findings without that join. Part of `explainedCount`. */
   chainExplainedCount?: number;
-  /** Unexplained spreads, before `limit`. */
+  /** Unexplained spreads, before `limit` — maximal ones only. */
   violationCount?: number;
+  /** Unexplained spreads nested in another finding and absorbed into its `evidence.nested`; not in `violationCount`. */
+  nestedFindingCount?: number;
   /** Otsu cut on shared-neighbour weight ln(N / fanIn) over the component graph, 3 decimals. */
   sharedNeighbourThreshold?: number;
   /** `none` = no Otsu cut was drawn; only direct dependencies explain. */

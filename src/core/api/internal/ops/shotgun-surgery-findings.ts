@@ -97,6 +97,7 @@ export function summariseShotgunSurgery(run: ShotgunSurgeryRun): ShotgunSurgeryR
     explainedCount: summary.explainedCount,
     chainExplainedCount: summary.chainExplainedCount,
     violationCount: summary.violationCount,
+    nestedFindingCount: summary.nestedFindingCount,
     ...(summary.sharedNeighbourThreshold === undefined
       ? {}
       : { sharedNeighbourThreshold: roundTo3(summary.sharedNeighbourThreshold) }),
@@ -132,6 +133,15 @@ function toShotgunSurgeryViolation(spread: ShotgunSurgerySpread): ShotgunSurgery
       carrierFiles: spread.carrierFiles,
       sampleCommits: spread.sampleCommits,
       sampleChanges: spread.sampleChanges,
+      ...(spread.nested
+        ? {
+            nested: spread.nested.map(({ components, support, familyEvidence }) => ({
+              components,
+              support,
+              familyEvidence: roundTo3(familyEvidence),
+            })),
+          }
+        : {}),
       drillDown: {
         tool: "find_co_changed",
         files: spread.exemplarFiles,

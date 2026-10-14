@@ -218,4 +218,36 @@ describe("shotgun surgery retirement stage — counts and the retired bucket (bd
     expect(shotgunSurgeryViolations(retiredRun, 10)).toEqual([]);
     expect(summariseShotgunSurgery(retiredRun)).toMatchObject({ retiredSpreadCount: 1, violationCount: 0 });
   });
+
+  it("carries a finding's nested findings into its evidence and their count into the summary (bd tea-rags-mcp-k556p)", () => {
+    const built = run(new Map([[0, 1_760_000_000]]));
+    if (!built.built) throw new Error("expected a built run");
+    const spread: ShotgunSurgerySpread = {
+      components: ["A", "B", "C", "D"],
+      componentChanges: [3, 3, 3, 3],
+      support: 3,
+      weightedSupport: 3,
+      expectedSupport: 0.01,
+      strength: 0.5,
+      familyEvidence: 4,
+      islands: [["A"], ["B"], ["C"], ["D"]],
+      exemplarFiles: ["a.ts", "b.ts", "c.ts", "d.ts"],
+      carrierFiles: [["a.ts"], ["b.ts"], ["c.ts"], ["d.ts"]],
+      sampleCommits: ["c1"],
+      sampleChanges: [["c1"]],
+      nested: [{ components: ["A", "B", "C"], support: 6, familyEvidence: 5.12345 }],
+    };
+    const nestedRun = {
+      ...built,
+      report: {
+        ...built.report,
+        findings: [spread],
+        summary: { ...built.report.summary, violationCount: 1, nestedFindingCount: 1 },
+      },
+    };
+
+    const [violation] = shotgunSurgeryViolations(nestedRun, 10);
+    expect(violation.evidence.nested).toEqual([{ components: ["A", "B", "C"], support: 6, familyEvidence: 5.123 }]);
+    expect(summariseShotgunSurgery(nestedRun)).toMatchObject({ violationCount: 1, nestedFindingCount: 1 });
+  });
 });

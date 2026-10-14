@@ -279,6 +279,21 @@ export interface ShotgunSurgerySpread {
    * every commit of the change that held the spread, newest first.
    */
   sampleChanges: string[][];
+  /**
+   * Findings whose components this finding contains (bd tea-rags-mcp-k556p),
+   * most surprising first — absorbed instead of reported beside it. A nested
+   * finding's support is at least this one's (every change holding this
+   * finding holds it), so its own count and evidence stay here. Absent when
+   * none nests, and on spreads that are not findings.
+   */
+  nested?: ShotgunSurgeryNestedSpread[];
+}
+
+/** A finding absorbed by a finding containing it: its components, support and ranking evidence. */
+export interface ShotgunSurgeryNestedSpread {
+  components: string[];
+  support: number;
+  familyEvidence: number;
 }
 
 export interface ShotgunSurgerySummary {
@@ -338,6 +353,8 @@ export interface ShotgunSurgerySummary {
    */
   chainExplainedCount: number;
   violationCount: number;
+  /** Findings nested in another finding and absorbed into it (`ShotgunSurgerySpread.nested`) — not part of `violationCount`. */
+  nestedFindingCount: number;
   sharedNeighbourThreshold?: number;
   /** `none` = the neighbour weights allowed no Otsu cut; only direct dependencies explained. */
   sharedNeighbourThresholdMethod: "otsu" | "none";
@@ -510,12 +527,13 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
     }
     findings.push(shaped);
   }
-  findings.sort(compareSpreads);
+  const { maximal, nestedCount } = absorbNestedFindings(findings);
+  maximal.sort(compareSpreads);
   explained.sort(compareSpreads);
   retired.sort(compareSpreads);
 
   return {
-    findings,
+    findings: maximal,
     explained,
     retired,
     summary: {
@@ -551,7 +569,8 @@ export function detectShotgunSurgery(input: ShotgunSurgeryInput): ShotgunSurgery
       spreadCount: closed.length,
       explainedCount: explained.length,
       chainExplainedCount,
-      violationCount: findings.length,
+      violationCount: maximal.length,
+      nestedFindingCount: nestedCount,
       ...(islandsOf.neighbourThreshold === undefined
         ? { sharedNeighbourThresholdMethod: "none" as const }
         : { sharedNeighbourThreshold: islandsOf.neighbourThreshold, sharedNeighbourThresholdMethod: "otsu" as const }),
@@ -1727,6 +1746,38 @@ function mergeIntoMaximalSpreads(
     spreads.push({ components: [...members].sort(compareCodePoints), unitIndices, support });
   }
   return spreads.sort((a, b) => compareKeys(a.components, b.components));
+}
+
+/**
+ * Findings reported maximal (bd tea-rags-mcp-k556p): a finding whose
+ * components another finding contains is absorbed into every finding
+ * containing it, as `nested`. Spreads already merge per recurrence set
+ * ({@link mergeIntoMaximalSpreads}); this merges ACROSS recurrence sets, where
+ * a narrower spread recurs in more changes than the wider one around it — one
+ * fan-out reported once, its nested evidence kept. Findings only: a spread
+ * nested in an explained or out-of-scope spread stays its own finding, since
+ * nothing reported would carry it.
+ */
+function absorbNestedFindings(findings: readonly ShotgunSurgerySpread[]): {
+  maximal: ShotgunSurgerySpread[];
+  nestedCount: number;
+} {
+  const contains = (outer: ShotgunSurgerySpread, inner: ShotgunSurgerySpread): boolean =>
+    outer.components.length > inner.components.length &&
+    inner.components.every((component) => outer.components.includes(component));
+  const isNested = (spread: ShotgunSurgerySpread): boolean => findings.some((outer) => contains(outer, spread));
+  const nested = findings.filter(isNested).sort(compareSpreads);
+  const maximal = findings
+    .filter((spread) => !isNested(spread))
+    .map((spread) => {
+      const inside = nested.filter((inner) => contains(spread, inner));
+      if (inside.length === 0) return spread;
+      return {
+        ...spread,
+        nested: inside.map(({ components, support, familyEvidence }) => ({ components, support, familyEvidence })),
+      };
+    });
+  return { maximal, nestedCount: nested.length };
 }
 
 /**
