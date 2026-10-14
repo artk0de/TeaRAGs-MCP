@@ -8,6 +8,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { QdrantOperationError, QdrantUnavailableError } from "../errors.js";
 import { compareSemver, isSemver } from "../required-version.js";
 import { QDRANT_CRASH_LOG_NAME } from "./corruption-recovery.js";
+import { findOrphanedDaemon, readProcessTable, type OrphanedDaemon } from "./daemon-discovery.js";
 import { DaemonLock } from "./daemon-lock.js";
 import {
   assertNoDowngrade,
@@ -245,6 +246,48 @@ function cleanupDaemonFiles(paths: DaemonPaths): void {
   }
 }
 
+/**
+ * Failed-spawn cleanup: remove the daemon files only while `daemon.pid` still
+ * names the pid that failed. Another process may have recorded a live daemon
+ * meanwhile; wiping its files orphans that daemon (bd tea-rags-mcp-k6sy2).
+ */
+export function cleanupDaemonFilesOwnedBy(paths: DaemonPaths, pid: number): void {
+  let recorded: string;
+  try {
+    recorded = readFileSync(paths.pidFile, "utf-8").trim();
+  } catch {
+    return; // nothing names the failed pid
+  }
+  if (recorded === String(pid)) cleanupDaemonFiles(paths);
+}
+
+/**
+ * Re-record a live daemon that serves this storage but whose pid/port files are
+ * gone, so the caller attaches to it instead of cold-spawning a second qdrant
+ * over the held storage (bd tea-rags-mcp-k6sy2). Pid liveness is authoritative,
+ * as on the attach fast path — no /readyz probe. Discovery failure of any kind
+ * returns `undefined`: the caller falls back to the cold spawn.
+ */
+export async function adoptOrphanedDaemon(
+  paths: DaemonPaths,
+  binaryPath: string,
+  discover: (storagePath: string, binaryPath: string) => Promise<OrphanedDaemon | undefined> = async (
+    storagePath,
+    binary,
+  ) => findOrphanedDaemon(storagePath, binary, { readProcessTable, isAlive: isPidAlive }),
+): Promise<OrphanedDaemon | undefined> {
+  let orphan: OrphanedDaemon | undefined;
+  try {
+    orphan = await discover(paths.storagePath, binaryPath);
+  } catch {
+    return undefined;
+  }
+  if (orphan === undefined) return undefined;
+  writeFileSync(paths.pidFile, String(orphan.pid), "utf-8");
+  writeFileSync(paths.portFile, String(orphan.port), "utf-8");
+  return orphan;
+}
+
 const GRACEFUL_KILL_TIMEOUT_MS = 3000;
 
 /**
@@ -372,7 +415,7 @@ export async function evictStaleDaemon(
   );
 
   await terminateAndWait(pid, deps);
-  cleanupDaemonFiles(paths);
+  cleanupDaemonFilesOwnedBy(paths, pid);
   return true;
 }
 
@@ -545,6 +588,20 @@ async function ensureDaemon(appDataPath?: string, lowMemory = false): Promise<Da
       return makeDaemonHandle(paths, port, url, pid, appDataPath, lowMemory);
     }
 
+    // The pid/port files can be lost while the daemon lives on; a cold spawn
+    // over its held storage would die, so re-adopt it instead (k6sy2).
+    const orphan = await adoptOrphanedDaemon(paths, getBinaryPath(undefined, appDataPath));
+    if (orphan) {
+      const url = `http://127.0.0.1:${orphan.port}`;
+      const refs = incrementRefs(paths);
+      console.error(
+        `[tea-rags] Re-adopted Qdrant daemon with lost pid/port files ` +
+          `(pid=${orphan.pid}, port=${orphan.port}, refs=${refs})`,
+      );
+      warnIfStaleBinary(appDataPath);
+      return makeDaemonHandle(paths, orphan.port, url, orphan.pid, appDataPath, lowMemory);
+    }
+
     cleanupDaemonFiles(paths);
 
     if (!isBinaryUpToDate(appDataPath)) {
@@ -591,7 +648,7 @@ async function ensureDaemon(appDataPath?: string, lowMemory = false): Promise<Da
     // QdrantStartingError / QdrantRecoveringError while the pid is alive.
     await sleep(SPAWN_GRACE_MS);
     if (!isPidAlive(pid)) {
-      cleanupDaemonFiles(paths);
+      cleanupDaemonFilesOwnedBy(paths, pid);
       throw new QdrantUnavailableError(
         url,
         new Error(`Qdrant daemon (pid=${pid}) exited ${SPAWN_GRACE_MS}ms after spawn`),
@@ -606,7 +663,8 @@ async function ensureDaemon(appDataPath?: string, lowMemory = false): Promise<Da
   }
 }
 
-function scheduleIdleWatcher(paths: DaemonPaths, pid: number): void {
+/** Exported for testability. */
+export function scheduleIdleWatcher(paths: DaemonPaths, pid: number): void {
   let idleSince: number | null = null;
 
   const interval = setInterval(() => {
@@ -614,7 +672,7 @@ function scheduleIdleWatcher(paths: DaemonPaths, pid: number): void {
       process.kill(pid, 0);
     } catch {
       clearInterval(interval);
-      cleanupDaemonFiles(paths);
+      cleanupDaemonFilesOwnedBy(paths, pid);
       return;
     }
 
@@ -629,7 +687,7 @@ function scheduleIdleWatcher(paths: DaemonPaths, pid: number): void {
         } catch {
           /* ignore */
         }
-        cleanupDaemonFiles(paths);
+        cleanupDaemonFilesOwnedBy(paths, pid);
         clearInterval(interval);
       }
     } else {
