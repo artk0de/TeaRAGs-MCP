@@ -6,3 +6,9 @@
 
 export { ByteBoundedLru } from "./byte-bounded-lru.js";
 export { CommitDiffMemo, type CommitDiffHunk } from "./commit-diff-memo.js";
+export {
+  deepFreeze,
+  StampKeyedReadCache,
+  type StampKeyedReadCacheOptions,
+  type StampKeyedReadSlot,
+} from "./stamp-keyed-read-cache.js";

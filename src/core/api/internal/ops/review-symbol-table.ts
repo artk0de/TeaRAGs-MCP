@@ -73,42 +73,6 @@ export async function readIndexedSymbolRows(
   }
 }
 
-/**
- * The indexed rows held across reviews by the long-lived process (bd
- * tea-rags-mcp-nehn5): DDG reviews per commit from one MCP server, and the
- * whole-table read is the review's most expensive graph read (taxdome: 98k
- * definitions, a 39 MB daemon frame). An entry is keyed by the database's
- * write stamp (`GraphDbClientPool#databaseWriteStamp`), which moves on every
- * committed write — an index run, a recompute, a checkpoint — so a cached
- * read is never older than the database. One entry per collection: a new
- * stamp replaces the old rows. Only `rows` answers stay; an unavailable read
- * is retried by the next review, and no stamp means no caching.
- */
-export class IndexedSymbolRowsCache {
-  private readonly entries = new Map<string, { stamp: string; read: Promise<IndexedSymbolRowsRead> }>();
-
-  /**
-   * The rows of `collectionName`'s database. `stampOf` is called BEFORE the
-   * read, so a write that commits while the rows are in flight leaves the
-   * entry under the older stamp and the next review reads again.
-   */
-  async read(
-    collectionName: string,
-    stampOf: () => string | undefined,
-    graphDb: IndexedSymbolRowsGraphDb | undefined,
-  ): Promise<IndexedSymbolRowsRead> {
-    const stamp = graphDb === undefined ? undefined : stampOf();
-    if (stamp === undefined) return readIndexedSymbolRows(graphDb);
-    const entry = this.entries.get(collectionName);
-    if (entry?.stamp === stamp) return entry.read;
-    const read = readIndexedSymbolRows(graphDb);
-    this.entries.set(collectionName, { stamp, read });
-    const answer = await read;
-    if (!("rows" in answer) && this.entries.get(collectionName)?.read === read) this.entries.delete(collectionName);
-    return answer;
-  }
-}
-
 /** The working tree a review's table is overlaid with. */
 export interface ReviewSymbolTableTreeOverlay {
   workTree: string;

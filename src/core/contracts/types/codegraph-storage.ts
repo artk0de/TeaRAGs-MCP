@@ -31,6 +31,7 @@ import type {
   FileDependencyGraph,
   FileGraphMetrics,
   FileImportLookup,
+  FileReexportEdge,
   FileResolveStatsWrite,
   GraphEdges,
   GraphFileNode,
@@ -1383,6 +1384,13 @@ export interface CodegraphGraphAnalyticsStore {
    * an edge to an unwalked file still moves its source's instability.
    */
   readFileDependencyGraph: () => Promise<FileDependencyGraph>;
+
+  /**
+   * The `cg_symbols_edges_file` rows that forward export names, names decoded
+   * (bd tea-rags-mcp-lnor0) — exactly the edges of `readFileDependencyGraph`
+   * that carry `reexportedExportNames`, without the rest of the graph.
+   */
+  readFileReexportEdges: () => Promise<FileReexportEdge[]>;
 
   /**
    * Resolved method edges whose target is declared `private` / `protected` or

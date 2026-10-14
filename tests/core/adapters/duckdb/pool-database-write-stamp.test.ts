@@ -72,3 +72,33 @@ describe("GraphDbClientPool#databaseWriteStamp", () => {
     expect(new Set([first, second, third]).size).toBe(3);
   });
 });
+
+describe("GraphDbClientPool#acquireReader — whole-graph reads held per write stamp (bd tea-rags-mcp-lnor0)", () => {
+  async function readHashes(): Promise<readonly { relPath: string }[]> {
+    const { graphDb } = await pool.acquireReader(TARGET);
+    try {
+      return await graphDb.listFileContentHashes();
+    } finally {
+      await graphDb.close();
+    }
+  }
+
+  it("serves a later reader the read an earlier one made, until a write moves the stamp", async () => {
+    const writer = await pool.acquire(TARGET);
+    await writeFile(writer.graphDb, "a.ts");
+    await pool.closeAll();
+
+    const first = await readHashes();
+    const second = await readHashes();
+    expect(second).toBe(first);
+    expect(Object.isFrozen(first)).toBe(true);
+
+    const again = await pool.acquire(TARGET);
+    await writeFile(again.graphDb, "b.ts");
+    await pool.closeAll();
+
+    const afterWrite = await readHashes();
+    expect(afterWrite).not.toBe(first);
+    expect(afterWrite.map((row) => row.relPath).sort()).toEqual(["a.ts", "b.ts"]);
+  });
+});

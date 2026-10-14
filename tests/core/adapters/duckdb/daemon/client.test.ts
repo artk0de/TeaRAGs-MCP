@@ -684,6 +684,27 @@ describe("DaemonGraphDbClient — readFileDependencyGraph (bd tea-rags-mcp-94hd9
   });
 });
 
+describe("DaemonGraphDbClient — readFileReexportEdges (bd tea-rags-mcp-lnor0)", () => {
+  it("proxies the re-export edge projection through the daemon socket", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const edges = [{ sourceRelPath: "index.ts", targetRelPath: "a.ts", reexportedExportNames: ["A"] }];
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "readFileReexportEdges" ? edges : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
+    await client.init();
+    const result = await client.readFileReexportEdges();
+    await client.close();
+
+    expect(result).toEqual(edges);
+    expect(seen.find((r) => r.op === "readFileReexportEdges")?.params).toMatchObject({ collection: "code_x_v1" });
+  });
+});
+
 describe("DaemonGraphDbClient — getFileImporters / getFileImports (bd tea-rags-mcp-gfvr8)", () => {
   it("proxies both per-file reads through the daemon socket with the relPath", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));

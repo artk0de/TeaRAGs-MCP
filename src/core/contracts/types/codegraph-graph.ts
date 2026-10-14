@@ -133,6 +133,17 @@ export interface FileDependencyGraph {
 }
 
 /**
+ * A file edge that forwards export names (bd tea-rags-mcp-lnor0): the
+ * projection of {@link FileDependencyEdge} naming's re-export twin suppression
+ * reads, without pulling the whole graph.
+ */
+export interface FileReexportEdge {
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  reexportedExportNames: string[];
+}
+
+/**
  * The role one FILE carries in the dependency-norms model (bd
  * tea-rags-mcp-rpx0v): its primary type's role. `strong: false` marks a
  * project-suffix assignment — naming's entry gate treats suffix evidence as

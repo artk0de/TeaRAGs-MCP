@@ -16,6 +16,7 @@ import type {
   FileDependencyGraph,
   FileGraphMetrics,
   FileImportLookup,
+  FileReexportEdge,
   FileResolveStatsWrite,
   FileScopedSymbolId,
   FileScopedSymbolRef,
@@ -474,6 +475,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
     return this.analytics.readFileDependencyGraph();
+  }
+
+  async readFileReexportEdges(): Promise<FileReexportEdge[]> {
+    return this.analytics.readFileReexportEdges();
   }
 
   async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {

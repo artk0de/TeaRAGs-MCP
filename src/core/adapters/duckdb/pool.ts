@@ -35,6 +35,7 @@ import type { CollectionGraphHandle, GraphDbClientPoolPort } from "../../contrac
 import type { CallResolver, GlobalSymbolTable } from "../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { DatabaseMigrationApplier } from "../../contracts/types/migration.js";
+import { StampKeyedReadCache } from "../../primitives/collections/index.js";
 import { isDebug } from "../../primitives/diagnostics/index.js";
 import { DuckDbGraphClient } from "./client.js";
 import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.js";
@@ -52,6 +53,7 @@ import { CodegraphDatabaseMissingError, DuckDbCloseFailedError, DuckDbOpenFailed
 import { LockContendedOpenRetry, type LockContendedOpenRetryWindow } from "./lock-contended-open-retry.js";
 import { ReadOnlyGraphFileReaders } from "./read-only-graph-file-readers.js";
 import { purgeStaleSpills } from "./spill-files.js";
+import { withStampKeyedGraphReads } from "./stamp-keyed-graph-reads.js";
 import type { CodegraphCompactionPolicy } from "./storage-compaction.js";
 
 export type { CollectionInitHook, GraphDbClientPoolIdleEviction, SymbolTableFactory };
@@ -204,6 +206,11 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
   private readonly lockContendedOpen: LockContendedOpenRetry;
   /** READ_ONLY file handles, counted per path. */
   private readonly fileReaders: ReadOnlyGraphFileReaders;
+  /**
+   * The whole-graph reads `acquireReader` handles serve across handles, held
+   * per `databaseWriteStamp` (bd tea-rags-mcp-lnor0, `withStampKeyedGraphReads`).
+   */
+  private readonly wholeGraphReads = new StampKeyedReadCache();
 
   constructor(private readonly options: GraphDbClientPoolOptions) {
     this.dbFiles = new CodegraphDbFiles(options.rootDir);
@@ -523,16 +530,26 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
    * it never had — `hasDatabase` turned true and the empty-vs-error contract
    * of every graph read flipped for it.
    *
+   * The handle's whole-graph reads are served across handles while the
+   * database's write stamp holds (bd tea-rags-mcp-lnor0) — see
+   * `withStampKeyedGraphReads` for which reads, and why every tool benefits.
+   *
    * @throws CodegraphDatabaseMissingError when the collection has no database.
    */
   async acquireReader(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     if (!this.hasDatabase(physicalCollectionName)) {
       throw new CodegraphDatabaseMissingError(this.pathFor(physicalCollectionName));
     }
-    if (this.isDaemonMode()) {
-      return this.acquireDaemonHandle(physicalCollectionName);
-    }
-    return this.acquireRead(physicalCollectionName);
+    const handle = this.isDaemonMode()
+      ? await this.acquireDaemonHandle(physicalCollectionName)
+      : await this.acquireRead(physicalCollectionName);
+    const graphDb = withStampKeyedGraphReads(
+      handle.graphDb,
+      physicalCollectionName,
+      () => this.databaseWriteStamp(physicalCollectionName),
+      this.wholeGraphReads,
+    );
+    return { ...handle, graphDb };
   }
 
   /**

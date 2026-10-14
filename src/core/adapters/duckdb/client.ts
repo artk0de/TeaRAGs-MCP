@@ -57,6 +57,7 @@ import type {
   FileDependencyGraph,
   FileGraphMetrics,
   FileImportLookup,
+  FileReexportEdge,
   FileResolveStatsWrite,
   FileScopedSymbolId,
   FileScopedSymbolRef,
@@ -509,6 +510,11 @@ export class DuckDbGraphClient implements GraphDbClient {
    */
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
     return this.analytics.readFileDependencyGraph();
+  }
+
+  /** Re-export edges for naming's twin suppression (bd tea-rags-mcp-lnor0); daemon op of the same name. */
+  async readFileReexportEdges(): Promise<FileReexportEdge[]> {
+    return this.analytics.readFileReexportEdges();
   }
 
   /** Convention-privacy candidates (bd tea-rags-mcp-r8hme.1); daemon op of the same name. */

@@ -438,7 +438,7 @@ type IdentifierReader = Pick<
   | "hasData"
   | "readOntologyReportSummary"
   | "readTypeNameRows"
-  | "readFileDependencyGraph"
+  | "readFileReexportEdges"
   | "getFanIn"
   | "getSupertypes"
   | "getSymbolVisibilities"
@@ -2314,12 +2314,13 @@ function typeDraftVerdict(
 
 /**
  * The file pairs a re-export joins ({@link reexportTwins}), read once per
- * request. A failed read resolves `undefined` — no suppression, every
- * collision stands (bd tea-rags-mcp-89k7k.15), like {@link NamingLexiconOps#collisionHolders}'s.
+ * request from the re-export edges alone — never the whole dependency graph
+ * (bd tea-rags-mcp-lnor0). A failed read resolves `undefined` — no suppression,
+ * every collision stands (bd tea-rags-mcp-89k7k.15), like {@link NamingLexiconOps#collisionHolders}'s.
  */
 async function readReexportTwins(graphDb: IdentifierReader): Promise<ReexportTwins | undefined> {
   try {
-    return reexportTwins((await graphDb.readFileDependencyGraph()).edges);
+    return reexportTwins(await graphDb.readFileReexportEdges());
   } catch {
     return undefined;
   }
@@ -2821,7 +2822,7 @@ function scopedEvidence(reader: IdentifierReader, scope: EvidenceReadScope): Ide
     // A fan-in counts edges INTO an unchanged file; nothing of the diff to exclude.
     getFanIn: async (relPath) => reader.getFanIn(relPath),
     // The re-export joins are file-graph edges; the evidence scope binds nothing.
-    readFileDependencyGraph: async () => reader.readFileDependencyGraph(),
+    readFileReexportEdges: async () => reader.readFileReexportEdges(),
     // An override is judged against its ANCESTORS' declarations, never the changed file's own.
     getSupertypes: async (fqName) => reader.getSupertypes(fqName),
     getSymbolVisibilities: async (symbolIds) => reader.getSymbolVisibilities(symbolIds),

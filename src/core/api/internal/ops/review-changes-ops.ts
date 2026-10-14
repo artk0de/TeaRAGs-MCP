@@ -53,15 +53,15 @@ import {
   type ReviewNamingLexicon,
   type ReviewSectionBuildContext,
 } from "./review-sections/index.js";
-import { IndexedSymbolRowsCache, type IndexedSymbolRowsRead } from "./review-symbol-table.js";
+import { readIndexedSymbolRows, type IndexedSymbolRowsRead } from "./review-symbol-table.js";
 
 export interface ReviewChangesOpsDeps {
   /**
-   * `databaseWriteStamp` keys the indexed symbol rows held across reviews (bd
-   * tea-rags-mcp-nehn5); absent (unit wiring) → every review reads them.
+   * The reader's whole-graph reads — the symbol rows, the file and co-change
+   * graphs — are held across reviews by the pool itself, per database write
+   * stamp (bd tea-rags-mcp-lnor0, `withStampKeyedGraphReads`).
    */
-  pool: Pick<GraphDbClientPool, "acquireReader" | "hasDatabase"> &
-    Partial<Pick<GraphDbClientPool, "databaseWriteStamp">>;
+  pool: Pick<GraphDbClientPool, "acquireReader" | "hasDatabase">;
   collectionRegistry: RegistryLookup;
   /**
    * Resolve an addressed collection name to the ACTIVE underlying collection
@@ -128,9 +128,6 @@ export interface ReviewChangesOpsDeps {
 }
 
 export class ReviewChangesOps {
-  /** The index's symbol rows, held across reviews per database write stamp (bd tea-rags-mcp-nehn5). */
-  private readonly indexedSymbolRows = new IndexedSymbolRowsCache();
-
   constructor(private readonly deps: ReviewChangesOpsDeps) {}
 
   /**
@@ -183,13 +180,7 @@ export class ReviewChangesOps {
     // diff is read (bd tea-rags-mcp-nehn5): the rows do not depend on the diff.
     const reader = this.acquireGraphReader(collectionName);
     const symbolRows = providers.some((provider) => provider.consumesReviewChangeEdges)
-      ? reader.then(async ({ handle, physicalCollectionName }) =>
-          this.indexedSymbolRows.read(
-            collectionName,
-            () => this.deps.pool.databaseWriteStamp?.(physicalCollectionName),
-            handle?.graphDb,
-          ),
-        )
+      ? reader.then(async ({ handle }) => readIndexedSymbolRows(handle?.graphDb))
       : undefined;
     // A reader that fails rejects `symbolRows` too — the review throws the
     // reader's failure below, so this branch must not surface unhandled.
@@ -352,20 +343,17 @@ export class ReviewChangesOps {
    * the collection has no codegraph database at all. A database that exists
    * but cannot be read rethrows — see the module docblock.
    */
-  private async acquireGraphReader(
-    collectionName: string,
-  ): Promise<{ handle: CollectionGraphHandle | undefined; physicalCollectionName: PhysicalCollectionName }> {
+  private async acquireGraphReader(collectionName: string): Promise<{ handle: CollectionGraphHandle | undefined }> {
     const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
           .resolveActiveCollection(collectionName)
           .catch(() => resolvePhysicalCollection(collectionName, []))
       : resolvePhysicalCollection(collectionName, []);
     try {
-      const handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
-      return { handle, physicalCollectionName: activePhysicalCollectionName };
+      return { handle: await this.deps.pool.acquireReader(activePhysicalCollectionName) };
     } catch (error) {
       if (this.deps.pool.hasDatabase(activePhysicalCollectionName)) throw error;
-      return { handle: undefined, physicalCollectionName: activePhysicalCollectionName };
+      return { handle: undefined };
     }
   }
 }

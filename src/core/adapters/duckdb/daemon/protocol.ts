@@ -150,6 +150,9 @@ export const DAEMON_OPS = [
   // Whole file dependency graph for the architecture report (bd tea-rags-mcp-94hd9).
   // REQUIRED, not legacy-tolerated: an empty graph would read as "no violations".
   "readFileDependencyGraph",
+  // The re-export file edges naming's twin suppression reads (bd tea-rags-mcp-lnor0).
+  // REQUIRED, not legacy-tolerated: an empty answer would drop every suppression.
+  "readFileReexportEdges",
   // Method edges into non-public members for the convention-privacy check
   // (bd tea-rags-mcp-r8hme.1). REQUIRED, not legacy-tolerated: an empty answer
   // would read as "no convention-privacy leaks".
@@ -346,6 +349,7 @@ export interface DaemonOpParamsMap {
   findCycles: { scope: CycleScope; pathPattern?: string };
   listAdjacency: { scope: CycleScope };
   readFileDependencyGraph: NoDaemonOpParams;
+  readFileReexportEdges: NoDaemonOpParams;
   readNonPublicMemberEdges: { languages: string[] };
   readTemporalCochangeMeta: NoDaemonOpParams;
   readTemporalCochangeGraph: NoDaemonOpParams;

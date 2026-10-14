@@ -447,28 +447,6 @@ describe("ReviewChangesOps", () => {
     expect(lsFilesSpawns() - before).toBe(1);
   });
 
-  it("keeps the symbol rows across reviews until a write moves the database stamp (bd tea-rags-mcp-nehn5)", async () => {
-    const listAllSymbols = vi.fn(async () => []);
-    const listFileContentHashes = vi.fn(async () => [{ relPath: CHANGED, contentHash: null }]);
-    const graph = graphDbStub({ listAllSymbols, listFileContentHashes });
-    let stamp = "gen-1";
-    const ops = makeOps(graph, {}, {
-      pool: {
-        acquireReader: vi.fn(async () => ({ graphDb: graph, symbolTable: {} })),
-        hasDatabase: vi.fn(() => true),
-        databaseWriteStamp: vi.fn(() => stamp),
-      },
-    } as Partial<ReviewChangesOpsDeps>);
-
-    const first = await ops.reviewChanges(request({ sections: ["architecture", "norms"] }));
-    const second = await ops.reviewChanges(request({ sections: ["architecture", "norms"] }));
-    stamp = "gen-2";
-    await ops.reviewChanges(request({ sections: ["architecture", "norms"] }));
-
-    expect(second.review.sections).toEqual(first.review.sections);
-    expect(listAllSymbols).toHaveBeenCalledTimes(2);
-  });
-
   it("reads no symbol rows for a review whose sections walk no diff edges", async () => {
     const listAllSymbols = vi.fn(async () => []);
     const graph = graphDbStub({ listAllSymbols });

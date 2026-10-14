@@ -275,6 +275,20 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     );
   });
 
+  // bd tea-rags-mcp-lnor0 (n415l lever 5): the twins come from the projected re-export edges —
+  // a naming review never pulls the whole file dependency graph.
+  it("reads the re-export edges, not the whole file dependency graph", async () => {
+    writeFileSync(join(repo, "src/git/widget.ts"), "export class Widget {}\n");
+    await db.replaceTypeDeclarationsBulk([{ relPath: "src/dto/widgets.ts", rows: [decl("Widget", "class")] }]);
+    const wholeGraph = vi.spyOn(db, "readFileDependencyGraph");
+    const reexportEdges = vi.spyOn(db, "readFileReexportEdges");
+
+    await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+
+    expect(wholeGraph).not.toHaveBeenCalled();
+    expect(reexportEdges).toHaveBeenCalledTimes(1);
+  });
+
   // bd tea-rags-mcp-icuxg: a diff spanning languages judges each name within its own language.
   it("a type declared in another language is no collision; one in the same language is", async () => {
     await db.replaceTypeDeclarationsBulk([

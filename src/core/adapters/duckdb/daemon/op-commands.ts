@@ -395,6 +395,7 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   listAdjacency: read(async (graphDb, p) => [...(await graphDb.listAdjacency(p.scope)).entries()]),
   // Plain arrays on the wire — nothing to rebuild on the client.
   readFileDependencyGraph: read(async (graphDb) => graphDb.readFileDependencyGraph()),
+  readFileReexportEdges: read(async (graphDb) => graphDb.readFileReexportEdges()),
   readNonPublicMemberEdges: read(async (graphDb, p) => graphDb.readNonPublicMemberEdges(p.languages)),
   readTemporalCochangeMeta: read(async (graphDb) => graphDb.readTemporalCochangeMeta()),
   // The graph's bundle membership, commits, bursts, commit times and per-file line counts
