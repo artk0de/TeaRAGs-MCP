@@ -495,7 +495,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "spreads left under 2 genuine changes are retired (summary.retiredSpreadCount; neither violation nor " +
       "explained); evidence support, " +
       "expectedSupport, strength (cohesion, not severity), familyEvidence = -log10 p - log10 C(n2,m) (list order; cost " +
-      "tags only), islands, exemplarFiles, drillDown = find_co_changed; summary mechanicalCommitCount / " +
+      "tags only), islands, exemplarFiles, drillDown = find_co_changed; findings maximal — one inside another " +
+      "rides in its evidence.nested (summary.nestedFindingCount); summary mechanicalCommitCount / " +
       "echoPairCount / lifecyclePairCount / retiredSpreadCount absent = line counts or commit timestamps not " +
       "recorded; built false = same " +
       "reasons as splitMerge. mainSequence " +

@@ -289,9 +289,45 @@ describe("detectShotgunSurgery", () => {
 
     const spreads = report.findings.map((f) => `${f.components.join(",")}@${f.support}`).sort();
     // {a,b,c} recurs in all six; {a,b,c,d} and {a,b,c,e} in three each;
-    // {a,…,e} never co-occurred, so it is no spread.
-    expect(spreads).toEqual(["a,b,c,d@3", "a,b,c,e@3", "a,b,c@6"]);
+    // {a,…,e} never co-occurred, so it is no spread. {a,b,c} is nested in
+    // both maximal findings (bd tea-rags-mcp-k556p), so it rides on them.
+    expect(spreads).toEqual(["a,b,c,d@3", "a,b,c,e@3"]);
     expect(report.summary.spreadCount).toBe(3);
+  });
+
+  it("reports maximal findings only, each carrying the nested findings it contains (bd tea-rags-mcp-k556p)", () => {
+    const left = ["a", "b", "c", "d"];
+    const right = ["a", "b", "c", "e"];
+    const report = detectShotgunSurgery({
+      ...history([...background(["a", "b", "c", "d", "e"]), left, left, left, right, right, right]),
+      componentDependencies: [],
+    });
+
+    for (const finding of report.findings) {
+      expect(finding.nested?.map((n) => `${n.components.join(",")}@${n.support}`)).toEqual(["a,b,c@6"]);
+      expect(finding.nested?.[0].familyEvidence).toBeGreaterThan(0);
+    }
+    expect(report.summary.nestedFindingCount).toBe(1);
+    expect(report.summary.violationCount).toBe(2);
+  });
+
+  it("keeps a nested spread a finding when every spread containing it is explained", () => {
+    const left = ["a", "b", "c", "d"];
+    const right = ["a", "b", "c", "e"];
+    // d and e each depend on every member: one island explains each superset,
+    // while {a,b,c} share only common dependents — never a chain — and stay a finding.
+    const dependencies = ["a", "b", "c"].flatMap((member) => [
+      { sourceComponent: "d", targetComponent: member },
+      { sourceComponent: "e", targetComponent: member },
+    ]);
+    const report = detectShotgunSurgery({
+      ...history([...background(["a", "b", "c", "d", "e"]), left, left, left, right, right, right]),
+      componentDependencies: dependencies,
+    });
+
+    expect(report.findings.map((f) => f.components.join(","))).toEqual(["a,b,c"]);
+    expect(report.findings[0].nested).toBeUndefined();
+    expect(report.summary.nestedFindingCount).toBe(0);
   });
 
   it("explains the same spread when an import chain joins its components", () => {
@@ -1069,6 +1105,7 @@ describe("detectShotgunSurgery — mechanical commits", () => {
       explainedCount: 0,
       chainExplainedCount: 0,
       violationCount: 1,
+      nestedFindingCount: 0,
       sharedNeighbourThresholdMethod: "none",
     });
   });
