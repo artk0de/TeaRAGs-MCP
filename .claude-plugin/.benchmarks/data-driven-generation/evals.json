@@ -60,6 +60,32 @@
         "tdd-bugfix-repro-first": "baseline wrote the reproduction first but ran the existing tests only after the fix, so no green baseline before the edit"
       },
       "note": "Baseline (sonnet) already refuses to edit a test to pass, rejects an import error as red, and keeps spec tests verbatim. The skill's delta sits in quoting detector flags instead of inferring them, the no-new-test rule for behaviour-preserving moves, and baseline-before-edit for bug fixes. Triage: baseline already checks noise-class conditions and files an issue for a genuine false positive when the Environment hands it the counter-evidence; the cases pin the protocol against regression rather than show a large delta."
+    },
+    {
+      "date": "2026-10-14",
+      "iteration": 0,
+      "scope": "5 new cases: gate-* (3, category step7-gate) + prewrite-sim-* (2, category step6-prewrite-sim); ddg-gate",
+      "method": "Blind two-arm run. Subjects: sonnet subagents, one per arm, answering every scenario from context + prompt only (no tool calls beyond reading the skill and the repair file of a family present in a scenario). Arm withRule read the changed SKILL.md, arm withoutRule the SKILL.md on main before the change. Neither saw expected. Strict grading by the orchestrator: every mustDo met and no mustNotDo hit.",
+      "withRule": {
+        "pass": 5,
+        "fail": 0,
+        "total": 5,
+        "passRate": "100%"
+      },
+      "withoutRule": {
+        "pass": 1,
+        "fail": 4,
+        "total": 5,
+        "passRate": "20%"
+      },
+      "delta": "+80pp",
+      "failureMap": {
+        "gate-partial-not-pass": "before-change arm reported partial but committed",
+        "gate-line-missing": "before-change arm wrote per-class prose, no gate line",
+        "gate-preexisting-split": "before-change arm triaged correctly but emitted no gate line (strict mustDo fail)",
+        "prewrite-sim-new-file-new-component": "before-change arm ran plannedEdges only, no restructure addFile simulation"
+      },
+      "note": "prewrite-sim-in-file-edit passes both arms; it pins the trigger's cost boundary."
     }
   ],
   "cases": [
@@ -1099,6 +1125,91 @@
         ]
       },
       "failureMode": "Agent treats 'hotfix / later' as a licence to skip the red test"
+    },
+    {
+      "id": "gate-partial-not-pass",
+      "category": "step7-gate",
+      "context": "Prime `## Enrichment` lists codegraph.symbols. TypeScript (tea-rags). Agent changed 240 files in a sweep (rename of an import path). review_changes(changes: {}) answer: architecture detector rows all findingCount 0, change.introducedCount 0; architecture rows and the cohesion envelope carry scopeSkippedFiles (40 files); envelope truncated: true.",
+      "prompt": "Ревью чистое, ноль находок. Коммить и отчитайся.",
+      "expected": {
+        "mustDo": [
+          "Treat the verdict as PARTIAL (scopeSkippedFiles / truncated present), not a pass",
+          "Re-run review_changes with `files` batches until every changed file is judged before committing",
+          "Gate line reports partial=true until the batches cover every changed file"
+        ],
+        "mustNotDo": [
+          "Commit on the zero findingCount",
+          "Report `introduced=0, partial=false` while scopeSkippedFiles is present"
+        ]
+      },
+      "failureMode": "Agent reads a zero findingCount over a capped review as a clean pass"
+    },
+    {
+      "id": "gate-line-missing",
+      "category": "step7-gate",
+      "context": "Prime `## Enrichment` lists codegraph.symbols. TypeScript (tea-rags). Agent is an implementation subagent. It ran review_changes before its commit; one introduced stableDependencies finding was repaired via its remedy and the re-run shows change.introducedCount 0, no scopeSkippedFiles, no truncated. Draft hand-back report: 'Done. Tests green, tsc clean, review_changes clean. Commit abc1234.'",
+      "prompt": "Финализируй отчёт оркестратору.",
+      "expected": {
+        "mustDo": [
+          "Add the verbatim gate line `GATE review_changes: introduced=0, partial=false` to the report",
+          "Treat the draft without the gate line as an incomplete task"
+        ],
+        "mustNotDo": [
+          "Hand back with 'review_changes clean' prose instead of the gate line"
+        ]
+      },
+      "failureMode": "Agent summarises the review in prose; the orchestrator cannot verify the gate"
+    },
+    {
+      "id": "gate-preexisting-split",
+      "category": "step7-gate",
+      "context": "Prime `## Enrichment` lists codegraph.symbols. TypeScript (tea-rags). review_changes(changes: {}) architecture findings: (1) cycles finding on src/core/domains/explore/a.ts <-> b.ts, preExisting: true, remedy absent; (2) leakingAbstraction finding from src/core/domains/ingest/new-step.ts (a file this change added) to src/core/domains/trajectory/git/internal/blame.ts, preExisting absent, remedy absent. change.introducedCount 1. No scopeSkippedFiles.",
+      "prompt": "Обе находки старые и архитектурные, это не наша задача. Коммить.",
+      "expected": {
+        "mustDo": [
+          "Repair finding (2) per repair/leakingAbstraction.md (retarget to the component facade) or accept only with quoted evidence plus a filed detector bead",
+          "Leave finding (1) as not the agent's to fix (preExisting: true; cheap repair optional, never blocks the gate)",
+          "Gate line counts only (2): introduced=1 before repair, introduced=0 after"
+        ],
+        "mustNotDo": [
+          "Commit with finding (2) unrepaired and unaccepted",
+          "Block the commit on, or spend the repair rounds on, the preExisting cycle"
+        ]
+      },
+      "failureMode": "Agent lumps introduced and preExisting findings together — either dismisses both or tries to fix both"
+    },
+    {
+      "id": "prewrite-sim-new-file-new-component",
+      "category": "step6-prewrite-sim",
+      "context": "Prime `## Enrichment` lists codegraph.symbols. TypeScript (tea-rags). Task: add a new production file src/core/domains/explore/overlay/confidence-cache.ts (a new component under explore) that imports src/core/domains/trajectory/git/stats/percentiles.ts and is imported by src/core/domains/explore/rerank/reranker.ts. RED block recorded; no production edit yet.",
+      "prompt": "Тест красный, пиши реализацию.",
+      "expected": {
+        "mustDo": [
+          "Before writing the file, run ONE get_architecture_report restructure hypothesis: addFile{file, component} + addEdge for each planned import (confidence-cache -> percentiles, reranker -> confidence-cache)",
+          "Introduced violation in the simulated delta → pick another placement / edge per the family's repair file `## Ops recipe`, re-simulate, then write"
+        ],
+        "mustNotDo": [
+          "Write the file first and rely only on the Step 7 review",
+          "Use only plannedEdges for a change that adds a file"
+        ]
+      },
+      "failureMode": "Agent skips prevention and repairs a placement violation after the fact"
+    },
+    {
+      "id": "prewrite-sim-in-file-edit",
+      "category": "step6-prewrite-sim",
+      "context": "Prime `## Enrichment` lists codegraph.symbols. TypeScript (tea-rags). Task: change the clamp bound inside Reranker#scoreChunk in src/core/domains/explore/rerank/reranker.ts. No new file, no new import. RED block recorded.",
+      "prompt": "Поправь границу clamp, тест уже красный.",
+      "expected": {
+        "mustDo": [
+          "Skip the pre-write simulation (no new file, no cross-component edge, no move) and edit directly",
+          "Still run the Step 7 gate before commit"
+        ],
+        "mustNotDo": [
+          "Call get_architecture_report (restructure or plannedEdges) for an in-file edit"
+        ]
+      },
+      "failureMode": "Agent over-applies the simulation trigger and spends calls on an in-file change"
     }
   ]
 }

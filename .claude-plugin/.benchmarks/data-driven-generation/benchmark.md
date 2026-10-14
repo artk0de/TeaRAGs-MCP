@@ -191,3 +191,44 @@ as red, keeps spec tests verbatim, and checks a noise-class condition when the
 environment hands it the facts. The triage cases mostly pin the protocol against
 regression. The delta is in flag quoting, the no-new-test rule for moves, and
 baseline-before-edit.
+
+## Run 2026-10-14 — Step 7 gate + pre-write simulation (ddg-gate)
+
+SKILL.md change (tea-rags 0.43.6): Step 7 `review_changes` becomes a GATE —
+before every commit, pass = introduced findings repaired or accepted with quoted
+evidence + filed detector bead, PARTIAL (`scopeSkippedFiles` / `truncated`) is
+never a pass, and the hand-back quotes
+`GATE review_changes: introduced=<n>, partial=<bool>`. Step 6b gains a pre-write
+simulation: a new production file, a cross-component edge or a move / merge /
+split is simulated as one `get_architecture_report` `restructure` hypothesis
+before writing; an in-file edit makes zero calls. The own-build source for
+`review_changes` is a project rule (`.claude/rules/code-generation-ddg.md`), not
+skill text.
+
+5 new cases: `step7-gate` (`gate-partial-not-pass`, `gate-line-missing`,
+`gate-preexisting-split`) and `step6-prewrite-sim`
+(`prewrite-sim-new-file-new-component`, `prewrite-sim-in-file-edit`).
+
+Method: two sonnet subagents, blind. Arm A read the SKILL.md before the change
+(main), arm B the changed SKILL.md; both could read only the repair file of a
+family present in a scenario, neither saw `expected`. Strict grading: every
+`mustDo` met, no `mustNotDo` hit.
+
+| Metric               | Value      |
+| -------------------- | ---------- |
+| With change          | 100% (5/5) |
+| Before change (main) | 20% (1/5)  |
+| Delta                | +80pp      |
+
+Before-change failures:
+
+- `gate-partial-not-pass` — reported "partial" honestly but committed anyway.
+- `gate-line-missing` — rewrote the report in per-class prose, no gate line.
+- `gate-preexisting-split` — behaviour right (repair the introduced leak, cycle
+  report-only) but no gate line; fails the strict `mustDo`.
+- `prewrite-sim-new-file-new-component` — ran `plannedEdges` only, no
+  `restructure` `addFile` simulation.
+
+`prewrite-sim-in-file-edit` passed both arms: neither arm calls
+`get_architecture_report` for an in-file edit, so it pins the trigger's cost
+boundary against regression rather than measuring a delta.
