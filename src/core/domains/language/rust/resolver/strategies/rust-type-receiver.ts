@@ -1,14 +1,14 @@
-import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef, SymbolDefinition } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.js";
-import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-constructor.js";
+import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
-  lookupRustSymbolsByShortName,
-  pickSameFileThenSingle,
-  rustImportMatchesReceiver,
-  type ResolverConfig,
-} from "./shared.js";
+  ChainTypeSymbolResolutionStrategy,
+  propagateReceiverType,
+  type ReceiverTypePorts,
+  type ReceiverTypingPorts,
+} from "../../../kernel/index.js";
+import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-constructor.js";
+import { createRustTypeMemberLookup } from "../rust-type-member-lookup.js";
+import { lookupRustSymbolsByShortName, rustImportMatchesReceiver, type ResolverConfig } from "./shared.js";
 
 /** Import roots that are never this project's code. */
 const STD_IMPORT_ROOT = /^(::)?(std|core|alloc)::/;
@@ -36,31 +36,50 @@ const RUST_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*/;
  * VALUE receiver (`P.get_or_init()` on a `static P`) is not a type path: the
  * call text must spell `Receiver::member`, which only a scoped path does.
  */
-export class RustTypeReceiverSymbolResolutionStrategy implements SymbolResolutionStrategy {
-  readonly name = "typeReceiver";
-  constructor(private readonly cfg: ResolverConfig) {}
+const RUST_RECEIVER_TYPE_PORTS: ReceiverTypePorts = {
+  singleHopType: (receiver, _atLine, ctx) => rustNamedType(receiver, ctx),
+  seedHead: (head, firstLink, ctx) => {
+    if (firstLink === undefined) return undefined;
+    const type = rustNamedType(head, ctx);
+    return type === undefined ? undefined : { type, consumedMembers: 0 };
+  },
+  memberTypeOf: () => undefined,
+  maxHops: () => 8,
+};
 
-  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const typeName = receiverTypeName(call, ctx);
-    if (typeName === null || !declaresInProjectType(typeName, ctx)) return CONTINUE;
-    const members = lookupRustSymbolsByShortName(ctx, call.member);
-    // Instance first, then associated — the order `localBinding` probes in.
-    for (const separator of [INSTANCE_METHOD_SEPARATOR, "."]) {
-      const own = members.filter((def) => isTypeMember(def.symbolId, typeName, separator, call.member));
-      const hit = pickSameFileThenSingle(own, ctx.callerFile, this.cfg.mode);
-      if (hit) return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
-    }
-    return DROP;
-  }
+const RUST_TYPE_RECEIVER_TYPING: ReceiverTypingPorts = {
+  typeOfReceiver: (call, ctx) => {
+    // A CapWords receiver with dot syntax may be a Rust value (`static P`),
+    // not a type path. Only scoped `::` calls and constructor-result receivers
+    // enter this typed strategy; the legacy chain then keeps its fallback.
+    if (!isTypeReceiverCall(call)) return null;
+    return propagateReceiverType(call.receiver, call.startLine, ctx, RUST_RECEIVER_TYPE_PORTS) ?? null;
+  },
+};
+
+function isTypeReceiverCall(call: CallRef): boolean {
+  const { receiver } = call;
+  if (!receiver) return false;
+  return call.callText.startsWith(`${receiver}::${call.member}`) || constructorCallHead(receiver) !== undefined;
 }
 
-/** The type the receiver names, or `null` when it names none this pass can read. */
-function receiverTypeName(call: CallRef, ctx: CallContext): string | null {
-  const { receiver } = call;
-  if (!receiver) return null;
-  if (call.callText.startsWith(`${receiver}::${call.member}`)) return typeOfPathHead(receiver, ctx);
+function rustNamedType(receiver: string, ctx: CallContext): TypeRef | undefined {
+  const typeName = receiverTypeNameFromCall(receiver, ctx);
+  if (typeName === null || !declaresInProjectType(typeName, ctx)) return undefined;
+  return { form: "class", name: typeName };
+}
+
+function receiverTypeNameFromCall(receiver: string, ctx: CallContext): string | null {
+  if (receiver === "Self") return ctx.callerScope.at(-1) ?? null;
   const head = constructorCallHead(receiver);
-  return head !== undefined && isRustConstructorAssocFn(head.assocFn) ? typeOfPathHead(head.type, ctx) : null;
+  if (head !== undefined && isRustConstructorAssocFn(head.assocFn)) return typeOfPathHead(head.type, ctx);
+  return typeOfPathHead(receiver, ctx);
+}
+
+export class RustTypeReceiverSymbolResolutionStrategy extends ChainTypeSymbolResolutionStrategy {
+  constructor(cfg: ResolverConfig) {
+    super("typeReceiver", RUST_TYPE_RECEIVER_TYPING, createRustTypeMemberLookup(cfg.mode), { dropOnTypedMiss: true });
+  }
 }
 
 /** `Self` → the enclosing impl type; a bare CapWords identifier → itself; anything else → `null`. */
@@ -98,14 +117,4 @@ function declaresInProjectType(typeName: string, ctx: CallContext): boolean {
   return lookupRustSymbolsByShortName(ctx, typeName).some(
     (def) => def.symbolId === typeName || def.symbolId.endsWith(`::${typeName}`),
   );
-}
-
-function isTypeMember(
-  symbolId: SymbolDefinition["symbolId"],
-  typeName: string,
-  separator: string,
-  member: string,
-): boolean {
-  const own = `${typeName}${separator}${member}`;
-  return symbolId === own || symbolId.endsWith(`::${own}`);
 }
