@@ -988,6 +988,15 @@ export interface ClassFieldParamLink {
   readonly param: string;
 }
 
+/**
+ * The export name that stands for the WHOLE module on
+ * {@link ImportRef.importedExportNames} / {@link ImportRef.reexportedExportNames}
+ * and on the file edge they persist onto: a namespace import, `export *`,
+ * `import m` in Python, a require bound whole. Taking it takes the whole
+ * surface, so no single name settles it.
+ */
+export const WHOLE_MODULE_EXPORT_NAME = "*";
+
 export interface ImportRef {
   /** Raw import path as written, e.g. `"./utils"`, `"@/lib/foo"`, `"react"`. */
   importText: string;
