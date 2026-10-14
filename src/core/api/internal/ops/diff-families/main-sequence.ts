@@ -1,5 +1,11 @@
 import type { DiffDetectorFinding } from "../../../../contracts/types/diff-detector-finding.js";
-import type { DiffFamilyDetector, OverlayEdge } from "./diff-family-detector.js";
+import type {
+  DiffDetectorBaseEdgeReader,
+  DiffDetectorCatalog,
+  DiffDetectorGraphReader,
+  DiffFamilyDetector,
+  OverlayEdge,
+} from "./diff-family-detector.js";
 import { pastThresholdBefore, targetsBeforeChange, wasEfferentBeforeChange } from "./pre-existing.js";
 import { detectorStatus, format3, round3, withRenderedSubject } from "./shared.js";
 
@@ -34,8 +40,23 @@ interface CrossingEdges {
  * in steps of 1/n, so one new edge on a one-or-two-edge component is a
  * half-to-full-scale move — the small-N false positive every facade/refactor
  * diff drew on components whose legal fanOut is one contracts edge. The
- * guard reads `connectionCount`, which the recompute below never moves (k
- * lands on top of the fan, not inside it), so it composes with both paths. *
+ * guard reads the BASE `connectionCount` (below), which the recompute never
+ * moves (k lands on top of the fan, not inside it), so it composes with both
+ * paths.
+ *
+ * BEFORE = THE BASE (bd tea-rags-mcp-aht0q): the catalog's facts are the
+ * INDEX's, and an index that caught up past the merge-base already holds the
+ * diff's own edges — adding k on top counted them twice (a component the base
+ * did not hold reported its post-diff fan as "before"). So a changed file
+ * whose indexed edges reach another component while its base edges do not is
+ * subtracted from Ce (and from Ca of each component it newly reaches) before
+ * k lands, and I, D are recomputed there at the held abstractness. A
+ * component the base connected to nothing has no before side and is counted
+ * with the low-connection exclusions. An index AT the base subtracts nothing,
+ * so the facts stay the catalog's verbatim. A reconstructed before-distance
+ * farther from the sequence than the diff leaves is a move ONTO it — no
+ * finding.
+ *
  * EXACT RECOMPUTE (bd tea-rags-mcp-89k7k.19): when the catalog serves the
  * component's fan counts (Ca/Ce — the same `ArchitectureComponent` facts
  * the whole-repo report derives), the SOURCE's component's instability moves
@@ -103,24 +124,33 @@ export const mainSequenceDetector: DiffFamilyDetector = {
         distanceFromMainSequence: number;
         afferentCount?: number;
         efferentCount?: number;
+        abstractness: number;
         entryFacade?: true;
       }
     >();
     const judgedComponents = new Set<string>();
     let excludedLowConnectionCount = 0;
+    const indexSurplus = readIndexAheadFanSurplus(
+      scope.changedFiles,
+      baseEdges,
+      graph,
+      (relPath) => catalog.componentOf(relPath)?.name,
+    );
     for (const relPath of scope.changedFiles) {
       const component = catalog.componentOf(relPath);
       if (component === undefined || judgedComponents.has(component.name)) continue;
       judgedComponents.add(component.name);
-      if (component.connectionCount < minConnectionCount) {
+      const baseFact = baseComponentFact(component, indexSurplus.get(component.name));
+      if (baseFact === undefined || baseFact.connectionCount < minConnectionCount) {
         excludedLowConnectionCount++;
         continue;
       }
       touched.set(component.name, {
-        instability: component.instability,
-        distanceFromMainSequence: component.distanceFromMainSequence,
-        afferentCount: component.afferentCount,
-        efferentCount: component.efferentCount,
+        instability: baseFact.instability,
+        distanceFromMainSequence: baseFact.distanceFromMainSequence,
+        afferentCount: baseFact.afferentCount,
+        efferentCount: baseFact.efferentCount,
+        abstractness: baseFact.abstractness,
         ...(component.entryFacade ? { entryFacade: true as const } : {}),
       });
     }
@@ -173,8 +203,10 @@ export const mainSequenceDetector: DiffFamilyDetector = {
           : Math.min(1, fact.instability + newlyEfferentFileCount);
       const instabilityDelta = newInstability - fact.instability;
       if (Math.abs(instabilityDelta) <= MAIN_SEQUENCE_EPSILON) continue;
-      const abstractness = 1 - fact.instability + fact.distanceFromMainSequence;
-      const newDistance = Math.abs(abstractness + newInstability - 1);
+      const newDistance = Math.abs(fact.abstractness + newInstability - 1);
+      // A move ONTO the main sequence is no defect: only an index ahead of the
+      // base reconstructs a before-distance farther out than the diff leaves.
+      if (newDistance < fact.distanceFromMainSequence) continue;
       if (round3(Math.abs(newDistance - fact.distanceFromMainSequence)) <= MAIN_SEQUENCE_FLAP_TOLERANCE) {
         excludedFlapCount++;
         continue;
@@ -220,3 +252,122 @@ export const mainSequenceDetector: DiffFamilyDetector = {
     };
   },
 };
+
+/**
+ * The changed files an index AHEAD of the merge-base counts in one
+ * component's fan while the base did not (bd tea-rags-mcp-aht0q): the diff's
+ * own contribution the catalog's index-derived Ca/Ce already hold.
+ */
+interface IndexAheadFanSurplus {
+  /** The component's changed files efferent in the index and not at the base. */
+  efferentFileCount: number;
+  /** Changed files of OTHER components with an indexed edge into it and none at the base. */
+  afferentFileCount: number;
+}
+
+/** A touched component's main-sequence facts at the diff base — the before side of the delta. */
+interface MainSequenceBeforeFact {
+  instability: number;
+  distanceFromMainSequence: number;
+  connectionCount: number;
+  afferentCount?: number;
+  efferentCount?: number;
+  /** Held across the delta: the +D solution of D = |A + I - 1| over the catalog's facts. */
+  abstractness: number;
+}
+
+/**
+ * Per component, the {@link IndexAheadFanSurplus} of the changed files. Only
+ * a file BOTH ports answer for contributes — the base's targets against the
+ * indexed graph's — so an index at the base subtracts nothing, and an absent
+ * port, or a base that does not answer for a file, keeps the index's count
+ * (a missing fact is never read as "the index is ahead"). Subtraction only:
+ * the base efferency an index BEHIND the base lacks is not added back.
+ */
+function readIndexAheadFanSurplus(
+  changedFiles: readonly string[],
+  baseEdges: DiffDetectorBaseEdgeReader | undefined,
+  graph: DiffDetectorGraphReader | undefined,
+  componentNameOf: (relPath: string) => string | undefined,
+): Map<string, IndexAheadFanSurplus> {
+  const surplus = new Map<string, IndexAheadFanSurplus>();
+  if (baseEdges === undefined || graph === undefined) return surplus;
+  const surplusOf = (component: string): IndexAheadFanSurplus => {
+    let counts = surplus.get(component);
+    if (counts === undefined) {
+      counts = { efferentFileCount: 0, afferentFileCount: 0 };
+      surplus.set(component, counts);
+    }
+    return counts;
+  };
+  for (const relPath of new Set(changedFiles)) {
+    const sourceComponent = componentNameOf(relPath);
+    const atBase = baseEdges.targetsAtBase(relPath);
+    if (sourceComponent === undefined || atBase === undefined) continue;
+    const reachedAtBase = componentsReached(atBase, sourceComponent, componentNameOf);
+    const reachedInIndex = componentsReached(
+      graph.edgesFrom(relPath).map((indexed) => indexed.target),
+      sourceComponent,
+      componentNameOf,
+    );
+    if (reachedInIndex.size > 0 && reachedAtBase.size === 0) surplusOf(sourceComponent).efferentFileCount++;
+    for (const component of reachedInIndex) {
+      if (!reachedAtBase.has(component)) surplusOf(component).afferentFileCount++;
+    }
+  }
+  return surplus;
+}
+
+/** The components other than `sourceComponent` the targets fall in. */
+function componentsReached(
+  targets: Iterable<string>,
+  sourceComponent: string,
+  componentNameOf: (relPath: string) => string | undefined,
+): Set<string> {
+  const reached = new Set<string>();
+  for (const target of targets) {
+    const component = componentNameOf(target);
+    if (component !== undefined && component !== sourceComponent) reached.add(component);
+  }
+  return reached;
+}
+
+/**
+ * The component's facts at the diff base: the catalog's verbatim when no
+ * surplus applies (or no fan counts are served — the +1 fallback has no fan
+ * to correct), else the fan with the surplus subtracted and I, D recomputed
+ * at the held abstractness. `undefined` when the base connected the
+ * component to nothing — no before side, so no main-sequence move.
+ */
+function baseComponentFact(
+  component: NonNullable<ReturnType<DiffDetectorCatalog["componentOf"]>>,
+  surplus: IndexAheadFanSurplus | undefined,
+): MainSequenceBeforeFact | undefined {
+  const abstractness = 1 - component.instability + component.distanceFromMainSequence;
+  const { afferentCount, efferentCount } = component;
+  if (surplus === undefined || afferentCount === undefined || efferentCount === undefined) {
+    return {
+      instability: component.instability,
+      distanceFromMainSequence: component.distanceFromMainSequence,
+      connectionCount: component.connectionCount,
+      afferentCount,
+      efferentCount,
+      abstractness,
+    };
+  }
+  const baseAfferentCount = Math.max(0, afferentCount - surplus.afferentFileCount);
+  const baseEfferentCount = Math.max(0, efferentCount - surplus.efferentFileCount);
+  if (baseAfferentCount + baseEfferentCount === 0) return undefined;
+  const instability = baseEfferentCount / (baseAfferentCount + baseEfferentCount);
+  return {
+    instability,
+    distanceFromMainSequence: Math.abs(abstractness + instability - 1),
+    connectionCount: Math.max(
+      0,
+      component.connectionCount - (afferentCount - baseAfferentCount) - (efferentCount - baseEfferentCount),
+    ),
+    afferentCount: baseAfferentCount,
+    efferentCount: baseEfferentCount,
+    abstractness,
+  };
+}

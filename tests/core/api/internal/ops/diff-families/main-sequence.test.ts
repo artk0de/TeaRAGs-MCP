@@ -314,3 +314,134 @@ describe("mainSequence parity with the report's component graph (bd tea-rags-mcp
     expect(appAfter?.efferentCount).toBe(2);
   });
 });
+
+/**
+ * Index ahead of the merge-base (bd tea-rags-mcp-aht0q): the catalog's fan
+ * counts are the INDEX's, and an index that caught up past the base already
+ * holds the diff's own edges. The "before" side of the delta is the BASE
+ * state, so a changed file the index counts as efferent (or as afferent into
+ * a touched component) while the base did not is subtracted before k lands.
+ */
+describe("mainSequence before-side reads the base, not an index ahead of it (bd tea-rags-mcp-aht0q)", () => {
+  /** `app` as an index ahead of the base reports it: a.ts already efferent, Ca 8, Ce 2. */
+  const APP_AHEAD: ComponentFact = {
+    name: "app",
+    instability: 0.2,
+    distanceFromMainSequence: 0.15,
+    connectionCount: 10,
+    afferentCount: 8,
+    efferentCount: 2,
+  };
+
+  function catalogWith(facts: ReadonlyMap<string, ComponentFact>): DiffDetectorCatalog {
+    return catalogOf(
+      new Map<string, ComponentFact>([
+        ["src/app/a.ts", APP_AHEAD],
+        ["src/app/b.ts", APP_AHEAD],
+        ["src/lib/l.ts", LIB_FACT],
+        ["src/lib/m.ts", LIB_FACT],
+        ...facts,
+      ]),
+    );
+  }
+
+  function componentFinding(result: DiffDetectorFindings, component: string): DiffDetectorFinding | undefined {
+    return result.findings.find(
+      (finding) =>
+        finding.detector === "mainSequence" &&
+        finding.endpoints.kind === "component" &&
+        finding.endpoints.component === component,
+    );
+  }
+
+  it("does not count a newly efferent file twice when the index already holds its edge", () => {
+    const result = run(
+      {
+        graph: graphOf([["src/app/a.ts", "src/lib/l.ts"]]),
+        baseEdges: baseEdgesOf({ "src/app/a.ts": [] }),
+        catalog: catalogWith(new Map()),
+      },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/lib/l.ts"]],
+    );
+    // Base Ce = 2 - 1 (a.ts is the index's surplus) = 1; k = 1 lands on it:
+    // I 1/9 -> 2/10, never 2/10 -> 3/11. A held at 1 - 0.2 + 0.15 = 0.95.
+    expect(componentFinding(result, "app")?.evidence).toMatchObject({
+      instabilityBefore: 0.111,
+      instabilityAfter: 0.2,
+      distanceBefore: 0.061,
+      distanceAfter: 0.15,
+      fanCounts: { afferentCount: 8, efferentCount: 1, newlyEfferentFileCount: 1 },
+    });
+  });
+
+  it("subtracts a changed importer the index counts in Ca while the base did not", () => {
+    const result = run(
+      {
+        graph: graphOf([
+          ["src/app/a.ts", "src/lib/l.ts"],
+          ["src/lib/m.ts", "src/app/b.ts"],
+        ]),
+        baseEdges: baseEdgesOf({ "src/app/a.ts": [], "src/lib/m.ts": [] }),
+        catalog: catalogWith(new Map()),
+      },
+      ["src/app/a.ts", "src/lib/m.ts"],
+      [
+        ["src/app/a.ts", "src/lib/l.ts"],
+        ["src/lib/m.ts", "src/app/b.ts"],
+      ],
+    );
+    // Base Ca 7, Ce 1: I 1/8 -> 2/9.
+    expect(componentFinding(result, "app")?.evidence).toMatchObject({
+      instabilityBefore: 0.125,
+      instabilityAfter: 0.222,
+      fanCounts: { afferentCount: 7, efferentCount: 1, newlyEfferentFileCount: 1 },
+    });
+  });
+
+  it("judges no move for a component the base did not connect at all — counted below the connection floor", () => {
+    const fresh: ComponentFact = {
+      name: "fresh",
+      instability: 0.5,
+      distanceFromMainSequence: 0,
+      connectionCount: 2,
+      afferentCount: 1,
+      efferentCount: 1,
+    };
+    const changedFiles = ["src/fresh/f.ts", "src/app/a.ts"];
+    const edges: FixtureEdge[] = [
+      ["src/fresh/f.ts", "src/lib/l.ts"],
+      ["src/app/a.ts", "src/fresh/f.ts"],
+    ];
+    const result = new DiffDetectorRun({
+      graph: graphOf(edges),
+      baseEdges: baseEdgesOf({ "src/fresh/f.ts": [], "src/app/a.ts": [] }),
+      catalog: catalogWith(new Map([["src/fresh/f.ts", fresh]])),
+      minConnectionCount: 1,
+    }).run({ changedFiles }, overlayOf(edges, changedFiles));
+    expect(componentFinding(result, "fresh")).toBeUndefined();
+    expect(result.detectors.find((row) => row.detector === "mainSequence")).toMatchObject({
+      excludedLowConnectionCount: 1,
+    });
+  });
+
+  it("reports no finding when the reconstructed base sat farther from the main sequence than the diff leaves it", () => {
+    const onSequence: ComponentFact = { ...APP_AHEAD, distanceFromMainSequence: 0 };
+    const result = run(
+      {
+        graph: graphOf([["src/app/a.ts", "src/lib/l.ts"]]),
+        baseEdges: baseEdgesOf({ "src/app/a.ts": [] }),
+        catalog: catalogWith(
+          new Map([
+            ["src/app/a.ts", onSequence],
+            ["src/app/b.ts", onSequence],
+          ]),
+        ),
+      },
+      ["src/app/a.ts"],
+      [["src/app/a.ts", "src/lib/l.ts"]],
+    );
+    // A = 0.8: D 0.089 at base -> 0 after — a move ONTO the main sequence.
+    expect(componentFinding(result, "app")).toBeUndefined();
+  });
+});
