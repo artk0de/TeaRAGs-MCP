@@ -251,10 +251,10 @@ describe("readWorkingTreeFileEdges", () => {
  * the whole-repo report does (bd tea-rags-mcp-c9a40).
  */
 describe("readWorkingTreeFileEdges — type-only imports", () => {
-  // The TypeScript walker records a type-only import's specifier and line only
-  // (`typeOnlyImportRef`), so the index's type-only edge carries no export
-  // names — and neither does the overlay's: parity, not a richer read.
-  it("yields the edge the value-import form yields for an `import type`, names unrecorded as in the index", async () => {
+  // The TypeScript walker records a type-only import's export names exactly as
+  // the value form's (`typeOnlyImportRef`, bd tea-rags-mcp-dourd), so the
+  // index's type-only edge carries them — and so does the overlay's.
+  it("yields the edge the value-import form yields for an `import type`, names included", async () => {
     const tree = freshWorkTree();
     writeFile("src/deep/internal.ts", "export interface Shape { a: number }\nexport const SHAPE = 1;\n");
     writeFile("src/value.ts", 'import { Shape } from "./deep/internal";\nexport const v: Shape = { a: 1 };\n');
@@ -266,10 +266,14 @@ describe("readWorkingTreeFileEdges — type-only imports", () => {
     expect(value.edges).toEqual([
       { sourceRelPath: "src/value.ts", targetRelPath: "src/deep/internal.ts", importedExportNames: ["Shape"] },
     ]);
-    expect(typed.edges).toEqual([{ sourceRelPath: "src/typed.ts", targetRelPath: "src/deep/internal.ts" }]);
+    expect(typed.edges).toEqual([
+      { sourceRelPath: "src/typed.ts", targetRelPath: "src/deep/internal.ts", importedExportNames: ["Shape"] },
+    ]);
   });
 
-  it("collapses a runtime and a type-only import of one target into one edge, the runtime names kept", async () => {
+  // Same rule as the index's runner: one edge per target, the runtime
+  // statement's names first, then the type-only statement's (bd tea-rags-mcp-dourd).
+  it("collapses a runtime and a type-only import of one target into one edge carrying both statements' names", async () => {
     const tree = freshWorkTree();
     writeFile("src/b.ts", "export interface Shape { a: number }\nexport const B = 1;\n");
     writeFile("src/c.ts", "export interface Other { c: number }\n");
@@ -282,8 +286,8 @@ describe("readWorkingTreeFileEdges — type-only imports", () => {
     const read = await readWorkingTreeFileEdges(realDeps(), tree, "src/both.ts");
 
     expect(read.edges).toEqual([
-      { sourceRelPath: "src/both.ts", targetRelPath: "src/b.ts", importedExportNames: ["B"] },
-      { sourceRelPath: "src/both.ts", targetRelPath: "src/c.ts" },
+      { sourceRelPath: "src/both.ts", targetRelPath: "src/b.ts", importedExportNames: ["B", "Shape"] },
+      { sourceRelPath: "src/both.ts", targetRelPath: "src/c.ts", importedExportNames: ["Other"] },
     ]);
   });
 

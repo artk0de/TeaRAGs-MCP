@@ -2,6 +2,7 @@ import Parser from "tree-sitter";
 import TsLang from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
+import { WHOLE_MODULE_EXPORT_NAME } from "../../../../../../src/core/contracts/types/codegraph-extraction.js";
 import { extractFromTypescriptFile } from "../../../../../../src/core/domains/language/typescript/walker/walker.js";
 
 function parse(code: string): Parser.Tree {
@@ -633,8 +634,8 @@ describe("extractFromTypescriptFile", () => {
       );
       expect(extraction.imports.map((i) => i.importText)).toEqual(["./runner.js"]);
       expect(extraction.typeOnlyImports).toEqual([
-        { importText: "./protocol.js", startLine: 1 },
-        { importText: "./shapes.js", startLine: 2 },
+        { importText: "./protocol.js", startLine: 1, importedExportNames: ["DaemonOp"] },
+        { importText: "./shapes.js", startLine: 2, reexportedExportNames: ["Shape"] },
       ]);
     });
 
@@ -642,6 +643,58 @@ describe("extractFromTypescriptFile", () => {
       const extraction = extract('import { type X, Y } from "./y";\n');
       expect(extraction.typeOnlyImports).toBeUndefined();
       expect(extraction.imports.map((i) => i.importText)).toEqual(["./y"]);
+    });
+
+    // bd tea-rags-mcp-dourd — a type-only reference names the target's export
+    // surface exactly like its runtime twin, in the TARGET's spelling, so every
+    // name-matching consumer (shim resolution, facade leak, wired export table)
+    // can settle it instead of falling back to the file link. It still binds no
+    // local name a call can reach.
+    describe("export names on type-only references (bd tea-rags-mcp-dourd)", () => {
+      const onlyRef = (code: string) => {
+        const refs = extract(code).typeOnlyImports ?? [];
+        expect(refs).toHaveLength(1);
+        return refs[0];
+      };
+
+      it("`import type { A, B as C }` takes the source-side names", () => {
+        expect(onlyRef('import type { A, B as C } from "./m";\n')).toEqual({
+          importText: "./m",
+          startLine: 1,
+          importedExportNames: ["A", "B"],
+        });
+      });
+
+      it("`import type D` takes the default export", () => {
+        expect(onlyRef('import type D from "./m";\n').importedExportNames).toEqual(["default"]);
+      });
+
+      it("`import type * as NS` takes the whole module", () => {
+        expect(onlyRef('import type * as NS from "./m";\n').importedExportNames).toEqual([WHOLE_MODULE_EXPORT_NAME]);
+      });
+
+      it("`export type { A, B as C } from` forwards the source-side names", () => {
+        const ref = onlyRef('export type { A, B as C } from "./m";\n');
+        expect(ref.reexportedExportNames).toEqual(["A", "B"]);
+        expect(ref.importedExportNames).toBeUndefined();
+      });
+
+      it("`export type * from` and `export type * as NS from` forward the whole module", () => {
+        expect(onlyRef('export type * from "./m";\n').reexportedExportNames).toEqual([WHOLE_MODULE_EXPORT_NAME]);
+        expect(onlyRef('export type * as NS from "./m";\n').reexportedExportNames).toEqual([WHOLE_MODULE_EXPORT_NAME]);
+      });
+
+      it("binds no local name a call can reach", () => {
+        const ref = onlyRef('import type { A as B } from "./m";\n');
+        expect(ref.importedNames).toBeUndefined();
+        expect(ref.importedBindings).toBeUndefined();
+      });
+
+      it("inline `import { type X, Y }` stays one runtime import taking both names", () => {
+        const extraction = extract('import { type X, Y as Z } from "./y";\n');
+        expect(extraction.imports).toHaveLength(1);
+        expect(extraction.imports[0]?.importedExportNames).toEqual(["X", "Y"]);
+      });
     });
   });
 
