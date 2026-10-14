@@ -565,7 +565,11 @@ const EMPTY_COCHANGE: TemporalCochangeGraph = { meta: null, edges: [] };
  * violations from one side and fabricate introduced / resolved — and share
  * one set of history lookups, so only the edges differ between them. The
  * families an edge overlay cannot move (silent coupling and shotgun surgery
- * read git history; norms are not requested) answer alike on both sides.
+ * read git history; norms are not requested) answer alike on both sides —
+ * except silent coupling's shared-neighbour explanation, which reads the file
+ * edges and so legitimately moves with the overlay. It resolves an import
+ * through a module facade to the forwarded file (bd tea-rags-mcp-jnynq), so
+ * retargeting a deep import to its facade moves nothing.
  * The asset-import specifier read is left out: it relinks silent-coupling
  * pairs identically on both sides, so it cannot move a key, and it would
  * read every one-walked pair of the repository instead of the diff's.
