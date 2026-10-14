@@ -88,7 +88,7 @@ function makeOps(view: WorkingTreeView) {
   };
   return new TracePathOps({
     pool: pool as never,
-    qdrant: qdrant as never,
+    qdrant,
     reranker: reranker as never,
     collectionRegistry: {} as never,
     resolveActiveCollection: async (n: string) => n as never,

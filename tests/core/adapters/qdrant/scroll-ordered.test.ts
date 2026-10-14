@@ -16,12 +16,7 @@ describe("scrollOrderedBy", () => {
     ];
     const qdrant = createMockQdrant(mockPoints);
 
-    const results = await scrollOrderedBy(
-      qdrant as never,
-      "test-collection",
-      { key: "methodLines", direction: "desc" },
-      10,
-    );
+    const results = await scrollOrderedBy(qdrant, "test-collection", { key: "methodLines", direction: "desc" }, 10);
 
     expect(qdrant.scrollOrdered).toHaveBeenCalledWith(
       "test-collection",
@@ -38,7 +33,7 @@ describe("scrollOrderedBy", () => {
     const qdrant = createMockQdrant([]);
     const filter = { must: [{ key: "language", match: { value: "typescript" } }] };
 
-    await scrollOrderedBy(qdrant as never, "test-collection", { key: "git.file.ageDays", direction: "asc" }, 5, filter);
+    await scrollOrderedBy(qdrant, "test-collection", { key: "git.file.ageDays", direction: "asc" }, 5, filter);
 
     expect(qdrant.scrollOrdered).toHaveBeenCalledWith(
       "test-collection",
@@ -51,12 +46,7 @@ describe("scrollOrderedBy", () => {
   it("returns empty array when no points match", async () => {
     const qdrant = createMockQdrant([]);
 
-    const results = await scrollOrderedBy(
-      qdrant as never,
-      "test-collection",
-      { key: "methodLines", direction: "desc" },
-      10,
-    );
+    const results = await scrollOrderedBy(qdrant, "test-collection", { key: "methodLines", direction: "desc" }, 10);
 
     expect(results).toEqual([]);
   });

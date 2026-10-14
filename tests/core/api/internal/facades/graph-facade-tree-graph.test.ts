@@ -214,7 +214,7 @@ describe("graph tools over the tree graph (WTO-7)", { timeout: 120_000 }, () => 
       const { overlay } = overlayAnswering(built());
       const ops = new TracePathOps({
         pool: pool() as never,
-        qdrant: { scrollBySymbolIds: vi.fn(async () => []) } as never,
+        qdrant: { scrollBySymbolIds: vi.fn(async () => []) },
         reranker: {} as never,
         collectionRegistry: {} as never,
         resolveActiveCollection: async () => PHYSICAL,
@@ -278,7 +278,7 @@ describe("graph tools over the tree graph (WTO-7)", { timeout: 120_000 }, () => 
       const { overlay } = overlayAnswering({ kind: "unavailable", reason: "codegraph is disabled" });
       const ops = new TracePathOps({
         pool: pool() as never,
-        qdrant: { scrollBySymbolIds: vi.fn(async () => []) } as never,
+        qdrant: { scrollBySymbolIds: vi.fn(async () => []) },
         reranker: {} as never,
         collectionRegistry: {} as never,
         resolveActiveCollection: async () => PHYSICAL,

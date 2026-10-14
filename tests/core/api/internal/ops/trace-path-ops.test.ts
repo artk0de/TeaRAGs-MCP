@@ -65,7 +65,7 @@ function makeOps(overrides: Partial<Record<string, unknown>> = {}) {
   const collectionRegistry = {};
   return new TracePathOps({
     pool: pool as never,
-    qdrant: qdrant as never,
+    qdrant,
     reranker: reranker as never,
     collectionRegistry: collectionRegistry as never,
     resolveActiveCollection: async (n: string) => n,
@@ -156,7 +156,7 @@ describe("TracePathOps.tracePath", () => {
     };
     const ops = new TracePathOps({
       pool: pool as never,
-      qdrant: qdrant as never,
+      qdrant,
       reranker: reranker as never,
       collectionRegistry: {} as never,
       resolveActiveCollection: async (n: string) => n,
@@ -203,7 +203,7 @@ describe("TracePathOps.tracePath", () => {
     const reranker = { rerank: vi.fn() };
     const ops = new TracePathOps({
       pool: pool as never,
-      qdrant: qdrant as never,
+      qdrant,
       reranker: reranker as never,
       collectionRegistry: {} as never,
       resolveActiveCollection: async (n: string) => n,
@@ -236,7 +236,7 @@ describe("TracePathOps.tracePath — step lines without a chunk", () => {
     };
     return new TracePathOps({
       pool: pool as never,
-      qdrant: qdrant as never,
+      qdrant,
       reranker: { rerank: vi.fn() } as never,
       collectionRegistry: {} as never,
       resolveActiveCollection: async (n: string) => n,
