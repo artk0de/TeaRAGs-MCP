@@ -19,7 +19,8 @@ Apply the finding's `remedy`.
 - If the import goes through a re-export, import from the declaring file.
 - If the dependency is a type, look for an existing contract in a permitted
   layer.
-- Do not move files between layers to satisfy this family.
+- Cheap repair never moves files between layers. Escalated: `## Ops recipe`,
+  simulated through `restructure` or ordered by `tea-rags:refactoring-planning`.
 
 ## Known false positives
 
@@ -34,3 +35,30 @@ Apply the finding's `remedy`.
 - No permitted-layer target exists for the imported names.
 - The fix needs a move, a new file or a new interface.
 - Two repair rounds left the back-edge introduced.
+
+## Ops recipe
+
+Back-edge A→B, A in a lower layer, B in a higher one. Pick by A's other edges.
+
+Inversion, as in stableDependencies:
+
+- `removeEdge {from: A, to: B}`
+- `addFile {file: I, component: <lower-layer component>}`
+- `addEdge {from: A, to: I}`
+- `addEdge {from: B, to: I}`
+
+Move, when A has no other dependency on a layer above its target:
+
+- `move {files: [A], toComponent: <component in the permitted layer>}`
+
+New file path: I sits in the component of the lower of the two layers in the
+report's layer map, nearest to both A and B in the component tree. Move target:
+the component of A's dependencies' layer, or the layer of its importers. Never a
+hard-coded directory.
+
+Example, finding fields `sourceRelPath: A`, `toRelPath: B`, layer map `A: L1`,
+`B: L3`:
+`removeEdge A→B · addFile I in an L1 component · addEdge A→I · addEdge B→I`.
+
+Simulate with `get_architecture_report restructure` before writing; the skill
+`tea-rags:refactoring-planning` orders several.

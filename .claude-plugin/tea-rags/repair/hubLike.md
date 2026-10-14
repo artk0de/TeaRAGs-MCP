@@ -22,7 +22,8 @@ component the source already depends on, so efferent coupling does not grow.
   added edge is a type import, retarget it to an existing contract.
 - Threshold flap (0.02 or less): report metric before and after, threshold and
   the moving edge, and let the user decide.
-- Splitting the hub is not a cheap fix. Report it with a bead suggestion.
+- Splitting the hub is not a cheap fix. Report it with a bead suggestion;
+  escalated, the split is `## Ops recipe`, simulated through `restructure`.
 
 ## Known false positives
 
@@ -41,3 +42,28 @@ component the source already depends on, so efferent coupling does not grow.
 - Every candidate target would add a new component dependency.
 - The only fix is splitting the component.
 - Two repair rounds left the finding introduced.
+
+## Ops recipe
+
+Split the hub's afferent surface, one cluster of consumers at a time. Cluster =
+consumers importing the same subset of `importedNames` from the hub H.
+
+Per cluster C with interface I:
+
+- `addFile {file: I, component: <H's component>}`
+- `removeEdge {from: c, to: H}` for each c in C
+- `addEdge {from: c, to: I}` for each c in C
+- `addEdge {from: H, to: I}`
+
+New file path: I sits beside H, same directory. Never in a component H does not
+already depend on: efferent coupling must not grow. Edge into a contract-kind
+file does not count toward Ce, so prefer the contracts component when the
+report's tree has one H already imports.
+
+Example, finding fields `component: H`, consumers `[c1, c2]`,
+`importedNames: [N]`:
+`addFile H-dir/I · removeEdge c1→H · removeEdge c2→H · addEdge c1→I · addEdge c2→I · addEdge H→I`.
+Ca of H drops by 2; Ce gains one local edge.
+
+Simulate with `get_architecture_report restructure` before writing; the skill
+`tea-rags:refactoring-planning` orders several.
