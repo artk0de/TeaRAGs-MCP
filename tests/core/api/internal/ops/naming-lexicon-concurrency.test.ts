@@ -35,20 +35,34 @@ const NAMING = new Map<string, IdentifierNamingConvention>([
 
 const EMPTY: ExploreResponse = { results: [], driftWarning: null };
 
-/** A read the test settles by hand, with the in-flight high-water mark of its kind. */
+/** A promise the test resolves from inside a mock — an awaited barrier instead of a polled wall-clock wait. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((res) => (resolve = res));
+  return { promise, resolve };
+}
+
+/**
+ * A read the test settles by hand, with the in-flight high-water mark of its kind.
+ * `untilInFlight(n)` resolves the moment n reads are in flight; `openGate()` releases
+ * every held read and lets later ones through at once (peak still counts them).
+ */
 function heldReads(): {
   fn: ReturnType<typeof vi.fn<(req: unknown) => Promise<ExploreResponse>>>;
   inFlight: () => number;
   peak: () => number;
-  releaseAll: () => void;
+  untilInFlight: (count: number) => Promise<void>;
+  openGate: () => void;
 } {
-  const waiting: (() => void)[] = [];
+  const gate = deferred();
+  const arrivals: { count: number; barrier: ReturnType<typeof deferred> }[] = [];
   let inFlight = 0;
   let peak = 0;
   const fn = vi.fn(async (_req: unknown) => {
     inFlight++;
     peak = Math.max(peak, inFlight);
-    await new Promise<void>((resolve) => waiting.push(resolve));
+    for (const { count, barrier } of arrivals) if (inFlight >= count) barrier.resolve();
+    await gate.promise;
     inFlight--;
     return EMPTY;
   });
@@ -56,9 +70,13 @@ function heldReads(): {
     fn,
     inFlight: () => inFlight,
     peak: () => peak,
-    releaseAll: () => {
-      for (const release of waiting.splice(0)) release();
+    untilInFlight: async (count) => {
+      const barrier = deferred();
+      arrivals.push({ count, barrier });
+      if (inFlight >= count) barrier.resolve();
+      await barrier.promise;
     },
+    openGate: gate.resolve,
   };
 }
 
@@ -114,13 +132,9 @@ describe("NamingLexiconOps — concurrent remote reads", () => {
       const names = Array.from({ length: NAMING_LEXICON_READ_CONCURRENCY + 4 }, (_, i) => `Draft${i}Ledger`);
       const pending = ops.getNamingLexicon({ collection: "c", names: names.map(typeDraft) });
 
-      await vi.waitFor(() => {
-        expect(search.inFlight()).toBe(NAMING_LEXICON_READ_CONCURRENCY);
-      });
-      while (search.fn.mock.calls.length < names.length || search.inFlight() > 0) {
-        search.releaseAll();
-        await new Promise((resolve) => setTimeout(resolve, 1));
-      }
+      await search.untilInFlight(NAMING_LEXICON_READ_CONCURRENCY);
+      expect(search.inFlight()).toBe(NAMING_LEXICON_READ_CONCURRENCY);
+      search.openGate();
       const result = await pending;
 
       expect(search.peak()).toBe(NAMING_LEXICON_READ_CONCURRENCY);
@@ -154,20 +168,24 @@ describe("NamingLexiconOps — concurrent remote reads", () => {
         const sequential = await build({ semanticSearch: vi.fn(async () => EMPTY) }).getNamingLexicon(request);
 
         const readEdges = db.readFileReexportEdges.bind(db);
-        let releaseEdges: () => void = () => undefined;
+        // The read is held until the draft's search has started AND the read itself was requested,
+        // so the order of the two starts never decides whether the release has something to release.
+        const edgesRequested = deferred();
+        const edgesHeld = deferred();
         vi.spyOn(db, "readFileReexportEdges").mockImplementation(async () => {
-          await new Promise<void>((resolve) => (releaseEdges = resolve));
+          edgesRequested.resolve();
+          await edgesHeld.promise;
           return readEdges();
         });
-        const semanticSearch = vi.fn(async (_req: unknown) => EMPTY);
+        const draftSearched = deferred();
+        const semanticSearch = vi.fn(async (req: unknown) => {
+          if ((req as { query: string }).query === "a book of ledger entries") draftSearched.resolve();
+          return EMPTY;
+        });
         const pending = build({ semanticSearch }).getNamingLexicon(request);
 
-        await vi.waitFor(() => {
-          expect(semanticSearch.mock.calls.map(([req]) => (req as { query: string }).query)).toContain(
-            "a book of ledger entries",
-          );
-        });
-        releaseEdges();
+        await Promise.all([draftSearched.promise, edgesRequested.promise]);
+        edgesHeld.resolve();
         expect(await pending).toEqual(sequential);
       });
 
@@ -176,17 +194,18 @@ describe("NamingLexiconOps — concurrent remote reads", () => {
 
         let releaseTerms: () => void = () => undefined;
         const termsHeld = new Promise<void>((resolve) => (releaseTerms = resolve));
+        const bothStarted = deferred();
         const semanticSearch = vi.fn(async (req: unknown) => {
+          if (semanticSearch.mock.calls.length === 2) bothStarted.resolve();
           if ((req as { query: string }).query === TERMS_QUERY) await termsHeld;
           return EMPTY;
         });
         const pending = build({ semanticSearch }).getNamingLexicon(request);
 
-        await vi.waitFor(() => {
-          expect(semanticSearch.mock.calls.map(([req]) => (req as { query: string }).query).sort()).toEqual(
-            ["a book of ledger entries", TERMS_QUERY].sort(),
-          );
-        });
+        await bothStarted.promise;
+        expect(semanticSearch.mock.calls.map(([req]) => (req as { query: string }).query).sort()).toEqual(
+          ["a book of ledger entries", TERMS_QUERY].sort(),
+        );
         releaseTerms();
         expect(await pending).toEqual(sequential);
       });
@@ -209,7 +228,10 @@ describe("NamingLexiconOps — concurrent remote reads", () => {
           await expect(build({ semanticSearch }).getNamingLexicon(request)).rejects.toBeInstanceOf(
             InvalidParameterError,
           );
-          await new Promise((resolve) => setTimeout(resolve, 20));
+          // unhandledRejection fires once the microtask queue drains after the tick that rejected;
+          // two setImmediate turns are past that point with no wall-clock budget.
+          await new Promise((resolve) => setImmediate(resolve));
+          await new Promise((resolve) => setImmediate(resolve));
           expect(unhandled).toEqual([]);
         } finally {
           process.off("unhandledRejection", onUnhandled);
@@ -245,10 +267,9 @@ describe("NamingLexiconOps — concurrent remote reads", () => {
         names: names.map((name) => ({ name, kind: "return" as const })),
       });
 
-      await vi.waitFor(() => {
-        expect(lookup.inFlight()).toBe(names.length);
-      });
-      lookup.releaseAll();
+      await lookup.untilInFlight(names.length);
+      expect(lookup.inFlight()).toBe(names.length);
+      lookup.openGate();
       const result = await pending;
 
       expect(result.names.map((n) => [n.name, n.evidence?.collisions])).toEqual(
