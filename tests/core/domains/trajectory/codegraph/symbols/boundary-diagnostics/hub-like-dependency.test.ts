@@ -171,6 +171,36 @@ describe("detectHubLikeDependencies", () => {
     expect(report.violations).toEqual([]);
   });
 
+  // bd tea-rags-mcp-j5gti: a parent↔nested dependency is containment, not
+  // coupling — on tea-rags `language/swift/resolver` read Ca 9 from its own
+  // child `strategies` alone, `ruby/walker/type-sources` Ca 7 from its parent
+  // `ruby/walker` alone. Neither axis of the hub counts a containment edge.
+  it("counts no containment dependency toward a hub's Ca or Ce, in either direction", () => {
+    const g = graph();
+    for (let i = 1; i <= 10; i++) {
+      // par: Ce 10 into sinks; its only dependent is its own child par/kid.
+      g.files.push(file(`par/p${i}.ts`), file(`par/kid/k${i}.ts`));
+      g.edges.push(edge(`par/p${i}.ts`, "sink2/s.ts"), edge(`par/kid/k${i}.ts`, `par/p${i}.ts`));
+      // outer/inner: Ce 10 into a sink; its only dependent is its own parent outer.
+      g.files.push(file(`outer/o${i}.ts`), file(`outer/inner/n${i}.ts`));
+      g.edges.push(edge(`outer/o${i}.ts`, `outer/inner/n${i}.ts`), edge(`outer/inner/n${i}.ts`, "sink3/s.ts"));
+    }
+    const components = buildComponentGraph(g, []);
+    // The premise: by the component graph's own counts both read balanced and busy.
+    expect(components.components.get("par")).toMatchObject({ afferentCount: 10, efferentCount: 10 });
+    expect(components.components.get("outer/inner")).toMatchObject({ afferentCount: 10, efferentCount: 10 });
+
+    const report = detectHubLikeDependencies(components);
+    expect(report.violations.map((v) => v.component)).toEqual(["hub"]);
+    const reading = readHubLikeDependency(components);
+    expect(reading.fanCountsOf("par")).toMatchObject({ afferentCount: 0, efferentCount: 10 });
+    expect(reading.fanCountsOf("par/kid")).toMatchObject({ afferentCount: 0, efferentCount: 0 });
+    expect(reading.fanCountsOf("outer/inner")).toMatchObject({ afferentCount: 0, efferentCount: 10 });
+    expect(reading.isContainment("par/kid", "par")).toBe(true);
+    expect(reading.isContainment("outer", "outer/inner")).toBe(true);
+    expect(reading.isContainment("hub", "sink1")).toBe(false);
+  });
+
   it("does not flag a balanced component (I near 0.5) that is no busier than the typical component", () => {
     const report = judge(graph());
     expect(report.violations.some((v) => v.component === "mid")).toBe(false);

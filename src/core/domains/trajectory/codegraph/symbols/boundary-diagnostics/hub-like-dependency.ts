@@ -1,12 +1,14 @@
 import type { RelPath } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../primitives/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
+import { classifyComponentRelation } from "./constant-namespace.js";
 import { MAIN_SEQUENCE_OTSU_MIN_POPULATION } from "./main-sequence.js";
 import { DEFAULT_SDP_MIN_CONNECTION_COUNT } from "./stable-dependencies.js";
 import type {
   ArchitectureComponent,
   ComponentDependency,
   ComponentGraph,
+  DependencyDirectoryRelation,
   HubLikeDependencyAxisCut,
   HubLikeDependencyChurn,
   HubLikeDependencyNeighbour,
@@ -56,8 +58,11 @@ export const HUB_LIKE_DEPENDENCY_OTSU_MIN_POPULATION = MAIN_SEQUENCE_OTSU_MIN_PO
  * Ce counts only dependencies outside `foundationComponents` (bd
  * tea-rags-mcp-g77p3): an edge into the pure-types foundation is no efferent
  * coupling, and counting it made every busy contracts consumer read balanced.
- * Ca, the connection floor and the reported instability stay the component's.
- * The efferent cut is drawn over the judged components with Ce > 0.
+ * Neither axis counts a containment dependency — parent into nested or nested
+ * into parent (bd tea-rags-mcp-j5gti): a component only its own child uses,
+ * or that only uses its own parent, is composition, not a hub. The connection
+ * floor and the reported instability stay the component's. The efferent cut
+ * is drawn over the judged components with Ce > 0.
  *
  * `sourcePathPattern` only decides which judged components are reported; the
  * cuts are whole-graph. `fileVolatility` attaches churn to every hub and never
@@ -68,7 +73,7 @@ export function detectHubLikeDependencies(
   options: HubLikeDependencyOptions = {},
 ): HubLikeDependencyReport {
   const cuts = resolveHubLikeDependencyCuts(componentGraph, options);
-  const { judged, efferentCountOf, afferent, efferent } = cuts;
+  const { judged, fanCountsOf, afferent, efferent } = cuts;
 
   const pathsOf = componentPaths(componentGraph);
   const inScope = compilePathPatternMatcher(options.sourcePathPattern);
@@ -84,13 +89,14 @@ export function detectHubLikeDependencies(
       scope.outOfScopeComponentCount++;
       continue;
     }
-    const verdict = classifyHubLikeFan(hubFanCountsOf(component, efferentCountOf), cuts);
+    const verdict = classifyHubLikeFan(fanCountsOf(component), cuts);
     if (verdict === "hub") hubs.push(component);
     else if (verdict === "imbalanced") imbalanced++;
   }
 
   const reach = hubs.length > 0 ? new ReverseComponentReach(componentGraph.dependencies) : undefined;
   const violations = hubs.map((hub): HubLikeDependencyViolation => {
+    const fan = fanCountsOf(hub);
     const dependents = componentGraph.dependencies.filter((d) => d.targetComponent === hub.componentDir);
     const dependencies = componentGraph.dependencies.filter((d) => d.sourceComponent === hub.componentDir);
     const churn = options.fileVolatility
@@ -100,8 +106,8 @@ export function detectHubLikeDependencies(
       component: hub.componentDir,
       kind: hub.kind,
       facadeRelPath: hub.facadeRelPath,
-      afferentCount: hub.afferentCount,
-      efferentCount: efferentCountOf(hub),
+      afferentCount: fan.afferentCount,
+      efferentCount: fan.efferentCount,
       instability: hub.instability,
       fileCount: hub.fileCount,
       dependentComponentCount: dependents.length,
@@ -137,10 +143,10 @@ export function detectHubLikeDependencies(
 }
 
 /**
- * A component's coupling as the hub verdict reads it: Ca, the hub's Ce (the
- * files with a dependency outside the measured foundation, bd
- * tea-rags-mcp-g77p3) and the component's own Ca + Ce the connection floor
- * judges.
+ * A component's coupling as the hub verdict reads it: the hub's Ca and Ce —
+ * containment dependencies left out of both (bd tea-rags-mcp-j5gti), the
+ * measured foundation out of Ce (bd tea-rags-mcp-g77p3) — and the component's
+ * own Ca + Ce the connection floor judges.
  */
 export interface HubLikeDependencyFanCounts {
   afferentCount: number;
@@ -163,6 +169,8 @@ export interface HubLikeDependencyReading {
   fanCountsOf: (component: string) => (HubLikeDependencyFanCounts & { compositionRoot?: true }) | undefined;
   /** Whether a dependency into the component is left out of the hub's Ce (the measured foundation). */
   isFoundation: (component: string) => boolean;
+  /** Whether a dependency between the two is containment (one nested in the other), left out of both axes. */
+  isContainment: (sourceComponent: string, targetComponent: string) => boolean;
   /** The detector's verdict on a component at these counts: connection floor, both cuts, balance. */
   isHub: (fan: HubLikeDependencyFanCounts) => boolean;
 }
@@ -179,11 +187,13 @@ export function readHubLikeDependency(
       const component = componentGraph.components.get(componentDir);
       if (component === undefined) return undefined;
       return {
-        ...hubFanCountsOf(component, cuts.efferentCountOf),
+        ...cuts.fanCountsOf(component),
         ...(component.entryFacade ? { compositionRoot: true as const } : {}),
       };
     },
     isFoundation: (componentDir) => foundation.has(componentDir),
+    isContainment: (sourceComponent, targetComponent) =>
+      isContainmentRelation(classifyComponentRelation(sourceComponent, targetComponent)),
     isHub: (fan) => classifyHubLikeFan(fan, cuts) === "hub",
   };
 }
@@ -193,7 +203,7 @@ interface HubLikeDependencyCuts {
   minConnectionCount: number;
   judged: readonly ArchitectureComponent[];
   lowConnectionCount: number;
-  efferentCountOf: (component: ArchitectureComponent) => number;
+  fanCountsOf: (component: ArchitectureComponent) => HubLikeDependencyFanCounts;
   afferent: AxisCut;
   efferent: AxisCut;
 }
@@ -210,29 +220,20 @@ function resolveHubLikeDependencyCuts(
     else judged.push(component);
   }
 
-  // Ce reads past the foundation (bd tea-rags-mcp-g77p3); Ca and the
-  // connection floor stay the component's own. The efferent cut is drawn over
-  // the non-leaf components only: a Ce 0 leaf is never a hub, and a mass of
-  // them would drag the median down to where every dependent clears it.
-  const efferentCountOf = hubEfferentCounts(componentGraph, options.foundationComponents);
+  // Both axes read past containment (bd tea-rags-mcp-j5gti), Ce past the
+  // foundation too (bd tea-rags-mcp-g77p3); the connection floor stays the
+  // component's own. The efferent cut is drawn over the non-leaf components
+  // only: a Ce 0 leaf is never a hub, and a mass of them would drag the median
+  // down to where every dependent clears it.
+  const fanCountsOf = hubFanCounts(componentGraph, options.foundationComponents);
+  const judgedFans = judged.map(fanCountsOf);
   return {
     minConnectionCount,
     judged,
     lowConnectionCount,
-    efferentCountOf,
-    afferent: resolveAxisCut(judged.map((c) => c.afferentCount)),
-    efferent: resolveAxisCut(judged.map(efferentCountOf).filter((count) => count > 0)),
-  };
-}
-
-function hubFanCountsOf(
-  component: ArchitectureComponent,
-  efferentCountOf: (component: ArchitectureComponent) => number,
-): HubLikeDependencyFanCounts {
-  return {
-    afferentCount: component.afferentCount,
-    efferentCount: efferentCountOf(component),
-    connectionCount: component.connectionCount,
+    fanCountsOf,
+    afferent: resolveAxisCut(judgedFans.map((fan) => fan.afferentCount)),
+    efferent: resolveAxisCut(judgedFans.map((fan) => fan.efferentCount).filter((count) => count > 0)),
   };
 }
 
@@ -255,24 +256,39 @@ function couplingImbalance(afferentCount: number, efferentCount: number): number
 }
 
 /**
- * The hub's Ce per component: the distinct files carrying a dependency into a
- * component outside `foundationComponents` — the component graph's own Ce
- * (distinct source files) with the foundation's dependencies left out. A file
- * reaching the foundation AND anything else still counts once.
+ * The hub's counts per component — the component graph's own Ca and Ce
+ * (distinct source files) over the dependencies that are not containment (bd
+ * tea-rags-mcp-j5gti), Ce also without those into `foundationComponents` (bd
+ * tea-rags-mcp-g77p3). A file reaching an excluded component AND anything else
+ * still counts once.
  */
-function hubEfferentCounts(
+function hubFanCounts(
   componentGraph: ComponentGraph,
   foundationComponents: ReadonlySet<string> | undefined,
-): (component: ArchitectureComponent) => number {
-  if (!foundationComponents || foundationComponents.size === 0) return (component) => component.efferentCount;
-  const sourceFiles = new Map<string, Set<RelPath>>();
-  for (const dependency of componentGraph.dependencies) {
-    if (foundationComponents.has(dependency.targetComponent)) continue;
-    const files = sourceFiles.get(dependency.sourceComponent) ?? new Set<RelPath>();
+): (component: ArchitectureComponent) => HubLikeDependencyFanCounts {
+  const afferentFiles = new Map<string, Set<RelPath>>();
+  const efferentFiles = new Map<string, Set<RelPath>>();
+  const addSourceFiles = (into: Map<string, Set<RelPath>>, component: string, dependency: ComponentDependency) => {
+    const files = into.get(component) ?? new Set<RelPath>();
     for (const edge of dependency.fileEdges) files.add(edge.sourceRelPath);
-    sourceFiles.set(dependency.sourceComponent, files);
+    into.set(component, files);
+  };
+  for (const dependency of componentGraph.dependencies) {
+    if (isContainmentRelation(dependency.directoryRelation)) continue;
+    addSourceFiles(afferentFiles, dependency.targetComponent, dependency);
+    if (foundationComponents?.has(dependency.targetComponent)) continue;
+    addSourceFiles(efferentFiles, dependency.sourceComponent, dependency);
   }
-  return (component) => sourceFiles.get(component.componentDir)?.size ?? 0;
+  return (component) => ({
+    afferentCount: afferentFiles.get(component.componentDir)?.size ?? 0,
+    efferentCount: efferentFiles.get(component.componentDir)?.size ?? 0,
+    connectionCount: component.connectionCount,
+  });
+}
+
+/** A parent↔nested dependency, either direction. */
+function isContainmentRelation(relation: DependencyDirectoryRelation): boolean {
+  return relation === "descendant" || relation === "ancestor";
 }
 
 interface AxisCut {
