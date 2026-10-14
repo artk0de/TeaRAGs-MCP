@@ -1,6 +1,6 @@
 import type { DiffDetectorFinding } from "../../../../contracts/types/diff-detector-finding.js";
 import type { DiffFamilyDetector, OverlayEdge } from "./diff-family-detector.js";
-import { pastThresholdBefore } from "./pre-existing.js";
+import { pastThresholdBefore, targetsBeforeChange } from "./pre-existing.js";
 import { detectorStatus, format3, round3, withRenderedSubject } from "./shared.js";
 
 /** Below this |deltaD| a touched component's main-sequence move reads as no move. */
@@ -16,6 +16,12 @@ const MAIN_SEQUENCE_EPSILON = 0.001;
  */
 const MAIN_SEQUENCE_FLAP_TOLERANCE = 0.02;
 
+/** One touched component's diff-added cross-component edges and the files they make efferent for the first time. */
+interface CrossingEdges {
+  edges: OverlayEdge[];
+  newlyEfferentFiles: Set<string>;
+}
+
 /**
  * Main-sequence DELTAS for the components of changed files only — untouched
  * components never appear, and a touched component that does not move does
@@ -29,25 +35,34 @@ const MAIN_SEQUENCE_FLAP_TOLERANCE = 0.02;
  * half-to-full-scale move — the small-N false positive every facade/refactor
  * diff drew on components whose legal fanOut is one contracts edge. The
  * guard reads `connectionCount`, which the recompute below never moves (k
- * lands on top of the fan, not inside it), so it composes with both paths.
- *
+ * lands on top of the fan, not inside it), so it composes with both paths. *
  * EXACT RECOMPUTE (bd tea-rags-mcp-89k7k.19): when the catalog serves the
  * component's fan counts (Ca/Ce — the same `ArchitectureComponent` facts
- * the whole-repo report derives), k genuinely-new outgoing edges move the
- * SOURCE's component's instability to exactly I' = (Ce + k)/(Ca + Ce + k) —
- * the whole-repo detector's own instability arithmetic re-applied to the
- * post-diff fan. One new edge on a 24-connection component moves I by ~1/25,
- * never the full-scale step that saturated such a component to I=1.000 and
- * D 0.946 from a single facade import (the 89k7k.14 replay residual: the
- * +1-per-edge step had no access to the fan counts through the diff ports).
- * The edge set is the subtraction's output (bd tea-rags-mcp-89k7k.14: a
- * pair the indexed graph already holds never moves anything).
+ * the whole-repo report derives), the SOURCE's component's instability moves
+ * to exactly I' = (Ce + k)/(Ca + Ce + k) — the whole-repo detector's own
+ * instability arithmetic re-applied to the post-diff fan. One newly efferent
+ * file on a 24-connection component moves I by ~1/25, never the full-scale
+ * step that saturated such a component to I=1.000 and D 0.946 from a single
+ * facade import (the 89k7k.14 replay residual: the +1-per-edge step had no
+ * access to the fan counts through the diff ports).
+ *
+ * k = NEWLY EFFERENT FILES (bd tea-rags-mcp-zuwvv): the report's Ce
+ * (`buildComponentGraph`) counts DISTINCT source files with at least one
+ * cross-component edge, so k is the number of distinct sources among the
+ * component's diff-added cross-component edges whose targets BEFORE the
+ * change (`targetsBeforeChange`: the diff base where it answers, else the
+ * index) reached no file of another component. A file already efferent
+ * never moves Ce again — five new imports from it move nothing; a missing
+ * pre-change fact counts the file. Foundation targets count like any other:
+ * Martin's I counts them, and only the hub reading excludes them (g77p3).
+ * The edges are the subtraction's output (bd tea-rags-mcp-89k7k.14: a pair
+ * the indexed graph already holds never moves anything); `evidence.edges`
+ * lists every one of them, and k = 0 is no move (the epsilon below).
  *
  * FALLBACK (the 89k7k.14 absence rule, documented per spec): a catalog that
- * serves no fan counts keeps the +1-per-edge step — one full step per
- * diff-added edge clamped at I=1 — because the fan counts are not reachable
- * through that port, and a missing fact is never read as "no edges", so the
- * step judges ALL k edges, never zero of them. Abstractness A is held
+ * serves no fan counts keeps the +1 step — one full step per newly efferent
+ * file (the same k) clamped at I=1 — because the fan counts are not reachable
+ * through that port, and a missing fact is never read as "no edges". Abstractness A is held
  * constant at the +D solution of D = |A + I - 1| (A = 1 - I + D): which side
  * of the main sequence the component sits on is not exposed by the catalog
  * either, and on that solution the deltaD equals the I increment — the
@@ -72,7 +87,7 @@ const MAIN_SEQUENCE_FLAP_TOLERANCE = 0.02;
  */
 export const mainSequenceDetector: DiffFamilyDetector = {
   family: "mainSequence",
-  judge: ({ scope, addedEdges, catalog, minConnectionCount, mainSequenceDistanceThreshold }) => {
+  judge: ({ scope, addedEdges, catalog, baseEdges, graph, minConnectionCount, mainSequenceDistanceThreshold }) => {
     const touched = new Map<
       string,
       {
@@ -101,23 +116,43 @@ export const mainSequenceDetector: DiffFamilyDetector = {
         ...(component.entryFacade ? { entryFacade: true as const } : {}),
       });
     }
-    const crossingEdges = new Map<string, OverlayEdge[]>();
+    const crossingEdges = new Map<string, CrossingEdges>();
+    const efferentBefore = new Map<string, boolean>();
+    const wasEfferentBefore = (source: string, sourceComponent: string): boolean => {
+      let efferent = efferentBefore.get(source);
+      if (efferent === undefined) {
+        const targets = targetsBeforeChange(source, baseEdges, graph);
+        efferent =
+          targets !== undefined &&
+          [...targets].some((target) => {
+            const targetComponent = catalog.componentOf(target)?.name;
+            return targetComponent !== undefined && targetComponent !== sourceComponent;
+          });
+        efferentBefore.set(source, efferent);
+      }
+      return efferent;
+    };
     for (const edge of addedEdges) {
       const sourceComponent = catalog.componentOf(edge.source);
       const targetComponent = catalog.componentOf(edge.target);
       if (sourceComponent === undefined || targetComponent === undefined) continue;
       if (sourceComponent.name === targetComponent.name || !touched.has(sourceComponent.name)) continue;
-      const componentEdges = crossingEdges.get(sourceComponent.name);
-      if (componentEdges === undefined) crossingEdges.set(sourceComponent.name, [edge]);
-      else componentEdges.push(edge);
+      let crossing = crossingEdges.get(sourceComponent.name);
+      if (crossing === undefined) {
+        crossing = { edges: [], newlyEfferentFiles: new Set() };
+        crossingEdges.set(sourceComponent.name, crossing);
+      }
+      crossing.edges.push(edge);
+      if (!wasEfferentBefore(edge.source, sourceComponent.name)) crossing.newlyEfferentFiles.add(edge.source);
     }
 
     const findings: DiffDetectorFinding[] = [];
     let excludedFlapCount = 0;
     for (const [name, fact] of touched) {
-      const edgesOut = crossingEdges.get(name);
-      if (edgesOut === undefined) continue;
-      const newEdgeCount = edgesOut.length;
+      const crossing = crossingEdges.get(name);
+      if (crossing === undefined) continue;
+      const { edges: edgesOut } = crossing;
+      const newlyEfferentFileCount = crossing.newlyEfferentFiles.size;
       // Both counts or neither: one alone cannot feed the exact recompute, and
       // a half-served fan is the same absent fact as none (the 89k7k.14 rule).
       const fans =
@@ -126,8 +161,9 @@ export const mainSequenceDetector: DiffFamilyDetector = {
           : undefined;
       const newInstability =
         fans !== undefined
-          ? (fans.efferentCount + newEdgeCount) / (fans.afferentCount + fans.efferentCount + newEdgeCount)
-          : Math.min(1, fact.instability + newEdgeCount);
+          ? (fans.efferentCount + newlyEfferentFileCount) /
+            (fans.afferentCount + fans.efferentCount + newlyEfferentFileCount)
+          : Math.min(1, fact.instability + newlyEfferentFileCount);
       const instabilityDelta = newInstability - fact.instability;
       if (Math.abs(instabilityDelta) <= MAIN_SEQUENCE_EPSILON) continue;
       const abstractness = 1 - fact.instability + fact.distanceFromMainSequence;
@@ -148,10 +184,10 @@ export const mainSequenceDetector: DiffFamilyDetector = {
             distanceAfter: round3(newDistance),
             instabilityBefore: round3(fact.instability),
             instabilityAfter: round3(newInstability),
-            ...(fans !== undefined ? { fanCounts: { ...fans, addedEdgeCount: newEdgeCount } } : {}),
+            ...(fans !== undefined ? { fanCounts: { ...fans, newlyEfferentFileCount } } : {}),
             edges: edgesOut.map((edge) => ({ sourceRelPath: edge.source, targetRelPath: edge.target })),
           },
-          detail: `the diff moves ${name} off its main-sequence distance: ${newEdgeCount} cross-component outgoing edge(s) raise instability ${format3(fact.instability)} -> ${format3(newInstability)} with abstractness held${recomputeClause}`,
+          detail: `the diff moves ${name} off its main-sequence distance: ${newlyEfferentFileCount} newly efferent file(s) over ${edgesOut.length} cross-component outgoing edge(s) raise instability ${format3(fact.instability)} -> ${format3(newInstability)} with abstractness held${recomputeClause}`,
           ...(foundationTerminal ? { foundationTerminal: true as const } : {}),
           // The unstable end of the main sequence is where an entry component
           // belongs (the measured entry-facade component): annotated, still

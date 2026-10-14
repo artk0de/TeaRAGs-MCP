@@ -152,10 +152,20 @@ export interface MainSequenceDiffFindingEvidence {
   instabilityAfter: number;
   /**
    * The report's fan counts the exact recompute I' = (Ce+k)/(Ca+Ce+k) read;
-   * absent = the catalog served none and the +1-per-edge step applied.
+   * absent = the catalog served none and the +1-per-newly-efferent-file step applied.
    */
-  fanCounts?: { afferentCount: number; efferentCount: number; addedEdgeCount: number };
-  /** The cross-component outgoing edges that moved the component. */
+  fanCounts?: {
+    afferentCount: number;
+    efferentCount: number;
+    /**
+     * k: the component's files the diff makes efferent for the FIRST time —
+     * distinct sources of its diff-added cross-component edges that reached
+     * no other component before the change (bd tea-rags-mcp-zuwvv). The
+     * report's Ce counts files, not edges, so this is how far Ce moves.
+     */
+    newlyEfferentFileCount: number;
+  };
+  /** Every diff-added cross-component outgoing edge of the component — k counts their newly efferent sources. */
   edges: { sourceRelPath: RelPath; targetRelPath: RelPath }[];
 }
 

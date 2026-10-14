@@ -725,12 +725,15 @@ describe("mainSequence", () => {
         distanceAfter: 0.037,
         instabilityBefore: 0.083,
         instabilityAfter: 0.12,
-        fanCounts: { afferentCount: 22, efferentCount: 2, addedEdgeCount: 1 },
+        fanCounts: { afferentCount: 22, efferentCount: 2, newlyEfferentFileCount: 1 },
       });
     });
 
-    it("recomputes with k = the genuinely-new edge count — two new edges give (Ce+2)/(Ca+Ce+2)", () => {
+    // bd tea-rags-mcp-zuwvv: k counts newly efferent FILES (the report's Ce), so the two edges come from two files.
+    it("recomputes with k = the newly efferent file count — two newly efferent files give (Ce+2)/(Ca+Ce+2)", () => {
       const twoTargets = new Map(lowIFanFixture());
+      const barrelFact = twoTargets.get("src/api/barrel.ts");
+      if (barrelFact !== undefined) twoTargets.set("src/api/sibling.ts", barrelFact);
       twoTargets.set("src/other/c.ts", {
         name: "other",
         instability: 0.3,
@@ -741,10 +744,10 @@ describe("mainSequence", () => {
       });
       const result = runWith(
         { catalog: catalogOf(twoTargets) },
-        ["src/api/barrel.ts"],
+        ["src/api/barrel.ts", "src/api/sibling.ts"],
         [
           ["src/api/barrel.ts", "src/lib/b.ts"],
-          ["src/api/barrel.ts", "src/other/c.ts"],
+          ["src/api/sibling.ts", "src/other/c.ts"],
         ],
       );
       expect(subjectsOf(result, "mainSequence")).toEqual(["api"]);
@@ -755,7 +758,7 @@ describe("mainSequence", () => {
         distanceAfter: 0.071,
         instabilityBefore: 0.083,
         instabilityAfter: 0.154,
-        fanCounts: { afferentCount: 22, efferentCount: 2, addedEdgeCount: 2 },
+        fanCounts: { afferentCount: 22, efferentCount: 2, newlyEfferentFileCount: 2 },
       });
     });
 
@@ -846,7 +849,8 @@ describe("diff-added subtraction", () => {
       [["src/app/a.ts", "src/lib/b.ts"]],
     );
     expect(subjectsOf(result, "stableDependencies")).toEqual(["src/app/a.ts -> src/lib/b.ts"]);
-    expect(subjectsOf(result, "mainSequence")).toEqual(["app"]);
+    // bd tea-rags-mcp-zuwvv: a.ts already reached lib, so the report's Ce (distinct files) does not move.
+    expect(subjectsOf(result, "mainSequence")).toEqual([]);
   });
 
   it("subtracts per pair, not per file — a changed file whose imports did not change contributes zero crossing edges", () => {
@@ -890,7 +894,7 @@ describe("diff-added subtraction", () => {
     // pre-existing imports must not dilute or silence them.
     const toFoundation = new Map<string, ComponentFact>([
       ["src/app/a.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
-      ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 9 }],
+      ["src/app/z.ts", { name: "app", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 }],
       [
         "src/core/contracts/types/x.ts",
         { name: "src/core/contracts/types", instability: 0.1, distanceFromMainSequence: 0.1, connectionCount: 9 },
@@ -898,12 +902,14 @@ describe("diff-added subtraction", () => {
     ]);
     const result = runWith(
       {
-        graph: graphOf([["src/app/a.ts", "src/lib/b.ts"]]),
+        // bd tea-rags-mcp-zuwvv: the pre-existing import stays inside app — a file already
+        // efferent would move no Ce, so the contracts edge is the file's first crossing.
+        graph: graphOf([["src/app/a.ts", "src/app/z.ts"]]),
         catalog: catalogOf(toFoundation, new Map(), CONTRACTS_FOUNDATION),
       },
       ["src/app/a.ts"],
       [
-        ["src/app/a.ts", "src/lib/b.ts"],
+        ["src/app/a.ts", "src/app/z.ts"],
         ["src/app/a.ts", "src/core/contracts/types/x.ts"],
       ],
     );
