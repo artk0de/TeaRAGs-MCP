@@ -171,7 +171,7 @@ const CASES: readonly LanguageCase[] = [
     declarationFacet: returnOf("Svc#run", "run", 4, "string"),
     symbolKindFacet: { Svc: "class", "Svc#run": "method", "Svc#constructor": "method" },
     typeDeclarationFacet: [{ typeId: "Svc", symbolKind: "class", line: 3, reopens: false }],
-    typeMemberCensusFacet: [{ typeId: "Svc", line: 3, methodCount: 1, fieldCount: 0 }],
+    typeMemberCensusFacet: [{ typeId: "Svc", line: 3, methodCount: 1, fieldCount: 0, asyncMethodCount: 0 }],
   },
   {
     language: "javascript",
@@ -182,7 +182,7 @@ const CASES: readonly LanguageCase[] = [
     visibilityFacet: { "Svc#run": "public" },
     symbolKindFacet: { Svc: "class", "Svc#run": "method", "Svc#constructor": "method" },
     typeDeclarationFacet: [{ typeId: "Svc", symbolKind: "class", line: 3, reopens: false }],
-    typeMemberCensusFacet: [{ typeId: "Svc", line: 3, methodCount: 1, fieldCount: 0 }],
+    typeMemberCensusFacet: [{ typeId: "Svc", line: 3, methodCount: 1, fieldCount: 0, asyncMethodCount: 0 }],
   },
   {
     language: "java",

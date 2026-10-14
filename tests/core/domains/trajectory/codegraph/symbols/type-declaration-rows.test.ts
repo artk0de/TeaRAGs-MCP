@@ -93,6 +93,26 @@ describe("buildTypeDeclarationRows", () => {
     expect(rows[2]).not.toHaveProperty("fieldCount");
   });
 
+  // bd tea-rags-mcp-ek2cu: a class census's async method count rides along; a census without one leaves it unknown.
+  it("carries a census's async method count, and leaves it absent where the census has none", () => {
+    const rows = buildTypeDeclarationRows(
+      extraction({
+        relPath: "src/ops/indexing-ops.ts",
+        language: "typescript",
+        typeDeclarations: [
+          { typeId: "IndexingOps", symbolKind: "class", line: 1, reopens: false },
+          { typeId: "IndexingDeps", symbolKind: "interface", line: 20, reopens: false },
+        ],
+        typeMemberCensus: [
+          { typeId: "IndexingOps", line: 1, methodCount: 3, fieldCount: 1, asyncMethodCount: 2 },
+          { typeId: "IndexingDeps", line: 20, methodCount: 1, fieldCount: 0 },
+        ],
+      }),
+    );
+    expect(rows[0].asyncMethodCount).toBe(2);
+    expect(rows[1]).not.toHaveProperty("asyncMethodCount");
+  });
+
   it("returns no rows for a file that declares none, so its stored rows are cleared", () => {
     expect(buildTypeDeclarationRows(extraction({}))).toEqual([]);
   });

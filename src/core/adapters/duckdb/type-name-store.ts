@@ -43,9 +43,18 @@ const CG_TYPE_DECLARATIONS_COLUMNS = [
   // Migration 040 (bd tea-rags-mcp-ffxfc): the declaration's member census, NULL when it has none.
   "method_count",
   "field_count",
+  // Migration 050 (bd tea-rags-mcp-ek2cu): a class's async instance methods, NULL when unknown.
+  "async_method_count",
   // Last: the only cell the tuple casts, see TYPE_DECLARATION_TUPLE.
   "supertypes",
 ] as const;
+
+/**
+ * The members that BUILD an instance (bd tea-rags-mcp-ek2cu), `Type#constructor`
+ * and `Type#initialize`: no method a caller calls on the instance, so a type whose
+ * only instance callable is its constructor has no instance surface.
+ */
+const CONSTRUCTOR_MEMBERS = "'constructor', 'initialize'";
 
 /**
  * Values per `IN (…)` list and rows per multi-row `INSERT` — the bound the
@@ -57,7 +66,7 @@ const TYPE_DECLARATION_CHUNK = 200;
  * One row's `VALUES` tuple. The session binds primitives only, so the
  * supertype list travels as JSON text and is cast to `VARCHAR[]` in SQL.
  */
-const TYPE_DECLARATION_TUPLE = "(?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(CAST(? AS JSON) AS VARCHAR[]))";
+const TYPE_DECLARATION_TUPLE = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(CAST(? AS JSON) AS VARCHAR[]))";
 
 function chunkedTypeDeclarationValues<T>(values: readonly T[]): T[][] {
   const chunks: T[][] = [];
@@ -79,6 +88,7 @@ function typeDeclarationCells(relPath: RelPath, row: TypeDeclarationRow): unknow
     row.reopens,
     row.methodCount ?? null,
     row.fieldCount ?? null,
+    row.asyncMethodCount ?? null,
     [...row.supertypes],
   ];
 }
@@ -153,7 +163,8 @@ export class DuckDbTypeNameStore implements Pick<
     // The member census is the TYPE's (bd tea-rags-mcp-ffxfc): summed over every
     // production row of the same language and id, re-openings included, and
     // independent of the scope the types are read in. A type none of whose rows
-    // carries a census has no `members` row, so both counts read back NULL.
+    // carries a census has no `members` row, so both counts read back NULL. The async
+    // count (bd tea-rags-mcp-ek2cu) is known only when EVERY such row knows it.
     const rows = await this.session.queryAll<{
       type_id: string;
       rel_path: string;
@@ -162,6 +173,7 @@ export class DuckDbTypeNameStore implements Pick<
       supertypes: string[];
       method_count: number | null;
       field_count: number | null;
+      async_method_count: number | null;
       superclass: string | null;
       instance_method_count: number | null;
       singleton_method_count: number | null;
@@ -169,7 +181,9 @@ export class DuckDbTypeNameStore implements Pick<
       `WITH members AS (
          SELECT language, type_id,
                 CAST(SUM(method_count) AS INTEGER) AS method_count,
-                CAST(SUM(field_count) AS INTEGER) AS field_count
+                CAST(SUM(field_count) AS INTEGER) AS field_count,
+                CASE WHEN COUNT(async_method_count) = COUNT(*)
+                     THEN CAST(SUM(async_method_count) AS INTEGER) END AS async_method_count
            FROM cg_type_declarations
           WHERE method_count IS NOT NULL
             AND field_count IS NOT NULL
@@ -194,21 +208,23 @@ export class DuckDbTypeNameStore implements Pick<
        ),
        callables AS (
          SELECT regexp_extract(symbol_id, '^(.+)([#.])[^#.:]+$', 1) AS owner,
-                regexp_extract(symbol_id, '^(.+)([#.])[^#.:]+$', 2) AS separator
+                regexp_extract(symbol_id, '^(.+)([#.])[^#.:]+$', 2) AS separator,
+                regexp_extract(symbol_id, '[#.]([^#.:]+)$', 1) AS member
            FROM cg_symbols
           WHERE symbol_kind IN ('method', 'function')
             AND NOT ${nonProduction("rel_path")}
        ),
        shapes AS (
          SELECT owner AS type_id,
-                CAST(COUNT(*) FILTER (WHERE separator = '#') AS INTEGER) AS instance_method_count,
+                CAST(COUNT(*) FILTER (WHERE separator = '#' AND member NOT IN (${CONSTRUCTOR_MEMBERS})) AS INTEGER)
+                  AS instance_method_count,
                 CAST(COUNT(*) FILTER (WHERE separator = '.') AS INTEGER) AS singleton_method_count
            FROM callables
           WHERE owner <> ''
           GROUP BY owner
        )
        SELECT s.type_id, s.rel_path, s.short_name, s.symbol_kind, s.supertypes, m.method_count, m.field_count,
-              sup.superclass, sh.instance_method_count, sh.singleton_method_count
+              m.async_method_count, sup.superclass, sh.instance_method_count, sh.singleton_method_count
          FROM scoped s
          LEFT JOIN members m ON m.language = s.language AND m.type_id = s.type_id
          LEFT JOIN supers sup ON sup.source_rel_path = s.rel_path AND sup.source_fq_name = s.type_id
@@ -235,9 +251,13 @@ export class DuckDbTypeNameStore implements Pick<
               singletonMethodCount: Number(r.singleton_method_count),
             }),
       };
-      return r.method_count === null || r.field_count === null
-        ? row
-        : { ...row, methodCount: Number(r.method_count), fieldCount: Number(r.field_count) };
+      if (r.method_count === null || r.field_count === null) return row;
+      return {
+        ...row,
+        methodCount: Number(r.method_count),
+        fieldCount: Number(r.field_count),
+        ...(r.async_method_count === null ? {} : { asyncMethodCount: Number(r.async_method_count) }),
+      };
     });
   }
 }

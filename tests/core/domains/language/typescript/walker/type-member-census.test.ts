@@ -86,7 +86,7 @@ describe("TypeScript walker — type member census", () => {
     ].join("\n");
     // methods: read, create, handler, callback, flush, load (overloads merged)
     // fields: session, limit, size (accessor pair), count, #secret
-    expect(censusOf(src)).toEqual([{ typeId: "Store", line: 1, methodCount: 6, fieldCount: 5 }]);
+    expect(censusOf(src)).toEqual([{ typeId: "Store", line: 1, methodCount: 6, fieldCount: 5, asyncMethodCount: 0 }]);
   });
 
   it("counts an object-type alias and a const-bound class expression; other declarations have no census", () => {
@@ -101,15 +101,53 @@ describe("TypeScript walker — type member census", () => {
     ].join("\n");
     expect(censusOf(src)).toEqual([
       { typeId: "Shape", line: 1, methodCount: 1, fieldCount: 1 },
-      { typeId: "Recorder", line: 5, methodCount: 1, fieldCount: 0 },
+      { typeId: "Recorder", line: 5, methodCount: 1, fieldCount: 0, asyncMethodCount: 0 },
     ]);
   });
 
   it("gives a memberless class and interface a zero census, not an absent one", () => {
     const src = ["class Empty {}", "interface Marker {}", ""].join("\n");
     expect(censusOf(src)).toEqual([
-      { typeId: "Empty", line: 1, methodCount: 0, fieldCount: 0 },
+      { typeId: "Empty", line: 1, methodCount: 0, fieldCount: 0, asyncMethodCount: 0 },
       { typeId: "Marker", line: 2, methodCount: 0, fieldCount: 0 },
+    ]);
+  });
+
+  it("counts a class's async instance methods: the keyword or a Promise / PromiseLike return head (bd tea-rags-mcp-ek2cu)", () => {
+    const src = [
+      "export abstract class IndexingOps {",
+      "  constructor(private readonly deps: Deps) {}",
+      "  async index(path: string) {}",
+      "  status(): Promise<Status> { return this.deps.read(); }",
+      "  private load(): PromiseLike<void> { return this.deps.load(); }",
+      "  abstract flush(): Promise<void>;",
+      "  get ready(): Promise<boolean> { return this.deps.ready(); }",
+      "  static async create(): Promise<IndexingOps> { return null!; }",
+      "  sync(): Status { return this.deps.now(); }",
+      "  later(): Array<Promise<void>> { return []; }",
+      "  handler = async () => 1;",
+      "}",
+      "",
+    ].join("\n");
+    // async: index (keyword), status (Promise), load (PromiseLike, any visibility), flush (abstract).
+    // Not: the constructor, the accessor (a field), the static method, sync, later (head Array), an arrow field.
+    expect(censusOf(src)).toEqual([
+      { typeId: "IndexingOps", line: 1, methodCount: 8, fieldCount: 2, asyncMethodCount: 4 },
+    ]);
+  });
+
+  it("gives a class with no async method a known zero, and an interface no async count (unknown)", () => {
+    const src = [
+      "class MaintenanceCostShrinkage {",
+      "  estimate(x: number): number { return x; }",
+      "  constructor() {}",
+      "}",
+      "interface Port { read(): Promise<void>; }",
+      "",
+    ].join("\n");
+    expect(censusOf(src)).toEqual([
+      { typeId: "MaintenanceCostShrinkage", line: 1, methodCount: 1, fieldCount: 0, asyncMethodCount: 0 },
+      { typeId: "Port", line: 5, methodCount: 1, fieldCount: 0 },
     ]);
   });
 });

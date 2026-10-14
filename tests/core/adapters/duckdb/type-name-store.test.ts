@@ -165,6 +165,30 @@ describe("readTypeNameRows", () => {
     expect(byId.get("StoreKind")).not.toHaveProperty("singletonMethodCount");
   });
 
+  // bd tea-rags-mcp-ek2cu: construction is no method a caller calls on the instance.
+  it("leaves the constructor and initialize out of the instance callables", async () => {
+    const callable = (relPath: string, symbolId: string) => ({
+      symbolId,
+      fqName: symbolId,
+      shortName: symbolId.split(/[#.]/).at(-1) ?? symbolId,
+      relPath,
+      scope: [],
+      symbolKind: "method" as SymbolDefinitionKind,
+    });
+    await db.upsertSymbols("src/strategies/exact.ts", [
+      callable("src/strategies/exact.ts", "ExactStrategy#constructor"),
+      callable("src/strategies/exact.ts", "ExactStrategy.create"),
+    ]);
+    await db.upsertSymbols("src/strategies/fuzzy.ts", [
+      callable("src/strategies/fuzzy.ts", "FuzzyStrategy#initialize"),
+      callable("src/strategies/fuzzy.ts", "FuzzyStrategy#score"),
+    ]);
+    const byId = new Map((await db.readTypeNameRows(query())).map((r) => [r.symbolId, r]));
+
+    expect(byId.get("ExactStrategy")).toMatchObject({ instanceMethodCount: 0, singletonMethodCount: 1 });
+    expect(byId.get("FuzzyStrategy")).toMatchObject({ instanceMethodCount: 1, singletonMethodCount: 0 });
+  });
+
   it("excludes rows of unknown kind and kinds outside the requested set", async () => {
     const ids = (await db.readTypeNameRows(query())).map((r) => r.symbolId);
     expect(ids).not.toContain("LegacyStore");
@@ -402,5 +426,41 @@ describe("member counts", () => {
     const legacy = rows.find((r) => r.symbolId === "Legacy");
     expect(legacy).not.toHaveProperty("methodCount");
     expect(legacy).not.toHaveProperty("fieldCount");
+  });
+
+  // bd tea-rags-mcp-ek2cu: the async method count is the TYPE's too, and unknown unless every row knows it.
+  it("round-trips the async method count and reads it summed, unknown when a production row lacks it", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      {
+        relPath: "src/ops/indexing-ops.ts",
+        rows: [decl("IndexingOps", "class", { methodCount: 3, fieldCount: 1, asyncMethodCount: 2 })],
+      },
+      {
+        relPath: "src/ops/shrinkage.ts",
+        rows: [decl("MaintenanceCostShrinkage", "class", { methodCount: 2, fieldCount: 0, asyncMethodCount: 0 })],
+      },
+      { relPath: "src/ops/deps.ts", rows: [decl("IndexingDeps", "interface", { methodCount: 1, fieldCount: 0 })] },
+      {
+        relPath: "src/ops/merged.ts",
+        rows: [
+          decl("Merged", "class", { methodCount: 1, fieldCount: 0, asyncMethodCount: 1 }),
+          decl("Merged", "interface", { line: 9, methodCount: 1, fieldCount: 0 }),
+        ],
+      },
+    ]);
+    expect(
+      await db.queryAll(
+        "SELECT type_id, async_method_count FROM cg_type_declarations WHERE type_id <> 'Merged' ORDER BY type_id",
+      ),
+    ).toEqual([
+      { type_id: "IndexingDeps", async_method_count: null },
+      { type_id: "IndexingOps", async_method_count: 2 },
+      { type_id: "MaintenanceCostShrinkage", async_method_count: 0 },
+    ]);
+    const byId = new Map((await db.readTypeNameRows(query())).map((r) => [r.symbolId, r]));
+    expect(byId.get("IndexingOps")?.asyncMethodCount).toBe(2);
+    expect(byId.get("MaintenanceCostShrinkage")?.asyncMethodCount).toBe(0);
+    expect(byId.get("IndexingDeps")).not.toHaveProperty("asyncMethodCount");
+    expect(byId.get("Merged")).not.toHaveProperty("asyncMethodCount");
   });
 });

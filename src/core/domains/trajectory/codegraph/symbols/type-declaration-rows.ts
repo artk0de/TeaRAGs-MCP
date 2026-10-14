@@ -32,6 +32,12 @@ export function buildTypeDeclarationRows(extraction: FileExtraction): TypeDeclar
       supertypes: [...(fact.conforms ?? [])],
     };
     const members = census.get(censusKey(fact.typeId, fact.line));
-    return members === undefined ? row : { ...row, methodCount: members.methodCount, fieldCount: members.fieldCount };
+    if (members === undefined) return row;
+    return {
+      ...row,
+      methodCount: members.methodCount,
+      fieldCount: members.fieldCount,
+      ...(members.asyncMethodCount === undefined ? {} : { asyncMethodCount: members.asyncMethodCount }),
+    };
   });
 }

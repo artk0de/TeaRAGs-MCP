@@ -558,6 +558,13 @@ export interface TypeMemberCensus {
   readonly line: number;
   readonly methodCount: number;
   readonly fieldCount: number;
+  /**
+   * A class's async instance methods (bd tea-rags-mcp-ek2cu): `async`, or a
+   * `Promise` / `PromiseLike` return head; the constructor and statics are not
+   * counted. Absent = unknown — a language or declaration kind the census does
+   * not judge.
+   */
+  readonly asyncMethodCount?: number;
 }
 
 /** A file's type-abstractness census ({@link FileExtraction.typeAbstractness}). */
