@@ -25,8 +25,11 @@ import {
   aggregateFileChurnFollowingRenames,
   buildAuthorNameDirectory,
   canonicalizeAuthorNames,
+  EMPTY_TASK_ID_VOCABULARY,
   historyWindowSince,
+  learnTaskIdVocabulary,
   type AuthorNameDirectory,
+  type TaskIdVocabulary,
 } from "../history/index.js";
 
 /**
@@ -149,6 +152,10 @@ export class FileChurnDiscovery {
    *  that fills `churnPromise` — read via `authorNames()`. */
   private directory: AuthorNameDirectory = new Map();
 
+  /** The run's task-id vocabulary (bd tea-rags-mcp-8rcox), set by the same
+   *  build — read via `taskIdVocabulary()`. */
+  private vocabulary: TaskIdVocabulary = EMPTY_TASK_ID_VOCABULARY;
+
   constructor(
     adapter: VcsGitAdapter | Promise<VcsGitAdapter>,
     private readonly opts: FileChurnDiscoveryOptions,
@@ -183,13 +190,18 @@ export class FileChurnDiscovery {
     const anchorSec = await this.opts.historyAnchorSec?.();
     const { sinceDate, lowerBoundSec } = fileChurnWindowOf(this.opts.maxAgeMonths, anchorSec);
 
-    const raw = await this.resolveEntries(sinceDate);
+    const [raw, remoteUrls] = await Promise.all([this.resolveEntries(sinceDate), this.readRemoteUrls()]);
     // ONE canonical name per identity for the whole run, from every in-window
     // commit of the repository (not just files at HEAD). The persisted
     // snapshot keeps raw names; the directory is rebuilt here each run, so a
     // warm top-up can never serve a name the current history disagrees with.
     const inWindow = raw.filter((entry) => entry.committerTimestamp >= lowerBoundSec);
     this.directory = buildAuthorNameDirectory(inWindow.map((entry) => entry.commit));
+    // The run's ticket keys, learned over the same repo-wide window.
+    this.vocabulary = learnTaskIdVocabulary(
+      inWindow.map((entry) => entry.commit.body),
+      remoteUrls,
+    );
     const entries = raw.map((entry) => {
       const [commit] = canonicalizeAuthorNames([entry.commit], this.directory);
       return commit === entry.commit ? entry : { ...entry, commit };
@@ -204,6 +216,24 @@ export class FileChurnDiscovery {
   async authorNames(): Promise<AuthorNameDirectory> {
     await this.fileChurn();
     return this.directory;
+  }
+
+  /**
+   * The run's task-id vocabulary — learned with the churn aggregate (awaits
+   * it, sharing its single-flight). Every task id of the run is read under it.
+   */
+  async taskIdVocabulary(): Promise<TaskIdVocabulary> {
+    await this.fileChurn();
+    return this.vocabulary;
+  }
+
+  /** The repository's remote URLs; none on any failure — a forge is then simply not assumed. */
+  private async readRemoteUrls(): Promise<string[]> {
+    try {
+      return await (await this.adapter).readRemoteUrls(this.opts.timeoutMs);
+    } catch {
+      return [];
+    }
   }
 
   private async resolveEntries(sinceDate: Date): Promise<CommitFileNumstat[]> {

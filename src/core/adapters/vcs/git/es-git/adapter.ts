@@ -83,6 +83,10 @@ export class EsGitAdapter extends VcsGitAdapter {
     return this.cliHistory.readHeadCommitTime(timeoutMs);
   }
 
+  async readRemoteUrls(timeoutMs?: number): Promise<string[]> {
+    return this.cliHistory.readRemoteUrls(timeoutMs);
+  }
+
   async isAncestor(ancestor: string, descendant: string): Promise<boolean> {
     // CLI semantics: ANY failure (bad rev, unknown oid, not a repo state)
     // resolves false — callers treat it as "cannot top up, rebuild fully".

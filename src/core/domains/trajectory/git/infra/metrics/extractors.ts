@@ -8,7 +8,7 @@
  */
 
 import type { CommitInfo } from "../../../../../adapters/vcs/index.js";
-import { extractTaskIds, isBugFixCommitOrBranch, tallyAuthors } from "../../history/index.js";
+import { extractTaskIds, isBugFixCommitOrBranch, tallyAuthors, type TaskIdVocabulary } from "../../history/index.js";
 
 export interface AuthorshipResult {
   author: string;
@@ -151,12 +151,12 @@ export function computeBugFixRate(commits: CommitInfo[], bugFixShas?: Set<string
 }
 
 /**
- * Collect unique task IDs from all commit messages.
+ * Collect unique task IDs from all commit messages, under the run's vocabulary.
  */
-export function extractAllTaskIds(commits: CommitInfo[]): string[] {
+export function extractAllTaskIds(commits: CommitInfo[], vocabulary: TaskIdVocabulary): string[] {
   const allIds = new Set<string>();
   for (const c of commits) {
-    for (const tid of extractTaskIds(c.body)) {
+    for (const tid of extractTaskIds(c.body, vocabulary)) {
       allIds.add(tid);
     }
   }

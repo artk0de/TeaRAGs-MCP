@@ -43,10 +43,13 @@ import {
   buildAuthorNameDirectory,
   buildBugFixShaSet,
   canonicalizeAuthorNames,
+  EMPTY_TASK_ID_VOCABULARY,
   historyWindowSince,
+  learnTaskIdVocabulary,
   resolveHistoryAnchorSec,
   type AuthorNameDirectory,
   type GitHistoryAnchorMode,
+  type TaskIdVocabulary,
 } from "../history/index.js";
 import type { ChunkChurnOverlay, GitFileSignals } from "../types.js";
 import { buildChunkChurnMapUncached, type WalkCommitDiscovery } from "./chunk-reader.js";
@@ -167,7 +170,7 @@ export async function buildOnDemandGitSignals(
     reader: adapter.createBlobBatchReader(),
   };
   try {
-    const names = await persistedAuthorNames(adapter, options, head);
+    const { names, taskIdVocabulary } = await persistedRunHistory(adapter, options, head);
     const churn = canonicalizeChurnNames(
       await fileChurnOf(
         adapter,
@@ -204,6 +207,7 @@ export async function buildOnDemandGitSignals(
                 options.squashOpts,
                 buildBugFixShaSet(data.commits),
                 blameByPath.get(target.relPath),
+                taskIdVocabulary,
               ),
             }
           : {}),
@@ -219,7 +223,7 @@ export async function buildOnDemandGitSignals(
     const walked =
       chunkMap.size === 0
         ? new Map<string, Map<string, ChunkChurnOverlay>>()
-        : await walkChunks(adapter, chunkMap, options, shared, churn, blameByPath);
+        : await walkChunks(adapter, chunkMap, options, shared, churn, blameByPath, taskIdVocabulary);
     for (const overlays of [zero, walked]) {
       for (const [relPath, byChunk] of overlays) {
         const answer = result.get(relPath);
@@ -328,6 +332,7 @@ async function walkChunks(
   shared: OnDemandCallGitState,
   churn?: Map<string, FileChurnData>,
   blameByPath?: Map<string, BlameLine[]>,
+  taskIdVocabulary?: TaskIdVocabulary,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   return buildChunkChurnMapUncached(
     adapter,
@@ -352,6 +357,7 @@ async function walkChunks(
     undefined,
     undefined,
     options.historyAnchorSec,
+    taskIdVocabulary,
   );
 }
 
@@ -415,24 +421,45 @@ async function blameAtHead(
  * discovery persists; a head that moved since the snapshot only means newer
  * commits are not in the tally. No snapshot (never indexed here, no window
  * configured, unreadable store) → an empty directory: names stay per file.
+ * The task-id vocabulary is learned from the same commits, so a delta row
+ * reads ticket ids exactly as the index run did; no snapshot → the empty
+ * vocabulary.
  */
-async function persistedAuthorNames(
+async function persistedRunHistory(
   adapter: VcsGitAdapter,
   options: OnDemandGitSignalOptions,
   head: () => Promise<string>,
-): Promise<AuthorNameDirectory> {
-  if (!options.file) return new Map();
+): Promise<PersistedRunHistory> {
+  const none: PersistedRunHistory = { names: new Map(), taskIdVocabulary: EMPTY_TASK_ID_VOCABULARY };
+  if (!options.file) return none;
   try {
     const store = options.churnStore ?? new FileChurnDiscoveryStore();
     const snapshot = store.load(adapter.repoRoot, await head()) ?? store.loadLatest(adapter.repoRoot);
-    if (!snapshot) return new Map();
+    if (!snapshot) return none;
     const { lowerBoundSec } = fileChurnWindowOf(options.file.maxAgeMonths, options.historyAnchorSec);
-    return buildAuthorNameDirectory(
-      snapshot.entries.filter((entry) => entry.committerTimestamp >= lowerBoundSec).map((entry) => entry.commit),
-    );
+    const commits = snapshot.entries
+      .filter((entry) => entry.committerTimestamp >= lowerBoundSec)
+      .map((entry) => entry.commit);
+    const remoteUrls = await Promise.resolve()
+      .then(async () => adapter.readRemoteUrls(options.timeoutMs))
+      .catch((): string[] => []);
+    return {
+      names: buildAuthorNameDirectory(commits),
+      // The same window FileChurnDiscovery learns the index run's vocabulary from (bd tea-rags-mcp-8rcox).
+      taskIdVocabulary: learnTaskIdVocabulary(
+        commits.map((commit) => commit.body),
+        remoteUrls,
+      ),
+    };
   } catch {
-    return new Map();
+    return none;
   }
+}
+
+/** What an index run learned over its file window, re-derived from the persisted snapshot. */
+interface PersistedRunHistory {
+  names: AuthorNameDirectory;
+  taskIdVocabulary: TaskIdVocabulary;
 }
 
 /** The churn map with each entry's commits rewritten to the canonical names; untouched when nothing changes. */

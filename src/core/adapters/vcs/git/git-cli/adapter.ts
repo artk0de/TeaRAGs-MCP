@@ -18,7 +18,7 @@ import type {
 } from "../../types.js";
 import { VcsGitAdapter } from "../adapter.js";
 import { createCatFileBatch, createCatFileBatchCheck, readBlobAsString } from "./cat-file.js";
-import { getHead, isAncestor, readHeadCommitTime, writeCommitGraph } from "./client.js";
+import { getHead, isAncestor, readHeadCommitTime, readRemoteUrls, writeCommitGraph } from "./client.js";
 import {
   blameFile,
   buildViaCli,
@@ -42,6 +42,10 @@ export class GitCliAdapter extends VcsGitAdapter {
 
   async readHeadCommitTime(timeoutMs?: number): Promise<number> {
     return readHeadCommitTime(this.repoRoot, timeoutMs);
+  }
+
+  async readRemoteUrls(timeoutMs?: number): Promise<string[]> {
+    return readRemoteUrls(this.repoRoot, timeoutMs);
   }
 
   /**

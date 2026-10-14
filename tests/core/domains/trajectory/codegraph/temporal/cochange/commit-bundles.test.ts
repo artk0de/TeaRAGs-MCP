@@ -93,8 +93,10 @@ describe("bundleCochangeCommits", () => {
 
   it("carries the task ids the git trajectory reads from each commit's message", () => {
     const tagged = commit("a", "alice", 0, ["a.ts"]);
-    tagged.commit.body = "fix(api): TD-1234 keep the cursor (#567)";
-    const bundles = bundleCochangeCommits([tagged, commit("b", "alice", MIN, ["b.ts"])], 30);
+    tagged.commit.body = "fix(api): TD-1234 keep the SHA-256 cursor (#567)";
+    // bd tea-rags-mcp-8rcox: ids are read under the run's learned vocabulary.
+    const vocabulary = { projectKeys: new Set(["TD"]), forgeIssueRefs: true };
+    const bundles = bundleCochangeCommits([tagged, commit("b", "alice", MIN, ["b.ts"])], 30, vocabulary);
 
     expect(bundles.map((b) => b.taskIds)).toEqual([["TD-1234", "#567"], []]);
   });

@@ -264,20 +264,23 @@ describe("computeBugFixRate", () => {
 // ─── extractAllTaskIds ──────────────────────────────────────────────────────
 
 describe("extractAllTaskIds", () => {
+  // bd tea-rags-mcp-8rcox: ids are read under the run's learned vocabulary.
+  const vocabulary = { projectKeys: new Set(["TD"]), forgeIssueRefs: false };
+
   it("collects unique task IDs from all commits", () => {
     const commits = [makeCommit({ body: "feat: TD-123" }), makeCommit({ body: "fix: TD-456, TD-123" })];
-    const result = extractAllTaskIds(commits);
+    const result = extractAllTaskIds(commits, vocabulary);
     expect(result).toContain("TD-123");
     expect(result).toContain("TD-456");
     expect(result).toHaveLength(2);
   });
 
   it("returns empty array for empty commits", () => {
-    expect(extractAllTaskIds([])).toEqual([]);
+    expect(extractAllTaskIds([], vocabulary)).toEqual([]);
   });
 
   it("returns empty array for commits without task IDs", () => {
     const commits = [makeCommit({ body: "feat: add feature" }), makeCommit({ body: "chore: cleanup" })];
-    expect(extractAllTaskIds(commits)).toEqual([]);
+    expect(extractAllTaskIds(commits, vocabulary)).toEqual([]);
   });
 });

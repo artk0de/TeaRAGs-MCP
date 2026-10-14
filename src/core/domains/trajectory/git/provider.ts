@@ -41,11 +41,13 @@ import { gitFilters } from "./filters.js";
 import {
   buildBugFixShaSet,
   canonicalizeAuthorNames,
+  EMPTY_TASK_ID_VOCABULARY,
   GitCommitDiscovery,
   GitCommitDiscoveryStore,
   resolveHistoryAnchorSec,
   sliceCommitsFollowingRenames,
   type AuthorNameDirectory,
+  type TaskIdVocabulary,
 } from "./history/index.js";
 import { GitBlameStore } from "./infra/blame-store.js";
 import { relativizeChunkMap } from "./infra/build-accumulators.js";
@@ -159,6 +161,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   private readonly config: GitProviderConfig;
   /** Bug-fix SHAs resolved from merge branch prefixes. Updated per buildFileSignals() call. */
   private bugFixShas: Set<string> = new Set();
+  /** The run's task-id vocabulary as the file assembly reads it — set beside bugFixShas. */
+  private fileTaskIdVocabulary: TaskIdVocabulary = EMPTY_TASK_ID_VOCABULARY;
+  /** See getRunTaskIdVocabulary. */
+  private taskIdVocabularyMemo: {
+    readonly root: string;
+    readonly headSha: string;
+    readonly data: Promise<TaskIdVocabulary>;
+  } | null = null;
 
   /** Blame results keyed by FileChurnData identity — populated in buildFileSignals,
    *  consumed in fileSignalTransform. WeakMap auto-cleans when churnData is GC'd. */
@@ -259,8 +269,38 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     this.fileSignalTransform = (data, maxEndLine) => {
       const churnData = data as unknown as FileChurnData;
       const blameLines = this.blameByChurnData.get(churnData);
-      return assembleFileSignals(churnData, maxEndLine, this.squashOpts, this.bugFixShas, blameLines);
+      return assembleFileSignals(
+        churnData,
+        maxEndLine,
+        this.squashOpts,
+        this.bugFixShas,
+        blameLines,
+        this.fileTaskIdVocabulary,
+      );
     };
+  }
+
+  /**
+   * The run's task-id vocabulary (bd tea-rags-mcp-8rcox), learned ONCE per
+   * (root, HEAD) by the file-churn discovery over the file window and read by
+   * both the file assembly and every chunk walk. Deliberately NOT dropped by
+   * finalizeSignals: chunk walks drain after it, and the value is a handful of
+   * keys — the (root, HEAD) key is the staleness guard. A failed learn is not
+   * memoized; that run's ids are read under the empty vocabulary.
+   */
+  private async getRunTaskIdVocabulary(root: string): Promise<TaskIdVocabulary> {
+    const adapter = await this.adapterFor(root);
+    const headSha = await adapter.getHead().catch(() => "");
+    const memo = this.taskIdVocabularyMemo;
+    if (memo?.root === root && memo.headSha === headSha) return memo.data;
+    const data = this.fileChurnDiscoveryFor(root)
+      .taskIdVocabulary()
+      .catch(() => {
+        if (this.taskIdVocabularyMemo?.data === data) this.taskIdVocabularyMemo = null;
+        return EMPTY_TASK_ID_VOCABULARY;
+      });
+    this.taskIdVocabularyMemo = { root, headSha, data };
+    return data;
   }
 
   resolveRoot(absolutePath: string): string {
@@ -551,6 +591,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       }
     }
     this.bugFixShas = buildBugFixShaSet(Array.from(allCommits.values()));
+    if (rawData.size > 0) this.fileTaskIdVocabulary = await this.getRunTaskIdVocabulary(root);
 
     // Fetch git blame per file in parallel (throttled by chunkConcurrency).
     // Stored in WeakMap so fileSignalTransform can look up by churnData identity later.
@@ -879,6 +920,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       );
       const walkMap = carried.chunkMap;
       const historyAnchorSec = await this.getRunHistoryAnchor(root);
+      const taskIdVocabulary = await this.getRunTaskIdVocabulary(root);
       uncommittedOverlays = zeroOverlaysOfUncommittedRows(adapter.repoRoot, carried.uncommittedRows, {
         fileChurnDataMap: handoff.churnByPath,
         maxFileLines: this.config.chunkMaxFileLines,
@@ -892,6 +934,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
           options.commitDiscovery,
           handoff,
           historyAnchorSec,
+          taskIdVocabulary,
           options,
         );
         ({ overlays: rawResult, symbolCommits } = outcome);
@@ -923,9 +966,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
           // iqpuu: per-walk instrumentation for the [ChunkChurn] pipeline line.
           options?.onWalkStats,
           collected,
-          // Only an anchored run passes the history anchor: the wall-clock walk
-          // keeps the exact call it had before the anchor existed.
-          ...(historyAnchorSec !== undefined ? ([historyAnchorSec] as const) : ([] as const)),
+          historyAnchorSec,
+          // bd tea-rags-mcp-8rcox: the run's ONE learned vocabulary, never per batch.
+          taskIdVocabulary,
         );
         symbolCommits = collected;
       }
@@ -969,6 +1012,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     discovery: NonNullable<ChunkSignalOptions["commitDiscovery"]>,
     handoff: ChunkPhaseHandoffSlice,
     historyAnchorSec: number | undefined,
+    taskIdVocabulary: TaskIdVocabulary,
     options?: ChunkSignalOptions,
   ): Promise<ChunkChurnWalkOutcome> {
     const relativeChunkMap = relativizeChunkMap(root, chunkMap);
@@ -1009,6 +1053,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       relativeChunkMap,
       commitEntries,
       bugFixShas,
+      taskIdVocabulary,
       // The batch's file-phase handoff, snapshotted by buildChunkSignals before
       // the awaits above — reading the live maps here raced other batches.
       blameByPath: handoff.blameByPath,

@@ -7,6 +7,7 @@
 import type { BlameLine, BlobBatchReader, FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
+import type { TaskIdVocabulary } from "../history/index.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import { assembleOverlays } from "./assemble-overlays.js";
 import { buildAccumulators } from "./build-accumulators.js";
@@ -66,6 +67,8 @@ export async function buildChunkChurnMap(
   symbolCommitsOut?: Map<string, Map<string, Set<string>>>,
   /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
   historyAnchorSec?: number,
+  /** The run's task-id vocabulary (bd tea-rags-mcp-8rcox); absent ⇒ no ticket key is accepted. */
+  taskIdVocabulary?: TaskIdVocabulary,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   if (!skipCache) {
     const cached = await enrichmentCache.getChunkChurn(adapter);
@@ -90,6 +93,7 @@ export async function buildChunkChurnMap(
     onWalkStats,
     symbolCommitsOut,
     historyAnchorSec,
+    taskIdVocabulary,
   );
 
   if (!skipCache) {
@@ -119,6 +123,8 @@ export async function buildChunkChurnMapUncached(
   symbolCommitsOut?: Map<string, Map<string, Set<string>>>,
   /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
   historyAnchorSec?: number,
+  /** The run's task-id vocabulary (bd tea-rags-mcp-8rcox); absent ⇒ no ticket key is accepted. */
+  taskIdVocabulary?: TaskIdVocabulary,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Phase 1: initialize per-chunk accumulator state
   // Files past maxFileLines are dropped here — no accumulator, so no overlay.
@@ -155,6 +161,7 @@ export async function buildChunkChurnMapUncached(
     diffMemo,
     commitDiscovery,
     historyAnchorSec,
+    ...(taskIdVocabulary ? { taskIdVocabulary } : {}),
   });
 
   // Phase 3: assemble per-file overlay maps
