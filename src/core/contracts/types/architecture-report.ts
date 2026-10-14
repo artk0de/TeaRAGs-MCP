@@ -730,8 +730,10 @@ export interface LayeringReportSummary {
   abstractionBypassCount: number;
   compositionCycleCount: number;
   islandCount: number;
-  /** Every finding, violations and informational alike. */
+  /** Violation findings only: knots, back-edges and abstraction bypasses. */
   violationCount: number;
+  /** Informational findings: composition cycles and detached islands (bd tea-rags-mcp-wzq9i). */
+  informationalCount: number;
   /**
    * Findings no file matching `pathPattern` carries; present only when scoped.
    * Levels, coverage and coherence stay whole-graph under a scope.

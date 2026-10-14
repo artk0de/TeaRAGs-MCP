@@ -336,6 +336,7 @@ describe("ArchitectureReportOps#build", () => {
       backEdgeCount: 1,
       islandCount: 0,
       violationCount: 2,
+      informationalCount: 0,
       outOfScopeFindingCount: 2,
     });
     expect(whole.summary.layering.outOfScopeFindingCount).toBeUndefined();

@@ -34,6 +34,7 @@ export function summariseLayering(report: LayeringReport): LayeringReportSummary
     compositionCycleCount: summary.compositionCycleCount,
     islandCount: summary.islandCount,
     violationCount: summary.violationCount,
+    informationalCount: summary.informationalCount,
     ...(summary.scope ? { outOfScopeFindingCount: summary.scope.outOfScopeFindingCount } : {}),
     ...(summary.foundation ? { foundation: summary.foundation } : {}),
   };

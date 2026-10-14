@@ -286,6 +286,7 @@ describe("detectLayeringViolations", () => {
         compositionCycleCount: 0,
         islandCount: 0,
         violationCount: 0,
+        informationalCount: 0,
       },
     });
   });
@@ -403,7 +404,9 @@ describe("detectLayeringViolations", () => {
       coverage: 0,
       knotCount: 0,
       compositionCycleCount: 1,
-      violationCount: 1,
+      // Informational, never a violation (bd tea-rags-mcp-wzq9i).
+      violationCount: 0,
+      informationalCount: 1,
     });
   });
 
@@ -429,7 +432,9 @@ describe("detectLayeringViolations", () => {
       coherence: 6 / Math.sqrt(9.5 * 9),
       knotCount: 0,
       islandCount: 1,
-      violationCount: 1,
+      // Informational, never a violation (bd tea-rags-mcp-wzq9i).
+      violationCount: 0,
+      informationalCount: 1,
     });
   });
 
@@ -483,6 +488,7 @@ describe("detectLayeringViolations", () => {
         compositionCycleCount: 0,
         islandCount: 0,
         violationCount: 0,
+        informationalCount: 0,
       },
     });
   });
@@ -517,6 +523,7 @@ describe("detectLayeringViolations", () => {
         compositionCycleCount: 0,
         islandCount: 0,
         violationCount: 0,
+        informationalCount: 0,
       },
     });
   });
