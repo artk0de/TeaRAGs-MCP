@@ -310,6 +310,7 @@ describe("DiffFindingRemedyResolver", () => {
         component === "lib" ? { afferentCount: 7, efferentCount: 11, connectionCount: 18 } : quiet,
       isFoundation: () => false,
       isContainment: () => false,
+      isInheritance: () => false,
       isHub: (fan) => fan.afferentCount >= 8 && fan.efferentCount >= 11,
     };
     const deps: DiffDetectorRunDeps = {

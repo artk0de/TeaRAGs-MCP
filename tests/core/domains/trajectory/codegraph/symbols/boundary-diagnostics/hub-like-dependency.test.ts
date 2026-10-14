@@ -140,6 +140,34 @@ describe("detectHubLikeDependencies", () => {
     expect(hub).toMatchObject({ component: "hub", afferentCount: 40, efferentCount: 40 });
   });
 
+  // bd tea-rags-mcp-r8hme.52.18 (owner decision, mirror of g77p3): a file
+  // whose every non-foundation edge lands on a file declaring one of its
+  // supertypes inherits, it does not couple — on taxdome a Rails controller
+  // namespace read Ce 23 from subclassing `::TaxPreparation::Base`,
+  // `::GettingPaid::Base` and `::Base` alone. The unit stays files.
+  it("does not count a file whose every dependency lands on its supertypes' files toward the hub's Ce", () => {
+    const g = graph();
+    const heritage = (relPath: string) => ({
+      ...file(relPath),
+      typeHeritage: [{ typeName: "H", supertypes: [{ name: "Base", declaringRelPaths: ["sink1/s.ts"] }] }],
+    });
+    // h11..h40 reach sink1 alone, which declares their supertype; h1..h10
+    // subclass the same base but also reach sink2..sink8.
+    g.files = g.files.map((f) => (f.relPath.startsWith("hub/") ? heritage(f.relPath) : f));
+    const components = buildComponentGraph(g, []);
+
+    const report = detectHubLikeDependencies(components, { typeHeritageFiles: g.files });
+    // Ce 10, Ca 40 → 30/50 = 0.6, lopsided.
+    expect(report.violations).toEqual([]);
+    expect(report.summary.excluded.imbalanced).toBe(1);
+    const reading = readHubLikeDependency(components, { typeHeritageFiles: g.files });
+    expect(reading.fanCountsOf("hub")).toMatchObject({ afferentCount: 40, efferentCount: 10 });
+    expect(reading.isInheritance("hub/h11.ts", "sink1/s.ts")).toBe(true);
+    expect(reading.isInheritance("hub/h11.ts", "sink2/s.ts")).toBe(false);
+    // Without the heritage the same graph reads a hub.
+    expect(detectHubLikeDependencies(components).violations.map((v) => v.component)).toEqual(["hub"]);
+  });
+
   // bd tea-rags-mcp-g77p3 (owner decision): the efferent cut is drawn over
   // the components that depend on something — a Ce 0 leaf can never be a hub,
   // and a mass of them must not drag the median down.

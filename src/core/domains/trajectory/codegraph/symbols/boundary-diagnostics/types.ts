@@ -16,7 +16,12 @@ import type {
   MainSequenceVolatilityCut,
   MainSequenceZone,
 } from "../../../../../contracts/types/architecture-report.js";
-import type { FileDependencyEdge, HierarchySnapshot, RelPath } from "../../../../../contracts/types/codegraph.js";
+import type {
+  FileDependencyEdge,
+  FileDependencyGraphFile,
+  HierarchySnapshot,
+  RelPath,
+} from "../../../../../contracts/types/codegraph.js";
 
 /**
  * Where a dependency's target sits relative to its source, by directory — the
@@ -778,6 +783,13 @@ export interface HubLikeDependencyOptions {
    * outside it. Absent, every dependency counts.
    */
   foundationComponents?: ReadonlySet<string>;
+  /**
+   * The walked files, read for their `typeHeritage` (bd
+   * tea-rags-mcp-r8hme.52.18). A file whose every edge outside the foundation
+   * lands on a file declaring one of its supertypes inherits rather than
+   * couples, and leaves Ce. Absent, no edge reads as inheritance.
+   */
+  typeHeritageFiles?: readonly Pick<FileDependencyGraphFile, "relPath" | "typeHeritage">[];
 }
 
 /** A dependent or dependency of a hub — the report's `HubLikeDependencyNeighbourEvidence` under its domain name. */

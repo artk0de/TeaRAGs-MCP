@@ -2418,6 +2418,20 @@ describe("ArchitectureReportOps#build — hubLikeDependency (bd tea-rags-mcp-r8h
     expect(report.summary.hubLikeDependency.excluded.imbalanced).toBe(1);
   });
 
+  // bd tea-rags-mcp-r8hme.52.18: the report hands the walked files' typeHeritage
+  // to the hub detector. h11..h40 subclass a type sink1/s.ts declares and reach
+  // nothing else, so they inherit rather than couple — Ca 40, Ce 10, lopsided.
+  it("does not count a file whose every edge lands on its supertype's file toward a hub's Ce", async () => {
+    const g = hubGraph();
+    const typeHeritage = [{ typeName: "H", supertypes: [{ name: "Base", declaringRelPaths: ["sink1/s.ts"] }] }];
+    const files = g.files.map((f) => (/^hub\/h(1[1-9]|[2-4]\d)\.ts$/.test(f.relPath) ? { ...f, typeHeritage } : f));
+
+    const report = await new ArchitectureReportOps().build(graphDb({ files, edges: g.edges }), {});
+
+    expect(report.violations.filter((v) => v.detector === "hubLikeDependency")).toEqual([]);
+    expect(report.summary.hubLikeDependency.excluded.imbalanced).toBe(1);
+  });
+
   it("attaches the hub's churn from git.file.commitCount", async () => {
     const read = vi.fn(
       async () => new Map(hubGraph().files.map((f) => [f.relPath, f.relPath.startsWith("hub/") ? 7 : 1])),

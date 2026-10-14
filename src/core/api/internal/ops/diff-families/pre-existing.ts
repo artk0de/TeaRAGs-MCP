@@ -92,14 +92,19 @@ export function componentPairHeldBeforeChange(
  * component never counts. `excludesTargetComponent` drops target components
  * the reading does not count — the hub reading's measured foundation (bd
  * tea-rags-mcp-g77p3); main-sequence counts every component, as Martin's I
- * does (bd tea-rags-mcp-zuwvv).
+ * does (bd tea-rags-mcp-zuwvv). `excludesTargetFile` drops single target
+ * files the same way — the hub reading's inheritance edges (bd
+ * tea-rags-mcp-r8hme.52.18).
  */
 export function wasEfferentBeforeChange(
   relPath: string,
   sourceComponent: string,
   targetsBefore: (relPath: string) => ReadonlySet<string> | undefined,
   componentOf: (relPath: string) => string | undefined,
-  options: { excludesTargetComponent?: (component: string) => boolean } = {},
+  options: {
+    excludesTargetComponent?: (component: string) => boolean;
+    excludesTargetFile?: (targetRelPath: string) => boolean;
+  } = {},
 ): boolean {
   const targets = targetsBefore(relPath);
   if (targets === undefined) return false;
@@ -107,6 +112,7 @@ export function wasEfferentBeforeChange(
     const targetComponent = componentOf(target);
     if (targetComponent === undefined || targetComponent === sourceComponent) continue;
     if (options.excludesTargetComponent?.(targetComponent) === true) continue;
+    if (options.excludesTargetFile?.(target) === true) continue;
     return true;
   }
   return false;

@@ -880,9 +880,11 @@ function implementationEvidence(
  * Per file, the files declaring the supertypes its own types name. A consumer
  * file that subclasses an implementer inherits its implementation, which no
  * abstraction can substitute for — so that implementer is no bypass witness
- * from that file.
+ * from that file. The hub-like Ce reads the same map (bd tea-rags-mcp-r8hme.52.18).
  */
-function subclassedFiles(files: readonly FileDependencyGraphFile[]): Map<string, Set<string>> {
+export function subclassedFiles(
+  files: readonly Pick<FileDependencyGraphFile, "relPath" | "typeHeritage">[],
+): Map<string, Set<string>> {
   const subclassed = new Map<string, Set<string>>();
   for (const f of files) {
     if (!f.typeHeritage) continue;

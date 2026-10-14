@@ -1,7 +1,8 @@
-import type { RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../primitives/graph/index.js";
 import { compilePathPatternMatcher } from "../../../../../primitives/paths/index.js";
 import { classifyComponentRelation } from "./constant-namespace.js";
+import { subclassedFiles } from "./layering.js";
 import { MAIN_SEQUENCE_OTSU_MIN_POPULATION } from "./main-sequence.js";
 import { DEFAULT_SDP_MIN_CONNECTION_COUNT } from "./stable-dependencies.js";
 import type {
@@ -58,6 +59,9 @@ export const HUB_LIKE_DEPENDENCY_OTSU_MIN_POPULATION = MAIN_SEQUENCE_OTSU_MIN_PO
  * Ce counts only dependencies outside `foundationComponents` (bd
  * tea-rags-mcp-g77p3): an edge into the pure-types foundation is no efferent
  * coupling, and counting it made every busy contracts consumer read balanced.
+ * Nor does a file whose every such edge lands on a file declaring one of its
+ * supertypes (`typeHeritageFiles`, bd tea-rags-mcp-r8hme.52.18): it inherits,
+ * it does not couple — the unit stays files.
  * Neither axis counts a containment dependency — parent into nested or nested
  * into parent (bd tea-rags-mcp-j5gti): a component only its own child uses,
  * or that only uses its own parent, is composition, not a hub. The connection
@@ -172,6 +176,8 @@ export interface HubLikeDependencyReading {
   isFoundation: (component: string) => boolean;
   /** Whether a dependency between the two is containment (one nested in the other), left out of both axes. */
   isContainment: (sourceComponent: string, targetComponent: string) => boolean;
+  /** Whether a file edge is inheritance — the target declares a supertype of a type the source declares — left out of the hub's Ce. */
+  isInheritance: (sourceRelPath: RelPath, targetRelPath: RelPath) => boolean;
   /** The detector's verdict on a component at these counts: connection floor, both cuts, balance. */
   isHub: (fan: HubLikeDependencyFanCounts) => boolean;
 }
@@ -179,7 +185,7 @@ export interface HubLikeDependencyReading {
 /** The view over `componentGraph`, with the cuts `detectHubLikeDependencies` draws under the same options. */
 export function readHubLikeDependency(
   componentGraph: ComponentGraph,
-  options: Pick<HubLikeDependencyOptions, "minConnectionCount" | "foundationComponents"> = {},
+  options: Pick<HubLikeDependencyOptions, "minConnectionCount" | "foundationComponents" | "typeHeritageFiles"> = {},
 ): HubLikeDependencyReading {
   const cuts = resolveHubLikeDependencyCuts(componentGraph, options);
   const foundation = options.foundationComponents ?? new Set<string>();
@@ -195,6 +201,7 @@ export function readHubLikeDependency(
     isFoundation: (componentDir) => foundation.has(componentDir),
     isContainment: (sourceComponent, targetComponent) =>
       isContainmentRelation(classifyComponentRelation(sourceComponent, targetComponent)),
+    isInheritance: cuts.isInheritance,
     isHub: (fan) => classifyHubLikeFan(fan, cuts) === "hub",
   };
 }
@@ -205,13 +212,14 @@ interface HubLikeDependencyCuts {
   judged: readonly ArchitectureComponent[];
   lowConnectionCount: number;
   fanCountsOf: (component: ArchitectureComponent) => HubLikeDependencyFanCounts;
+  isInheritance: (sourceRelPath: RelPath, targetRelPath: RelPath) => boolean;
   afferent: AxisCut;
   efferent: AxisCut;
 }
 
 function resolveHubLikeDependencyCuts(
   componentGraph: ComponentGraph,
-  options: Pick<HubLikeDependencyOptions, "minConnectionCount" | "foundationComponents">,
+  options: Pick<HubLikeDependencyOptions, "minConnectionCount" | "foundationComponents" | "typeHeritageFiles">,
 ): HubLikeDependencyCuts {
   const minConnectionCount = options.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
   const judged: ArchitectureComponent[] = [];
@@ -227,13 +235,15 @@ function resolveHubLikeDependencyCuts(
   // count on its axis only: a Ce 0 leaf or a Ca 0 entry is never a hub, and a
   // mass of them would drag the median down to where every busy component
   // clears it (efferent g77p3, afferent bd tea-rags-mcp-nxikh).
-  const fanCountsOf = hubFanCounts(componentGraph, options.foundationComponents);
+  const isInheritance = inheritanceEdgeOf(options.typeHeritageFiles);
+  const fanCountsOf = hubFanCounts(componentGraph, options.foundationComponents, isInheritance);
   const judgedFans = judged.map(fanCountsOf);
   return {
     minConnectionCount,
     judged,
     lowConnectionCount,
     fanCountsOf,
+    isInheritance,
     afferent: resolveAxisCut(judgedFans.map((fan) => fan.afferentCount).filter((count) => count > 0)),
     efferent: resolveAxisCut(judgedFans.map((fan) => fan.efferentCount).filter((count) => count > 0)),
   };
@@ -261,31 +271,46 @@ function couplingImbalance(afferentCount: number, efferentCount: number): number
  * The hub's counts per component — the component graph's own Ca and Ce
  * (distinct source files) over the dependencies that are not containment (bd
  * tea-rags-mcp-j5gti), Ce also without those into `foundationComponents` (bd
- * tea-rags-mcp-g77p3). A file reaching an excluded component AND anything else
- * still counts once.
+ * tea-rags-mcp-g77p3) and without the inheritance edges (bd
+ * tea-rags-mcp-r8hme.52.18). A file reaching an excluded component or a
+ * supertype's file AND anything else still counts once.
  */
 function hubFanCounts(
   componentGraph: ComponentGraph,
   foundationComponents: ReadonlySet<string> | undefined,
+  isInheritance: (sourceRelPath: RelPath, targetRelPath: RelPath) => boolean,
 ): (component: ArchitectureComponent) => HubLikeDependencyFanCounts {
   const afferentFiles = new Map<string, Set<RelPath>>();
   const efferentFiles = new Map<string, Set<RelPath>>();
-  const addSourceFiles = (into: Map<string, Set<RelPath>>, component: string, dependency: ComponentDependency) => {
+  const addSourceFiles = (into: Map<string, Set<RelPath>>, component: string, edges: readonly FileDependencyEdge[]) => {
     const files = into.get(component) ?? new Set<RelPath>();
-    for (const edge of dependency.fileEdges) files.add(edge.sourceRelPath);
+    for (const edge of edges) files.add(edge.sourceRelPath);
     into.set(component, files);
   };
   for (const dependency of componentGraph.dependencies) {
     if (isContainmentRelation(dependency.directoryRelation)) continue;
-    addSourceFiles(afferentFiles, dependency.targetComponent, dependency);
+    addSourceFiles(afferentFiles, dependency.targetComponent, dependency.fileEdges);
     if (foundationComponents?.has(dependency.targetComponent)) continue;
-    addSourceFiles(efferentFiles, dependency.sourceComponent, dependency);
+    const coupling = dependency.fileEdges.filter((edge) => !isInheritance(edge.sourceRelPath, edge.targetRelPath));
+    addSourceFiles(efferentFiles, dependency.sourceComponent, coupling);
   }
   return (component) => ({
     afferentCount: afferentFiles.get(component.componentDir)?.size ?? 0,
     efferentCount: efferentFiles.get(component.componentDir)?.size ?? 0,
     connectionCount: component.connectionCount,
   });
+}
+
+/**
+ * Whether a file edge lands on a file declaring a DIRECT supertype of a type
+ * the source declares — the map `abstractionBypass` reads (bd
+ * tea-rags-mcp-r8hme.52.6). No files given, no edge is inheritance.
+ */
+function inheritanceEdgeOf(
+  typeHeritageFiles: HubLikeDependencyOptions["typeHeritageFiles"],
+): (sourceRelPath: RelPath, targetRelPath: RelPath) => boolean {
+  const supertypeFilesOf = subclassedFiles(typeHeritageFiles ?? []);
+  return (sourceRelPath, targetRelPath) => supertypeFilesOf.get(sourceRelPath)?.has(targetRelPath) === true;
 }
 
 /** A parent↔nested dependency, either direction. */
