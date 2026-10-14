@@ -18,7 +18,7 @@ import { detectorStatus, format3, round3, withRenderedSubject } from "./shared.j
  */
 export const stableDependenciesDetector: DiffFamilyDetector = {
   family: "stableDependencies",
-  judge: ({ scope, addedEdges, catalog, baseEdges, graph }) => {
+  judge: ({ scope, addedDependencyEdges, catalog, baseEdges, graph }) => {
     const componentNameOf = (relPath: string): string | undefined => catalog.componentOf(relPath)?.name;
     const changedFilesOf = (component: string): readonly string[] =>
       scope.changedFiles.filter((relPath) => componentNameOf(relPath) === component);
@@ -29,7 +29,7 @@ export const stableDependenciesDetector: DiffFamilyDetector = {
       graph,
     };
     const findings: DiffDetectorFinding[] = [];
-    for (const edge of addedEdges) {
+    for (const edge of addedDependencyEdges) {
       const sourceComponent = catalog.componentOf(edge.source);
       const targetComponent = catalog.componentOf(edge.target);
       if (sourceComponent === undefined || targetComponent === undefined) continue;

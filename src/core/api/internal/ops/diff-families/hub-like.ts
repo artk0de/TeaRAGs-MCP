@@ -42,7 +42,7 @@ interface HubLikeComponentMove {
  */
 export const hubLikeDetector: DiffFamilyDetector = {
   family: "hubLike",
-  judge: ({ hubLike, addedEdges, catalog, baseEdges, graph }) => {
+  judge: ({ hubLike, addedDependencyEdges, catalog, baseEdges, graph }) => {
     if (hubLike === undefined) {
       return {
         findings: [],
@@ -55,7 +55,7 @@ export const hubLikeDetector: DiffFamilyDetector = {
       };
     }
     const findings = judgeHubLike({
-      addedEdges,
+      addedEdges: addedDependencyEdges,
       componentOf: (relPath) => catalog.componentOf(relPath)?.name,
       hubLike,
       targetsBeforeChange: (relPath) => targetsBeforeChange(relPath, baseEdges, graph),

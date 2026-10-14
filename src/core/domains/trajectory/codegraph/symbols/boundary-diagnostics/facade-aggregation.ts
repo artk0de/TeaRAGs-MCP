@@ -9,6 +9,17 @@ import { MODULE_ENTRY_FILE_NAMES } from "../../component-geometry/index.js";
 export const FACADE_AGGREGATION_REASON =
   "facade aggregation: a module facade re-exporting a descendant module's facade";
 
+/**
+ * What the facade-aggregation rule reads off one file edge: its endpoints and
+ * the export names its statements recorded. A persisted graph edge and a
+ * review tree read both carry them, so the whole-repo graph and the diff run
+ * judge the shape through this one predicate (bd tea-rags-mcp-e1bf2).
+ */
+export type FacadeAggregationEdgeFacts = Pick<
+  FileDependencyEdge,
+  "sourceRelPath" | "targetRelPath" | "importedExportNames" | "reexportedExportNames" | "reexportedExportBindings"
+>;
+
 const ENTRY_FILE_NAMES: ReadonlySet<string> = new Set(Object.values(MODULE_ENTRY_FILE_NAMES).flat());
 
 /** Entry files whose imports ARE the package's exports — Python has no re-export syntax. */
@@ -27,7 +38,7 @@ const IMPORTS_ARE_EXPORTS_ENTRY_NAMES: ReadonlySet<string> = new Set(MODULE_ENTR
  * IMPORTS from the child (for code of its own) is a dependency and stays
  * judged; so is an edge with no recorded names, which cannot show a re-export.
  */
-export function isFacadeAggregationEdge(edge: FileDependencyEdge): boolean {
+export function isFacadeAggregationEdge(edge: FacadeAggregationEdgeFacts): boolean {
   const sourceName = baseName(edge.sourceRelPath);
   if (!ENTRY_FILE_NAMES.has(sourceName) || !ENTRY_FILE_NAMES.has(baseName(edge.targetRelPath))) return false;
   const sourceDir = directoryOf(edge.sourceRelPath);
@@ -41,7 +52,7 @@ export function isFacadeAggregationEdge(edge: FileDependencyEdge): boolean {
  * re-export (`export … from`), or it leaves a Python `__init__.py`, where the
  * imports are the exports. An edge with no recorded names cannot show one.
  */
-export function carriesReexport(edge: FileDependencyEdge): boolean {
+export function carriesReexport(edge: FacadeAggregationEdgeFacts): boolean {
   return forwardedExportNames(edge).length > 0;
 }
 
@@ -52,7 +63,7 @@ export function carriesReexport(edge: FileDependencyEdge): boolean {
  * `reexportSourceName` gives back — or a Python `__init__.py`'s imported
  * names. Empty when the edge forwards nothing it recorded.
  */
-export function forwardedExportNames(edge: FileDependencyEdge): readonly string[] {
+export function forwardedExportNames(edge: FacadeAggregationEdgeFacts): readonly string[] {
   const exposed = exposedReexportNames(edge) ?? [];
   if (exposed.length > 0) return exposed;
   return IMPORTS_ARE_EXPORTS_ENTRY_NAMES.has(baseName(edge.sourceRelPath)) ? (edge.importedExportNames ?? []) : [];
