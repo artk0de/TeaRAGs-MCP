@@ -10,8 +10,9 @@
  * the wrong thing.
  */
 
+import { createIdentifierRecord } from "../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../contracts/types/ast.js";
-import { WHOLE_MODULE_EXPORT_NAME } from "../../../contracts/types/codegraph-extraction.js";
+import { WHOLE_MODULE_EXPORT_NAME, type ImportRef } from "../../../contracts/types/codegraph-extraction.js";
 
 /** Name of the default export. */
 export const DEFAULT_EXPORT_NAME = "default";
@@ -44,23 +45,84 @@ export function esmImportExportNames(importStatement: AstNode): string[] {
 }
 
 /**
- * `export { a, b as c } from "./x"` → `["a", "b"]`; `export * from "./x"` and
- * `export * as ns from "./x"` → `["*"]`. Only meaningful on an export
- * statement that HAS a source.
+ * One name an `export` statement exposes (bd tea-rags-mcp-zl3so): `exposed` is
+ * what an importer of THIS file writes, `forwarded` the name it stands for —
+ * the target's export for a source re-export, the local binding for an
+ * `export { … }` without a source.
  */
-export function esmReexportExportNames(exportStatement: AstNode): string[] {
-  const names: string[] = [];
+export interface EsmExportedName {
+  exposed: string;
+  forwarded: string;
+}
+
+/**
+ * `export { a, b as c } from "./x"` → `a→a, c→b`; `export * from "./x"` →
+ * `*→*`; `export * as ns from "./x"` → `ns→*`. Without a source the clause
+ * names local bindings: `export { local as b }` → `b→local`.
+ */
+export function esmExportedNames(exportStatement: AstNode): EsmExportedName[] {
+  const names: EsmExportedName[] = [];
   for (const child of exportStatement.children) {
-    if (child.type === "*" || child.type === "namespace_export") names.push(WHOLE_MODULE_EXPORT_NAME);
-    else if (child.type === "export_clause") {
+    if (child.type === "*") names.push({ exposed: WHOLE_MODULE_EXPORT_NAME, forwarded: WHOLE_MODULE_EXPORT_NAME });
+    else if (child.type === "namespace_export") {
+      const exposed = specifierName(child.namedChildren[0] ?? null) ?? WHOLE_MODULE_EXPORT_NAME;
+      names.push({ exposed, forwarded: WHOLE_MODULE_EXPORT_NAME });
+    } else if (child.type === "export_clause") {
       for (const spec of child.children) {
         if (spec.type !== "export_specifier") continue;
-        const name = specifierName(spec.childForFieldName("name"));
-        if (name) names.push(name);
+        const forwarded = specifierName(spec.childForFieldName("name"));
+        if (!forwarded) continue;
+        names.push({ exposed: specifierName(spec.childForFieldName("alias")) ?? forwarded, forwarded });
       }
     }
   }
-  return names.includes(WHOLE_MODULE_EXPORT_NAME) ? [WHOLE_MODULE_EXPORT_NAME] : names;
+  return names;
+}
+
+/**
+ * The local bindings an import statement introduces, each with the target
+ * name it stands for: `import D, { a as b } from` → `D→default, b→a`;
+ * `import * as ns from` → `ns→*`. The local-side twin of
+ * {@link esmImportExportNames}.
+ */
+export function esmImportLocalBindings(importStatement: AstNode): { local: string; target: string }[] {
+  const clause = importStatement.children.find((c) => c.type === "import_clause");
+  if (!clause) return [];
+  const bindings: { local: string; target: string }[] = [];
+  for (const child of clause.children) {
+    if (child.type === "identifier") bindings.push({ local: child.text, target: DEFAULT_EXPORT_NAME });
+    else if (child.type === "namespace_import") {
+      const local = child.namedChildren.find((c) => c.type === "identifier");
+      if (local) bindings.push({ local: local.text, target: WHOLE_MODULE_EXPORT_NAME });
+    } else if (child.type === "named_imports") {
+      for (const spec of child.children) {
+        if (spec.type !== "import_specifier") continue;
+        const target = specifierName(spec.childForFieldName("name"));
+        if (!target) continue;
+        bindings.push({ local: specifierName(spec.childForFieldName("alias")) ?? target, target });
+      }
+    }
+  }
+  return bindings;
+}
+
+/**
+ * Spread-ready re-export facts of one reference (bd tea-rags-mcp-zl3so):
+ * `reexportedExportNames` = the distinct target names forwarded (`*` alone
+ * when the whole module is), plus `reexportedExportBindings` — the complete
+ * exposed→target table — only when some name is exposed under another
+ * spelling. Nothing when `names` is empty.
+ */
+export function reexportNamesFields(
+  names: readonly EsmExportedName[],
+): Pick<ImportRef, "reexportedExportNames" | "reexportedExportBindings"> {
+  if (names.length === 0) return {};
+  const forwarded = [...new Set(names.map((n) => n.forwarded))];
+  const reexportedExportNames = forwarded.includes(WHOLE_MODULE_EXPORT_NAME) ? [WHOLE_MODULE_EXPORT_NAME] : forwarded;
+  if (names.every((n) => n.exposed === n.forwarded)) return { reexportedExportNames };
+  const bindings = createIdentifierRecord<string>();
+  for (const { exposed, forwarded: target } of names) bindings[exposed] = target;
+  return { reexportedExportNames, reexportedExportBindings: bindings };
 }
 
 /**

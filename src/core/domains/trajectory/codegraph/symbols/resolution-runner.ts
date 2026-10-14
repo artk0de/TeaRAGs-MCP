@@ -14,6 +14,7 @@
  * `trajectory/** -> domains/language/**`).
  */
 
+import { reexportBindingsField, unionReexportBindings } from "../../../../contracts/reexport-bindings.js";
 import {
   chunkCallerScope,
   type CallContext,
@@ -247,6 +248,7 @@ function defaultImportFileEdges(
         importText: imp.importText,
         ...(imp.importedExportNames ? { importedExportNames: imp.importedExportNames } : {}),
         ...(imp.reexportedExportNames ? { reexportedExportNames: imp.reexportedExportNames } : {}),
+        ...reexportBindingsField(imp.reexportedExportBindings),
       });
     }
   }
@@ -284,8 +286,11 @@ function dedupeFileEdgesByTarget(edges: GraphEdges["fileEdges"]): GraphEdges["fi
 function unionExportNamesInto(into: GraphEdges["fileEdges"][number], other: GraphEdges["fileEdges"][number]): void {
   const imported = unionExportNames(into.importedExportNames, other.importedExportNames);
   const reexported = unionExportNames(into.reexportedExportNames, other.reexportedExportNames);
+  // Before the name union: both sides' tables are read as they were recorded.
+  const bindings = unionReexportBindings(into, other);
   if (imported) into.importedExportNames = imported;
   if (reexported) into.reexportedExportNames = reexported;
+  if (bindings) into.reexportedExportBindings = bindings;
 }
 
 export class CallEdgeResolutionRunner {

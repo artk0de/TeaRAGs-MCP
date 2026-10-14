@@ -25,7 +25,7 @@ function edge(
   sourceRelPath: string,
   targetRelPath: string,
   callWeight = 1,
-  exportNames?: { importedExportNames?: string[]; reexportedExportNames?: string[] },
+  exportNames?: Pick<FileDependencyEdge, "importedExportNames" | "reexportedExportNames" | "reexportedExportBindings">,
 ): FileDependencyEdge {
   return { sourceRelPath, targetRelPath, callWeight, ...exportNames };
 }
@@ -582,6 +582,56 @@ describe("detectComponentStableDependencyViolations — re-export shim component
 
       expect(targetsOf(report).sort()).toEqual(["x", "y"]);
       expect(report.summary.reexportShimNameUnknownEdges).toBe(1);
+    });
+
+    // bd tea-rags-mcp-zl3so: the alias is recorded — the importer's name matches the EXPOSED name.
+    it("links an importer taking an alias to the target the alias forwards from", () => {
+      const report = judge(
+        merge(
+          {
+            files: [file("core/c.ts"), shimFile("shim/index.ts"), file("vendor/v.ts")],
+            edges: [
+              edge("core/c.ts", "shim/index.ts", 1, { importedExportNames: ["aAlias"] }),
+              edge("shim/index.ts", "x/index.ts", 0, {
+                reexportedExportNames: ["a"],
+                reexportedExportBindings: { aAlias: "a" },
+              }),
+              reexport("shim/index.ts", "y/index.ts", ["b"]),
+            ],
+          },
+          files("app", 6, (p) => edge(p, "core/c.ts")),
+          volatileDomain("x", 5),
+          volatileDomain("y", 5),
+        ),
+      );
+
+      expect(targetsOf(report)).toEqual(["x"]);
+      expect(report.summary.reexportShimNameUnknownEdges).toBe(0);
+    });
+
+    it("continues the chain past an alias with the SOURCE name, to the declarer behind the next shim", () => {
+      const report = judge(
+        merge(
+          {
+            files: [file("core/c.ts"), shimFile("shim/index.ts"), shimFile("inner/index.ts"), file("vendor/v.ts")],
+            edges: [
+              edge("core/c.ts", "shim/index.ts", 1, { importedExportNames: ["b"] }),
+              edge("shim/index.ts", "inner/index.ts", 0, {
+                reexportedExportNames: ["a"],
+                reexportedExportBindings: { b: "a" },
+              }),
+              reexport("inner/index.ts", "x/index.ts", ["a"]),
+              reexport("inner/index.ts", "y/index.ts", ["b"]),
+            ],
+          },
+          files("app", 6, (p) => edge(p, "core/c.ts")),
+          volatileDomain("x", 5),
+          volatileDomain("y", 5),
+        ),
+      );
+
+      expect(targetsOf(report)).toEqual(["x"]);
+      expect(report.summary.reexportShimNameUnknownEdges).toBe(0);
     });
   });
 });

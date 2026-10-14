@@ -63,6 +63,8 @@ export interface ArchitectureFileEdge {
   importedExportNames?: string[];
   /** Export names the source re-exports from the target — a re-export edge is call-free by construction, not type-only. */
   reexportedExportNames?: string[];
+  /** Exposed → forwarded name table when the re-export renames (bd tea-rags-mcp-zl3so); read via `exposedReexportNames`. */
+  reexportedExportBindings?: Record<string, string>;
 }
 
 /**

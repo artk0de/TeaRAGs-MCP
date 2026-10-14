@@ -1,3 +1,4 @@
+import { exposedReexportNames } from "../../../../../contracts/reexport-bindings.js";
 import type { FileDependencyEdge } from "../../../../../contracts/types/codegraph.js";
 import { MODULE_ENTRY_FILE_NAMES } from "../../component-geometry/index.js";
 
@@ -45,12 +46,15 @@ export function carriesReexport(edge: FileDependencyEdge): boolean {
 }
 
 /**
- * The names the edge forwards, in the TARGET's spelling (`*` for a
- * whole-module re-export): its re-export names, or a Python `__init__.py`'s
- * imported names. Empty when the edge forwards nothing it recorded.
+ * The names the edge forwards, in the spelling an importer of the SOURCE
+ * writes (`*` for a whole-module re-export): its exposed re-export names —
+ * the alias of `export { a as b }` (bd tea-rags-mcp-zl3so), whose target name
+ * `reexportSourceName` gives back — or a Python `__init__.py`'s imported
+ * names. Empty when the edge forwards nothing it recorded.
  */
 export function forwardedExportNames(edge: FileDependencyEdge): readonly string[] {
-  if ((edge.reexportedExportNames?.length ?? 0) > 0) return edge.reexportedExportNames ?? [];
+  const exposed = exposedReexportNames(edge) ?? [];
+  if (exposed.length > 0) return exposed;
   return IMPORTS_ARE_EXPORTS_ENTRY_NAMES.has(baseName(edge.sourceRelPath)) ? (edge.importedExportNames ?? []) : [];
 }
 

@@ -15,6 +15,7 @@
  * What lives here is the part every language agrees on.
  */
 
+import { reexportBindingsField } from "../../../contracts/reexport-bindings.js";
 import type { CallContext, FileExtraction, GraphEdges, ImportRef } from "../../../contracts/types/codegraph.js";
 import type { ImportFileMapper } from "../../../contracts/types/language.js";
 
@@ -29,6 +30,7 @@ export function importFileEdge(targetRelPath: string, imp: ImportRef): GraphEdge
     importText: imp.importText,
     ...(imp.importedExportNames ? { importedExportNames: imp.importedExportNames } : {}),
     ...(imp.reexportedExportNames ? { reexportedExportNames: imp.reexportedExportNames } : {}),
+    ...reexportBindingsField(imp.reexportedExportBindings),
   };
 }
 

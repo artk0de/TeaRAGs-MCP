@@ -36,7 +36,11 @@ import {
 type FixtureNamedEdge = readonly [
   source: string,
   target: string,
-  names: { imported?: readonly string[]; reexported?: readonly string[] },
+  names: {
+    imported?: readonly string[];
+    reexported?: readonly string[];
+    reexportBindings?: Readonly<Record<string, string>>;
+  },
 ];
 
 /** The measured layering foundation the report would name for these fixtures' contracts file. */
@@ -139,6 +143,9 @@ function namedOverlayOf(edges: readonly FixtureNamedEdge[], changed: readonly st
             targetRelPath,
             ...(names.imported !== undefined ? { importedExportNames: [...names.imported] } : {}),
             ...(names.reexported !== undefined ? { reexportedExportNames: [...names.reexported] } : {}),
+            ...(names.reexportBindings !== undefined
+              ? { reexportedExportBindings: { ...names.reexportBindings } }
+              : {}),
           })),
       ),
     })),
@@ -1321,6 +1328,32 @@ describe("facadeContract", () => {
     expect(finding?.endpoints).toEqual({ kind: "file", relPath: FACADE, component: "src/lib" });
     expect(finding?.evidence).toEqual({ droppedNames: [{ name: "b", consumers: ["src/app/a.ts"] }] });
     expect(finding?.detail).toContain("stops re-exporting");
+  });
+
+  // bd tea-rags-mcp-zl3so: `export { a as a2 } from "./x"` forwards `a` but exposes `a2` —
+  // an importer of `a` breaks, so the renamed export is a drop of `a`.
+  it("reports a renamed re-export as a drop of the old name: the facade exposes the alias, not the source name", () => {
+    const result = runWithContract(
+      contractOf(facades, new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["a"] }]]])),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"], reexportBindings: { a2: "a" } }]],
+    );
+    expect(subjectsOf(result, "facadeContract")).toEqual([FACADE]);
+    const finding = result.findings.find((f) => f.detector === "facadeContract");
+    expect(finding?.evidence).toEqual({ droppedNames: [{ name: "a", consumers: ["src/app/a.ts"] }] });
+  });
+
+  it("stays silent when the alias consumers import is still exposed", () => {
+    const result = runWithContract(
+      contractOf(
+        facades,
+        new Map([[FACADE, [{ source: "src/app/a.ts", importedNames: ["b"] }]]]),
+        new Map([[FACADE, ["b"]]]),
+      ),
+      [FACADE],
+      [[FACADE, "src/lib/x.ts", { reexported: ["a"], reexportBindings: { b: "a" } }]],
+    );
+    expect(result.findings).toEqual([]);
   });
 
   it("stays silent when every consumed name is still re-exported", () => {

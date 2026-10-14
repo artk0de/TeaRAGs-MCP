@@ -51,6 +51,7 @@
  * again from a reverse or duplicated read.
  */
 
+import { reexportBindingsField, unionReexportBindings } from "../../../contracts/reexport-bindings.js";
 import type { ReviewFileEdge } from "../../../contracts/types/codegraph-storage.js";
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../contracts/types/diff-detector-finding.js";
 import {
@@ -434,6 +435,7 @@ function mergedEdge(into: ReviewFileEdge, moved: ReviewFileEdge): ReviewFileEdge
     targetRelPath: into.targetRelPath,
     ...(imported !== undefined ? { importedExportNames: imported } : {}),
     ...(reexported !== undefined ? { reexportedExportNames: reexported } : {}),
+    ...reexportBindingsField(unionReexportBindings(into, moved)),
   };
 }
 

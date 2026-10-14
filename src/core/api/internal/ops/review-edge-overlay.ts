@@ -34,6 +34,7 @@ import {
   collectDependencyManifestSources,
   readDeclaredDependenciesByLanguage,
 } from "../../../adapters/filesystem/dependency-manifests.js";
+import { reexportBindingsField, unionReexportBindings } from "../../../contracts/reexport-bindings.js";
 import type { ReviewFileEdge } from "../../../contracts/types/codegraph-storage.js";
 import type { CallContext, FileExtraction, GlobalSymbolTable, GraphEdges } from "../../../contracts/types/codegraph.js";
 import type {
@@ -345,7 +346,10 @@ function reviewEdgesOfFile(
 ): readonly ReviewFileEdge[] {
   // First-seen target order preserved: Map iteration is insertion order, so
   // the emitted edges keep the order the statements were walked in.
-  const namesByTarget = new Map<string, { imported?: string[]; reexported?: string[] }>();
+  const namesByTarget = new Map<
+    string,
+    { imported?: string[]; reexported?: string[]; reexportBindings?: Record<string, string> }
+  >();
   for (const edge of fileEdges) {
     if (edge.targetRelPath === relPath) continue;
     if (!existsSync(join(workTree, edge.targetRelPath))) continue;
@@ -354,9 +358,17 @@ function reviewEdgesOfFile(
       namesByTarget.set(edge.targetRelPath, {
         ...(edge.importedExportNames !== undefined ? { imported: [...edge.importedExportNames] } : {}),
         ...(edge.reexportedExportNames !== undefined ? { reexported: [...edge.reexportedExportNames] } : {}),
+        ...(edge.reexportedExportBindings !== undefined
+          ? { reexportBindings: { ...edge.reexportedExportBindings } }
+          : {}),
       });
       continue;
     }
+    // bd tea-rags-mcp-zl3so — read both sides' tables BEFORE the name union moves `reexported`.
+    names.reexportBindings = unionReexportBindings(
+      { reexportedExportNames: names.reexported, reexportedExportBindings: names.reexportBindings },
+      edge,
+    );
     names.imported = unionRecordedNames(names.imported, edge.importedExportNames);
     names.reexported = unionRecordedNames(names.reexported, edge.reexportedExportNames);
   }
@@ -367,6 +379,7 @@ function reviewEdgesOfFile(
       targetRelPath,
       ...(names.imported !== undefined ? { importedExportNames: names.imported } : {}),
       ...(names.reexported !== undefined ? { reexportedExportNames: names.reexported } : {}),
+      ...reexportBindingsField(names.reexportBindings),
     });
   }
   return Object.freeze(edges);

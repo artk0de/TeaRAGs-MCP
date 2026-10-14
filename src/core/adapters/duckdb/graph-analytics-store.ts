@@ -36,7 +36,7 @@ import {
   type SymbolId,
 } from "../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../primitives/paths/index.js";
-import { decodeFileEdgeExportNames } from "./file-edge-export-names-codec.js";
+import { decodeFileEdgeExportNames, decodeReexportBindings } from "./file-edge-export-names-codec.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
 /**
@@ -278,11 +278,12 @@ export class DuckDbGraphAnalyticsStore implements Omit<
       import_text: string | null;
       imported_export_names: string | null;
       reexported_export_names: string | null;
+      reexported_export_bindings: string | null;
     }>(
       `WITH RECURSIVE ${edgeCallWeightCtes("")}
        SELECT e.source_rel_path, e.target_rel_path, COALESCE(c.call_weight, 0) AS call_weight,
               c.framework_routed_call_weight,
-              e.import_text, e.imported_export_names, e.reexported_export_names
+              e.import_text, e.imported_export_names, e.reexported_export_names, e.reexported_export_bindings
        FROM cg_symbols_edges_file e
        LEFT JOIN edge_call_weight c ON c.source_rel_path = e.source_rel_path AND c.target_rel_path = e.target_rel_path
        ORDER BY e.source_rel_path, e.target_rel_path`,
@@ -309,6 +310,8 @@ export class DuckDbGraphAnalyticsStore implements Omit<
         // bd tea-rags-mcp-r8hme.2 — present only when the walk recorded them.
         const imported = decodeFileEdgeExportNames(r.imported_export_names);
         const reexported = decodeFileEdgeExportNames(r.reexported_export_names);
+        // bd tea-rags-mcp-zl3so — present only when a re-export renamed.
+        const reexportBindings = decodeReexportBindings(r.reexported_export_bindings);
         const frameworkRouted = Number(r.framework_routed_call_weight ?? 0);
         return {
           sourceRelPath: r.source_rel_path,
@@ -320,6 +323,7 @@ export class DuckDbGraphAnalyticsStore implements Omit<
           ...(r.import_text ? { importText: r.import_text } : {}),
           ...(imported ? { importedExportNames: imported } : {}),
           ...(reexported ? { reexportedExportNames: reexported } : {}),
+          ...(reexportBindings ? { reexportedExportBindings: reexportBindings } : {}),
         };
       }),
     };
