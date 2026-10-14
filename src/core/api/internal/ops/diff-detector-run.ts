@@ -56,6 +56,7 @@ import type { ReviewFileEdge } from "../../../contracts/types/codegraph-storage.
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../contracts/types/diff-detector-finding.js";
 import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
+  isFacadeAggregationEdge,
   ReviewEdgeOverlay,
   type HubLikeDependencyReading,
   type LayeringReading,
@@ -265,6 +266,7 @@ export class DiffDetectorRun {
     const inChange = scope.touchedFiles ?? new Set(scope.changedFiles);
     const overlayEdges = uniqueOverlayEdges(scope.changedFiles, overlay);
     const heldBeforeChange = (edge: OverlayEdge): HeldBeforeChangeEvidence | undefined => this.heldBeforeChange(edge);
+    const addedEdges = overlayEdges.filter((edge) => heldBeforeChange(edge) === undefined);
     return {
       scope,
       overlay,
@@ -273,7 +275,11 @@ export class DiffDetectorRun {
       // reach the two families that weigh "what the diff adds"; the per-edge
       // detectors whose predicate is about the edge AS READ (leakingAbstraction's
       // facade reach, cycles' closing edge) keep the overlay's own set.
-      addedEdges: overlayEdges.filter((edge) => heldBeforeChange(edge) === undefined),
+      addedEdges,
+      // Facade aggregation is no component dependency in the whole-repo graph
+      // (bd tea-rags-mcp-e1bf2): the same predicate over the overlay's own
+      // export names drops it here.
+      addedDependencyEdges: addedEdges.filter((edge) => !isOverlayFacadeAggregation(overlay, edge)),
       inChange,
       graph: this.graph,
       baseEdges: this.baseEdges,
@@ -455,6 +461,17 @@ function indexedGraphHolds(graph: DiffDetectorGraphReader | undefined, edge: Ove
  * guard keeps the judgement total), duplicates collapsed — a scope that lists
  * a file twice judges its edges once.
  */
+/**
+ * The overlay read of `edge` is facade aggregation by the whole-repo rule
+ * (`isFacadeAggregationEdge`): one of its statements forwards the nested
+ * facade's exports as the parent facade's own.
+ */
+function isOverlayFacadeAggregation(overlay: ReviewEdgeOverlay, edge: OverlayEdge): boolean {
+  return overlay
+    .edgesFrom(edge.source)
+    .some((read) => read.targetRelPath === edge.target && isFacadeAggregationEdge(read));
+}
+
 function uniqueOverlayEdges(changedFiles: readonly string[], overlay: ReviewEdgeOverlay): readonly OverlayEdge[] {
   const seen = new Set<string>();
   const edges: OverlayEdge[] = [];

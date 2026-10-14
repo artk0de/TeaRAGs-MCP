@@ -277,6 +277,16 @@ export interface DiffFamilyDetectorContext {
   /** Diff-added edges only (the 89k7k.14 subtraction), computed once. */
   addedEdges: readonly OverlayEdge[];
   /**
+   * The diff-added edges that are component DEPENDENCIES: `addedEdges` minus
+   * facade aggregation — a module facade re-exporting a descendant module's
+   * facade, judged on the overlay's own export names by the whole-repo
+   * component graph's predicate (`isFacadeAggregationEdge`, bd
+   * tea-rags-mcp-e1bf2). The families weighing a component dependency
+   * (stableDependencies, mainSequence, layeringBackEdge, hubLike) read THIS,
+   * so neither pipeline judges an edge the other drops.
+   */
+  addedDependencyEdges: readonly OverlayEdge[];
+  /**
    * Presence in the change (bd tea-rags-mcp-lxbrr): `scope.touchedFiles`, else
    * the changed files — never the capped set alone.
    */

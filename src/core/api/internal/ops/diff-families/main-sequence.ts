@@ -87,7 +87,15 @@ interface CrossingEdges {
  */
 export const mainSequenceDetector: DiffFamilyDetector = {
   family: "mainSequence",
-  judge: ({ scope, addedEdges, catalog, baseEdges, graph, minConnectionCount, mainSequenceDistanceThreshold }) => {
+  judge: ({
+    scope,
+    addedDependencyEdges,
+    catalog,
+    baseEdges,
+    graph,
+    minConnectionCount,
+    mainSequenceDistanceThreshold,
+  }) => {
     const touched = new Map<
       string,
       {
@@ -131,7 +139,7 @@ export const mainSequenceDetector: DiffFamilyDetector = {
       }
       return efferent;
     };
-    for (const edge of addedEdges) {
+    for (const edge of addedDependencyEdges) {
       const sourceComponent = catalog.componentOf(edge.source);
       const targetComponent = catalog.componentOf(edge.target);
       if (sourceComponent === undefined || targetComponent === undefined) continue;

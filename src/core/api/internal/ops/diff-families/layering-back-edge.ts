@@ -29,7 +29,7 @@ interface LayeringBackEdgeComponentPair {
 export const layeringBackEdgeDetector: DiffFamilyDetector = {
   family: "layeringBackEdge",
   judge: (context) => {
-    const { layering, addedEdges, catalog } = context;
+    const { layering, addedDependencyEdges, catalog } = context;
     if (layering === undefined) {
       return {
         findings: [],
@@ -46,7 +46,7 @@ export const layeringBackEdgeDetector: DiffFamilyDetector = {
     // preExisting (spec D9): some file of the source component already carried
     // the pair before the change — the base where it answers, else the index.
     const findings = judgeLayeringBackEdges({
-      addedEdges,
+      addedEdges: addedDependencyEdges,
       componentOf,
       layering,
       heldAtBase: (pair) =>

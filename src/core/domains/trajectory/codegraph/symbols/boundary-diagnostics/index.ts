@@ -4,7 +4,11 @@ export {
   COMPONENT_EVIDENCE_FILE_EDGE_LIMIT,
   detectComponentStableDependencyViolations,
 } from "./component-stable-dependencies.js";
-export { FACADE_AGGREGATION_REASON, isFacadeAggregationEdge } from "./facade-aggregation.js";
+export {
+  FACADE_AGGREGATION_REASON,
+  isFacadeAggregationEdge,
+  type FacadeAggregationEdgeFacts,
+} from "./facade-aggregation.js";
 export { computeFileInstabilities } from "./file-instability.js";
 export { REEXPORT_SHIM_REASON, resolveReexportShimTargets, type ReexportShimResolution } from "./reexport-shim.js";
 export { domainBoundaryFileEdges, inducedDomainGraph, type DomainBoundaryFileEdges } from "./induced-domain-graph.js";
