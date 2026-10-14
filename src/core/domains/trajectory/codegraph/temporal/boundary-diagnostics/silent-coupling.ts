@@ -14,13 +14,15 @@
 
 import { posix } from "node:path";
 
+import { exposedReexportNames, reexportSourceName } from "../../../../../contracts/reexport-bindings.js";
 import type { SilentCouplingSharedNeighbourSignificanceSummary } from "../../../../../contracts/types/architecture-report.js";
-import type {
-  FileDependencyEdge,
-  FileDependencyGraphFile,
-  RelPath,
-  TemporalCochangeEdgeWithLinkage,
-  TemporalCochangeGraph,
+import {
+  WHOLE_MODULE_EXPORT_NAME,
+  type FileDependencyEdge,
+  type FileDependencyGraphFile,
+  type RelPath,
+  type TemporalCochangeEdgeWithLinkage,
+  type TemporalCochangeGraph,
 } from "../../../../../contracts/types/codegraph.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../../primitives/graph/index.js";
 import { hypergeometricUpperTail, sidakCorrectedMinimumPValue } from "../../../../../primitives/math/index.js";
@@ -374,7 +376,11 @@ function explainBySharedNeighbourChance(
  * family the code declares, each sibling taking its own value; its weight is
  * the mirror IDF, ln(N / fanOut(C)). A re-export-only edge does not consume,
  * so a barrel that merely packages siblings explains nothing about why they
- * change together. The shotgun detector's island join still reads
+ * change together. A consuming import of a module facade also counts as an
+ * import of each file its taken names are forwarded from
+ * ({@link facadeImportOrigins}, bd tea-rags-mcp-jnynq), so the arms read the
+ * same neighbour whether the import is spelled deep or through the barrel.
+ * The shotgun detector's island join still reads
  * {@link heaviestSharedNeighbour} under its own Otsu cut.
  */
 export class SilentCouplingNeighbourIndex {
@@ -389,24 +395,38 @@ export class SilentCouplingNeighbourIndex {
   /** Distinct consuming edges — the endpoints of the consumer arm's draws. */
   private readonly consumingEdgeCount: number;
 
+  /** source → targets of its DECLARED edges only — the graph {@link resolvesThroughFacadeChain} walks. */
+  private readonly declaredImports = new Map<RelPath, Set<RelPath>>();
+
   constructor(
     edges: readonly Pick<
       FileDependencyEdge,
-      "sourceRelPath" | "targetRelPath" | "importedExportNames" | "reexportedExportNames"
+      "sourceRelPath" | "targetRelPath" | "importedExportNames" | "reexportedExportNames" | "reexportedExportBindings"
     >[],
     private readonly walkedFileCount: number,
   ) {
+    const facadeForwards = collectFacadeForwards(edges);
     for (const edge of edges) {
       const { sourceRelPath, targetRelPath } = edge;
       if (sourceRelPath === targetRelPath) continue;
-      addToSetMap(this.imports, sourceRelPath, targetRelPath);
-      addToSetMap(this.importers, targetRelPath, sourceRelPath);
-      if (isReexportOnlyEdge(edge)) continue;
-      addToSetMap(this.consumes, sourceRelPath, targetRelPath);
-      addToSetMap(this.consumers, targetRelPath, sourceRelPath);
+      addToSetMap(this.declaredImports, sourceRelPath, targetRelPath);
+      const consuming = !isReexportOnlyEdge(edge);
+      this.addImport(sourceRelPath, targetRelPath, consuming);
+      if (!consuming) continue;
+      for (const origin of facadeImportOrigins(edge, facadeForwards)) {
+        if (origin !== sourceRelPath) this.addImport(sourceRelPath, origin, true);
+      }
     }
     this.importEdgeCount = sumOfSetSizes(this.imports);
     this.consumingEdgeCount = sumOfSetSizes(this.consumes);
+  }
+
+  private addImport(sourceRelPath: RelPath, targetRelPath: RelPath, consuming: boolean): void {
+    addToSetMap(this.imports, sourceRelPath, targetRelPath);
+    addToSetMap(this.importers, targetRelPath, sourceRelPath);
+    if (!consuming) return;
+    addToSetMap(this.consumes, sourceRelPath, targetRelPath);
+    addToSetMap(this.consumers, targetRelPath, sourceRelPath);
   }
 
   /** The heaviest neighbour of the pair; a tie goes to the smaller path, so the answer is stable. */
@@ -543,11 +563,13 @@ export class SilentCouplingNeighbourIndex {
    */
   resolvesThroughFacadeChain(importer: RelPath, target: RelPath): boolean {
     const visited = new Set<RelPath>([importer, target]);
-    let frontier = [...(this.imports.get(importer) ?? [])].filter((next) => next !== target && isModuleEntryFile(next));
+    let frontier = [...(this.declaredImports.get(importer) ?? [])].filter(
+      (next) => next !== target && isModuleEntryFile(next),
+    );
     for (let depth = 0; depth < RE_EXPORT_CYCLE_PATH_CAP - 2 && frontier.length > 0; depth++) {
       const nextFrontier: RelPath[] = [];
       for (const entry of frontier) {
-        for (const next of this.imports.get(entry) ?? []) {
+        for (const next of this.declaredImports.get(entry) ?? []) {
           if (next === target) return true;
           if (!visited.has(next) && isModuleEntryFile(next)) {
             visited.add(next);
@@ -564,6 +586,81 @@ export class SilentCouplingNeighbourIndex {
 /** An edge that only re-exports names and consumes none — packaging, not use. */
 function isReexportOnlyEdge(edge: Pick<FileDependencyEdge, "importedExportNames" | "reexportedExportNames">): boolean {
   return (edge.reexportedExportNames?.length ?? 0) > 0 && (edge.importedExportNames?.length ?? 0) === 0;
+}
+
+/** One named forward of a module entry file: where the exposed name comes from, in the target's spelling. */
+interface FacadeNameForward {
+  targetRelPath: RelPath;
+  sourceName: string;
+}
+
+/** Module entry file → exposed name → the forwards that expose it. */
+type FacadeForwards = ReadonlyMap<RelPath, ReadonlyMap<string, readonly FacadeNameForward[]>>;
+
+/**
+ * The NAMED forwards of every module entry file ({@link isModuleEntryFile}).
+ * `export *` claims no name, so it forwards nothing here: a name only a star
+ * could carry stays on the facade edge, never guessed onto every star target.
+ */
+function collectFacadeForwards(
+  edges: readonly Pick<
+    FileDependencyEdge,
+    "sourceRelPath" | "targetRelPath" | "reexportedExportNames" | "reexportedExportBindings"
+  >[],
+): FacadeForwards {
+  const forwards = new Map<RelPath, Map<string, FacadeNameForward[]>>();
+  for (const edge of edges) {
+    if (edge.sourceRelPath === edge.targetRelPath || !isModuleEntryFile(edge.sourceRelPath)) continue;
+    for (const exposed of exposedReexportNames(edge) ?? []) {
+      if (exposed === WHOLE_MODULE_EXPORT_NAME) continue;
+      const byName = forwards.get(edge.sourceRelPath) ?? new Map<string, FacadeNameForward[]>();
+      forwards.set(edge.sourceRelPath, byName);
+      const named = byName.get(exposed) ?? [];
+      byName.set(exposed, named);
+      named.push({ targetRelPath: edge.targetRelPath, sourceName: reexportSourceName(edge, exposed) });
+    }
+  }
+  return forwards;
+}
+
+/**
+ * The files a consuming import of a module facade really takes its names from
+ * (bd tea-rags-mcp-jnynq): each imported name followed through the facade's
+ * named forwards — and through nested facades forwarding it on — to the first
+ * file that does not forward it again. Taking a name through the facade is
+ * consuming its origin, so the shared-neighbour arms see the origin the same
+ * whether the importer spells the import deep or through the barrel; without
+ * it, the leakingAbstraction remedy (retarget the deep import to the facade)
+ * hid the specific shared dependency behind a hub and turned an explained
+ * pair into a new violation. A namespace import, a name the facade defines or
+ * only a star carries, and a chain past {@link RE_EXPORT_CYCLE_PATH_CAP} files
+ * resolve to nothing: the declared facade edge alone stands.
+ */
+function facadeImportOrigins(
+  edge: Pick<FileDependencyEdge, "targetRelPath" | "importedExportNames">,
+  forwards: FacadeForwards,
+): RelPath[] {
+  if (!forwards.has(edge.targetRelPath)) return [];
+  const origins = new Set<RelPath>();
+  for (const name of edge.importedExportNames ?? []) {
+    if (name === WHOLE_MODULE_EXPORT_NAME) continue;
+    let frontier: { relPath: RelPath; name: string }[] = [{ relPath: edge.targetRelPath, name }];
+    // The path is consumer, facades…, origin — at most the cap, so at most cap - 2 facades.
+    for (let facades = 1; frontier.length > 0; facades++) {
+      const onward: { relPath: RelPath; name: string }[] = [];
+      for (const step of frontier) {
+        for (const forward of forwards.get(step.relPath)?.get(step.name) ?? []) {
+          if (forwards.get(forward.targetRelPath)?.has(forward.sourceName) !== true) {
+            origins.add(forward.targetRelPath);
+          } else if (facades < RE_EXPORT_CYCLE_PATH_CAP - 2) {
+            onward.push({ relPath: forward.targetRelPath, name: forward.sourceName });
+          }
+        }
+      }
+      frontier = onward;
+    }
+  }
+  return [...origins];
 }
 
 /**

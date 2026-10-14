@@ -733,6 +733,104 @@ describe("detectSilentCoupling — facade-chain explanation (bd tea-rags-mcp-89k
   });
 });
 
+describe("detectSilentCoupling — shared neighbour reached through a facade (bd tea-rags-mcp-jnynq)", () => {
+  /**
+   * The jnynq repro shape: `b/producer.ts` imports the vocabulary file
+   * `voc/keys.ts` directly; `a/consumer.ts` takes the same name either
+   * directly (the leakingAbstraction finding) or through the module facade
+   * `voc/index.ts` that forwards it (the remedy the detector proposes). The
+   * facade itself is a hub every filler imports, so it explains nothing; the
+   * vocabulary file behind it does, whichever way the consumer spells the
+   * import.
+   */
+  function facadeNeighbourFixture(consumerEdges: readonly FileDependencyEdge[]): {
+    walked: FileDependencyGraphFile[];
+    edges: FileDependencyEdge[];
+    cochange: TemporalCochangeGraph;
+  } {
+    const fillers = Array.from({ length: 20 }, (_, i) => `z/f${i}.ts`);
+    const walked = files(
+      "a/consumer.ts",
+      "b/producer.ts",
+      "voc/index.ts",
+      "voc/keys.ts",
+      "voc/other.ts",
+      "voc/alias.ts",
+      ...fillers,
+    );
+    const edges: FileDependencyEdge[] = [
+      { sourceRelPath: "voc/index.ts", targetRelPath: "voc/keys.ts", callWeight: 0, reexportedExportNames: ["Key"] },
+      {
+        sourceRelPath: "voc/index.ts",
+        targetRelPath: "voc/other.ts",
+        callWeight: 0,
+        reexportedExportNames: ["Other"],
+      },
+      {
+        sourceRelPath: "voc/index.ts",
+        targetRelPath: "voc/alias.ts",
+        callWeight: 0,
+        reexportedExportNames: ["Original"],
+        reexportedExportBindings: { Renamed: "Original" },
+      },
+      { sourceRelPath: "b/producer.ts", targetRelPath: "voc/keys.ts", callWeight: 1, importedExportNames: ["Key"] },
+      {
+        sourceRelPath: "b/producer.ts",
+        targetRelPath: "voc/alias.ts",
+        callWeight: 1,
+        importedExportNames: ["Original"],
+      },
+      ...fillers.map((f) => ({
+        sourceRelPath: f,
+        targetRelPath: "voc/index.ts",
+        callWeight: 1,
+        importedExportNames: ["Other"],
+      })),
+      ...consumerEdges,
+    ];
+    return { walked, edges, cochange: built([pair("a/consumer.ts", "b/producer.ts")]) };
+  }
+
+  const viaFacade = (names: string[]): FileDependencyEdge => ({
+    sourceRelPath: "a/consumer.ts",
+    targetRelPath: "voc/index.ts",
+    callWeight: 1,
+    importedExportNames: names,
+  });
+
+  it("applying the leakingAbstraction remedy introduces no violation: the forwarded file still explains the pair", () => {
+    const direct = facadeNeighbourFixture([
+      { sourceRelPath: "a/consumer.ts", targetRelPath: "voc/keys.ts", callWeight: 1, importedExportNames: ["Key"] },
+    ]);
+    const remedied = facadeNeighbourFixture([viaFacade(["Key"])]);
+
+    const before = detectSilentCoupling(direct.cochange, direct.walked, { fileDependencyEdges: direct.edges });
+    const after = detectSilentCoupling(remedied.cochange, remedied.walked, { fileDependencyEdges: remedied.edges });
+
+    expect(before.violations).toEqual([]);
+    expect(after.violations).toEqual([]);
+    expect(after.explained.map((v) => v.explainedBy?.relPath)).toEqual(["voc/keys.ts"]);
+    expect(before.explained.map((v) => v.explainedBy?.relPath)).toEqual(["voc/keys.ts"]);
+  });
+
+  it("follows an aliased forward to the file it renames", () => {
+    const { walked, edges, cochange } = facadeNeighbourFixture([viaFacade(["Renamed"])]);
+
+    const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    expect(report.violations).toEqual([]);
+    expect(report.explained.map((v) => v.explainedBy?.relPath)).toEqual(["voc/alias.ts"]);
+  });
+
+  it("still judges the pair when the name taken through the facade comes from a file the partner never imports", () => {
+    const { walked, edges, cochange } = facadeNeighbourFixture([viaFacade(["Other"])]);
+
+    const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    expect(report.violations.map((v) => `${v.relPathA} ~ ${v.relPathB}`)).toEqual(["a/consumer.ts ~ b/producer.ts"]);
+  });
+});
+
 describe("cochangeEvidenceEndpointExclusion — the file classes whose co-change is no coupling evidence (bd tea-rags-mcp-r8hme.53)", () => {
   it("names the first class an endpoint falls in, either order", () => {
     expect(cochangeEvidenceEndpointExclusion("src/a.ts", "tests/a.test.ts")).toBe("testEndpoints");
