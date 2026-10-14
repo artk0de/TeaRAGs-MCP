@@ -31,10 +31,13 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import {
+  esmExportedNames,
   esmImportExportNames,
-  esmReexportExportNames,
+  esmImportLocalBindings,
   exportNamesField,
   moduleCallExportNames,
+  reexportNamesFields,
+  type EsmExportedName,
 } from "../../shared/ecmascript-export-names.js";
 import { TypescriptLocalBindingSites } from "./local-binding-sites.js";
 import {
@@ -186,12 +189,18 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
  * protocol consumed only through `import type` is still declared coupling.
  * They carry the specifier, line and the export names they take or forward
  * (bd tea-rags-mcp-dourd) — but no local binding a call can reach.
+ *
+ * An imported binding the module re-exports by name (`import { a } from "./x";
+ * export { a as b }`) forwards `a` out of `./x` exactly like
+ * `export { a as b } from "./x"` (bd tea-rags-mcp-zl3so), so its import
+ * reference carries the same re-export facts.
  */
 function collectImports(root: AstNode): { imports: ImportRef[]; typeOnlyImports: ImportRef[] } {
   const out: ImportRef[] = [];
   const typeOnly: ImportRef[] = [];
+  const localExports = collectLocalExports(root);
   walk(root, (node) => {
-    if (node.type === "import_statement") collectEsmImport(node, out, typeOnly);
+    if (node.type === "import_statement") collectEsmImport(node, out, typeOnly, localExports);
     else if (node.type === "export_statement") collectReexport(node, out, typeOnly);
     else if (node.type === "call_expression") {
       collectRequire(node, out);
@@ -255,7 +264,46 @@ function stringLiteralText(node: AstNode): string {
   return node.text.replace(/^['"`]|['"`]$/g, "");
 }
 
-function collectEsmImport(node: AstNode, out: ImportRef[], typeOnly: ImportRef[]): void {
+/**
+ * The module-level `export { … }` clauses WITHOUT a source, keyed by the local
+ * binding each names (bd tea-rags-mcp-zl3so): `export { a as b, a }` →
+ * `a → [b, a]`. Only the program's own statements count — a clause inside a
+ * `declare module` / namespace body exports from that body, not the file.
+ */
+function collectLocalExports(root: AstNode): ReadonlyMap<string, readonly string[]> {
+  const exposedByLocal = new Map<string, string[]>();
+  for (const statement of root.children) {
+    if (statement.type !== "export_statement" || statement.childForFieldName("source")) continue;
+    for (const { exposed, forwarded } of esmExportedNames(statement)) {
+      const names = exposedByLocal.get(forwarded);
+      if (names) names.push(exposed);
+      else exposedByLocal.set(forwarded, [exposed]);
+    }
+  }
+  return exposedByLocal;
+}
+
+/** The re-export facts an import statement earns by having its bindings exported (`collectLocalExports`). */
+function localReexportFields(
+  node: AstNode,
+  localExports: ReadonlyMap<string, readonly string[]>,
+): Pick<ImportRef, "reexportedExportNames" | "reexportedExportBindings"> {
+  // Same scope as `collectLocalExports`: an import inside a `declare module`
+  // body binds into that body, never into the file's own exports.
+  if (localExports.size === 0 || node.parent?.type !== "program") return {};
+  const names: EsmExportedName[] = [];
+  for (const { local, target } of esmImportLocalBindings(node)) {
+    for (const exposed of localExports.get(local) ?? []) names.push({ exposed, forwarded: target });
+  }
+  return reexportNamesFields(names);
+}
+
+function collectEsmImport(
+  node: AstNode,
+  out: ImportRef[],
+  typeOnly: ImportRef[],
+  localExports: ReadonlyMap<string, readonly string[]>,
+): void {
   const src = node.children.find((c) => c.type === "string");
   if (!src) return;
   // Route top-level type-only imports away from imports[] (bd tea-rags-mcp-m19a):
@@ -267,7 +315,12 @@ function collectEsmImport(node: AstNode, out: ImportRef[], typeOnly: ImportRef[]
   // form. Per-specifier `import { type X, Y }` is NOT filtered — the
   // statement is still a runtime import that loads `Y`.
   if (hasTypeOnlyModifier(node, "import")) {
-    typeOnly.push(typeOnlyImportRef(node, src, exportNamesField("importedExportNames", esmImportExportNames(node))));
+    typeOnly.push(
+      typeOnlyImportRef(node, src, {
+        ...exportNamesField("importedExportNames", esmImportExportNames(node)),
+        ...localReexportFields(node, localExports),
+      }),
+    );
     return;
   }
   // bd tea-rags-mcp-2v16 — capture the LOCAL binding names this import
@@ -282,6 +335,7 @@ function collectEsmImport(node: AstNode, out: ImportRef[], typeOnly: ImportRef[]
     importText: stringLiteralText(src),
     startLine: node.startPosition.row + 1,
     ...exportNamesField("importedExportNames", esmImportExportNames(node)),
+    ...localReexportFields(node, localExports),
   };
   applyModuleBindings(ref, collectImportedBindings(node));
   out.push(ref);
@@ -321,17 +375,16 @@ function collectReexport(node: AstNode, out: ImportRef[], typeOnly: ImportRef[])
   const src = node.childForFieldName("source");
   if (src?.type !== "string") return;
   if (hasTypeOnlyModifier(node, "export")) {
-    typeOnly.push(
-      typeOnlyImportRef(node, src, exportNamesField("reexportedExportNames", esmReexportExportNames(node))),
-    );
+    typeOnly.push(typeOnlyImportRef(node, src, reexportNamesFields(esmExportedNames(node))));
     return;
   }
   // bd tea-rags-mcp-r8hme.2 — the names it FORWARDS are recorded on their own
-  // channel; `importedNames` stays empty for the reason above.
+  // channel; `importedNames` stays empty for the reason above. An alias also
+  // records the name importers write (bd tea-rags-mcp-zl3so).
   out.push({
     importText: stringLiteralText(src),
     startLine: node.startPosition.row + 1,
-    ...exportNamesField("reexportedExportNames", esmReexportExportNames(node)),
+    ...reexportNamesFields(esmExportedNames(node)),
   });
 }
 

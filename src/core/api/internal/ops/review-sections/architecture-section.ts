@@ -32,6 +32,7 @@ import {
   isAncestor,
   readEnclosingRepoGitState,
 } from "../../../../adapters/vcs/index.js";
+import { exposedReexportNames } from "../../../../contracts/reexport-bindings.js";
 import type {
   FileDependencyEdge,
   FileDependencyGraphFile,
@@ -286,9 +287,11 @@ export class WiredContractReader implements DiffDetectorContractReader {
     const surfaceByFacade = new Map<string, Set<string>>();
     const served = new Set<string>();
     for (const edge of edges) {
-      if (edge.reexportedExportNames !== undefined && this.componentByFacade.has(edge.sourceRelPath)) {
+      // The facade's surface is what its importers write — aliases, not forwarded names (bd tea-rags-mcp-zl3so).
+      const exposed = exposedReexportNames(edge);
+      if (exposed !== undefined && this.componentByFacade.has(edge.sourceRelPath)) {
         const surface = surfaceByFacade.get(edge.sourceRelPath) ?? new Set<string>();
-        for (const name of edge.reexportedExportNames) surface.add(name);
+        for (const name of exposed) surface.add(name);
         surfaceByFacade.set(edge.sourceRelPath, surface);
       }
       const componentDir = this.componentByFacade.get(edge.targetRelPath);

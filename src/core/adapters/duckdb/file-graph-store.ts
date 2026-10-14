@@ -34,7 +34,7 @@ import {
   toCgPass1Row,
   type CgPass1AggregatesRow,
 } from "./cg-pass1-aggregates-row.js";
-import { encodeFileEdgeExportNames } from "./file-edge-export-names-codec.js";
+import { encodeFileEdgeExportNames, encodeReexportBindings } from "./file-edge-export-names-codec.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
 /**
@@ -69,7 +69,13 @@ const BULK_WRITE_GROUP_FILES = 32;
 const FILE_EDGE_KEYS = ["source_rel_path", "target_rel_path"] as const;
 // Migration 030 (bd tea-rags-mcp-r8hme.2): the export names are VALUES, so a
 // re-walk that changes only them rewrites the row instead of keeping the first.
-const FILE_EDGE_VALUES = ["import_text", "imported_export_names", "reexported_export_names"] as const;
+// Migration 051 (bd tea-rags-mcp-zl3so): the alias table rides the same row.
+const FILE_EDGE_VALUES = [
+  "import_text",
+  "imported_export_names",
+  "reexported_export_names",
+  "reexported_export_bindings",
+] as const;
 // Migration 037 (bd tea-rags-mcp-r8hme.12): same key as the runtime file edge.
 const TYPE_ONLY_FILE_EDGE_VALUES = ["import_text"] as const;
 const METHOD_EDGE_KEYS = [
@@ -215,6 +221,7 @@ export class DuckDbFileGraphStore {
           e.importText,
           encodeFileEdgeExportNames(e.importedExportNames),
           encodeFileEdgeExportNames(e.reexportedExportNames),
+          encodeReexportBindings(e.reexportedExportBindings),
         ]);
       }
       for (const e of edges.typeOnlyFileEdges ?? []) {

@@ -1,3 +1,4 @@
+import { exposedReexportNames } from "../../../../contracts/reexport-bindings.js";
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../../contracts/types/diff-detector-finding.js";
 import type { DiffFamilyDetector } from "./diff-family-detector.js";
 import { detectorStatus, WHOLE_MODULE_EXPORT_NAME, withRenderedSubject } from "./shared.js";
@@ -39,9 +40,11 @@ export const facadeContractDetector: DiffFamilyDetector = {
       const treeExposed = new Set<string>();
       let reexportsRecorded = false;
       for (const edge of overlay.edgesFrom(relPath)) {
-        if (edge.reexportedExportNames === undefined) continue;
+        // The names an importer of the facade writes — an alias, not the name it forwards (bd tea-rags-mcp-zl3so).
+        const exposed = exposedReexportNames(edge);
+        if (exposed === undefined) continue;
         reexportsRecorded = true;
-        for (const name of edge.reexportedExportNames) treeExposed.add(name);
+        for (const name of exposed) treeExposed.add(name);
       }
       if (!reexportsRecorded) continue;
       const indexedSurface = contract.indexedSurfaceOf(relPath);

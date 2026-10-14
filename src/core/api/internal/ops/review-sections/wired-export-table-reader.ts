@@ -22,13 +22,14 @@
  * which may forward the name without recording it.
  */
 
+import { exposedReexportNames, reexportSourceName } from "../../../../contracts/reexport-bindings.js";
 import type { FileDependencyEdge } from "../../../../contracts/types/codegraph.js";
 import { WHOLE_MODULE_EXPORT_NAME, type ExportTableReader } from "../diff-detector-run.js";
 
 /** The export names one file edge records — what the reader needs of an indexed or overlay edge. */
 type ExportNamingEdge = Pick<
   FileDependencyEdge,
-  "sourceRelPath" | "targetRelPath" | "importedExportNames" | "reexportedExportNames"
+  "sourceRelPath" | "targetRelPath" | "importedExportNames" | "reexportedExportNames" | "reexportedExportBindings"
 >;
 
 /** What the reader needs of the review's edge overlay (`ReviewEdgeOverlay` satisfies it). */
@@ -57,14 +58,19 @@ export class WiredExportTableReader implements ExportTableReader {
   ) {
     for (const edge of effectiveEdges(indexedEdges, overlay)) {
       for (const name of edge.importedExportNames ?? []) this.hold(name, edge.targetRelPath);
-      for (const name of edge.reexportedExportNames ?? []) {
-        if (name === WHOLE_MODULE_EXPORT_NAME) {
+      for (const exposed of exposedReexportNames(edge) ?? []) {
+        const source = reexportSourceName(edge, exposed);
+        if (exposed === WHOLE_MODULE_EXPORT_NAME) {
           this.wildcardForwarders.add(edge.sourceRelPath);
           continue;
         }
-        this.hold(name, edge.targetRelPath);
+        this.hold(source, edge.targetRelPath);
+        // An alias (bd tea-rags-mcp-zl3so) is a name only the forwarding file
+        // exports, so it declares it: retargeting its importers past the file
+        // would name a member the target does not have.
+        if (source !== exposed) continue;
         const forwarded = this.forwardedByFile.get(edge.sourceRelPath) ?? new Set<string>();
-        forwarded.add(name);
+        forwarded.add(exposed);
         this.forwardedByFile.set(edge.sourceRelPath, forwarded);
       }
     }
@@ -81,7 +87,7 @@ export class WiredExportTableReader implements ExportTableReader {
   indexedSurfaceOf(facade: string): readonly string[] | undefined {
     const reread = this.overlay?.masked.has(facade) === true && this.overlay.unsupported().every(skippedIsNot(facade));
     if (!reread || this.overlay === undefined) return this.contract.indexedSurfaceOf(facade);
-    const names = new Set(this.overlay.edgesFrom(facade).flatMap((edge) => edge.reexportedExportNames ?? []));
+    const names = new Set(this.overlay.edgesFrom(facade).flatMap((edge) => exposedReexportNames(edge) ?? []));
     names.delete(WHOLE_MODULE_EXPORT_NAME);
     return names.size > 0 ? [...names] : this.contract.indexedSurfaceOf(facade);
   }

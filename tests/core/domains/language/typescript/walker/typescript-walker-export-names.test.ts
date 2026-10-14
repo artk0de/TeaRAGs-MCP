@@ -78,3 +78,74 @@ describe("extractFromTypescriptFile — reexportedExportNames", () => {
     expect(ref?.importedBindings).toBeUndefined();
   });
 });
+
+/**
+ * bd tea-rags-mcp-zl3so — an aliased re-export records the IMPORTER-FACING
+ * name beside the source one: `reexportedExportBindings` maps every name the
+ * file exports to the target name it forwards. Present only when some
+ * forwarded name is renamed, and then complete (identity entries included);
+ * an unaliased re-export records no table.
+ */
+describe("extractFromTypescriptFile — reexportedExportBindings (bd tea-rags-mcp-zl3so)", () => {
+  function typeOnlyRefFor(code: string, importText: string) {
+    const parser = new Parser();
+    parser.setLanguage((TsLang as { typescript: Parser.Language }).typescript);
+    return extractFromTypescriptFile({
+      tree: parser.parse(code),
+      code,
+      relPath: "src/a.ts",
+      language: "typescript",
+      chunks: [],
+    }).typeOnlyImports?.find((i) => i.importText === importText);
+  }
+
+  it("`export { a as b } from` maps the exported name to the source name, identity entries included", () => {
+    const ref = refFor(`export { a as b, c, default as D } from "./x";\n`, "./x");
+    expect(ref?.reexportedExportNames).toEqual(["a", "c", "default"]);
+    expect(ref?.reexportedExportBindings).toEqual({ b: "a", c: "c", D: "default" });
+  });
+
+  it("`export * as ns from` maps the namespace name to the whole module", () => {
+    const ref = refFor(`export * as ns from "./nsx";\n`, "./nsx");
+    expect(ref?.reexportedExportNames).toEqual(["*"]);
+    expect(ref?.reexportedExportBindings).toEqual({ ns: "*" });
+  });
+
+  it("`export type { A as B } from` records the alias on the type-only reference", () => {
+    const ref = typeOnlyRefFor(`export type { A as B } from "./t";\n`, "./t");
+    expect(ref?.reexportedExportNames).toEqual(["A"]);
+    expect(ref?.reexportedExportBindings).toEqual({ B: "A" });
+  });
+
+  it("`import { a } from; export { a as b }` forwards `a` out of the import's target as `b`", () => {
+    const ref = refFor(`import { a, other } from "./x";\nexport { a as b };\n`, "./x");
+    expect(ref?.importedExportNames).toEqual(["a", "other"]);
+    expect(ref?.reexportedExportNames).toEqual(["a"]);
+    expect(ref?.reexportedExportBindings).toEqual({ b: "a" });
+  });
+
+  it("a local re-export follows the import alias back to the target's name", () => {
+    const ref = refFor(`import { a as local } from "./x";\nexport { local as b };\n`, "./x");
+    expect(ref?.reexportedExportNames).toEqual(["a"]);
+    expect(ref?.reexportedExportBindings).toEqual({ b: "a" });
+  });
+
+  it("`import type { A }; export type { A as B }` records the alias on the type-only reference", () => {
+    const ref = typeOnlyRefFor(`import type { A } from "./t";\nexport type { A as B };\n`, "./t");
+    expect(ref?.reexportedExportNames).toEqual(["A"]);
+    expect(ref?.reexportedExportBindings).toEqual({ B: "A" });
+  });
+
+  it("an unaliased re-export records no bindings table", () => {
+    expect(refFor(`export { a, b } from "./x";\n`, "./x")?.reexportedExportBindings).toBeUndefined();
+    expect(refFor(`export * from "./all";\n`, "./all")?.reexportedExportBindings).toBeUndefined();
+    const local = refFor(`import { a } from "./x";\nexport { a };\n`, "./x");
+    expect(local?.reexportedExportNames).toEqual(["a"]);
+    expect(local?.reexportedExportBindings).toBeUndefined();
+  });
+
+  it("an export of a local declaration is not a re-export of any import", () => {
+    const ref = refFor(`import { a } from "./x";\nconst b = 1;\nexport { b as c };\n`, "./x");
+    expect(ref?.reexportedExportNames).toBeUndefined();
+  });
+});

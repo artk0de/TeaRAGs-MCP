@@ -7,6 +7,7 @@
  * producer built it; this module only derives the overlaid value.
  */
 
+import { reexportBindingsField } from "../../../../../contracts/reexport-bindings.js";
 import type { ReviewFileEdge } from "../../../../../contracts/types/codegraph-storage.js";
 import type { FileDependencyEdge, FileDependencyGraphFile, RelPath } from "../../../../../contracts/types/codegraph.js";
 import type { PathFilter } from "../../../../../primitives/paths/index.js";
@@ -195,5 +196,6 @@ function overlayFileDependencyEdge(edge: ReviewFileEdge, indexed: FileDependency
     ...(indexed?.importText !== undefined ? { importText: indexed.importText } : {}),
     ...(edge.importedExportNames !== undefined ? { importedExportNames: [...edge.importedExportNames] } : {}),
     ...(edge.reexportedExportNames !== undefined ? { reexportedExportNames: [...edge.reexportedExportNames] } : {}),
+    ...reexportBindingsField(edge.reexportedExportBindings),
   };
 }

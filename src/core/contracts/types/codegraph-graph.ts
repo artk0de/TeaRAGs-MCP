@@ -424,6 +424,11 @@ export interface FileEdgeExportNames {
   importedExportNames?: string[];
   /** {@link ImportRef.reexportedExportNames}, unioned per edge. */
   reexportedExportNames?: string[];
+  /**
+   * {@link ImportRef.reexportedExportBindings}, unioned per edge
+   * (`unionReexportBindings`) — present only when some statement renames.
+   */
+  reexportedExportBindings?: Record<string, string>;
 }
 
 export interface GraphEdges {

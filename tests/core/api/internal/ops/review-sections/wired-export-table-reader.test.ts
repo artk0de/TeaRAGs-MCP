@@ -70,6 +70,32 @@ describe("WiredExportTableReader", () => {
     ]);
     expect(reader.declarersOf("X")).toBeUndefined();
   });
+
+  // bd tea-rags-mcp-zl3so: `export { X as Y } from "./x"` forwards X but exposes Y.
+  it("an aliasing barrel declares the alias it exposes; the source name stays the target's", () => {
+    const reader = new WiredExportTableReader(NO_SURFACE, [
+      edge("src/app/a.ts", "src/lib/index.ts", { imported: ["Y"] }),
+      { ...edge("src/lib/index.ts", "src/lib/x.ts", { reexported: ["X"] }), reexportedExportBindings: { Y: "X" } },
+    ]);
+    expect(reader.declarersOf("Y")).toEqual(["src/lib/index.ts"]);
+    expect(reader.declarersOf("X")).toEqual(["src/lib/x.ts"]);
+  });
+
+  it("a re-read facade's surface is the names it EXPOSES, aliases included", () => {
+    const overlay = new ReviewEdgeOverlay([
+      {
+        relPath: "src/lib/index.ts",
+        edges: [
+          {
+            ...edge("src/lib/index.ts", "src/lib/x.ts", { reexported: ["a", "c"] }),
+            reexportedExportBindings: { b: "a", c: "c" },
+          },
+        ],
+      },
+    ]);
+    const reader = new WiredExportTableReader({ indexedSurfaceOf: () => ["a"] }, [], overlay);
+    expect(reader.indexedSurfaceOf("src/lib/index.ts")).toEqual(["b", "c"]);
+  });
   describe("through the review overlay (bd tea-rags-mcp-if14t)", () => {
     it("A: a name held only by the overlay's edges of a changed file is declared by that edge's target", () => {
       const overlay = new ReviewEdgeOverlay([

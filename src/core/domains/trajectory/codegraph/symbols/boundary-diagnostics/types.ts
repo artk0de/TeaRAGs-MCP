@@ -519,7 +519,10 @@ export interface ReexportShimComponents {
 /** One re-export edge of a shim file: where it points and which names it forwards. */
 export interface ReexportShimForward {
   targetRelPath: RelPath;
+  /** In the spelling an importer of the shim file writes (`forwardedExportNames`). */
   names: readonly string[];
+  /** Exposed → target name where the edge renames (bd tea-rags-mcp-zl3so); absent = every name is its own. */
+  reexportedExportBindings?: Readonly<Record<string, string>>;
 }
 
 export interface ComponentStableDependenciesOptions {

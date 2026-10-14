@@ -678,6 +678,33 @@ describe("detectLeakingAbstractions — kindBasis (bd tea-rags-mcp-r8hme.43)", (
     const report = detectLeakingAbstractions(basisFixture());
     expect(basisOf(report, "app/d5.ts")).toEqual({ kind: "bypass", kindBasis: "file-rule" });
   });
+
+  /**
+   * bd tea-rags-mcp-zl3so — a deep import names `a.ts`'s exports in `a.ts`'s
+   * spelling, so it is compared with the names the facade FORWARDS from
+   * `a.ts` (the source side of `export { x as y }`), never with the alias the
+   * facade exposes: `x` is reachable through the facade (as `y`), so the deep
+   * import of `x` is a bypass; a name `a.ts` does not export is not exposed.
+   */
+  it("judges a deep import against the source names an aliasing facade forwards", () => {
+    const facadeUsers = ["app/f0.ts", "app/f1.ts", "app/f2.ts"];
+    const report = detectLeakingAbstractions({
+      files: [
+        ...["index.ts", "a.ts"].map((f) => walked(`lib/m/${f}`)),
+        ...facadeUsers.map((f) => walked(f)),
+        walked("app/d1.ts"),
+        walked("app/d2.ts"),
+      ],
+      edges: [
+        { ...named("lib/m/index.ts", "lib/m/a.ts", { reexported: ["x"] }), reexportedExportBindings: { y: "x" } },
+        ...facadeUsers.map((f) => named(f, "lib/m/index.ts", { imported: ["y"] })),
+        named("app/d1.ts", "lib/m/a.ts", { imported: ["x"] }),
+        named("app/d2.ts", "lib/m/a.ts", { imported: ["y"] }),
+      ],
+    });
+    expect(basisOf(report, "app/d1.ts")).toEqual({ kind: "bypass", kindBasis: "names" });
+    expect(basisOf(report, "app/d2.ts")).toEqual({ kind: "internal-reach", kindBasis: "names" });
+  });
 });
 
 /**

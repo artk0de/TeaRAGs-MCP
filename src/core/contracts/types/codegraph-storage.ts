@@ -936,6 +936,8 @@ export interface ReviewFileEdge {
   importedExportNames?: string[];
   /** The names this edge's statements re-export out of the target — the facade-contract detector's supply side. */
   reexportedExportNames?: string[];
+  /** Exposed → forwarded name table when the re-export renames (bd tea-rags-mcp-zl3so); read via `exposedReexportNames`. */
+  reexportedExportBindings?: Record<string, string>;
 }
 
 /**

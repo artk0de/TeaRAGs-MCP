@@ -1,3 +1,4 @@
+import { reexportBindingsField, reexportSourceName } from "../../../../../contracts/reexport-bindings.js";
 import {
   WHOLE_MODULE_EXPORT_NAME,
   type FileDependencyEdge,
@@ -57,7 +58,11 @@ export function deriveReexportShimComponents(
       ultimateTargetsOf.set(relPath, ultimateTargets(relPath, outgoing, componentOf, componentDirs));
       forwardsOf.set(
         relPath,
-        (outgoing.get(relPath) ?? []).map((e) => ({ targetRelPath: e.targetRelPath, names: forwardedExportNames(e) })),
+        (outgoing.get(relPath) ?? []).map((e) => ({
+          targetRelPath: e.targetRelPath,
+          names: forwardedExportNames(e),
+          ...reexportBindingsField(e.reexportedExportBindings),
+        })),
       );
     }
   }
@@ -74,14 +79,15 @@ export interface ReexportShimResolution {
 /**
  * The files an importer edge into shim file `relPath` reaches through the
  * shim chain, followed by the names it takes (bd tea-rags-mcp-ciq4d). A
- * forward naming a taken name carries that name on; a name no named forward
- * claims passes through every `export *` forward. A namespace import (`*`)
- * takes the whole surface — the per-file link, exactly.
+ * forward EXPOSING a taken name carries it on under the name it forwards from
+ * its target — the source side of an alias (bd tea-rags-mcp-zl3so); a name no
+ * named forward claims passes through every `export *` forward. A namespace
+ * import (`*`) takes the whole surface — the per-file link, exactly, and so
+ * does a name a forward exposes for its whole target (`export * as ns`).
  *
  * The names cannot settle it — the importer recorded none, or took a name no
- * forward of the chain claims and no `export *` can carry (an aliased
- * re-export: the walker records the SOURCE-side name, and no fact names the
- * alias) — and the answer is the per-file link with `nameResolved: false`.
+ * forward of the chain claims and no `export *` can carry — and the answer is
+ * the per-file link with `nameResolved: false`.
  */
 export function resolveReexportShimTargets(
   shims: ReexportShimComponents,
@@ -103,7 +109,17 @@ export function resolveReexportShimTargets(
     for (const forward of forwards) {
       const hit = forward.names.filter((n) => next.names.has(n));
       for (const n of hit) unclaimed.delete(n);
-      if (hit.length > 0) carried.push({ targetRelPath: forward.targetRelPath, names: new Set(hit) });
+      if (hit.length === 0) continue;
+      const forwarded = new Set(hit.map((n) => reexportSourceName(forward, n)));
+      // `export * as ns`: the whole target stands behind the taken name.
+      if (forwarded.has(WHOLE_MODULE_EXPORT_NAME) && !hit.includes(WHOLE_MODULE_EXPORT_NAME)) {
+        for (const target of shims.ultimateTargetsOf.get(forward.targetRelPath) ?? [forward.targetRelPath]) {
+          targets.add(target);
+        }
+        forwarded.delete(WHOLE_MODULE_EXPORT_NAME);
+        if (forwarded.size === 0) continue;
+      }
+      carried.push({ targetRelPath: forward.targetRelPath, names: forwarded });
     }
     if (unclaimed.size > 0) {
       const stars = forwards.filter((f) => f.names.includes(WHOLE_MODULE_EXPORT_NAME));

@@ -588,6 +588,9 @@ function classifyFacadeLeak(
   let facadeNamesRecorded = false;
   for (const { entry, facadeEdge } of facadeEdges) {
     if (facadeEdge.importedExportNames || facadeEdge.reexportedExportNames) facadeNamesRecorded = true;
+    // `x`'s spelling on both sides: the deep import names `x`'s exports, so it
+    // is compared with what the facade FORWARDS from `x` — never with the alias
+    // the facade exposes it under (bd tea-rags-mcp-zl3so).
     for (const name of facadeEdge.reexportedExportNames ?? []) exposed.add(name);
     if (IMPORTS_ARE_EXPORTS_ENTRY_NAMES.has(baseName(entry))) {
       for (const name of facadeEdge.importedExportNames ?? []) exposed.add(name);

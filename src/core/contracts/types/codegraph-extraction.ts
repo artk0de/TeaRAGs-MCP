@@ -1064,6 +1064,18 @@ export interface ImportRef {
    * Absent on every statement that is not a source re-export.
    */
   reexportedExportNames?: string[];
+  /**
+   * The IMPORTER-FACING side of {@link reexportedExportNames}
+   * (bd tea-rags-mcp-zl3so): each name this file exports mapped to the target
+   * name it forwards — `export { a as b } from` is `{ b: "a" }`,
+   * `export * as ns from` is `{ ns: "*" }`. Present only when some forwarded
+   * name is renamed, and then COMPLETE (an unrenamed forward is an identity
+   * entry), so a reader never has to merge it with the source list. Absent =
+   * every forwarded name is exported under its own spelling. Read through
+   * `exposedReexportNames` / `reexportSourceName`
+   * (`contracts/reexport-bindings.ts`), never directly.
+   */
+  reexportedExportBindings?: Record<string, string>;
 }
 
 export interface ChunkExtraction {

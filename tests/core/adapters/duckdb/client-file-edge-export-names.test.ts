@@ -75,4 +75,29 @@ describe("DuckDbGraphClient — file edge export names", () => {
     expect(edges).toHaveLength(1);
     expect(edges[0]?.importedExportNames).toEqual(["b", "c"]);
   });
+
+  // bd tea-rags-mcp-zl3so, migration 051 — the exposed → forwarded table of an aliased re-export.
+  it("round-trips the re-export bindings table, and an unaliased edge reads back without one", async () => {
+    await db.upsertFile(
+      { relPath: "src/lib/index.ts", language: "typescript" },
+      {
+        fileEdges: [
+          {
+            targetRelPath: "src/lib/a.ts",
+            importText: "./a.js",
+            reexportedExportNames: ["a", "c"],
+            reexportedExportBindings: { b: "a", c: "c" },
+          },
+          { targetRelPath: "src/lib/n.ts", importText: "./n.js", reexportedExportNames: ["*"] },
+        ],
+        methodEdges: [],
+      },
+    );
+
+    const { edges } = await db.readFileDependencyGraph();
+    const byTarget = new Map(edges.map((e) => [e.targetRelPath, e]));
+    expect(byTarget.get("src/lib/a.ts")?.reexportedExportBindings).toEqual({ b: "a", c: "c" });
+    const plain = byTarget.get("src/lib/n.ts");
+    expect(plain && "reexportedExportBindings" in plain).toBe(false);
+  });
 });
