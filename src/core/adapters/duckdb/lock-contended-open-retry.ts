@@ -86,7 +86,9 @@ export class LockContendedOpenRetry {
         const settlement = await arbiter?.settle(err, physicalCollectionName);
         // Retried at once, within the window only: a foreign session respawning
         // its daemon and re-taking the file each time must not spin this loop.
-        if (settlement?.kind === "drained" && !windowSpent) continue;
+        // A holder that released the collection on request (bd
+        // tea-rags-mcp-8noie) freed the file the same way.
+        if ((settlement?.kind === "drained" || settlement?.kind === "released") && !windowSpent) continue;
         if (arbiter && settlement?.kind === "held") {
           // One window per holder, not one per op (bd tea-rags-mcp-hw27k): the
           // op that already waited it out recorded the holder's verdict, whose

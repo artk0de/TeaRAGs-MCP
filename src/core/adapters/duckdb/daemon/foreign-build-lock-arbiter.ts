@@ -17,11 +17,13 @@
  *   the build handshake uses, still refused by the daemon while a write is in
  *   flight (bd tea-rags-mcp-zgcmo). Its own sessions respawn it on their next
  *   acquire, as they do after an idle exit;
- * - with a client connected it is left alone: draining it would cut a session
+ * - with a client connected it is not drained: draining it would cut a session
  *   of that build mid-use, and a daemon of this build meeting OUR run's daemon
  *   would drain it back between two writes — the livelock the handshake's
- *   bounded restart exists to avoid (bd tea-rags-mcp-ryoqn). The caller keeps
- *   its bounded wait and then names the holder.
+ *   bounded restart exists to avoid (bd tea-rags-mcp-ryoqn). It is asked
+ *   instead to release the ONE collection (bd tea-rags-mcp-8noie), which it
+ *   does only with no op in flight and past a short idle grace; until then the
+ *   caller keeps its bounded wait and then names the holder.
  *
  * A holder that is not a registered daemon (another process, a legacy layout)
  * is not this arbiter's business: the caller keeps its plain retry.
@@ -108,7 +110,7 @@ export class ForeignBuildDaemonLockArbiter implements ForeignBuildLockArbiter {
     const holder = settlement.kind === "notForeignBuildDaemon" ? undefined : settlement.holder;
     const reason = settlement.kind === "held" ? settlement.reason : undefined;
     const dedupKey = `${settlement.kind}|${reason ?? ""}|${holder?.pid ?? openError.lockHolderPid ?? ""}|${openError.dbPath}`;
-    if (settlement.kind !== "drained") {
+    if (settlement.kind !== "drained" && settlement.kind !== "released") {
       if (this.loggedOutcomes.has(dedupKey)) return;
       this.loggedOutcomes.add(dedupKey);
     }
@@ -138,8 +140,36 @@ export class ForeignBuildDaemonLockArbiter implements ForeignBuildLockArbiter {
 
     const holder: ForeignBuildDaemonLockHolder = { pid, buildDir: status.keyDir, buildFingerprint: undefined };
     // Read BEFORE connecting: our own control connection counts as a client.
-    if (readRefs(status.paths) > 0) return { kind: "held", holder, reason: "clientConnected" };
+    if (readRefs(status.paths) > 0) {
+      return (await this.requestIdleRelease(status, physicalCollectionName))
+        ? { kind: "released", holder }
+        : { kind: "held", holder, reason: "clientConnected" };
+    }
     return this.drain(status, holder, physicalCollectionName);
+  }
+
+  /**
+   * Ask a holder that still serves a client to release this ONE collection
+   * (bd tea-rags-mcp-8noie). Its pool honours the request only with no op in
+   * flight on the collection and past a short idle grace, so an active session
+   * of that build is never cut — the livelock the drain avoids for the same
+   * holder cannot arise either. Any failure (socket, a build without the op, an
+   * unreadable answer) counts as not released: the caller keeps polling within
+   * its unchanged window.
+   */
+  private async requestIdleRelease(
+    status: DaemonKeyDirStatus,
+    physicalCollectionName: PhysicalCollectionName,
+  ): Promise<boolean> {
+    const client = this.controlClient(status.keyDir, physicalCollectionName);
+    try {
+      await client.init();
+      return await client.releaseIdleCollection();
+    } catch {
+      return false;
+    } finally {
+      await client.close().catch(() => undefined);
+    }
   }
 
   /**

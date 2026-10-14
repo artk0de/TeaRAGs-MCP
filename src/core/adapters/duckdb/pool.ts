@@ -40,7 +40,11 @@ import { isDebug } from "../../primitives/diagnostics/index.js";
 import { DuckDbGraphClient } from "./client.js";
 import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.js";
 import { CodegraphPathLeases } from "./codegraph-path-leases.js";
-import { CollectionIdleEvictionTracker, type GraphDbClientPoolIdleEviction } from "./collection-idle-eviction.js";
+import {
+  CollectionIdleEvictionTracker,
+  type CollectionReleaseRequestOutcome,
+  type GraphDbClientPoolIdleEviction,
+} from "./collection-idle-eviction.js";
 import type { CollectionInitHook, SymbolTableFactory } from "./collection-init-hook.js";
 import type {
   CodegraphDaemonClientTarget,
@@ -749,6 +753,24 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
     if (!entry) return false;
     await this.retireEntry(physicalCollectionName, entry, "swallow");
     return true;
+  }
+
+  /**
+   * Release the collection's cached client because another build's daemon is
+   * waiting on its file lock (bd tea-rags-mcp-8noie) — only when no op is in
+   * flight and it has been idle past the grace
+   * (`CollectionIdleEvictionTracker#releaseOnRequest`). A pool without idle
+   * eviction keeps its clients until it closes, so it declines.
+   */
+  async releaseIdleCollection(
+    physicalCollectionName: PhysicalCollectionName,
+  ): Promise<CollectionReleaseRequestOutcome> {
+    if (!this.idleEviction) {
+      return this.clients.has(physicalCollectionName)
+        ? { kind: "declined", reason: "idleEvictionOff" }
+        : { kind: "notHeld" };
+    }
+    return this.idleEviction.releaseOnRequest(physicalCollectionName);
   }
 
   /**

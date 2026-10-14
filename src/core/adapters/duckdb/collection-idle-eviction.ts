@@ -17,7 +17,39 @@ export interface GraphDbClientPoolIdleEviction {
   idleMs: number;
   /** How often the eviction pass runs. */
   pollMs?: number;
+  /**
+   * How long a collection must have been idle before a release request from
+   * another build's daemon is honoured (bd tea-rags-mcp-8noie). Defaults to
+   * {@link RELEASE_REQUEST_IDLE_GRACE_MS}; tests shorten it.
+   */
+  releaseRequestGraceMs?: number;
 }
+
+/**
+ * Idle grace before a release REQUEST is honoured (bd tea-rags-mcp-8noie).
+ *
+ * 3 s, because it has to sit between two numbers. Above the gap between two
+ * ops of one active session: a review's or enrichment pass's ops follow each
+ * other within milliseconds, and a write admitted behind another one starts in
+ * the same tick the previous one ends — so an active session is never cut
+ * between ops, and two builds active on one collection hand the lock over at
+ * most once per 3 s of quiet instead of thrashing. Far below the 60 s idle
+ * window (`DEFAULT_IDLE_EVICT_MS`) the waiter otherwise sits out: a waiter
+ * polling once a second gets the file within about grace + one interval.
+ */
+export const RELEASE_REQUEST_IDLE_GRACE_MS = 3_000;
+
+/**
+ * The holder's answer to a release request (bd tea-rags-mcp-8noie):
+ * `released` — the cached client was closed through the ordinary release;
+ * `notHeld` — no cached client to release; `declined` — busy, kept open
+ * (`idleEvictionOff`: a pool without idle eviction keeps clients until it
+ * closes, so it has no idle clock to judge by).
+ */
+export type CollectionReleaseRequestOutcome =
+  | { kind: "released" }
+  | { kind: "notHeld" }
+  | { kind: "declined"; reason: "opInFlight" | "withinGrace" | "idleEvictionOff" };
 
 /** What an eviction pass reads and acts on — the pool's client cache. */
 export interface CollectionIdleEvictionTarget {
@@ -85,6 +117,26 @@ export class CollectionIdleEvictionTracker {
   clear(): void {
     this.lastUsedByCollection.clear();
     this.opsInFlightByCollection.clear();
+  }
+
+  /**
+   * Honour a release request from another build's daemon waiting on the
+   * collection's file lock (bd tea-rags-mcp-8noie): release it now when no op
+   * is in flight AND it has been idle past the grace, else decline. The check
+   * and the target's `release` start in one synchronous step — the pool marks
+   * the client retired before its first await — so no op can pin the client in
+   * between. Same `release` path as the idle poller: never the stale-retire
+   * path, which deletes the WAL by path (bd tea-rags-mcp-amh78).
+   */
+  async releaseOnRequest(physicalCollectionName: PhysicalCollectionName): Promise<CollectionReleaseRequestOutcome> {
+    if (!this.target.cachedCollections().includes(physicalCollectionName)) return { kind: "notHeld" };
+    if ((this.opsInFlightByCollection.get(physicalCollectionName) ?? 0) > 0) {
+      return { kind: "declined", reason: "opInFlight" };
+    }
+    const lastUsed = this.lastUsedByCollection.get(physicalCollectionName);
+    const graceMs = this.eviction.releaseRequestGraceMs ?? RELEASE_REQUEST_IDLE_GRACE_MS;
+    if (lastUsed !== undefined && Date.now() - lastUsed < graceMs) return { kind: "declined", reason: "withinGrace" };
+    return (await this.target.release(physicalCollectionName)) ? { kind: "released" } : { kind: "notHeld" };
   }
 
   /**

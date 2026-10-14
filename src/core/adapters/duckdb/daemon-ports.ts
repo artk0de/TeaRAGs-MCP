@@ -105,6 +105,11 @@ export type ForeignBuildLockSettlement =
   | { kind: "notForeignBuildDaemon" }
   /** The holder served nobody and has exited; the open may be retried at once. */
   | { kind: "drained"; holder: ForeignBuildDaemonLockHolder }
+  /**
+   * The holder, still serving a client, closed this one idle collection on
+   * request and stays up (bd tea-rags-mcp-8noie); the open may be retried at once.
+   */
+  | { kind: "released"; holder: ForeignBuildDaemonLockHolder }
   /** The holder is in use, refused the drain, or could not be drained; it stays up. */
   | {
       kind: "held";

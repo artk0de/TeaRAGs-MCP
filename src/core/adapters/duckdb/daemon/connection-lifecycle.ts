@@ -49,6 +49,7 @@ const LEGACY_TOLERATED_OP_LIST = [
   "ping",
   "removeCollectionDatabase",
   "cloneCollectionDatabase",
+  "releaseIdleCollection",
 ] as const satisfies readonly DaemonOp[];
 
 export type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
@@ -85,6 +86,9 @@ export type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
  *   daemon's in-flight op, and the dev/ino check its next acquire runs is what
  *   retires the client. Requiring them would drain a daemon other sessions are
  *   using for the sake of a clear.
+ * - `releaseIdleCollection` — not released: the holder keeps the file until
+ *   its own idle eviction, the waiter's pre-8noie wait. The op is only ever
+ *   sent to ANOTHER build's daemon, which this client never restarts.
  *
  * An op whose fallback is wrong data stays required — weno4's
  * pass-1 aggregate read (now `listPass1Aggregates`) degraded a live repair to a

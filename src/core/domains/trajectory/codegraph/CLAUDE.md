@@ -239,10 +239,14 @@
   catches the replacement. Another build's daemon merely HOLDING the file is
   settled at open instead (bd tea-rags-mcp-hw27k): the daemon pool's
   `ForeignBuildDaemonLockArbiter` drains such a holder when no client is
-  connected to it, and once the open window runs out on one still in use the
-  open fails with `CodegraphDatabaseHeldByForeignDaemonError` naming its pid and
-  build — never drained then, or two builds' daemons would drain each other
-  between writes.
+  connected to it. One still in use is never drained — two builds' daemons would
+  drain each other between writes — but is asked to release that ONE collection
+  (op `releaseIdleCollection`, bd tea-rags-mcp-8noie), which its pool honours
+  only with no op in flight and past `RELEASE_REQUEST_IDLE_GRACE_MS`
+  (`CollectionIdleEvictionTracker#releaseOnRequest`, through
+  `GraphDbClientPool#release`, never the stale-retire path). Declined until the
+  open window runs out, the open fails with
+  `CodegraphDatabaseHeldByForeignDaemonError` naming its pid and build.
 
 - **Every `cg_*` table keeps the rows it deletes, so a wholesale rewrite
   RECREATES its table and the file is compacted by copy.** DuckDB 1.5.3 vacuums

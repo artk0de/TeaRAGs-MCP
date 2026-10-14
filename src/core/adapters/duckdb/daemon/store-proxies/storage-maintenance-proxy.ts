@@ -108,6 +108,24 @@ export class DaemonStorageMaintenanceProxy implements Omit<CodegraphStorageMaint
    * leases (bd tea-rags-mcp-r4veq). Resolves `false` when the daemon predates
    * the op and the caller must copy the files itself.
    */
+  /**
+   * Ask ANOTHER build's daemon holding this collection's file to release it (bd
+   * tea-rags-mcp-8noie). Resolves whether it did: an idle-past-grace collection
+   * is released, a busy one declined, and a daemon that predates the op — or an
+   * answer this build cannot read — counts as not released.
+   */
+  async releaseIdleCollection(): Promise<boolean> {
+    return this.ops.callTolerated(
+      "releaseIdleCollection",
+      {},
+      (releaseOutcome) =>
+        typeof releaseOutcome === "object" &&
+        releaseOutcome !== null &&
+        (releaseOutcome as { kind?: unknown }).kind === "released",
+      () => false,
+    );
+  }
+
   async cloneCollectionDatabase(source: PhysicalCollectionName, target: PhysicalCollectionName): Promise<boolean> {
     return this.ops.callTolerated(
       "cloneCollectionDatabase",

@@ -212,6 +212,9 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
       // The liveness probe (f924y): an older daemon's "unknown op" answer is the proof of life it asks for.
       "ping",
       "refreshSymbolSignalsPrev",
+      // Release request from another build's daemon (8noie): an older holder
+      // keeps the file until its idle eviction, the waiter's pre-8noie wait.
+      "releaseIdleCollection",
       "removeCollectionDatabase",
     ]);
     expect(new Set([...REQUIRED_DAEMON_OPS, ...LEGACY_TOLERATED_OPS])).toEqual(new Set(DAEMON_OPS));
@@ -230,9 +233,15 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
       if (access === "read") expect(isDaemonWriteOp(op), op).toBe(false);
     }
     // Of the ops acting on the daemon itself, only the connection's own
-    // handshake and liveness probe leave everything as it was.
+    // handshake and liveness probe leave everything as it was — and the
+    // release request (8noie), which only closes an idle client the next op
+    // re-opens, exactly as the idle poller does; no data or file changes.
     const daemonOps = DAEMON_OPS.filter((op) => DAEMON_OP_COMMANDS[op].access === "daemon");
-    expect(daemonOps.filter((op) => !isDaemonWriteOp(op)).sort()).toEqual(["handshake", "ping"]);
+    expect(daemonOps.filter((op) => !isDaemonWriteOp(op)).sort()).toEqual([
+      "handshake",
+      "ping",
+      "releaseIdleCollection",
+    ]);
     expect(daemonOps.filter((op) => isDaemonWriteOp(op)).sort()).toEqual([
       "cloneCollectionDatabase",
       "finalizeReindex",
