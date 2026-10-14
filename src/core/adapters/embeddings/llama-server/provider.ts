@@ -112,6 +112,43 @@ class EndpointRequestFailure extends Error {
   }
 }
 
+/**
+ * Endpoints one call stopped using because they failed it. A passing `/health`
+ * does not lift an exclusion: an endpoint can be live and still fail every
+ * request (5xx, 429, a malformed body), and retrying it on that evidence spins
+ * the call without ever reaching the fallback (bd hgghf). Exclusions lift once
+ * the call has backed off. The one exception is an endpoint the call could not
+ * REACH — a probe that reaches it contradicts exactly that evidence, so a
+ * probe lifts it, once per endpoint per call.
+ */
+class EndpointCallExclusions {
+  readonly urls = new Set<string>();
+  private readonly unreachable = new Set<string>();
+  private readonly liftedByProbe = new Set<string>();
+
+  exclude(failure: EndpointRequestFailure): void {
+    this.urls.add(failure.url);
+    if (isConnectClassFailure(failure.reason)) this.unreachable.add(failure.url);
+    else this.unreachable.delete(failure.url);
+  }
+
+  /** Lift the exclusion of each unreachable endpoint a probe has since found live. */
+  liftReachable(isLive: (url: string) => boolean): void {
+    for (const url of this.unreachable) {
+      if (this.liftedByProbe.has(url) || !isLive(url)) continue;
+      this.liftedByProbe.add(url);
+      this.unreachable.delete(url);
+      this.urls.delete(url);
+    }
+  }
+
+  /** The call has backed off: every endpoint gets another chance. */
+  clear(): void {
+    this.urls.clear();
+    this.unreachable.clear();
+  }
+}
+
 /** The server failed the request on its SIZE; halve it. Never leaves the provider. */
 class BatchSizeFailure extends Error {
   constructor(
@@ -342,7 +379,8 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
    * endpoint drains it with one worker per slot. A micro-batch whose endpoint
    * failed returns to the front of the queue for the endpoints still standing.
    * An endpoint that failed in this call is not asked again until the call has
-   * waited, so a failure below the failover threshold cannot spin.
+   * backed off (see `EndpointCallExclusions`), and the tier is chosen among the
+   * endpoints left, so a failure below the failover threshold cannot spin.
    */
   private async embedAcrossEndpoints(
     texts: readonly string[],
@@ -351,14 +389,13 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
     recoveryBudgetMs: number,
   ): Promise<void> {
     const wait: RecoveryWaitState = { start: this.now(), budgetMs: recoveryBudgetMs, attempt: 0 };
-    const excluded = new Set<string>();
+    const exclusions = new EndpointCallExclusions();
     let queue: number[][] | undefined;
 
     while (queue === undefined || queue.length > 0) {
-      const active = this.pool.activeEndpoints().filter((e) => !excluded.has(e.url));
+      const active = this.pool.activeEndpoints(exclusions.urls);
       if (active.length === 0) {
-        await this.waitForEndpoint(wait);
-        excluded.clear();
+        await this.waitForEndpoint(wait, exclusions);
         continue;
       }
 
@@ -376,7 +413,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       const round = await this.drainMicroBatchQueue(queue, endpoints, texts, vectors);
       for (const failure of round.endpointFailures) {
         this.noteEndpointFailure(failure);
-        excluded.add(failure.url);
+        exclusions.exclude(failure);
         wait.lastError = failure;
       }
       if (round.callerError !== undefined) throw round.callerError;
@@ -531,14 +568,18 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   }
 
   /**
-   * No endpoint is usable. Probe every endpoint directly (the pool's own
-   * interval gate is for the background timer, not for a caller that is
-   * already blocked), then back off until the call's budget is spent. A zero
-   * budget still makes that one direct probe: an endpoint that is back answers.
+   * No endpoint is usable by this call. Probe every endpoint directly (the
+   * pool's own interval gate is for the background timer, not for a caller
+   * that is already blocked); return at once if that brings back an endpoint
+   * the call may use, else back off until the call's budget is spent and give
+   * every excluded endpoint another chance. A zero budget still makes that one
+   * direct probe: an endpoint that is back answers.
    */
-  private async waitForEndpoint(wait: RecoveryWaitState): Promise<void> {
+  private async waitForEndpoint(wait: RecoveryWaitState, exclusions: EndpointCallExclusions): Promise<void> {
     this.failWhenNoEndpointServesModel();
-    if (await this.reprobeAll()) return;
+    await this.reprobeAll();
+    exclusions.liftReachable((url) => this.pool.snapshot().some((e) => e.url === url && e.healthy));
+    if (this.pool.activeEndpoints(exclusions.urls).length > 0) return;
     const remainingMs = wait.start + wait.budgetMs - this.now();
     if (remainingMs <= 0) {
       const recoveryWaitMs = wait.attempt > 0 ? this.now() - wait.start : 0;
@@ -563,13 +604,12 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
     });
     await this.sleep(delayMs);
     await this.reprobeAll();
+    exclusions.clear();
   }
 
-  private async reprobeAll(): Promise<boolean> {
-    const peersUp = await this.pool.checkPeersHealth();
-    const up = peersUp || (await this.pool.checkFallbacksHealth()) === true;
+  private async reprobeAll(): Promise<void> {
+    if (!(await this.pool.checkPeersHealth())) await this.pool.checkFallbacksHealth();
     this.syncProbeTimer();
-    return up;
   }
 
   /**

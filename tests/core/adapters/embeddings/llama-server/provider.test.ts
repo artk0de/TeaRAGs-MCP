@@ -574,6 +574,119 @@ describe("LlamaServerEmbeddings", () => {
 
       expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3]);
     });
+
+    describe("a peer that answers /health but fails every post (bd hgghf)", () => {
+      /** Every bounded test gets this timeout; the livelock it guards against spun forever. */
+      const LIVELOCK_TIMEOUT_MS = 5_000;
+      /**
+       * Breaks a livelock so a regression fails on its assertions instead of
+       * hanging: past this many posts the peer stops answering at all.
+       */
+      const SPIN_BREAKER_POSTS = 50;
+
+      function failingPeer(outcome: () => Response): FakeLlamaServer {
+        const server: FakeLlamaServer = { health: true };
+        let posts = 0;
+        server.embed = () => {
+          posts += 1;
+          if (posts >= SPIN_BREAKER_POSTS) server.health = false;
+          return outcome();
+        };
+        return server;
+      }
+
+      const transientFailures: [string, () => Response][] = [
+        ["503", () => new Response("loading model", { status: 503 })],
+        ["429", () => new Response("too many requests", { status: 429 })],
+        ["a malformed body", () => Response.json({ object: "list", data: [] })],
+      ];
+
+      for (const [label, outcome] of transientFailures) {
+        it(
+          `serves the call from the fallback when the only peer answers ${label} on every post`,
+          async () => {
+            const cluster = fakeCluster({ [PEER_A]: failingPeer(outcome), [FALLBACK]: healthy() });
+            const provider = makeProvider(cluster, { peers: PEER_A, fallbacks: FALLBACK });
+
+            const results = await provider.embedBatch(texts(4));
+
+            expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3]);
+            expect(cluster.embedCalls(PEER_A)).toHaveLength(1);
+            expect(cluster.embedCalls(FALLBACK).length).toBeGreaterThan(0);
+          },
+          LIVELOCK_TIMEOUT_MS,
+        );
+      }
+
+      it(
+        "gives up within the wait budget when no fallback is configured",
+        async () => {
+          const cluster = fakeCluster({
+            [PEER_A]: failingPeer(() => new Response("loading model", { status: 503 })),
+          });
+          const time = fakeTime();
+          const provider = makeProvider(cluster, {
+            peers: PEER_A,
+            time,
+            rateLimit: { unavailableRetryMaxWaitMs: 10_000, unavailableRetryBaseDelayMs: 1_000 },
+          });
+
+          const error = await provider.embedBatch(texts(2)).catch((e: unknown) => e);
+
+          expect(error).toBeInstanceOf(LlamaServerUnavailableError);
+          expect((error as LlamaServerUnavailableError).recoveryWaitMs).toBeGreaterThanOrEqual(10_000);
+          // One post per backoff step, never a retry the wait did not pace.
+          expect(cluster.embedCalls(PEER_A).length).toBeLessThan(SPIN_BREAKER_POSTS);
+        },
+        LIVELOCK_TIMEOUT_MS,
+      );
+
+      it(
+        "uses the peer again on a later call once it serves",
+        async () => {
+          const serverA = failingPeer(() => new Response("loading model", { status: 503 }));
+          const cluster = fakeCluster({ [PEER_A]: serverA, [FALLBACK]: healthy() });
+          const provider = makeProvider(cluster, { peers: PEER_A, fallbacks: FALLBACK });
+          await provider.embedBatch(texts(2));
+
+          serverA.embed = undefined;
+          const fallbackPosts = cluster.embedCalls(FALLBACK).length;
+          const results = await provider.embedBatch(texts(2));
+
+          expect(results.map((r) => r.embedding[0])).toEqual([0, 1]);
+          expect(cluster.embedCalls(FALLBACK)).toHaveLength(fallbackPosts);
+          expect(provider.getBaseUrl()).toBe(PEER_A);
+        },
+        LIVELOCK_TIMEOUT_MS,
+      );
+
+      it(
+        "re-admits a peer the failures took out of service once the failback probe finds it serving",
+        async () => {
+          const serverA = failingPeer(() => new Response("loading model", { status: 503 }));
+          const cluster = fakeCluster({ [PEER_A]: serverA, [FALLBACK]: healthy() });
+          const time = fakeTime();
+          const provider = makeProvider(cluster, {
+            peers: PEER_A,
+            fallbacks: FALLBACK,
+            time,
+            rateLimit: { failoverConsecutiveFailures: 1 },
+          });
+          await provider.embedBatch(texts(2));
+          expect(provider.getBaseUrl()).toBe(FALLBACK);
+
+          serverA.embed = undefined;
+          time.advance(60_000);
+          await time.fireProbe();
+          const fallbackPosts = cluster.embedCalls(FALLBACK).length;
+          await provider.embedBatch(texts(2));
+
+          expect(cluster.embedCalls(FALLBACK)).toHaveLength(fallbackPosts);
+          expect(provider.getBaseUrl()).toBe(PEER_A);
+        },
+        LIVELOCK_TIMEOUT_MS,
+      );
+    });
   });
 
   describe("size failure", () => {

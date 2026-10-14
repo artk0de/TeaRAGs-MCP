@@ -45,6 +45,7 @@ export interface EmbeddingEndpointPoolConfig {
 }
 
 const DEFAULT_EWMA_ALPHA = 0.3;
+const NO_EXCLUSIONS: ReadonlySet<string> = new Set();
 
 interface TrackedEmbeddingEndpoint extends EmbeddingEndpointState {
   /** Timestamp of the last probe while failed; cleared when the endpoint fails anew. */
@@ -106,17 +107,24 @@ export class EmbeddingEndpointPool {
     ];
   }
 
-  /** Healthy endpoints of the active tier: peers if any healthy, else fallbacks. */
-  activeEndpoints(): EmbeddingEndpointState[] {
-    const tier = this.activeTier();
+  /**
+   * Healthy endpoints of the active tier: peers if any healthy, else fallbacks.
+   * `excluded` are endpoints one caller will not use (they failed it); the
+   * tier is chosen among the rest, so a caller whose every peer failed it gets
+   * the fallbacks even while those peers still count as healthy.
+   */
+  activeEndpoints(excluded: ReadonlySet<string> = NO_EXCLUSIONS): EmbeddingEndpointState[] {
+    const tier = this.activeTier(excluded);
     if (!tier) return [];
-    return this.endpoints.filter((e) => e.tier === tier && isServing(e)).map(toState);
+    return this.endpoints.filter((e) => e.tier === tier && isServing(e) && !excluded.has(e.url)).map(toState);
   }
 
-  /** Tier currently serving; undefined when no endpoint is healthy. */
-  activeTier(): EmbeddingEndpointTier | undefined {
-    if (this.endpoints.some((e) => e.tier === "peer" && isServing(e))) return "peer";
-    if (this.endpoints.some((e) => e.tier === "fallback" && isServing(e))) return "fallback";
+  /** Tier serving once `excluded` is set aside; undefined when no other endpoint is healthy. */
+  activeTier(excluded: ReadonlySet<string> = NO_EXCLUSIONS): EmbeddingEndpointTier | undefined {
+    const serves = (tier: EmbeddingEndpointTier) =>
+      this.endpoints.some((e) => e.tier === tier && isServing(e) && !excluded.has(e.url));
+    if (serves("peer")) return "peer";
+    if (serves("fallback")) return "fallback";
     return undefined;
   }
 
@@ -244,9 +252,14 @@ export class EmbeddingEndpointPool {
     endpoint.healthy = false;
   }
 
+  /**
+   * A passing probe proves the endpoint is LIVE, not that it serves: a
+   * re-admitted endpoint starts with a clean failure count, but one that never
+   * left service keeps the count its requests earned (bd hgghf).
+   */
   private markHealthy(endpoint: TrackedEmbeddingEndpoint): void {
+    if (!endpoint.healthy) endpoint.consecutiveFailures = 0;
     endpoint.healthy = true;
-    endpoint.consecutiveFailures = 0;
     endpoint.lastProbeAt = undefined;
   }
 
