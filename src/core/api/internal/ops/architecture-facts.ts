@@ -107,13 +107,20 @@ export async function readProductionArchitectureGraph(
   readIndexedFileImports?: IndexedFileImportLookup,
   readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
 ): Promise<ProductionArchitectureGraph> {
-  const indexed = await graphDb.readFileDependencyGraph();
+  // Both whole-index reads start together, and the synchronous manifest read
+  // runs while they are in flight (bd tea-rags-mcp-pqdw4); the no-op catch
+  // keeps a rejection unhandled-free if the manifest read throws first — the
+  // await below still sees it.
+  const reads = Promise.all([graphDb.readFileDependencyGraph(), readIndexedFileImports?.()]);
+  reads.catch(() => undefined);
+  const declaredTestDependencies = readIndexedFileImports ? readDeclaredTestDependencies?.() : undefined;
+  const [indexed, importsByFile] = await reads;
   const nonProductionPaths = buildNonProductionPathFilter();
   const withoutTooling = excludeNonProductionFiles(indexed, nonProductionPaths);
-  const { testSupport, testOnlyDependencyCount } = await classifyIndexedTestSupport(
+  const { testSupport, testOnlyDependencyCount } = classifyIndexedTestSupport(
     indexed,
-    readIndexedFileImports,
-    readDeclaredTestDependencies,
+    importsByFile,
+    declaredTestDependencies,
   );
   const testSupportPaths: PathFilter = { ignores: (relPath) => testSupport.has(relPath) };
   const production = excludeNonProductionFiles(withoutTooling.graph, testSupportPaths);
@@ -132,22 +139,21 @@ export async function readProductionArchitectureGraph(
 
 /**
  * Test support over the whole indexed graph, and the size of the test-only
- * dependency set it rests on. Without `readIndexedFileImports` no test
- * importer is known and nothing is classified.
+ * dependency set it rests on. Without the indexed imports no test importer is
+ * known and nothing is classified.
  */
-async function classifyIndexedTestSupport(
+function classifyIndexedTestSupport(
   indexed: FileDependencyGraph,
-  readIndexedFileImports: IndexedFileImportLookup | undefined,
-  readDeclaredTestDependencies: DeclaredTestDependencyLookup | undefined,
-): Promise<{ testSupport: ReadonlySet<RelPath>; testOnlyDependencyCount: number }> {
-  if (!readIndexedFileImports) return { testSupport: new Set(), testOnlyDependencyCount: 0 };
-  const importsByFile = await readIndexedFileImports();
+  importsByFile: ReadonlyMap<RelPath, IndexedFileImports> | undefined,
+  declaredTestDependencies: ReadonlySet<string> | undefined,
+): { testSupport: ReadonlySet<RelPath>; testOnlyDependencyCount: number } {
+  if (!importsByFile) return { testSupport: new Set(), testOnlyDependencyCount: 0 };
   const walkedFiles = indexed.files.map((f) => f.relPath);
   const { files, testOnlyDependencies } = classifyTestSupportFiles(
     indexed,
     resolveUnwalkedImportEdges(importsByFile, walkedFiles),
     resolveExternalImports(importsByFile, walkedFiles),
-    readDeclaredTestDependencies?.(),
+    declaredTestDependencies,
   );
   return { testSupport: files, testOnlyDependencyCount: testOnlyDependencies.size };
 }

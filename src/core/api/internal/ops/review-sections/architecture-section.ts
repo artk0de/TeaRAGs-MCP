@@ -634,7 +634,10 @@ export const architectureSectionProvider: ReviewSectionProvider = {
     // answers from. The pre-read snapshot is reused, never read again.
     const graphFacts = await readArchitectureGraphFacts(
       graphDb,
-      { cochange: context.temporalCochange ?? EMPTY_COCHANGE },
+      {
+        cochange: context.temporalCochange ?? EMPTY_COCHANGE,
+        ...(context.readProductionGraph === undefined ? {} : { production: context.readProductionGraph() }),
+      },
       context.readIndexedFileImports,
       context.readDeclaredTestDependencies,
     );

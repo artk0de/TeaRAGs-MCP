@@ -35,7 +35,12 @@ import type {
 } from "../../public/dto/review.js";
 import { InvalidParameterError } from "../../public/errors.js";
 import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
-import type { DeclaredTestDependencyLookup, IndexedFileImportLookup } from "./architecture-facts.js";
+import {
+  readProductionArchitectureGraph,
+  type DeclaredTestDependencyLookup,
+  type IndexedFileImportLookup,
+} from "./architecture-facts.js";
+import { readOnce } from "./architecture-report-ops.js";
 import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import type { ReviewEdgeExtractionDeps } from "./review-edge-overlay.js";
 import {
@@ -232,6 +237,15 @@ export class ReviewChangesOps {
         readDeclaredTestDependencies === undefined || workTree === undefined
           ? undefined
           : () => readDeclaredTestDependencies(workTree);
+      // The production graph, read on first use and shared by architecture and
+      // norms (bd tea-rags-mcp-pqdw4): the whole-graph and whole-index reads
+      // run once per review, not once per section.
+      const readProductionGraphOnce =
+        graphDb === undefined
+          ? undefined
+          : readOnce(async () =>
+              readProductionArchitectureGraph(graphDb, indexedFileImports, declaredTestDependencies),
+            );
       // The change's edges, read on first use and shared (bd tea-rags-mcp-nehn5):
       // every section that walks the diff resolves against one hydrated table
       // (bd tea-rags-mcp-vdhjc) and one walk, and a review asking for none of
@@ -257,6 +271,7 @@ export class ReviewChangesOps {
         ...(maintenanceSignals === undefined ? {} : { readFileMaintenanceSignals: maintenanceSignals }),
         ...(indexedFileImports === undefined ? {} : { readIndexedFileImports: indexedFileImports }),
         ...(declaredTestDependencies === undefined ? {} : { readDeclaredTestDependencies: declaredTestDependencies }),
+        ...(readProductionGraphOnce === undefined ? {} : { readProductionGraph: readProductionGraphOnce }),
       };
       // The sections are independent reads of one snapshot, so they run
       // together; the envelope lists them in the requested order whatever

@@ -402,6 +402,22 @@ describe("ReviewChangesOps", () => {
     expect(both).toBe(alone);
   });
 
+  it("reads the production graph once per review: architecture and norms share it (bd tea-rags-mcp-pqdw4)", async () => {
+    const graph = graphDbStub();
+    const readIndexedFileImports = vi.fn().mockResolvedValue(new Map());
+    const readDeclaredTestDependencies = vi.fn(() => new Set<string>());
+
+    const result = await makeOps(graph, {}, { readIndexedFileImports, readDeclaredTestDependencies }).reviewChanges(
+      request({ sections: ["architecture", "norms"] }),
+    );
+
+    expect(result.review.sections.architecture?.built).toBe(true);
+    expect(result.review.sections.norms?.built).toBe(true);
+    expect(graph.readFileDependencyGraph).toHaveBeenCalledTimes(1);
+    expect(readIndexedFileImports).toHaveBeenCalledTimes(1);
+    expect(readDeclaredTestDependencies).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the symbol rows across reviews until a write moves the database stamp (bd tea-rags-mcp-nehn5)", async () => {
     const listAllSymbols = vi.fn(async () => []);
     const listFileContentHashes = vi.fn(async () => [{ relPath: CHANGED, contentHash: null }]);

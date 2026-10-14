@@ -92,18 +92,23 @@ export async function readArchitectureGraphFacts(
     norms?: boolean;
     /** A co-change snapshot the caller already read — taken as is instead of read again. */
     cochange?: TemporalCochangeGraph;
+    /**
+     * A production graph the caller already reads (bd tea-rags-mcp-pqdw4) —
+     * the review's one shared read — awaited instead of read again.
+     */
+    production?: Promise<ProductionArchitectureGraph>;
   },
   readIndexedFileImports?: IndexedFileImportLookup,
   readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
 ): Promise<ArchitectureGraphFacts> {
   // The read and the exclusions live in `architecture-facts.ts`, shared with
-  // the diff-scoped run (bd tea-rags-mcp-89k7k.1.4).
-  const production = await readProductionArchitectureGraph(
-    graphDb,
-    readIndexedFileImports,
-    readDeclaredTestDependencies,
-  );
-  const memberEdges = await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]);
+  // the diff-scoped run (bd tea-rags-mcp-89k7k.1.4). The member edges are
+  // read beside the production graph, not after it (bd tea-rags-mcp-pqdw4).
+  const [production, memberEdges] = await Promise.all([
+    request.production ??
+      readProductionArchitectureGraph(graphDb, readIndexedFileImports, readDeclaredTestDependencies),
+    graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]),
+  ]);
   const classHierarchy =
     graphDb.loadHierarchySnapshot !== undefined && memberEdges.some((e) => e.targetLanguage === "python")
       ? await graphDb.loadHierarchySnapshot()

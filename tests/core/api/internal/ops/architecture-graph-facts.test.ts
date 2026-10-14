@@ -6,6 +6,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import { readProductionArchitectureGraph } from "../../../../../src/core/api/internal/ops/architecture-facts.js";
 import { readArchitectureGraphFacts } from "../../../../../src/core/api/internal/ops/architecture-graph-facts.js";
 import { ArchitectureReportOps } from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
 import type {
@@ -82,6 +83,46 @@ describe("readArchitectureGraphFacts", () => {
     );
     expect(loadHierarchySnapshot).toHaveBeenCalledTimes(1);
     expect(withPython.classHierarchy).toEqual({ parents: new Map() });
+  });
+
+  it("takes a production graph the caller is already reading and starts the member edges beside it (bd tea-rags-mcp-pqdw4)", async () => {
+    const db = graphDb();
+    const production = await readProductionArchitectureGraph(db);
+    let settle!: () => void;
+    const shared = new Promise<typeof production>((resolve) => {
+      settle = () => {
+        resolve(production);
+      };
+    });
+
+    const pending = readArchitectureGraphFacts(db, { production: shared });
+    await Promise.resolve();
+
+    expect(db.readNonPublicMemberEdges).toHaveBeenCalledTimes(1);
+    settle();
+    const facts = await pending;
+    expect(facts.production).toBe(production);
+    expect(db.readFileDependencyGraph).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the member edges beside its own production-graph read (bd tea-rags-mcp-pqdw4)", async () => {
+    const db = graphDb();
+    let settle!: () => void;
+    db.readFileDependencyGraph.mockImplementation(
+      async () =>
+        new Promise<FileDependencyGraph>((resolve) => {
+          settle = () => {
+            resolve(graph());
+          };
+        }),
+    );
+
+    const pending = readArchitectureGraphFacts(db, {});
+    await Promise.resolve();
+
+    expect(db.readNonPublicMemberEdges).toHaveBeenCalledTimes(1);
+    settle();
+    expect((await pending).production.graph.files.length).toBeGreaterThan(0);
   });
 });
 

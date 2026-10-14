@@ -161,6 +161,66 @@ describe("readProductionArchitectureGraph", () => {
   });
 });
 
+describe("readProductionArchitectureGraph — concurrent reads (bd tea-rags-mcp-pqdw4)", () => {
+  /** A promise the test settles by hand, to observe what starts while a read is in flight. */
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  it("starts the graph and the import read together and reads the manifests while both are in flight", async () => {
+    const graph = deferred<FileDependencyGraph>();
+    const imports = deferred<Map<RelPath, { isTest: boolean; specifiers: string[] }>>();
+    const order: string[] = [];
+    const graphDb = {
+      readFileDependencyGraph: vi.fn(async () => {
+        order.push("graph");
+        return graph.promise;
+      }),
+    };
+    const readIndexedFileImports = vi.fn(async () => {
+      order.push("imports");
+      return imports.promise;
+    });
+    const readDeclaredTestDependencies = vi.fn(() => {
+      order.push("manifests");
+      return new Set<string>();
+    });
+
+    const pending = readProductionArchitectureGraph(graphDb, readIndexedFileImports, readDeclaredTestDependencies);
+    await Promise.resolve();
+
+    expect(order).toEqual(["graph", "imports", "manifests"]);
+    graph.resolve(graphOf([file("src/a.ts")], []));
+    imports.resolve(new Map());
+    expect((await pending).graph.files.map((f) => f.relPath)).toEqual(["src/a.ts"]);
+  });
+
+  it("rejects with the graph read's failure, leaving no unhandled rejection behind", async () => {
+    const graphDb = { readFileDependencyGraph: vi.fn(async () => Promise.reject(new Error("graph down"))) };
+    const readIndexedFileImports = vi.fn(async () => Promise.reject(new Error("qdrant down")));
+
+    await expect(readProductionArchitectureGraph(graphDb, readIndexedFileImports)).rejects.toThrow("graph down");
+  });
+
+  it("rejects with the manifest read's failure while the reads are in flight, leaving no unhandled rejection", async () => {
+    const graphDb = { readFileDependencyGraph: vi.fn(async () => Promise.reject(new Error("graph down"))) };
+    const readIndexedFileImports = vi.fn(async () => Promise.reject(new Error("qdrant down")));
+    const readDeclaredTestDependencies = vi.fn((): ReadonlySet<string> => {
+      throw new Error("manifest unreadable");
+    });
+
+    await expect(
+      readProductionArchitectureGraph(graphDb, readIndexedFileImports, readDeclaredTestDependencies),
+    ).rejects.toThrow("manifest unreadable");
+  });
+});
+
 describe("deriveArchitectureComponentFacts", () => {
   it("partitions the graph into directory components and classifies facade modules — the same derivation the report judges through", () => {
     const graph = graphOf(
