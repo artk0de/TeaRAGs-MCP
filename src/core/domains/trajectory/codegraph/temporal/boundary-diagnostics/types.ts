@@ -18,6 +18,7 @@ import type {
   ArchitectureDirectoryRelation,
   CochangeSignificanceSummary,
   SilentCouplingBuildSummary,
+  SilentCouplingSharedNeighbourSignificanceSummary,
   SilentCouplingStructuralVisibility,
 } from "../../../../../contracts/types/architecture-report.js";
 import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
@@ -56,6 +57,11 @@ export interface SilentCouplingOptions {
 export interface SilentCouplingSharedNeighbour {
   relPath: RelPath;
   weight: number;
+}
+
+/** A shared neighbour with the chance the pair shares it under the hypergeometric null (bd tea-rags-mcp-gj45h). */
+export interface SilentCouplingSharedNeighbourChance extends SilentCouplingSharedNeighbour {
+  chance: number;
 }
 
 /**
@@ -176,19 +182,11 @@ export interface SilentCouplingSummary {
   /** η of the Otsu cut; absent under `majority`. */
   strengthSeparability?: number;
   /**
-   * Otsu's cut over every candidate's heaviest shared-neighbour weight; a
-   * strong unlinked pair whose neighbour is at or above it is explained.
-   * Absent under `none`.
+   * The per-pair chance gate that explains a strong unlinked pair by a shared
+   * neighbour (bd tea-rags-mcp-gj45h); absent without dependency edges, and
+   * then no pair is explained.
    */
-  sharedNeighbourThreshold?: number;
-  /**
-   * `otsu` when ≥ `SILENT_COUPLING_OTSU_MIN_POPULATION` candidates share
-   * a neighbour and their weights split; `none` otherwise, or without
-   * dependency edges — and then no pair is explained.
-   */
-  sharedNeighbourThresholdMethod: "otsu" | "none";
-  /** η of the shared-neighbour cut; absent under `none`. */
-  sharedNeighbourSeparability?: number;
+  sharedNeighbourSignificance?: SilentCouplingSharedNeighbourSignificanceSummary;
   /** Strong, unlinked, in-scope pairs a specific shared neighbour explains — not violations. */
   explainedCount: number;
   excluded: SilentCouplingExclusionCounts;

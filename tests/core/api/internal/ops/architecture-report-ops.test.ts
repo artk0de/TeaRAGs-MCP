@@ -1275,9 +1275,10 @@ describe("ArchitectureReportOps#build — shotgunSurgery (bd tea-rags-mcp-r8hme.
 /**
  * bd tea-rags-mcp-r8hme.13: a co-change pair a SPECIFIC shared neighbour
  * explains leaves the violations and is counted under `excluded`, with the
- * reason named, the adaptive cut reported like the strength one, and the pair
- * listed with `evidence.explainedBy`. `proto/protocol.ts` (fanIn 2) explains
- * client ↔ server; `lib/kernel.ts`, imported by 40 of 42 files, explains no
+ * reason named, the chance gate reported like the co-change one (bd
+ * tea-rags-mcp-gj45h), and the pair listed with `evidence.explainedBy`.
+ * `proto/protocol.ts` (fanIn 2, the only import of client and server) explains
+ * client ↔ server; `lib/kernel.ts`, imported by 38 of 42 files, explains no
  * w/p ↔ w/q pair.
  */
 describe("ArchitectureReportOps#build — silentCoupling shared-neighbour explanation (bd tea-rags-mcp-r8hme.13)", () => {
@@ -1287,7 +1288,11 @@ describe("ArchitectureReportOps#build — silentCoupling shared-neighbour explan
     const fillers = Array.from({ length: 22 }, (_, i) => `z/f${i}.ts`);
     const files = ["lib/kernel.ts", "proto/protocol.ts", ...importers, ...fillers].map(file);
     const edges: FileDependencyGraph["edges"] = [
-      ...[...importers, ...fillers].map((s) => ({ sourceRelPath: s, targetRelPath: "lib/kernel.ts", callWeight: 1 })),
+      ...[...hubPairs.flat(), ...fillers].map((s) => ({
+        sourceRelPath: s,
+        targetRelPath: "lib/kernel.ts",
+        callWeight: 1,
+      })),
       { sourceRelPath: "a/client.ts", targetRelPath: "proto/protocol.ts", callWeight: 1 },
       { sourceRelPath: "b/server.ts", targetRelPath: "proto/protocol.ts", callWeight: 1 },
     ];
@@ -1316,12 +1321,14 @@ describe("ArchitectureReportOps#build — silentCoupling shared-neighbour explan
     const summary = report.summary.silentCoupling;
     expect(summary).toMatchObject({
       violationCount: 8,
-      sharedNeighbourThresholdMethod: "otsu",
+      sharedNeighbourSignificance: {
+        method: "hypergeometricChance",
+        q: 0.05,
+        testedPairCount: 9,
+        explainedPairCount: 1,
+      },
       excluded: { explainedBySharedNeighbour: 1 },
     });
-    expect(summary.sharedNeighbourThreshold).toBeGreaterThan(Math.log(42 / 40));
-    expect(summary.sharedNeighbourThreshold).toBeLessThan(Math.log(42 / 2));
-    expect(summary.sharedNeighbourSeparability).toBeGreaterThan(0.9);
     expect(summary.exclusionReasons?.explainedBySharedNeighbour).toEqual(expect.any(String));
     expect(summary.explainedPairs).toEqual([
       {
@@ -1340,7 +1347,7 @@ describe("ArchitectureReportOps#build — silentCoupling shared-neighbour explan
     const summary = ArchitectureReportOps.empty({}).summary.silentCoupling;
 
     expect(summary.excluded.explainedBySharedNeighbour).toBe(0);
-    expect(summary.sharedNeighbourThresholdMethod).toBe("none");
+    expect(summary).not.toHaveProperty("sharedNeighbourSignificance");
     expect(summary).not.toHaveProperty("exclusionReasons");
     expect(summary).not.toHaveProperty("explainedPairs");
   });

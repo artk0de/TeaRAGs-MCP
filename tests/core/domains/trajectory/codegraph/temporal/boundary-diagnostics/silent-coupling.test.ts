@@ -349,10 +349,12 @@ describe("linkImportedCochangePairs (bd tea-rags-mcp-rbnkp)", () => {
  * bd tea-rags-mcp-r8hme.13: a flagged pair is EXPLAINED by a common neighbour C
  * — both files import C, or one reaches the other through C — when C is
  * SPECIFIC: weight(C) = ln(N / fanIn(C)), N the walked files, fanIn(C) the
- * distinct files importing C. The explained/unexplained cut is Otsu's split
- * over every candidate's best neighbour weight (same helper and population
- * floor as the strength cut); an explained pair leaves the violations and is
- * counted, carrying the neighbour that explained it.
+ * distinct files importing C. Since bd tea-rags-mcp-gj45h the decision is per
+ * pair: the chance of sharing its least likely neighbour given both files'
+ * import counts (hypergeometric over the corpus's import endpoints), under
+ * Benjamini–Hochberg over every tested pair at the co-change gate's FDR; an
+ * explained pair leaves the violations and is counted, carrying the neighbour
+ * that explained it.
  */
 describe("detectSilentCoupling — shared-neighbour explanation (bd tea-rags-mcp-r8hme.13)", () => {
   /**
@@ -404,7 +406,6 @@ describe("detectSilentCoupling — shared-neighbour explanation (bd tea-rags-mcp
   }
 
   const N = 42;
-  const HUB_WEIGHT = Math.log(N / 39);
 
   it("explains a pair by a specific common import, and by a path through a specific file either way", () => {
     const { walked, edges, cochange } = explanationFixture();
@@ -438,29 +439,54 @@ describe("detectSilentCoupling — shared-neighbour explanation (bd tea-rags-mcp
     expect(report.summary.explainedCount).toBe(3);
   });
 
-  it("draws the explained/unexplained cut with Otsu over every candidate's best neighbour weight", () => {
+  it("tests every strong unlinked pair for a chance overlap and reports the gate under BH at the co-change FDR", () => {
     const { walked, edges, cochange } = explanationFixture();
 
     const { summary } = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
 
-    expect(summary.sharedNeighbourThresholdMethod).toBe("otsu");
-    // Six hub weights below, ln(42/2) the smallest specific weight above.
-    expect(summary.sharedNeighbourThreshold).toBeCloseTo((HUB_WEIGHT + Math.log(N / 2)) / 2, 12);
-    expect(summary.sharedNeighbourSeparability).toBeGreaterThan(0.9);
-    expect(summary.sharedNeighbourSeparability).toBeLessThanOrEqual(1);
+    expect(summary.sharedNeighbourSignificance).toEqual({
+      method: "hypergeometricChance",
+      q: 0.05,
+      testedPairCount: 9,
+      explainedPairCount: 3,
+    });
   });
 
-  it("explains nothing when too few candidates share a neighbour for Otsu to be trusted", () => {
+  /**
+   * bd tea-rags-mcp-gj45h: the chance is the pair's own — 45 import endpoints,
+   * the client importing 2 of them, the protocol holding 2 — so a lone family
+   * is explained with no corpus-wide population to draw a cut over, while a
+   * pair sharing only the kernel (39 of the 45 endpoints) stays flagged.
+   */
+  it("explains a pair by its own chance overlap, with no corpus-wide cut to wait for", () => {
     const { walked, edges } = explanationFixture();
     const cochange = built([pair("a/client.ts", "b/server.ts"), pair("w/p1.ts", "w/q1.ts")]);
 
     const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
 
-    expect(report.summary.sharedNeighbourThresholdMethod).toBe("none");
-    expect(report.summary.sharedNeighbourThreshold).toBeUndefined();
-    expect(report.summary.explainedCount).toBe(0);
-    expect(report.explained).toEqual([]);
-    expect(report.violations).toHaveLength(2);
+    expect(report.explained.map((v) => `${v.relPathA}|${v.relPathB}`)).toEqual(["a/client.ts|b/server.ts"]);
+    expect(report.violations.map((v) => `${v.relPathA}|${v.relPathB}`)).toEqual(["w/p1.ts|w/q1.ts"]);
+    expect(report.summary.sharedNeighbourSignificance).toMatchObject({ testedPairCount: 2, explainedPairCount: 1 });
+  });
+
+  it("keeps a pair flagged when sharing its neighbour is likely given how much both files import", () => {
+    const { walked, edges, cochange } = explanationFixture();
+    // Both ends of the client/server pair import 12 more files each, and the
+    // protocol 13 more importers: sharing it stops being remarkable.
+    const extra = Array.from({ length: 12 }, (_, i) => `z/f${i}.ts`);
+    const busy: FileDependencyEdge[] = [
+      ...edges,
+      ...extra.flatMap((f) => [
+        { sourceRelPath: "a/client.ts", targetRelPath: f, callWeight: 1 },
+        { sourceRelPath: "b/server.ts", targetRelPath: f, callWeight: 1 },
+        { sourceRelPath: f, targetRelPath: "proto/protocol.ts", callWeight: 1 },
+      ]),
+    ];
+    const lone = built([pair("a/client.ts", "b/server.ts"), ...cochange.edges.slice(3)]);
+
+    const report = detectSilentCoupling(lone, walked, { fileDependencyEdges: busy });
+
+    expect(report.violations.map((v) => `${v.relPathA}|${v.relPathB}`)).toContain("a/client.ts|b/server.ts");
   });
 
   it("explains nothing when the dependency edges are not supplied", () => {
@@ -468,7 +494,7 @@ describe("detectSilentCoupling — shared-neighbour explanation (bd tea-rags-mcp
 
     const report = detectSilentCoupling(cochange, walked);
 
-    expect(report.summary.sharedNeighbourThresholdMethod).toBe("none");
+    expect(report.summary.sharedNeighbourSignificance).toBeUndefined();
     expect(report.summary.explainedCount).toBe(0);
     expect(report.violations).toHaveLength(9);
   });
@@ -482,6 +508,51 @@ describe("detectSilentCoupling — shared-neighbour explanation (bd tea-rags-mcp
     // a/client.ts has two strong partners, but server is explained: one silent partner is no root cause.
     expect(report.explained.map((v) => v.relPathB)).toContain("b/server.ts");
     expect(report.rootCauses.map((r) => r.relPath)).not.toContain("a/client.ts");
+  });
+
+  /**
+   * bd tea-rags-mcp-gj45h: `r/registry.ts` imports and USES the two sibling
+   * implementers `s/a.ts` and `s/b.ts` (a preset list, a strategy chain), so
+   * their co-change is a sweep over one declared family. `t/index.ts` only
+   * re-exports `u/a.ts` and `u/b.ts` — packaging, which explains nothing.
+   */
+  function registryFixture(): {
+    walked: FileDependencyGraphFile[];
+    edges: FileDependencyEdge[];
+    cochange: TemporalCochangeGraph;
+  } {
+    const base = explanationFixture();
+    const walked = [...base.walked, ...files("r/registry.ts", "s/a.ts", "s/b.ts", "t/index.ts", "u/a.ts", "u/b.ts")];
+    const edges: FileDependencyEdge[] = [
+      ...base.edges,
+      { sourceRelPath: "r/registry.ts", targetRelPath: "s/a.ts", callWeight: 1, importedExportNames: ["A"] },
+      { sourceRelPath: "r/registry.ts", targetRelPath: "s/b.ts", callWeight: 1, importedExportNames: ["B"] },
+      { sourceRelPath: "t/index.ts", targetRelPath: "u/a.ts", callWeight: 0, reexportedExportNames: ["UA"] },
+      { sourceRelPath: "t/index.ts", targetRelPath: "u/b.ts", callWeight: 0, reexportedExportNames: ["UB"] },
+    ];
+    const cochange = built([...base.cochange.edges, pair("s/a.ts", "s/b.ts"), pair("u/a.ts", "u/b.ts")]);
+    return { walked, edges, cochange };
+  }
+
+  it("explains sibling implementers by a specific common importer that consumes both, weighted ln(N / fanOut)", () => {
+    const { walked, edges, cochange } = registryFixture();
+
+    const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    const explained = Object.fromEntries(report.explained.map((v) => [`${v.relPathA}|${v.relPathB}`, v.explainedBy]));
+    expect(explained["s/a.ts|s/b.ts"]).toEqual({
+      relPath: "r/registry.ts",
+      weight: expect.closeTo(Math.log(walked.length / 2), 12),
+    });
+  });
+
+  it("keeps sibling files flagged when their common importer only re-exports them", () => {
+    const { walked, edges, cochange } = registryFixture();
+
+    const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    expect(report.violations.map((v) => `${v.relPathA}|${v.relPathB}`)).toContain("u/a.ts|u/b.ts");
+    expect(report.explained.map((v) => `${v.relPathA}|${v.relPathB}`)).not.toContain("u/a.ts|u/b.ts");
   });
 });
 

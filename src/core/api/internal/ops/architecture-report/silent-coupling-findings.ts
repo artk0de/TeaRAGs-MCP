@@ -61,13 +61,9 @@ export function summariseSilentCoupling(report: SilentCouplingReport, limit: num
     ...(summary.strengthSeparability === undefined
       ? {}
       : { strengthSeparability: Math.round(summary.strengthSeparability * 1000) / 1000 }),
-    ...(summary.sharedNeighbourThreshold === undefined
-      ? {}
-      : { sharedNeighbourThreshold: roundTo3(summary.sharedNeighbourThreshold) }),
-    sharedNeighbourThresholdMethod: summary.sharedNeighbourThresholdMethod,
-    ...(summary.sharedNeighbourSeparability === undefined
-      ? {}
-      : { sharedNeighbourSeparability: roundTo3(summary.sharedNeighbourSeparability) }),
+    ...(summary.sharedNeighbourSignificance
+      ? { sharedNeighbourSignificance: { ...summary.sharedNeighbourSignificance } }
+      : {}),
     excluded: { ...summary.excluded, explainedBySharedNeighbour: summary.explainedCount },
     ...(summary.cochangeSignificance ? { cochangeSignificance: { ...summary.cochangeSignificance } } : {}),
     ...(explained ? { exclusionReasons: { explainedBySharedNeighbour: SILENT_COUPLING_EXPLAINED_REASON } } : {}),
