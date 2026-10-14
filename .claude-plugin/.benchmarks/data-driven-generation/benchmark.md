@@ -139,3 +139,55 @@ After the two fixes the with-skill arm re-ran both cases (opus, same blind
 protocol): both PASS — NEW_TERM alternative adopted only on same meaning, no
 re-fetch of the unedited file. Final: with-skill 100% (18/18), baseline 67%
 (12/18), delta +33pp.
+
+## Run 2026-10-14 — test-first RED phase + verify-first triage (bd tea-rags-mcp-mrlb9)
+
+SKILL.md change (tea-rags 0.43.0): Step 6 split into 6a RED (new agent-only
+skill `tea-rags:test-first`), 6b GREEN (tests never edited to pass) and 6c
+REFACTOR under green. Step 7 gains **Confirm first**: a finding is presumed
+real, a false positive needs counter-evidence (edge absent, role misread, or a
+known-noise CONDITION shown to hold), detector flags count only when quoted from
+the finding, and every accepted false positive files a detector issue.
+`repair/README.md` carries the same rule for the other consumers.
+
+13 new cases, none superseded (the old `step7-fix-false-positive-flag` still
+holds: its `compositionRoot` flag is quoted from the finding):
+
+- `step7-verify-first` (5): `step7-confirm-noise-class-unchecked`,
+  `step7-confirm-looks-false-but-real`, `step7-confirm-genuine-false-positive`,
+  `step7-confirm-touched-active`, `step7-confirm-flag-inferred`
+- `step6-tdd` (8): `tdd-red-before-code`, `tdd-spec-test-verbatim`,
+  `tdd-import-error-not-red`, `tdd-test-edited-to-pass`,
+  `tdd-refactor-baseline`, `tdd-bugfix-repro-first`,
+  `tdd-modify-baseline-then-red`, `tdd-hotfix-no-exception`
+
+Method: four sonnet subagents, one per arm per category, each answering all
+scenarios of its category from `context` + `prompt` only. The with-skill arm
+read DDG SKILL.md, test-first SKILL.md (TDD) and only the repair files its
+findings load (triage). The baseline arm read the scenario packet only. Neither
+arm saw `expected`. Strict grading by the orchestrator: every `mustDo` met, no
+`mustNotDo` hit. Subject model differs from the 2026-10-13 run (opus), so the
+baselines are not comparable across runs.
+
+| Metric    | Value        |
+| --------- | ------------ |
+| With-rule | 100% (13/13) |
+| Baseline  | 69% (9/13)   |
+| Delta     | +31pp        |
+
+Baseline failures:
+
+- `step7-confirm-flag-inferred` — inferred `compositionRoot` from the
+  `src/bootstrap` path, would commit if the file "is pure wiring".
+- `tdd-red-before-code` — real red reached, but no test-first protocol and no
+  `fixture-lookup` (behaviour pass, protocol fail).
+- `tdd-refactor-baseline` — planned a new characterization test for the moved
+  helper.
+- `tdd-bugfix-repro-first` — ran the existing tests only after the fix; no green
+  baseline before the edit.
+
+Baseline sonnet already refuses to edit a test to pass, rejects an import error
+as red, keeps spec tests verbatim, and checks a noise-class condition when the
+environment hands it the facts. The triage cases mostly pin the protocol against
+regression. The delta is in flag quoting, the no-new-test rule for moves, and
+baseline-before-edit.

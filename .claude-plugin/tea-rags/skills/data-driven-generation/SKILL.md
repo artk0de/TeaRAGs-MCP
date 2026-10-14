@@ -73,8 +73,10 @@ Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
 | 3 PLACEMENT | run                         | fixed = container; guard fires | skip                                        |
 | 4 REUSE     | run                         | run                            | run — for introduced logic                  |
 | 5 STYLE     | blame-owner + lexicon       | container file + lexicon       | symbol itself + lexicon                     |
-| 6 GENERATE  | strategy + style + manifest | same                           | find_co_changed + minimal diff per strategy |
-| 7 VERIFY    | symbol risks + N-th-way     | same                           | + tests-at-risk                             |
+| 6a RED      | test-first: new red tests   | same                           | tests-at-risk green baseline, then red      |
+| 6b GREEN    | strategy + style + manifest | same                           | find_co_changed + minimal diff per strategy |
+| 6c REFACTOR | under green                 | same                           | same                                        |
+| 7 VERIFY    | symbol risks + N-th-way     | same                           | + re-run 6a baseline pins                   |
 | 8 IMPACT    | blastRadius of new code     | container fanIn                | `get_callers` — MANDATORY                   |
 
 - **Hotfix** (user gives exact location) = MODIFY, additionally skip STRATEGY
@@ -84,6 +86,8 @@ Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
   empty naturally, don't pre-skip.
 - **REUSE never skipped in any mode** — shared infra exists even when feature is
   new.
+- **RED never skipped** except a named `test-first` exception (no-tests language
+  / config-docs only), stated in one line. Hotfix included.
 - **VERIFY never skipped. Ever.**
 
 ## Workflow
@@ -308,10 +312,31 @@ template's code names the same types.
 
 Output: the vocabulary for Step 6.
 
-### Step 6: GENERATE
+### Step 6: GENERATE — RED → GREEN → REFACTOR
+
+#### 6a RED
+
+Invoke `tea-rags:test-first` with mode (Step 0) + change kind (CREATE/EXTEND,
+MODIFY behaviour, refactor/move, bug fix). Behaviour source: spec / plan
+acceptance criteria or test code verbatim when present, else one test per
+behaviour of the task. Output = `RED` block: per-test failure reason (assertion
+/ missing behaviour — never import, compile, syntax, missing fixture) +
+baseline. **No production edit without a recorded RED block** (or its one-line
+named exception). Refactor / move → no new test; the green baseline is the
+invariant through 6b–6c.
+
+#### 6b GREEN
+
+Minimal implementation that turns every RED test green and keeps every baseline
+pin green.
 
 Apply strategy + style + reuse manifest — call manifest helpers, NEVER
 reimplement them. MODIFY: minimal diff per strategy.
+
+Failing test → fix the CODE. Never edit a test to pass: business-logic tests are
+immutable. Test genuinely wrong (contradicts spec) → report test + spec line to
+the user, do not change it silently. Only a `PIN-UPDATED` pin from 6a changes,
+and only there.
 
 MODIFY, before the first edit:
 `find_co_changed(path=<your working directory>, files: [target])` on the target
@@ -331,9 +356,10 @@ direction / `transit` role), not the planned edge. `NEW_PATTERN` / `UNJUDGED` �
 write it, one output line:
 `NEW_PATTERN|UNJUDGED <source> -> <target> — <reason>`.
 
-Tests alongside (CREATE/EXTEND): invoke `tea-rags:tests-as-context` recipe
-`fixture-lookup` (intent = setup you need) — existing setup patterns, not
-invented mocks. SKIP verdict → proceed without.
+#### 6c REFACTOR
+
+Clean up under green: duplication, names, extraction. Re-run RED tests +
+baseline after each refactor edit; any red → undo that edit. Then Step 7.
 
 ### Step 7: VERIFY
 
@@ -358,9 +384,9 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
    ignore hits on template + target file. Near-duplicate hit in another module =
    you wrote the N-th way → back to Step 4 gate (import instead) or surface to
    user.
-3. **MODIFY:** `tea-rags:tests-as-context` recipe `tests-at-risk` (affectedFiles
-   = [target file], intent = change description) → run the pinning scenarios.
-   SKIP verdict → note behavior unpinned, proceed.
+3. **MODIFY:** re-run the 6a baseline pins (`tests-at-risk` scenarios) + RED
+   tests — all green, none edited except `PIN-UPDATED`. Baseline was "unpinned"
+   → note behavior unpinned, proceed.
 4. **Fix-at-write review before commit** (codegraph on): ONE
    `review_changes(changes: {}, sections: ["naming", "incompleteChange", "cohesion", "architecture", "norms"])`
    (`{}` = the uncommitted edit just generated; branch-wide review →
@@ -384,18 +410,53 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
 
 #### Fix-at-write loop
 
-**Triage** every architecture / cohesion / incompleteChange / norms finding:
+**Confirm first** — before a triage class, per finding. **Default presumption:
+REAL.** Read its evidence fields (edge `source`/`target`, symbolId, metric +
+tolerance, flags) and check:
 
-| Finding                   | Class             | Action                                                                                |
-| ------------------------- | ----------------- | ------------------------------------------------------------------------------------- |
-| no `preExisting`          | must-fix          | repair in this diff                                                                   |
-| `preExisting` + `remedy`  | cheap-preExisting | apply `remedy` (cheap by construction)                                                |
-| `change.nonLocal` entry   | must-fix          | introduced away from diff — repair like no `preExisting`                              |
-| `change.touchedActive`    | must-fix priority | edit hits live cascade (`tier` active/critical): repair or ask user                   |
-| `change.persisting` entry | report-only       | structural; one count line per family, no triage                                      |
-| norms `MISFIT`            | must-fix          | route edge via `expectedPath`; skip only citing plausible `exclusionsUnchecked` class |
-| norms `NEW_PATTERN`       | report-only       | one-line why                                                                          |
-| norms `UNJUDGED`          | report-only       | read `unjudgedReasonCounts` (pre-cap count per reason)                                |
+1. The edge / symbol it names exists in the diff — or in the tree for a
+   `nonLocal` entry (`find_symbol` / the diff hunk, reused if in context).
+2. The metric is computed from that edge (the edge appears in the finding's
+   evidence; removing it would move the metric).
+
+Both hold → REAL → triage below. A finding that LOOKS wrong but passes 1–2 is
+real: fix it, do not argue it away.
+
+**False positive** only with COUNTER-evidence, quoted in its triage line:
+
+- the edge / symbol does NOT exist (diff hunk or `find_symbol` shows its
+  absence), or
+- the detector misread a role / kind (quote the finding's role/kind vs the
+  symbol's actual declaration read this session), or
+- a known-noise class from the family's repair file (`## Known false positives`)
+  whose CONDITION is shown to hold on THIS edge — cite the condition and the
+  fact that meets it. Naming the class is not evidence.
+
+Detector flags (`compositionRoot`, `entryPoint`, `foundationTerminal`,
+`preExisting` without `remedy`) are detector-sanctioned exemptions, not false
+positives: valid only QUOTED from the finding's fields, never inferred from a
+file's path or role ("it's the bootstrap folder" ≠ `compositionRoot: true`).
+
+**Every accepted false positive files a detector issue** — the detector is
+wrong, that is a defect, never a silent accept. Session has an issue tracker
+(project beads, tickets) → file there; else `tea-rags:report-issue`. Body:
+family, finding fields verbatim, counter-evidence. Report line:
+`FALSE-POSITIVE <family> <edge> — <counter-evidence> — issue <id|url>`. No issue
+→ not accepted → fix or ask.
+
+**Triage** every architecture / cohesion / incompleteChange / norms finding
+confirmed REAL:
+
+| Finding                   | Class             | Action                                                                               |
+| ------------------------- | ----------------- | ------------------------------------------------------------------------------------ |
+| no `preExisting`          | must-fix          | repair in this diff                                                                  |
+| `preExisting` + `remedy`  | cheap-preExisting | apply `remedy` (cheap by construction)                                               |
+| `change.nonLocal` entry   | must-fix          | introduced away from diff — repair like no `preExisting`                             |
+| `change.touchedActive`    | must-fix priority | edit hits live cascade (`tier` active/critical): repair or ask user                  |
+| `change.persisting` entry | report-only       | structural; one count line per family, no triage                                     |
+| norms `MISFIT`            | must-fix          | route via `expectedPath`; skip only if `exclusionsUnchecked` condition shown to hold |
+| norms `NEW_PATTERN`       | report-only       | one-line why                                                                         |
+| norms `UNJUDGED`          | report-only       | read `unjudgedReasonCounts` (pre-cap count per reason)                               |
 
 **Base** — `review_changes` base = `git merge-base HEAD main`, the branch's fork
 point on main. Never an integration branch, never a sibling `worktree-agent-*`
@@ -416,11 +477,11 @@ repair file's procedure decides. A family with `built: false` or
   no new files, interfaces or moves. Footprint ⊆ diff files + ≤ 1 facade. Re-run
   shows finding gone, no new finding, tests green and untouched. No line-count
   limit. A server `remedy` = cheap, already dry-run-verified.
-- **Evidence** — a finding stays unfixed ONLY with: a detector flag
-  (`preExisting: true` with `remedy` absent, `compositionRoot`, `entryPoint`,
-  `foundationTerminal`), a symbolId / file read THIS session, a cited project
-  rule (file + quoted line), or a known-noise class from the family's repair
-  file with the evidence that file names. Each introduced / non-`preExisting`
+- **Evidence** — a finding stays unfixed ONLY with: a detector flag QUOTED from
+  the finding (`preExisting: true` with `remedy` absent, `compositionRoot`,
+  `entryPoint`, `foundationTerminal`), a symbolId / file read THIS session, a
+  cited project rule (file + quoted line), or a false positive per **Confirm
+  first** (counter-evidence + filed issue). Each introduced / non-`preExisting`
   finding left unrepaired gets its OWN triage line citing one such token. Banned
   as reasons: "I believe", "by design", "budget", "out of scope", "fair nit",
   "not needed", group dismissal (one reason for N findings). Finding conceded
@@ -458,8 +519,9 @@ reason citing the symbol: a named test that already pins the seam, or why the
 file cannot change with this edit. "Not needed" / "unrelated" without evidence =
 fail → edit it or ask.
 
-**Report:** per class — fixed (remedy / procedure), accepted (evidence),
-report-only (line + bead suggestion), families not judged / partial.
+**Report:** per class — fixed (remedy / procedure), accepted (evidence), false
+positive (counter-evidence + issue), report-only (line + bead suggestion),
+families not judged / partial.
 
 Step 7 is the extension point for post-generation structural checks — add them
 here, not as a second verification step.

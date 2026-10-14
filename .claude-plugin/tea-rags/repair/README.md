@@ -21,5 +21,10 @@ Rules common to all families:
 - Accept a finding as a false positive only with evidence: a detector flag
   (`compositionRoot`, `entryPoint`, `foundationTerminal`) or a cited project
   rule (rule file path plus a quoted line). "By design" alone is not evidence.
+- A finding is presumed real. Before accepting it, confirm the edge it names
+  exists and drives the metric. A `## Known false positives` entry counts only
+  when its condition is shown to hold on this edge; naming the class is not
+  evidence. Every accepted false positive is a detector defect: file an issue
+  with the counter-evidence.
 - At most two repair rounds. A round that adds a finding or breaks a test is
   reverted whole. Findings still introduced after round two go to the user.
