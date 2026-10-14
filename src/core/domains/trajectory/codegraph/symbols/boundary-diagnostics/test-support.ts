@@ -5,7 +5,7 @@ import type { FileDependencyGraph, RelPath } from "../../../../../contracts/type
 
 /** What the test-support exclusion takes out, named for a report (bd tea-rags-mcp-89k7k.35.3). */
 export const TEST_SUPPORT_REASON =
-  "test support: imported only by test files or by other test support, and named after a test importing it, importing a test-only dependency (one tests import and no production file does, or one the manifests declare for development only) or importing other test support";
+  "test support: imported only by test files or by other test support, and named after a test importing it, importing a test-only dependency (one tests import and no production file does, or one the manifests declare for development only) or importing other test support; also a file nothing imports that imports a dependency the manifests declare for development only (a story, a bundler config), with what only it reaches";
 
 /** The module specifiers one indexed file declares (`payload.imports`), and whether it is a test file. */
 export interface IndexedFileImports {
@@ -42,6 +42,12 @@ export interface TestSupportClassification {
   files: ReadonlySet<RelPath>;
   /** What tests import and no production file does (`deriveTestOnlyDependencies`). */
   testOnlyDependencies: ReadonlySet<string>;
+  /**
+   * Walked files nothing imports that import a dependency the manifests
+   * declare for development only (bd tea-rags-mcp-r8hme.52.14) — a story, a
+   * bundler config. Members of `files`, as is what only they reach.
+   */
+  developmentRoots: ReadonlySet<RelPath>;
 }
 
 const RELATIVE_SPECIFIER = /^\.\.?(\/|$)/;
@@ -303,7 +309,13 @@ const SEPARATOR = /[^\p{L}\p{N}]/u;
  * reaches (a worker, a dynamically imported language module) to the test
  * side, and the packages only that subtree imports become test-only.
  *
- * A file with no importer at all always stays production. Importers are the
+ * A file with no importer at all stays production unless it imports a
+ * dependency the manifests declare for development only, value or type
+ * import alike (bd tea-rags-mcp-r8hme.52.14: a story, a bundler config): then
+ * it is a non-production root (`developmentRoots`), and every imported file
+ * whose importers are all non-production, support or such a root's followers,
+ * grounded in a root, follows it — the (a) closure with the root standing in
+ * for the test, and its manifest evidence for (b). Importers are the
  * graph's edges plus `unwalkedImportEdges`; an unwalked importer that is not
  * a test (a generated file, say) counts as production.
  */
@@ -345,12 +357,27 @@ export function classifyTestSupportFiles(
   const testSideOrphans = new Set(
     [...unimported].filter((relPath) => [...(imported.get(relPath) ?? [])].some((t) => namedAfterTest.has(t))),
   );
-  const isNonProduction = (relPath: RelPath): boolean => testFiles.has(relPath) || testSideOrphans.has(relPath);
-  const closeAndGround = (members: Set<RelPath>, isNonProduction: (relPath: RelPath) => boolean): Set<RelPath> => {
+  // A file nothing imports that imports a dependency the manifests declare
+  // for development only (a story, a bundler config) is a non-production
+  // root (r8hme.52.14): the manifest, not the test-only set, is its evidence,
+  // so no entry point loaded by module path earns it unless it imports
+  // tooling no runtime ships.
+  const developmentRoots = new Set(
+    [...unimported].filter((relPath) =>
+      [...(dependenciesOf.get(relPath) ?? [])].some((d) => declaredTestDependencies.has(d)),
+    ),
+  );
+  const isNonProduction = (relPath: RelPath): boolean =>
+    testFiles.has(relPath) || testSideOrphans.has(relPath) || developmentRoots.has(relPath);
+  const closeAndGround = (
+    members: Set<RelPath>,
+    isNonProduction: (relPath: RelPath) => boolean,
+    groundedBy: ReadonlySet<RelPath> = testReached,
+  ): Set<RelPath> => {
     for (;;) {
       closeOverImporters(members, importers, imported, isNonProduction);
       const grounded = reachableFrom(
-        [...testReached].filter((f) => members.has(f)),
+        [...groundedBy].filter((f) => members.has(f)),
         imported,
         members,
       );
@@ -375,9 +402,23 @@ export function classifyTestSupportFiles(
       importers,
       support,
     );
-    if (evidenced.size === support.size) return { files: support, testOnlyDependencies: testOnly };
+    if (evidenced.size === support.size) break;
     for (const relPath of support) if (!evidenced.has(relPath)) support.delete(relPath);
   }
+
+  // What only the development roots (with tests and support) reach follows
+  // them through (a); their manifest evidence stands in for (b).
+  const developmentReached = new Set([...developmentRoots].flatMap((root) => [...(imported.get(root) ?? [])]));
+  const followers = closeAndGround(
+    new Set([...importers.keys()].filter((relPath) => !support.has(relPath))),
+    (relPath) => isNonProduction(relPath) || support.has(relPath),
+    developmentReached,
+  );
+  return {
+    files: new Set([...support, ...developmentRoots, ...followers]),
+    testOnlyDependencies: testOnly,
+    developmentRoots,
+  };
 }
 
 /** Drops every member with an importer that is neither non-production nor a member, until none is left. */

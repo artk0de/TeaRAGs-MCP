@@ -1718,7 +1718,7 @@ describe("ArchitectureReportOps#build — non-production paths (bd tea-rags-mcp-
 // (a `.spec.presets.tsx`, a spec builder) is test support, not architecture.
 describe("ArchitectureReportOps#build — test support (bd tea-rags-mcp-89k7k.35.3)", () => {
   const TEST_SUPPORT =
-    "test support: imported only by test files or by other test support, and named after a test importing it, importing a test-only dependency (one tests import and no production file does, or one the manifests declare for development only) or importing other test support";
+    "test support: imported only by test files or by other test support, and named after a test importing it, importing a test-only dependency (one tests import and no production file does, or one the manifests declare for development only) or importing other test support; also a file nothing imports that imports a dependency the manifests declare for development only (a story, a bundler config), with what only it reaches";
 
   function withPresets(): FileDependencyGraph {
     const g = graph();
@@ -1752,6 +1752,7 @@ describe("ArchitectureReportOps#build — test support (bd tea-rags-mcp-89k7k.35
       excludedFileCount: 1,
       excludedEdgeCount: 1,
       testOnlyDependencyCount: 1,
+      developmentRootCount: 0,
       reason: TEST_SUPPORT,
     });
   });
@@ -1763,12 +1764,14 @@ describe("ArchitectureReportOps#build — test support (bd tea-rags-mcp-89k7k.35
       excludedFileCount: 0,
       excludedEdgeCount: 0,
       testOnlyDependencyCount: 0,
+      developmentRootCount: 0,
       reason: TEST_SUPPORT,
     });
     expect(ArchitectureReportOps.empty({}).summary.testSupport).toEqual({
       excludedFileCount: 0,
       excludedEdgeCount: 0,
       testOnlyDependencyCount: 0,
+      developmentRootCount: 0,
       reason: TEST_SUPPORT,
     });
   });

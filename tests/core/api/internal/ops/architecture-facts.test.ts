@@ -107,7 +107,12 @@ describe("readProductionArchitectureGraph", () => {
 
     expect(readIndexedFileImports).toHaveBeenCalledTimes(1);
     expect(production.excludedFileCount).toBe(1);
-    expect(production.testSupport).toEqual({ excludedFileCount: 2, excludedEdgeCount: 2, testOnlyDependencyCount: 2 });
+    expect(production.testSupport).toEqual({
+      excludedFileCount: 2,
+      excludedEdgeCount: 2,
+      testOnlyDependencyCount: 2,
+      developmentRootCount: 0,
+    });
     expect(production.graph.files.map((f) => f.relPath)).toEqual([
       "src/modal/Modal.tsx",
       "src/modal/public.ts",
@@ -143,8 +148,50 @@ describe("readProductionArchitectureGraph", () => {
     );
 
     expect(readDeclaredTestDependencies).toHaveBeenCalledTimes(1);
-    expect(production.testSupport).toEqual({ excludedFileCount: 1, excludedEdgeCount: 0, testOnlyDependencyCount: 1 });
+    expect(production.testSupport).toEqual({
+      excludedFileCount: 1,
+      excludedEdgeCount: 0,
+      testOnlyDependencyCount: 1,
+      developmentRootCount: 0,
+    });
     expect(production.nonProduction.ignores("src/modal/specs/renderHelper.tsx")).toBe(true);
+  });
+
+  it("counts a file nothing imports that type-imports a development-only package as a non-production root (bd tea-rags-mcp-r8hme.52.14)", async () => {
+    const story = "src/modal/stories/Modal.stories.tsx";
+    const storyArgs = "src/modal/stories/storyArgs.ts";
+    const graphDb = {
+      readFileDependencyGraph: vi.fn(async () =>
+        graphOf(
+          [file("src/modal/Modal.tsx"), file("src/modal/public.ts"), file(story), file(storyArgs)],
+          [
+            edge("src/modal/public.ts", "src/modal/Modal.tsx"),
+            edge(story, "src/modal/Modal.tsx"),
+            edge(story, storyArgs),
+          ],
+        ),
+      ),
+    };
+    // payload.imports keeps `import type` specifiers: the story's only tie to storybook is a type import.
+    const readIndexedFileImports = async () =>
+      new Map([
+        [story, { isTest: false, specifiers: ["@storybook/react-vite", "../Modal", "./storyArgs"] }],
+        ["src/modal/public.ts", { isTest: false, specifiers: ["./Modal"] }],
+      ]);
+
+    const production = await readProductionArchitectureGraph(
+      graphDb,
+      readIndexedFileImports,
+      () => new Set(["@storybook/react-vite"]),
+    );
+
+    expect(production.testSupport).toEqual({
+      excludedFileCount: 2,
+      excludedEdgeCount: 2,
+      testOnlyDependencyCount: 0,
+      developmentRootCount: 1,
+    });
+    expect(production.graph.files.map((f) => f.relPath).sort()).toEqual(["src/modal/Modal.tsx", "src/modal/public.ts"]);
   });
 
   it("excludes no test support when no test-import read is wired", async () => {
@@ -156,7 +203,12 @@ describe("readProductionArchitectureGraph", () => {
 
     const production = await readProductionArchitectureGraph(graphDb);
 
-    expect(production.testSupport).toEqual({ excludedFileCount: 0, excludedEdgeCount: 0, testOnlyDependencyCount: 0 });
+    expect(production.testSupport).toEqual({
+      excludedFileCount: 0,
+      excludedEdgeCount: 0,
+      testOnlyDependencyCount: 0,
+      developmentRootCount: 0,
+    });
     expect(production.graph.files).toHaveLength(2);
   });
 });

@@ -149,6 +149,10 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
     not named after its test → stays production (no evidence) — low count ≠ bug.
     Dev-tool file (codegen type, lint script) only a test imports + importing a
     devDependency → may count as support.
+  - `developmentRootCount`: file nothing imports + imports manifest dev-only dep
+    (value or `import type`) → non-production root (story, bundler/lint config);
+    subtree only it reaches follows. Story-only component = excluded too (dead
+    in production).
 - `limit` caps `violations` + `rootCauses` PER DETECTOR; each
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.

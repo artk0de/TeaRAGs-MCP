@@ -73,6 +73,12 @@ export interface TestSupportExclusionCounts {
    * production file does — the positive evidence test support is tied to.
    */
   testOnlyDependencyCount: number;
+  /**
+   * Walked files nothing imports that import a dependency the manifests
+   * declare for development only (bd tea-rags-mcp-r8hme.52.14) — stories,
+   * bundler configs. Counted in `excludedFileCount`, with what only they reach.
+   */
+  developmentRootCount: number;
 }
 
 /**
@@ -117,7 +123,7 @@ export async function readProductionArchitectureGraph(
   const [indexed, importsByFile] = await reads;
   const nonProductionPaths = buildNonProductionPathFilter();
   const withoutTooling = excludeNonProductionFiles(indexed, nonProductionPaths);
-  const { testSupport, testOnlyDependencyCount } = classifyIndexedTestSupport(
+  const { testSupport, testOnlyDependencyCount, developmentRootCount } = classifyIndexedTestSupport(
     indexed,
     importsByFile,
     declaredTestDependencies,
@@ -132,6 +138,7 @@ export async function readProductionArchitectureGraph(
       excludedFileCount: production.excludedFileCount,
       excludedEdgeCount: production.excludedEdgeCount,
       testOnlyDependencyCount,
+      developmentRootCount,
     },
     nonProduction: { ignores: (relPath) => nonProductionPaths.ignores(relPath) || testSupport.has(relPath) },
   };
@@ -146,16 +153,20 @@ function classifyIndexedTestSupport(
   indexed: FileDependencyGraph,
   importsByFile: ReadonlyMap<RelPath, IndexedFileImports> | undefined,
   declaredTestDependencies: ReadonlySet<string> | undefined,
-): { testSupport: ReadonlySet<RelPath>; testOnlyDependencyCount: number } {
-  if (!importsByFile) return { testSupport: new Set(), testOnlyDependencyCount: 0 };
+): { testSupport: ReadonlySet<RelPath>; testOnlyDependencyCount: number; developmentRootCount: number } {
+  if (!importsByFile) return { testSupport: new Set(), testOnlyDependencyCount: 0, developmentRootCount: 0 };
   const walkedFiles = indexed.files.map((f) => f.relPath);
-  const { files, testOnlyDependencies } = classifyTestSupportFiles(
+  const { files, testOnlyDependencies, developmentRoots } = classifyTestSupportFiles(
     indexed,
     resolveUnwalkedImportEdges(importsByFile, walkedFiles),
     resolveExternalImports(importsByFile, walkedFiles),
     declaredTestDependencies,
   );
-  return { testSupport: files, testOnlyDependencyCount: testOnlyDependencies.size };
+  return {
+    testSupport: files,
+    testOnlyDependencyCount: testOnlyDependencies.size,
+    developmentRootCount: developmentRoots.size,
+  };
 }
 
 /** The component partition with the facade classification it was built from. */

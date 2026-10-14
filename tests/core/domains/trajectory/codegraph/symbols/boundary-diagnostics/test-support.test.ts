@@ -434,6 +434,66 @@ describe("classifyTestSupportFiles", () => {
     expect([...classification.files]).toEqual([PRESETS]);
     expect([...classification.testOnlyDependencies]).toEqual(["msw"]);
   });
+
+  describe("a file nothing imports that imports a dependency the manifests declare for development only (r8hme.52.14)", () => {
+    // taxdome: 519 of 524 *.stories.tsx only `import type { Meta, StoryObj }`
+    // from a development-only package and nothing imports them; vite configs
+    // import vite. Owner decision (B): any import of a development-only
+    // dependency, value or type, makes such a file a non-production root, and
+    // what only it reaches follows through (a).
+    const STORYBOOK = "@storybook/react-vite";
+    const STORY = "app/modal/stories/Modal.stories.tsx";
+    const STORY_HELPER = "app/modal/stories/storyArgs.ts";
+    const PAGE = "app/pages/Page.tsx";
+    const DECLARED = new Set([STORYBOOK]);
+
+    it("names the file and the helper only it reaches as non-production, never what production also reaches", () => {
+      const graph: FileDependencyGraph = {
+        files: [file(STORY), file(STORY_HELPER), file(MODAL), file(PAGE)],
+        edges: [edge(STORY, STORY_HELPER), edge(STORY, MODAL), edge(STORY_HELPER, MODAL), edge(PAGE, MODAL)],
+      };
+
+      const classification = classifyTestSupportFiles(
+        graph,
+        [],
+        [uses(STORY, STORYBOOK), uses(PAGE, "react")],
+        DECLARED,
+      );
+
+      expect([...classification.files].sort()).toEqual([STORY, STORY_HELPER].sort());
+      expect([...classification.developmentRoots]).toEqual([STORY]);
+    });
+
+    it("keeps a helper the root reaches in production when a production file imports it too", () => {
+      const graph: FileDependencyGraph = {
+        files: [file(STORY), file(STORY_HELPER), file(PAGE)],
+        edges: [edge(STORY, STORY_HELPER), edge(PAGE, STORY_HELPER)],
+      };
+
+      const classification = classifyTestSupportFiles(graph, [], [uses(STORY, STORYBOOK)], DECLARED);
+
+      expect([...classification.files]).toEqual([STORY]);
+    });
+
+    it("keeps a file nothing imports that imports only runtime dependencies in production, with its subtree", () => {
+      // The page imports the development-only package, but it is imported: only a file nothing imports is a root.
+      const worker = "app/workers/worker.ts";
+      const graph: FileDependencyGraph = {
+        files: [file(worker), file(STORY_HELPER), file(PAGE)],
+        edges: [edge(worker, STORY_HELPER), edge(worker, PAGE)],
+      };
+
+      const classification = classifyTestSupportFiles(
+        graph,
+        [],
+        [uses(worker, "react"), uses(PAGE, STORYBOOK)],
+        DECLARED,
+      );
+
+      expect(classification.files.size).toBe(0);
+      expect(classification.developmentRoots.size).toBe(0);
+    });
+  });
 });
 
 describe("deriveTestOnlyDependencies", () => {

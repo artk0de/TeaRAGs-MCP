@@ -1270,6 +1270,12 @@ export interface TestSupportExclusionSummary {
   excludedEdgeCount: number;
   /** Distinct dependencies (packages, unwalked files) tests import and no production file does. */
   testOnlyDependencyCount: number;
+  /**
+   * Walked files nothing imports that import a dependency the manifests declare
+   * for development only (bd tea-rags-mcp-r8hme.52.14) — stories, bundler
+   * configs — counted in `excludedFileCount` with what only they reach.
+   */
+  developmentRootCount: number;
   /** Human-readable meaning of the exclusion. */
   reason: string;
 }
