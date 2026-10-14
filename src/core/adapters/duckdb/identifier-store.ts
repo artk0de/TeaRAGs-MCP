@@ -415,9 +415,12 @@ export function resolvedIdentifiersCte(scope: SqlPredicate): SqlPredicate {
                r.type_name AS return_type_name, r.type_multiplicity AS return_type_multiplicity,
                r.return_wrapper AS return_wrapper_name
           FROM scoped s
+          -- Only an untyped row reads its call target. The condition rides the
+          -- equi-join key (a typed row's key is NULL and matches nothing): as a
+          -- separate left-only ON predicate it forces a nested-loop join (bd
+          -- tea-rags-mcp-3x25d).
           LEFT JOIN call_targets t
-            ON s.type_name IS NULL
-           AND t.source_rel_path = s.rel_path
+            ON t.source_rel_path = CASE WHEN s.type_name IS NULL THEN s.rel_path END
            AND t.source_symbol_id = s.owner_symbol_id
            AND t.call_expression = s.bound_call_expression
           LEFT JOIN return_types r
