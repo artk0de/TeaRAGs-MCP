@@ -82,6 +82,10 @@ export interface TypeRoleAssignment {
   familySupertypes?: readonly string[];
   /** A directory role: whether its family declares behaviour ({@link RoleFamilyMembership.familyDeclaresBehaviour}). */
   familyDeclaresBehaviour?: boolean;
+  /** A directory role: its family's effect ({@link RoleFamilyMembership.familyEffect}). */
+  familyEffect?: TypeFamilyEffect;
+  /** A directory role: its family's call surface ({@link RoleFamilyMembership.familySurface}). */
+  familySurface?: TypeCallSurface;
   /**
    * `false` on an inheritance role its family does NOT carry in names — a
    * dispersed family's kind ({@link deriveTypeRoles}): what the type IS, never a
@@ -142,7 +146,44 @@ export interface RoleFamilyMembership {
    * tail words across a project.
    */
   familyDeclaresBehaviour?: boolean;
+  /**
+   * A directory family whose carriers are async facades (bd tea-rags-mcp-ek2cu):
+   * at least {@link COHESIVE_FAMILY_FACT_SHARE} of ≥ {@link MIN_ROLE_MEMBERS}
+   * carriers with a KNOWN `asyncMethodCount` have an async instance method.
+   * One-way: a family of synchronous carriers records nothing.
+   */
+  familyEffect?: TypeFamilyEffect;
+  /**
+   * A directory family's call surface ({@link typeCallSurface}, bd
+   * tea-rags-mcp-ek2cu), by the same cohesion over carriers whose surface is known.
+   */
+  familySurface?: TypeCallSurface;
 }
+
+/** The effect a directory family's carriers share (bd tea-rags-mcp-ek2cu). */
+export type TypeFamilyEffect = "async";
+
+/** How a type's callables are called: on instances, or on the type only (a namespace of functions). */
+export type TypeCallSurface = "instance" | "functions";
+
+/**
+ * A type's call surface (bd tea-rags-mcp-4vj2u): `instance` when an instance
+ * method exists, `functions` when only singleton callables do; `undefined` when
+ * the counts are unknown or the type has no callable.
+ */
+export function typeCallSurface(
+  type: Pick<TypeNameRow, "instanceMethodCount" | "singletonMethodCount"> | undefined,
+): TypeCallSurface | undefined {
+  if (type?.instanceMethodCount === undefined || type.singletonMethodCount === undefined) return undefined;
+  if (type.instanceMethodCount > 0) return "instance";
+  return type.singletonMethodCount > 0 ? "functions" : undefined;
+}
+
+/** What a type is KNOWN to do, for a directory family's behaviour facts; absent = unknown. */
+export type TypeBehaviourCensus = Pick<
+  TypeNameRow,
+  "asyncMethodCount" | "instanceMethodCount" | "singletonMethodCount"
+>;
 
 /**
  * Whether a type belongs to a role family (bd tea-rags-mcp-49fsr): its form is
@@ -154,12 +195,15 @@ export interface RoleFamilyMembership {
  * `supertypes` only for a type that DECLARES at least one: `BatchAccumulator`
  * declaring nothing beside `implements StatsAccumulator` classes is no evidence
  * of non-membership, `SendFailedPaymentNotification` declaring `KindOfService`
- * among `Notification` subclasses is. The one test the
- * derivation applies to an existing type and the draft verdict to a draft.
+ * among `Notification` subclasses is. A directory family's behaviour facts (bd
+ * tea-rags-mcp-ek2cu) exclude the same way: a type KNOWN to have no async method
+ * is no member of an async family, a type of KNOWN call surface none of a family
+ * of the other surface. The one test the derivation applies to an existing type
+ * and the draft verdict to a draft.
  */
 export function isRoleFamilyMember(
   family: RoleFamilyMembership,
-  type: { symbolKind?: TypeNameRow["symbolKind"]; supertypes?: ReadonlySet<string> },
+  type: { symbolKind?: TypeNameRow["symbolKind"]; supertypes?: ReadonlySet<string> } & TypeBehaviourCensus,
 ): boolean {
   const form = type.symbolKind === undefined ? undefined : declarationForm(type.symbolKind);
   if (family.familyForm !== undefined && form !== undefined && form !== family.familyForm) return false;
@@ -168,6 +212,9 @@ export function isRoleFamilyMember(
   if (familyDeclaresBehaviour !== undefined && behaviour !== undefined && behaviour !== familyDeclaresBehaviour) {
     return false;
   }
+  if (family.familyEffect === "async" && type.asyncMethodCount === 0) return false;
+  const surface = typeCallSurface(type);
+  if (family.familySurface !== undefined && surface !== undefined && surface !== family.familySurface) return false;
   const { familySupertypes } = family;
   const { supertypes } = type;
   if (familySupertypes === undefined || supertypes === undefined || !declaresSupertypes(type.symbolKind)) return true;
@@ -444,13 +491,65 @@ function assign(
  * assignment; the form is read back off the carriers ({@link projectSuffixRole}).
  */
 function withFamily(assignments: TypeRoleAssignment[], family: RoleFamilyMembership): TypeRoleAssignment[] {
-  const { familySupertypes, familyDeclaresBehaviour } = family;
-  if (familySupertypes === undefined && familyDeclaresBehaviour === undefined) return assignments;
+  const { familySupertypes, familyDeclaresBehaviour, familyEffect, familySurface } = family;
+  if (
+    familySupertypes === undefined &&
+    familyDeclaresBehaviour === undefined &&
+    familyEffect === undefined &&
+    familySurface === undefined
+  ) {
+    return assignments;
+  }
   return assignments.map((assignment) => ({
     ...assignment,
     ...(familySupertypes !== undefined ? { familySupertypes } : {}),
     ...(familyDeclaresBehaviour !== undefined ? { familyDeclaresBehaviour } : {}),
+    ...(familyEffect !== undefined ? { familyEffect } : {}),
+    ...(familySurface !== undefined ? { familySurface } : {}),
   }));
+}
+
+/**
+ * The share of a directory family's carriers with a KNOWN behaviour fact that
+ * must share it for the family to judge by it (bd tea-rags-mcp-ek2cu). Measured,
+ * not a majority: on the self-index every `api/internal/ops/` `*Ops` carrier is
+ * async and every non-carrier is not; at 0.9 the rule held precision 0.96 on
+ * tea-rags (TS async) and 0.97 / 0.99 on taxdome (Ruby surface). A fact shared
+ * by a bare majority is a tendency, not the family's definition.
+ */
+const COHESIVE_FAMILY_FACT_SHARE = 0.9;
+
+/** The value at least {@link COHESIVE_FAMILY_FACT_SHARE} of ≥ {@link MIN_ROLE_MEMBERS} known values share. */
+function cohesiveFact<T>(known: readonly T[]): T | undefined {
+  if (known.length < MIN_ROLE_MEMBERS) return undefined;
+  const counts = new Map<T, number>();
+  for (const value of known) counts.set(value, (counts.get(value) ?? 0) + 1);
+  for (const [value, count] of counts) if (count / known.length >= COHESIVE_FAMILY_FACT_SHARE) return value;
+  return undefined;
+}
+
+/**
+ * A directory family's behaviour facts (bd tea-rags-mcp-ek2cu), each over the
+ * carriers that KNOW it: `familyEffect: "async"` when the carriers are async
+ * (one-way — a synchronous family records nothing), `familySurface` when they
+ * share a call surface. Unknown carriers neither count for nor against.
+ */
+function familyBehaviourFacts(
+  carriers: readonly { row: TypeNameRow }[],
+): Pick<RoleFamilyMembership, "familyEffect" | "familySurface"> {
+  const effect = cohesiveFact(
+    carriers.flatMap(({ row }) => (row.asyncMethodCount === undefined ? [] : [row.asyncMethodCount > 0])),
+  );
+  const surface = cohesiveFact(
+    carriers.flatMap(({ row }) => {
+      const known = typeCallSurface(row);
+      return known === undefined ? [] : [known];
+    }),
+  );
+  return {
+    ...(effect === true ? { familyEffect: "async" as const } : {}),
+    ...(surface !== undefined ? { familySurface: surface } : {}),
+  };
 }
 
 /**
@@ -865,6 +964,7 @@ function rolesFrom(rows: readonly TypeNameRow[], t: TypeRoleThresholds, parse: T
     const family = roleFamily(carriers, t.directoryShare, false);
     // The behaviour group judges DRAFTS only (bd tea-rags-mcp-9yhnx): the carrier set is decided
     // without it, so the file roles built on these carriers do not move.
+    // So do its behaviour facts (bd tea-rags-mcp-ek2cu): an async facade family, a call surface.
     const familyDeclaresBehaviour = dominantBehaviour(carriers, t.directoryShare);
     assignments.push(
       ...withFamily(
@@ -874,7 +974,11 @@ function rolesFrom(rows: readonly TypeNameRow[], t: TypeRoleThresholds, parse: T
           "directory",
           dir,
         ),
-        familyDeclaresBehaviour === undefined ? family : { ...family, familyDeclaresBehaviour },
+        {
+          ...family,
+          ...(familyDeclaresBehaviour === undefined ? {} : { familyDeclaresBehaviour }),
+          ...familyBehaviourFacts(carriers),
+        },
       ),
     );
   }
@@ -925,6 +1029,8 @@ function pickRole(
     examples,
     ...(best.familySupertypes ? { familySupertypes: best.familySupertypes } : {}),
     ...(best.familyDeclaresBehaviour !== undefined ? { familyDeclaresBehaviour: best.familyDeclaresBehaviour } : {}),
+    ...(best.familyEffect !== undefined ? { familyEffect: best.familyEffect } : {}),
+    ...(best.familySurface !== undefined ? { familySurface: best.familySurface } : {}),
     ...(best.carriedInName === false ? { carriedInName: false } : {}),
     ...(best.tail ? { tail: best.tail } : {}),
   };

@@ -1145,3 +1145,117 @@ describe("isRoleFamilyMember — a known kind of the other group is no member (9
     expect(isRoleFamilyMember({ familyDeclaresBehaviour: false }, { symbolKind: "interface" })).toBe(true);
   });
 });
+
+/**
+ * A directory family is also judged by a BEHAVIOUR fact (bd tea-rags-mcp-ek2cu):
+ * `api/internal/ops/` holds `*Ops` facades whose instance methods are all async,
+ * beside computational models (`MaintenanceCostShrinkage`) with the same member
+ * counts and no async method; Ruby `*Helper` directories hold singleton-only
+ * namespaces beside instance classes. When at least 0.9 of ≥ 2 carriers with a
+ * KNOWN fact share it, the family records it (`familyEffect: "async"`,
+ * `familySurface`); unknown carriers are ignored. The carrier set is unchanged.
+ */
+describe("deriveTypeRoles — a directory family's behaviour fact (ek2cu)", () => {
+  const OPS = "src/core/api/internal/ops";
+  function c(shortName: string, relPath: string, extra: Partial<TypeNameRow> = {}): TypeNameRow {
+    return { symbolId: shortName, relPath, shortName, symbolKind: "class", ancestors: [], ...extra };
+  }
+  const op = (q: string, extra: Partial<TypeNameRow> = {}) => c(`${q}Ops`, `${OPS}/${q.toLowerCase()}-ops.ts`, extra);
+  const role = (rows: TypeNameRow[]) => expectedRoleFor(deriveTypeRoles(rows), { path: `${OPS}/new-ops.ts` });
+
+  it("every carrier with a known count is async: the family's effect is async", () => {
+    const rows = ["Collection", "Document", "Indexing"].map((q) => op(q, { asyncMethodCount: 2 }));
+    expect(role(rows)).toMatchObject({ role: "ops", familyEffect: "async" });
+    expect(
+      deriveTypeRoles(rows)
+        .filter((r) => r.evidence === "directory")
+        .every((r) => r.familyEffect === "async"),
+    ).toBe(true);
+  });
+
+  it("below 0.9 of the known carriers async: no effect", () => {
+    const rows = [
+      op("Collection", { asyncMethodCount: 2 }),
+      op("Document", { asyncMethodCount: 1 }),
+      op("Indexing", { asyncMethodCount: 0 }),
+    ];
+    expect(role(rows)).not.toHaveProperty("familyEffect");
+  });
+
+  it("unknown carriers are ignored, and one known carrier is no evidence", () => {
+    const two = [op("Collection", { asyncMethodCount: 1 }), op("Document", { asyncMethodCount: 3 }), op("Indexing")];
+    expect(role(two)).toMatchObject({ familyEffect: "async" });
+    const one = [op("Collection", { asyncMethodCount: 1 }), op("Document"), op("Indexing")];
+    expect(role(one)).not.toHaveProperty("familyEffect");
+  });
+
+  it("a family of synchronous carriers records no effect: the polarity is one-way", () => {
+    const rows = ["Collection", "Document", "Indexing"].map((q) => op(q, { asyncMethodCount: 0 }));
+    expect(role(rows)).not.toHaveProperty("familyEffect");
+  });
+
+  it("leaves the carrier set unchanged: a synchronous carrier is still a carrier", () => {
+    const rows = [
+      ...["Collection", "Document", "Indexing", "Explore", "Graph", "Review", "Naming", "Cochange", "Metrics"].map(
+        (q) => op(q, { asyncMethodCount: 1 }),
+      ),
+      op("Worktree", { asyncMethodCount: 0 }),
+    ];
+    expect(role(rows)).toMatchObject({ familyEffect: "async" });
+    expect(deriveTypeRoles(rows).filter((r) => r.evidence === "directory")).toHaveLength(10);
+  });
+
+  it("a singleton-only family's surface is functions, an instance family's instance", () => {
+    const dir = "app/lib/workflow/pipelines/jobs";
+    const helper = (q: string, instance: number, singleton: number) =>
+      c(`${q}Helper`, `${dir}/${q.toLowerCase()}_helper.rb`, {
+        instanceMethodCount: instance,
+        singletonMethodCount: singleton,
+      });
+    const mixed = [helper("Assignee", 0, 3), helper("Link", 0, 1), helper("Stage", 0, 2), helper("Due", 4, 0)];
+    expect(expectedRoleFor(deriveTypeRoles(mixed), { path: `${dir}/new.rb` })).not.toHaveProperty("familySurface");
+    const functions = mixed.slice(0, 3);
+    expect(expectedRoleFor(deriveTypeRoles(functions), { path: `${dir}/new.rb` })).toMatchObject({
+      role: "helper",
+      familySurface: "functions",
+    });
+    const instances = [helper("Assignee", 2, 0), helper("Link", 1, 1), helper("Stage", 3, 0)];
+    expect(expectedRoleFor(deriveTypeRoles(instances), { path: `${dir}/new.rb` })).toMatchObject({
+      familySurface: "instance",
+    });
+  });
+
+  it("a project-suffix family records neither fact", () => {
+    const rows = [
+      c("EdgeStore", "src/s0/edge-store.ts", { asyncMethodCount: 2 }),
+      c("FileStore", "src/s1/file-store.ts", { asyncMethodCount: 2 }),
+      c("SymbolStore", "src/s2/symbol-store.ts", { asyncMethodCount: 2 }),
+    ];
+    const suffix = deriveTypeRoles(rows).filter((r) => r.evidence === "projectSuffix");
+    expect(suffix.length).toBeGreaterThan(0);
+    expect(suffix.some((r) => "familyEffect" in r || "familySurface" in r)).toBe(false);
+  });
+});
+
+describe("isRoleFamilyMember — a known behaviour fact against the family's (ek2cu)", () => {
+  it("an async family rejects a type KNOWN to have no async method, keeps unknown and async ones", () => {
+    expect(isRoleFamilyMember({ familyEffect: "async" }, { asyncMethodCount: 0 })).toBe(false);
+    expect(isRoleFamilyMember({ familyEffect: "async" }, { asyncMethodCount: 3 })).toBe(true);
+    expect(isRoleFamilyMember({ familyEffect: "async" }, {})).toBe(true);
+  });
+
+  it("a family with no effect keeps a synchronous type", () => {
+    expect(isRoleFamilyMember({}, { asyncMethodCount: 0 })).toBe(true);
+  });
+
+  it("a known surface other than the family's is no member; an unknown surface is", () => {
+    const instance = { instanceMethodCount: 2, singletonMethodCount: 0 };
+    const functions = { instanceMethodCount: 0, singletonMethodCount: 2 };
+    const empty = { instanceMethodCount: 0, singletonMethodCount: 0 };
+    expect(isRoleFamilyMember({ familySurface: "functions" }, instance)).toBe(false);
+    expect(isRoleFamilyMember({ familySurface: "instance" }, functions)).toBe(false);
+    expect(isRoleFamilyMember({ familySurface: "instance" }, instance)).toBe(true);
+    expect(isRoleFamilyMember({ familySurface: "instance" }, {})).toBe(true);
+    expect(isRoleFamilyMember({ familySurface: "instance" }, empty)).toBe(true);
+  });
+});

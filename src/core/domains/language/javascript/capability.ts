@@ -83,6 +83,8 @@ export const capability: LanguageCapability = {
   // constructor, fields and accessors — an Error subclass, a data-only shape —
   // leaves the type-abstractness census (member kinds, never a base-list
   // spelling). Recompute: `--force-enrichments codegraph --languages javascript`.
+  // Same walker 5 (one bump per release), bd tea-rags-mcp-ek2cu: the shared
+  // ECMAScript class census counts async instance methods (migration 050).
   versions: { chunking: 3, walker: 5, codegraphSchema: 2 },
   // Google JavaScript Style Guide — the same convention as TypeScript:
   // classes UpperCamelCase, functions / methods / parameters / locals /

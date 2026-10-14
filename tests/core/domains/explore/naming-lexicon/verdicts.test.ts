@@ -2506,3 +2506,66 @@ describe("judgeDraftName — the owner-kind gate on a return draft's rows", () =
     ).toEqual({ verdict: "MISFIT", suggestion: "call", holder: "Billing::Charge#call" });
   });
 });
+
+/**
+ * A directory family's behaviour fact judges an EXISTING draft (bd
+ * tea-rags-mcp-ek2cu). Live: `MaintenanceCostShrinkage`,
+ * `ArchitectureViolationImpactTierModel`, `DiffDetectorRun` under
+ * `api/internal/ops/` were MISFIT → `...Ops` beside `*Ops` facades whose every
+ * instance method is async; taxdome's `ConnectionErrorHandler` (an instance
+ * class) was MISFIT → `...Helper` beside singleton-only `*Helper` namespaces.
+ * A draft KNOWN to differ is no member; a draft with unknown counts, and a
+ * misnamed class of the family's own shape, still are.
+ */
+describe("judgeTypeDraft — a directory family's behaviour fact (ek2cu)", () => {
+  const OPS = "src/core/api/internal/ops";
+  const row = (shortName: string, relPath: string, extra: Partial<TypeNameRow> = {}): TypeNameRow => ({
+    symbolId: shortName,
+    relPath,
+    shortName,
+    symbolKind: "class",
+    ancestors: [],
+    ...extra,
+  });
+  const OPS_ROWS = ["Collection", "Document", "Indexing", "Worktree"].map((q) =>
+    row(`${q}Ops`, `${OPS}/${q.toLowerCase()}-ops.ts`, { asyncMethodCount: 2 }),
+  );
+  const judge = (draft: { name: string; path: string }, rows: TypeNameRow[]) =>
+    judgeTypeDraft({ ...draft, casing: "pascal", evidence: typeNameEvidence(rows, "type"), conceptNames: [] });
+
+  it("an existing class with no async method beside async *Ops → no directory MISFIT", () => {
+    const path = `${OPS}/maintenance-cost-shrinkage.ts`;
+    const rows = [...OPS_ROWS, row("MaintenanceCostShrinkage", path, { asyncMethodCount: 0 })];
+    expect(judge({ name: "MaintenanceCostShrinkage", path }, rows).verdict).not.toBe("MISFIT");
+  });
+
+  it("every *Ops carrier still conforms", () => {
+    expect(judge({ name: "IndexingOps", path: `${OPS}/indexing-ops.ts` }, OPS_ROWS).verdict).toBe("CONFORMS");
+  });
+
+  it("an async class misnamed in the ops directory is still MISFIT", () => {
+    const path = `${OPS}/review-changes.ts`;
+    const rows = [...OPS_ROWS, row("ReviewChangesService", path, { asyncMethodCount: 1 })];
+    expect(judge({ name: "ReviewChangesService", path }, rows)).toMatchObject({
+      verdict: "MISFIT",
+      suggestion: "ReviewChangesServiceOps",
+    });
+  });
+
+  it("a draft with no known count is still held to the role", () => {
+    expect(judge({ name: "ReviewChangesService", path: `${OPS}/review-changes.ts` }, OPS_ROWS).verdict).toBe("MISFIT");
+  });
+
+  it("an instance class beside singleton-only *Helper namespaces → no directory MISFIT", () => {
+    const dir = "app/lib/bookkeeping/qbo";
+    const helpers = ["Account", "Invoice", "Vendor"].map((q) =>
+      row(`${q}Helper`, `${dir}/${q.toLowerCase()}_helper.rb`, { instanceMethodCount: 0, singletonMethodCount: 3 }),
+    );
+    const path = `${dir}/connection_error_handler.rb`;
+    const rows = [...helpers, row("ConnectionErrorHandler", path, { instanceMethodCount: 2, singletonMethodCount: 0 })];
+    expect(judge({ name: "ConnectionErrorHandler", path }, rows).verdict).not.toBe("MISFIT");
+    const misnamed = `${dir}/payment_tools.rb`;
+    const namespace = [...helpers, row("PaymentTools", misnamed, { instanceMethodCount: 0, singletonMethodCount: 1 })];
+    expect(judge({ name: "PaymentTools", path: misnamed }, namespace).verdict).toBe("MISFIT");
+  });
+});

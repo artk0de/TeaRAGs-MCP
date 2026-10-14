@@ -9,7 +9,10 @@ import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintena
 import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const MIGRATION = "040-cg-type-declarations-member-counts.sql";
-const PRE_040 = DATABASE_MIGRATIONS.filter((m) => m.filename !== MIGRATION);
+const PRE_040 = DATABASE_MIGRATIONS.slice(
+  0,
+  DATABASE_MIGRATIONS.findIndex((m) => m.filename === MIGRATION),
+);
 
 /**
  * bd tea-rags-mcp-ffxfc — `cg_type_declarations` gains a declaration's member

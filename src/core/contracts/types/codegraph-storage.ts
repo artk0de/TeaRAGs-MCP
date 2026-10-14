@@ -160,6 +160,8 @@ export interface TypeDeclarationRow {
    */
   methodCount?: number;
   fieldCount?: number;
+  /** The census's async instance method count (migration 050, bd tea-rags-mcp-ek2cu); absent = unknown. */
+  asyncMethodCount?: number;
 }
 
 /** One file's type-declaration rows, as consumed by `GraphDbClient.replaceTypeDeclarationsBulk`. */
@@ -748,12 +750,21 @@ export interface TypeNameRow {
   methodCount?: number;
   fieldCount?: number;
   /**
+   * How many of the TYPE's instance methods are async (bd tea-rags-mcp-ek2cu),
+   * summed like the census over its production declarations. Absent = unknown:
+   * some declaration of the type carries no count (an interface, a language
+   * whose census takes none, an index written before migration 050).
+   */
+  asyncMethodCount?: number;
+  /**
    * The type's callables in the symbol table by how they are called (bd
    * tea-rags-mcp-4vj2u): `Type#m` — on an instance (a mixin's or an object's
    * methods) — against `Type.m` — on the type itself (`class << self`,
    * `def self.m`, a `static`). A type with singleton callables only is a
    * namespace of functions, whatever its name says. Both-or-neither; absent
-   * when the symbol table holds no callable of the type.
+   * when the symbol table holds no callable of the type. The constructor
+   * (`#constructor`, `#initialize`) builds the instance and is not counted
+   * (bd tea-rags-mcp-ek2cu).
    */
   instanceMethodCount?: number;
   singletonMethodCount?: number;
