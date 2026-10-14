@@ -77,38 +77,50 @@ function canNameCodegraphDatabasePath(source: ts.SourceFile): boolean {
   return found || source.fileName.endsWith("codegraph-db-files.ts");
 }
 
-/** Copy calls in `text` that could put bytes over an existing codegraph database path. */
-function findCopyOverViolations(fileName: string, text: string): CopyViolation[] {
+/**
+ * A module whose text names none of the guarded copy calls cannot hold one, so
+ * the full-src scan skips parsing it. Derived from the call sets, not hand-typed.
+ */
+const COPY_CALL_TEXT = new RegExp(`\\b(?:${[...COPY_CALLS, ...OVERWRITING_COPY_CALLS].join("|")})\\b`);
+
+interface CopyScan {
+  violations: CopyViolation[];
+  /** Copy calls seen in a path-aware module, violating or not — proves the guard is not vacuous. */
+  copyCalls: number;
+}
+
+/** One parse of `text`: copy calls that could put bytes over a codegraph database path, plus the copy count. */
+function scanCopyCalls(fileName: string, text: string): CopyScan {
   const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  if (!canNameCodegraphDatabasePath(source)) return [];
-  const violations: CopyViolation[] = [];
+  const scan: CopyScan = { violations: [], copyCalls: 0 };
+  if (!canNameCodegraphDatabasePath(source)) return scan;
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
       const name = calleeName(node.expression);
       const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
       if (name && OVERWRITING_COPY_CALLS.has(name)) {
-        violations.push({ file: fileName, line, call: name, reason: "recursive copy overwrites in place" });
-      } else if (name && COPY_CALLS.has(name) && !mentionsExclusiveMode(node.arguments[2])) {
-        violations.push({ file: fileName, line, call: name, reason: "copy without COPYFILE_EXCL keeps the inode" });
+        scan.violations.push({ file: fileName, line, call: name, reason: "recursive copy overwrites in place" });
+      } else if (name && COPY_CALLS.has(name)) {
+        scan.copyCalls += 1;
+        if (!mentionsExclusiveMode(node.arguments[2])) {
+          scan.violations.push({
+            file: fileName,
+            line,
+            call: name,
+            reason: "copy without COPYFILE_EXCL keeps the inode",
+          });
+        }
       }
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
-  return violations;
+  return scan;
 }
 
-/** Copy calls the scan saw in path-aware files, violating or not — proves the guard is not vacuous. */
-function countCopyCalls(fileName: string, text: string): number {
-  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  if (!canNameCodegraphDatabasePath(source)) return 0;
-  let count = 0;
-  const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && COPY_CALLS.has(calleeName(node.expression) ?? "")) count += 1;
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  return count;
+/** Copy calls in `text` that could put bytes over an existing codegraph database path. */
+function findCopyOverViolations(fileName: string, text: string): CopyViolation[] {
+  return scanCopyCalls(fileName, text).violations;
 }
 
 function listSourceFiles(dir: string): string[] {
@@ -173,8 +185,10 @@ describe("codegraph database files land at a path only by rename (r4veq)", () =>
     for (const file of listSourceFiles(SRC_DIR)) {
       const text = readFileSync(file, "utf8");
       const rel = relative(REPO_ROOT, file);
-      violations.push(...findCopyOverViolations(rel, text));
-      scannedCopies += countCopyCalls(rel, text);
+      if (!COPY_CALL_TEXT.test(text)) continue;
+      const scan = scanCopyCalls(rel, text);
+      violations.push(...scan.violations);
+      scannedCopies += scan.copyCalls;
     }
 
     expect(violations).toEqual([]);
