@@ -167,7 +167,7 @@ import type {
 } from "../../public/dto/naming-lexicon.js";
 import { InputValidationError, InvalidParameterError, MissingArgumentError } from "../../public/errors.js";
 import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
-import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
+import { DIFF_FILE_CAP, readDiffScope, readTreeLag, type DiffScopeRead } from "./diff-scope-reader.js";
 import { readUntypedMethodEvidence, type MethodHeadWordMemo } from "./naming-lexicon-method-evidence.js";
 import type {
   NamingReviewExtractor,
@@ -242,6 +242,15 @@ export const NAMING_LEXICON_DRIFT_WARNING =
  * a batch of short words in, one vector each out — the shape of
  * `EmbeddingProvider#embedBatch`, which the factory injects.
  */
+/**
+ * The evidence scope, plus the change a `review_changes` call already read (bd
+ * tea-rags-mcp-wijz7): diff mode judges that read instead of reading the
+ * change again. Internal — the endpoint's request carries no pre-read change.
+ */
+export interface NamingLexiconReviewScope extends NamingLexiconEvidenceScope {
+  diff?: DiffScopeRead;
+}
+
 export interface NamingLexiconEmbeddings {
   embedBatch: (texts: string[]) => Promise<{ embedding: number[] }[]>;
 }
@@ -569,11 +578,12 @@ export class NamingLexiconOps {
 
   /**
    * `scope` is internal (not a request field): diff mode passes the changed
-   * files as `excludePaths`, and every evidence read then skips them.
+   * files as `excludePaths`, and every evidence read then skips them; a
+   * review passes the change it read as `diff`.
    */
   async getNamingLexicon(
     req: NamingLexiconRequest,
-    scope: NamingLexiconEvidenceScope = {},
+    scope: NamingLexiconReviewScope = {},
   ): Promise<NamingLexiconResult> {
     validateRequest(req);
     // One addressing rule (bd tea-rags-mcp-xi2r9): index reads address the base index, git
@@ -588,7 +598,7 @@ export class NamingLexiconOps {
 
   private async answerNamingLexicon(
     req: NamingLexiconRequest,
-    scope: NamingLexiconEvidenceScope,
+    scope: NamingLexiconReviewScope,
     workingTree: WorkingTree,
   ): Promise<NamingLexiconResult> {
     const { collectionName } = workingTree.baseIndex;
@@ -599,7 +609,7 @@ export class NamingLexiconOps {
     const indexLag =
       workTree === undefined ? undefined : readTreeLag(this.deps.collectionRegistry, collectionName, workTree);
     // Diff mode reads the change first: its files are the evidence every read excludes.
-    const diff = isDiffRequest(req) ? await this.readDiff(req, workTree) : undefined;
+    const diff = isDiffRequest(req) ? await this.readDiff(req, workTree, scope.diff) : undefined;
     const excludePaths = [...(scope.excludePaths ?? []), ...(diff?.files ?? [])];
     const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
@@ -647,10 +657,15 @@ export class NamingLexiconOps {
    * its added lines and — when something was added and a codegraph language
    * walks it — its declarations. A file the ontology calls non-production, one
    * no codegraph language walks, or an unreadable one is not judged; a listed
-   * file with no diff was read whole by {@link readDiffScope}.
+   * file with no diff was read whole by {@link readDiffScope}. A review's
+   * `preRead` is that same read of the same request — not read again.
    */
-  private async readDiff(req: NamingLexiconRequest, repoRoot: string | undefined): Promise<DiffRead> {
-    const read = await readDiffScope(repoRoot, { base: req.changes?.base, files: req.files });
+  private async readDiff(
+    req: NamingLexiconRequest,
+    repoRoot: string | undefined,
+    preRead: DiffScopeRead | undefined,
+  ): Promise<DiffRead> {
+    const read = preRead ?? (await readDiffScope(repoRoot, { base: req.changes?.base, files: req.files }));
     // `repoRoot` is the tree the change is read from (`resolveWorkingTree`).
     const extract = this.deps.extractDeclarations?.forWorkingTree(read.workTree);
     const judged: DiffFile[] = [];
@@ -761,6 +776,18 @@ export class NamingLexiconOps {
     // scope and the language whose descriptor applies there.
     const asked = await this.readAskedTypes(early, req, drafts);
     const resolved = await this.resolveAnswerScope(early, req, typeDrafts, asked);
+    // Stage 7's concept searches start here and overlap stages 3-6 (bd tea-rags-mcp-wijz7):
+    // no stage before 7 moves `alignment.failure` — a nested answer judges value drafts only —
+    // and the searches are memoized and consumed in draft order, so no verdict moves. A
+    // stage that throws first leaves the start unawaited: handled here, rethrown in stage 7.
+    const conceptSearchesStarted = this.startTypeDraftConceptSearches(
+      unscoped,
+      req,
+      typeDrafts,
+      resolved.language,
+      alignment,
+    );
+    conceptSearchesStarted.catch(() => undefined);
 
     // Stages 3-4: the evidence read in the answer's language namespace
     // (bd tea-rags-mcp-0qaht), each row classified in its own language's casing.
@@ -795,7 +822,10 @@ export class NamingLexiconOps {
     const typeVerdicts =
       typeDrafts.length === 0
         ? []
-        : await this.judgeTypeDrafts(unscoped, req, typeDrafts, resolved.language, notices, alignment);
+        : await this.judgeTypeDrafts(unscoped, req, typeDrafts, resolved.language, notices, {
+            alignment,
+            conceptSearchesStarted,
+          });
     const names = inDraftOrder(allDrafts, valueVerdicts, typeVerdicts);
 
     return {
@@ -1147,7 +1177,8 @@ export class NamingLexiconOps {
    * Stage 7: one read of the project's declarations, then per draft a concept
    * search and {@link judgeTypeDraft}. The first failed search is a notice and
    * stops further searches — for the whole request, through `alignment`; the
-   * drafts are still judged, without alignment.
+   * drafts are still judged, without alignment. The searches were started by
+   * {@link answer} (`conceptSearchesStarted`); the re-export twins read overlaps them.
    */
   private async judgeTypeDrafts(
     graphDb: IdentifierReader,
@@ -1155,16 +1186,19 @@ export class NamingLexiconOps {
     drafts: readonly NamingLexiconTypeDraft[],
     language: string | undefined,
     notices: string[],
-    alignment: TypeAlignmentState,
+    started: { alignment: TypeAlignmentState; conceptSearchesStarted: Promise<void> },
   ): Promise<NamingLexiconNameVerdict[]> {
+    const { alignment } = started;
     const evidenceByKey = new Map<string, TypeNameEvidence>();
     let tableEmpty = false;
     const failedBefore = alignment.failure !== undefined;
     const verdicts: NamingLexiconNameVerdict[] = [];
     // A barrel re-exporting the draft's file is the same declaration, not a clash (bd
     // tea-rags-mcp-89k7k.15); an unreadable file graph leaves every collision standing.
-    const twins = await (alignment.reexportTwins ??= readReexportTwins(graphDb));
-    await this.startTypeDraftConceptSearches(graphDb, req, drafts, language, alignment);
+    const [twins] = await Promise.all([
+      (alignment.reexportTwins ??= readReexportTwins(graphDb)),
+      started.conceptSearchesStarted,
+    ]);
     for (const draft of drafts) {
       const population = typeDraftPopulation(draft);
       const draftLanguage = this.languageOfPath(draft.path) ?? language;
@@ -1211,8 +1245,9 @@ export class NamingLexiconOps {
   }
 
   /**
-   * Every searched draft's concept search starts here, bounded; the loop of
-   * {@link judgeTypeDrafts} consumes each in draft order, so the verdicts do not move.
+   * Every searched draft's concept search starts here, bounded, ahead of the
+   * stages before stage 7; the loop of {@link judgeTypeDrafts} consumes each in
+   * draft order, so the verdicts do not move.
    */
   private async startTypeDraftConceptSearches(
     graphDb: IdentifierReader,

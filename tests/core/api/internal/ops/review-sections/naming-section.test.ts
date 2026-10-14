@@ -2,8 +2,8 @@
  * `namingSectionProvider` (bd tea-rags-mcp-89k7k.1.4, F3 slice 1): the review
  * section behind `review_changes`'s `naming` id. It owns no judgement of its
  * own — it forwards the diff request to `NamingLexiconOps#getNamingLexicon`
- * (which re-reads the diff itself; the double read is documented in the
- * provider) and spreads the returned `.review` verbatim, so the section keeps
+ * together with the change the orchestration already read (bd
+ * tea-rags-mcp-wijz7: the lexicon does not read the diff again) and spreads the returned `.review` verbatim, so the section keeps
  * field parity with `get_naming_lexicon` diff mode for free.
  */
 import { describe, expect, it, vi } from "vitest";
@@ -67,15 +67,14 @@ describe("namingSectionProvider", () => {
     });
   });
 
-  it("passes the diff request through and spreads `.review` verbatim", async () => {
+  it("passes the diff request and the pre-read change through and spreads `.review` verbatim", async () => {
     const context = makeContext();
     const payload = (await namingSectionProvider.run(context)) as Record<string, unknown>;
 
-    expect(context.lexiconOps?.getNamingLexicon).toHaveBeenCalledWith({
-      project: "p",
-      changes: { base: "main" },
-      files: ["src/a.ts"],
-    });
+    expect(context.lexiconOps?.getNamingLexicon).toHaveBeenCalledWith(
+      { project: "p", changes: { base: "main" }, files: ["src/a.ts"] },
+      { diff: scope },
+    );
     expect(payload.checked).toBe(4);
     expect(payload.conforming).toBe(3);
     expect(payload.findings).toEqual([

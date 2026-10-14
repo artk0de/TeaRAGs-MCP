@@ -20,6 +20,7 @@ import {
   type NamingLexiconExplore,
 } from "../../../../../src/core/api/internal/ops/naming-lexicon-ops.js";
 import type { ExploreResponse, FindSymbolRequest } from "../../../../../src/core/api/public/dto/index.js";
+import { InvalidParameterError } from "../../../../../src/core/api/public/errors.js";
 import type { TypeDeclarationRow } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { IdentifierNamingConvention } from "../../../../../src/core/contracts/types/language.js";
 import { capability as rubyCapability } from "../../../../../src/core/domains/language/ruby/capability.js";
@@ -136,6 +137,84 @@ describe("NamingLexiconOps — concurrent remote reads", () => {
       });
       expect(semanticSearch).toHaveBeenCalledTimes(1);
       expect(result.names[1]).toEqual(result.names[0]);
+    });
+
+    // bd tea-rags-mcp-wijz7: the searches overlap the re-export twins read and the value-draft
+    // stages; the answer is the one the sequential order gave.
+    describe("overlap with the stages before them", () => {
+      const TERMS_QUERY = "ledger bookkeeping terms";
+      const request = {
+        collection: "c",
+        language: "typescript",
+        concept: TERMS_QUERY,
+        names: [{ ...typeDraft("LedgerBook"), concept: "a book of ledger entries" }],
+      };
+
+      it("start before the re-export twins read resolves", async () => {
+        const sequential = await build({ semanticSearch: vi.fn(async () => EMPTY) }).getNamingLexicon(request);
+
+        const readEdges = db.readFileReexportEdges.bind(db);
+        let releaseEdges: () => void = () => undefined;
+        vi.spyOn(db, "readFileReexportEdges").mockImplementation(async () => {
+          await new Promise<void>((resolve) => (releaseEdges = resolve));
+          return readEdges();
+        });
+        const semanticSearch = vi.fn(async (_req: unknown) => EMPTY);
+        const pending = build({ semanticSearch }).getNamingLexicon(request);
+
+        await vi.waitFor(() => {
+          expect(semanticSearch.mock.calls.map(([req]) => (req as { query: string }).query)).toContain(
+            "a book of ledger entries",
+          );
+        });
+        releaseEdges();
+        expect(await pending).toEqual(sequential);
+      });
+
+      it("start before the value-draft stages finish", async () => {
+        const sequential = await build({ semanticSearch: vi.fn(async () => EMPTY) }).getNamingLexicon(request);
+
+        let releaseTerms: () => void = () => undefined;
+        const termsHeld = new Promise<void>((resolve) => (releaseTerms = resolve));
+        const semanticSearch = vi.fn(async (req: unknown) => {
+          if ((req as { query: string }).query === TERMS_QUERY) await termsHeld;
+          return EMPTY;
+        });
+        const pending = build({ semanticSearch }).getNamingLexicon(request);
+
+        await vi.waitFor(() => {
+          expect(semanticSearch.mock.calls.map(([req]) => (req as { query: string }).query).sort()).toEqual(
+            ["a book of ledger entries", TERMS_QUERY].sort(),
+          );
+        });
+        releaseTerms();
+        expect(await pending).toEqual(sequential);
+      });
+
+      it("a started search leaves no unhandled rejection when an earlier stage throws", async () => {
+        const unhandled: unknown[] = [];
+        const onUnhandled = (reason: unknown): void => {
+          unhandled.push(reason);
+        };
+        process.on("unhandledRejection", onUnhandled);
+        try {
+          vi.spyOn(db, "readTypeNameRows").mockRejectedValue(new Error("type name rows unreadable"));
+          const semanticSearch = vi.fn(async (req: unknown) => {
+            if ((req as { query: string }).query === TERMS_QUERY) {
+              throw new InvalidParameterError("concept", "rejected by the search");
+            }
+            return EMPTY;
+          });
+
+          await expect(build({ semanticSearch }).getNamingLexicon(request)).rejects.toBeInstanceOf(
+            InvalidParameterError,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          expect(unhandled).toEqual([]);
+        } finally {
+          process.off("unhandledRejection", onUnhandled);
+        }
+      });
     });
   });
 
