@@ -36,8 +36,10 @@
  * what the reverse-direction checks read, and the cycle BFS expands a re-read
  * changed file through its OVERLAY edges, never its stale indexed rows (bd
  * tea-rags-mcp-ah66x).
- * TWO predicates deliberately read a changed file's INDEXED out-edges — the
- * only places such rows are read at all: leakingAbstraction's facade evidence
+ * THREE predicates deliberately read a changed file's INDEXED out-edges — the
+ * only places such rows are read at all: mainSequence's index-ahead surplus
+ * (bd tea-rags-mcp-aht0q — the fan the index already counts for a changed
+ * file the base did not), leakingAbstraction's facade evidence
  * ("the facade A already imports" is the pre-diff usage the diff did not add)
  * and the diff-added subtraction (bd tea-rags-mcp-89k7k.14), which drops from
  * stableDependencies' and mainSequence's edge set every (source, target) pair
