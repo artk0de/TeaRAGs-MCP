@@ -141,4 +141,35 @@ describe("WiredExportTableReader", () => {
       expect(reader.indexedSurfaceOf("src/lib/index.ts")).toEqual(["a"]);
     });
   });
+
+  describe("files the diff deleted (bd tea-rags-mcp-ah66x)", () => {
+    it("a deleted file is not a declarer — the indexed import into it does not hold the name there", () => {
+      const overlay = new ReviewEdgeOverlay(
+        [{ relPath: "src/app/b.ts", edges: [edge("src/app/b.ts", "src/lib/new.ts", { imported: ["X"] })] }],
+        { deleted: ["src/lib/old.ts"] },
+      );
+      const reader = new WiredExportTableReader(
+        NO_SURFACE,
+        [edge("src/app/a.ts", "src/lib/old.ts", { imported: ["X"] })],
+        overlay,
+      );
+      expect(reader.declarersOf("X")).toEqual(["src/lib/new.ts"]);
+    });
+
+    it("a deleted whole-module re-exporter is not a declarer and no longer hides the real one", () => {
+      const overlay = new ReviewEdgeOverlay(
+        [{ relPath: "src/app/b.ts", edges: [edge("src/app/b.ts", "src/lib/impl.ts", { imported: ["X"] })] }],
+        { deleted: ["src/lib/index.ts"] },
+      );
+      const reader = new WiredExportTableReader(
+        NO_SURFACE,
+        [
+          edge("src/app/a.ts", "src/lib/index.ts", { imported: ["X"] }),
+          edge("src/lib/index.ts", "src/lib/other.ts", { reexported: ["*"] }),
+        ],
+        overlay,
+      );
+      expect(reader.declarersOf("X")).toEqual(["src/lib/impl.ts"]);
+    });
+  });
 });

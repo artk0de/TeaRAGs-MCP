@@ -39,18 +39,22 @@ export interface ReviewFileEdgeRead {
 
 /**
  * Per-review view over file edges: every read file MASKED out of the indexed
- * graph, plus that read's edges. Immutable after construction.
+ * graph, plus that read's edges, plus the files the change DELETED — gone from
+ * the tree, so no edge leaves or enters them there. Immutable after
+ * construction.
  */
 export class ReviewEdgeOverlay {
   private readonly edgesBySource: ReadonlyMap<string, readonly ReviewFileEdge[]>;
   private readonly maskedPaths: ReadonlySet<string>;
+  private readonly deletedPaths: ReadonlySet<string>;
+  private readonly skippedPaths: ReadonlySet<string>;
   private readonly unsupportedReads: readonly {
     relPath: string;
     reason: ReviewEdgeSkipReason;
     detail?: string;
   }[];
 
-  constructor(reads: readonly ReviewFileEdgeRead[]) {
+  constructor(reads: readonly ReviewFileEdgeRead[], options: { deleted?: Iterable<string> } = {}) {
     const edgesBySource = new Map<string, readonly ReviewFileEdge[]>();
     const unsupported: { relPath: string; reason: ReviewEdgeSkipReason; detail?: string }[] = [];
     for (const read of reads) {
@@ -64,6 +68,32 @@ export class ReviewEdgeOverlay {
     this.edgesBySource = edgesBySource;
     this.maskedPaths = new Set(reads.map((read) => read.relPath));
     this.unsupportedReads = Object.freeze(unsupported);
+    this.skippedPaths = new Set(unsupported.map((skip) => skip.relPath));
+    this.deletedPaths = new Set(options.deleted ?? []);
+  }
+
+  /** The files the change deleted — absent from the tree, whatever the index still holds. */
+  get deleted(): ReadonlySet<string> {
+    return this.deletedPaths;
+  }
+
+  /**
+   * One file's out-edges in the TREE: none for a deleted file, its re-read's
+   * edges for a successfully read one, else `indexedEdgesFrom`'s (not read, or
+   * a skipped read — a missing read is never an edge-free file); an edge into a
+   * deleted file is dropped either way. The single rule every consumer that
+   * judges the tree graph applies.
+   */
+  treeEdgesFrom<IndexedEdge extends { targetRelPath: string }>(
+    relPath: string,
+    indexedEdgesFrom: (relPath: string) => readonly IndexedEdge[],
+  ): readonly (IndexedEdge | ReviewFileEdge)[] {
+    if (this.deletedPaths.has(relPath)) return EMPTY_EDGES;
+    const edges: readonly (IndexedEdge | ReviewFileEdge)[] =
+      this.maskedPaths.has(relPath) && !this.skippedPaths.has(relPath)
+        ? this.edgesFrom(relPath)
+        : indexedEdgesFrom(relPath);
+    return this.deletedPaths.size === 0 ? edges : edges.filter((edge) => !this.deletedPaths.has(edge.targetRelPath));
   }
 
   /** Every read relPath — the files whose indexed edges the review replaces, whatever the read found. */

@@ -514,6 +514,25 @@ describe("readReviewChangeEdges — one hydrated table per review read", () => {
       },
     ]);
   });
+
+  it("marks every touched path the working tree no longer holds as deleted (bd tea-rags-mcp-ah66x)", async () => {
+    const tree = freshWorkTree();
+    writeFile("app/models/user.rb", "class User\nend\n");
+    const files = ["app/models/user.rb"];
+
+    const { overlay } = await readReviewChangeEdges(
+      {
+        workTree: tree,
+        mergeBase: "0".repeat(40),
+        files,
+        touchedFiles: new Set([...files, "app/models/gone.rb"]),
+      },
+      realDeps(),
+      { unavailable: "the collection has no codegraph database" },
+    );
+
+    expect([...overlay.deleted]).toEqual(["app/models/gone.rb"]);
+  });
 });
 
 /** Runs git in the temp tree with a fixed identity — the fixture never reads the user's config. */

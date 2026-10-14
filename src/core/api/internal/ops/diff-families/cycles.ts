@@ -11,7 +11,7 @@ import { detectorStatus, HELD_BY_WORDING, HELD_IN_WORDING, withRenderedSubject }
  * closing through ANOTHER changed file's new edge is found, and a closing
  * edge a re-read removed is never walked. A changed file whose re-read was
  * skipped keeps its indexed edges (a missing read is never an edge-free
- * file). The base side is `heldBeforeChange`, unchanged. Each edge pair
+ * file); a deleted file has no edge in or out. The base side is `heldBeforeChange`, unchanged. Each edge pair
  * reports at most once — the unique-pair iteration of the overlay's edges is
  * the dedupe.
  */
@@ -45,19 +45,17 @@ export const cyclesDetector: DiffFamilyDetector = {
 };
 
 /**
- * The tree graph's out-targets of one file: a successfully re-read file's
- * overlay edges, any other file's indexed edges (none when the graph port is
- * absent — an empty indexed graph).
+ * The tree graph's out-targets of one file, by the overlay's single tree-edge
+ * rule (`ReviewEdgeOverlay#treeEdgesFrom`); the indexed side is empty when the
+ * graph port is absent.
  */
 function treeGraphOf(
   graph: DiffDetectorGraphReader | undefined,
   overlay: ReviewEdgeOverlay,
 ): (relPath: string) => readonly string[] {
-  const skipped = new Set(overlay.unsupported().map((skip) => skip.relPath));
-  return (relPath) =>
-    overlay.masked.has(relPath) && !skipped.has(relPath)
-      ? overlay.edgesFrom(relPath).map((edge) => edge.targetRelPath)
-      : (graph?.edgesFrom(relPath) ?? []).map((indexed) => indexed.target);
+  const indexedEdgesFrom = (relPath: string): readonly { targetRelPath: string }[] =>
+    (graph?.edgesFrom(relPath) ?? []).map((indexed) => ({ targetRelPath: indexed.target }));
+  return (relPath) => overlay.treeEdgesFrom(relPath, indexedEdgesFrom).map((edge) => edge.targetRelPath);
 }
 
 /**

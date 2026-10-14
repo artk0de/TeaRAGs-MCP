@@ -375,7 +375,7 @@ export function diffRemovedEdgeCount(
 }
 
 /**
- * The overlay after `edits`, rebuilt from its own reads (masked set and
+ * The overlay after `edits`, rebuilt from its own reads (masked set, deleted set and
  * unsupported reads unchanged — an edit never widens what the review read):
  *
  * - `replace` points `source`'s edge to `from` at `to`, names kept; when
@@ -409,6 +409,7 @@ function editedReviewEdgeOverlay(overlay: ReviewEdgeOverlay, edits: readonly Dif
       const skip = skips.get(relPath);
       return { relPath, edges, ...(skip !== undefined ? { skip } : {}) };
     }),
+    { deleted: overlay.deleted },
   );
 }
 

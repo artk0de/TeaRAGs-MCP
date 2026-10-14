@@ -82,6 +82,27 @@ describe("cycles over the tree graph", () => {
     expect(cycleSubjects(result)).toEqual(["src/a.ts -> src/b.ts"]);
   });
 
+  it("does not close a cycle through a file the diff deleted — its indexed edges are gone from the tree", () => {
+    // The index still holds b -> d -> a; d no longer exists in the tree.
+    const run = new DiffDetectorRun({
+      catalog: catalogOf(new Map()),
+      graph: graphOf([
+        ["src/b.ts", "src/d.ts"],
+        ["src/d.ts", "src/a.ts"],
+      ]),
+    });
+    const overlay = new ReviewEdgeOverlay(
+      [{ relPath: "src/a.ts", edges: [{ sourceRelPath: "src/a.ts", targetRelPath: "src/b.ts" }] }],
+      { deleted: ["src/d.ts"] },
+    );
+    const scope = { changedFiles: ["src/a.ts"] };
+    expect(cycleSubjects(run.run(scope, overlay))).toEqual([]);
+    // The what-if re-run judges the same tree: an edit never resurrects a deleted file.
+    expect(cycleSubjects({ findings: run.rejudge(scope, overlay, []).findings } as ReturnType<typeof runWith>)).toEqual(
+      [],
+    );
+  });
+
   it("keeps the single-file cycle through unchanged files as before", () => {
     const result = runWith(
       {

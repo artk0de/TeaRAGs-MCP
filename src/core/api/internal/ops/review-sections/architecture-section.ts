@@ -103,6 +103,7 @@ import {
 } from "../diff-detector-run.js";
 import type { DiffScopeRead, DiffTreeLag } from "../diff-scope-reader.js";
 import {
+  deletedReviewPaths,
   extractReviewFile,
   extractReviewFileEdges,
   extractWorkingTreeFile,
@@ -526,7 +527,8 @@ export async function readReviewChangeEdges(
         }
       : undefined;
   const baseEdges = await readDiffBaseEdges(scope, deps, context, rename);
-  return { overlay: new ReviewEdgeOverlay(reads), baseEdges };
+  const deleted = deletedReviewPaths(scope.workTree, scope.touchedFiles);
+  return { overlay: new ReviewEdgeOverlay(reads, { deleted }), baseEdges };
 }
 
 /** A co-change graph with no build — what an absent or unreadable snapshot judges as. */

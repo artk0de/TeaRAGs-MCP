@@ -36,6 +36,10 @@ export interface ReviewEdgeFacts {
   readonly masked: ReadonlySet<string>;
   edgesFrom: (relPath: string) => readonly ExportNamingEdge[];
   unsupported: () => readonly { relPath: string }[];
+  treeEdgesFrom: (
+    relPath: string,
+    indexedEdgesFrom: (relPath: string) => readonly FileDependencyEdge[],
+  ) => readonly ExportNamingEdge[];
 }
 
 export class WiredExportTableReader implements ExportTableReader {
@@ -102,17 +106,19 @@ function skippedIsNot(relPath: string): (skip: { relPath: string }) => boolean {
   return (skip) => skip.relPath !== relPath;
 }
 
-/** The indexed edges with every successfully re-read source's edges swapped for the overlay's. */
+/** The tree's edges: every source's edges by the overlay's tree-edge rule (`ReviewEdgeOverlay#treeEdgesFrom`). */
 function effectiveEdges(
   indexedEdges: readonly FileDependencyEdge[],
   overlay: ReviewEdgeFacts | undefined,
 ): readonly ExportNamingEdge[] {
   if (overlay === undefined) return indexedEdges;
-  const skipped = new Set(overlay.unsupported().map(({ relPath }) => relPath));
-  const refreshed = [...overlay.masked].filter((relPath) => !skipped.has(relPath));
-  const refreshedSet = new Set(refreshed);
-  return [
-    ...indexedEdges.filter((edge) => !refreshedSet.has(edge.sourceRelPath)),
-    ...refreshed.flatMap((relPath) => overlay.edgesFrom(relPath)),
-  ];
+  const indexedBySource = new Map<string, FileDependencyEdge[]>();
+  for (const edge of indexedEdges) {
+    const edges = indexedBySource.get(edge.sourceRelPath) ?? [];
+    edges.push(edge);
+    indexedBySource.set(edge.sourceRelPath, edges);
+  }
+  const indexedEdgesFrom = (relPath: string): readonly FileDependencyEdge[] => indexedBySource.get(relPath) ?? [];
+  const sources = new Set([...indexedBySource.keys(), ...overlay.masked]);
+  return [...sources].flatMap((relPath) => overlay.treeEdgesFrom(relPath, indexedEdgesFrom));
 }
