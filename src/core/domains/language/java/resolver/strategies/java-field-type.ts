@@ -1,8 +1,7 @@
-import { identifierEntry } from "../../../../../contracts/identifier-record.js";
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveByLocalType, type ResolverConfig } from "./shared.js";
+import { ChainTypeSymbolResolutionStrategy, type ReceiverTypingPorts } from "../../../kernel/index.js";
+import { javaFieldReceiverType } from "../java-receiver-type-ports.js";
+import { createJavaTypeMemberLookup } from "../java-type-member-lookup.js";
+import type { ResolverConfig } from "./shared.js";
 
 /**
  * bd tea-rags-mcp-cvv9 — `this.<field>.<method>()`. Read the field's declared
@@ -14,17 +13,9 @@ import { resolveByLocalType, type ResolverConfig } from "./shared.js";
  * resolution. When the field type IS known, `resolveByLocalType` returns a
  * target unconditionally — the bound type is authoritative.
  */
-export class JavaFieldTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
-  readonly name = "fieldType";
-  constructor(private readonly cfg: ResolverConfig) {}
-
-  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (!call.receiver || !call.receiver.startsWith("this.") || ctx.callerScope.length === 0) return CONTINUE;
-    const fieldSegment = call.receiver.slice("this.".length);
-    if (fieldSegment.includes(".")) return CONTINUE;
-    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    const typeName = identifierEntry(identifierEntry(ctx.classFieldTypes, enclosing), fieldSegment);
-    if (!typeName) return CONTINUE;
-    return resolved(resolveByLocalType(typeName, call.member, ctx, this.cfg.mode));
+export class JavaFieldTypeSymbolResolutionStrategy extends ChainTypeSymbolResolutionStrategy {
+  constructor(cfg: ResolverConfig) {
+    const typing: ReceiverTypingPorts = { typeOfReceiver: (call, ctx) => javaFieldReceiverType(call, ctx) ?? null };
+    super("fieldType", typing, createJavaTypeMemberLookup(cfg.mode), { dropOnTypedMiss: true });
   }
 }
