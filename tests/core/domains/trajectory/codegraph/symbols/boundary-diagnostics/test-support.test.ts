@@ -147,8 +147,10 @@ describe("classifyTestSupportFiles", () => {
 
   it("keeps a file importing a package production also imports in production, though tests import it too", () => {
     // The fixture is not named after its test: the name relation is evidence
-    // of its own (89k7k.35.3), and this case pins the package rule alone.
-    const fixture = "app/modal/specs/modalFixture.tsx";
+    // of its own (89k7k.35.3), and this case pins the package rule alone — so
+    // it sits outside the test's directory, whose evidence is its own too
+    // (r8hme.52.14 b).
+    const fixture = "app/modal/fixtures/modalFixture.tsx";
     const page = "app/pages/Page.tsx";
     const router = "app/router.tsx";
     const graph: FileDependencyGraph = {
@@ -363,7 +365,8 @@ describe("classifyTestSupportFiles", () => {
   });
 
   it("does not take a name that merely starts like the test's name, without a separator, as related", () => {
-    const presetsLike = "app/modal/specs/Modal.specification.ts";
+    // Outside the test's directory: this pins the name relation alone (r8hme.52.14 b).
+    const presetsLike = "app/modal/specification/Modal.specification.ts";
     const graph: FileDependencyGraph = { files: [file(presetsLike)], edges: [] };
 
     const support = supportOf(graph, [testImport(SPEC, presetsLike)], []);
@@ -492,6 +495,112 @@ describe("classifyTestSupportFiles", () => {
 
       expect(classification.files.size).toBe(0);
       expect(classification.developmentRoots.size).toBe(0);
+    });
+  });
+
+  describe("a file only tests and their support import, in a directory of tests and test support (r8hme.52.14 b)", () => {
+    // taxdome specs/mocks.ts: imported by its directory's spec and the spec's
+    // presets companion, importing only production modules — no test-only
+    // dependency, no name relation. Owner decision: a directory whose other
+    // indexed files are all tests or test support is the positive evidence.
+    const MOCKS = "app/modal/specs/mocks.ts";
+    const API_MOCKS = "app/api/mocks.ts";
+    const INDEXED = new Map([
+      [SPEC, testFile("./mocks", "./Modal.spec.presets", "../Modal")],
+      [MOCKS, { isTest: false, specifiers: ["../../api/mocks"] }],
+      [PRESETS, { isTest: false, specifiers: ["./mocks", "../Modal"] }],
+    ]);
+
+    it("names the file test support when every other file in its directory is a test or test support", () => {
+      const graph: FileDependencyGraph = {
+        files: [file(MOCKS), file(PRESETS), file(MODAL), file(API_MOCKS), file(FACADE)],
+        edges: [edge(MOCKS, API_MOCKS), edge(PRESETS, MOCKS), edge(PRESETS, MODAL), edge(FACADE, MODAL)],
+      };
+
+      const classification = classifyTestSupportFiles(
+        graph,
+        [testImport(SPEC, MOCKS), testImport(SPEC, PRESETS), testImport(SPEC, MODAL)],
+        [uses(MOCKS, "react"), uses(MODAL, "react")],
+        new Set(),
+        INDEXED,
+      );
+
+      expect([...classification.files].sort()).toEqual([MOCKS, PRESETS].sort());
+    });
+
+    it("keeps a file only a test and its companion import in production when a production file shares its directory", () => {
+      // The 89k7k.35.3 guard: Foo.tsx imported only by Foo.spec.tsx and
+      // Foo.spec.presets.tsx, beside production code, is the code under test.
+      const foo = "app/forms/Foo.tsx";
+      const fooSpec = "app/forms/Foo.spec.tsx";
+      const fooPresets = "app/forms/Foo.spec.presets.tsx";
+      const bar = "app/forms/Bar.tsx";
+      const graph: FileDependencyGraph = {
+        files: [file(foo), file(fooPresets), file(bar), file(FACADE)],
+        edges: [edge(fooPresets, foo), edge(FACADE, bar)],
+      };
+
+      const classification = classifyTestSupportFiles(
+        graph,
+        [testImport(fooSpec, foo), testImport(fooSpec, fooPresets)],
+        [uses(foo, "react"), uses(bar, "react")],
+        new Set(),
+        new Map([[fooSpec, testFile("./Foo", "./Foo.spec.presets")]]),
+      );
+
+      expect([...classification.files]).toEqual([fooPresets]);
+    });
+
+    it("keeps the file a test in its directory is named after in production — it is the code under test", () => {
+      const foo = "app/forms/Foo.tsx";
+      const fooSpec = "app/forms/Foo.spec.tsx";
+      const graph: FileDependencyGraph = { files: [file(foo)], edges: [] };
+
+      const classification = classifyTestSupportFiles(
+        graph,
+        [testImport(fooSpec, foo)],
+        [uses(foo, "react")],
+        new Set(),
+        new Map([[fooSpec, testFile("./Foo")]]),
+      );
+
+      expect(classification.files.size).toBe(0);
+    });
+
+    it("keeps the file in production when an indexed sibling is neither a test nor test support", () => {
+      const generated = "app/modal/specs/schema.generated.ts";
+      const graph: FileDependencyGraph = {
+        files: [file(MOCKS), file(API_MOCKS)],
+        edges: [edge(MOCKS, API_MOCKS)],
+      };
+
+      const classification = classifyTestSupportFiles(
+        graph,
+        [testImport(SPEC, MOCKS)],
+        [uses(MOCKS, "react")],
+        new Set(),
+        new Map([...INDEXED, [generated, { isTest: false, specifiers: ["zod"] }]]),
+      );
+
+      expect(classification.files.size).toBe(0);
+    });
+
+    it("keeps a file whose directory holds no test in production — support siblings alone are not evidence", () => {
+      const fixtures = "app/modal/fixtures/fixtures.ts";
+      const graph: FileDependencyGraph = {
+        files: [file(MOCKS), file(PRESETS), file(fixtures)],
+        edges: [edge(PRESETS, MOCKS)],
+      };
+
+      const classification = classifyTestSupportFiles(
+        graph,
+        [testImport(SPEC, PRESETS), testImport(SPEC, fixtures)],
+        [uses(fixtures, "react")],
+        new Set(),
+        new Map([[SPEC, testFile("../fixtures/fixtures")]]),
+      );
+
+      expect(classification.files.has(fixtures)).toBe(false);
     });
   });
 });

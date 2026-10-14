@@ -161,6 +161,7 @@ function classifyIndexedTestSupport(
     resolveUnwalkedImportEdges(importsByFile, walkedFiles),
     resolveExternalImports(importsByFile, walkedFiles),
     declaredTestDependencies,
+    importsByFile,
   );
   return {
     testSupport: files,
