@@ -336,4 +336,27 @@ describe("FileChurnDiscovery", () => {
     expect(adapter.readCommitFileNumstat).toHaveBeenCalledTimes(1);
     expect(adapter.readCommitFileNumstat.mock.calls[0][1]).toBeUndefined();
   });
+
+  it("learns the run's task-id vocabulary from the in-window commit messages and the remote (bd tea-rags-mcp-8rcox)", async () => {
+    const anchored = Array.from({ length: 10 }, (_, i) => {
+      const entry = fileEntry(String(i).repeat(40), [{ path: "a.ts", added: 1, deleted: 0 }]);
+      return { ...entry, commit: { ...entry.commit, body: `[TD-${100 + i}] change` } };
+    });
+    const unanchored = Array.from({ length: 12 }, (_, i) => {
+      const entry = fileEntry(`u${i}`.padEnd(40, "u"), [{ path: "b.ts", added: 1, deleted: 0 }]);
+      return { ...entry, commit: { ...entry.commit, body: `feat: UTF-${i % 2 === 0 ? 8 : 16} paths` } };
+    });
+    const adapter = {
+      ...fakeAdapter({ head: HEAD, readCommitFileNumstat: async () => [...anchored, ...unanchored] }),
+      readRemoteUrls: vi.fn().mockResolvedValue(["git@github.com:org/repo.git"]),
+    };
+
+    const vocabulary = await new FileChurnDiscovery(asAdapter(adapter), {
+      maxAgeMonths: 12,
+      timeoutMs: 30000,
+    }).taskIdVocabulary();
+
+    expect([...vocabulary.projectKeys]).toEqual(["TD"]);
+    expect(vocabulary.forgeIssueRefs).toBe(true);
+  });
 });

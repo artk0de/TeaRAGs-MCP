@@ -38,6 +38,7 @@ import { isDebug } from "../../../../../primitives/diagnostics/index.js";
 import {
   GitCommitDiscovery,
   GitCommitDiscoveryStore,
+  learnTaskIdVocabulary,
   type GitCommitDiscoveryEntry,
 } from "../../../git/history/index.js";
 import { estimateBurstWindow } from "./burst-window.js";
@@ -106,6 +107,11 @@ export interface TemporalCochangeHistory {
   trackedPaths: () => Promise<readonly string[]>;
   /** Discovery rows, newest → oldest, inside the window. Only read when a rebuild is due. */
   entries: () => Promise<readonly GitCommitDiscoveryEntry[]>;
+  /**
+   * The repository's remote URLs — whether `#N` names an issue (bd
+   * tea-rags-mcp-8rcox). Absent = no remote known. Only read when a rebuild is due.
+   */
+  remoteUrls?: () => Promise<readonly string[]>;
 }
 
 /** Opens a project's history; the default reads git through the discovery matrix. */
@@ -149,6 +155,7 @@ export class GitTemporalCochangeHistorySource implements TemporalCochangeHistory
           timeoutMs: this.options.timeoutMs,
           store: new GitCommitDiscoveryStore(),
         }).allEntries(),
+      remoteUrls: async () => adapter.readRemoteUrls(this.options.timeoutMs),
     };
   }
 }
@@ -198,13 +205,20 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
 
     const live = new Set(await history.trackedPaths());
     for (const deleted of history.worktreeDeletions) live.delete(deleted);
-    const commits = scopeCochangeHistory(await history.entries(), {
+    const entries = await history.entries();
+    const commits = scopeCochangeHistory(entries, {
       projectPrefix,
       fileExists: (relPath: RelPath) => live.has(`${projectPrefix}${relPath}`),
     });
+    // Ticket keys are learned ONCE per build over the whole window, unscoped:
+    // a key is the repository's convention, not one subtree's.
+    const taskIdVocabulary = learnTaskIdVocabulary(
+      entries.map((entry) => entry.commit.body),
+      (await history.remoteUrls?.().catch(() => [])) ?? [],
+    );
     const t2 = this.now();
     const burstWindow = estimateBurstWindow(commits);
-    const bundles = bundleCochangeCommits(commits, burstWindow.minutes);
+    const bundles = bundleCochangeCommits(commits, burstWindow.minutes, taskIdVocabulary);
     const maxFilesPerBundle = computeMassChangeCut(bundles.map((b) => b.files.length));
     const graph = extractCochangeGraph(bundles, {
       minSupport: TEMPORAL_COCHANGE_MIN_SUPPORT,

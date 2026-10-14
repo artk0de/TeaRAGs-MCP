@@ -6,7 +6,13 @@
  */
 
 import type { FileChurnData } from "../../../../adapters/vcs/index.js";
-import { isBugFixCommit, isBugFixCommitOrBranch, MERGE_SUBJECT } from "../history/index.js";
+import {
+  EMPTY_TASK_ID_VOCABULARY,
+  isBugFixCommit,
+  isBugFixCommitOrBranch,
+  MERGE_SUBJECT,
+  type TaskIdVocabulary,
+} from "../history/index.js";
 import type { ChunkChurnOverlay, GitFileSignals } from "../types.js";
 import { computeDominantAuthor, extractAllTaskIds } from "./metrics/extractors.js";
 
@@ -58,6 +64,7 @@ export function computeFileSignals(
   churnData: FileChurnData,
   currentLineCount: number,
   bugFixShas?: Set<string>,
+  taskIdVocabulary: TaskIdVocabulary = EMPTY_TASK_ID_VOCABULARY,
 ): GitFileSignals {
   const nowSec = Date.now() / 1000;
   const { commits } = churnData;
@@ -97,7 +104,7 @@ export function computeFileSignals(
   const authorship = computeDominantAuthor(commits);
 
   // Task ID collection (delegates to extractor for dedup)
-  const taskIds = extractAllTaskIds(commits);
+  const taskIds = extractAllTaskIds(commits, taskIdVocabulary);
 
   const lastCommit = sorted[sorted.length - 1];
   const firstCommit = sorted[0];

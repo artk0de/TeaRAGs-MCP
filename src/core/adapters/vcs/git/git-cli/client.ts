@@ -83,6 +83,26 @@ export async function readCommitTime(
 }
 
 /**
+ * Every configured remote's fetch URL (`git config --get-regexp`), config
+ * order. A repository with no remote — git exits 1 — and any failure answer
+ * `[]`: a missing remote is a fact about the repository, never an error.
+ */
+export async function readRemoteUrls(repoRoot: string, timeoutMs = TREE_LISTING_STALL_MS): Promise<string[]> {
+  try {
+    const out = await execWithStallGuard(resolveGitExecutable(), ["config", "--get-regexp", "^remote\\..*\\.url$"], {
+      cwd: repoRoot,
+      stallTimeoutMs: timeoutMs,
+    });
+    return out
+      .split("\n")
+      .map((line) => line.trim().split(/\s+/)[1])
+      .filter((url): url is string => url !== undefined && url !== "");
+  } catch {
+    return [];
+  }
+}
+
+/**
  * True iff `ancestor` is an ancestor of `descendant` per
  * `git merge-base --is-ancestor`. Any failure — non-ancestor exit code,
  * unresolvable / gc'd shas, not a repo — resolves false, which callers treat

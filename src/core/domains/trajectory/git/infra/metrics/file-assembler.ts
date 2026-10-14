@@ -6,7 +6,7 @@
  */
 
 import type { BlameLine, CommitInfo } from "../../../../../adapters/vcs/index.js";
-import { groupIntoSessions } from "../../history/index.js";
+import { EMPTY_TASK_ID_VOCABULARY, groupIntoSessions, type TaskIdVocabulary } from "../../history/index.js";
 import type { GitFileSignals } from "../../types.js";
 import { computeBlameOwnership } from "../blame-ownership.js";
 import type { WindowedFileChurn } from "../file-lifetime.js";
@@ -29,6 +29,7 @@ export function assembleFileSignals(
   squashOpts?: SquashOptions,
   bugFixShas?: Set<string>,
   blameLines?: BlameLine[],
+  taskIdVocabulary: TaskIdVocabulary = EMPTY_TASK_ID_VOCABULARY,
 ): GitFileSignals {
   const ownership = blameLines && blameLines.length > 0 ? computeBlameOwnership(blameLines).file : null;
   const { commits, lifetime, historyAnchorSec } = churnData;
@@ -108,7 +109,7 @@ export function assembleFileSignals(
     churnVolatility: computeChurnVolatility(countSource ?? commits),
     bugFixRate: computeBugFixRate(countSource ?? commits, bugFixShas),
     recentContributorCount: authorship.contributorCount,
-    taskIds: extractAllTaskIds(commits),
+    taskIds: extractAllTaskIds(commits, taskIdVocabulary),
     // Line-based ownership: from `git blame HEAD` if provided, otherwise unknown defaults.
     blameDominantAuthor: ownership?.blameDominantAuthor ?? "unknown",
     blameDominantAuthorPct: ownership?.blameDominantAuthorPct ?? 0,

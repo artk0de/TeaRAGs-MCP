@@ -21,11 +21,13 @@ import type { ChunkLookupEntry } from "../../../../types.js";
 import {
   authorIdentityKey,
   buildBugFixShaSet,
+  EMPTY_TASK_ID_VOCABULARY,
   extractTaskIds,
   historyWindowSince,
   resolveHeadPaths,
   sliceCommitsFollowingRenames,
   type HeadAttributedChangedPath,
+  type TaskIdVocabulary,
 } from "../history/index.js";
 import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
 import { applyOffsets, changedRowsInRange, mapHunksToChunks, type AdjustedRange } from "./offset-tracker.js";
@@ -131,6 +133,12 @@ export interface WalkCommitsOptions {
    * ignores it: the discovery owns its own window.
    */
   historyAnchorSec?: number;
+  /**
+   * The run's task-id vocabulary (bd tea-rags-mcp-8rcox) — learned once per
+   * run by the file-churn discovery, never per batch. Absent ⇒ no ticket key
+   * is accepted.
+   */
+  taskIdVocabulary?: TaskIdVocabulary;
 }
 
 /** One commit's hunks for one file, carried from Phase 1 to Phase 2. */
@@ -391,7 +399,7 @@ async function collectHunksPerFile(
       if (relevantFiles.length === 0) return;
 
       const isBugFix = isBugFixCommitOrBranch(commit.body, commit.sha, discovery.bugFixShas);
-      const commitTaskIds = extractTaskIds(commit.body);
+      const commitTaskIds = extractTaskIds(commit.body, opts.taskIdVocabulary ?? EMPTY_TASK_ID_VOCABULARY);
 
       // First-parent oid straight from CommitInfo.parents — already parsed
       // from `%P` by the git log parsers and validated by the discovery store,

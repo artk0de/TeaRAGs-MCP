@@ -52,7 +52,7 @@ Inline param hints short; full semantics here.
 - \`minAgeDays\` / \`maxAgeDays\` — age from lastModifiedAt at QUERY time (0 = within a day). Chunk level: chunk with no
   commit in chunk git window (and docs) dropped. level 'file' → file last commit, grouped per file.
   File-level recency at chunk granularity → modifiedAfter.
-- \`taskId\` — JIRA (TD-1234), GitHub (#567), Azure DevOps (AB#890). File: any commit of file; chunk: chunk's own commits.
+- \`taskId\` — JIRA-style (TD-1234; key learned from repo history), GitHub/GitLab issue/PR (#567; remote required), Azure DevOps (AB#890). File: any commit of file; chunk: chunk's own commits.
 - \`symbolId\` — text match: 'Class' → all its methods, 'method' → that method in any class.
 - Codegraph filters (\`minFanIn\`, \`minFanOut\`, \`minPageRank\`, \`minInstability\`, \`minTransitiveImpact\`,
   \`minConnectionCount\`, \`isHub\`, \`isLeaf\`) exposed only when codegraph enabled.

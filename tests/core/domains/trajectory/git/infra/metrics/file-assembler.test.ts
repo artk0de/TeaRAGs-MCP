@@ -109,7 +109,9 @@ describe("assembleFileSignals", () => {
       linesAdded: 10,
       linesDeleted: 5,
     };
-    const result = assembleFileSignals(churnData, 100);
+    // bd tea-rags-mcp-8rcox: ids are read under the run's learned vocabulary.
+    const vocabulary = { projectKeys: new Set(["TD"]), forgeIssueRefs: false };
+    const result = assembleFileSignals(churnData, 100, undefined, undefined, undefined, vocabulary);
     expect(result.taskIds).toContain("TD-123");
     expect(result.taskIds).toContain("TD-456");
     expect(result.taskIds).toHaveLength(2);

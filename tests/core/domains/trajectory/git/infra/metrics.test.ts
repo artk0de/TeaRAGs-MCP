@@ -106,7 +106,8 @@ describe("computeFileSignals", () => {
     ];
 
     const data: FileChurnData = { commits, linesAdded: 50, linesDeleted: 10 };
-    const meta = computeFileSignals(data, 100);
+    // bd tea-rags-mcp-8rcox: ids are read under the run's learned vocabulary.
+    const meta = computeFileSignals(data, 100, undefined, { projectKeys: new Set(["TD"]), forgeIssueRefs: true });
 
     expect(meta.taskIds).toContain("TD-1234");
     expect(meta.taskIds).toContain("#567");

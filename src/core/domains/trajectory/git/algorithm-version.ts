@@ -19,6 +19,8 @@
  * - 4 — one author per identity (bd tea-rags-mcp-nsxzh): authors are read
  *   after the repo's `.mailmap` and keyed by lowercased email, so name variants
  *   of one address merge in every author count, dominant author / pct, session
- *   grouping and the chunk contributor count; ties order by code point.
+ *   grouping and the chunk contributor count; ties order by code point. Same
+ *   release: `taskIds` are read under the run's learned ticket-key vocabulary
+ *   (bd tea-rags-mcp-8rcox) — no `UTF-8` / `LEVEL-2`, no numbering `#N`, no `!N`.
  */
 export const GIT_TRAJECTORY_ALGORITHM_VERSION = 4;

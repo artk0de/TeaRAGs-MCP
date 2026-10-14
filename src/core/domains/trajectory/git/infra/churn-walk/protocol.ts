@@ -17,6 +17,7 @@ import type {
   GitAdapterKind,
 } from "../../../../../adapters/vcs/index.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
+import type { TaskIdVocabulary } from "../../history/index.js";
 import type { ChunkChurnOverlay } from "../../types.js";
 import type { SquashOptions } from "../metrics.js";
 import type { ChunkChurnWalkStats } from "../walk-commits.js";
@@ -43,6 +44,8 @@ export interface ChunkChurnWalkJobInput {
    */
   commitEntries: CommitWithChangedFiles[];
   bugFixShas: Set<string>;
+  /** The run's task-id vocabulary (bd tea-rags-mcp-8rcox) — learned once on the main side; a Set clones. */
+  taskIdVocabulary: TaskIdVocabulary;
   /** Blame slice for this batch's files (chunk-range ownership fields). */
   blameByPath: Map<string, BlameLine[]>;
   /** File-churn slice for this batch's files (churnRatio denominator). */

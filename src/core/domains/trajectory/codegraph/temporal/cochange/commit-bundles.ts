@@ -20,7 +20,12 @@
 
 import type { CommitInfo } from "../../../../../adapters/vcs/index.js";
 import type { CochangeFileLineCounts, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { extractTaskIds, partitionIntoAuthorSessions } from "../../../git/history/index.js";
+import {
+  EMPTY_TASK_ID_VOCABULARY,
+  extractTaskIds,
+  partitionIntoAuthorSessions,
+  type TaskIdVocabulary,
+} from "../../../git/history/index.js";
 
 /** One scoped commit: the files it touched, as project-relative HEAD paths, each once. */
 export interface CochangeCommit {
@@ -61,6 +66,8 @@ export interface CochangeBundle {
 export function bundleCochangeCommits(
   commits: readonly CochangeCommit[],
   burstWindowMinutes: number,
+  /** The build's task-id vocabulary, learned once over its window (bd tea-rags-mcp-8rcox). */
+  taskIdVocabulary: TaskIdVocabulary = EMPTY_TASK_ID_VOCABULARY,
 ): CochangeBundle[] {
   const bursts = partitionIntoAuthorSessions(commits, (c) => c.commit, burstWindowMinutes);
   const bundles = bursts.flatMap((members, burst) =>
@@ -69,7 +76,7 @@ export function bundleCochangeCommits(
       timestamp: m.commit.timestamp,
       files: [...new Set(m.files)].sort(compareCodePoints),
       burst,
-      taskIds: extractTaskIds(m.commit.body),
+      taskIds: extractTaskIds(m.commit.body, taskIdVocabulary),
       ...(m.fileLines ? { fileLines: m.fileLines } : {}),
     })),
   );

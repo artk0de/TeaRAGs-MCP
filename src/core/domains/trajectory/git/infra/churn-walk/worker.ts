@@ -130,6 +130,7 @@ async function runWalk(job: ChunkChurnWalkJobInput): Promise<ChunkChurnWalkOutco
     },
     symbolCommits,
     job.historyAnchorSec,
+    job.taskIdVocabulary,
   );
   return { overlays, stats, symbolCommits };
 }

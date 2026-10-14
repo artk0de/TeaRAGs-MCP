@@ -121,6 +121,18 @@ For detailed metric definitions, formulas, and research context, see
 | `chunkAgeDays`          | Chunk | Days since this chunk was last modified                                 |
 | `chunkTaskIds`          | Chunk | Ticket IDs from commits touching this chunk                             |
 
+Ticket IDs are read under a vocabulary learned per indexing run. A `KEY-123`
+token counts only when the repository uses `KEY` as a ticket key: it must lead
+a subject (`[KEY-1]`, `KEY-1:`), sit in a conventional scope (`fix(KEY-1):`), a
+merge-branch name, or follow `closes` / `fixes` / `resolves` / `refs` / `see` /
+`part of` in at least 10 commits with at least 2 distinct numbers. Once
+accepted, the key counts anywhere in a message, so `UTF-8` or `SHA-256` never
+becomes a ticket. `#123` counts only as a PR or issue reference (`fixes #123`,
+`PR #123`, a trailing `(#123)`, a link to `/issues/123` or `/pull/123`) and
+only when the repository has a GitHub or GitLab remote. GitLab merge-request
+footers (`!123`) are not ticket IDs. Existing payloads refresh with
+`--force-enrichments git`.
+
 A file past `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` (see [Environment
 Variables](#environment-variables)) has none of the chunk-level metrics above —
 the chunk-level walk is declined by policy, not zero-filled, and the payload
