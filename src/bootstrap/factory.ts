@@ -82,6 +82,7 @@ import {
   readPayloadIndexedFileImports,
   ReviewChangesOps,
   ReviewFacade,
+  ReviewScopedFileFactsReader,
   scheduleWorkingTreeBasePointSweep,
   scheduleWorkingTreeChunkSweep,
   scheduleWorkingTreeGitSignalSweep,
@@ -2178,48 +2179,59 @@ function createExploreSection(deps: {
   // trajectory's chunkMaxAgeMonths — the same number wireCodegraph hands the
   // temporal co-change config). Absent → App.reviewChanges answers the
   // not-built envelope.
-  const reviewFacade =
+  //
+  // The maintenance readings and the indexed-file imports both reduce every
+  // payload point to one row per file, so a review reads them from ONE scroll
+  // (bd tea-rags-mcp-i2zr8): the reader shares a scan per collection while a
+  // review is open and drops it when the review ends.
+  const reviewFileFacts = new ReviewScopedFileFactsReader(infra.qdrant);
+  const reviewChangesOps =
     codegraphContext && namingLexiconOps
-      ? new ReviewFacade({
-          ops: new ReviewChangesOps({
-            pool: codegraphContext.pool,
-            collectionRegistry,
-            resolveActiveCollection,
-            lexiconOps: namingLexiconOps,
-            // The `architecture` section's working-tree walks run on the same
-            // extraction trio the naming review extractor and the index path
-            // use (languageFactory + collectSymbols + composer), so walk
-            // semantics cannot drift between them.
-            reviewEdgeExtraction: {
-              languageFactory: composition.languageFactory,
-              collectSymbols,
-              // A fresh composer, the same choice `createNamingReviewExtractor`
-              // makes: the mapper is stateless, and this wiring sits outside
-              // `wireCodegraph`'s single-instance scope.
-              composer: new DefaultSymbolIdComposer(),
-            },
-            windowMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
-            workingTreeOverlay,
-            indexExists,
-            // The architecture section's asset-import rescue reads the SAME
-            // payload specifiers the whole-repo report's second silent-coupling
-            // pass reads (bd tea-rags-mcp-2wsnt) — one reader, two consumers.
-            readImportSpecifiers: async (collectionName, relPaths) =>
-              readPayloadImportSpecifiers(infra.qdrant, collectionName, relPaths),
-            // The architecture section ranks its findings by the SAME
-            // maintenance readings the whole-repo report ranks by (bd
-            // tea-rags-mcp-r8hme.20).
-            readFileMaintenanceSignals: async (collectionName) =>
-              readPayloadFileMaintenanceSignals(infra.qdrant, collectionName),
-            // Test support is excluded from the production graph through the
-            // SAME indexed-file import read the whole-repo report uses (bd
-            // tea-rags-mcp-89k7k.35.3).
-            readIndexedFileImports: async (collectionName) =>
-              readPayloadIndexedFileImports(infra.qdrant, collectionName),
-            readDeclaredTestDependencies: readTreeDeclaredTestDependencies,
-          }),
+      ? new ReviewChangesOps({
+          pool: codegraphContext.pool,
+          collectionRegistry,
+          resolveActiveCollection,
+          lexiconOps: namingLexiconOps,
+          // The `architecture` section's working-tree walks run on the same
+          // extraction trio the naming review extractor and the index path
+          // use (languageFactory + collectSymbols + composer), so walk
+          // semantics cannot drift between them.
+          reviewEdgeExtraction: {
+            languageFactory: composition.languageFactory,
+            collectSymbols,
+            // A fresh composer, the same choice `createNamingReviewExtractor`
+            // makes: the mapper is stateless, and this wiring sits outside
+            // `wireCodegraph`'s single-instance scope.
+            composer: new DefaultSymbolIdComposer(),
+          },
+          windowMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
+          workingTreeOverlay,
+          indexExists,
+          // The architecture section's asset-import rescue reads the SAME
+          // payload specifiers the whole-repo report's second silent-coupling
+          // pass reads (bd tea-rags-mcp-2wsnt) — one reader, two consumers.
+          readImportSpecifiers: async (collectionName, relPaths) =>
+            readPayloadImportSpecifiers(infra.qdrant, collectionName, relPaths),
+          // The architecture section ranks its findings by the SAME
+          // maintenance readings the whole-repo report ranks by (bd
+          // tea-rags-mcp-r8hme.20).
+          readFileMaintenanceSignals: async (collectionName) =>
+            reviewFileFacts.readFileMaintenanceSignals(collectionName),
+          // Test support is excluded from the production graph through the
+          // SAME indexed-file import read the whole-repo report uses (bd
+          // tea-rags-mcp-89k7k.35.3).
+          readIndexedFileImports: async (collectionName) => reviewFileFacts.readIndexedFileImports(collectionName),
+          readDeclaredTestDependencies: readTreeDeclaredTestDependencies,
         })
       : undefined;
+  const reviewFacade = reviewChangesOps
+    ? new ReviewFacade({
+        ops: {
+          reviewChanges: async (request) =>
+            reviewFileFacts.withinReview(async () => reviewChangesOps.reviewChanges(request)),
+        },
+      })
+    : undefined;
   return { explore, namingLexiconOps, reviewFacade };
 }
 

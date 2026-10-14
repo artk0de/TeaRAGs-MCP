@@ -28,16 +28,34 @@ export async function readPayloadFileMaintenanceSignals(
   qdrant: Pick<QdrantPointReader, "scrollPayloadPages">,
   collectionName: string,
 ): Promise<Map<RelPath, GitFileMaintenanceSignals>> {
-  const signals = new Map<RelPath, GitFileMaintenanceSignals>();
-  for await (const page of qdrant.scrollPayloadPages(collectionName, FILE_MAINTENANCE_PAYLOAD_KEYS)) {
+  const accumulator = new FileMaintenanceSignalsAccumulator();
+  for await (const page of qdrant.scrollPayloadPages(collectionName, FileMaintenanceSignalsAccumulator.payloadKeys())) {
+    accumulator.accept(page);
+  }
+  return accumulator.signals;
+}
+
+/**
+ * The maintenance reduction, fed one scroll page at a time (bd
+ * tea-rags-mcp-i2zr8): the first chunk of a file carrying all three readings
+ * answers for it. Pages arrive in scroll order, so the shared scan
+ * (`readPayloadFileFacts`) answers exactly what this reader's own scroll does.
+ */
+export class FileMaintenanceSignalsAccumulator {
+  readonly signals = new Map<RelPath, GitFileMaintenanceSignals>();
+
+  static payloadKeys(): string[] {
+    return [...FILE_MAINTENANCE_PAYLOAD_KEYS];
+  }
+
+  accept(page: readonly { payload: Record<string, unknown> }[]): void {
     for (const { payload } of page) {
       const { relativePath } = payload;
-      if (typeof relativePath !== "string" || signals.has(relativePath)) continue;
+      if (typeof relativePath !== "string" || this.signals.has(relativePath)) continue;
       const reading = readFileMaintenanceSignals(payload);
-      if (reading !== undefined) signals.set(relativePath, reading);
+      if (reading !== undefined) this.signals.set(relativePath, reading);
     }
   }
-  return signals;
 }
 
 function readFileMaintenanceSignals(payload: Record<string, unknown>): GitFileMaintenanceSignals | undefined {
