@@ -20,6 +20,7 @@
  */
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import { withSharedWorkTreeListings } from "../../../adapters/filesystem/dependency-manifests.js";
 import type { GitFileMaintenanceSignals } from "../../../contracts/types/architecture-report.js";
 import type { RelPath } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
@@ -162,7 +163,11 @@ export class ReviewChangesOps {
     // Every read answer carries the marker (bd tea-rags-mcp-xi2r9, live probe P2-4).
     // `indexLag` inside the review block stays until the marker supersedes it.
     const view = this.deps.workingTreeOverlay?.view(workingTree, req.project);
-    const result = await this.reviewWorkingTree(req, providers, workingTree);
+    // One listing scope per review (bd tea-rags-mcp-uqkn5): the declared-dependency
+    // read and the test-dependency read see one work tree and list it once. The
+    // scope opens here so every promise the review creates — the early symbol-row
+    // and production-graph reads included — is bound to it.
+    const result = await withSharedWorkTreeListings(async () => this.reviewWorkingTree(req, providers, workingTree));
     return view ? { ...result, workingTree: (await view).marker } : result;
   }
 
