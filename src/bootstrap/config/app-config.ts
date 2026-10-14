@@ -6,7 +6,15 @@ import { ConfigNotInitializedError } from "../../core/primitives/errors/index.js
 import type { IngestCodeConfig, TrajectoryIngestConfig } from "../../core/types.js";
 import { DEFAULT_CODE_EXTENSIONS, DEFAULT_IGNORE_PATTERNS } from "./defaults.js";
 import { parseAppConfigZod } from "./parse.js";
-import { appDataDir, daemonPidFile, daemonSocketPath, logsDir, modelsDir, snapshotsDir } from "./paths.js";
+import {
+  appDataDir,
+  daemonPidFile,
+  daemonSocketPath,
+  embeddingEndpointHealthPath,
+  logsDir,
+  modelsDir,
+  snapshotsDir,
+} from "./paths.js";
 import type { VcsConfig } from "./schemas.js";
 
 export interface ResolvedPaths {
@@ -16,6 +24,7 @@ export interface ResolvedPaths {
   models: string;
   daemonSocket: string;
   daemonPid: string;
+  embeddingEndpointHealth: string;
 }
 
 export interface AppConfig {
@@ -65,6 +74,7 @@ export function buildAppConfig(zodConfig: ReturnType<typeof parseAppConfigZod>):
     models: modelsDir(),
     daemonSocket: daemonSocketPath(),
     daemonPid: daemonPidFile(),
+    embeddingEndpointHealth: embeddingEndpointHealthPath(),
   };
 
   // Bridge Zod slices to typed AppConfig for consumers

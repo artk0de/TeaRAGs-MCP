@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { describeConnectFailure } from "../../../../../src/core/adapters/embeddings/utils/connect-failure.js";
+import {
+  describeConnectFailure,
+  isConnectClassFailure,
+} from "../../../../../src/core/adapters/embeddings/utils/connect-failure.js";
 
 describe("describeConnectFailure", () => {
   it("maps an errno code on the direct cause (existing behaviour)", () => {
@@ -46,5 +49,28 @@ describe("describeConnectFailure", () => {
     a.cause = b;
 
     expect(() => describeConnectFailure(a)).not.toThrow();
+  });
+});
+
+describe("isConnectClassFailure", () => {
+  const fetchFailed = (code: string) =>
+    new TypeError("fetch failed", { cause: Object.assign(new Error(`connect ${code}`), { code }) });
+
+  it.each(["ECONNREFUSED", "EHOSTUNREACH", "EHOSTDOWN", "ENETUNREACH", "ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT"])(
+    "%s is a connect-class failure",
+    (code) => {
+      expect(isConnectClassFailure(fetchFailed(code))).toBe(true);
+    },
+  );
+
+  it("a reset mid-request, a request-level abort and a plain error are not", () => {
+    const aborted = new Error("aborted");
+    aborted.name = "TimeoutError";
+
+    expect(isConnectClassFailure(fetchFailed("ECONNRESET"))).toBe(false);
+    expect(isConnectClassFailure(fetchFailed("UND_ERR_SOCKET"))).toBe(false);
+    expect(isConnectClassFailure(aborted)).toBe(false);
+    expect(isConnectClassFailure(new Error("HTTP 503"))).toBe(false);
+    expect(isConnectClassFailure("HTTP 500: boom")).toBe(false);
   });
 });

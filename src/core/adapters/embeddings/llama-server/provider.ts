@@ -39,8 +39,9 @@ import {
   type RateLimitConfig,
 } from "../base.js";
 import { planEmbeddingMicroBatches } from "../batch-fanout.js";
+import type { EmbeddingEndpointDownVerdictStore } from "../endpoint-down-verdicts.js";
 import { EmbeddingEndpointPool, parseEmbeddingEndpointList } from "../endpoint-pool.js";
-import { describeConnectFailure } from "../utils/connect-failure.js";
+import { describeConnectFailure, isConnectClassFailure, isTimeoutAbort } from "../utils/connect-failure.js";
 import { getModelDimensions, resolveStartingDimensions } from "../utils/model-dimensions.js";
 import {
   LlamaServerContextOverflowError,
@@ -88,6 +89,12 @@ export interface LlamaServerEmbeddingsDeps {
   clearInterval?: (timer: ReturnType<typeof setInterval>) => void;
   /** Operator-facing lines (model check, size failures). Default: stderr. */
   log?: (line: string) => void;
+  /**
+   * Cross-process "endpoint down" verdicts (bd w1bz7). Read once at
+   * construction, written on connect-class failures. Absent → every process
+   * discovers a dead endpoint on its own.
+   */
+  endpointDownVerdicts?: EmbeddingEndpointDownVerdictStore;
 }
 
 interface LlamaServerEmbeddingsResponse {
@@ -164,6 +171,9 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   private readonly startInterval: (fn: () => void, ms: number) => ReturnType<typeof setInterval>;
   private readonly stopInterval: (timer: ReturnType<typeof setInterval>) => void;
   private readonly log: (line: string) => void;
+  private readonly downVerdicts?: EmbeddingEndpointDownVerdictStore;
+  /** Endpoints this process knows carry a down verdict; a success on one withdraws it. */
+  private readonly downVerdictUrls = new Set<string>();
 
   private probeTimer?: ReturnType<typeof setInterval>;
   /** `/props` per endpoint; dropped when the endpoint fails (it may come back with another `-np`). */
@@ -219,6 +229,8 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       probe: async (url) => this.probeHealth(url),
       now: this.now,
     });
+    this.downVerdicts = deps.endpointDownVerdicts;
+    this.adoptDownVerdicts();
   }
 
   // ---------------------------------------------------------------------------
@@ -433,6 +445,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
         batch.reduce((sum, t) => sum + t.length, 0),
         this.now() - started,
       );
+      if (this.downVerdictUrls.has(url)) this.withdrawDownVerdict(url);
       indices.forEach((index, k) => {
         vectors[index] = embeddings[k];
       });
@@ -511,6 +524,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   // ---------------------------------------------------------------------------
 
   private noteEndpointFailure(failure: EndpointRequestFailure): void {
+    if (isConnectClassFailure(failure.reason)) this.recordDownVerdict(failure.url, failure.reason);
     this.pool.recordEndpointFailure(failure.url, failure.kind);
     this.propsCache.delete(failure.url);
     this.syncProbeTimer();
@@ -558,6 +572,36 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
     return up;
   }
 
+  /**
+   * Start with the endpoints another process found dead moments ago already
+   * failed over, so this process pays neither their `/props` nor their connect
+   * timeout. They stay on the failback probe like any failed endpoint. When
+   * the verdicts cover EVERY endpoint, none is adopted: with nothing left to
+   * fail over to, a stale verdict must not turn into a fast failure.
+   */
+  private adoptDownVerdicts(): void {
+    const verdicts = this.downVerdicts?.liveVerdicts() ?? [];
+    for (const verdict of verdicts) this.downVerdictUrls.add(verdict.url);
+    const endpoints = this.pool.snapshot();
+    const marked = endpoints.filter((e) => this.downVerdictUrls.has(e.url));
+    if (marked.length === 0 || marked.length === endpoints.length) return;
+    for (const endpoint of marked) this.pool.recordEndpointFailure(endpoint.url, "refused");
+    this.syncProbeTimer();
+  }
+
+  /** Call only for a connect-class failure (or a `/props` / `/health` timeout) — never an HTTP or model error. */
+  private recordDownVerdict(url: string, error: unknown): void {
+    if (!this.downVerdicts) return;
+    this.downVerdicts.markDown(url, describeConnectFailure(error));
+    this.downVerdictUrls.add(url);
+  }
+
+  private withdrawDownVerdict(url: string): void {
+    if (!this.downVerdicts) return;
+    this.downVerdicts.clear(url);
+    this.downVerdictUrls.delete(url);
+  }
+
   /** Run the failback probe while any endpoint is failed; stop it once all are healthy. */
   private syncProbeTimer(): void {
     const anyFailed = this.pool.snapshot().some((e) => !e.healthy);
@@ -590,13 +634,18 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
         signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS),
       });
     } catch (error) {
+      if (isConnectClassFailure(error) || isTimeoutAbort(error)) this.recordDownVerdict(url, error);
       throw new LlamaServerProbeError(url, `${url} is unreachable: ${describeConnectFailure(error)}`, error);
     }
     const body = await response.text().catch(() => "");
     if (response.status === 503) {
       throw new LlamaServerProbeError(url, `llama-server at ${url} answered 503 on /health (still loading the model?)`);
     }
-    if (response.ok && isLlamaServerHealthBody(body)) return true;
+    if (response.ok && isLlamaServerHealthBody(body)) {
+      // Unconditional: another process may have marked it after this one read the verdicts.
+      this.withdrawDownVerdict(url);
+      return true;
+    }
     const seen = `GET ${url}/health answered ${response.status} ${response.headers.get("content-type") ?? "no content-type"} ${JSON.stringify(body.slice(0, 80))}`;
     throw new LlamaServerProbeError(url, `port ${portOf(url)} is held by a non-llama-server process (${seen})`);
   }
@@ -622,7 +671,16 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   private async propsFor(url: string): Promise<LlamaServerProps | undefined> {
     let pending = this.propsCache.get(url);
     if (!pending) {
-      pending = fetchLlamaServerProps(url, { fetch: this.fetchFn, headers: this.authHeaders() });
+      // fetchLlamaServerProps swallows every failure; tap the fetch to see a dead endpoint go by.
+      const fetchNotingDeadEndpoint: typeof fetch = async (input, init) => {
+        try {
+          return await this.fetchFn(input, init);
+        } catch (error) {
+          if (isConnectClassFailure(error) || isTimeoutAbort(error)) this.recordDownVerdict(url, error);
+          throw error;
+        }
+      };
+      pending = fetchLlamaServerProps(url, { fetch: fetchNotingDeadEndpoint, headers: this.authHeaders() });
       this.propsCache.set(url, pending);
     }
     const props = await pending;

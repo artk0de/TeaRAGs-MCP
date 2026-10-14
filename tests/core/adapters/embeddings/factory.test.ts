@@ -1,8 +1,13 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { EmbeddingConfig } from "../../../../src/bootstrap/config/index.js";
 import { ConfigValueInvalidError, ConfigValueMissingError } from "../../../../src/bootstrap/errors.js";
 import { CohereEmbeddings } from "../../../../src/core/adapters/embeddings/cohere.js";
+import { EmbeddingEndpointDownVerdictStore } from "../../../../src/core/adapters/embeddings/endpoint-down-verdicts.js";
 import { EmbeddingProviderFactory } from "../../../../src/core/adapters/embeddings/factory.js";
 import { LlamaServerEmbeddings } from "../../../../src/core/adapters/embeddings/llama-server/provider.js";
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";
@@ -315,6 +320,28 @@ describe("EmbeddingProviderFactory", () => {
           );
         } finally {
           fetchSpy.mockRestore();
+        }
+      });
+
+      it("shares endpoint-down verdicts through the configured file: a fresh provider starts failed over", () => {
+        const dir = mkdtempSync(join(tmpdir(), "factory-verdicts-"));
+        try {
+          const file = join(dir, "embedding-endpoint-health.json");
+          new EmbeddingEndpointDownVerdictStore(file).markDown("http://gpu:8081", "EHOSTUNREACH");
+          const paths = { models: dir, daemonSocket: join(dir, "s"), daemonPid: join(dir, "p") };
+          const config = makeConfig({
+            provider: "llama-server",
+            baseUrl: "http://gpu:8081",
+            fallbackBaseUrl: "http://127.0.0.1:8080",
+          });
+
+          expect(EmbeddingProviderFactory.create(config, { ...paths, endpointDownVerdicts: file }).getBaseUrl?.()).toBe(
+            "http://127.0.0.1:8080",
+          );
+          // Without a verdict file nothing is shared.
+          expect(EmbeddingProviderFactory.create(config, paths).getBaseUrl?.()).toBe("http://gpu:8081");
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
         }
       });
     });
