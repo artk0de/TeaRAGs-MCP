@@ -398,9 +398,12 @@ export class DuckDbMethodEdgeReader implements Pick<
       // file to name: it still goes to every declaring file, exactly as before,
       // until the next recompute replaces it with per-file rows. Those rows
       // come first so a file-scoped rank for the same id is applied last.
+      // `rel_path = ''` rides the equi-join key (a per-file row's key is NULL
+      // and matches nothing): as a separate left-only ON predicate it forces a
+      // nested-loop join (bd tea-rags-mcp-3x25d).
       `SELECT m.symbol_id AS id, m.rel_path AS path, m.page_rank, d.rel_path AS decl_path
          FROM cg_symbols_metrics m
-         LEFT JOIN cg_symbols d ON m.rel_path = '' AND d.symbol_id = m.symbol_id
+         LEFT JOIN cg_symbols d ON d.symbol_id = CASE WHEN m.rel_path = '' THEN m.symbol_id END
         ORDER BY m.rel_path <> ''`,
     );
     for (const r of pageRankRows) {
