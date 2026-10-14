@@ -171,6 +171,24 @@ describe("EmbeddingEndpointPool", () => {
     expect(pool.snapshot().find((e) => e.url === PEER_A)).toMatchObject({ healthy: true, consecutiveFailures: 0 });
   });
 
+  it("keeps a serving endpoint's failure count when its health probe passes (bd hgghf)", async () => {
+    const pool = makePool({ probe: async () => true });
+    pool.recordEndpointFailure(PEER_A, "transient");
+    pool.recordEndpointFailure(PEER_A, "transient");
+    await pool.checkPeersHealth();
+    expect(pool.snapshot().find((e) => e.url === PEER_A)?.consecutiveFailures).toBe(2);
+    pool.recordEndpointFailure(PEER_A, "transient");
+    expect(urls(pool)).toEqual([PEER_B]);
+  });
+
+  it("selects the tier among endpoints the caller has not excluded (bd hgghf)", () => {
+    const pool = makePool();
+    expect(pool.activeEndpoints(new Set([PEER_A])).map((e) => e.url)).toEqual([PEER_B]);
+    expect(pool.activeEndpoints(new Set([PEER_A, PEER_B])).map((e) => e.url)).toEqual([FALLBACK]);
+    expect(pool.activeEndpoints(new Set([PEER_A, PEER_B, FALLBACK]))).toEqual([]);
+    expect(urls(pool)).toEqual([PEER_A, PEER_B]);
+  });
+
   it("sets the EWMA rate from the first sample and blends later samples with alpha 0.3", () => {
     const pool = makePool();
     pool.recordSuccess(PEER_A, 1000, 1000); // 1000 chars/s
