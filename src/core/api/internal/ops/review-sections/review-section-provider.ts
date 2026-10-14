@@ -15,7 +15,11 @@ import type { GitFileMaintenanceSignals } from "../../../../contracts/types/arch
 import type { GraphDbClient, RelPath, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
 import type { ReviewEdgeOverlay } from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import type { ReviewSectionId } from "../../../public/dto/review.js";
-import type { DeclaredTestDependencyLookup, IndexedFileImportLookup } from "../architecture-facts.js";
+import type {
+  DeclaredTestDependencyLookup,
+  IndexedFileImportLookup,
+  ProductionArchitectureGraph,
+} from "../architecture-facts.js";
 import type { ArchitectureReportGraphDb } from "../architecture-graph-facts.js";
 import type { DiffDetectorBaseEdgeReader } from "../diff-families/diff-family-detector.js";
 import type { DiffScopeRead, DiffScopeRequest, DiffTreeLag } from "../diff-scope-reader.js";
@@ -110,6 +114,14 @@ export interface ReviewSectionBuildContext {
    * Absent → the manifests add nothing.
    */
   readDeclaredTestDependencies?: DeclaredTestDependencyLookup;
+  /**
+   * The production graph (`readProductionArchitectureGraph` over this review's
+   * `graphDb` and the two lookups above), read on first use and shared by the
+   * `architecture` and `norms` sections (bd tea-rags-mcp-pqdw4): one whole-graph
+   * read, one whole-index import read, one manifest read per review. Consumers
+   * never mutate it. Absent (unit wiring) → each section reads its own.
+   */
+  readProductionGraph?: () => Promise<ProductionArchitectureGraph>;
 }
 
 /**

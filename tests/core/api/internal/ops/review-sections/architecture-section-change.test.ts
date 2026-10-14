@@ -11,8 +11,10 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { readProductionArchitectureGraph } from "../../../../../../src/core/api/internal/ops/architecture-facts.js";
 import type { DiffScopeRead } from "../../../../../../src/core/api/internal/ops/diff-scope-reader.js";
 import { architectureSectionProvider } from "../../../../../../src/core/api/internal/ops/review-sections/architecture-section.js";
+import { normsSectionProvider } from "../../../../../../src/core/api/internal/ops/review-sections/norms-section.js";
 import type { ReviewSectionContext } from "../../../../../../src/core/api/internal/ops/review-sections/review-section-provider.js";
 import type { ArchitectureSectionPayload } from "../../../../../../src/core/api/public/dto/review.js";
 import type {
@@ -285,5 +287,34 @@ describe("architecture section impact tiers (bd tea-rags-mcp-r8hme.53 T2)", () =
 
     expect(payload.change?.touchedActive).toEqual([]);
     expect(payload.findings.filter((f) => f.detector === "stableDependencies")).toEqual([]);
+  });
+});
+
+describe("architecture and norms over one shared production graph (bd tea-rags-mcp-pqdw4)", () => {
+  /** Freeze every plain object and array reachable from `value` — a consumer that mutates it throws. */
+  function deepFreeze<T>(value: T): T {
+    if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+      Object.freeze(value);
+      for (const child of Object.values(value)) deepFreeze(child);
+    }
+    return value;
+  }
+
+  it("neither section mutates the shared graph: a deep-frozen one yields the same payloads as each section's own read", async () => {
+    writeUiTree();
+    writeFile("src/core/k.ts", 'import { V } from "../ui/v";\nexport const K = V;\n');
+    const scope = scopeOf(["src/core/k.ts"]);
+    const sections = async (extra: Partial<ReviewSectionContext>) =>
+      Promise.all([
+        architectureSectionProvider.run(runContext(stableUnstableGraph(), scope, extra)),
+        normsSectionProvider.run(runContext(stableUnstableGraph(), scope, extra)),
+      ]);
+    const shared = deepFreeze(await readProductionArchitectureGraph(graphDbStub(stableUnstableGraph())));
+
+    const own = await sections({});
+    const frozen = await sections({ readProductionGraph: async () => shared });
+
+    expect((own[0] as ArchitectureSectionPayload).findings).not.toEqual([]);
+    expect(frozen).toEqual(own);
   });
 });

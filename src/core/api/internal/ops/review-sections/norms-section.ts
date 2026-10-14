@@ -229,11 +229,8 @@ export const normsSectionProvider: ReviewSectionProvider = {
     }
     // The indexed side: the production graph every report detector judges and
     // the type rows its roles come from — the ledgers' only precedent.
-    const production = await readProductionArchitectureGraph(
-      graphDb,
-      context.readIndexedFileImports,
-      context.readDeclaredTestDependencies,
-    );
+    const production = await (context.readProductionGraph?.() ??
+      readProductionArchitectureGraph(graphDb, context.readIndexedFileImports, context.readDeclaredTestDependencies));
     const typeNameRows = await readDependencyNormTypeNameRows(graphDb);
     // The change's side, classified by the run's before-the-change evidence.
     const { overlay, baseEdges } = await (context.readReviewChangeEdges?.() ??
