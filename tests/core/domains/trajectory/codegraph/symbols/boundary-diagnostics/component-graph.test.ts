@@ -213,8 +213,8 @@ describe("buildComponentGraph — the domain partition", () => {
  * constants alone: no directory list, no language list.
  */
 describe("buildComponentGraph — constant-namespace partition", () => {
-  function rubyFile(relPath: string, outerScopeNames: string[]) {
-    return { relPath, language: "ruby", symbolCount: 1, outerScopeNames };
+  function rubyFile(relPath: string, enclosingScopeNames: string[]) {
+    return { relPath, language: "ruby", symbolCount: 1, enclosingScopeNames };
   }
 
   function zeitwerkGraph(): FileDependencyGraph {
@@ -232,7 +232,7 @@ describe("buildComponentGraph — constant-namespace partition", () => {
         // A monkey patch: the path does not spell the constant.
         rubyFile("config/initializers/string_ext.rb", ["String"]),
         rubyFile("clock.rb", []),
-        { relPath: "src/reranker.ts", language: "typescript", symbolCount: 1, outerScopeNames: ["Reranker"] },
+        { relPath: "src/reranker.ts", language: "typescript", symbolCount: 1, enclosingScopeNames: ["Reranker"] },
       ],
       edges: [
         edge("app/models/billing/invoice.rb", "app/services/billing/charge_service.rb"),
@@ -253,6 +253,27 @@ describe("buildComponentGraph — constant-namespace partition", () => {
     expect(componentOf.get("app/services/billing/refunds/request.rb")).toBe("::Billing::Refunds");
     expect(components.get("::Billing")).toMatchObject({ componentDir: "::Billing", kind: "namespace", fileCount: 2 });
     expect(components.get("::Billing::Refunds")).toMatchObject({ kind: "namespace", fileCount: 2 });
+  });
+
+  it("places a nested-module file in the namespace its compact sibling spells (bd tea-rags-mcp-r8hme.54)", () => {
+    const graph: FileDependencyGraph = {
+      files: [
+        // `module Communication; module Api; module ChatThread`
+        rubyFile("app/services/communication/api/chat_thread.rb", [
+          "Communication",
+          "Communication::Api",
+          "Communication::Api::ChatThread",
+        ]),
+        // `module Communication::Api::Automations`
+        rubyFile("app/services/communication/api/automations.rb", ["Communication::Api::Automations"]),
+      ],
+      edges: [],
+    };
+
+    const { componentOf } = buildComponentGraph(graph, []);
+
+    expect(componentOf.get("app/services/communication/api/chat_thread.rb")).toBe("::Communication::Api");
+    expect(componentOf.get("app/services/communication/api/automations.rb")).toBe("::Communication::Api");
   });
 
   it("puts a top-level constant with its own nested constants, and leaves a lone one in its directory", () => {

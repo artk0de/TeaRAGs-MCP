@@ -15,7 +15,7 @@ import type { DependencyDirectoryRelation } from "./types.js";
  * `app/services/billing/*` to one `Billing`, and a directory partition split
  * it in two.
  *
- * Derived from the declared scopes alone ({@link FileDependencyGraphFile.outerScopeNames}),
+ * Derived from the declared scopes alone ({@link FileDependencyGraphFile.enclosingScopeNames}),
  * never from a directory list:
  *
  * 1. The file's PATH spells a declared constant — its trailing segments equal
@@ -39,7 +39,7 @@ export function deriveConstantNamespaceComponents(
 ): ReadonlyMap<RelPath, string> {
   const namespacePrefixes = new Set<string>();
   for (const f of files) {
-    for (const name of f.outerScopeNames ?? []) {
+    for (const name of f.enclosingScopeNames ?? []) {
       const segments = constantSegments(name);
       for (let k = 1; k < segments.length; k++) {
         namespacePrefixes.add(segments.slice(0, k).join(CONSTANT_PATH_SEPARATOR));
@@ -49,8 +49,8 @@ export function deriveConstantNamespaceComponents(
 
   const namespaceOf = new Map<RelPath, string>();
   for (const f of files) {
-    if (!f.outerScopeNames || f.outerScopeNames.length === 0) continue;
-    const namespace = spelledNamespace(f.relPath, f.outerScopeNames);
+    if (!f.enclosingScopeNames || f.enclosingScopeNames.length === 0) continue;
+    const namespace = spelledNamespace(f.relPath, f.enclosingScopeNames);
     if (namespace === undefined) continue;
     if (!namespace.includes(CONSTANT_PATH_SEPARATOR) && !namespacePrefixes.has(namespace)) continue;
     namespaceOf.set(f.relPath, `${NAMESPACE_COMPONENT_PREFIX}${namespace}`);
@@ -76,13 +76,13 @@ function namespacePath(component: string): string {
   return constantSegments(component).join("/");
 }
 
-function spelledNamespace(relPath: RelPath, outerScopeNames: readonly string[]): string | undefined {
+function spelledNamespace(relPath: RelPath, enclosingScopeNames: readonly string[]): string | undefined {
   const pathSegments = withoutExtension(relPath).split("/").map(normalizeSegment);
   const directorySegments = pathSegments.slice(0, -1);
 
   let fileMatch: string[] | undefined;
   let directoryMatch: string[] | undefined;
-  for (const name of outerScopeNames) {
+  for (const name of enclosingScopeNames) {
     const segments = constantSegments(name);
     const spelledByFile = longestSpelledPrefix(segments, pathSegments);
     if (spelledByFile && (!fileMatch || spelledByFile.length > fileMatch.length)) fileMatch = spelledByFile;
