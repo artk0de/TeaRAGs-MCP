@@ -361,6 +361,11 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return this.maintenance.cloneCollectionDatabase(source, target);
   }
 
+  /** Ask another build's holder daemon to release this collection — see the proxy (bd tea-rags-mcp-8noie). */
+  async releaseIdleCollection(): Promise<boolean> {
+    return this.maintenance.releaseIdleCollection();
+  }
+
   async computeAndPersistCyclesAndSignals(): Promise<void> {
     return this.analytics.computeAndPersistCyclesAndSignals();
   }

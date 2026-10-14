@@ -68,6 +68,12 @@ export const DAEMON_OPS = [
   // older daemon's "unknown op" sends the caller back to its own file path.
   "removeCollectionDatabase",
   "cloneCollectionDatabase",
+  // Release request from ANOTHER build's daemon waiting on the request's
+  // collection's file lock (bd tea-rags-mcp-8noie): the pool closes that one
+  // cached client only with no op in flight and past a short idle grace, else
+  // declines. Tolerated legacy op: an older holder keeps the file until its
+  // idle eviction, the waiter's pre-8noie wait.
+  "releaseIdleCollection",
   // ── writes ──
   "upsertFile",
   "removeFile",
@@ -242,6 +248,7 @@ export const DAEMON_LIFECYCLE_OPS = [
   "finalizeReindex",
   "removeCollectionDatabase",
   "cloneCollectionDatabase",
+  "releaseIdleCollection",
 ] as const satisfies readonly DaemonOp[];
 
 export type DaemonLifecycleOp = (typeof DAEMON_LIFECYCLE_OPS)[number];
@@ -296,6 +303,7 @@ export interface DaemonOpParamsMap {
   finalizeReindex: { oldVersion: string; newVersion: string };
   removeCollectionDatabase: { target: string };
   cloneCollectionDatabase: { source: string; target: string };
+  releaseIdleCollection: NoDaemonOpParams;
   // ── writes ──
   upsertFile: { node: GraphFileNode; edges: GraphEdges };
   removeFile: { relPath: RelPath };

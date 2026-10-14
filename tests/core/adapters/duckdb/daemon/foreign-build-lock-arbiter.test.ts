@@ -90,13 +90,17 @@ function lockErrorHeldBy(pid: number | undefined): DuckDbOpenFailedError {
 /**
  * Scripted daemon on `paths.socketPath`: answers the handshake, answers
  * `shutdown` as told. `"exit"` accepts it and, a beat later, removes the pid
- * file the way an exiting daemon does.
+ * file the way an exiting daemon does. `onReleaseRequest`, when given, is the
+ * answer to `releaseIdleCollection` (bd tea-rags-mcp-8noie) — `"unknownOp"`
+ * plays a daemon from a build that predates the op.
  */
 async function listenAsDaemon(
   paths: CodegraphDaemonPaths,
   onShutdown: "refuse" | "accept" | "exit",
-): Promise<{ shutdownRequests: () => number }> {
+  onReleaseRequest?: unknown,
+): Promise<{ shutdownRequests: () => number; releaseRequests: string[] }> {
   let shutdownRequests = 0;
+  const releaseRequests: string[] = [];
   const server = createServer((sock) => {
     let buf = "";
     sock.on("data", (d) => {
@@ -122,6 +126,15 @@ async function listenAsDaemon(
                 : { id: req.id, ok: true, result: true },
             ),
           );
+        } else if (req.op === "releaseIdleCollection" && onReleaseRequest !== undefined) {
+          releaseRequests.push(String((req.params as { collection?: unknown }).collection));
+          sock.write(
+            encodeFrame(
+              onReleaseRequest === "unknownOp"
+                ? { id: req.id, ok: false, error: { name: "Error", message: `unknown daemon op: ${req.op}` } }
+                : { id: req.id, ok: true, result: onReleaseRequest },
+            ),
+          );
         } else {
           sock.write(encodeFrame({ id: req.id, ok: true, result: true }));
         }
@@ -134,7 +147,7 @@ async function listenAsDaemon(
       res();
     });
   });
-  return { shutdownRequests: () => shutdownRequests };
+  return { shutdownRequests: () => shutdownRequests, releaseRequests };
 }
 
 function makeArbiter(exitTimeoutMs = 300): ForeignBuildDaemonLockArbiter {
@@ -249,6 +262,61 @@ describe("ForeignBuildDaemonLockArbiter#settle (hw27k)", () => {
       holder: { pid: process.pid, buildDir: foreign.buildDir, buildFingerprint: undefined },
     });
     expect(daemon.shutdownRequests()).toBe(0);
+  });
+
+  describe("a foreign holder with a connected client is asked to release the one collection (8noie)", () => {
+    function connectedForeignHolder(): CodegraphDaemonPaths {
+      makeRoot();
+      const foreign = makeKeyDir(FOREIGN_FINGERPRINT, process.pid);
+      writeFileSync(foreign.refsFile, "1", "utf-8");
+      return foreign;
+    }
+
+    it("settles as released when the holder released it, and never asks it to shut down", async () => {
+      const foreign = connectedForeignHolder();
+      const daemon = await listenAsDaemon(foreign, "accept", { kind: "released" });
+
+      const settlement = await makeArbiter().settle(lockErrorHeldBy(process.pid), COLLECTION);
+
+      expect(settlement).toEqual({
+        kind: "released",
+        holder: { pid: process.pid, buildDir: foreign.buildDir, buildFingerprint: undefined },
+      });
+      expect(daemon.releaseRequests).toEqual([COLLECTION]);
+      expect(daemon.shutdownRequests()).toBe(0);
+    });
+
+    it.each([
+      ["an op in flight", { kind: "declined", reason: "opInFlight" }],
+      ["within the grace", { kind: "declined", reason: "withinGrace" }],
+      ["an answer it cannot read", true],
+      ["a build that predates the op", "unknownOp"],
+    ])("stays held as clientConnected when the holder declines: %s", async (_case, answer) => {
+      const foreign = connectedForeignHolder();
+      const daemon = await listenAsDaemon(foreign, "accept", answer);
+
+      const settlement = await makeArbiter().settle(lockErrorHeldBy(process.pid), COLLECTION);
+
+      expect(settlement).toEqual({
+        kind: "held",
+        reason: "clientConnected",
+        holder: { pid: process.pid, buildDir: foreign.buildDir, buildFingerprint: undefined },
+      });
+      expect(daemon.releaseRequests).toEqual([COLLECTION]);
+      expect(daemon.shutdownRequests()).toBe(0);
+    });
+
+    it("never asks a holder with no client connected to release: it is drained as before", async () => {
+      makeRoot();
+      const foreign = makeKeyDir(FOREIGN_FINGERPRINT, process.pid);
+      const daemon = await listenAsDaemon(foreign, "exit", { kind: "released" });
+
+      const settlement = await makeArbiter().settle(lockErrorHeldBy(process.pid), COLLECTION);
+
+      expect(settlement.kind).toBe("drained");
+      expect(daemon.releaseRequests).toEqual([]);
+      expect(daemon.shutdownRequests()).toBe(1);
+    });
   });
 
   describe("describe", () => {

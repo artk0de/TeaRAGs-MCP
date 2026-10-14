@@ -32,6 +32,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
+import { RELEASE_REQUEST_IDLE_GRACE_MS } from "../../../../../src/core/adapters/duckdb/collection-idle-eviction.js";
 import { getBuildFingerprint } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
 import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
@@ -172,6 +173,32 @@ describe("a foreign-build daemon holding the collection file (hw27k)", () => {
     const again = Date.now();
     await expect(pool.acquire(COLLECTION)).rejects.toBeInstanceOf(CodegraphDatabaseHeldByForeignDaemonError);
     expect(Date.now() - again).toBeLessThan(1_000);
+  }, 30_000);
+
+  // bd tea-rags-mcp-8noie: a connected client kept the foreign daemon up, so
+  // the open used to wait out its whole idle window (11-58 s on taxdome). The
+  // holder now releases the ONE collection on request once it has been idle
+  // past the grace, and the open lands about one retry interval later.
+  it("has a foreign daemon with a connected client release the idle collection, and its client keeps working", async () => {
+    makeRoot();
+    const foreign = await spawnForeignDaemon();
+    const client = await foreignOpensCollection(foreign.paths);
+    cleanups.push(async () => client.close());
+    await new Promise((r) => setTimeout(r, RELEASE_REQUEST_IDLE_GRACE_MS + 200));
+
+    const pool = makeLoserPool(60_000);
+    const started = Date.now();
+    const handle = await pool.acquire(COLLECTION);
+
+    expect(await handle.graphDb.listFileContentHashes()).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    // Released, not drained: the daemon and its client's connection stay up.
+    expect(isDaemonPidAlive(foreign.pid)).toBe(true);
+    expect(readRefs(foreign.paths)).toBeGreaterThan(0);
+
+    // Once we let go, the holder's own client re-opens on its next op.
+    await pool.closeAll();
+    expect(await client.listFileContentHashes()).toEqual([]);
   }, 30_000);
 
   it("a read through our own daemon succeeds while an idle foreign daemon held the file", async () => {

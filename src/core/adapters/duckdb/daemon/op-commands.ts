@@ -210,6 +210,17 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
     },
   },
 
+  // Release request from another build's daemon waiting on the collection's
+  // file lock (bd tea-rags-mcp-8noie). Never routed through `runCollectionOp`:
+  // it must not count as an op of its own, or it would always see one in flight.
+  releaseIdleCollection: {
+    access: "daemon",
+    // Closes an idle client the next op re-opens, as the idle poller does; no
+    // data, file or lifecycle changes.
+    mutates: false,
+    run: async (ctx, p) => ctx.pool.releaseIdleCollection(physicalCollectionNameFromDaemonRequest(p.collection)),
+  },
+
   // ── writes ──
   upsertFile: write(async (graphDb, p) => graphDb.upsertFile(p.node, p.edges)),
   removeFile: write(async (graphDb, p) => graphDb.removeFile(p.relPath)),

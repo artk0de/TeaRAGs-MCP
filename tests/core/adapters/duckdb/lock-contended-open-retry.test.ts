@@ -65,4 +65,32 @@ describe("LockContendedOpenRetry", () => {
     await expect(retry.open(name, failing)).rejects.toBeInstanceOf(CodegraphDatabaseHeldByForeignDaemonError);
     expect(settle).toHaveBeenCalledTimes(2);
   });
+
+  // bd tea-rags-mcp-8noie: a foreign holder that released the collection on
+  // request leaves the file free now — the next attempt runs at once, not one
+  // interval later, so the open costs about one retry instead of the holder's
+  // remaining idle window.
+  it("retries at once after the foreign holder released the collection on request", async () => {
+    const settle = vi.fn(async () => ({ kind: "released" as const, holder }));
+    const arbiter = {
+      settle,
+      describe: vi.fn(async () => holder),
+      isStillHeldBy: vi.fn(() => true),
+    } as unknown as ForeignBuildDaemonLockArbiter;
+    const retry = new LockContendedOpenRetry({
+      openRetry: { maxMs: 120_000, intervalMs: 60_000 },
+      foreignBuildLockArbiter: arbiter,
+      pathFor: () => "/db",
+    });
+    let attempts = 0;
+    const started = Date.now();
+    const opened = await retry.open(name, async () => {
+      attempts += 1;
+      if (attempts < 2) throw lockHeld();
+      return "entry";
+    });
+    expect(opened).toBe("entry");
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
 });
