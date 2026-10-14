@@ -16,18 +16,45 @@ const KNOWN_CAUSES: Readonly<Record<string, string>> = {
   ENOTFOUND: "host name does not resolve",
 };
 
-function errnoCode(error: unknown): string | undefined {
-  const cause = (error as { cause?: { code?: unknown } } | undefined)?.cause;
-  const code = cause?.code ?? (error as { code?: unknown } | undefined)?.code;
-  return typeof code === "string" ? code : undefined;
+/** Bound on `error.cause` unwrapping; also terminates a cyclic chain. */
+const MAX_CAUSE_DEPTH = 5;
+
+/** The error followed by its `cause` chain, outermost first, at most MAX_CAUSE_DEPTH links. */
+function causeChain(error: unknown): unknown[] {
+  const chain: unknown[] = [];
+  let current: unknown = error;
+  while (current !== undefined && current !== null && chain.length < MAX_CAUSE_DEPTH && !chain.includes(current)) {
+    chain.push(current);
+    current = (current as { cause?: unknown }).cause;
+  }
+  return chain;
+}
+
+/** Deepest-cause-first errno lookup; the outermost error's own code is the last resort. */
+function errnoCode(chain: unknown[]): string | undefined {
+  for (const link of [...chain.slice(1), ...chain.slice(0, 1)]) {
+    const code = (link as { code?: unknown } | undefined)?.code;
+    if (typeof code === "string") return code;
+  }
+  return undefined;
+}
+
+/** Message of the innermost link that carries one (undici nests the real reason, e.g. "bad port"). */
+function innermostMessage(chain: unknown[]): string | undefined {
+  for (const link of [...chain].reverse()) {
+    const message = (link as { message?: unknown } | undefined)?.message;
+    if (typeof message === "string" && message.length > 0) return message;
+  }
+  return undefined;
 }
 
 export function describeConnectFailure(error: unknown): string {
-  const code = errnoCode(error);
+  const chain = causeChain(error);
+  const code = errnoCode(chain);
   if (code !== undefined) {
     const known = KNOWN_CAUSES[code];
     return known ? `${code}: ${known}` : code;
   }
   if (error instanceof Error && error.name === "TimeoutError") return "ETIMEDOUT: request timed out";
-  return error instanceof Error ? error.message : String(error);
+  return innermostMessage(chain) ?? String(error);
 }

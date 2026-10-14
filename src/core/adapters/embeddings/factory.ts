@@ -33,6 +33,15 @@ function fallbackPaths(): EmbeddingPaths {
 }
 /* v8 ignore stop */
 
+function rejectOllamaEndpointList(variable: string, value: string | undefined): void {
+  if (!value?.includes(",")) return;
+  throw new ConfigValueInvalidError(
+    `${variable} (provider: ollama)`,
+    value,
+    "a single URL - the ollama provider supports one endpoint per role; comma-separated lists are llama-server only",
+  );
+}
+
 export class EmbeddingProviderFactory {
   static create(config: EmbeddingConfig, paths?: EmbeddingPaths): EmbeddingProvider {
     const { provider, model, dimensions, baseUrl, tune } = config;
@@ -79,6 +88,11 @@ export class EmbeddingProviderFactory {
         );
 
       case "ollama":
+        // Ollama holds exactly one endpoint per role (failover is a boolean
+        // flip); only the llama-server pool parses a comma list. The raw list
+        // reached fetch as one URL and surfaced as a silent ERR_INVALID_URL.
+        rejectOllamaEndpointList("EMBEDDING_BASE_URL", baseUrl);
+        rejectOllamaEndpointList("EMBEDDING_FALLBACK_URL", config.fallbackBaseUrl);
         return new OllamaEmbeddings(
           model || "unclemusclez/jina-embeddings-v2-base-code:latest",
           dimensions,
