@@ -365,6 +365,24 @@ describe("get_architecture_report", () => {
     expect(parse([{ rename: { from: "a", to: "b" } }])).toBe(false);
   });
 
+  // bd tea-rags-mcp-cm9gt.1: edge ops ride the same union; the description says
+  // they move structural detectors only.
+  it("takes the addFile / addEdge / removeEdge edge ops and says co-change does not respond (bd tea-rags-mcp-cm9gt.1)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+    const parse = (restructure: unknown) => schema.safeParse({ project: "tea-rags", restructure }).success;
+
+    expect(config.description).toMatch(/co-change detectors read history and do not respond/);
+    expect(parse([{ addFile: { file: "src/contracts/port.ts" } }])).toBe(true);
+    expect(parse([{ addFile: { file: "src/a/port.ts", component: "src/a" } }])).toBe(true);
+    expect(parse([{ addEdge: { from: "src/a.ts", to: "src/b.ts" } }])).toBe(true);
+    expect(parse([{ removeEdge: { from: "src/a.ts", to: "src/b.ts" } }])).toBe(true);
+    expect(parse([{ addFile: { file: "" } }])).toBe(false);
+    expect(parse([{ addEdge: { from: "src/a.ts" } }])).toBe(false);
+    expect(parse([{ removeEdge: { from: "", to: "src/b.ts" } }])).toBe(false);
+  });
+
   it("routes a restructure call to app.simulateArchitectureRestructure, never to the report", async () => {
     const { app, call } = registered();
     const answer = { mode: "restructure", hypothesis: [], unavailable: "noCodegraph" };

@@ -13,6 +13,7 @@ import type {
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   applyArchitectureRestructure,
+  architectureRestructureEdgeKey,
   compileArchitectureRestructure,
   type ArchitectureRestructurePartition,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
@@ -150,5 +151,181 @@ describe("applyArchitectureRestructure", () => {
     expect(relabelled.componentRelabel).toBe(relabel.componentOf);
     // the base facts are never mutated
     expect(graph.files[0].relPath).toBe("lib/f1.ts");
+  });
+});
+
+/**
+ * bd tea-rags-mcp-cm9gt.1: edge ops — a code remedy (inversion, interface
+ * extraction, back-edge cut) changes edges, not file homes. They name BASE
+ * paths, never relabel, and apply before the rename map.
+ */
+describe("compileArchitectureRestructure — edge ops", () => {
+  const edgeBase = {
+    fileEdges: new Set([
+      architectureRestructureEdgeKey("core/a.ts", "lib/f1.ts"),
+      architectureRestructureEdgeKey("app/c1.ts", "core/b.ts"),
+    ]),
+  };
+  const compile = (ops: Parameters<typeof compileArchitectureRestructure>[0]) =>
+    compileArchitectureRestructure(ops, partition(), edgeBase);
+
+  it("compiles addFile, addEdge and removeEdge into edge edits without relabelling", () => {
+    const result = compile([
+      { removeEdge: { from: "core/a.ts", to: "lib/f1.ts" } },
+      { addFile: { file: "contracts/port.ts" } },
+      { addFile: { file: "core/port.ts", component: "core" } },
+      { addEdge: { from: "core/a.ts", to: "contracts/port.ts" } },
+      { addEdge: { from: "lib/f1.ts", to: "contracts/port.ts" } },
+    ]);
+    if (result.kind !== "compiled") throw new Error(`expected compiled, got ${result.kind}`);
+    expect(result.ops).toEqual([
+      { op: "removeEdge", relabelledFiles: 0, components: [], edge: { from: "core/a.ts", to: "lib/f1.ts" } },
+      // no component named: the judge derives it from the path, the compiler does not guess
+      { op: "addFile", relabelledFiles: 0, components: [], file: "contracts/port.ts" },
+      { op: "addFile", relabelledFiles: 0, components: ["core"], file: "core/port.ts" },
+      { op: "addEdge", relabelledFiles: 0, components: [], edge: { from: "core/a.ts", to: "contracts/port.ts" } },
+      { op: "addEdge", relabelledFiles: 0, components: [], edge: { from: "lib/f1.ts", to: "contracts/port.ts" } },
+    ]);
+    expect(result.relabel.renamedFrom.size).toBe(0);
+    expect([...result.relabel.componentOf]).toEqual([["core/port.ts", "core"]]);
+    expect(result.relabel.edgeEdits.addedFiles).toEqual([
+      { relPath: "contracts/port.ts" },
+      { relPath: "core/port.ts", component: "core" },
+    ]);
+    expect(result.relabel.edgeEdits.addedEdges).toEqual([
+      { from: "core/a.ts", to: "contracts/port.ts" },
+      { from: "lib/f1.ts", to: "contracts/port.ts" },
+    ]);
+    expect([...result.relabel.edgeEdits.removedEdges]).toEqual([
+      architectureRestructureEdgeKey("core/a.ts", "lib/f1.ts"),
+    ]);
+  });
+
+  it("edge ops never claim files: a move of an edge endpoint in the same hypothesis compiles", () => {
+    const result = compile([
+      { removeEdge: { from: "core/a.ts", to: "lib/f1.ts" } },
+      { move: { files: ["lib/f1.ts"], toComponent: "core" } },
+    ]);
+    expect(result.kind).toBe("compiled");
+  });
+
+  it("names the failure of each edge op", () => {
+    expect(compile([{ addFile: { file: "core/a.ts" } }])).toMatchObject({ kind: "invalidOp", opIndex: 0 });
+    expect(compile([{ addFile: { file: "x/n.ts" } }, { addFile: { file: "x/n.ts" } }])).toMatchObject({
+      kind: "invalidOp",
+      opIndex: 1,
+    });
+    expect(compile([{ addFile: { file: "x/n.ts", component: "ghost" } }])).toEqual({
+      kind: "unknownComponent",
+      opIndex: 0,
+      component: "ghost",
+    });
+    expect(compile([{ addEdge: { from: "nope.ts", to: "ghost.ts" } }])).toEqual({
+      kind: "unknownFile",
+      opIndex: 0,
+      files: ["nope.ts", "ghost.ts"],
+    });
+    expect(compile([{ addEdge: { from: "core/a.ts", to: "core/a.ts" } }])).toMatchObject({ kind: "invalidOp" });
+    expect(compile([{ addEdge: { from: "core/a.ts", to: "lib/f1.ts" } }])).toMatchObject({
+      kind: "invalidOp",
+      detail: expect.stringContaining("edge already present"),
+    });
+    const fresh = { addEdge: { from: "core/a.ts", to: "lib/f2.ts" } };
+    expect(compile([fresh, fresh])).toMatchObject({ kind: "invalidOp", opIndex: 1 });
+    expect(compile([{ removeEdge: { from: "nope.ts", to: "core/a.ts" } }])).toEqual({
+      kind: "unknownFile",
+      opIndex: 0,
+      files: ["nope.ts"],
+    });
+    expect(compile([{ removeEdge: { from: "core/a.ts", to: "core/b.ts" } }])).toEqual({
+      kind: "unknownEdge",
+      opIndex: 0,
+      from: "core/a.ts",
+      to: "core/b.ts",
+    });
+  });
+
+  it("removing an edge twice is unknownEdge; removing an added edge is invalidOp", () => {
+    const twice = { removeEdge: { from: "core/a.ts", to: "lib/f1.ts" } };
+    expect(compile([twice, twice])).toEqual({ kind: "unknownEdge", opIndex: 1, from: "core/a.ts", to: "lib/f1.ts" });
+    expect(
+      compile([
+        { addEdge: { from: "core/a.ts", to: "lib/f2.ts" } },
+        { removeEdge: { from: "core/a.ts", to: "lib/f2.ts" } },
+      ]),
+    ).toMatchObject({ kind: "invalidOp", opIndex: 1 });
+  });
+
+  it("an added file is a known endpoint for later edge ops only", () => {
+    expect(compile([{ addEdge: { from: "core/a.ts", to: "x/n.ts" } }, { addFile: { file: "x/n.ts" } }])).toMatchObject({
+      kind: "unknownFile",
+      opIndex: 0,
+    });
+  });
+
+  it("without an edge base every removeEdge is unknownEdge", () => {
+    expect(
+      compileArchitectureRestructure([{ removeEdge: { from: "core/a.ts", to: "lib/f1.ts" } }], partition()),
+    ).toMatchObject({ kind: "unknownEdge", opIndex: 0 });
+  });
+});
+
+describe("applyArchitectureRestructure — edge edits", () => {
+  const base = (): FileDependencyGraph => ({
+    files: [
+      { relPath: "core/a.ts", language: "typescript", symbolCount: 1 },
+      { relPath: "lib/f1.ts", language: "typescript", symbolCount: 2 },
+      { relPath: "lib/f2.ts", language: "typescript", symbolCount: 1 },
+    ],
+    edges: [
+      { sourceRelPath: "core/a.ts", targetRelPath: "lib/f1.ts", callWeight: 2 },
+      { sourceRelPath: "core/a.ts", targetRelPath: "lib/f1.ts", callWeight: 0 },
+      { sourceRelPath: "core/a.ts", targetRelPath: "lib/f2.ts", callWeight: 1 },
+    ],
+  });
+  const cochange = { meta: null, edges: [] } as unknown as TemporalCochangeGraph;
+  const edgeBase = {
+    fileEdges: new Set(base().edges.map((e) => architectureRestructureEdgeKey(e.sourceRelPath, e.targetRelPath))),
+  };
+
+  function applied(ops: Parameters<typeof compileArchitectureRestructure>[0]) {
+    const result = compileArchitectureRestructure(ops, partition(), edgeBase);
+    if (result.kind !== "compiled") throw new Error(`expected compiled, got ${result.kind}`);
+    const graph = base();
+    const facts = { production: { graph }, memberEdges: [], cochange };
+    return { graph, relabelled: applyArchitectureRestructure(facts, result.relabel) };
+  }
+
+  it("drops every base edge of a removed pair and keeps the rest", () => {
+    const { relabelled, graph } = applied([{ removeEdge: { from: "core/a.ts", to: "lib/f1.ts" } }]);
+    expect(relabelled.production.graph.edges).toEqual([
+      { sourceRelPath: "core/a.ts", targetRelPath: "lib/f2.ts", callWeight: 1 },
+    ]);
+    expect(graph.edges).toHaveLength(3);
+  });
+
+  it("appends an added file (the language its extension carries in the graph) and an added edge once with callWeight 1", () => {
+    const { relabelled } = applied([
+      { addFile: { file: "contracts/port.ts" } },
+      { addEdge: { from: "core/a.ts", to: "contracts/port.ts" } },
+    ]);
+    const added = relabelled.production.graph.files.find((f) => f.relPath === "contracts/port.ts");
+    expect(added).toEqual({ relPath: "contracts/port.ts", language: "typescript", symbolCount: 1 });
+    expect(relabelled.production.graph.edges.filter((e) => e.targetRelPath === "contracts/port.ts")).toEqual([
+      { sourceRelPath: "core/a.ts", targetRelPath: "contracts/port.ts", callWeight: 1 },
+    ]);
+  });
+
+  it("a move in the same hypothesis renames an endpoint of an added edge", () => {
+    const { relabelled } = applied([
+      { addFile: { file: "contracts/port.ts" } },
+      { addEdge: { from: "lib/f2.ts", to: "contracts/port.ts" } },
+      { move: { files: ["lib/f2.ts"], toComponent: "core" } },
+    ]);
+    expect(relabelled.production.graph.edges).toContainEqual({
+      sourceRelPath: "core/f2.ts",
+      targetRelPath: "contracts/port.ts",
+      callWeight: 1,
+    });
   });
 });

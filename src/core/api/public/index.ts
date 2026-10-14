@@ -154,6 +154,7 @@ export {
   DocumentMetadataSchemaViolationError,
   UnknownArchitectureComponentError,
   UnknownRestructureComponentError,
+  UnknownRestructureEdgeError,
   UnknownRestructureFileError,
 } from "./errors.js";
 export type { InputErrorCode, DocumentMetadataViolation } from "./errors.js";

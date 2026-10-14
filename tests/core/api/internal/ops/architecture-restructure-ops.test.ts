@@ -16,6 +16,7 @@ import type { GetArchitectureReportRequest } from "../../../../../src/core/api/p
 import {
   InvalidParameterError,
   UnknownRestructureComponentError,
+  UnknownRestructureEdgeError,
   UnknownRestructureFileError,
 } from "../../../../../src/core/api/public/errors.js";
 import type { FileDependencyGraph, TemporalCochangeGraph } from "../../../../../src/core/contracts/types/codegraph.js";
@@ -134,6 +135,59 @@ describe("ArchitectureRestructureOps#simulate", () => {
     );
     await expect(new ArchitectureRestructureOps().simulate(graphDb(), { restructure: [] })).rejects.toBeInstanceOf(
       InvalidParameterError,
+    );
+  });
+});
+
+/**
+ * bd tea-rags-mcp-cm9gt.1: edge ops on the same fixture. base → lib rests on
+ * ONE file edge, base/a → lib/f4, so cutting it resolves that SDP violation;
+ * an inversion routes both ends through a new stable contracts-side file.
+ */
+describe("ArchitectureRestructureOps#simulate — edge ops", () => {
+  it("removeEdge of the edge behind an SDP violation resolves it", async () => {
+    const answer = await new ArchitectureRestructureOps().simulate(graphDb(), {
+      restructure: [{ removeEdge: { from: "base/a.ts", to: "lib/f4.ts" } }],
+    });
+    expect(answer.hypothesis).toEqual([
+      { op: "removeEdge", relabelledFiles: 0, components: [], edge: { from: "base/a.ts", to: "lib/f4.ts" } },
+    ]);
+    expect(answer.delta!.resolved).toContainEqual({ family: "stableDependencies", subject: "base → lib" });
+  });
+
+  it("addEdge from a stable to an unstable component introduces an SDP violation", async () => {
+    const answer = await new ArchitectureRestructureOps().simulate(graphDb(), {
+      // vendor: five importers, no dependency — the stablest component; lib depends on it
+      restructure: [{ addEdge: { from: "vendor/v.ts", to: "lib/f1.ts" } }],
+    });
+    expect(answer.delta!.introduced).toContainEqual({ family: "stableDependencies", subject: "vendor → lib" });
+  });
+
+  it("an inversion — cut A→B, add I, A→I, B→I — nets fewer violations", async () => {
+    const answer = await new ArchitectureRestructureOps().simulate(graphDb(), {
+      restructure: [
+        { removeEdge: { from: "base/a.ts", to: "lib/f4.ts" } },
+        { addFile: { file: "contracts/f4-port.ts" } },
+        { addEdge: { from: "base/a.ts", to: "contracts/f4-port.ts" } },
+        { addEdge: { from: "lib/f4.ts", to: "contracts/f4-port.ts" } },
+      ],
+    });
+    expect(answer.delta!.resolved).toContainEqual({ family: "stableDependencies", subject: "base → lib" });
+    expect(answer.delta!.net).toBeLessThan(0);
+  });
+
+  it("rejects an absent edge, an unknown endpoint and an existing file with typed errors naming the op", async () => {
+    const ops = new ArchitectureRestructureOps();
+    const second = async (op: NonNullable<GetArchitectureReportRequest["restructure"]>[number]) =>
+      ops.simulate(graphDb(), { restructure: [MOVE_INTO_BASE[0], op] });
+    await expect(second({ removeEdge: { from: "core/a.ts", to: "core/b.ts" } })).rejects.toSatisfy(
+      (error) => error instanceof UnknownRestructureEdgeError && error.message.includes("restructure[1]"),
+    );
+    await expect(second({ addEdge: { from: "core/a.ts", to: "lib/nope.ts" } })).rejects.toSatisfy(
+      (error) => error instanceof UnknownRestructureFileError && error.message.includes("restructure[1]"),
+    );
+    await expect(second({ addFile: { file: "core/a.ts" } })).rejects.toSatisfy(
+      (error) => error instanceof InvalidParameterError && error.message.includes("restructure[1]"),
     );
   });
 });

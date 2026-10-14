@@ -24,6 +24,14 @@
  *
  * Every op compiles against the BASE partition, and a file is relabelled by at
  * most one op: the ops of one call are one hypothesis, not a sequence.
+ *
+ * EDGE ops (bd tea-rags-mcp-cm9gt.1) model a code remedy — an inversion, an
+ * interface extraction, a back-edge cut — that changes edges, not file homes.
+ * They name BASE paths (a path is known when the partition holds it or an
+ * earlier `addFile` added it), never relabel, and never claim a file, so they
+ * mix freely with `move` / `merge` / `split`. They apply on base paths BEFORE
+ * the rename map: a moved endpoint of an added edge moves with it. Only the
+ * file dependency graph changes; member edges and co-change history do not.
  */
 
 import type {
@@ -49,6 +57,27 @@ export interface ArchitectureRestructureRelabel {
   renamedFrom: ReadonlyMap<RelPath, RelPath>;
   /** Relabelled path (new path for a moved file) → the component it belongs to. */
   componentOf: ReadonlyMap<RelPath, string>;
+  /** The edge ops' edits, on BASE paths — applied before the renames. */
+  edgeEdits: ArchitectureRestructureEdgeEdits;
+}
+
+/** What the edge ops of one hypothesis add to and drop from the file dependency graph, on base paths. */
+export interface ArchitectureRestructureEdgeEdits {
+  addedFiles: { relPath: RelPath; component?: string }[];
+  addedEdges: { from: RelPath; to: RelPath }[];
+  /** {@link architectureRestructureEdgeKey} of every dropped file pair. */
+  removedEdges: ReadonlySet<string>;
+}
+
+/** The base file edges edge ops are checked against, keyed by `(from, to)`. */
+export interface ArchitectureRestructureEdgeBase {
+  /** {@link architectureRestructureEdgeKey} of every base file edge. */
+  fileEdges: ReadonlySet<string>;
+}
+
+/** The identity of a file edge: its `(from, to)` pair. */
+export function architectureRestructureEdgeKey(from: RelPath, to: RelPath): string {
+  return `${from}\u0000${to}`;
 }
 
 /** The compile verdict: the relabel, or the first op that names something the partition lacks or cannot honour. */
@@ -56,6 +85,7 @@ export type ArchitectureRestructureCompilation =
   | { kind: "compiled"; relabel: ArchitectureRestructureRelabel; ops: ArchitectureRestructureCompiledOp[] }
   | { kind: "unknownFile"; opIndex: number; files: RelPath[] }
   | { kind: "unknownComponent"; opIndex: number; component: string }
+  | { kind: "unknownEdge"; opIndex: number; from: RelPath; to: RelPath }
   | { kind: "invalidOp"; opIndex: number; detail: string };
 
 /** The facts a relabel rewrites: every file-keyed graph fact. The report's facts value carries more; the rest is kept. */
@@ -71,12 +101,17 @@ const ENTRY_FILE_NAMES: ReadonlySet<string> = new Set(Object.values(MODULE_ENTRY
 
 type CompileFailure = Exclude<ArchitectureRestructureCompilation, { kind: "compiled" }>;
 
-/** Compile `ops` against the base partition — see the module comment for the rules. */
+/**
+ * Compile `ops` against the base partition — see the module comment for the
+ * rules. `edgeBase` is what `removeEdge` is checked against; without it every
+ * `removeEdge` is an unknown edge.
+ */
 export function compileArchitectureRestructure(
   ops: readonly ArchitectureRestructureOp[],
   partition: ArchitectureRestructurePartition,
+  edgeBase: ArchitectureRestructureEdgeBase = { fileEdges: new Set() },
 ): ArchitectureRestructureCompilation {
-  const compiler = new RestructureCompiler(partition);
+  const compiler = new RestructureCompiler(partition, edgeBase);
   const compiledOps: ArchitectureRestructureCompiledOp[] = [];
   for (const [opIndex, op] of ops.entries()) {
     const compiled = compiler.compile(op, opIndex);
@@ -97,7 +132,7 @@ export function applyArchitectureRestructure<Facts extends ArchitectureRestructu
 ): Facts & { readonly componentRelabel: ReadonlyMap<RelPath, string> } {
   const renamedTo = new Map([...relabel.renamedFrom].map(([newPath, oldPath]) => [oldPath, newPath]));
   const rename = (relPath: RelPath): RelPath => renamedTo.get(relPath) ?? relPath;
-  const { graph } = facts.production;
+  const graph = applyArchitectureRestructureEdgeEdits(facts.production.graph, relabel.edgeEdits);
   const { cochange } = facts;
   return {
     ...facts,
@@ -156,6 +191,37 @@ export function applyArchitectureRestructure<Facts extends ArchitectureRestructu
   };
 }
 
+/**
+ * The base graph with the edge edits applied on base paths: every edge of a
+ * removed pair dropped (all its call sites), one file record per added file
+ * (the language a graph file of the same extension carries, one symbol, no
+ * heritage), one edge of call weight 1 per added edge.
+ */
+function applyArchitectureRestructureEdgeEdits(
+  graph: FileDependencyGraph,
+  edgeEdits: ArchitectureRestructureEdgeEdits,
+): FileDependencyGraph {
+  const { addedFiles, addedEdges, removedEdges } = edgeEdits;
+  if (addedFiles.length === 0 && addedEdges.length === 0 && removedEdges.size === 0) return graph;
+  const languageByExtension = new Map(graph.files.map((file) => [extensionOf(file.relPath), file.language]));
+  return {
+    files: [
+      ...graph.files,
+      ...addedFiles.map(({ relPath }) => ({
+        relPath,
+        language: languageByExtension.get(extensionOf(relPath)) ?? "",
+        symbolCount: 1,
+      })),
+    ],
+    edges: [
+      ...graph.edges.filter(
+        (edge) => !removedEdges.has(architectureRestructureEdgeKey(edge.sourceRelPath, edge.targetRelPath)),
+      ),
+      ...addedEdges.map(({ from, to }) => ({ sourceRelPath: from, targetRelPath: to, callWeight: 1 })),
+    ],
+  };
+}
+
 /** Accumulates one hypothesis's relabel across its ops. */
 class RestructureCompiler {
   private readonly components: ReadonlySet<string>;
@@ -163,8 +229,16 @@ class RestructureCompiler {
   private readonly renamedFrom = new Map<RelPath, RelPath>();
   private readonly componentOf = new Map<RelPath, string>();
   private readonly relabelledBy = new Map<RelPath, number>();
+  private readonly addedFiles: ArchitectureRestructureEdgeEdits["addedFiles"] = [];
+  private readonly addedRelPaths = new Set<RelPath>();
+  private readonly addedEdges: ArchitectureRestructureEdgeEdits["addedEdges"] = [];
+  private readonly addedEdgeKeys = new Set<string>();
+  private readonly removedEdges = new Set<string>();
 
-  constructor(private readonly partition: ArchitectureRestructurePartition) {
+  constructor(
+    private readonly partition: ArchitectureRestructurePartition,
+    private readonly edgeBase: ArchitectureRestructureEdgeBase,
+  ) {
     this.components = new Set(partition.componentOf.values());
     this.occupiedRelPaths = new Set(partition.componentOf.keys());
   }
@@ -172,11 +246,73 @@ class RestructureCompiler {
   compile(op: ArchitectureRestructureOp, opIndex: number): ArchitectureRestructureCompiledOp | CompileFailure {
     if ("move" in op) return this.move(op.move.files, op.move.toComponent, opIndex);
     if ("merge" in op) return this.merge(op.merge.components, opIndex);
-    return this.split(op.split.component, op.split.groups, opIndex);
+    if ("split" in op) return this.split(op.split.component, op.split.groups, opIndex);
+    if ("addFile" in op) return this.addFile(op.addFile.file, op.addFile.component, opIndex);
+    if ("addEdge" in op) return this.addEdge(op.addEdge.from, op.addEdge.to, opIndex);
+    return this.removeEdge(op.removeEdge.from, op.removeEdge.to, opIndex);
   }
 
   relabel(): ArchitectureRestructureRelabel {
-    return { renamedFrom: this.renamedFrom, componentOf: this.componentOf };
+    return {
+      renamedFrom: this.renamedFrom,
+      componentOf: this.componentOf,
+      edgeEdits: { addedFiles: this.addedFiles, addedEdges: this.addedEdges, removedEdges: this.removedEdges },
+    };
+  }
+
+  private addFile(
+    relPath: RelPath,
+    component: string | undefined,
+    opIndex: number,
+  ): ArchitectureRestructureCompiledOp | CompileFailure {
+    if (this.isKnownBasePath(relPath)) return invalid(opIndex, `${relPath} already exists`);
+    if (component !== undefined && !this.components.has(component)) {
+      return { kind: "unknownComponent", opIndex, component };
+    }
+    this.addedRelPaths.add(relPath);
+    this.occupiedRelPaths.add(relPath);
+    if (component === undefined) {
+      this.addedFiles.push({ relPath });
+      return { op: "addFile", relabelledFiles: 0, components: [], file: relPath };
+    }
+    this.addedFiles.push({ relPath, component });
+    this.componentOf.set(relPath, component);
+    return { op: "addFile", relabelledFiles: 0, components: [component], file: relPath };
+  }
+
+  private addEdge(from: RelPath, to: RelPath, opIndex: number): ArchitectureRestructureCompiledOp | CompileFailure {
+    const unknown = this.unknownEndpoints(from, to, opIndex);
+    if (unknown) return unknown;
+    if (from === to) return invalid(opIndex, `an edge needs two files, got ${from} twice`);
+    const key = architectureRestructureEdgeKey(from, to);
+    if (this.edgeBase.fileEdges.has(key) || this.addedEdgeKeys.has(key)) {
+      return invalid(opIndex, `edge already present: ${from} → ${to}`);
+    }
+    this.addedEdgeKeys.add(key);
+    this.addedEdges.push({ from, to });
+    return { op: "addEdge", relabelledFiles: 0, components: [], edge: { from, to } };
+  }
+
+  private removeEdge(from: RelPath, to: RelPath, opIndex: number): ArchitectureRestructureCompiledOp | CompileFailure {
+    const unknown = this.unknownEndpoints(from, to, opIndex);
+    if (unknown) return unknown;
+    const key = architectureRestructureEdgeKey(from, to);
+    if (this.addedEdgeKeys.has(key)) return invalid(opIndex, `${from} → ${to} was added by an earlier op`);
+    if (!this.edgeBase.fileEdges.has(key) || this.removedEdges.has(key)) {
+      return { kind: "unknownEdge", opIndex, from, to };
+    }
+    this.removedEdges.add(key);
+    return { op: "removeEdge", relabelledFiles: 0, components: [], edge: { from, to } };
+  }
+
+  /** A base path the partition holds or an earlier `addFile` added. */
+  private isKnownBasePath(relPath: RelPath): boolean {
+    return this.partition.componentOf.has(relPath) || this.addedRelPaths.has(relPath);
+  }
+
+  private unknownEndpoints(from: RelPath, to: RelPath, opIndex: number): CompileFailure | undefined {
+    const unknown = [...new Set([from, to])].filter((relPath) => !this.isKnownBasePath(relPath));
+    return unknown.length > 0 ? { kind: "unknownFile", opIndex, files: unknown } : undefined;
   }
 
   private move(
@@ -283,4 +419,10 @@ function invalid(opIndex: number, detail: string): CompileFailure {
 
 function baseName(relPath: RelPath): string {
   return relPath.slice(relPath.lastIndexOf("/") + 1);
+}
+
+function extensionOf(relPath: RelPath): string {
+  const name = baseName(relPath);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot) : "";
 }
