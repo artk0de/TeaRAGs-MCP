@@ -4,7 +4,12 @@ import { join } from "node:path";
 import type { Argv, CommandModule } from "yargs";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
-import { CollectionRegistry, listWorktreeInfos, worktreeInfoForPath } from "../../core/api/index.js";
+import {
+  CollectionRegistry,
+  listWorktreeInfos,
+  resolveDomainEnvCodeDefaults,
+  worktreeInfoForPath,
+} from "../../core/api/index.js";
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
@@ -12,7 +17,7 @@ function resolveDataDir(): string {
 
 export function runWorktreeList(args: { json: boolean; dataDir?: string }): void {
   const registry = new CollectionRegistry(args.dataDir ?? resolveDataDir(), {
-    envCodeDefaults: resolveRegistryEnvCodeDefaults,
+    envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
   });
   const rows = listWorktreeInfos(registry);
   if (args.json) {
@@ -32,7 +37,7 @@ export function runWorktreeList(args: { json: boolean; dataDir?: string }): void
 
 export function runWorktreeInfo(args: { json: boolean; dataDir?: string }): void {
   const registry = new CollectionRegistry(args.dataDir ?? resolveDataDir(), {
-    envCodeDefaults: resolveRegistryEnvCodeDefaults,
+    envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
   });
   const info = worktreeInfoForPath(registry, process.cwd());
   process.stdout.write(args.json ? `${JSON.stringify(info, null, 2)}\n` : `${JSON.stringify(info)}\n`);

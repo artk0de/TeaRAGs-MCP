@@ -82,12 +82,15 @@ function defaultDeps(): QdrantRecoverDeps {
     const {
       CollectionRegistry,
       OptimizerRecoveryOps: Ops,
+      resolveDomainEnvCodeDefaults,
       resolveRegistryQdrantBackend,
     } = await import("../../core/api/index.js");
     const { EMBEDDED_MARKER, QdrantManager, resolveQdrantUrl } = await import("../../core/api/public/index.js");
 
     const config = parseAppConfig();
-    const registry = new CollectionRegistry(config.paths.appData, { envCodeDefaults: resolveRegistryEnvCodeDefaults });
+    const registry = new CollectionRegistry(config.paths.appData, {
+      envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+    });
     const entry = target.project ? registry.findByName(target.project) : registry.findByPath(target.path ?? "");
     const backend = entry ? resolveRegistryQdrantBackend(entry) : { kind: "unaddressed" as const };
     const qdrantUrl =

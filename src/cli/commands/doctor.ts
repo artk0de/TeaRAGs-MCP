@@ -5,7 +5,13 @@ import type { Argv, CommandModule } from "yargs";
 
 import type { CodegraphDaemonRestartOutcome } from "../../bootstrap/codegraph-daemon-restart.js";
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
-import { CollectionRegistry, ProjectRegistryOps, QuarantineStore, resolveCollection } from "../../core/api/index.js";
+import {
+  CollectionRegistry,
+  ProjectRegistryOps,
+  QuarantineStore,
+  resolveCollection,
+  resolveDomainEnvCodeDefaults,
+} from "../../core/api/index.js";
 import { QdrantManager, validatePath, type EmbeddingProvider } from "../../core/api/public/index.js";
 import { IndexWorkerRegistry, indexWorkerRegistryDir } from "../index-progress/worker-registry.js";
 import {
@@ -78,7 +84,9 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
  */
 export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<void> {
   const { qdrant, embeddings } = deps ?? (await defaultDeps());
-  const registry = new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults });
+  const registry = new CollectionRegistry(resolveDataDir(), {
+    envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+  });
   // The lease predicate's api surface (bd tea-rags-mcp-89k7k.9): the ops class
   // owns the domain edge, so doctor keeps its bare read-only client and still
   // reaches the predicate without the retired barrel re-export.
@@ -253,7 +261,9 @@ export async function runQuarantineDoctor(args: { path: string; json?: boolean }
   // collection the index actually lives in — the registry's entry when one
   // claims this path, the hash only otherwise (bd tea-rags-mcp-dxa9w).
   const { collectionName } = resolveCollection(
-    new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults }),
+    new CollectionRegistry(resolveDataDir(), {
+      envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+    }),
     { path: project },
   );
   const snapshotDir = join(resolveDataDir(), "snapshots");

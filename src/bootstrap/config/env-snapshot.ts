@@ -25,21 +25,28 @@
  * Injected into the ingest pipeline via DI (like `teaRagsVersion`) and
  * written by `recordRegistryEntry` on every successful index.
  *
- * The two functions at the bottom of this file are the READ-side twins: the
- * same snapshot vocabulary, but for runs that have not happened.
- * `buildEffectiveIndexEnvSnapshot` is what a stamp resolves to under the
- * current process env; `buildRunningIndexEnvSnapshot` is what THIS process
- * resolved on its own, with no replay. The env drift axis diffs the stamp
- * against the first, and the two enable flags against the second.
+ * `buildRunningIndexEnvSnapshot` at the bottom of this file is a READ-side
+ * twin: what THIS process resolved on its own, with no replay — the side the
+ * env drift axis compares the two enable flags against. Its other twin,
+ * `buildEffectiveIndexEnvSnapshot` (what a stamp resolves to under the current
+ * process env), lives in the composition root because it replays the registry
+ * env (bd tea-rags-mcp-umixb).
+ *
+ * Config passes a few knobs through raw — `undefined` when unset — and their
+ * owning domain applies the default. The snapshot records effective values, so
+ * those defaults are INJECTED (`DomainEnvCodeDefaults`, built by
+ * `resolveDomainEnvCodeDefaults` in the core composition root): this stable
+ * component must not read a domain (bd tea-rags-mcp-umixb).
  */
 
-// The stable api entry-points sub-component, not the api assembly barrel:
-// config parsing must not load the whole api graph (see
-// `core/api/entry-points/registry-env-replay.ts`).
-import { outerEnvForRegistryStamp, replayRegistryEnv, type AmbientEnvRole } from "../../core/api/entry-points/index.js";
-import type { EmbeddingConfig, QdrantTuneConfig, TrajectoryGitConfig, VcsConfig } from "../../core/contracts/index.js";
-import { isDebug } from "../../core/primitives/diagnostics/index.js";
-import { parseAppConfigZod } from "./parse.js";
+import type {
+  DomainEnvCodeDefaults,
+  EmbeddingConfig,
+  QdrantTuneConfig,
+  TrajectoryGitConfig,
+  VcsConfig,
+} from "../../core/contracts/index.js";
+import type { RegistryEnvCanonicalKey } from "../../core/contracts/registry-env-groups.js";
 import type { CodegraphConfig, IngestConfig } from "./schemas.js";
 
 export interface RegistryEnvSnapshotSource {
@@ -57,13 +64,18 @@ export interface RegistryEnvSnapshotSource {
   };
 }
 
-export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Record<string, string> {
+export function buildRegistryEnvSnapshot(
+  config: RegistryEnvSnapshotSource,
+  domainDefaults: DomainEnvCodeDefaults,
+): Record<string, string> {
   const { vcs, trajectoryGit, ingest, embedding, codegraph, qdrantTune, flags } = config;
   const snapshot: Record<string, string> = {};
-  const put = (key: string, value: string | number | boolean | undefined): void => {
+  // Typed by the registry vocabulary: a key no alias family declares does not
+  // compile, so the snapshot and the families cannot drift apart silently.
+  const put = (key: RegistryEnvCanonicalKey, value: string | number | boolean | undefined): void => {
     if (value !== undefined) snapshot[key] = String(value);
   };
-  const putList = (key: string, value: readonly string[] | undefined): void => {
+  const putList = (key: RegistryEnvCanonicalKey, value: readonly string[] | undefined): void => {
     if (value !== undefined) snapshot[key] = value.join(",");
   };
 
@@ -81,7 +93,7 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   put("TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS", trajectoryGit.logMaxAgeMonths);
   put("TRAJECTORY_GIT_LOG_TIMEOUT_MS", trajectoryGit.logTimeoutMs);
   put("TRAJECTORY_GIT_CHUNK_CONCURRENCY", trajectoryGit.chunkConcurrency);
-  put("TRAJECTORY_GIT_BLAME_POOL_SIZE", trajectoryGit.blamePoolSize);
+  put("TRAJECTORY_GIT_BLAME_POOL_SIZE", trajectoryGit.blamePoolSize ?? domainDefaults.blamePoolSize);
   put("TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS", trajectoryGit.chunkMaxAgeMonths);
   put("TRAJECTORY_GIT_CHUNK_TIMEOUT_MS", trajectoryGit.chunkTimeoutMs);
   put("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", trajectoryGit.chunkMaxFileLines);
@@ -93,11 +105,14 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   put("INGEST_ENABLE_HYBRID", ingest.enableHybrid);
   putList("CODE_TEST_PATHS", ingest.testPaths);
   put("INGEST_PIPELINE_CONCURRENCY", ingest.tune.pipelineConcurrency);
-  put("INGEST_TUNE_CHUNKER_POOL_SIZE", ingest.tune.chunkerPoolSize);
+  put("INGEST_TUNE_CHUNKER_POOL_SIZE", ingest.tune.chunkerPoolSize ?? domainDefaults.chunkerPoolSize);
   put("INGEST_TUNE_FILE_CONCURRENCY", ingest.tune.fileConcurrency);
   put("INGEST_TUNE_IO_CONCURRENCY", ingest.tune.ioConcurrency);
   put("INGEST_TUNE_ENRICHMENT_POOL_SIZE", ingest.tune.enrichmentPoolSize);
-  put("INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD", ingest.tune.enrichmentFilesPerThread);
+  put(
+    "INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD",
+    ingest.tune.enrichmentFilesPerThread ?? domainDefaults.enrichmentFilesPerThread,
+  );
   if (flags.userSetChunkSize) put("INGEST_CHUNK_SIZE", ingest.chunkSize);
   put("INGEST_CHUNK_OVERLAP", ingest.chunkOverlap);
 
@@ -156,11 +171,14 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
  */
 export function buildPinnedRegistryEnvSnapshot(
   config: RegistryEnvSnapshotSource & { flags: { explicitEnvKeys: readonly string[] } },
+  domainDefaults: DomainEnvCodeDefaults,
 ): Record<string, string> {
   const explicit = new Set(config.flags.explicitEnvKeys);
   // Both sides speak canonical names: the snapshot emits one per group, and the
   // parser records the canonical name it asked for, whichever spelling answered.
-  return Object.fromEntries(Object.entries(buildRegistryEnvSnapshot(config)).filter(([key]) => explicit.has(key)));
+  return Object.fromEntries(
+    Object.entries(buildRegistryEnvSnapshot(config, domainDefaults)).filter(([key]) => explicit.has(key)),
+  );
 }
 
 /**
@@ -180,57 +198,13 @@ export function buildPinnedRegistryEnvSnapshot(
  * were actually built from, with no registry replay anywhere in it. That is the
  * side the two enable flags are compared against.
  */
-export function buildRunningIndexEnvSnapshot(config: RegistryEnvSnapshotSource): Readonly<Record<string, string>> {
+export function buildRunningIndexEnvSnapshot(
+  config: RegistryEnvSnapshotSource,
+  domainDefaults: DomainEnvCodeDefaults,
+): Readonly<Record<string, string>> {
   return {
-    ...buildRegistryEnvSnapshot(config),
+    ...buildRegistryEnvSnapshot(config, domainDefaults),
     CODEGRAPH_ENABLED: String(config.codegraph.enabled),
     ...(config.embedding.model ? { EMBEDDING_MODEL: config.embedding.model } : {}),
   };
-}
-
-/**
- * The canonical env snapshot the NEXT index run on `collectionName` would
- * produce, given the snapshot its last run stamped (`EnvDriftMonitor`, spec
- * decision 6).
- *
- * The same resolution `ProjectIngestFactory#forPath` performs before it builds
- * an ingest facade — outer env > stored registry env > code default, where a
- * `server` role narrows the outer env to what `outerEnvForRegistryStamp` lets
- * it override — expressed as a snapshot so it can be diffed against the stamp
- * key for key. It lives
- * here rather than in the monitor because `core/` must not import `bootstrap/`,
- * and because this is where the snapshot vocabulary already lives. Replay
- * writes onto a COPY of `ambient`; `process.env` is never mutated.
- *
- * An unparseable result is no claim, not a throw. A stamp can carry a value the
- * current build no longer accepts (a retired enum member), and this runs on the
- * read path behind a search response, where a diagnostic must never fail the
- * query. It is not silent, though: a swallowed parse disables the whole env
- * axis for that collection, which is indistinguishable from "nothing drifted",
- * so the reason goes to the debug log under the collection's own name. The
- * stamp itself is not tolerated anywhere that matters — the next index run
- * parses the same env and refuses to start.
- */
-export function buildEffectiveIndexEnvSnapshot(
-  stored: Readonly<Record<string, string>>,
-  collectionName: string,
-  ambient: NodeJS.ProcessEnv = process.env,
-  /**
-   * Where `ambient` came from — the same role `ProjectIngestFactory` resolves a
-   * real run with, or the axis reports what no run would do. A server's spawn
-   * env yields every index-shaping group the stamp pins (tea-rags-mcp-o0qsw).
-   */
-  role: AmbientEnvRole = "invocation",
-): Readonly<Record<string, string>> {
-  try {
-    const env: NodeJS.ProcessEnv = { ...outerEnvForRegistryStamp(stored, ambient, role) };
-    replayRegistryEnv(stored, env);
-    return buildRunningIndexEnvSnapshot(parseAppConfigZod(env));
-  } catch (error) {
-    if (isDebug()) {
-      const reason = error instanceof Error ? error.message : String(error);
-      console.error(`[Drift] env axis skipped for ${collectionName}: its env stamp does not parse here — ${reason}`);
-    }
-    return {};
-  }
 }

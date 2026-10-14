@@ -103,9 +103,10 @@
   `envCodeDefaults` runs a due data migration on first load
   (`CollectionRegistry#loadMigrated`, through `migrateRegistryFileWithCAS` —
   same CAS and temp+rename as a flush). Every production construction site
-  passes `resolveRegistryEnvCodeDefaults` (`bootstrap/config/`); one without it
-  loads as-is and leaves the migration to the next open, never marking it done.
-  Why: a test that reaches the `~/.tea-rags` fallback of `resolveDataDir`
+  passes `resolveRegistryEnvCodeDefaults` (`bootstrap/config/`, fed the
+  domain-owned defaults by `resolveDomainEnvCodeDefaults`); one without it loads
+  as-is and leaves the migration to the next open, never marking it done. Why: a
+  test that reaches the `~/.tea-rags` fallback of `resolveDataDir`
   (`TEA_RAGS_DATA_DIR` unset) migrates the developer's REAL registry — the
   pre-existing `tests/cli/registry-resolver.test.ts` fallback case did exactly
   that until it was pointed at a scratch home. A test that unsets the data dir
@@ -167,14 +168,15 @@
   because ingest may not import this domain.
 
 - **`REGISTRY_ENV_GROUPS` is one leg of a three-file contract with `bootstrap`,
-  with no compile-time link.** The alias families in `REGISTRY_ENV_GROUPS`
-  (`env-groups.ts`) must mirror what `bootstrap/config/parse.ts` resolves
-  through the reader `createEnvReader` hands it (`bootstrap/config/utils.ts`;
-  its `readEnv` core is shared with the `envWithFallback` spelling the source
-  comments still name), and `bootstrap/config/env-snapshot.ts` must emit each
-  group's canonical key at its parsed effective value. `env-snapshot.ts` imports
-  nothing from here; `parse.ts` restates the alias order literally
-  (`env("EMBEDDING_BASE_URL", "OLLAMA_URL")`). The only guard is
+  and the table lives in `contracts/registry-env-groups.ts`.** This module
+  re-exports it. `bootstrap/config/env-snapshot.ts` types every key it emits as
+  `RegistryEnvCanonicalKey`, so a key no family declares does not compile (bd
+  tea-rags-mcp-umixb). `bootstrap/config/parse.ts` has no such link: it restates
+  the alias order literally (`env("EMBEDDING_BASE_URL", "OLLAMA_URL")`) through
+  the reader `createEnvReader` hands it (`bootstrap/config/utils.ts`; its
+  `readEnv` core is shared with the `envWithFallback` spelling the source
+  comments still name), and the snapshot must still emit each family's canonical
+  key at its parsed effective value. The guard on that half is
   `tests/core/domains/maintenance/registry/env-groups.test.ts`, which pins the
   families against hardcoded literals rather than reading `parse.ts`. Why: miss
   a group and the failure is silent — `replayRegistryEnv` (`env-replay.ts`)

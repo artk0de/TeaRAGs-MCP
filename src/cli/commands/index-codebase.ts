@@ -10,6 +10,7 @@ import {
   CollectionRegistry,
   pickRegistryEnvSeed,
   ProjectRegistryOps,
+  resolveDomainEnvCodeDefaults,
   resolveRegistryEnv,
 } from "../../core/api/index.js";
 import { TeaRagsError, type IndexOptions } from "../../core/api/public/index.js";
@@ -316,7 +317,9 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
     const jsonMode = Boolean(argv.json);
 
     const dataDir = resolveDataDir();
-    const registry = new CollectionRegistry(dataDir, { envCodeDefaults: resolveRegistryEnvCodeDefaults });
+    const registry = new CollectionRegistry(dataDir, {
+      envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+    });
 
     // JSON mode forces NO_COLOR semantics so the output is clean for parsing.
     const colors = createColorizer(jsonMode ? { env: { NO_COLOR: "1" }, isTTY: false } : undefined);

@@ -96,7 +96,6 @@ const DEFAULT_PROVIDER_CONFIG: GitProviderConfig = {
   logMaxAgeMonths: 12,
   logTimeoutMs: 60000,
   chunkConcurrency: 10,
-  blamePoolSize: defaultBlamePoolSize(),
   chunkMaxAgeMonths: 6,
   chunkTimeoutMs: 120000,
   chunkMaxFileLines: 5000,
@@ -158,7 +157,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly optionalOverlayKeys = GIT_OPTIONAL_OVERLAY_KEYS;
 
   private readonly squashOpts?: SquashOptions;
-  private readonly config: GitProviderConfig;
+  private readonly config: GitProviderConfig & { blamePoolSize: number };
   /** Bug-fix SHAs resolved from merge branch prefixes. Updated per buildFileSignals() call. */
   private bugFixShas: Set<string> = new Set();
   /** The run's task-id vocabulary as the file assembly reads it — set beside bugFixShas. */
@@ -262,7 +261,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
      */
     temporalSymbolCommits?: TemporalSymbolCommitBuffer,
   ) {
-    this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config };
+    // The composition hands TRAJECTORY_GIT_BLAME_POOL_SIZE through raw —
+    // `undefined` when unset — and this provider owns the default (bd
+    // tea-rags-mcp-umixb); the spread alone would let that undefined win.
+    this.config = {
+      ...DEFAULT_PROVIDER_CONFIG,
+      ...config,
+      blamePoolSize: config?.blamePoolSize ?? defaultBlamePoolSize(),
+    };
     this.squashOpts = squashOpts;
     this.workerDescriptor = workerDescriptor;
     this.temporalSymbolCommits = temporalSymbolCommits;

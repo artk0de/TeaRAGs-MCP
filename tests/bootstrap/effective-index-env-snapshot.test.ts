@@ -15,11 +15,10 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  buildEffectiveIndexEnvSnapshot,
-  buildRunningIndexEnvSnapshot,
-} from "../../src/bootstrap/config/env-snapshot.js";
+import { buildRunningIndexEnvSnapshot } from "../../src/bootstrap/config/env-snapshot.js";
 import { parseAppConfigZod } from "../../src/bootstrap/config/parse.js";
+import { buildEffectiveIndexEnvSnapshot } from "../../src/bootstrap/effective-index-env-snapshot.js";
+import { resolveDomainEnvCodeDefaults } from "../../src/core/api/internal/domain-env-code-defaults.js";
 import { EnvDriftMonitor } from "../../src/core/domains/maintenance/drift/env-drift-monitor.js";
 import { isDebug, setDebug } from "../../src/core/primitives/diagnostics/debug-flag.js";
 
@@ -158,14 +157,19 @@ describe("buildEffectiveIndexEnvSnapshot", () => {
 
 describe("buildRunningIndexEnvSnapshot", () => {
   it("reports this process's own resolved config, with no registry replay", () => {
-    const running = buildRunningIndexEnvSnapshot(parseAppConfigZod({ CODEGRAPH_ENABLED: "true" }));
+    const running = buildRunningIndexEnvSnapshot(
+      parseAppConfigZod({ CODEGRAPH_ENABLED: "true" }),
+      resolveDomainEnvCodeDefaults(),
+    );
 
     expect(running.CODEGRAPH_ENABLED).toBe("true");
     expect(running.TRAJECTORY_GIT_ENABLED).toBe("true");
   });
 
   it("resolves an absent flag to its code default — the prime-hook case", () => {
-    expect(buildRunningIndexEnvSnapshot(parseAppConfigZod({})).CODEGRAPH_ENABLED).toBe("false");
+    expect(buildRunningIndexEnvSnapshot(parseAppConfigZod({}), resolveDomainEnvCodeDefaults()).CODEGRAPH_ENABLED).toBe(
+      "false",
+    );
   });
 });
 
@@ -178,7 +182,7 @@ describe("the two current sides wired into EnvDriftMonitor", () => {
     new EnvDriftMonitor(
       registry,
       (stored, collectionName) => buildEffectiveIndexEnvSnapshot(stored, collectionName, ambient),
-      buildRunningIndexEnvSnapshot(parseAppConfigZod(ambient)),
+      buildRunningIndexEnvSnapshot(parseAppConfigZod(ambient), resolveDomainEnvCodeDefaults()),
     );
 
   it("reports nothing when the reading process matches the stamp", () => {
@@ -233,7 +237,7 @@ describe("the two current sides wired into EnvDriftMonitor", () => {
     const monitor = new EnvDriftMonitor(
       taxdome,
       (stored, collectionName) => buildEffectiveIndexEnvSnapshot(stored, collectionName, serverEnv, "server"),
-      buildRunningIndexEnvSnapshot(parseAppConfigZod(serverEnv)),
+      buildRunningIndexEnvSnapshot(parseAppConfigZod(serverEnv), resolveDomainEnvCodeDefaults()),
     );
 
     expect(monitor.check(COLLECTION)).toEqual([]);

@@ -29,6 +29,7 @@ import {
   trajectoryGitSchema,
   vcsSchema,
 } from "../../src/bootstrap/config/schemas.js";
+import { resolveDomainEnvCodeDefaults } from "../../src/core/api/internal/domain-env-code-defaults.js";
 import {
   ADAPTIVE_DEFAULT_ENV_KEYS,
   DEDICATED_FIELD_ENV_KEYS,
@@ -55,7 +56,7 @@ const bareConfig = () => ({
 
 describe("buildRegistryEnvSnapshot", () => {
   it("materializes code defaults for every statically-defaulted canonical key (bare config)", () => {
-    const snapshot = buildRegistryEnvSnapshot(bareConfig());
+    const snapshot = buildRegistryEnvSnapshot(bareConfig(), resolveDomainEnvCodeDefaults());
     expect(snapshot).toMatchObject({
       GIT_ADAPTER: "git",
       EMBEDDING_PROVIDER: "ollama",
@@ -107,14 +108,14 @@ describe("buildRegistryEnvSnapshot", () => {
   });
 
   it("never emits identity keys — they live in dedicated CollectionEntry fields", () => {
-    const snapshot = buildRegistryEnvSnapshot(bareConfig());
+    const snapshot = buildRegistryEnvSnapshot(bareConfig(), resolveDomainEnvCodeDefaults());
     for (const key of DEDICATED_FIELD_ENV_KEYS) {
       expect(snapshot).not.toHaveProperty(key);
     }
   });
 
   it("omits runtime-adaptive keys when the user did not set them (flags false)", () => {
-    const snapshot = buildRegistryEnvSnapshot(bareConfig());
+    const snapshot = buildRegistryEnvSnapshot(bareConfig(), resolveDomainEnvCodeDefaults());
     for (const key of ADAPTIVE_DEFAULT_ENV_KEYS) {
       expect(snapshot).not.toHaveProperty(key);
     }
@@ -128,7 +129,7 @@ describe("buildRegistryEnvSnapshot", () => {
       userSetDeleteBatchSize: true,
       userSetDeleteConcurrency: true,
     };
-    const snapshot = buildRegistryEnvSnapshot(cfg);
+    const snapshot = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());
     expect(snapshot.EMBEDDING_TUNE_BATCH_SIZE).toBe("1024");
     expect(snapshot.INGEST_CHUNK_SIZE).toBe("2500");
     expect(snapshot.QDRANT_TUNE_DELETE_BATCH_SIZE).toBe("500");
@@ -136,7 +137,7 @@ describe("buildRegistryEnvSnapshot", () => {
   });
 
   it("omits optional no-default keys while unset, includes them when set", () => {
-    const bare = buildRegistryEnvSnapshot(bareConfig());
+    const bare = buildRegistryEnvSnapshot(bareConfig(), resolveDomainEnvCodeDefaults());
     for (const key of [
       "EMBEDDING_DIMENSIONS",
       "EMBEDDING_TUNE_MIN_BATCH_SIZE",
@@ -158,7 +159,7 @@ describe("buildRegistryEnvSnapshot", () => {
     cfg.ingest = ingestSchema.parse({ testPaths: "spec/,test/", tune: {} });
     cfg.codegraph = codegraphSchema.parse({ dbPath: "/tmp/cg", customExcludePatterns: "vendor/**,generated/**" });
     cfg.qdrantTune = qdrantTuneSchema.parse({ maxResidentMemoryPercent: "80", searchMaxBatchsize: "64" });
-    const set = buildRegistryEnvSnapshot(cfg);
+    const set = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());
     expect(set.EMBEDDING_DIMENSIONS).toBe("768");
     expect(set.EMBEDDING_TUNE_MIN_BATCH_SIZE).toBe("8");
     expect(set.EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE).toBe("600");
@@ -175,7 +176,7 @@ describe("buildRegistryEnvSnapshot", () => {
     cfg.trajectoryGit = trajectoryGitSchema.parse({ chunkConcurrency: "20", enabled: "false" });
     cfg.ingest = ingestSchema.parse({ enableHybrid: "false", tune: { pipelineConcurrency: "8" } });
     cfg.codegraph = codegraphSchema.parse({ ambiguousResolveMode: "first" });
-    const snapshot = buildRegistryEnvSnapshot(cfg);
+    const snapshot = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());
     expect(snapshot.GIT_ADAPTER).toBe("es-git");
     expect(snapshot.TRAJECTORY_GIT_CHUNK_CONCURRENCY).toBe("20");
     expect(snapshot.TRAJECTORY_GIT_ENABLED).toBe("false");
@@ -204,7 +205,7 @@ describe("buildRegistryEnvSnapshot", () => {
     cfg.ingest = ingestSchema.parse({ testPaths: "spec/", tune: {} });
     cfg.codegraph = codegraphSchema.parse({ dbPath: "/tmp/cg", customExcludePatterns: "vendor/**" });
     cfg.qdrantTune = qdrantTuneSchema.parse({ maxResidentMemoryPercent: "80", searchMaxBatchsize: "64" });
-    const snapshot = buildRegistryEnvSnapshot(cfg);
+    const snapshot = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());
     const expected = REGISTRY_ENV_GROUPS.map((g) => g.canonical)
       .filter((key) => !DEDICATED_FIELD_ENV_KEYS.has(key))
       .sort();
@@ -212,7 +213,7 @@ describe("buildRegistryEnvSnapshot", () => {
   });
 
   it("emits only canonical keys — deprecated alias spellings never appear", () => {
-    const snapshot = buildRegistryEnvSnapshot(bareConfig());
+    const snapshot = buildRegistryEnvSnapshot(bareConfig(), resolveDomainEnvCodeDefaults());
     const aliases = new Set(REGISTRY_ENV_GROUPS.flatMap((g) => [...g.aliases]));
     for (const key of Object.keys(snapshot)) {
       expect(aliases.has(key)).toBe(false);
@@ -229,7 +230,7 @@ describe("INGEST_PIPELINE_CONCURRENCY through the registry", () => {
   const bareEnv = (): Record<string, string> => ({ HOME: "/tmp/tea-rags-env-snapshot-test" });
 
   it("an unset run pins nothing, so its replay stays unset", () => {
-    const pinned = buildPinnedRegistryEnvSnapshot(parseAppConfigZod(bareEnv()));
+    const pinned = buildPinnedRegistryEnvSnapshot(parseAppConfigZod(bareEnv()), resolveDomainEnvCodeDefaults());
     expect(pinned).not.toHaveProperty("INGEST_PIPELINE_CONCURRENCY");
 
     const env = bareEnv();
@@ -238,7 +239,10 @@ describe("INGEST_PIPELINE_CONCURRENCY through the registry", () => {
   });
 
   it("an explicit run pins its value under the canonical key, and the replay stays explicit", () => {
-    const pinned = buildPinnedRegistryEnvSnapshot(parseAppConfigZod({ ...bareEnv(), EMBEDDING_CONCURRENCY: "1" }));
+    const pinned = buildPinnedRegistryEnvSnapshot(
+      parseAppConfigZod({ ...bareEnv(), EMBEDDING_CONCURRENCY: "1" }),
+      resolveDomainEnvCodeDefaults(),
+    );
     expect(pinned).toMatchObject({ INGEST_PIPELINE_CONCURRENCY: "1" });
 
     const env = bareEnv();
@@ -249,6 +253,8 @@ describe("INGEST_PIPELINE_CONCURRENCY through the registry", () => {
   });
 
   it("keeps the code default '1' in the default snapshot, so the env-pin migration drops pre-h4l6k frozen pins", () => {
-    expect(resolveRegistryEnvCodeDefaults(bareEnv())).toMatchObject({ INGEST_PIPELINE_CONCURRENCY: "1" });
+    expect(resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults(), bareEnv())).toMatchObject({
+      INGEST_PIPELINE_CONCURRENCY: "1",
+    });
   });
 });

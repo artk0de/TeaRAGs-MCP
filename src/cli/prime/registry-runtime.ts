@@ -19,13 +19,17 @@ import {
   RegistryQdrantBackendUnresolvedError,
   replayableRegistryEnv,
   replayRegistryEnv,
+  resolveDomainEnvCodeDefaults,
   resolveRegistryQdrantBackend,
 } from "../../core/api/index.js";
 import { resolveDataDir, type PrimeRegistryRuntime } from "./run-prime.js";
 
 export function primeRegistryRuntime(): PrimeRegistryRuntime {
   return {
-    openRegistry: () => new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults }),
+    openRegistry: () =>
+      new CollectionRegistry(resolveDataDir(), {
+        envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+      }),
     createFreshness: () => new IndexFreshnessCheck(),
     // The entry's backend is `resolveRegistryQdrantBackend`'s call, not a local
     // reading of `qdrantUrl` — see `run-prime.ts`'s lookup docs (bd
