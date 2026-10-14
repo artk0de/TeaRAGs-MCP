@@ -1162,6 +1162,12 @@ export interface LeakingAbstractionReportSummary {
      * `deFactoSurfaces`), not reported as violations. Counts edges.
      */
     deFactoSurfaceEdges: number;
+    /**
+     * Internal-reach edges into exactly the entry file of a directory that
+     * declares its own entry inside the module — the inner module's facade
+     * edges, not reported as violations of the outer one. Counts edges.
+     */
+    nestedEntryEdges: number;
   };
   /** Children measured as de-facto second surfaces of their module, lowest p first; capped at `limit`. */
   deFactoSurfaces: FacadeDeFactoSurface[];

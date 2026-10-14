@@ -697,7 +697,9 @@ Reasons verbatim in `exclusionReasons`. Report them as "not judged", never as
 `summary.leakingAbstraction.excludedModules` — first three count modules NOT
 judged; `intraParentConsumers` counts excluded importer pairs;
 `deFactoSurfaceEdges` counts internal-reach edges spared because target child is
-measured de-facto surface. Surfaces listed in
+measured de-facto surface; `nestedEntryEdges` counts internal-reach edges into
+exactly entry file of dir declaring own entry inside module — inner module's
+facade edge, not outer leak (bypass still reported). Surfaces listed in
 `summary.leakingAbstraction.deFactoSurfaces`
 (`moduleDir, child, directImporterCount, backgroundRate, pValue`): child (first
 path segment under module) importers reach directly far above module's

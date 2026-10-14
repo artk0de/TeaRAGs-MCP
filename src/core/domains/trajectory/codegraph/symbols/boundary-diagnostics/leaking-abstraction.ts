@@ -126,6 +126,12 @@ interface ModuleCandidate {
  * {@link classifyFacadeLeak}: by the export names both edges carry when they
  * do, by whether the entry file has an edge to `x` at all otherwise.
  *
+ * An edge into exactly the entry file of a directory that declares its own
+ * entry strictly inside the module is that inner module's facade edge (bd
+ * tea-rags-mcp-n8shz): not a violation of the outer module and no deep
+ * importer in its adoption, counted in `summary.excludedModules.nestedEntryEdges`
+ * ({@link isNestedEntryFacadeEdge}). A bypass into it stays a violation.
+ *
  * A module may have a SECOND surface its importers adopted beside the facade —
  * a child they reach directly far above the module's background deep-import
  * rate ({@link measureDeFactoSurfaces}, bd tea-rags-mcp-r8hme.52.16). An
@@ -165,6 +171,7 @@ export function detectLeakingAbstractions(
         intraParentConsumerKeys.add(edgeKey(module.moduleDir, edge.sourceRelPath));
         continue;
       }
+      if (isNestedEntryFacadeEdge(edge, module, candidates, edgesByKey)) continue;
       const deep = !module.entries.has(edge.targetRelPath);
       module.importers.set(edge.sourceRelPath, (module.importers.get(edge.sourceRelPath) ?? false) || deep);
     }
@@ -179,7 +186,7 @@ export function detectLeakingAbstractions(
     assessments.set(m.moduleDir, { ...m, status });
   }
 
-  const deFactoSurfaces = measureDeFactoSurfaces(graph, candidates, assessments);
+  const deFactoSurfaces = measureDeFactoSurfaces(graph, candidates, assessments, edgesByKey);
   const rule: FacadeLeakRule = {
     candidates,
     assessments,
@@ -190,15 +197,17 @@ export function detectLeakingAbstractions(
   const violations: FacadeLeakViolation[] = [];
   let judgedEdgeCount = 0;
   let deFactoSurfaceEdges = 0;
+  let nestedEntryEdges = 0;
   for (const edge of graph.edges) {
     if (scope && inScope && !inScope(edge.sourceRelPath)) {
       scope.outOfScopeEdgeCount++;
       continue;
     }
     if (edge.sourceRelPath === edge.targetRelPath) continue;
-    const { judged, leak, spared } = judgeFacadeLeak(edge, rule);
+    const { judged, leak, spared, nestedEntry } = judgeFacadeLeak(edge, rule);
     if (judged) judgedEdgeCount++;
     if (spared) deFactoSurfaceEdges++;
+    if (nestedEntry) nestedEntryEdges++;
     if (!leak) continue;
     const { owner, classification } = leak;
     const { module, assessment } = owner;
@@ -244,6 +253,7 @@ export function detectLeakingAbstractions(
         languageEnforced: countStatus("language-enforced"),
         intraParentConsumers: intraParentConsumerKeys.size,
         deFactoSurfaceEdges,
+        nestedEntryEdges,
       },
       deFactoSurfaces,
       ...(scope ? { scope } : {}),
@@ -261,13 +271,16 @@ interface FacadeLeakOwner {
  * Whether `edge` is judged by some active module, and the module it leaks
  * past: innermost first, the first active module whose non-entry file the edge
  * reaches from outside its parent component owns it. An edge into an inner
- * module's entry is judged there and may still leak past an outer one.
+ * module's entry is that inner module's facade edge and leaks past no outer
+ * one ({@link isNestedEntryFacadeEdge}) — `nestedEntry`, unless the outer
+ * facade already exposes it (a bypass).
  */
 function judgeFacadeEdge(
   edge: FileDependencyEdge,
   candidates: Map<string, ModuleCandidate>,
   assessments: ReadonlyMap<string, FacadeModuleAssessment>,
-): { judged: boolean; owner?: FacadeLeakOwner } {
+  edgesByKey: ReadonlyMap<string, FileDependencyEdge>,
+): { judged: boolean; nestedEntry: boolean; owner?: FacadeLeakOwner } {
   let judged = false;
   for (const module of enclosingModules(candidates, edge.targetRelPath)) {
     const assessment = assessments.get(module.moduleDir);
@@ -277,9 +290,32 @@ function judgeFacadeEdge(
     if (isIntraParentConsumer(edge.sourceRelPath, module.moduleDir, candidates)) continue;
     judged = true;
     if (module.entries.has(edge.targetRelPath)) continue;
-    return { judged, owner: { module, assessment } };
+    if (isNestedEntryFacadeEdge(edge, module, candidates, edgesByKey)) return { judged, nestedEntry: true };
+    return { judged, nestedEntry: false, owner: { module, assessment } };
   }
-  return { judged };
+  return { judged, nestedEntry: false };
+}
+
+/**
+ * `edge` targets exactly the entry file of a directory that declares its own
+ * entry and lies strictly inside `module` (bd tea-rags-mcp-n8shz): a DECLARED
+ * surface — the same declaration {@link isIntraParentConsumer} honours — so
+ * the edge is that inner module's facade edge, judged there or not at all
+ * (an inner module with too few importers is not judged), never an internal
+ * reach of `module`. A bypass stays: when {@link classifyFacadeLeak} says
+ * `module`'s facade already exposes what the edge takes, the importer walked
+ * past an outer surface that offers it — the de-facto surface rule draws the
+ * same line.
+ */
+function isNestedEntryFacadeEdge(
+  edge: FileDependencyEdge,
+  module: ModuleCandidate,
+  candidates: ReadonlyMap<string, ModuleCandidate>,
+  edgesByKey: ReadonlyMap<string, FileDependencyEdge>,
+): boolean {
+  const declaring = candidates.get(directoryOf(edge.targetRelPath));
+  if (declaring === undefined || declaring === module || !declaring.entries.has(edge.targetRelPath)) return false;
+  return classifyFacadeLeak(edge, module.entries, edgesByKey).kind === "internal-reach";
 }
 
 /** What the facade-leak rule reads beside the edge: the modules, their statuses, the graph's edges and de-facto surfaces. */
@@ -303,18 +339,23 @@ interface FacadeLeakRule {
 function judgeFacadeLeak(
   edge: FileDependencyEdge,
   rule: FacadeLeakRule,
-): { judged: boolean; spared: boolean; leak?: { owner: FacadeLeakOwner; classification: FacadeLeakClassification } } {
-  const { judged, owner } = judgeFacadeEdge(edge, rule.candidates, rule.assessments);
-  if (!owner) return { judged, spared: false };
+): {
+  judged: boolean;
+  spared: boolean;
+  nestedEntry: boolean;
+  leak?: { owner: FacadeLeakOwner; classification: FacadeLeakClassification };
+} {
+  const { judged, nestedEntry, owner } = judgeFacadeEdge(edge, rule.candidates, rule.assessments, rule.edgesByKey);
+  if (!owner) return { judged, spared: false, nestedEntry };
   const { moduleDir } = owner.module;
   const classification = classifyFacadeLeak(edge, owner.module.entries, rule.edgesByKey);
   if (
     classification.kind === "internal-reach" &&
     rule.surfaceKeys.has(edgeKey(moduleDir, childSegment(moduleDir, edge.targetRelPath)))
   ) {
-    return { judged, spared: true };
+    return { judged, spared: true, nestedEntry };
   }
-  return { judged, spared: false, leak: { owner, classification } };
+  return { judged, spared: false, nestedEntry, leak: { owner, classification } };
 }
 
 /**
@@ -394,12 +435,13 @@ function measureDeFactoSurfaces(
   graph: FileDependencyGraph,
   candidates: Map<string, ModuleCandidate>,
   assessments: ReadonlyMap<string, FacadeModuleAssessment>,
+  edgesByKey: ReadonlyMap<string, FileDependencyEdge>,
 ): FacadeDeFactoSurface[] {
   const childImporters = new Map<string, Map<string, Set<RelPath>>>();
   const importerChildren = new Map<string, Map<RelPath, Set<string>>>();
   for (const edge of graph.edges) {
     if (edge.sourceRelPath === edge.targetRelPath) continue;
-    const { owner } = judgeFacadeEdge(edge, candidates, assessments);
+    const { owner } = judgeFacadeEdge(edge, candidates, assessments, edgesByKey);
     if (!owner) continue;
     const { moduleDir } = owner.module;
     const child = childSegment(moduleDir, edge.targetRelPath);
