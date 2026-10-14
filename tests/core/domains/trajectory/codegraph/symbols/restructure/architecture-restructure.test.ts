@@ -310,9 +310,37 @@ describe("applyArchitectureRestructure — edge edits", () => {
       { addEdge: { from: "core/a.ts", to: "contracts/port.ts" } },
     ]);
     const added = relabelled.production.graph.files.find((f) => f.relPath === "contracts/port.ts");
-    expect(added).toEqual({ relPath: "contracts/port.ts", language: "typescript", symbolCount: 1 });
+    expect(added).toEqual({
+      relPath: "contracts/port.ts",
+      language: "typescript",
+      symbolCount: 1,
+      typeAbstractness: { abstractTypeCount: 0, concreteTypeCount: 1 },
+    });
     expect(relabelled.production.graph.edges.filter((e) => e.targetRelPath === "contracts/port.ts")).toEqual([
       { sourceRelPath: "core/a.ts", targetRelPath: "contracts/port.ts", callWeight: 1 },
+    ]);
+  });
+
+  it("an abstract added file carries an all-abstract census, the reading main sequence and the foundation take", () => {
+    const { relabelled } = applied([
+      { addFile: { file: "contracts/port.ts", abstract: true } },
+      { addFile: { file: "contracts/impl.ts", abstract: false } },
+    ]);
+    const censusOf = (relPath: string) =>
+      relabelled.production.graph.files.find((f) => f.relPath === relPath)?.typeAbstractness;
+    expect(censusOf("contracts/port.ts")).toEqual({ abstractTypeCount: 1, concreteTypeCount: 0 });
+    expect(censusOf("contracts/impl.ts")).toEqual({ abstractTypeCount: 0, concreteTypeCount: 1 });
+  });
+
+  it("compiles the abstract flag into the added-file edit", () => {
+    const result = compileArchitectureRestructure(
+      [{ addFile: { file: "contracts/port.ts", abstract: true } }, { addFile: { file: "contracts/impl.ts" } }],
+      partition(),
+    );
+    if (result.kind !== "compiled") throw new Error(`expected compiled, got ${result.kind}`);
+    expect(result.relabel.edgeEdits.addedFiles).toEqual([
+      { relPath: "contracts/port.ts", abstract: true },
+      { relPath: "contracts/impl.ts" },
     ]);
   });
 

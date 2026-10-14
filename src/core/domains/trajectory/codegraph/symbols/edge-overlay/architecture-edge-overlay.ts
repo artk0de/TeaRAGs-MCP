@@ -12,6 +12,7 @@ import type { ReviewFileEdge } from "../../../../../contracts/types/codegraph-st
 import type { FileDependencyEdge, FileDependencyGraphFile, RelPath } from "../../../../../contracts/types/codegraph.js";
 import type { PathFilter } from "../../../../../primitives/paths/index.js";
 import type { ProductionDependencyGraph } from "../boundary-diagnostics/index.js";
+import { architectureRestructureEdgeKey } from "../restructure/index.js";
 
 /**
  * The facts an edge overlay CANNOT refresh for its files — they keep the
@@ -128,7 +129,9 @@ export function applyEdgeOverlay<Facts extends ArchitectureEdgeOverlayTargetFact
   const { graph, nonProduction } = facts.production;
   const indexedByPair = new Map<string, FileDependencyEdge>();
   for (const edge of graph.edges) {
-    if (refreshedFiles.has(edge.sourceRelPath)) indexedByPair.set(edgePairKey(edge), edge);
+    if (refreshedFiles.has(edge.sourceRelPath)) {
+      indexedByPair.set(architectureRestructureEdgeKey(edge.sourceRelPath, edge.targetRelPath), edge);
+    }
   }
   // The tree's edges by the overlay's one rule (`ReviewEdgeOverlay#treeEdgesFrom`):
   // an indexed edge comes back tagged with its row, an overlay edge bare.
@@ -148,7 +151,12 @@ export function applyEdgeOverlay<Facts extends ArchitectureEdgeOverlayTargetFact
         continue;
       }
       if (nonProduction.ignores(edge.sourceRelPath) || nonProduction.ignores(edge.targetRelPath)) continue;
-      overlaidEdges.push(overlayFileDependencyEdge(edge, indexedByPair.get(edgePairKey(edge))));
+      overlaidEdges.push(
+        overlayFileDependencyEdge(
+          edge,
+          indexedByPair.get(architectureRestructureEdgeKey(edge.sourceRelPath, edge.targetRelPath)),
+        ),
+      );
     }
   }
   const files = treeFileNodes(graph.files, overlay.deleted, options.renamedFrom);
@@ -178,10 +186,6 @@ function treeFileNodes(
     if (file !== undefined && !byPath.has(newPath)) movedFiles.push({ ...file, relPath: newPath });
   }
   return [...files.filter((file) => !deleted.has(file.relPath)), ...movedFiles];
-}
-
-function edgePairKey(edge: { sourceRelPath: string; targetRelPath: string }): string {
-  return `${edge.sourceRelPath}\u0000${edge.targetRelPath}`;
 }
 
 /** One overlay edge as a file-graph edge: export names are the tree's, call weight and import text the index's. */

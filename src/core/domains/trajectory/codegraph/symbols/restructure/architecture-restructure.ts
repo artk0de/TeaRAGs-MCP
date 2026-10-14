@@ -63,7 +63,8 @@ export interface ArchitectureRestructureRelabel {
 
 /** What the edge ops of one hypothesis add to and drop from the file dependency graph, on base paths. */
 export interface ArchitectureRestructureEdgeEdits {
-  addedFiles: { relPath: RelPath; component?: string }[];
+  /** `abstract`: the file declares one abstract type (an extracted interface), else one concrete type. */
+  addedFiles: { relPath: RelPath; component?: string; abstract?: true }[];
   addedEdges: { from: RelPath; to: RelPath }[];
   /** {@link architectureRestructureEdgeKey} of every dropped file pair. */
   removedEdges: ReadonlySet<string>;
@@ -194,8 +195,10 @@ export function applyArchitectureRestructure<Facts extends ArchitectureRestructu
 /**
  * The base graph with the edge edits applied on base paths: every edge of a
  * removed pair dropped (all its call sites), one file record per added file
- * (the language a graph file of the same extension carries, one symbol, no
- * heritage), one edge of call weight 1 per added edge.
+ * (the language a graph file of the same extension carries, one symbol, one
+ * type — abstract when the op says so, else concrete — and no heritage), one
+ * edge of call weight 1 per added edge. The census is what the main-sequence
+ * and layering-foundation measurements read abstractness from.
  */
 function applyArchitectureRestructureEdgeEdits(
   graph: FileDependencyGraph,
@@ -207,10 +210,13 @@ function applyArchitectureRestructureEdgeEdits(
   return {
     files: [
       ...graph.files,
-      ...addedFiles.map(({ relPath }) => ({
+      ...addedFiles.map(({ relPath, abstract }) => ({
         relPath,
         language: languageByExtension.get(extensionOf(relPath)) ?? "",
         symbolCount: 1,
+        typeAbstractness: abstract
+          ? { abstractTypeCount: 1, concreteTypeCount: 0 }
+          : { abstractTypeCount: 0, concreteTypeCount: 1 },
       })),
     ],
     edges: [
@@ -247,7 +253,7 @@ class RestructureCompiler {
     if ("move" in op) return this.move(op.move.files, op.move.toComponent, opIndex);
     if ("merge" in op) return this.merge(op.merge.components, opIndex);
     if ("split" in op) return this.split(op.split.component, op.split.groups, opIndex);
-    if ("addFile" in op) return this.addFile(op.addFile.file, op.addFile.component, opIndex);
+    if ("addFile" in op) return this.addFile(op.addFile, opIndex);
     if ("addEdge" in op) return this.addEdge(op.addEdge.from, op.addEdge.to, opIndex);
     return this.removeEdge(op.removeEdge.from, op.removeEdge.to, opIndex);
   }
@@ -261,8 +267,7 @@ class RestructureCompiler {
   }
 
   private addFile(
-    relPath: RelPath,
-    component: string | undefined,
+    { file: relPath, component, abstract }: { file: RelPath; component?: string; abstract?: boolean },
     opIndex: number,
   ): ArchitectureRestructureCompiledOp | CompileFailure {
     if (this.isKnownBasePath(relPath)) return invalid(opIndex, `${relPath} already exists`);
@@ -271,11 +276,12 @@ class RestructureCompiler {
     }
     this.addedRelPaths.add(relPath);
     this.occupiedRelPaths.add(relPath);
-    if (component === undefined) {
-      this.addedFiles.push({ relPath });
-      return { op: "addFile", relabelledFiles: 0, components: [], file: relPath };
-    }
-    this.addedFiles.push({ relPath, component });
+    this.addedFiles.push({
+      relPath,
+      ...(component !== undefined ? { component } : {}),
+      ...(abstract === true ? { abstract } : {}),
+    });
+    if (component === undefined) return { op: "addFile", relabelledFiles: 0, components: [], file: relPath };
     this.componentOf.set(relPath, component);
     return { op: "addFile", relabelledFiles: 0, components: [component], file: relPath };
   }

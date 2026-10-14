@@ -2111,7 +2111,8 @@ export interface GetArchitectureReportResponse {
  *
  * Edge ops (bd tea-rags-mcp-cm9gt.1) model a code remedy that changes edges,
  * not file homes, on BASE paths: `addFile` adds a file that does not exist yet
- * (pinned to `component` when given, else derived from its path), `addEdge`
+ * (pinned to `component` when given, else derived from its path; one type,
+ * abstract when `abstract` — an extracted interface — else concrete), `addEdge`
  * adds a file edge of call weight 1, `removeEdge` drops every edge of a file
  * pair. They move structural detectors only; co-change reads history.
  */
@@ -2119,7 +2120,7 @@ export type ArchitectureRestructureOp =
   | { move: { files: RelPath[]; toComponent: string } }
   | { merge: { components: string[] } }
   | { split: { component: string; groups: RelPath[][] } }
-  | { addFile: { file: RelPath; component?: string } }
+  | { addFile: { file: RelPath; component?: string; abstract?: boolean } }
   | { addEdge: { from: RelPath; to: RelPath } }
   | { removeEdge: { from: RelPath; to: RelPath } };
 

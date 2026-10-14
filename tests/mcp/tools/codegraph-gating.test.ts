@@ -378,6 +378,9 @@ describe("get_architecture_report", () => {
     expect(parse([{ addFile: { file: "src/a/port.ts", component: "src/a" } }])).toBe(true);
     expect(parse([{ addEdge: { from: "src/a.ts", to: "src/b.ts" } }])).toBe(true);
     expect(parse([{ removeEdge: { from: "src/a.ts", to: "src/b.ts" } }])).toBe(true);
+    expect(parse([{ addFile: { file: "src/contracts/port.ts", abstract: true } }])).toBe(true);
+    expect(config.description).toMatch(/addFile\{file,component\?,abstract\?\}/);
+    expect(parse([{ addFile: { file: "src/contracts/port.ts", abstract: "yes" } }])).toBe(false);
     expect(parse([{ addFile: { file: "" } }])).toBe(false);
     expect(parse([{ addEdge: { from: "src/a.ts" } }])).toBe(false);
     expect(parse([{ removeEdge: { from: "", to: "src/b.ts" } }])).toBe(false);

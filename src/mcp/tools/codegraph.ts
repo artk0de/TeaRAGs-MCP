@@ -183,7 +183,13 @@ const GetArchitectureReportInputShape = {
         z.object({
           split: z.object({ component: z.string(), groups: z.array(z.array(z.string().min(1)).min(1)).min(1) }),
         }),
-        z.object({ addFile: z.object({ file: z.string().min(1), component: z.string().optional() }) }),
+        z.object({
+          addFile: z.object({
+            file: z.string().min(1),
+            component: z.string().optional(),
+            abstract: z.boolean().optional(),
+          }),
+        }),
         z.object({ addEdge: z.object({ from: z.string().min(1), to: z.string().min(1) }) }),
         z.object({ removeEdge: z.object({ from: z.string().min(1), to: z.string().min(1) }) }),
       ]),
@@ -547,7 +553,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "noCodegraph); exclusionsUnchecked = classes no call data can check yet. restructure mode: what-if " +
       "move{files,toComponent} | merge{components; later fold into first} | split{component,groups} vs current " +
       "partition; full detectors on base vs relabelled facts, delta by violation key: introduced/resolved subjects, " +
-      "counts, net, byFamily. Edge ops addFile{file,component?} | addEdge{from,to} | removeEdge{from,to} (base " +
+      "counts, net, byFamily. Edge ops addFile{file,component?,abstract?} | addEdge{from,to} | removeEdge{from,to} (base " +
       "paths) move structural detectors only; co-change detectors read history and do not respond. One hypothesis " +
       "per call — rank remedies one call each.",
     schemaKey: "get_architecture_report",
