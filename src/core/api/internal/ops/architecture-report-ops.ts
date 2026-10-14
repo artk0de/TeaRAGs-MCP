@@ -528,6 +528,7 @@ export class ArchitectureReportOps {
           excludedFileCount: 0,
           excludedEdgeCount: 0,
           testOnlyDependencyCount: 0,
+          developmentRootCount: 0,
           reason: TEST_SUPPORT_REASON,
         },
         impactTiers: {
