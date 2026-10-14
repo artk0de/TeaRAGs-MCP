@@ -11,6 +11,7 @@ import type { TypeNameRow } from "../../../../../src/core/contracts/types/codegr
 import {
   buildDependencyNormFilePrimaryTypes,
   buildDependencyNormFileRoles,
+  buildDependencyNormFileSuperclassFiles,
 } from "../../../../../src/core/domains/explore/naming-lexicon/file-roles.js";
 import type { TypeRoleAssignment } from "../../../../../src/core/domains/explore/naming-lexicon/type-roles.js";
 
@@ -255,6 +256,51 @@ describe("buildDependencyNormFilePrimaryTypes (xb669.6)", () => {
       row("s2", "app/lib/ai/adapters/base_adapter.rb", "RateLimitError"),
     ];
     expect(buildDependencyNormFilePrimaryTypes(rows).get("app/lib/ai/adapters/base_adapter.rb")).toBe("BaseAdapter");
+  });
+});
+
+/**
+ * The inheritance exclusion's input (bd tea-rags-mcp-ptkwf): for each file,
+ * the files whose PRIMARY type is its primary's declared superclass — resolved
+ * against the subclass's namespace the way the role families resolve it
+ * (9okcg), never matched by last segment.
+ */
+describe("buildDependencyNormFileSuperclassFiles (ptkwf)", () => {
+  const declaredClass = (relPath: string, symbolId: string, superclass?: string): TypeNameRow => ({
+    symbolId,
+    relPath,
+    shortName: symbolId.slice(symbolId.lastIndexOf("::") + 2),
+    symbolKind: "class",
+    ancestors: superclass === undefined ? [] : [superclass],
+    ...(superclass === undefined ? {} : { superclass }),
+  });
+
+  it("maps a subclass file to the file its resolved superclass is the primary of, never a namesake's", () => {
+    const rows = [
+      declaredClass("app/models/inbox/notification.rb", "Inbox::Notification", "ApplicationRecord"),
+      declaredClass("app/models/notification.rb", "Notification", "ApplicationRecord"),
+      declaredClass("app/models/inbox/new_mention_notification.rb", "Inbox::NewMentionNotification", "Notification"),
+      declaredClass("app/models/digest_notification.rb", "DigestNotification", "Notification"),
+    ];
+    const superclassFiles = buildDependencyNormFileSuperclassFiles(rows);
+
+    expect(superclassFiles.get("app/models/inbox/new_mention_notification.rb")).toEqual(
+      new Set(["app/models/inbox/notification.rb"]),
+    );
+    expect(superclassFiles.get("app/models/digest_notification.rb")).toEqual(new Set(["app/models/notification.rb"]));
+  });
+
+  it("has no entry for a superclass outside the project or a file whose primary names none", () => {
+    const rows = [
+      declaredClass("app/models/application_record.rb", "ApplicationRecord", "ActiveRecord::Base"),
+      declaredClass("app/lib/base.rb", "Base"),
+      declaredClass("app/models/user.rb", "User", "ApplicationRecord"),
+    ];
+    const superclassFiles = buildDependencyNormFileSuperclassFiles(rows);
+
+    expect(superclassFiles.has("app/models/application_record.rb")).toBe(false);
+    expect(superclassFiles.has("app/lib/base.rb")).toBe(false);
+    expect(superclassFiles.get("app/models/user.rb")).toEqual(new Set(["app/models/application_record.rb"]));
   });
 });
 
@@ -529,5 +575,134 @@ describe("buildDependencyNormFileRoles — ancestor-confirmed conventional direc
       expect(roles.get(relPath), relPath).toEqual({ role: "migration", strong: true });
     }
     expect(roles.get("src/maintenance/migration/schema-migrator.ts")?.role).toBe("migrator");
+  });
+});
+
+describe("buildDependencyNormFileRoles — a written supertype resolves against its writer's namespace (9okcg)", () => {
+  /** A class declared under its full `symbolId`, its superclass written as the source spells it. */
+  function nested(relPath: string, symbolId: string, superclass?: string): TypeNameRow {
+    const shortName = symbolId.slice(symbolId.lastIndexOf("::") + 2);
+    return {
+      symbolId,
+      relPath,
+      shortName,
+      symbolKind: "class",
+      ancestors: superclass === undefined ? [] : [superclass],
+      ...(superclass === undefined ? {} : { superclass }),
+    };
+  }
+  const pathOf = (symbolId: string) => `lib/${symbolId.toLowerCase().replaceAll("::", "/")}.rb`;
+  const at = (symbolId: string, superclass?: string) => nested(pathOf(symbolId), symbolId, superclass);
+
+  it("never lets a same-named base in another namespace lend its superclass to unrelated families", () => {
+    const rows = [
+      at("Results::Base", "Ext::Value"),
+      at("Money", "Ext::Value"),
+      at("Period", "Ext::Value"),
+      at("Address", "Ext::Value"),
+      // Two small, unrelated `Base` families — neither declares a superclass.
+      at("Seed::Base"),
+      at("Seed::TaskSeed", "Seed::Base"),
+      at("Seed::StageLoader", "Seed::Base"),
+      at("Admin::Base"),
+      at("Admin::RefundAction", "Admin::Base"),
+      at("Admin::AuditPage", "Admin::Base"),
+    ];
+    const roles = buildDependencyNormFileRoles(rows, []);
+
+    for (const symbolId of ["Money", "Period", "Address"]) {
+      expect(roles.get(pathOf(symbolId)), symbolId).toEqual({ role: "value", strong: true });
+    }
+    for (const symbolId of ["Seed::TaskSeed", "Seed::StageLoader", "Admin::RefundAction", "Admin::AuditPage"]) {
+      expect(roles.get(pathOf(symbolId))?.role, symbolId).not.toBe("value");
+    }
+  });
+
+  it("resolves a relative supertype through the writer's enclosing namespaces and keeps hopping", () => {
+    const rows = [
+      at("Billing::Handlers::Base", "Ext::Event"),
+      at("Billing::Handlers::AccessRestored", "Handlers::Base"),
+      at("Billing::Handlers::PlanChanged", "Handlers::Base"),
+      at("Signup", "Ext::Event"),
+      at("Payout", "Ext::Event"),
+    ];
+    const roles = buildDependencyNormFileRoles(rows, []);
+
+    for (const symbolId of ["Billing::Handlers::AccessRestored", "Billing::Handlers::PlanChanged"]) {
+      expect(roles.get(pathOf(symbolId)), symbolId).toEqual({ role: "event", strong: true });
+    }
+  });
+
+  it("takes the INNERMOST declaration of a written name, never a namesake further out", () => {
+    const rows = [
+      at("Shop::Orders::Base", "Ext::Inner"),
+      at("Shop::Orders::Checkout", "Base"),
+      at("Shop::Orders::Refund", "Base"),
+      at("Base", "Ext::Outer"),
+      at("Ledger", "Ext::Outer"),
+      at("Journal", "Ext::Outer"),
+      at("Account", "Ext::Outer"),
+    ];
+    const roles = buildDependencyNormFileRoles(rows, []);
+
+    for (const symbolId of ["Shop::Orders::Checkout", "Shop::Orders::Refund"]) {
+      expect(roles.get(pathOf(symbolId)), symbolId).toEqual({ role: "inner", strong: true });
+    }
+    for (const symbolId of ["Ledger", "Journal", "Account"]) {
+      expect(roles.get(pathOf(symbolId)), symbolId).toEqual({ role: "outer", strong: true });
+    }
+  });
+
+  it("treats a supertype no row declares as an external leaf: no hop through a same-named declared type", () => {
+    const rows = [
+      at("Lib::Base", "Ext::Wrong"),
+      at("Lib::Alpha", "Ext::Wrong"),
+      at("Lib::Beta", "Ext::Wrong"),
+      // `Vendor::Base` is no project type — the hop stops at it.
+      at("Sync::PushJob", "Vendor::Base"),
+      at("Sync::PullTask", "Vendor::Base"),
+    ];
+    const roles = buildDependencyNormFileRoles(rows, []);
+
+    for (const symbolId of ["Sync::PushJob", "Sync::PullTask"]) {
+      expect(roles.get(pathOf(symbolId))?.role, symbolId).not.toBe("wrong");
+    }
+  });
+
+  it("resolves each further hop against the type that WROTE it, not against the original row", () => {
+    const rows = [
+      at("Crm::Base", "Ext::Near"),
+      at("Crm::Mid", "Base"),
+      at("Reports::DailyDigest", "Crm::Mid"),
+      at("Pipe", "Ext::Near"),
+      at("Base", "Ext::Far"),
+      at("Tray", "Ext::Far"),
+      at("Shelf", "Ext::Far"),
+      at("Crate", "Ext::Far"),
+    ];
+    const roles = buildDependencyNormFileRoles(rows, []);
+
+    // `Crm::Mid` writes `Base` inside `Crm` — `Crm::Base`, whatever namespace the subclass sits in.
+    expect(roles.get(pathOf("Reports::DailyDigest"))).toEqual({ role: "near", strong: true });
+  });
+
+  it("never resolves a written supertype to its own writer: a namespaced base naming the outer one hops past itself", () => {
+    const rows = [
+      at("Model", "Ext::Rec"),
+      at("Invoice", "Ext::Rec"),
+      at("Payment", "Ext::Rec"),
+      // `class Risk::Model < Model` names the top-level `Model`, not itself.
+      at("Risk::Model", "Model"),
+      at("Risk::ScoreSnapshot", "Risk::Model"),
+    ];
+    const roles = buildDependencyNormFileRoles(rows, []);
+
+    expect(roles.get(pathOf("Risk::ScoreSnapshot"))).toEqual({ role: "rec", strong: true });
+  });
+
+  it("terminates on a supertype cycle the rows declare", () => {
+    const rows = [at("Loop::Left", "Right"), at("Loop::Right", "Left")];
+
+    expect(() => buildDependencyNormFileRoles(rows, [])).not.toThrow();
   });
 });

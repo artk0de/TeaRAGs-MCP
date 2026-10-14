@@ -269,7 +269,12 @@ export type NormsAddedEdgeVerdictKind = "CONFORMS" | "MISFIT" | "NEW_PATTERN" | 
  * edge. An added edge carries no call data, so a class the review could not
  * evaluate is listed on the row as `exclusionsUnchecked`.
  */
-export type NormsEdgeExclusionClass = "uncalled" | "frameworkRouted" | "constantReference" | "displacedRole";
+export type NormsEdgeExclusionClass =
+  | "inheritance"
+  | "uncalled"
+  | "frameworkRouted"
+  | "constantReference"
+  | "displacedRole";
 
 /**
  * Why an added edge is UNJUDGED: an endpoint absent from the indexed

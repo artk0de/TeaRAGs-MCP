@@ -36,8 +36,9 @@ import {
   LanguageFactory,
 } from "../../../../../../src/core/domains/language/index.js";
 
-// Overlay edges carry no call data or reference text: only displacedRole is evaluable.
-const ALL_EXCLUSIONS = ["uncalled", "frameworkRouted", "constantReference"];
+// Overlay edges carry no call data or reference text: only displacedRole is evaluable, and
+// inheritance once the check is handed the superclass files (these fixtures hand none).
+const ALL_EXCLUSIONS = ["inheritance", "uncalled", "frameworkRouted", "constantReference"];
 
 function file(relPath: RelPath, language = "typescript"): FileDependencyGraphFile {
   return { relPath, language, symbolCount: 1 };
@@ -207,9 +208,32 @@ describe("judgeAddedEdgeNorms", () => {
       expect.objectContaining({
         source: "src/controllers/c3.ts",
         verdict: "CONFORMS",
-        exclusionsUnchecked: ["uncalled", "frameworkRouted"],
+        exclusionsUnchecked: ["inheritance", "uncalled", "frameworkRouted"],
       }),
       expect.objectContaining({ source: "src/controllers/c1.ts", verdict: "UNJUDGED", reason: "constantReference" }),
+    ]);
+  });
+
+  it("reads a subclass's edge to its own superclass file as UNJUDGED inheritance, and stops listing the class unchecked", () => {
+    const { graph, fileRoles } = indexedFixture();
+    const fileSuperclassFiles = new Map([["src/services/s1.ts", new Set(["src/controllers/c2.ts"])]]);
+    const result = judgeAddedEdgeNorms({
+      addedEdges: [
+        { source: "src/services/s1.ts", target: "src/controllers/c2.ts" },
+        { source: "src/services/s3.ts", target: "src/controllers/c2.ts" },
+      ],
+      removedEdgeCount: 0,
+      indexedGraph: graph,
+      fileRoles,
+      exclusions: buildNormsEdgeExclusionCheck({ graph, fileRoles, fileSuperclassFiles }),
+    });
+    expect(result.addedEdgeVerdicts).toEqual([
+      expect.objectContaining({
+        source: "src/services/s3.ts",
+        verdict: "MISFIT",
+        exclusionsUnchecked: ["uncalled", "frameworkRouted", "constantReference"],
+      }),
+      expect.objectContaining({ source: "src/services/s1.ts", verdict: "UNJUDGED", reason: "inheritance" }),
     ]);
   });
 

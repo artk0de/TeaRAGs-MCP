@@ -13,12 +13,15 @@
  * does not hold has no role and its edges are UNJUDGED. Read-time only — no
  * index writes.
  *
- * Exclusions: the report never judges an edge whose evidence is a nested
- * constant, a call-less reference, a framework-routed call, or a displaced
- * role. The test is the report's own (`normEdgeExclusionResolver`), wired by
+ * Exclusions: the report never judges a subclass's edge to its own superclass
+ * file, nor an edge whose evidence is a nested constant, a call-less
+ * reference, a framework-routed call, or a displaced role. The test is the
+ * report's own (`normEdgeExclusionResolver`), wired by
  * {@link buildNormsEdgeExclusionCheck}. An overlay edge carries neither call
  * data nor the reference text, so `uncalled`, `frameworkRouted` and
- * `constantReference` are never evaluated here; only `displacedRole` is. Every
+ * `constantReference` are never evaluated here; `displacedRole` is, and
+ * `inheritance` is too, read off the same indexed type rows as the roles (a
+ * superclass the change itself adds is not seen until the next index). Every
  * class not evaluated is listed on each judged row as `exclusionsUnchecked`.
  */
 
@@ -29,6 +32,7 @@ import type { DependencyNormFileRole, FileDependencyGraph, RelPath } from "../..
 import {
   buildDependencyNormFilePrimaryTypes,
   buildDependencyNormFileRoles,
+  buildDependencyNormFileSuperclassFiles,
 } from "../../../../domains/explore/naming-lexicon/index.js";
 import {
   buildNormLedgers,
@@ -57,6 +61,7 @@ export const NORMS_VERDICT_CAP = 100;
 
 /** Every exclusion class the whole-repo norms report applies, in its evaluation order. */
 const NORMS_EXCLUSION_CLASSES: readonly NormsEdgeExclusionClass[] = [
+  "inheritance",
   "uncalled",
   "frameworkRouted",
   "constantReference",
@@ -84,19 +89,21 @@ export interface NormsEdgeExclusionCheck {
 /**
  * The exclusion check over the report's single definition. The edge handed to
  * the resolver is evidence-free (no `callWeight`, no `importText` — an overlay
- * edge has neither), so the resolver can only answer `displacedRole`, and that
- * is the only class this check claims to cover.
+ * edge has neither), so the resolver can only answer `inheritance` — claimed
+ * only when the input carries the superclass files — and `displacedRole`.
  */
 export function buildNormsEdgeExclusionCheck(input: DependencyNormsInput): NormsEdgeExclusionCheck {
   const exclusionOf = normEdgeExclusionResolver(input);
+  const classes: readonly NormsEdgeExclusionClass[] =
+    input.fileSuperclassFiles === undefined ? ["displacedRole"] : ["inheritance", "displacedRole"];
   return {
-    classes: ["displacedRole"],
+    classes,
     classify: ({ source, target }) => {
       const sourceRole = input.fileRoles.get(source);
       const targetRole = input.fileRoles.get(target);
       if (sourceRole === undefined || targetRole === undefined) return undefined;
-      const exclusion = exclusionOf({ targetRelPath: target }, sourceRole, targetRole);
-      return exclusion === "displacedRole" ? exclusion : undefined;
+      const exclusion = exclusionOf({ sourceRelPath: source, targetRelPath: target }, sourceRole, targetRole);
+      return exclusion === "inheritance" || exclusion === "displacedRole" ? exclusion : undefined;
     },
   };
 }
@@ -108,6 +115,8 @@ export interface AddedEdgeNormsInput {
   indexedGraph: FileDependencyGraph;
   fileRoles: ReadonlyMap<RelPath, DependencyNormFileRole>;
   filePrimaryTypes?: ReadonlyMap<RelPath, string>;
+  /** Each file's superclass files — the ledgers drop inheritance edges, as the report's do. */
+  fileSuperclassFiles?: ReadonlyMap<RelPath, ReadonlySet<RelPath>>;
   /** Non-production paths (tests, tooling) — an edge touching one is counted, not judged. */
   isNonProduction?: (relPath: string) => boolean;
   exclusions?: NormsEdgeExclusionCheck;
@@ -125,6 +134,7 @@ export function judgeAddedEdgeNorms(input: AddedEdgeNormsInput): NormsSectionRes
     graph: indexedGraph,
     fileRoles,
     ...(input.filePrimaryTypes !== undefined ? { filePrimaryTypes: input.filePrimaryTypes } : {}),
+    ...(input.fileSuperclassFiles !== undefined ? { fileSuperclassFiles: input.fileSuperclassFiles } : {}),
   });
   const languageOf = new Map(indexedGraph.files.map((f) => [f.relPath, f.language]));
   const checked = new Set(exclusions?.classes ?? []);
@@ -237,13 +247,15 @@ export const normsSectionProvider: ReviewSectionProvider = {
     };
     const deletedFiles = [...scope.touchedFiles].filter((relPath) => !existsSync(join(scope.workTree, relPath)));
     const fileRoles = buildDependencyNormFileRoles(typeNameRows);
+    const fileSuperclassFiles = buildDependencyNormFileSuperclassFiles(typeNameRows);
     const result = judgeAddedEdgeNorms({
       addedEdges: diffAddedEdges(scope.files, overlay, ports),
       removedEdgeCount: diffRemovedEdgeCount(scope.files, overlay, { ...ports, deletedFiles }),
       indexedGraph: production.graph,
       fileRoles,
       filePrimaryTypes: buildDependencyNormFilePrimaryTypes(typeNameRows),
-      exclusions: buildNormsEdgeExclusionCheck({ graph: production.graph, fileRoles }),
+      fileSuperclassFiles,
+      exclusions: buildNormsEdgeExclusionCheck({ graph: production.graph, fileRoles, fileSuperclassFiles }),
       isNonProduction: (relPath) => production.nonProduction.ignores(relPath),
     });
     const notJudged: ReviewSectionNotJudgedEntry[] = overlay.unsupported().map((skip) => ({

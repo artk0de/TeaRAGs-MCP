@@ -18,6 +18,7 @@ import type { RelPath } from "../../../contracts/types/codegraph.js";
 import {
   buildDependencyNormFilePrimaryTypes,
   buildDependencyNormFileRoles,
+  buildDependencyNormFileSuperclassFiles,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import {
   judgePlannedFileEdges,
@@ -73,6 +74,7 @@ export class ArchitecturePlannedEdgeOps {
         graph: production.graph,
         fileRoles: buildDependencyNormFileRoles(rows),
         filePrimaryTypes: buildDependencyNormFilePrimaryTypes(rows),
+        fileSuperclassFiles: buildDependencyNormFileSuperclassFiles(rows),
         componentOf: components.componentOf,
       },
       planned.map((edge) => ({

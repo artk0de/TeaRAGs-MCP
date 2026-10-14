@@ -26,6 +26,7 @@ import type {
 import {
   buildDependencyNormFilePrimaryTypes,
   buildDependencyNormFileRoles,
+  buildDependencyNormFileSuperclassFiles,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import {
   buildComponentGraph,
@@ -1061,6 +1062,7 @@ function computeReportNorms(
     graph,
     fileRoles: buildDependencyNormFileRoles(rows),
     filePrimaryTypes: buildDependencyNormFilePrimaryTypes(rows),
+    fileSuperclassFiles: buildDependencyNormFileSuperclassFiles(rows),
     componentOf,
     sourcePathPattern,
   });

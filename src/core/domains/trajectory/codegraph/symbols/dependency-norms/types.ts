@@ -17,6 +17,12 @@ export interface DependencyNormsInput {
    */
   filePrimaryTypes?: ReadonlyMap<RelPath, string>;
   /**
+   * For each file, the files whose primary type is its primary's resolved
+   * superclass (bd tea-rags-mcp-ptkwf) — an edge into one of them is "is-a",
+   * not a dependency on a role. Absent: no edge is excluded as inheritance.
+   */
+  fileSuperclassFiles?: ReadonlyMap<RelPath, ReadonlySet<RelPath>>;
+  /**
    * Picomatch glob scoping the FINDINGS by source file (bd tea-rags-mcp-mv8yv),
    * the way every other detector scopes. Ledgers, supports and the cut stay
    * whole-graph; findings the scope drops are counted in
@@ -126,9 +132,11 @@ export interface PlannedEdgeVerdict {
  * finding: an inversion is a layering mistake only when the minority edge
  * runs the target's own logic. `displacedRole` is precedent too: an endpoint's
  * role is read where that role does not live (bd tea-rags-mcp-4vj2u), so the
- * edge says nothing about the layer the role names.
+ * edge says nothing about the layer the role names. `inheritance` — the
+ * source's primary type subclasses the target's (bd tea-rags-mcp-ptkwf) — is
+ * "is-a", no role edge: never judged, never precedent.
  */
-export type NormEdgeExclusion = "constantReference" | "uncalled" | "frameworkRouted" | "displacedRole";
+export type NormEdgeExclusion = "inheritance" | "constantReference" | "uncalled" | "frameworkRouted" | "displacedRole";
 
 /**
  * The edge evidence the exclusion classes read. `callWeight` absent = the edge
@@ -136,6 +144,7 @@ export type NormEdgeExclusion = "constantReference" | "uncalled" | "frameworkRou
  * call-level classes cannot be evaluated and are skipped, never assumed.
  */
 export interface NormEdgeEvidence {
+  sourceRelPath: RelPath;
   targetRelPath: RelPath;
   /** The reference the source names the target by (`Outer::Inner`, `zeitwerk:Name`). */
   importText?: string | null;
@@ -164,6 +173,7 @@ export type NormPlannedEdgeUnjudgedReason =
   | "untypedFile"
   | "weakRole"
   | "crossLanguage"
+  | "inheritance"
   | "constantReference"
   | "displacedRole";
 
@@ -194,7 +204,7 @@ export interface NormPlannedFileEdgeJudgement {
   /** `weakRole` only: which endpoint's role is suffix-only (weak); the other is strong. */
   weakSide?: NormWeakSide;
   /** Exclusion classes the planned edge's evidence cannot evaluate — present with a verdict. */
-  exclusionsUnchecked?: Exclude<NormEdgeExclusion, "displacedRole">[];
+  exclusionsUnchecked?: Exclude<NormEdgeExclusion, "displacedRole" | "inheritance">[];
 }
 
 /** The one verdict the whole-repo report lists; every other edge CONFORMS and is not listed. */
@@ -258,6 +268,13 @@ export interface DependencyNormsSummary {
      * against. Counted in `typedEdgeCount`, absent from `judgedEdgeCount`.
      */
     crossLanguageEdgeCount: number;
+    /**
+     * Typed edges from a file whose primary type declares the target's primary
+     * type as its superclass (bd tea-rags-mcp-ptkwf) — "is-a", not a
+     * dependency on the target's role. Counted in `typedEdgeCount`, absent
+     * from `judgedEdgeCount` and from every ledger.
+     */
+    inheritanceEdgeCount: number;
     /**
      * Typed edges whose recorded reference names a constant NESTED in the
      * target's primary type (`BaseAdapter::RateLimitError`) and that carry no
