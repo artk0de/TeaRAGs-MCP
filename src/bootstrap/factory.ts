@@ -109,6 +109,7 @@ import {
   type CodegraphDeps,
   type CodegraphWorkerConfig,
   type GraphFacadeDeps,
+  type ReviewChangesOpsDeps,
   type TemporalCochangeConfig,
   type WorkingTreeGitSignalConfig,
   type WorkingTreeGraphCodegraphRuntime,
@@ -120,6 +121,7 @@ import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-exe
 import type { LanguageFactoryDescriptor } from "../core/contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
+import type { WorkingTree } from "../core/contracts/types/working-tree.js";
 import { setDebug } from "../core/primitives/diagnostics/index.js";
 import { installFileClassificationSettings } from "../core/primitives/paths/index.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
@@ -1393,6 +1395,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     workingTreeWatcher,
     workingTreeGraphCache,
     workingTreeOverlay,
+    readWorkingTreeFileChunks,
     stopWorkingTreeChunkSweep,
     stopWorkingTreeGitSignalSweep,
     stopWorkingTreeBasePointSweep,
@@ -1495,6 +1498,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     codegraphContext,
     projectIngestFactory,
     workingTreeOverlay,
+    readWorkingTreeFileChunks,
     historyAnchor,
     indexExists,
     readTreeDeclaredTestDependencies,
@@ -1591,6 +1595,13 @@ interface WorkingTreeSection {
   workingTreeWatcher: WorkingTreeWatcher | undefined;
   workingTreeGraphCache: WorkingTreeGraphCache;
   workingTreeOverlay: WorkingTreeOverlay;
+  /**
+   * Given files' rows as the tree holds them — the overlay's chunk layer under
+   * the base index's chunker config, for a reader that names its files itself
+   * rather than reading the delta (the review's touched tests, bd
+   * tea-rags-mcp-89k7k.34).
+   */
+  readWorkingTreeFileChunks: NonNullable<ReviewChangesOpsDeps["readTreeChunks"]>;
   stopWorkingTreeChunkSweep: ReturnType<typeof scheduleWorkingTreeChunkSweep>;
   stopWorkingTreeGitSignalSweep: ReturnType<typeof scheduleWorkingTreeGitSignalSweep>;
   stopWorkingTreeBasePointSweep: ReturnType<typeof scheduleWorkingTreeBasePointSweep>;
@@ -1710,6 +1721,13 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
     }
     return resolved;
   };
+  // The base index's chunker config: its project's registry env replayed
+  // over the server's (`ProjectIngestFactory#forPath`, built below and only
+  // read at request time), with the size its embedding model derives.
+  const resolveWorkingTreeChunkerConfig = async (tree: WorkingTree) =>
+    projectIngestFactory()
+      .forPath(tree.baseIndex.root ?? tree.root)
+      .resolveChunkerConfig(tree.baseIndex.collectionName);
   // One overlay per process (bd tea-rags-mcp-xi2r9): its delta reader caches per
   // tree, and every read surface — explore, graph, trace_path — shares it.
   const workingTreeOverlay = new WorkingTreeOverlay({
@@ -1722,13 +1740,7 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
     ...(workingTreeWatcher ? { watcher: workingTreeWatcher } : {}),
     deltaChunks: {
       layer: workingTreeChunkLayer,
-      // The base index's chunker config: its project's registry env replayed
-      // over the server's (`ProjectIngestFactory#forPath`, built below and only
-      // read at request time), with the size its embedding model derives.
-      resolveChunkerConfig: async (tree) =>
-        projectIngestFactory()
-          .forPath(tree.baseIndex.root ?? tree.root)
-          .resolveChunkerConfig(tree.baseIndex.collectionName),
+      resolveChunkerConfig: resolveWorkingTreeChunkerConfig,
     },
     // WTO-7: a non-empty delta warms the tree graph at view time; graph tools
     // and the delta rows' codegraph signals read it through the view.
@@ -1785,6 +1797,15 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
     workingTreeWatcher,
     workingTreeGraphCache,
     workingTreeOverlay,
+    readWorkingTreeFileChunks: async (tree, relPaths) => {
+      const read = await workingTreeChunkLayer.chunk(
+        tree.root,
+        relPaths,
+        await resolveWorkingTreeChunkerConfig(tree),
+        tree.baseIndex.collectionName,
+      );
+      return read.rowsByPath ?? new Map();
+    },
     stopWorkingTreeChunkSweep,
     stopWorkingTreeGitSignalSweep,
     stopWorkingTreeBasePointSweep,
@@ -2119,6 +2140,7 @@ function createExploreSection(deps: {
   codegraphContext: CodegraphContext | undefined;
   projectIngestFactory: ProjectIngestFactory;
   workingTreeOverlay: WorkingTreeOverlay;
+  readWorkingTreeFileChunks: WorkingTreeSection["readWorkingTreeFileChunks"];
   historyAnchor: IndexHistoryAnchorResolver;
   indexExists: (collectionName: string) => Promise<boolean>;
   readTreeDeclaredTestDependencies: (root: string) => ReadonlySet<string>;
@@ -2137,6 +2159,7 @@ function createExploreSection(deps: {
     codegraphContext,
     projectIngestFactory,
     workingTreeOverlay,
+    readWorkingTreeFileChunks,
     historyAnchor,
     indexExists,
     readTreeDeclaredTestDependencies,
@@ -2223,6 +2246,10 @@ function createExploreSection(deps: {
           },
           windowMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
           workingTreeOverlay,
+          // incompleteChange reads the touched tests' subjects and imports from
+          // the reviewed tree — the overlay's own chunk layer (bd
+          // tea-rags-mcp-89k7k.34).
+          readTreeChunks: readWorkingTreeFileChunks,
           indexExists,
           // The architecture section's asset-import rescue reads the SAME
           // payload specifiers the whole-repo report's second silent-coupling

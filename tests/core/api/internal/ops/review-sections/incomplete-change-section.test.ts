@@ -16,8 +16,14 @@ import { describe, expect, it } from "vitest";
 
 import type { DiffScopeRead } from "../../../../../../src/core/api/internal/ops/diff-scope-reader.js";
 import { incompleteChangeSectionProvider } from "../../../../../../src/core/api/internal/ops/review-sections/incomplete-change-section.js";
-import type { ReviewSectionContext } from "../../../../../../src/core/api/internal/ops/review-sections/index.js";
-import type { IncompleteChangePartner } from "../../../../../../src/core/api/public/dto/review.js";
+import type {
+  ReviewSectionContext,
+  ReviewTreeChunkRow,
+} from "../../../../../../src/core/api/internal/ops/review-sections/index.js";
+import type {
+  IncompleteChangeCoveredPartner,
+  IncompleteChangePartner,
+} from "../../../../../../src/core/api/public/dto/review.js";
 import type { TemporalCochangeEdgeWithLinkage } from "../../../../../../src/core/contracts/types/codegraph.js";
 
 function edge(
@@ -398,5 +404,112 @@ describe("incompleteChangeSectionProvider — the coupling-statistics gate (bd t
       ["src/linked.ts", true],
       ["src/history-only.ts", false],
     ]);
+  });
+});
+
+describe("incompleteChangeSectionProvider — a touched test whose SUBJECT is the source covers its missing test partner (bd tea-rags-mcp-89k7k.34)", () => {
+  const SOURCE = "src/core/ops/widget-ops.ts";
+  const HISTORICAL_TEST = "tests/core/ops/widget-ops.test.ts";
+  const SIBLING_TEST = "tests/core/ops/widget-diff.test.ts";
+  const OTHER_COMPONENT_TEST = "tests/core/gadget/gadget.test.ts";
+  const SOURCE_IMPORT = "../../../src/core/ops/widget-ops.js";
+  const SOURCE_ROWS: ReviewTreeChunkRow[] = [
+    { symbolId: "WidgetOps" },
+    { symbolId: "WidgetOps#review#part2" },
+    { symbolId: "widgetDefaults" },
+  ];
+  type CoveragePayload = { partners: IncompleteChangePartner[]; coveredPartners?: IncompleteChangeCoveredPartner[] };
+
+  function testRows(top: string, imports: string[]): ReviewTreeChunkRow[] {
+    return [
+      { symbolId: `${top}.describe "${top}"`, isTest: true, imports },
+      { symbolId: `${top}.describe "${top}".it "does the thing"`, isTest: true, imports },
+    ];
+  }
+
+  function withTree(
+    files: string[],
+    rows: Record<string, ReviewTreeChunkRow[]>,
+    requested: string[][] = [],
+  ): ReviewSectionContext {
+    return {
+      ...makeContext([edge(SOURCE, HISTORICAL_TEST, 12, 0.85, { confidenceBA: 0.8, lift: 3 })], files),
+      readTreeChunks: async (relPaths) => {
+        requested.push([...relPaths]);
+        return new Map(relPaths.flatMap((relPath) => (rows[relPath] ? [[relPath, rows[relPath]] as const] : [])));
+      },
+    };
+  }
+
+  it("a touched sibling test whose top scope names a symbol the source declares, and which imports the source, demotes the partner to a note naming it", async () => {
+    const requested: string[][] = [];
+    const context = withTree(
+      [SOURCE, SIBLING_TEST],
+      { [SOURCE]: SOURCE_ROWS, [SIBLING_TEST]: testRows("WidgetOps — diff mode", ["vitest", SOURCE_IMPORT]) },
+      requested,
+    );
+    const payload = (await incompleteChangeSectionProvider.run(context)) as CoveragePayload;
+    expect(payload.partners).toEqual([]);
+    expect(payload.coveredPartners).toEqual([
+      { file: SOURCE, missingPartner: HISTORICAL_TEST, coveredBy: SIBLING_TEST, subject: "WidgetOps" },
+    ]);
+    // Only the touched test and the source are read from the tree.
+    expect(requested.flat().sort()).toEqual([SIBLING_TEST, SOURCE].sort());
+  });
+
+  it("a NEW test file that exists only in the working tree covers the partner — its subject comes from the tree read, not the index", async () => {
+    // An untracked test the diff adds: the index has never seen it, only the tree read knows its rows.
+    const NEW_TEST = "tests/core/ops/widget-ops-review.test.ts";
+    const context = withTree([SOURCE, NEW_TEST], {
+      [SOURCE]: SOURCE_ROWS,
+      [NEW_TEST]: testRows("WidgetOps#review", [SOURCE_IMPORT]),
+    });
+    const payload = (await incompleteChangeSectionProvider.run(context)) as CoveragePayload;
+    expect(payload.partners).toEqual([]);
+    expect(payload.coveredPartners).toEqual([
+      { file: SOURCE, missingPartner: HISTORICAL_TEST, coveredBy: NEW_TEST, subject: "WidgetOps" },
+    ]);
+  });
+
+  it("reach is not subject: a touched test of ANOTHER component that imports the source keeps the finding", async () => {
+    const context = withTree([SOURCE, OTHER_COMPONENT_TEST], {
+      [SOURCE]: SOURCE_ROWS,
+      [OTHER_COMPONENT_TEST]: testRows("GadgetService — uses widgets", [SOURCE_IMPORT]),
+    });
+    const payload = (await incompleteChangeSectionProvider.run(context)) as CoveragePayload;
+    expect(payload.partners).toMatchObject([{ file: SOURCE, missingPartner: HISTORICAL_TEST, partnerKind: "test" }]);
+    expect(payload.coveredPartners).toBeUndefined();
+  });
+
+  it("a subject naming the source's symbol keeps the finding when the test does not import the source", async () => {
+    const context = withTree([SOURCE, SIBLING_TEST], {
+      [SOURCE]: SOURCE_ROWS,
+      [SIBLING_TEST]: testRows("WidgetOps — diff mode", ["../../../src/core/ops/other-ops.js"]),
+    });
+    const payload = (await incompleteChangeSectionProvider.run(context)) as CoveragePayload;
+    expect(payload.partners).toHaveLength(1);
+    expect(payload.coveredPartners).toBeUndefined();
+  });
+
+  it("the leading token is a whole identifier: `WidgetOpsHelper` does not name `WidgetOps`", async () => {
+    const context = withTree([SOURCE, SIBLING_TEST], {
+      [SOURCE]: SOURCE_ROWS,
+      [SIBLING_TEST]: testRows("WidgetOpsHelper", [SOURCE_IMPORT]),
+    });
+    const payload = (await incompleteChangeSectionProvider.run(context)) as CoveragePayload;
+    expect(payload.partners).toHaveLength(1);
+  });
+
+  it("no subject can be read — no tree reader, or the test did not parse — keeps the finding (the safe default)", async () => {
+    const noReader = makeContext(
+      [edge(SOURCE, HISTORICAL_TEST, 12, 0.85, { confidenceBA: 0.8, lift: 3 })],
+      [SOURCE, SIBLING_TEST],
+    );
+    const unparsed = withTree([SOURCE, SIBLING_TEST], { [SOURCE]: SOURCE_ROWS });
+    for (const context of [noReader, unparsed]) {
+      const payload = (await incompleteChangeSectionProvider.run(context)) as CoveragePayload;
+      expect(payload.partners).toHaveLength(1);
+      expect(payload.coveredPartners).toBeUndefined();
+    }
   });
 });

@@ -151,6 +151,7 @@ export type {
   // Diff-scoped review (review_changes)
   CohesionSectionPayload,
   CohesionSectionResult,
+  IncompleteChangeCoveredPartner,
   IncompleteChangePartner,
   IncompleteChangePartnerKind,
   IncompleteChangeSectionPayload,

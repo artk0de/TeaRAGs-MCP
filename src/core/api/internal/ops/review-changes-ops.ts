@@ -52,6 +52,7 @@ import {
   type ReviewGraphDb,
   type ReviewNamingLexicon,
   type ReviewSectionBuildContext,
+  type ReviewTreeChunkRow,
 } from "./review-sections/index.js";
 import { readIndexedSymbolRows, type IndexedSymbolRowsRead } from "./review-symbol-table.js";
 
@@ -112,6 +113,17 @@ export interface ReviewChangesOpsDeps {
    * before a section sees it. Absent → the manifests add nothing.
    */
   readDeclaredTestDependencies?: (root: string) => ReturnType<DeclaredTestDependencyLookup>;
+  /**
+   * The given files' chunk rows as the reviewed working tree holds them (bd
+   * tea-rags-mcp-89k7k.34) — the composition root binds the working-tree
+   * chunk layer find_symbol's `chunks` floor reads, under the base index's
+   * chunker config. Bound to the review's tree before a section sees it.
+   * Absent → no file is read from the tree.
+   */
+  readTreeChunks?: (
+    workingTree: WorkingTree,
+    relPaths: readonly RelPath[],
+  ) => Promise<ReadonlyMap<RelPath, readonly { payload: Record<string, unknown> }[]>>;
   /** The temporal walk's history window (the git trajectory's `chunkMaxAgeMonths`). */
   windowMonths: number;
   /**
@@ -228,6 +240,11 @@ export class ReviewChangesOps {
         readFileMaintenanceSignals === undefined ? undefined : async () => readFileMaintenanceSignals(collectionName);
       const indexedFileImports =
         readIndexedFileImports === undefined ? undefined : async () => readIndexedFileImports(collectionName);
+      const { readTreeChunks } = this.deps;
+      const treeChunks =
+        readTreeChunks === undefined
+          ? undefined
+          : async (relPaths: readonly RelPath[]) => toReviewTreeChunkRows(await readTreeChunks(workingTree, relPaths));
       const { readDeclaredTestDependencies } = this.deps;
       const declaredTestDependencies =
         readDeclaredTestDependencies === undefined || workTree === undefined
@@ -268,6 +285,7 @@ export class ReviewChangesOps {
         ...(indexedFileImports === undefined ? {} : { readIndexedFileImports: indexedFileImports }),
         ...(declaredTestDependencies === undefined ? {} : { readDeclaredTestDependencies: declaredTestDependencies }),
         ...(readProductionGraphOnce === undefined ? {} : { readProductionGraph: readProductionGraphOnce }),
+        ...(treeChunks === undefined ? {} : { readTreeChunks: treeChunks }),
       };
       // The sections are independent reads of one snapshot, so they run
       // together; the envelope lists them in the requested order whatever
@@ -362,3 +380,23 @@ export class ReviewChangesOps {
 const NO_SYMBOL_ROWS: Promise<IndexedSymbolRowsRead> = Promise.resolve({
   unavailable: "no indexed symbol table was read for this review",
 });
+
+/** The tree rows' payload, narrowed to the fields a section reads; a field of another shape is absent. */
+function toReviewTreeChunkRows(
+  rowsByPath: ReadonlyMap<RelPath, readonly { payload: Record<string, unknown> }[]>,
+): ReadonlyMap<RelPath, readonly ReviewTreeChunkRow[]> {
+  const narrowed = new Map<RelPath, ReviewTreeChunkRow[]>();
+  for (const [relPath, rows] of rowsByPath) {
+    narrowed.set(
+      relPath,
+      rows.map(({ payload }) => ({
+        ...(typeof payload.symbolId === "string" ? { symbolId: payload.symbolId } : {}),
+        ...(payload.isTest === true ? { isTest: true } : {}),
+        ...(Array.isArray(payload.imports)
+          ? { imports: payload.imports.filter((specifier): specifier is string => typeof specifier === "string") }
+          : {}),
+      })),
+    );
+  }
+  return narrowed;
+}

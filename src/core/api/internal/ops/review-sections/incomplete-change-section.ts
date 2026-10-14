@@ -58,6 +58,12 @@
  * (`scope.touchedFiles`, bd tea-rags-mcp-lxbrr): a partner the change touches
  * past the cap, or deletes, is carried by the change and never a finding —
  * live, 23 of 29 reported partners were such files.
+ *
+ * A missing TEST partner is demoted to `coveredPartners` when a test the
+ * change touches has the source as its subject and imports it (bd
+ * tea-rags-mcp-89k7k.34, {@link readTestPartnerCoverage}): both read from the
+ * working tree, over the scanned (capped) tests; no subject read keeps the
+ * finding.
  */
 
 import type { RelPath } from "../../../../contracts/types/codegraph.js";
@@ -70,8 +76,13 @@ import {
 } from "../../../../domains/trajectory/codegraph/temporal/index.js";
 import { resolveMajorityFlooredOtsuThreshold } from "../../../../primitives/graph/index.js";
 import { classify } from "../../../../primitives/paths/index.js";
-import type { IncompleteChangePartner, IncompleteChangePartnerKind } from "../../../public/dto/review.js";
+import type {
+  IncompleteChangeCoveredPartner,
+  IncompleteChangePartner,
+  IncompleteChangePartnerKind,
+} from "../../../public/dto/review.js";
 import { isDocumentationPath } from "../architecture-report-ops.js";
+import { readTestPartnerCoverage } from "./incomplete-change-test-coverage.js";
 import type { ReviewSectionProvider } from "./review-section-provider.js";
 
 /** Findings the section lists; the rest are counted in `truncated`. */
@@ -172,17 +183,33 @@ export const incompleteChangeSectionProvider: ReviewSectionProvider = {
         lastCoChangeAt: edge.lastCoChangeAt,
       });
     }
-    findings.sort(compareFindings);
-    const partners = findings.slice(0, PARTNER_CAP);
+    // A missing test partner the change tests elsewhere is a note, not a
+    // finding (bd tea-rags-mcp-89k7k.34): judged over the scanned tests the
+    // change touches, read from the working tree.
+    const coverage = await readTestPartnerCoverage(
+      findings,
+      scope.files.filter((relPath) => classify(relPath).isTest),
+      context.readTreeChunks,
+    );
+    const uncovered: IncompleteChangePartner[] = [];
+    const coveredPartners: IncompleteChangeCoveredPartner[] = [];
+    for (const finding of findings) {
+      const covered = coverage(finding);
+      if (covered === undefined) uncovered.push(finding);
+      else coveredPartners.push({ file: finding.file, missingPartner: finding.missingPartner, ...covered });
+    }
+    uncovered.sort(compareFindings);
+    const partners = uncovered.slice(0, PARTNER_CAP);
     return {
       partners,
+      ...(coveredPartners.length > 0 ? { coveredPartners } : {}),
       strengthThreshold: policy.threshold,
       strengthThresholdMethod: policy.method,
       ...(policy.separability === undefined ? {} : { strengthSeparability: policy.separability }),
       ...(significance ? { cochangeSignificance: significance.summary, notSignificant } : {}),
       ...(versionManifestPairs > 0 ? { versionManifestPairs } : {}),
       ...truncatedScope,
-      ...(findings.length > partners.length ? { truncated: findings.length - partners.length } : {}),
+      ...(uncovered.length > partners.length ? { truncated: uncovered.length - partners.length } : {}),
     };
   },
 };
