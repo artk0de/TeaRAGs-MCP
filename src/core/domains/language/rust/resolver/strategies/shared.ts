@@ -70,33 +70,115 @@ export function lookupRustSymbolsByShortName(ctx: CallContext, name: string): Sy
   return ctx.symbolTable.lookupByShortName(name).filter((def) => def.relPath.endsWith(".rs"));
 }
 
-export function rustImportMatchesReceiver(importText: string, receiver: string): boolean {
-  // Strip `crate::`, `super::`, `self::` prefixes.
-  const cleaned = importText.replace(/^(crate|super|self)::/, "");
-  const segments = cleaned.split("::");
-  const last = segments[segments.length - 1]?.trim() ?? "";
-  // Group import `{a, b, c}` — receiver matches if it appears in the
-  // braced list.
-  if (last.startsWith("{") && last.endsWith("}")) {
-    const inner = last
+type RustImportPrefix = "crate" | "self" | "super" | null;
+
+export interface RustImportPath {
+  prefix: RustImportPrefix;
+  moduleSegments: string[];
+  receiverMatches: boolean;
+  groupImport: boolean;
+}
+
+const RUST_PATH_SEGMENT = /^(?:[A-Za-z_][A-Za-z0-9_]*|r#[A-Za-z_][A-Za-z0-9_]*)$/;
+
+function parseRustImport(importText: string, receiver: string): RustImportPath | null {
+  const trimmed = importText.trim();
+  const pathText = trimmed.startsWith("::") ? trimmed.slice(2) : trimmed;
+  const segments = pathText.split("::");
+  if (segments.some((segment) => segment.trim() === "")) return null;
+
+  const first = segments[0]?.trim() ?? "";
+  const prefix: RustImportPrefix = first === "crate" || first === "self" || first === "super" ? first : null;
+  const pathSegments = prefix
+    ? segments.slice(1).map((segment) => segment.trim())
+    : segments.map((segment) => segment.trim());
+  if (pathSegments.length === 0) return null;
+
+  const last = pathSegments.at(-1) ?? "";
+  if (last.startsWith("{") || last.endsWith("}")) {
+    if (!last.startsWith("{") || !last.endsWith("}")) return null;
+    const members = last
       .slice(1, -1)
       .split(",")
-      .map((s) => s.trim());
-    return inner.includes(receiver);
+      .map((member) => member.trim());
+    if (members.length === 0 || members.some((member) => !RUST_PATH_SEGMENT.test(member))) return null;
+    if (pathSegments.slice(0, -1).some((segment) => !RUST_PATH_SEGMENT.test(segment))) return null;
+    return {
+      prefix,
+      moduleSegments: pathSegments.slice(0, -1),
+      receiverMatches: members.includes(receiver),
+      groupImport: true,
+    };
   }
-  return last === receiver;
+
+  if (pathSegments.some((segment) => !RUST_PATH_SEGMENT.test(segment))) return null;
+  return {
+    prefix,
+    moduleSegments: pathSegments,
+    receiverMatches: last === receiver,
+    groupImport: false,
+  };
+}
+
+export function parseRustImportPath(importText: string, receiver: string): RustImportPath | null {
+  return parseRustImport(importText, receiver);
+}
+
+export function rustImportMatchesReceiver(importText: string, receiver: string): boolean {
+  return parseRustImport(importText, receiver)?.receiverMatches ?? false;
 }
 
 export function rustImportSuffix(importText: string): string | null {
-  // Reduce import to its module path component (suffix), dropping
-  // crate-prefix and any terminal `{...}` group.
-  const cleaned = importText.replace(/^(crate|super|self)::/, "");
-  const segments = cleaned.split("::");
-  // Drop the trailing item if it's brace-wrapped (the suffix is the
-  // path up to that segment).
-  const last = segments[segments.length - 1]?.trim() ?? "";
-  if (last.startsWith("{")) {
-    return segments.slice(0, -1).join("/");
-  }
-  return segments.join("/");
+  const parsed = parseRustImport(importText, "");
+  if (!parsed || parsed.moduleSegments.length === 0) return null;
+  return parsed.moduleSegments.join("/");
+}
+
+/** A cheap malformed-path guard for an import that names the receiver anywhere in its path. */
+export function rustImportContainsReceiver(importText: string, receiver: string): boolean {
+  return importText
+    .trim()
+    .replace(/^::/, "")
+    .split("::")
+    .some((segment) => {
+      const trimmed = segment.trim();
+      if (trimmed === receiver) return true;
+      return (
+        trimmed.startsWith("{") &&
+        trimmed.endsWith("}") &&
+        trimmed
+          .slice(1, -1)
+          .split(",")
+          .some((member) => member.trim() === receiver)
+      );
+    });
+}
+
+export function rustImportCandidateSuffix(importText: string, receiver: string): string | null {
+  const parsed = parseRustImport(importText, receiver);
+  if (!parsed || !parsed.receiverMatches || parsed.moduleSegments.length === 0) return null;
+  return [...parsed.moduleSegments, ...(parsed.groupImport ? [receiver] : [])].join("/");
+}
+
+export function rustImportCandidatePaths(importText: string, receiver: string, callerFile: string): string[] | null {
+  const parsed = parseRustImport(importText, receiver);
+  if (!parsed?.receiverMatches) return parsed ? [] : null;
+  const segments = [...parsed.moduleSegments, ...(parsed.groupImport ? [receiver] : [])];
+  const suffix = segments.join("/");
+  const callerDir = callerFile.includes("/") ? callerFile.slice(0, callerFile.lastIndexOf("/")) : "";
+  const callerSegments = callerFile.split("/");
+  const srcIndex = callerSegments.indexOf("src");
+  const crateRoot = srcIndex >= 0 ? callerSegments.slice(0, srcIndex + 1).join("/") : callerDir;
+  const moduleRoot = callerDir;
+  const parentRoot = moduleRoot.includes("/") ? moduleRoot.slice(0, moduleRoot.lastIndexOf("/")) : "";
+  const candidateRoot =
+    parsed.prefix === "crate"
+      ? crateRoot
+      : parsed.prefix === "self"
+        ? moduleRoot
+        : parsed.prefix === "super"
+          ? parentRoot
+          : "";
+  const candidate = candidateRoot ? `${candidateRoot}/${suffix}` : suffix;
+  return [`${candidate}.rs`, `${candidate}/mod.rs`];
 }

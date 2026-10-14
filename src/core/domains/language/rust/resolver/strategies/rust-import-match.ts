@@ -1,8 +1,13 @@
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
+import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { capability } from "../../capability.js";
-import { rustImportMatchesReceiver, rustImportSuffix, type ResolverConfig } from "./shared.js";
+import {
+  parseRustImportPath,
+  rustImportCandidatePaths,
+  rustImportContainsReceiver,
+  type ResolverConfig,
+} from "./shared.js";
 
 /**
  * `use crate::foo::bar` import-match — when the receiver matches a `use`
@@ -20,16 +25,25 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
     const { receiver } = call;
-    const match = ctx.imports.find((imp) => rustImportMatchesReceiver(imp.importText, receiver));
-    if (match) {
-      const suffix = rustImportSuffix(match.importText);
-      if (suffix) {
-        const candidates = ctx.symbolTable
-          .lookupByShortName(call.member, { kinds: capability.codegraph.symbolKindRoles.callee })
-          .filter((def) => def.relPath.endsWith(`${suffix}.rs`) || def.relPath.endsWith(`${suffix}/mod.rs`));
-        const target = pickSingleCandidate(candidates, this.cfg.mode);
-        if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
-      }
+    const matchingImport = ctx.imports.find((imp) => parseRustImportPath(imp.importText, receiver)?.receiverMatches);
+    if (matchingImport) {
+      const candidatePaths = rustImportCandidatePaths(matchingImport.importText, receiver, ctx.callerFile);
+      if (candidatePaths === null) return CONTINUE;
+      const candidates = ctx.symbolTable
+        .lookupByShortName(call.member, { kinds: capability.codegraph.symbolKindRoles.callee })
+        .filter((def) => candidatePaths.includes(def.relPath) && def.relPath.endsWith(".rs"));
+      const target = pickSingleCandidate(candidates, this.cfg.mode);
+      if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
+      return DROP;
+    }
+    if (
+      ctx.imports.some(
+        (imp) =>
+          parseRustImportPath(imp.importText, receiver) === null &&
+          rustImportContainsReceiver(imp.importText, receiver),
+      )
+    ) {
+      return DROP;
     }
     return CONTINUE;
   }
