@@ -141,7 +141,7 @@ export interface LeakingAbstractionDiffFindingEvidence {
 }
 
 export interface CycleDiffFindingEvidence {
-  /** The closed cycle: the judged edge, then the indexed path back; first file = last file. */
+  /** The closed cycle: the judged edge, then the tree graph's path back; first file = last file. */
   path: RelPath[];
 }
 

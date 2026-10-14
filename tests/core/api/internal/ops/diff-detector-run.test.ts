@@ -964,7 +964,7 @@ describe("pre-existing edge attribution", () => {
     expect(finding?.preExisting).toBeUndefined();
     expect("preExisting" in (finding ?? {})).toBe(false);
     expect(finding?.detail).toBe(
-      "the diff closes a cycle: the new edge src/a.ts -> src/b.ts plus the indexed path back to src/a.ts",
+      "the diff closes a cycle: the new edge src/a.ts -> src/b.ts plus the path back to src/a.ts",
     );
   });
 
