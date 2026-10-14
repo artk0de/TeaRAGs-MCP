@@ -215,4 +215,131 @@ describe("computeSplitMergeVerdicts (bd tea-rags-mcp-c3v6o)", () => {
     expect(alphaBeta).toBeDefined();
     expect(alphaBeta?.strength).toBe(cochangeStrength({ support: 30, confidenceAB: 30 / 32, confidenceBA: 1 }));
   });
+
+  describe("split separability and coverage (bd tea-rags-mcp-755bj)", () => {
+    /**
+     * Two clusters held together by few-but-certain pairs (5/5 and 6/6), and a
+     * bridge between them that is frequent but diluted (`crossSupport` of 40
+     * changes each side) — the Wilson bound keeps the bridge under the floor,
+     * so the threshold clustering always sees two groups.
+     */
+    function chainedComponent(crossSupport: number) {
+      return computeSplitMergeVerdicts({
+        components: {
+          componentOf: componentOf([
+            ["chain/a1.ts", "chain"],
+            ["chain/a2.ts", "chain"],
+            ["chain/b1.ts", "chain"],
+            ["chain/b2.ts", "chain"],
+          ]),
+        },
+        edges: [
+          pair("chain/a1.ts", "chain/a2.ts", 5, 5, 5),
+          pair("chain/b1.ts", "chain/b2.ts", 6, 6, 6),
+          pair("chain/a2.ts", "chain/b1.ts", crossSupport, 40, 40),
+        ],
+        bundles: bundleMap(["chain/a1.ts", "chain/a2.ts"]),
+      });
+    }
+
+    it("joins clusters a cross pair links at least as often as the weaker cluster's own weakest link", () => {
+      // Precondition: the bridge is refused by strength, the clusters admitted.
+      expect(cochangeStrength(pair("chain/a2.ts", "chain/b1.ts", 8, 40, 40))).toBeLessThan(0.5);
+      expect(cochangeStrength(pair("chain/a1.ts", "chain/a2.ts", 5, 5, 5))).toBeGreaterThanOrEqual(0.5);
+
+      // 8 co-changes across vs 5 holding cluster a together: the history does
+      // not separate the groups, it chains them — no split.
+      expect(chainedComponent(8).splitCandidates).toEqual([]);
+      // A tie is no separation either.
+      expect(chainedComponent(5).splitCandidates).toEqual([]);
+      // Control: a bridge rarer than both clusters' weakest links keeps the split.
+      expect(chainedComponent(3).splitCandidates.map((candidate) => candidate.clusters)).toEqual([2]);
+    });
+
+    it("refuses a split whose clusters hold only a minority of the component's co-changing files", () => {
+      // The x/y clusters are the split test's own, separable and balanced; but
+      // five more files of the same component co-change too (weakly, among
+      // themselves), so the clusters describe 4 of 9 co-changing files — a
+      // corner of the component, not a partition of it.
+      const weakTail = ["wide/z1.ts", "wide/z2.ts", "wide/z3.ts", "wide/z4.ts", "wide/z5.ts"];
+      const verdicts = computeSplitMergeVerdicts({
+        components: {
+          componentOf: componentOf(
+            ["wide/x1.ts", "wide/x2.ts", "wide/y1.ts", "wide/y2.ts", ...weakTail].map(
+              (file) => [file, "wide"] as const,
+            ),
+          ),
+        },
+        edges: [
+          pair("wide/x1.ts", "wide/x2.ts", 16, 16, 18),
+          pair("wide/y1.ts", "wide/y2.ts", 20, 22, 20),
+          ...weakTail.slice(1).map((file, i) => pair(weakTail[i], file, 2, 20, 20)),
+        ],
+        bundles: bundleMap(["wide/x1.ts", "wide/x2.ts"]),
+      });
+
+      expect(verdicts.splitCandidates).toEqual([]);
+    });
+
+    it("keeps a split whose clusters hold a strict majority of the co-changing files", () => {
+      // Same clusters, one weakly co-changing file outside: 4 of 5.
+      const verdicts = computeSplitMergeVerdicts({
+        components: {
+          componentOf: componentOf(
+            ["wide/x1.ts", "wide/x2.ts", "wide/y1.ts", "wide/y2.ts", "wide/z1.ts"].map(
+              (file) => [file, "wide"] as const,
+            ),
+          ),
+        },
+        edges: [
+          pair("wide/x1.ts", "wide/x2.ts", 16, 16, 18),
+          pair("wide/y1.ts", "wide/y2.ts", 20, 22, 20),
+          pair("wide/x2.ts", "wide/z1.ts", 2, 18, 20),
+        ],
+        bundles: bundleMap(["wide/x1.ts", "wide/x2.ts"]),
+      });
+
+      expect(verdicts.splitCandidates.map((candidate) => candidate.component)).toEqual(["wide"]);
+    });
+  });
+
+  it("never proposes merging a component with one nested in it (bd tea-rags-mcp-755bj)", () => {
+    // pkg/sub sits inside pkg's own tree: the pair already is one subtree, so
+    // "merge" names no boundary between them. The sibling pkg/other changing
+    // with pkg/sub just as often is a real merge candidate.
+    const bundles = bundleMap(
+      ...Array.from({ length: 30 }, () => ["pkg/p.ts", "pkg/sub/s.ts", "pkg/other/o.ts"]),
+      ["pkg/p.ts"],
+      ["pkg/sub/s.ts"],
+    );
+    const verdicts = computeSplitMergeVerdicts({
+      components: {
+        componentOf: componentOf([
+          ["pkg/p.ts", "pkg"],
+          ["pkg/sub/s.ts", "pkg/sub"],
+          ["pkg/other/o.ts", "pkg/other"],
+        ]),
+      },
+      edges: [],
+      bundles,
+    });
+
+    expect(verdicts.mergeCandidates.map((c) => [c.componentA, c.componentB])).toEqual([["pkg/other", "pkg/sub"]]);
+  });
+
+  it("treats a namespace component nested in another namespace as containment too", () => {
+    const bundles = bundleMap(...Array.from({ length: 30 }, () => ["app/billing.rb", "app/billing/invoice.rb"]));
+    const verdicts = computeSplitMergeVerdicts({
+      components: {
+        componentOf: componentOf([
+          ["app/billing.rb", "::Billing"],
+          ["app/billing/invoice.rb", "::Billing::Invoice"],
+        ]),
+      },
+      edges: [],
+      bundles,
+    });
+
+    expect(verdicts.mergeCandidates).toEqual([]);
+  });
 });
