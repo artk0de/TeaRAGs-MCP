@@ -35,6 +35,7 @@ const FILES: Readonly<Record<string, string>> = {
   "src/app/b.ts": "app",
   "src/lib/l.ts": "lib",
   "src/contracts/t.ts": "contracts",
+  "src/core/inner/i.ts": "core/inner",
 };
 
 const catalog = catalogOf(
@@ -47,12 +48,13 @@ const catalog = catalogOf(
 const isHubPastStubCuts = (fan: HubLikeDependencyFanCounts): boolean =>
   fan.afferentCount >= 8 && fan.efferentCount >= 11;
 
-/** A hand-built reading: `core` at the given counts, every other component quiet, `contracts` the foundation. */
+/** A hand-built reading: `core` at the given counts, every other component quiet, `contracts` the foundation, `core/inner` nested in `core`. */
 function hubLikeOf(core: HubLikeDependencyFanCounts & { compositionRoot?: true }): HubLikeDependencyReading {
   const quiet: HubLikeDependencyFanCounts = { afferentCount: 1, efferentCount: 1, connectionCount: 2 };
   return {
     fanCountsOf: (component) => (component === "core" ? core : component in COMPONENTS ? quiet : undefined),
     isFoundation: (component) => component === "contracts",
+    isContainment: (source, target) => source.startsWith(`${target}/`) || target.startsWith(`${source}/`),
     isHub: isHubPastStubCuts,
   };
 }
@@ -108,6 +110,24 @@ describe("hubLike diff family", () => {
       { hubLike: hubLikeOf(BELOW_CUT), baseEdges: baseEdgesOf({ "src/core/a.ts": [] }) },
       ["src/core/a.ts"],
       [["src/core/a.ts", "src/contracts/t.ts"]],
+    );
+
+    expect(hubFindingsOf(result)).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-j5gti: a parent↔nested edge is containment — the detector
+  // counts it on neither axis, so the diff does not either.
+  it("moves neither Ca nor Ce on a new edge between a component and its own nested component", () => {
+    const result = runWith(
+      {
+        hubLike: hubLikeOf({ afferentCount: 7, efferentCount: 10, connectionCount: 17 }),
+        baseEdges: baseEdgesOf({ "src/core/a.ts": [], "src/core/inner/i.ts": [] }),
+      },
+      ["src/core/a.ts", "src/core/inner/i.ts"],
+      [
+        ["src/core/a.ts", "src/core/inner/i.ts"],
+        ["src/core/inner/i.ts", "src/core/a.ts"],
+      ],
     );
 
     expect(hubFindingsOf(result)).toEqual([]);

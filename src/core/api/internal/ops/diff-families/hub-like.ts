@@ -27,6 +27,8 @@ interface HubLikeComponentMove {
  *   tea-rags-mcp-g77p3) and `s` carried no edge out of S past the foundation
  *   before the change — a file already counted never counts twice;
  * - T's Ca by one file when `s` carried no edge into T before the change.
+ * An edge between a component and one nested in it moves neither (bd
+ * tea-rags-mcp-j5gti): containment is on neither axis of the detector.
  * "Before the change" is the diff base where it answers for `s`, else the
  * index (`targetsBeforeChange`); a missing fact counts the file. The counts
  * served are the index's, the same footing the mainSequence recompute stands
@@ -85,10 +87,13 @@ export function judgeHubLike(input: {
     const targetComponent = componentOf(edge.target);
     if (sourceComponent === undefined || targetComponent === undefined) continue;
     if (sourceComponent === targetComponent) continue;
+    // Containment is on neither axis (bd tea-rags-mcp-j5gti).
+    if (hubLike.isContainment(sourceComponent, targetComponent)) continue;
     const reachedBefore = targetComponentsBefore(edge.source);
     if (!hubLike.isFoundation(targetComponent)) {
       const alreadyEfferent = wasEfferentBeforeChange(edge.source, sourceComponent, before, componentOf, {
-        excludesTargetComponent: (component) => hubLike.isFoundation(component),
+        excludesTargetComponent: (component) =>
+          hubLike.isFoundation(component) || hubLike.isContainment(sourceComponent, component),
       });
       if (!alreadyEfferent) {
         const move = moveOf(sourceComponent);
