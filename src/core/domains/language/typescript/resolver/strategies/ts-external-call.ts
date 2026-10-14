@@ -33,6 +33,7 @@ import {
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
 } from "../../../kernel/index.js";
+import { TS_UTILITY_TYPES } from "../../utility-types.js";
 import {
   mapImportToFile,
   type ProjectFileProbe,
@@ -304,54 +305,6 @@ function receiverIsImportedBuiltinContainer(call: CallRef, ctx: CallContext): bo
     (imp) => imp.importedNames?.includes(receiver) || importSpecifierNamesReceiver(imp.importText, receiver),
   );
 }
-
-/**
- * TypeScript's own type-level operators — the complete `type X<…> = …` list
- * from `lib.es5.d.ts`, which is where every one of them is declared.
- *
- * These are not types in the sense the guard below needs. Each is a FUNCTION
- * over types, and the name records which transformation was applied, not what
- * the value is: `Awaited<ReturnType<EmbeddingProvider["embedBatch"]>>` is an
- * array of numbers, and the name says `Awaited`. So a receiver annotated with
- * one carries no nominal information at all, and treating the name as a type
- * the guard may decide on is what produced the measured defect
- * (bd tea-rags-mcp-yjqi5).
- *
- * Distinct from the exclusion noted on {@link ECMASCRIPT_BUILTIN_TYPES}: that
- * set omits these because they are not BUILTIN INSTANCES. This set says the
- * stronger thing — they are not evidence either way. `ReadonlyMap` /
- * `ReadonlySet` / `ReadonlyArray` are deliberately absent here for exactly that
- * reason: they have no runtime constructor either, but they DENOTE a builtin
- * instance, so they belong in the builtin set and decide outright.
- */
-const TS_UTILITY_TYPES: ReadonlySet<string> = new Set([
-  // Object shape transformations
-  "Partial",
-  "Required",
-  "Readonly",
-  "Record",
-  "Pick",
-  "Omit",
-  // Union filters
-  "Exclude",
-  "Extract",
-  "NonNullable",
-  "NoInfer",
-  // Function / constructor introspection
-  "Parameters",
-  "ConstructorParameters",
-  "ReturnType",
-  "InstanceType",
-  "ThisParameterType",
-  "OmitThisParameter",
-  // Promise unwrapping
-  "Awaited",
-  // String-literal transformations
-  "Uppercase",
-  "Lowercase",
-  "Capitalize",
-  "Uncapitalize",
-]);
 
 /**
  * Cases 3, 4 and 4b of {@link targetsExternalImport}: does the RECEIVER belong

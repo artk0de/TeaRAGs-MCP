@@ -1829,6 +1829,26 @@ describe("ArchitectureReportOps#build — mainSequence (bd tea-rags-mcp-r8hme.8)
     expect(report.violations.at(-1)?.detector).toBe("mainSequence");
   });
 
+  // bd tea-rags-mcp-mqaj7: the census of a file the non-production
+  // classification excludes (a fixture's object-literal implementations, say)
+  // never reaches a component's abstractness — the census is summed over the
+  // production graph only.
+  it("leaves the census of a non-production file out of its directory's abstractness", async () => {
+    const g = censusGraph();
+    g.files.push({ ...file("ports/fixtures/impl.ts"), typeAbstractness: census(0, 5) });
+    g.edges.push({ sourceRelPath: "ports/fixtures/impl.ts", targetRelPath: "vendor/v.ts", callWeight: 1 });
+
+    const report = await new ArchitectureReportOps().build(graphDb(g), {});
+    const ports = report.violations.find((v) => v.detector === "mainSequence" && v.component === "ports");
+
+    expect(ports?.evidence).toMatchObject({
+      abstractness: 1,
+      abstractTypeCount: 5,
+      concreteTypeCount: 0,
+      fileCount: 5,
+    });
+  });
+
   // The response shape must carry the detector's entry-point annotation: a
   // mainSequence distance on an entry component is placement, not defect (bd
   // tea-rags-mcp-zh3l0) — the mapper dropping it would repeat the 0qaht.45
