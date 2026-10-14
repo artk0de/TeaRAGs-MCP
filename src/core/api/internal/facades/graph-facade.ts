@@ -124,6 +124,13 @@ export interface GraphFacadeDeps {
    */
   readIndexedFileImports?: (collectionName: string) => ReturnType<IndexedFileImportLookup>;
   /**
+   * Opens one request window around an architecture read that consumes both
+   * file-level facts, so `readFileMaintenanceSignals` and `readIndexedFileImports`
+   * answer from ONE index scan per call (bd tea-rags-mcp-2i7lg). Optional:
+   * absent, each fact scans on its own.
+   */
+  withinRequest?: <T>(request: () => Promise<T>) => Promise<T>;
+  /**
    * The development-only packages the manifests under a tree root declare (bd
    * tea-rags-mcp-89k7k.35.3) — more evidence for the same test-support
    * exclusion. Optional: absent, the manifests add nothing.
@@ -470,19 +477,21 @@ export class GraphFacade {
       ? async () => readFileMaintenanceSignals(addressedCollection())
       : undefined;
     const { indexedFileImports, declaredTestDependencies } = addressedTestSupportLookups(this.deps, req);
-    return this.withMarkedReadHandle(
-      req,
-      async (handle) =>
-        this.architectureReport.build(
-          handle.graphDb,
-          req,
-          importSpecifiers,
-          fileCommitCounts,
-          maintenanceSignals,
-          indexedFileImports,
-          declaredTestDependencies,
-        ),
-      ArchitectureReportOps.empty(req),
+    return this.inRequestWindow(async () =>
+      this.withMarkedReadHandle(
+        req,
+        async (handle) =>
+          this.architectureReport.build(
+            handle.graphDb,
+            req,
+            importSpecifiers,
+            fileCommitCounts,
+            maintenanceSignals,
+            indexedFileImports,
+            declaredTestDependencies,
+          ),
+        ArchitectureReportOps.empty(req),
+      ),
     );
   }
 
@@ -514,18 +523,26 @@ export class GraphFacade {
     const { readFileMaintenanceSignals } = this.deps;
     const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
     const { indexedFileImports, declaredTestDependencies } = addressedTestSupportLookups(this.deps, req);
-    return this.withMarkedReadHandle(
-      req,
-      async (handle) =>
-        this.restructure.simulate(handle.graphDb, req, {
-          readIndexedFileImports: indexedFileImports,
-          readDeclaredTestDependencies: declaredTestDependencies,
-          readFileMaintenanceSignals: readFileMaintenanceSignals
-            ? async () => readFileMaintenanceSignals(addressedCollection())
-            : undefined,
-        }),
-      fallback,
+    return this.inRequestWindow(async () =>
+      this.withMarkedReadHandle(
+        req,
+        async (handle) =>
+          this.restructure.simulate(handle.graphDb, req, {
+            readIndexedFileImports: indexedFileImports,
+            readDeclaredTestDependencies: declaredTestDependencies,
+            readFileMaintenanceSignals: readFileMaintenanceSignals
+              ? async () => readFileMaintenanceSignals(addressedCollection())
+              : undefined,
+          }),
+        fallback,
+      ),
     );
+  }
+
+  /** Runs `request` inside the wired request window, or bare when none is wired. */
+  private async inRequestWindow<T>(request: () => Promise<T>): Promise<T> {
+    const { withinRequest } = this.deps;
+    return withinRequest ? withinRequest(request) : request();
   }
 
   /**

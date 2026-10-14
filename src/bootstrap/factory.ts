@@ -77,12 +77,10 @@ import {
   ProjectRegistryOps,
   QuarantineStore,
   readPayloadFileCommitCounts,
-  readPayloadFileMaintenanceSignals,
   readPayloadImportSpecifiers,
-  readPayloadIndexedFileImports,
+  RequestScopedFileFactsReader,
   ReviewChangesOps,
   ReviewFacade,
-  ReviewScopedFileFactsReader,
   scheduleWorkingTreeBasePointSweep,
   scheduleWorkingTreeChunkSweep,
   scheduleWorkingTreeGitSignalSweep,
@@ -794,6 +792,11 @@ export function wireCodegraph(
    * by `createAppContext`; optional for the same reason as above.
    */
   readDeclaredTestDependencies?: GraphFacadeDeps["readDeclaredTestDependencies"],
+  /**
+   * Opens one request window around an architecture read that consumes both
+   * file-level facts (bd tea-rags-mcp-2i7lg) — the same window the review wraps.
+   */
+  withinRequest?: GraphFacadeDeps["withinRequest"],
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -922,6 +925,7 @@ export function wireCodegraph(
     ...(readFileMaintenanceSignals ? { readFileMaintenanceSignals } : {}),
     ...(readIndexedFileImports ? { readIndexedFileImports } : {}),
     ...(readDeclaredTestDependencies ? { readDeclaredTestDependencies } : {}),
+    ...(withinRequest ? { withinRequest } : {}),
     ...(workingTreeOverlay ? { workingTreeOverlay } : {}),
     ...(indexExists ? { indexExists } : {}),
   });
@@ -1412,6 +1416,10 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   const manifestLanguages: { factory?: LanguageFactoryDescriptor } = {};
   const readTreeDeclaredTestDependencies = (root: string): ReadonlySet<string> =>
     readDeclaredTestDependencies(root, collectTestDependencyManifestSources(manifestLanguages.factory));
+  // One file-facts scan per request: the report and the review each open a
+  // window on this reader, inside which both facts ride one Qdrant scroll
+  // (bd tea-rags-mcp-i2zr8, tea-rags-mcp-2i7lg).
+  const requestFileFacts = new RequestScopedFileFactsReader(infra.qdrant);
   const codegraphContext = wireCodegraph(
     config,
     zodConfig,
@@ -1421,9 +1429,10 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     async (collectionName) => readPayloadFileCommitCounts(infra.qdrant, collectionName),
     workingTreeOverlay,
     indexExists,
-    async (collectionName) => readPayloadFileMaintenanceSignals(infra.qdrant, collectionName),
-    async (collectionName) => readPayloadIndexedFileImports(infra.qdrant, collectionName),
+    async (collectionName) => requestFileFacts.readFileMaintenanceSignals(collectionName),
+    async (collectionName) => requestFileFacts.readIndexedFileImports(collectionName),
     readTreeDeclaredTestDependencies,
+    async (request) => requestFileFacts.withinRequest(request),
   );
   // Swept with the chunk store's schedule (first after 2 min, then every 6 h,
   // unref'd, throttled across processes by a stamp) — here,
@@ -1486,6 +1495,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     historyAnchor,
     indexExists,
     readTreeDeclaredTestDependencies,
+    requestFileFacts,
   });
   // App-layer ops (bd tea-rags-mcp-0qaht.12): composed by the api composition
   // root and injected as ready handlers — createApp's own fallback exists only
@@ -2106,6 +2116,7 @@ function createExploreSection(deps: {
   historyAnchor: IndexHistoryAnchorResolver;
   indexExists: (collectionName: string) => Promise<boolean>;
   readTreeDeclaredTestDependencies: (root: string) => ReadonlySet<string>;
+  requestFileFacts: RequestScopedFileFactsReader;
 }): ExploreSection {
   const {
     zodConfig,
@@ -2123,6 +2134,7 @@ function createExploreSection(deps: {
     historyAnchor,
     indexExists,
     readTreeDeclaredTestDependencies,
+    requestFileFacts,
   } = deps;
   const explore = new ExploreFacade({
     qdrant: infra.qdrant,
@@ -2182,9 +2194,8 @@ function createExploreSection(deps: {
   //
   // The maintenance readings and the indexed-file imports both reduce every
   // payload point to one row per file, so a review reads them from ONE scroll
-  // (bd tea-rags-mcp-i2zr8): the reader shares a scan per collection while a
-  // review is open and drops it when the review ends.
-  const reviewFileFacts = new ReviewScopedFileFactsReader(infra.qdrant);
+  // (bd tea-rags-mcp-i2zr8): the reader shares a scan per collection while a request
+  // window (review or architecture report) is open and drops it when it ends.
   const reviewChangesOps =
     codegraphContext && namingLexiconOps
       ? new ReviewChangesOps({
@@ -2216,11 +2227,11 @@ function createExploreSection(deps: {
           // maintenance readings the whole-repo report ranks by (bd
           // tea-rags-mcp-r8hme.20).
           readFileMaintenanceSignals: async (collectionName) =>
-            reviewFileFacts.readFileMaintenanceSignals(collectionName),
+            requestFileFacts.readFileMaintenanceSignals(collectionName),
           // Test support is excluded from the production graph through the
           // SAME indexed-file import read the whole-repo report uses (bd
           // tea-rags-mcp-89k7k.35.3).
-          readIndexedFileImports: async (collectionName) => reviewFileFacts.readIndexedFileImports(collectionName),
+          readIndexedFileImports: async (collectionName) => requestFileFacts.readIndexedFileImports(collectionName),
           readDeclaredTestDependencies: readTreeDeclaredTestDependencies,
         })
       : undefined;
@@ -2228,7 +2239,7 @@ function createExploreSection(deps: {
     ? new ReviewFacade({
         ops: {
           reviewChanges: async (request) =>
-            reviewFileFacts.withinReview(async () => reviewChangesOps.reviewChanges(request)),
+            requestFileFacts.withinRequest(async () => reviewChangesOps.reviewChanges(request)),
         },
       })
     : undefined;

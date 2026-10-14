@@ -1,5 +1,5 @@
 /**
- * readPayloadFileFacts / ReviewScopedFileFactsReader (bd tea-rags-mcp-i2zr8):
+ * readPayloadFileFacts / RequestScopedFileFactsReader (bd tea-rags-mcp-i2zr8):
  * the file-level facts a review consumes — maintenance readings and indexed
  * imports — read by ONE payload scroll whose pages feed both reducers, each
  * keeping its own dedupe rule, so the answers equal the standalone readers'.
@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   readPayloadFileFacts,
-  ReviewScopedFileFactsReader,
+  RequestScopedFileFactsReader,
 } from "../../../../../src/core/api/internal/infra/payload-file-facts-reader.js";
 import { readPayloadFileMaintenanceSignals } from "../../../../../src/core/api/internal/infra/payload-file-maintenance-signal-reader.js";
 import { readPayloadIndexedFileImports } from "../../../../../src/core/api/internal/infra/payload-import-specifier-reader.js";
@@ -112,12 +112,12 @@ describe("readPayloadFileFacts", () => {
   });
 });
 
-describe("ReviewScopedFileFactsReader", () => {
+describe("RequestScopedFileFactsReader", () => {
   it("scrolls once per review however many times either fact is consumed", async () => {
     const scrollPayloadPages = scroller();
-    const reader = new ReviewScopedFileFactsReader({ scrollPayloadPages });
+    const reader = new RequestScopedFileFactsReader({ scrollPayloadPages });
 
-    const [signals, imports, importsAgain] = await reader.withinReview(async () =>
+    const [signals, imports, importsAgain] = await reader.withinRequest(async () =>
       Promise.all([
         reader.readFileMaintenanceSignals("code_x"),
         reader.readIndexedFileImports("code_x"),
@@ -133,9 +133,9 @@ describe("ReviewScopedFileFactsReader", () => {
 
   it("shares a scan with a fact consumed after the other one settled", async () => {
     const scrollPayloadPages = scroller();
-    const reader = new ReviewScopedFileFactsReader({ scrollPayloadPages });
+    const reader = new RequestScopedFileFactsReader({ scrollPayloadPages });
 
-    await reader.withinReview(async () => {
+    await reader.withinRequest(async () => {
       await reader.readIndexedFileImports("code_x");
       await reader.readFileMaintenanceSignals("code_x");
     });
@@ -145,19 +145,19 @@ describe("ReviewScopedFileFactsReader", () => {
 
   it("re-reads in the next review — a finished review's facts are never served again", async () => {
     const scrollPayloadPages = scroller();
-    const reader = new ReviewScopedFileFactsReader({ scrollPayloadPages });
+    const reader = new RequestScopedFileFactsReader({ scrollPayloadPages });
 
-    await reader.withinReview(async () => reader.readIndexedFileImports("code_x"));
-    await reader.withinReview(async () => reader.readFileMaintenanceSignals("code_x"));
+    await reader.withinRequest(async () => reader.readIndexedFileImports("code_x"));
+    await reader.withinRequest(async () => reader.readFileMaintenanceSignals("code_x"));
 
     expect(scrollPayloadPages).toHaveBeenCalledTimes(2);
   });
 
   it("keeps one scan per collection", async () => {
     const scrollPayloadPages = scroller();
-    const reader = new ReviewScopedFileFactsReader({ scrollPayloadPages });
+    const reader = new RequestScopedFileFactsReader({ scrollPayloadPages });
 
-    await reader.withinReview(async () =>
+    await reader.withinRequest(async () =>
       Promise.all([reader.readIndexedFileImports("code_x"), reader.readIndexedFileImports("code_y")]),
     );
 
@@ -166,35 +166,35 @@ describe("ReviewScopedFileFactsReader", () => {
 
   it("drops the shared scans only when the last overlapping review ends", async () => {
     const scrollPayloadPages = scroller();
-    const reader = new ReviewScopedFileFactsReader({ scrollPayloadPages });
+    const reader = new RequestScopedFileFactsReader({ scrollPayloadPages });
     let releaseFirst!: () => void;
     const firstHeld = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
 
-    const first = reader.withinReview(async () => {
+    const first = reader.withinRequest(async () => {
       await reader.readIndexedFileImports("code_x");
       await firstHeld;
     });
-    await reader.withinReview(async () => reader.readFileMaintenanceSignals("code_x"));
+    await reader.withinRequest(async () => reader.readFileMaintenanceSignals("code_x"));
     releaseFirst();
     await first;
-    await reader.withinReview(async () => reader.readFileMaintenanceSignals("code_x"));
+    await reader.withinRequest(async () => reader.readFileMaintenanceSignals("code_x"));
 
     expect(scrollPayloadPages).toHaveBeenCalledTimes(2);
   });
 
   it("ends the review window when the review throws", async () => {
     const scrollPayloadPages = scroller();
-    const reader = new ReviewScopedFileFactsReader({ scrollPayloadPages });
+    const reader = new RequestScopedFileFactsReader({ scrollPayloadPages });
 
     await expect(
-      reader.withinReview(async () => {
+      reader.withinRequest(async () => {
         await reader.readIndexedFileImports("code_x");
         throw new Error("section failed");
       }),
     ).rejects.toThrow("section failed");
-    await reader.withinReview(async () => reader.readIndexedFileImports("code_x"));
+    await reader.withinRequest(async () => reader.readIndexedFileImports("code_x"));
 
     expect(scrollPayloadPages).toHaveBeenCalledTimes(2);
   });
@@ -202,9 +202,9 @@ describe("ReviewScopedFileFactsReader", () => {
   it("propagates a failed scroll to both consumers of the shared scan", async () => {
     const failure = new Error("qdrant down");
     const scrollPayloadPages = failingScroller(failure);
-    const reader = new ReviewScopedFileFactsReader({ scrollPayloadPages });
+    const reader = new RequestScopedFileFactsReader({ scrollPayloadPages });
 
-    const outcomes = await reader.withinReview(async () =>
+    const outcomes = await reader.withinRequest(async () =>
       Promise.allSettled([reader.readFileMaintenanceSignals("code_x"), reader.readIndexedFileImports("code_x")]),
     );
 
@@ -217,7 +217,7 @@ describe("ReviewScopedFileFactsReader", () => {
 
   it("reads each fact through its own narrow scroll outside a review", async () => {
     const scrollPayloadPages = scroller();
-    const reader = new ReviewScopedFileFactsReader({ scrollPayloadPages });
+    const reader = new RequestScopedFileFactsReader({ scrollPayloadPages });
 
     const signals = await reader.readFileMaintenanceSignals("code_x");
     const imports = await reader.readIndexedFileImports("code_x");

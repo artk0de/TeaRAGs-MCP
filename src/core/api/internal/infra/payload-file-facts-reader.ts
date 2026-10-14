@@ -47,27 +47,28 @@ export async function readPayloadFileFacts(
 }
 
 /**
- * The two file-fact ports a review is wired with, sharing one scan per
- * collection while a review is open (`withinReview`). However many sections
- * consume either fact, a review scrolls once; the scan is dropped when the
- * last open review ends, so a later review never reads a finished one's facts.
- * Overlapping reviews share the scan the first of them started. Outside any
- * review each port scrolls its own narrow keys, as its standalone reader does.
- * A failed scan rejects every consumer that shares it.
+ * The two file-fact ports a review or an architecture report is wired with,
+ * sharing one scan per collection while a request window is open
+ * (`withinRequest`). However many sections consume either fact, the request
+ * scrolls once; the scan is dropped when the last open window ends, so a later
+ * request never reads a finished one's facts. Overlapping windows share the
+ * scan the first of them started. Outside any window each port scrolls its own
+ * narrow keys, as its standalone reader does. A failed scan rejects every
+ * consumer that shares it.
  */
-export class ReviewScopedFileFactsReader {
-  private openReviews = 0;
+export class RequestScopedFileFactsReader {
+  private openWindows = 0;
   private readonly scans = new Map<string, Promise<PayloadFileFacts>>();
 
   constructor(private readonly qdrant: PayloadPageScroller) {}
 
-  async withinReview<T>(review: () => Promise<T>): Promise<T> {
-    this.openReviews++;
+  async withinRequest<T>(request: () => Promise<T>): Promise<T> {
+    this.openWindows++;
     try {
-      return await review();
+      return await request();
     } finally {
-      this.openReviews--;
-      if (this.openReviews === 0) this.scans.clear();
+      this.openWindows--;
+      if (this.openWindows === 0) this.scans.clear();
     }
   }
 
@@ -84,7 +85,7 @@ export class ReviewScopedFileFactsReader {
   }
 
   private sharedScan(collectionName: string): Promise<PayloadFileFacts> | undefined {
-    if (this.openReviews === 0) return undefined;
+    if (this.openWindows === 0) return undefined;
     let scan = this.scans.get(collectionName);
     if (scan === undefined) {
       scan = readPayloadFileFacts(this.qdrant, collectionName);
