@@ -49,7 +49,7 @@ export class WiredExportTableReader implements ExportTableReader {
   constructor(
     private readonly contract: Pick<ExportTableReader, "indexedSurfaceOf">,
     indexedEdges: readonly FileDependencyEdge[],
-    overlay?: ReviewEdgeFacts,
+    private readonly overlay?: ReviewEdgeFacts,
   ) {
     for (const edge of effectiveEdges(indexedEdges, overlay)) {
       for (const name of edge.importedExportNames ?? []) this.hold(name, edge.targetRelPath);
@@ -66,8 +66,20 @@ export class WiredExportTableReader implements ExportTableReader {
     }
   }
 
+  /**
+   * The facade's surface AS THE REVIEW SEES IT: a facade the diff re-read
+   * serves the names its working-tree edges re-export, so an export the diff
+   * adds is not proposed again. Remedy-only — the facade-contract detector
+   * keeps judging the INDEXED surface through its own port. A facade not
+   * re-read, whose read was skipped, or whose re-read recorded no names keeps
+   * the contract's surface: a missing fact is never an empty surface.
+   */
   indexedSurfaceOf(facade: string): readonly string[] | undefined {
-    return this.contract.indexedSurfaceOf(facade);
+    const reread = this.overlay?.masked.has(facade) === true && this.overlay.unsupported().every(skippedIsNot(facade));
+    if (!reread || this.overlay === undefined) return this.contract.indexedSurfaceOf(facade);
+    const names = new Set(this.overlay.edgesFrom(facade).flatMap((edge) => edge.reexportedExportNames ?? []));
+    names.delete(WHOLE_MODULE_EXPORT_NAME);
+    return names.size > 0 ? [...names] : this.contract.indexedSurfaceOf(facade);
   }
 
   declarersOf(name: string): readonly string[] | undefined {
@@ -84,6 +96,10 @@ export class WiredExportTableReader implements ExportTableReader {
     holders.add(relPath);
     this.holdersByName.set(name, holders);
   }
+}
+
+function skippedIsNot(relPath: string): (skip: { relPath: string }) => boolean {
+  return (skip) => skip.relPath !== relPath;
 }
 
 /** The indexed edges with every successfully re-read source's edges swapped for the overlay's. */

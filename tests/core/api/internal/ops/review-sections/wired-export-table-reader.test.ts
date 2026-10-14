@@ -110,5 +110,35 @@ describe("WiredExportTableReader", () => {
       );
       expect(reader.declarersOf("X")).toEqual(["src/lib/x.ts"]);
     });
+
+    it("E: a re-read facade's surface is the names its overlay edges re-export, not the indexed ones", () => {
+      const overlay = new ReviewEdgeOverlay([
+        {
+          relPath: "src/lib/index.ts",
+          edges: [edge("src/lib/index.ts", "src/lib/x.ts", { reexported: ["a", "fresh"] })],
+        },
+      ]);
+      const reader = new WiredExportTableReader(
+        { indexedSurfaceOf: () => ["a", "dropped"] },
+        [edge("src/lib/index.ts", "src/lib/x.ts", { reexported: ["a", "dropped"] })],
+        overlay,
+      );
+      expect(reader.indexedSurfaceOf("src/lib/index.ts")).toEqual(["a", "fresh"]);
+    });
+
+    it("F: a facade the overlay did not re-read, or whose read was skipped, keeps the contract's surface", () => {
+      const overlay = new ReviewEdgeOverlay([
+        { relPath: "src/lib/skipped.ts", edges: [], skip: { reason: "parseFailed" } },
+      ]);
+      const reader = new WiredExportTableReader({ indexedSurfaceOf: () => ["a"] }, [], overlay);
+      expect(reader.indexedSurfaceOf("src/lib/index.ts")).toEqual(["a"]);
+      expect(reader.indexedSurfaceOf("src/lib/skipped.ts")).toEqual(["a"]);
+    });
+
+    it("G: a re-read facade whose overlay edges record no re-export names keeps the contract's surface", () => {
+      const overlay = new ReviewEdgeOverlay([{ relPath: "src/lib/index.ts", edges: [] }]);
+      const reader = new WiredExportTableReader({ indexedSurfaceOf: () => ["a"] }, [], overlay);
+      expect(reader.indexedSurfaceOf("src/lib/index.ts")).toEqual(["a"]);
+    });
   });
 });
