@@ -22,70 +22,10 @@ import type { PhysicalCollectionName } from "../../contracts/types/collection-id
 import { physicalCollectionNamesListedByStorage } from "../../primitives/ids/index.js";
 import type { QdrantConnection } from "./connection.js";
 import { CollectionAlreadyExistsError, QdrantUnavailableError } from "./errors.js";
+import type { CollectionInfo, QdrantCollectionMemoryUsage, QdrantMemoryUsage } from "./types.js";
 
-export interface CollectionInfo {
-  name: string;
-  vectorSize: number;
-  pointsCount: number;
-  distance: "Cosine" | "Euclid" | "Dot";
-  hybridEnabled?: boolean;
-  /** Qdrant collection health status. `yellow` indicates background optimization. */
-  status: "green" | "yellow" | "red";
-  /**
-   * Optimizer state from Qdrant: `"ok"`, `"error: <message>"` when the
-   * optimizer failed (Qdrant's `{ error }` arm), or `"unknown"` when absent.
-   */
-  optimizerStatus: string;
-  /**
-   * Vector quantization mode derived from `config.quantization_config`:
-   * `turbo` (TurboQuant 8x), `scalar` (int8), or `none` (unquantized or an
-   * unrecognized quantization variant).
-   */
-  quantization: "turbo" | "scalar" | "none";
-  /**
-   * Application JSON stored on the collection itself (`config.metadata`,
-   * written at creation). Absent when the collection carries none.
-   */
-  metadata?: Record<string, unknown>;
-  /**
-   * Operations Qdrant has accepted but not yet applied (`update_queue.length`,
-   * Qdrant >= 1.18). Absent when the server does not report a queue — an older
-   * server, or a build that omits it — which is not the same as an empty one.
-   */
-  updateQueueLength?: number;
-}
-
-/**
- * One cell of Qdrant's per-collection memory report, in bytes — the four ways
- * the server accounts a part of a collection.
- */
-export interface QdrantMemoryUsage {
-  /**
-   * Sum of the part's FILE SIZES (`disk_bytes`) — apparent size. Qdrant
-   * preallocates its mmap files sparsely, so this counts space never written and
-   * runs well above the blocks the filesystem actually allocated.
-   */
-  diskBytes: number;
-  /** Non-evictable heap memory (`ram_bytes`). */
-  ramBytes: number;
-  /** Evictable mmap pages currently resident in the OS page cache (`cached_bytes`). */
-  cachedBytes: number;
-  /** Bytes Qdrant wants resident in page cache for full-speed search (`expected_cache_bytes`). */
-  expectedCacheBytes: number;
-}
-
-/** Qdrant's `GET /collections/{name}/memory` report, camel-cased; named parts keep their names. */
-export interface QdrantCollectionMemoryUsage {
-  total: QdrantMemoryUsage;
-  /** Dense vectors, one entry per named vector (`""` = the unnamed default vector). */
-  vectors: { name: string; storage: QdrantMemoryUsage; index: QdrantMemoryUsage; quantized?: QdrantMemoryUsage }[];
-  sparseVectors: { name: string; storage: QdrantMemoryUsage; index: QdrantMemoryUsage }[];
-  payload: QdrantMemoryUsage;
-  /** One entry per payload FIELD index, in server order. */
-  payloadIndexes: { name: string; usage: QdrantMemoryUsage }[];
-  /** Remaining structures the server accounts separately (e.g. `id_tracker`). */
-  other: { name: string; usage: QdrantMemoryUsage }[];
-}
+// Declared in types.ts so ports.ts stays a leaf off the connection/alias graph.
+export type { CollectionInfo, QdrantCollectionMemoryUsage, QdrantMemoryUsage } from "./types.js";
 
 export class QdrantCollectionAdmin {
   constructor(private readonly connection: QdrantConnection) {}

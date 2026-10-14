@@ -26,10 +26,14 @@
  */
 import type { CollectionAliasEntry, PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { EmbeddingCallOptions } from "../embeddings/base.js";
-import type { CollectionInfo, QdrantCollectionMemoryUsage } from "./collection-admin.js";
-import type { PayloadFieldIndex } from "./payload-index.js";
-import type { SearchResult } from "./search-executor.js";
-import type { QdrantUpdateStatus, SparseVector } from "./types.js";
+import type {
+  CollectionInfo,
+  PayloadFieldIndex,
+  QdrantCollectionMemoryUsage,
+  QdrantUpdateStatus,
+  SearchResult,
+  SparseVector,
+} from "./types.js";
 import type { PayloadWriteBarrierOutcome } from "./write-barrier.js";
 
 /** Read side of `QdrantCollectionAdmin`: what collections exist and the state each is in. */
