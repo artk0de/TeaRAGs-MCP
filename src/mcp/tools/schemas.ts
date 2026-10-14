@@ -50,8 +50,7 @@ const projectField = () =>
  * One string for the search and codegraph surfaces alike.
  */
 export const WORKING_TREE_PATH_HINT =
-  "Your working directory, any dir in checkout. Addresses the TREE; index resolves from same repository. " +
-  "Prefer over project in worktrees.";
+  "Working dir (any checkout dir): addresses the TREE; index via same repo. " + "Prefer over project in worktrees.";
 
 /** `path` hint for the project-or-path tools (index status / metrics / clear). */
 const PROJECT_OR_PATH_HINT = "Codebase path. Prefer 'project' when an alias is registered.";
