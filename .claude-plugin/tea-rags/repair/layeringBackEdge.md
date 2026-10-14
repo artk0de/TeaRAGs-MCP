@@ -19,7 +19,8 @@ Apply the finding's `remedy`.
 - If the import goes through a re-export, import from the declaring file.
 - If the dependency is a type, look for an existing contract in a permitted
   layer.
-- Do not move files between layers to satisfy this family.
+- Cheap repair never moves files between layers. Escalated: `## Ops recipe`,
+  simulated through `restructure` or ordered by `tea-rags:refactoring-planning`.
 
 ## Known false positives
 

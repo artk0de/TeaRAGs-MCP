@@ -22,7 +22,8 @@ component the source already depends on, so efferent coupling does not grow.
   added edge is a type import, retarget it to an existing contract.
 - Threshold flap (0.02 or less): report metric before and after, threshold and
   the moving edge, and let the user decide.
-- Splitting the hub is not a cheap fix. Report it with a bead suggestion.
+- Splitting the hub is not a cheap fix. Report it with a bead suggestion;
+  escalated, the split is `## Ops recipe`, simulated through `restructure`.
 
 ## Known false positives
 

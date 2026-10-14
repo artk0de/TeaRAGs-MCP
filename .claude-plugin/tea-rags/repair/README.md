@@ -10,7 +10,10 @@ are acting on. Never preload the directory.
 
 Every file has the same five sections, in this order: `## What it means`,
 `## Apply remedy`, `## No remedy`, `## Known false positives`,
-`## Escalate when`.
+`## Escalate when`. A sixth, `## Ops recipe`, comes last and is present only for
+families with a code remedy. It is the plan-level remedy expanded into
+restructure primitives, read by `tea-rags:refactoring-planning` and by DDG Step
+7 only when a finding escalates past the cheap repair.
 
 Rules common to all families:
 

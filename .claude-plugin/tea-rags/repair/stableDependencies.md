@@ -22,7 +22,8 @@ The server found no cheap target. Look for one by hand:
 - If the import goes through a re-export, import from the declaring file.
 - If the dependency is a type, look for an existing contract of the same name in
   a more stable component and import that.
-- Do not create files, interfaces or moves to satisfy this family.
+- Cheap repair never creates files, interfaces or moves. Escalated: use
+  `## Ops recipe`, simulated through `restructure`.
 
 Nothing found: if the finding carries `compositionRoot`, `compositionTable` or
 `parentSurface`, that flag is the evidence, so record it as a false positive.
