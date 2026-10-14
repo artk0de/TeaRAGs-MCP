@@ -120,9 +120,17 @@ export function collectTestDependencyManifestSources(
  * The packages the manifests under `root` declare for development and tests
  * only (bd tea-rags-mcp-89k7k.35.3): declared development-only by some
  * manifest and runtime by none, so a package one workspace ships and another
- * only tests with is never counted. Same walk, bounds and ignore list as
+ * only tests with is never counted. Same bounds and ignore list as
  * {@link readManifestFiles}; total — an unreadable or malformed manifest
  * declares nothing.
+ *
+ * The manifests come from the same work-tree listing the declared-dependency
+ * read takes (bd tea-rags-mcp-s0xex): a nested checkout under the root
+ * (`.claude/worktrees/*`) or a gitignored tool directory (`.ruby-lsp/`) is
+ * another tree's declaration, and walking one read every file of a full second
+ * checkout — on taxdome 98,580 entries against 52,672 listed, seconds per call.
+ * Without a listing the walk stays; either way no directory that is itself a
+ * checkout is entered.
  */
 export function readDeclaredTestDependencies(
   root: string,
@@ -131,9 +139,16 @@ export function readDeclaredTestDependencies(
   if (sources.length === 0) return new Set();
   const developmentOnly = new Set<string>();
   const runtime = new Set<string>();
-  for (const { fileName, content } of readManifestFiles(root, (name) =>
-    sources.some((s) => s.matchesManifestFile(name)),
-  )) {
+  const found: ManifestFile[] = [];
+  walkManifestFiles(
+    root,
+    (name) => sources.some((s) => s.matchesManifestFile(name)),
+    collectManifestFile(found),
+    NO_EXTRA_IGNORED_DIRS,
+    workTreeListingOnce(root)(),
+    isOwnDirectory,
+  );
+  for (const { fileName, content } of found) {
     for (const source of sources) {
       if (!source.matchesManifestFile(fileName)) continue;
       const scopes = source.parseDependencyScopes(fileName, content);
@@ -274,19 +289,30 @@ export function readManifestFiles(
   extraIgnoredDirs: ReadonlySet<string> = NO_EXTRA_IGNORED_DIRS,
 ): ManifestFile[] {
   const found: ManifestFile[] = [];
-  walkManifestFiles(
-    root,
-    matchesManifestFile,
-    (dir, relDir, fileName) => {
-      try {
-        found.push({ relDir, fileName, content: readFileSync(join(dir, fileName), "utf8") });
-      } catch {
-        // unreadable: skipped, like every other failure of the walk
-      }
-    },
-    extraIgnoredDirs,
-  );
+  walkManifestFiles(root, matchesManifestFile, collectManifestFile(found), extraIgnoredDirs);
   return found;
+}
+
+/** A walk visitor appending each manifest it reads to `found`; an unreadable one is skipped. */
+function collectManifestFile(found: ManifestFile[]): (dir: string, relDir: string, fileName: string) => void {
+  return (dir, relDir, fileName) => {
+    try {
+      found.push({ relDir, fileName, content: readFileSync(join(dir, fileName), "utf8") });
+    } catch {
+      // unreadable: skipped, like every other failure of the walk
+    }
+  };
+}
+
+const DESCENDS_INTO_EVERY_DIRECTORY = (): boolean => true;
+
+/**
+ * A directory that is not itself a checkout — no `.git` entry, the file a linked
+ * worktree or submodule holds or a repository's own store. A nested checkout's
+ * manifests declare ANOTHER tree's dependencies.
+ */
+function isOwnDirectory(dir: string): boolean {
+  return !existsSync(join(dir, ".git"));
 }
 
 /**
@@ -334,8 +360,9 @@ function listWorkTreeFiles(root: string): readonly string[] | undefined {
 /**
  * The listed files the walk would reach and `matchesManifestFile` accepts —
  * the walk's bounds applied to each path: no directory segment in the ignore
- * sets, no deeper than {@link MAX_MANIFEST_WALK_DEPTH}, and a regular file on
- * disk now (the walk follows no symlink; a tracked file may be deleted).
+ * sets, no deeper than {@link MAX_MANIFEST_WALK_DEPTH}, no directory on the
+ * way that `descendsInto` vetoes, and a regular file on disk now (the walk
+ * follows no symlink; a tracked file may be deleted).
  */
 function visitListedManifests(
   root: string,
@@ -343,12 +370,14 @@ function visitListedManifests(
   matchesManifestFile: (fileName: string) => boolean,
   onManifest: (dir: string, relDir: string, fileName: string) => void,
   extraIgnoredDirs: ReadonlySet<string>,
+  descendsInto: (dir: string) => boolean,
 ): void {
   for (const path of paths) {
     const segments = path.split("/");
     const fileName = segments.pop() ?? "";
     if (segments.length > MAX_MANIFEST_WALK_DEPTH || !matchesManifestFile(fileName)) continue;
     if (segments.some((dir) => DEPENDENCY_MANIFEST_IGNORED_DIRS.has(dir) || extraIgnoredDirs.has(dir))) continue;
+    if (!segments.every((_, depth) => descendsInto(join(root, ...segments.slice(0, depth + 1))))) continue;
     const dir = join(root, ...segments);
     try {
       if (!lstatSync(join(dir, fileName)).isFile()) continue;
@@ -362,6 +391,9 @@ function visitListedManifests(
 /**
  * The bounded, ignore-aware directory walk both readers share; given a
  * work-tree listing, the same bounds over the listed paths instead.
+ * `descendsInto` vetoes a directory below the root by its absolute path, in
+ * either mode: git leaves a healthy nested checkout's files out of the listing,
+ * but not one whose `.git` file names a store that is gone.
  */
 function walkManifestFiles(
   root: string,
@@ -369,9 +401,10 @@ function walkManifestFiles(
   onManifest: (dir: string, relDir: string, fileName: string) => void,
   extraIgnoredDirs: ReadonlySet<string> = NO_EXTRA_IGNORED_DIRS,
   listed?: readonly string[],
+  descendsInto: (dir: string) => boolean = DESCENDS_INTO_EVERY_DIRECTORY,
 ): void {
   if (listed !== undefined) {
-    visitListedManifests(root, listed, matchesManifestFile, onManifest, extraIgnoredDirs);
+    visitListedManifests(root, listed, matchesManifestFile, onManifest, extraIgnoredDirs, descendsInto);
     return;
   }
   const visit = (dir: string, relDir: string, depth: number): void => {
@@ -385,7 +418,9 @@ function walkManifestFiles(
       if (entry.isDirectory()) {
         if (depth >= MAX_MANIFEST_WALK_DEPTH) continue;
         if (DEPENDENCY_MANIFEST_IGNORED_DIRS.has(entry.name) || extraIgnoredDirs.has(entry.name)) continue;
-        visit(join(dir, entry.name), relDir === "" ? entry.name : `${relDir}/${entry.name}`, depth + 1);
+        const subDir = join(dir, entry.name);
+        if (!descendsInto(subDir)) continue;
+        visit(subDir, relDir === "" ? entry.name : `${relDir}/${entry.name}`, depth + 1);
         continue;
       }
       if (!entry.isFile() || !matchesManifestFile(entry.name)) continue;
