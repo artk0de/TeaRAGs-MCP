@@ -249,6 +249,7 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
         languageEnforced: 2,
         intraParentConsumers: 2,
         deFactoSurfaceEdges: 0,
+        nestedEntryEdges: 0,
       },
       deFactoSurfaces: [],
     });
@@ -1144,5 +1145,105 @@ describe("resolveFacadeAdoptionThreshold", () => {
     expect(policy.threshold).toBeCloseTo(0.25, 12);
     expect(policy.admits(0.5)).toBe(false);
     expect(policy.admits(0.6)).toBe(true);
+  });
+});
+
+/**
+ * A directory that declares its own entry file inside an outer module is a
+ * DECLARED surface (bd tea-rags-mcp-n8shz, the g3oo1 shape): an edge into
+ * exactly that entry file is a facade edge of the inner module, never an
+ * internal reach of the outer one — whether or not the inner module has the
+ * importers to be judged itself. A deep file inside the inner directory stays
+ * judged as before, and a bypass (the outer facade already exposes the entry)
+ * stays a bypass.
+ *
+ * - `core/ep/` — facade `index.ts` (re-exports `a.ts` only), adopted by
+ *   `app/f1..f3`; parent `core` holds no entry, so `boot/` is external.
+ * - `core/ep/worker/` — declares `index.ts`; one external importer
+ *   `boot/factory.ts` → too-few-importers.
+ */
+describe("detectLeakingAbstractions — nested declared entry (bd tea-rags-mcp-n8shz)", () => {
+  function nested(extraEdges: FileDependencyEdge[] = []): FileDependencyGraph {
+    return {
+      files: [
+        walked("core/ep/index.ts"),
+        walked("core/ep/a.ts"),
+        walked("core/ep/worker/index.ts"),
+        walked("core/ep/worker/w.ts"),
+        walked("boot/factory.ts"),
+        walked("boot/deep.ts"),
+        ...["f1", "f2", "f3"].map((f) => walked(`app/${f}.ts`)),
+      ],
+      edges: [
+        edge("core/ep/index.ts", "core/ep/a.ts"),
+        edge("core/ep/worker/index.ts", "core/ep/worker/w.ts"),
+        ...["f1", "f2", "f3"].map((f) => edge(`app/${f}.ts`, "core/ep/index.ts")),
+        edge("boot/factory.ts", "core/ep/worker/index.ts", 1),
+        ...extraEdges,
+      ],
+    };
+  }
+
+  it("treats an edge into the nested module's entry file as its facade edge: no violation, counted, adoption unaffected", () => {
+    const report = detectLeakingAbstractions(nested());
+
+    expect(report.violations).toEqual([]);
+    expect(report.summary.excludedModules.nestedEntryEdges).toBe(1);
+    expect(report.modules.find((m) => m.moduleDir === "core/ep")).toMatchObject({
+      externalImporterCount: 3,
+      facadeImporterCount: 3,
+      deepImporterCount: 0,
+      status: "active",
+    });
+    expect(report.modules.find((m) => m.moduleDir === "core/ep/worker")).toMatchObject({
+      externalImporterCount: 1,
+      status: "too-few-importers",
+    });
+  });
+
+  it("still flags a deep file inside the nested directory as an internal reach of the outer module", () => {
+    const report = detectLeakingAbstractions(nested([edge("boot/deep.ts", "core/ep/worker/w.ts", 2)]));
+
+    expect(report.violations.map((v) => [v.sourceRelPath, v.targetRelPath, v.moduleDir, v.kind])).toEqual([
+      ["boot/deep.ts", "core/ep/worker/w.ts", "core/ep", "internal-reach"],
+    ]);
+    expect(report.summary.excludedModules.nestedEntryEdges).toBe(1);
+    expect(report.modules.find((m) => m.moduleDir === "core/ep")).toMatchObject({
+      externalImporterCount: 4,
+      deepImporterCount: 1,
+    });
+  });
+
+  it("keeps a bypass: the outer facade already exposes the nested entry, so the edge walked past it", () => {
+    const report = detectLeakingAbstractions(nested([edge("core/ep/index.ts", "core/ep/worker/index.ts")]));
+
+    expect(report.violations.map((v) => [v.sourceRelPath, v.targetRelPath, v.moduleDir, v.kind])).toEqual([
+      ["boot/factory.ts", "core/ep/worker/index.ts", "core/ep", "bypass"],
+    ]);
+    expect(report.summary.excludedModules.nestedEntryEdges).toBe(0);
+  });
+
+  it("judges exactly what the report lists — the review edge judge shares the rule", () => {
+    const graph = nested([edge("boot/deep.ts", "core/ep/worker/w.ts", 2)]);
+    const report = detectLeakingAbstractions(graph);
+    const judge = createFacadeLeakEdgeJudge(graph, report);
+    const expected = new Map(report.violations.map((v) => [`${v.sourceRelPath} -> ${v.targetRelPath}`, v]));
+
+    for (const e of graph.edges) {
+      const violation = expected.get(`${e.sourceRelPath} -> ${e.targetRelPath}`);
+      expect(judge(e.sourceRelPath, e.targetRelPath)).toEqual(
+        violation === undefined
+          ? undefined
+          : { moduleDir: violation.moduleDir, facadeRelPath: violation.facadeRelPath, kind: violation.kind },
+      );
+    }
+    expect(judge("boot/factory.ts", "core/ep/worker/index.ts")).toBeUndefined();
+    // An edge the graph does not hold yet, into the nested entry: still the inner module's facade edge.
+    expect(judge("boot/new.ts", "core/ep/worker/index.ts")).toBeUndefined();
+    expect(judge("boot/new.ts", "core/ep/worker/w.ts")).toEqual({
+      moduleDir: "core/ep",
+      facadeRelPath: "core/ep/index.ts",
+      kind: "internal-reach",
+    });
   });
 });

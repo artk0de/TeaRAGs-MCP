@@ -300,6 +300,13 @@ export interface LeakingAbstractionSummary {
      * (`deFactoSurfaces`): judged, not reported as violations. Counts edges.
      */
     deFactoSurfaceEdges: number;
+    /**
+     * In-scope internal-reach edges into exactly the entry file of a directory
+     * that declares its own entry inside the judged module (bd
+     * tea-rags-mcp-n8shz): the inner module's facade edges — not violations
+     * of the outer module, not deep importers in its adoption. Counts edges.
+     */
+    nestedEntryEdges: number;
   };
   /**
    * Children of active modules measured as de-facto second surfaces (bd
