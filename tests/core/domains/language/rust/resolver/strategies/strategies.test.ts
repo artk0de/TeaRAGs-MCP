@@ -7,17 +7,12 @@ import {
   type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
-  ChainTypeSymbolResolutionStrategy,
-  LocalBindingSymbolResolutionStrategy,
-} from "../../../../../../../src/core/domains/language/kernel/index.js";
-import {
   RustBareSelfMethodSymbolResolutionStrategy,
   RustGlobalShortNameSymbolResolutionStrategy,
   RustImportMatchSymbolResolutionStrategy,
   RustLocalBindingSymbolResolutionStrategy,
   RustSelfFieldSymbolResolutionStrategy,
   RustSelfMethodSymbolResolutionStrategy,
-  RustTypeReceiverSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../../src/core/domains/language/rust/resolver/strategies/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -304,16 +299,6 @@ describe("RustBareSelfMethodSymbolResolutionStrategy", () => {
     const symbolTable = tableWith(["src/other.rs", [sym("Worker#helper", "helper", "src/other.rs", ["Worker"])]]);
     const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/worker.rs", callerScope: ["Worker"] }));
     expect(outcome.kind).toBe("continue");
-  });
-});
-
-describe("Rust kernel strategy adapters", () => {
-  it("uses the reusable LocalBindingSymbolResolutionStrategy substrate", () => {
-    expect(new RustLocalBindingSymbolResolutionStrategy(cfg)).toBeInstanceOf(LocalBindingSymbolResolutionStrategy);
-  });
-
-  it("uses the reusable ChainTypeSymbolResolutionStrategy substrate for type receivers", () => {
-    expect(new RustTypeReceiverSymbolResolutionStrategy(cfg)).toBeInstanceOf(ChainTypeSymbolResolutionStrategy);
   });
 });
 

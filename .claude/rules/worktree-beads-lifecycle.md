@@ -45,11 +45,12 @@ floor, not a ceiling.
 
 ### 2. Settle each bead — one of three verdicts, no fourth
 
-| Verdict         | Condition                                      | Action                                                        |
-| --------------- | ---------------------------------------------- | ------------------------------------------------------------- |
-| **Closed**      | the bead's acceptance is met by merged code    | `bd close <id> --reason="<commits + what proves it>"`         |
-| **Open**        | real remaining work, nobody actively on it     | `bd update <id> --status=open` + comment stating what is left |
-| **In progress** | another live worktree is carrying it right now | leave as-is, name that worktree in a comment                  |
+- **Closed** — the bead's acceptance is met by merged code. Run
+  `bd close <id> --reason="<commits + what proves it>"`.
+- **Open** — real remaining work exists and nobody actively owns it. Run
+  `bd update <id> --status=open` and add a comment stating what is left.
+- **In progress** — another live worktree is carrying it right now. Leave it as
+  is and name that worktree in a comment.
 
 `--reason` must cite evidence a reader can check without you: commit hashes, the
 test file pinning the behavior, the release it shipped in. "done" is not a
@@ -61,6 +62,12 @@ Bead half-delivered → close it for what landed, and file the remainder as its
 own bead linked to the parent. Never close a bead on the strength of intent, and
 never leave it `in_progress` as a bookmark for the leftover — that is precisely
 the drift this rule prevents.
+
+## Mandatory cleanup after merge
+
+After a worktree branch is merged into `main`, the worktree directory and its
+branch MUST be removed in the same landing flow, after the bead reconciliation
+above. A merged worktree left on disk is a failed cleanup, not a valid handoff.
 
 ## Invariant
 

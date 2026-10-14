@@ -27,6 +27,7 @@ superpowers skill internally, so nothing is skipped.
 
 | If the user is asking you to... | Invoke |
 |---|---|
+| Write or change production code outside a written plan | Skill(tea-rags:data-driven-generation) |
 | Brainstorm / design / discuss / refactor a feature in a code area | Skill(dinopowers:brainstorming) |
 | Write or draft an implementation plan | Skill(dinopowers:writing-plans) |
 | Execute a written plan that edits files | Skill(dinopowers:executing-plans) |

@@ -45,14 +45,17 @@ npm run test:coverage
 `npm test` is NOT the gate — pre-commit deliberately skips coverage for speed
 and says so. An epic closed on `npm test` alone can still be below threshold.
 
-**Run it ONCE, on main after the branches merge — never per agent branch.** The
-coverage thresholds are global, so the run always executes the whole suite
-(~19.7k tests); nothing caches results. Three agent branches each running it in
-parallel cost three 15–20 minute runs at load 40+ and made each other's
-pre-commit time out (2026-09-27). A subagent branch's gate is its targeted
-suites, `tsc` and `eslint`, plus the `vitest related` run pre-commit makes. The
-orchestrator merges the branches to main, runs `npm run test:coverage` there
-once, and lands whatever it finds as separate fix commits.
+**Run it exactly ONCE, on `main`, only after every implementation and research
+task in the session is complete and all implementation branches have been merged
+into `main` — never per agent branch, never mid-session.** The coverage
+thresholds are global, so the run always executes the whole suite (~19.7k
+tests); nothing caches results. Three agent branches each running it in parallel
+cost three 15–20 minute runs at load 40+ and made each other's pre-commit time
+out (2026-09-27). A subagent branch's gate is its targeted suites, `tsc` and
+`eslint`, plus the `vitest related` run pre-commit makes. The orchestrator
+merges all branches, completes all session tasks, then runs
+`npm run test:coverage` on `main` once and lands whatever it finds as separate
+fix commits.
 
 ### 3. Live validation — USER-GATED
 
@@ -62,15 +65,24 @@ what you intend to run, and wait for explicit "reindex" / "замер".
 
 Pick the validation that matches what the epic changed:
 
-| Epic touched                                    | Live validation                                                                                                                                                                                            |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Enrichment, payload shape, signal descriptors   | `tea-rags index-codebase --project <alias> --wait-enrichments --force-enrichments <keys> --json`, then confirm enrichment health has no `degraded` / `failed` and the unenriched count settles at 0        |
-| Language resolver, walker, codegraph resolution | `--force-enrichments codegraph --languages <the language>`, then re-measure `resolveSuccessRate` / `inProjectEdgeRecall` on the corpus the epic targets, against a baseline recorded BEFORE the first edit |
-| Chunking, parsing, sparse/dense vectors         | `--force` — the chunk set itself changes, so point ids move and the vectors must be rebuilt. This is the ONLY class that needs a full reindex                                                              |
-| Query path, rerank presets, derived signals     | `npm run build && npm link`, ask for `/mcp reconnect`, then exercise the change through `mcp__tea-rags__*` — not through DuckDB-direct probes                                                              |
-| Migrations, schema versions                     | Run the migration against a real index and verify the drift guard reports clean                                                                                                                            |
+- **Enrichment, payload shape, signal descriptors** — run
+  `tea-rags index-codebase --project <alias> --wait-enrichments --force-enrichments <keys> --json`,
+  then confirm enrichment health has no `degraded` / `failed` state and the
+  unenriched count settles at 0.
+- **Language resolver, walker, codegraph resolution** — run
+  `--force-enrichments codegraph --languages <the language>`, then re-measure
+  `resolveSuccessRate` / `inProjectEdgeRecall` on the target corpus against a
+  baseline recorded BEFORE the first edit.
+- **Chunking, parsing, sparse/dense vectors** — run `--force`; the chunk set
+  changes, so point IDs move and vectors must be rebuilt. This is the ONLY class
+  that needs a full reindex.
+- **Query path, rerank presets, derived signals** — run
+  `npm run build && npm link`, ask for `/mcp reconnect`, then exercise the
+  change through `mcp__tea-rags__*`, not through DuckDB-direct probes.
+- **Migrations, schema versions** — run the migration against a real index and
+  verify that the drift guard reports clean.
 
-Always `DEBUG=1` on the index CLI, for per-phase timing.
+Always set `DEBUG=1` on the index CLI for per-phase timing.
 
 ### Keep the auto-update watcher out of the measurement window (MANDATORY)
 
