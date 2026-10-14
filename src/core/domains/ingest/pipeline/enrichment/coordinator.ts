@@ -1599,8 +1599,16 @@ export class EnrichmentCoordinator {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       const next = await read(settled);
       if (next === 0) return 0;
-      if (next === settled) return next;
+      if (next === settled) break;
       settled = next;
+    }
+    // DEBUG-only attribution for a count that did not settle to zero
+    // (bd tea-rags-mcp-2d5o1); read-only, never alters `settled`. The method
+    // gates itself on DEBUG; a diagnostic must not fail the completion either.
+    try {
+      await recovery.logUnenrichedSample(collectionName, provider, level, settled, languages);
+    } catch {
+      // Attribution is best-effort.
     }
     return settled;
   }
