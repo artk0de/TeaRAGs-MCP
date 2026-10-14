@@ -83,6 +83,36 @@ export function componentPairHeldBeforeChange(
 }
 
 /**
+ * Whether `relPath` already carried an edge out of `sourceComponent` before
+ * the change — whether the component's file-counted Ce (the report's
+ * `buildComponentGraph`) already held it, so a diff-added crossing edge from
+ * it moves Ce by nothing. `targetsBefore` is the evidence order the family
+ * reads ({@link targetsBeforeChange}); a file it answers `undefined` for was
+ * not efferent (a missing fact counts the file). A target mapping to no
+ * component never counts. `excludesTargetComponent` drops target components
+ * the reading does not count — the hub reading's measured foundation (bd
+ * tea-rags-mcp-g77p3); main-sequence counts every component, as Martin's I
+ * does (bd tea-rags-mcp-zuwvv).
+ */
+export function wasEfferentBeforeChange(
+  relPath: string,
+  sourceComponent: string,
+  targetsBefore: (relPath: string) => ReadonlySet<string> | undefined,
+  componentOf: (relPath: string) => string | undefined,
+  options: { excludesTargetComponent?: (component: string) => boolean } = {},
+): boolean {
+  const targets = targetsBefore(relPath);
+  if (targets === undefined) return false;
+  for (const target of targets) {
+    const targetComponent = componentOf(target);
+    if (targetComponent === undefined || targetComponent === sourceComponent) continue;
+    if (options.excludesTargetComponent?.(targetComponent) === true) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
  * Whether the component's distance from the main sequence was ALREADY past
  * the threshold before the diff — strictly greater: a distance AT the
  * threshold is on it, not past it, so a diff that lifts it over the line

@@ -20,6 +20,7 @@ import { DiffDetectorRun } from "../../../../../../src/core/api/internal/ops/dif
 import {
   componentPairViolatedAtBase,
   pastThresholdBefore,
+  wasEfferentBeforeChange,
 } from "../../../../../../src/core/api/internal/ops/diff-families/pre-existing.js";
 import type { DiffDetectorFinding } from "../../../../../../src/core/contracts/types/diff-detector-finding.js";
 
@@ -171,5 +172,37 @@ describe("pre-existing helpers", () => {
     expect(pastThresholdBefore(0.31, 0.2)).toBe(true);
     expect(pastThresholdBefore(0.2, 0.2)).toBe(false);
     expect(pastThresholdBefore(0.19, 0.2)).toBe(false);
+  });
+});
+
+describe("wasEfferentBeforeChange", () => {
+  const componentOf = (relPath: string): string | undefined => relPath.split("/")[1];
+  const before = (targets: Readonly<Record<string, readonly string[]>>) => (relPath: string) =>
+    relPath in targets ? new Set(targets[relPath]) : undefined;
+
+  it("is true only for a pre-change target in another known component", () => {
+    expect(
+      wasEfferentBeforeChange("src/app/a.ts", "app", before({ "src/app/a.ts": ["src/lib/l.ts"] }), componentOf),
+    ).toBe(true);
+    expect(
+      wasEfferentBeforeChange("src/app/a.ts", "app", before({ "src/app/a.ts": ["src/app/b.ts"] }), componentOf),
+    ).toBe(false);
+    expect(wasEfferentBeforeChange("src/app/a.ts", "app", before({ "src/app/a.ts": ["unmapped"] }), componentOf)).toBe(
+      false,
+    );
+  });
+
+  it("reads a missing pre-change fact as not efferent, so the file counts", () => {
+    expect(wasEfferentBeforeChange("src/app/a.ts", "app", before({}), componentOf)).toBe(false);
+  });
+
+  it("skips target components the caller excludes, and only those", () => {
+    const targets = before({ "src/app/a.ts": ["src/contracts/t.ts"] });
+    expect(wasEfferentBeforeChange("src/app/a.ts", "app", targets, componentOf)).toBe(true);
+    expect(
+      wasEfferentBeforeChange("src/app/a.ts", "app", targets, componentOf, {
+        excludesTargetComponent: (component) => component === "contracts",
+      }),
+    ).toBe(false);
   });
 });

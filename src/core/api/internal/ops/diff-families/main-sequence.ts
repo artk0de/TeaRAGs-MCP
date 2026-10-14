@@ -1,6 +1,6 @@
 import type { DiffDetectorFinding } from "../../../../contracts/types/diff-detector-finding.js";
 import type { DiffFamilyDetector, OverlayEdge } from "./diff-family-detector.js";
-import { pastThresholdBefore, targetsBeforeChange } from "./pre-existing.js";
+import { pastThresholdBefore, targetsBeforeChange, wasEfferentBeforeChange } from "./pre-existing.js";
 import { detectorStatus, format3, round3, withRenderedSubject } from "./shared.js";
 
 /** Below this |deltaD| a touched component's main-sequence move reads as no move. */
@@ -121,13 +121,12 @@ export const mainSequenceDetector: DiffFamilyDetector = {
     const wasEfferentBefore = (source: string, sourceComponent: string): boolean => {
       let efferent = efferentBefore.get(source);
       if (efferent === undefined) {
-        const targets = targetsBeforeChange(source, baseEdges, graph);
-        efferent =
-          targets !== undefined &&
-          [...targets].some((target) => {
-            const targetComponent = catalog.componentOf(target)?.name;
-            return targetComponent !== undefined && targetComponent !== sourceComponent;
-          });
+        efferent = wasEfferentBeforeChange(
+          source,
+          sourceComponent,
+          (relPath) => targetsBeforeChange(relPath, baseEdges, graph),
+          (relPath) => catalog.componentOf(relPath)?.name,
+        );
         efferentBefore.set(source, efferent);
       }
       return efferent;

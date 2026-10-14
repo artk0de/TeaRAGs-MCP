@@ -1,7 +1,7 @@
 import type { DiffDetectorFinding, DiffDetectorStatus } from "../../../../contracts/types/diff-detector-finding.js";
 import type { HubLikeDependencyReading } from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import type { DiffFamilyDetector, OverlayEdge } from "./diff-family-detector.js";
-import { targetsBeforeChange } from "./pre-existing.js";
+import { targetsBeforeChange, wasEfferentBeforeChange } from "./pre-existing.js";
 import { detectorStatus, withRenderedSubject } from "./shared.js";
 
 /** The hubLike family's verdict when no hub-like reading was injected. */
@@ -87,9 +87,9 @@ export function judgeHubLike(input: {
     if (sourceComponent === targetComponent) continue;
     const reachedBefore = targetComponentsBefore(edge.source);
     if (!hubLike.isFoundation(targetComponent)) {
-      const alreadyEfferent = [...reachedBefore].some(
-        (component) => component !== undefined && component !== sourceComponent && !hubLike.isFoundation(component),
-      );
+      const alreadyEfferent = wasEfferentBeforeChange(edge.source, sourceComponent, before, componentOf, {
+        excludesTargetComponent: (component) => hubLike.isFoundation(component),
+      });
       if (!alreadyEfferent) {
         const move = moveOf(sourceComponent);
         move.efferentFiles.add(edge.source);
