@@ -78,7 +78,7 @@ export interface DiffDetectorCatalog {
          * Ca: distinct files outside the component with an edge into it (bd
          * tea-rags-mcp-89k7k.19) — the report's own component fact, served
          * when the wiring holds it. Absent, mainSequence falls back to the
-         * documented +1-per-edge step; a missing fact is never read as "no
+         * documented +1-per-newly-efferent-file step; a missing fact is never read as "no
          * afferent edges".
          */
         afferentCount?: number;
