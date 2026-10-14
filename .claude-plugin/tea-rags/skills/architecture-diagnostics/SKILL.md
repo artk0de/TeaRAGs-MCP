@@ -694,6 +694,10 @@ unsimulated.
 Output row per remedy:
 `| # | Remedy | ops | net | resolved (by family) | introduced (subjects) |`.
 
+Several remedies, order matters, or plan wanted →
+`tea-rags:refactoring-planning` (edge-op recipes + `restructurePlan` ordering +
+plan Tasks).
+
 ## Phase 4 — EXCLUSIONS
 
 `summary.stableDependencies.excluded` — edges read, NOT judged:

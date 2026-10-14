@@ -1,0 +1,182 @@
+{
+  "skill": "tea-rags:refactoring-planning",
+  "skillPath": ".claude-plugin/tea-rags/skills/refactoring-planning/SKILL.md",
+  "objective": "Agent turns an architecture diagnosis into an ordered, simulated refactoring plan: Phase 1 report with impact tiers, Phase 2 one candidate per critical/active finding expanded from the family's repair `## Ops recipe` (new names via get_naming_lexicon, new edges between existing files judged with plannedEdges, MISFIT edge never proposed, rationale = finding key), Phase 3 restructurePlan ordering (report split/merge candidates included unless the estimated cost exceeds one call's budget on a large repo — bd tea-rags-mcp-vytjl), Phase 4 refactoring-scan annotation that never reorders, Phase 5 hand-off to dinopowers:writing-plans with one Task per step carrying the expected delta and the DDG Step 7 gate line, trade-offs and unselected listed apart, never as Tasks, plus the execution contract (compare review_changes delta per Task, Step 7 repair, re-plan the remaining candidates on the real tree when repair does not converge). Eval prompts use neutral user framing.",
+  "runs": [
+    {
+      "date": "2026-10-14",
+      "iteration": 0,
+      "scope": "8 cases: candidates (2), order (2), annotate (1), plan (2), execution-contract (1); bd tea-rags-mcp-cm9gt.4",
+      "method": "Blind two-arm run. Subjects: sonnet subagents, one per arm, answering every scenario from context + prompt only (reads only, no MCP calls). Arm withoutRule read the get_architecture_report schema + description, the four repair Ops recipes, architecture-diagnostics Phase 3i and DDG Step 6b/7 (no skill existed). Arm withRule read the same plus the new SKILL.md. Neither saw expected. Strict grading by the orchestrator: every mustDo met and no mustNotDo hit.",
+      "withRule": {
+        "pass": 8,
+        "fail": 0,
+        "total": 8,
+        "passRate": "100%"
+      },
+      "withoutRule": {
+        "pass": 3,
+        "fail": 5,
+        "total": 8,
+        "passRate": "38%"
+      },
+      "delta": "+62pp",
+      "failureMap": {
+        "recipe-sdp-inversion": "baseline expanded the recipe correctly but never checked the new interface name with get_naming_lexicon",
+        "tradeoffs-not-tasks": "baseline kept trade-off/unselected out of Tasks but never handed off to dinopowers:writing-plans",
+        "divergence-replans": "baseline escalated to the user (DDG two-round stop) and only proposed the re-plan, folding the diverged candidate back in",
+        "large-repo-report-candidates-off": "baseline sent all 22 caller candidates in one call and cited no reason/bead for includeReportCandidates false",
+        "task-carries-expected-delta-and-gate": "baseline wrote a per-Task 'stop and replan' line but no execution contract naming restructurePlan over the remaining candidates and the Task update"
+      },
+      "note": "misfit-edge-dropped, scan-annotation-no-reorder and report-candidates-included pass both arms: the tool description and recipes already carry MISFIT, the never-select-trade-off rule and the cheap-estimate reasoning; they pin the skill against regression."
+    }
+  ],
+  "cases": [
+    {
+      "id": "recipe-sdp-inversion",
+      "category": "candidates",
+      "context": "TypeScript project, codegraph on. Phase-1 get_architecture_report returned one stableDependencies violation, tier critical: key `stableDependencies:src/core/domains/maintenance/worktree->src/core/domains/maintenance/footprint`, sourceRelPath `src/core/domains/maintenance/worktree/provisioner.ts`, toRelPath `src/core/domains/maintenance/footprint/footprint-store.ts`, importedNames [`FootprintStore`]. summary.foundation names component `src/core/contracts`. The repair file stableDependencies.md `## Ops recipe` is available to read. summary.propagationCost.fileCount 1400, summary.splitMerge has 0 split and 0 merge candidates.",
+      "prompt": "Составь план рефакторинга для этой SDP-инверсии.",
+      "expected": {
+        "mustDo": [
+          "Build ONE candidate whose ops are removeEdge provisioner.ts->footprint-store.ts, addFile of a new interface file in the foundation component with abstract: true, addEdge provisioner.ts->interface, addEdge footprint-store.ts->interface",
+          "Place the new file under the foundation component (src/core/contracts sub-tree nearest both files), not a hard-coded directory picked without the recipe's path rule",
+          "Check the new interface name with get_naming_lexicon before using it",
+          "Set the candidate rationale to the finding key",
+          "Order via get_architecture_report restructurePlan before writing any plan Task"
+        ],
+        "mustNotDo": [
+          "Propose moving files instead of the inversion recipe",
+          "Write code or the plan without a restructurePlan (or restructure) simulation"
+        ]
+      },
+      "failureMode": "Agent describes the inversion in prose or as a move and never expands it into simulated primitives"
+    },
+    {
+      "id": "misfit-edge-dropped",
+      "category": "candidates",
+      "context": "TypeScript project, codegraph on. Two active findings: (1) leakingAbstraction `src/app/billing/invoice.ts` imports deep file `src/core/ledger/internal/posting.ts`; evidence.facadeRelPath `src/core/ledger/index.ts`, facade already re-exports the names. (2) stableDependencies `src/core/ledger -> src/app/payments` (sourceRelPath `src/core/ledger/balance.ts`, toRelPath `src/app/payments/gateway.ts`), summary.foundation `src/contracts`. You built candidate ops from the recipes. get_architecture_report plannedEdges for the edges between EXISTING files returned: `src/app/billing/invoice.ts -> src/core/ledger/index.ts` = MISFIT (establishedDirection: facade -> service, support 31, pairSupport 2); edges onto the new interface file = UNJUDGED newFile.",
+      "prompt": "Продолжай планирование.",
+      "expected": {
+        "mustDo": [
+          "Drop candidate (1) — its addEdge invoice.ts->index.ts is MISFIT — and say why, citing the verdict",
+          "Keep candidate (2): UNJUDGED newFile is not a reason to drop",
+          "Pass only candidate (2) to restructurePlan"
+        ],
+        "mustNotDo": [
+          "Send the MISFIT candidate to restructurePlan or into the plan",
+          "Drop the inversion candidate because its edges onto the new file are UNJUDGED"
+        ]
+      },
+      "failureMode": "Agent ignores plannedEdges verdicts, or treats UNJUDGED newFile as a rejection"
+    },
+    {
+      "id": "tradeoffs-not-tasks",
+      "category": "plan",
+      "context": "restructurePlan returned steps: [{candidateId: 'sdp-ledger', source: caller, delta.net -2, byTier critical resolved 1}, {candidateId: 'report:merge:3', source: report, net -1}, {candidateId: 'hub-config', source: caller, net -1}]; tradeOffs: [{candidateId: 'layer-cut-api', delta introduces 1 critical layering.knot, resolves 3 structural}]; unselected: [{candidateId: 'leak-util', reason: noImprovement}, {candidateId: 'report:split:1', reason: conflictsWithPrefix}]. refactoring-scan found nothing tier 1/2 on touched files.",
+      "prompt": "Отлично, теперь сделай из этого план реализации.",
+      "expected": {
+        "mustDo": [
+          "Hand off to dinopowers:writing-plans",
+          "Exactly 3 Tasks, in step order sdp-ledger, report:merge:3, hub-config",
+          "List layer-cut-api as a trade-off (what it introduces vs resolves) outside the Tasks",
+          "List leak-util (noImprovement) and report:split:1 (conflictsWithPrefix) as unselected outside the Tasks"
+        ],
+        "mustNotDo": [
+          "Turn the trade-off or an unselected candidate into a Task",
+          "Reorder the steps"
+        ]
+      },
+      "failureMode": "Agent folds the net-positive-looking trade-off into the plan as an extra Task"
+    },
+    {
+      "id": "divergence-replans",
+      "category": "execution-contract",
+      "context": "Executing a plan generated by the refactoring-planning workflow. Task 2 (candidate 'hub-config', expected delta: resolved [hubLike:src/core/config], introduced none, byTier active resolved 1) is implemented. review_changes architecture: change.resolved is empty, change.introducedCount 1 (stableDependencies, tier active). Two Step 7 fix-at-write rounds were tried; both left introducedCount 1 and resolved still empty. Tasks 3 and 4 remain (candidates 'leak-search', 'sdp-ingest').",
+      "prompt": "Task 2 не сходится с ожидаемым. Что делаем?",
+      "expected": {
+        "mustDo": [
+          "Recognise divergence by comparing review_changes delta with the Task's expected delta",
+          "Since Step 7 repair did not converge, call get_architecture_report restructurePlan with the remaining candidates (leak-search, sdp-ingest) against the current real tree (path = working directory)",
+          "Update the remaining Tasks from the new plan's steps/expected deltas"
+        ],
+        "mustNotDo": [
+          "Proceed to Task 3 unchanged with the old expected deltas",
+          "Commit Task 2 with an unresolved introduced finding and no gate pass"
+        ]
+      },
+      "failureMode": "Agent keeps executing the stale plan after its simulation stopped matching reality"
+    },
+    {
+      "id": "scan-annotation-no-reorder",
+      "category": "annotate",
+      "context": "restructurePlan steps (in order): 1 'sdp-a' touchedFiles [src/a/x.ts, src/contracts/a-port.ts]; 2 'hub-b' touchedFiles [src/b/hub.ts, src/b/hub-reader.ts]; 3 'leak-c' touchedFiles [src/c/y.ts]. tea-rags:refactoring-scan over these touched files returns src/b/hub.ts as tier 1 (decomposition candidate, 900 LOC, bugFixRate critical) and nothing else tier 1/2.",
+      "prompt": "Собери финальный план.",
+      "expected": {
+        "mustDo": [
+          "Keep the step order 1 sdp-a, 2 hub-b, 3 leak-c",
+          "Attach a note to step 2 that src/b/hub.ts also needs decomposition (tier 1 scan hit)"
+        ],
+        "mustNotDo": [
+          "Move hub-b earlier or later because of the scan",
+          "Insert a decomposition Task of its own into the plan"
+        ]
+      },
+      "failureMode": "Agent lets the health scan reorder the simulated sequence"
+    },
+    {
+      "id": "report-candidates-included",
+      "category": "order",
+      "context": "Small repo. Phase-1 summary: propagationCost.fileCount 420, splitMerge 2 split candidates and 3 merge candidates. You have 6 caller candidates. A first restructurePlan call with the 6 caller candidates and includeReportCandidates:false returned 2 steps and timing {factsMs 900, judgeCount 13, totalMs 6100}.",
+      "prompt": "Упорядочь кандидатов.",
+      "expected": {
+        "mustDo": [
+          "Estimate the cost of adding the 5 report candidates from the measured per-judge time (a few seconds total) and find it within one call's budget",
+          "Run restructurePlan with includeReportCandidates true (or omitted) over the same caller candidates",
+          "Use that plan (report:-prefixed steps included) as the ordering"
+        ],
+        "mustNotDo": [
+          "Leave the report's split/merge candidates out on a repo where including them is cheap"
+        ]
+      },
+      "failureMode": "Agent applies the large-repo default everywhere and never lets the server add its structural candidates"
+    },
+    {
+      "id": "large-repo-report-candidates-off",
+      "category": "order",
+      "context": "Large repo. Phase-1 summary: propagationCost.fileCount 18400, splitMerge 31 split candidates and 12 merge candidates. You built 22 caller candidates from critical/active findings. No restructurePlan call has run yet this session.",
+      "prompt": "Упорядочь кандидатов в план.",
+      "expected": {
+        "mustDo": [
+          "Call restructurePlan with includeReportCandidates: false",
+          "Pass at most ~15 caller candidates in one call (critical first, then active), deferring the rest",
+          "State why, citing bd tea-rags-mcp-vytjl (report candidates are judged every round; on a large repo the call can run for an hour)",
+          "Keep the report's split/merge candidates visible as not ordered (not silently dropped)"
+        ],
+        "mustNotDo": [
+          "Call restructurePlan with includeReportCandidates true or omitted on this repo",
+          "Send all 22 caller candidates in one call"
+        ]
+      },
+      "failureMode": "Agent runs the default includeReportCandidates on a large repo and the call never returns"
+    },
+    {
+      "id": "task-carries-expected-delta-and-gate",
+      "category": "plan",
+      "context": "restructurePlan returned one step: {candidateId: 'sdp-ledger', rationale: 'stableDependencies:src/core/ledger->src/app/payments', ops [removeEdge, addFile abstract, addEdge, addEdge], delta {net -1, resolved [stableDependencies:src/core/ledger->src/app/payments (critical)], introduced [], byTier {critical: {resolved 1, introduced 0}}}, touchedFiles [...], blastRadius 41}. No trade-offs, no unselected.",
+      "prompt": "Пиши план.",
+      "expected": {
+        "mustDo": [
+          "The Task states its expected delta: resolved subject(s), introduced (none), byTier",
+          "The Task carries the DDG Step 7 gate, quoting the line form `GATE review_changes: introduced=<n>, partial=<true|false>`",
+          "The plan contains the execution contract: compare review_changes delta with the expected delta after each Task; diverged -> Step 7 repair; not converging -> restructurePlan over the remaining candidates on the real tree, update the remaining Tasks"
+        ],
+        "mustNotDo": [
+          "Write a Task without its expected delta",
+          "Omit the execution contract from the generated plan"
+        ]
+      },
+      "failureMode": "Plan loses the simulated delta so the executor has nothing to compare against"
+    }
+  ]
+}
