@@ -946,6 +946,27 @@ describe("architectureSectionProvider.run — remedy wiring", () => {
     });
   });
 
+  it("a name only the diff declares still resolves its declarer (bd tea-rags-mcp-if14t)", async () => {
+    const graphDb = facadeBypassFixture(true);
+    // `fresh` is new in the tree: no indexed edge names it, only the changed source's own import does.
+    writeFile(INTERNAL, "export const a = 1;\nexport const b = 2;\nexport const fresh = 3;\n");
+    writeFile(
+      SOURCE,
+      'import { a } from "../lib/index";\nimport { fresh } from "../lib/x";\nexport const A = a + fresh;\n',
+    );
+
+    const leak = await leakOf(graphDb);
+
+    expect(leak.remedy).toEqual({
+      kind: "retargetImport",
+      sourceRelPath: SOURCE,
+      fromRelPath: INTERNAL,
+      toRelPath: FACADE,
+      importedNames: ["fresh"],
+      addExport: { facadeRelPath: FACADE, names: ["fresh"] },
+    });
+  });
+
   it("no export table for the names — the finding goes out without a remedy", async () => {
     const leak = await leakOf(facadeBypassFixture(false));
 

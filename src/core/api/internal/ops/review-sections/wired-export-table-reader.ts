@@ -10,6 +10,12 @@
  * name out of it; a holder that forwards the name itself (a named re-export
  * edge carrying it) is a barrel, not a declarer. What is left declares it.
  *
+ * The edges are the review's EFFECTIVE edges: the indexed edges of every
+ * source the review's overlay did not re-read, plus the overlay's edges of each
+ * re-read source — so a name the diff itself declares is seen. A skipped read
+ * (the overlay's `unsupported()`) keeps its indexed edges: a missing fact is
+ * never "no edge".
+ *
  * Absence of the fact is never "no declarer": a name no recorded edge names —
  * a language without an export table, or a name nobody imports — answers
  * `undefined`, and so does a holder with a whole-module re-export (`export *`),
@@ -18,6 +24,19 @@
 
 import type { FileDependencyEdge } from "../../../../contracts/types/codegraph.js";
 import { WHOLE_MODULE_EXPORT_NAME, type ExportTableReader } from "../diff-detector-run.js";
+
+/** The export names one file edge records — what the reader needs of an indexed or overlay edge. */
+type ExportNamingEdge = Pick<
+  FileDependencyEdge,
+  "sourceRelPath" | "targetRelPath" | "importedExportNames" | "reexportedExportNames"
+>;
+
+/** What the reader needs of the review's edge overlay (`ReviewEdgeOverlay` satisfies it). */
+export interface ReviewEdgeFacts {
+  readonly masked: ReadonlySet<string>;
+  edgesFrom: (relPath: string) => readonly ExportNamingEdge[];
+  unsupported: () => readonly { relPath: string }[];
+}
 
 export class WiredExportTableReader implements ExportTableReader {
   /** Every file holding a name — the target an edge takes or re-exports it from. */
@@ -29,9 +48,10 @@ export class WiredExportTableReader implements ExportTableReader {
 
   constructor(
     private readonly contract: Pick<ExportTableReader, "indexedSurfaceOf">,
-    edges: readonly FileDependencyEdge[],
+    indexedEdges: readonly FileDependencyEdge[],
+    overlay?: ReviewEdgeFacts,
   ) {
-    for (const edge of edges) {
+    for (const edge of effectiveEdges(indexedEdges, overlay)) {
       for (const name of edge.importedExportNames ?? []) this.hold(name, edge.targetRelPath);
       for (const name of edge.reexportedExportNames ?? []) {
         if (name === WHOLE_MODULE_EXPORT_NAME) {
@@ -64,4 +84,19 @@ export class WiredExportTableReader implements ExportTableReader {
     holders.add(relPath);
     this.holdersByName.set(name, holders);
   }
+}
+
+/** The indexed edges with every successfully re-read source's edges swapped for the overlay's. */
+function effectiveEdges(
+  indexedEdges: readonly FileDependencyEdge[],
+  overlay: ReviewEdgeFacts | undefined,
+): readonly ExportNamingEdge[] {
+  if (overlay === undefined) return indexedEdges;
+  const skipped = new Set(overlay.unsupported().map(({ relPath }) => relPath));
+  const refreshed = [...overlay.masked].filter((relPath) => !skipped.has(relPath));
+  const refreshedSet = new Set(refreshed);
+  return [
+    ...indexedEdges.filter((edge) => !refreshedSet.has(edge.sourceRelPath)),
+    ...refreshed.flatMap((relPath) => overlay.edgesFrom(relPath)),
+  ];
 }

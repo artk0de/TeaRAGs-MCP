@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { WiredExportTableReader } from "../../../../../../src/core/api/internal/ops/review-sections/wired-export-table-reader.js";
 import type { FileDependencyEdge } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { ReviewEdgeOverlay } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/index.js";
 
 function edge(
   sourceRelPath: string,
@@ -68,5 +69,46 @@ describe("WiredExportTableReader", () => {
       edge("src/lib/index.ts", "src/lib/x.ts", { reexported: ["*"] }),
     ]);
     expect(reader.declarersOf("X")).toBeUndefined();
+  });
+  describe("through the review overlay (bd tea-rags-mcp-if14t)", () => {
+    it("A: a name held only by the overlay's edges of a changed file is declared by that edge's target", () => {
+      const overlay = new ReviewEdgeOverlay([
+        { relPath: "src/app/a.ts", edges: [edge("src/app/a.ts", "src/lib/new.ts", { imported: ["Fresh"] })] },
+      ]);
+      const reader = new WiredExportTableReader(NO_SURFACE, [], overlay);
+      expect(reader.declarersOf("Fresh")).toEqual(["src/lib/new.ts"]);
+    });
+
+    it("B: a changed source's stale indexed edge is replaced by its overlay edges", () => {
+      const overlay = new ReviewEdgeOverlay([
+        { relPath: "src/app/a.ts", edges: [edge("src/app/a.ts", "src/lib/moved.ts", { imported: ["X"] })] },
+      ]);
+      const reader = new WiredExportTableReader(
+        NO_SURFACE,
+        [edge("src/app/a.ts", "src/lib/old.ts", { imported: ["X"] })],
+        overlay,
+      );
+      expect(reader.declarersOf("X")).toEqual(["src/lib/moved.ts"]);
+    });
+
+    it("C: a skipped read keeps the source's indexed edges — a missing fact is never 'no edge'", () => {
+      const overlay = new ReviewEdgeOverlay([{ relPath: "src/app/a.ts", edges: [], skip: { reason: "parseFailed" } }]);
+      const reader = new WiredExportTableReader(
+        NO_SURFACE,
+        [edge("src/app/a.ts", "src/lib/x.ts", { imported: ["X"] })],
+        overlay,
+      );
+      expect(reader.declarersOf("X")).toEqual(["src/lib/x.ts"]);
+    });
+
+    it("D: sources the overlay does not mask keep their indexed edges", () => {
+      const overlay = new ReviewEdgeOverlay([{ relPath: "src/app/other.ts", edges: [] }]);
+      const reader = new WiredExportTableReader(
+        NO_SURFACE,
+        [edge("src/app/a.ts", "src/lib/x.ts", { imported: ["X"] })],
+        overlay,
+      );
+      expect(reader.declarersOf("X")).toEqual(["src/lib/x.ts"]);
+    });
   });
 });

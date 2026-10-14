@@ -707,7 +707,7 @@ export const architectureSectionProvider: ReviewSectionProvider = {
       run.run(runScope, overlay),
       new DiffFindingRemedyResolver({
         overlay,
-        exports: new WiredExportTableReader(contract, production.graph.edges),
+        exports: new WiredExportTableReader(contract, production.graph.edges, overlay),
         rejudge: (edits) => run.rejudge(runScope, overlay, edits),
       }),
     );
