@@ -64,6 +64,14 @@ export interface DiffDetectorBaseEdgeReader {
    * unknown for this file — the indexed graph then decides, as before.
    */
   targetsAtBase: (relPath: string) => ReadonlySet<string> | undefined;
+  /**
+   * The names `relPath` exposed through re-exports at the diff base, off its
+   * base blob's walk — the same extraction the tree read runs, before any
+   * resolution, so a name forwarded from a file the change deleted is still
+   * here (bd tea-rags-mcp-2plk2). Empty when the file is absent there or
+   * re-exports nothing; `undefined` when the base is unknown for this file.
+   */
+  reexportSurfaceAtBase: (relPath: string) => ReadonlySet<string> | undefined;
 }
 
 /** Component/facade facts the whole-repo report already derived — consumed, never recomputed. */

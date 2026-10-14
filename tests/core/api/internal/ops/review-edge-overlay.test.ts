@@ -667,3 +667,50 @@ describe("readReviewChangeEdges — the base side of a rename (bd tea-rags-mcp-s
     expect(added).toEqual([]);
   });
 });
+
+// bd tea-rags-mcp-2plk2: facadeContract judges a dropped name against what the
+// facade exposed AT THE BASE, read by the same walk as the tree — never against
+// an index another extraction wrote. The surface comes from the base walk's own
+// re-export facts, so a name forwarded from a file the change deleted is still
+// on it.
+describe("readReviewChangeEdges — the base's re-export surface (bd tea-rags-mcp-2plk2)", () => {
+  const FACADE = "src/lib/index.ts";
+
+  it("holds every name the base blob re-exported: runtime, type-only, and from a since-deleted file", async () => {
+    const tree = freshWorkTree();
+    writeFile("src/lib/a.ts", "export interface A { a: number }\n");
+    writeFile("src/lib/b.ts", "export const B = 1;\n");
+    writeFile("src/lib/d.ts", "export const D = 1;\n");
+    writeFile(
+      FACADE,
+      'export type { A } from "./a.js";\nexport { B } from "./b.js";\nexport { D as D2 } from "./d.js";\n',
+    );
+    const mergeBase = commitBase(tree);
+    rmSync(join(tree, "src/lib/d.ts"));
+    writeFile("src/lib/c.ts", "export const C = 1;\n");
+    writeFile(FACADE, 'export type { A } from "./a.js";\nexport { B } from "./b.js";\nexport { C } from "./c.js";\n');
+
+    const { baseEdges } = await readReviewChangeEdges(
+      { workTree: tree, mergeBase, files: [FACADE], touchedFiles: new Set([FACADE, "src/lib/c.ts", "src/lib/d.ts"]) },
+      realDeps(),
+      { unavailable: "the collection has no codegraph database" },
+    );
+
+    expect([...(baseEdges?.reexportSurfaceAtBase(FACADE) ?? [])].sort()).toEqual(["A", "B", "D2"]);
+  });
+
+  it("answers an empty surface for a facade the base did not hold", async () => {
+    const tree = freshWorkTree();
+    writeFile("src/lib/b.ts", "export const B = 1;\n");
+    const mergeBase = commitBase(tree);
+    writeFile(FACADE, 'export { B } from "./b.js";\n');
+
+    const { baseEdges } = await readReviewChangeEdges(
+      { workTree: tree, mergeBase, files: [FACADE], touchedFiles: new Set([FACADE]) },
+      realDeps(),
+      { unavailable: "the collection has no codegraph database" },
+    );
+
+    expect(baseEdges?.reexportSurfaceAtBase(FACADE)).toEqual(new Set());
+  });
+});
