@@ -28,7 +28,7 @@
  * tea-rags-mcp-hw27k).
  */
 
-import { mkdirSync, statSync } from "node:fs";
+import { mkdirSync, statSync, type BigIntStats } from "node:fs";
 import { join } from "node:path";
 
 import type { CollectionGraphHandle, GraphDbClientPoolPort } from "../../contracts/types/codegraph-pool.js";
@@ -282,6 +282,24 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
    */
   hasDatabase(physicalCollectionName: PhysicalCollectionName): boolean {
     return this.dbFiles.has(physicalCollectionName);
+  }
+
+  /**
+   * A stamp of the database's on-disk state that moves on EVERY committed write
+   * (bd tea-rags-mcp-nehn5): identity, size, mtime and ctime (ns) of the
+   * database file and of its `.wal`. A commit appends to the WAL, a checkpoint
+   * rewrites the database file, a replacement changes the inode — so an index
+   * run, a recompute that leaves the indexed commit alone, and a fold of the
+   * WAL all move it, whichever process wrote. A long-lived process keys cached
+   * whole-database reads by it; take it BEFORE the read, so a write racing the
+   * read leaves the entry under the older stamp. `undefined` = no database.
+   */
+  databaseWriteStamp(physicalCollectionName: PhysicalCollectionName): string | undefined {
+    const dbPath = this.pathFor(physicalCollectionName);
+    const dbStats = statSync(dbPath, { bigint: true, throwIfNoEntry: false });
+    if (dbStats === undefined) return undefined;
+    const walStats = statSync(`${dbPath}.wal`, { bigint: true, throwIfNoEntry: false });
+    return `${dbPath}|${fileStateStamp(dbStats)}|${walStats === undefined ? "no-wal" : fileStateStamp(walStats)}`;
   }
 
   /**
@@ -824,6 +842,11 @@ export class GraphDbClientPool implements GraphDbClientPoolPort {
 }
 
 /** End one op's pin; the last one out wakes a lease holder waiting to drain. */
+/** One file's on-disk state, as `GraphDbClientPool#databaseWriteStamp` compares it. */
+function fileStateStamp(stats: BigIntStats): string {
+  return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeNs}:${stats.ctimeNs}`;
+}
+
 function unpinClient(entry: PoolEntry): void {
   entry.pinnedOps -= 1;
   if (entry.pinnedOps > 0) return;

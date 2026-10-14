@@ -39,16 +39,23 @@ import type { DeclaredTestDependencyLookup, IndexedFileImportLookup } from "./ar
 import { DIFF_FILE_CAP, readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import type { ReviewEdgeExtractionDeps } from "./review-edge-overlay.js";
 import {
+  readReviewChangeEdges,
   REVIEW_SECTION_PROVIDERS,
   reviewSectionIds,
+  type ReviewChangeEdges,
   type ReviewGraphDb,
   type ReviewNamingLexicon,
   type ReviewSectionBuildContext,
 } from "./review-sections/index.js";
-import { readIndexedSymbolRows, type IndexedSymbolRowsRead } from "./review-symbol-table.js";
+import { IndexedSymbolRowsCache, type IndexedSymbolRowsRead } from "./review-symbol-table.js";
 
 export interface ReviewChangesOpsDeps {
-  pool: Pick<GraphDbClientPool, "acquireReader" | "hasDatabase">;
+  /**
+   * `databaseWriteStamp` keys the indexed symbol rows held across reviews (bd
+   * tea-rags-mcp-nehn5); absent (unit wiring) → every review reads them.
+   */
+  pool: Pick<GraphDbClientPool, "acquireReader" | "hasDatabase"> &
+    Partial<Pick<GraphDbClientPool, "databaseWriteStamp">>;
   collectionRegistry: RegistryLookup;
   /**
    * Resolve an addressed collection name to the ACTIVE underlying collection
@@ -115,6 +122,9 @@ export interface ReviewChangesOpsDeps {
 }
 
 export class ReviewChangesOps {
+  /** The index's symbol rows, held across reviews per database write stamp (bd tea-rags-mcp-nehn5). */
+  private readonly indexedSymbolRows = new IndexedSymbolRowsCache();
+
   constructor(private readonly deps: ReviewChangesOpsDeps) {}
 
   /**
@@ -159,11 +169,38 @@ export class ReviewChangesOps {
     const { collectionName } = workingTree.baseIndex;
     const addressing = { project: req.project, collection: req.collection, path: req.path };
     const workTree = workingTree.root || undefined;
-    const scope = await readDiffScope(workTree, { base: req.changes?.base, files: req.files });
+    // The graph reader opens, and the index's symbol rows are read, while the
+    // diff is read (bd tea-rags-mcp-nehn5): the rows do not depend on the diff.
+    const reader = this.acquireGraphReader(collectionName);
+    const symbolRows = providers.some((provider) => provider.consumesReviewChangeEdges)
+      ? reader.then(async ({ handle, physicalCollectionName }) =>
+          this.indexedSymbolRows.read(
+            collectionName,
+            () => this.deps.pool.databaseWriteStamp?.(physicalCollectionName),
+            handle?.graphDb,
+          ),
+        )
+      : undefined;
+    // A reader that fails rejects `symbolRows` too — the review throws the
+    // reader's failure below, so this branch must not surface unhandled.
+    symbolRows?.catch(() => undefined);
+    const [readerOutcome, scopeOutcome] = await Promise.allSettled([
+      reader,
+      readDiffScope(workTree, { base: req.changes?.base, files: req.files }),
+    ]);
+    if (scopeOutcome.status === "rejected") {
+      if (readerOutcome.status === "fulfilled") {
+        await symbolRows?.catch(() => undefined);
+        await readerOutcome.value.handle?.graphDb.close().catch(() => undefined);
+      }
+      throw scopeOutcome.reason;
+    }
+    if (readerOutcome.status === "rejected") throw readerOutcome.reason;
+    const scope = scopeOutcome.value;
+    const { handle } = readerOutcome.value;
     const indexLag =
       workTree === undefined ? undefined : readTreeLag(this.deps.collectionRegistry, collectionName, workTree);
 
-    const handle = await this.acquireGraphReader(collectionName);
     try {
       const graphDb: ReviewGraphDb | undefined = handle?.graphDb;
       let temporalCochange: Awaited<ReturnType<ReviewGraphDb["readTemporalCochangeGraph"]>> | undefined;
@@ -195,20 +232,26 @@ export class ReviewChangesOps {
         readDeclaredTestDependencies === undefined || workTree === undefined
           ? undefined
           : () => readDeclaredTestDependencies(workTree);
-      // The index's symbol rows, read on first use and shared: the sections that
-      // walk the diff resolve its edges against one hydrated table (bd
-      // tea-rags-mcp-vdhjc), and a review asking for none of them reads nothing.
-      let indexedSymbolRows: Promise<IndexedSymbolRowsRead> | undefined;
-      const readIndexedSymbolRowsOnce = async (): Promise<IndexedSymbolRowsRead> =>
-        (indexedSymbolRows ??= readIndexedSymbolRows(handle?.graphDb));
+      // The change's edges, read on first use and shared (bd tea-rags-mcp-nehn5):
+      // every section that walks the diff resolves against one hydrated table
+      // (bd tea-rags-mcp-vdhjc) and one walk, and a review asking for none of
+      // them reads nothing.
+      const { reviewEdgeExtraction } = this.deps;
+      let changeEdges: Promise<ReviewChangeEdges> | undefined;
+      const readReviewChangeEdgesOnce =
+        reviewEdgeExtraction === undefined
+          ? undefined
+          : async (): Promise<ReviewChangeEdges> =>
+              (changeEdges ??= (async () =>
+                readReviewChangeEdges(scope, reviewEdgeExtraction, await (symbolRows ?? NO_SYMBOL_ROWS)))());
       const buildContext: ReviewSectionBuildContext = {
         scope,
         graphDb,
         temporalCochange,
         temporalCochangeError,
         lexiconOps: this.deps.lexiconOps,
-        reviewEdgeExtraction: this.deps.reviewEdgeExtraction,
-        readIndexedSymbolRows: readIndexedSymbolRowsOnce,
+        reviewEdgeExtraction,
+        ...(readReviewChangeEdgesOnce === undefined ? {} : { readReviewChangeEdges: readReviewChangeEdgesOnce }),
         ...(indexLag === undefined ? {} : { indexLag }),
         ...(importSpecifiers === undefined ? {} : { readImportSpecifiers: importSpecifiers }),
         ...(maintenanceSignals === undefined ? {} : { readFileMaintenanceSignals: maintenanceSignals }),
@@ -289,17 +332,25 @@ export class ReviewChangesOps {
    * the collection has no codegraph database at all. A database that exists
    * but cannot be read rethrows — see the module docblock.
    */
-  private async acquireGraphReader(collectionName: string): Promise<CollectionGraphHandle | undefined> {
+  private async acquireGraphReader(
+    collectionName: string,
+  ): Promise<{ handle: CollectionGraphHandle | undefined; physicalCollectionName: PhysicalCollectionName }> {
     const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
           .resolveActiveCollection(collectionName)
           .catch(() => resolvePhysicalCollection(collectionName, []))
       : resolvePhysicalCollection(collectionName, []);
     try {
-      return await this.deps.pool.acquireReader(activePhysicalCollectionName);
+      const handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
+      return { handle, physicalCollectionName: activePhysicalCollectionName };
     } catch (error) {
       if (this.deps.pool.hasDatabase(activePhysicalCollectionName)) throw error;
-      return undefined;
+      return { handle: undefined, physicalCollectionName: activePhysicalCollectionName };
     }
   }
 }
+
+/** What a review that read no symbol rows resolves against. */
+const NO_SYMBOL_ROWS: Promise<IndexedSymbolRowsRead> = Promise.resolve({
+  unavailable: "no indexed symbol table was read for this review",
+});

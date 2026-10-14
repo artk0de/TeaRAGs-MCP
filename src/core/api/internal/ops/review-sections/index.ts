@@ -8,12 +8,13 @@
  */
 
 import type { ReviewSectionId } from "../../../public/dto/review.js";
-import { architectureSectionProvider } from "./architecture-section.js";
+import { architectureSectionProvider, readReviewChangeEdges } from "./architecture-section.js";
 import { cohesionSectionProvider } from "./cohesion-section.js";
 import { incompleteChangeSectionProvider } from "./incomplete-change-section.js";
 import { namingSectionProvider } from "./naming-section.js";
 import { normsSectionProvider } from "./norms-section.js";
 import type {
+  ReviewChangeEdges,
   ReviewGraphDb,
   ReviewNamingLexicon,
   ReviewSectionBuildContext,
@@ -22,6 +23,7 @@ import type {
 } from "./review-section-provider.js";
 
 export type {
+  ReviewChangeEdges,
   ReviewGraphDb,
   ReviewNamingLexicon,
   ReviewSectionBuildContext,
@@ -30,6 +32,7 @@ export type {
 };
 export {
   architectureSectionProvider,
+  readReviewChangeEdges,
   cohesionSectionProvider,
   incompleteChangeSectionProvider,
   namingSectionProvider,

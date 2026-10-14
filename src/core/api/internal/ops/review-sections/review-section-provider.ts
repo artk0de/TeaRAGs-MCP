@@ -13,13 +13,14 @@
 
 import type { GitFileMaintenanceSignals } from "../../../../contracts/types/architecture-report.js";
 import type { GraphDbClient, RelPath, TemporalCochangeGraph } from "../../../../contracts/types/codegraph.js";
+import type { ReviewEdgeOverlay } from "../../../../domains/trajectory/codegraph/symbols/index.js";
 import type { ReviewSectionId } from "../../../public/dto/review.js";
 import type { DeclaredTestDependencyLookup, IndexedFileImportLookup } from "../architecture-facts.js";
 import type { ArchitectureReportGraphDb } from "../architecture-graph-facts.js";
+import type { DiffDetectorBaseEdgeReader } from "../diff-families/diff-family-detector.js";
 import type { DiffScopeRead, DiffScopeRequest, DiffTreeLag } from "../diff-scope-reader.js";
 import type { NamingLexiconOps } from "../naming-lexicon-ops.js";
 import type { ReviewEdgeExtractionDeps } from "../review-edge-overlay.js";
-import type { IndexedSymbolRowsRead } from "../review-symbol-table.js";
 
 /**
  * The indexed graph reads a review section may perform: the temporal
@@ -68,12 +69,15 @@ export interface ReviewSectionBuildContext {
    */
   reviewEdgeExtraction: ReviewEdgeExtractionDeps | undefined;
   /**
-   * The index's symbol rows (every definition + every file) the review's
-   * symbol table is hydrated from (bd tea-rags-mcp-vdhjc) — read once per
-   * review on first call and shared by every section that walks the diff.
-   * Absent (unit wiring) → the table-reading languages skip with the reason.
+   * The change's edges on both sides (`readReviewChangeEdges`), read once per
+   * review and shared by every section that walks the diff (bd
+   * tea-rags-mcp-nehn5): the walk, the symbol table hydrated from the index's
+   * rows (bd tea-rags-mcp-vdhjc) and the base read run once, not once per
+   * section — the overlay and the base reader are immutable. Absent (unit
+   * wiring) → the section reads them itself with no indexed rows, so the
+   * table-reading languages skip with the reason.
    */
-  readIndexedSymbolRows?: () => Promise<IndexedSymbolRowsRead>;
+  readReviewChangeEdges?: () => Promise<ReviewChangeEdges>;
   /**
    * The indexed payload's import specifiers per file (bd tea-rags-mcp-2wsnt)
    * — the SAME read the whole-repo report's second silent-coupling pass uses
@@ -108,6 +112,15 @@ export interface ReviewSectionBuildContext {
   readDeclaredTestDependencies?: DeclaredTestDependencyLookup;
 }
 
+/**
+ * The change's edges on both sides: the working tree's reads of the scope
+ * files, and the diff base's targets of the same files.
+ */
+export interface ReviewChangeEdges {
+  overlay: ReviewEdgeOverlay;
+  baseEdges: DiffDetectorBaseEdgeReader | undefined;
+}
+
 /** What a section needs to ANSWER, once it has decided it can build. */
 export interface ReviewSectionContext extends ReviewSectionBuildContext {
   /** The request's addressing, forwarded so a section can address the index itself. */
@@ -133,6 +146,13 @@ export interface ReviewSectionProvider {
    * review's sake.
    */
   readonly consumesTemporalCochange?: boolean;
+  /**
+   * This section walks the diff's edges (`readReviewChangeEdges`), so the
+   * orchestration starts the index's symbol-row read as soon as the graph
+   * reader is open, overlapping the diff read (bd tea-rags-mcp-nehn5). Absent
+   * = no rows are read for this review's sake.
+   */
+  readonly consumesReviewChangeEdges?: boolean;
   /**
    * Decide from the build context; `{ built: false, reason }` when the
    * substrate is missing. Never throws, never reads.
