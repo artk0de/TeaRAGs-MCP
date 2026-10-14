@@ -143,12 +143,15 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
   `worker.ts` ← `worker.test.ts` = reverse, no evidence), or imports test-only
   dep (package/file tests import, no production file does; or manifest dev-only
   — `devDependencies`, Gemfile `:development`/`:test` — tests import; never
-  `node:*`), or imports other support. `summary.testSupport` counts files
+  `node:*`), or imports other support, or sits in test dir (dir holds a test,
+  every other indexed file there = test/support; file no test importing it is
+  named after). `summary.testSupport` counts files
   - `testOnlyDependencyCount`. Worker loaded by module path, importing only
     production deps → stays production. Fixture importing only production code,
-    not named after its test → stays production (no evidence) — low count ≠ bug.
-    Dev-tool file (codegen type, lint script) only a test imports + importing a
-    devDependency → may count as support.
+    not named after its test, alone in its dir or beside production → stays
+    production (no evidence) — low count ≠ bug. Dev-tool file (codegen type,
+    lint script) only a test imports + importing a devDependency → may count as
+    support.
   - `developmentRootCount`: file nothing imports + imports manifest dev-only dep
     (value or `import type`) → non-production root (story, bundler/lint config);
     subtree only it reaches follows. Story-only component = excluded too (dead

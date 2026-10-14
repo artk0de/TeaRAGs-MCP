@@ -194,6 +194,35 @@ describe("readProductionArchitectureGraph", () => {
     expect(production.graph.files.map((f) => f.relPath).sort()).toEqual(["src/modal/Modal.tsx", "src/modal/public.ts"]);
   });
 
+  it("reads a file's directory siblings over the indexed files, an unwalked non-test sibling included (bd tea-rags-mcp-r8hme.52.14)", async () => {
+    // Both mocks are imported only by the spec beside them and import only
+    // production code; the second directory also holds a generated file the
+    // codegraph does not walk, which only the indexed imports reveal.
+    const mocks = "src/modal/specs/mocks.ts";
+    const otherMocks = "src/panel/specs/mocks.ts";
+    const graphDb = {
+      readFileDependencyGraph: vi.fn(async () =>
+        graphOf(
+          [file("src/modal/Modal.tsx"), file(mocks), file(otherMocks)],
+          [edge(mocks, "src/modal/Modal.tsx"), edge(otherMocks, "src/modal/Modal.tsx")],
+        ),
+      ),
+    };
+    const readIndexedFileImports = async () =>
+      new Map([
+        ["src/modal/specs/Modal.spec.tsx", { isTest: true, specifiers: ["./mocks"] }],
+        [mocks, { isTest: false, specifiers: ["../Modal"] }],
+        ["src/panel/specs/Panel.spec.tsx", { isTest: true, specifiers: ["./mocks"] }],
+        ["src/panel/specs/schema.generated.ts", { isTest: false, specifiers: ["zod"] }],
+        [otherMocks, { isTest: false, specifiers: ["../../modal/Modal"] }],
+      ]);
+
+    const production = await readProductionArchitectureGraph(graphDb, readIndexedFileImports);
+
+    expect(production.graph.files.map((f) => f.relPath).sort()).toEqual(["src/modal/Modal.tsx", otherMocks]);
+    expect(production.testSupport.excludedFileCount).toBe(1);
+  });
+
   it("excludes no test support when no test-import read is wired", async () => {
     const graphDb = {
       readFileDependencyGraph: vi.fn(async () =>

@@ -5,7 +5,7 @@ import type { FileDependencyGraph, RelPath } from "../../../../../contracts/type
 
 /** What the test-support exclusion takes out, named for a report (bd tea-rags-mcp-89k7k.35.3). */
 export const TEST_SUPPORT_REASON =
-  "test support: imported only by test files or by other test support, and named after a test importing it, importing a test-only dependency (one tests import and no production file does, or one the manifests declare for development only) or importing other test support; also a file nothing imports that imports a dependency the manifests declare for development only (a story, a bundler config), with what only it reaches";
+  "test support: imported only by test files or by other test support, and named after a test importing it, importing a test-only dependency (one tests import and no production file does, or one the manifests declare for development only), importing other test support, or sitting in a directory that holds a test and nothing but tests and test support; also a file nothing imports that imports a dependency the manifests declare for development only (a story, a bundler config), with what only it reaches";
 
 /** The module specifiers one indexed file declares (`payload.imports`), and whether it is a test file. */
 export interface IndexedFileImports {
@@ -240,6 +240,15 @@ export function deriveTestOnlyDependencies(
 
 const NO_DECLARED_TEST_DEPENDENCIES: ReadonlySet<string> = new Set();
 
+const NO_INDEXED_FILES: ReadonlyMap<RelPath, Pick<IndexedFileImports, "isTest">> = new Map();
+
+/** The other files of each file's directory, over the given file set (duplicates collapse). */
+function indexSiblingsByDirectory(files: readonly RelPath[]): (relPath: RelPath) => RelPath[] {
+  const byDirectory = new Map<string, Set<RelPath>>();
+  for (const relPath of files) addTo(byDirectory, posix.dirname(relPath), relPath);
+  return (relPath) => [...(byDirectory.get(posix.dirname(relPath)) ?? [])].filter((s) => s !== relPath);
+}
+
 /**
  * Whether `candidate` is named after `test` (bd tea-rags-mcp-89k7k.35.3): its
  * basename without extension extends the test's, as a proper prefix followed
@@ -268,9 +277,18 @@ const SEPARATOR = /[^\p{L}\p{N}]/u;
  * - (a) it has an importer and every importer is a test file or in S;
  * - (g) a test reaches it through members of S (grounding);
  * - (b) it reaches, through imports staying inside S (itself included), a
- *   file that imports a test-only dependency (`deriveTestOnlyDependencies`)
- *   or is named after a test importing it (`isNamedAfterTest`:
- *   `X.spec.presets.tsx` imported by `X.spec.tsx`).
+ *   file that imports a test-only dependency (`deriveTestOnlyDependencies`),
+ *   is named after a test importing it (`isNamedAfterTest`:
+ *   `X.spec.presets.tsx` imported by `X.spec.tsx`), or sits in a test
+ *   directory (bd tea-rags-mcp-r8hme.52.14: `specs/mocks.ts` beside its
+ *   spec): its directory holds a test, every other file there is a test or
+ *   in S, and no test importing it is named after it — a file a test is
+ *   named after is the code under test, whatever its directory. Siblings are
+ *   read over the INDEX's file set: the walked files, the test importers,
+ *   and every file `indexedFiles` lists (the indexed files declaring
+ *   imports; an unwalked one that is not a test, a generated file say, is a
+ *   production sibling). A file declaring no imports and walked by nothing
+ *   (a JSON fixture) is not a sibling.
  *
  * The name relation is a root of the same reachability, so a member that
  * imports a companion is evidenced through it, as through any other member;
@@ -324,6 +342,7 @@ export function classifyTestSupportFiles(
   unwalkedImportEdges: readonly UnwalkedFileImportEdge[],
   externalImports: readonly UnwalkedDependencyImport[],
   declaredTestDependencies: ReadonlySet<string> = NO_DECLARED_TEST_DEPENDENCIES,
+  indexedFiles: ReadonlyMap<RelPath, Pick<IndexedFileImports, "isTest">> = NO_INDEXED_FILES,
 ): TestSupportClassification {
   const walked = new Set(graph.files.map((f) => f.relPath));
   const importers = new Map<RelPath, Set<RelPath>>();
@@ -392,12 +411,30 @@ export function classifyTestSupportFiles(
     declaredTestDependencies,
   );
 
+  const isTestFile = (relPath: RelPath): boolean =>
+    testFiles.has(relPath) || indexedFiles.get(relPath)?.isTest === true;
+  const siblingsOf = indexSiblingsByDirectory([...walked, ...testFiles, ...indexedFiles.keys()]);
+  // A file in a directory of tests and test support (r8hme.52.14 b) is
+  // evidenced by the directory itself — unless a test importing it is named
+  // after it, which makes it the code under test (89k7k.35.3 guard).
+  const inTestDirectory = (relPath: RelPath, members: ReadonlySet<RelPath>): boolean => {
+    const siblings = siblingsOf(relPath);
+    return (
+      siblings.some(isTestFile) &&
+      siblings.every((s) => isTestFile(s) || members.has(s)) &&
+      ![...(importers.get(relPath) ?? [])].some((i) => testFiles.has(i) && isNamedAfterTest(i, relPath))
+    );
+  };
+
   const support = new Set(importers.keys());
   for (;;) {
     closeAndGround(support, isNonProduction);
     const evidenced = reachableFrom(
       [...support].filter(
-        (f) => namedAfterTest.has(f) || [...(dependenciesOf.get(f) ?? [])].some((d) => testOnly.has(d)),
+        (f) =>
+          namedAfterTest.has(f) ||
+          [...(dependenciesOf.get(f) ?? [])].some((d) => testOnly.has(d)) ||
+          inTestDirectory(f, support),
       ),
       importers,
       support,

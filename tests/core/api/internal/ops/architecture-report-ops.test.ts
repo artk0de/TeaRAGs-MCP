@@ -1718,7 +1718,7 @@ describe("ArchitectureReportOps#build — non-production paths (bd tea-rags-mcp-
 // (a `.spec.presets.tsx`, a spec builder) is test support, not architecture.
 describe("ArchitectureReportOps#build — test support (bd tea-rags-mcp-89k7k.35.3)", () => {
   const TEST_SUPPORT =
-    "test support: imported only by test files or by other test support, and named after a test importing it, importing a test-only dependency (one tests import and no production file does, or one the manifests declare for development only) or importing other test support; also a file nothing imports that imports a dependency the manifests declare for development only (a story, a bundler config), with what only it reaches";
+    "test support: imported only by test files or by other test support, and named after a test importing it, importing a test-only dependency (one tests import and no production file does, or one the manifests declare for development only), importing other test support, or sitting in a directory that holds a test and nothing but tests and test support; also a file nothing imports that imports a dependency the manifests declare for development only (a story, a bundler config), with what only it reaches";
 
   function withPresets(): FileDependencyGraph {
     const g = graph();
