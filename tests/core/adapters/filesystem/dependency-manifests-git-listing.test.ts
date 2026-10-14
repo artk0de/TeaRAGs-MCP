@@ -16,10 +16,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   readDeclaredDependencies,
   readDeclaredDependenciesByLanguage,
+  readDeclaredTestDependencies,
 } from "../../../../src/core/adapters/filesystem/dependency-manifests.js";
 import type { DependencyManifestSource } from "../../../../src/core/contracts/types/language.js";
 import { PYTHON_DEPENDENCY_MANIFEST } from "../../../../src/core/domains/language/python/manifest.js";
-import { RUBY_DEPENDENCY_MANIFEST } from "../../../../src/core/domains/language/ruby/gemfile.js";
+import {
+  RUBY_DEPENDENCY_MANIFEST,
+  RUBY_TEST_DEPENDENCY_MANIFEST,
+} from "../../../../src/core/domains/language/ruby/gemfile.js";
+import { PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST } from "../../../../src/core/domains/language/typescript/package-manifest.js";
 
 const SOURCES: readonly DependencyManifestSource[] = [PYTHON_DEPENDENCY_MANIFEST];
 
@@ -110,5 +115,67 @@ describe("readDeclaredDependencies in a git work tree", () => {
     write("corpus/pyproject.toml", '[project]\ndependencies = ["flask"]\n');
     write("other/requirements.txt", "django==6.0.3\n");
     expect([...(readDeclaredDependencies(join(root, "corpus"), SOURCES) ?? [])]).toEqual(["flask"]);
+  });
+});
+
+describe("readDeclaredTestDependencies in a git work tree (bd tea-rags-mcp-s0xex)", () => {
+  const TEST_SOURCES = [PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST, RUBY_TEST_DEPENDENCY_MANIFEST];
+
+  function testDependencies(at: string = root): string[] {
+    return [...readDeclaredTestDependencies(at, TEST_SOURCES)].sort();
+  }
+
+  /** A nested checkout the way `git worktree add` leaves one: a `.git` FILE naming the main store. */
+  function writeNestedCheckout(base: string, relDir: string): void {
+    const at = (relPath: string, body: string): void => {
+      mkdirSync(join(base, relDir, relPath, ".."), { recursive: true });
+      writeFileSync(join(base, relDir, relPath), body, "utf8");
+    };
+    at(".git", "gitdir: /elsewhere/.git/worktrees/x\n");
+    at("package.json", JSON.stringify({ devDependencies: { "nested-only": "1" } }));
+    at("Gemfile", 'group :test do\n  gem "nested-gem"\nend\n');
+  }
+
+  it("reads tracked and untracked manifests alike", () => {
+    write("package.json", JSON.stringify({ devDependencies: { vitest: "^3" } }));
+    git("add", "package.json");
+    write("packages/ui/package.json", JSON.stringify({ devDependencies: { jest: "^29" } }));
+    expect(testDependencies()).toEqual(["jest", "vitest"]);
+  });
+
+  it("does not read a nested checkout's manifests — another tree's declarations, not this project's", () => {
+    write("package.json", JSON.stringify({ devDependencies: { vitest: "^3" } }));
+    writeNestedCheckout(root, join(".claude", "worktrees", "x"));
+    expect(testDependencies()).toEqual(["vitest"]);
+  });
+
+  it("does not read a manifest the tree ignores", () => {
+    write("package.json", JSON.stringify({ devDependencies: { vitest: "^3" } }));
+    write(".gitignore", ".ruby-lsp/\n");
+    write(".ruby-lsp/Gemfile", 'group :test do\n  gem "ruby-lsp"\nend\n');
+    expect(testDependencies()).toEqual(["vitest"]);
+  });
+
+  it("without git, walks — and still skips a directory that is itself a checkout", () => {
+    const plain = mkdtempSync(join(tmpdir(), "tea-rags-manifest-nogit-"));
+    try {
+      writeFileSync(join(plain, "package.json"), JSON.stringify({ devDependencies: { vitest: "^3" } }), "utf8");
+      mkdirSync(join(plain, "packages", "ui"), { recursive: true });
+      writeFileSync(
+        join(plain, "packages", "ui", "package.json"),
+        JSON.stringify({ devDependencies: { jest: "^29" } }),
+        "utf8",
+      );
+      writeNestedCheckout(plain, join(".claude", "worktrees", "x"));
+      mkdirSync(join(plain, "sub", ".git"), { recursive: true });
+      writeFileSync(
+        join(plain, "sub", "package.json"),
+        JSON.stringify({ devDependencies: { "submodule-only": "1" } }),
+        "utf8",
+      );
+      expect(testDependencies(plain)).toEqual(["jest", "vitest"]);
+    } finally {
+      rmSync(plain, { recursive: true, force: true });
+    }
   });
 });
