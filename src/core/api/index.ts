@@ -103,7 +103,7 @@ export { resolveBaseIndexEntry, resolveCollection } from "./internal/collection-
 export { listWorktreeInfos, toWorktreeInfo, worktreeInfoForPath } from "./internal/ops/worktree-ops.js";
 export { readPayloadFileCommitCounts } from "./internal/infra/payload-file-commit-count-reader.js";
 export { readPayloadFileMaintenanceSignals } from "./internal/infra/payload-file-maintenance-signal-reader.js";
-export { ReviewScopedFileFactsReader } from "./internal/infra/payload-file-facts-reader.js";
+export { RequestScopedFileFactsReader } from "./internal/infra/payload-file-facts-reader.js";
 export {
   readPayloadImportSpecifiers,
   readPayloadIndexedFileImports,
