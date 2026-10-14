@@ -572,8 +572,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "established) | NEW_PATTERN (pair nobody wrote, no established direction; transit when one exists) | UNJUDGED " +
       "(reason newFile, nonProduction, untypedFile, weakRole + weakSide source|target|both, crossLanguage, inheritance, constantReference, displacedRole, " +
       "noCodegraph); exclusionsUnchecked = classes no call data can check yet. restructure mode: what-if " +
-      "move{files,toComponent} | merge{components; later fold into first} | split{component,groups} vs current " +
-      "partition; full detectors on base vs relabelled facts, delta by violation key: introduced/resolved subjects, " +
+      "move{files,toComponent} | merge{components; later fold into first} | split{component,groups}, applied " +
+      "in order (a later op may name what an earlier one produced); full detectors on base vs relabelled facts, delta by violation key: introduced/resolved subjects, " +
       "counts, net, byFamily. Edge ops addFile{file,component?,abstract?} | addEdge{from,to} | removeEdge{from,to} (base " +
       "paths) move structural detectors only; co-change detectors read history and do not respond. One hypothesis " +
       "per call. restructurePlan mode: greedy ordered plan over candidate hypotheses {id,rationale?,ops} (+ report " +

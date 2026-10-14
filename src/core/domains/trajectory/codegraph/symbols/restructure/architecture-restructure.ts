@@ -22,8 +22,16 @@
  *   the remainder, never nested in it, because a dependency on a nested
  *   component is containment and SDP does not judge containment.
  *
- * Every op compiles against the BASE partition, and a file is relabelled by at
- * most one op: the ops of one call are one hypothesis, not a sequence.
+ * Ops apply IN ORDER (bd tea-rags-mcp-cm9gt): each compiles against the
+ * partition the ops before it produced, so a later op may name a component an
+ * earlier one produced (merge A+B into A, then merge A+C) and a component an
+ * earlier merge folded away is unknown. A file is named by its current path or
+ * by its base path — a relocated path never takes a base path, so the two
+ * cannot collide. A file's final path and component are the composition of its
+ * relabels: a relocated file keeps its BASE name, `renamedFrom` maps the FINAL
+ * path to the BASE path, and a file relocated back to its base path carries no
+ * rename. A split part is a label, not a directory — nothing relocates into it
+ * — and a second split of one component numbers its parts past the first's.
  *
  * EDGE ops (bd tea-rags-mcp-cm9gt.1) model a code remedy — an inversion, an
  * interface extraction, a back-edge cut — that changes edges, not file homes.
@@ -99,6 +107,10 @@ export interface ArchitectureRestructureTargetFacts {
 }
 
 const ENTRY_FILE_NAMES: ReadonlySet<string> = new Set(Object.values(MODULE_ENTRY_FILE_NAMES).flat());
+
+/** A split part is named `<component>~split<k>` — a label, never a directory. */
+const SPLIT_PART_MARKER = "~split";
+const SPLIT_PART_PATTERN = new RegExp(`${SPLIT_PART_MARKER}\\d+$`);
 
 type CompileFailure = Exclude<ArchitectureRestructureCompilation, { kind: "compiled" }>;
 
@@ -228,13 +240,23 @@ function applyArchitectureRestructureEdgeEdits(
   };
 }
 
-/** Accumulates one hypothesis's relabel across its ops. */
+/** Where one base (or added) file sits after the ops compiled so far. */
+interface RestructureFilePlacement {
+  relPath: RelPath;
+  component: string | undefined;
+}
+
+/** Accumulates one hypothesis's relabel across its ops, each op against the partition the earlier ones produced. */
 class RestructureCompiler {
-  private readonly components: ReadonlySet<string>;
+  /** File count per component of the current partition. */
+  private readonly componentSizes = new Map<string, number>();
   private readonly occupiedRelPaths: Set<RelPath>;
-  private readonly renamedFrom = new Map<RelPath, RelPath>();
-  private readonly componentOf = new Map<RelPath, string>();
-  private readonly relabelledBy = new Map<RelPath, number>();
+  /** Base (or added) path → its current placement. */
+  private readonly placements = new Map<RelPath, RestructureFilePlacement>();
+  /** Current path of a relocated file → its base path. */
+  private readonly basePathAt = new Map<RelPath, RelPath>();
+  /** Base (or added) paths some op relabelled, in first-relabel order. */
+  private readonly relabelled = new Set<RelPath>();
   private readonly addedFiles: ArchitectureRestructureEdgeEdits["addedFiles"] = [];
   private readonly addedRelPaths = new Set<RelPath>();
   private readonly addedEdges: ArchitectureRestructureEdgeEdits["addedEdges"] = [];
@@ -245,8 +267,8 @@ class RestructureCompiler {
     private readonly partition: ArchitectureRestructurePartition,
     private readonly edgeBase: ArchitectureRestructureEdgeBase,
   ) {
-    this.components = new Set(partition.componentOf.values());
     this.occupiedRelPaths = new Set(partition.componentOf.keys());
+    for (const [relPath, component] of partition.componentOf) this.place(relPath, { relPath, component });
   }
 
   compile(op: ArchitectureRestructureOp, opIndex: number): ArchitectureRestructureCompiledOp | CompileFailure {
@@ -259,9 +281,16 @@ class RestructureCompiler {
   }
 
   relabel(): ArchitectureRestructureRelabel {
+    const renamedFrom = new Map<RelPath, RelPath>();
+    const componentOf = new Map<RelPath, string>();
+    for (const basePath of this.relabelled) {
+      const { relPath, component } = this.placementOf(basePath);
+      if (relPath !== basePath) renamedFrom.set(relPath, basePath);
+      if (component !== undefined) componentOf.set(relPath, component);
+    }
     return {
-      renamedFrom: this.renamedFrom,
-      componentOf: this.componentOf,
+      renamedFrom,
+      componentOf,
       edgeEdits: { addedFiles: this.addedFiles, addedEdges: this.addedEdges, removedEdges: this.removedEdges },
     };
   }
@@ -271,7 +300,7 @@ class RestructureCompiler {
     opIndex: number,
   ): ArchitectureRestructureCompiledOp | CompileFailure {
     if (this.isKnownBasePath(relPath)) return invalid(opIndex, `${relPath} already exists`);
-    if (component !== undefined && !this.components.has(component)) {
+    if (component !== undefined && !this.componentSizes.has(component)) {
       return { kind: "unknownComponent", opIndex, component };
     }
     this.addedRelPaths.add(relPath);
@@ -281,8 +310,9 @@ class RestructureCompiler {
       ...(component !== undefined ? { component } : {}),
       ...(abstract === true ? { abstract } : {}),
     });
+    this.place(relPath, { relPath, component });
     if (component === undefined) return { op: "addFile", relabelledFiles: 0, components: [], file: relPath };
-    this.componentOf.set(relPath, component);
+    this.relabelled.add(relPath);
     return { op: "addFile", relabelledFiles: 0, components: [component], file: relPath };
   }
 
@@ -327,30 +357,28 @@ class RestructureCompiler {
     opIndex: number,
   ): ArchitectureRestructureCompiledOp | CompileFailure {
     if (files.length === 0) return invalid(opIndex, "move names no file");
-    const unknown = files.filter((relPath) => !this.partition.componentOf.has(relPath));
-    if (unknown.length > 0) return { kind: "unknownFile", opIndex, files: unknown };
+    const resolved = this.resolveFiles(files, opIndex);
+    if (!Array.isArray(resolved)) return resolved;
     const target = this.relocationTarget(toComponent, opIndex);
     if (typeof target !== "string") return target;
-    const resident = files.find((relPath) => this.partition.componentOf.get(relPath) === toComponent);
+    const resident = files.find((_, k) => this.placementOf(resolved[k]).component === toComponent);
     if (resident !== undefined) return invalid(opIndex, `${resident} already belongs to ${toComponent}`);
-    const claimed = this.claim(files, opIndex);
-    if (claimed) return claimed;
-    for (const relPath of files) this.relocate(relPath, toComponent);
+    for (const basePath of resolved) this.relocate(basePath, toComponent);
     return { op: "move", relabelledFiles: files.length, components: [toComponent] };
   }
 
   private merge(components: readonly string[], opIndex: number): ArchitectureRestructureCompiledOp | CompileFailure {
     if (new Set(components).size < 2) return invalid(opIndex, "merge needs at least two distinct components");
-    const unknown = components.find((component) => !this.components.has(component));
+    const unknown = components.find((component) => !this.componentSizes.has(component));
     if (unknown !== undefined) return { kind: "unknownComponent", opIndex, component: unknown };
     const [into, ...folded] = components;
     const target = this.relocationTarget(into, opIndex);
     if (typeof target !== "string") return target;
     const foldedSet = new Set(folded);
-    const files = [...this.partition.componentOf].filter(([, c]) => foldedSet.has(c)).map(([relPath]) => relPath);
-    const claimed = this.claim(files, opIndex);
-    if (claimed) return claimed;
-    for (const relPath of files) this.relocate(relPath, into);
+    const files = [...this.placements]
+      .filter(([, { component }]) => component !== undefined && foldedSet.has(component))
+      .map(([basePath]) => basePath);
+    for (const basePath of files) this.relocate(basePath, into);
     return { op: "merge", relabelledFiles: files.length, components: [into] };
   }
 
@@ -359,56 +387,99 @@ class RestructureCompiler {
     groups: readonly (readonly RelPath[])[],
     opIndex: number,
   ): ArchitectureRestructureCompiledOp | CompileFailure {
-    if (!this.components.has(component)) return { kind: "unknownComponent", opIndex, component };
+    if (!this.componentSizes.has(component)) return { kind: "unknownComponent", opIndex, component };
     if (groups.length === 0 || groups.some((group) => group.length === 0)) {
       return invalid(opIndex, "split needs non-empty groups");
     }
     const files = groups.flat();
-    const unknown = files.filter((relPath) => !this.partition.componentOf.has(relPath));
-    if (unknown.length > 0) return { kind: "unknownFile", opIndex, files: unknown };
-    const stranger = files.find((relPath) => this.partition.componentOf.get(relPath) !== component);
+    const resolved = this.resolveFiles(files, opIndex);
+    if (!Array.isArray(resolved)) return resolved;
+    const stranger = files.find((_, k) => this.placementOf(resolved[k]).component !== component);
     if (stranger !== undefined) return invalid(opIndex, `${stranger} does not belong to ${component}`);
-    if (new Set(files).size !== files.length) return invalid(opIndex, "split groups overlap");
-    const remainder = [...this.partition.componentOf.values()].filter((c) => c === component).length - files.length;
+    if (new Set(resolved).size !== resolved.length) return invalid(opIndex, "split groups overlap");
+    const remainder = (this.componentSizes.get(component) ?? 0) - resolved.length;
     if (groups.length + (remainder > 0 ? 1 : 0) < 2) return invalid(opIndex, "a split must leave at least two parts");
-    const claimed = this.claim(files, opIndex);
-    if (claimed) return claimed;
-    const parts = groups.map((group, k) => {
-      const part = `${component}~split${k + 1}`;
-      for (const relPath of group) this.componentOf.set(relPath, part);
-      return part;
-    });
+    const parts = this.freeSplitPartNames(component, groups.length);
+    let offset = 0;
+    for (const [g, group] of groups.entries()) {
+      for (const basePath of resolved.slice(offset, offset + group.length)) {
+        this.place(basePath, { relPath: this.placementOf(basePath).relPath, component: parts[g] });
+        this.relabelled.add(basePath);
+      }
+      offset += group.length;
+    }
     return { op: "split", relabelledFiles: files.length, components: parts };
+  }
+
+  /** `count` part names `<component>~split<k>` no current component holds, smallest k first. */
+  private freeSplitPartNames(component: string, count: number): string[] {
+    const parts: string[] = [];
+    for (let k = 1; parts.length < count; k++) {
+      const part = `${component}${SPLIT_PART_MARKER}${k}`;
+      if (!this.componentSizes.has(part)) parts.push(part);
+    }
+    return parts;
   }
 
   /** The directory files relocated into `component` land in, or why there is none. */
   private relocationTarget(component: string, opIndex: number): string | CompileFailure {
-    if (!this.components.has(component)) return { kind: "unknownComponent", opIndex, component };
+    if (!this.componentSizes.has(component)) return { kind: "unknownComponent", opIndex, component };
     if (isNamespaceComponent(component)) {
       return invalid(opIndex, `${component} is a constant namespace: its membership is spelled, not a directory`);
+    }
+    if (SPLIT_PART_PATTERN.test(component)) {
+      return invalid(opIndex, `${component} is a split part: its membership is a label, not a directory`);
     }
     return component;
   }
 
-  /** Mark `files` as this op's; the failure when an earlier op already relabelled one. */
-  private claim(files: readonly RelPath[], opIndex: number): CompileFailure | undefined {
-    const taken = files.find((relPath) => this.relabelledBy.has(relPath));
-    if (taken !== undefined) {
-      return invalid(opIndex, `${taken} is already relabelled by op ${this.relabelledBy.get(taken)}`);
+  /** The base path of every named file (current or base path), or the unknown names. */
+  private resolveFiles(files: readonly RelPath[], opIndex: number): RelPath[] | CompileFailure {
+    const resolved = files.map((relPath) => this.basePathAt.get(relPath) ?? relPath);
+    const unknown = files.filter((_, k) => !this.placements.has(resolved[k]));
+    return unknown.length > 0 ? { kind: "unknownFile", opIndex, files: unknown } : resolved;
+  }
+
+  private placementOf(basePath: RelPath): RestructureFilePlacement {
+    const placement = this.placements.get(basePath);
+    if (placement === undefined) throw new Error(`restructure compiler: no placement for ${basePath}`);
+    return placement;
+  }
+
+  /** Set `basePath`'s placement, keeping the component sizes and the current-path index in step. */
+  private place(basePath: RelPath, placement: RestructureFilePlacement): void {
+    const previous = this.placements.get(basePath);
+    if (previous !== undefined) {
+      if (previous.component !== undefined) {
+        const size = (this.componentSizes.get(previous.component) ?? 0) - 1;
+        if (size > 0) this.componentSizes.set(previous.component, size);
+        else this.componentSizes.delete(previous.component);
+      }
+      if (previous.relPath !== basePath) {
+        this.basePathAt.delete(previous.relPath);
+        this.occupiedRelPaths.delete(previous.relPath);
+      }
     }
-    for (const relPath of files) this.relabelledBy.set(relPath, opIndex);
-    return undefined;
+    if (placement.component !== undefined) {
+      this.componentSizes.set(placement.component, (this.componentSizes.get(placement.component) ?? 0) + 1);
+    }
+    if (placement.relPath !== basePath) {
+      this.basePathAt.set(placement.relPath, basePath);
+      this.occupiedRelPaths.add(placement.relPath);
+    }
+    this.placements.set(basePath, placement);
   }
 
-  private relocate(relPath: RelPath, componentDir: string): void {
-    const newPath = this.freePath(componentDir, baseName(relPath));
-    this.occupiedRelPaths.add(newPath);
-    this.renamedFrom.set(newPath, relPath);
-    this.componentOf.set(newPath, componentDir);
+  private relocate(basePath: RelPath, componentDir: string): void {
+    const relPath = this.freePath(componentDir, baseName(basePath), basePath);
+    this.place(basePath, { relPath, component: componentDir });
+    this.relabelled.add(basePath);
   }
 
-  private freePath(componentDir: string, name: string): RelPath {
+  /** A free path in `componentDir` for `name`; the file's own base path is always free to it. */
+  private freePath(componentDir: string, name: string, basePath: RelPath): RelPath {
     const at = (fileName: string) => (componentDir === "" ? fileName : `${componentDir}/${fileName}`);
+    if (at(name) === basePath) return basePath;
     if (!ENTRY_FILE_NAMES.has(name) && !this.occupiedRelPaths.has(at(name))) return at(name);
     const dot = name.lastIndexOf(".");
     const [stem, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
