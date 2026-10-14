@@ -15,6 +15,10 @@
  *      `jsNameOf` so the CommonJS shapes are named (and so tagged) too.
  *   4. type declarations (bd tea-rags-mcp-vi0wx, spec §1b) — TypeScript's pass,
  *      driven by `jsNameOf`: classes and module-level non-function `const`s.
+ *   5. field accesses (bd tea-rags-mcp-p1w1c) — TypeScript's collector with a
+ *      JavaScript parameter reader: one `FileExtraction.fieldAccesses` fact per
+ *      site a class member reads or writes a field of `this`, its class or a
+ *      parameter (always `unknown`: no annotations), for `cg_symbols_edges_field`.
  *
  * A new JavaScript extraction facet is added HERE, one `ExtractionFacetPass` at a
  * time, rather than by growing the monolith. What a pass can and cannot express —
@@ -32,6 +36,7 @@ import { readEcmascriptDeclaredVisibility } from "../../typescript/walker/passes
 import { ecmascriptSymbolKindFacetPass } from "../../typescript/walker/passes/symbol-kind.js";
 import { ecmascriptTypeDeclarationFacetPass } from "../../typescript/walker/passes/type-declarations.js";
 import { jsNameOf } from "./name-of.js";
+import { javascriptFieldAccessFacetPass } from "./passes/field-accesses.js";
 import { JAVASCRIPT_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
 import { javascriptTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
@@ -41,4 +46,5 @@ export const JAVASCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   createIdentifierDeclarationFacetPass(JAVASCRIPT_IDENTIFIER_DECLARATION_SYNTAX),
   ecmascriptSymbolKindFacetPass(jsNameOf),
   ecmascriptTypeDeclarationFacetPass(jsNameOf),
+  javascriptFieldAccessFacetPass,
 ];

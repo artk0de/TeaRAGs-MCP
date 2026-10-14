@@ -85,6 +85,9 @@ export const capability: LanguageCapability = {
   // spelling). Recompute: `--force-enrichments codegraph --languages javascript`.
   // Same walker 5 (one bump per release), bd tea-rags-mcp-ek2cu: the shared
   // ECMAScript class census counts async instance methods (migration 050).
+  // Same walker 5, bd tea-rags-mcp-p1w1c: the shared ECMAScript field-access
+  // pass publishes `fieldAccesses` (`cg_symbols_edges_field`) for JS classes.
+  // Recompute: `--force-enrichments codegraph --languages javascript`.
   versions: { chunking: 3, walker: 5, codegraphSchema: 2 },
   // Google JavaScript Style Guide — the same convention as TypeScript:
   // classes UpperCamelCase, functions / methods / parameters / locals /
