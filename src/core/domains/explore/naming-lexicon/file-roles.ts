@@ -9,7 +9,9 @@ import {
   filePrimaryDeclaration,
   MIN_ROLE_MEMBERS,
   TYPE_ROLE_THRESHOLDS,
+  typeCallSurface,
   typeNameParser,
+  type TypeCallSurface,
   type TypeRoleAssignment,
 } from "./type-roles.js";
 
@@ -425,13 +427,7 @@ function ancestorConfirmedDirectories(
 }
 
 /** How a primary's callables are called: on instances, on the type only, or unknown. */
-type PrimaryCallShape = "instance" | "functions" | undefined;
-
-function callShapeOf(primary: TypeNameRow | undefined): PrimaryCallShape {
-  if (primary?.instanceMethodCount === undefined || primary.singletonMethodCount === undefined) return undefined;
-  if (primary.instanceMethodCount > 0) return "instance";
-  return primary.singletonMethodCount > 0 ? "functions" : undefined;
-}
+type PrimaryCallShape = TypeCallSurface | undefined;
 
 /**
  * Rules 4 and 5 of {@link buildDependencyNormFileRoles} (bd tea-rags-mcp-4vj2u):
@@ -466,7 +462,7 @@ function applyRoleHomes(
   const shapeTally = new Map<string, { instance: number; functions: number }>();
   for (const [relPath, { role }] of entries) {
     if (!role.strong || !homeOf(relPath, role.role)) continue;
-    const shape = callShapeOf(primaries.get(relPath));
+    const shape = typeCallSurface(primaries.get(relPath));
     if (shape === undefined) continue;
     const tally = shapeTally.get(role.role) ?? { instance: 0, functions: 0 };
     tally[shape]++;
@@ -494,7 +490,7 @@ function applyRoleHomes(
       continue;
     }
     const expected = homeShape(role.role);
-    const shape = callShapeOf(primaries.get(relPath));
+    const shape = typeCallSurface(primaries.get(relPath));
     if (expected !== undefined && shape !== undefined && shape !== expected) {
       entries.set(relPath, { ...entry, role: { ...role, displaced: "callShape" } });
     }

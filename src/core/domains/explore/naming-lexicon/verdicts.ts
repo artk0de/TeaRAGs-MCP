@@ -87,6 +87,7 @@ import {
   typeNameParser,
   type ExpectedTypeRole,
   type FileDeclaration,
+  type TypeBehaviourCensus,
   type TypeNameRow,
   type TypeRoleAssignment,
 } from "./type-roles.js";
@@ -1455,8 +1456,26 @@ function familyNonMemberRole(
   const member = isRoleFamilyMember(role, {
     ...(supertypes !== undefined ? { supertypes } : {}),
     ...(symbolKind !== undefined ? { symbolKind } : {}),
+    ...knownDraftCounts(draft, evidence),
   });
   return member ? undefined : role.role;
+}
+
+/**
+ * What the draft is KNOWN to do (bd tea-rags-mcp-ek2cu): the behaviour counts of
+ * the existing declaration it names, each from the first such row that knows
+ * it. A new draft has none — unknown, which never excludes it from a family.
+ */
+function knownDraftCounts(draft: TypeDraftPlacement, evidence: TypeNameEvidence): TypeBehaviourCensus {
+  const own = ownDeclarations(draft, evidence);
+  const asyncMethodCount = own.find((row) => row.asyncMethodCount !== undefined)?.asyncMethodCount;
+  const shaped = own.find((row) => row.instanceMethodCount !== undefined && row.singletonMethodCount !== undefined);
+  return {
+    ...(asyncMethodCount !== undefined ? { asyncMethodCount } : {}),
+    ...(shaped !== undefined
+      ? { instanceMethodCount: shaped.instanceMethodCount, singletonMethodCount: shaped.singletonMethodCount }
+      : {}),
+  };
 }
 
 /**
