@@ -73,5 +73,10 @@ describe("chunker worker debug inheritance", () => {
     await vi.waitFor(() => {
       expect(isDebug()).toBe(true);
     });
+    // The flag is adopted BEFORE the entry's engine build imports the language
+    // module. Join that in-flight import (same registry) so the test does not end
+    // while it is still loading — vitest tears the environment down under it and
+    // reports an unhandled EnvironmentTeardownError on a loaded runner.
+    await import(languageModulePath);
   });
 });
