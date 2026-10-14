@@ -1,70 +1,1228 @@
+## [1.48.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.47.0...v1.48.0) (2026-10-14)
+
+### ⚠ BREAKING CHANGES
+
+- **trajectory:** get_architecture_report no longer returns
+  `summary.layering.facadePartition` (the adoption partition's component/level
+  counts) — there is only one partition left to report. SDP / mainSequence /
+  hubLike / shotgun findings are now judged on the domain partition, so their
+  component names and counts change.
+
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+
+### Plugin
+
+- **plugin:** co-change support counts author bursts, not sessions
+  ([e3bec60](https://github.com/artk0de/TeaRAGs-MCP/commit/e3bec6070eb85040ba29adf33aa47634bed031f0))
+- **plugin:** name the dependency-norm verdict exclusions in
+  architecture-diagnostics (4vj2u)
+  ([76cd283](https://github.com/artk0de/TeaRAGs-MCP/commit/76cd28309df69c725ff46a4095afbb012c36ff64))
+- **skills:** architecture-diagnostics and risk-assessment read remedy,
+  preExisting and repair files
+  ([695ef1e](https://github.com/artk0de/TeaRAGs-MCP/commit/695ef1e849c5b7db106eb40ace55e33381c89a26))
+- **skills:** DDG red-first via test-first + verify-first triage (mrlb9)
+  ([20e3cf7](https://github.com/artk0de/TeaRAGs-MCP/commit/20e3cf7067baf8a281bfec1341e32f1ee0037760))
+- **skills:** DDG Step 7 fix-at-write loop and session-context reuse
+  ([f3ba242](https://github.com/artk0de/TeaRAGs-MCP/commit/f3ba2420a7350238b650d043104f39b6d4c0a12b))
+- **skills:** DDG Step 7 merge-base, per-finding evidence, preExisting summary
+  ([f34eac6](https://github.com/artk0de/TeaRAGs-MCP/commit/f34eac66aca1b2116b6ae094214b3c93540b4fba))
+- **skills:** DDG Step 7 NEW_TERM alternative is soft; record fix-at-write eval
+  run (89k7k.1.19.8)
+  ([e8e2a3e](https://github.com/artk0de/TeaRAGs-MCP/commit/e8e2a3e31b5dcc0d4dd255b4d913e2cd7adf4db9))
+- **skills:** naming-review eval follows the four-section review_changes Step 7
+  ([60000f9](https://github.com/artk0de/TeaRAGs-MCP/commit/60000f9cee10cb930d711c83c64fdf781b20b246))
+- **skills:** per-family repair strategy files for architecture findings
+  ([e0a766a](https://github.com/artk0de/TeaRAGs-MCP/commit/e0a766a963b729de257c12abda7e009ec4c1fe3b))
+- **skills:** triage review_changes change block - nonLocal fix, persisting
+  report-only (89k7k.1.7)
+  ([f618241](https://github.com/artk0de/TeaRAGs-MCP/commit/f618241678aec51951105403f50c8732d9fbabca))
+
+### Features
+
+- **adapters:** cg_symbols_edges_field substrate for method field-access edges
+  (zy6hx T1)
+  ([bcfd891](https://github.com/artk0de/TeaRAGs-MCP/commit/bcfd8912c6057d702fd91d8b1ebb7f8a305aeaf4))
+- **api:** addFile abstract flag for extracted interfaces (cm9gt)
+  ([6ed684e](https://github.com/artk0de/TeaRAGs-MCP/commit/6ed684e5e894e45dd6ffd182057ab07d49d909d0))
+- **api:** DiffFindingRemedyResolver proposes dry-run-verified import retargets
+  ([29978ab](https://github.com/artk0de/TeaRAGs-MCP/commit/29978ab8386854d001f9aaa995d5061acd343b85))
+- **api:** gate co-change pairs by a calibrated significance test
+  ([2136421](https://github.com/artk0de/TeaRAGs-MCP/commit/2136421ac2aa4cfb56cb1972de30d8ffa2eb665c))
+- **api:** get_architecture_report plannedEdges — write-time dependency-norm
+  verdicts (xb669.2)
+  ([ccc6577](https://github.com/artk0de/TeaRAGs-MCP/commit/ccc6577f6858a03b4966cde9ae157f255eef2a71))
+- **api:** get_architecture_report restructure mode — what-if move/merge/split
+  delta (r8hme.21)
+  ([a56193a](https://github.com/artk0de/TeaRAGs-MCP/commit/a56193aaddcc8eb6f35d76f887e6429525e3fe8c)),
+  closes
+  [ArchitectureReportOps#judge](https://github.com/artk0de/ArchitectureReportOps/issues/judge)
+- **api:** hubLike diff family in review_changes
+  ([dc0ac7c](https://github.com/artk0de/TeaRAGs-MCP/commit/dc0ac7ce68dd06ea77b065e96081cc94d25c79a7))
+- **api:** layeringBackEdge diff family in review_changes
+  ([b998c03](https://github.com/artk0de/TeaRAGs-MCP/commit/b998c03d16351aaf642b85a10ca1ffe87c9403ff))
+- **api:** list silent-coupling pairs sharing an endpoint as one grouped finding
+  ([06abd84](https://github.com/artk0de/TeaRAGs-MCP/commit/06abd8472d6a2a386d283dccdbd119deb7823037))
+- **api:** rank architecture violations by maintenance cost
+  ([b07dfb3](https://github.com/artk0de/TeaRAGs-MCP/commit/b07dfb3b1992f8174d8850eb1ed95e1fed90266c))
+- **api:** restructure edge ops addFile/addEdge/removeEdge (cm9gt)
+  ([c5c1f82](https://github.com/artk0de/TeaRAGs-MCP/commit/c5c1f8280af6142cf0cc0d37311006aee91751ea))
+- **api:** restructure ops compose in order — chained merges (cm9gt)
+  ([6bd08ef](https://github.com/artk0de/TeaRAGs-MCP/commit/6bd08efcba98c3188aa634c333041d979ba469e1))
+- **api:** restructurePlan mode — greedy simulated refactoring order (cm9gt)
+  ([dae068d](https://github.com/artk0de/TeaRAGs-MCP/commit/dae068dde3b92452335e2fdadf36389a9938c4a6))
+- **api:** review_changes architecture findings carry verified remedies
+  ([d2c677c](https://github.com/artk0de/TeaRAGs-MCP/commit/d2c677c01ebfe1573c1ea8788db66ba6cc57642b))
+- **api:** review_changes architecture splits introduced / resolved / persisting
+  (89k7k.1.7)
+  ([706eecf](https://github.com/artk0de/TeaRAGs-MCP/commit/706eecfe4d2fef3998f3c3b8e6ad6798329c9286)),
+  closes
+  [ArchitectureReportOps#judge](https://github.com/artk0de/ArchitectureReportOps/issues/judge)
+- **api:** review_changes carries violation impact tiers (r8hme.53 T2)
+  ([601b1a4](https://github.com/artk0de/TeaRAGs-MCP/commit/601b1a47cadf35aae75e8636672ed21083c63dba))
+- **api:** review_changes norms section — dependency-norm verdicts for added
+  edges (xb669.3)
+  ([9abfa95](https://github.com/artk0de/TeaRAGs-MCP/commit/9abfa958a1cbcc63958de4773ed73caedc592e91))
+- **api:** review_changes resolves working-tree edges for every codegraph
+  language (vdhjc)
+  ([b12b54f](https://github.com/artk0de/TeaRAGs-MCP/commit/b12b54f0d674ff43afc15bb2c4a125a1b071c5ab))
+- **api:** tea-rags:refactoring-planning skill (cm9gt)
+  ([254a878](https://github.com/artk0de/TeaRAGs-MCP/commit/254a87886185cf7042655fa25ddf9d1e8536e2b0))
+- **api:** violation impact tiers in get_architecture_report (r8hme.53 T1)
+  ([0d108f8](https://github.com/artk0de/TeaRAGs-MCP/commit/0d108f82e12bdfc532d28a8ba8077cf3ac6ebc5d)),
+  closes
+  [ComponentEdgeCarrierIndex#edgesBetween](https://github.com/artk0de/ComponentEdgeCarrierIndex/issues/edgesBetween)
+- **codegraph:** JavaScript field-access facet pass sharing the TypeScript
+  collector (p1w1c)
+  ([643bbf5](https://github.com/artk0de/TeaRAGs-MCP/commit/643bbf597c571caffb1563ba9c2351f9d8b0688b)),
+  closes [#private](https://github.com/artk0de/TeaRAGs-MCP/issues/private)
+- **contracts:** stable identity keys for architecture findings (89k7k.35.18)
+  ([465ea82](https://github.com/artk0de/TeaRAGs-MCP/commit/465ea82c70c8808cb163f57f622aa446f6320f17))
+- **git:** extract hash-suffixed task ids under a prefix learned from history
+  (0ik6q)
+  ([ce788e5](https://github.com/artk0de/TeaRAGs-MCP/commit/ce788e540d0e12f58424e573d03b0d4f6a755671))
+- **migration:** procedural migrations in the ledger; drop legacy review edge
+  tables (bdnfu)
+  ([8fc966c](https://github.com/artk0de/TeaRAGs-MCP/commit/8fc966c86f5a823126d1f302f3fed4e153d7d441))
+- **trajectory:** census counts a class's async instance methods, migration 050
+  (ek2cu)
+  ([e2f7f21](https://github.com/artk0de/TeaRAGs-MCP/commit/e2f7f217ebebea4f0b7268eef46b86b082687090))
+- **trajectory:** change-reason extraction — ticket domains per component
+  (psh3j)
+  ([ddf9dad](https://github.com/artk0de/TeaRAGs-MCP/commit/ddf9dadf34df48628d0b3da756dea05b5962c2c2)),
+  closes [#8](https://github.com/artk0de/TeaRAGs-MCP/issues/8)
+- **trajectory:** count co-change once per author burst with a repo-derived
+  window
+  ([246991d](https://github.com/artk0de/TeaRAGs-MCP/commit/246991d7bc05e53b5934d0f03e87db32796b45a1))
+- **trajectory:** detect hub-like dependencies in the architecture report
+  ([029b985](https://github.com/artk0de/TeaRAGs-MCP/commit/029b9852280d0ec4932428160f6bb48c3918275a))
+- **trajectory:** detect shotgun surgery from co-change bundles
+  ([2cddc76](https://github.com/artk0de/TeaRAGs-MCP/commit/2cddc768739f3b928b5df842b8976bfeaabcaa46))
+- **trajectory:** expose per-file reach and the co-change evidence exclusion
+  (r8hme.53)
+  ([36ae8e3](https://github.com/artk0de/TeaRAGs-MCP/commit/36ae8e308c7e993b4040afbde3192bf698696a02))
+- **trajectory:** judge dependency norms against an independence null (xb669.8)
+  ([dc195d4](https://github.com/artk0de/TeaRAGs-MCP/commit/dc195d40bc51031732fd191c40a73acab2319dd2))
+- **trajectory:** judge dependency-norm MISFIT as a direction inversion
+  (xb669.8)
+  ([79d5940](https://github.com/artk0de/TeaRAGs-MCP/commit/79d5940e3da2d2ffef40acbe33de20bd715c57dc))
+- **trajectory:** partition Ruby components by constant namespace
+  ([7e61ca8](https://github.com/artk0de/TeaRAGs-MCP/commit/7e61ca88faf0e0d09816fe7fd77438a8ebf96343))
+- **trajectory:** report MacCormack propagation cost and core-periphery shape
+  ([f6ab494](https://github.com/artk0de/TeaRAGs-MCP/commit/f6ab4940d1fc514008a23f2baf5acf9979b98580))
+- **trajectory:** require Arcan's balance condition for a hub-like dependency
+  ([916ae03](https://github.com/artk0de/TeaRAGs-MCP/commit/916ae03d8e344dcc9f755fd48d73f9867e0a0c8f))
+- **trajectory:** Ruby field-access facet pass for cg_symbols_edges_field (zy6hx
+  T3)
+  ([feec1f1](https://github.com/artk0de/TeaRAGs-MCP/commit/feec1f1062073cb2c3c990ac8c384108077f1ef5)),
+  closes [#partN](https://github.com/artk0de/TeaRAGs-MCP/issues/partN)
+  [Cart#add](https://github.com/artk0de/Cart/issues/add)
+- **trajectory:** TypeScript field-access facet pass for cg_symbols_edges_field
+  (zy6hx T2)
+  ([ab25387](https://github.com/artk0de/TeaRAGs-MCP/commit/ab253879a1f5f5ff5f964b7c96052008bf9d8b34)),
+  closes [this.#x](https://github.com/artk0de/this./issues/x)
+
+### Improvements
+
+- **adapters:** log every foreign-build daemon arbitration outcome (zlt41)
+  ([e8ba8da](https://github.com/artk0de/TeaRAGs-MCP/commit/e8ba8dad599c8de952fdeee334b78c3cec270480))
+- **api:** DDG Step 7 is a per-commit gate — introduced=0, gate line, pre-write
+  simulation
+  ([9056b74](https://github.com/artk0de/TeaRAGs-MCP/commit/9056b746f00fbb236d31d8bcea32a3f29f513ea4))
+- **api:** diff scope read exposes renames against the merge-base (89k7k.1.7)
+  ([0051ae4](https://github.com/artk0de/TeaRAGs-MCP/commit/0051ae4de82e742a71868b88e2930d2fce47f32b))
+- **api:** exclude version manifests from incompleteChange partners (s2nes)
+  ([de22357](https://github.com/artk0de/TeaRAGs-MCP/commit/de22357fea769bd9b3f187eeaa4f0b91c6716981))
+- **api:** mainSequence diff rise below the served threshold is no finding
+  (x6y75)
+  ([5dc99f2](https://github.com/artk0de/TeaRAGs-MCP/commit/5dc99f2322b93cf868c32e340265f956f871092c))
+- **api:** norms section counts UNJUDGED reasons before the cap (svymr)
+  ([e1739dc](https://github.com/artk0de/TeaRAGs-MCP/commit/e1739dcc2e1c245e91dbe062c4d480509681e7f4))
+- **api:** one component-pair preExisting check for the pair families
+  ([c2da52c](https://github.com/artk0de/TeaRAGs-MCP/commit/c2da52c31933b4402b2dd1f5228818a51a826c8f))
+- **api:** preExisting attribution for stableDependencies and mainSequence diff
+  findings
+  ([07f24fe](https://github.com/artk0de/TeaRAGs-MCP/commit/07f24fe12f54dd4be9b9e52a99e8f8b7d6e67122))
+- **api:** review_changes norms section evaluates displacedRole exclusion
+  (xb669.3 follow-up)
+  ([edd9844](https://github.com/artk0de/TeaRAGs-MCP/commit/edd9844f3fb905f5888389a7d1c48c72111d3a9a))
+- **api:** splitCandidates merge verdicts persist by construction (89k7k.1.7)
+  ([3df5cda](https://github.com/artk0de/TeaRAGs-MCP/commit/3df5cdae1961596ad0bc2ec470df4b9f3778adbe))
+- **api:** suppress version-manifest and edge-less splitCandidates diff-review
+  noise (s2nes)
+  ([85cc13f](https://github.com/artk0de/TeaRAGs-MCP/commit/85cc13f1fd43929af349fd1a9bcea8028ca1524c))
+- **contracts:** structured diff findings on the finding contract (r8hme.44)
+  ([06ae482](https://github.com/artk0de/TeaRAGs-MCP/commit/06ae482b38d497f36562fa44b52e8b5e066be8c1))
+- **pipeline:** DEBUG UNENRICHED_SAMPLE line attributes a settled unenriched
+  count (2d5o1)
+  ([3d2db46](https://github.com/artk0de/TeaRAGs-MCP/commit/3d2db469326a1e677cf467d7270b177758d0ac0a))
+- **trajectory:** co-change bundles persist per-file line counts (dm61n)
+  ([68c8117](https://github.com/artk0de/TeaRAGs-MCP/commit/68c811719eb24ade82f68aaa04a105f89a2f0f8c))
+- **trajectory:** compositionTable cut is a geometric-tail BH test, not Otsu
+  (r8hme.52.17)
+  ([3ddbb25](https://github.com/artk0de/TeaRAGs-MCP/commit/3ddbb252f952fdb40412bc12e70327e9cc925919))
+- **trajectory:** confirm conventional directories by a declared ancestor's head
+  (8up12)
+  ([13553a9](https://github.com/artk0de/TeaRAGs-MCP/commit/13553a95a1c8484647902dcf945153f53071defb))
+- **trajectory:** count shotgun-surgery support per logical change
+  ([a93012b](https://github.com/artk0de/TeaRAGs-MCP/commit/a93012bb3923b468a1682e5d0c8d859a3b9cf25a))
+- **trajectory:** declare working-tree recompute policy on payload signal
+  descriptors (39xca.20)
+  ([8ab8ff2](https://github.com/artk0de/TeaRAGs-MCP/commit/8ab8ff25e36a6ff1efb7124248412bd6937ac922))
+- **trajectory:** discount newer retiring changes from shotgun spread support
+  (zf9yz.2)
+  ([885915d](https://github.com/artk0de/TeaRAGs-MCP/commit/885915dbc194214ba58d41fe034cf1b52604db26))
+- **trajectory:** exempt layer skips into the measured foundation (89k7k.35.11)
+  ([f6283be](https://github.com/artk0de/TeaRAGs-MCP/commit/f6283beeeb2cfdc6aa478e6363b7f4fe095011ea)),
+  closes
+  [DiffDetectorCatalog#isLayeringFoundation](https://github.com/artk0de/DiffDetectorCatalog/issues/isLayeringFoundation)
+- **trajectory:** join shotgun spread members through a chain in the change's
+  footprint (zf9yz.3)
+  ([318b76e](https://github.com/artk0de/TeaRAGs-MCP/commit/318b76efa237993df443f071022c37ce967847c2))
+- **trajectory:** join shotgun-surgery commits by task id only
+  ([5d73941](https://github.com/artk0de/TeaRAGs-MCP/commit/5d7394128c81e413af5c4ee55f5a0488a6bd5033))
+- **trajectory:** maintenance cost comparable across violation families (afyku)
+  ([a4f274b](https://github.com/artk0de/TeaRAGs-MCP/commit/a4f274b2390a6ae2b1b48307d132da984c55a4e3))
+- **trajectory:** maintenance cost score is an empirical-Bayes shrunken mean
+  (afyku)
+  ([8c2a84d](https://github.com/artk0de/TeaRAGs-MCP/commit/8c2a84d6ae96813c3f17a16309d6877974683dfe))
+- **trajectory:** measured compositionTable + parentSurface flags on SDP and
+  hubs (r8hme.52.17)
+  ([c93a319](https://github.com/artk0de/TeaRAGs-MCP/commit/c93a319057bd28ec02c03eae9d7ec9cd3927f6cb))
+- **trajectory:** never judge a dependency-norm edge that runs no call (4vj2u,
+  xb669.8)
+  ([955d10f](https://github.com/artk0de/TeaRAGs-MCP/commit/955d10f1f00292d58a29bcb9a3bea8c4600a541c))
+- **trajectory:** never judge a norm edge whose calls all go through a framework
+  (4vj2u)
+  ([708d6f1](https://github.com/artk0de/TeaRAGs-MCP/commit/708d6f1f6e1fe0c0f140bcbf25df40f36fcdde63))
+- **trajectory:** propagation-cost shape indeterminate when a visibility cut is
+  floored (j9kjf)
+  ([576d0dc](https://github.com/artk0de/TeaRAGs-MCP/commit/576d0dc630d5b8a0a267849c9c79508c4b2b8958))
+- **trajectory:** shotgun support = distinct logical changes, weighted by
+  specificity (bvcg4)
+  ([cbd7b11](https://github.com/artk0de/TeaRAGs-MCP/commit/cbd7b1159b25e6d02dc2e6e6d0d94f0d266f8f58))
+- **trajectory:** shotgun surgery drops mechanical commits and joins echo pairs
+  (dm61n)
+  ([aa7ddcc](https://github.com/artk0de/TeaRAGs-MCP/commit/aa7ddcc3bc8a0382eb44246dde7f9819fcb70dc0))
+- **trajectory:** shotgun surgery explains siblings of one feature subtree
+  (bvcg4)
+  ([0e53229](https://github.com/artk0de/TeaRAGs-MCP/commit/0e53229bad2577cb67903e2e700a86d202a1a83c))
+- **trajectory:** shotgun surgery joins feature lifecycle pairs by exact
+  negation (zf9yz)
+  ([414a1e6](https://github.com/artk0de/TeaRAGs-MCP/commit/414a1e664bfda6ef0c2ccc66a6122a55cc87a364)),
+  closes
+  [ShotgunSurgeryLifecycleNull#mirrorProbability](https://github.com/artk0de/ShotgunSurgeryLifecycleNull/issues/mirrorProbability)
+- **trajectory:** shotgun surgery ranks by family evidence, report keeps its
+  order (zf9yz.1)
+  ([a4c816d](https://github.com/artk0de/TeaRAGs-MCP/commit/a4c816d3356fb566080ddc80e1abdf5d199505e3))
+- **trajectory:** task-declared shotgun units never fuse through a shared burst
+  (zf9yz.5)
+  ([3013d5e](https://github.com/artk0de/TeaRAGs-MCP/commit/3013d5ecab8b9a914ef82e14e2ea1ac5ca187bb6))
+- **trajectory:** test shotgun-surgery k-sets against a C(n, k) family
+  ([6df9b45](https://github.com/artk0de/TeaRAGs-MCP/commit/6df9b45101b933c623114650079876877abd7cd3))
+
+### Bug Fixes
+
+- **adapters:** credit barrel imports with re-exported definers' call weight
+  (r8hme.52.1)
+  ([1516c1c](https://github.com/artk0de/TeaRAGs-MCP/commit/1516c1c15f7f66c3641829841ae17c9fae9fa4dd))
+- **adapters:** Go module map reads the work-tree listing; reads share a listing
+  scope (uqkn5)
+  ([4870737](https://github.com/artk0de/TeaRAGs-MCP/commit/4870737ccfd42b72d666abb7c7e2673ca3705730))
+- **adapters:** read pre-044 co-change files as bursts not recorded
+  ([3657c0b](https://github.com/artk0de/TeaRAGs-MCP/commit/3657c0bb4ab3ba22cbac9db4d3e34ac485fa3e3c))
+- **adapters:** remember unreachable foreign holder verdict; log drain after
+  exit (89k7k.35.27/.28)
+  ([0402b5c](https://github.com/artk0de/TeaRAGs-MCP/commit/0402b5c89a12694bc6d82911fa79549e09edc60c)),
+  closes
+  [ForeignBuildDaemonLockArbiter#settle](https://github.com/artk0de/ForeignBuildDaemonLockArbiter/issues/settle)
+  [#describe](https://github.com/artk0de/TeaRAGs-MCP/issues/describe)
+  [ForeignBuildDaemonLockArbiter#isStillHeldBy](https://github.com/artk0de/ForeignBuildDaemonLockArbiter/issues/isStillHeldBy)
+  [DaemonGraphDbClient#init](https://github.com/artk0de/DaemonGraphDbClient/issues/init)
+- **adapters:** test-dependency manifests come from the work-tree listing
+  (s0xex)
+  ([8faedbf](https://github.com/artk0de/TeaRAGs-MCP/commit/8faedbff9c4645d2de250472de445989596c3b53))
+- **api:** a touched test whose subject is the source covers its missing test
+  partner (89k7k.34)
+  ([7393f43](https://github.com/artk0de/TeaRAGs-MCP/commit/7393f432dcd44e694c4227d191ec22838eb3383c))
+- **api:** cycles diff family traverses changed files through their overlay
+  edges (ah66x)
+  ([02ac3a9](https://github.com/artk0de/TeaRAGs-MCP/commit/02ac3a922fcab742e927a6e557e73491b4a46484))
+- **api:** deleted files contribute no edges to the review's tree graph (ah66x)
+  ([6efbf9f](https://github.com/artk0de/TeaRAGs-MCP/commit/6efbf9f20b62529a46dfdd0118dd5c4c3a544707))
+- **api:** diff detectors share the facade-aggregation exclusion (e1bf2)
+  ([fbf21e1](https://github.com/artk0de/TeaRAGs-MCP/commit/fbf21e1c873c4169fb2fcf491d0cb202cb5e0fb6))
+- **api:** facadeContract reads the full base facade surface (2plk2)
+  ([e39252d](https://github.com/artk0de/TeaRAGs-MCP/commit/e39252dc51f306678f2c9163e3a17990cb1e3468))
+- **api:** hub efferent count excludes edges into contracts (g77p3)
+  ([492dc60](https://github.com/artk0de/TeaRAGs-MCP/commit/492dc60d6d8cc12fdc0ac5f4de5ddbffd81612a7))
+- **api:** hub efferent cut drawn over non-leaf components (g77p3)
+  ([59703ac](https://github.com/artk0de/TeaRAGs-MCP/commit/59703ac7a4f231239e051255cb36b1ae28044056))
+- **api:** judge review missing partners against the whole change, not the
+  capped scan
+  ([b6f1e67](https://github.com/artk0de/TeaRAGs-MCP/commit/b6f1e67b4b3ad2615d7827f51fa22de5c921c70c))
+- **api:** judge review_changes diff-added edges against the merge-base, not the
+  index
+  ([6cfcfec](https://github.com/artk0de/TeaRAGs-MCP/commit/6cfcfec16bf27529da7ea2b2da93e83d41a36d72))
+- **api:** leakingAbstraction diff family agrees with the report's facade-leak
+  rule (hv38q)
+  ([e9077d1](https://github.com/artk0de/TeaRAGs-MCP/commit/e9077d1c75b6ffd827189ddcec274d6c911eeaf0)),
+  closes
+  [ArchitectureFactsCatalog#facadeLeakOf](https://github.com/artk0de/ArchitectureFactsCatalog/issues/facadeLeakOf)
+- **api:** mainSequence diff delta reads the base state, not the index (aht0q)
+  ([5fd742e](https://github.com/artk0de/TeaRAGs-MCP/commit/5fd742eb1a4e1a4440cd882a2f3159a9ef55528c))
+- **api:** mainSequence diff family counts newly efferent files, as the report's
+  Ce does
+  ([6df5d3b](https://github.com/artk0de/TeaRAGs-MCP/commit/6df5d3bf586c5b9727f1c6b271d2c01d043f07c5))
+- **api:** mainSequence diff family suppresses distance flaps within tolerance
+  (odhsp)
+  ([3f465df](https://github.com/artk0de/TeaRAGs-MCP/commit/3f465df590ed857acbb9ac37727e29c0c911020a))
+- **api:** plan blast radius counts the files a merge relabels (cm9gt)
+  ([3509d51](https://github.com/artk0de/TeaRAGs-MCP/commit/3509d513ba84c73b50519722f71cea92f9955fc2))
+- **api:** remedy resolver sees names the diff declares (if14t)
+  ([5596860](https://github.com/artk0de/TeaRAGs-MCP/commit/55968607bb25100fb41368a4673e3030abcccab8))
+- **api:** retarget-to-facade reads the facade surface the diff leaves (if14t)
+  ([c0d1662](https://github.com/artk0de/TeaRAGs-MCP/commit/c0d16628715434d880530fcd46be3cd6e9f599c6))
+- **api:** review base edges see a rename's base side, not only the tree's table
+  (slsia)
+  ([eca05b8](https://github.com/artk0de/TeaRAGs-MCP/commit/eca05b89c39a3647c939cce2ee4d599b792920fa))
+- **api:** review_changes judges the whole diff — drop the 200-file cap
+  (89k7k.1.8)
+  ([44438eb](https://github.com/artk0de/TeaRAGs-MCP/commit/44438ebb95bfaa3ead60daa51821bb4dd36d7b41)),
+  closes
+  [ReviewEdgeOverlay#treeEdgesFrom](https://github.com/artk0de/ReviewEdgeOverlay/issues/treeEdgesFrom)
+- **api:** review_changes overlay carries type-only imports like the index
+  (c9a40)
+  ([e348fc0](https://github.com/artk0de/TeaRAGs-MCP/commit/e348fc009633d521adc440e64559788c09fc6c94))
+- **api:** SDP preExisting reads unchanged source files from the index
+  (89k7k.1.19.11)
+  ([e778cec](https://github.com/artk0de/TeaRAGs-MCP/commit/e778cec389995e0d46a6019d7a07b6d3861f2828)),
+  closes
+  [DiffDetectorCatalog#filesOf](https://github.com/artk0de/DiffDetectorCatalog/issues/filesOf)
+- **api:** silent-coupling shared neighbour resolves facade imports to forwarded
+  files (jnynq)
+  ([294c8e6](https://github.com/artk0de/TeaRAGs-MCP/commit/294c8e6193d09626e240c030245e175e583eb8d7))
+- **bootstrap:** load the worker pool factory's symbol table through a narrow
+  entry point
+  ([da0c442](https://github.com/artk0de/TeaRAGs-MCP/commit/da0c4422ee2678b4e265b8a2d73ed8cd03381028))
+- **capability:** language-config sources join the shared walker version axis
+  (g7w8f G4 follow-up)
+  ([55310de](https://github.com/artk0de/TeaRAGs-MCP/commit/55310de450d2f57948ff38ab48a6dd0e9dd0a56a))
+- **chunker:** chunker worker processes inherit the parent's debug flag (372we)
+  ([7df44ad](https://github.com/artk0de/TeaRAGs-MCP/commit/7df44ade9427448e8b39aebad560ce440236f01f))
+- **cli:** launchd plist execs llama-server directly, not via /bin/sh (n18nj)
+  ([904f12d](https://github.com/artk0de/TeaRAGs-MCP/commit/904f12d206347553eeb9140a6fa76ab0013609ac))
+- **codegraph:** applyEdgeOverlay drops deleted files and carries moved rows
+  (ah66x)
+  ([36a8e75](https://github.com/artk0de/TeaRAGs-MCP/commit/36a8e757f8111ec8dcc2af2956711c7cbf11184c)),
+  closes
+  [ReviewEdgeOverlay#treeEdgesFrom](https://github.com/artk0de/ReviewEdgeOverlay/issues/treeEdgesFrom)
+- **codegraph:** census counts ambient method signatures and Python lambda attrs
+  (89k7k.38)
+  ([ddfe250](https://github.com/artk0de/TeaRAGs-MCP/commit/ddfe2508d90656090110ca6084c3cdc5318f173f))
+- **codegraph:** census counts typed object-literal implementations as concrete
+  (mqaj7)
+  ([99d750d](https://github.com/artk0de/TeaRAGs-MCP/commit/99d750dc3a7679786ade633a0cbfd8b67b3213cb))
+- **codegraph:** cone declines a library receiver type a project class extends
+  (0qaht.64)
+  ([a7b50ca](https://github.com/artk0de/TeaRAGs-MCP/commit/a7b50ca3f20f27c15c8eabeccd133f0cdd1fb51a)),
+  closes
+  [TreeContentHashes#get](https://github.com/artk0de/TreeContentHashes/issues/get)
+- **codegraph:** edge into a nested module's declared entry is not an outer leak
+  (n8shz)
+  ([df75833](https://github.com/artk0de/TeaRAGs-MCP/commit/df7583334ec9f6456732f2c5af1ff306d1765f07))
+- **codegraph:** file-scope Swift constants reach naming facts (0qaht.30)
+  ([564148f](https://github.com/artk0de/TeaRAGs-MCP/commit/564148f3aee066cf339d7d79cecfbab9244783cd))
+- **codegraph:** follow re-export shims by imported name, count fallbacks
+  (ciq4d)
+  ([9652482](https://github.com/artk0de/TeaRAGs-MCP/commit/96524826ee3dd095e539c9a1dbd2665ba7a1772d))
+- **codegraph:** gate TS structural cone implementers by checker assignability
+  (iw702)
+  ([ce02e22](https://github.com/artk0de/TeaRAGs-MCP/commit/ce02e227e37d6ac1458ea6d9d3fdc71cb8c6203c)),
+  closes
+  [TreeContentHashes#get](https://github.com/artk0de/TreeContentHashes/issues/get)
+  [CreatingFloatingButton#onClick](https://github.com/artk0de/CreatingFloatingButton/issues/onClick)
+- **codegraph:** judge SDP through pure re-export shim components (ciq4d)
+  ([4111c6d](https://github.com/artk0de/TeaRAGs-MCP/commit/4111c6d12329e1a2da249afdceda482d50271ea0))
+- **codegraph:** merge reopened Ruby class heritage across files (89k7k.35.30)
+  ([3a468d7](https://github.com/artk0de/TeaRAGs-MCP/commit/3a468d76fe3b32674b87bf74b31f36db859292fa))
+- **codegraph:** namespace components read the full enclosing scope, not
+  scope[0] (r8hme.54)
+  ([9e15d68](https://github.com/artk0de/TeaRAGs-MCP/commit/9e15d688a0dc800ad5fd0ca625ad641f6beb4ea8))
+- **codegraph:** record the importer-facing name of aliased TS re-exports
+  (zl3so)
+  ([677c34a](https://github.com/artk0de/TeaRAGs-MCP/commit/677c34a5aa6d9dc33d77a0992a74557a05e086e2))
+- **codegraph:** resolve a Ruby constant whose namespace nested files reopen
+  (r8hme.52.12)
+  ([b96e862](https://github.com/artk0de/TeaRAGs-MCP/commit/b96e8622dafcecd30617c7b7f06811d4a764b05c))
+- **codegraph:** resolve exact-construction receivers to their own definer, not
+  the cone (0qaht.66)
+  ([2367748](https://github.com/artk0de/TeaRAGs-MCP/commit/2367748851732aa4a160e3f09432c7ca1dab6968)),
+  closes
+  [CollectionReachFinder#inboxes](https://github.com/artk0de/CollectionReachFinder/issues/inboxes)
+  [AccountReachFinder#inboxes](https://github.com/artk0de/AccountReachFinder/issues/inboxes)
+  [CollectionReachFinder#inboxes](https://github.com/artk0de/CollectionReachFinder/issues/inboxes)
+  [FetchRemoteActorService#call](https://github.com/artk0de/FetchRemoteActorService/issues/call)
+  [FetchRemoteAccountService#call](https://github.com/artk0de/FetchRemoteAccountService/issues/call)
+- **codegraph:** Ruby field-access pass skips core-member reads on parameters
+  (ne2vj)
+  ([7e311a3](https://github.com/artk0de/TeaRAGs-MCP/commit/7e311a3f1a79b7ffef8dac0d617e0a4219d7b32c))
+- **codegraph:** settle returnTypes by declarer, persist the RTA set (39xca.15)
+  ([cc43286](https://github.com/artk0de/TeaRAGs-MCP/commit/cc432868e51345d2c277532ba31dc9ee023b3a46)),
+  closes [Address#street](https://github.com/artk0de/Address/issues/street)
+- **codegraph:** strip Swift backticks from declared identifier names (0qaht.30)
+  ([fc38186](https://github.com/artk0de/TeaRAGs-MCP/commit/fc381863892686943f45f3a47df2754bcc9bd500))
+- **codegraph:** type-only imports and re-exports record their export names
+  (dourd)
+  ([124f4c6](https://github.com/artk0de/TeaRAGs-MCP/commit/124f4c617a64f57a47a090335c9cdefa6c0fbb3b))
+- **config:** blame pool default from the git trajectory; review fixes 89k7k.40
+  ([7c59f87](https://github.com/artk0de/TeaRAGs-MCP/commit/7c59f873c897dd2b2541c9f34a66a30aebcebbc4))
+- **config:** reject comma-separated EMBEDDING_BASE_URL for ollama too (u0vxf)
+  ([7bd3138](https://github.com/artk0de/TeaRAGs-MCP/commit/7bd3138c21727c5930805bebd8e76f68330d1924))
+- **config:** reject comma-separated EMBEDDING_FALLBACK_URL for ollama (u0vxf)
+  ([4d4e25b](https://github.com/artk0de/TeaRAGs-MCP/commit/4d4e25bb11a9a3e5e27f62095c86dca281af7048))
+- **docs:** move INGEST_SEED_MARKER_UNCONFIRMED into the error-code reference
+  table (wjyaf)
+  ([58d29eb](https://github.com/artk0de/TeaRAGs-MCP/commit/58d29ebf5eb5e1a107532172e9d3cc2131aad18e))
+- **embedding:** name a foreign process on the llama-server port, not a llama
+  404
+  ([b7c7971](https://github.com/artk0de/TeaRAGs-MCP/commit/b7c797189918612ef1dd276a5793fbc4c678f9f4))
+- **embedding:** stop the failover livelock on a peer that is live but fails
+  every post (hgghf)
+  ([b5c5f5c](https://github.com/artk0de/TeaRAGs-MCP/commit/b5c5f5c7301f293cf65fe9a4957a8e4b7541efbc))
+- **embedding:** surface why an embedding endpoint is unavailable in status
+  ([88f945c](https://github.com/artk0de/TeaRAGs-MCP/commit/88f945c31bd13ab1b75c56cf8cf52db3ae0c7b3f))
+- **embedding:** surface why an ollama endpoint is unavailable in status (fembu)
+  ([f09d8ec](https://github.com/artk0de/TeaRAGs-MCP/commit/f09d8ec6cd7eeed53885a288cc44f0d4643d9134))
+- **embedding:** unwrap error.cause chain in describeConnectFailure (k6qiw)
+  ([c78027d](https://github.com/artk0de/TeaRAGs-MCP/commit/c78027d2884f5eb75b6724ba8c45d2a2202f4321))
+- **explore:** a head that is the expected role keeps its spelling
+  ([327eac7](https://github.com/artk0de/TeaRAGs-MCP/commit/327eac717ee40b3859651239f82c5a9296dfe39c))
+- **explore:** directory role families judged by an async effect and a call
+  surface (ek2cu)
+  ([ef2e47e](https://github.com/artk0de/TeaRAGs-MCP/commit/ef2e47e52ab2713e48c0e0ff07d3c95454c5d75f))
+- **explore:** directory roles impose no class role on interfaces, types, enums
+  ([eac6313](https://github.com/artk0de/TeaRAGs-MCP/commit/eac6313bd37dcc5941351d8cdb72e70cb6d7b8f7))
+- **explore:** form dependency-norm role families from the superclass only
+  (xb669.6)
+  ([ea164c0](https://github.com/artk0de/TeaRAGs-MCP/commit/ea164c0f91db3169a2970d9c18defebeb9a25976))
+- **explore:** read a head-noun role only where the role lives (4vj2u, xb669.8)
+  ([b31edb1](https://github.com/artk0de/TeaRAGs-MCP/commit/b31edb198dca6ee01665bebf27be791ff475f305))
+- **explore:** stable naming verdict for drafts inside the similarity-floor
+  jitter band
+  ([8efe68d](https://github.com/artk0de/TeaRAGs-MCP/commit/8efe68d5c857d53db1c784cfc42f9a08f5e92dd8))
+- **git:** probe timeout is no verdict, retry before falling back (0qaht.67)
+  ([3f1bb40](https://github.com/artk0de/TeaRAGs-MCP/commit/3f1bb40ee997802be486ccb5485606e42c876db9))
+- **ingest:** a --languages recompute takes uncovered paths, not a declined
+  deferral (zdg3y)
+  ([9f0c517](https://github.com/artk0de/TeaRAGs-MCP/commit/9f0c5178ff8ab5caf4cc7d4e5998c4a4a4764cab)),
+  closes
+  [IndexingOps#recomputeEnrichments](https://github.com/artk0de/IndexingOps/issues/recomputeEnrichments)
+  [EnrichmentCoordinator#recomputeEnrichments](https://github.com/artk0de/EnrichmentCoordinator/issues/recomputeEnrichments)
+- **ingest:** refuse --languages naming a language the index does not hold
+  (34v57)
+  ([4bf94fa](https://github.com/artk0de/TeaRAGs-MCP/commit/4bf94fab0ebb16de8401c23e6175321b34270d49)),
+  closes [IndexingOps#run](https://github.com/artk0de/IndexingOps/issues/run)
+- **mcp:** get_naming_lexicon schema back under its 1536-byte budget
+  ([693b89b](https://github.com/artk0de/TeaRAGs-MCP/commit/693b89b79bbd0efd78c19221c559260d68e88956))
+- **mcp:** reject removed changes/files params on get_naming_lexicon
+  ([d8f68a9](https://github.com/artk0de/TeaRAGs-MCP/commit/d8f68a9f21a7ef41ee717dc49cf80ab066e201a9))
+- **naming:** declared supertype head outranks the directory suffix role
+  (0qaht.49)
+  ([dc3ae7b](https://github.com/artk0de/TeaRAGs-MCP/commit/dc3ae7b3c175f383f94cd7d85d5d241fb886349b))
+- **pipeline:** treat Qdrant wait_timeout as an undrained barrier, not success
+  (yf4je)
+  ([91b793c](https://github.com/artk0de/TeaRAGs-MCP/commit/91b793c258dfc5208e6c4690f15ae2ca9ad3be67)),
+  closes
+  [QdrantPointStore#awaitQueuedUpdates](https://github.com/artk0de/QdrantPointStore/issues/awaitQueuedUpdates)
+  [#batchSetPayload](https://github.com/artk0de/TeaRAGs-MCP/issues/batchSetPayload)
+  [EnrichmentMarkerStore#awaitQueuedPayloadWrites](https://github.com/artk0de/EnrichmentMarkerStore/issues/awaitQueuedPayloadWrites)
+- **qdrant:** handle wait_timeout on the remaining waited writes (wjyaf)
+  ([730f28c](https://github.com/artk0de/TeaRAGs-MCP/commit/730f28c6f3640113f2861c21ee796f47c1bedaab)),
+  closes
+  [adapters/qdrant/write-barrier.ts#awaitWriteBarrier](https://github.com/adapters/qdrant/write-barrier.ts/issues/awaitWriteBarrier)
+  [QdrantManager#awaitWriteBarrier](https://github.com/artk0de/QdrantManager/issues/awaitWriteBarrier)
+- **qdrant:** re-adopt a live daemon whose pid/port files were lost (k6sy2)
+  ([fc2c6d5](https://github.com/artk0de/TeaRAGs-MCP/commit/fc2c6d5c38f39ac3069ae73045a6193daa997b1c))
+- **qdrant:** relativePathExact capability heals points an older build wrote
+  before serving (ejio7)
+  ([479b481](https://github.com/artk0de/TeaRAGs-MCP/commit/479b4812221f844324849855a699f6737b0993e9)),
+  closes
+  [RelativePathExactCapability#isServed](https://github.com/artk0de/RelativePathExactCapability/issues/isServed)
+- **qdrant:** relativePathExact gate re-creates a keyword index that missed
+  segments (ejio7)
+  ([89dcc0b](https://github.com/artk0de/TeaRAGs-MCP/commit/89dcc0bb19c6a57ee885930039ede6a7fba9d080))
+- **qdrant:** relativePathExact index completeness is judged against live twin
+  count (ejio7)
+  ([704fd38](https://github.com/artk0de/TeaRAGs-MCP/commit/704fd38b48d094d7ca2775a844afbf88c513e3f8))
+- **qdrant:** relativePathExact probe counts positives, heals only truly missing
+  points (ejio7)
+  ([bdd9e36](https://github.com/artk0de/TeaRAGs-MCP/commit/bdd9e3692819d7d76a314a360790ec79f80bde43))
+- **ruby:** cone keeps the receiver's own module declaration (0qaht.60)
+  ([bf3c6b7](https://github.com/artk0de/TeaRAGs-MCP/commit/bf3c6b783878a0b617b96e450e45f25b76023084)),
+  closes
+  [Finalizer#ast_node](https://github.com/artk0de/Finalizer/issues/ast_node)
+  [Finalizer#ast_node](https://github.com/artk0de/Finalizer/issues/ast_node)
+  [Agent#check](https://github.com/artk0de/Agent/issues/check)
+  [ZooKeeper#make_noise](https://github.com/artk0de/ZooKeeper/issues/make_noise)
+  [Finalizer#ast_node](https://github.com/artk0de/Finalizer/issues/ast_node)
+  [Finalizer#path](https://github.com/artk0de/Finalizer/issues/path)
+- **ruby:** drop extend-only modules from instance ancestry, add their hook
+  mixins (89k7k.35.31)
+  ([3e693bb](https://github.com/artk0de/TeaRAGs-MCP/commit/3e693bb31bd6eabad80f5c7c227fa86d19c64770)),
+  closes
+  [ArgumentObjectLoader#load_application_object_failed](https://github.com/artk0de/ArgumentObjectLoader/issues/load_application_object_failed)
+  [HasFields#field](https://github.com/artk0de/HasFields/issues/field)
+  [Resolver#field](https://github.com/artk0de/Resolver/issues/field)
+  [BaseDSLMethods#graphql_name](https://github.com/artk0de/BaseDSLMethods/issues/graphql_name)
+  [InvariantError#initialize](https://github.com/artk0de/InvariantError/issues/initialize)
+  [Resolver#initialize](https://github.com/artk0de/Resolver/issues/initialize)
+  [Resolver#call_resolve](https://github.com/artk0de/Resolver/issues/call_resolve)
+  [Object#class](https://github.com/artk0de/Object/issues/class)
+- **ruby:** reopened-class member lookup, mixins no longer file-only stand-ins
+  (89k7k.35.32)
+  ([9eed405](https://github.com/artk0de/TeaRAGs-MCP/commit/9eed405df3fb926ab0ed0bba96be1b0f69c8d5c6)),
+  closes
+  [Resolver#initialize](https://github.com/artk0de/Resolver/issues/initialize)
+  [Resolver#call_resolve](https://github.com/artk0de/Resolver/issues/call_resolve)
+  [Resolver#resolve_with_support](https://github.com/artk0de/Resolver/issues/resolve_with_support)
+  [Validator#initialize](https://github.com/artk0de/Validator/issues/initialize)
+  [Field#extensions](https://github.com/artk0de/Field/issues/extensions)
+  [ApplicationController#current_account](https://github.com/artk0de/ApplicationController/issues/current_account)
+- **ruby:** resolve RTA instantiation sites by Ruby constant lookup at the
+  barrier (0qaht.65)
+  ([29131da](https://github.com/artk0de/TeaRAGs-MCP/commit/29131da96da3a34cfcd9ad224268430ad7b0b245))
+- **ruby:** thread AR relation types through call-result locals (89k7k.35.29)
+  ([c96ecc3](https://github.com/artk0de/TeaRAGs-MCP/commit/c96ecc32fd1d349b2a24f60c06cdec29c582a030)),
+  closes
+  [CustomFilter#keywords](https://github.com/artk0de/CustomFilter/issues/keywords)
+  [Agent#received_events](https://github.com/artk0de/Agent/issues/received_events)
+- **scripts:** chain-tally harness gates Ruby DSL by the run's Gemfile like
+  production (0qaht.48)
+  ([954ccfe](https://github.com/artk0de/TeaRAGs-MCP/commit/954ccfefbf7c7e021485f3fd5730bcdb7da403ec))
+- **scripts:** pass the worker pool factory path in the pass-1 fan-out spike
+  ([31a5741](https://github.com/artk0de/TeaRAGs-MCP/commit/31a57416deadc97eef37efa14ce48a80ff8b6ead))
+- **test:** deterministic naming-lexicon concurrency test (2bx0c)
+  ([ce89bc1](https://github.com/artk0de/TeaRAGs-MCP/commit/ce89bc1c3f8bbc6df16c39725b9a07813cdc6497))
+- **trajectory:** a directory a dev root names after itself is a separate
+  build's tree (r8hme.52.19)
+  ([dc7e7bf](https://github.com/artk0de/TeaRAGs-MCP/commit/dc7e7bff57cd6f75642ce8c89f5b0e0aeb1510f0))
+- **trajectory:** a file in a directory of tests and test support is test
+  support (r8hme.52.14)
+  ([8c8da48](https://github.com/artk0de/TeaRAGs-MCP/commit/8c8da48fdb1104f97bb6746d7c29f325b00788e5))
+- **trajectory:** abstractionBypass requires implementation evidence
+  (r8hme.52.6)
+  ([c77eb04](https://github.com/artk0de/TeaRAGs-MCP/commit/c77eb0469ce8b2b15f6e6f4f614ef3e42b0b5c5e)),
+  closes
+  [DuckDbGraphAnalyticsStore#readFileDependencyGraph](https://github.com/artk0de/DuckDbGraphAnalyticsStore/issues/readFileDependencyGraph)
+- **trajectory:** behaviour-free classes excluded from type-abstractness census
+  (44cpv c-1)
+  ([ea3705f](https://github.com/artk0de/TeaRAGs-MCP/commit/ea3705f8105e8faed17c1a162ca5ed1ab51bb21d))
+- **trajectory:** canonical author names in the working-tree overlay, warn on
+  directory failure
+  ([94d45d0](https://github.com/artk0de/TeaRAGs-MCP/commit/94d45d0c7d788c60dfbbe26146bcdbd9a687e888))
+- **trajectory:** centre maintenance-cost shrinkage at the null mean (afyku)
+  ([fbfd63c](https://github.com/artk0de/TeaRAGs-MCP/commit/fbfd63c84328d3cbd46f153e3f767cc255afca29))
+- **trajectory:** count shotgun-surgery support per commit, each burst once
+  ([0a4ae97](https://github.com/artk0de/TeaRAGs-MCP/commit/0a4ae97b81d884c7ac010416b8cbf963eacdf547))
+- **trajectory:** drop test support from the architecture production graph
+  (89k7k.35.3)
+  ([1b51e0b](https://github.com/artk0de/TeaRAGs-MCP/commit/1b51e0be0e544afcb2a9d0d736a48206344f2395))
+- **trajectory:** entry facades own no subtree; retire declared root/entry lists
+  (r8hme.52.4)
+  ([ca2781b](https://github.com/artk0de/TeaRAGs-MCP/commit/ca2781b119199789dc05ecfb4deb0f0572023fad))
+- **trajectory:** exclude a subclass's edge to its own superclass file from
+  norms (ptkwf)
+  ([ba2d65f](https://github.com/artk0de/TeaRAGs-MCP/commit/ba2d65fbea7301db2968918bc31d47744af646a1))
+- **trajectory:** exempt layer skips into foundation-terminal components
+  (r8hme.52.3)
+  ([f1fc18f](https://github.com/artk0de/TeaRAGs-MCP/commit/f1fc18f116f8d382bf5cee8388fbd11a9a192b5a))
+- **trajectory:** exempt subclass self/cls/super() calls from pythonUnderscore
+  privacy leaks
+  ([b05e5ce](https://github.com/artk0de/TeaRAGs-MCP/commit/b05e5ce4793f5e43d45a80511b74cc3bd734cd86)),
+  closes
+  [Flask#handle_exception](https://github.com/artk0de/Flask/issues/handle_exception)
+  [App#\_find_error_handler](https://github.com/artk0de/App/issues/_find_error_handler)
+- **trajectory:** hub Ce leaves out files that only inherit (r8hme.52.18)
+  ([41ea877](https://github.com/artk0de/TeaRAGs-MCP/commit/41ea87788c819eb7b09b3db90698b77f7060ac55)),
+  closes
+  [HubLikeDependencyReading#isInheritance](https://github.com/artk0de/HubLikeDependencyReading/issues/isInheritance)
+- **trajectory:** hub-like afferent cut drawn over components with Ca > 0
+  (nxikh)
+  ([e3a514e](https://github.com/artk0de/TeaRAGs-MCP/commit/e3a514e05af12cfa598ce99d8adfadd564b028cc))
+- **trajectory:** hub-like Ca/Ce leave out containment dependencies (j5gti)
+  ([edcba58](https://github.com/artk0de/TeaRAGs-MCP/commit/edcba58f8c2f3e65eac6bb5011ebf61325d477fd))
+- **trajectory:** internal-reach spares a measured de-facto surface child
+  (r8hme.52.16)
+  ([c4d5281](https://github.com/artk0de/TeaRAGs-MCP/commit/c4d5281aa41927e5d27eb09d70b3ae8a3543aaaf))
+- **trajectory:** islands skip convention-dispatched entry points (r8hme.52.13)
+  ([132f77b](https://github.com/artk0de/TeaRAGs-MCP/commit/132f77b638816aed27c5d1d7b9d8c9340fa588ff))
+- **trajectory:** judge dependency norms against one ledger per language family
+  ([22e08be](https://github.com/artk0de/TeaRAGs-MCP/commit/22e08beffed78d4fc1c81e489c28dd42a2c696ee))
+- **trajectory:** judge dependency norms by architectural roles, not domain
+  nouns
+  ([93e62b3](https://github.com/artk0de/TeaRAGs-MCP/commit/93e62b349e552a3848483de051eeef829d7efdb6))
+- **trajectory:** key git authors by mailmap-applied email, not display name
+  ([0dd5987](https://github.com/artk0de/TeaRAGs-MCP/commit/0dd5987e0aba90835f7072d33076a2f8a1d84f89))
+- **trajectory:** layering violationCount counts violations only, informational
+  apart (wzq9i)
+  ([a145764](https://github.com/artk0de/TeaRAGs-MCP/commit/a145764ecad37aa36aa6782bcf5b039b4e15f643))
+- **trajectory:** learn ticket keys per run, gate #N on forge remotes, drop !N
+  (8rcox)
+  ([6f208ca](https://github.com/artk0de/TeaRAGs-MCP/commit/6f208ca733ebcd7ae992b21794a62ef777175c86)),
+  closes [#N](https://github.com/artk0de/TeaRAGs-MCP/issues/N)
+  [#N](https://github.com/artk0de/TeaRAGs-MCP/issues/N)
+  [VcsGitAdapter#readRemoteUrls](https://github.com/artk0de/VcsGitAdapter/issues/readRemoteUrls)
+- **trajectory:** name relation and manifest dev deps as test-support evidence
+  (89k7k.35.3)
+  ([be79723](https://github.com/artk0de/TeaRAGs-MCP/commit/be79723ffadb12edb64e36d6a1c3832cfabdf05c))
+- **trajectory:** one canonical display name per git author identity
+  ([5a0fdae](https://github.com/artk0de/TeaRAGs-MCP/commit/5a0fdaeabcc513cffd4f41ec33c8a5193a2e2303))
+- **trajectory:** one domain partition for every component detector (r8hme.52.7)
+  ([e9c37a6](https://github.com/artk0de/TeaRAGs-MCP/commit/e9c37a6b1cd03ad502349ed5cdd7ed8893f2a5c7)),
+  closes
+  [#runDetectors](https://github.com/artk0de/TeaRAGs-MCP/issues/runDetectors)
+- **trajectory:** promote matching weak dir roles; name weak side on weakRole
+  verdicts
+  ([29b0ced](https://github.com/artk0de/TeaRAGs-MCP/commit/29b0ced3dca4ae428e9900509d65c50a7e745801))
+- **trajectory:** rebuild the cochange snapshot when its persisted shape changes
+  (hzm7g)
+  ([549a803](https://github.com/artk0de/TeaRAGs-MCP/commit/549a80300e065c9ba97f973e4db901b277709551))
+- **trajectory:** remove the layerSkip layering finding family (r8hme.52.9)
+  ([97fe0da](https://github.com/artk0de/TeaRAGs-MCP/commit/97fe0dafadb9716364db648773e5a353103a52c6))
+- **trajectory:** report shotgun-surgery findings maximal, nested subsets
+  absorbed (k556p)
+  ([74b8bda](https://github.com/artk0de/TeaRAGs-MCP/commit/74b8bdace89a05698bd4db12d54f11b73ef3c786))
+- **trajectory:** resolve a written supertype against its writer, not by last
+  segment (9okcg)
+  ([3320dd4](https://github.com/artk0de/TeaRAGs-MCP/commit/3320dd4c9ff22daed1e46d7e2558f05c7fdcade0))
+- **trajectory:** Ruby components are path-based; only shotgun groups by
+  namespace (r8hme.52.15)
+  ([f35410a](https://github.com/artk0de/TeaRAGs-MCP/commit/f35410af6eb9284e20314c3d60b4d5d8ccd9c06e))
+- **trajectory:** shotgun leaves identifier rename sweeps out of its history
+  (v2525)
+  ([1271686](https://github.com/artk0de/TeaRAGs-MCP/commit/12716861e15d51b2f707d9cf24d27fa4d0e732e8))
+- **trajectory:** silentCoupling explains pairs by a per-pair chance test
+  (gj45h)
+  ([346d0bb](https://github.com/artk0de/TeaRAGs-MCP/commit/346d0bb88a08a50dc46eb194d6369d991246d8d9))
+- **trajectory:** silentCoupling Šidák-corrects the least-likely shared
+  neighbour (v4279)
+  ([952570d](https://github.com/artk0de/TeaRAGs-MCP/commit/952570d5b27d657afe3d63dae17c70116d5f4dfb))
+- **trajectory:** splitMerge requires separable, covering clusters and skips
+  nested merges (755bj)
+  ([f9615d3](https://github.com/artk0de/TeaRAGs-MCP/commit/f9615d3fe7b5b7f47a9498b8c0a7649555c14d53))
+- **trajectory:** stop reporting facade-aggregated and entry components as
+  islands (r8hme.52.2)
+  ([b25afd4](https://github.com/artk0de/TeaRAGs-MCP/commit/b25afd486dc101b76bfac53f717c6d6e4b58b2c6))
+- **trajectory:** take shotgun sample recency from commit timestamps, not max
+  bundle id (dlvyi)
+  ([6b7adee](https://github.com/artk0de/TeaRAGs-MCP/commit/6b7adeec16425fbc6b4e053878303ffe8e2d1f2f))
+- **trajectory:** test support needs positive evidence, not absent production
+  importers (89k7k.35.3)
+  ([d3ddeb9](https://github.com/artk0de/TeaRAGs-MCP/commit/d3ddeb969d0e17464fb102c0dc2110e249dbf645))
+- **trajectory:** unimported file importing a dev-only dependency is
+  non-production (r8hme.52.14)
+  ([d9bb0fe](https://github.com/artk0de/TeaRAGs-MCP/commit/d9bb0fe5efab534136423a20f6694c7b1ab943b6))
+
+### Performance Improvements
+
+- **adapters:** delete removed files' codegraph rows set-based in one
+  transaction (b4drg)
+  ([3d534c8](https://github.com/artk0de/TeaRAGs-MCP/commit/3d534c8959e3615a8cc81fb0d2110df37aa2b874)),
+  closes [16520/#15092](https://github.com/16520/TeaRAGs-MCP/issues/15092)
+- **adapters:** delete the write-only review edge temp-table path (89k7k.35.20)
+  ([73889c4](https://github.com/artk0de/TeaRAGs-MCP/commit/73889c47081eef4df213f25dcdcd8c0fb0e4c82d)),
+  closes
+  [GraphDbClient#readReviewFileEdges](https://github.com/artk0de/GraphDbClient/issues/readReviewFileEdges)
+- **adapters:** fold one-sided LEFT JOIN predicates into equi-join keys (3x25d)
+  ([a6dd8da](https://github.com/artk0de/TeaRAGs-MCP/commit/a6dd8da5f23f92c5f887a64da4cf2a83f66e8a84)),
+  closes
+  [DuckDbMethodEdgeReader#getChunkSignalsBulk](https://github.com/artk0de/DuckDbMethodEdgeReader/issues/getChunkSignalsBulk)
+- **api:** cache review symbol rows per DB write stamp, walk the diff once per
+  review (nehn5)
+  ([c439a59](https://github.com/artk0de/TeaRAGs-MCP/commit/c439a595a17f5ffd91554e2ff270872113e9bd77))
+- **api:** cycles judge reads the tree graph once and SCC-prefilters edges
+  (h2zwo)
+  ([35daefb](https://github.com/artk0de/TeaRAGs-MCP/commit/35daefba84fc866e3e241914229d23e27a6eae2b)),
+  closes
+  [ReviewEdgeOverlay#treeEdgesFrom](https://github.com/artk0de/ReviewEdgeOverlay/issues/treeEdgesFrom)
+- **api:** get_architecture_report shares one Qdrant file-facts scroll per call
+  (2i7lg)
+  ([c4986d3](https://github.com/artk0de/TeaRAGs-MCP/commit/c4986d3f119315979c176d4db827cd61aa83571a))
+- **api:** one Qdrant file-facts scroll per review feeds both file reducers
+  (i2zr8)
+  ([50087d5](https://github.com/artk0de/TeaRAGs-MCP/commit/50087d5d32d9eedc5fafbdf863c5b6d114e3991d)),
+  closes
+  [ReviewChangesOps#reviewChanges](https://github.com/artk0de/ReviewChangesOps/issues/reviewChanges)
+- **api:** overlap naming concept searches with earlier stages; reuse review
+  diff read (wijz7)
+  ([6c8bf9d](https://github.com/artk0de/TeaRAGs-MCP/commit/6c8bf9d328e760f1b16af7b7bf1d3d27664f5178)),
+  closes
+  [NamingLexiconOps#answer](https://github.com/artk0de/NamingLexiconOps/issues/answer)
+- **api:** review architecture prefetches maintenance signals beside the graph
+  facts (pqdw4)
+  ([9292590](https://github.com/artk0de/TeaRAGs-MCP/commit/92925905d7d91460f1a2357c0dc7f543c6ecb3f6))
+- **api:** review lists the work tree once, inside one listing scope (uqkn5)
+  ([e4b9b5a](https://github.com/artk0de/TeaRAGs-MCP/commit/e4b9b5a2ab8ec71d36028630ee7a9f3b07503400)),
+  closes
+  [ReviewChangesOps#reviewChanges](https://github.com/artk0de/ReviewChangesOps/issues/reviewChanges)
+- **api:** review reads the production graph once, its whole-index reads
+  concurrently (pqdw4)
+  ([cbd929b](https://github.com/artk0de/TeaRAGs-MCP/commit/cbd929b10e10fcea14e2ae49de545c30b37dda2e))
+- **codegraph:** foreign holder releases an idle collection on request (8noie)
+  ([dfb9b5d](https://github.com/artk0de/TeaRAGs-MCP/commit/dfb9b5d337891e08fe5ecd0895669071fdc50ccf)),
+  closes
+  [GraphDbClientPool#release](https://github.com/artk0de/GraphDbClientPool/issues/release)
+- **codegraph:** hold whole-graph reads across reviews per database write stamp
+  (lnor0)
+  ([5de6089](https://github.com/artk0de/TeaRAGs-MCP/commit/5de6089c1af0424f3b152af4e5b2a2cbafea4901)),
+  closes
+  [GraphDbClientPool#acquireReader](https://github.com/artk0de/GraphDbClientPool/issues/acquireReader)
+  [GraphDbClientPool#databaseWriteStamp](https://github.com/artk0de/GraphDbClientPool/issues/databaseWriteStamp)
+- **codegraph:** naming reads re-export edges, not the whole dependency graph
+  (lnor0)
+  ([3da9aa1](https://github.com/artk0de/TeaRAGs-MCP/commit/3da9aa1157381176dd9e5b7114249ae4c2520fac))
+- **embedding:** share a short-TTL endpoint-down verdict across processes
+  (w1bz7)
+  ([8b4b0e5](https://github.com/artk0de/TeaRAGs-MCP/commit/8b4b0e5b4deb8c86e0c3fb6e2867a06613a34137))
+- **git:** cut serial git spawns in on-demand working-tree git signals
+  (89k7k.35.22)
+  ([cdce2e2](https://github.com/artk0de/TeaRAGs-MCP/commit/cdce2e2ac263f0754ba0d0f8c6e5a6e7f86f2f20))
+- **git:** memoize lifetime walk and history anchor per HEAD in on-demand
+  signals (89k7k.35.23/.24)
+  ([fe9556b](https://github.com/artk0de/TeaRAGs-MCP/commit/fe9556b34fc56c026dbc0b4dabb59366dbf097e1))
+- **git:** read HEAD from repo files, dedupe ancestry and empty-range spawns
+  (0qaht.51)
+  ([12ef591](https://github.com/artk0de/TeaRAGs-MCP/commit/12ef59157a1cce3aa8dc3ebd283ef09395b7db18)),
+  closes
+  [FileChurnDiscovery#resolveEntries](https://github.com/artk0de/FileChurnDiscovery/issues/resolveEntries)
+  [GitCliAdapter#isAncestor](https://github.com/artk0de/GitCliAdapter/issues/isAncestor)
+- **ingest:** the --force-enrichments sync leg leaves selected providers to the
+  recompute (b4drg)
+  ([629e2ad](https://github.com/artk0de/TeaRAGs-MCP/commit/629e2adffd937577a43d82a6e30b1b1c08c594d5)),
+  closes
+  [IndexingOps#recomputeEnrichments](https://github.com/artk0de/IndexingOps/issues/recomputeEnrichments)
+  [EnrichmentCoordinator#recomputeEnrichments](https://github.com/artk0de/EnrichmentCoordinator/issues/recomputeEnrichments)
+  [ReindexPipeline#reindexChanges](https://github.com/artk0de/ReindexPipeline/issues/reindexChanges)
+  [ReindexPipeline#settleRecomputeDeferral](https://github.com/artk0de/ReindexPipeline/issues/settleRecomputeDeferral)
+- **pipeline:** time fileFinalize sub-steps and Qdrant queue length at drain
+  (4ybh4)
+  ([625cb9b](https://github.com/artk0de/TeaRAGs-MCP/commit/625cb9bc8e1bac4e9ba135260c2f3e82d1bb2ace)),
+  closes [FilePhase#drain](https://github.com/artk0de/FilePhase/issues/drain)
+  [QdrantManager#getCollectionInfo](https://github.com/artk0de/QdrantManager/issues/getCollectionInfo)
+- **qdrant:** collect deleted paths' point ids one exact pair per request
+  (b4drg)
+  ([5983aae](https://github.com/artk0de/TeaRAGs-MCP/commit/5983aae1ad63ab1ff25cdbca716f785403a399e4))
+- **qdrant:** keyword-indexed relativePathExact serves path-membership filters
+  (ejio7)
+  ([fe02b29](https://github.com/artk0de/TeaRAGs-MCP/commit/fe02b2974eb98c4a50de3daf42a4d7026b1ca99a)),
+  closes
+  [SchemaManager#initializeSchema](https://github.com/artk0de/SchemaManager/issues/initializeSchema)
+  [RelativePathExactCapability#isServed](https://github.com/artk0de/RelativePathExactCapability/issues/isServed)
+  [QdrantManager#servesRelativePathExact](https://github.com/artk0de/QdrantManager/issues/servesRelativePathExact)
+  [WorkingTreeTouchedBasePoints#scrollEach](https://github.com/artk0de/WorkingTreeTouchedBasePoints/issues/scrollEach)
+- **review:** cut review_changes git spawns from 11 to 5 per review (0qaht.63)
+  ([b99a109](https://github.com/artk0de/TeaRAGs-MCP/commit/b99a1099a323aad6b157caf54a3b0cdc720067f6))
+
+### Documentation
+
+- **api:** ops recipes for SDP, hub, leaking and back-edge repairs (cm9gt)
+  ([1818a7b](https://github.com/artk0de/TeaRAGs-MCP/commit/1818a7bbd246204d2de0ab2120ac97f7dad0815b))
+- **api:** recipes mark extracted interfaces abstract (cm9gt)
+  ([4eb20c6](https://github.com/artk0de/TeaRAGs-MCP/commit/4eb20c60d2998316d86189c703374f466235c25e))
+- **api:** refactoring-planning design — edge ops, greedy restructurePlan, skill
+  (cm9gt)
+  ([355bba3](https://github.com/artk0de/TeaRAGs-MCP/commit/355bba3303409c059e149c3c7e4e069d09d90a23))
+- **api:** refactoring-planning implementation plan (cm9gt)
+  ([996ea0d](https://github.com/artk0de/TeaRAGs-MCP/commit/996ea0dbb48ad52aae2122db1681aa189ec13f43))
+- **api:** scope repair cheap path vs ops recipe (cm9gt)
+  ([4fd9b45](https://github.com/artk0de/TeaRAGs-MCP/commit/4fd9b458129e69de857a6df2725702309741bbb2))
+- **beads:** scope DDG to session start, located bug fixes and new tasks
+  ([74c3222](https://github.com/artk0de/TeaRAGs-MCP/commit/74c322292b6d561e25defbdcf343896b9fcccca8))
+- **contracts:** three-destination foundation rule with a primitives layer
+  (2wu2h W1)
+  ([efb2a74](https://github.com/artk0de/TeaRAGs-MCP/commit/efb2a74a298555ae334a42ded44a6ecc743371ef))
+- **language:** point the TS compiler-loader citation at resolver/program
+  (0qaht.37)
+  ([d15e26b](https://github.com/artk0de/TeaRAGs-MCP/commit/d15e26b55bcddc5312cd328509cdbf29f6e40296))
+- **pipeline:** FILE_PHASE_DRAIN awaits deferred extraction, not Qdrant's queue
+  (ek7fd)
+  ([bf8c723](https://github.com/artk0de/TeaRAGs-MCP/commit/bf8c723a3ea8d05d42282ad484996d4dbc01ca35))
+- **plans:** add Task 0 — split DiffDetectorRun into DiffFamilyDetector modules
+  (89k7k.1.19)
+  ([4c357ac](https://github.com/artk0de/TeaRAGs-MCP/commit/4c357ac45afc4df6fbaeec0419d0b38359a7df70))
+- **plans:** DDG fix-at-write loop plan + rule: all code via
+  data-driven-generation (89k7k.1.19)
+  ([1ab005b](https://github.com/artk0de/TeaRAGs-MCP/commit/1ab005b588cc9bf07ea1775a02377fb24cc3cb1b))
+- **specs:** DDG fix-at-write loop design (89k7k.1.19)
+  ([924e282](https://github.com/artk0de/TeaRAGs-MCP/commit/924e282e2c414529113655d365443652fcd16f22))
+
+### Code Refactoring
+
+- **adapters:** dependency-manifests imports git-executable via vcs facade
+  (k7kmu C4 residue)
+  ([ddf2c1d](https://github.com/artk0de/TeaRAGs-MCP/commit/ddf2c1d1484ac32c9f296c3c9d1a08231b6b177c))
+- **adapters:** move domain-owned helpers out of the DuckDB adapter
+  (89k7k.35.10)
+  ([98a8710](https://github.com/artk0de/TeaRAGs-MCP/commit/98a8710915f7270ee8f0c74eebdf2407c361aea2))
+- **adapters:** move git-executable, repo-git-state, dependency-manifests (2wu2h
+  W8a)
+  ([3ef57c9](https://github.com/artk0de/TeaRAGs-MCP/commit/3ef57c9ffbe1e969e69efdcbb269a68d44408227))
+- **adapters:** move materialize, extraction-fast-path to adapters/tree-sitter
+  (2wu2h W8c)
+  ([de353f9](https://github.com/artk0de/TeaRAGs-MCP/commit/de353f9cc00178393ca15fcc27e0adbff3a92731))
+- **adapters:** move stats-cache to adapters/filesystem (2wu2h W8b)
+  ([edf7dac](https://github.com/artk0de/TeaRAGs-MCP/commit/edf7dace6cc81addcc1ebe5d8378555900c534b8))
+- **adapters:** name the daemon client-cache port
+  DaemonCollectionClientCachePort (89k7k.39)
+  ([51b6891](https://github.com/artk0de/TeaRAGs-MCP/commit/51b6891d6dfc30d8296dc6d941e89bdf78e4c9d6))
+- **adapters:** split collection-name into identity and path canonicalization
+  (2wu2h W4b)
+  ([8391520](https://github.com/artk0de/TeaRAGs-MCP/commit/83915204ce22a8304bc372551a66b867c2f67d56))
+- **adapters:** split DaemonGraphDbClient into op channel + store proxies
+  (0qaht.38)
+  ([2e95909](https://github.com/artk0de/TeaRAGs-MCP/commit/2e95909ca7d351650d273e26bfdb92d016c44c59))
+- **adapters:** split DuckDbGraphClient onto the codegraph store interfaces
+  (0qaht.38)
+  ([85e00d3](https://github.com/artk0de/TeaRAGs-MCP/commit/85e00d3adb9e7dd99c057e53f68e7b61aecdde51))
+- **adapters:** split GraphDbClientPool responsibilities (0qaht.62)
+  ([38f498a](https://github.com/artk0de/TeaRAGs-MCP/commit/38f498a2dde0b5e5ffd8ef21a150004220e34690))
+- **adapters:** type daemon op commands over DaemonOpParamsMap, drop casts
+  (89k7k.35.9)
+  ([028e45e](https://github.com/artk0de/TeaRAGs-MCP/commit/028e45e79ceef35f157d2a567d8614916eb4238d))
+- **adapters:** type the daemon op surface from GraphDbClient (89k7k.35.6)
+  ([648068b](https://github.com/artk0de/TeaRAGs-MCP/commit/648068b6475cb42946e9a06fa53e97813701e46a)),
+  closes
+  [DaemonGraphDbClient#call](https://github.com/artk0de/DaemonGraphDbClient/issues/call)
+  [#callTolerated](https://github.com/artk0de/TeaRAGs-MCP/issues/callTolerated)
+- **api,maintenance,ingest,trajectory:** deep imports move to component facades
+  (k7kmu C4)
+  ([2bfe8e3](https://github.com/artk0de/TeaRAGs-MCP/commit/2bfe8e3df7d28126b81da6f3065c85f64787fb41))
+- **api:** decompose ArchitectureReportOps runDetectors and shapeResponse
+  (89k7k.35.26)
+  ([e91dd1c](https://github.com/artk0de/TeaRAGs-MCP/commit/e91dd1c21e473c7853c469b184f0c053e3faca4b))
+- **api:** decompose NamingLexiconOps long methods (89k7k.35.25)
+  ([9a67fa5](https://github.com/artk0de/TeaRAGs-MCP/commit/9a67fa59d16eeb7f6a706bca8b9bff53db5fb2cc)),
+  closes
+  [NamingLexiconOps#review](https://github.com/artk0de/NamingLexiconOps/issues/review)
+  [NamingLexiconOps#answerReviewDraftGroups](https://github.com/artk0de/NamingLexiconOps/issues/answerReviewDraftGroups)
+  [NamingLexiconOps#judgeTypeDrafts](https://github.com/artk0de/NamingLexiconOps/issues/judgeTypeDrafts)
+  [NamingLexiconOps#startTypeDraftConceptSearches](https://github.com/artk0de/NamingLexiconOps/issues/startTypeDraftConceptSearches)
+  [NamingLexiconOps#alignTypeDraft](https://github.com/artk0de/NamingLexiconOps/issues/alignTypeDraft)
+- **api:** judge the architecture report over an ArchitectureGraphFacts snapshot
+  (89k7k.35.4)
+  ([4536375](https://github.com/artk0de/TeaRAGs-MCP/commit/45363754e656fad8805f1d5bbfe018146cabe5b7)),
+  closes
+  [ArchitectureReportOps#runDetectors](https://github.com/artk0de/ArchitectureReportOps/issues/runDetectors)
+- **api:** move AppDeps out of the contract layer (k7kmu C1)
+  ([73c9d0a](https://github.com/artk0de/TeaRAGs-MCP/commit/73c9d0ad818b96e383b3d070d23c78606b285fa3))
+- **api:** move codegraph worker-pool shim into its own entry-points sub-facade
+  (g3oo1)
+  ([94b4230](https://github.com/artk0de/TeaRAGs-MCP/commit/94b4230b13c6fef281340be1565e4085b8eca56e))
+- **api:** pool-sizing and registry-env-replay become api/entry-points/
+  (89k7k.35.36)
+  ([a3da8bf](https://github.com/artk0de/TeaRAGs-MCP/commit/a3da8bf1e78dd0244d330af7e6779c99f8eb89ea))
+- **api:** public barrel no longer reaches api/internal; SchemaBuilderPort
+  (k7kmu C2)
+  ([9c09336](https://github.com/artk0de/TeaRAGs-MCP/commit/9c093369d319d4c62d037efab16e21000a04d343))
+- **api:** qdrant holders type against narrowest ports (6oah1 Q2api)
+  ([41ee548](https://github.com/artk0de/TeaRAGs-MCP/commit/41ee54845642411c1d8683125a045344deeedc33))
+- **api:** runtime domain re-exports leave the contract barrel (k7kmu C3 + R1)
+  ([b8f87a0](https://github.com/artk0de/TeaRAGs-MCP/commit/b8f87a0638b088930f3c8b3e1b4b5977a9003938))
+- **api:** share the efferent-before-change check between hubLike and
+  mainSequence
+  ([55d5a1e](https://github.com/artk0de/TeaRAGs-MCP/commit/55d5a1e33eb83b4e782bfa435f31269bc1808a0a))
+- **api:** split architecture-report ops per detector family (u4920)
+  ([b883a6a](https://github.com/artk0de/TeaRAGs-MCP/commit/b883a6a99797c9da7e70897adf9fca96c9f7aefb))
+- **api:** split DiffDetectorRun into per-family DiffFamilyDetector modules
+  ([e448a7e](https://github.com/artk0de/TeaRAGs-MCP/commit/e448a7e5820831a2432c702267b0a4ae47987ed0)),
+  closes
+  [DiffDetectorRun#run](https://github.com/artk0de/DiffDetectorRun/issues/run)
+- **bootstrap:** dissolve the bootstrap layering knot (g7w8f)
+  ([695d9bf](https://github.com/artk0de/TeaRAGs-MCP/commit/695d9bfeb6447ebbca279ce273756b94d55083f3))
+- **bootstrap:** move server-runtime under transport, breaking the layer cycle
+  (adrqy)
+  ([4d6a2d9](https://github.com/artk0de/TeaRAGs-MCP/commit/4d6a2d9aae82bc5eb4ab3dcb36e6355bc4ee8c0f))
+- **bootstrap:** one MCP server lifecycle for the server command and
+  src/index.ts (f3gq0)
+  ([b3a7204](https://github.com/artk0de/TeaRAGs-MCP/commit/b3a7204b817e5359fab10d6d27aa66e665c81650))
+- **bootstrap:** reach bootstrap/config and mcp/prompts through their facades
+  (k7kmu C6)
+  ([205ea44](https://github.com/artk0de/TeaRAGs-MCP/commit/205ea4422ae930d700a807d2444d0d8ec9a15ee6))
+- **bootstrap:** reach drift/symbols/language/pipeline via api barrel (k7kmu
+  C5a)
+  ([450bf14](https://github.com/artk0de/TeaRAGs-MCP/commit/450bf14c18548f4205f786a27432c53227f2cf3a))
+- **bootstrap:** reach every remaining domain only through core/api (k7kmu C5b)
+  ([e8e96b1](https://github.com/artk0de/TeaRAGs-MCP/commit/e8e96b1217dfebfbf877a1ed2418306398d94440))
+- **bootstrap:** share one codegraph symbol-table hydration hook
+  ([c18e5f4](https://github.com/artk0de/TeaRAGs-MCP/commit/c18e5f4bc1d13a6708b06e733a3fe8c79a7e2337))
+- **bootstrap:** split createAppContext into section factories (0qaht.39)
+  ([b7fc686](https://github.com/artk0de/TeaRAGs-MCP/commit/b7fc6860b49a4b92ebbb60321f12bd9ef0a76413))
+- **chunker:** break ruby walker <-> type-sources cycle via walker/shared leaf
+  (89k7k.35.15)
+  ([b61420b](https://github.com/artk0de/TeaRAGs-MCP/commit/b61420b499e6e8cef5be2025459e646c1da9ca9c))
+- **chunker:** one test-chunk link key list shared by the chunker and the point
+  payload (f3gq0)
+  ([27214f2](https://github.com/artk0de/TeaRAGs-MCP/commit/27214f26d734bb16a2771e6f6a4001791f7b651e))
+- **chunker:** route language/kernel deep imports through the barrel (0qaht.44)
+  ([f9060f6](https://github.com/artk0de/TeaRAGs-MCP/commit/f9060f645440bb12fd92931723770d8b70ddc904))
+- **cli:** extract IndexRunReportPrinter from superviseIndexing (0qaht.40 U-D)
+  ([71b9f4d](https://github.com/artk0de/TeaRAGs-MCP/commit/71b9f4d3d2c19bfe57f41649ca7a8452726e981c))
+- **codegraph:** extract createTSSymbolResolutionChain from ts-resolver
+  (0qaht.40 U-B)
+  ([b6b25ab](https://github.com/artk0de/TeaRAGs-MCP/commit/b6b25abe597740bf008eeef01666e09f04196b2c)),
+  closes
+  [TSCallResolver#constructor](https://github.com/artk0de/TSCallResolver/issues/constructor)
+- **codegraph:** extract finishCodegraphExtractionRun from the extraction sink
+  (0qaht.40 U-E)
+  ([c521bf9](https://github.com/artk0de/TeaRAGs-MCP/commit/c521bf9e90ebf1fc601b7e4913d76603c13c5af9))
+- **codegraph:** Go helpers below resolver root; split-fragment to
+  chunk-grouping (0qaht.37 U4)
+  ([031d68c](https://github.com/artk0de/TeaRAGs-MCP/commit/031d68cfda45e98a803a346ed9b2f4591037241a))
+- **codegraph:** move cochange partner shapes to contracts (k7kmu C11b)
+  ([5a0ca60](https://github.com/artk0de/TeaRAGs-MCP/commit/5a0ca60373498f3c66bdca0d0363dca991bcfa6a))
+- **codegraph:** move Python resolver helpers below the resolver root (0qaht.37
+  U2)
+  ([994bdfe](https://github.com/artk0de/TeaRAGs-MCP/commit/994bdfed2b0040491f87136ca69b97d3d0ed5a6d))
+- **codegraph:** move the collection-completion hook seam to contracts (k7kmu
+  C11)
+  ([3d9955b](https://github.com/artk0de/TeaRAGs-MCP/commit/3d9955bb591b620f8f63d2cf3dfbc8a737f2148f))
+- **codegraph:** move TS resolver helpers below the resolver root (0qaht.37 U1)
+  ([cbdcdac](https://github.com/artk0de/TeaRAGs-MCP/commit/cbdcdace58bac00e8f161e85c02c18ecd85cd125))
+- **codegraph:** one WHOLE_MODULE_EXPORT_NAME beside ImportRef (4z6kx)
+  ([1237e31](https://github.com/artk0de/TeaRAGs-MCP/commit/1237e31a7a62f4423ef14fb64d6142dcdfe199a9))
+- **codegraph:** python walker no longer imports the python root (0qaht.37.1)
+  ([1678a8b](https://github.com/artk0de/TeaRAGs-MCP/commit/1678a8b91b6a5c8644d2abcf2e85ff2258067f00))
+- **codegraph:** Ruby resolver/walker layout without upward imports (0qaht.37
+  U3)
+  ([0d5ac44](https://github.com/artk0de/TeaRAGs-MCP/commit/0d5ac44d1fd4c316649164585fb874d0f8c74acf))
+- **codegraph:** split python strategies/shared.ts by cohesion cluster
+  (0qaht.43)
+  ([963c124](https://github.com/artk0de/TeaRAGs-MCP/commit/963c124ac4c436eca5b360d32c05868fa0e3f401))
+- **codegraph:** split
+  rubyAstInferenceTypeSource[#extract](https://github.com/artk0de/TeaRAGs-MCP/issues/extract)
+  into recorder + rules (0qaht.40 U-A)
+  ([26914a4](https://github.com/artk0de/TeaRAGs-MCP/commit/26914a4179eee3e68d1e12d20b8c3e28d505e533))
+- **codegraph:** worker-side pool factory bootstrap-owned by module path (h4a
+  S15 H-D2)
+  ([33d7e68](https://github.com/artk0de/TeaRAGs-MCP/commit/33d7e68b5ba01f07453e0fcf881e00e9c3f216e4))
+- **config:** domains own pool-size defaults, registry env vocabulary in
+  contracts (umixb)
+  ([fded2dd](https://github.com/artk0de/TeaRAGs-MCP/commit/fded2dd4cd4dbc9d52122d3f566e43beab44e7e0))
+- **config:** env-snapshot reads RegistryEnvCanonicalKey through the contracts
+  facade
+  ([5735214](https://github.com/artk0de/TeaRAGs-MCP/commit/57352143aef6735108353fee2a0b42aeaca9a945))
+- **config:** inject file-classification env settings from bootstrap (82ztq)
+  ([a0c5190](https://github.com/artk0de/TeaRAGs-MCP/commit/a0c51906b08f35cc31549a2bba9fa5315f795a6f))
+- **config:** pool-size defaults via core/api/pool-sizing (h4a H2a)
+  ([229f485](https://github.com/artk0de/TeaRAGs-MCP/commit/229f485787bc20064b3280488ca2b55832d0d5bb))
+- **config:** pure defaultIoBoundPoolSize primitive (k7kmu C10)
+  ([8d033d8](https://github.com/artk0de/TeaRAGs-MCP/commit/8d033d8e959aca5ebe4b8d0ddfea3f731e08cea8))
+- **contracts:** move graph, math, collections, concurrency from infra to
+  primitives (2wu2h W3)
+  ([78306fd](https://github.com/artk0de/TeaRAGs-MCP/commit/78306fddc61916391b79b4ba721fc9d85d264706))
+- **contracts:** move path-pattern, scope-detection, file-classification to
+  primitives (W5)
+  ([f5b94c0](https://github.com/artk0de/TeaRAGs-MCP/commit/f5b94c0c57ab8a53e025cf965f4c52e86eb47af2))
+- **contracts:** move SearchResult and index metrics out of api dto (g7w8f)
+  ([1cb9879](https://github.com/artk0de/TeaRAGs-MCP/commit/1cb9879ddcb59237d1b646c06485e6af1a034e19))
+- **contracts:** move symbolid from infra to primitives/ids (2wu2h W4a)
+  ([21538c2](https://github.com/artk0de/TeaRAGs-MCP/commit/21538c2c0120235c30f89e259ed965a57ee0f062))
+- **contracts:** move TeaRagsError base to primitives/errors (2wu2h W6a)
+  ([c55c7ab](https://github.com/artk0de/TeaRAGs-MCP/commit/c55c7ab3bf048dd5f2c7932a44ce75769ed94be1))
+- **contracts:** move the naming-lexicon DTO value types to contracts/types
+  (89k7k.35.8)
+  ([6c81ae0](https://github.com/artk0de/TeaRAGs-MCP/commit/6c81ae0810f0a29bbd1cc2818bf0db3514fe23f0))
+- **contracts:** one value-identifier-kind list for ontology store and naming
+  verdicts (q2eqs)
+  ([fc13e2f](https://github.com/artk0de/TeaRAGs-MCP/commit/fc13e2fd751e5510c5be479fd79977a730aae8cc))
+- **contracts:** split file-content-hash, read half to codegraph working-tree
+  (2wu2h W4c)
+  ([7d37255](https://github.com/artk0de/TeaRAGs-MCP/commit/7d37255cf9dc2923aa7adf2ac3a77a089c77c4a9))
+- **debug:** move the debug flag to primitives/diagnostics (2wu2h W6b)
+  ([0967de3](https://github.com/artk0de/TeaRAGs-MCP/commit/0967de30799d4f2766f4b6479a96fadb3b244991))
+- **drift:** judgeStatsContract moves to contracts (k7kmu C9)
+  ([b9bd994](https://github.com/artk0de/TeaRAGs-MCP/commit/b9bd99488f9acd8d21665ff5df487400afe56fa9))
+- **duckdb:** createDaemonRouting factory, bootstrap passes it (h4a H4a3)
+  ([b0e69b2](https://github.com/artk0de/TeaRAGs-MCP/commit/b0e69b2684591a8005ba40332ecbf26af73d0759))
+- **duckdb:** daemon-ports.ts owns the contracts the pool consumes (h4a H4a1)
+  ([cbd84be](https://github.com/artk0de/TeaRAGs-MCP/commit/cbd84be0dc509c8bb87d944454532ff4ac4fbf3a))
+- **duckdb:** pool consumes DaemonRouting instead of constructing daemon classes
+  (h4a H4a2)
+  ([a312760](https://github.com/artk0de/TeaRAGs-MCP/commit/a3127605be5ff9a62a631d8b595e6ebacc81b2af))
+- **explore:** error vocabulary becomes a leaf module (g7w8f-2 X1)
+  ([c324c4f](https://github.com/artk0de/TeaRAGs-MCP/commit/c324c4f1132e541ee2ce1ff642d3f5fa2ee51684))
+- **explore:** inject mapEnrichmentHealth into IndexMetricsQuery (k7kmu C8)
+  ([0827c3c](https://github.com/artk0de/TeaRAGs-MCP/commit/0827c3ce9c947413bbe7985d6273e93e6d973e71))
+- **explore:** inject the NotIndexedError factory into IndexMetricsQuery (g7w8f
+  G6)
+  ([70347d8](https://github.com/artk0de/TeaRAGs-MCP/commit/70347d8d0ec41a51052eaa23e403b6ef863b3382))
+- **explore:** qdrant holders type against narrowest ports (6oah1 Q2explore)
+  ([9375ab2](https://github.com/artk0de/TeaRAGs-MCP/commit/9375ab257103cbb5bbc0948b0fcefc0b92047b66))
+- **explore:** Reranker takes a contracts port for stats recompute (k7kmu C8b)
+  ([4914567](https://github.com/artk0de/TeaRAGs-MCP/commit/4914567ca04bc0c74c6c3d07a23f7a2dc1110ec1)),
+  closes
+  [Reranker#setRecomputeService](https://github.com/artk0de/Reranker/issues/setRecomputeService)
+- **explore:** RerankerPort holders import shared types off reranker.js
+  (89k7k.39)
+  ([b7722f8](https://github.com/artk0de/TeaRAGs-MCP/commit/b7722f82abff660504642b38283902cc132285bf))
+- **explore:** RerankerPort interface, holders retype (6oah1 E1)
+  ([e90e4a9](https://github.com/artk0de/TeaRAGs-MCP/commit/e90e4a9bd7653dc87b220b9e55dd682537490e9e))
+- **explore:** take ExploreResult from contracts beneath the strategies (g7w8f)
+  ([006545f](https://github.com/artk0de/TeaRAGs-MCP/commit/006545fe2ee0318f422a784a96ceddac6a40daa4))
+- **git:** extract repo-history primitives into trajectory/git/history facade
+  (89k7k.35.7)
+  ([f94037a](https://github.com/artk0de/TeaRAGs-MCP/commit/f94037a0233f54daf52d47807d6bd33926849eb9)),
+  closes [#19](https://github.com/artk0de/TeaRAGs-MCP/issues/19)
+- **git:** route repo-root resolution through VcsAdapterFactory (89k7k.35.13)
+  ([2484058](https://github.com/artk0de/TeaRAGs-MCP/commit/2484058a4cd804f2a20fee6e0bac3b90537f9a26))
+- **git:** split git-cli history and exec out of client, add vcs facade
+  (0qaht.41 part 2)
+  ([0157229](https://github.com/artk0de/TeaRAGs-MCP/commit/015722976355e6e578a11b536d1dceff6ce66051))
+- **git:** split working-tree and cat-file reads out of git-cli client (0qaht.41
+  part 1)
+  ([099431b](https://github.com/artk0de/TeaRAGs-MCP/commit/099431bb722ae9077a974785bf41a4a09fe1018d))
+- **ingest:** CollectionIndexingLock port in ingest/infra/ports.ts (6oah1 I1)
+  ([8a76f15](https://github.com/artk0de/TeaRAGs-MCP/commit/8a76f153d03ab705eafa9f2209b29c3f0ec849bf)),
+  closes
+  [IndexingOps#tryClaimCollection](https://github.com/artk0de/IndexingOps/issues/tryClaimCollection)
+- **ingest:** delete dead extractTaskIds copy in enrichment/utils (89k7k.35.12)
+  ([6c25a61](https://github.com/artk0de/TeaRAGs-MCP/commit/6c25a619b3754e6ecb0d2fcd53554657cd388834))
+- **ingest:** DeletionOutcome interface moves to contracts (g7w8f G3)
+  ([6ab4e71](https://github.com/artk0de/TeaRAGs-MCP/commit/6ab4e71dca42f6f125f96a4d824dc6c1b853b1f1))
+- **ingest:** errors.ts becomes ingest/errors/ component (81bfm c)
+  ([d41106d](https://github.com/artk0de/TeaRAGs-MCP/commit/d41106db198b856978ff06097d2ee42c89da9942))
+- **ingest:** IngestDependencies leaves the ingest root (g7w8f G2)
+  ([559303b](https://github.com/artk0de/TeaRAGs-MCP/commit/559303b8ae2cc23aec24d5e1321b36e95ad293a4))
+- **ingest:** move the indexing marker codec and run-liveness predicate to
+  ingest/infra (bu8iv)
+  ([cc7efdf](https://github.com/artk0de/TeaRAGs-MCP/commit/cc7efdfc9702aca5e85302fae4da1bbcf5cfe26d))
+- **ingest:** qdrant holders type against narrowest ports (6oah1 Q2ingestRest)
+  ([c2f19d3](https://github.com/artk0de/TeaRAGs-MCP/commit/c2f19d370ce4ce23de21ad6e7c05b76cdea30ca1))
+- **ingest:** re-export the ingest barrel through its sub-module facades (g7w8f)
+  ([c9ccfa9](https://github.com/artk0de/TeaRAGs-MCP/commit/c9ccfa9d3706f1bda2809ead4429c7a777831aae))
+- **ingest:** split
+  IndexPipeline[#index](https://github.com/artk0de/TeaRAGs-MCP/issues/index)Codebase
+  into stages (0qaht.40 U-C)
+  ([2638dc4](https://github.com/artk0de/TeaRAGs-MCP/commit/2638dc478b3171e12ada087478a4fd71363f6086)),
+  closes
+  [IndexPipeline#indexCodebase](https://github.com/artk0de/IndexPipeline/issues/indexCodebase)
+  [IndexPipeline#indexCodebase](https://github.com/artk0de/IndexPipeline/issues/indexCodebase)
+  [ReindexPipeline#reindexChanges](https://github.com/artk0de/ReindexPipeline/issues/reindexChanges)
+- **language:** inject the manifest reader into the Go module-map strategy
+  (2wu2h W7)
+  ([bc0fc2c](https://github.com/artk0de/TeaRAGs-MCP/commit/bc0fc2cd92eb4f455a1fa74594bd5772bebf68d2)),
+  closes
+  [#readManifestFiles](https://github.com/artk0de/TeaRAGs-MCP/issues/readManifestFiles)
+  [codegraph/factory.ts#createCodegraphProviderRuntime](https://github.com/codegraph/factory.ts/issues/createCodegraphProviderRuntime)
+- **language:** move ECMAScript import-specifier reader into the kernel (k7kmu
+  C12)
+  ([8490cfe](https://github.com/artk0de/TeaRAGs-MCP/commit/8490cfee223b6d93ad2f2694c354a995ae7cb26f))
+- **maintenance:** qdrant holders type against narrowest ports (6oah1 Q2maint)
+  ([e0cd659](https://github.com/artk0de/TeaRAGs-MCP/commit/e0cd65951581ab31ed922eec05c41b0515796935))
+- **mcp,cli:** dto importers go through the api/public barrel (k7kmu C14)
+  ([5987710](https://github.com/artk0de/TeaRAGs-MCP/commit/598771044b9c5f58d459fc9b161fd8bdce3d1d03))
+- **mcp:** McpAutoUpdateTrigger moves to api/public (k7kmu C13)
+  ([0a9caff](https://github.com/artk0de/TeaRAGs-MCP/commit/0a9caffe89da0d0f6da524de13989b5f96e7235d))
+- **pipeline:** chunker language tables become language-config module (g7w8f-2
+  G4)
+  ([5b7125d](https://github.com/artk0de/TeaRAGs-MCP/commit/5b7125d380c6e4891fa5f3a93ab24632171ee12d))
+- **pipeline:** debug-log cluster becomes infra/debug-log/ (6oah1 PI1)
+  ([c613fda](https://github.com/artk0de/TeaRAGs-MCP/commit/c613fda821d097566756907e31e26022446eac50))
+- **pipeline:** enrichment worker protocol moves to the executor that owns it
+  (g7w8f G5)
+  ([c8fc038](https://github.com/artk0de/TeaRAGs-MCP/commit/c8fc038a6b8ba2ddd508f9cd2939bc477366b294))
+- **pipeline:** pipeline/infra owns the batching and work-item vocabulary (g7w8f
+  C7+G1)
+  ([d9de0a9](https://github.com/artk0de/TeaRAGs-MCP/commit/d9de0a90011a342474a740b381a44695d878c6ee))
+- **pipeline:** qdrant holders type against narrowest ports (6oah1 Q2pipe)
+  ([bbeb99b](https://github.com/artk0de/TeaRAGs-MCP/commit/bbeb99bd548d75a0209d6b964ee404ce121cb9d3))
+- **pipeline:** split worker dispatch runtime into
+  pipeline/infra/worker-dispatch (6oah1 PI1)
+  ([5c52778](https://github.com/artk0de/TeaRAGs-MCP/commit/5c52778abf1e0fb96509aa56fa5ce03f415d2b13))
+- **qdrant:** add QdrantAliasAdmin port and narrow alias-only holders (89k7k.39)
+  ([06e17ce](https://github.com/artk0de/TeaRAGs-MCP/commit/06e17cef73523110c7263cef0adcfe21f0a82508))
+- **qdrant:** ports.ts declares one interface per collaborator concern (6oah1
+  Q1)
+  ([0e4d44a](https://github.com/artk0de/TeaRAGs-MCP/commit/0e4d44adde109f79e7f173cd32ed722a60ea231a))
+- **qdrant:** ports.ts types off collaborator files, breaks alias cycle (session
+  arch repair)
+  ([9b127a4](https://github.com/artk0de/TeaRAGs-MCP/commit/9b127a450e6634f08733b38c14f4bca2a5cceb06))
+- **trajectory:** adopt the git facade for config, squash and blame-pool imports
+  (0qaht.32)
+  ([a0e2ac8](https://github.com/artk0de/TeaRAGs-MCP/commit/a0e2ac8d577e4afdff088393d696fdc11e56fe1e))
+- **trajectory:** consumers import trajectory internals through barrels
+  (0qaht.28)
+  ([dea93bb](https://github.com/artk0de/TeaRAGs-MCP/commit/dea93bbaf4cb97fbad3ad887813b1b504e4c041e))
+- **trajectory:** decompose pass-2 resolveAndUpsert, make the edge cap a policy
+  (89k7k.35.17)
+  ([e8043f1](https://github.com/artk0de/TeaRAGs-MCP/commit/e8043f157055ec8fe143aec147b4242a54e830f3)),
+  closes
+  [GraphBuildFinalizer#resolveAndUpsert](https://github.com/artk0de/GraphBuildFinalizer/issues/resolveAndUpsert)
+- **trajectory:** extract CodegraphExtractionSpillWriter from the run sink
+  (89k7k.35.16)
+  ([9bbad6f](https://github.com/artk0de/TeaRAGs-MCP/commit/9bbad6f8e1135a3a4a409f4a16ea4f2467adddaa)),
+  closes [#5](https://github.com/artk0de/TeaRAGs-MCP/issues/5)
+- **trajectory:** facade imports through barrels, no deep reaches (0qaht.28)
+  ([0e2ebef](https://github.com/artk0de/TeaRAGs-MCP/commit/0e2ebef68b5053e9127f55e0ee031d6a1341decf))
+- **trajectory:** leaf components break codegraph and api composition cycles
+  (t80p0)
+  ([f1cfbde](https://github.com/artk0de/TeaRAGs-MCP/commit/f1cfbdeec29fd1faf85743f842f33058a101faf1))
+- **trajectory:** lift component-geometry helpers below both codegraph detectors
+  (89k7k.35.14)
+  ([7698233](https://github.com/artk0de/TeaRAGs-MCP/commit/7698233a119142955ebf24494898352b11cce019))
+- **trajectory:** move code-file-extraction, declared-visibility-index to
+  domains (2wu2h W9)
+  ([5f98d61](https://github.com/artk0de/TeaRAGs-MCP/commit/5f98d61f592490b418ea1b9d9c2947b0ad6e3a81))
+- **trajectory:** move the pure edge overlay into the codegraph domain
+  (89k7k.35.19)
+  ([ffa6414](https://github.com/artk0de/TeaRAGs-MCP/commit/ffa641449534026c24f1d9276248126369b815c8)),
+  closes
+  [GraphDbClient#readReviewFileEdges](https://github.com/artk0de/GraphDbClient/issues/readReviewFileEdges)
+
 ## [1.47.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.46.0...v1.47.0) (2026-10-06)
 
 ### 🔎 Search & ranking
 
-* Searches now see your uncommitted working tree: `semantic_search`, `hybrid_search` and `find_symbol` answer from edited files alongside the index, rows from stale index data are flagged with `treeState`, and every read answer carries a `workingTree` marker
-* Working-tree answers stay fast and fresh: edited trees are kept warm by a watcher and served within a wait budget, and graph tools such as callers and symbol lookup answer from the working tree
-* Searching with an unreachable embedder fails fast and `hybrid_search` still answers from keyword matching
-* Test search results include each example's shared setup code, hydrated on read
-* Search signal ranking: `rank_chunks` now orders correctly by age, and parameter and return-name naming verdicts are more accurate
+- Searches now see your uncommitted working tree: `semantic_search`,
+  `hybrid_search` and `find_symbol` answer from edited files alongside the
+  index, rows from stale index data are flagged with `treeState`, and every read
+  answer carries a `workingTree` marker
+- Working-tree answers stay fast and fresh: edited trees are kept warm by a
+  watcher and served within a wait budget, and graph tools such as callers and
+  symbol lookup answer from the working tree
+- Searching with an unreachable embedder fails fast and `hybrid_search` still
+  answers from keyword matching
+- Test search results include each example's shared setup code, hydrated on read
+- Search signal ranking: `rank_chunks` now orders correctly by age, and
+  parameter and return-name naming verdicts are more accurate
 
 ### 🧠 Code intelligence
 
-* New `review_changes` tool reviews a diff for architecture problems, silent couplings, facade-contract changes, incomplete changes and split/merge candidates, flagging pre-existing issues separately
-* Dependency norms and write-time verdicts judge a planned edge against the project's own precedents
-* `get_architecture_report` infers architectural layers, shows a layer map, ranks layering knots with keep-cost per cut edge, and can drill into one knot or judge one directory as its own system
-* Architecture findings are more accurate: re-export cycles, leaking abstractions, naming collisions, strict-JSON output and small-project guards are corrected
-* New `find_co_changed` tool lists files that change together with a given file
-* `get_naming_lexicon` judges untyped methods by the project's verb vocabulary, understands ***Ruby*** class state and accessor macros, sees **worktrees** and marks index lag; `get_ontology_report` gains a verbs section
-* **Breaking:** `get_naming_lexicon` no longer accepts `changes` or `files`; use `review_changes` with `changes: {base}` and `sections: ["naming"]` for diff-scoped naming review
+- New `review_changes` tool reviews a diff for architecture problems, silent
+  couplings, facade-contract changes, incomplete changes and split/merge
+  candidates, flagging pre-existing issues separately
+- Dependency norms and write-time verdicts judge a planned edge against the
+  project's own precedents
+- `get_architecture_report` infers architectural layers, shows a layer map,
+  ranks layering knots with keep-cost per cut edge, and can drill into one knot
+  or judge one directory as its own system
+- Architecture findings are more accurate: re-export cycles, leaking
+  abstractions, naming collisions, strict-JSON output and small-project guards
+  are corrected
+- New `find_co_changed` tool lists files that change together with a given file
+- `get_naming_lexicon` judges untyped methods by the project's verb vocabulary,
+  understands **_Ruby_** class state and accessor macros, sees **worktrees** and
+  marks index lag; `get_ontology_report` gains a verbs section
+- **Breaking:** `get_naming_lexicon` no longer accepts `changes` or `files`; use
+  `review_changes` with `changes: {base}` and `sections: ["naming"]` for
+  diff-scoped naming review
 
 ### ⚡ Indexing & performance
 
-* New `llama-server` embedding provider (`EMBEDDING_PROVIDER=llama-server`) spreads batches across several GPUs or servers by measured throughput, fails over between peers and a local fallback, and drops endpoints serving the wrong model
-* Endpoint lists accept port shorthand such as `EMBEDDING_BASE_URL=http://host:8081,8082`
-* A missing **Ollama** model is pulled automatically (`EMBEDDING_AUTO_PULL`)
-* Embedding batch size and concurrency adapt to measured throughput, with the best point remembered and shared across projects using the same embedding setup; concurrency climbs up to an implicit ceiling of 8 when unpinned
-* **Breaking:** a stamped `INGEST_PIPELINE_CONCURRENCY`, `EMBEDDING_TUNE_BATCH_SIZE`, `EMBEDDING_TUNE_MIN_BATCH_SIZE` or `EMBEDDING_TUNE_BATCH_TIMEOUT_MS` in a project's registry entry, including values `tea-rags tune` wrote, no longer applies; pin one as a per-project ceiling with `tea-rags projects set-env --name <alias> KEY=VALUE`, and stored throughput optima are re-measured once
-* Test files chunk better: setup code is stored once per scope, adjacent examples are packed together, and `.tsx` files parse correctly
-* Small markdown sections are grouped into sensible chunks instead of tiny fragments
-* `TRAJECTORY_GIT_ANCHOR=head` measures git windows and ages from HEAD time, so pinned historical checkouts no longer index as dormant
+- New `llama-server` embedding provider (`EMBEDDING_PROVIDER=llama-server`)
+  spreads batches across several GPUs or servers by measured throughput, fails
+  over between peers and a local fallback, and drops endpoints serving the wrong
+  model
+- Endpoint lists accept port shorthand such as
+  `EMBEDDING_BASE_URL=http://host:8081,8082`
+- A missing **Ollama** model is pulled automatically (`EMBEDDING_AUTO_PULL`)
+- Embedding batch size and concurrency adapt to measured throughput, with the
+  best point remembered and shared across projects using the same embedding
+  setup; concurrency climbs up to an implicit ceiling of 8 when unpinned
+- **Breaking:** a stamped `INGEST_PIPELINE_CONCURRENCY`,
+  `EMBEDDING_TUNE_BATCH_SIZE`, `EMBEDDING_TUNE_MIN_BATCH_SIZE` or
+  `EMBEDDING_TUNE_BATCH_TIMEOUT_MS` in a project's registry entry, including
+  values `tea-rags tune` wrote, no longer applies; pin one as a per-project
+  ceiling with `tea-rags projects set-env --name <alias> KEY=VALUE`, and stored
+  throughput optima are re-measured once
+- Test files chunk better: setup code is stored once per scope, adjacent
+  examples are packed together, and `.tsx` files parse correctly
+- Small markdown sections are grouped into sensible chunks instead of tiny
+  fragments
+- `TRAJECTORY_GIT_ANCHOR=head` measures git windows and ages from HEAD time, so
+  pinned historical checkouts no longer index as dormant
 
 ### 🗣 Language support
 
-* ***Python*** **call-graph** navigation resolves far more calls: union types, re-exports and import aliases, return inference through self-calls, iteration and context-manager bindings, descriptors, decorators and container elements
-* ***Django*** **call-graph** navigation understands managers, `_meta`, relations and `ForeignKey`/`OneToOneField` fields
-* ***Ruby*** **call-graph** navigation types more locals, singleton constructors, self-returning chains and association names, and stops mis-typing self-reassignments
+- **_Python_** **call-graph** navigation resolves far more calls: union types,
+  re-exports and import aliases, return inference through self-calls, iteration
+  and context-manager bindings, descriptors, decorators and container elements
+- **_Django_** **call-graph** navigation understands managers, `_meta`,
+  relations and `ForeignKey`/`OneToOneField` fields
+- **_Ruby_** **call-graph** navigation types more locals, singleton
+  constructors, self-returning chains and association names, and stops
+  mis-typing self-reassignments
 
 ### 🛠 CLI & workflow
 
-* New `llama-server` CLI command prints per-OS launch, model-download (`fetch-model`) and autostart instructions
-* **MCP** clients get subagent guidance addressed by working directory, delivered through the subagent start context
+- New `llama-server` CLI command prints per-OS launch, model-download
+  (`fetch-model`) and autostart instructions
+- **MCP** clients get subagent guidance addressed by working directory,
+  delivered through the subagent start context
 
 ### 🧩 Agent plugin
 
-* Skills and the subagent rule address the caller's working tree and document the dense-floor and fallback markers, `pendingFiles` and `indexOnlyFiles` rows, and the `find_similar` selection branch
-* Skills and the search cascade route diff reviews to `review_changes`, and `architecture-diagnostics` gains a layering detector and layer map
+- Skills and the subagent rule address the caller's working tree and document
+  the dense-floor and fallback markers, `pendingFiles` and `indexOnlyFiles`
+  rows, and the `find_similar` selection branch
+- Skills and the search cascade route diff reviews to `review_changes`, and
+  `architecture-diagnostics` gains a layering detector and layer map
 
 ### 📚 Documentation
 
-* **Docusaurus:** llama-server provider, multi-GPU guide, measured configurations, embedding model comparison and shared throughput optima are documented
+- **Docusaurus:** llama-server provider, multi-GPU guide, measured
+  configurations, embedding model comparison and shared throughput optima are
+  documented
 
 ### 🩹 Fixes
 
-* Each collection now embeds with its registry model rather than the server environment's model
-* Indexing refuses to run from a process whose build changed on disk, and oversized embeddings no longer stall or quarantine documents
-* `index-codebase` repair pass and registry stamping no longer lose **codegraph** data after a recompute
-* **Worktree** diffs no longer write to the user's index, and git children no longer take optional locks
-* Calls addressed by **worktree** path replay the repository's registry environment
-* Type resolution for `.jsx` sources and ***Ruby***/***Python*** navigation edge cases are corrected
+- Each collection now embeds with its registry model rather than the server
+  environment's model
+- Indexing refuses to run from a process whose build changed on disk, and
+  oversized embeddings no longer stall or quarantine documents
+- `index-codebase` repair pass and registry stamping no longer lose
+  **codegraph** data after a recompute
+- **Worktree** diffs no longer write to the user's index, and git children no
+  longer take optional locks
+- Calls addressed by **worktree** path replay the repository's registry
+  environment
+- Type resolution for `.jsx` sources and **_Ruby_**/**_Python_** navigation edge
+  cases are corrected
 
 ### 🔧 Environment Variables
 
-* `EMBEDDING_PROVIDER` · New `llama-server` value embeds through one llama-server per GPU with peer and local fallback tiers · default: `unchanged` (changed)
-* `EMBEDDING_AUTO_PULL` · Automatically pull a missing **Ollama** embedding model · default: `true` (new)
-* `TRAJECTORY_GIT_ANCHOR` · Measure git windows and ages from `now` or from `head` commit time · default: `now` (new)
-* `EMBEDDING_BASE_URL` · Endpoint lists accept port shorthand such as host:8081,8082 · default: `unchanged` (changed)
-* `INGEST_PIPELINE_CONCURRENCY` · Registry-stamped values no longer replay unless pinned with `projects set-env`; unset means an implicit climb ceiling of 8 · default: `unset (ceiling 8)` (changed)
+- `EMBEDDING_PROVIDER` · New `llama-server` value embeds through one
+  llama-server per GPU with peer and local fallback tiers · default: `unchanged`
+  (changed)
+- `EMBEDDING_AUTO_PULL` · Automatically pull a missing **Ollama** embedding
+  model · default: `true` (new)
+- `TRAJECTORY_GIT_ANCHOR` · Measure git windows and ages from `now` or from
+  `head` commit time · default: `now` (new)
+- `EMBEDDING_BASE_URL` · Endpoint lists accept port shorthand such as
+  host:8081,8082 · default: `unchanged` (changed)
+- `INGEST_PIPELINE_CONCURRENCY` · Registry-stamped values no longer replay
+  unless pinned with `projects set-env`; unset means an implicit climb ceiling
+  of 8 · default: `unset (ceiling 8)` (changed)
 
 ## [1.45.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.45.0...v1.45.1) (2026-09-28)
 
