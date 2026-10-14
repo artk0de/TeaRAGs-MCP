@@ -8,7 +8,7 @@
  */
 
 import type { ReviewFileEdge } from "../../../../../contracts/types/codegraph-storage.js";
-import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { FileDependencyEdge, FileDependencyGraphFile, RelPath } from "../../../../../contracts/types/codegraph.js";
 import type { PathFilter } from "../../../../../primitives/paths/index.js";
 import type { ProductionDependencyGraph } from "../boundary-diagnostics/index.js";
 
@@ -24,7 +24,8 @@ import type { ProductionDependencyGraph } from "../boundary-diagnostics/index.js
  *   sequence's abstractness and the namespace partition read the indexed
  *   census, and abstractionBypass's implementation evidence the indexed
  *   heritage (only the consumer's imported names move with the tree); a file
- *   the index never walked gets no node.
+ *   the index never walked gets no node — except a moved file, which takes
+ *   its old path's row; a deleted file's row leaves the graph.
  * - `callWeight`: an overlay edge carries no resolved calls. A pair the index
  *   already held keeps its indexed weight, routed weight and import text; a
  *   new pair weighs 0.
@@ -78,8 +79,14 @@ export interface ArchitectureEdgeOverlayState {
  */
 export interface ArchitectureEdgeOverlaySource {
   readonly masked: ReadonlySet<string>;
+  /** The files the change deleted — no edge leaves or enters them in the tree. */
+  readonly deleted: ReadonlySet<string>;
   edgesFrom: (relPath: string) => readonly ReviewFileEdge[];
   unsupported: () => readonly { relPath: string; reason: string; detail?: string }[];
+  treeEdgesFrom: <IndexedEdge extends { targetRelPath: string }>(
+    relPath: string,
+    indexedEdgesFrom: (relPath: string) => readonly IndexedEdge[],
+  ) => readonly (IndexedEdge | ReviewFileEdge)[];
 }
 
 /**
@@ -101,12 +108,14 @@ export interface ArchitectureEdgeOverlayTargetFacts {
  * An unsupported read keeps its indexed edges and is listed in
  * `edgeOverlay.notJudgedFiles` — never treated as edge-free, never silently
  * as the tree. An overlay edge with a non-production endpoint is dropped, as
- * the production read drops it. What no edge overlay refreshes is declared on
- * the result (`edgeOverlay.notRefreshed`).
+ * the production read drops it. A file the change deleted leaves the graph:
+ * no file row, no edge from or to it (bd tea-rags-mcp-ah66x). What no edge
+ * overlay refreshes is declared on the result (`edgeOverlay.notRefreshed`).
  */
 export function applyEdgeOverlay<Facts extends ArchitectureEdgeOverlayTargetFacts>(
   facts: Facts,
   overlay: ArchitectureEdgeOverlaySource,
+  options: { renamedFrom?: ReadonlyMap<RelPath, RelPath> } = {},
 ): Facts {
   const notJudgedFiles = overlay.unsupported().map(({ relPath, reason, detail }) => ({
     relPath,
@@ -120,18 +129,54 @@ export function applyEdgeOverlay<Facts extends ArchitectureEdgeOverlayTargetFact
   for (const edge of graph.edges) {
     if (refreshedFiles.has(edge.sourceRelPath)) indexedByPair.set(edgePairKey(edge), edge);
   }
-  const overlaidEdges: FileDependencyEdge[] = graph.edges.filter((edge) => !refreshedFiles.has(edge.sourceRelPath));
-  for (const relPath of refreshedFiles) {
-    for (const edge of overlay.edgesFrom(relPath)) {
+  // The tree's edges by the overlay's one rule (`ReviewEdgeOverlay#treeEdgesFrom`):
+  // an indexed edge comes back tagged with its row, an overlay edge bare.
+  const indexedBySource = new Map<RelPath, { targetRelPath: RelPath; indexed: FileDependencyEdge }[]>();
+  for (const edge of graph.edges) {
+    const edges = indexedBySource.get(edge.sourceRelPath) ?? [];
+    edges.push({ targetRelPath: edge.targetRelPath, indexed: edge });
+    indexedBySource.set(edge.sourceRelPath, edges);
+  }
+  const indexedEdgesFrom = (relPath: RelPath): readonly { targetRelPath: RelPath; indexed: FileDependencyEdge }[] =>
+    indexedBySource.get(relPath) ?? [];
+  const overlaidEdges: FileDependencyEdge[] = [];
+  for (const relPath of new Set([...indexedBySource.keys(), ...refreshedFiles])) {
+    for (const edge of overlay.treeEdgesFrom(relPath, indexedEdgesFrom)) {
+      if ("indexed" in edge) {
+        overlaidEdges.push(edge.indexed);
+        continue;
+      }
       if (nonProduction.ignores(edge.sourceRelPath) || nonProduction.ignores(edge.targetRelPath)) continue;
       overlaidEdges.push(overlayFileDependencyEdge(edge, indexedByPair.get(edgePairKey(edge))));
     }
   }
+  const files = treeFileNodes(graph.files, overlay.deleted, options.renamedFrom);
   return {
     ...facts,
-    production: { ...facts.production, graph: { files: graph.files, edges: overlaidEdges } },
+    production: { ...facts.production, graph: { files, edges: overlaidEdges } },
     edgeOverlay: { refreshedFiles, notJudgedFiles, notRefreshed: ARCHITECTURE_FACTS_NOT_REFRESHED_BY_EDGE_OVERLAY },
   };
+}
+
+/**
+ * The walked-file rows of the tree: a deleted file's row leaves, and a moved
+ * file (`renamedFrom`: new path → old path) takes its old path's row under the
+ * new path when the index has none for it — the row is the index's reading
+ * either way (`fileNodes` is not refreshed), so a move keeps its component.
+ */
+function treeFileNodes(
+  files: FileDependencyGraphFile[],
+  deleted: ReadonlySet<RelPath>,
+  renamedFrom: ReadonlyMap<RelPath, RelPath> | undefined,
+): FileDependencyGraphFile[] {
+  if (deleted.size === 0 && (renamedFrom === undefined || renamedFrom.size === 0)) return files;
+  const byPath = new Map(files.map((file) => [file.relPath, file]));
+  const movedFiles: FileDependencyGraphFile[] = [];
+  for (const [newPath, oldPath] of renamedFrom ?? []) {
+    const file = byPath.get(oldPath);
+    if (file !== undefined && !byPath.has(newPath)) movedFiles.push({ ...file, relPath: newPath });
+  }
+  return [...files.filter((file) => !deleted.has(file.relPath)), ...movedFiles];
 }
 
 function edgePairKey(edge: { sourceRelPath: string; targetRelPath: string }): string {
