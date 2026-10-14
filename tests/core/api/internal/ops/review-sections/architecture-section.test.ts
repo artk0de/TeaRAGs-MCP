@@ -925,8 +925,8 @@ describe("architectureSectionProvider.run — remedy wiring", () => {
     });
   }
 
-  const leakOf = async (graphDb: GraphDbStub) => {
-    const payload = (await architectureSectionProvider.run(runContext({ graphDb, scope: scopeOf([SOURCE]) }))) as {
+  const leakOf = async (graphDb: GraphDbStub, changed: readonly string[] = [SOURCE]) => {
+    const payload = (await architectureSectionProvider.run(runContext({ graphDb, scope: scopeOf(changed) }))) as {
       findings: { detector: string; remedy?: unknown }[];
     };
     const leaks = payload.findings.filter((finding) => finding.detector === "leakingAbstraction");
@@ -943,6 +943,47 @@ describe("architectureSectionProvider.run — remedy wiring", () => {
       fromRelPath: INTERNAL,
       toRelPath: FACADE,
       importedNames: ["b"],
+    });
+  });
+
+  it("a name only the diff declares still resolves its declarer (bd tea-rags-mcp-if14t)", async () => {
+    const graphDb = facadeBypassFixture(true);
+    // `fresh` is new in the tree: no indexed edge names it, only the changed source's own import does.
+    writeFile(INTERNAL, "export const a = 1;\nexport const b = 2;\nexport const fresh = 3;\n");
+    writeFile(
+      SOURCE,
+      'import { a } from "../lib/index";\nimport { fresh } from "../lib/x";\nexport const A = a + fresh;\n',
+    );
+
+    const leak = await leakOf(graphDb);
+
+    expect(leak.remedy).toEqual({
+      kind: "retargetImport",
+      sourceRelPath: SOURCE,
+      fromRelPath: INTERNAL,
+      toRelPath: FACADE,
+      importedNames: ["fresh"],
+      addExport: { facadeRelPath: FACADE, names: ["fresh"] },
+    });
+  });
+
+  it("a diff that adds the export to the facade gets no redundant addExport (bd tea-rags-mcp-if14t)", async () => {
+    const graphDb = facadeBypassFixture(true);
+    writeFile(INTERNAL, "export const a = 1;\nexport const b = 2;\nexport const fresh = 3;\n");
+    writeFile(FACADE, 'export { a, b, fresh } from "./x";\nexport { z } from "./y";\n');
+    writeFile(
+      SOURCE,
+      'import { a } from "../lib/index";\nimport { fresh } from "../lib/x";\nexport const A = a + fresh;\n',
+    );
+
+    const leak = await leakOf(graphDb, [SOURCE, FACADE]);
+
+    expect(leak.remedy).toEqual({
+      kind: "retargetImport",
+      sourceRelPath: SOURCE,
+      fromRelPath: INTERNAL,
+      toRelPath: FACADE,
+      importedNames: ["fresh"],
     });
   });
 
