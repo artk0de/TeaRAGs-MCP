@@ -30,7 +30,11 @@ import type {
   LanguageFactoryDescriptor,
   LanguageSymbolResolver,
 } from "../../../../contracts/types/language.js";
-import { DEFAULT_RESIDUAL_MENU_LIMIT, ResidualSiteCollector } from "../residual/residual-site-builder.js";
+import {
+  addResidualExclusionCounts,
+  DEFAULT_RESIDUAL_MENU_LIMIT,
+  ResidualSiteCollector,
+} from "../residual/residual-site-builder.js";
 import { mergeDerivedClassFieldTypes, paramTypesOfChunk, seedParamLocalBindings } from "./call-arg-param-types.js";
 import { descendantNamesOf, HierarchyDependencyRecorder } from "./hierarchy-dependencies.js";
 import { runtimeImportExtraction, typeOnlyImportExtraction } from "./import-channels.js";
@@ -479,6 +483,7 @@ export class CallEdgeResolutionRunner {
     } finally {
       this.activeHierarchy = undefined;
       this.activeResidual = undefined;
+      addResidualExclusionCounts(this.runState.stats.residualSitesExcluded, residual.excluded());
     }
     const runtimeFileEdges = this.buildFileEdges(extraction, symbolTable, resolver, inputs, methodEdges);
     const typeOnlyFileEdges = this.buildTypeOnlyFileEdges(extraction, symbolTable, resolver, inputs, runtimeFileEdges);
@@ -781,7 +786,12 @@ export class CallEdgeResolutionRunner {
     const calleeKinds = this.calleeKindsFor(extraction.language);
     this.forEachCallSite(extraction, symbolTable, resolver, inputs, (site) => {
       const verdict = this.judgeCallSite(site, resolver, symbolTable, calleeKinds);
-      this.activeResidual?.observe(site.chunk, site.call, verdict);
+      this.activeResidual?.observe(
+        site.chunk,
+        site.call,
+        verdict,
+        () => resolver.residualExclusion?.(site.call, site.classifierCtx) ?? null,
+      );
       methodEdges.push(...verdict.edges);
       if (verdict.ambiguousFanout !== undefined) ambiguousFanouts.push(verdict.ambiguousFanout);
       tallyCallSiteVerdict(kindTally, verdict);

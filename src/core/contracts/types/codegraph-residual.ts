@@ -14,6 +14,14 @@
 
 export type ResidualKind = "ambiguous" | "dynamic";
 
+/**
+ * Why a language keeps a residual site out of `cg_residual_call_sites`: the true
+ * callee is outside the menu, so no model pick can be right. `schemaColumn` — a
+ * column accessor on a receiver named after the model owning it; `frameworkMember`
+ * — a framework method on a receiver chain the framework itself returns.
+ */
+export type ResidualExclusionRule = "schemaColumn" | "frameworkMember";
+
 /** One row of `cg_residual_call_sites` (053). */
 export interface ResidualCallSiteRow {
   /** sha1(relPath, methodSymbolId, line, column, receiverText, member). */

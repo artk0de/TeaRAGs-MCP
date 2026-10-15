@@ -218,3 +218,21 @@ describe("rubyAssociationTypeSource — registered in the inline source pipeline
     });
   });
 });
+
+describe("rubyAssociationTypeSource — ActiveStorage attachments", () => {
+  it("has_one_attached → instance of ActiveStorage::Attached::One", () => {
+    const facts = returnFacts(["class Document", "  has_one_attached :file", "end"].join("\n"));
+    expect(facts.find((f) => f.methodName === "file")?.type).toEqual({
+      form: "instance",
+      name: "ActiveStorage::Attached::One",
+    });
+  });
+
+  it("has_many_attached → instance of ActiveStorage::Attached::Many", () => {
+    const facts = returnFacts(["class Document", "  has_many_attached :scans", "end"].join("\n"));
+    expect(facts.find((f) => f.methodName === "scans")?.type).toEqual({
+      form: "instance",
+      name: "ActiveStorage::Attached::Many",
+    });
+  });
+});

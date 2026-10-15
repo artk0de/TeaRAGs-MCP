@@ -101,7 +101,15 @@ function deriveAssociationModel(args: AstNode, shape: string): string | null {
  * model; the association shapes derive the model and wrap it as instance or
  * container (a relation).
  */
+/** The ActiveStorage proxy class each attachment macro's reader returns. */
+const ATTACHMENT_PROXY_CLASSES: Readonly<Record<string, string>> = {
+  "attachment-one": "ActiveStorage::Attached::One",
+  "attachment-many": "ActiveStorage::Attached::Many",
+};
+
 function returnTypeForShape(args: AstNode, shape: string, scope: readonly string[]): RubyTypeRef | undefined {
+  const proxy = ATTACHMENT_PROXY_CLASSES[shape];
+  if (proxy !== undefined) return { form: "instance", name: proxy };
   if (shape === "scope-relation") {
     const self = scope.join("::");
     if (self.length === 0) return undefined;

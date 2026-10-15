@@ -183,8 +183,8 @@ const RAILS_ENTRIES: Record<string, RubyDslEntry> = {
   // (the engine takes only the first symbol; the 2nd positional arg is the cast
   // type, not another attribute name). The attachments take each symbol independently.
   attribute: { category: "accessor", declares: (b) => attrPair(b), operands: "first-symbol" },
-  has_one_attached: { category: "accessor", declares: (b) => attrPair(b) },
-  has_many_attached: { category: "accessor", declares: (b) => attrPair(b) },
+  has_one_attached: { category: "accessor", declares: (b) => attrPair(b), returnShape: "attachment-one" },
+  has_many_attached: { category: "accessor", declares: (b) => attrPair(b), returnShape: "attachment-many" },
 
   // validations
   validates: { category: "validation" },
@@ -352,4 +352,58 @@ export const ACTIVE_RECORD_QUERY_INTERFACE: {
 } = {
   modelBaseClasses: new Set(["ApplicationRecord", "ActiveRecord::Base"]),
   dynamicFinderPrefix: "find_by_",
+};
+
+/**
+ * Framework members a residual site cannot have an in-project callee for
+ * (bd tea-rags-mcp-2m83f.34): `relationMembers` on a receiver that is an
+ * `ActiveRecord::Relation`, `attachmentMembers` on an ActiveStorage attachment
+ * proxy. Read by the Ruby `residualExclusion` hook, gated on `gems` — a project
+ * whose Gemfile declares none of them keeps every residual site.
+ */
+export const RAILS_RESIDUAL_FRAMEWORK_MEMBERS: {
+  readonly gems: ReadonlySet<string>;
+  readonly relationMembers: ReadonlySet<string>;
+  readonly attachmentMembers: ReadonlySet<string>;
+} = {
+  gems: new Set(["rails", "activerecord", "activestorage"]),
+  relationMembers: new Set([
+    "includes",
+    "ids",
+    "pluck",
+    "pick",
+    "limit",
+    "order",
+    "where",
+    "select",
+    "joins",
+    "find_each",
+    "find_in_batches",
+    "in_batches",
+    "delete_all",
+    "update_all",
+    "preload",
+    "eager_load",
+    "distinct",
+    "group",
+    "having",
+    "reorder",
+    "unscope",
+    "offset",
+    "left_joins",
+    "merge",
+  ]),
+  attachmentMembers: new Set([
+    "attach",
+    "attached?",
+    "purge",
+    "purge_later",
+    "detach",
+    "blob",
+    "attachment",
+    "attachments",
+    "variant",
+    "preview",
+    "download",
+  ]),
 };

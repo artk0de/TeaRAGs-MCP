@@ -88,7 +88,11 @@ export const capability: LanguageCapability = {
   // walker 9: bd tea-rags-mcp-zy6hx — field-access facet pass. The walker
   // publishes `fieldAccesses` (`@x`, `@@x`, a parameter's `p.x`, read / write)
   // for `cg_symbols_edges_field`; a walker-8 index has no rows.
-  versions: { chunking: 2, walker: 9, codegraphSchema: 2 },
+  // walker 10: bd tea-rags-mcp-2m83f.34 — `has_one_attached` / `has_many_attached`
+  // readers return `ActiveStorage::Attached::One` / `::Many`, and the facade answers
+  // `residualExclusion`, so a walker-9 index holds residual rows for column and
+  // Rails-framework callees no menu can name.
+  versions: { chunking: 2, walker: 10, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

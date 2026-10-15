@@ -43,6 +43,7 @@ import {
   type DispatchFanoutOutcome,
   type FileExtraction,
   type GraphEdges,
+  type ResidualExclusionRule,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
@@ -53,6 +54,7 @@ import {
   resolveViaChain,
 } from "../../kernel/index.js";
 import { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
+import { rubyResidualExclusion } from "./residual-exclusion.js";
 import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
 import {
   lookupRubySymbolsByShortName,
@@ -172,6 +174,11 @@ export class RubyCallResolver implements CallResolver {
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
     return lookupRubySymbolsByShortName(ctx, call.member, { role: rubyMemberLookupRole(call) }).length > 0;
+  }
+
+  /** Residual sites whose callee is a Rails-generated method (bd tea-rags-mcp-2m83f.34). */
+  residualExclusion(call: CallRef, ctx: CallContext): ResidualExclusionRule | null {
+    return rubyResidualExclusion(call, ctx);
   }
 
   /**

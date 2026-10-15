@@ -26,6 +26,7 @@ import type {
   ModuleReexport,
   NamedSymbol,
   RelPath,
+  ResidualExclusionRule,
   RubyInstantiationSite,
   StructuralContractDecl,
   SymbolDefinition,
@@ -800,6 +801,14 @@ export interface LanguageSymbolResolver {
    * the unfiltered `lookupByShortName(member).length > 0`.
    */
   hasInProjectDefinition?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
+   * Optional: should this residual site (bd tea-rags-mcp-2m83f.34) stay out of
+   * `cg_residual_call_sites`? The runner asks it lazily, only for a site the
+   * static resolve left residual with a non-empty menu, and counts the dropped
+   * site under the returned rule. `null` keeps the site. Mirrors
+   * `CallResolver.residualExclusion`.
+   */
+  residualExclusion?: (call: CallRef, ctx: CallContext) => ResidualExclusionRule | null;
   /**
    * Optional: a chunk's local bindings as this language reads them — a binding
    * it cannot read at all is hidden from every call-site reader, as if never

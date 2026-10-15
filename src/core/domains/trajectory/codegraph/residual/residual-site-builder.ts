@@ -6,7 +6,11 @@
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
 
-import type { ResidualCallSiteRow, ResidualKind } from "../../../../contracts/types/codegraph-residual.js";
+import type {
+  ResidualCallSiteRow,
+  ResidualExclusionRule,
+  ResidualKind,
+} from "../../../../contracts/types/codegraph-residual.js";
 import type { CallRef, GlobalSymbolTable, RelPath } from "../../../../contracts/types/codegraph.js";
 import type { ReceiverKind } from "../symbols/receiver-kind.js";
 
@@ -69,8 +73,24 @@ export function residualMenuHash(candidates: readonly string[]): string {
   return sha1(candidates.join("\n"));
 }
 
+/** Residual sites a language kept out of the rows, per rule. */
+export type ResidualExclusionCounts = Record<ResidualExclusionRule, number>;
+
+export function emptyResidualExclusionCounts(): ResidualExclusionCounts {
+  return { schemaColumn: 0, frameworkMember: 0 };
+}
+
+export function addResidualExclusionCounts(
+  counts: ResidualExclusionCounts,
+  excluded: Readonly<ResidualExclusionCounts>,
+): void {
+  counts.schemaColumn += excluded.schemaColumn;
+  counts.frameworkMember += excluded.frameworkMember;
+}
+
 export class ResidualSiteCollector {
   private readonly collected: ResidualCallSiteRow[] = [];
+  private readonly excludedCounts = emptyResidualExclusionCounts();
   private readonly menus = new Map<string, string[]>();
   private readonly extension: string;
 
@@ -82,11 +102,22 @@ export class ResidualSiteCollector {
     this.extension = extname(sourceRelPath);
   }
 
-  observe(method: ResidualMethodView, call: CallRef, verdict: ResidualVerdictView): void {
+  /** `exclude` is asked only for a residual site with a non-empty menu; a rule drops the site. */
+  observe(
+    method: ResidualMethodView,
+    call: CallRef,
+    verdict: ResidualVerdictView,
+    exclude?: () => ResidualExclusionRule | null,
+  ): void {
     const kind = residualKindOf(verdict);
     if (kind === null) return;
     const menu = this.menuFor(call.member);
     if (menu.length === 0) return;
+    const rule = exclude?.() ?? null;
+    if (rule !== null) {
+      this.excludedCounts[rule] += 1;
+      return;
+    }
     const menuOverflow = menu.length > this.menuLimit;
     const candidates = menuOverflow ? menu.slice(0, this.menuLimit) : menu;
     const line = call.startLine;
@@ -118,6 +149,10 @@ export class ResidualSiteCollector {
 
   rows(): ResidualCallSiteRow[] {
     return this.collected;
+  }
+
+  excluded(): Readonly<ResidualExclusionCounts> {
+    return this.excludedCounts;
   }
 
   /** Same-language method ids named `member`, deduplicated and sorted; cached per member. */

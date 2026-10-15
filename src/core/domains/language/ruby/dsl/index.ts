@@ -29,5 +29,6 @@ export {
   ACTIVE_RECORD_SCHEMA_SNAPSHOT,
   columnAccessors,
   columnValueAccessor,
+  RAILS_RESIDUAL_FRAMEWORK_MEMBERS,
 } from "./rails.js";
 export { RAILS_RUNTIME_BUILTINS } from "./rails-runtime.js";
