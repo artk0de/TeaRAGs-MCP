@@ -227,6 +227,14 @@ export const codegraphResidualSchema = z.object({
   menuLimit: intWithDefault(40),
   /** Verdicts not seen by any run for this many days are dropped. */
   retentionDays: intWithDefault(180),
+  /**
+   * GPU session broker on the Kev host (e.g. `http://192.168.1.71:8008`). Set:
+   * a pass that has questions leases Kev from it and uses the lease's Kev URL;
+   * unset: `kevUrls` is asked directly.
+   */
+  kevSessionUrl: z.string().optional(),
+  /** Broker `X-Broker-Token`. A secret: never in the registry snapshot. */
+  kevSessionToken: z.string().optional(),
 });
 
 export const codegraphSchema = z.object({

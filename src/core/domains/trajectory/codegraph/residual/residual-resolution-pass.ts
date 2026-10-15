@@ -5,6 +5,8 @@
  * `applyModelEdges` replaces the model's edges, and a static re-walk of a file
  * drops that file's model edges. A provider that is down or keeps failing ends
  * the pass `skipped`; the verdicts already held are applied all the same.
+ * A provider that leases its hardware (`acquire`) is leased only when some
+ * site needs asking, and released however the asking ends.
  */
 
 import type { ResidualVerdictStore } from "../../../../adapters/duckdb/residual-verdict-store.js";
@@ -16,6 +18,7 @@ import type {
   ResidualModelProvider,
   ResidualPassMode,
   ResidualPassReport,
+  ResidualProviderLease,
   ResidualQuestion,
   ResidualVerdict,
 } from "./types.js";
@@ -24,6 +27,9 @@ export const DEFAULT_MAX_GROUP_FAILURES = 3;
 
 /** Provider error codes that mean "this method source is too long to ask"; its sites are skipped, not failed. */
 const STATE_TOO_LONG_CODES = new Set(["INFRA_KEV_STATE_TOO_LONG"]);
+
+/** Provider error codes that mean the hardware lease is gone; no further group can be answered. */
+const LEASE_LOST_CODES = new Set(["INFRA_KEV_SESSION_LOST"]);
 
 export interface ResidualPassInput {
   graphDb: Pick<GraphDbClient, "readResidualCallSites" | "applyModelEdges" | "markDerivedStale">;
@@ -54,6 +60,7 @@ interface AskTally {
   answered: number;
   tooLong: number;
   failures: string[];
+  leaseLost: boolean;
 }
 
 const verdictKey = (siteKey: string, menuHash: string): string => `${siteKey}\u0000${menuHash}`;
@@ -71,17 +78,19 @@ export class ResidualResolutionPass {
     const groups = groupQuestions(eligible.filter((r) => !verdicts.has(verdictKey(r.siteKey, r.menuHash))));
     const readAt = input.now();
 
-    const tally: AskTally = { asked: 0, answered: 0, tooLong: 0, failures: [] };
-    if (servedVersion.version !== undefined) {
-      await this.askGroups(groups, servedVersion.version, verdicts, tally, input);
+    const tally: AskTally = { asked: 0, answered: 0, tooLong: 0, failures: [], leaseLost: false };
+    let notAcquired: string | undefined;
+    if (servedVersion.version !== undefined && groups.length > 0) {
+      notAcquired = await this.askLeased(groups, servedVersion.version, verdicts, tally, input);
     }
     const askedAt = input.now();
 
     const maxFailures = input.maxGroupFailures ?? DEFAULT_MAX_GROUP_FAILURES;
     const failureReason =
       tally.failures.length > 0 ? `${tally.failures.length} group(s) failed: ${tally.failures[0]}` : undefined;
-    const reason = servedVersion.unavailable ?? failureReason;
-    const skipped = servedVersion.unavailable !== undefined || tally.failures.length > maxFailures;
+    const unavailable = servedVersion.unavailable ?? notAcquired;
+    const reason = unavailable ?? failureReason;
+    const skipped = unavailable !== undefined || tally.leaseLost || tally.failures.length > maxFailures;
 
     const { edges, belowThreshold } = buildEdges(eligible, verdicts, provider);
     await input.graphDb.applyModelEdges(provider.id, edges);
@@ -129,6 +138,40 @@ export class ResidualResolutionPass {
     }
   }
 
+  /** Asks under the provider's lease when it has one; returns why the lease was not taken. */
+  private async askLeased(
+    groups: PendingGroup[],
+    modelVersion: string,
+    verdicts: Map<string, ResidualVerdict>,
+    tally: AskTally,
+    input: ResidualPassInput,
+  ): Promise<string | undefined> {
+    const { provider } = input;
+    if (!provider.acquire) {
+      await this.askGroups(groups, modelVersion, verdicts, tally, input);
+      return undefined;
+    }
+    input.onProgress?.({
+      phase: "resolving-residual",
+      current: 0,
+      total: groups.length,
+      percentage: 0,
+      message: "Residual resolution: acquiring GPU session (switching embedders → Kev)",
+    });
+    let lease: ResidualProviderLease;
+    try {
+      lease = await provider.acquire();
+    } catch (error) {
+      return `provider ${provider.id} session not acquired: ${errorMessage(error)}`;
+    }
+    try {
+      await this.askGroups(groups, modelVersion, verdicts, tally, input);
+    } finally {
+      await lease.release();
+    }
+    return undefined;
+  }
+
   /** At the served version when asking; otherwise the newest verdict per site, whatever version gave it. */
   private async cachedVerdicts(
     input: ResidualPassInput,
@@ -161,7 +204,7 @@ export class ResidualResolutionPass {
     let next = 0;
     let done = 0;
     const worker = async (): Promise<void> => {
-      while (next < groups.length && tally.failures.length <= maxFailures) {
+      while (next < groups.length && !tally.leaseLost && tally.failures.length <= maxFailures) {
         const group = groups[next++];
         tally.asked += group.questions.length;
         try {
@@ -170,8 +213,10 @@ export class ResidualResolutionPass {
           tally.answered += fresh.length;
           for (const verdict of fresh) verdicts.set(verdictKey(verdict.siteKey, verdict.menuHash), verdict);
         } catch (error) {
-          if (STATE_TOO_LONG_CODES.has(errorCode(error) ?? "")) tally.tooLong += group.questions.length;
+          const code = errorCode(error) ?? "";
+          if (STATE_TOO_LONG_CODES.has(code)) tally.tooLong += group.questions.length;
           else tally.failures.push(errorMessage(error));
+          if (LEASE_LOST_CODES.has(code)) tally.leaseLost = true;
         }
         done++;
         input.onProgress?.({

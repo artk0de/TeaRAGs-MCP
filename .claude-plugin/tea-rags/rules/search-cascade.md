@@ -255,6 +255,11 @@ only if needed:
    relativePath, take it from a prior search result. Wrong path → `paths: []` +
    `namesakes` listing real candidates: disambiguation cue, NOT absence-of-path.
 
+**Model edges.** A `get_callers` / `get_callees` entry with `origin: "model"`
+was added by residual resolution (Kev) and carries `model` and `p`. Treat it as
+probabilistic: weigh `p`, never as compiler truth. Entries without `origin` are
+static. `trace_path` steps carry no `origin`.
+
 **Declared visibility.** `get_callees` targets, `get_callers` callers (+ queried
 symbol as top-level `visibility`), `trace_path` steps, find_symbol outline lines
 carry DECLARED level when codegraph knows it. `private` → callers confined to

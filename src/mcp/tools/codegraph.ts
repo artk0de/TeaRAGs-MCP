@@ -430,6 +430,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "(private|protected|public; absent = unknown). " +
       "Pass includeAmbiguous:true to also list ambiguous dispatch sites (member-matched, " +
       "MAY reach target among candidateCount candidates; not materialized as edges). " +
+      "Entries with origin:'model' come from residual resolution: probabilistic (carry model, p), not compiler truth. " +
       "File scope: pass relativePath instead of symbolId → {relativePath, importers[], total} — " +
       "files that import it, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
       "unknown file → empty importers + message.",
@@ -443,6 +444,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     description:
       `Return symbols invoked by given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}` +
       "Each callee carries the target's declared visibility (private|protected|public; absent = unknown). " +
+      "Entries with origin:'model' come from residual resolution: probabilistic (carry model, p), not compiler truth. " +
       "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
       "files it imports, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
       "unknown file → empty imports + message.",

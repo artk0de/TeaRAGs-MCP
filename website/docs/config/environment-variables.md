@@ -135,6 +135,11 @@ project and replayed on later runs. See
 | `CODEGRAPH_CUSTOM_EXCLUDE`          | Comma-separated `.gitignore`-shaped patterns to exclude from the graph        | _(empty)_  |
 | `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE`  | Short-name call resolution: `strict` (drop ambiguous) or `first` (pick first) | `strict`   |
 | `CODEGRAPH_TS_TYPECHECKER`          | TypeScript type checker for call resolution; `0` / `false` turns it off (see below) | on         |
+| `CODEGRAPH_RESIDUAL_KEV_URL`        | Kev base URL for residual call resolution; comma-separate several hosts (see [Kev setup](kev-setup)) | _(unset)_  |
+| `CODEGRAPH_RESIDUAL_KEV_THRESHOLD`  | Minimum Kev confidence for a pick to become an edge                          | `0.7`      |
+| `CODEGRAPH_RESIDUAL_CONCURRENCY`    | Residual requests in flight (one per enclosing method)                       | `96`       |
+| `CODEGRAPH_RESIDUAL_MENU_LIMIT`     | Call sites with more candidates than this are not asked                      | `40`       |
+| `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | Cached verdicts unseen this many days are dropped                    | `180`      |
 
 **`CODEGRAPH_TS_TYPECHECKER`.** TypeScript call resolution builds a
 `ts.Program` and asks the type checker what a call's receiver is. Setting it to

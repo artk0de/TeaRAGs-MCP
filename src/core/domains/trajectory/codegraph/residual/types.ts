@@ -11,6 +11,7 @@ export type {
   ResidualPassDurations,
   ResidualPassMode,
   ResidualPassReport,
+  ResidualProviderLease,
   ResidualQuestion,
   ResidualQuestionGroup,
   ResidualVerdict,
