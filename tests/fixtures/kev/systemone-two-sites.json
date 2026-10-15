@@ -1,0 +1,12 @@
+{
+  "answers": {
+    "site-a": {
+      "choice": "Firm",
+      "probabilities": { "Firm": 0.91, "Client": 0.09 }
+    },
+    "site-b": {
+      "choice": "Client",
+      "probabilities": { "Firm": 0.2, "Client": 0.8 }
+    }
+  }
+}

@@ -87,6 +87,9 @@ export const INFRA_ERROR_CODES = [
   "INFRA_CODEGRAPH_DAEMON_BUILD_UNAVAILABLE",
   "INFRA_CODEGRAPH_DAEMON_OWNED_ELSEWHERE",
   "INFRA_CODEGRAPH_DB_HELD_BY_FOREIGN_DAEMON",
+  // Kev residual model
+  "INFRA_KEV_UNAVAILABLE",
+  "INFRA_KEV_RESPONSE_ERROR",
 ] as const;
 
 /** Infrastructure error codes. Local strict union, derived from `INFRA_ERROR_CODES`. */

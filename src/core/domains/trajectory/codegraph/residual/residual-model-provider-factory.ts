@@ -1,4 +1,5 @@
-import { ConfigValueInvalidError } from "../../../../primitives/errors/index.js";
+import { KevResidualProvider, type KevResidualProviderDeps } from "../../../../adapters/kev/kev-residual-provider.js";
+import { ConfigValueInvalidError, ConfigValueMissingError } from "../../../../primitives/errors/index.js";
 import type { ResidualModelProvider } from "./types.js";
 
 /** Models `--resolve-residual` / `--model` accept. Wave 1: Kev only. */
@@ -11,8 +12,19 @@ export interface ResidualProviderConfig {
 }
 
 export class ResidualModelProviderFactory {
-  static create(model: string, _config: ResidualProviderConfig): ResidualModelProvider {
+  static create(
+    model: string,
+    config: ResidualProviderConfig,
+    deps: KevResidualProviderDeps = {},
+  ): ResidualModelProvider {
     switch (model) {
+      case "kev": {
+        const urls = (config.kevUrls ?? []).filter((url) => url.length > 0);
+        if (urls.length === 0) {
+          throw new ConfigValueMissingError("codegraph.residual.kevUrls", "CODEGRAPH_RESIDUAL_KEV_URL");
+        }
+        return new KevResidualProvider({ urls, threshold: config.kevThreshold }, deps);
+      }
       default:
         throw new ConfigValueInvalidError("residualModel", model, RESIDUAL_MODELS.join(" | "));
     }
