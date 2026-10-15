@@ -37,7 +37,7 @@ adapters), yargs CLI, zod config, vitest.
 - Defaults: `CODEGRAPH_RESIDUAL_CONCURRENCY=96`,
   `CODEGRAPH_RESIDUAL_MENU_LIMIT=40`,
   `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS=180`.
-- Migrations: new pairs `046-*` / `047-*`; never edit an applied migration;
+- Migrations: new pairs `053-*` / `054-*`; never edit an applied migration;
   `ADD COLUMN IF NOT EXISTS`, nullable, no `DEFAULT`.
 - `resolution-runner.ts` and `symbols/provider.ts` are hotspots: thin seams
   only, no new logic inside existing methods beyond a sink call.
@@ -133,9 +133,9 @@ export interface ResidualAnswer {
 export interface ResidualModelProvider {
   readonly id: string;
   readonly threshold: number;
-  version(): Promise<string>;
-  health(): Promise<{ ok: true } | { ok: false; reason: string }>;
-  resolveGroup(group: ResidualQuestionGroup): Promise<ResidualAnswer[]>;
+  version: () => Promise<string>;
+  health: () => Promise<{ ok: true } | { ok: false; reason: string }>;
+  resolveGroup: (group: ResidualQuestionGroup) => Promise<ResidualAnswer[]>;
 }
 ```
 
@@ -180,7 +180,7 @@ export class ResidualVerdictStore {
 
 ---
 
-### Task 1: Residual contracts and graph-DB migrations 046 / 047
+### Task 1: Residual contracts and graph-DB migrations 053 / 054
 
 **Files:**
 
@@ -188,22 +188,22 @@ export class ResidualVerdictStore {
 - Modify: `src/core/contracts/types/codegraph.ts` (barrel, one line after
   `export type * from "./codegraph-pass1.js";`)
 - Create:
-  `src/core/domains/maintenance/migration/database/migrations/046-cg-residual-call-sites.ts`
+  `src/core/domains/maintenance/migration/database/migrations/053-cg-residual-call-sites.ts`
 - Create:
-  `src/core/domains/maintenance/migration/database/migrations/046-cg-residual-call-sites.sql`
+  `src/core/domains/maintenance/migration/database/migrations/053-cg-residual-call-sites.sql`
   (generated)
 - Create:
-  `src/core/domains/maintenance/migration/database/migrations/047-cg-method-edges-origin.ts`
+  `src/core/domains/maintenance/migration/database/migrations/054-cg-method-edges-origin.ts`
 - Create:
-  `src/core/domains/maintenance/migration/database/migrations/047-cg-method-edges-origin.sql`
+  `src/core/domains/maintenance/migration/database/migrations/054-cg-method-edges-origin.sql`
   (generated)
 - Modify:
   `src/core/domains/maintenance/migration/database/migrations/index.ts:50`
   (imports) and `:102` (registry)
 - Test:
-  `tests/core/domains/maintenance/migration/database/046-cg-residual-call-sites.test.ts`
+  `tests/core/domains/maintenance/migration/database/053-cg-residual-call-sites.test.ts`
 - Test:
-  `tests/core/domains/maintenance/migration/database/047-cg-method-edges-origin.test.ts`
+  `tests/core/domains/maintenance/migration/database/054-cg-method-edges-origin.test.ts`
 
 **Interfaces:**
 
@@ -235,7 +235,7 @@ JSON array in a `VARCHAR`, the convention of
 
 - [ ] **Step 1: Write the failing migration tests**
 
-`tests/core/domains/maintenance/migration/database/046-cg-residual-call-sites.test.ts`:
+`tests/core/domains/maintenance/migration/database/053-cg-residual-call-sites.test.ts`:
 
 ```ts
 import { mkdtempSync, rmSync } from "node:fs";
@@ -248,14 +248,14 @@ import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/cl
 import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
-const MIGRATION = "046-cg-residual-call-sites.sql";
+const MIGRATION = "053-cg-residual-call-sites.sql";
 
 const INSERT = `INSERT INTO cg_residual_call_sites
   (source_rel_path, site_key, method_symbol_id, method_start_line, method_end_line, line, call_column,
    receiver_text, member, kind, candidates, menu_hash, menu_overflow)
   VALUES ('app/a.rb', 'k1', 'A#run', 1, 9, 3, 4, 'account', 'users', 'dynamic', '["Firm#users"]', 'h', false)`;
 
-describe("046 creates the residual call-site table", () => {
+describe("053 creates the residual call-site table", () => {
   let dir: string;
   let db: DuckDbGraphClient;
 
@@ -300,7 +300,7 @@ describe("046 creates the residual call-site table", () => {
 });
 ```
 
-`tests/core/domains/maintenance/migration/database/047-cg-method-edges-origin.test.ts`:
+`tests/core/domains/maintenance/migration/database/054-cg-method-edges-origin.test.ts`:
 
 ```ts
 import { mkdtempSync, rmSync } from "node:fs";
@@ -313,9 +313,9 @@ import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/cl
 import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
-const MIGRATION = "047-cg-method-edges-origin.sql";
+const MIGRATION = "054-cg-method-edges-origin.sql";
 
-describe("047 adds model-edge provenance to method edges", () => {
+describe("054 adds model-edge provenance to method edges", () => {
   let dir: string;
   let db: DuckDbGraphClient;
 
@@ -330,10 +330,10 @@ describe("047 adds model-edge provenance to method edges", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("is registered after 046", () => {
+  it("is registered after 053", () => {
     const names = DATABASE_MIGRATIONS.map((m) => m.filename);
     expect(names.indexOf(MIGRATION)).toBe(
-      names.indexOf("046-cg-residual-call-sites.sql") + 1,
+      names.indexOf("053-cg-residual-call-sites.sql") + 1,
     );
   });
 
@@ -373,7 +373,7 @@ describe("047 adds model-edge provenance to method edges", () => {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run:
-`npx vitest run tests/core/domains/maintenance/migration/database/046-cg-residual-call-sites.test.ts tests/core/domains/maintenance/migration/database/047-cg-method-edges-origin.test.ts`
+`npx vitest run tests/core/domains/maintenance/migration/database/053-cg-residual-call-sites.test.ts tests/core/domains/maintenance/migration/database/054-cg-method-edges-origin.test.ts`
 Expected: FAIL — `indexOf(MIGRATION)` is `-1` (≠ 45's index + 1); the insert
 fails with `Table with name cg_residual_call_sites does not exist` /
 `Referenced column "origin" not found`.
@@ -459,9 +459,9 @@ export interface ResidualAnswer {
 export interface ResidualModelProvider {
   readonly id: string;
   readonly threshold: number;
-  version(): Promise<string>;
-  health(): Promise<{ ok: true } | { ok: false; reason: string }>;
-  resolveGroup(group: ResidualQuestionGroup): Promise<ResidualAnswer[]>;
+  version: () => Promise<string>;
+  health: () => Promise<{ ok: true } | { ok: false; reason: string }>;
+  resolveGroup: (group: ResidualQuestionGroup) => Promise<ResidualAnswer[]>;
 }
 ```
 
@@ -472,9 +472,9 @@ In `src/core/contracts/types/codegraph.ts`, after
 export type * from "./codegraph-residual.js";
 ```
 
-- [ ] **Step 4: Create migration 046**
+- [ ] **Step 4: Create migration 053**
 
-`src/core/domains/maintenance/migration/database/migrations/046-cg-residual-call-sites.ts`:
+`src/core/domains/maintenance/migration/database/migrations/053-cg-residual-call-sites.ts`:
 
 ```ts
 /**
@@ -487,7 +487,7 @@ export type * from "./codegraph-residual.js";
  *
  * Companion `.sql` mirrors this for the disk-loading test path. Keep in sync.
  */
-export const SQL_046_CG_RESIDUAL_CALL_SITES = `
+export const SQL_053_CG_RESIDUAL_CALL_SITES = `
 CREATE TABLE IF NOT EXISTS cg_residual_call_sites (
   source_rel_path   VARCHAR NOT NULL,
   site_key          VARCHAR NOT NULL,
@@ -510,9 +510,9 @@ CREATE INDEX IF NOT EXISTS idx_cg_residual_call_sites_site_key
 `;
 ```
 
-- [ ] **Step 5: Create migration 047**
+- [ ] **Step 5: Create migration 054**
 
-`src/core/domains/maintenance/migration/database/migrations/047-cg-method-edges-origin.ts`:
+`src/core/domains/maintenance/migration/database/migrations/054-cg-method-edges-origin.ts`:
 
 ```ts
 /**
@@ -528,7 +528,7 @@ CREATE INDEX IF NOT EXISTS idx_cg_residual_call_sites_site_key
  *
  * Companion `.sql` mirrors this for the disk-loading test path. Keep in sync.
  */
-export const SQL_047_CG_METHOD_EDGES_ORIGIN = `
+export const SQL_054_CG_METHOD_EDGES_ORIGIN = `
 ALTER TABLE cg_symbols_edges_method ADD COLUMN IF NOT EXISTS origin VARCHAR;
 ALTER TABLE cg_symbols_edges_method ADD COLUMN IF NOT EXISTS model VARCHAR;
 ALTER TABLE cg_symbols_edges_method ADD COLUMN IF NOT EXISTS p DOUBLE;
@@ -539,30 +539,31 @@ ALTER TABLE cg_symbols_edges_method ADD COLUMN IF NOT EXISTS site_key VARCHAR;
 - [ ] **Step 6: Register both migrations**
 
 In `src/core/domains/maintenance/migration/database/migrations/index.ts`, after
-line 50 (`import { SQL_045_CG_TEMPORAL_BUNDLE_TASK_IDS } ...`) add:
+after the last import (`SQL_052_CG_TEMPORAL_BUNDLE_RENAME_SWEEP`; 046–052 were
+taken by the temporal-bundle migrations) add:
 
 ```ts
-import { SQL_046_CG_RESIDUAL_CALL_SITES } from "./046-cg-residual-call-sites.js";
-import { SQL_047_CG_METHOD_EDGES_ORIGIN } from "./047-cg-method-edges-origin.js";
+import { SQL_053_CG_RESIDUAL_CALL_SITES } from "./053-cg-residual-call-sites.js";
+import { SQL_054_CG_METHOD_EDGES_ORIGIN } from "./054-cg-method-edges-origin.js";
 ```
 
 After line 102 (`{ filename: "045-cg-temporal-bundle-task-ids.sql", ... },`)
 add:
 
 ```ts
-  { filename: "046-cg-residual-call-sites.sql", sql: SQL_046_CG_RESIDUAL_CALL_SITES },
-  { filename: "047-cg-method-edges-origin.sql", sql: SQL_047_CG_METHOD_EDGES_ORIGIN },
+  { filename: "053-cg-residual-call-sites.sql", sql: SQL_053_CG_RESIDUAL_CALL_SITES },
+  { filename: "054-cg-method-edges-origin.sql", sql: SQL_054_CG_METHOD_EDGES_ORIGIN },
 ```
 
 Generate the `.sql` twins:
 
 Run: `npm run gen:migration-sql` Expected: writes
-`046-cg-residual-call-sites.sql` and `047-cg-method-edges-origin.sql`.
+`053-cg-residual-call-sites.sql` and `054-cg-method-edges-origin.sql`.
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/core/domains/maintenance/migration/database/`
-Expected: PASS (046, 047 and `sql-twins.test.ts` included).
+Expected: PASS (053, 054 and `sql-twins.test.ts` included).
 
 Run: `npx tsc --noEmit` Expected: no errors.
 
@@ -570,13 +571,13 @@ Run: `npx tsc --noEmit` Expected: no errors.
 
 ```bash
 git add src/core/contracts/types/codegraph-residual.ts src/core/contracts/types/codegraph.ts \
-  src/core/domains/maintenance/migration/database/migrations/046-cg-residual-call-sites.ts \
-  src/core/domains/maintenance/migration/database/migrations/046-cg-residual-call-sites.sql \
-  src/core/domains/maintenance/migration/database/migrations/047-cg-method-edges-origin.ts \
-  src/core/domains/maintenance/migration/database/migrations/047-cg-method-edges-origin.sql \
+  src/core/domains/maintenance/migration/database/migrations/053-cg-residual-call-sites.ts \
+  src/core/domains/maintenance/migration/database/migrations/053-cg-residual-call-sites.sql \
+  src/core/domains/maintenance/migration/database/migrations/054-cg-method-edges-origin.ts \
+  src/core/domains/maintenance/migration/database/migrations/054-cg-method-edges-origin.sql \
   src/core/domains/maintenance/migration/database/migrations/index.ts \
-  tests/core/domains/maintenance/migration/database/046-cg-residual-call-sites.test.ts \
-  tests/core/domains/maintenance/migration/database/047-cg-method-edges-origin.test.ts
+  tests/core/domains/maintenance/migration/database/053-cg-residual-call-sites.test.ts \
+  tests/core/domains/maintenance/migration/database/054-cg-method-edges-origin.test.ts
 git commit -m "feat(codegraph): residual contracts and migrations for call sites and model edges"
 ```
 
@@ -1555,7 +1556,7 @@ ignores `residualCallSites`); the `removeFiles` case passes trivially.
 After `const FANOUT_VALUES = ["member", "candidate_count"] as const;` add:
 
 ```ts
-// Migration 046: one row per residual call site of the file.
+// Migration 053: one row per residual call site of the file.
 const RESIDUAL_KEYS = ["source_rel_path", "site_key"] as const;
 const RESIDUAL_VALUES = [
   "method_symbol_id",
@@ -1572,23 +1573,16 @@ const RESIDUAL_VALUES = [
 ] as const;
 ```
 
-`REMOVED_FILE_SOURCE_TABLES` becomes:
-
-```ts
-const REMOVED_FILE_SOURCE_TABLES = [
-  "cg_symbols_inheritance",
-  "cg_ambiguous_fanout",
-  "cg_hierarchy_dependencies",
-  "cg_residual_call_sites",
-] as const;
-```
+`REMOVED_FILE_SOURCE_TABLES` already lists `cg_residual_call_sites` (landed with
+Task 1: `removed-file-table-classification.test.ts` fails on any path-keyed
+table missing from that list) — leave it as is.
 
 In `writeFileRowsGroup`, next to `const fanoutRows: unknown[][] = [];` add
 `const residualRows: unknown[][] = [];`; after the
 `for (const a of edges.ambiguousFanouts ?? []) { ... }` loop add:
 
 ```ts
-// Residual call sites (migration 046) — keyed by the NODE's path, so a
+// Residual call sites (migration 053) — keyed by the NODE's path, so a
 // re-walk replaces the file's slice and a file with none clears it.
 for (const r of edges.residualCallSites ?? []) {
   residualRows.push([
@@ -2195,7 +2189,7 @@ export const METHOD_EDGE_KEYS = [
   "target_rel_path",
   "target_symbol_key",
 ] as const;
-// Migration 047: a static row writes NULL provenance, so a re-walk that proves a
+// Migration 054: a static row writes NULL provenance, so a re-walk that proves a
 // model edge statically turns it back into a static edge.
 export const METHOD_EDGE_VALUES = [
   "target_symbol_id",
@@ -2772,7 +2766,7 @@ Append to both `CallerEdge` and `CalleeEdge`:
 `const SCOPED_EDGE_IN_LIST_CHUNK = 200;` add:
 
 ```ts
-/** Model-edge provenance columns (migration 047); NULL on a static edge. */
+/** Model-edge provenance columns (migration 054); NULL on a static edge. */
 interface EdgeOriginColumns {
   origin: string | null;
   model: string | null;
