@@ -46,7 +46,7 @@ export const capability: LanguageCapability = {
   // `Self::f()` and `Type::new().m()` through an in-project type.
   // walker 3: release v1.44.2 shipped walker 2 and a release cycle gets ONE
   // walker bump, so every branch-local number above collapses into 3.
-  versions: { chunking: 2, walker: 4, codegraphSchema: 2 },
+  versions: { chunking: 3, walker: 5, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
   // SCREAMING_SNAKE_CASE.

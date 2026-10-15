@@ -59,6 +59,7 @@ import type {
   LanguageWalker,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
+import { rustCommentCaptureHook } from "./chunking/comment-capture.js";
 import { rustKernel } from "./kernel.js";
 import { RustCallResolver } from "./resolver/index.js";
 import { rustNameOf } from "./walker/name-of.js";
@@ -68,14 +69,17 @@ import { extractFromRustFile, type RustExtractInput } from "./walker/walker.js";
 /**
  * Chunk-boundary config for Rust — mirrors the chunker slice of the legacy
  * `LANGUAGE_DEFINITIONS.rust` entry 1:1 (chunkableTypes, childChunkTypes,
- * alwaysExtractChildren, nameExtractor). No `hooks` / `macroSymbols` /
- * `chunkSymbols` — Rust declares none (generic chunking). `scopeContainerTypes`
+ * alwaysExtractChildren, nameExtractor). Rust's metadata hook captures comments
+ * before methods and associated items; it does not claim containers. No
+ * `macroSymbols` / `chunkSymbols` — Rust declares none (generic chunking).
+ * `scopeContainerTypes`
  * + `scopeSeparator "::"` live on the KERNEL (not here) per the `LanguageKernel`
  * contract.
  *
- * `childChunkTypes` lists ONLY the leaf chunks (functions + macro defs);
- * `impl_item` / `trait_item` / `mod_item` are intentionally excluded so the
- * descent traverses THROUGH them to reach methods, while `scopeContainerTypes`
+ * `childChunkTypes` lists leaf chunks plus the containers whose own metadata
+ * context must be traversed (functions, signatures, macros, impls, traits);
+ * `mod_item` stays excluded so the descent traverses through modules to reach
+ * methods, while `scopeContainerTypes`
  * (kernel) accumulates `impl Type` into the symbolId. The `nameExtractor` reads
  * the impl-block `type` field and strips generics + lifetimes so `impl<'s>
  * Worker<'s>` composes as `Worker#send`, not `Worker<'s>#send` (bd
@@ -95,11 +99,12 @@ const rustChunkerHooks: LanguageChunkerHooks = {
   // implementing header when they are nested below a module. The impl name
   // still composes through the kernel scope separator; it is not emitted as
   // an extra standalone leaf.
-  childChunkTypes: ["function_item", "macro_definition", "impl_item"],
+  childChunkTypes: ["function_item", "function_signature_item", "macro_definition", "impl_item", "trait_item"],
   alwaysExtractChildren: true,
+  hooks: [rustCommentCaptureHook],
   // Rust function items are searchable symbols even when their bodies are
   // shorter than the generic 50-character noise floor.
-  keepShortChildChunkTypes: ["function_item"],
+  keepShortChildChunkTypes: ["function_item", "function_signature_item"],
   nameExtractor: (node: AstNode, code: string): string | undefined => {
     if (node.type !== "impl_item") return undefined;
     const ty = node.childForFieldName("type");

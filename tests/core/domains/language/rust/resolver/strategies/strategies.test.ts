@@ -265,6 +265,125 @@ describe("RustImportMatchSymbolResolutionStrategy", () => {
     );
     expect(outcome.kind).toBe("continue");
   });
+
+  it("resolves a renamed module alias", () => {
+    const symbolTable = tableWith(["src/foo.rs", [sym("run", "run", "src/foo.rs", [])]]);
+    const outcome = strat.attempt(
+      { callText: "alias::run()", receiver: "alias", member: "run", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerFile: "src/main.rs",
+        imports: [{ importText: "crate::foo as alias", startLine: 1 }],
+      }),
+    );
+    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/foo.rs", targetSymbolId: "run" } });
+  });
+
+  it("resolves a grouped renamed item alias", () => {
+    const symbolTable = tableWith(["src/foo/bar.rs", [sym("run", "run", "src/foo/bar.rs", [])]]);
+    const outcome = strat.attempt(
+      { callText: "alias::run()", receiver: "alias", member: "run", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerFile: "src/main.rs",
+        imports: [{ importText: "crate::foo::{bar as alias, baz}", startLine: 1 }],
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/foo/bar.rs", targetSymbolId: "run" },
+    });
+  });
+
+  it("resolves a module receiver through a glob import", () => {
+    const symbolTable = tableWith(["src/foo.rs", [sym("run", "run", "src/foo.rs", [])]]);
+    const outcome = strat.attempt(
+      { callText: "foo::run()", receiver: "foo", member: "run", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerFile: "src/main.rs",
+        imports: [{ importText: "crate::foo::*", startLine: 1 }],
+      }),
+    );
+    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/foo.rs", targetSymbolId: "run" } });
+  });
+
+  it("follows a one-hop pub-use re-export through the module re-export channel", () => {
+    const symbolTable = tableWith(["src/api.rs", [sym("run", "run", "src/api.rs", [])]]);
+    const outcome = strat.attempt(
+      { callText: "public::run()", receiver: "public", member: "run", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerFile: "src/main.rs",
+        imports: [{ importText: "crate::facade::public", startLine: 1 }],
+        moduleReexports: {
+          "src/facade.rs": [{ exportedName: "public", sourceModule: "crate::api", sourceName: "run" }],
+        },
+      }),
+    );
+    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/api.rs", targetSymbolId: "run" } });
+  });
+
+  it("follows a bounded multi-hop pub-use chain", () => {
+    const symbolTable = tableWith(["src/api.rs", [sym("run", "run", "src/api.rs", [])]]);
+    const outcome = strat.attempt(
+      { callText: "public::run()", receiver: "public", member: "run", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerFile: "src/main.rs",
+        imports: [{ importText: "crate::facade::public", startLine: 1 }],
+        moduleReexports: {
+          "src/facade.rs": [{ exportedName: "public", sourceModule: "crate::bar", sourceName: "facade" }],
+          "src/bar.rs": [{ exportedName: "facade", sourceModule: "crate::api", sourceName: "run" }],
+        },
+      }),
+    );
+    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/api.rs", targetSymbolId: "run" } });
+  });
+
+  it("declines missing, cyclic, and ambiguous re-export facts conservatively", () => {
+    const symbolTable = tableWith(
+      ["src/one.rs", [sym("run", "run", "src/one.rs", [])]],
+      ["src/two.rs", [sym("run", "run", "src/two.rs", [])]],
+    );
+    const base = {
+      callerFile: "src/main.rs",
+      imports: [{ importText: "crate::facade::public", startLine: 1 }],
+    };
+    expect(
+      strat.attempt(
+        { callText: "public::run()", receiver: "public", member: "run", startLine: 1 },
+        ctx({ symbolTable, ...base, moduleReexports: {} }),
+      ).kind,
+    ).toBe("drop");
+    expect(
+      strat.attempt(
+        { callText: "public::run()", receiver: "public", member: "run", startLine: 1 },
+        ctx({
+          symbolTable,
+          ...base,
+          moduleReexports: {
+            "src/facade.rs": [{ exportedName: "public", sourceModule: "crate::facade", sourceName: "public" }],
+          },
+        }),
+      ).kind,
+    ).toBe("drop");
+    expect(
+      strat.attempt(
+        { callText: "public::run()", receiver: "public", member: "run", startLine: 1 },
+        ctx({
+          symbolTable,
+          ...base,
+          moduleReexports: {
+            "src/facade.rs": [
+              { exportedName: "public", sourceModule: "crate::one", sourceName: "run" },
+              { exportedName: "public", sourceModule: "crate::two", sourceName: "run" },
+            ],
+          },
+        }),
+      ).kind,
+    ).toBe("drop");
+  });
 });
 
 describe("RustBareSelfMethodSymbolResolutionStrategy", () => {

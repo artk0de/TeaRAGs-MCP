@@ -95,7 +95,7 @@ describe("resolveLanguageCodeVersions", () => {
     // walker 4 (post-v1.45.1): bd tea-rags-mcp-89k7k.31 — resolved type-only
     // imports merge into `GraphEdges.fileEdges` at callWeight 0 beside the
     // dedicated `typeOnlyFileEdges` channel.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 4, walker: 4, codegraphSchema: 2 });
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 5, walker: 4, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -481,7 +481,7 @@ describe("seeded support versions", () => {
         ["python", 10],
         ["ruby", 6],
         ["java", 3],
-        ["rust", 3],
+        ["rust", 5],
         ["go", 5],
         ["swift", 7],
         ["bash", 2],
@@ -516,6 +516,7 @@ describe("seeded support versions", () => {
         ["swift", 4],
         ["bash", 2],
         ["ruby", 2],
+        ["rust", 3],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);

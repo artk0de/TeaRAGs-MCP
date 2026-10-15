@@ -11,6 +11,34 @@ function parse(src: string) {
 }
 
 describe("extractFromRustFile — imports", () => {
+  it("records only pub use statements as module re-exports while preserving aliases, groups, and globs", () => {
+    const src = [
+      "pub use crate::api::run as public;",
+      "pub use crate::foo::{bar as alias, baz};",
+      "pub use crate::foo::*;",
+      "use crate::private::run as hidden;",
+    ].join("\\n");
+    const result = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/facade.rs",
+      language: "rust",
+      chunks: [],
+    });
+    expect(result.moduleReexports).toEqual([
+      { exportedName: "public", sourceModule: "crate::api", sourceName: "run" },
+      { exportedName: "alias", sourceModule: "crate::foo", sourceName: "bar" },
+      { exportedName: "baz", sourceModule: "crate::foo", sourceName: "baz" },
+      { exportedName: "*", sourceModule: "crate::foo" },
+    ]);
+    expect(result.imports.map((entry) => entry.importText)).toEqual([
+      "crate::api::run as public",
+      "crate::foo::{bar as alias, baz}",
+      "crate::foo::*",
+      "crate::private::run as hidden",
+    ]);
+  });
+
   it("captures `use foo::bar;`", () => {
     const src = "use foo::bar;\nfn main() {}\n";
     const r = extractFromRustFile({ tree: parse(src), code: src, relPath: "main.rs", language: "rust", chunks: [] });

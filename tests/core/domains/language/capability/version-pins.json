@@ -68,9 +68,13 @@
     }
   },
   "rust": {
+    "chunking": {
+      "version": 3,
+      "digest": "sha256:9cefd88ef6de19884e76fcc3391814133575b5b929dd274cc3912bcde08b3ace"
+    },
     "walker": {
-      "version": 4,
-      "digest": "sha256:0c0d6d417bec35a68df2059048840116ea38f50ada44cc335231bc7f140296f0"
+      "version": 5,
+      "digest": "sha256:2ff1323669652297d13cd878484ccc9cbb17efdbd8c9da818309611c048a5d48"
     }
   },
   "swift": {

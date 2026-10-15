@@ -24,7 +24,7 @@
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
-import type { TypeDeclarationFact } from "../../../../contracts/types/codegraph-extraction.js";
+import type { ModuleReexport, TypeDeclarationFact } from "../../../../contracts/types/codegraph-extraction.js";
 import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type {
   CallRef,
@@ -49,6 +49,7 @@ export interface RustExtractInput {
 
 export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   const imports = collectRustImports(input.tree.rootNode);
+  const moduleReexports = collectRustModuleReexports(input.tree.rootNode);
   const calls = collectRustCalls(input.tree.rootNode);
   // bd tea-rags-mcp-q1pl — per-class struct field types for the
   // `self.field.method()` resolver path. Keyed by struct name (which
@@ -89,6 +90,7 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
     fileScope: [],
   };
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
+  if (moduleReexports.length > 0) out.moduleReexports = moduleReexports;
   if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
   return out;
 }
@@ -325,18 +327,99 @@ function collectRustLocalBindingsForChunk(
   return bindings;
 }
 
+function rustUseClause(node: AstNode): AstNode | null {
+  return node.children.find((child) => child.type !== "visibility_modifier" && child.type !== "use") ?? null;
+}
+
+function rustUsePathParts(node: AstNode | null): string[] {
+  return (
+    node?.text
+      .split("::")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0) ?? []
+  );
+}
+
+function rustUsePathNode(node: AstNode): AstNode | null {
+  return node.childForFieldName("path") ?? node.children[0] ?? null;
+}
+
+function rustUseAlias(node: AstNode): { sourceName: string; exportedName: string } | null {
+  const path = rustUsePathNode(node);
+  const alias = node.childForFieldName("alias") ?? node.children.at(-1);
+  if (!path || !alias || alias === path) return null;
+  const sourceParts = rustUsePathParts(path);
+  return sourceParts.length > 0 ? { sourceName: sourceParts.at(-1) ?? "", exportedName: alias.text } : null;
+}
+
 function collectRustImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
     if (node.type !== "use_declaration") return;
-    // Strip `use`, trailing `;`, trim. Group lists (`use foo::{a, b}`)
-    // are preserved verbatim — resolver expands as needed.
-    const text = node.text
-      .replace(/^use\s+/, "")
-      .replace(/;$/, "")
-      .trim();
-    if (text.length === 0) return;
-    out.push({ importText: text, startLine: node.startPosition.row + 1 });
+    const clause = rustUseClause(node);
+    if (clause && clause.text.length > 0) out.push({ importText: clause.text, startLine: node.startPosition.row + 1 });
+  });
+  return out;
+}
+
+function collectRustModuleReexports(root: AstNode): ModuleReexport[] {
+  const out: ModuleReexport[] = [];
+  walk(root, (node) => {
+    if (node.type !== "use_declaration" || !node.children.some((child) => child.type === "visibility_modifier")) return;
+    const clause = rustUseClause(node);
+    if (!clause) return;
+
+    if (clause.type === "use_as_clause") {
+      const path = rustUsePathNode(clause);
+      const alias = rustUseAlias(clause);
+      if (!path || !alias) return;
+      const sourceParts = rustUsePathParts(path);
+      out.push({
+        exportedName: alias.exportedName,
+        sourceModule: sourceParts.slice(0, -1).join("::"),
+        sourceName: alias.sourceName,
+      });
+      return;
+    }
+
+    if (clause.type === "use_wildcard") {
+      const sourceModule = rustUsePathNode(clause)?.text;
+      if (sourceModule) out.push({ exportedName: "*", sourceModule });
+      return;
+    }
+
+    if (clause.type === "scoped_use_list") {
+      const sourceModule = rustUsePathNode(clause)?.text;
+      const useList = clause.childForFieldName("list") ?? clause.children.find((child) => child.type === "use_list");
+      if (!sourceModule || !useList) return;
+      for (const member of useList.children) {
+        if (member.type === "use_as_clause") {
+          const alias = rustUseAlias(member);
+          if (alias) out.push({ exportedName: alias.exportedName, sourceModule, sourceName: alias.sourceName });
+          continue;
+        }
+        if (member.type === "use_wildcard") {
+          out.push({ exportedName: "*", sourceModule });
+          continue;
+        }
+        if (member.type === "identifier" || member.type === "scoped_identifier") {
+          const sourceParts = rustUsePathParts(member);
+          const sourceName = sourceParts.at(-1);
+          if (sourceName) out.push({ exportedName: sourceName, sourceModule, sourceName });
+        }
+      }
+      return;
+    }
+
+    const sourceParts = rustUsePathParts(clause);
+    const sourceName = sourceParts.at(-1);
+    if (sourceName) {
+      out.push({
+        exportedName: sourceName,
+        sourceModule: sourceParts.slice(0, -1).join("::"),
+        sourceName,
+      });
+    }
   });
   return out;
 }
