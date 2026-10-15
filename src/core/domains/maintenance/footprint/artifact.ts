@@ -1,6 +1,13 @@
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 
-export type ArtifactId = "qdrant" | "codegraph" | "snapshot" | "stats" | "quarantine" | "indexing-lock";
+export type ArtifactId =
+  | "qdrant"
+  | "codegraph"
+  | "snapshot"
+  | "stats"
+  | "quarantine"
+  | "indexing-lock"
+  | "residual-verdicts";
 
 /**
  * Which half of {@link ResolvedCollection} an artifact keys on — the choice the

@@ -7,3 +7,4 @@ export {
   type GraphDbClientPoolOptions,
   type SymbolTableFactory,
 } from "./pool.js";
+export { ResidualVerdictStore } from "./residual-verdict-store.js";

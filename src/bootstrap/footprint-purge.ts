@@ -20,6 +20,7 @@ import {
   readRefs,
   resolveDaemonClientTarget,
 } from "../core/adapters/duckdb/daemon/lifecycle.js";
+import { ResidualVerdictStore } from "../core/adapters/duckdb/index.js";
 import { StatsCache } from "../core/adapters/filesystem/stats-cache.js";
 import type {
   QdrantAliasAccess,
@@ -108,6 +109,7 @@ export function createCollectionFootprintPurger(deps: FootprintPurgeDeps): Colle
     indexingLockStoreFactory: (baseDir, logicalName) => ({
       removeIfStale: async () => new CollectionIndexingLock({ lockDir: baseDir }).removeIfStale(logicalName),
     }),
+    residualVerdictFile: (logicalName) => ResidualVerdictStore.pathFor(deps.appDataDir, logicalName),
   });
   return new CollectionFootprintPurger({
     qdrant: deps.qdrant,
