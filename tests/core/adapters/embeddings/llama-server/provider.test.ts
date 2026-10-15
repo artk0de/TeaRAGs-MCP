@@ -575,6 +575,21 @@ describe("LlamaServerEmbeddings", () => {
       expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3]);
     });
 
+    it("keeps a healthy peer ahead of fallback after another peer fails in the call", async () => {
+      const cluster = fakeCluster({
+        [PEER_A]: { health: true, embed: () => new Response("model loading", { status: 503 }) },
+        [PEER_B]: healthy(),
+        [FALLBACK]: healthy(),
+      });
+      const provider = makeProvider(cluster);
+
+      const results = await provider.embedBatch(texts(4));
+
+      expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3]);
+      expect(cluster.embedCalls(PEER_B).length).toBeGreaterThan(0);
+      expect(cluster.embedCalls(FALLBACK)).toHaveLength(0);
+    });
+
     describe("a peer that answers /health but fails every post (bd hgghf)", () => {
       /** Every bounded test gets this timeout; the livelock it guards against spun forever. */
       const LIVELOCK_TIMEOUT_MS = 5_000;
