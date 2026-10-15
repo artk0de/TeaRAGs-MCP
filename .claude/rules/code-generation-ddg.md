@@ -38,7 +38,8 @@ still runs before the commit and its findings are repaired.
   (`GATE review_changes: introduced=0, partial=false`); no gate line, task not
   done.
 - Inside this repo, run `review_changes` (and the pre-write
-  `get_architecture_report` simulation) from your own checkout's build:
+  `get_architecture_report` simulation, which DDG runs only before a file move /
+  merge / split) from your own checkout's build:
   `node build/cli/index.js call review_changes '<json params>'` — the global MCP
   server process may run older extraction and report false findings (bd
   tea-rags-mcp-2plk2). MCP only when the checkout has no build.

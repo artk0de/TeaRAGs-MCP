@@ -171,8 +171,8 @@ god-module → do NOT grow it. Propose sibling module or extraction, surface
 choice to user. EXTEND: guard fires on the container.
 
 New file where a home module exists = structural N-th way. Placement converges
-same as implementation. Chosen placement → Step 6b pre-write simulation before
-the file is written.
+same as implementation. Step 7 gate judges chosen placement; no pre-write
+simulation.
 
 ### Step 4: REUSE — all modes
 
@@ -350,26 +350,19 @@ Names come from the Step 5 vocabulary, built by the dominant shape. A word
 outside it is `NEW_TERM` and gets one line in the output:
 `NEW_TERM <term> — <why no project term denotes this>`.
 
-**Pre-write simulation** (codegraph on) — prevent, not repair. Runs BEFORE the
-first production edit iff task (a) adds new production file, (b) adds import
-edge crossing component boundary, or (c) moves / merges / splits files. Else —
-in-file edit, no new file, no cross-component edge — skip, zero calls.
+**Pre-write simulation** (codegraph on) — ONLY task moves / merges / splits
+existing files: bad move undone = every importer re-touched, judge first. Else —
+in-file edit, new file, new import, cross-component edge — skip, zero calls:
+Step 7 gate catches same detectors after write, repair = one edge.
 
-- **Edge-only** (no file added, no move) → cheap check: ONE
-  `get_architecture_report(path, plannedEdges: [{source, target}])` for all such
-  imports. `MISFIT` → route via `expectedPath` (established direction /
-  `transit` role), not planned edge. `NEW_PATTERN` / `UNJUDGED` → write it, one
-  line: `NEW_PATTERN|UNJUDGED <source> -> <target> — <reason>`.
-- **New file / move / merge / split** → planned change as ONE
-  `get_architecture_report(path, restructure: [...])` hypothesis:
-  `addFile{file,component?,abstract?}` + `addEdge{from,to}` per planned import
-  (+ `removeEdge{from,to}` per dropped / retargeted one),
-  `move{files,toComponent}`, `merge{components}`, `split{component,groups}`.
-  Delta `introduced` non-empty → choose other placement / edge per
+- Planned change = ONE `get_architecture_report(path, restructure: [...])`
+  hypothesis: `move{files,toComponent}`, `merge{components}`,
+  `split{component,groups}` (+ `addEdge` / `removeEdge` per import move
+  retargets). Delta `introduced` non-empty → other placement per
   `../../repair/<family>.md` `## Ops recipe` (absent → `## Apply remedy`; that
-  family only), re-simulate. Write when `introduced` empty, or each left entry
+  family only), re-simulate. Move when `introduced` empty, or each left entry
   meets Step 7 evidence rules. Edge ops move structural detectors only —
-  co-change families answer at the Step 7 gate.
+  co-change families answer at Step 7 gate.
 - **Multi-step restructuring** (several remedies, order matters) →
   `tea-rags:refactoring-planning`, not this step.
 
