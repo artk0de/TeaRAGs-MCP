@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "corpora": [
+    {
+      "alias": "ripgrep-rust",
+      "root": "/Users/artk0re/Dev/OpenSource/codegraph-test/ripgrep",
+      "commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "config": "production-default",
+      "cfgEvaluation": "not-run",
+      "options": {
+        "timeOnly": true,
+        "kindStats": true,
+        "persisted": true,
+        "edgeDump": true
+      }
+    },
+    {
+      "alias": "servo-rust",
+      "root": "/Users/artk0re/Dev/OpenSource/codegraph-validation/servo",
+      "commit": "44deea18cfa432f0c0f4d8aec46042f3eda9367b",
+      "config": "production-default",
+      "cfgEvaluation": "not-run",
+      "options": {
+        "timeOnly": true,
+        "kindStats": true,
+        "persisted": true,
+        "edgeDump": true
+      }
+    },
+    {
+      "alias": "tikv-rust",
+      "root": "/Users/artk0re/Dev/OpenSource/codegraph-validation/tikv",
+      "commit": "67ffce0c137b7c171405a76df8bc8e9f04a19ce6",
+      "config": "production-default",
+      "cfgEvaluation": "not-run",
+      "options": {
+        "timeOnly": true,
+        "kindStats": true,
+        "persisted": true,
+        "edgeDump": true
+      }
+    }
+  ]
+}
