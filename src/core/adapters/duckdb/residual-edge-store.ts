@@ -1,0 +1,138 @@
+/**
+ * Residual call sites and the model edges applied over them (bd
+ * tea-rags-mcp-2m83f) — the graph-DB half of the residual pass.
+ *
+ * Model edges live in `cg_symbols_edges_method` beside the static ones
+ * (migration 054: `origin = 'model'`, `model`, `p`, `site_key`; NULL origin =
+ * static). They are replaced per model through `applyScopedRowDiff` scoped by
+ * the `model` column, so a static row (model NULL) is never in scope. The
+ * static re-walk (`DuckDbFileGraphStore#writeFileRowsGroup`) diffs by
+ * `source_rel_path` and writes NULL provenance: a re-walked file drops its
+ * model rows, a statically proven model key turns back into a static edge, and
+ * an untouched file keeps its model rows.
+ */
+import type {
+  CodegraphResidualEdgeStore,
+  ModelEdgeRow,
+  ResidualCallSiteRow,
+  ResidualKind,
+} from "../../contracts/types/codegraph.js";
+import { METHOD_EDGE_KEYS, METHOD_EDGE_VALUES } from "./file-graph-store.js";
+import type { DuckDbGraphSession } from "./graph-session.js";
+import { placeholders } from "./sql-binding.js";
+
+/** Values per `IN (…)` list — the bound the session's batched writers use. */
+const RESIDUAL_IN_LIST_CHUNK = 200;
+
+interface ResidualSiteDbRow {
+  site_key: string;
+  source_rel_path: string;
+  method_symbol_id: string;
+  method_start_line: number | bigint;
+  method_end_line: number | bigint;
+  line: number | bigint;
+  call_column: number | bigint;
+  receiver_text: string;
+  member: string;
+  kind: string;
+  candidates: string;
+  menu_hash: string;
+  menu_overflow: boolean;
+}
+
+export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
+  constructor(private readonly session: DuckDbGraphSession) {}
+
+  async readResidualCallSites(): Promise<ResidualCallSiteRow[]> {
+    const rows = await this.session.queryAll<ResidualSiteDbRow>(
+      `SELECT site_key, source_rel_path, method_symbol_id, method_start_line, method_end_line, line, call_column,
+              receiver_text, member, kind, candidates, menu_hash, menu_overflow
+         FROM cg_residual_call_sites ORDER BY source_rel_path, site_key`,
+    );
+    return rows.map((r) => ({
+      siteKey: r.site_key,
+      sourceRelPath: r.source_rel_path,
+      methodSymbolId: r.method_symbol_id,
+      methodStartLine: Number(r.method_start_line),
+      methodEndLine: Number(r.method_end_line),
+      line: Number(r.line),
+      column: Number(r.call_column),
+      receiverText: r.receiver_text,
+      member: r.member,
+      kind: r.kind as ResidualKind,
+      candidates: JSON.parse(r.candidates) as string[],
+      menuHash: r.menu_hash,
+      menuOverflow: r.menu_overflow,
+    }));
+  }
+
+  /**
+   * Make the `model` rows of `cg_symbols_edges_method` equal `edges`. An edge
+   * whose site is not a current residual row or whose target symbol is unknown
+   * is skipped; one whose key a static edge already holds is ignored by the
+   * diff's `INSERT OR IGNORE`.
+   */
+  async applyModelEdges(model: string, edges: readonly ModelEdgeRow[]): Promise<void> {
+    await this.session.transaction(async () => {
+      const callTexts = await this.callTextsBySite(edges.map((e) => e.siteKey));
+      const targetPaths = await this.targetPathsBySymbol(edges.map((e) => e.targetSymbolId));
+      const rows: unknown[][] = [];
+      for (const e of edges) {
+        const callExpression = callTexts.get(e.siteKey);
+        const targetRelPath = targetPaths.get(e.targetSymbolId);
+        if (callExpression === undefined || targetRelPath === undefined) continue;
+        rows.push([
+          e.sourceSymbolId,
+          e.sourceRelPath,
+          callExpression,
+          targetRelPath,
+          e.targetSymbolId,
+          e.targetSymbolId,
+          "exact",
+          e.p,
+          "model",
+          model,
+          e.p,
+          e.siteKey,
+        ]);
+      }
+      await this.session.applyScopedRowDiff(
+        "cg_symbols_edges_method",
+        "model",
+        [model],
+        METHOD_EDGE_KEYS,
+        METHOD_EDGE_VALUES,
+        rows,
+      );
+    });
+  }
+
+  /** `receiver.member` of each current residual site — `member` alone for an empty receiver. */
+  private async callTextsBySite(siteKeys: readonly string[]): Promise<Map<string, string>> {
+    const rows = await this.queryInChunks<{ site_key: string; receiver_text: string; member: string }>(
+      (list) => `SELECT site_key, receiver_text, member FROM cg_residual_call_sites WHERE site_key IN (${list})`,
+      siteKeys,
+    );
+    return new Map(rows.map((r) => [r.site_key, r.receiver_text === "" ? r.member : `${r.receiver_text}.${r.member}`]));
+  }
+
+  /** The first file (by path) declaring each symbol id — a reopened class declares it in several. */
+  private async targetPathsBySymbol(symbolIds: readonly string[]): Promise<Map<string, string>> {
+    const rows = await this.queryInChunks<{ symbol_id: string; rel_path: string }>(
+      (list) =>
+        `SELECT symbol_id, MIN(rel_path) AS rel_path FROM cg_symbols WHERE symbol_id IN (${list}) GROUP BY symbol_id`,
+      symbolIds,
+    );
+    return new Map(rows.map((r) => [r.symbol_id, r.rel_path]));
+  }
+
+  private async queryInChunks<T>(sql: (list: string) => string, values: readonly string[]): Promise<T[]> {
+    const unique = [...new Set(values)];
+    const found: T[] = [];
+    for (let i = 0; i < unique.length; i += RESIDUAL_IN_LIST_CHUNK) {
+      const chunk = unique.slice(i, i + RESIDUAL_IN_LIST_CHUNK);
+      found.push(...(await this.session.queryAll<T>(sql(placeholders(chunk)), chunk)));
+    }
+    return found;
+  }
+}

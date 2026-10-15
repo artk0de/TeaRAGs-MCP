@@ -21,6 +21,7 @@ import type {
   MethodHeadWordQuery,
   MethodNamePatternQuery,
   MethodTailVerbQuery,
+  ModelEdgeRow,
   OntologyReportQuery,
   RelPath,
   ResolveRunStatsRow,
@@ -82,6 +83,9 @@ export const DAEMON_OPS = [
   "removeSymbolsForFile",
   // Derived-table prune on deletion (bd tea-rags-mcp-dy852).
   "pruneDerivedForDeletedFiles",
+  // Residual pass: model edges + the derived recompute they force (bd tea-rags-mcp-2m83f).
+  "applyModelEdges",
+  "markDerivedStale",
   // Cone dependents of deleted files (bd tea-rags-mcp-7t2ee).
   "invalidateHierarchyDependentsOfDeletedFiles",
   "upsertSymbols",
@@ -185,6 +189,7 @@ export const DAEMON_OPS = [
   "getFileImporters",
   "getFileImports",
   "hasStaleDerivedTables",
+  "readResidualCallSites",
   "getPageRank",
   "findSymbolChunk",
   // Declared visibility of a batch of symbols for the graph tools and the
@@ -310,6 +315,8 @@ export interface DaemonOpParamsMap {
   removeFiles: { relPaths: RelPath[] };
   removeSymbolsForFile: { relPath: RelPath };
   pruneDerivedForDeletedFiles: { relPaths: RelPath[] };
+  applyModelEdges: { model: string; edges: ModelEdgeRow[] };
+  markDerivedStale: NoDaemonOpParams;
   invalidateHierarchyDependentsOfDeletedFiles: { relPaths: RelPath[] };
   upsertSymbols: { relPath: RelPath; definitions: SymbolDefinition[] };
   upsertSymbolsBulk: { entries: BulkSymbolUpsertEntry[] };
@@ -367,6 +374,7 @@ export interface DaemonOpParamsMap {
   getFileImporters: { relPath: RelPath };
   getFileImports: { relPath: RelPath };
   hasStaleDerivedTables: NoDaemonOpParams;
+  readResidualCallSites: NoDaemonOpParams;
   getPageRank: { symbolId: SymbolId; relPath?: RelPath };
   findSymbolChunk: { symbolId: SymbolId };
   getSymbolVisibilities: { symbolIds: SymbolId[] };

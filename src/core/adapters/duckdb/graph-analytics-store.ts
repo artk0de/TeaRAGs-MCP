@@ -694,6 +694,11 @@ export class DuckDbGraphAnalyticsStore implements Omit<
     return Number(rows[0]?.n ?? 0) > 0;
   }
 
+  /** Mark cycles + PageRank stale so the next derived recompute runs; idempotent. */
+  async markDerivedStale(): Promise<void> {
+    await this.session.exec("INSERT OR IGNORE INTO cg_derived_stale (marker) VALUES ('derived')");
+  }
+
   /**
    * The PageRank of one declaration. With `relPath`: the rank stored for that
    * file, else a rank carried without a file (migration 028), else 0. Without

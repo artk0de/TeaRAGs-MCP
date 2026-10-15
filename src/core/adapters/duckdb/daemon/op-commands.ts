@@ -230,6 +230,8 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
     graphDb.invalidateHierarchyDependentsOfDeletedFiles(p.relPaths),
   ),
   pruneDerivedForDeletedFiles: write(async (graphDb, p) => graphDb.pruneDerivedForDeletedFiles(p.relPaths)),
+  applyModelEdges: write(async (graphDb, p) => graphDb.applyModelEdges(p.model, p.edges)),
+  markDerivedStale: write(async (graphDb) => graphDb.markDerivedStale()),
   upsertSymbols: write(async (graphDb, p) => graphDb.upsertSymbols(p.relPath, p.definitions)),
   upsertSymbolsBulk: write(async (graphDb, p) => graphDb.upsertSymbolsBulk(p.entries)),
   upsertFilesBulk: write(async (graphDb, p) => graphDb.upsertFilesBulk(p.entries)),
@@ -441,6 +443,7 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   getFileImporters: read(async (graphDb, p) => graphDb.getFileImporters(p.relPath)),
   getFileImports: read(async (graphDb, p) => graphDb.getFileImports(p.relPath)),
   hasStaleDerivedTables: read(async (graphDb) => graphDb.hasStaleDerivedTables()),
+  readResidualCallSites: read(async (graphDb) => graphDb.readResidualCallSites()),
   getPageRank: read(async (graphDb, p) => graphDb.getPageRank(p.symbolId, p.relPath)),
 
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──

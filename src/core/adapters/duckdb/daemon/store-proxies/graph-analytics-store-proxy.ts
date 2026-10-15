@@ -42,6 +42,10 @@ export class DaemonGraphAnalyticsStoreProxy implements CodegraphGraphAnalyticsSt
     return (await this.ops.call("hasStaleDerivedTables", {})) as boolean;
   }
 
+  async markDerivedStale(): Promise<void> {
+    await this.ops.call("markDerivedStale", {});
+  }
+
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {
     await this.ops.call("replaceCycles", { scope, sccs });
   }

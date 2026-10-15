@@ -44,6 +44,7 @@ import type {
   MethodNameRow,
   MethodTailVerbQuery,
   MethodTailVerbRow,
+  ModelEdgeRow,
   NonPublicMemberEdge,
   OntologyReportQuery,
   OntologyReportSectionRows,
@@ -52,6 +53,7 @@ import type {
   PersistedHierarchyDescendantDependency,
   PersistedSymbolLineRanges,
   RelPath,
+  ResidualCallSiteRow,
   ResolveRunStatsRow,
   StoredFieldAccessRow,
   SymbolChunkIdJoinEntry,
@@ -77,6 +79,7 @@ import {
   DaemonGraphReadStoreProxy,
   DaemonIdentifierStoreProxy,
   DaemonOntologyReportStoreProxy,
+  DaemonResidualEdgeStoreProxy,
   DaemonStorageMaintenanceProxy,
   DaemonSymbolFileStoreProxy,
   DaemonTemporalStoreProxy,
@@ -121,6 +124,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
   private readonly fieldAccesses: DaemonFieldAccessStoreProxy;
   private readonly ontology: DaemonOntologyReportStoreProxy;
   private readonly temporal: DaemonTemporalStoreProxy;
+  private readonly residualEdges: DaemonResidualEdgeStoreProxy;
 
   constructor(socketPath: string, physicalCollectionName: PhysicalCollectionName, opts?: DaemonClientOptions) {
     this.channel = new DaemonOpChannel(socketPath, physicalCollectionName, opts);
@@ -132,6 +136,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     this.fieldAccesses = new DaemonFieldAccessStoreProxy(this.channel);
     this.ontology = new DaemonOntologyReportStoreProxy(this.channel);
     this.temporal = new DaemonTemporalStoreProxy(this.channel);
+    this.residualEdges = new DaemonResidualEdgeStoreProxy(this.channel);
   }
 
   /** Connect to the daemon socket with bounded retry — see `DaemonConnectionLifecycle#init`. */
@@ -196,6 +201,18 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async hasStaleDerivedTables(): Promise<boolean> {
     return this.analytics.hasStaleDerivedTables();
+  }
+
+  async markDerivedStale(): Promise<void> {
+    return this.analytics.markDerivedStale();
+  }
+
+  async readResidualCallSites(): Promise<ResidualCallSiteRow[]> {
+    return this.residualEdges.readResidualCallSites();
+  }
+
+  async applyModelEdges(model: string, edges: ModelEdgeRow[]): Promise<void> {
+    return this.residualEdges.applyModelEdges(model, edges);
   }
 
   async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {
