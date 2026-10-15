@@ -10,6 +10,7 @@ import { primeCommand } from "./commands/prime.js";
 import { projectCommand } from "./commands/project.js";
 import { projectsCommand } from "./commands/projects.js";
 import { qdrantCommand } from "./commands/qdrant.js";
+import { resolveCodegraphResidualCommand } from "./commands/resolve-codegraph-residual.js";
 import { serverCommand } from "./commands/server.js";
 import { tuneCommand } from "./commands/tune.js";
 import { updateCommand } from "./commands/update.js";
@@ -35,6 +36,7 @@ export function createCli(argv?: string[]): ReturnType<typeof yargs> {
     .command(doctorCommand)
     .command(qdrantCommand)
     .command(indexCodebaseCommand)
+    .command(resolveCodegraphResidualCommand)
     .command(llamaServerCommand)
     .command(autoUpdateCommand)
     .completion(
