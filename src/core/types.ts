@@ -556,8 +556,9 @@ export interface ProgressUpdate {
    * - `embedding` — chunks embedded by the pipeline (current=itemsProcessed, total=chunksQueued)
    * - `storing`   — finalization
    * - `enriching` — git/static enrichment
+   * - `resolving-residual` — model verdicts for residual call sites (current/total = methods asked)
    */
-  phase: "scanning" | "chunking" | "embedding" | "storing" | "enriching";
+  phase: "scanning" | "chunking" | "embedding" | "storing" | "enriching" | "resolving-residual";
   current: number;
   total: number;
   percentage: number;

@@ -194,6 +194,40 @@ describe("runIndexWorker", () => {
     expect(outcome).toEqual({ failed: [], degraded: [] });
   });
 
+  it("reports the residual-resolution phase after enrichment, timed from its first to its last update", async () => {
+    let clock = 0;
+    const app = {
+      indexCodebase: vi.fn(async (_path, _opts, progress) => {
+        progress?.({ phase: "embedding", current: 5, total: 5, percentage: 100, message: "" });
+        return { status: "completed" };
+      }),
+      getIndexStatus: vi.fn().mockResolvedValue(healthy),
+      whenEnrichmentComplete: vi.fn(async () => {
+        const progress = app.indexCodebase.mock.calls[0][2] as (p: unknown) => void;
+        clock = 100;
+        progress({ phase: "resolving-residual", current: 1, total: 2, percentage: 50, message: "" });
+        clock = 1_300;
+        progress({ phase: "resolving-residual", current: 2, total: 2, percentage: 100, message: "" });
+      }),
+    };
+    const sent: WorkerMessage[] = [];
+
+    await runIndexWorker(
+      app as never,
+      "/repo",
+      {},
+      (m) => sent.push(m),
+      () => clock,
+    );
+
+    const phases = sent.filter((m) => m.type === "phase-done");
+    expect(phases.map((m) => m.phase)).toEqual(["embedding", "enrichment", "resolving-residual"]);
+    expect(phases[2]).toEqual({ type: "phase-done", phase: "resolving-residual", elapsedMs: 1_200 });
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: "embedding", phase: "resolving-residual", current: 2, total: 2 }),
+    );
+  });
+
   it("forwards totalFinal from progress + enrichmentProgress callbacks onto the IPC messages", async () => {
     const app = {
       indexCodebase: vi.fn(async (_path, _opts, progress, enrichmentProgress) => {
