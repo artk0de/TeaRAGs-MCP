@@ -171,6 +171,14 @@ export interface EmbeddingProvider {
    * Returns the detach. Absent on providers that never split a batch.
    */
   observeServerBatchFailures?: (observer: (event: EmbeddingServerBatchFailure) => void) => () => void;
+  /**
+   * Watch the requests an ENDPOINT failed — refused, timed out, a 5xx unrelated
+   * to size, a malformed body — that the provider moves to another endpoint or
+   * retries after its recovery wait. Invisible to the caller otherwise, because
+   * the call still succeeds while any endpoint is left. Returns the detach.
+   * Absent on providers that keep no endpoint-level failure handling.
+   */
+  observeEndpointFailures?: (observer: (event: EmbeddingEndpointFailure) => void) => () => void;
 }
 
 /** A native batch the embedding server failed on its SIZE (bd tea-rags-mcp-7ju66). */
@@ -181,6 +189,20 @@ export interface EmbeddingServerBatchFailure {
   retrySize: number;
   /** Endpoint the batch went to. */
   endpointUrl?: string;
+  /** What the server answered: an HTTP status with a body excerpt, or the socket error of a dropped connection. */
+  cause?: string;
+}
+
+/** A request an embedding endpoint failed, as opposed to its size (see `EmbeddingServerBatchFailure`). */
+export interface EmbeddingEndpointFailure {
+  /** Endpoint the request went to. */
+  endpointUrl: string;
+  /** `refused` = the connection itself was refused; `transient` = any other endpoint-side failure. */
+  kind: "refused" | "transient";
+  /** What failed: an HTTP status with a body excerpt, an errno code, a timeout, a malformed response. */
+  reason: string;
+  /** How long the failed request ran on the wire, when known. */
+  elapsedMs?: number;
 }
 
 export interface ProviderConfig {
