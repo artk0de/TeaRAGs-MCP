@@ -28,3 +28,15 @@ export class KevResponseError extends InfraError {
     });
   }
 }
+
+/** Kev refused the method source as longer than its state limit (HTTP 422); the group cannot be asked as is. */
+export class KevStateTooLongError extends InfraError {
+  constructor(url: string, detail: string) {
+    super({
+      code: "INFRA_KEV_STATE_TOO_LONG",
+      message: `Kev at ${url} refused the state as too long: ${detail}`,
+      hint: "Raise SERVE_MAX_STATE on the Kev server, or start it with KEV_TRUNCATE_STATES=1.",
+      httpStatus: 422,
+    });
+  }
+}

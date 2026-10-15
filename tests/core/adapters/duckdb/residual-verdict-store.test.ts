@@ -82,6 +82,30 @@ describe("ResidualVerdictStore", () => {
     expect(found?.pick).toBe("Firm#users");
   });
 
+  it("findLatest answers the newest verdict of the model per site and menu, whatever its version", async () => {
+    await store.put([
+      verdict({ modelVersion: "kev@1", pick: "Team#users", createdAt: 1_000 }),
+      verdict({ modelVersion: "kev@2", pick: "Firm#users", createdAt: 2_000 }),
+      verdict({ siteKey: "k2", modelVersion: "kev@1", createdAt: 1_500 }),
+      verdict({ siteKey: "k1", model: "jev", modelVersion: "jev@9", createdAt: 9_000 }),
+      verdict({ siteKey: "k1", menuHash: "m2", modelVersion: "kev@3", createdAt: 3_000 }),
+    ]);
+
+    const latest = await store.findLatest(
+      [
+        { siteKey: "k1", menuHash: "m1" },
+        { siteKey: "k2", menuHash: "m1" },
+        { siteKey: "k3", menuHash: "m1" },
+      ],
+      "kev",
+    );
+
+    expect(latest.map((v) => [v.siteKey, v.menuHash, v.modelVersion, v.pick])).toEqual([
+      ["k1", "m1", "kev@2", "Firm#users"],
+      ["k2", "m1", "kev@1", "Firm#users"],
+    ]);
+  });
+
   it("touch moves last_seen_at for the model's sites only", async () => {
     await store.put([verdict(), verdict({ siteKey: "k2" }), verdict({ model: "jev", modelVersion: "jev@1" })]);
 

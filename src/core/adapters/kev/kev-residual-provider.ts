@@ -11,7 +11,7 @@ import type {
   ResidualQuestion,
   ResidualQuestionGroup,
 } from "../../contracts/types/codegraph-residual.js";
-import { KevResponseError, KevUnavailableError } from "./errors.js";
+import { KevResponseError, KevStateTooLongError, KevUnavailableError } from "./errors.js";
 
 const MODEL_NAME = "kev-latest";
 const RESOLVE_TIMEOUT_MS = 120_000;
@@ -123,7 +123,7 @@ export class KevResidualProvider implements ResidualModelProvider {
     return modelRun;
   }
 
-  /** Round-robin start, then every other URL once; 4xx and malformed bodies are not retried elsewhere. */
+  /** Round-robin start, then every other URL once; 4xx (422 = state too long) and malformed bodies are not retried elsewhere. */
   private async postAcrossUrls(body: string): Promise<{ url: string; response: SystemOneResponse }> {
     const start = this.nextUrl;
     this.nextUrl = (this.nextUrl + 1) % this.urls.length;
@@ -146,6 +146,7 @@ export class KevResidualProvider implements ResidualModelProvider {
         lastError = new KevResponseError(url, `POST /v1/systemone answered HTTP ${response.status}`);
         continue;
       }
+      if (response.status === 422) throw new KevStateTooLongError(url, await response.text());
       if (!response.ok) throw new KevResponseError(url, `HTTP ${response.status}: ${await response.text()}`);
       return { url, response: (await response.json()) as SystemOneResponse };
     }

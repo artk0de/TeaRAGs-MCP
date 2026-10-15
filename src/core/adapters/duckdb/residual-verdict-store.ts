@@ -103,6 +103,26 @@ export class ResidualVerdictStore {
     return verdicts;
   }
 
+  /** The newest verdict of `model` per (site, menu), whatever model version answered it. */
+  async findLatest(keys: { siteKey: string; menuHash: string }[], model: string): Promise<ResidualVerdict[]> {
+    const verdicts: ResidualVerdict[] = [];
+    for (let i = 0; i < keys.length; i += CHUNK_ROWS) {
+      const chunk = keys.slice(i, i + CHUNK_ROWS);
+      const rows = await this.session.queryAll<VerdictRow>(
+        `SELECT v.${COLUMNS.join(", v.")}
+           FROM residual_verdicts v
+           JOIN (VALUES ${chunk.map(() => "(?, ?)").join(", ")}) AS k(site_key, menu_hash)
+             ON v.site_key = k.site_key AND v.menu_hash = k.menu_hash
+          WHERE v.model = ?
+        QUALIFY row_number() OVER (PARTITION BY v.site_key, v.menu_hash ORDER BY v.created_at DESC, v.model_version DESC) = 1
+          ORDER BY v.site_key, v.menu_hash`,
+        [...chunk.flatMap((k) => [k.siteKey, k.menuHash]), model],
+      );
+      verdicts.push(...rows.map(toVerdict));
+    }
+    return verdicts;
+  }
+
   async put(verdicts: ResidualVerdict[]): Promise<void> {
     const byKey = new Map<string, ResidualVerdict>();
     for (const v of verdicts) byKey.set([v.siteKey, v.menuHash, v.model, v.modelVersion].join("\u0000"), v);
