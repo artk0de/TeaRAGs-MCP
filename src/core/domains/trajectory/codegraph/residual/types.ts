@@ -8,6 +8,7 @@
 export type {
   ResidualAnswer,
   ResidualModelProvider,
+  ResidualProviderLease,
   ResidualQuestion,
   ResidualQuestionGroup,
   ResidualVerdict,

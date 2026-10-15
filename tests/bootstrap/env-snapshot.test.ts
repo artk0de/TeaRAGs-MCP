@@ -206,7 +206,7 @@ describe("buildRegistryEnvSnapshot", () => {
     cfg.codegraph = codegraphSchema.parse({
       dbPath: "/tmp/cg",
       customExcludePatterns: "vendor/**",
-      residual: { kevUrls: "http://gpu:8090" },
+      residual: { kevUrls: "http://gpu:8090", kevSessionUrl: "http://gpu:8008", kevSessionToken: "s3cret" },
     });
     cfg.qdrantTune = qdrantTuneSchema.parse({ maxResidentMemoryPercent: "80", searchMaxBatchsize: "64" });
     const snapshot = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());
@@ -214,6 +214,18 @@ describe("buildRegistryEnvSnapshot", () => {
       .filter((key) => !DEDICATED_FIELD_ENV_KEYS.has(key))
       .sort();
     expect(Object.keys(snapshot).sort()).toEqual(expected);
+  });
+
+  it("records the Kev session broker URL but never its token", () => {
+    const cfg = bareConfig();
+    cfg.codegraph = codegraphSchema.parse({
+      residual: { kevSessionUrl: "http://gpu:8008", kevSessionToken: "s3cret" },
+    });
+
+    const snapshot = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());
+
+    expect(snapshot.CODEGRAPH_RESIDUAL_KEV_SESSION_URL).toBe("http://gpu:8008");
+    expect(JSON.stringify(snapshot)).not.toContain("s3cret");
   });
 
   it("emits only canonical keys — deprecated alias spellings never appear", () => {

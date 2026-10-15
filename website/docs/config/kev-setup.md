@@ -178,11 +178,29 @@ it is spilling.
 
 Run embeddings and Kev one after the other on the same card: tea-rags runs the
 residual pass after embeddings and codegraph enrichment finish, so they never
-need the GPU at the same time. Until the Kev host automates it, switch by hand:
-stop the embedding servers on the Kev GPU (and their supervisor, or it restarts
-them), start Kev, and after the pass stop Kev and start the embedding servers
-again. Servers on a second GPU (an integrated Intel Arc, for instance) can keep
-running.
+need the GPU at the same time. The GPU session broker on the Kev host
+(kev-rocm-serving `broker/`, port 8008) does the switch: set
+`CODEGRAPH_RESIDUAL_KEV_SESSION_URL` and a pass that has questions to ask leases
+Kev from it — the broker waits for the embedding servers to go quiet, stops
+them, starts Kev, and starts them again when the pass releases the lease. The
+lease call blocks about 75 s; the progress line reads "acquiring GPU session".
+A pass answered entirely from cached verdicts never takes the GPU.
+
+- **Busy broker.** Another lease, a switch in progress, or an embedding run
+  still in flight on the card ends the pass `skipped` with the broker's reason
+  (`gpu-session-busy: …` / `gpu-session-unavailable: …`); indexing still
+  succeeds and the cached verdicts are applied.
+- **Other indexing runs.** An index run started while Kev holds the card gets
+  connection errors from those embedders; its retry and `EMBEDDING_FALLBACK_URL`
+  path applies.
+- **Interrupted pass.** The lease is released on completion, on failure and on
+  Ctrl-C / SIGTERM. A killed process stops heartbeating, and the broker expires
+  the lease after its ttl (120 s) and restores the embedders.
+
+Without the broker, switch by hand: stop the embedding servers on the Kev GPU
+(and their supervisor, or it restarts them), start Kev, and after the pass stop
+Kev and start the embedding servers again. Servers on a second GPU (an
+integrated Intel Arc, for instance) can keep running.
 
 ## Tuning for other hardware
 
@@ -243,6 +261,8 @@ to system memory), and smaller 512-token buckets (more padding, not less).
 | `CODEGRAPH_RESIDUAL_CONCURRENCY`            | `96`    | Requests in flight (one per method); fewer leaves Kev's passes half full |
 | `CODEGRAPH_RESIDUAL_MENU_LIMIT`             | `40`    | Call sites with more candidates are not asked              |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | `180`   | Cached verdicts unseen this long are dropped               |
+| `CODEGRAPH_RESIDUAL_KEV_SESSION_URL`        | —       | GPU session broker; set, Kev is leased per pass and asked at the URL the lease names (`CODEGRAPH_RESIDUAL_KEV_URL` is then not needed) |
+| `CODEGRAPH_RESIDUAL_KEV_SESSION_TOKEN`      | —       | Broker `X-Broker-Token`; a secret, never stored with the project |
 
 Codegraph must be on.
 

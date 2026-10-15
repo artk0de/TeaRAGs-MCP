@@ -103,6 +103,8 @@ const REGISTRY_ENV_GROUP_TABLE = [
   { canonical: "CODEGRAPH_RESIDUAL_CONCURRENCY", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_MENU_LIMIT", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS", aliases: [], consequence: "runtime" },
+  // CODEGRAPH_RESIDUAL_KEV_SESSION_TOKEN is a secret and stays outside the registry.
+  { canonical: "CODEGRAPH_RESIDUAL_KEV_SESSION_URL", aliases: [], consequence: "runtime" },
   // embedding.tune (parse.ts `embeddingTune` section). CODE_BATCH_SIZE is a
   // member of TWO groups — parse.ts feeds it into both embedding batchSize
   // and qdrant upsertBatchSize.

@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { ResidualVerdictStore } from "../../../../../../src/core/adapters/duckdb/residual-verdict-store.js";
-import { KevStateTooLongError } from "../../../../../../src/core/adapters/kev/errors.js";
+import {
+  KevSessionBusyError,
+  KevSessionLostError,
+  KevStateTooLongError,
+} from "../../../../../../src/core/adapters/kev/errors.js";
 import type {
   ModelEdgeRow,
   ResidualCallSiteRow,
@@ -17,6 +21,7 @@ import {
 import type {
   ResidualAnswer,
   ResidualModelProvider,
+  ResidualProviderLease,
   ResidualQuestion,
   ResidualQuestionGroup,
 } from "../../../../../../src/core/domains/trajectory/codegraph/residual/types.js";
@@ -80,6 +85,33 @@ class FakeProvider implements ResidualModelProvider {
       return { siteKey: q.siteKey, pick, p, probabilities: { [pick]: p }, questionPayload: JSON.stringify(q) };
     });
   };
+}
+
+/** A provider whose hardware is leased per pass; records the lease lifecycle against the asks. */
+class LeasedProvider extends FakeProvider {
+  readonly events: string[] = [];
+  acquireError: Error | undefined;
+  lostOn = new Set<string>();
+
+  acquire = async (): Promise<ResidualProviderLease> => {
+    this.events.push("acquire");
+    if (this.acquireError) throw this.acquireError;
+    return {
+      release: async () => {
+        this.events.push("release");
+      },
+    };
+  };
+
+  constructor(answer: (q: ResidualQuestion) => { pick: string; p: number }) {
+    super(answer);
+    const ask = this.resolveGroup;
+    this.resolveGroup = async (group) => {
+      this.events.push(`ask ${group.methodSymbolId}`);
+      if (this.lostOn.has(group.methodSymbolId)) throw new KevSessionLostError("http://broker:8008", "lease-1");
+      return ask(group);
+    };
+  }
 }
 
 function fakeGraphDb(rows: ResidualCallSiteRow[]) {
@@ -418,5 +450,79 @@ describe("ResidualResolutionPass", () => {
     ]);
     expect(report.durations.totalMs).toBeGreaterThan(0);
     expect(report.durations.totalMs).toBe(report.durations.readMs + report.durations.askMs + report.durations.applyMs);
+  });
+  describe("leased provider", () => {
+    it("never acquires when every eligible site is answered from the cache", async () => {
+      const provider = new LeasedProvider(firmPick);
+      await run(fakeGraphDb([row({ siteKey: "s1" })]), provider);
+      provider.events.length = 0;
+
+      const report = await run(fakeGraphDb([row({ siteKey: "s1" })]), provider);
+
+      expect(provider.events).toEqual([]);
+      expect(report).toMatchObject({ outcome: "completed", cacheHits: 1, asked: 0, edgesApplied: 1 });
+    });
+
+    it("never acquires in cacheOnly mode", async () => {
+      const provider = new LeasedProvider(firmPick);
+
+      await run(fakeGraphDb([row({ siteKey: "s1" })]), provider, { mode: "cacheOnly" });
+
+      expect(provider.events).toEqual([]);
+    });
+
+    it("acquires once before the first ask and releases after the last one", async () => {
+      const provider = new LeasedProvider(firmPick);
+      const updates: ProgressUpdate[] = [];
+      const rows = [row({ siteKey: "s1" }), row({ siteKey: "s2", methodSymbolId: "A#other" })];
+
+      const report = await run(fakeGraphDb(rows), provider, { concurrency: 1, onProgress: (u) => updates.push(u) });
+
+      expect(provider.events).toEqual(["acquire", "ask A#run", "ask A#other", "release"]);
+      expect(report).toMatchObject({ outcome: "completed", answered: 2 });
+      expect(updates[0]).toMatchObject({ phase: "resolving-residual", current: 0, total: 2 });
+      expect(updates[0].message).toMatch(/acquiring GPU session/);
+    });
+
+    it("releases the lease when the pass throws mid-ask", async () => {
+      const provider = new LeasedProvider(firmPick);
+      const onProgress = (update: ProgressUpdate) => {
+        if (update.current > 0) throw new Error("renderer died");
+      };
+
+      await expect(run(fakeGraphDb([row({ siteKey: "s1" })]), provider, { onProgress })).rejects.toThrow(
+        "renderer died",
+      );
+
+      expect(provider.events).toEqual(["acquire", "ask A#run", "release"]);
+    });
+
+    it("ends skipped with the broker's reason when the session is busy, applying the cached verdicts", async () => {
+      const provider = new LeasedProvider(firmPick);
+      await run(fakeGraphDb([row({ siteKey: "s1" })]), provider);
+      provider.events.length = 0;
+      provider.acquireError = new KevSessionBusyError("http://broker:8008", "other-host:42", "KEV");
+      const graphDb = fakeGraphDb([row({ siteKey: "s1" }), row({ siteKey: "s2", line: 3 })]);
+
+      const report = await run(graphDb, provider);
+
+      expect(provider.events).toEqual(["acquire"]);
+      expect(report).toMatchObject({ outcome: "skipped", cacheHits: 1, asked: 0, edgesApplied: 1 });
+      expect(report.reason).toBe(
+        "provider kev session not acquired: gpu-session-busy: other-host:42 (KEV) at http://broker:8008",
+      );
+    });
+
+    it("stops asking and ends skipped as soon as the lease is lost", async () => {
+      const provider = new LeasedProvider(firmPick);
+      provider.lostOn.add("A#b");
+      const rows = ["A#a", "A#b", "A#c"].map((method, i) => row({ siteKey: `s${i}`, methodSymbolId: method }));
+
+      const report = await run(fakeGraphDb(rows), provider, { concurrency: 1 });
+
+      expect(provider.events).toEqual(["acquire", "ask A#a", "ask A#b", "release"]);
+      expect(report).toMatchObject({ outcome: "skipped", answered: 1, failedGroups: 1, edgesApplied: 1 });
+      expect(report.reason).toBe("1 group(s) failed: gpu-session-lost: lease lease-1 at http://broker:8008");
+    });
   });
 });

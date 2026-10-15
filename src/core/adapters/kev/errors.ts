@@ -40,3 +40,42 @@ export class KevStateTooLongError extends InfraError {
     });
   }
 }
+
+/** The GPU session broker holds the card for another client, or is mid-switch (HTTP 409). */
+export class KevSessionBusyError extends InfraError {
+  constructor(brokerUrl: string, holder: string | undefined, state: string | undefined) {
+    super({
+      code: "INFRA_KEV_SESSION_BUSY",
+      message: `gpu-session-busy: ${holder ?? "no holder"} (${state ?? "unknown state"}) at ${brokerUrl}`,
+      hint: "Another run holds the Kev GPU session, or the broker is switching the card; retry when it is back in EMBED.",
+      httpStatus: 409,
+    });
+  }
+}
+
+/** The broker refused the session or could not be reached; nothing on the host changed for us. */
+export class KevSessionUnavailableError extends InfraError {
+  constructor(brokerUrl: string, reason: string, cause?: Error) {
+    super({
+      code: "INFRA_KEV_SESSION_UNAVAILABLE",
+      message: `gpu-session-unavailable: ${reason} at ${brokerUrl}`,
+      hint:
+        "An embedding run in flight keeps the broker from switching the card to Kev; let it finish. " +
+        `Otherwise check the broker log on the GPU host and CODEGRAPH_RESIDUAL_KEV_SESSION_URL=${brokerUrl}`,
+      httpStatus: 503,
+      cause,
+    });
+  }
+}
+
+/** The broker no longer knows the lease (expired or restarted); Kev may already be gone. */
+export class KevSessionLostError extends InfraError {
+  constructor(brokerUrl: string, lease: string) {
+    super({
+      code: "INFRA_KEV_SESSION_LOST",
+      message: `gpu-session-lost: lease ${lease} at ${brokerUrl}`,
+      hint: "The lease expired or the broker restarted mid-pass; run the residual pass again.",
+      httpStatus: 503,
+    });
+  }
+}

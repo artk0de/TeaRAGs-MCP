@@ -12,6 +12,8 @@ describe("codegraph.residual config", () => {
       concurrency: 96,
       menuLimit: 40,
       retentionDays: 180,
+      kevSessionUrl: undefined,
+      kevSessionToken: undefined,
     });
   });
 
@@ -22,6 +24,8 @@ describe("codegraph.residual config", () => {
       CODEGRAPH_RESIDUAL_CONCURRENCY: "8",
       CODEGRAPH_RESIDUAL_MENU_LIMIT: "20",
       CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS: "30",
+      CODEGRAPH_RESIDUAL_KEV_SESSION_URL: "http://192.168.1.71:8008",
+      CODEGRAPH_RESIDUAL_KEV_SESSION_TOKEN: "s3cret",
     });
 
     expect(codegraph.residual).toEqual({
@@ -30,6 +34,8 @@ describe("codegraph.residual config", () => {
       concurrency: 8,
       menuLimit: 20,
       retentionDays: 30,
+      kevSessionUrl: "http://192.168.1.71:8008",
+      kevSessionToken: "s3cret",
     });
   });
 

@@ -97,7 +97,7 @@ export const resolveCodegraphResidualCommand: CommandModule<object, ResolveResid
         type: "string",
         demandOption: true,
         choices: ["kev"] as const,
-        describe: "Residual model (needs CODEGRAPH_RESIDUAL_KEV_URL).",
+        describe: "Residual model (needs CODEGRAPH_RESIDUAL_KEV_URL or CODEGRAPH_RESIDUAL_KEV_SESSION_URL).",
       })
       .option("cache-only", {
         type: "boolean",
