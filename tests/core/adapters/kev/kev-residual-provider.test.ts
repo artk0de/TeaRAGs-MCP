@@ -3,7 +3,11 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { KevResponseError, KevUnavailableError } from "../../../../src/core/adapters/kev/errors.js";
+import {
+  KevResponseError,
+  KevStateTooLongError,
+  KevUnavailableError,
+} from "../../../../src/core/adapters/kev/errors.js";
 import {
   candidateClass,
   kevQuestion,
@@ -162,6 +166,17 @@ describe("KevResidualProvider", () => {
       "http://b:1/v1/systemone",
       "http://a:1/v1/systemone",
     ]);
+  });
+
+  it("throws KevStateTooLongError when Kev refuses the state as too long (HTTP 422)", async () => {
+    const { fetch, requests } = fakeFetch(() => new Response("state exceeds SERVE_MAX_STATE", { status: 422 }));
+    const provider = new KevResidualProvider({ urls: ["http://a:1", "http://b:1"], threshold: 0.7 }, { fetch });
+
+    const error = await provider.resolveGroup(GROUP).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(KevStateTooLongError);
+    expect(error).toMatchObject({ code: "INFRA_KEV_STATE_TOO_LONG" });
+    expect(requests).toHaveLength(1);
   });
 
   it("throws KevUnavailableError when every URL is down", async () => {
