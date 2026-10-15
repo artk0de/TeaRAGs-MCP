@@ -89,7 +89,10 @@ export const sharedVersions: LanguageSupportVersions = {
   //   - bd tea-rags-mcp-g5i0a: adjacent examples of one scope are packed into
   //     one test chunk up to 1500 chars, each member addressable by its id,
   //     own line range and row count.
-  chunking: 4,
+  // chunking 5: Rust attribute and nested-impl context are now preserved by
+  // the shared tree-sitter chunker (tea-rags-mcp-2g2og.8), alongside the
+  // existing release-wide chunking changes above.
+  chunking: 5,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
   // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd
   // tea-rags-mcp-r8hme.12: the resolution runner resolves `typeOnlyImports`

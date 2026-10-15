@@ -49,6 +49,7 @@ export function symbolKindOf(nodeType: string, context: RustSymbolKindContext = 
     case "mod_item":
       return "module";
     case "function_item":
+    case "function_signature_item":
       return context.ownerItem !== undefined && METHOD_OWNERS.has(context.ownerItem) ? "method" : "function";
     case "const_item":
     case "static_item":

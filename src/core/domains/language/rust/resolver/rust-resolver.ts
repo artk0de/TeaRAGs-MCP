@@ -45,8 +45,9 @@ import {
   type CallResolver,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import { resolveViaChain } from "../../kernel/index.js";
+import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import { ConeDispatchResolver, resolveDispatchViaComponents, resolveViaChain } from "../../kernel/index.js";
+import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
 import {
   RustBareSelfMethodSymbolResolutionStrategy,
   RustGlobalShortNameSymbolResolutionStrategy,
@@ -61,9 +62,11 @@ import {
 export class RustCallResolver implements CallResolver {
   readonly language = "rust";
   private readonly strategies: SymbolResolutionStrategy[];
+  private readonly dispatchComponents: readonly DispatchResolverComponent[];
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const cfg: ResolverConfig = { mode };
+    this.dispatchComponents = [new ConeDispatchResolver(new RustConeTypeLocator(cfg), 8)];
     this.strategies = [
       new RustSelfMethodSymbolResolutionStrategy(cfg),
       new RustSelfFieldSymbolResolutionStrategy(cfg),
@@ -73,6 +76,10 @@ export class RustCallResolver implements CallResolver {
       new RustBareSelfMethodSymbolResolutionStrategy(cfg),
       new RustGlobalShortNameSymbolResolutionStrategy(cfg),
     ];
+  }
+
+  resolveDispatch(call: CallRef, ctx: CallContext) {
+    return resolveDispatchViaComponents(this.dispatchComponents, call, ctx);
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {

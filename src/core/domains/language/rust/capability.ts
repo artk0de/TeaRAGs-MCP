@@ -7,9 +7,16 @@ export const capability: LanguageCapability = {
     tier: "full",
     engine: "tree-sitter",
     grammarPackage: "tree-sitter-rust",
-    hooks: [{ name: "nameExtractor", short: "named-item extraction" }],
+    hooks: [
+      { name: "nameExtractor", short: "named-item extraction" },
+      { name: "rustTestScopeChunker", short: "#[cfg(test)] / #[test] scopes" },
+    ],
   },
-  tests: { tier: "medium", detection: "*_test.rs", tech: "generic AST (#[test] attrs not preserved)" },
+  tests: {
+    tier: "high",
+    detection: "*_test.rs + #[cfg(test)] modules",
+    tech: "attribute-based test scope chunking (#[cfg(test)] / #[test])",
+  },
   testFiles,
   codegraph: {
     tier: "moderate",
@@ -46,7 +53,7 @@ export const capability: LanguageCapability = {
   // `Self::f()` and `Type::new().m()` through an in-project type.
   // walker 3: release v1.44.2 shipped walker 2 and a release cycle gets ONE
   // walker bump, so every branch-local number above collapses into 3.
-  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
+  versions: { chunking: 4, walker: 5, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
   // SCREAMING_SNAKE_CASE.

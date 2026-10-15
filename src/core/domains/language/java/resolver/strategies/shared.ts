@@ -15,9 +15,26 @@ import {
   type CallContext,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
+import { DefaultSymbolIdComposer, type NominalTypeRef } from "../../../kernel/index.js";
 
 export interface ResolverConfig {
   mode: AmbiguousResolveMode;
+}
+
+const JAVA_SYMBOL_ID_COMPOSER = new DefaultSymbolIdComposer();
+
+/** Java's instance/static spelling, preserved behind the kernel lookup port. */
+export function resolveJavaTypeMember(
+  type: NominalTypeRef,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget {
+  const methodKind = type.form === "class" ? "static" : "instance";
+  const fqName = JAVA_SYMBOL_ID_COMPOSER.compose(type.name, member, { methodKind });
+  const hit = pickSingleCandidate(ctx.symbolTable.lookup(fqName), mode);
+  if (hit) return { targetRelPath: hit.relPath, targetSymbolId: hit.symbolId };
+  return { targetRelPath: type.name, targetSymbolId: fqName };
 }
 
 /**

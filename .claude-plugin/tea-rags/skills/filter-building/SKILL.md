@@ -101,13 +101,14 @@ Two test-related filters address different granularity. They compose freely.
 **`chunkType: "test"` and `chunkType: "test_setup"` require AST test chunking.**
 Currently supported:
 
-| Language   | Frameworks            | Granularity | Chunker                                                               |
-| ---------- | --------------------- | ----------- | --------------------------------------------------------------------- |
-| TypeScript | Vitest, Jest, Mocha   | scope       | `src/core/domains/language/typescript/chunking/test-scope-chunker.ts` |
-| JavaScript | Vitest, Jest, Mocha   | scope       | `src/core/domains/language/javascript/chunking/test-scope-chunker.ts` |
-| Ruby       | RSpec                 | scope       | `src/core/domains/language/ruby/chunking/rspec-scope-chunker.ts`      |
-| Swift      | XCTest, swift-testing | test case   | `src/core/domains/language/swift/chunking/suite-recognition.ts`       |
-| Swift      | Quick / Nimble        | scope       | `src/core/domains/language/swift/chunking/quick-scope-chunker.ts`     |
+| Language   | Frameworks                 | Granularity | Chunker                                                               |
+| ---------- | -------------------------- | ----------- | --------------------------------------------------------------------- |
+| TypeScript | Vitest, Jest, Mocha        | scope       | `src/core/domains/language/typescript/chunking/test-scope-chunker.ts` |
+| JavaScript | Vitest, Jest, Mocha        | scope       | `src/core/domains/language/javascript/chunking/test-scope-chunker.ts` |
+| Ruby       | RSpec                      | scope       | `src/core/domains/language/ruby/chunking/rspec-scope-chunker.ts`      |
+| Swift      | XCTest, swift-testing      | test case   | `src/core/domains/language/swift/chunking/suite-recognition.ts`       |
+| Swift      | Quick / Nimble             | scope       | `src/core/domains/language/swift/chunking/quick-scope-chunker.ts`     |
+| Rust       | `#[cfg(test)]` / `#[test]` | test case   | `src/core/domains/language/rust/chunking/test-scope-chunker.ts`       |
 
 Granularity `scope` = one chunk per describe/context with ancestor setup spliced
 in. `test case` = one chunk per method (XCTest and swift-testing declare cases

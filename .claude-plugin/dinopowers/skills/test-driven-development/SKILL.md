@@ -36,7 +36,7 @@ skips `proven`'s production default when `chunkType` / `testFile` select tests
 If `Skill(tea-rags:tests-as-context)` Step 0 preflight returns SKIP (no
 `chunkType: "test"` chunks — language has no AST test chunking; **currently
 supported: TypeScript + JavaScript (Vitest/Jest/Mocha), Ruby (RSpec), Swift
-(XCTest / swift-testing / Quick)** — see
+(XCTest / swift-testing / Quick), Rust (#[cfg(test)] / #[test])** — see
 `src/core/domains/language/<lang>/chunking/` (`test-scope-chunker.ts`,
 `rspec-scope-chunker.ts`, `suite-recognition.ts`, `quick-scope-chunker.ts`);
 canonical per-language list:

@@ -1,8 +1,7 @@
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
-import { resolveLocalBindingType } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveByLocalType, type ResolverConfig } from "./shared.js";
+import { LocalBindingSymbolResolutionStrategy, type ReceiverTypingPorts } from "../../../kernel/index.js";
+import { javaLocalReceiverType } from "../java-receiver-type-ports.js";
+import { createJavaTypeMemberLookup } from "../java-type-member-lookup.js";
+import type { ResolverConfig } from "./shared.js";
 
 /**
  * bd tea-rags-mcp-cvv9 — typed-receiver call (`param.method()` /
@@ -14,14 +13,9 @@ import { resolveByLocalType, type ResolverConfig } from "./shared.js";
  * `resolveByLocalType` returns a target unconditionally — the bound type is
  * authoritative.
  */
-export class JavaLocalBindingSymbolResolutionStrategy implements SymbolResolutionStrategy {
-  readonly name = "localBinding";
-  constructor(private readonly cfg: ResolverConfig) {}
-
-  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (!call.receiver) return CONTINUE;
-    const boundType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
-    if (!boundType) return CONTINUE;
-    return resolved(resolveByLocalType(boundType, call.member, ctx, this.cfg.mode));
+export class JavaLocalBindingSymbolResolutionStrategy extends LocalBindingSymbolResolutionStrategy {
+  constructor(cfg: ResolverConfig) {
+    const typing: ReceiverTypingPorts = { typeOfReceiver: (call, ctx) => javaLocalReceiverType(call, ctx) ?? null };
+    super("localBinding", typing, createJavaTypeMemberLookup(cfg.mode), { dropOnTypedMiss: true });
   }
 }

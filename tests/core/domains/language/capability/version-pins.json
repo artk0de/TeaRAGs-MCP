@@ -1,8 +1,8 @@
 {
   "*": {
     "chunking": {
-      "version": 4,
-      "digest": "sha256:c7fb6c112b49637266075f5bc0299384ef9a634288365d2f6ffa7830c313f25b"
+      "version": 5,
+      "digest": "sha256:e00e5d54d94ecd533fb267174a3ed9f695f7309ef99067ad16879b289cb10c44"
     },
     "walker": {
       "version": 6,
@@ -32,7 +32,7 @@
   "java": {
     "walker": {
       "version": 4,
-      "digest": "sha256:14d4c83320cf75b7245f8bdbca07c182680dc39e74a758241697733c3f155a7a"
+      "digest": "sha256:9a419eb4ac1bd86ba0c55e695968cd9877bee33f49bcda29a6b0558161bdb229"
     }
   },
   "javascript": {
@@ -68,9 +68,13 @@
     }
   },
   "rust": {
+    "chunking": {
+      "version": 4,
+      "digest": "sha256:e0b33c5196c520c0a681fbdd648255f2ece989426b18a88c04c583b36251ecd9"
+    },
     "walker": {
-      "version": 3,
-      "digest": "sha256:6a25bd130238f2c0f0d9fe8d8bc6df3c3c0649040da3281bf36c91e3bbb5e842"
+      "version": 5,
+      "digest": "sha256:c286d23df8ed666c75b40ccc8b4bcb023c6c8f97a7f1157e036041a1a4d8266e"
     }
   },
   "swift": {

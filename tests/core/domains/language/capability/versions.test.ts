@@ -99,7 +99,7 @@ describe("resolveLanguageCodeVersions", () => {
     // type a project class extends, when the locator answers `isProjectType`.
     // walker 6: bd tea-rags-mcp-44cpv (c-1=a) — the census facet grows the
     // shared behaviour-free fold over class bodies.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 4, walker: 6, codegraphSchema: 2 });
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 5, walker: 6, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -507,7 +507,7 @@ describe("seeded support versions", () => {
         ["python", 11],
         ["ruby", 9],
         ["java", 4],
-        ["rust", 3],
+        ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a
         // nested-checkout or gitignored go.mod.
         ["go", 6],
@@ -544,6 +544,7 @@ describe("seeded support versions", () => {
         ["swift", 4],
         ["bash", 2],
         ["ruby", 2],
+        ["rust", 4],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);
