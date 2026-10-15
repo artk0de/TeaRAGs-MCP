@@ -28,10 +28,16 @@ import {
   type EmbeddingThroughputDecision,
   type EmbeddingThroughputTuner,
 } from "./embedding-throughput-tuner.js";
-import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-log/index.js";
-import type { Batch, BatchAccumulatorConfig, BatchResult, ChunkItem, WorkerPoolConfig } from "./infra/index.js";
-import { WorkerPool } from "./infra/worker-pool.js";
+import {
+  BatchAccumulator,
+  WorkerPool,
+  type Batch,
+  type BatchAccumulatorConfig,
+  type BatchResult,
+  type ChunkItem,
+  type WorkerPoolConfig,
+} from "./infra/index.js";
 import type { PipelineStats } from "./types.js";
 
 const LOG_CTX = { component: "ChunkPipeline" };
@@ -81,6 +87,7 @@ export class ChunkPipeline {
   /** Batch size the tuner asks for; the accumulator uses min(this, Qdrant sizer). */
   private tunedBatchSize: number;
   private detachServerBatchFailures?: () => void;
+  private detachEndpointFailures?: () => void;
   private pendingBatches: Promise<BatchResult>[] = [];
 
   private onBatchUpsertedCb?: (items: ChunkItem[]) => void;
@@ -204,6 +211,12 @@ export class ChunkPipeline {
       // A size failure the provider absorbs by halving internally never fails
       // the call, so it reaches the tuner only through this hook.
       this.detachServerBatchFailures = this.embeddings.observeServerBatchFailures?.((event) => {
+        pipelineLog.step(LOG_CTX, "EMBED_SERVER_BATCH_FAILURE", {
+          endpointUrl: event.endpointUrl,
+          failedSize: event.failedSize,
+          retrySize: event.retrySize,
+          ...(event.cause !== undefined ? { cause: event.cause } : {}),
+        });
         this.applyThroughputDecision(
           tuner.observe({
             size: event.failedSize,
@@ -216,6 +229,20 @@ export class ChunkPipeline {
       });
       this.applyThroughputDecision(tuner.begin(this.currentEmbeddingEndpoint()));
     }
+
+    // Diagnostics must not depend on adaptive tuning: attached with or without a tuner.
+    this.detachEndpointFailures = this.embeddings.observeEndpointFailures?.((event) => {
+      pipelineLog.step(LOG_CTX, "EMBED_ENDPOINT_FAILURE", {
+        endpointUrl: event.endpointUrl,
+        kind: event.kind,
+        reason: event.reason,
+        ...(event.elapsedMs !== undefined ? { elapsedMs: event.elapsedMs } : {}),
+      });
+      if (tuner) {
+        tuner.noteEndpointFailure(this.currentEmbeddingEndpoint(event.endpointUrl));
+        this.applyThroughputDecision(tuner.decision());
+      }
+    });
 
     if (isDebug()) {
       console.error(
@@ -400,6 +427,8 @@ export class ChunkPipeline {
   private detachFromProvider(): void {
     this.detachServerBatchFailures?.();
     this.detachServerBatchFailures = undefined;
+    this.detachEndpointFailures?.();
+    this.detachEndpointFailures = undefined;
   }
 
   /**
@@ -501,7 +530,13 @@ export class ChunkPipeline {
         ({ items, embeddings } = await this.isolateEmbeddingFailures(items, wrapped));
         // Every chunk survived the bisection: the server rejected the BATCH, not
         // any chunk in it (bd tea-rags-mcp-nu05a) — a size fact for the tuner.
-        if (items.length === sent) this.observeEmbedBatch(sent, 0, 0, false);
+        if (items.length === sent) {
+          pipelineLog.step(ctx, "EMBED_SERVER_BATCH_FAILURE", {
+            failedSize: sent,
+            cause: (wrapped instanceof Error ? wrapped.message : String(wrapped)).slice(0, 200),
+          });
+          this.observeEmbedBatch(sent, 0, 0, false);
+        }
         if (items.length === 0) {
           // Every chunk in the batch was quarantined — nothing left to store.
           return;
