@@ -20,6 +20,8 @@
  *   - `codegraph-extraction.ts`    what a walker emits per file (pass 1)
  *   - `codegraph-pass1.ts`         the persisted per-file pass-1 aggregate slice
  *   - `codegraph-resolution.ts`    `CallContext` / `CallResolver` (pass 2)
+ *   - `codegraph-residual.ts`      residual call sites, model edges, the
+ *                                  residual provider port and its verdicts
  *   - `codegraph-storage.ts`       `GraphDbClient` and its call shapes
  *   - `codegraph-temporal.ts`      the co-change sub-graph (`cg_temporal_*`)
  *
@@ -41,6 +43,7 @@ export type * from "./codegraph-graph.js";
 export * from "./codegraph-hierarchy.js";
 export * from "./codegraph-local-binding.js";
 export type * from "./codegraph-pass1.js";
+export type * from "./codegraph-residual.js";
 export * from "./codegraph-resolution.js";
 export type * from "./codegraph-storage.js";
 export * from "./codegraph-symbols.js";
