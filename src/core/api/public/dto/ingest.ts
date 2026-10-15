@@ -4,6 +4,7 @@
  * App-facing types only. Internal pipeline types stay in core/types.ts.
  */
 
+import type { ResidualPassReport } from "../../../contracts/types/codegraph-residual.js";
 import type { EnrichmentHealthMap } from "../../../contracts/types/enrichment.js";
 import {
   isRestrictingRechunkSelector,
@@ -47,6 +48,13 @@ export interface IndexOptions {
    * including the vectors.
    */
   forceEnrichments?: string[];
+  /**
+   * After codegraph enrichment, ask this model (`kev`) about the call sites the
+   * static resolver left ambiguous or dynamic, and add its confident verdicts as
+   * model edges. Never fails the run: an unreachable model ends that pass
+   * skipped.
+   */
+  resolveResidual?: string;
 
   /**
    * Restrict the run to points of these languages.
@@ -282,6 +290,11 @@ export interface IndexStatus {
    * `IndexStats.worktreeSeed` so `--json` reports it.
    */
   worktreeSeed?: WorktreeSeedReport;
+  /**
+   * The collection's last residual pass in this process (`--resolve-residual`,
+   * or the cache-only re-apply of an index run). Never persisted.
+   */
+  residualResolution?: ResidualPassReport;
   /**
    * Outcome of a live scoped force (bd tea-rags-mcp-j4oww), carried like
    * `worktreeSeed`: attached by the CLI worker from `IndexStats.changeDetails`.

@@ -11,6 +11,7 @@ import {
   CollectionRegistry,
   pickRegistryEnvSeed,
   ProjectRegistryOps,
+  RESIDUAL_MODELS,
   resolveDomainEnvCodeDefaults,
   resolveRegistryEnv,
 } from "../../core/api/index.js";
@@ -29,6 +30,8 @@ export interface IndexCodebaseArgs {
   force?: boolean;
   /** Comma-separated enrichment provider selectors, or `all`. */
   "force-enrichments"?: string;
+  /** Model to resolve residual call sites with after codegraph enrichment (`kev`). */
+  "resolve-residual"?: string;
   languages?: string;
   /** Scoped force: picomatch pattern of files to re-chunk. */
   "path-pattern"?: string;
@@ -159,6 +162,7 @@ export function buildIndexOptions(argv: IndexCodebaseArgs): IndexOptions {
   return {
     forceReindex: Boolean(argv.force),
     ...(forceEnrichments ? { forceEnrichments } : {}),
+    ...(argv["resolve-residual"] !== undefined ? { resolveResidual: argv["resolve-residual"] } : {}),
     ...(languages ? { languages } : {}),
     ...(argv["test-file"] !== undefined ? { testFile: argv["test-file"] } : {}),
     ...(argv["path-pattern"] !== undefined ? { pathPattern: argv["path-pattern"] } : {}),
@@ -242,6 +246,16 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
           "Use this to validate a new signal, walker, or resolver; use --force only when " +
           "chunking, parsing, or the vectors themselves changed. Implies --wait-enrichments: " +
           "the recompute IS the enrichment, so detaching would return before it finished.",
+      })
+      .option("resolve-residual", {
+        type: "string",
+        nargs: 1,
+        choices: RESIDUAL_MODELS,
+        describe:
+          "After codegraph enrichment, ask this model about the call sites static resolution left " +
+          "ambiguous or dynamic, and add its confident answers as model edges. Verdicts are cached " +
+          "across runs, and later runs without the flag re-apply them with no model call. Needs " +
+          "CODEGRAPH_RESIDUAL_KEV_URL. An unreachable model skips the pass; indexing still succeeds.",
       })
       .option("languages", {
         type: "string",

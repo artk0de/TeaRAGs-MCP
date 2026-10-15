@@ -1,10 +1,11 @@
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { ResidualPassMode, ResidualPassReport } from "../../../domains/trajectory/codegraph/residual/types.js";
 import type { ProgressCallback } from "../../../types.js";
 
 /** What the CLI-driven residual pass asks of the resolution ops. */
 export interface ResidualResolvePortRequest {
   logicalName: string;
-  physicalCollectionName: string;
+  physicalCollectionName: PhysicalCollectionName;
   projectRoot: string;
   model: string;
   /** `ask` queries the model; `cacheOnly` re-applies stored verdicts. Defaults to `ask` in the ops. */
@@ -12,9 +13,18 @@ export interface ResidualResolvePortRequest {
   onProgress?: ProgressCallback;
 }
 
-/** The slice of the residual resolution ops `IndexingOps#resolveResidual` consumes. */
+/** An index run's request: `model` only when the run was given `--resolve-residual`. */
+export type ResidualAfterIndexRequest = Omit<ResidualResolvePortRequest, "model" | "mode"> & { model?: string };
+
+/** The slice of the residual resolution ops `IndexingOps` consumes. */
 export interface ResidualResolvePort {
+  /** `IndexingOps#resolveResidual` — a pass on the current generation. */
   resolve: (request: ResidualResolvePortRequest) => Promise<ResidualPassReport>;
+  /**
+   * The pass an index run ends with; `undefined` when none was due. An
+   * implementation without it ends index runs with no pass.
+   */
+  resolveAfterIndex?: (request: ResidualAfterIndexRequest) => Promise<ResidualPassReport | undefined>;
 }
 
 /** Report of a pass that could not start; the same shape the pass itself returns when skipped. */

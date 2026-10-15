@@ -105,6 +105,16 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
     lines.push(`  ${r.filesRechunked} files re-chunked in place (+${r.chunksAdded} / -${r.chunksDeleted} chunks)`);
   }
 
+  // The run's residual pass, reported by the core from this process.
+  if (status.residualResolution) {
+    const r = status.residualResolution;
+    lines.push(colors.bold("Residual resolution"));
+    lines.push(`  ${r.outcome} (${r.mode})${r.reason !== undefined ? `: ${r.reason}` : ""}`);
+    lines.push(
+      `  ${r.sites} sites, ${r.cacheHits} from cache, ${r.asked} asked, ${r.edgesApplied} model edges applied`,
+    );
+  }
+
   return lines.join("\n");
 }
 
@@ -238,6 +248,10 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
 
   if (status.scopedRechunk) {
     base.scopedRechunk = status.scopedRechunk;
+  }
+
+  if (status.residualResolution) {
+    base.residualResolution = status.residualResolution;
   }
 
   return base;
