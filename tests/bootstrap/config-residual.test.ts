@@ -3,13 +3,13 @@ import { describe, expect, it } from "vitest";
 import { parseAppConfigZod } from "../../src/bootstrap/config/index.js";
 
 describe("codegraph.residual config", () => {
-  it("defaults: no Kev URL, threshold 0.7, concurrency 96, menu limit 40, retention 180 days", () => {
+  it("defaults: no Kev URL, threshold 0.7, concurrency 16, menu limit 40, retention 180 days", () => {
     const { codegraph } = parseAppConfigZod({});
 
     expect(codegraph.residual).toEqual({
       kevUrls: undefined,
       kevThreshold: 0.7,
-      concurrency: 96,
+      concurrency: 16,
       menuLimit: 40,
       retentionDays: 180,
       kevSessionUrl: undefined,

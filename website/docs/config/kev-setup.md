@@ -260,7 +260,7 @@ to system memory), and smaller 512-token buckets (more padding, not less).
 | ------------------------------------------- | ------- | ---------------------------------------------------------- |
 | `CODEGRAPH_RESIDUAL_KEV_URL`                | —       | Kev base URL; comma-separate several hosts for round-robin |
 | `CODEGRAPH_RESIDUAL_KEV_THRESHOLD`          | `0.7`   | Minimum confidence for a pick to become an edge            |
-| `CODEGRAPH_RESIDUAL_CONCURRENCY`            | `96`    | Requests in flight (one per method); fewer leaves Kev's passes half full |
+| `CODEGRAPH_RESIDUAL_CONCURRENCY`            | `16`    | Requests in flight (one per method); Kev packs a few states per pass, so more only queue |
 | `CODEGRAPH_RESIDUAL_MENU_LIMIT`             | `40`    | Call sites with more candidates are not asked              |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | `180`   | Cached verdicts unseen this long are dropped               |
 | `CODEGRAPH_RESIDUAL_KEV_SESSION_URL`        | —       | GPU session broker; set, Kev is leased per pass and asked at the URL the lease names (`CODEGRAPH_RESIDUAL_KEV_URL` is then not needed) |
