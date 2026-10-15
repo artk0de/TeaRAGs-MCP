@@ -20,6 +20,7 @@ import type {
   ResidualModelProvider,
   ResidualPassReport,
 } from "../../../domains/trajectory/codegraph/residual/types.js";
+import { recomputeGraphMetrics } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   skippedResidualReport,
   type ResidualAfterIndexRequest,
@@ -33,6 +34,8 @@ export interface ResidualResolutionConfig {
   kevThreshold: number;
   concurrency: number;
   menuLimit: number;
+  /** Smallest menu the pass asks about or applies. */
+  minMenu: number;
   retentionDays: number;
   /** GPU session broker; set, an `ask` pass with uncached sites leases Kev from it. */
   kevSessionUrl?: string;
@@ -93,7 +96,9 @@ export class ResidualResolutionOps implements ResidualResolvePort {
         mode,
         concurrency: this.deps.config.concurrency,
         menuLimit: this.deps.config.menuLimit,
+        minMenu: this.deps.config.minMenu,
         retentionDays: this.deps.config.retentionDays,
+        recomputeDerived: async () => recomputeGraphMetrics(graphDb),
         readMethodSource: async (relPath: string, startLine: number, endLine: number) =>
           sliceLines(await readFile(join(request.projectRoot, relPath), "utf8"), startLine, endLine),
         now: this.now,

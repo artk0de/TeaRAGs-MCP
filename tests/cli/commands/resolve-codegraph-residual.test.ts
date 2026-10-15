@@ -13,6 +13,7 @@ const COMPLETED = {
   outcome: "completed" as const,
   sites: 120,
   menuOverflow: 3,
+  menuTooSmall: 7,
   cacheHits: 80,
   groups: 10,
   asked: 40,
@@ -20,8 +21,10 @@ const COMPLETED = {
   tooLong: 1,
   failedGroups: 1,
   belowThreshold: 5,
+  sitesEdged: 97,
   edgesApplied: 95,
-  durations: { readMs: 1, askMs: 2, applyMs: 3, totalMs: 6 },
+  derived: "recomputed" as const,
+  durations: { readMs: 1, askMs: 2, applyMs: 3, recomputeMs: 2, totalMs: 6 },
 };
 delete (COMPLETED as { reason?: string }).reason;
 
@@ -45,6 +48,10 @@ describe("formatResidualReport", () => {
     expect(text).toContain("  cache hits:       80\n");
     expect(text).toContain("  edges applied:    95\n");
     expect(text).toContain("  menu overflow:    3\n");
+    expect(text).toContain("  menu too small:   7\n");
+    expect(text).toContain("  sites edged:      97\n");
+    expect(text).toContain("  derived metrics:  recomputed\n");
+    expect(text).toContain("apply 3 (recompute 2), total 6");
     expect(text).toContain("total 6");
   });
 

@@ -139,6 +139,7 @@ project and replayed on later runs. See
 | `CODEGRAPH_RESIDUAL_KEV_THRESHOLD`  | Minimum Kev confidence for a pick to become an edge                          | `0.7`      |
 | `CODEGRAPH_RESIDUAL_CONCURRENCY`    | Residual requests in flight (one per enclosing method)                       | `96`       |
 | `CODEGRAPH_RESIDUAL_MENU_LIMIT`     | Call sites with more candidates than this are not asked                      | `40`       |
+| `CODEGRAPH_RESIDUAL_MIN_MENU`      | Call sites with fewer candidates than this are neither asked nor given an edge | `4`        |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | Cached verdicts unseen this many days are dropped                    | `180`      |
 
 **`CODEGRAPH_TS_TYPECHECKER`.** TypeScript call resolution builds a

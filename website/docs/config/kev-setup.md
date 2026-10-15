@@ -262,6 +262,7 @@ to system memory), and smaller 512-token buckets (more padding, not less).
 | `CODEGRAPH_RESIDUAL_KEV_THRESHOLD`          | `0.7`   | Minimum confidence for a pick to become an edge            |
 | `CODEGRAPH_RESIDUAL_CONCURRENCY`            | `96`    | Requests in flight (one per method); fewer leaves Kev's passes half full |
 | `CODEGRAPH_RESIDUAL_MENU_LIMIT`             | `40`    | Call sites with more candidates are not asked              |
+| `CODEGRAPH_RESIDUAL_MIN_MENU`               | `4`     | Call sites with fewer candidates are neither asked nor given an edge, even from a stored verdict |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | `180`   | Cached verdicts unseen this long are dropped               |
 | `CODEGRAPH_RESIDUAL_KEV_SESSION_URL`        | —       | GPU session broker; set, Kev is leased per pass and asked at the URL the lease names (`CODEGRAPH_RESIDUAL_KEV_URL` is then not needed) |
 | `CODEGRAPH_RESIDUAL_KEV_SESSION_TOKEN`      | —       | Broker `X-Broker-Token`; a secret, never stored with the project |
@@ -296,9 +297,21 @@ tea-rags resolve-codegraph-residual --model kev --project my-app
 
 Add `--cache-only` to re-apply stored verdicts without contacting Kev, and
 `--json` to print the report as JSON. The command prints a report: call sites
-found, menu overflow, cache hits, groups, asked, answered, too long, failed
-groups, below threshold, edges applied, and timings. It exits 0 when the pass
-completed and 1 when it was skipped.
+found, menu overflow, menu too small, cache hits, groups, asked, answered, too
+long, failed groups, below threshold, sites edged, edges applied, the state of the
+derived metrics, and timings. It exits 0 when the pass completed and 1 when it
+was skipped.
+
+`sites edged` counts call sites whose pick reached the threshold; `edges applied`
+counts the distinct edges stored, so two sites making the same call to the same
+method in one method body count once. When the stored model edges changed, the
+pass recomputes cycles and PageRank before it returns (`derived metrics:
+recomputed`); a failed recompute leaves them marked stale (`stale`) and the next
+index run recomputes them.
+
+Small menus are skipped on purpose. On a 1–3 entry menu the true target is
+usually a framework or gem method the graph does not hold, and Kev's
+probability, normalised over the menu, is close to 1.0 whatever it picks.
 
 A method whose source is too long for Kev (the server answers HTTP 422) is not an
 error: its sites are counted under `too long` and left without an edge.

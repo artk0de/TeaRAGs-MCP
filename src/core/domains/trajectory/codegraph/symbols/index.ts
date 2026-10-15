@@ -65,6 +65,7 @@ export {
 } from "./identifier-rows.js";
 export { InMemoryGlobalSymbolTable } from "./symbol-table.js";
 export { symbolDefinitionsOf } from "./symbol-definitions.js";
+export { recomputeGraphMetrics } from "./graph-finalizer.js";
 export { runtimeImportExtraction, typeOnlyImportExtraction } from "./import-channels.js";
 export { CODEGRAPH_SYMBOLS_FILE_SIGNALS, CODEGRAPH_SYMBOLS_CHUNK_SIGNALS } from "./payload-signals.js";
 export { codegraphFilters } from "./filters.js";

@@ -541,42 +541,52 @@ export class GraphBuildFinalizer {
   /** The recompute itself; `recomputeMetrics` owns only its timing. */
   private async runMetricsRecompute(physicalCollectionName?: PhysicalCollectionName): Promise<void> {
     const { graphDb } = await this.resolveStore(physicalCollectionName);
-    // Daemon-routed write path: the daemon owns the RW connection and runs
-    // the (potentially 30 GB) SCC + PageRank build itself, so the MCP client
-    // process never allocates the adjacency. When the handle exposes the
-    // method (DaemonGraphDbClient) delegate and return; the in-process
-    // DuckDbGraphClient leaves it undefined, falling through to the inline
-    // path below (direct/test mode).
-    //
-    // Both routes fail the same way — a staged `CodegraphMetricsError` — so the
-    // best-effort contract holds in either mode: a daemon-side failure (a
-    // stream closed by a daemon teardown, bd tea-rags-mcp-sgo8v) leaves the
-    // metrics stale instead of failing the run.
-    if (graphDb.computeAndPersistCyclesAndSignals) {
-      try {
-        await graphDb.computeAndPersistCyclesAndSignals();
-      } catch (err) {
-        throw metricsFailure("daemon", err);
-      }
-      return;
-    }
+    await recomputeGraphMetrics(graphDb);
+  }
+}
+
+/**
+ * Recompute Tarjan SCC for both scopes and PageRank over `graphDb`, through the
+ * daemon when the handle runs it there. Shared by the build finalizer and the
+ * residual pass, whose model edges land after finalize. Fails with a staged
+ * {@link CodegraphMetricsError}; the derived tables then stay marked stale.
+ */
+export async function recomputeGraphMetrics(graphDb: GraphDbClient): Promise<void> {
+  // Daemon-routed write path: the daemon owns the RW connection and runs
+  // the (potentially 30 GB) SCC + PageRank build itself, so the MCP client
+  // process never allocates the adjacency. When the handle exposes the
+  // method (DaemonGraphDbClient) delegate and return; the in-process
+  // DuckDbGraphClient leaves it undefined, falling through to the inline
+  // path below (direct/test mode).
+  //
+  // Both routes fail the same way — a staged `CodegraphMetricsError` — so the
+  // best-effort contract holds in either mode: a daemon-side failure (a
+  // stream closed by a daemon teardown, bd tea-rags-mcp-sgo8v) leaves the
+  // metrics stale instead of failing the run.
+  if (graphDb.computeAndPersistCyclesAndSignals) {
     try {
-      const fileAdj = await collectAdjacency(graphDb, "file");
-      const fileSccs = tarjanScc(fileAdj.adjacency);
-      await graphDb.replaceCycles("file", fileSccs);
-
-      const methodAdj = await collectAdjacency(graphDb, "method");
-      const methodSccs = tarjanScc(methodAdj.adjacency);
-      await graphDb.replaceCycles("method", methodSccs);
-
-      // Tarjan stays unweighted (cycles are structural); PageRank is
-      // confidence-weighted (bd tea-rags-mcp-s5ato) — mirrors the daemon's
-      // computeAndPersistCyclesAndSignals in adapters/duckdb/daemon/server.ts.
-      const rankResult = pageRank(methodAdj.adjacency, { weights: methodAdj.edgeWeights });
-      await graphDb.replacePageRanks(rankResult.ranks);
+      await graphDb.computeAndPersistCyclesAndSignals();
     } catch (err) {
-      throw metricsFailure(err instanceof CodegraphMetricsError ? "pagerank" : "tarjan", err);
+      throw metricsFailure("daemon", err);
     }
+    return;
+  }
+  try {
+    const fileAdj = await collectAdjacency(graphDb, "file");
+    const fileSccs = tarjanScc(fileAdj.adjacency);
+    await graphDb.replaceCycles("file", fileSccs);
+
+    const methodAdj = await collectAdjacency(graphDb, "method");
+    const methodSccs = tarjanScc(methodAdj.adjacency);
+    await graphDb.replaceCycles("method", methodSccs);
+
+    // Tarjan stays unweighted (cycles are structural); PageRank is
+    // confidence-weighted (bd tea-rags-mcp-s5ato) — mirrors the daemon's
+    // computeAndPersistCyclesAndSignals in adapters/duckdb/daemon/server.ts.
+    const rankResult = pageRank(methodAdj.adjacency, { weights: methodAdj.edgeWeights });
+    await graphDb.replacePageRanks(rankResult.ranks);
+  } catch (err) {
+    throw metricsFailure(err instanceof CodegraphMetricsError ? "pagerank" : "tarjan", err);
   }
 }
 

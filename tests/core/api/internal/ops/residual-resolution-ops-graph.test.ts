@@ -36,7 +36,14 @@ const SITE: ResidualCallSiteRow = {
   menuOverflow: false,
 };
 
-const CONFIG = { kevUrls: ["http://gpu:8090"], kevThreshold: 0.7, concurrency: 2, menuLimit: 40, retentionDays: 180 };
+const CONFIG = {
+  kevUrls: ["http://gpu:8090"],
+  kevThreshold: 0.7,
+  concurrency: 2,
+  menuLimit: 40,
+  minMenu: 2,
+  retentionDays: 180,
+};
 
 describe("ResidualResolutionOps on a real graph", () => {
   let tmp: string;
@@ -72,11 +79,11 @@ describe("ResidualResolutionOps on a real graph", () => {
       `SELECT target_symbol_id, model FROM cg_symbols_edges_method WHERE origin = 'model'`,
     );
 
-  const ops = (createProvider?: (model: string) => ResidualModelProvider) =>
+  const ops = (createProvider?: (model: string) => ResidualModelProvider, config: typeof CONFIG = CONFIG) =>
     new ResidualResolutionOps({
       rootDir: tmp,
       codegraphPool: { acquireWrite: async () => ({ graphDb: client }) } as never,
-      config: CONFIG,
+      config,
       ...(createProvider ? { createProvider } : {}),
     });
 
@@ -143,5 +150,50 @@ describe("ResidualResolutionOps on a real graph", () => {
     expect(report).toMatchObject({ outcome: "skipped", mode: "ask", edgesApplied: 0 });
     expect(report?.reason).toMatch(/ECONNREFUSED/);
     expect(await modelEdges()).toEqual([]);
+  });
+
+  it("asks about and applies only sites whose menu reaches the floor, then recomputes the derived metrics", async () => {
+    for (const owner of ["Client", "User"]) {
+      const relPath = `app/models/${owner.toLowerCase()}.rb`;
+      await client.upsertSymbols(relPath, [
+        { symbolId: `${owner}#users`, fqName: `${owner}#users`, shortName: "users", relPath, scope: [owner] },
+      ]);
+    }
+    const bigSite: ResidualCallSiteRow = {
+      ...SITE,
+      siteKey: "k-big",
+      column: 12,
+      receiverText: "owner",
+      candidates: ["Client#users", "Firm#users", "Team#users", "User#users"],
+      menuHash: "menu-4",
+    };
+    await client.upsertFile(
+      { relPath: "app/billing.rb", language: "ruby" },
+      { fileEdges: [], methodEdges: [], residualCallSites: [SITE, bigSite] },
+    );
+    await client.markDerivedStale();
+    const askedSites: string[] = [];
+    const recordingKev: ResidualModelProvider = {
+      ...fakeKev,
+      resolveGroup: async (group) => {
+        askedSites.push(...group.questions.map((q) => q.siteKey));
+        return fakeKev.resolveGroup(group);
+      },
+    };
+
+    const report = await ops(() => recordingKev, { ...CONFIG, minMenu: 4 }).resolveAfterIndex({
+      ...request,
+      projectRoot,
+      model: "kev",
+    });
+
+    expect(askedSites).toEqual(["k-big"]);
+    expect(report).toMatchObject({ outcome: "completed", menuTooSmall: 1, edgesApplied: 1, derived: "recomputed" });
+    expect(
+      await client.queryAll<{ call_expression: string }>(
+        `SELECT call_expression FROM cg_symbols_edges_method WHERE origin = 'model'`,
+      ),
+    ).toEqual([{ call_expression: "owner.users" }]);
+    expect(await client.hasStaleDerivedTables()).toBe(false);
   });
 });

@@ -41,6 +41,7 @@ export function formatResidualReport(report: ResidualReport): string {
   return (
     `${head}  sites:            ${report.sites}\n` +
     `  menu overflow:    ${report.menuOverflow}\n` +
+    `  menu too small:   ${report.menuTooSmall}\n` +
     `  cache hits:       ${report.cacheHits}\n` +
     `  groups:           ${report.groups}\n` +
     `  asked:            ${report.asked}\n` +
@@ -48,8 +49,10 @@ export function formatResidualReport(report: ResidualReport): string {
     `  too long:         ${report.tooLong}\n` +
     `  failed groups:    ${report.failedGroups}\n` +
     `  below threshold:  ${report.belowThreshold}\n` +
+    `  sites edged:      ${report.sitesEdged}\n` +
     `  edges applied:    ${report.edgesApplied}\n` +
-    `  time (ms):        read ${report.durations.readMs}, ask ${report.durations.askMs}, apply ${report.durations.applyMs}, total ${report.durations.totalMs}\n`
+    `  derived metrics:  ${report.derived}\n` +
+    `  time (ms):        read ${report.durations.readMs}, ask ${report.durations.askMs}, apply ${report.durations.applyMs} (recompute ${report.durations.recomputeMs}), total ${report.durations.totalMs}\n`
   );
 }
 

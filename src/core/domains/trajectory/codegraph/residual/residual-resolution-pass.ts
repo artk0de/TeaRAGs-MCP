@@ -5,6 +5,9 @@
  * `applyModelEdges` replaces the model's edges, and a static re-walk of a file
  * drops that file's model edges. A provider that is down or keeps failing ends
  * the pass `skipped`; the verdicts already held are applied all the same.
+ * Only eligible sites (see {@link siteEligibility}) are asked or applied. The
+ * pass runs after finalize, so when the applied edges change it recomputes the
+ * derived metrics itself, best-effort.
  * A provider that leases its hardware (`acquire`) is leased only when some
  * site needs asking, and released however the asking ends.
  */
@@ -15,6 +18,7 @@ import type { GraphDbClient } from "../../../../contracts/types/codegraph-storag
 import type { ProgressCallback } from "../../../../types.js";
 import type {
   ResidualAnswer,
+  ResidualDerivedState,
   ResidualModelProvider,
   ResidualPassMode,
   ResidualPassReport,
@@ -39,7 +43,11 @@ export interface ResidualPassInput {
   /** Method groups in flight at once. */
   concurrency: number;
   menuLimit: number;
+  /** Smallest menu a site needs to be asked or applied. */
+  minMenu: number;
   retentionDays: number;
+  /** Recompute cycles and PageRank over the current graph; clears the derived-stale mark. */
+  recomputeDerived: () => Promise<void>;
   readMethodSource: (relPath: string, startLine: number, endLine: number) => Promise<string>;
   /** Epoch ms. */
   now: () => number;
@@ -65,6 +73,22 @@ interface AskTally {
 
 const verdictKey = (siteKey: string, menuHash: string): string => `${siteKey}\u0000${menuHash}`;
 
+export type SiteEligibility = "eligible" | "menuOverflow" | "menuTooSmall";
+
+/**
+ * Whether the pass asks about and applies a site. A menu cut at the limit was
+ * never measured; a menu under the floor rarely holds the true target, and the
+ * model's probability, normalised over it, tends to 1.0 whatever the answer.
+ */
+export function siteEligibility(
+  row: Pick<ResidualCallSiteRow, "menuOverflow" | "candidates">,
+  limits: { menuLimit: number; minMenu: number },
+): SiteEligibility {
+  if (row.menuOverflow || row.candidates.length > limits.menuLimit) return "menuOverflow";
+  if (row.candidates.length < limits.minMenu) return "menuTooSmall";
+  return "eligible";
+}
+
 export class ResidualResolutionPass {
   async run(input: ResidualPassInput): Promise<ResidualPassReport> {
     const { provider } = input;
@@ -72,7 +96,8 @@ export class ResidualResolutionPass {
     const servedVersion = input.mode === "ask" ? await this.servedVersion(provider) : { version: undefined };
 
     const rows = await input.graphDb.readResidualCallSites();
-    const eligible = rows.filter((r) => !r.menuOverflow && r.candidates.length <= input.menuLimit);
+    const eligibility = rows.map((r) => siteEligibility(r, input));
+    const eligible = rows.filter((_, i) => eligibility[i] === "eligible");
     const verdicts = await this.cachedVerdicts(input, eligible, servedVersion.version);
     const cacheHits = eligible.filter((r) => verdicts.has(verdictKey(r.siteKey, r.menuHash))).length;
     const groups = groupQuestions(eligible.filter((r) => !verdicts.has(verdictKey(r.siteKey, r.menuHash))));
@@ -93,8 +118,10 @@ export class ResidualResolutionPass {
     const skipped = unavailable !== undefined || tally.leaseLost || tally.failures.length > maxFailures;
 
     const { edges, belowThreshold } = buildEdges(eligible, verdicts, provider);
-    await input.graphDb.applyModelEdges(provider.id, edges);
-    await input.graphDb.markDerivedStale();
+    const applied = await input.graphDb.applyModelEdges(provider.id, edges);
+    const recomputeStartedAt = input.now();
+    const derived = applied.changed ? await this.recomputeDerived(input) : "unchanged";
+    const recomputeMs = input.now() - recomputeStartedAt;
     await input.store.touch(
       rows.map((r) => r.siteKey),
       provider.id,
@@ -108,7 +135,8 @@ export class ResidualResolutionPass {
       ...(reason !== undefined ? { reason } : {}),
       mode: input.mode,
       sites: rows.length,
-      menuOverflow: rows.length - eligible.length,
+      menuOverflow: eligibility.filter((e) => e === "menuOverflow").length,
+      menuTooSmall: eligibility.filter((e) => e === "menuTooSmall").length,
       cacheHits,
       groups: groups.length,
       asked: tally.asked,
@@ -116,14 +144,32 @@ export class ResidualResolutionPass {
       tooLong: tally.tooLong,
       failedGroups: tally.failures.length,
       belowThreshold,
-      edgesApplied: edges.length,
+      sitesEdged: edges.length,
+      edgesApplied: applied.stored,
+      derived,
       durations: {
         readMs: readAt - startedAt,
         askMs: askedAt - readAt,
         applyMs: finishedAt - askedAt,
+        recomputeMs,
         totalMs: finishedAt - startedAt,
       },
     };
+  }
+
+  /**
+   * Mark the derived tables stale, then recompute them; a failed recompute
+   * leaves the mark for the next run and never fails the pass.
+   */
+  private async recomputeDerived(input: ResidualPassInput): Promise<ResidualDerivedState> {
+    await input.graphDb.markDerivedStale();
+    try {
+      await input.recomputeDerived();
+      return "recomputed";
+    } catch (error) {
+      process.stderr.write(`[residual] derived metrics recompute failed, left stale: ${errorMessage(error)}\n`);
+      return "stale";
+    }
   }
 
   /** The model version to ask under, or why the provider cannot be asked. */

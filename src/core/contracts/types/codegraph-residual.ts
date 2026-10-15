@@ -47,6 +47,17 @@ export interface ModelEdgeRow {
   p: number;
 }
 
+/**
+ * What `applyModelEdges` left in the graph. `stored` counts distinct model
+ * edges (the method-edge key dedupes sites making the same call to the same
+ * target; a key a static edge holds is not stored). `changed` is whether the
+ * model's stored edges differ from what they were before the apply.
+ */
+export interface ModelEdgeApplyResult {
+  stored: number;
+  changed: boolean;
+}
+
 export type EdgeOrigin = "static" | "model";
 
 export interface ResidualVerdict {
@@ -118,10 +129,19 @@ export interface ResidualPassDurations {
   /** Health, version, site read and cache lookup. */
   readMs: number;
   askMs: number;
-  /** Edge apply, derived-stale mark, touch and expire. */
+  /** Edge apply, derived-stale mark and recompute, touch and expire. */
   applyMs: number;
+  /** The derived-metrics recompute alone; part of `applyMs`, 0 when the edges did not change. */
+  recomputeMs: number;
   totalMs: number;
 }
+
+/**
+ * The derived metrics (cycles, PageRank) after the pass: `unchanged` — the
+ * model edges did not change, nothing to do; `recomputed`; `stale` — the
+ * recompute failed and the tables stay marked stale for the next run.
+ */
+export type ResidualDerivedState = "unchanged" | "recomputed" | "stale";
 
 /**
  * Counts are in sites (residual rows) unless named otherwise. `skipped` means
@@ -136,6 +156,8 @@ export interface ResidualPassReport {
   sites: number;
   /** Rows not asked: the menu overflowed or exceeds the menu limit. */
   menuOverflow: number;
+  /** Rows neither asked nor applied: the menu has fewer entries than the floor (`CODEGRAPH_RESIDUAL_MIN_MENU`). */
+  menuTooSmall: number;
   /** Eligible rows answered from the verdict store. */
   cacheHits: number;
   /** Methods holding at least one uncached question. */
@@ -149,6 +171,14 @@ export interface ResidualPassReport {
   failedGroups: number;
   /** Eligible rows whose verdict is under the provider threshold. */
   belowThreshold: number;
+  /** Eligible rows whose verdict is at or above the provider threshold. */
+  sitesEdged: number;
+  /**
+   * Distinct model edges stored. Until 2m83f.29 this counted sites (what
+   * `sitesEdged` counts now); sites making the same call to the same target
+   * share one edge.
+   */
   edgesApplied: number;
+  derived: ResidualDerivedState;
   durations: ResidualPassDurations;
 }

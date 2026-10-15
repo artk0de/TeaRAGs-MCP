@@ -118,6 +118,7 @@ describe("CodegraphDaemonServer.handle — residual ops", () => {
     expect(DAEMON_OP_COMMANDS.markDerivedStale.access).toBe("write");
     expect((sites as { result: unknown }).result).toEqual([SITE]);
     expect(applied.ok).toBe(true);
+    expect((applied as { result: unknown }).result).toEqual({ stored: 1, changed: true });
     expect((callers as { result: { sourceSymbolId: string }[] }).result.map((e) => e.sourceSymbolId)).toEqual([
       "Billing#run",
     ]);

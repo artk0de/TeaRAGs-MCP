@@ -250,7 +250,7 @@ vi.mock("../../src/bootstrap/config/index.js", async () => {
       },
       trajectoryGit: {},
       vcs: { adapter: "git" },
-      codegraph: { residual: { kevThreshold: 0.7, concurrency: 96, menuLimit: 40, retentionDays: 180 } },
+      codegraph: { residual: { kevThreshold: 0.7, concurrency: 96, menuLimit: 40, minMenu: 4, retentionDays: 180 } },
       qdrantTune: {
         deleteBatchSize: 500,
         deleteConcurrency: 8,
@@ -514,7 +514,14 @@ describe("wireCodegraph", () => {
         dbThreads: 2,
         customExcludePatterns: [],
         ambiguousResolveMode: "strict",
-        residual: { kevUrls: undefined, kevThreshold: 0.7, concurrency: 96, menuLimit: 40, retentionDays: 180 },
+        residual: {
+          kevUrls: undefined,
+          kevThreshold: 0.7,
+          concurrency: 96,
+          menuLimit: 40,
+          minMenu: 4,
+          retentionDays: 180,
+        },
       },
     } as unknown as ReturnType<typeof getZodConfig>;
   }

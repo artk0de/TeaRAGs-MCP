@@ -230,7 +230,8 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
     graphDb.invalidateHierarchyDependentsOfDeletedFiles(p.relPaths),
   ),
   pruneDerivedForDeletedFiles: write(async (graphDb, p) => graphDb.pruneDerivedForDeletedFiles(p.relPaths)),
-  applyModelEdges: write(async (graphDb, p) => graphDb.applyModelEdges(p.model, p.edges)),
+  // A write whose result the residual pass reads: whether the model's edges changed.
+  applyModelEdges: { access: "write", run: async (graphDb, p) => graphDb.applyModelEdges(p.model, p.edges) },
   markDerivedStale: write(async (graphDb) => graphDb.markDerivedStale()),
   upsertSymbols: write(async (graphDb, p) => graphDb.upsertSymbols(p.relPath, p.definitions)),
   upsertSymbolsBulk: write(async (graphDb, p) => graphDb.upsertSymbolsBulk(p.entries)),

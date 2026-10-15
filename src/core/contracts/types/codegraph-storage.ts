@@ -41,7 +41,7 @@ import type {
 } from "./codegraph-graph.js";
 import type { HierarchySnapshot, InheritanceEdge } from "./codegraph-hierarchy.js";
 import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
-import type { ModelEdgeRow, ResidualCallSiteRow } from "./codegraph-residual.js";
+import type { ModelEdgeApplyResult, ModelEdgeRow, ResidualCallSiteRow } from "./codegraph-residual.js";
 import type {
   CallableSymbolKind,
   FileScopedSymbolId,
@@ -1738,7 +1738,7 @@ export interface CodegraphResidualEdgeStore {
    * static edges and other models' edges are untouched. An edge whose site is
    * not a current residual row or whose target symbol is unknown is skipped.
    */
-  applyModelEdges: (model: string, edges: ModelEdgeRow[]) => Promise<void>;
+  applyModelEdges: (model: string, edges: ModelEdgeRow[]) => Promise<ModelEdgeApplyResult>;
 }
 
 /**
