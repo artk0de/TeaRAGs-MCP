@@ -5818,6 +5818,18 @@ git commit -m "feat(cli): resolving-residual progress phase with its own bar"
 
 ### Task 11: `index-codebase --resolve-residual <model>`
 
+> **As built by Task 9 (supersedes the drafts below where they differ).**
+> `ResidualPassInput` takes a required `mode: "ask" | "cacheOnly"`, a store with
+> `findLatest`, and `onProgress: ProgressCallback` (the pass emits the
+> `resolving-residual` phase itself — pass `request.onProgress` straight
+> through). `ResidualPassReport` is
+> `{ outcome: "completed" | "skipped"; reason?; mode; sites; menuOverflow; cacheHits; groups; asked; answered; tooLong; failedGroups; belowThreshold; edgesApplied; durations: { readMs, askMs, applyMs, totalMs } }`
+> — the drafts' `status` / `reused` / `applied` / `overflowSkipped` map to
+> `outcome` / `cacheHits` / `edgesApplied` / `menuOverflow`. `skipped` still
+> re-applies stored verdicts. `cacheOnly` always applies (an empty set clears
+> the model's edges) and marks derived tables stale, so wire it only for
+> projects that have a residual model recorded.
+
 Where the pass runs: `IndexingOps#run` returns once embeddings and the alias are
 done; codegraph enrichment keeps running in the background, and the collection's
 `IndexingLock` stays held until `releaseCollectionWhenEnrichmentSettles`
@@ -6637,6 +6649,18 @@ git commit -m "feat(codegraph): index-codebase --resolve-residual runs the pass 
 ---
 
 ### Task 12: `tea-rags resolve-codegraph-residual`
+
+> **As built by Task 9 (supersedes the drafts below where they differ).**
+> `ResidualPassInput` takes a required `mode: "ask" | "cacheOnly"`, a store with
+> `findLatest`, and `onProgress: ProgressCallback` (the pass emits the
+> `resolving-residual` phase itself — pass `request.onProgress` straight
+> through). `ResidualPassReport` is
+> `{ outcome: "completed" | "skipped"; reason?; mode; sites; menuOverflow; cacheHits; groups; asked; answered; tooLong; failedGroups; belowThreshold; edgesApplied; durations: { readMs, askMs, applyMs, totalMs } }`
+> — the drafts' `status` / `reused` / `applied` / `overflowSkipped` map to
+> `outcome` / `cacheHits` / `edgesApplied` / `menuOverflow`. `skipped` still
+> re-applies stored verdicts. `cacheOnly` always applies (an empty set clears
+> the model's edges) and marks derived tables stale, so wire it only for
+> projects that have a residual model recorded.
 
 Runs the pass against the current generation without indexing. The collection is
 claimed through the same `IndexingLock` path `run` uses

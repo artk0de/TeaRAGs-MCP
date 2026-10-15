@@ -171,14 +171,24 @@ generation.
    (`CODEGRAPH_RESIDUAL_CONCURRENCY`, default 96). Each group's verdicts are
    written as soon as they arrive, so an interrupted pass resumes where it
    stopped.
-4. **Apply** edges for verdicts at or above the threshold, mark the generation
-   `cg_derived_stale`, and let finalize recompute derived metrics.
+4. **Apply** the model's full edge set — every current eligible site whose
+   verdict (cached or new) picks a menu entry at or above the threshold — mark
+   the generation `cg_derived_stale`, and let finalize recompute derived
+   metrics. Then touch the current sites' verdicts and expire by retention.
+
+The pass has two modes. `ask` queries the provider for uncached sites (lookup at
+the served model version). `cacheOnly` makes no provider call and re-applies the
+newest stored verdict per (`site_key`, `menu_hash`) whatever its model version.
+A static re-walk of a file deletes that file's model edges, so `cacheOnly` is
+what restores them after an index run that asked nothing.
 
 Failure handling: provider unreachable, or more than `maxGroupFailures`
-(default 3) groups failing → the pass ends `skipped` with the reason and leaves
-edges untouched; verdicts already stored stay, so the next run resumes from
-them. The index stays complete and correct without model edges, and indexing
-does not fail. The CLI command exits 1 on `skipped`.
+(default 3) groups failing → the pass ends `skipped` with the reason, still
+re-applies the edges its stored verdicts support (as `cacheOnly` does), and
+keeps every verdict, so the next run resumes from them. A state over Kev's token
+limit (HTTP 422) counts the group's sites as `tooLong` and leaves them without
+an edge; it is not a group failure. The index stays complete and correct without
+model edges, and indexing does not fail. The CLI command exits 1 on `skipped`.
 
 ## Provider port
 
