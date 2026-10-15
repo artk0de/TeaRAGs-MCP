@@ -106,6 +106,8 @@ const HIERARCHY_DEPENDENCY_VALUES = ["descendant_names"] as const;
  * - Per-source tables hold what the file's own walk wrote — the field-access
  *   edges among them (bd tea-rags-mcp-zy6hx): they carry no target path, the
  *   owner is a type NAME, so only the accessing file's removal clears them.
+ *   So are the residual call sites (bd tea-rags-mcp-2m83f): the residual pass
+ *   must not ask about calls in a file that is gone.
  * - Per-file tables, keyed by `rel_path`: the symbols; pass-1 aggregates; the
  *   resolve tallies (bd tea-rags-mcp-xpmwg — `getRunStats` sums them per
  *   language, so a deleted file's calls must stop counting); the declared
@@ -124,6 +126,7 @@ export const REMOVED_FILE_SOURCE_TABLES = [
   "cg_ambiguous_fanout",
   "cg_hierarchy_dependencies",
   "cg_symbols_edges_field",
+  "cg_residual_call_sites",
 ] as const;
 export const REMOVED_FILE_REL_PATH_TABLES = [
   "cg_symbols",
