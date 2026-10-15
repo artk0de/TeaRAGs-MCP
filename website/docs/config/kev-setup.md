@@ -6,11 +6,9 @@ sidebar_position: 5
 # Kev: Model-Assisted Call Resolution
 
 :::caution Experimental
-Residual resolution with Kev is experimental. The Kev host setup on this page
-works today. The tea-rags side — the `--resolve-residual` flag, the
-`resolve-codegraph-residual` command and the `CODEGRAPH_RESIDUAL_*` variables —
-is in development and lands with the residual-resolution epic. Flags and
-defaults may change before release.
+Residual resolution with Kev is experimental. The feature ships — the
+`--resolve-residual` flag, the `resolve-codegraph-residual` command and the
+`CODEGRAPH_RESIDUAL_*` variables — but flags and defaults may change.
 :::
 
 Codegraph resolves most calls statically. Some it cannot: a call whose receiver
@@ -51,7 +49,8 @@ hardware lands elsewhere; see
 
 Every step above keeps Kev's answers: against the stock path, picks agree on
 557–559 of 559 questions, and probabilities differ by at most 0.014 (bf16
-rounding from different pass shapes).
+rounding from different pass shapes). Run-to-run bf16 noise alone reaches
+0.0154, so a parity gate against the stock path should allow up to 0.02.
 
 Accuracy on the 91-site Ruby fixture (`tests/fixtures/residual-eval`): **0.934**
 overall (85/91), **0.806** where the parameter name does not name the class
@@ -153,7 +152,7 @@ they paid off:
 6. **Tune the GEMMs once, offline.** With fixed pass sizes (512–2048 tokens in
    steps of 512) the backbone has only 24 GEMM shapes. Tune them once with
    PyTorch TunableOp (~3 minutes), write the results to a file, and serve with
-   lookups only: 2741 → 3703 tokens/s per pass. Do not enable TunableOp's online
+   lookups only: 2741 → ~3700 tokens/s per 2048-token pass. Do not enable TunableOp's online
    tuning on a server with variable shapes — every new shape costs 20+ seconds.
 7. **AOTriton attention.** Set `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`. Without
    it, SDPA on RDNA3 falls back to the math path, which collapses above ~2k
@@ -207,14 +206,17 @@ Per platform:
 - **NVIDIA (CUDA), Linux or Windows.** Closest to what Kev's stock server was
   built for. Start with the stock server; add packing and shared states if the
   traffic is mixed. CUDA graphs pay off more there than on AMD, where they gave
-  ~4%.
+  ~2% and cannot be reused across packed layouts.
 - **AMD on Linux (ROCm).** Use the official ROCm torch wheels; no shim, no
   `clang-cl`. Everything from step 3 except items 1–2 applies.
-- **24 GB or more.** Keep the embedding table on the GPU, try 4096-token passes,
-  and raise the state-group cap.
+- **24 GB or more.** Keep the embedding table on the GPU and raise the
+  state-group cap. 4096-token passes were slower on the reference host
+  (0.917x of the 2048 rate), so measure before moving off 2048.
 - **Less than 10 GB.** The bf16 weights alone do not fit. Weight-only int8
   quantization would halve them, but Kev's accuracy under int8 is unmeasured —
-  run the [accuracy check](#check-accuracy) before using it.
+  run the [accuracy check](#check-accuracy) before using it. On
+  `torch 2.9.1+rocm7.13` for gfx110x, `torch._int_mm` crashes, so int8 matmul
+  is not available there.
 - **Integrated GPUs sharing system memory** (Intel Arc 140T measured). No help:
   their memory bandwidth is a fraction of a discrete card's, and moving the
   embedding table or the embedding servers there was slower overall.
@@ -244,7 +246,8 @@ to system memory), and smaller 512-token buckets (more padding, not less).
 | `CODEGRAPH_RESIDUAL_MENU_LIMIT`             | `40`    | Call sites with more candidates are not asked              |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | `180`   | Cached verdicts unseen this long are dropped               |
 
-Codegraph must be on.
+Codegraph must be on (it is by default; `CODEGRAPH_ENABLED=false` turns it
+off, and the residual pass then does nothing).
 
 Store the URL with the project so every run picks it up:
 
@@ -261,15 +264,24 @@ finished:
 tea-rags index-codebase --project my-app --resolve-residual kev
 ```
 
+Without the flag, an index run asks nothing. If the project already has a verdict
+file, the run re-applies the stored verdicts with no model call (`cacheOnly`), so
+model edges survive a reindex. With codegraph off the run does no residual work.
+
 Against the current index, without reindexing:
 
 ```bash
 tea-rags resolve-codegraph-residual --model kev --project my-app
 ```
 
-The command prints how many call sites were found, how many verdicts came from
-the cache, how many were asked, and how many edges were applied. It exits 1 when
-the pass was skipped.
+Add `--cache-only` to re-apply stored verdicts without contacting Kev, and
+`--json` to print the report as JSON. The command prints a report: call sites
+found, menu overflow, cache hits, groups, asked, answered, too long, failed
+groups, below threshold, edges applied, and timings. It exits 0 when the pass
+completed and 1 when it was skipped.
+
+A method whose source is too long for Kev (the server answers HTTP 422) is not an
+error: its sites are counted under `too long` and left without an edge.
 
 If Kev is unreachable, the pass ends `skipped` with the reason and indexing
 still succeeds. The graph keeps its static edges. An interrupted pass resumes on
@@ -285,11 +297,20 @@ The repository carries a 91-site Ruby fixture with known answers. Run it against
 your Kev host before trusting a new model revision:
 
 ```bash
-npx tsx scripts/residual-eval.ts --url http://gpu-host:8009 \
+npx tsx scripts/residual-eval.ts --kev-url http://gpu-host:8009 \
   --sites tests/fixtures/residual-eval/sites40.jsonl --gate
 ```
 
 It prints accuracy overall, on sites where the parameter name does not name the
 class (naming-miss), and where it does (naming-hit), plus coverage and precision
 at confidence 0.5, 0.7 and 0.9. With `--gate` it exits non-zero below the
-baseline: 0.93 overall, 0.80 naming-miss.
+baseline: 0.93 overall, 0.80 naming-miss. `--kev-url` takes several
+comma-separated hosts; `--concurrency <n>` sets the requests in flight.
+
+## Model edges in the graph
+
+`get_callers` and `get_callees` mark an edge that came from a verdict with
+`origin: "model"`, plus `model` (for example `kev`) and `p`, the model's
+confidence. Static edges carry no `origin`. Treat a model edge as probabilistic,
+not as compiler truth: `p` is at or above the confidence threshold. `trace_path`
+steps do not carry `origin` yet.
