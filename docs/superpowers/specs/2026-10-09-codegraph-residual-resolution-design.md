@@ -21,9 +21,11 @@ receiver questions (menus of ~34 classes, method source only):
 | Kev 4B (`jaredpalmer/kev-4b@v1.0`) | 0.945 | 0.839              | 1.000             |
 | Claude Haiku 4.5                   | 0.989 | 0.968              | 1.000             |
 
-Every Kev error had `p ≤ 0.5`; at `p ≥ 0.7` Kev's precision was 1.00. Kev on a
-local RX 7800M serves ~13 q/s, so the full taxdome residual takes ~19 minutes. A
-cloud model on the full residual costs ~20–40M tokens, which eats a
+Kev's row is the design-time run; the recorded run vendored as the eval baseline
+(`tests/fixtures/residual-eval/baseline-kev.json`) scores 0.934 / 0.806 / 1.000.
+Every Kev error had `p ≤ 0.503`; at `p ≥ 0.7` Kev's precision was 1.00 (70/70).
+Kev on a local RX 7800M serves ~13 q/s, so the full taxdome residual takes ~19
+minutes. A cloud model on the full residual costs ~20–40M tokens, which eats a
 subscription's 5-hour or weekly limit. The subsystem is therefore local-first:
 Kev is the reference provider, cloud providers are optional.
 
@@ -240,7 +242,8 @@ The setup that makes it fast on a 12 GB WDDM card is documented on a new
   unchanged one keeps it.
 - `KevResidualProvider` contract test on recorded responses.
 - Eval gate `scripts/residual-eval`: the 91-question YARD set, baseline Kev
-  0.945 / 0.839 naming-miss. Wave 2 providers are compared with the same script.
+  0.934 / 0.806 naming-miss (bar 0.93 / 0.80). Wave 2 providers are compared
+  with the same script.
 
 ## Wave 2
 

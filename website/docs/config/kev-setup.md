@@ -53,10 +53,11 @@ Every step above keeps Kev's answers: against the stock path, picks agree on
 557–559 of 559 questions, and probabilities differ by at most 0.014 (bf16
 rounding from different pass shapes).
 
-Accuracy on the 91-site Ruby fixture (`tests/fixtures/residual-eval`): **0.945**
-overall, **0.839** where the parameter name does not name the class, **1.0**
-where it does. Every wrong pick had confidence ≤ 0.5, so the default threshold
-of 0.7 keeps them out of the graph. For a sense of scale, Claude Haiku 4.5 scores
+Accuracy on the 91-site Ruby fixture (`tests/fixtures/residual-eval`): **0.934**
+overall (85/91), **0.806** where the parameter name does not name the class
+(25/31), **1.0** where it does (60/60). The most confident wrong pick had
+p = 0.503, so the default threshold of 0.7 keeps every wrong pick out of the
+graph: the 70 picks at or above it are all correct. For a sense of scale, Claude Haiku 4.5 scores
 0.989 / 0.968 on the same set, but the full residual of a ~30k-file project is
 ~13k questions and 20–40M input tokens.
 
