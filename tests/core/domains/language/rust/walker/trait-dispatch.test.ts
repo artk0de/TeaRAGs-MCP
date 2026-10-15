@@ -3,10 +3,10 @@ import RustLang from "tree-sitter-rust";
 import { describe, expect, it } from "vitest";
 
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { materializeTree } from "../../../../../../src/core/domains/ingest/pipeline/chunker/materialize.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { RustLanguage } from "../../../../../../src/core/domains/language/rust/index.js";
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 function extract(src: string): FileExtraction {
   const language = new RustLanguage();
@@ -101,7 +101,7 @@ describe("Rust walker — trait and impl dispatch facts", () => {
 
     expect(extraction.chunks.map(({ symbolId }) => symbolId)).toContain("Worker#fmt");
     expect(extraction.inheritanceEdges).toEqual([
-      { source: "Worker", ancestor: "Display", kind: "implements", ordinal: 0 }
+      { source: "Worker", ancestor: "Display", kind: "implements", ordinal: 0 },
     ]);
   });
 
