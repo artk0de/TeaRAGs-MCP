@@ -76,6 +76,7 @@ function wire() {
       dbThreads: 2,
       customExcludePatterns: [],
       ambiguousResolveMode: "strict",
+      residual: { kevUrls: undefined, kevThreshold: 0.7, concurrency: 96, menuLimit: 40, retentionDays: 180 },
     },
   } as unknown as ReturnType<typeof getZodConfig>;
   const config = { paths: { appData: rootDir } } as unknown as AppConfig;

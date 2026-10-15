@@ -203,7 +203,11 @@ describe("buildRegistryEnvSnapshot", () => {
       tune: { minBatchSize: "8", maxRequestsPerMinute: "600" },
     });
     cfg.ingest = ingestSchema.parse({ testPaths: "spec/", tune: {} });
-    cfg.codegraph = codegraphSchema.parse({ dbPath: "/tmp/cg", customExcludePatterns: "vendor/**" });
+    cfg.codegraph = codegraphSchema.parse({
+      dbPath: "/tmp/cg",
+      customExcludePatterns: "vendor/**",
+      residual: { kevUrls: "http://gpu:8090" },
+    });
     cfg.qdrantTune = qdrantTuneSchema.parse({ maxResidentMemoryPercent: "80", searchMaxBatchsize: "64" });
     const snapshot = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());
     const expected = REGISTRY_ENV_GROUPS.map((g) => g.canonical)

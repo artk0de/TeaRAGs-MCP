@@ -212,6 +212,23 @@ export const vcsSchema = z.object({
   adapter: z.enum(["git", "es-git"]).default("git"),
 });
 
+/**
+ * Residual resolution (`index-codebase --resolve-residual`, `resolve-codegraph-residual`):
+ * model verdicts for the call sites the static resolver left ambiguous or dynamic.
+ */
+export const codegraphResidualSchema = z.object({
+  /** Kev base URLs; several are used round-robin. */
+  kevUrls: commaSeparatedList,
+  /** Minimum verdict probability for a Kev answer to become an edge. */
+  kevThreshold: floatWithDefault(0.7),
+  /** Concurrent provider requests (one request per enclosing method). */
+  concurrency: intWithDefault(96),
+  /** A site with more candidates than this is not asked. */
+  menuLimit: intWithDefault(40),
+  /** Verdicts not seen by any run for this many days are dropped. */
+  retentionDays: intWithDefault(180),
+});
+
 export const codegraphSchema = z.object({
   /**
    * Master switch for the codegraph trajectory family. On by default; opt
@@ -280,6 +297,8 @@ export const codegraphSchema = z.object({
    * changed per-call.
    */
   ambiguousResolveMode: z.enum(["strict", "first"]).default("strict"),
+  /** Model-assisted resolution of residual call sites. */
+  residual: codegraphResidualSchema.prefault({}),
 });
 
 export const qdrantTuneSchema = z.object({
