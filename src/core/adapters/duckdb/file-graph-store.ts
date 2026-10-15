@@ -92,6 +92,20 @@ const INHERITANCE_VALUES = ["source_symbol_id", "ancestor_symbol_id", "ordinal"]
 // namesake caller's aggregate in another file is a distinct row, not a collision.
 const FANOUT_KEYS = ["source_symbol_id", "source_rel_path", "call_expression"] as const;
 const FANOUT_VALUES = ["member", "candidate_count"] as const;
+const RESIDUAL_KEYS = ["source_rel_path", "site_key"] as const;
+const RESIDUAL_VALUES = [
+  "method_symbol_id",
+  "method_start_line",
+  "method_end_line",
+  "line",
+  "call_column",
+  "receiver_text",
+  "member",
+  "kind",
+  "candidates",
+  "menu_hash",
+  "menu_overflow",
+] as const;
 // Migration 039 (bd tea-rags-mcp-7t2ee): one row per (file, type it asked about).
 const HIERARCHY_DEPENDENCY_KEYS = ["source_rel_path", "type_name"] as const;
 const HIERARCHY_DEPENDENCY_VALUES = ["descendant_names"] as const;
@@ -210,6 +224,7 @@ export class DuckDbFileGraphStore {
     const methodEdgeRows: unknown[][] = [];
     const inheritanceRows: unknown[][] = [];
     const fanoutRows: unknown[][] = [];
+    const residualRows: unknown[][] = [];
     const pass1Rows: unknown[][] = [];
     const typeOnlyFileEdgeRows: unknown[][] = [];
     const hierarchyDependencyRows: unknown[][] = [];
@@ -287,6 +302,25 @@ export class DuckDbFileGraphStore {
       for (const a of edges.ambiguousFanouts ?? []) {
         fanoutRows.push([a.sourceSymbolId, node.relPath, a.callExpression, a.member, a.candidateCount]);
       }
+      // Residual call sites: the slice is keyed by the NODE's path, so a row can
+      // only land under the file being written; an absent field clears it.
+      for (const r of edges.residualCallSites ?? []) {
+        residualRows.push([
+          node.relPath,
+          r.siteKey,
+          r.methodSymbolId,
+          r.methodStartLine,
+          r.methodEndLine,
+          r.line,
+          r.column,
+          r.receiverText,
+          r.member,
+          r.kind,
+          JSON.stringify(r.candidates),
+          r.menuHash,
+          r.menuOverflow,
+        ]);
+      }
       // The pass-1 slice, keyed by the NODE's path rather than the slice's own,
       // so the row can only ever land under the file being written.
       if (edges.pass1Aggregates !== undefined) {
@@ -352,6 +386,14 @@ export class DuckDbFileGraphStore {
       FANOUT_KEYS,
       FANOUT_VALUES,
       fanoutRows,
+    );
+    await this.session.applyScopedRowDiff(
+      "cg_residual_call_sites",
+      "source_rel_path",
+      relPaths,
+      RESIDUAL_KEYS,
+      RESIDUAL_VALUES,
+      residualRows,
     );
     // Pass-1 aggregate slice (bd tea-rags-mcp-znxg8). Scoped by `rel_path` like
     // the node table rather than `source_rel_path`, because the row IS the file.
