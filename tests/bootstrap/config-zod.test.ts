@@ -145,11 +145,11 @@ describe("parseAppConfigZod", () => {
   });
 
   describe("codegraph defaults", () => {
-    it("is disabled by default (beta — opt-in via CODEGRAPH_ENABLED)", async () => {
+    it("is enabled by default", async () => {
       const { parseAppConfigZod } = await freshImport();
       const { codegraph } = parseAppConfigZod();
 
-      expect(codegraph.enabled).toBe(false);
+      expect(codegraph.enabled).toBe(true);
       expect(codegraph.dbMemoryLimit).toBe("2GB");
       expect(codegraph.dbMemoryLimitMax).toBe("4GB");
       expect(codegraph.dbThreads).toBe(2);
@@ -166,12 +166,12 @@ describe("parseAppConfigZod", () => {
       expect(codegraph.dbMemoryLimit).toBe("2GB");
     });
 
-    it("CODEGRAPH_ENABLED=true opts in", async () => {
-      process.env.CODEGRAPH_ENABLED = "true";
+    it("CODEGRAPH_ENABLED=false opts out", async () => {
+      process.env.CODEGRAPH_ENABLED = "false";
       const { parseAppConfigZod } = await freshImport();
       const { codegraph } = parseAppConfigZod();
 
-      expect(codegraph.enabled).toBe(true);
+      expect(codegraph.enabled).toBe(false);
     });
   });
 

@@ -184,7 +184,7 @@ export class CodegraphDatabaseMissingError extends InfraError {
     super({
       code: "INFRA_CODEGRAPH_DATABASE_MISSING",
       message: `No codegraph database at ${dbPath}`,
-      hint: "The collection was not indexed with codegraph. Enable CODEGRAPH_ENABLED and re-index to build it.",
+      hint: "The collection was indexed without codegraph. Turn it on with 'tea-rags projects set-env --name <alias> CODEGRAPH_ENABLED=true' and re-index to build it.",
       httpStatus: 404,
     });
   }

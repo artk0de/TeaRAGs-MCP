@@ -121,17 +121,14 @@ needs `--force-enrichments git`.
 
 ## Trajectory: Codegraph
 
-:::caution Beta feature
-
-Codegraph enrichment (call graph + import graph signals) is **beta** and
-**disabled by default**; set `CODEGRAPH_ENABLED=true` to opt in. See
+Codegraph enrichment (call graph + import graph signals) is **on by default**;
+set `CODEGRAPH_ENABLED=false` to index without it. The value is recorded per
+project and replayed on later runs. See
 [Codegraph Enrichments](/usage/advanced/codegraph-enrichments).
-
-:::
 
 | Variable                            | Description                                                                  | Default    |
 | ----------------------------------- | ---------------------------------------------------------------------------- | ---------- |
-| `CODEGRAPH_ENABLED`                 | Enable codegraph family (graph signals + `get_callers`/`get_callees`/`find_cycles` tools) | `false`    |
+| `CODEGRAPH_ENABLED`                 | Enable codegraph family (graph signals + `get_callers`/`get_callees`/`find_cycles` tools) | `true`     |
 | `CODEGRAPH_DB_PATH`                 | Override graph-DB root dir (per-project `.duckdb` files live under it)        | data dir   |
 | `CODEGRAPH_DB_MEMORY_LIMIT`         | Per-project DuckDB RAM ceiling before spilling to temp dir                    | `2GB`      |
 | `CODEGRAPH_DB_THREADS`              | DuckDB worker threads per project                                            | `2`        |

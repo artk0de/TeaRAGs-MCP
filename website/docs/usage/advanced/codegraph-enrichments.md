@@ -8,14 +8,9 @@ import MermaidTeaRAGs from '@site/src/components/MermaidTeaRAGs';
 
 # Codegraph Enrichments
 
-:::caution Beta feature
-
-Codegraph enrichment is a **beta** capability — **disabled by default**. The
-graph extraction and structural signals are still being calibrated across
-languages. Resolution recall varies by language, and signal semantics may change
-between releases. Opt in with `CODEGRAPH_ENABLED=true`.
-
-:::
+Codegraph enrichment is **on by default**. Resolution recall varies by
+language; see [Supported Languages](#supported-languages). Opt out with
+`CODEGRAPH_ENABLED=false`.
 
 While [git enrichments](/usage/advanced/git-enrichments) answer _"how has this
 code behaved over time?"_, codegraph enrichment answers _"how is this code
@@ -62,19 +57,27 @@ For the theory behind these metrics (Henry & Kafura fan-in/fan-out, Martin
 instability, PageRank centrality and bug-proneness), see
 [Code Quality Metrics](/knowledge-base/code-quality-metrics).
 
-## Enabling Codegraph
+## Enabling and Disabling Codegraph
 
-Codegraph is **disabled by default** (beta). Opt in with `CODEGRAPH_ENABLED`:
+Codegraph is **on by default**. Each index run records the value it used in the
+project registry, and later runs — CLI, MCP server, auto-update — replay it, so
+every project keeps its own choice. To index a project without codegraph, set
+`CODEGRAPH_ENABLED=false` for the run or pin it:
 
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
-  -e CODEGRAPH_ENABLED=true
+tea-rags projects set-env --name <alias> CODEGRAPH_ENABLED=false
 ```
 
-While disabled (the default), the entire family is dropped — no graph
-extraction, no graph signals on payloads, and the codegraph MCP tools
-(`get_callers`, `get_callees`, `find_cycles`) are not registered. Re-index after
-enabling so payloads carry the new signals.
+While disabled, the entire family is dropped for that project — no graph
+extraction, no graph signals on payloads — and a process with the flag off does
+not register the codegraph MCP tools (`get_callers`, `get_callees`,
+`find_cycles`). Re-index after enabling so payloads carry the new signals.
+
+Projects indexed while codegraph was opt-in keep the state they were indexed
+with: the first start of this release records `false` for every project whose
+index holds no codegraph data, so nothing is rebuilt and no drift asks for
+`--force-enrichments codegraph`. Turn it on for one with
+`tea-rags projects set-env --name <alias> CODEGRAPH_ENABLED=true` and reindex.
 
 ## Supported Languages
 
@@ -484,7 +487,7 @@ when codegraph is enabled:
 
 | Variable                          | Default   | Description                                                                                  |
 | --------------------------------- | --------- | ------------------------------------------------------------------------------------------- |
-| `CODEGRAPH_ENABLED`               | `false`   | Master switch for the codegraph trajectory family (beta). `true` enables extraction, signals, and tools. |
+| `CODEGRAPH_ENABLED`               | `true`    | Master switch for the codegraph trajectory family. `false` disables extraction, signals, and tools. |
 | `CODEGRAPH_DB_PATH`               | data dir  | Override the graph-DB root directory. Per-project files at `<rootDir>/codegraph/<collection>.duckdb`. |
 | `CODEGRAPH_DB_MEMORY_LIMIT`       | `"2GB"`   | Per-project DuckDB RAM ceiling before spilling to a temp dir (prevents OOM on large repos). |
 | `CODEGRAPH_DB_THREADS`            | `2`       | DuckDB worker threads per project. The writer lock — not parallel scan — is the bottleneck, so more threads inflate memory without speeding up. |

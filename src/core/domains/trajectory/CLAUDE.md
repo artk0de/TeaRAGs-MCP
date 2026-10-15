@@ -172,8 +172,8 @@ carry their own navigators.
   dropped composite falls back to the same-named provider preset, so a shadowing
   composite must repeat that preset's default `filter` or the name changes scope
   with the flag (`decomposition` lost `coreLogic` this way). The switch is
-  `CODEGRAPH_ENABLED=true` (`buildEnvInputs` in `bootstrap/config/parse.ts`),
-  default off. Why: `ENABLE_CODEGRAPH` exists nowhere in `src/`, and
+  `CODEGRAPH_ENABLED` (`buildEnvInputs` in `bootstrap/config/parse.ts`), default
+  on, `false` opts out. Why: `ENABLE_CODEGRAPH` exists nowhere in `src/`, and
   `requires: ["codegraph"]` gates on nothing — either literal ranks differently
   than intended, silently.
 - **Every percentile is scope-split; the global aggregate is source-scope,

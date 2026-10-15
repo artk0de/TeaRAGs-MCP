@@ -260,8 +260,9 @@ The server's environment is your shell's, plus the settings the target project
 was indexed with: `call` finds the project from the `project`, `collection` or
 `path` argument (else the current directory) and fills every variable your shell
 leaves unset from its registry entry, the same way `index-codebase` does. A
-project indexed with codegraph therefore gets its codegraph tools (`get_callers`,
-`trace_path`, …) without exporting `CODEGRAPH_ENABLED=true`. For a project that
+project indexed without codegraph therefore stays without it even though the
+flag is on by default, and one indexed with it keeps its codegraph tools
+(`get_callers`, `trace_path`, …) whatever your shell exports. For a project that
 is not registered nothing is filled in; to reproduce what your MCP client sees,
 export the same variables its server config sets.
 

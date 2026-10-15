@@ -96,10 +96,13 @@ Run: tea-rags index-codebase --project myapp --force-enrichments codegraph
 
 The most common payload-key drift is not a schema change at all. Codegraph and
 git payload descriptors are declared only when their trajectory is enabled, so a
-process without `CODEGRAPH_ENABLED` or `TRAJECTORY_GIT_ENABLED` declares fewer
-keys than the index recorded, and every `codegraph.*` key reports as removed.
-The env axis names the flag that explains it, and reports it whether the reading
-process set the flag to `false` or simply never had it.
+process run with `CODEGRAPH_ENABLED=false` or `TRAJECTORY_GIT_ENABLED=false`
+declares fewer keys than the index recorded, and every `codegraph.*` key reports
+as removed. The env axis names the flag that explains it.
+
+The opposite direction is not reported for codegraph: a project whose registry
+records `codegraphEnabled: false` is not missing the `codegraph.*` keys a
+default-on process declares, because its own next run would not write them.
 
 The fix is to restore the flag in the process that reads the index — a
 SessionStart hook running in a fresh shell is the standing offender — not to

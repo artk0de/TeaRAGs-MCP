@@ -61,9 +61,12 @@ describe("resolveCodegraphSizeBytes", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("returns undefined when CODEGRAPH_ENABLED is not set", () => {
+  it("reads the graph size when CODEGRAPH_ENABLED is not set (on by default)", () => {
     delete process.env.CODEGRAPH_ENABLED;
-    expect(resolveCodegraphSizeBytes("code_abc")).toBeUndefined();
+    process.env.TEA_RAGS_DATA_DIR = tmpDir;
+    mkdirSync(join(tmpDir, "codegraph"), { recursive: true });
+    writeFileSync(join(tmpDir, "codegraph", "code_abc_v1.duckdb"), Buffer.alloc(4096));
+    expect(resolveCodegraphSizeBytes("code_abc")).toBeGreaterThan(0);
   });
 
   it("returns undefined when CODEGRAPH_ENABLED is 'false'", () => {
