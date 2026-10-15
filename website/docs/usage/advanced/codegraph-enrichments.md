@@ -147,6 +147,12 @@ the pre-computed DuckDB graph directly — no embedding):
 | `review_changes` | Every diff-scoped report over one working-tree change in one call: `naming` (the names the change declares, judged against the project's vocabulary), `incompleteChange` (co-change partners of the changed files that the change does not touch), `cohesion` (per changed file, groups of symbols that change together and split candidates) and `architecture` (the change's new edges judged by the boundary detectors). See [Reviewing a change](#reviewing-a-change) |
 | `find_co_changed` | Co-change partners of the given files from git history — support, both directed confidences, Wilson lower-bound strength, lift, up to three sample commits, and `structurallyLinked` (an import / method edge / re-export barrel chain joins the pair; `false` = silent coupling). Ranked by strength; partners deleted from the working tree are dropped; `built: false` means no co-change build yet, not "no partners" |
 
+**Model edges.** When [residual resolution with Kev](../../config/kev-setup)
+has run, `get_callers` / `get_callees` entries it produced carry
+`origin: "model"`, `model` and `p` (the model's confidence). Entries without
+`origin` are static. Treat a model edge as probabilistic. `trace_path` steps
+carry no `origin`.
+
 **Call-graph resolution scope.** `get_callers` / `get_callees` walk the run-time
 hierarchy (Class Hierarchy Analysis), which reaches **structural**
 implementers too: a TypeScript class or object-literal factory that satisfies
