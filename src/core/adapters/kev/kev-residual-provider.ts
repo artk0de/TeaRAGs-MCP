@@ -20,7 +20,7 @@ import {
 } from "./errors.js";
 
 const MODEL_NAME = "kev-latest";
-const RESOLVE_TIMEOUT_MS = 120_000;
+const RESOLVE_TIMEOUT_MS = 300_000;
 const MODELS_TIMEOUT_MS = 5_000;
 
 export interface KevChoiceQuestion {
@@ -32,7 +32,7 @@ export interface KevChoiceQuestion {
 export interface KevResidualProviderOptions {
   urls: readonly string[];
   threshold: number;
-  /** Per-request budget of `POST /v1/systemone`; default 120 s. */
+  /** Per-request budget of `POST /v1/systemone`; default 300 s (`CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC`). */
   resolveTimeoutMs?: number;
 }
 

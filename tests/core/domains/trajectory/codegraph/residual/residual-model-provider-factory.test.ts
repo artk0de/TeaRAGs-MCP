@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { BrokeredResidualProvider } from "../../../../../../src/core/adapters/kev/brokered-residual-provider.js";
 import { KevResidualProvider } from "../../../../../../src/core/adapters/kev/kev-residual-provider.js";
@@ -32,6 +32,23 @@ describe("ResidualModelProviderFactory", () => {
 
     expect(provider).toBeInstanceOf(KevResidualProvider);
     expect(provider.threshold).toBe(0.8);
+  });
+
+  it("gives Kev requests the configured timeout, in seconds", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const refused = (async () => Promise.reject(new TypeError("fetch failed"))) as typeof fetch;
+    const provider = ResidualModelProviderFactory.create(
+      "kev",
+      { kevUrls: ["http://gpu:8090"], kevThreshold: 0.7, requestTimeoutSec: 450 },
+      { fetch: refused },
+    );
+
+    await provider
+      .resolveGroup({ sourceRelPath: "a.rb", methodSymbolId: "A#run", methodSource: "def run; end", questions: [] })
+      .catch(() => undefined);
+
+    expect(timeout).toHaveBeenCalledWith(450_000);
+    timeout.mockRestore();
   });
 
   it("refuses kev without CODEGRAPH_RESIDUAL_KEV_URL", () => {

@@ -223,6 +223,8 @@ export const codegraphResidualSchema = z.object({
   kevThreshold: floatWithDefault(0.7),
   /** Concurrent provider requests (one request per enclosing method). */
   concurrency: intWithDefault(16),
+  /** Seconds one provider request may run; Kev answers one batch at a time, so a request also waits for the batches ahead of it. */
+  requestTimeoutSec: intWithDefault(300),
   /** A site with more candidates than this is not asked. */
   menuLimit: intWithDefault(40),
   /** A site with fewer candidates than this is neither asked nor applied. */

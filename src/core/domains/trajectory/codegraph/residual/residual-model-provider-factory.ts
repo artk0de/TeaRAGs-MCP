@@ -11,6 +11,8 @@ export const RESIDUAL_MODELS = ["kev"] as const;
 export interface ResidualProviderConfig {
   kevUrls?: readonly string[];
   kevThreshold: number;
+  /** Per-request Kev budget, seconds; the provider's default when unset. */
+  requestTimeoutSec?: number;
   /** GPU session broker; set, Kev is leased per pass and asked at the lease's URL. */
   kevSessionUrl?: string;
   kevSessionToken?: string;
@@ -24,6 +26,10 @@ export class ResidualModelProviderFactory {
   ): ResidualModelProvider {
     switch (model) {
       case "kev": {
+        const kevOptions = {
+          threshold: config.kevThreshold,
+          ...(config.requestTimeoutSec !== undefined ? { resolveTimeoutMs: config.requestTimeoutSec * 1000 } : {}),
+        };
         if (config.kevSessionUrl) {
           const session = new KevSessionClient(
             { url: config.kevSessionUrl, ...(config.kevSessionToken ? { token: config.kevSessionToken } : {}) },
@@ -32,14 +38,14 @@ export class ResidualModelProviderFactory {
           return new BrokeredResidualProvider({
             session,
             threshold: config.kevThreshold,
-            kevProvider: (kevUrl) => new KevResidualProvider({ urls: [kevUrl], threshold: config.kevThreshold }, deps),
+            kevProvider: (kevUrl) => new KevResidualProvider({ urls: [kevUrl], ...kevOptions }, deps),
           });
         }
         const urls = (config.kevUrls ?? []).filter((url) => url.length > 0);
         if (urls.length === 0) {
           throw new ConfigValueMissingError("codegraph.residual.kevUrls", "CODEGRAPH_RESIDUAL_KEV_URL");
         }
-        return new KevResidualProvider({ urls, threshold: config.kevThreshold }, deps);
+        return new KevResidualProvider({ urls, ...kevOptions }, deps);
       }
       default:
         throw new ConfigValueInvalidError("residualModel", model, RESIDUAL_MODELS.join(" | "));

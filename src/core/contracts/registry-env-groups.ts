@@ -101,6 +101,7 @@ const REGISTRY_ENV_GROUP_TABLE = [
   { canonical: "CODEGRAPH_RESIDUAL_KEV_URL", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_KEV_THRESHOLD", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_CONCURRENCY", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_MENU_LIMIT", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_MIN_MENU", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS", aliases: [], consequence: "runtime" },

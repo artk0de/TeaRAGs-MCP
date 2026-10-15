@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   KevRequestCancelledError,
@@ -221,6 +221,26 @@ describe("KevResidualProvider", () => {
     expect((error as KevTimeoutError).hint).not.toMatch(/Start the Kev server/);
     expect((error as KevTimeoutError).cause).toBeInstanceOf(Error);
     expect(requests).toHaveLength(2);
+  });
+
+  it("gives each request 300 s by default", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const { fetch } = fakeFetch(() => "refused");
+    const provider = new KevResidualProvider({ urls: ["http://a:1"], threshold: 0.7 }, { fetch });
+
+    await provider.resolveGroup(GROUP).catch(() => undefined);
+
+    expect(timeout).toHaveBeenCalledWith(300_000);
+    timeout.mockRestore();
+  });
+
+  it("names the timeout setting in the timeout hint", async () => {
+    const { fetch } = stalledFetch();
+    const provider = new KevResidualProvider({ urls: ["http://a:1"], threshold: 0.7, resolveTimeoutMs: 20 }, { fetch });
+
+    const error = await provider.resolveGroup(GROUP).catch((e: unknown) => e);
+
+    expect((error as KevTimeoutError).hint).toMatch(/CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC/);
   });
 
   it("stops at once and tries no other URL when the caller's signal aborts", async () => {

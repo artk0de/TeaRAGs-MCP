@@ -171,6 +171,7 @@ function buildEnvInputs(env: EnvReader) {
       kevUrls: env("CODEGRAPH_RESIDUAL_KEV_URL"),
       kevThreshold: env("CODEGRAPH_RESIDUAL_KEV_THRESHOLD"),
       concurrency: env("CODEGRAPH_RESIDUAL_CONCURRENCY"),
+      requestTimeoutSec: env("CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC"),
       menuLimit: env("CODEGRAPH_RESIDUAL_MENU_LIMIT"),
       minMenu: env("CODEGRAPH_RESIDUAL_MIN_MENU"),
       retentionDays: env("CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS"),

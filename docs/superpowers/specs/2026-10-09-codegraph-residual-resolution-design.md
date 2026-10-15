@@ -196,15 +196,19 @@ newest stored verdict per (`site_key`, `menu_hash`) whatever its model version.
 A static re-walk of a file deletes that file's model edges, so `cacheOnly` is
 what restores them after an index run that asked nothing.
 
-Failure handling: provider unreachable, or more than `maxGroupFailures`
-(default 3) groups failing → the pass cancels the requests still in flight and
-ends `skipped` with the reason (a timeout is reported as one, not as an
-unreachable provider), still re-applies the edges its stored verdicts support
-(as `cacheOnly` does), and keeps every verdict, so the next run resumes from
-them. A state over Kev's token limit (HTTP 422) counts the group's sites as
-`tooLong` and leaves them without an edge; it is not a group failure. The index
-stays complete and correct without model edges, and indexing does not fail. The
-CLI command exits 1 on `skipped`.
+Failure handling: Kev answers one batch at a time, so a request also waits for
+the batches ahead of it; each request gets
+`CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC` (default 300 s). A group that times out
+goes back to the tail of the queue once (`requeuedGroups`); a second timeout is
+a failure. Provider unreachable, failed groups over the budget — the larger of
+`maxGroupFailures` (default 3) and 2% of the pass's groups — or 5 groups failing
+in a row → the pass cancels the requests still in flight and ends `skipped` with
+the reason (a timeout is reported as one, not as an unreachable provider), still
+re-applies the edges its stored verdicts support (as `cacheOnly` does), and
+keeps every verdict, so the next run resumes from them. A state over Kev's token
+limit (HTTP 422) counts the group's sites as `tooLong` and leaves them without
+an edge; it is not a group failure. The index stays complete and correct without
+model edges, and indexing does not fail. The CLI command exits 1 on `skipped`.
 
 ## Provider port
 
