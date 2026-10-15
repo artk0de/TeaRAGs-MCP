@@ -92,6 +92,16 @@ eval measured). A site whose menu is larger (`id`, `firm` on a Rails app) is
 written with `menu_overflow = true` and skipped by the pass in wave 1: a model
 choosing among hundreds of classes was never measured.
 
+Menus are also floored: a site whose menu has fewer than
+`CODEGRAPH_RESIDUAL_MIN_MENU` entries (default 4) is not eligible. Its row is
+still written, but the pass neither asks about it nor applies a stored verdict
+for it, in either mode. The floor comes from the TaxDome live run (bead
+2m83f.24): on a 1–3 entry menu the true target was absent in 150 of 162 labelled
+sites — ActiveSupport and gem methods, DB columns and Struct readers that share
+a name with one project method — and the provider's probability, normalised over
+the menu, tends to 1.0 there whatever the answer. With the floor, pooled
+precision at p ≥ 0.7 was 0.93 (43 edges over 204 sites).
+
 ### Verdict store — its own DuckDB file, keyed by base collection
 
 `<rootDir>/residual-verdicts/<logicalName>.duckdb`. It is NOT a generation file:
@@ -170,13 +180,15 @@ generation.
 2. **Group** questions by enclosing method (one method source, many questions —
    Kev caches it as a prefix) and drop duplicate questions.
 3. **Send** groups through a pool of N concurrent requests
-   (`CODEGRAPH_RESIDUAL_CONCURRENCY`, default 96). Each group's verdicts are
-   written as soon as they arrive, so an interrupted pass resumes where it
+   (`CODEGRAPH_RESIDUAL_CONCURRENCY`, default 16 — Kev packs a few states per
+   forward pass, so more requests in flight only queue). Each group's verdicts
+   are written as soon as they arrive, so an interrupted pass resumes where it
    stopped.
 4. **Apply** the model's full edge set — every current eligible site whose
-   verdict (cached or new) picks a menu entry at or above the threshold — mark
-   the generation `cg_derived_stale`, and let finalize recompute derived
-   metrics. Then touch the current sites' verdicts and expire by retention.
+   verdict (cached or new) picks a menu entry at or above the threshold — and,
+   when the edge set changed, recompute the derived metrics before returning:
+   the pass runs after finalize, so nothing later in the same run would. Then
+   touch the current sites' verdicts and expire by retention.
 
 The pass has two modes. `ask` queries the provider for uncached sites (lookup at
 the served model version). `cacheOnly` makes no provider call and re-applies the
@@ -185,12 +197,14 @@ A static re-walk of a file deletes that file's model edges, so `cacheOnly` is
 what restores them after an index run that asked nothing.
 
 Failure handling: provider unreachable, or more than `maxGroupFailures`
-(default 3) groups failing → the pass ends `skipped` with the reason, still
-re-applies the edges its stored verdicts support (as `cacheOnly` does), and
-keeps every verdict, so the next run resumes from them. A state over Kev's token
-limit (HTTP 422) counts the group's sites as `tooLong` and leaves them without
-an edge; it is not a group failure. The index stays complete and correct without
-model edges, and indexing does not fail. The CLI command exits 1 on `skipped`.
+(default 3) groups failing → the pass cancels the requests still in flight and
+ends `skipped` with the reason (a timeout is reported as one, not as an
+unreachable provider), still re-applies the edges its stored verdicts support
+(as `cacheOnly` does), and keeps every verdict, so the next run resumes from
+them. A state over Kev's token limit (HTTP 422) counts the group's sites as
+`tooLong` and leaves them without an edge; it is not a group failure. The index
+stays complete and correct without model edges, and indexing does not fail. The
+CLI command exits 1 on `skipped`.
 
 ## Provider port
 
