@@ -20,6 +20,7 @@ const COMPLETED = {
   answered: 38,
   tooLong: 1,
   failedGroups: 1,
+  abortedGroups: 2,
   belowThreshold: 5,
   sitesEdged: 97,
   edgesApplied: 95,
@@ -52,6 +53,7 @@ describe("formatResidualReport", () => {
     expect(text).toContain("  sites edged:      97\n");
     expect(text).toContain("  derived metrics:  recomputed\n");
     expect(text).toContain("apply 3 (recompute 2), total 6");
+    expect(text).toContain("  aborted groups:   2\n");
     expect(text).toContain("total 6");
   });
 

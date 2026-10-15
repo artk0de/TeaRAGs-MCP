@@ -222,7 +222,7 @@ export const codegraphResidualSchema = z.object({
   /** Minimum verdict probability for a Kev answer to become an edge. */
   kevThreshold: floatWithDefault(0.7),
   /** Concurrent provider requests (one request per enclosing method). */
-  concurrency: intWithDefault(96),
+  concurrency: intWithDefault(16),
   /** A site with more candidates than this is not asked. */
   menuLimit: intWithDefault(40),
   /** A site with fewer candidates than this is neither asked nor applied. */

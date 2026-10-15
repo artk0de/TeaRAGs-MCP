@@ -4,10 +4,11 @@
  * edges. Every run applies the FULL model edge set of the current sites —
  * `applyModelEdges` replaces the model's edges, and a static re-walk of a file
  * drops that file's model edges. A provider that is down or keeps failing ends
- * the pass `skipped`; the verdicts already held are applied all the same.
- * Only eligible sites (see {@link siteEligibility}) are asked or applied. The
- * pass runs after finalize, so when the applied edges change it recomputes the
- * derived metrics itself, best-effort.
+ * the pass `skipped`, cancelling the asks still in flight; the verdicts already
+ * held are applied all the same. Only eligible sites (see
+ * {@link siteEligibility}) are asked or applied. The pass runs after finalize,
+ * so when the applied edges change it recomputes the derived metrics itself,
+ * best-effort.
  * A provider that leases its hardware (`acquire`) is leased only when some
  * site needs asking, and released however the asking ends.
  */
@@ -68,6 +69,8 @@ interface AskTally {
   answered: number;
   tooLong: number;
   failures: string[];
+  /** Groups cancelled in flight when the pass stopped asking. */
+  aborted: number;
   leaseLost: boolean;
 }
 
@@ -103,7 +106,7 @@ export class ResidualResolutionPass {
     const groups = groupQuestions(eligible.filter((r) => !verdicts.has(verdictKey(r.siteKey, r.menuHash))));
     const readAt = input.now();
 
-    const tally: AskTally = { asked: 0, answered: 0, tooLong: 0, failures: [], leaseLost: false };
+    const tally: AskTally = { asked: 0, answered: 0, tooLong: 0, failures: [], aborted: 0, leaseLost: false };
     let notAcquired: string | undefined;
     if (servedVersion.version !== undefined && groups.length > 0) {
       notAcquired = await this.askLeased(groups, servedVersion.version, verdicts, tally, input);
@@ -143,6 +146,7 @@ export class ResidualResolutionPass {
       answered: tally.answered,
       tooLong: tally.tooLong,
       failedGroups: tally.failures.length,
+      abortedGroups: tally.aborted,
       belowThreshold,
       sitesEdged: edges.length,
       edgesApplied: applied.stored,
@@ -167,7 +171,7 @@ export class ResidualResolutionPass {
       await input.recomputeDerived();
       return "recomputed";
     } catch (error) {
-      process.stderr.write(`[residual] derived metrics recompute failed, left stale: ${errorMessage(error)}\n`);
+      console.error(`[Residual] derived metrics recompute failed, left stale: ${describeError(error)}`);
       return "stale";
     }
   }
@@ -180,7 +184,7 @@ export class ResidualResolutionPass {
       if (!health.ok) return unavailable(health.reason);
       return { version: await provider.version() };
     } catch (error) {
-      return unavailable(errorMessage(error));
+      return unavailable(describeError(error));
     }
   }
 
@@ -208,7 +212,7 @@ export class ResidualResolutionPass {
     try {
       lease = await provider.acquire();
     } catch (error) {
-      return `provider ${provider.id} session not acquired: ${errorMessage(error)}`;
+      return `provider ${provider.id} session not acquired: ${describeError(error)}`;
     }
     try {
       await this.askGroups(groups, modelVersion, verdicts, tally, input);
@@ -238,7 +242,10 @@ export class ResidualResolutionPass {
     return verdicts;
   }
 
-  /** Pool of `concurrency` workers; each group's verdicts are stored as soon as it answers. */
+  /**
+   * Pool of `concurrency` workers; each group's verdicts are stored as soon as it answers. A lost lease or more
+   * than `maxGroupFailures` failed groups aborts the asks still in flight; those count as aborted, not failed.
+   */
   private async askGroups(
     groups: PendingGroup[],
     modelVersion: string,
@@ -247,22 +254,21 @@ export class ResidualResolutionPass {
     input: ResidualPassInput,
   ): Promise<void> {
     const maxFailures = input.maxGroupFailures ?? DEFAULT_MAX_GROUP_FAILURES;
+    const controller = new AbortController();
     let next = 0;
     let done = 0;
     const worker = async (): Promise<void> => {
-      while (next < groups.length && !tally.leaseLost && tally.failures.length <= maxFailures) {
+      while (next < groups.length && !controller.signal.aborted) {
         const group = groups[next++];
         tally.asked += group.questions.length;
         try {
-          const fresh = await this.askGroup(group, modelVersion, input);
+          const fresh = await this.askGroup(group, modelVersion, input, controller.signal);
           await input.store.put(fresh);
           tally.answered += fresh.length;
           for (const verdict of fresh) verdicts.set(verdictKey(verdict.siteKey, verdict.menuHash), verdict);
         } catch (error) {
-          const code = errorCode(error) ?? "";
-          if (STATE_TOO_LONG_CODES.has(code)) tally.tooLong += group.questions.length;
-          else tally.failures.push(errorMessage(error));
-          if (LEASE_LOST_CODES.has(code)) tally.leaseLost = true;
+          this.countFailure(group, error, tally, controller.signal);
+          if (tally.leaseLost || tally.failures.length > maxFailures) controller.abort();
         }
         done++;
         input.onProgress?.({
@@ -278,18 +284,40 @@ export class ResidualResolutionPass {
     await Promise.all(Array.from({ length: workerCount }, async () => worker()));
   }
 
+  /** An error that lands after the pass aborted is the cancellation itself, not a failure of the group. */
+  private countFailure(group: PendingGroup, error: unknown, tally: AskTally, signal: AbortSignal): void {
+    if (signal.aborted) {
+      tally.aborted++;
+      return;
+    }
+    const code = errorCode(error) ?? "";
+    if (STATE_TOO_LONG_CODES.has(code)) {
+      tally.tooLong += group.questions.length;
+      return;
+    }
+    tally.failures.push(describeError(error));
+    if (LEASE_LOST_CODES.has(code)) tally.leaseLost = true;
+    console.error(
+      `[Residual] group failed: method=${group.methodSymbolId} questions=${group.questions.length} code=${code || "UNKNOWN"}`,
+    );
+  }
+
   private async askGroup(
     group: PendingGroup,
     modelVersion: string,
     input: ResidualPassInput,
+    signal: AbortSignal,
   ): Promise<ResidualVerdict[]> {
     const methodSource = await input.readMethodSource(group.sourceRelPath, group.methodStartLine, group.methodEndLine);
-    const answers = await input.provider.resolveGroup({
-      sourceRelPath: group.sourceRelPath,
-      methodSymbolId: group.methodSymbolId,
-      methodSource,
-      questions: group.questions,
-    });
+    const answers = await input.provider.resolveGroup(
+      {
+        sourceRelPath: group.sourceRelPath,
+        methodSymbolId: group.methodSymbolId,
+        methodSource,
+        questions: group.questions,
+      },
+      signal,
+    );
     return toVerdicts(group.questions, answers, input.provider.id, modelVersion, input.now());
   }
 }
@@ -392,6 +420,8 @@ function errorCode(error: unknown): string | undefined {
   return undefined;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/** The message, and the cause's when the error carries one (a typed error wraps the transport failure there). */
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  return error.cause instanceof Error ? `${error.message} (cause: ${error.cause.message})` : error.message;
 }

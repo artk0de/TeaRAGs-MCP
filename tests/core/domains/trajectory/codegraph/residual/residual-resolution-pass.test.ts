@@ -2,13 +2,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ResidualVerdictStore } from "../../../../../../src/core/adapters/duckdb/residual-verdict-store.js";
 import {
   KevSessionBusyError,
   KevSessionLostError,
   KevStateTooLongError,
+  KevTimeoutError,
 } from "../../../../../../src/core/adapters/kev/errors.js";
 import type {
   ModelEdgeRow,
@@ -54,6 +55,10 @@ class FakeProvider implements ResidualModelProvider {
   healthy = true;
   modelVersion = "fake@1";
   failOn = new Set<string>();
+  failure: (method: string) => Error = (method) => new Error(`boom ${method}`);
+  /** Methods whose ask settles only when the pass's signal aborts. */
+  stallOn = new Set<string>();
+  abortedAsks = 0;
   tooLongOn = new Set<string>();
   inFlight = 0;
   maxInFlight = 0;
@@ -72,13 +77,25 @@ class FakeProvider implements ResidualModelProvider {
     return this.healthy ? { ok: true } : { ok: false, reason: "connection refused" };
   };
 
-  resolveGroup = async (group: ResidualQuestionGroup): Promise<ResidualAnswer[]> => {
+  resolveGroup = async (group: ResidualQuestionGroup, signal?: AbortSignal): Promise<ResidualAnswer[]> => {
     this.calls.push(group);
     this.inFlight++;
     this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+    if (this.stallOn.has(group.methodSymbolId)) {
+      await new Promise((_resolve, reject) => {
+        signal?.addEventListener(
+          "abort",
+          () => {
+            this.abortedAsks++;
+            reject(new Error(`aborted ${group.methodSymbolId}`));
+          },
+          { once: true },
+        );
+      });
+    }
     await new Promise((resolve) => setTimeout(resolve, 1));
     this.inFlight--;
-    if (this.failOn.has(group.methodSymbolId)) throw new Error(`boom ${group.methodSymbolId}`);
+    if (this.failOn.has(group.methodSymbolId)) throw this.failure(group.methodSymbolId);
     if (this.tooLongOn.has(group.methodSymbolId)) throw new KevStateTooLongError("http://gpu:1", "too long");
     return group.questions.map((q) => {
       const { pick, p } = this.answer(q);
@@ -106,10 +123,10 @@ class LeasedProvider extends FakeProvider {
   constructor(answer: (q: ResidualQuestion) => { pick: string; p: number }) {
     super(answer);
     const ask = this.resolveGroup;
-    this.resolveGroup = async (group) => {
+    this.resolveGroup = async (group, signal) => {
       this.events.push(`ask ${group.methodSymbolId}`);
       if (this.lostOn.has(group.methodSymbolId)) throw new KevSessionLostError("http://broker:8008", "lease-1");
-      return ask(group);
+      return ask(group, signal);
     };
   }
 }
@@ -155,6 +172,7 @@ describe("ResidualResolutionPass", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await store.close();
     rmSync(rootDir, { recursive: true, force: true });
   });
@@ -427,6 +445,56 @@ describe("ResidualResolutionPass", () => {
     expect(report).toMatchObject({ failedGroups: 2, asked: 2, cacheHits: 1, edgesApplied: 1 });
     expect(provider.calls).toHaveLength(2);
     expect(appliedSites(graphDb)).toEqual(["cached"]);
+  });
+
+  it("cancels the asks still in flight when the failure breaker trips, counting them apart from failures", async () => {
+    const provider = new FakeProvider(firmPick);
+    const stalled = ["A#c", "A#d", "A#e", "A#f"];
+    for (const method of ["A#a", "A#b"]) provider.failOn.add(method);
+    for (const method of stalled) provider.stallOn.add(method);
+    const rows = ["A#a", "A#b", ...stalled].map((method, i) => row({ siteKey: `s${i}`, methodSymbolId: method }));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const report = await run(fakeGraphDb(rows), provider, { maxGroupFailures: 1, concurrency: 6 });
+
+    expect(provider.abortedAsks).toBe(4);
+    expect(report).toMatchObject({ outcome: "skipped", failedGroups: 2, abortedGroups: 4, answered: 0 });
+    expect(report.reason).toMatch(/^2 group\(s\) failed: boom A#/);
+
+    provider.failOn.clear();
+    provider.stallOn.clear();
+    provider.calls.length = 0;
+    const second = await run(fakeGraphDb(rows), provider, { concurrency: 6 });
+
+    expect(provider.calls.map((g) => g.methodSymbolId).sort()).toEqual(["A#a", "A#b", ...stalled]);
+    expect(second).toMatchObject({ outcome: "completed", abortedGroups: 0, answered: 6 });
+  });
+
+  it("cancels the asks still in flight once the lease is lost", async () => {
+    const provider = new LeasedProvider(firmPick);
+    provider.lostOn.add("A#a");
+    provider.stallOn.add("A#b");
+    const rows = ["A#b", "A#a"].map((method, i) => row({ siteKey: `s${i}`, methodSymbolId: method }));
+
+    const report = await run(fakeGraphDb(rows), provider, { concurrency: 2 });
+
+    expect(provider.abortedAsks).toBe(1);
+    expect(report).toMatchObject({ outcome: "skipped", failedGroups: 1, abortedGroups: 1 });
+  });
+
+  it("reports a timeout as one, keeping the error's cause in the reason, and logs each failed group", async () => {
+    const provider = new FakeProvider(firmPick);
+    provider.failOn.add("A#a");
+    provider.failure = () =>
+      new KevTimeoutError(["http://gpu:1"], 120_000, new Error("The operation was aborted due to timeout"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const report = await run(fakeGraphDb([row({ siteKey: "s1", methodSymbolId: "A#a" })]), provider);
+
+    expect(report.reason).toBe(
+      "1 group(s) failed: Kev did not answer within 120s (cause: The operation was aborted due to timeout)",
+    );
+    expect(log).toHaveBeenCalledWith("[Residual] group failed: method=A#a questions=1 code=INFRA_KEV_TIMEOUT");
   });
 
   it("ends skipped when the provider is unhealthy, asks nothing and re-applies the newest cached verdicts", async () => {

@@ -42,6 +42,7 @@ export function skippedResidualReport(reason: string, mode: ResidualPassMode): R
     answered: 0,
     tooLong: 0,
     failedGroups: 0,
+    abortedGroups: 0,
     belowThreshold: 0,
     sitesEdged: 0,
     edgesApplied: 0,

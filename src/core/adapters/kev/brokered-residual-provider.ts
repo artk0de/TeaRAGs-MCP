@@ -51,6 +51,8 @@ interface ActiveLease {
   session: KevSession;
   kev: ResidualModelProvider;
   lost: boolean;
+  /** Aborts the asks in flight once the broker no longer knows the lease. */
+  controller: AbortController;
   heartbeat: NodeJS.Timeout;
   onSignal: Map<NodeJS.Signals, () => void>;
 }
@@ -101,6 +103,7 @@ export class BrokeredResidualProvider implements ResidualModelProvider {
       session,
       kev,
       lost: false,
+      controller: new AbortController(),
       heartbeat: setInterval(() => void this.beat(active), this.heartbeatMs),
       onSignal: new Map(),
     };
@@ -120,12 +123,13 @@ export class BrokeredResidualProvider implements ResidualModelProvider {
     return { release: async () => this.release(active) };
   };
 
-  resolveGroup = async (group: ResidualQuestionGroup): Promise<ResidualAnswer[]> => {
+  resolveGroup = async (group: ResidualQuestionGroup, signal?: AbortSignal): Promise<ResidualAnswer[]> => {
     const { active } = this;
     if (!active) throw new Error("BrokeredResidualProvider.resolveGroup called without an acquired lease");
     if (active.lost) throw new KevSessionLostError(this.session.url, active.session.lease);
+    const leaseSignal = active.controller.signal;
     try {
-      return await active.kev.resolveGroup(group);
+      return await active.kev.resolveGroup(group, signal ? AbortSignal.any([signal, leaseSignal]) : leaseSignal);
     } catch (error) {
       if (active.lost) throw new KevSessionLostError(this.session.url, active.session.lease);
       throw error;
@@ -148,7 +152,10 @@ export class BrokeredResidualProvider implements ResidualModelProvider {
     try {
       await this.session.heartbeat(active.session.lease);
     } catch (error) {
-      if (error instanceof KevSessionLostError) active.lost = true;
+      if (error instanceof KevSessionLostError) {
+        active.lost = true;
+        active.controller.abort(error);
+      }
     }
   }
 
