@@ -9,7 +9,13 @@
  * them with a typed `CollectionNotProvidedError`.
  */
 
-import type { CycleScope, DeclaredSymbolVisibility, RelPath, SymbolId } from "../../../contracts/types/codegraph.js";
+import type {
+  CycleScope,
+  DeclaredSymbolVisibility,
+  EdgeOrigin,
+  RelPath,
+  SymbolId,
+} from "../../../contracts/types/codegraph.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
 import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 
@@ -53,6 +59,12 @@ export interface CallerResult extends DeclaredVisibilityField {
   sourceSymbolId: SymbolId;
   sourceRelPath: RelPath;
   callExpression: string;
+  /** `"model"` when a residual-resolution verdict produced the edge; absent means a static edge. */
+  origin?: EdgeOrigin;
+  /** Provider id of a model edge. */
+  model?: string;
+  /** Provider probability of a model edge. */
+  p?: number;
 }
 
 /**
@@ -176,6 +188,12 @@ export interface CalleeResult extends DeclaredVisibilityField {
   targetSymbolId: SymbolId | null;
   targetRelPath: RelPath;
   callExpression: string;
+  /** `"model"` when a residual-resolution verdict produced the edge; absent means a static edge. */
+  origin?: EdgeOrigin;
+  /** Provider id of a model edge. */
+  model?: string;
+  /** Provider probability of a model edge. */
+  p?: number;
 }
 
 export interface SymbolCalleesResponse extends ResolvedSymbolIdField {
