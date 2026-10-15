@@ -116,6 +116,50 @@ describe("ResidualResolutionOps", () => {
     expect(report.reason).toMatch(/residualModel/);
   });
 
+  describe("GPU session", () => {
+    const leasedProvider = (events: string[]): ResidualModelProvider => ({
+      ...answeringProvider([]),
+      acquire: async () => {
+        events.push("acquire");
+        return {
+          release: async () => {
+            events.push("release");
+          },
+        };
+      },
+    });
+
+    it("leases the provider for an ask pass with uncached sites, and not again once every site is cached", async () => {
+      const events: string[] = [];
+      const ops = new ResidualResolutionOps({
+        rootDir,
+        codegraphPool: { acquireWrite } as never,
+        config: CONFIG,
+        createProvider: () => leasedProvider(events),
+      });
+
+      await ops.resolve({ ...request(), model: "kev" });
+      await ops.resolve({ ...request(), model: "kev" });
+      await ops.resolveAfterIndex(request());
+
+      expect(events).toEqual(["acquire", "release"]);
+    });
+
+    it("asks the session broker configured in codegraph.residual, ending skipped when it is unreachable", async () => {
+      const ops = new ResidualResolutionOps({
+        rootDir,
+        codegraphPool: { acquireWrite } as never,
+        config: { ...CONFIG, kevUrls: undefined, kevSessionUrl: "http://127.0.0.1:1", kevSessionToken: "s3cret" },
+      });
+
+      const report = await ops.resolve({ ...request(), model: "kev" });
+
+      expect(report).toMatchObject({ outcome: "skipped", asked: 0 });
+      expect(report.reason).toMatch(/^provider kev unavailable: gpu-session-unavailable: GET \/v1\/state/);
+      expect(report.reason).not.toContain("s3cret");
+    });
+  });
+
   describe("resolveAfterIndex", () => {
     it("does nothing when no model is asked and the project has no verdicts", async () => {
       const ops = new ResidualResolutionOps({ rootDir, codegraphPool: { acquireWrite } as never, config: CONFIG });

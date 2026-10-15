@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { BrokeredResidualProvider } from "../../../../../../src/core/adapters/kev/brokered-residual-provider.js";
 import { KevResidualProvider } from "../../../../../../src/core/adapters/kev/kev-residual-provider.js";
 import {
   RESIDUAL_MODELS,
@@ -35,6 +36,28 @@ describe("ResidualModelProviderFactory", () => {
 
   it("refuses kev without CODEGRAPH_RESIDUAL_KEV_URL", () => {
     expect(() => ResidualModelProviderFactory.create("kev", { kevThreshold: 0.7 })).toThrow(ConfigValueMissingError);
+  });
+
+  it("leases Kev through the session broker when CODEGRAPH_RESIDUAL_KEV_SESSION_URL is set; no Kev URL needed", async () => {
+    const requests: { url: string; token: string | null }[] = [];
+    const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push({
+        url: input instanceof Request ? input.url : input.toString(),
+        token: new Headers(init?.headers).get("x-broker-token"),
+      });
+      return new Response(JSON.stringify({ state: "EMBED", kev: { run: "jaredpalmer/kev-4b@v1.0" } }));
+    }) as typeof fetch;
+
+    const provider = ResidualModelProviderFactory.create(
+      "kev",
+      { kevThreshold: 0.8, kevSessionUrl: "http://gpu:8008", kevSessionToken: "s3cret" },
+      { fetch: fetchFn },
+    );
+
+    expect(provider).toBeInstanceOf(BrokeredResidualProvider);
+    expect(provider.threshold).toBe(0.8);
+    await expect(provider.version()).resolves.toBe("jaredpalmer/kev-4b@v1.0");
+    expect(requests).toEqual([{ url: "http://gpu:8008/v1/state", token: "s3cret" }]);
   });
 
   it("builds a cache-only kev provider without a URL: its threshold applies, asking it throws", async () => {

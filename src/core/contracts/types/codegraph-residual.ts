@@ -88,11 +88,21 @@ export interface ResidualAnswer {
   questionPayload: string;
 }
 
+/** Exclusive use of the model's hardware for one pass; `release` never throws. */
+export interface ResidualProviderLease {
+  release: () => Promise<void>;
+}
+
 export interface ResidualModelProvider {
   readonly id: string;
   readonly threshold: number;
   version: () => Promise<string>;
   health: () => Promise<{ ok: true } | { ok: false; reason: string }>;
+  /**
+   * Takes the hardware before the first `resolveGroup`; absent = the model is
+   * always up. Called only when a pass has questions to ask.
+   */
+  acquire?: () => Promise<ResidualProviderLease>;
   resolveGroup: (group: ResidualQuestionGroup) => Promise<ResidualAnswer[]>;
 }
 

@@ -91,6 +91,9 @@ export const INFRA_ERROR_CODES = [
   "INFRA_KEV_UNAVAILABLE",
   "INFRA_KEV_RESPONSE_ERROR",
   "INFRA_KEV_STATE_TOO_LONG",
+  "INFRA_KEV_SESSION_BUSY",
+  "INFRA_KEV_SESSION_UNAVAILABLE",
+  "INFRA_KEV_SESSION_LOST",
 ] as const;
 
 /** Infrastructure error codes. Local strict union, derived from `INFRA_ERROR_CODES`. */

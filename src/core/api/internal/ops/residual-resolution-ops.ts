@@ -18,7 +18,6 @@ import {
 import { ResidualResolutionPass } from "../../../domains/trajectory/codegraph/residual/residual-resolution-pass.js";
 import type {
   ResidualModelProvider,
-  ResidualPassMode,
   ResidualPassReport,
 } from "../../../domains/trajectory/codegraph/residual/types.js";
 import {
@@ -35,6 +34,9 @@ export interface ResidualResolutionConfig {
   concurrency: number;
   menuLimit: number;
   retentionDays: number;
+  /** GPU session broker; set, an `ask` pass with uncached sites leases Kev from it. */
+  kevSessionUrl?: string;
+  kevSessionToken?: string;
 }
 
 type VerdictStoreHandle = Pick<ResidualVerdictStore, "find" | "findLatest" | "put" | "touch" | "expire" | "close">;
@@ -97,24 +99,13 @@ export class ResidualResolutionOps implements ResidualResolvePort {
         now: this.now,
         ...(request.onProgress ? { onProgress: request.onProgress } : {}),
       };
-      return await this.withProviderSession(mode, async () => pass.run(input));
+      // A brokered provider leases the GPU inside the pass, which alone knows whether any site misses the cache.
+      return await pass.run(input);
     } catch (error) {
       return skippedResidualReport(error instanceof Error ? error.message : String(error), mode);
     } finally {
       await store?.close().catch(() => undefined);
     }
-  }
-
-  /**
-   * The one place an `ask` pass holds the provider for its duration — where the
-   * GPU broker session (bd tea-rags-mcp-2m83f.18) is acquired and released.
-   * `cacheOnly` never reaches the provider and runs outside any session.
-   */
-  private async withProviderSession(
-    _mode: ResidualPassMode,
-    run: () => Promise<ResidualPassReport>,
-  ): Promise<ResidualPassReport> {
-    return run();
   }
 }
 
