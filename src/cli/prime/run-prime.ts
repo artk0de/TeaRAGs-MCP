@@ -200,18 +200,24 @@ export async function runPrime(input: {
     return;
   }
 
-  // Registry-first for embedding endpoints: when the project was indexed
-  // against a remote Ollama (and optionally a fallback), reuse those URLs
-  // instead of letting the current shell's env silently downgrade prime to
-  // localhost:11434. Symmetric with qdrantUrl below. Untouched for legacy
-  // entries that pre-date embedding URL tracking (env value preserved).
+  // Registry-first for embedding identity and endpoints: when the project was
+  // indexed with a provider, model, and remote endpoints, reuse that complete
+  // binding instead of letting the current shell select an incompatible model
+  // or provider. This is symmetric with qdrantUrl below. Legacy entries that
+  // pre-date a field leave that field untouched.
   //
-  // Mechanism: set process.env BEFORE parseAppConfig so parseAppConfigZod
-  // picks up the override and caches it into _lastZodConfig. createAppContext
-  // reads embedding URLs from getZodConfig() (NOT from the AppConfig returned
-  // by parseAppConfig), so the env channel is the only mutation site that
-  // actually propagates downstream. runPrime is a CLI single-shot; env
-  // mutation persists for the process lifetime, which is fine here.
+  // Set process.env BEFORE parseAppConfig so parseAppConfigZod picks up the
+  // registry binding and caches it into _lastZodConfig. createAppContext reads
+  // embedding settings from getZodConfig() (not the AppConfig returned by
+  // parseAppConfig), so the env channel is the propagation seam. runPrime is a
+  // CLI single-shot; the mutation lasts only for this process.
+  const registryEmbeddingProvider = registryEntry?.env?.EMBEDDING_PROVIDER ?? registryEntry?.tuning?.EMBEDDING_PROVIDER;
+  if (registryEmbeddingProvider) {
+    process.env.EMBEDDING_PROVIDER = registryEmbeddingProvider;
+  }
+  if (registryEntry?.embeddingModel) {
+    process.env.EMBEDDING_MODEL = registryEntry.embeddingModel;
+  }
   if (registryEntry?.embeddingBaseUrl) {
     process.env.EMBEDDING_BASE_URL = registryEntry.embeddingBaseUrl;
   }

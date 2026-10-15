@@ -108,15 +108,19 @@ export class EmbeddingEndpointPool {
   }
 
   /**
-   * Healthy endpoints of the active tier: peers if any healthy, else fallbacks.
-   * `excluded` are endpoints one caller will not use (they failed it); the
-   * tier is chosen among the rest, so a caller whose every peer failed it gets
-   * the fallbacks even while those peers still count as healthy.
+   * Healthy endpoints of the globally active tier: peers if any are healthy,
+   * else fallbacks. `excluded` removes endpoints for this caller only; it never
+   * changes the tier selected by the pool's global health state.
    */
   activeEndpoints(excluded: ReadonlySet<string> = NO_EXCLUSIONS): EmbeddingEndpointState[] {
-    const tier = this.activeTier(excluded);
+    const tier = this.activeTier();
     if (!tier) return [];
     return this.endpoints.filter((e) => e.tier === tier && isServing(e) && !excluded.has(e.url)).map(toState);
+  }
+
+  /** Healthy fallbacks for an explicit in-call failover, without changing global tier selection. */
+  activeFallbackEndpoints(excluded: ReadonlySet<string> = NO_EXCLUSIONS): EmbeddingEndpointState[] {
+    return this.endpoints.filter((e) => e.tier === "fallback" && isServing(e) && !excluded.has(e.url)).map(toState);
   }
 
   /** Tier serving once `excluded` is set aside; undefined when no other endpoint is healthy. */

@@ -181,11 +181,35 @@ describe("EmbeddingEndpointPool", () => {
     expect(urls(pool)).toEqual([PEER_B]);
   });
 
-  it("selects the tier among endpoints the caller has not excluded (bd hgghf)", () => {
+  it("filters caller exclusions within the globally active tier (bd hgghf)", () => {
     const pool = makePool();
     expect(pool.activeEndpoints(new Set([PEER_A])).map((e) => e.url)).toEqual([PEER_B]);
-    expect(pool.activeEndpoints(new Set([PEER_A, PEER_B])).map((e) => e.url)).toEqual([FALLBACK]);
+    expect(pool.activeEndpoints(new Set([PEER_A, PEER_B]))).toEqual([]);
     expect(pool.activeEndpoints(new Set([PEER_A, PEER_B, FALLBACK]))).toEqual([]);
+    expect(urls(pool)).toEqual([PEER_A, PEER_B]);
+  });
+
+  it("does not activate fallback when a call excludes every peer but the peer tier is globally healthy", () => {
+    const pool = makePool();
+
+    expect(pool.activeEndpoints(new Set([PEER_A, PEER_B]))).toEqual([]);
+    expect(pool.activeTier()).toBe("peer");
+    expect(urls(pool)).toEqual([PEER_A, PEER_B]);
+  });
+
+  it("activates fallback for exclusions when every peer is globally unhealthy", () => {
+    const pool = makePool();
+    pool.recordEndpointFailure(PEER_A, "refused");
+    pool.recordEndpointFailure(PEER_B, "refused");
+
+    expect(pool.activeEndpoints(new Set([PEER_A, PEER_B])).map((e) => e.url)).toEqual([FALLBACK]);
+  });
+
+  it("exposes healthy fallbacks explicitly without changing the globally active tier", () => {
+    const pool = makePool();
+
+    expect(pool.activeFallbackEndpoints(new Set([PEER_A, PEER_B])).map((e) => e.url)).toEqual([FALLBACK]);
+    expect(pool.activeTier()).toBe("peer");
     expect(urls(pool)).toEqual([PEER_A, PEER_B]);
   });
 

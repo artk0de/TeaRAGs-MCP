@@ -379,8 +379,9 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
    * endpoint drains it with one worker per slot. A micro-batch whose endpoint
    * failed returns to the front of the queue for the endpoints still standing.
    * An endpoint that failed in this call is not asked again until the call has
-   * backed off (see `EndpointCallExclusions`), and the tier is chosen among the
-   * endpoints left, so a failure below the failover threshold cannot spin.
+   * backed off (see `EndpointCallExclusions`). Fallbacks are admitted only
+   * after the current call has exhausted its peer endpoints, so a remaining
+   * healthy peer always stays ahead of fallback capacity.
    */
   private async embedAcrossEndpoints(
     texts: readonly string[],
@@ -390,12 +391,16 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   ): Promise<void> {
     const wait: RecoveryWaitState = { start: this.now(), budgetMs: recoveryBudgetMs, attempt: 0 };
     const exclusions = new EndpointCallExclusions();
+    let allowFallback = false;
     let queue: number[][] | undefined;
 
     while (queue === undefined || queue.length > 0) {
       const active = this.pool.activeEndpoints(exclusions.urls);
+      if (allowFallback && active.length === 0 && this.pool.activeTier() === "peer") {
+        active.push(...this.pool.activeFallbackEndpoints(exclusions.urls));
+      }
       if (active.length === 0) {
-        await this.waitForEndpoint(wait, exclusions);
+        await this.waitForEndpoint(wait, exclusions, allowFallback);
         continue;
       }
 
@@ -414,6 +419,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       for (const failure of round.endpointFailures) {
         this.noteEndpointFailure(failure);
         exclusions.exclude(failure);
+        allowFallback = true;
         wait.lastError = failure;
       }
       if (round.callerError !== undefined) throw round.callerError;
@@ -575,11 +581,19 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
    * every excluded endpoint another chance. A zero budget still makes that one
    * direct probe: an endpoint that is back answers.
    */
-  private async waitForEndpoint(wait: RecoveryWaitState, exclusions: EndpointCallExclusions): Promise<void> {
+  private async waitForEndpoint(
+    wait: RecoveryWaitState,
+    exclusions: EndpointCallExclusions,
+    allowFallback: boolean,
+  ): Promise<void> {
     this.failWhenNoEndpointServesModel();
     await this.reprobeAll();
     exclusions.liftReachable((url) => this.pool.snapshot().some((e) => e.url === url && e.healthy));
-    if (this.pool.activeEndpoints(exclusions.urls).length > 0) return;
+    const active = this.pool.activeEndpoints(exclusions.urls);
+    if (allowFallback && this.pool.activeTier() === "peer") {
+      active.push(...this.pool.activeFallbackEndpoints(exclusions.urls));
+    }
+    if (active.length > 0) return;
     const remainingMs = wait.start + wait.budgetMs - this.now();
     if (remainingMs <= 0) {
       const recoveryWaitMs = wait.attempt > 0 ? this.now() - wait.start : 0;

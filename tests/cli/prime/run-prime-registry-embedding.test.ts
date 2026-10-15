@@ -59,6 +59,8 @@ describe("runPrime — registry-first embedding endpoint override", () => {
     process.env.TEA_RAGS_DATA_DIR = dataDir;
     delete process.env.EMBEDDING_BASE_URL;
     delete process.env.EMBEDDING_FALLBACK_URL;
+    delete process.env.EMBEDDING_MODEL;
+    delete process.env.EMBEDDING_PROVIDER;
     writeMock.mockClear();
     pingMock.mockReset();
     createAppContextMock.mockReset();
@@ -71,6 +73,8 @@ describe("runPrime — registry-first embedding endpoint override", () => {
     delete process.env.TEA_RAGS_DATA_DIR;
     delete process.env.EMBEDDING_BASE_URL;
     delete process.env.EMBEDDING_FALLBACK_URL;
+    delete process.env.EMBEDDING_MODEL;
+    delete process.env.EMBEDDING_PROVIDER;
     rmSync(dataDir, { recursive: true, force: true });
   });
 
@@ -138,6 +142,45 @@ describe("runPrime — registry-first embedding endpoint override", () => {
       expect(envAtParseTime).toBeDefined();
       expect(envAtParseTime?.base).toBe("http://gpu-server:11434");
       expect(envAtParseTime?.fallback).toBe("http://127.0.0.1:11434");
+    } finally {
+      rmSync(realPath, { recursive: true, force: true });
+    }
+  });
+
+  it("replays registry embedding provider and model before parseAppConfig despite ambient identity", async () => {
+    const realPath = mkdtempSync(join(tmpdir(), "rp-model-"));
+    try {
+      process.env.EMBEDDING_PROVIDER = "llama-server";
+      process.env.EMBEDDING_MODEL = "unclemusclez/jina-embeddings-v2-base-code:latest";
+
+      const registry = new CollectionRegistry(dataDir);
+      registry.record({
+        collectionName: "code_model",
+        path: realPath,
+        embeddingModel: "brokkai/Muninn-small",
+        embeddingDimensions: 384,
+        qdrantUrl: "http://qdrant:6333",
+        embeddingBaseUrl: "http://gpu-server:8091,http://gpu-server:8092",
+        env: { EMBEDDING_PROVIDER: "llama-server" },
+        indexedAt: "2026-05-01T00:00:00Z",
+        teaRagsVersion: "1.0.0",
+        chunksCount: 5,
+      });
+      registry.setName("code_model", "model");
+
+      let envAtParseTime: { provider: string | undefined; model: string | undefined } | undefined;
+      parseAppConfigMock.mockImplementation(() => {
+        envAtParseTime = {
+          provider: process.env.EMBEDDING_PROVIDER,
+          model: process.env.EMBEDDING_MODEL,
+        };
+        return { embedding: {} };
+      });
+      wireApp();
+
+      await runPrime({ registryRuntime: primeRegistryRuntime(), project: "model", createPathCollectionResolver });
+
+      expect(envAtParseTime).toEqual({ provider: "llama-server", model: "brokkai/Muninn-small" });
     } finally {
       rmSync(realPath, { recursive: true, force: true });
     }
