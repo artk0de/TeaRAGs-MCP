@@ -122,6 +122,11 @@ export function buildRegistryEnvSnapshot(
   put("CODEGRAPH_DB_THREADS", codegraph.dbThreads);
   putList("CODEGRAPH_CUSTOM_EXCLUDE", codegraph.customExcludePatterns);
   put("CODEGRAPH_AMBIGUOUS_RESOLVE_MODE", codegraph.ambiguousResolveMode);
+  putList("CODEGRAPH_RESIDUAL_KEV_URL", codegraph.residual.kevUrls);
+  put("CODEGRAPH_RESIDUAL_KEV_THRESHOLD", codegraph.residual.kevThreshold);
+  put("CODEGRAPH_RESIDUAL_CONCURRENCY", codegraph.residual.concurrency);
+  put("CODEGRAPH_RESIDUAL_MENU_LIMIT", codegraph.residual.menuLimit);
+  put("CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS", codegraph.residual.retentionDays);
 
   if (flags.userSetBatchSize) put("EMBEDDING_TUNE_BATCH_SIZE", embedding.tune.batchSize);
   put("EMBEDDING_TUNE_MIN_BATCH_SIZE", embedding.tune.minBatchSize);

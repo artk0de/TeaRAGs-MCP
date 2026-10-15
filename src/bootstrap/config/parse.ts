@@ -167,6 +167,13 @@ function buildEnvInputs(env: EnvReader) {
     dbThreads: env("CODEGRAPH_DB_THREADS"),
     customExcludePatterns: env("CODEGRAPH_CUSTOM_EXCLUDE"),
     ambiguousResolveMode: env("CODEGRAPH_AMBIGUOUS_RESOLVE_MODE"),
+    residual: {
+      kevUrls: env("CODEGRAPH_RESIDUAL_KEV_URL"),
+      kevThreshold: env("CODEGRAPH_RESIDUAL_KEV_THRESHOLD"),
+      concurrency: env("CODEGRAPH_RESIDUAL_CONCURRENCY"),
+      menuLimit: env("CODEGRAPH_RESIDUAL_MENU_LIMIT"),
+      retentionDays: env("CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS"),
+    },
   };
 
   const qdrantTune = {
