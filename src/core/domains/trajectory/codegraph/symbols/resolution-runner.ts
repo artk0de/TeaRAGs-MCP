@@ -30,6 +30,7 @@ import type {
   LanguageFactoryDescriptor,
   LanguageSymbolResolver,
 } from "../../../../contracts/types/language.js";
+import { DEFAULT_RESIDUAL_MENU_LIMIT, ResidualSiteCollector } from "../residual/residual-site-builder.js";
 import { mergeDerivedClassFieldTypes, paramTypesOfChunk, seedParamLocalBindings } from "./call-arg-param-types.js";
 import { descendantNamesOf, HierarchyDependencyRecorder } from "./hierarchy-dependencies.js";
 import { runtimeImportExtraction, typeOnlyImportExtraction } from "./import-channels.js";
@@ -297,6 +298,7 @@ export class CallEdgeResolutionRunner {
   constructor(
     private readonly languageFactory: LanguageFactoryDescriptor,
     private readonly runState: CodegraphRunState,
+    private readonly residualMenuLimit: number = DEFAULT_RESIDUAL_MENU_LIMIT,
   ) {}
 
   /**
@@ -307,6 +309,9 @@ export class CallEdgeResolutionRunner {
    * view is threaded.
    */
   private activeHierarchy: { relPath: RelPath; recorder: HierarchyDependencyRecorder } | undefined;
+
+  /** The residual rows of the file {@link resolve} is resolving; absent outside it. */
+  private activeResidual: ResidualSiteCollector | undefined;
 
   /**
    * Recorded descendant answers per sealed view. Keyed by the view object, which
@@ -464,6 +469,8 @@ export class CallEdgeResolutionRunner {
     const view = this.runState.hierarchyViewFor(extraction.language);
     const recorder = view === undefined ? undefined : new HierarchyDependencyRecorder(view);
     this.activeHierarchy = recorder === undefined ? undefined : { relPath: extraction.relPath, recorder };
+    const residual = new ResidualSiteCollector(extraction.relPath, symbolTable, this.residualMenuLimit);
+    this.activeResidual = residual;
     try {
       // Call sites FIRST, file edges second (bd tea-rags-mcp-y99pg.38): a
       // language whose imports name no file derives its file graph from where
@@ -471,6 +478,7 @@ export class CallEdgeResolutionRunner {
       this.resolveMethodEdges(extraction, symbolTable, resolver, inputs, methodEdges, ambiguousFanouts);
     } finally {
       this.activeHierarchy = undefined;
+      this.activeResidual = undefined;
     }
     const runtimeFileEdges = this.buildFileEdges(extraction, symbolTable, resolver, inputs, methodEdges);
     const typeOnlyFileEdges = this.buildTypeOnlyFileEdges(extraction, symbolTable, resolver, inputs, runtimeFileEdges);
@@ -504,6 +512,8 @@ export class CallEdgeResolutionRunner {
     }
     if (inheritance.length > 0) edges.inheritance = inheritance;
     if (ambiguousFanouts.length > 0) edges.ambiguousFanouts = ambiguousFanouts;
+    const residualCallSites = residual.rows();
+    if (residualCallSites.length > 0) edges.residualCallSites = residualCallSites;
     // What the call sites read from the hierarchy (bd tea-rags-mcp-7t2ee), so a
     // later run can re-resolve this file when one of those answers moves.
     if (view !== undefined && recorder !== undefined) {
@@ -771,6 +781,7 @@ export class CallEdgeResolutionRunner {
     const calleeKinds = this.calleeKindsFor(extraction.language);
     this.forEachCallSite(extraction, symbolTable, resolver, inputs, (site) => {
       const verdict = this.judgeCallSite(site, resolver, symbolTable, calleeKinds);
+      this.activeResidual?.observe(site.chunk, site.call, verdict);
       methodEdges.push(...verdict.edges);
       if (verdict.ambiguousFanout !== undefined) ambiguousFanouts.push(verdict.ambiguousFanout);
       tallyCallSiteVerdict(kindTally, verdict);

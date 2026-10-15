@@ -43,6 +43,7 @@ describe("GRAPH_EDGE_CAP_POLICY", () => {
         "inheritance",
         "methodEdges",
         "pass1Aggregates",
+        "residualCallSites",
         "typeOnlyFileEdges",
       ].sort(),
     );
@@ -57,6 +58,7 @@ describe("GRAPH_EDGE_CAP_POLICY", () => {
     expect(GRAPH_EDGE_CAP_POLICY.ambiguousFanouts).toBe("exempt");
     expect(GRAPH_EDGE_CAP_POLICY.pass1Aggregates).toBe("exempt");
     expect(GRAPH_EDGE_CAP_POLICY.hierarchyDependencies).toBe("exempt");
+    expect(GRAPH_EDGE_CAP_POLICY.residualCallSites).toBe("exempt");
   });
 
   it("refuses, at compile time, an edge kind the policy does not classify", () => {
