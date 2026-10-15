@@ -17,6 +17,34 @@ export class KevUnavailableError extends InfraError {
   }
 }
 
+/** Every configured Kev URL accepted the request and let it run past the timeout; Kev is up but stalled or overloaded. */
+export class KevTimeoutError extends InfraError {
+  constructor(urls: readonly string[], timeoutMs: number, cause?: Error) {
+    super({
+      code: "INFRA_KEV_TIMEOUT",
+      message: `Kev did not answer within ${timeoutMs / 1000}s`,
+      hint:
+        `Kev at ${urls.join(", ")} accepted the request but did not answer in time; check its log for a stall, ` +
+        "or lower CODEGRAPH_RESIDUAL_CONCURRENCY so fewer requests queue on it",
+      httpStatus: 504,
+      cause,
+    });
+  }
+}
+
+/** The caller cancelled the request (the pass stopped asking); not a Kev failure. */
+export class KevRequestCancelledError extends InfraError {
+  constructor(url: string, cause?: Error) {
+    super({
+      code: "INFRA_KEV_REQUEST_CANCELLED",
+      message: `Request to Kev at ${url} was cancelled by the caller`,
+      hint: "The residual pass stopped asking; its unanswered sites are asked again on the next run.",
+      httpStatus: 499,
+      cause,
+    });
+  }
+}
+
 /** Kev answered, but not with what was asked. */
 export class KevResponseError extends InfraError {
   constructor(url: string, detail: string) {

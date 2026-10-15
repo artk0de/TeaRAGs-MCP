@@ -38,6 +38,7 @@ const REPORT: ResidualPassReport = {
   answered: 0,
   tooLong: 0,
   failedGroups: 0,
+  abortedGroups: 0,
   belowThreshold: 3,
   edgesApplied: 77,
   durations: { readMs: 5, askMs: 0, applyMs: 20, totalMs: 25 },

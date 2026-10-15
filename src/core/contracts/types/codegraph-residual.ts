@@ -103,7 +103,8 @@ export interface ResidualModelProvider {
    * always up. Called only when a pass has questions to ask.
    */
   acquire?: () => Promise<ResidualProviderLease>;
-  resolveGroup: (group: ResidualQuestionGroup) => Promise<ResidualAnswer[]>;
+  /** `signal` aborts when the pass stops asking; the provider then settles the request at once with a rejection. */
+  resolveGroup: (group: ResidualQuestionGroup, signal?: AbortSignal) => Promise<ResidualAnswer[]>;
 }
 
 /**
@@ -147,6 +148,8 @@ export interface ResidualPassReport {
   /** Questions of groups the model refused as too long. */
   tooLong: number;
   failedGroups: number;
+  /** Groups in flight when the pass stopped asking; cancelled, not failed — their sites are asked next run. */
+  abortedGroups: number;
   /** Eligible rows whose verdict is under the provider threshold. */
   belowThreshold: number;
   edgesApplied: number;
