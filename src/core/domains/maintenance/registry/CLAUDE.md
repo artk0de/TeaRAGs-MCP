@@ -97,6 +97,19 @@
   it. An older binary's flush drops the field; the next open re-runs the
   migration, which then only removes default-equal values.
 
+- **A recorded `codegraphEnabled` is the project's codegraph decision, both
+  values.** `CODEGRAPH_ENABLED` is on by default; replay (`registryStampOf`,
+  `run-prime.ts`) carries a recorded `false` as well as `true`, and
+  `SchemaDriftMonitor` drops the codegraph keys for a collection whose effective
+  flag is off (`disabledTrajectoryFamiliesResolver`, `bootstrap/`). Entries with
+  no recorded value were stamped ONCE by revision 3
+  (`migrateRegistryCodegraphDefault`, `codegraph-default-migration.ts`) from
+  what the collection holds — stats-cache `codegraph.*` payload keys, else a
+  graph database on disk — so the flip changed no project's state. Why: under a
+  plain default flip every project indexed while codegraph was beta would build
+  a graph on its next run and report drift demanding
+  `--force-enrichments codegraph` first (bd tea-rags-mcp-2m83f.15).
+
 ## Mechanics
 
 - **Opening a registry can WRITE it.** A `CollectionRegistry` constructed with
@@ -104,9 +117,11 @@
   (`CollectionRegistry#loadMigrated`, through `migrateRegistryFileWithCAS` —
   same CAS and temp+rename as a flush). Every production construction site
   passes `resolveRegistryEnvCodeDefaults` (`bootstrap/config/`, fed the
-  domain-owned defaults by `resolveDomainEnvCodeDefaults`); one without it loads
-  as-is and leaves the migration to the next open, never marking it done. Why: a
-  test that reaches the `~/.tea-rags` fallback of `resolveDataDir`
+  domain-owned defaults by `resolveDomainEnvCodeDefaults`) and
+  `codegraphDataProbe: collectionHoldsCodegraphData`; the migrations run in
+  revision order and one whose input is missing stops the chain. One without it
+  loads as-is and leaves the migration to the next open, never marking it done.
+  Why: a test that reaches the `~/.tea-rags` fallback of `resolveDataDir`
   (`TEA_RAGS_DATA_DIR` unset) migrates the developer's REAL registry — the
   pre-existing `tests/cli/registry-resolver.test.ts` fallback case did exactly
   that until it was pointed at a scratch home. A test that unsets the data dir

@@ -126,13 +126,13 @@ function resolveDataDir(): string {
  * default` (the resolver takes `env` as ambient, so an explicit export wins).
  *
  * A bare snapshot replay is not enough: the identity flags live in dedicated
- * `CollectionEntry` fields, not in `entry.env`, and `CODEGRAPH_ENABLED` defaults
- * to off. A `run` launched by anything other than `prime` — cron, a plain
- * terminal, any other scheduler — would therefore build a composition WITHOUT
- * codegraph, and the registry record every successful sync writes would flip
- * `codegraphEnabled` to false. `prime` then stops forcing the flag and the
- * codegraph tools disappear: the phantom-drift class, self-inflicted by the
- * watcher.
+ * `CollectionEntry` fields, not in `entry.env`. A `run` launched by anything
+ * other than `prime` — cron, a plain terminal, any other scheduler — would
+ * otherwise build its composition from the code default instead of the
+ * project's recorded `codegraphEnabled`, and the registry record every
+ * successful sync writes would flip it: a project indexed without codegraph
+ * gains a graph nobody asked for, one indexed with it under an exported `false`
+ * loses its tools — the phantom-drift class, self-inflicted by the watcher.
  *
  * A backend the entry cannot resolve throws out of here on purpose, the way a
  * `parseAppConfig` / `createAppContext` failure already does — the CLI's

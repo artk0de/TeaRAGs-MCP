@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import {
+  collectionHoldsCodegraphData,
   CollectionRegistry,
   IndexFreshnessCheck,
   outerEnvForRegistryEntry,
@@ -61,6 +62,7 @@ export function buildMcpAutoUpdateTrigger(
 ): McpAutoUpdateTrigger {
   const registry = new CollectionRegistry(dataDir, {
     envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+    codegraphDataProbe: collectionHoldsCodegraphData,
   });
   // The MCP server is LONG-LIVED and CollectionRegistry caches registry.json
   // in memory — without the watcher, `tea-rags auto-update` config written

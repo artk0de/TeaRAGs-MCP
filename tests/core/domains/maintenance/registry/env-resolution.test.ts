@@ -50,6 +50,11 @@ describe("resolveRegistryEnv", () => {
     });
   });
 
+  it("replays a recorded codegraph opt-out ahead of the default-on flag", () => {
+    const env = resolveRegistryEnv(entry({ codegraphEnabled: false }), {});
+    expect(env.CODEGRAPH_ENABLED).toBe("false");
+  });
+
   it("omits keys the entry does not carry", () => {
     const env = resolveRegistryEnv(entry({ embeddingBaseUrl: undefined, embeddingFallbackUrl: undefined }));
     expect(env).toEqual({ EMBEDDING_MODEL: "jina-v2", QDRANT_URL: "http://127.0.0.1:6333" });

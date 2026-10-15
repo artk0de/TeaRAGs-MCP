@@ -20,6 +20,7 @@ import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js"
 import type { InProcessToolSession } from "../../bootstrap/transport/in-memory.js";
 import { openInProcessMcpSession } from "../../bootstrap/transport/in-process-session.js";
 import {
+  collectionHoldsCodegraphData,
   CollectionRegistry,
   resolveBaseIndexEntry,
   resolveDomainEnvCodeDefaults,
@@ -334,6 +335,7 @@ export const callCommand: CommandModule<object, CallArgs> = {
             prepareCallProjectEnv(params, resolveBaseIndexEntry, {
               registry: new CollectionRegistry(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), {
                 envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+                codegraphDataProbe: collectionHoldsCodegraphData,
               }),
               resolveEnv: resolveRegistryEnv,
             }),

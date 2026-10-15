@@ -214,13 +214,14 @@ export const vcsSchema = z.object({
 
 export const codegraphSchema = z.object({
   /**
-   * Master switch for the codegraph trajectory family. Beta — disabled by
-   * default; opt in with `CODEGRAPH_ENABLED=true`. When off, no graph
-   * extraction runs, no codegraph signals are written to payloads, and the
-   * graph-query MCP tools (`get_callers`/`get_callees`/`find_cycles`) are
-   * not registered.
+   * Master switch for the codegraph trajectory family. On by default; opt
+   * out with `CODEGRAPH_ENABLED=false`. The value an index run used is
+   * recorded per project (`CollectionEntry.codegraphEnabled`) and replayed
+   * ahead of this default. When off, no graph extraction runs, no codegraph
+   * signals are written to payloads, and the graph-query MCP tools
+   * (`get_callers`/`get_callees`/`find_cycles`) are not registered.
    */
-  enabled: booleanFromEnvWithDefault(false),
+  enabled: booleanFromEnvWithDefault(true),
   /**
    * Override for the DuckDB graph DB root directory. Per-collection
    * files go in `<rootDir>/codegraph/<collection>.duckdb`. When unset,

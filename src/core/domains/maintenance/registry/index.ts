@@ -16,6 +16,8 @@ export type {
 } from "../../../contracts/types/registry.js";
 export { loadRegistryFile, saveRegistryFile } from "./registry-file.js";
 export { CollectionRegistry } from "./collection-registry.js";
+export { collectionHoldsCodegraphData } from "./codegraph-default-migration.js";
+export type { CodegraphDataProbe } from "./codegraph-default-migration.js";
 export type { CollectionRegistryOptions } from "./collection-registry.js";
 export type { RegistryEnvCodeDefaults, RegistryEnvCodeDefaultsProvider } from "./env-pin-migration.js";
 export {

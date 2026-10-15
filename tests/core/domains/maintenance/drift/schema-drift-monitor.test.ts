@@ -168,4 +168,34 @@ describe("SchemaDriftMonitor", () => {
       expect(warning).not.toContain("--force-enrichments");
     });
   });
+
+  describe("trajectory families a collection runs without", () => {
+    const OWNERS: PayloadKeyOwner[] = [
+      { key: "git.file.commitCount", trajectory: "git", recomputable: true },
+      { key: "codegraph.file.fanIn", trajectory: "codegraph.symbols", recomputable: true },
+      { key: "codegraph.temporal.coChangeCount", trajectory: "codegraph.temporal", recomputable: true },
+    ];
+    const CURRENT = OWNERS.map((o) => o.key);
+
+    it("claims no drift for keys of a family the collection's own env turns off", () => {
+      cache.save("code_off", SAMPLE_STATS, ["git.file.commitCount"]);
+      const monitor = new SchemaDriftMonitor(cache, CURRENT, OWNERS, (name) =>
+        name === "code_off" ? ["codegraph"] : [],
+      );
+
+      expect(monitor.check("code_off")).toEqual([]);
+    });
+
+    it("still reports the family's keys for a collection that runs with it", () => {
+      cache.save("code_on", SAMPLE_STATS, ["git.file.commitCount"]);
+      const monitor = new SchemaDriftMonitor(cache, CURRENT, OWNERS, (name) =>
+        name === "code_off" ? ["codegraph"] : [],
+      );
+
+      expect(monitor.check("code_on").map((f) => f.subject)).toEqual([
+        "codegraph.file.fanIn",
+        "codegraph.temporal.coChangeCount",
+      ]);
+    });
+  });
 });

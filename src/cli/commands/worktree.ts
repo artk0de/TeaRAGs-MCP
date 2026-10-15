@@ -5,6 +5,7 @@ import type { Argv, CommandModule } from "yargs";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import {
+  collectionHoldsCodegraphData,
   CollectionRegistry,
   listWorktreeInfos,
   resolveDomainEnvCodeDefaults,
@@ -18,6 +19,7 @@ function resolveDataDir(): string {
 export function runWorktreeList(args: { json: boolean; dataDir?: string }): void {
   const registry = new CollectionRegistry(args.dataDir ?? resolveDataDir(), {
     envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+    codegraphDataProbe: collectionHoldsCodegraphData,
   });
   const rows = listWorktreeInfos(registry);
   if (args.json) {
@@ -38,6 +40,7 @@ export function runWorktreeList(args: { json: boolean; dataDir?: string }): void
 export function runWorktreeInfo(args: { json: boolean; dataDir?: string }): void {
   const registry = new CollectionRegistry(args.dataDir ?? resolveDataDir(), {
     envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+    codegraphDataProbe: collectionHoldsCodegraphData,
   });
   const info = worktreeInfoForPath(registry, process.cwd());
   process.stdout.write(args.json ? `${JSON.stringify(info, null, 2)}\n` : `${JSON.stringify(info)}\n`);

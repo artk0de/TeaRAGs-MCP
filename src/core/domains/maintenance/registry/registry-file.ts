@@ -7,8 +7,8 @@ import type {
   EmbeddingThroughputOptimumWrite,
   RegistryFileV1,
 } from "../../../contracts/types/registry.js";
+import { REGISTRY_CODEGRAPH_DEFAULT_MIGRATION_REVISION } from "./codegraph-default-migration.js";
 import { applyEmbeddingThroughputOptimumWrites, liftEmbeddingThroughputOptima } from "./embedding-throughput-optima.js";
-import { REGISTRY_ENV_PIN_MIGRATION_REVISION } from "./env-pin-migration.js";
 import { RegistryConcurrencyError, RegistryFileCorruptedError, RegistryWriteError } from "./errors.js";
 
 const FILE_NAME = "registry.json";
@@ -17,7 +17,7 @@ const CURRENT_VERSION = 1 as const;
  * The data revision a registry created from scratch is born at: it holds no
  * legacy data, so no one-time data migration has anything to do on it.
  */
-const LATEST_REGISTRY_REVISION = REGISTRY_ENV_PIN_MIGRATION_REVISION;
+const LATEST_REGISTRY_REVISION = REGISTRY_CODEGRAPH_DEFAULT_MIGRATION_REVISION;
 const CAS_MAX_ATTEMPTS = 5;
 const CAS_BACKOFF_MS_BASE = 10;
 

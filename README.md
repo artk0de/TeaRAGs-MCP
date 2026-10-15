@@ -363,8 +363,7 @@ npm install -g tea-rags
   "mcpServers": {
     "tea-rags": {
       "command": "tea-rags",
-      "args": ["server"],
-      "env": { "CODEGRAPH_ENABLED": "true" }
+      "args": ["server"]
     }
   }
 }
@@ -375,18 +374,19 @@ Voyage), an external Qdrant, and the built-in ONNX provider (beta) are covered
 in the
 [installation guide](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation).
 
-### 🕸️ Enable the call graph
+### 🕸️ The call graph
 
-The call graph is **off by default** while it is in beta. Turn it on with
-`CODEGRAPH_ENABLED=true` in the MCP server's environment — the JSON above
-already does — or, in Claude Code:
+The call graph is **on by default**. To index a project without it, set
+`CODEGRAPH_ENABLED=false` for that run, or pin it on an indexed project:
 
 ```bash
-claude mcp add tea-rags -s user -e CODEGRAPH_ENABLED=true -- tea-rags server
+tea-rags projects set-env --name <alias> CODEGRAPH_ENABLED=false
 ```
 
-Then reindex. The flag is recorded per project, so later runs from the CLI or
-auto-update keep the graph on. Details:
+The flag is recorded per project, so later runs from the CLI, the MCP server or
+auto-update keep each project's choice. Projects indexed while the call graph
+was opt-in keep the state they were indexed with; turn it on for one with
+`CODEGRAPH_ENABLED=true` in the same command. Details:
 [Codegraph Enrichments](https://artk0de.github.io/TeaRAGs-MCP/usage/advanced/codegraph-enrichments).
 
 #### 🧪 Model-assisted call resolution with Kev (experimental)

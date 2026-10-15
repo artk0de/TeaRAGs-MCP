@@ -83,7 +83,7 @@ describe("buildEffectiveIndexEnvSnapshot", () => {
   });
 
   it("re-attaches the identity keys the registry snapshot omits", () => {
-    const off = buildEffectiveIndexEnvSnapshot({}, COLLECTION, {});
+    const off = buildEffectiveIndexEnvSnapshot({ CODEGRAPH_ENABLED: "false" }, COLLECTION, {});
     expect(off.CODEGRAPH_ENABLED).toBe("false");
     expect(off.EMBEDDING_MODEL).toBeUndefined();
 
@@ -168,7 +168,7 @@ describe("buildRunningIndexEnvSnapshot", () => {
 
   it("resolves an absent flag to its code default — the prime-hook case", () => {
     expect(buildRunningIndexEnvSnapshot(parseAppConfigZod({}), resolveDomainEnvCodeDefaults()).CODEGRAPH_ENABLED).toBe(
-      "false",
+      "true",
     );
   });
 });
@@ -207,8 +207,8 @@ describe("the two current sides wired into EnvDriftMonitor", () => {
     ]);
   });
 
-  it("attributes the flag when the reading process merely LACKS it (the prime-hook phantom)", () => {
-    expect(monitorWithAmbient({}).check(COLLECTION)).toEqual([
+  it("attributes the flag when the reading process runs with it off (the prime-hook phantom)", () => {
+    expect(monitorWithAmbient({ CODEGRAPH_ENABLED: "false" }).check(COLLECTION)).toEqual([
       {
         axis: "env",
         subject: "CODEGRAPH_ENABLED",

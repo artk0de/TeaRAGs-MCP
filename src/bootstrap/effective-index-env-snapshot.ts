@@ -14,6 +14,7 @@ import {
   replayRegistryEnv,
   resolveDomainEnvCodeDefaults,
   type AmbientEnvRole,
+  type CollectionRegistry,
 } from "../core/api/index.js";
 import { isDebug } from "../core/primitives/diagnostics/index.js";
 import { buildRunningIndexEnvSnapshot, parseAppConfigZod } from "./config/index.js";
@@ -62,4 +63,28 @@ export function buildEffectiveIndexEnvSnapshot(
     }
     return {};
   }
+}
+
+/**
+ * The trajectory families a collection's own effective env turns off, for
+ * `SchemaDriftMonitor` — the reading process declares one key set for every
+ * collection, and a collection whose next run would not write a family's keys
+ * is not missing them.
+ *
+ * Only codegraph is per-project: an entry records `codegraphEnabled`, and with
+ * the flag on by default a recorded `false` is what keeps a project indexed
+ * without it off. The recorded value resolves the way a real run resolves it
+ * (`buildEffectiveIndexEnvSnapshot`), so an invocation that exports
+ * `CODEGRAPH_ENABLED=true` turns the claim back on.
+ */
+export function disabledTrajectoryFamiliesResolver(
+  registry: Pick<CollectionRegistry, "get">,
+  ambient: NodeJS.ProcessEnv,
+  role: AmbientEnvRole,
+): (collectionName: string) => readonly string[] {
+  return (collectionName) => {
+    if (registry.get(collectionName)?.codegraphEnabled !== false) return [];
+    const effective = buildEffectiveIndexEnvSnapshot({ CODEGRAPH_ENABLED: "false" }, collectionName, ambient, role);
+    return effective.CODEGRAPH_ENABLED === "false" ? ["codegraph"] : [];
+  };
 }

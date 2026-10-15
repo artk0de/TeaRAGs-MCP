@@ -44,7 +44,7 @@ function computeFileSize(filePath: string): number {
  * Resolve the on-disk size of the codegraph DuckDB file for a collection.
  *
  * Returns undefined when:
- * - CODEGRAPH_ENABLED is not set or is "false"
+ * - CODEGRAPH_ENABLED is "false" (unset means on, the default)
  * - collectionName is undefined
  * - no versioned file matching `<collectionName>_v<N>.duckdb` exists in the codegraph dir
  *
@@ -53,8 +53,7 @@ function computeFileSize(filePath: string): number {
  * Picks the highest version N when multiple versions exist.
  */
 export function resolveCodegraphSizeBytes(collectionName: string | undefined): number | undefined {
-  const enabled = process.env.CODEGRAPH_ENABLED;
-  if (!enabled || enabled === "false") return undefined;
+  if (process.env.CODEGRAPH_ENABLED === "false") return undefined;
   if (!collectionName) return undefined;
 
   const codegraphDir = join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "codegraph");

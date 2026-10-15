@@ -2,7 +2,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { resolveRegistryEnvCodeDefaults } from "../bootstrap/config/index.js";
-import { CollectionRegistry, resolveDomainEnvCodeDefaults, resolveRegistryQdrantBackend } from "../core/api/index.js";
+import {
+  collectionHoldsCodegraphData,
+  CollectionRegistry,
+  resolveDomainEnvCodeDefaults,
+  resolveRegistryQdrantBackend,
+} from "../core/api/index.js";
 import {
   EMBEDDED_MARKER,
   ProjectNotRegisteredError,
@@ -63,6 +68,7 @@ export function applyProjectDefaults<A extends ProjectAwareArgs>(argv: A): A {
   if (!argv.project) return argv;
   const registry = new CollectionRegistry(resolveDataDir(), {
     envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+    codegraphDataProbe: collectionHoldsCodegraphData,
   });
   const entry = registry.findByName(argv.project);
   if (!entry) {

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CollectionEntry, RegistryFileV1 } from "../../../../../src/core/contracts/types/registry.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import {
+  isRegistryEnvPinMigrationDue,
   migrateRegistryEnvPins,
   REGISTRY_ENV_PIN_MIGRATION_REVISION,
 } from "../../../../../src/core/domains/maintenance/registry/env-pin-migration.js";
@@ -229,11 +230,11 @@ describe("CollectionRegistry env-pin migration on load (bd tea-rags-mcp-h4l6k)",
     expect(readDisk().revision).toBe(REGISTRY_ENV_PIN_MIGRATION_REVISION);
   });
 
-  it("a registry created from scratch is born at the migration revision", () => {
+  it("a registry created from scratch is born past the migration revision", () => {
     const registry = new CollectionRegistry(dir, { envCodeDefaults: defaults });
     const { name: _n, ...fresh } = entry({ env: { TRAJECTORY_GIT_CHUNK_CONCURRENCY: "10" } });
     registry.record(fresh);
-    expect(readDisk().revision).toBe(REGISTRY_ENV_PIN_MIGRATION_REVISION);
+    expect(isRegistryEnvPinMigrationDue(readDisk())).toBe(false);
     expect(new CollectionRegistry(dir, { envCodeDefaults: defaults }).get("code_a")?.env).toEqual({
       TRAJECTORY_GIT_CHUNK_CONCURRENCY: "10",
     });

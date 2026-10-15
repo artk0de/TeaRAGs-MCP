@@ -35,6 +35,7 @@ import {
   ChunkerPool,
   CODEGRAPH_LANGUAGE_BY_EXTENSION,
   CollectionFootprintFactory,
+  collectionHoldsCodegraphData,
   CollectionIndexingLock,
   CollectionRegistry,
   collectSymbols,
@@ -147,7 +148,7 @@ import {
   type AppConfig,
   type TurboMigrationListener,
 } from "./config/index.js";
-import { buildEffectiveIndexEnvSnapshot } from "./effective-index-env-snapshot.js";
+import { buildEffectiveIndexEnvSnapshot, disabledTrajectoryFamiliesResolver } from "./effective-index-env-snapshot.js";
 import { buildEmbeddingBinding } from "./embedding-binding.js";
 import { ProjectIngestFactory } from "./project-ingest-factory.js";
 import {
@@ -1369,6 +1370,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // free, so creating it early costs nothing.
   const collectionRegistry = new CollectionRegistry(config.paths.appData, {
     envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+    codegraphDataProbe: collectionHoldsCodegraphData,
   });
   const resolveActiveCollection = async (name: string): Promise<PhysicalCollectionName> =>
     infra.qdrant.aliases.resolveActive(name);
@@ -1906,10 +1908,13 @@ function createIndexDriftReporter(deps: {
     ...composition.registry.getPayloadKeyOwners(),
     { key: "navigation", recomputable: false },
   ];
+  // A collection indexed without codegraph is not missing the codegraph keys
+  // this process declares under the default-on flag.
   const schemaDriftMonitor = new SchemaDriftMonitor(
     statsCache,
     payloadKeyOwners.map((o) => o.key),
     payloadKeyOwners,
+    disabledTrajectoryFamiliesResolver(collectionRegistry, process.env, ambientEnvRole),
   );
   // A payload key can be present and still be measured wrong: this axis asks
   // whether the stats file's SAMPLE still answers the question the descriptors

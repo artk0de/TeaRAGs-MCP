@@ -8,6 +8,7 @@ import type { CommandModule } from "yargs";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import {
+  collectionHoldsCodegraphData,
   CollectionRegistry,
   replayableRegistryEnv,
   replayRegistryEnv,
@@ -148,6 +149,7 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
     if (resolved.project) {
       const entry = new CollectionRegistry(resolveDataDir(), {
         envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+        codegraphDataProbe: collectionHoldsCodegraphData,
       }).findByName(resolved.project);
       // An unpinned throughput-tuned stamp stays out, as in every replay: it was
       // measured against whatever backend served an earlier run (y1ynz).
@@ -172,6 +174,7 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
             if (!existsSync(envFilePath)) return;
             const registry = new CollectionRegistry(resolveDataDir(), {
               envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+              codegraphDataProbe: collectionHoldsCodegraphData,
             });
             const applied = mergeTunedEnvIntoRegistry(
               registry,
