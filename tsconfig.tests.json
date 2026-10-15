@@ -231,6 +231,7 @@
     "tests/scripts/changelog-emphasis.test.ts",
     "tests/scripts/git-log-to-json.test.ts",
     "tests/scripts/naming-rename-eval.test.ts",
+    "tests/scripts/residual-eval.test.ts",
     "tests/scripts/py-codegraph-jedi-oracle.test.ts",
     "tests/scripts/releaserc-bump.test.ts",
     "tests/scripts/releaserc-notes.test.ts",

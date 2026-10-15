@@ -1,0 +1,912 @@
+[
+  {
+    "file": "app/services/tax_preparation/document_tree_nodes_move/rebind_subtree.rb",
+    "param": "target_directory",
+    "member": "client_has_read_write_access?",
+    "truth": "TaxPreparation::DocDir",
+    "naming_hit": false,
+    "pick": "TaxPreparation::DocDir",
+    "p": 0.8742,
+    "correct": true
+  },
+  {
+    "file": "app/services/communication/mailbox/threads_show.rb",
+    "param": "mailbox_holder",
+    "member": "id",
+    "truth": "User",
+    "naming_hit": false,
+    "pick": "User",
+    "p": 0.6159,
+    "correct": true
+  },
+  {
+    "file": "app/lib/growth_billing/ga4_helper.rb",
+    "param": "job",
+    "member": "id",
+    "truth": "Workflow::Pipeline::StageClient",
+    "naming_hit": false,
+    "pick": "Workflow::Pipeline::StageClient",
+    "p": 0.7996,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/documents/sign_offline.rb",
+    "param": "current_fm_user",
+    "member": "id",
+    "truth": "User",
+    "naming_hit": false,
+    "pick": "User",
+    "p": 0.8426,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/document_tree_nodes_move/self_contained_move.rb",
+    "param": "directory",
+    "member": "client_id",
+    "truth": "TaxPreparation::DocDir",
+    "naming_hit": false,
+    "pick": "TaxPreparation::DocDir",
+    "p": 0.8675,
+    "correct": true
+  },
+  {
+    "file": "app/lib/communication/twilio/activity_feed_helper.rb",
+    "param": "connection",
+    "member": "firm",
+    "truth": "Communication::TwilioConnection",
+    "naming_hit": false,
+    "pick": "Communication::TwilioConnection",
+    "p": 0.7647,
+    "correct": true
+  },
+  {
+    "file": "app/lib/communication/chat/account_activity_helper.rb",
+    "param": "comment",
+    "member": "id",
+    "truth": "Communication::Chat::Channel::Message",
+    "naming_hit": false,
+    "pick": "Communication::Chat::Channel::Message",
+    "p": 0.8877,
+    "correct": true
+  },
+  {
+    "file": "app/lib/growth_billing/ga4_helper.rb",
+    "param": "job",
+    "member": "id",
+    "truth": "Workflow::Pipeline::StageClient",
+    "naming_hit": false,
+    "pick": "Workflow::Pipeline::StageClient",
+    "p": 0.8168,
+    "correct": true
+  },
+  {
+    "file": "app/services/billing/webhooks/stripe/payment_intent_event_dispatch_handle.rb",
+    "param": "form",
+    "member": "invoice_id",
+    "truth": "Webhooks::Stripe::PaymentIntentEventForm",
+    "naming_hit": false,
+    "pick": "Webhooks::Stripe::PaymentIntentEventForm",
+    "p": 0.6953,
+    "correct": true
+  },
+  {
+    "file": "app/services/growth_billing/firms/seats/calculate_summary.rb",
+    "param": "current_firm",
+    "member": "plan",
+    "truth": "Firm",
+    "naming_hit": false,
+    "pick": "Firm",
+    "p": 0.5741,
+    "correct": true
+  },
+  {
+    "file": "app/lib/workflow/pipelines/jobs/assignee_set.rb",
+    "param": "job",
+    "member": "assignees",
+    "truth": "Workflow::Pipeline::StageClient",
+    "naming_hit": false,
+    "pick": "Workflow::Task",
+    "p": 0.4254,
+    "correct": false
+  },
+  {
+    "file": "app/services/getting_paid/quickbooks/payout_deposit_create.rb",
+    "param": "payout",
+    "member": "firm",
+    "truth": "GettingPaid::StripePayout",
+    "naming_hit": false,
+    "pick": "GettingPaid::StripePayout",
+    "p": 0.7799,
+    "correct": true
+  },
+  {
+    "file": "app/lib/communication/mailbox_helper/nylas_api_v3.rb",
+    "param": "mailbox_holder",
+    "member": "nylas_connection",
+    "truth": "User",
+    "naming_hit": false,
+    "pick": "Communication::Mailbox::ConnectedEmail",
+    "p": 0.5028,
+    "correct": false
+  },
+  {
+    "file": "app/queries/tax_preparation/firm/tax_automations/documents_query.rb",
+    "param": "form",
+    "member": "search_params",
+    "truth": "TaxPreparation::Api::V1::Firm::TaxAutomations::Documents::IndexForm",
+    "naming_hit": false,
+    "pick": "TaxPreparation::Api::V1::Firm::TaxAutomations::Documents::IndexForm",
+    "p": 0.7658,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/document_tree_nodes_move/self_contained_move.rb",
+    "param": "target_directory",
+    "member": "client_id",
+    "truth": "TaxPreparation::DocDir",
+    "naming_hit": false,
+    "pick": "TaxPreparation::DocDir",
+    "p": 0.8513,
+    "correct": true
+  },
+  {
+    "file": "app/queries/tax_preparation/firm/organizers_query.rb",
+    "param": "form",
+    "member": "per",
+    "truth": "Api::ApplicationForm",
+    "naming_hit": false,
+    "pick": "Api::ApplicationForm",
+    "p": 0.5324,
+    "correct": true
+  },
+  {
+    "file": "app/lib/growth_billing/ga4_helper.rb",
+    "param": "job",
+    "member": "id",
+    "truth": "Workflow::Pipeline::StageClient",
+    "naming_hit": false,
+    "pick": "Workflow::Pipeline::Automation",
+    "p": 0.2816,
+    "correct": false
+  },
+  {
+    "file": "app/helpers/tax_preparation/organizer_templates/versions_helper.rb",
+    "param": "template_version",
+    "member": "sections",
+    "truth": "TaxPreparation::OrganizerTemplate::Version",
+    "naming_hit": false,
+    "pick": "TaxPreparation::OrganizerTemplate::Version",
+    "p": 0.3607,
+    "correct": true
+  },
+  {
+    "file": "app/lib/workflow/pipelines/jobs/event_helper.rb",
+    "param": "job",
+    "member": "id",
+    "truth": "Workflow::Pipeline::StageClient",
+    "naming_hit": false,
+    "pick": "Workflow::Pipeline::StageClient",
+    "p": 0.2693,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/document_tree_nodes_move/rebind_subtree.rb",
+    "param": "directory",
+    "member": "updated_at",
+    "truth": "TaxPreparation::DocDir",
+    "naming_hit": false,
+    "pick": "TaxPreparation::DocDir",
+    "p": 0.9374,
+    "correct": true
+  },
+  {
+    "file": "app/lib/communication/mailbox_helper/nylas_api_v3.rb",
+    "param": "mailbox_holder",
+    "member": "firm",
+    "truth": "User",
+    "naming_hit": false,
+    "pick": "User",
+    "p": 0.5502,
+    "correct": true
+  },
+  {
+    "file": "app/helpers/getting_paid/proposals/reminder_schedule_helper.rb",
+    "param": "proposal",
+    "member": "id",
+    "truth": "GettingPaid::Contract",
+    "naming_hit": false,
+    "pick": "GettingPaid::Contract",
+    "p": 0.5345,
+    "correct": true
+  },
+  {
+    "file": "app/helpers/workflow/pipelines/jobs/triggers_helper.rb",
+    "param": "job",
+    "member": "stage",
+    "truth": "Workflow::Pipeline::StageClient",
+    "naming_hit": false,
+    "pick": "Workflow::Pipeline::StageClient",
+    "p": 0.2364,
+    "correct": true
+  },
+  {
+    "file": "app/lib/communication/chat/account_activity_helper.rb",
+    "param": "info_request",
+    "member": "id",
+    "truth": "Communication::Chat::Channel",
+    "naming_hit": false,
+    "pick": "Communication::Chat::Channel",
+    "p": 0.381,
+    "correct": true
+  },
+  {
+    "file": "app/lib/growth_billing/ga4_helper.rb",
+    "param": "job",
+    "member": "id",
+    "truth": "Workflow::Pipeline::StageClient",
+    "naming_hit": false,
+    "pick": "Workflow::Pipeline::StageClient",
+    "p": 0.7646,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/document_tree_nodes_move/classify_directories.rb",
+    "param": "target_directory",
+    "member": "client_id",
+    "truth": "TaxPreparation::DocDir",
+    "naming_hit": false,
+    "pick": "TaxPreparation::DocDir",
+    "p": 0.9029,
+    "correct": true
+  },
+  {
+    "file": "app/lib/growth_billing/ga4_helper.rb",
+    "param": "job",
+    "member": "pipeline",
+    "truth": "Workflow::Pipeline::StageClient",
+    "naming_hit": false,
+    "pick": "Workflow::Api::V1::Firm::Pipelines::ShowSerializer",
+    "p": 0.3836,
+    "correct": false
+  },
+  {
+    "file": "app/helpers/workflow/pipelines/automations/errors_helper.rb",
+    "param": "job",
+    "member": "id",
+    "truth": "Workflow::Pipeline::StageClient",
+    "naming_hit": false,
+    "pick": "Workflow::JobTemplate",
+    "p": 0.2165,
+    "correct": false
+  },
+  {
+    "file": "app/services/getting_paid/quickbooks/technology_fee_create.rb",
+    "param": "technology_fee",
+    "member": "firm",
+    "truth": "GettingPaid::QuickbooksTechnologyFee",
+    "naming_hit": false,
+    "pick": "GettingPaid::QuickbooksTechnologyFee",
+    "p": 0.8886,
+    "correct": true
+  },
+  {
+    "file": "app/queries/tax_preparation/document_checklist/items_query.rb",
+    "param": "form",
+    "member": "per",
+    "truth": "Api::ApplicationForm",
+    "naming_hit": false,
+    "pick": "Api::ApplicationForm",
+    "p": 0.6211,
+    "correct": true
+  },
+  {
+    "file": "app/lib/workflow/pipelines/jobs/link_dispatcher.rb",
+    "param": "job",
+    "member": "id",
+    "truth": "Workflow::Pipeline::StageClient",
+    "naming_hit": false,
+    "pick": "Workflow::Pipeline::AutomationSettings::AddedJobAssignment",
+    "p": 0.2109,
+    "correct": false
+  },
+  {
+    "file": "app/services/getting_paid/api/invoicing.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.8091,
+    "correct": true
+  },
+  {
+    "file": "app/lib/bookkeeping/qbo/model_reference_helper.rb",
+    "param": "connection",
+    "member": "items",
+    "truth": "Bookkeeping::QBO::Connection",
+    "naming_hit": true,
+    "pick": "Bookkeeping::QBO::Connection",
+    "p": 0.8938,
+    "correct": true
+  },
+  {
+    "file": "app/services/team_management/api/employees.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9259,
+    "correct": true
+  },
+  {
+    "file": "app/services/workflow/pipelines/create.rb",
+    "param": "user",
+    "member": "firm",
+    "truth": "User",
+    "naming_hit": true,
+    "pick": "User",
+    "p": 0.91,
+    "correct": true
+  },
+  {
+    "file": "app/services/team_management/api/automations.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9132,
+    "correct": true
+  },
+  {
+    "file": "app/services/getting_paid/refund/settle.rb",
+    "param": "refund",
+    "member": "payment",
+    "truth": "GettingPaid::Refund",
+    "naming_hit": true,
+    "pick": "GettingPaid::Refund",
+    "p": 0.7483,
+    "correct": true
+  },
+  {
+    "file": "app/queries/tax_preparation/firm/users_query.rb",
+    "param": "firm",
+    "member": "users",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.831,
+    "correct": true
+  },
+  {
+    "file": "app/services/getting_paid/webhooks/stripe/payout_paid.rb",
+    "param": "webhook",
+    "member": "firm",
+    "truth": "GettingPaid::InboxEvents::Stripe::Webhook",
+    "naming_hit": true,
+    "pick": "GettingPaid::InboxEvents::Stripe::Webhook",
+    "p": 0.9286,
+    "correct": true
+  },
+  {
+    "file": "app/mailers/billing/invoice_mailer.rb",
+    "param": "invoice",
+    "member": "currency",
+    "truth": "Billing::Invoice",
+    "naming_hit": true,
+    "pick": "Billing::Invoice",
+    "p": 0.7271,
+    "correct": true
+  },
+  {
+    "file": "app/services/growth_billing/employee_update.rb",
+    "param": "employee",
+    "member": "user",
+    "truth": "Employee",
+    "naming_hit": true,
+    "pick": "Employee",
+    "p": 0.8554,
+    "correct": true
+  },
+  {
+    "file": "app/queries/workflow/pipelines_query.rb",
+    "param": "firm",
+    "member": "pipelines",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.6485,
+    "correct": true
+  },
+  {
+    "file": "app/lib/growth_billing/ga4_helper.rb",
+    "param": "status",
+    "member": "id",
+    "truth": "Workflow::Pipeline::Job::Status",
+    "naming_hit": true,
+    "pick": "Workflow::Pipeline::Job::Status",
+    "p": 0.9385,
+    "correct": true
+  },
+  {
+    "file": "app/services/getting_paid/api/proposals.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9415,
+    "correct": true
+  },
+  {
+    "file": "app/services/team_management/api/default_assignments.rb",
+    "param": "user",
+    "member": "firm_id",
+    "truth": "User",
+    "naming_hit": true,
+    "pick": "User",
+    "p": 0.8962,
+    "correct": true
+  },
+  {
+    "file": "app/services/getting_paid/api/invoicing.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9068,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/api/document_management.rb",
+    "param": "firm",
+    "member": "owner",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.4387,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/client/data_request/progress.rb",
+    "param": "data_request",
+    "member": "id",
+    "truth": "TaxPreparation::Client::DataRequest",
+    "naming_hit": true,
+    "pick": "TaxPreparation::Client::DataRequest",
+    "p": 0.9454,
+    "correct": true
+  },
+  {
+    "file": "app/services/communication/api/mailbox.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.8634,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/client/data_request/destroy.rb",
+    "param": "data_request",
+    "member": "id",
+    "truth": "TaxPreparation::Client::DataRequest",
+    "naming_hit": true,
+    "pick": "TaxPreparation::Client::DataRequest",
+    "p": 0.929,
+    "correct": true
+  },
+  {
+    "file": "app/services/getting_paid/quickbooks/expense_create.rb",
+    "param": "charge_response",
+    "member": "client",
+    "truth": "GettingPaid::ChargeResponse",
+    "naming_hit": true,
+    "pick": "GettingPaid::ChargeResponse",
+    "p": 0.8759,
+    "correct": true
+  },
+  {
+    "file": "app/services/team_management/api/assignments.rb",
+    "param": "user",
+    "member": "firm_id",
+    "truth": "User",
+    "naming_hit": true,
+    "pick": "User",
+    "p": 0.9366,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/api/document_management/automations.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9364,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/api/document_management/templates.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9682,
+    "correct": true
+  },
+  {
+    "file": "app/services/getting_paid/api/proposals.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.8839,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/api/document_management/automations.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9187,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/client/data_request/destroy.rb",
+    "param": "user",
+    "member": "id",
+    "truth": "User",
+    "naming_hit": true,
+    "pick": "User",
+    "p": 0.8265,
+    "correct": true
+  },
+  {
+    "file": "app/services/workflow/pipelines/update.rb",
+    "param": "user",
+    "member": "firm",
+    "truth": "User",
+    "naming_hit": true,
+    "pick": "User",
+    "p": 0.81,
+    "correct": true
+  },
+  {
+    "file": "app/lib/growth_billing/ga4_helper.rb",
+    "param": "status",
+    "member": "id",
+    "truth": "Workflow::Pipeline::Job::Status",
+    "naming_hit": true,
+    "pick": "Workflow::Pipeline::Job::Status",
+    "p": 0.9314,
+    "correct": true
+  },
+  {
+    "file": "app/services/communication/api/mailbox_connection.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9644,
+    "correct": true
+  },
+  {
+    "file": "app/lib/growth_billing/ga4_helper.rb",
+    "param": "pipeline",
+    "member": "id",
+    "truth": "Workflow::Pipeline",
+    "naming_hit": true,
+    "pick": "Workflow::Pipeline",
+    "p": 0.9087,
+    "correct": true
+  },
+  {
+    "file": "app/lib/tax_preparation/text_to_image_converter.rb",
+    "param": "font_setting",
+    "member": "color",
+    "truth": "TaxPreparation::TextToImageConverter::FontSetting",
+    "naming_hit": true,
+    "pick": "TaxPreparation::TextToImageConverter::FontSetting",
+    "p": 0.8966,
+    "correct": true
+  },
+  {
+    "file": "app/lib/getting_paid/payments_helper.rb",
+    "param": "client",
+    "member": "account_name",
+    "truth": "Client",
+    "naming_hit": true,
+    "pick": "Client",
+    "p": 0.4008,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/api/intake/templates.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9086,
+    "correct": true
+  },
+  {
+    "file": "app/lib/growth_billing/ga4_helper.rb",
+    "param": "stage",
+    "member": "id",
+    "truth": "Workflow::Pipeline::Stage",
+    "naming_hit": true,
+    "pick": "Workflow::Pipeline::Stage",
+    "p": 0.9385,
+    "correct": true
+  },
+  {
+    "file": "app/services/workflow/api/tasks.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9459,
+    "correct": true
+  },
+  {
+    "file": "app/services/team_management/employees/assign_seat.rb",
+    "param": "employee",
+    "member": "firm",
+    "truth": "Employee",
+    "naming_hit": true,
+    "pick": "Employee",
+    "p": 0.9293,
+    "correct": true
+  },
+  {
+    "file": "app/services/workflow/api/job_automations.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9554,
+    "correct": true
+  },
+  {
+    "file": "app/lib/bookkeeping/qbo/api_helper.rb",
+    "param": "connection",
+    "member": "id",
+    "truth": "Bookkeeping::QBO::Connection",
+    "naming_hit": true,
+    "pick": "Bookkeeping::QBO::Connection",
+    "p": 0.9189,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/documents/kba_attempt_create.rb",
+    "param": "signature_request",
+    "member": "document",
+    "truth": "TaxPreparation::Document::SignatureRequest",
+    "naming_hit": true,
+    "pick": "TaxPreparation::Document::SignatureRequest",
+    "p": 0.7576,
+    "correct": true
+  },
+  {
+    "file": "app/services/team_management/clients/assignments/destroy.rb",
+    "param": "client",
+    "member": "firm",
+    "truth": "Client",
+    "naming_hit": true,
+    "pick": "Client",
+    "p": 0.9365,
+    "correct": true
+  },
+  {
+    "file": "app/services/getting_paid/api/time_tracking.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9135,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/api/signers.rb",
+    "param": "firm",
+    "member": "users",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.7887,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/api/document_management.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.8953,
+    "correct": true
+  },
+  {
+    "file": "app/lib/getting_paid/terminal_helper.rb",
+    "param": "payment",
+    "member": "id",
+    "truth": "GettingPaid::Payment",
+    "naming_hit": true,
+    "pick": "GettingPaid::Payment",
+    "p": 0.7834,
+    "correct": true
+  },
+  {
+    "file": "app/queries/tax_preparation/firm/tax_automations/documents_query.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.8452,
+    "correct": true
+  },
+  {
+    "file": "app/services/tax_preparation/api/document_management/templates.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9201,
+    "correct": true
+  },
+  {
+    "file": "app/helpers/workflow/pipelines/jobs_helper.rb",
+    "param": "client",
+    "member": "firm",
+    "truth": "Client",
+    "naming_hit": true,
+    "pick": "Client",
+    "p": 0.8178,
+    "correct": true
+  },
+  {
+    "file": "app/services/workflow/pipelines/jobs/batch_destroy_by_stages_async.rb",
+    "param": "user",
+    "member": "firm",
+    "truth": "User",
+    "naming_hit": true,
+    "pick": "User",
+    "p": 0.4162,
+    "correct": true
+  },
+  {
+    "file": "app/services/supporting/wiki/api/templates.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9432,
+    "correct": true
+  },
+  {
+    "file": "app/services/team_management/employees/restore.rb",
+    "param": "employee",
+    "member": "firm",
+    "truth": "Employee",
+    "naming_hit": true,
+    "pick": "Employee",
+    "p": 0.8513,
+    "correct": true
+  },
+  {
+    "file": "app/services/communication/api/chat_channel.rb",
+    "param": "user",
+    "member": "firm_id",
+    "truth": "User",
+    "naming_hit": true,
+    "pick": "User",
+    "p": 0.9251,
+    "correct": true
+  },
+  {
+    "file": "app/services/getting_paid/api/proposals/templates.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9213,
+    "correct": true
+  },
+  {
+    "file": "app/services/getting_paid/quickbooks/update_sync_status.rb",
+    "param": "quickbooks_entity",
+    "member": "firm",
+    "truth": "GettingPaid::QuickbooksEntity",
+    "naming_hit": true,
+    "pick": "GettingPaid::QuickbooksEntity",
+    "p": 0.8327,
+    "correct": true
+  },
+  {
+    "file": "app/services/supporting/wiki/api/automations.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9094,
+    "correct": true
+  },
+  {
+    "file": "app/helpers/communication/persist_thread_participants_helper.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.7654,
+    "correct": true
+  },
+  {
+    "file": "app/lib/bookkeeping/qbo/import_helper.rb",
+    "param": "connection",
+    "member": "firm",
+    "truth": "Bookkeeping::QBO::Connection",
+    "naming_hit": true,
+    "pick": "Bookkeeping::QBO::Connection",
+    "p": 0.8092,
+    "correct": true
+  },
+  {
+    "file": "app/lib/subscriptions/entitlements/feature_entitlement.rb",
+    "param": "entitlement",
+    "member": "created_at",
+    "truth": "Subscriptions::Entitlement",
+    "naming_hit": true,
+    "pick": "Subscriptions::Entitlement",
+    "p": 0.9126,
+    "correct": true
+  },
+  {
+    "file": "app/services/workflow/api/templates.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.9517,
+    "correct": true
+  },
+  {
+    "file": "app/lib/supporting/marketing/hubspot/company_attributes.rb",
+    "param": "firm",
+    "member": "id",
+    "truth": "Firm",
+    "naming_hit": true,
+    "pick": "Firm",
+    "p": 0.8777,
+    "correct": true
+  },
+  {
+    "file": "app/services/crm/user_update.rb",
+    "param": "user",
+    "member": "email",
+    "truth": "User",
+    "naming_hit": true,
+    "pick": "User",
+    "p": 0.8881,
+    "correct": true
+  }
+]
