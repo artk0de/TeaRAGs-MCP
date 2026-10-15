@@ -10,6 +10,7 @@
  *
  * snapshot flags: --threshold <p> (default 0.7)  --hubs <n> (default 20)  --generation <code_x_vN>
  *                 --codegraph-root <dir>  --no-disk-check
+ *                 --build <dir>  compiled build the daemon client loads from (default ./build; run `npm run build` first)
  * diff: prints the delta JSON, then one PASS/FAIL line per scenario check; exit 1 on any FAIL.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -43,7 +44,7 @@ async function snapshot(): Promise<void> {
     projectRoot: argValue("--project-root"),
     codegraphRoot: argValue("--codegraph-root"),
   });
-  const sources = await openResidualSources(paths);
+  const sources = await openResidualSources(paths, { buildDir: argValue("--build") });
   const root = process.argv.includes("--no-disk-check") ? undefined : paths.projectRoot;
   try {
     const state = await takeResidualSnapshot({

@@ -9,12 +9,20 @@
  */
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
+import type * as ConfigModule_ from "../../src/bootstrap/config/index.js";
+import type * as FactoryModule_ from "../../src/bootstrap/factory.js";
 import { CodegraphDbFiles } from "../../src/core/adapters/duckdb/codegraph-db-files.js";
 import { DuckDbGraphSession } from "../../src/core/adapters/duckdb/graph-session.js";
 import { ResidualVerdictStore } from "../../src/core/adapters/duckdb/residual-verdict-store.js";
+import type * as ApiModule_ from "../../src/core/api/index.js";
 import type { PhysicalCollectionName } from "../../src/core/contracts/types/collection-identity.js";
+
+type ConfigModule = typeof ConfigModule_;
+type FactoryModule = typeof FactoryModule_;
+type ApiModule = typeof ApiModule_;
 
 export interface ResidualSourcePaths {
   graphDb: string;
@@ -43,6 +51,23 @@ export interface OpenedResidualSources {
   readVia: "direct" | "daemon-snapshot";
   close: () => Promise<void>;
 }
+
+/**
+ * The compiled build the daemon client is loaded from. The daemon keys its
+ * socket on `computeBuildFingerprint` (the module's directory), so a client
+ * loaded from `src/` under tsx waits on a socket no `build/` daemon serves.
+ * No fallback to `src/`: a missing build fails loudly.
+ */
+export function resolveBuildDir(buildDir?: string): string {
+  const dir = buildDir ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..", "build");
+  if (!existsSync(join(dir, "bootstrap", "factory.js"))) {
+    throw new Error(`no compiled build at ${dir}; run \`npm run build\` or pass --build <dir>`);
+  }
+  return dir;
+}
+
+const importFromBuild = async <T>(buildDir: string, relPath: string): Promise<T> =>
+  (await import(pathToFileURL(join(buildDir, relPath)).href)) as T;
 
 const LOCK_CONTENTION = /Could not set lock on file|Conflicting lock is held/u;
 
@@ -95,10 +120,17 @@ async function openReadOnly(path: string): Promise<DuckDbGraphSession> {
 }
 
 /** Ask this build's codegraph daemon for a consistent copy of the generation; resolves to the copy's path. */
-async function exportThroughDaemon(physicalCollectionName: string, targetDir: string): Promise<string> {
-  const { getZodConfig, parseAppConfig } = await import("../../src/bootstrap/config/index.js");
-  const { wireCodegraph } = await import("../../src/bootstrap/factory.js");
-  const { CollectionRegistry, collectionHoldsCodegraphData } = await import("../../src/core/api/index.js");
+async function exportThroughDaemon(
+  physicalCollectionName: string,
+  targetDir: string,
+  buildDir: string,
+): Promise<string> {
+  const { getZodConfig, parseAppConfig } = await importFromBuild<ConfigModule>(buildDir, "bootstrap/config/index.js");
+  const { wireCodegraph } = await importFromBuild<FactoryModule>(buildDir, "bootstrap/factory.js");
+  const { CollectionRegistry, collectionHoldsCodegraphData } = await importFromBuild<ApiModule>(
+    buildDir,
+    "core/api/index.js",
+  );
   const config = parseAppConfig();
   const wired = wireCodegraph(
     config,
@@ -115,7 +147,10 @@ async function exportThroughDaemon(physicalCollectionName: string, targetDir: st
   return target;
 }
 
-export async function openResidualSources(paths: ResidualSourcePaths): Promise<OpenedResidualSources> {
+export async function openResidualSources(
+  paths: ResidualSourcePaths,
+  options: { buildDir?: string } = {},
+): Promise<OpenedResidualSources> {
   if (!existsSync(paths.graphDb)) throw new Error(`no codegraph database at ${paths.graphDb}`);
   let graph: DuckDbGraphSession;
   let readVia: OpenedResidualSources["readVia"] = "direct";
@@ -125,7 +160,14 @@ export async function openResidualSources(paths: ResidualSourcePaths): Promise<O
   } catch (error) {
     if (!isLockContention(error) || paths.physicalCollectionName === undefined) throw error;
     snapshotDir = mkdtempSync(join(tmpdir(), "residual-probe-"));
-    graph = await openReadOnly(await exportThroughDaemon(paths.physicalCollectionName, snapshotDir));
+    try {
+      graph = await openReadOnly(
+        await exportThroughDaemon(paths.physicalCollectionName, snapshotDir, resolveBuildDir(options.buildDir)),
+      );
+    } catch (exportError) {
+      rmSync(snapshotDir, { recursive: true, force: true });
+      throw exportError;
+    }
     readVia = "daemon-snapshot";
   }
   let verdicts: DuckDbGraphSession | undefined;

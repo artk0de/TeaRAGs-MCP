@@ -1,9 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { resolveBuildDir } from "../../scripts/lib/residual-graph-source.js";
 import {
   diffResidualSnapshots,
   evaluateScenario,
@@ -342,5 +344,39 @@ describe("diffResidualSnapshots / evaluateScenario", () => {
 
   it("rejects an unknown scenario id", () => {
     expect(() => evaluateScenario("B99", base(), base())).toThrow(/unknown scenario/);
+  });
+});
+
+describe("resolveBuildDir", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "residual-build-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("returns an explicit build dir that holds the compiled bootstrap", () => {
+    mkdirSync(join(dir, "bootstrap"), { recursive: true });
+    writeFileSync(join(dir, "bootstrap", "factory.js"), "");
+    expect(resolveBuildDir(dir)).toBe(dir);
+  });
+
+  it("refuses a dir without a compiled build instead of falling back to src", () => {
+    expect(() => resolveBuildDir(dir)).toThrow(/npm run build/);
+  });
+});
+
+describe("residual-probe CLI exit code", () => {
+  it("exits non-zero when the snapshot cannot be taken", () => {
+    const result = spawnSync(
+      "npx",
+      ["tsx", "scripts/residual-probe.ts", "snapshot", "--graph-db", "/nonexistent/x.duckdb"],
+      {
+        encoding: "utf8",
+      },
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("no codegraph database");
   });
 });
