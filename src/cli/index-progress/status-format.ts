@@ -116,6 +116,9 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
     lines.push(
       `  ${r.menuOverflow} over the menu limit, ${r.menuTooSmall} under the menu floor, ${r.sitesEdged} sites edged, derived metrics ${r.derived}`,
     );
+    lines.push(
+      `  ${r.failedGroups} groups failed, ${r.requeuedGroups} requeued after a timeout, ${r.abortedGroups} aborted`,
+    );
   }
 
   return lines.join("\n");

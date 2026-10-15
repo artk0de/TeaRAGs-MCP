@@ -138,6 +138,7 @@ project and replayed on later runs. See
 | `CODEGRAPH_RESIDUAL_KEV_URL`        | Kev base URL for residual call resolution; comma-separate several hosts (see [Kev setup](kev-setup)) | _(unset)_  |
 | `CODEGRAPH_RESIDUAL_KEV_THRESHOLD`  | Minimum Kev confidence for a pick to become an edge                          | `0.7`      |
 | `CODEGRAPH_RESIDUAL_CONCURRENCY`    | Residual requests in flight (one per enclosing method)                       | `16`       |
+| `CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC` | Seconds one residual request may run; a timed-out group is retried once at the end of the pass | `300` |
 | `CODEGRAPH_RESIDUAL_MENU_LIMIT`     | Call sites with more candidates than this are not asked                      | `40`       |
 | `CODEGRAPH_RESIDUAL_MIN_MENU`      | Call sites with fewer candidates than this are neither asked nor given an edge | `4`        |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | Cached verdicts unseen this many days are dropped                    | `180`      |

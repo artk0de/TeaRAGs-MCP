@@ -25,7 +25,7 @@ export class KevTimeoutError extends InfraError {
       message: `Kev did not answer within ${timeoutMs / 1000}s`,
       hint:
         `Kev at ${urls.join(", ")} accepted the request but did not answer in time; check its log for a stall, ` +
-        "or lower CODEGRAPH_RESIDUAL_CONCURRENCY so fewer requests queue on it",
+        "raise CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC, or lower CODEGRAPH_RESIDUAL_CONCURRENCY so fewer requests queue on it",
       httpStatus: 504,
       cause,
     });

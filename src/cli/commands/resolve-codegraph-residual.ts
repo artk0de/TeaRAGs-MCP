@@ -49,6 +49,7 @@ export function formatResidualReport(report: ResidualReport): string {
     `  too long:         ${report.tooLong}\n` +
     `  failed groups:    ${report.failedGroups}\n` +
     `  aborted groups:   ${report.abortedGroups}\n` +
+    `  requeued groups:  ${report.requeuedGroups}\n` +
     `  below threshold:  ${report.belowThreshold}\n` +
     `  sites edged:      ${report.sitesEdged}\n` +
     `  edges applied:    ${report.edgesApplied}\n` +

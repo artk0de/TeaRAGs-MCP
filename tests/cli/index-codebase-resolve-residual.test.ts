@@ -40,6 +40,7 @@ const REPORT: ResidualPassReport = {
   tooLong: 0,
   failedGroups: 0,
   abortedGroups: 0,
+  requeuedGroups: 0,
   belowThreshold: 3,
   sitesEdged: 79,
   edgesApplied: 77,
@@ -91,6 +92,15 @@ describe("the residual pass in the run's output", () => {
     expect(text).toContain("skipped (ask): provider kev unavailable: connect ECONNREFUSED");
     expect(text).toContain("120 sites, 80 from cache, 0 asked, 77 model edges applied");
     expect(text).toContain("4 over the menu limit, 9 under the menu floor, 79 sites edged, derived metrics stale");
+  });
+
+  it("shows the failed, requeued and aborted groups in the status block", () => {
+    const text = formatIndexStatus(
+      { ...status, residualResolution: { ...REPORT, failedGroups: 2, requeuedGroups: 3, abortedGroups: 5 } },
+      createColorizer({ env: { NO_COLOR: "1" }, isTTY: false }),
+    );
+
+    expect(text).toContain("2 groups failed, 3 requeued after a timeout, 5 aborted");
   });
 
   it("is absent from both when no pass ran", () => {

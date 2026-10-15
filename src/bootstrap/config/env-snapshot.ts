@@ -125,6 +125,7 @@ export function buildRegistryEnvSnapshot(
   putList("CODEGRAPH_RESIDUAL_KEV_URL", codegraph.residual.kevUrls);
   put("CODEGRAPH_RESIDUAL_KEV_THRESHOLD", codegraph.residual.kevThreshold);
   put("CODEGRAPH_RESIDUAL_CONCURRENCY", codegraph.residual.concurrency);
+  put("CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC", codegraph.residual.requestTimeoutSec);
   put("CODEGRAPH_RESIDUAL_MENU_LIMIT", codegraph.residual.menuLimit);
   put("CODEGRAPH_RESIDUAL_MIN_MENU", codegraph.residual.minMenu);
   put("CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS", codegraph.residual.retentionDays);

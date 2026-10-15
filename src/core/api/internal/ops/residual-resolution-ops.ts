@@ -33,6 +33,8 @@ export interface ResidualResolutionConfig {
   kevUrls?: readonly string[];
   kevThreshold: number;
   concurrency: number;
+  /** Per-request Kev budget, seconds. */
+  requestTimeoutSec?: number;
   menuLimit: number;
   /** Smallest menu the pass asks about or applies. */
   minMenu: number;

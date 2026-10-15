@@ -55,6 +55,8 @@ class FakeProvider implements ResidualModelProvider {
   healthy = true;
   modelVersion = "fake@1";
   failOn = new Set<string>();
+  /** Methods whose first ask fails with `failure`; later asks answer. */
+  failFirstOn = new Set<string>();
   failure: (method: string) => Error = (method) => new Error(`boom ${method}`);
   /** Methods whose ask settles only when the pass's signal aborts. */
   stallOn = new Set<string>();
@@ -96,6 +98,7 @@ class FakeProvider implements ResidualModelProvider {
     await new Promise((resolve) => setTimeout(resolve, 1));
     this.inFlight--;
     if (this.failOn.has(group.methodSymbolId)) throw this.failure(group.methodSymbolId);
+    if (this.failFirstOn.delete(group.methodSymbolId)) throw this.failure(group.methodSymbolId);
     if (this.tooLongOn.has(group.methodSymbolId)) throw new KevStateTooLongError("http://gpu:1", "too long");
     return group.questions.map((q) => {
       const { pick, p } = this.answer(q);
@@ -495,6 +498,105 @@ describe("ResidualResolutionPass", () => {
       "1 group(s) failed: Kev did not answer within 120s (cause: The operation was aborted due to timeout)",
     );
     expect(log).toHaveBeenCalledWith("[Residual] group failed: method=A#a questions=1 code=INFRA_KEV_TIMEOUT");
+  });
+
+  const kevTimeout = () => new KevTimeoutError(["http://gpu:1"], 300_000);
+
+  it("requeues a group that timed out at the tail of the queue and stores its answer from the second ask", async () => {
+    const provider = new FakeProvider(firmPick);
+    provider.failFirstOn.add("A#a");
+    provider.failure = kevTimeout;
+    const rows = ["A#a", "A#b", "A#c"].map((method, i) => row({ siteKey: `s${i}`, methodSymbolId: method }));
+    const progress: ProgressUpdate[] = [];
+
+    const report = await run(fakeGraphDb(rows), provider, { concurrency: 1, onProgress: (p) => progress.push(p) });
+
+    expect(provider.calls.map((g) => g.methodSymbolId)).toEqual(["A#a", "A#b", "A#c", "A#a"]);
+    expect(report).toMatchObject({
+      outcome: "completed",
+      asked: 3,
+      answered: 3,
+      failedGroups: 0,
+      requeuedGroups: 1,
+      edgesApplied: 3,
+    });
+    expect(progress.at(-1)).toMatchObject({ current: 3, total: 3, percentage: 100 });
+  });
+
+  it("counts a group that times out again after its requeue as failed", async () => {
+    const provider = new FakeProvider(firmPick);
+    provider.failOn.add("A#a");
+    provider.failure = kevTimeout;
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const rows = ["A#a", "A#b"].map((method, i) => row({ siteKey: `s${i}`, methodSymbolId: method }));
+
+    const report = await run(fakeGraphDb(rows), provider, { concurrency: 1 });
+
+    expect(provider.calls.map((g) => g.methodSymbolId)).toEqual(["A#a", "A#b", "A#a"]);
+    expect(report).toMatchObject({ outcome: "completed", failedGroups: 1, requeuedGroups: 1, answered: 1 });
+  });
+
+  it("requeues only timeouts; any other failure counts at once", async () => {
+    const provider = new FakeProvider(firmPick);
+    provider.failOn.add("A#a");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const report = await run(fakeGraphDb([row({ siteKey: "s0", methodSymbolId: "A#a" })]), provider);
+
+    expect(provider.calls).toHaveLength(1);
+    expect(report).toMatchObject({ failedGroups: 1, requeuedGroups: 0 });
+  });
+
+  it("lets failures scattered over a large pass run up to 2% of its groups before tripping", async () => {
+    const provider = new FakeProvider(firmPick);
+    const rows = Array.from({ length: 300 }, (_, i) => row({ siteKey: `s${i}`, methodSymbolId: `M#m${i}` }));
+    for (const i of [0, 50, 100, 150, 200, 250]) provider.failOn.add(`M#m${i}`);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const report = await run(fakeGraphDb(rows), provider, { concurrency: 1 });
+
+    expect(provider.calls).toHaveLength(300);
+    expect(report).toMatchObject({ outcome: "completed", failedGroups: 6, answered: 294 });
+  });
+
+  it("trips on the relative budget once failures pass the larger of the floor and the rate", async () => {
+    const provider = new FakeProvider(firmPick);
+    const rows = Array.from({ length: 300 }, (_, i) => row({ siteKey: `s${i}`, methodSymbolId: `M#m${i}` }));
+    for (const i of [0, 40, 80, 120, 160, 200, 240]) provider.failOn.add(`M#m${i}`);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const report = await run(fakeGraphDb(rows), provider, { concurrency: 1 });
+
+    expect(provider.calls).toHaveLength(241);
+    expect(report).toMatchObject({ outcome: "skipped", failedGroups: 7 });
+  });
+
+  it("trips when consecutive groups fail, even inside the failure budget", async () => {
+    const provider = new FakeProvider(firmPick);
+    const rows = Array.from({ length: 20 }, (_, i) => row({ siteKey: `s${i}`, methodSymbolId: `M#m${i}` }));
+    for (let i = 0; i < 5; i++) provider.failOn.add(`M#m${i}`);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const report = await run(fakeGraphDb(rows), provider, { concurrency: 1, maxGroupFailures: 10 });
+
+    expect(provider.calls).toHaveLength(5);
+    expect(report).toMatchObject({ outcome: "skipped", failedGroups: 5, answered: 0 });
+  });
+
+  it("restarts the consecutive-failure count at every answered group", async () => {
+    const provider = new FakeProvider(firmPick);
+    const rows = Array.from({ length: 20 }, (_, i) => row({ siteKey: `s${i}`, methodSymbolId: `M#m${i}` }));
+    for (const i of [0, 1, 2, 3, 5, 6, 7, 8]) provider.failOn.add(`M#m${i}`);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const report = await run(fakeGraphDb(rows), provider, {
+      concurrency: 1,
+      maxGroupFailures: 10,
+      maxConsecutiveGroupFailures: 5,
+    });
+
+    expect(provider.calls).toHaveLength(20);
+    expect(report).toMatchObject({ outcome: "completed", failedGroups: 8, answered: 12 });
   });
 
   it("ends skipped when the provider is unhealthy, asks nothing and re-applies the newest cached verdicts", async () => {
