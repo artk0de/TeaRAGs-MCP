@@ -28,6 +28,10 @@ export interface ProgressRenderer {
 
 /** Fixed label column width for aligned output (label padded to this width). */
 const LABEL_WIDTH = 22;
+/** Bar key and label of the residual-resolution phase (its own bar, not the embeddings one). */
+const RESIDUAL_BAR_KEY = "residual";
+const RESIDUAL_LABEL = "residual resolution";
+const RESIDUAL_PHASE = "resolving-residual";
 
 /**
  * Format an ETA (seconds, or null when not yet computable) for a progress bar.
@@ -163,7 +167,7 @@ export function buildBarLine(params: BuildBarLineParams): string {
 export function formatProgressLine(message: WorkerMessage): string | null {
   switch (message.type) {
     case "embedding": {
-      const label = "embedding".padEnd(LABEL_WIDTH);
+      const label = (message.phase === RESIDUAL_PHASE ? RESIDUAL_LABEL : "embedding").padEnd(LABEL_WIDTH);
       const pct = message.total > 0 ? Math.round((message.current / message.total) * 100) : 0;
       const base = `${label}${message.current}/${message.total} (${pct}%)`;
       return message.throughput !== null && message.throughput !== undefined
@@ -344,7 +348,8 @@ export class TtyProgressRenderer implements ProgressRenderer {
         this.renderEmbeddingStateBar(message);
         break;
       case "embedding":
-        this.renderEmbeddingBar(message);
+        if (message.phase === RESIDUAL_PHASE) this.renderResidualBar(message);
+        else this.renderEmbeddingBar(message);
         break;
       case "enrichment":
         this.renderEnrichmentBar(message);
@@ -611,14 +616,52 @@ export class TtyProgressRenderer implements ProgressRenderer {
     state.bar.update(state.value, { label, rate: "", eta, elapsed, totalFinal });
   }
 
+  /** Residual resolution: one determinate bar, methods asked / methods to ask. */
+  private renderResidualBar(message: WorkerMessageOf<"embedding">): void {
+    const label = this.colors.brand(RESIDUAL_LABEL.padEnd(LABEL_WIDTH));
+    let state = this.barStates.get(RESIDUAL_BAR_KEY);
+    if (!state) {
+      const bar = this.multibar.create(message.total, 0, {
+        label,
+        rate: "",
+        eta: "",
+        elapsed: "",
+        totalFinal: true,
+      });
+      state = {
+        bar,
+        startMs: this.now(),
+        value: 0,
+        total: message.total,
+        label,
+        rate: "",
+        done: false,
+        etaBaseSeconds: null,
+        etaBaseAtMs: this.now(),
+        totalFinal: true,
+      };
+      this.barStates.set(RESIDUAL_BAR_KEY, state);
+      this.startTickIfNeeded();
+    }
+    const nowMs = this.now();
+    state.total = message.total;
+    state.value = Math.min(message.current, message.total);
+    state.etaBaseSeconds = computeEtaSeconds(state.value, state.total, nowMs - state.startMs);
+    state.etaBaseAtMs = nowMs;
+    state.bar.setTotal(message.total);
+    state.bar.update(state.value, { label, rate: "", eta: "", elapsed: "", totalFinal: true });
+  }
+
   /** Freeze the bars a finished phase owns with their Done ✓ elapsed. */
   private markPhaseBarsDone(message: WorkerMessageOf<"phase-done">): void {
     let keysToMark: string[];
     if (message.phase === "embedding") {
       keysToMark = ["embedding"];
+    } else if (message.phase === RESIDUAL_PHASE) {
+      keysToMark = [RESIDUAL_BAR_KEY];
     } else {
-      // all non-embedding bars (enrichment)
-      keysToMark = [...this.barStates.keys()].filter((k) => k !== "embedding");
+      // all enrichment bars
+      keysToMark = [...this.barStates.keys()].filter((k) => k !== "embedding" && k !== RESIDUAL_BAR_KEY);
     }
     for (const key of keysToMark) {
       const state = this.barStates.get(key);

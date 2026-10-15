@@ -111,11 +111,19 @@ export async function runIndexWorker(
   send: (message: WorkerMessage) => void,
   now: () => number = Date.now,
 ): Promise<EnrichmentOutcome> {
+  // The residual pass runs while the collection is held after enrichment, so
+  // its updates arrive inside whenEnrichmentComplete(); time it on its own.
+  let residualFirstMs: number | undefined;
+  let residualLastMs: number | undefined;
   const embeddingStart = now();
   const indexStats = await app.indexCodebase(
     path,
     options,
     (p) => {
+      if (p.phase === "resolving-residual") {
+        residualFirstMs ??= now();
+        residualLastMs = now();
+      }
       send({
         type: "embedding",
         phase: p.phase,
@@ -201,6 +209,9 @@ export async function runIndexWorker(
     phase: "enrichment",
     elapsedMs: recomputeDurationMs ?? now() - enrichmentStart,
   });
+  if (residualFirstMs !== undefined && residualLastMs !== undefined) {
+    send({ type: "phase-done", phase: "resolving-residual", elapsedMs: residualLastMs - residualFirstMs });
+  }
 
   const finalStatus = await app.getIndexStatus(path);
   const finalCodegraphSizeBytes = resolveCodegraphSizeBytes(finalStatus.collectionName);

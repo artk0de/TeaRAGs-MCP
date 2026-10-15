@@ -3,6 +3,13 @@ import { describe, expect, it } from "vitest";
 import { isWorkerMessage } from "../../../src/cli/index-progress/ipc-protocol.js";
 
 describe("isWorkerMessage", () => {
+  it("accepts residual-resolution progress and its phase-done", () => {
+    expect(
+      isWorkerMessage({ type: "embedding", phase: "resolving-residual", percentage: 50, current: 1, total: 2 }),
+    ).toBe(true);
+    expect(isWorkerMessage({ type: "phase-done", phase: "resolving-residual", elapsedMs: 1200 })).toBe(true);
+  });
+
   it.each([
     { type: "embedding", phase: "embedding", percentage: 45, current: 45, total: 100 },
     { type: "enrichment", providerKey: "git", level: "file", applied: 10, total: 20 },

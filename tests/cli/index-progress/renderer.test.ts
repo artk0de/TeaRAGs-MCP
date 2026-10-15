@@ -83,6 +83,17 @@ describe("formatProgressLine", () => {
     expect(line).not.toContain("ch/s");
   });
 
+  it("labels residual-resolution progress as its own line", () => {
+    const line = formatProgressLine({
+      type: "embedding",
+      phase: "resolving-residual",
+      percentage: 25,
+      current: 3,
+      total: 12,
+    });
+    expect(line).toBe(`${"residual resolution".padEnd(22)}3/12 (25%)`);
+  });
+
   it("guards percentage when total is zero", () => {
     const line = formatProgressLine({ type: "enrichment", providerKey: "git", level: "file", applied: 0, total: 0 });
     expect(line).toContain("0%");
@@ -789,6 +800,25 @@ describe("TtyProgressRenderer — phase-done via multibar.log (legacy: now inlin
     expect(updateCalls.some((c) => (c[1] as Record<string, unknown>)["done"] !== undefined)).toBe(true);
     // Value MUST be filled to total (7339) on done
     expect(updateCalls.some((c) => c[0] === 7339)).toBe(true);
+  });
+
+  it("draws residual resolution on its own bar and closes only that bar on its phase-done", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "embedding", phase: "embedding", percentage: 100, current: 10, total: 10 });
+    r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 2, total: 2 });
+    r.handle({ type: "embedding", phase: "resolving-residual", percentage: 50, current: 1, total: 2 });
+
+    const { barStates } = r as unknown as {
+      barStates: Map<string, { done: boolean; value: number; total: number }>;
+    };
+    expect(barStates.get("residual")).toMatchObject({ value: 1, total: 2, done: false });
+    expect(barStates.get("embedding")?.value).toBe(10);
+
+    r.handle({ type: "phase-done", phase: "enrichment", elapsedMs: 100 });
+    expect(barStates.get("residual")?.done).toBe(false);
+
+    r.handle({ type: "phase-done", phase: "resolving-residual", elapsedMs: 900 });
+    expect(barStates.get("residual")?.done).toBe(true);
   });
 
   it("marks all enrichment bars done inline on enrichment phase-done (fills to total)", () => {
