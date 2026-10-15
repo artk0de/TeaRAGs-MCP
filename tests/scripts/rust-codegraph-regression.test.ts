@@ -1,8 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
+
+const tempRoot = process.env.TEA_RAGS_DATA_DIR;
+if (!tempRoot) throw new Error("test setup must provide TEA_RAGS_DATA_DIR");
+mkdirSync(tempRoot, { recursive: true });
 
 // A new module starts as an empty surface, so RED reports missing behavior,
 // rather than a loader failure. No replacement implementation lives in tests.
@@ -12,7 +15,12 @@ const sut = existsSync(moduleUrl) ? await import(moduleUrl.href) : {};
 function artifact(rows: unknown[] = []) {
   return {
     schemaVersion: 1,
-    corpus: { alias: "ripgrep-rust", commit: "a".repeat(40), config: "production-default" },
+    corpus: {
+      alias: "ripgrep-rust",
+      commit: "a".repeat(40),
+      config: "production-default",
+      options: { timeOnly: true, kindStats: true, persisted: true, edgeDump: true },
+    },
     engine: { commit: "b".repeat(40), dirty: false },
     workload: { files: 1, sites: 1, symbols: 2, loc: 10, siteDigest: "c".repeat(64), dispatch: true },
     environment: {
@@ -22,6 +30,8 @@ function artifact(rows: unknown[] = []) {
       cpuModel: "fixture",
       cpuCount: 10,
       nodeOptions: "",
+      resolverEnv: {},
+      loadMonitoring: { status: "sampled", samples: 3, maxLoadPerCpu: 0.2 },
       loadPerCpu: 0.2,
     },
     identityScheme: "tally-line-callText-v1",
@@ -199,7 +209,7 @@ describe("Rust codegraph baseline/after gate", () => {
       "/fixture",
       "rust",
       null,
-      0,
+      Infinity,
       true,
       true,
       { timeOnly: true, kindStats: true, persisted: true, edgeDump: true },
@@ -244,7 +254,7 @@ describe("Rust codegraph baseline/after gate", () => {
 
   it("writes artifact-only CLI reports and returns a failing gate exit code", async () => {
     const cli = await import("../../scripts/rust-codegraph-regression.js");
-    const dir = mkdtempSync(join(tmpdir(), "rust-gate-"));
+    const dir = mkdtempSync(join(tempRoot, "rust-gate-"));
     try {
       const before = join(dir, "before.json");
       const after = join(dir, "after.json");
@@ -287,6 +297,181 @@ describe("Rust codegraph baseline/after gate", () => {
       after: after.kindStats,
       denominatorContract: "production tallyCallSiteVerdict counters; resolveSuccessRate is not target recall",
     });
+  });
+
+  it("rejects empty capture and rechecks pins after extraction", async () => {
+    const cli = await import("../../scripts/rust-codegraph-regression.js");
+    const corpus = cli.selectRustCorpus("ripgrep-rust", "/fixture");
+    const engine = { commit: "b".repeat(40), dirty: false };
+    const result = {
+      rows: [{}],
+      files: 1,
+      symbols: 2,
+      timeOnly: true,
+      parseFailures: 0,
+      timing: { pass1Ms: 1, pass2Ms: 1, totalMs: 2, peakRssMb: 10, loc: 2 },
+      edgeDump: [edge()],
+      kindStats: {},
+    };
+    await expect(
+      cli.captureRustCodegraphArtifact(
+        corpus,
+        engine,
+        async () => ({ ...result, files: 0, rows: [], edgeDump: [] }) as never,
+      ),
+    ).rejects.toThrow(/empty/);
+    let reads = 0;
+    await expect(
+      cli.captureRustCodegraphArtifact(corpus, engine, async () => result as never, {
+        readPin: () => ({ corpus: { commit: corpus.commit, dirty: ++reads > 1 }, engine }),
+      }),
+    ).rejects.toThrow(/pin|clean|changed/);
+    expect(reads).toBe(2);
+  });
+
+  it("records effective knobs and admits insufficient load observation instead of isolated timing", async () => {
+    const cli = await import("../../scripts/rust-codegraph-regression.js");
+    const corpus = cli.selectRustCorpus("ripgrep-rust", "/fixture");
+    const captured = await cli.captureRustCodegraphArtifact(
+      corpus,
+      { commit: "b".repeat(40), dirty: false },
+      async () =>
+        ({
+          rows: [{}],
+          files: 1,
+          symbols: 2,
+          timeOnly: true,
+          parseFailures: 0,
+          timing: { pass1Ms: 1, pass2Ms: 1, totalMs: 2, peakRssMb: 10, loc: 2 },
+          edgeDump: [edge()],
+          kindStats: {},
+        }) as never,
+    );
+    expect(captured.corpus).toMatchObject({ options: corpus.options });
+    expect(captured.environment).toMatchObject({
+      resolverEnv: expect.any(Object),
+      loadMonitoring: { status: "insufficient" },
+    });
+    expect(compare(captured, captured).cost.status).toBe("incomparable");
+  });
+
+  it("rechecks engine and corpus pin changes even after a nonempty run", async () => {
+    const cli = await import("../../scripts/rust-codegraph-regression.js");
+    const corpus = cli.selectRustCorpus("ripgrep-rust", "/fixture");
+    const engine = { commit: "b".repeat(40), dirty: false };
+    for (const mutation of ["corpus-dirty", "corpus-head", "engine-dirty", "engine-head"]) {
+      let reads = 0;
+      await expect(
+        cli.captureRustCodegraphArtifact(
+          corpus,
+          engine,
+          async () =>
+            ({
+              rows: [{}],
+              files: 1,
+              symbols: 2,
+              timeOnly: true,
+              parseFailures: 0,
+              timing: { pass1Ms: 1, pass2Ms: 1, totalMs: 2, peakRssMb: 10, loc: 2 },
+              edgeDump: [edge()],
+              kindStats: {},
+            }) as never,
+          {
+            readPin: () => {
+              const changed = ++reads > 1;
+              return {
+                corpus: {
+                  commit: changed && mutation === "corpus-head" ? "f".repeat(40) : corpus.commit,
+                  dirty: changed && mutation === "corpus-dirty",
+                },
+                engine: {
+                  commit: changed && mutation === "engine-head" ? "f".repeat(40) : engine.commit,
+                  dirty: changed && mutation === "engine-dirty",
+                },
+              };
+            },
+          },
+        ),
+      ).rejects.toThrow(/pin|clean|changed/);
+      expect(reads).toBe(2);
+    }
+  });
+
+  it("does not compare cost with different effective options or resolver environment", () => {
+    const before = artifact();
+    const optionsChanged = structuredClone(before);
+    optionsChanged.corpus.options.persisted = false;
+    const envChanged = {
+      ...structuredClone(before),
+      environment: { ...before.environment, resolverEnv: { CODEGRAPH_RUST_TEST: "1" } },
+    };
+    expect(compare(before, optionsChanged, { maxCostRatio: { totalMs: 2 } }).cost.status).toBe("incomparable");
+    expect(compare(before, envChanged, { maxCostRatio: { totalMs: 2 } }).cost.status).toBe("incomparable");
+  });
+
+  it("rejects duplicate predictions before provenance can collapse", () => {
+    for (const rows of [
+      [edge(), edge()],
+      [edge("runner:cone@0.5"), edge("runner:registry@0.5")],
+    ]) {
+      expect(() => compare(artifact(rows), artifact())).toThrow(/duplicate.*prediction/);
+      expect(() => compare(artifact(), artifact([...rows].reverse()))).toThrow(/duplicate.*prediction/);
+    }
+  });
+
+  it("rejects contradictory or differently sourced oracle truth and shares improved known truth", () => {
+    const oracle = (classification = "inProject", source = "independent") => ({
+      status: "ingested",
+      source,
+      identityScheme: "tally-line-callText-v1",
+      sites: [
+        {
+          relPath: "src/main.rs",
+          line: 1,
+          callText: "a.run()",
+          classification,
+          expected: classification === "inProject" ? [{ targetRelPath: "src/a.rs", targetSymbolId: "A::run" }] : [],
+        },
+      ],
+    });
+    const before = { ...artifact([edge()]), oracle: oracle() };
+    expect(() => compare(before, { ...artifact(), oracle: oracle("external") })).toThrow(/contradict|incomparable/);
+    expect(() => compare(before, { ...artifact(), oracle: oracle("inactive-cfg") })).toThrow(/contradict|incomparable/);
+    const changedTarget = oracle();
+    changedTarget.sites[0].expected[0].targetSymbolId = "A::different";
+    expect(() => compare(before, { ...artifact(), oracle: changedTarget })).toThrow(/contradict|incomparable/);
+    expect(() => compare(before, { ...artifact(), oracle: oracle("inProject", "other") })).toThrow(
+      /source|incomparable/,
+    );
+    const duplicate = oracle();
+    duplicate.sites.push(duplicate.sites[0]);
+    expect(() => compare({ ...artifact(), oracle: duplicate }, artifact())).toThrow(/duplicate oracle/);
+    const result = compare(
+      { ...before, oracle: oracle("unknown") },
+      { ...artifact(), oracle: oracle() },
+      { maxValidEdgeLoss: 0 },
+    );
+    expect(result.validEdgeLoss).toBe(1);
+    expect(result.oracleComparison).toMatchObject({ source: "independent", truth: "merged-known-sites" });
+  });
+
+  it("requires an enforcing CLI policy unless report-only is explicit", async () => {
+    const cli = await import("../../scripts/rust-codegraph-regression.js");
+    const dir = mkdtempSync(join(tempRoot, "rust-report-"));
+    try {
+      const before = join(dir, "before.json"),
+        after = join(dir, "after.json"),
+        out = join(dir, "out.json");
+      writeFileSync(before, JSON.stringify(artifact([edge()])));
+      writeFileSync(after, JSON.stringify(artifact()));
+      const args = ["compare", "--before", before, "--after", after, "--out", out];
+      await expect(cli.rustCodegraphRegressionMain(args)).rejects.toThrow(/policy|report-only/);
+      expect(existsSync(out)).toBe(false);
+      expect(await cli.rustCodegraphRegressionMain([...args, "--report-only"])).toBe(0);
+      expect(JSON.parse(readFileSync(out, "utf8")).gate).toMatchObject({ status: "report-only", enforced: false });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("rejects zero confidence and keeps non-exact provenance changes visible", () => {

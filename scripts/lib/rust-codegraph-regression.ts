@@ -49,7 +49,14 @@ const oracleSchema = z.discriminatedUnion("status", [
       status: z.literal("ingested"),
       source: text,
       identityScheme: z.literal("tally-line-callText-v1"),
-      sites: z.array(oracleSiteSchema),
+      sites: z.array(oracleSiteSchema).superRefine((sites, ctx) => {
+        const seen = new Set<string>();
+        for (const site of sites) {
+          const key = rustTallySiteKey(site);
+          if (seen.has(key)) ctx.addIssue({ code: "custom", message: `duplicate oracle site: ${key}` });
+          seen.add(key);
+        }
+      }),
     })
     .strict(),
 ]);
@@ -57,7 +64,23 @@ const timingSchema = z.object({ pass1Ms: cost, pass2Ms: cost, totalMs: cost, pea
 export const rustCodegraphArtifactSchema = z
   .object({
     schemaVersion: z.literal(1),
-    corpus: z.object({ alias: text, commit: sha, config: text }).strict(),
+    corpus: z
+      .object({
+        alias: text,
+        commit: sha,
+        config: text,
+        options: z
+          .object({
+            timeOnly: z.boolean().optional(),
+            timing: z.boolean().optional(),
+            kindStats: z.boolean().optional(),
+            persisted: z.boolean().optional(),
+            edgeDump: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict(),
     engine: z.object({ commit: sha, dirty: z.boolean() }).strict(),
     workload: z
       .object({
@@ -77,6 +100,11 @@ export const rustCodegraphArtifactSchema = z
         cpuModel: text,
         cpuCount: count.min(1),
         nodeOptions: z.string(),
+        resolverEnv: z.record(z.string(), z.string()).optional(),
+        loadMonitoring: z
+          .object({ status: z.enum(["sampled", "insufficient"]), samples: count, maxLoadPerCpu: cost })
+          .strict()
+          .optional(),
         loadPerCpu: cost,
       })
       .strict(),
@@ -86,7 +114,16 @@ export const rustCodegraphArtifactSchema = z
     oracle: oracleSchema,
     timing: timingSchema,
     kindStats: z.record(z.string(), z.record(z.string(), cost)).optional(),
-    rows: z.array(rowSchema),
+    rows: z.array(rowSchema).superRefine((rows, ctx) => {
+      const seen = new Set<string>();
+      for (const row of rows) {
+        const kind = channel(row);
+        if (kind === null) continue;
+        const key = `${kind}:${edgeKey(row)}`;
+        if (seen.has(key)) ctx.addIssue({ code: "custom", message: `duplicate prediction: ${key}` });
+        seen.add(key);
+      }
+    }),
   })
   .strict();
 export type RustCodegraphArtifact = z.infer<typeof rustCodegraphArtifactSchema>;
@@ -206,7 +243,33 @@ export function compareRustCodegraphArtifacts(beforeInput: unknown, afterInput: 
   const before = rustCodegraphArtifactSchema.parse(beforeInput);
   const after = rustCodegraphArtifactSchema.parse(afterInput);
   const policy = policySchema.parse(policyInput);
-  if (JSON.stringify(before.corpus) !== JSON.stringify(after.corpus)) throw new Error("corpus pin/config mismatch");
+  const { options: beforeOptions, ...beforeCorpus } = before.corpus;
+  const { options: afterOptions, ...afterCorpus } = after.corpus;
+  if (JSON.stringify(beforeCorpus) !== JSON.stringify(afterCorpus)) throw new Error("corpus pin/config mismatch");
+  const knownTruth = new Map<string, Set<string>>();
+  const sources = new Set<string>();
+  const classifications = new Map<string, string>();
+  for (const artifact of [before, after]) {
+    if (artifact.oracle.status !== "ingested") continue;
+    sources.add(artifact.oracle.source);
+    for (const site of artifact.oracle.sites) {
+      if (site.classification === "unknown") continue;
+      const key = rustTallySiteKey(site);
+      const classification = classifications.get(key);
+      if (classification !== undefined && classification !== site.classification) {
+        throw new Error(`incomparable contradictory oracle classification: ${key}`);
+      }
+      classifications.set(key, site.classification);
+      if (site.classification !== "inProject" && site.classification !== "external") continue;
+      const targets = new Set(site.expected.map(targetKey));
+      const previous = knownTruth.get(key);
+      if (previous !== undefined && (previous.size !== targets.size || [...previous].some((t) => !targets.has(t)))) {
+        throw new Error(`incomparable contradictory oracle truth: ${key}`);
+      }
+      knownTruth.set(key, targets);
+    }
+  }
+  if (sources.size > 1) throw new Error("incomparable oracle source mismatch");
   const edges = {
     exact: diffEdges(predictions(before, "exact"), predictions(after, "exact")),
     candidate: diffEdges(predictions(before, "candidate"), predictions(after, "candidate")),
@@ -219,45 +282,60 @@ export function compareRustCodegraphArtifacts(beforeInput: unknown, afterInput: 
     if (adjudications.has(key)) throw new Error("duplicate edge adjudication");
     adjudications.set(key, item.verdict);
   }
-  const oracleTruth = (artifact: RustCodegraphArtifact, row: TallyEdgeDumpRow): string | undefined => {
-    if (artifact.oracle.status !== "ingested") return undefined;
-    const site = artifact.oracle.sites.find((s) => rustTallySiteKey(s) === rustTallySiteKey(row));
-    if (!site || (site.classification !== "inProject" && site.classification !== "external")) return undefined;
-    return site.expected.some((t) => t.targetRelPath === row.targetRelPath && t.targetSymbolId === row.targetSymbolId)
-      ? "valid"
-      : "incorrect";
+  const oracleTruth = (row: TallyEdgeDumpRow): string | undefined => {
+    const targets = knownTruth.get(rustTallySiteKey(row));
+    if (targets === undefined) return undefined;
+    return targets.has(JSON.stringify([row.targetRelPath, row.targetSymbolId])) ? "valid" : "incorrect";
   };
   let validEdgeLoss = 0;
   let falseEdgeGain = 0;
   let unjudgedEdgeLoss = 0;
   let unjudgedEdgeGain = 0;
   for (const kind of ["exact", "candidate"] as const) {
-    const truth = (row: TallyEdgeDumpRow, artifact: RustCodegraphArtifact) => {
+    const truth = (row: TallyEdgeDumpRow) => {
       const adjudicated = adjudications.get(`${kind}:${edgeKey(row)}`);
-      const independent = oracleTruth(artifact, row);
+      const independent = oracleTruth(row);
       if (adjudicated !== undefined && independent !== undefined && adjudicated !== independent) {
         throw new Error("adjudication contradicts independent oracle truth");
       }
       return adjudicated ?? independent;
     };
     for (const row of edges[kind].lost) {
-      const verdict = truth(row, before);
+      const verdict = truth(row);
       if (verdict === "valid") validEdgeLoss++;
       else if (verdict === undefined) unjudgedEdgeLoss++;
     }
     for (const row of edges[kind].gained) {
-      const verdict = truth(row, after);
+      const verdict = truth(row);
       if (verdict === "incorrect") falseEdgeGain++;
       else if (verdict === undefined) unjudgedEdgeGain++;
     }
   }
   const comparableWorkload = JSON.stringify(before.workload) === JSON.stringify(after.workload);
-  const environmentIdentity = ({ loadPerCpu: _load, ...identity }: RustCodegraphArtifact["environment"]) => identity;
+  const environmentIdentity = ({
+    loadPerCpu: _load,
+    loadMonitoring: _monitoring,
+    ...identity
+  }: RustCodegraphArtifact["environment"]) => identity;
+  const stableJson = (value: Record<string, unknown>) =>
+    JSON.stringify(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+  const comparableConfiguration =
+    beforeOptions !== undefined &&
+    afterOptions !== undefined &&
+    stableJson(beforeOptions) === stableJson(afterOptions) &&
+    before.environment.resolverEnv !== undefined &&
+    after.environment.resolverEnv !== undefined &&
+    stableJson(before.environment.resolverEnv) === stableJson(after.environment.resolverEnv);
   const comparableEnvironment =
     JSON.stringify(environmentIdentity(before.environment)) ===
       JSON.stringify(environmentIdentity(after.environment)) &&
-    Math.max(before.environment.loadPerCpu, after.environment.loadPerCpu) <= policy.maxLoadPerCpu;
-  const comparable = comparableWorkload && comparableEnvironment;
+    [before.environment, after.environment].every(
+      (env) =>
+        env.loadMonitoring?.status === "sampled" &&
+        env.loadMonitoring.samples >= 3 &&
+        Math.max(env.loadPerCpu, env.loadMonitoring.maxLoadPerCpu) <= policy.maxLoadPerCpu,
+    );
+  const comparable = comparableWorkload && comparableEnvironment && comparableConfiguration;
   const deltas = Object.fromEntries(
     (Object.keys(before.timing) as (keyof typeof before.timing)[]).map((key) => [
       key,
@@ -293,6 +371,19 @@ export function compareRustCodegraphArtifacts(beforeInput: unknown, afterInput: 
   return {
     exitCode: failures.length > 0 ? 1 : 0,
     failures,
+    gate: {
+      status:
+        policy.maxValidEdgeLoss !== undefined ||
+        policy.maxFalseEdgeGain !== undefined ||
+        Object.keys(policy.maxCostRatio).length > 0
+          ? "enforced"
+          : "report-only",
+      enforced:
+        policy.maxValidEdgeLoss !== undefined ||
+        policy.maxFalseEdgeGain !== undefined ||
+        Object.keys(policy.maxCostRatio).length > 0,
+    },
+    oracleComparison: { source: [...sources][0] ?? null, truth: "merged-known-sites", knownSites: knownTruth.size },
     edges,
     validEdgeLoss,
     falseEdgeGain,

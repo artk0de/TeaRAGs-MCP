@@ -50,10 +50,49 @@ export async function captureRustCodegraphArtifact(
   corpus: ReturnType<typeof selectRustCorpus>,
   engine: { commit: string; dirty: boolean },
   runner?: RustTallyRunner,
+  seams: {
+    readPin?: () => { corpus: { commit: string; dirty: boolean }; engine: { commit: string; dirty: boolean } };
+  } = {},
 ) {
+  const readPin =
+    seams.readPin ??
+    (runner
+      ? undefined
+      : () => ({
+          corpus: {
+            commit: git(corpus.root, ["rev-parse", "HEAD"]),
+            dirty: git(corpus.root, ["status", "--porcelain"]) !== "",
+          },
+          engine: {
+            commit: git(fileURLToPath(new URL("..", import.meta.url)), ["rev-parse", "HEAD"]),
+            dirty: git(fileURLToPath(new URL("..", import.meta.url)), ["status", "--porcelain"]) !== "",
+          },
+        }));
+  const checkPin = () => {
+    const pin = readPin?.();
+    if (
+      pin &&
+      (pin.corpus.commit !== corpus.commit ||
+        pin.corpus.dirty ||
+        pin.engine.commit !== engine.commit ||
+        pin.engine.dirty ||
+        engine.dirty)
+    ) {
+      throw new Error("capture pin changed or tree not clean");
+    }
+  };
+  checkPin();
+  const options = structuredClone(corpus.options);
+  const resolverEnv = Object.fromEntries(
+    Object.entries(process.env)
+      .filter(([key, value]) => /^(CODEGRAPH_|RUST_|CARGO_)/.test(key) && value !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
   // Lazy import keeps compare and manifest selection independent of grammars.
   const tally = runner ?? (await import("./codegraph-chain-tally.js")).run;
-  const result = await tally(corpus.root, "rust", null, 0, true, true, corpus.options);
+  const result = await tally(corpus.root, "rust", null, Infinity, true, true, options);
+  checkPin();
+  if (result.files === 0 || result.rows.length === 0) throw new Error("empty capture: no files or sites");
   if (
     !result.timeOnly ||
     result.edgeDump === undefined ||
@@ -71,7 +110,7 @@ export async function captureRustCodegraphArtifact(
   const processors = cpus();
   return rustCodegraphArtifactSchema.parse({
     schemaVersion: 1,
-    corpus: { alias: corpus.alias, commit: corpus.commit, config: corpus.config },
+    corpus: { alias: corpus.alias, commit: corpus.commit, config: corpus.config, options },
     engine,
     workload: {
       files: result.files,
@@ -88,6 +127,13 @@ export async function captureRustCodegraphArtifact(
       cpuModel: processors[0]?.model ?? "unknown",
       cpuCount: Math.max(processors.length, 1),
       nodeOptions: process.env.NODE_OPTIONS ?? "",
+      resolverEnv,
+      // Tally contains synchronous passes: a timer here cannot observe contention during them.
+      loadMonitoring: {
+        status: "insufficient",
+        samples: 1,
+        maxLoadPerCpu: loadavg()[0] / Math.max(processors.length, 1),
+      },
       loadPerCpu: loadavg()[0] / Math.max(processors.length, 1),
     },
     identityScheme: "tally-line-callText-v1",
@@ -119,9 +165,15 @@ function optionalFlag(args: string[], name: string): string | undefined {
 export async function rustCodegraphRegressionMain(args: string[]): Promise<number> {
   const [mode, ...flags] = args;
   const allowed =
-    mode === "capture" ? ["--corpus", "--root", "--out", "--oracle"] : ["--before", "--after", "--out", "--policy"];
+    mode === "capture"
+      ? ["--corpus", "--root", "--out", "--oracle"]
+      : ["--before", "--after", "--out", "--policy", "--report-only"];
   if (mode !== "capture" && mode !== "compare") throw new Error("expected capture or compare");
-  for (let i = 0; i < flags.length; i += 2) {
+  for (let i = 0; i < flags.length; i += flags[i] === "--report-only" ? 1 : 2) {
+    if (flags[i] === "--report-only" && mode === "compare") {
+      if (flags.indexOf(flags[i]) !== i) throw new Error(`duplicate option ${flags[i]}`);
+      continue;
+    }
     if (!allowed.includes(flags[i]) || !flags[i + 1] || flags[i + 1].startsWith("--")) {
       throw new Error(`invalid option ${flags[i]}`);
     }
@@ -130,11 +182,18 @@ export async function rustCodegraphRegressionMain(args: string[]): Promise<numbe
   const out = flag(flags, "--out");
   if (mode === "compare") {
     const policy = optionalFlag(flags, "--policy");
+    const reportOnly = flags.includes("--report-only");
+    if ((!policy && !reportOnly) || (policy && reportOnly)) {
+      throw new Error("require --policy or explicit --report-only, not both");
+    }
     const result = compareRustCodegraphArtifacts(
       JSON.parse(readFileSync(flag(flags, "--before"), "utf8")),
       JSON.parse(readFileSync(flag(flags, "--after"), "utf8")),
       policy ? JSON.parse(readFileSync(policy, "utf8")) : {},
     );
+    if (policy && !result.gate.enforced) {
+      throw new Error("policy must configure at least one enforcing threshold; use --report-only for reports");
+    }
     writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`);
     return result.exitCode;
   }
