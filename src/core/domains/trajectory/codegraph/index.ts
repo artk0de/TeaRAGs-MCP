@@ -71,6 +71,8 @@ export interface CodegraphDeps {
    * `DEFAULT_AMBIGUOUS_RESOLVE_MODE` ("strict") when omitted (tests).
    */
   ambiguousResolveMode?: AmbiguousResolveMode;
+  /** `CODEGRAPH_RESIDUAL_MENU_LIMIT`, spread into the symbols provider deps. */
+  residualMenuLimit?: number;
   /**
    * Worker-pool descriptor built by the bootstrap composition root (which
    * alone knows the absolute compiled-JS worker module path + daemon socket).
