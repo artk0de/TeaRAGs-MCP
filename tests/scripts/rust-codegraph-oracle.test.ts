@@ -18,6 +18,7 @@ const site = (start = 2): RustOracleSourceSite => ({
   expressionRange: range(3, start, start + 8),
   tokenRange: range(3, start, start + 3),
   provenance: "source",
+  cfgStatus: "unconditional",
   dispatch: "concrete",
 });
 const symbol = (symbolId = "helper", start = 0): RustOracleSymbol => ({
@@ -26,6 +27,7 @@ const symbol = (symbolId = "helper", start = 0): RustOracleSymbol => ({
   range: range(10, start, start + 20),
   selectionRange: range(10, start + 3, start + 9),
   provenance: "source",
+  cfgStatus: "unconditional",
   declarationOnly: false,
   traitDeclaration: false,
 });
@@ -61,11 +63,106 @@ describe("normalizeRustOracleEvidence", () => {
     const result = normalizeRustOracleEvidence(input());
     expect(result.provenance).toEqual(input().provenance);
     expect(result.sites[0]).toMatchObject({
+      site: { cfgStatus: "unconditional" },
       kind: "inProject",
       complete: true,
       reasons: [],
-      targets: [{ symbolId: "helper", relPath: "src/helper.rs" }],
+      targets: [{ symbolId: "helper", relPath: "src/helper.rs", cfgStatus: "unconditional" }],
     });
+  });
+
+  it.each(["unknown", "inactive"] as const)("withholds %s source cfg even with a complete definition", (cfgStatus) => {
+    expect(first(input([observation({ site: { ...site(), cfgStatus } })]))).toMatchObject({
+      site: { cfgStatus },
+      kind: "unknown",
+      complete: false,
+      reasons: [cfgStatus === "unknown" ? "cfgUnknown" : "inactiveCfg"],
+      targets: [{ symbolId: "helper", cfgStatus: "unconditional" }],
+    });
+  });
+
+  it.each(["unknown", "inactive"] as const)("withholds %s cfg on a matched target", (cfgStatus) => {
+    const target = { ...symbol(), cfgStatus };
+    expect(first(input([observation()], [target]))).toMatchObject({
+      site: { cfgStatus: "unconditional" },
+      kind: "unknown",
+      complete: false,
+      reasons: [cfgStatus === "unknown" ? "cfgUnknown" : "inactiveCfg"],
+      targets: [{ symbolId: "helper", cfgStatus }],
+    });
+  });
+
+  it.each(["unconditional", "active"] as const)("accepts proven %s cfg on both ends", (cfgStatus) => {
+    expect(first(input([observation({ site: { ...site(), cfgStatus } })], [{ ...symbol(), cfgStatus }]))).toMatchObject(
+      {
+        site: { cfgStatus },
+        kind: "inProject",
+        complete: true,
+        reasons: [],
+        targets: [{ symbolId: "helper", cfgStatus }],
+      },
+    );
+  });
+
+  it("does not let an unknown cfg symbol taint an unconditional sibling in the same file", () => {
+    const conditional = { ...symbol("conditional", 30), cfgStatus: "unknown" as const };
+    expect(first(input([observation()], [symbol(), conditional]))).toMatchObject({
+      kind: "inProject",
+      complete: true,
+      reasons: [],
+      targets: [{ symbolId: "helper", cfgStatus: "unconditional" }],
+    });
+  });
+
+  it("keeps a proven inactive sibling local, even when inventory marks its provenance inactiveCfg", () => {
+    const inactive = { ...symbol("inactive", 30), cfgStatus: "inactive" as const, provenance: "inactiveCfg" as const };
+    expect(first(input([observation()], [inactive, symbol()]))).toMatchObject({
+      kind: "inProject",
+      complete: true,
+      reasons: [],
+      targets: [{ symbolId: "helper", cfgStatus: "unconditional" }],
+    });
+    expect(
+      first(
+        input(
+          [
+            observation({
+              response: { kind: "success", value: { uri: inactive.uri, range: inactive.selectionRange } },
+            }),
+          ],
+          [symbol(), inactive],
+        ),
+      ),
+    ).toMatchObject({ kind: "unknown", complete: false, reasons: ["inactiveCfg"] });
+  });
+
+  it("preserves cfg status after deduplicating matching inventory symbols", () => {
+    const conditional = { ...symbol(), cfgStatus: "unknown" as const };
+    expect(first(input([observation()], [conditional, conditional]))).toMatchObject({
+      kind: "unknown",
+      reasons: ["cfgUnknown"],
+      targets: [{ symbolId: "helper", cfgStatus: "unknown" }],
+    });
+  });
+
+  it("rejects contradictory cfg status for a duplicate inventory symbol", () => {
+    expect(() => first(input([observation()], [symbol(), { ...symbol(), cfgStatus: "unknown" }]))).toThrow(
+      /contradictory symbol/,
+    );
+  });
+
+  it.each(["source", "target"] as const)("fails closed on missing %s cfg status", (where) => {
+    const value = input();
+    if (where === "source") delete (value.observations[0].site as Partial<RustOracleSourceSite>).cfgStatus;
+    else delete (value.symbols[0] as Partial<RustOracleSymbol>).cfgStatus;
+    expect(() => normalizeRustOracleEvidence(value)).toThrow(/cfg status|classification|inventory/);
+  });
+
+  it.each(["source", "target"] as const)("fails closed on invalid %s cfg status", (where) => {
+    const value = input();
+    if (where === "source") (value.observations[0].site as { cfgStatus: string }).cfgStatus = "enabled";
+    else (value.symbols[0] as { cfgStatus: string }).cfgStatus = "enabled";
+    expect(() => normalizeRustOracleEvidence(value)).toThrow(/cfg status|classification|inventory/);
   });
 
   it("keeps same-line sites separate in coordinate order", () => {

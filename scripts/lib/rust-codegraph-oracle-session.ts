@@ -2,7 +2,7 @@ import { accessSync, constants, realpathSync } from "node:fs";
 import { isAbsolute, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { LspClient } from "../py-oracle/lsp_oracle.js";
+import { LspClient, LspRequestTimeoutError } from "../py-oracle/lsp_oracle.js";
 import type { RustInventorySite } from "./rust-codegraph-inventory.js";
 import type { RustOracleObservation, RustOracleSourceSite } from "./rust-codegraph-oracle.js";
 
@@ -115,6 +115,7 @@ export async function collectRustOracleObservations(
         expressionRange: site.expressionRange,
         tokenRange: site.tokenRange,
         provenance: site.provenance,
+        cfgStatus: site.cfg.status,
         dispatch: site.dispatch,
       },
     });
@@ -138,6 +139,7 @@ export async function collectRustOracleObservations(
         processId: process.pid,
         rootUri,
         workspaceFolders: [{ uri: rootUri, name: root.split(sep).at(-1) ?? "corpus" }],
+        initializationOptions: settings["rust-analyzer"],
         capabilities: {
           general: { positionEncodings: ["utf-16"] },
           workspace: { configuration: true, workspaceFolders: true, didChangeConfiguration: {} },
@@ -218,7 +220,14 @@ export async function collectRustOracleObservations(
           } catch (failure) {
             result.observations.push({
               site: entry.source,
-              response: { kind: failure instanceof RustOracleRequestFailure ? failure.kind : "error" },
+              response: {
+                kind:
+                  failure instanceof LspRequestTimeoutError
+                    ? "timeout"
+                    : failure instanceof RustOracleRequestFailure
+                      ? failure.kind
+                      : "error",
+              },
               complete: false,
             });
           }

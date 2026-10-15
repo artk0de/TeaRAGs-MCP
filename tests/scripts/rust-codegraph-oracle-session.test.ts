@@ -11,6 +11,7 @@ import {
   type RustOracleSessionOptions,
 } from "../../scripts/lib/rust-codegraph-oracle-session.js";
 import type { RustOracleRange } from "../../scripts/lib/rust-codegraph-oracle.js";
+import { LspRequestTimeoutError } from "../../scripts/py-oracle/lsp_oracle.js";
 
 const corpusRoot = process.cwd();
 const relPath = "src/lib.rs";
@@ -93,6 +94,8 @@ describe("collectRustOracleObservations", () => {
         references: { excludeTests: false },
       },
     });
+    expect(init.initializationOptions).toEqual(result.settings["rust-analyzer"]);
+    expect(init.initializationOptions).not.toHaveProperty("rust-analyzer");
     expect(result.limitations).toEqual(
       expect.arrayContaining([
         expect.stringContaining("buildScripts"),
@@ -190,6 +193,18 @@ describe("collectRustOracleObservations", () => {
     expect(result.observations.map(({ response }) => response)).toEqual([{ kind: "timeout" }, { kind: "error" }]);
     expect(methods(calls).slice(-3)).toEqual(["textDocument/didClose", "shutdown", "exit"]);
     expect(rpc.kill).toHaveBeenCalledOnce();
+  });
+
+  it("maps the shared LSP transport timeout to timeout evidence, not a successful null", async () => {
+    const { rpc } = fakeRpc((method) => {
+      if (method === "initialize") return { capabilities: { definitionProvider: true } };
+      if (method === "textDocument/definition") {
+        throw new LspRequestTimeoutError("LSP request timed out");
+      }
+      return null;
+    });
+    const result = await collectRustOracleObservations(options(rpc));
+    expect(result.observations).toMatchObject([{ response: { kind: "timeout" }, complete: false }]);
   });
 
   it("keeps an unreadable source explicitly unknown without opening a document", async () => {

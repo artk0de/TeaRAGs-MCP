@@ -7,11 +7,13 @@ export interface RustOracleRange {
   end: { line: number; character: number };
 }
 export type RustOracleSourceProvenance = "source" | "generated" | "inactiveCfg";
+export type RustOracleCfgStatus = "unconditional" | "unknown" | "active" | "inactive";
 export interface RustOracleSourceSite {
   relPath: string;
   expressionRange: RustOracleRange;
   tokenRange: RustOracleRange;
   provenance: RustOracleSourceProvenance;
+  cfgStatus: RustOracleCfgStatus;
   dispatch: "concrete" | "trait";
 }
 export interface RustOracleSymbol {
@@ -20,6 +22,7 @@ export interface RustOracleSymbol {
   range: RustOracleRange;
   selectionRange: RustOracleRange;
   provenance: RustOracleSourceProvenance;
+  cfgStatus: RustOracleCfgStatus;
   declarationOnly: boolean;
   traitDeclaration: boolean;
 }
@@ -48,6 +51,7 @@ export interface RustOracleTarget {
   selectionRange: RustOracleRange;
   symbolId: string | null;
   provenance: RustOracleSourceProvenance | null;
+  cfgStatus: RustOracleCfgStatus | null;
   declarationOnly: boolean | null;
   traitDeclaration: boolean | null;
 }
@@ -114,6 +118,7 @@ export function normalizeRustOracleEvidence(input: RustOracleInput): RustOracleE
     }
     if (
       !validProvenance(site.provenance) ||
+      !validCfgStatus(site.cfgStatus) ||
       !["concrete", "trait"].includes(site.dispatch) ||
       typeof observation.complete !== "boolean"
     ) {
@@ -156,6 +161,7 @@ function prepareInventory(symbols: RustOracleSymbol[]): RustOracleInventorySymbo
       !validRange(symbol.selectionRange) ||
       !containsRange(symbol.range, symbol.selectionRange) ||
       !validProvenance(symbol.provenance) ||
+      !validCfgStatus(symbol.cfgStatus) ||
       typeof symbol.declarationOnly !== "boolean" ||
       typeof symbol.traitDeclaration !== "boolean"
     ) {
@@ -163,15 +169,24 @@ function prepareInventory(symbols: RustOracleSymbol[]): RustOracleInventorySymbo
     }
     const knownProvenance = uriProvenance.get(path);
     if (knownProvenance && knownProvenance !== symbol.provenance) {
-      throw new Error(`contradictory symbol URI provenance: ${path}`);
+      // Inactive cfg is symbol-scoped, not a property of every declaration
+      // in the URI. Generated source remains a file-level provenance claim.
+      const differsOnlyByInactiveCfg =
+        (knownProvenance === "source" && symbol.provenance === "inactiveCfg") ||
+        (knownProvenance === "inactiveCfg" && symbol.provenance === "source");
+      if (!differsOnlyByInactiveCfg) throw new Error(`contradictory symbol URI provenance: ${path}`);
     }
-    uriProvenance.set(path, symbol.provenance);
+    uriProvenance.set(
+      path,
+      knownProvenance === "source" || symbol.provenance === "source" ? "source" : symbol.provenance,
+    );
     const normalized = {
       uri: pathToFileURL(path).href,
       symbolId: symbol.symbolId,
       range: copyRange(symbol.range),
       selectionRange: copyRange(symbol.selectionRange),
       provenance: symbol.provenance,
+      cfgStatus: symbol.cfgStatus,
       declarationOnly: symbol.declarationOnly,
       traitDeclaration: symbol.traitDeclaration,
       path,
@@ -196,6 +211,8 @@ function classifyObservation(
   const targets = new Map<string, RustOracleTarget>();
   const { site, response } = observation;
   if (site.provenance !== "source") reasons.add(site.provenance);
+  if (site.cfgStatus === "unknown") reasons.add("cfgUnknown");
+  if (site.cfgStatus === "inactive") reasons.add("inactiveCfg");
   if (site.dispatch === "trait") reasons.add("traitUncertainty");
   if (!observation.complete) reasons.add("incompleteDefinitions");
   if (response.kind !== "success") {
@@ -217,13 +234,18 @@ function classifyObservation(
           (containsRange(symbol.selectionRange, location.selectionRange) ||
             equalRange(symbol.range, location.selectionRange)),
       );
-      const fileProvenance = inventory.find((entry) => entry.path === location.path)?.provenance;
+      const sameFile = inventory.filter((entry) => entry.path === location.path);
+      const fileProvenance = sameFile.some((entry) => entry.provenance === "source")
+        ? "source"
+        : sameFile[0]?.provenance;
       if (fileProvenance && fileProvenance !== "source") reasons.add(fileProvenance);
       const inProject = roots.some((root) => containsPath(root, location.path));
       if (candidates.length > 1) reasons.add("ambiguousTarget");
       const symbol = candidates.length === 1 ? candidates[0] : undefined;
       if (inProject && !candidates.length) reasons.add("unmappedTarget");
       if (symbol?.provenance && symbol.provenance !== "source") reasons.add(symbol.provenance);
+      if (symbol?.cfgStatus === "unknown") reasons.add("cfgUnknown");
+      if (symbol?.cfgStatus === "inactive") reasons.add("inactiveCfg");
       if (symbol?.declarationOnly) reasons.add("declarationOnly");
       if (symbol?.traitDeclaration) reasons.add("traitUncertainty");
       const target: RustOracleTarget = {
@@ -234,6 +256,7 @@ function classifyObservation(
         selectionRange: symbol?.selectionRange ?? location.selectionRange,
         symbolId: symbol?.symbolId ?? null,
         provenance: symbol?.provenance ?? fileProvenance ?? null,
+        cfgStatus: symbol?.cfgStatus ?? null,
         declarationOnly: symbol?.declarationOnly ?? null,
         traitDeclaration: symbol?.traitDeclaration ?? null,
       };
@@ -260,6 +283,7 @@ function classifyObservation(
       expressionRange: copyRange(site.expressionRange),
       tokenRange: copyRange(site.tokenRange),
       provenance: site.provenance,
+      cfgStatus: site.cfgStatus,
       dispatch: site.dispatch,
     },
     kind: complete ? (origins.has("inProject") ? "inProject" : "external") : "unknown",
@@ -334,6 +358,10 @@ function containsPath(root: string, path: string): boolean {
 
 function validProvenance(value: unknown): value is RustOracleSourceProvenance {
   return value === "source" || value === "generated" || value === "inactiveCfg";
+}
+
+function validCfgStatus(value: unknown): value is RustOracleCfgStatus {
+  return value === "unconditional" || value === "unknown" || value === "active" || value === "inactive";
 }
 
 function validRange(value: unknown): value is RustOracleRange {
