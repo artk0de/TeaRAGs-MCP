@@ -90,6 +90,7 @@ interface PurgerHarnessOverrides {
   daemon?: { pid: () => number | undefined; refs: () => number };
   statsInvalidateThrows?: string;
   indexingLockStoreFactory?: (baseDir: string, logicalName: string) => { removeIfStale: () => Promise<unknown> };
+  residualVerdictFile?: (logicalName: string) => string;
 }
 
 function buildPurger(over: PurgerHarnessOverrides = {}) {
@@ -104,6 +105,7 @@ function buildPurger(over: PurgerHarnessOverrides = {}) {
     snapshotStoreFactory: stores.snapshotStoreFactory,
     quarantineStoreFactory: stores.quarantineStoreFactory,
     indexingLockStoreFactory: (over.indexingLockStoreFactory ?? stores.indexingLockStoreFactory) as never,
+    ...(over.residualVerdictFile ? { residualVerdictFile: over.residualVerdictFile } : {}),
   });
   const purger = new CollectionFootprintPurger({
     qdrant: qdrant as never,
@@ -116,6 +118,26 @@ function buildPurger(over: PurgerHarnessOverrides = {}) {
 }
 
 describe("CollectionFootprintPurger", () => {
+  describe("residual verdicts", () => {
+    it("purging the collection deletes its verdict store and WAL", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "purge-residual-"));
+      const fileFor = (logical: string) => join(dir, `${logical}.duckdb`);
+      writeFileSync(fileFor("code_a"), "db");
+      writeFileSync(`${fileFor("code_a")}.wal`, "wal");
+      writeFileSync(fileFor("code_b"), "db");
+      const qdrant = fakeQdrant(["code_a_v1", "code_a_v2"], [{ aliasName: "code_a", collectionName: "code_a_v2" }]);
+      const { purger } = buildPurger({ qdrant, residualVerdictFile: fileFor });
+
+      const report = await purger.purge({ logicalName: "code_a" });
+
+      expect(report.failures).toEqual([]);
+      expect(existsSync(fileFor("code_a"))).toBe(false);
+      expect(existsSync(`${fileFor("code_a")}.wal`)).toBe(false);
+      expect(existsSync(fileFor("code_b"))).toBe(true);
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
+
   describe("generation enumeration", () => {
     it("drops every _vN Qdrant generation of the collection, not just the alias target", async () => {
       const qdrant = fakeQdrant(

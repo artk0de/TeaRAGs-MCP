@@ -15,7 +15,7 @@ import {
   sweepOrphanedDaemonKeyDirs,
   type CodegraphDaemonPaths,
 } from "../core/adapters/duckdb/daemon/index.js";
-import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
+import { GraphDbClientPool, ResidualVerdictStore } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import type { OllamaRecoveryWaitEvent } from "../core/adapters/embeddings/ollama.js";
 import {
@@ -2054,6 +2054,10 @@ function createIngestSection(deps: {
   // Reuses the live codegraph pool when enabled; falls back to a throwaway pool
   // (codegraph artifact is a no-op when codegraphEnabled is false) so the
   // footprint factory always has a pool to delegate to.
+  // The residual pass opens its verdict store under the codegraph root, so its removal resolves the same root.
+  const residualVerdictRootDir = zodConfig.codegraph
+    ? resolveCodegraphRootDir(zodConfig.codegraph, config.paths.appData)
+    : config.paths.appData;
   const footprintFactory = new CollectionFootprintFactory({
     qdrant: infra.qdrant,
     pool:
@@ -2072,6 +2076,7 @@ function createIngestSection(deps: {
     indexingLockStoreFactory: (baseDir, logicalName) => ({
       removeIfStale: async () => new CollectionIndexingLock({ lockDir: baseDir }).removeIfStale(logicalName),
     }),
+    residualVerdictFile: (logicalName) => ResidualVerdictStore.pathFor(residualVerdictRootDir, logicalName),
   });
 
   const ingestSlice: IngestSliceDeps = {

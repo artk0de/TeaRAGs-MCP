@@ -10,6 +10,7 @@ import { CodegraphArtifact } from "./codegraph-artifact.js";
 import { IndexingLockArtifact } from "./indexing-lock-artifact.js";
 import { QdrantArtifact, type QdrantArtifactSurface } from "./qdrant-artifact.js";
 import { QuarantineArtifact } from "./quarantine-artifact.js";
+import { ResidualVerdictsArtifact } from "./residual-verdicts-artifact.js";
 import { SnapshotArtifact } from "./snapshot-artifact.js";
 import { StatsArtifact } from "./stats-artifact.js";
 
@@ -25,6 +26,8 @@ export interface FootprintDeps {
   quarantineStoreFactory: QuarantineArtifactStoreFactory;
   /** Builds the per-collection indexing-lock store — concrete is wired by the composition root (DIP, keeps footprint out of ingest). */
   indexingLockStoreFactory: IndexingLockArtifactStoreFactory;
+  /** Verdict-store file of a logical collection; absent → the artifact is not registered. */
+  residualVerdictFile?: (logicalName: string) => string;
 }
 
 export class CollectionFootprintFactory {
@@ -42,6 +45,7 @@ export class CollectionFootprintFactory {
       snapshotStoreFactory,
       quarantineStoreFactory,
       indexingLockStoreFactory,
+      residualVerdictFile,
     } = this.deps;
     // Order = clone order; rollback / remove walk it in reverse.
     const artifacts: CollectionArtifact[] = [
@@ -51,6 +55,7 @@ export class CollectionFootprintFactory {
       new StatsArtifact(statsCache),
       new QuarantineArtifact(snapshotBaseDir, quarantineStoreFactory),
       new IndexingLockArtifact(snapshotBaseDir, indexingLockStoreFactory),
+      ...(residualVerdictFile === undefined ? [] : [new ResidualVerdictsArtifact(residualVerdictFile)]),
     ];
     return { context: { source, target }, artifacts };
   }
