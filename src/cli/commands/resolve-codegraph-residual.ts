@@ -47,6 +47,7 @@ export function formatResidualReport(report: ResidualReport): string {
     `  answered:         ${report.answered}\n` +
     `  too long:         ${report.tooLong}\n` +
     `  failed groups:    ${report.failedGroups}\n` +
+    `  aborted groups:   ${report.abortedGroups}\n` +
     `  below threshold:  ${report.belowThreshold}\n` +
     `  edges applied:    ${report.edgesApplied}\n` +
     `  time (ms):        read ${report.durations.readMs}, ask ${report.durations.askMs}, apply ${report.durations.applyMs}, total ${report.durations.totalMs}\n`

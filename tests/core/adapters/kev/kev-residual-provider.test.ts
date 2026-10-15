@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  KevRequestCancelledError,
   KevResponseError,
   KevStateTooLongError,
+  KevTimeoutError,
   KevUnavailableError,
 } from "../../../../src/core/adapters/kev/errors.js";
 import {
@@ -184,6 +186,61 @@ describe("KevResidualProvider", () => {
     const provider = new KevResidualProvider({ urls: ["http://a:1", "http://b:1"], threshold: 0.7 }, { fetch });
 
     await expect(provider.resolveGroup(GROUP)).rejects.toBeInstanceOf(KevUnavailableError);
+  });
+
+  /** A Kev that never answers: the request settles only when its signal aborts. */
+  const stalledFetch = (): { fetch: typeof fetch; requests: string[] } => {
+    const requests: string[] = [];
+    const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        signal?.addEventListener(
+          "abort",
+          () => {
+            reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
+          },
+          { once: true },
+        );
+      });
+    }) as typeof fetch;
+    return { fetch: fetchFn, requests };
+  };
+
+  it("throws KevTimeoutError, not KevUnavailableError, when every URL lets the request time out", async () => {
+    const { fetch, requests } = stalledFetch();
+    const provider = new KevResidualProvider(
+      { urls: ["http://a:1", "http://b:1"], threshold: 0.7, resolveTimeoutMs: 20 },
+      { fetch },
+    );
+
+    const error = await provider.resolveGroup(GROUP).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(KevTimeoutError);
+    expect(error).toMatchObject({ code: "INFRA_KEV_TIMEOUT", message: "Kev did not answer within 0.02s" });
+    expect((error as KevTimeoutError).hint).not.toMatch(/Start the Kev server/);
+    expect((error as KevTimeoutError).cause).toBeInstanceOf(Error);
+    expect(requests).toHaveLength(2);
+  });
+
+  it("stops at once and tries no other URL when the caller's signal aborts", async () => {
+    const { fetch, requests } = stalledFetch();
+    const provider = new KevResidualProvider({ urls: ["http://a:1", "http://b:1"], threshold: 0.7 }, { fetch });
+    const controller = new AbortController();
+
+    const pending = provider.resolveGroup(GROUP, controller.signal);
+    controller.abort();
+
+    await expect(pending).rejects.toBeInstanceOf(KevRequestCancelledError);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("sends nothing when the caller's signal is already aborted", async () => {
+    const { fetch, requests } = stalledFetch();
+    const provider = new KevResidualProvider({ urls: ["http://a:1"], threshold: 0.7 }, { fetch });
+
+    await expect(provider.resolveGroup(GROUP, AbortSignal.abort())).rejects.toBeInstanceOf(KevRequestCancelledError);
+    expect(requests).toEqual([]);
   });
 
   it("version() is the run of the served model; health() is ok when /v1/models answers", async () => {

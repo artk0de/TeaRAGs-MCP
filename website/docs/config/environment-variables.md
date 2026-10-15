@@ -137,7 +137,7 @@ project and replayed on later runs. See
 | `CODEGRAPH_TS_TYPECHECKER`          | TypeScript type checker for call resolution; `0` / `false` turns it off (see below) | on         |
 | `CODEGRAPH_RESIDUAL_KEV_URL`        | Kev base URL for residual call resolution; comma-separate several hosts (see [Kev setup](kev-setup)) | _(unset)_  |
 | `CODEGRAPH_RESIDUAL_KEV_THRESHOLD`  | Minimum Kev confidence for a pick to become an edge                          | `0.7`      |
-| `CODEGRAPH_RESIDUAL_CONCURRENCY`    | Residual requests in flight (one per enclosing method)                       | `96`       |
+| `CODEGRAPH_RESIDUAL_CONCURRENCY`    | Residual requests in flight (one per enclosing method)                       | `16`       |
 | `CODEGRAPH_RESIDUAL_MENU_LIMIT`     | Call sites with more candidates than this are not asked                      | `40`       |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | Cached verdicts unseen this many days are dropped                    | `180`      |
 

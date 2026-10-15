@@ -11,7 +11,13 @@ import type {
   ResidualQuestion,
   ResidualQuestionGroup,
 } from "../../contracts/types/codegraph-residual.js";
-import { KevResponseError, KevStateTooLongError, KevUnavailableError } from "./errors.js";
+import {
+  KevRequestCancelledError,
+  KevResponseError,
+  KevStateTooLongError,
+  KevTimeoutError,
+  KevUnavailableError,
+} from "./errors.js";
 
 const MODEL_NAME = "kev-latest";
 const RESOLVE_TIMEOUT_MS = 120_000;
@@ -26,6 +32,8 @@ export interface KevChoiceQuestion {
 export interface KevResidualProviderOptions {
   urls: readonly string[];
   threshold: number;
+  /** Per-request budget of `POST /v1/systemone`; default 120 s. */
+  resolveTimeoutMs?: number;
 }
 
 /** `fetch` is the seam a broker-session wrapper or a test replaces. */
@@ -63,11 +71,13 @@ export class KevResidualProvider implements ResidualModelProvider {
   readonly threshold: number;
   private readonly urls: readonly string[];
   private readonly fetchFn: typeof fetch;
+  private readonly resolveTimeoutMs: number;
   private nextUrl = 0;
 
   constructor(options: KevResidualProviderOptions, deps: KevResidualProviderDeps = {}) {
     this.urls = options.urls.map((url) => url.replace(/\/+$/, ""));
     this.threshold = options.threshold;
+    this.resolveTimeoutMs = options.resolveTimeoutMs ?? RESOLVE_TIMEOUT_MS;
     this.fetchFn = deps.fetch ?? (async (input, init) => fetch(input, init));
   }
 
@@ -96,7 +106,7 @@ export class KevResidualProvider implements ResidualModelProvider {
     return { ok: false, reason: failures.join("; ") };
   }
 
-  async resolveGroup(group: ResidualQuestionGroup): Promise<ResidualAnswer[]> {
+  async resolveGroup(group: ResidualQuestionGroup, signal?: AbortSignal): Promise<ResidualAnswer[]> {
     const menus = group.questions.map((question) => classMenu(question.candidates));
     const questions = group.questions.map((question, i) =>
       kevQuestion(question.receiverText, question.member, [...menus[i].keys()]),
@@ -106,7 +116,7 @@ export class KevResidualProvider implements ResidualModelProvider {
       state: `# file: ${group.sourceRelPath}\n${group.methodSource}`,
       questions: Object.fromEntries(group.questions.map((question, i) => [question.siteKey, questions[i]])),
     });
-    const { url, response } = await this.postAcrossUrls(body);
+    const { url, response } = await this.postAcrossUrls(body, signal);
     return group.questions.map((question, i) => toAnswer(url, question, menus[i], questions[i], response));
   }
 
@@ -123,25 +133,37 @@ export class KevResidualProvider implements ResidualModelProvider {
     return modelRun;
   }
 
-  /** Round-robin start, then every other URL once; 4xx (422 = state too long) and malformed bodies are not retried elsewhere. */
-  private async postAcrossUrls(body: string): Promise<{ url: string; response: SystemOneResponse }> {
+  /**
+   * Round-robin start, then every other URL once; 4xx (422 = state too long) and malformed bodies are not retried
+   * elsewhere. The caller's `signal` cancels the whole ask; only a request every URL let time out is a timeout.
+   */
+  private async postAcrossUrls(
+    body: string,
+    signal: AbortSignal | undefined,
+  ): Promise<{ url: string; response: SystemOneResponse }> {
     const start = this.nextUrl;
     this.nextUrl = (this.nextUrl + 1) % this.urls.length;
     let lastError: Error | undefined;
+    let everyAttemptTimedOut = true;
     for (let attempt = 0; attempt < this.urls.length; attempt++) {
       const url = this.urls[(start + attempt) % this.urls.length];
+      if (signal?.aborted) throw new KevRequestCancelledError(url, asError(signal.reason));
+      const timeout = AbortSignal.timeout(this.resolveTimeoutMs);
       let response: Response;
       try {
         response = await this.fetchFn(`${url}/v1/systemone`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body,
-          signal: AbortSignal.timeout(RESOLVE_TIMEOUT_MS),
+          signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         });
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
+        if (signal?.aborted) throw new KevRequestCancelledError(url, asError(error));
+        lastError = asError(error);
+        everyAttemptTimedOut &&= timeout.aborted;
         continue;
       }
+      everyAttemptTimedOut = false;
       if (response.status >= 500) {
         lastError = new KevResponseError(url, `POST /v1/systemone answered HTTP ${response.status}`);
         continue;
@@ -150,6 +172,7 @@ export class KevResidualProvider implements ResidualModelProvider {
       if (!response.ok) throw new KevResponseError(url, `HTTP ${response.status}: ${await response.text()}`);
       return { url, response: (await response.json()) as SystemOneResponse };
     }
+    if (everyAttemptTimedOut) throw new KevTimeoutError(this.urls, this.resolveTimeoutMs, lastError);
     throw new KevUnavailableError(this.urls, lastError);
   }
 }
@@ -189,6 +212,10 @@ function toAnswer(
     probabilities,
     questionPayload: JSON.stringify(payload),
   };
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function errorMessage(error: unknown): string {

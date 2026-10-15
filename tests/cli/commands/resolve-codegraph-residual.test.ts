@@ -19,6 +19,7 @@ const COMPLETED = {
   answered: 38,
   tooLong: 1,
   failedGroups: 1,
+  abortedGroups: 2,
   belowThreshold: 5,
   edgesApplied: 95,
   durations: { readMs: 1, askMs: 2, applyMs: 3, totalMs: 6 },
@@ -45,6 +46,7 @@ describe("formatResidualReport", () => {
     expect(text).toContain("  cache hits:       80\n");
     expect(text).toContain("  edges applied:    95\n");
     expect(text).toContain("  menu overflow:    3\n");
+    expect(text).toContain("  aborted groups:   2\n");
     expect(text).toContain("total 6");
   });
 

@@ -39,14 +39,27 @@ class FakeKev implements ResidualModelProvider {
   readonly id = "kev";
   readonly threshold = 0.7;
   readonly asked: string[] = [];
+  /** Asks settle only when their signal aborts. */
+  stalled = false;
   constructor(
     readonly url: string,
     private readonly run: string,
   ) {}
   version = async (): Promise<string> => this.run;
   health = async (): Promise<{ ok: true }> => ({ ok: true });
-  resolveGroup = async (group: ResidualQuestionGroup): Promise<ResidualAnswer[]> => {
+  resolveGroup = async (group: ResidualQuestionGroup, signal?: AbortSignal): Promise<ResidualAnswer[]> => {
     this.asked.push(`${this.url} ${group.methodSymbolId}`);
+    if (this.stalled) {
+      await new Promise((_resolve, reject) => {
+        signal?.addEventListener(
+          "abort",
+          () => {
+            reject(new Error("aborted"));
+          },
+          { once: true },
+        );
+      });
+    }
     return [{ siteKey: "s1", pick: "Firm#users", p: 0.9, probabilities: {}, questionPayload: "{}" }];
   };
 }
@@ -179,6 +192,31 @@ describe("BrokeredResidualProvider", () => {
 
     await expect(brokered.resolveGroup(GROUP)).rejects.toBeInstanceOf(KevSessionLostError);
     expect(kevs[0].asked).toEqual([]);
+    await lease.release();
+  });
+
+  it("aborts the asks in flight when the caller's signal aborts", async () => {
+    const brokered = provider();
+    const lease = await brokered.acquire();
+    kevs[0].stalled = true;
+    const controller = new AbortController();
+
+    const pending = brokered.resolveGroup(GROUP, controller.signal);
+    controller.abort();
+
+    await expect(pending).rejects.toThrow("aborted");
+    await lease.release();
+  });
+
+  it("aborts the asks in flight with a lost session once a heartbeat answers 404", async () => {
+    const brokered = provider(10);
+    const lease = await brokered.acquire();
+    kevs[0].stalled = true;
+
+    const pending = brokered.resolveGroup(GROUP);
+    broker.onHeartbeat = () => ({ status: 404, body: {} });
+
+    await expect(pending).rejects.toBeInstanceOf(KevSessionLostError);
     await lease.release();
   });
 
