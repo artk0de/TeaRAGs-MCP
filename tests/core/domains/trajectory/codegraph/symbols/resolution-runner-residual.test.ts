@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   FileExtraction,
@@ -133,5 +133,39 @@ describe("CallEdgeResolutionRunner.resolve — residual call sites", () => {
     const edges = runner.resolve(EXTRACTION, TABLE);
 
     expect(edges).not.toHaveProperty("residualCallSites");
+  });
+});
+
+describe("CallEdgeResolutionRunner.resolve — residual exclusions", () => {
+  it("drops a site the language excludes and folds the count into the run stats", () => {
+    const residualExclusion = vi.fn(() => "frameworkMember" as const);
+    const resolver = {
+      resolve: () => null,
+      hasInProjectDefinition: () => true,
+      residualExclusion,
+    };
+    const runState = new CodegraphRunState();
+    const runner = new CallEdgeResolutionRunner(factoryWith(resolver), runState);
+
+    const edges = runner.resolve(EXTRACTION, TABLE);
+
+    expect(edges).not.toHaveProperty("residualCallSites");
+    expect(residualExclusion).toHaveBeenCalledWith(expect.objectContaining({ member: "users" }), expect.anything());
+    expect(runState.stats.residualSitesExcluded).toEqual({ schemaColumn: 0, frameworkMember: 1 });
+  });
+
+  it("keeps the site when the language answers no exclusion", () => {
+    const resolver = {
+      resolve: () => null,
+      hasInProjectDefinition: () => true,
+      residualExclusion: () => null,
+    };
+    const runState = new CodegraphRunState();
+    const runner = new CallEdgeResolutionRunner(factoryWith(resolver), runState);
+
+    const edges = runner.resolve(EXTRACTION, TABLE);
+
+    expect(edges.residualCallSites).toHaveLength(1);
+    expect(runState.stats.residualSitesExcluded).toEqual({ schemaColumn: 0, frameworkMember: 0 });
   });
 });

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   CallRef,
@@ -169,5 +169,40 @@ describe("ResidualSiteCollector", () => {
       column: 0,
       receiverText: "",
     });
+  });
+});
+
+describe("ResidualSiteCollector — exclusions", () => {
+  const table = tableOf([def("Firm#users", "app/models/firm.rb")]);
+
+  it("drops an excluded site and counts it under its rule", () => {
+    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT);
+
+    collector.observe(METHOD, CALL, DYNAMIC_MISS, () => "frameworkMember");
+    collector.observe(METHOD, CALL, DYNAMIC_MISS, () => "schemaColumn");
+    collector.observe(METHOD, CALL, DYNAMIC_MISS, () => "frameworkMember");
+
+    expect(collector.rows()).toEqual([]);
+    expect(collector.excluded()).toEqual({ schemaColumn: 1, frameworkMember: 2 });
+  });
+
+  it("keeps a site the exclusion answers null for", () => {
+    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT);
+
+    collector.observe(METHOD, CALL, DYNAMIC_MISS, () => null);
+
+    expect(collector.rows()).toHaveLength(1);
+    expect(collector.excluded()).toEqual({ schemaColumn: 0, frameworkMember: 0 });
+  });
+
+  it("never asks the exclusion for a site that is not residual or has no menu", () => {
+    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT);
+    const exclude = vi.fn(() => "frameworkMember" as const);
+
+    collector.observe(METHOD, CALL, { receiverKind: "dynamic", outcome: "resolved" }, exclude);
+    collector.observe(METHOD, { ...CALL, member: "nobody" }, DYNAMIC_MISS, exclude);
+
+    expect(exclude).not.toHaveBeenCalled();
+    expect(collector.excluded()).toEqual({ schemaColumn: 0, frameworkMember: 0 });
   });
 });

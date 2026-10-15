@@ -31,6 +31,7 @@ import {
   type CallResolver,
   type DispatchFanoutOutcome,
   type FileExtraction,
+  type ResidualExclusionRule,
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
@@ -163,6 +164,8 @@ export class RubyLanguage implements LanguageProvider {
       // facade, never the resolver behind it (bd tea-rags-mcp-x9qsh).
       hasInProjectDefinition: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.hasInProjectDefinition?.(call, ctx) ?? false,
+      residualExclusion: (call: CallRef, ctx: CallContext): ResidualExclusionRule | null =>
+        callResolver.residualExclusion?.(call, ctx) ?? null,
     };
   }
 }

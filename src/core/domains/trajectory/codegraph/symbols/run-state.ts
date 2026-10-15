@@ -55,6 +55,7 @@ import type {
 import type { FileExtractionAbsorbRole, ProviderRunMetrics } from "../../../../contracts/types/provider.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
 import { MapHierarchyView } from "../hierarchy-view/index.js";
+import { emptyResidualExclusionCounts, type ResidualExclusionCounts } from "../residual/residual-site-builder.js";
 import {
   deriveClassFieldTypesFromParams,
   foldKnownTargetParamTypes,
@@ -148,6 +149,9 @@ export interface RunStats {
   // cg_ambiguous_fanout aggregate instead of m edges. Strict recall keeps them in
   // the denominator; coveredRecall counts them as coverage.
   callsAmbiguousFanout: number;
+  // bd tea-rags-mcp-2m83f.34 — residual sites a language kept out of
+  // cg_residual_call_sites because no menu holds their callee, per rule.
+  residualSitesExcluded: ResidualExclusionCounts;
   // Per-(language, receiver kind) tally (bd tea-rags-mcp-cnqrg, extends j431): the
   // source every aggregate above and every per-kind / per-language summary sums
   // from; persisted per cell to cg_run_stats. Test files never reach it — the
@@ -264,6 +268,7 @@ export function createEmptyRunStats(): RunStats {
     callsNoInProjectDef: 0,
     callsCoreAmbiguous: 0,
     callsAmbiguousFanout: 0,
+    residualSitesExcluded: emptyResidualExclusionCounts(),
     byLanguageKind: new Map(),
     byFile: new Map(),
   };

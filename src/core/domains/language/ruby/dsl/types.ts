@@ -92,8 +92,16 @@ export type RubyDslEmits =
  *     relation — `container(model)` — over the associated model.
  *   - `"scope-relation"`         — `scope`: a relation — `container(self)` — over
  *     the ENCLOSING model (a scope returns an `ActiveRecord::Relation` of it).
+ *   - `"attachment-one"` / `"attachment-many"` — `has_one_attached` /
+ *     `has_many_attached`: the ActiveStorage proxy (`ActiveStorage::Attached::One`
+ *     / `::Many`), an external class, so `doc.file.attach` lands outside the project.
  */
-export type RubyMacroReturnShape = "association-singular" | "association-collection" | "scope-relation";
+export type RubyMacroReturnShape =
+  | "association-singular"
+  | "association-collection"
+  | "scope-relation"
+  | "attachment-one"
+  | "attachment-many";
 
 export interface RubyDslEntry {
   /** Intrinsic category. Drives the chunker's class-body group (`CATEGORY_TO_GROUP`). */

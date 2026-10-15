@@ -7,7 +7,10 @@ export { RubyConstantSymbolResolutionStrategy } from "./ruby-constant.js";
 export { RubyEnqueueDispatchSymbolResolutionStrategy } from "./ruby-enqueue-dispatch.js";
 export { RubySelfDispatchEntrySymbolResolutionStrategy } from "./ruby-self-dispatch-entry.js";
 export { RubyExplicitRequireSymbolResolutionStrategy } from "./ruby-explicit-require.js";
-export { RubyArRelationGuardSymbolResolutionStrategy } from "./ruby-ar-relation-guard.js";
+export {
+  receiverLooksLikeArRelationChain,
+  RubyArRelationGuardSymbolResolutionStrategy,
+} from "./ruby-ar-relation-guard.js";
 export { RubyChainTypeSymbolResolutionStrategy } from "./ruby-chain-type.js";
 export { RubyConventionReceiverSymbolResolutionStrategy } from "./ruby-convention-receiver.js";
 export { RubyReceiverSetDropSymbolResolutionStrategy } from "./ruby-receiver-set-drop.js";

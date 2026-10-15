@@ -26,6 +26,7 @@ import type { GraphEdges } from "./codegraph-graph.js";
 import type { HierarchyView } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, ConstructedLocalLines, LocalBinding } from "./codegraph-local-binding.js";
 import type { SelfDispatchArgTemplate } from "./codegraph-pass1.js";
+import type { ResidualExclusionRule } from "./codegraph-residual.js";
 import type { GlobalSymbolTable, RelPath, SymbolId, SymbolKindRoles } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
 
@@ -219,6 +220,13 @@ export interface CallResolver {
    * the unfiltered gate.
    */
   hasInProjectDefinition?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
+   * Optional: should this residual site stay out of the residual rows, and by
+   * which rule? Asked only for a site the static resolve left residual with a
+   * non-empty menu. Mirrors `LanguageSymbolResolver.residualExclusion`;
+   * resolvers that omit it keep every residual site.
+   */
+  residualExclusion?: (call: CallRef, ctx: CallContext) => ResidualExclusionRule | null;
   /**
    * Optional: a chunk's local bindings as this resolver reads them (bd
    * tea-rags-mcp-m99j1.1.30 regression). A binding the resolver cannot read at
