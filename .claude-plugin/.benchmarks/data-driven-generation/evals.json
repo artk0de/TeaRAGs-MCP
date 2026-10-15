@@ -608,7 +608,7 @@
     {
       "id": "session-reuse-unedited",
       "category": "session-context-reuse",
-      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). Earlier in this conversation the agent ran find_symbol(relativePath: src/core/domains/explore/rerank/reranker.ts) (outline) and find_symbol(symbol: Reranker#rerank) (full body); both answers carried rankingOverlay labels (rerank preset) for the file and the method. Nothing has edited reranker.ts since.",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). Earlier in this conversation the agent ran find_symbol(relativePath: src/core/domains/explore/reranker.ts) (outline) and find_symbol(symbol: Reranker#rerank) (full body); both answers carried rankingOverlay labels (rerank preset) for the file and the method. Nothing has edited reranker.ts since.",
       "prompt": "Добавь в Reranker метод, который возвращает топ-N без overlay.",
       "expected": {
         "mustDo": [
@@ -625,7 +625,7 @@
     {
       "id": "session-reuse-edited",
       "category": "session-context-reuse",
-      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). The agent fetched the outline and body of src/core/domains/explore/rerank/reranker.ts earlier, then edited Reranker#rerank in this conversation (Edit tool). Now a second change in the same file is requested.",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (review_changes architecture section is available). TypeScript (tea-rags). The agent fetched the outline and body of src/core/domains/explore/reranker.ts earlier, then edited Reranker#rerank in this conversation (Edit tool). Now a second change in the same file is requested.",
       "prompt": "Теперь в том же Reranker поправь сортировку при равных score.",
       "expected": {
         "mustDo": [
@@ -1181,28 +1181,44 @@
     {
       "id": "prewrite-sim-new-file-new-component",
       "category": "step6-prewrite-sim",
-      "context": "Prime `## Enrichment` lists codegraph.symbols. TypeScript (tea-rags). Task: add a new production file src/core/domains/explore/overlay/confidence-cache.ts (a new component under explore) that imports src/core/domains/trajectory/git/stats/percentiles.ts and is imported by src/core/domains/explore/rerank/reranker.ts. RED block recorded; no production edit yet.",
+      "context": "Prime `## Enrichment` lists codegraph.symbols. TypeScript (tea-rags). Task: add a new production file src/core/domains/explore/overlay/confidence-cache.ts (a new component under explore) that imports src/core/domains/trajectory/git/stats/utils.ts and is imported by src/core/domains/explore/reranker.ts. RED block recorded; no production edit yet.",
       "prompt": "Тест красный, пиши реализацию.",
       "expected": {
         "mustDo": [
-          "Before writing the file, run ONE get_architecture_report restructure hypothesis: addFile{file, component} + addEdge for each planned import (confidence-cache -> percentiles, reranker -> confidence-cache)",
-          "Introduced violation in the simulated delta → pick another placement / edge per the family's repair file `## Ops recipe`, re-simulate, then write"
+          "Skip the pre-write simulation (a new file and new imports are not a move / merge / split) and write the file",
+          "Run the Step 7 gate before commit; an introduced placement finding is repaired there (one edge or the file's placement)"
         ],
         "mustNotDo": [
-          "Write the file first and rely only on the Step 7 review",
-          "Use only plannedEdges for a change that adds a file"
+          "Call get_architecture_report (restructure addFile/addEdge or plannedEdges) before writing a new file"
         ]
       },
-      "failureMode": "Agent skips prevention and repairs a placement violation after the fact"
+      "failureMode": "Agent spends a pre-write simulation on a new file the Step 7 gate already judges"
+    },
+    {
+      "id": "prewrite-sim-move-files",
+      "category": "step6-prewrite-sim",
+      "context": "Prime `## Enrichment` lists codegraph.symbols. TypeScript (tea-rags). Task: move src/core/domains/explore/label-resolver.ts into src/core/domains/trajectory/composite/ — 3 files import it. RED block recorded; no production edit yet.",
+      "prompt": "Перенеси label-resolver в composite, тест уже красный.",
+      "expected": {
+        "mustDo": [
+          "Before moving, run ONE get_architecture_report restructure hypothesis: move{files, toComponent} (+ addEdge/removeEdge for the retargeted imports)",
+          "Introduced violation in the simulated delta → pick another placement per the family's repair file `## Ops recipe`, re-simulate, then move"
+        ],
+        "mustNotDo": [
+          "Move the files first and rely only on the Step 7 review",
+          "Use only plannedEdges for a file move"
+        ]
+      },
+      "failureMode": "Agent moves files blind and has to move them again after the Step 7 gate"
     },
     {
       "id": "prewrite-sim-in-file-edit",
       "category": "step6-prewrite-sim",
-      "context": "Prime `## Enrichment` lists codegraph.symbols. TypeScript (tea-rags). Task: change the clamp bound inside Reranker#scoreChunk in src/core/domains/explore/rerank/reranker.ts. No new file, no new import. RED block recorded.",
+      "context": "Prime `## Enrichment` lists codegraph.symbols. TypeScript (tea-rags). Task: change the clamp bound inside Reranker#scoreChunk in src/core/domains/explore/reranker.ts. No new file, no new import. RED block recorded.",
       "prompt": "Поправь границу clamp, тест уже красный.",
       "expected": {
         "mustDo": [
-          "Skip the pre-write simulation (no new file, no cross-component edge, no move) and edit directly",
+          "Skip the pre-write simulation (no move / merge / split) and edit directly",
           "Still run the Step 7 gate before commit"
         ],
         "mustNotDo": [
