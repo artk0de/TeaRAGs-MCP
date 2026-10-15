@@ -6,6 +6,7 @@ import type { Argv, CommandModule } from "yargs";
 import type { CodegraphDaemonRestartOutcome } from "../../bootstrap/codegraph-daemon-restart.js";
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import {
+  collectionHoldsCodegraphData,
   CollectionRegistry,
   ProjectRegistryOps,
   QuarantineStore,
@@ -86,6 +87,7 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
   const { qdrant, embeddings } = deps ?? (await defaultDeps());
   const registry = new CollectionRegistry(resolveDataDir(), {
     envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+    codegraphDataProbe: collectionHoldsCodegraphData,
   });
   // The lease predicate's api surface (bd tea-rags-mcp-89k7k.9): the ops class
   // owns the domain edge, so doctor keeps its bare read-only client and still
@@ -263,6 +265,7 @@ export async function runQuarantineDoctor(args: { path: string; json?: boolean }
   const { collectionName } = resolveCollection(
     new CollectionRegistry(resolveDataDir(), {
       envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+      codegraphDataProbe: collectionHoldsCodegraphData,
     }),
     { path: project },
   );

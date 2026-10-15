@@ -128,6 +128,38 @@ describe("runPrime — registry-first codegraph enablement override", () => {
     }
   });
 
+  it("sets CODEGRAPH_ENABLED=false BEFORE parseAppConfig fires when the registry entry was indexed without codegraph", async () => {
+    const realPath = mkdtempSync(join(tmpdir(), "rp-cg-off-"));
+    try {
+      const registry = new CollectionRegistry(dataDir);
+      registry.record({
+        collectionName: "code_off",
+        path: realPath,
+        embeddingModel: "jina",
+        embeddingDimensions: 384,
+        qdrantUrl: "http://qdrant:6333",
+        codegraphEnabled: false,
+        indexedAt: "2026-05-01T00:00:00Z",
+        teaRagsVersion: "1.0.0",
+        chunksCount: 5,
+      });
+      registry.setName("code_off", "off");
+
+      let envAtParseTime: string | undefined;
+      parseAppConfigMock.mockImplementation(() => {
+        envAtParseTime = process.env.CODEGRAPH_ENABLED;
+        return {};
+      });
+      wireApp();
+
+      await runPrime({ registryRuntime: primeRegistryRuntime(), project: "off", createPathCollectionResolver });
+
+      expect(envAtParseTime).toBe("false");
+    } finally {
+      rmSync(realPath, { recursive: true, force: true });
+    }
+  });
+
   it("leaves CODEGRAPH_ENABLED untouched when the registry entry has no codegraphEnabled (legacy entry)", async () => {
     // Pre-fix entries had no codegraphEnabled field. runPrime must NOT force
     // the flag on — it falls back to whatever the current shell exposes.

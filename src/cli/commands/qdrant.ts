@@ -81,6 +81,7 @@ function defaultDeps(): QdrantRecoverDeps {
     // surface (bd tea-rags-mcp-89k7k.22); the addressing types stay public.
     const {
       CollectionRegistry,
+      collectionHoldsCodegraphData,
       OptimizerRecoveryOps: Ops,
       resolveDomainEnvCodeDefaults,
       resolveRegistryQdrantBackend,
@@ -90,6 +91,7 @@ function defaultDeps(): QdrantRecoverDeps {
     const config = parseAppConfig();
     const registry = new CollectionRegistry(config.paths.appData, {
       envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+      codegraphDataProbe: collectionHoldsCodegraphData,
     });
     const entry = target.project ? registry.findByName(target.project) : registry.findByPath(target.path ?? "");
     const backend = entry ? resolveRegistryQdrantBackend(entry) : { kind: "unaddressed" as const };

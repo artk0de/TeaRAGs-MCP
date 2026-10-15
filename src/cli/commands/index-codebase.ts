@@ -7,6 +7,7 @@ import type { CommandModule } from "yargs";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import {
+  collectionHoldsCodegraphData,
   CollectionRegistry,
   pickRegistryEnvSeed,
   ProjectRegistryOps,
@@ -319,6 +320,7 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
     const dataDir = resolveDataDir();
     const registry = new CollectionRegistry(dataDir, {
       envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+      codegraphDataProbe: collectionHoldsCodegraphData,
     });
 
     // JSON mode forces NO_COLOR semantics so the output is clean for parsing.

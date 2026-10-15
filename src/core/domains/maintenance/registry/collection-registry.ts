@@ -12,6 +12,12 @@ import {
   type RegistryAutoUpdateConfig,
   type RegistryFileV1,
 } from "../../../contracts/types/registry.js";
+import {
+  formatRegistryCodegraphKeptOff,
+  migrateRegistryCodegraphDefault,
+  type CodegraphDataProbe,
+  type RegistryCodegraphKeptOff,
+} from "./codegraph-default-migration.js";
 import { PROJECT_NAME_RE } from "./constants.js";
 import { liftEmbeddingThroughputOptima, type EmbeddingThroughputOptimaSection } from "./embedding-throughput-optima.js";
 import {
@@ -19,6 +25,7 @@ import {
   isRegistryEnvPinMigrationDue,
   migrateRegistryEnvPins,
   type RegistryEnvCodeDefaultsProvider,
+  type RegistryEnvPinDrop,
 } from "./env-pin-migration.js";
 import { RegistryConcurrencyError, RegistryNameConflictError, RegistryWriteError } from "./errors.js";
 import { flushWithCAS, loadRegistryFile, migrateRegistryFileWithCAS } from "./registry-file.js";
@@ -39,6 +46,13 @@ export interface CollectionRegistryOptions {
    * it — never marking it done.
    */
   envCodeDefaults?: RegistryEnvCodeDefaultsProvider;
+  /**
+   * Evidence for the one-time codegraph-default migration
+   * (`migrateRegistryCodegraphDefault`): whether a collection holds codegraph
+   * data. It runs only after the env-pin migration, so it needs
+   * `envCodeDefaults` too; without the probe the step is left to the next open.
+   */
+  codegraphDataProbe?: CodegraphDataProbe;
 }
 
 export class CollectionRegistry {
@@ -97,15 +111,40 @@ export class CollectionRegistry {
     if (provider === undefined) return loadRegistryFile(this.dataDir);
     try {
       const { file, applied } = migrateRegistryFileWithCAS(this.dataDir, (disk) =>
-        isRegistryEnvPinMigrationDue(disk) ? migrateRegistryEnvPins(disk, provider()) : null,
+        this.migrateDataRevisions(disk, provider),
       );
-      if (applied !== null) process.stderr.write(formatRegistryEnvPinDrops(applied.droppedPins));
+      if (applied !== null) {
+        process.stderr.write(formatRegistryEnvPinDrops(applied.droppedPins));
+        process.stderr.write(formatRegistryCodegraphKeptOff(applied.codegraphKeptOff));
+      }
       return file;
     } catch (err) {
       if (!(err instanceof RegistryConcurrencyError) && !(err instanceof RegistryWriteError)) throw err;
       process.stderr.write(`[tea-rags] registry env migration deferred: ${err.message}\n`);
       return loadRegistryFile(this.dataDir);
     }
+  }
+
+  /**
+   * Every due data migration, in revision order: each step runs only on the
+   * revision the previous one leaves, so a step whose input is missing stops
+   * the chain instead of being skipped past. Null when nothing ran.
+   */
+  private migrateDataRevisions(
+    disk: RegistryFileV1,
+    envCodeDefaults: RegistryEnvCodeDefaultsProvider,
+  ): { file: RegistryFileV1; droppedPins: RegistryEnvPinDrop[]; codegraphKeptOff: RegistryCodegraphKeptOff[] } | null {
+    let file = disk;
+    let droppedPins: RegistryEnvPinDrop[] = [];
+    let codegraphKeptOff: RegistryCodegraphKeptOff[] = [];
+    if (isRegistryEnvPinMigrationDue(file)) {
+      const pins = migrateRegistryEnvPins(file, envCodeDefaults());
+      if (pins !== null) ({ file, droppedPins } = pins);
+    }
+    const probe = this.options.codegraphDataProbe;
+    const codegraph = probe ? migrateRegistryCodegraphDefault(file, this.dataDir, probe) : null;
+    if (codegraph !== null) ({ file, keptOff: codegraphKeptOff } = codegraph);
+    return file === disk ? null : { file, droppedPins, codegraphKeptOff };
   }
 
   private flush(optimumWrites: readonly EmbeddingThroughputOptimumWrite[] = []): void {

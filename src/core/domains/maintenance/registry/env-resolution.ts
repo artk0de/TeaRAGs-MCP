@@ -191,7 +191,9 @@ function registryStampOf(entry: CollectionEntry): Record<string, string> {
   if (entry.embeddingModel) stamp.EMBEDDING_MODEL = entry.embeddingModel;
   if (entry.embeddingBaseUrl) stamp.EMBEDDING_BASE_URL = entry.embeddingBaseUrl;
   if (entry.embeddingFallbackUrl) stamp.EMBEDDING_FALLBACK_URL = entry.embeddingFallbackUrl;
-  if (entry.codegraphEnabled) stamp.CODEGRAPH_ENABLED = "true";
+  // Both values replay: codegraph is on by default, so a recorded `false` is
+  // what keeps a project indexed without it off.
+  if (entry.codegraphEnabled !== undefined) stamp.CODEGRAPH_ENABLED = String(entry.codegraphEnabled);
   return stamp;
 }
 

@@ -14,6 +14,7 @@
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import {
+  collectionHoldsCodegraphData,
   CollectionRegistry,
   IndexFreshnessCheck,
   RegistryQdrantBackendUnresolvedError,
@@ -29,6 +30,7 @@ export function primeRegistryRuntime(): PrimeRegistryRuntime {
     openRegistry: () =>
       new CollectionRegistry(resolveDataDir(), {
         envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+        codegraphDataProbe: collectionHoldsCodegraphData,
       }),
     createFreshness: () => new IndexFreshnessCheck(),
     // The entry's backend is `resolveRegistryQdrantBackend`'s call, not a local

@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { resolveRegistryEnvCodeDefaults } from "../bootstrap/config/index.js";
-import { CollectionRegistry, resolveDomainEnvCodeDefaults } from "../core/api/index.js";
+import { collectionHoldsCodegraphData, CollectionRegistry, resolveDomainEnvCodeDefaults } from "../core/api/index.js";
 import { recallCallToolNames } from "./call/tool-name-cache.js";
 
 /**
@@ -22,6 +22,7 @@ export function listProjectNames(): string[] {
     const dataDir = process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
     return new CollectionRegistry(dataDir, {
       envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+      codegraphDataProbe: collectionHoldsCodegraphData,
     })
       .list()
       .map((e) => e.name)

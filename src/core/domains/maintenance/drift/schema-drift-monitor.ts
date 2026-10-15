@@ -25,6 +25,13 @@ export class SchemaDriftMonitor implements IndexDriftMonitor {
      * only a flat key list — every key is then unattributed, which escalates.
      */
     private readonly payloadKeyOwners?: readonly PayloadKeyOwner[],
+    /**
+     * Trajectory families (`codegraph` covers `codegraph.symbols` and
+     * `codegraph.temporal`) the collection's own effective env turns off. The
+     * declared key set belongs to the whole process; a collection whose next
+     * run would not write a family's keys is not missing them.
+     */
+    private readonly disabledTrajectoryFamilies?: (collectionName: string) => readonly string[],
   ) {}
 
   /**
@@ -34,9 +41,9 @@ export class SchemaDriftMonitor implements IndexDriftMonitor {
    */
   check(collectionName: string): IndexDriftFinding[] {
     const stats = this.statsCache.load(collectionName);
-    const drift = checkSchemaDrift(stats?.payloadFieldKeys, this.currentPayloadKeys);
-    if (!drift) return [];
     const ownerByKey = new Map((this.payloadKeyOwners ?? []).map((o) => [o.key, o]));
+    const drift = checkSchemaDrift(stats?.payloadFieldKeys, this.declaredKeysFor(collectionName, ownerByKey));
+    if (!drift) return [];
     return [
       ...drift.added.map((key) => ({
         axis: this.axis,
@@ -53,6 +60,15 @@ export class SchemaDriftMonitor implements IndexDriftMonitor {
         remedy: { kind: "none" } as const,
       })),
     ];
+  }
+
+  private declaredKeysFor(collectionName: string, ownerByKey: ReadonlyMap<string, PayloadKeyOwner>): string[] {
+    const families = this.disabledTrajectoryFamilies?.(collectionName) ?? [];
+    if (families.length === 0) return this.currentPayloadKeys;
+    const isDisabled = (trajectory: string | undefined): boolean =>
+      trajectory !== undefined &&
+      families.some((family) => trajectory === family || trajectory.startsWith(`${family}.`));
+    return this.currentPayloadKeys.filter((key) => !isDisabled(ownerByKey.get(key)?.trajectory));
   }
 
   /** Expose drift detection for testing. */

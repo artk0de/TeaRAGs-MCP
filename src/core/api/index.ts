@@ -212,7 +212,7 @@ export { WorktreeProvisioner } from "../domains/maintenance/worktree/index.js";
 // assembly-surface symbols: their consumers are cli commands and bootstrap,
 // both of which import this barrel. The CONTRACT surface (`api/public`) keeps
 // the types and the pure alias regex only (from `contracts/`).
-export { CollectionRegistry } from "../domains/maintenance/registry/index.js";
+export { CollectionRegistry, collectionHoldsCodegraphData } from "../domains/maintenance/registry/index.js";
 export {
   REGISTRY_ENV_ALLOWLIST,
   REGISTRY_ENV_GROUPS,
