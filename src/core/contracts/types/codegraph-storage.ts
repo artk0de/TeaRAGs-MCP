@@ -41,6 +41,7 @@ import type {
 } from "./codegraph-graph.js";
 import type { HierarchySnapshot, InheritanceEdge } from "./codegraph-hierarchy.js";
 import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
+import type { ModelEdgeRow, ResidualCallSiteRow } from "./codegraph-residual.js";
 import type {
   CallableSymbolKind,
   FileScopedSymbolId,
@@ -1351,6 +1352,9 @@ export interface CodegraphGraphAnalyticsStore {
    */
   hasStaleDerivedTables: () => Promise<boolean>;
 
+  /** Mark cycles + PageRank stale so the next derived recompute runs; idempotent. */
+  markDerivedStale: () => Promise<void>;
+
   // ── Cycle detection (Slice 2 / B2) ──
 
   /**
@@ -1722,6 +1726,22 @@ export interface CodegraphTemporalStore {
 }
 
 /**
+ * Residual call sites and the model edges applied over them (bd
+ * tea-rags-mcp-2m83f). Part of {@link GraphDbClient}.
+ */
+export interface CodegraphResidualEdgeStore {
+  /** Every residual call site of the generation, ordered by file then site key. */
+  readResidualCallSites: () => Promise<ResidualCallSiteRow[]>;
+
+  /**
+   * Replace every `origin = 'model'` method edge of `model` with `edges`;
+   * static edges and other models' edges are untouched. An edge whose site is
+   * not a current residual row or whose target symbol is unknown is skipped.
+   */
+  applyModelEdges: (model: string, edges: ModelEdgeRow[]) => Promise<void>;
+}
+
+/**
  * Driver-agnostic graph DB client.
  *
  * Slice 1 ships `DuckDbGraphClient`; slice 4 ships `PostgresGraphClient`.
@@ -1734,6 +1754,7 @@ export interface GraphDbClient
     CodegraphSymbolFileStore,
     CodegraphGraphReadStore,
     CodegraphGraphAnalyticsStore,
+    CodegraphResidualEdgeStore,
     CodegraphIdentifierStore,
     CodegraphFieldAccessStore,
     CodegraphOntologyReportStore,

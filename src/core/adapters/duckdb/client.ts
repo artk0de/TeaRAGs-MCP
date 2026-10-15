@@ -31,6 +31,7 @@
  * | `DuckDbTypeNameStore`        | `CodegraphIdentifierStore` slice | type-level `cg_symbols` rows + their ancestors  |
  * | `DuckDbOntologyReportStore`  | `CodegraphOntologyReportStore`   | `cg_identifiers` ontology audit reads           |
  * | `DuckDbFieldAccessStore`     | `CodegraphFieldAccessStore`      | `cg_symbols_edges_field` (field-access edges)   |
+ * | `DuckDbResidualEdgeStore`    | `CodegraphResidualEdgeStore`     | residual call sites + model method edges        |
  *
  * Concurrency: methods run sequentially on a single shared connection owned by
  * the session; a transactional write holds the queue for its whole BEGIN/COMMIT
@@ -85,6 +86,7 @@ import type {
   MethodNameRow,
   MethodTailVerbQuery,
   MethodTailVerbRow,
+  ModelEdgeRow,
   NonPublicMemberEdge,
   OntologyReportQuery,
   OntologyReportSectionRows,
@@ -93,6 +95,7 @@ import type {
   PersistedHierarchyDescendantDependency,
   PersistedSymbolLineRanges,
   RelPath,
+  ResidualCallSiteRow,
   ResolveRunStatsRow,
   StoredFieldAccessRow,
   SymbolChunkIdJoinEntry,
@@ -117,6 +120,7 @@ import { DuckDbHierarchyReader } from "./hierarchy-reader.js";
 import { DuckDbIdentifierStore } from "./identifier-store.js";
 import { DuckDbMethodEdgeReader } from "./method-edge-reader.js";
 import { DuckDbOntologyReportStore } from "./ontology-report-store.js";
+import { DuckDbResidualEdgeStore } from "./residual-edge-store.js";
 import { DuckDbRunStatsStore } from "./run-stats-store.js";
 import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
 import { DuckDbStorageMaintenance } from "./storage-maintenance.js";
@@ -155,6 +159,7 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly ontology: DuckDbOntologyReportStore;
   private readonly typeNames: DuckDbTypeNameStore;
   private readonly fieldAccesses: DuckDbFieldAccessStore;
+  private readonly residualEdges: DuckDbResidualEdgeStore;
 
   constructor(options: DuckDbGraphClientOptions) {
     this.session = new DuckDbGraphSession(options);
@@ -174,6 +179,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.ontology = new DuckDbOntologyReportStore(this.session);
     this.typeNames = new DuckDbTypeNameStore(this.session);
     this.fieldAccesses = new DuckDbFieldAccessStore(this.session);
+    this.residualEdges = new DuckDbResidualEdgeStore(this.session);
   }
 
   // ── Lifecycle + durability ──
@@ -578,6 +584,20 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async hasStaleDerivedTables(): Promise<boolean> {
     return this.analytics.hasStaleDerivedTables();
+  }
+
+  async markDerivedStale(): Promise<void> {
+    return this.analytics.markDerivedStale();
+  }
+
+  // ── Residual call sites + model edges (bd tea-rags-mcp-2m83f) ──
+
+  async readResidualCallSites(): Promise<ResidualCallSiteRow[]> {
+    return this.residualEdges.readResidualCallSites();
+  }
+
+  async applyModelEdges(model: string, edges: ModelEdgeRow[]): Promise<void> {
+    return this.residualEdges.applyModelEdges(model, edges);
   }
 
   async getPageRank(symbolId: SymbolId, relPath?: RelPath): Promise<number> {

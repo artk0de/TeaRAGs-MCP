@@ -78,14 +78,24 @@ const FILE_EDGE_VALUES = [
 ] as const;
 // Migration 037 (bd tea-rags-mcp-r8hme.12): same key as the runtime file edge.
 const TYPE_ONLY_FILE_EDGE_VALUES = ["import_text"] as const;
-const METHOD_EDGE_KEYS = [
+export const METHOD_EDGE_KEYS = [
   "source_symbol_id",
   "source_rel_path",
   "call_expression",
   "target_rel_path",
   "target_symbol_key",
 ] as const;
-const METHOD_EDGE_VALUES = ["target_symbol_id", "edge_kind", "confidence"] as const;
+// Migration 054: a static row writes NULL provenance, so a re-walk that proves a
+// model edge statically turns it back into a static edge.
+export const METHOD_EDGE_VALUES = [
+  "target_symbol_id",
+  "edge_kind",
+  "confidence",
+  "origin",
+  "model",
+  "p",
+  "site_key",
+] as const;
 const INHERITANCE_KEYS = ["source_fq_name", "source_rel_path", "ancestor_fq_name", "kind"] as const;
 const INHERITANCE_VALUES = ["source_symbol_id", "ancestor_symbol_id", "ordinal"] as const;
 // Migration 027 (bd tea-rags-mcp-n9bmd): `source_rel_path` joined the key, so a
@@ -278,6 +288,10 @@ export class DuckDbFileGraphStore {
           e.targetSymbolId,
           e.edgeKind ?? "exact",
           e.confidence ?? 1.0,
+          null,
+          null,
+          null,
+          null,
         ]);
       }
       // Inheritance edges (bd tea-rags-mcp-f10y) — same per-source-file
