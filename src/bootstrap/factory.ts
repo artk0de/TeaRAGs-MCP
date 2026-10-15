@@ -204,6 +204,8 @@ export interface AppContext {
   app: App;
   /** CLI-only worktree maintenance facade — wired here, off the App/MCP contract. */
   worktreeOps: WorktreeOps;
+  /** CLI-only residual resolution on the current generation (`resolve-codegraph-residual`). */
+  resolveCodegraphResidual: IngestFacade["resolveCodegraphResidual"];
   schemaBuilder: SchemaBuilder;
   healthProbes?: HealthProbes;
   embeddedRelease?: () => void;
@@ -1565,6 +1567,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   return {
     app,
     worktreeOps,
+    resolveCodegraphResidual: async (path, model, options) => ingest.resolveCodegraphResidual(path, model, options),
     schemaBuilder: composition.schemaBuilder,
     healthProbes: {
       checkQdrant: async () => infra.qdrant.checkHealth(),

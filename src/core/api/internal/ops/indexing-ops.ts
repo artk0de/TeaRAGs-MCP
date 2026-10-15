@@ -60,6 +60,7 @@ import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-log/in
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { advanceChunkSetStamp } from "../../../domains/maintenance/drift/index.js";
 import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/index.js";
+import type { ResidualPassMode, ResidualPassReport } from "../../../domains/trajectory/codegraph/residual/types.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { computeScoreBackground } from "../../../primitives/math/index.js";
 import type {
@@ -76,6 +77,7 @@ import { isEnrichmentRecompute, rechunkSelectorOf } from "../../public/dto/index
 import type { PathCollectionResolver } from "../collection-resolver.js";
 import { assertRequestedLanguagesPresent } from "./language-presence-guard.js";
 import { bindLanguagePresencePorts } from "./language-presence-ports.js";
+import { skippedResidualReport, type ResidualResolvePort } from "./residual-resolve-port.js";
 import type { WorktreeSeedAttempt, WorktreeSeedOps, WorktreeSeedSourceRelease } from "./worktree-seed-ops.js";
 
 type ModelInfo = { model: string; contextLength: number; dimensions: number };
@@ -142,6 +144,8 @@ export interface IndexingOpsDeps {
    * codegraph tools at call time. Omitted → nothing is stamped.
    */
   codegraphEnabledStamper?: CodegraphEnabledStamper;
+  /** Residual resolution; omitted when codegraph is off. */
+  residualResolution?: ResidualResolvePort;
   /**
    * Where the settled embedding throughput optimum of an endpoint + model is
    * read back for `infraHealth.embedding.throughputTune` (bd tea-rags-mcp-7ju66).
@@ -281,6 +285,7 @@ export class IndexingOps {
   private readonly status: StatusModule;
   private readonly languageVersionStamper?: LanguageVersionStamper;
   private readonly codegraphEnabledStamper?: CodegraphEnabledStamper;
+  private readonly residualResolution?: ResidualResolvePort;
   private readonly embeddingThroughputOptima?: Pick<CollectionRegistryPort, "readEmbeddingThroughputOptimum">;
   private readonly embeddingProducerStarvation?: Pick<CollectionRegistryPort, "readEmbeddingProducerStarvation">;
   private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
@@ -354,6 +359,7 @@ export class IndexingOps {
     );
     this.languageVersionStamper = deps.languageVersionStamper;
     this.codegraphEnabledStamper = deps.codegraphEnabledStamper;
+    this.residualResolution = deps.residualResolution;
     this.embeddingThroughputOptima = deps.embeddingThroughputOptima;
     this.embeddingProducerStarvation = deps.embeddingProducerStarvation;
     this.languageCodeVersions = deps.languageCodeVersions;
@@ -659,6 +665,46 @@ export class IndexingOps {
     // so a caller that waits here and then indexes again is never refused by its
     // own finished run (bd tea-rags-mcp-62pgi).
     await Promise.all([...this.pendingCollectionReleases]);
+  }
+
+  /**
+   * Residual resolution against the collection's current generation, without
+   * indexing (`tea-rags resolve-codegraph-residual`). Holds the collection like
+   * an index run, so the two never overlap.
+   */
+  async resolveResidual(
+    path: string,
+    model: string,
+    options: { mode?: ResidualPassMode; onProgress?: ProgressCallback } = {},
+  ): Promise<ResidualPassReport> {
+    const mode = options.mode ?? "ask";
+    if (!this.residualResolution) {
+      return skippedResidualReport("codegraph is disabled (CODEGRAPH_ENABLED=false)", mode);
+    }
+    this.assertProcessBuildCurrent();
+    const projectRoot = await validatePath(path);
+    const collectionName = await this.claimCollectionForIndexing(path, undefined);
+    try {
+      return await this.residualResolution.resolve({
+        logicalName: collectionName,
+        physicalCollectionName: await this.physicalCollectionOf(collectionName),
+        projectRoot,
+        model,
+        mode,
+        ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+      });
+    } finally {
+      await this.releaseCollectionForIndexing(collectionName);
+    }
+  }
+
+  /** The collection the alias currently points at; the name itself when aliases cannot be listed. */
+  private async physicalCollectionOf(collectionName: string): Promise<string> {
+    try {
+      return resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
+    } catch {
+      return resolvePhysicalCollection(collectionName, []);
+    }
   }
 
   /**

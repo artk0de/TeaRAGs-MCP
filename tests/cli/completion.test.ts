@@ -151,3 +151,14 @@ describe("CLI completion helpers", () => {
     });
   });
 });
+
+describe("maybeCompleteProjectName — resolve-codegraph-residual", () => {
+  it("completes --model with the residual models", () => {
+    expect(
+      maybeCompleteProjectName(
+        ["resolve-codegraph-residual", "--model", ""],
+        ["tea-rags", "resolve-codegraph-residual"],
+      ),
+    ).toEqual(["kev"]);
+  });
+});

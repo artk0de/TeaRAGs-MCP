@@ -66,6 +66,11 @@ export function maybeCompleteProjectName(
     return recallCallToolNames();
   }
 
+  // `tea-rags resolve-codegraph-residual --model <TAB>` — the residual models.
+  if (last === "--model" && withoutScriptName(parsedPositionals)[0] === "resolve-codegraph-residual") {
+    return ["kev"];
+  }
+
   if (last === "--project" || last === "-p") {
     return listProjectNames();
   }
