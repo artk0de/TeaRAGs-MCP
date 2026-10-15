@@ -61,6 +61,7 @@ describe("Rust walker — symbol kind per chunk", () => {
       Kind: "enum",
       Store: "interface",
       "Store#get": "method",
+      "Store::make": "method",
       "Engine.new": "method",
       "Engine#run": "method",
       inner: "module",

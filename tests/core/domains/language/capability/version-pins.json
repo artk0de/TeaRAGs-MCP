@@ -69,12 +69,12 @@
   },
   "rust": {
     "chunking": {
-      "version": 3,
-      "digest": "sha256:9cefd88ef6de19884e76fcc3391814133575b5b929dd274cc3912bcde08b3ace"
+      "version": 4,
+      "digest": "sha256:e0b33c5196c520c0a681fbdd648255f2ece989426b18a88c04c583b36251ecd9"
     },
     "walker": {
       "version": 5,
-      "digest": "sha256:2ff1323669652297d13cd878484ccc9cbb17efdbd8c9da818309611c048a5d48"
+      "digest": "sha256:4e26760d412d56b92a91e59e02c1b71056fb27432c0c9284b8f70ba45b31ea29"
     }
   },
   "swift": {

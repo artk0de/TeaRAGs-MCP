@@ -25,6 +25,7 @@
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type { ModuleReexport, TypeDeclarationFact } from "../../../../contracts/types/codegraph-extraction.js";
+import type { InheritanceEdgeDecl } from "../../../../contracts/types/codegraph-hierarchy.js";
 import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type {
   CallRef,
@@ -50,6 +51,7 @@ export interface RustExtractInput {
 export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   const imports = collectRustImports(input.tree.rootNode);
   const moduleReexports = collectRustModuleReexports(input.tree.rootNode);
+  const inheritanceEdges = collectRustInheritanceEdges(input.tree.rootNode);
   const calls = collectRustCalls(input.tree.rootNode);
   // bd tea-rags-mcp-q1pl — per-class struct field types for the
   // `self.field.method()` resolver path. Keyed by struct name (which
@@ -91,6 +93,7 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   };
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
   if (moduleReexports.length > 0) out.moduleReexports = moduleReexports;
+  if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
   if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
   return out;
 }
@@ -180,7 +183,7 @@ function symbolKindOfChunk(
  */
 function readRustBareType(typeNode: AstNode | null): string | null {
   if (!typeNode) return null;
-  if (typeNode.type === "type_identifier") return typeNode.text;
+  if (typeNode.type === "type_identifier" || typeNode.type === "identifier") return typeNode.text;
   if (typeNode.type === "reference_type") {
     // `&Foo` / `&mut Foo` — the referent type is the only `type` field.
     const inner = typeNode.childForFieldName("type");
@@ -200,6 +203,31 @@ function readRustBareType(typeNode: AstNode | null): string | null {
   return null;
 }
 
+function rustGenericBounds(fn: AstNode): Record<string, string> {
+  const bounds: Record<string, string> = createIdentifierRecord();
+  const parameters = fn.childForFieldName("type_parameters");
+  for (const parameter of parameters?.namedChildren ?? []) {
+    if (parameter.type !== "type_parameter") continue;
+    const name = parameter.childForFieldName("name")?.text;
+    const traitBounds = parameter.childForFieldName("bounds");
+    const candidates = traitBounds?.namedChildren ?? [];
+    if (name === undefined || candidates.length !== 1) continue;
+    const bound = readRustBareType(candidates[0]);
+    if (bound !== null) bounds[name] = bound;
+  }
+  return bounds;
+}
+
+function rustTypeRefFor(
+  typeNode: AstNode | null,
+  genericBounds: Readonly<Record<string, string>>,
+): { type: string; typeRef?: LocalBinding["typeRef"] } | null {
+  const type = readRustBareType(typeNode);
+  if (type === null) return null;
+  const bound = genericBounds[type];
+  return bound === undefined ? { type } : { type, typeRef: { form: "instance", name: bound, upperBound: true } };
+}
+
 /**
  * Collect `structName → fieldName → typeName` from every `struct_item`
  * with a `field_declaration_list` body. Field types are stripped to their
@@ -213,6 +241,35 @@ function readRustBareType(typeNode: AstNode | null): string | null {
  * `classFieldTypes[callerScope.at(-1)][field]`. Mirrors the Python walker's
  * `collectPythonClassFieldTypes` channel.
  */
+function collectRustInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
+  const edges: InheritanceEdgeDecl[] = [];
+  walk(root, (node) => {
+    if (node.type !== "impl_item") return;
+    const trait = node.childForFieldName("trait");
+    const type = node.childForFieldName("type");
+    if (!trait || !type) return;
+    const source = rustTypeName(type);
+    const ancestor = rustTypeName(trait);
+    if (source !== null && ancestor !== null) {
+      edges.push({ source, ancestor, kind: "implements", ordinal: 0 });
+    }
+  });
+  return edges;
+}
+
+function rustTypeName(node: AstNode): string | null {
+  if (node.type === "type_identifier" || node.type === "identifier") return node.text;
+  if (node.type === "scoped_type_identifier" || node.type === "scoped_identifier") {
+    const name = node.childForFieldName("name");
+    return name?.text ?? null;
+  }
+  if (node.type === "generic_type") {
+    const base = node.childForFieldName("type");
+    return base ? rustTypeName(base) : null;
+  }
+  return null;
+}
+
 function collectRustStructFieldTypes(root: AstNode): Record<string, Record<string, string>> {
   const out: Record<string, Record<string, string>> = createIdentifierRecord();
   walk(root, (node) => {
@@ -278,14 +335,15 @@ function collectRustLocalBindingsForChunk(
   // Parameters — `fn bar(&self, p: Foo)`. `self_parameter` is anonymous
   // and skipped; only `parameter` nodes with a `pattern` identifier and a
   // resolvable `type` contribute.
+  const genericBounds = rustGenericBounds(fn);
   const params = fn.childForFieldName("parameters");
   if (params) {
     for (const param of params.children) {
       if (param.type !== "parameter") continue;
       const pattern = param.childForFieldName("pattern");
       if (pattern?.type !== "identifier") continue;
-      const typeName = readRustBareType(param.childForFieldName("type"));
-      if (typeName) (bindings[pattern.text] ??= []).push({ line: param.startPosition.row + 1, type: typeName });
+      const typed = rustTypeRefFor(param.childForFieldName("type"), genericBounds);
+      if (typed) (bindings[pattern.text] ??= []).push({ line: param.startPosition.row + 1, ...typed });
     }
   }
 
@@ -315,12 +373,12 @@ function collectRustLocalBindingsForChunk(
     if (callee?.type !== "scoped_identifier") return;
     const pathNode = callee.childForFieldName("path");
     const fnNameNode = callee.childForFieldName("name");
-    // `Worker::new` — path is the receiving type (single identifier), name
-    // is the assoc fn. Multi-segment paths (`a::b::new`) and non-identifier
-    // paths are skipped: the receiving type isn't unambiguous.
-    if (pathNode?.type !== "identifier" || fnNameNode?.type !== "identifier") return;
-    const typeName = pathNode.text;
-    if (isRustConstructorAssocFn(fnNameNode.text) && isCapWordsType(typeName)) {
+    // `Worker::new` — path is the receiving type, including a turbofish
+    // generic (`Worker::<Token>`); strip only the generic arguments and keep
+    // the constructor's nominal owner.
+    if (!pathNode || fnNameNode?.type !== "identifier") return;
+    const typeName = readRustBareType(pathNode);
+    if (typeName && isRustConstructorAssocFn(fnNameNode.text) && isCapWordsType(typeName)) {
       (bindings[varName] ??= []).push({ line: node.startPosition.row + 1, type: typeName });
     }
   });

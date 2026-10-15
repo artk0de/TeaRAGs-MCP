@@ -30,7 +30,12 @@ const UNRECORDED_ITEM_TYPES: ReadonlySet<string> = new Set(["impl_item", "macro_
 
 /** A fn whose visibility is its trait's: declared in a trait, or implementing one. */
 function isTraitMember(node: AstNode): boolean {
-  if (node.type !== "function_item" || node.parent?.type !== "declaration_list") return false;
+  if (
+    (node.type !== "function_item" && node.type !== "function_signature_item") ||
+    node.parent?.type !== "declaration_list"
+  ) {
+    return false;
+  }
   const owner = node.parent.parent;
   if (owner?.type === "trait_item") return true;
   return owner?.type === "impl_item" && owner.childForFieldName("trait") !== null;

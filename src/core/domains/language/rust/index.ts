@@ -60,6 +60,8 @@ import type {
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
 import { rustCommentCaptureHook } from "./chunking/comment-capture.js";
+import { rustTestDslFilterHook } from "./chunking/test-dsl-filter.js";
+import { rustTestScopeChunkerHook } from "./chunking/test-scope-chunker.js";
 import { rustKernel } from "./kernel.js";
 import { RustCallResolver } from "./resolver/index.js";
 import { rustNameOf } from "./walker/name-of.js";
@@ -101,7 +103,7 @@ const rustChunkerHooks: LanguageChunkerHooks = {
   // an extra standalone leaf.
   childChunkTypes: ["function_item", "function_signature_item", "macro_definition", "impl_item", "trait_item"],
   alwaysExtractChildren: true,
-  hooks: [rustCommentCaptureHook],
+  hooks: [rustTestDslFilterHook, rustCommentCaptureHook, rustTestScopeChunkerHook],
   // Rust function items are searchable symbols even when their bodies are
   // shorter than the generic 50-character noise floor.
   keepShortChildChunkTypes: ["function_item", "function_signature_item"],

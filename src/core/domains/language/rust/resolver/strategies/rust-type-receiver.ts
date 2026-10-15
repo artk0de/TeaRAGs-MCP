@@ -71,9 +71,18 @@ function rustNamedType(receiver: string, ctx: CallContext): TypeRef | undefined 
 
 function receiverTypeNameFromCall(receiver: string, ctx: CallContext): string | null {
   if (receiver === "Self") return ctx.callerScope.at(-1) ?? null;
+  const qualified = qualifiedReceiverType(receiver);
+  if (qualified !== null) return typeOfPathHead(qualified, ctx);
   const head = constructorCallHead(receiver);
   if (head !== undefined && isRustConstructorAssocFn(head.assocFn)) return typeOfPathHead(head.type, ctx);
   return typeOfPathHead(receiver, ctx);
+}
+
+/** `<Type as Trait>` is a qualified path: the local type owns the impl method,
+ * while `Trait` may be external and therefore need not be indexed. */
+function qualifiedReceiverType(receiver: string): string | null {
+  const match = receiver.match(/^<\s*([^<>]+?)\s+as\s+[^<>]+\s*>$/);
+  return match?.[1]?.trim() ?? null;
 }
 
 export class RustTypeReceiverSymbolResolutionStrategy extends ChainTypeSymbolResolutionStrategy {
@@ -85,9 +94,20 @@ export class RustTypeReceiverSymbolResolutionStrategy extends ChainTypeSymbolRes
 /** `Self` → the enclosing impl type; a bare CapWords identifier → itself; anything else → `null`. */
 function typeOfPathHead(head: string, ctx: CallContext): string | null {
   if (head === "Self") return ctx.callerScope.at(-1) ?? null;
-  if (RUST_IDENTIFIER.exec(head)?.[0] !== head || !isCapWordsType(head)) return null;
-  const imported = ctx.imports.find((imp) => rustImportMatchesReceiver(imp.importText, head));
-  return imported !== undefined && STD_IMPORT_ROOT.test(imported.importText) ? null : head;
+  const bareHead = rustGenericTypeHead(head);
+  if (bareHead === null || !isCapWordsType(bareHead)) return null;
+  const imported = ctx.imports.find((imp) => rustImportMatchesReceiver(imp.importText, bareHead));
+  return imported !== undefined && STD_IMPORT_ROOT.test(imported.importText) ? null : bareHead;
+}
+
+/** Strip a Rust turbofish from a nominal path (`Parser::<Token>` → `Parser`). */
+function rustGenericTypeHead(path: string): string | null {
+  const match = RUST_IDENTIFIER.exec(path);
+  if (match === null) return null;
+  const bare = match[0];
+  if (path === bare) return bare;
+  if (!path.startsWith(`${bare}::<`) || !path.endsWith(">")) return null;
+  return bare;
 }
 
 /**
@@ -97,17 +117,37 @@ function typeOfPathHead(head: string, ctx: CallContext): string | null {
  * `goBareCallHead`).
  */
 function constructorCallHead(receiver: string): { type: string; assocFn: string } | undefined {
-  const type = RUST_IDENTIFIER.exec(receiver)?.[0];
-  if (type === undefined || !receiver.startsWith("::", type.length)) return undefined;
-  const assocFn = RUST_IDENTIFIER.exec(receiver.slice(type.length + 2))?.[0];
+  const head = RUST_IDENTIFIER.exec(receiver)?.[0];
+  if (head === undefined) return undefined;
+  let typeEnd = head.length;
+  if (receiver.startsWith("::<", typeEnd)) {
+    let angleDepth = 0;
+    let close = -1;
+    for (let i = typeEnd + 2; i < receiver.length; i++) {
+      const ch = receiver[i];
+      if (ch === "<") angleDepth++;
+      else if (ch === ">" && --angleDepth === 0) {
+        close = i;
+        break;
+      }
+    }
+    if (close < 0 || receiver.slice(close + 1, close + 3) !== "::") return undefined;
+    typeEnd = close + 1;
+  } else if (!receiver.startsWith("::", typeEnd)) {
+    return undefined;
+  }
+  const assocStart = typeEnd + 2;
+  const assocFn = RUST_IDENTIFIER.exec(receiver.slice(assocStart))?.[0];
   if (assocFn === undefined) return undefined;
-  const open = type.length + 2 + assocFn.length;
+  const open = assocStart + assocFn.length;
   if (receiver[open] !== "(" || !receiver.endsWith(")")) return undefined;
   let depth = 0;
   for (let i = open; i < receiver.length; i++) {
     const ch = receiver[i];
     if (ch === "(") depth++;
-    else if (ch === ")" && --depth === 0) return i === receiver.length - 1 ? { type, assocFn } : undefined;
+    else if (ch === ")" && --depth === 0) {
+      return i === receiver.length - 1 ? { type: receiver.slice(0, typeEnd), assocFn } : undefined;
+    }
   }
   return undefined;
 }

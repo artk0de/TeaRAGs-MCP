@@ -253,6 +253,15 @@ const BASELINE_EXTRACTION = {
       visibility: "public",
     },
     {
+      symbolId: "Runner::run",
+      scope: ["Runner"],
+      startLine: 9,
+      endLine: 9,
+      calls: [],
+      symbolKind: "method",
+      visibility: "public",
+    },
+    {
       symbolId: "Engine.new",
       scope: ["Engine"],
       startLine: 14,

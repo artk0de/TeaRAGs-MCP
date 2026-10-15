@@ -516,7 +516,7 @@ describe("seeded support versions", () => {
         ["swift", 4],
         ["bash", 2],
         ["ruby", 2],
-        ["rust", 3],
+        ["rust", 4],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);
