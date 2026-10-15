@@ -14,6 +14,7 @@
 import type { TypeAbstractnessCensus } from "./codegraph-extraction.js";
 import type { InheritanceEdgeRow } from "./codegraph-hierarchy.js";
 import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
+import type { ResidualCallSiteRow } from "./codegraph-residual.js";
 import type { RelPath, SymbolId } from "./codegraph-symbols.js";
 
 /**
@@ -473,6 +474,12 @@ export interface GraphEdges {
     member: string;
     candidateCount: number;
   }[];
+  /**
+   * Call sites this file's resolve left without a confident static edge — an
+   * over-cap fan-out or an untyped receiver (codegraph residual resolution).
+   * Persisted to `cg_residual_call_sites` by the per-file reconciliation.
+   */
+  residualCallSites?: ResidualCallSiteRow[];
   /**
    * This file's pass-1 aggregate slice (bd tea-rags-mcp-znxg8), persisted to
    * `cg_pass1_aggregates` on the same per-file reconciliation as the rows above

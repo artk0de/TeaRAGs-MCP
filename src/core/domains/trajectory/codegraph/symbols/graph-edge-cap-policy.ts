@@ -65,6 +65,9 @@ export const GRAPH_EDGE_CAP_POLICY = {
   // One row per hierarchy type the file's resolution read, bounded by the
   // project's type names rather than by the file's size.
   hierarchyDependencies: "exempt",
+  // Call sites left for the residual pass, not edges; each menu is cut at the
+  // residual menu limit, and an over-cap file drops them with every other kind.
+  residualCallSites: "exempt",
 } as const satisfies GraphEdgeCapPolicy;
 
 /** The kinds {@link GRAPH_EDGE_CAP_POLICY} counts against the cap. */
