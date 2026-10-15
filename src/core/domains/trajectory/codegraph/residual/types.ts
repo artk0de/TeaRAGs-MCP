@@ -7,6 +7,7 @@
 
 export type {
   ResidualAnswer,
+  ResidualDerivedState,
   ResidualModelProvider,
   ResidualPassDurations,
   ResidualPassMode,

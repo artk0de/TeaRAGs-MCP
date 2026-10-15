@@ -131,18 +131,28 @@ class LeasedProvider extends FakeProvider {
   }
 }
 
+/** `stored` defaults to one edge per site, `changed` to true; a test sets either to model the adapter's diff. */
 function fakeGraphDb(rows: ResidualCallSiteRow[]) {
   const applied: { model: string; edges: ModelEdgeRow[] }[] = [];
-  let staleMarks = 0;
+  const events: string[] = [];
+  const state: { stored?: number; changed: boolean; recomputeError?: Error } = { changed: true };
   return {
     applied,
-    staleMarks: () => staleMarks,
+    events,
+    state,
+    staleMarks: () => events.filter((e) => e === "markStale").length,
+    recomputes: () => events.filter((e) => e === "recompute").length,
     readResidualCallSites: async () => rows,
     applyModelEdges: async (model: string, edges: ModelEdgeRow[]) => {
       applied.push({ model, edges });
+      return { stored: state.stored ?? edges.length, changed: state.changed };
     },
     markDerivedStale: async () => {
-      staleMarks++;
+      events.push("markStale");
+    },
+    recomputeDerived: async () => {
+      events.push("recompute");
+      if (state.recomputeError) throw state.recomputeError;
     },
   };
 }
@@ -179,7 +189,9 @@ describe("ResidualResolutionPass", () => {
       mode: "ask",
       concurrency: 4,
       menuLimit: 40,
+      minMenu: 1,
       retentionDays: 180,
+      recomputeDerived: graphDb.recomputeDerived,
       readMethodSource: async (relPath, startLine, endLine) => {
         sourceReads.push(`${relPath}:${startLine}-${endLine}`);
         return `# source of ${relPath}`;
@@ -302,6 +314,73 @@ describe("ResidualResolutionPass", () => {
 
     expect(provider.calls.flatMap((g) => g.questions.map((q) => q.siteKey))).toEqual(["s1"]);
     expect(report).toMatchObject({ sites: 3, asked: 1, menuOverflow: 2, edgesApplied: 1 });
+  });
+
+  describe("menu floor", () => {
+    const bigMenu = ["Client#users", "Firm#users", "Team#users", "User#users"];
+
+    it("neither asks about nor applies a site whose menu is under the floor", async () => {
+      const graphDb = fakeGraphDb([row({ siteKey: "small" }), row({ siteKey: "big", line: 4, candidates: bigMenu })]);
+      const provider = new FakeProvider(firmPick);
+
+      const report = await run(graphDb, provider, { minMenu: 4 });
+
+      expect(provider.calls.flatMap((g) => g.questions.map((q) => q.siteKey))).toEqual(["big"]);
+      expect(appliedSites(graphDb)).toEqual(["big"]);
+      expect(report).toMatchObject({ sites: 2, menuTooSmall: 1, menuOverflow: 0, asked: 1, edgesApplied: 1 });
+    });
+
+    it("does not re-apply a stored verdict for a site under the floor in cacheOnly mode", async () => {
+      const graphDb = fakeGraphDb([row({ siteKey: "small" }), row({ siteKey: "big", line: 4, candidates: bigMenu })]);
+      await run(graphDb, new FakeProvider(firmPick), { minMenu: 1 });
+      const provider = new FakeProvider(firmPick);
+
+      const report = await run(graphDb, provider, { mode: "cacheOnly", minMenu: 4 });
+
+      expect(provider.calls).toEqual([]);
+      expect(appliedSites(graphDb)).toEqual(["big"]);
+      expect(report).toMatchObject({ mode: "cacheOnly", menuTooSmall: 1, cacheHits: 1, edgesApplied: 1 });
+    });
+  });
+
+  describe("derived metrics", () => {
+    it("marks the derived tables stale and recomputes them when the applied edge set changed", async () => {
+      const graphDb = fakeGraphDb([row({ siteKey: "s1" })]);
+
+      const report = await run(graphDb, new FakeProvider(firmPick));
+
+      expect(graphDb.events).toEqual(["markStale", "recompute"]);
+      expect(report.derived).toBe("recomputed");
+    });
+
+    it("leaves the derived tables alone when the applied edge set did not change", async () => {
+      const graphDb = fakeGraphDb([row({ siteKey: "s1" })]);
+      graphDb.state.changed = false;
+
+      const report = await run(graphDb, new FakeProvider(firmPick));
+
+      expect(graphDb.events).toEqual([]);
+      expect(report.derived).toBe("unchanged");
+    });
+
+    it("completes with the derived tables left stale when the recompute fails", async () => {
+      const graphDb = fakeGraphDb([row({ siteKey: "s1" })]);
+      graphDb.state.recomputeError = new Error("daemon gone");
+
+      const report = await run(graphDb, new FakeProvider(firmPick));
+
+      expect(graphDb.events).toEqual(["markStale", "recompute"]);
+      expect(report).toMatchObject({ outcome: "completed", derived: "stale", edgesApplied: 1 });
+    });
+  });
+
+  it("reports distinct stored edges apart from the sites that reached the threshold", async () => {
+    const graphDb = fakeGraphDb([row({ siteKey: "s1" }), row({ siteKey: "s2", column: 9 })]);
+    graphDb.state.stored = 1;
+
+    const report = await run(graphDb, new FakeProvider(firmPick));
+
+    expect(report).toMatchObject({ sitesEdged: 2, edgesApplied: 1 });
   });
 
   it("counts the sites of a group refused as too long and completes without them", async () => {

@@ -35,6 +35,7 @@ export function skippedResidualReport(reason: string, mode: ResidualPassMode): R
     mode,
     sites: 0,
     menuOverflow: 0,
+    menuTooSmall: 0,
     cacheHits: 0,
     groups: 0,
     asked: 0,
@@ -43,7 +44,9 @@ export function skippedResidualReport(reason: string, mode: ResidualPassMode): R
     failedGroups: 0,
     abortedGroups: 0,
     belowThreshold: 0,
+    sitesEdged: 0,
     edgesApplied: 0,
-    durations: { readMs: 0, askMs: 0, applyMs: 0, totalMs: 0 },
+    derived: "unchanged",
+    durations: { readMs: 0, askMs: 0, applyMs: 0, recomputeMs: 0, totalMs: 0 },
   };
 }

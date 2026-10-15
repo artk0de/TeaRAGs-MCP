@@ -13,6 +13,7 @@
  */
 import type {
   CodegraphResidualEdgeStore,
+  ModelEdgeApplyResult,
   ModelEdgeRow,
   ResidualCallSiteRow,
   ResidualKind,
@@ -70,10 +71,13 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
    * Make the `model` rows of `cg_symbols_edges_method` equal `edges`. An edge
    * whose site is not a current residual row or whose target symbol is unknown
    * is skipped; one whose key a static edge already holds is ignored by the
-   * diff's `INSERT OR IGNORE`.
+   * diff's `INSERT OR IGNORE`. Reports what the model holds afterwards and
+   * whether that differs from before, so the caller recomputes derived metrics
+   * only when it does.
    */
-  async applyModelEdges(model: string, edges: readonly ModelEdgeRow[]): Promise<void> {
-    await this.session.transaction(async () => {
+  async applyModelEdges(model: string, edges: readonly ModelEdgeRow[]): Promise<ModelEdgeApplyResult> {
+    return this.session.transaction(async () => {
+      const before = await this.storedModelEdges(model);
       const callTexts = await this.callTextsBySite(edges.map((e) => e.siteKey));
       const targetPaths = await this.targetPathsBySymbol(edges.map((e) => e.targetSymbolId));
       const rows: unknown[][] = [];
@@ -104,7 +108,19 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
         METHOD_EDGE_VALUES,
         rows,
       );
+      const after = await this.storedModelEdges(model);
+      return { stored: after.length, changed: after.join("\n") !== before.join("\n") };
     });
+  }
+
+  /** One sorted fingerprint (key and values) per stored edge of `model`. */
+  private async storedModelEdges(model: string): Promise<string[]> {
+    const columns = [...METHOD_EDGE_KEYS, ...METHOD_EDGE_VALUES];
+    const rows = await this.session.queryAll<Record<string, unknown>>(
+      `SELECT ${columns.join(", ")} FROM cg_symbols_edges_method WHERE model = ?`,
+      [model],
+    );
+    return rows.map((r) => columns.map((c) => String(r[c])).join("\u0000")).sort();
   }
 
   /** `receiver.member` of each current residual site — `member` alone for an empty receiver. */

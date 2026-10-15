@@ -32,6 +32,7 @@ const REPORT: ResidualPassReport = {
   mode: "ask",
   sites: 3,
   menuOverflow: 0,
+  menuTooSmall: 0,
   cacheHits: 1,
   groups: 2,
   asked: 0,
@@ -40,8 +41,10 @@ const REPORT: ResidualPassReport = {
   failedGroups: 0,
   abortedGroups: 0,
   belowThreshold: 0,
+  sitesEdged: 1,
   edgesApplied: 1,
-  durations: { readMs: 1, askMs: 0, applyMs: 1, totalMs: 2 },
+  derived: "unchanged",
+  durations: { readMs: 1, askMs: 0, applyMs: 1, recomputeMs: 0, totalMs: 2 },
 };
 
 function gate(): { open: () => void; opened: Promise<void> } {
@@ -216,12 +219,13 @@ describe("IndexingOps — residual resolution after enrichment", () => {
             readResidualCallSites: async () => [],
             applyModelEdges: async (model: string) => {
               applied.push(model);
+              return { stored: 0, changed: false };
             },
             markDerivedStale: async () => undefined,
           },
         }),
       } as never,
-      config: { kevThreshold: 0.7, concurrency: 1, menuLimit: 40, retentionDays: 180 },
+      config: { kevThreshold: 0.7, concurrency: 1, menuLimit: 40, minMenu: 4, retentionDays: 180 },
       createProvider: (model) => ({
         id: model,
         threshold: 0.7,

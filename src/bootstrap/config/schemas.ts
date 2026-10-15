@@ -225,6 +225,8 @@ export const codegraphResidualSchema = z.object({
   concurrency: intWithDefault(16),
   /** A site with more candidates than this is not asked. */
   menuLimit: intWithDefault(40),
+  /** A site with fewer candidates than this is neither asked nor applied. */
+  minMenu: intWithDefault(4),
   /** Verdicts not seen by any run for this many days are dropped. */
   retentionDays: intWithDefault(180),
   /**

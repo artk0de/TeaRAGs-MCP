@@ -86,6 +86,7 @@ import type {
   MethodNameRow,
   MethodTailVerbQuery,
   MethodTailVerbRow,
+  ModelEdgeApplyResult,
   ModelEdgeRow,
   NonPublicMemberEdge,
   OntologyReportQuery,
@@ -596,7 +597,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.residualEdges.readResidualCallSites();
   }
 
-  async applyModelEdges(model: string, edges: ModelEdgeRow[]): Promise<void> {
+  async applyModelEdges(model: string, edges: ModelEdgeRow[]): Promise<ModelEdgeApplyResult> {
     return this.residualEdges.applyModelEdges(model, edges);
   }
 

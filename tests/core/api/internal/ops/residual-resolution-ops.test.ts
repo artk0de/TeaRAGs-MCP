@@ -32,7 +32,14 @@ const ROW: ResidualCallSiteRow = {
   menuOverflow: false,
 };
 
-const CONFIG = { kevUrls: ["http://gpu:8090"], kevThreshold: 0.7, concurrency: 4, menuLimit: 40, retentionDays: 180 };
+const CONFIG = {
+  kevUrls: ["http://gpu:8090"],
+  kevThreshold: 0.7,
+  concurrency: 4,
+  menuLimit: 40,
+  minMenu: 2,
+  retentionDays: 180,
+};
 
 function answeringProvider(groups: ResidualQuestionGroup[]): ResidualModelProvider {
   return {
@@ -70,8 +77,10 @@ describe("ResidualResolutionOps", () => {
         readResidualCallSites: async () => [ROW],
         applyModelEdges: async (_model: string, edges: ModelEdgeRow[]) => {
           applied.push(edges);
+          return { stored: edges.length, changed: true };
         },
         markDerivedStale: async () => undefined,
+        computeAndPersistCyclesAndSignals: async () => undefined,
       },
     }));
   });

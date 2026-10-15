@@ -32,6 +32,7 @@ const REPORT: ResidualPassReport = {
   mode: "ask",
   sites: 120,
   menuOverflow: 4,
+  menuTooSmall: 9,
   cacheHits: 80,
   groups: 12,
   asked: 0,
@@ -40,8 +41,10 @@ const REPORT: ResidualPassReport = {
   failedGroups: 0,
   abortedGroups: 0,
   belowThreshold: 3,
+  sitesEdged: 79,
   edgesApplied: 77,
-  durations: { readMs: 5, askMs: 0, applyMs: 20, totalMs: 25 },
+  derived: "stale",
+  durations: { readMs: 5, askMs: 0, applyMs: 20, recomputeMs: 15, totalMs: 25 },
 };
 
 const status: IndexStatus = { isIndexed: true, status: "indexed", collectionName: "code_repo" };
@@ -87,6 +90,7 @@ describe("the residual pass in the run's output", () => {
     expect(text).toContain("Residual resolution");
     expect(text).toContain("skipped (ask): provider kev unavailable: connect ECONNREFUSED");
     expect(text).toContain("120 sites, 80 from cache, 0 asked, 77 model edges applied");
+    expect(text).toContain("4 over the menu limit, 9 under the menu floor, 79 sites edged, derived metrics stale");
   });
 
   it("is absent from both when no pass ran", () => {

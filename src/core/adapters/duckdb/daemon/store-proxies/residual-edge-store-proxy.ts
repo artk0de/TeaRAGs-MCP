@@ -1,5 +1,6 @@
 import type {
   CodegraphResidualEdgeStore,
+  ModelEdgeApplyResult,
   ModelEdgeRow,
   ResidualCallSiteRow,
 } from "../../../../contracts/types/codegraph.js";
@@ -16,7 +17,7 @@ export class DaemonResidualEdgeStoreProxy implements CodegraphResidualEdgeStore 
     return (await this.ops.call("readResidualCallSites", {})) as ResidualCallSiteRow[];
   }
 
-  async applyModelEdges(model: string, edges: ModelEdgeRow[]): Promise<void> {
-    await this.ops.call("applyModelEdges", { model, edges });
+  async applyModelEdges(model: string, edges: ModelEdgeRow[]): Promise<ModelEdgeApplyResult> {
+    return (await this.ops.call("applyModelEdges", { model, edges })) as ModelEdgeApplyResult;
   }
 }

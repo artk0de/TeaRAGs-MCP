@@ -149,6 +149,36 @@ describe("DuckDbGraphClient — residual ops", () => {
     ]);
   });
 
+  describe("apply result", () => {
+    it("counts one stored edge for two sites making the same call to the same target", async () => {
+      await client.upsertFile(
+        { relPath: "app/billing.rb", language: "ruby" },
+        { fileEdges: [], methodEdges: [], residualCallSites: [SITE, { ...SITE, siteKey: "k2", column: 20 }] },
+      );
+
+      const result = await client.applyModelEdges("kev", [EDGE, { ...EDGE, siteKey: "k2" }]);
+
+      expect(result).toEqual({ stored: 1, changed: true });
+    });
+
+    it("reports a change only when the stored model edges differ from the previous apply", async () => {
+      await writeBilling();
+      await client.applyModelEdges("kev", [EDGE]);
+
+      expect(await client.applyModelEdges("kev", [EDGE])).toEqual({ stored: 1, changed: false });
+      expect(await client.applyModelEdges("kev", [{ ...EDGE, p: 0.8 }])).toEqual({ stored: 1, changed: true });
+      expect(await client.applyModelEdges("kev", [])).toEqual({ stored: 0, changed: true });
+    });
+
+    it("stores nothing and reports no change for an edge a static edge already holds", async () => {
+      await writeBilling([
+        { targetSymbolId: "Firm#users", targetRelPath: "app/models/firm.rb", callExpression: "account.users" },
+      ]);
+
+      expect(await client.applyModelEdges("kev", [EDGE])).toEqual({ stored: 0, changed: false });
+    });
+  });
+
   it("skips an edge whose site is not a current residual row or whose target is unknown", async () => {
     await writeBilling();
 
