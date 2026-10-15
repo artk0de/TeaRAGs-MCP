@@ -14,7 +14,7 @@
 import type { TypeAbstractnessCensus } from "./codegraph-extraction.js";
 import type { InheritanceEdgeRow } from "./codegraph-hierarchy.js";
 import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
-import type { ResidualCallSiteRow } from "./codegraph-residual.js";
+import type { EdgeOrigin, ResidualCallSiteRow } from "./codegraph-residual.js";
 import type { RelPath, SymbolId } from "./codegraph-symbols.js";
 
 /**
@@ -529,6 +529,12 @@ export interface CallerEdge {
   edgeKind?: MethodEdgeKind;
   /** Dispatch confidence in (0,1] from `cg_symbols_edges_method.confidence` (xlnub Task 5). */
   confidence?: number;
+  /** `"model"` on an edge a residual-resolution verdict produced; absent on a static edge. */
+  origin?: EdgeOrigin;
+  /** Provider id of a model edge. */
+  model?: string;
+  /** Provider probability of a model edge. */
+  p?: number;
 }
 
 /**
@@ -554,6 +560,12 @@ export interface CalleeEdge {
   edgeKind?: MethodEdgeKind;
   /** Dispatch confidence in (0,1] from `cg_symbols_edges_method.confidence` (xlnub Task 5). */
   confidence?: number;
+  /** `"model"` on an edge a residual-resolution verdict produced; absent on a static edge. */
+  origin?: EdgeOrigin;
+  /** Provider id of a model edge. */
+  model?: string;
+  /** Provider probability of a model edge. */
+  p?: number;
 }
 
 /** Minimal chunk preview returned by graph MCP tools (`get_callers`,

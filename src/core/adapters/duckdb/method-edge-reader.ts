@@ -45,6 +45,20 @@ import type { DuckDbGraphSession } from "./graph-session.js";
  */
 const SCOPED_EDGE_IN_LIST_CHUNK = 200;
 
+/** Model-edge provenance columns (migration 054); NULL on a static edge. */
+interface EdgeOriginColumns {
+  origin: string | null;
+  model: string | null;
+  p: number | null;
+}
+
+/** Drop the provenance columns, re-attaching them only on a model edge. */
+function withEdgeOrigin<E extends object>(row: E & EdgeOriginColumns): E {
+  const { origin, model, p, ...edge } = row;
+  if (origin !== "model" || model === null || p === null) return edge as unknown as E;
+  return { ...(edge as unknown as E), origin: "model", model, p };
+}
+
 export class DuckDbMethodEdgeReader implements Pick<
   CodegraphGraphReadStore,
   | "getCallers"
@@ -60,10 +74,12 @@ export class DuckDbMethodEdgeReader implements Pick<
   constructor(private readonly session: DuckDbGraphSession) {}
 
   async getCallers(symbolId: SymbolId): Promise<CallerEdge[]> {
-    const direct = await this.session.queryAll<CallerEdge>(
-      'SELECT source_symbol_id AS "sourceSymbolId", source_rel_path AS "sourceRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind", confidence FROM cg_symbols_edges_method WHERE target_symbol_id = ? ORDER BY source_rel_path, source_symbol_id',
-      [symbolId],
-    );
+    const direct = (
+      await this.session.queryAll<CallerEdge & EdgeOriginColumns>(
+        'SELECT source_symbol_id AS "sourceSymbolId", source_rel_path AS "sourceRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind", confidence, origin, model, p FROM cg_symbols_edges_method WHERE target_symbol_id = ? ORDER BY source_rel_path, source_symbol_id',
+        [symbolId],
+      )
+    ).map((r) => withEdgeOrigin<CallerEdge>(r));
     // bd tea-rags-mcp-2jet-E — symmetric CHA cone expansion. A large cone was
     // capped to ONE `poly-base` edge to the base declaration `T#m`. Callers of a
     // concrete override `Sub#m` must therefore ALSO include any caller that
@@ -71,24 +87,26 @@ export class DuckDbMethodEdgeReader implements Pick<
     // `Sub`. Re-derive those callers through the forward inheritance index.
     const split = splitMethodSymbol(symbolId);
     if (!split) return direct;
-    const polyBaseCallers = await this.session.queryAll<CallerEdge>(
-      `SELECT m.source_symbol_id AS "sourceSymbolId", m.source_rel_path AS "sourceRelPath", m.call_expression AS "callExpression", m.edge_kind AS "edgeKind", m.confidence
+    const polyBaseCallers = (
+      await this.session.queryAll<CallerEdge & EdgeOriginColumns>(
+        `SELECT m.source_symbol_id AS "sourceSymbolId", m.source_rel_path AS "sourceRelPath", m.call_expression AS "callExpression", m.edge_kind AS "edgeKind", m.confidence, m.origin, m.model, m.p
          FROM cg_symbols_edges_method m
          JOIN cg_symbols_inheritance i ON i.source_fq_name = ?
         WHERE m.edge_kind = 'poly-base'
           AND m.target_symbol_id = i.ancestor_fq_name || ? || ?
         ORDER BY m.source_rel_path, m.source_symbol_id`,
-      [split.base, split.sep, split.member],
-    );
+        [split.base, split.sep, split.member],
+      )
+    ).map((r) => withEdgeOrigin<CallerEdge>(r));
     if (polyBaseCallers.length === 0) return direct;
     return dedupeCallerEdges([...direct, ...polyBaseCallers]);
   }
 
   async getCallees(symbolId: SymbolId): Promise<CalleeEdge[]> {
     const edges = await this.session.queryAll<
-      CalleeEdge & { edgeKind: MethodEdgeKind | null; confidence: number | null }
+      CalleeEdge & { edgeKind: MethodEdgeKind | null; confidence: number | null } & EdgeOriginColumns
     >(
-      `SELECT target_symbol_id AS "targetSymbolId", target_rel_path AS "targetRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind", confidence
+      `SELECT target_symbol_id AS "targetSymbolId", target_rel_path AS "targetRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind", confidence, origin, model, p
          FROM cg_symbols_edges_method WHERE source_symbol_id = ? ORDER BY target_rel_path`,
       [symbolId],
     );
@@ -101,6 +119,11 @@ export class DuckDbMethodEdgeReader implements Pick<
         edgeKind: e.edgeKind ?? undefined,
         confidence: e.confidence ?? undefined,
       };
+      if (e.origin === "model" && e.model !== null && e.p !== null) {
+        base.origin = "model";
+        base.model = e.model;
+        base.p = e.p;
+      }
       out.push(base);
       // bd tea-rags-mcp-2jet-E — expand a `poly-base` edge to the overriding
       // subtypes at query time. The persisted edge points at the base decl
