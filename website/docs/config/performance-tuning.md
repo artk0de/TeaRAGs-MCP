@@ -25,11 +25,18 @@ What happens during a run:
   because of its size (an Ollama runner crash, an HTTP 400 on an oversized
   batch), the batch size is halved for every later batch, not just the failing
   one. After a streak of successful batches it is doubled back one step.
-- **Throughput hill-climb.** Each size is measured over several full batches
-  in characters per second. The neighbours at half and double the size,
-  inside the bounds, are probed, and the run moves to one only when it is more
-  than 5% faster. A settled size is re-probed every 200 batches, so a server
-  whose speed drifts is followed.
+- **Throughput hill-climb.** Each size is measured as **aggregate** chars/s
+  over a window of full batches at that size, started after the probe opened
+  — three rounds of the concurrency in force — so batches of other sizes still
+  in flight do not blur the reading. The neighbours at half and double the
+  size, inside the bounds, are probed, and the run moves to one only when it is
+  more than 5% faster. A settled point is re-probed upward every 1000 batches,
+  so a server that got faster is followed.
+- **Return to the best point.** The fastest point the run measured is kept
+  across failures and slowdowns. When a run re-settles below it — after a size
+  failure or a slow stretch of the server — it jumps back to that point after 64
+  settled batches and keeps it if it is faster again; otherwise it returns and
+  waits twice as long before the next try (up to 1000 batches).
 - **Concurrency hill-climb.** Once the batch size settles, concurrency is
   climbed the same way: half and double the current value, inside
   [1, ceiling] — `INGEST_PIPELINE_CONCURRENCY` when set, 8 when unset — each
@@ -64,7 +71,11 @@ it, under either spelling and even to `1`, makes your value the hard ceiling
 and the starting point of a run without a stored optimum. Set it only to cap
 the climb (for example `1` for a shared server you must not saturate), or to
 allow more than 8. llama-server does not depend on it: the provider already
-splits each batch across every endpoint and every `-np` slot.
+splits each batch across every endpoint and every `-np` slot. It also never
+sends an endpoint more requests than its `-np` slots, however many batches the
+pipeline runs at once — the rest wait on the client — so the request timeout
+measures time on the server, not time in its queue, and a slow GPU cannot be
+buried under retries of requests it is still working on.
 
 **Where to see the settled values:**
 
@@ -74,8 +85,14 @@ splits each batch across every endpoint and every `-np` slot.
   until a run has settled, and for providers that report no endpoint URL.
 - With `DEBUG=1`, every change is logged in `~/.tea-rags/logs/pipeline-*.log`
   as an `EMBED_TUNE_ADAPTED` line with the old and new value, the reason
-  (`seed`, `failure`, `recovery`, `probe`, `reprobe`, `settle`,
-  `concurrency-probe`, `concurrency-settle`) and the measured chars/s.
+  (`seed`, `failure`, `recovery`, `probe`, `reprobe`, `best-reprobe`,
+  `settle`, `concurrency-probe`, `concurrency-settle`, `producer-starved`,
+  `seed-slower`, `settled-slower`) and the measured chars/s. What failed is
+  logged next to it: `EMBED_SERVER_BATCH_FAILURE` names the endpoint, the
+  failed and retried sizes and the server's cause (HTTP status and body, or
+  the socket error), and `EMBED_ENDPOINT_FAILURE` names an endpoint that
+  refused, timed out or answered 5xx, with the reason and the time the request
+  spent on the wire.
 
 **Pinning static behaviour.** Set `EMBEDDING_TUNE_STATIC=true` to use
 `EMBEDDING_TUNE_BATCH_SIZE` and `INGEST_PIPELINE_CONCURRENCY` (1 when unset)
