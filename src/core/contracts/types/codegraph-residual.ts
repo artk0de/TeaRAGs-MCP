@@ -172,6 +172,8 @@ export interface ResidualPassReport {
   failedGroups: number;
   /** Groups in flight when the pass stopped asking; cancelled, not failed — their sites are asked next run. */
   abortedGroups: number;
+  /** Groups that timed out and were asked once more at the tail of the queue; a second timeout is a failure. */
+  requeuedGroups: number;
   /** Eligible rows whose verdict is under the provider threshold. */
   belowThreshold: number;
   /** Eligible rows whose verdict is at or above the provider threshold. */

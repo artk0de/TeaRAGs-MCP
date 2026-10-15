@@ -5,7 +5,8 @@
  * `applyModelEdges` replaces the model's edges, and a static re-walk of a file
  * drops that file's model edges. A provider that is down or keeps failing ends
  * the pass `skipped`, cancelling the asks still in flight; the verdicts already
- * held are applied all the same. Only eligible sites (see
+ * held are applied all the same. A group that timed out is asked once more at
+ * the tail of the queue, since it usually only waited behind a slow batch. Only eligible sites (see
  * {@link siteEligibility}) are asked or applied. The pass runs after finalize,
  * so when the applied edges change it recomputes the derived metrics itself,
  * best-effort.
@@ -29,6 +30,11 @@ import type {
 } from "./types.js";
 
 export const DEFAULT_MAX_GROUP_FAILURES = 3;
+export const DEFAULT_MAX_GROUP_FAILURE_RATE = 0.02;
+export const DEFAULT_MAX_CONSECUTIVE_GROUP_FAILURES = 5;
+
+/** Provider error codes for a group that may answer when asked again later; it is requeued once. */
+const REQUEUE_CODES = new Set(["INFRA_KEV_TIMEOUT"]);
 
 /** Provider error codes that mean "this method source is too long to ask"; its sites are skipped, not failed. */
 const STATE_TOO_LONG_CODES = new Set(["INFRA_KEV_STATE_TOO_LONG"]);
@@ -53,7 +59,12 @@ export interface ResidualPassInput {
   /** Epoch ms. */
   now: () => number;
   onProgress?: ProgressCallback;
+  /** Failed groups tolerated however few groups the pass has; the budget is the larger of this and the rate. */
   maxGroupFailures?: number;
+  /** Failed groups tolerated as a share of the pass's groups, e.g. 0.02. */
+  maxGroupFailureRate?: number;
+  /** Failed groups in a row (in completion order) that trip the breaker whatever the budget. */
+  maxConsecutiveGroupFailures?: number;
 }
 
 interface PendingGroup {
@@ -71,7 +82,13 @@ interface AskTally {
   failures: string[];
   /** Groups cancelled in flight when the pass stopped asking. */
   aborted: number;
+  /** Groups asked again at the tail after a timeout. */
+  requeued: number;
+  /** Failed groups in a row; an answered group restarts it. */
+  consecutiveFailures: number;
   leaseLost: boolean;
+  /** The failure budget or the consecutive-failure limit was exceeded. */
+  breakerTripped: boolean;
 }
 
 const verdictKey = (siteKey: string, menuHash: string): string => `${siteKey}\u0000${menuHash}`;
@@ -106,19 +123,28 @@ export class ResidualResolutionPass {
     const groups = groupQuestions(eligible.filter((r) => !verdicts.has(verdictKey(r.siteKey, r.menuHash))));
     const readAt = input.now();
 
-    const tally: AskTally = { asked: 0, answered: 0, tooLong: 0, failures: [], aborted: 0, leaseLost: false };
+    const tally: AskTally = {
+      asked: 0,
+      answered: 0,
+      tooLong: 0,
+      failures: [],
+      aborted: 0,
+      requeued: 0,
+      consecutiveFailures: 0,
+      leaseLost: false,
+      breakerTripped: false,
+    };
     let notAcquired: string | undefined;
     if (servedVersion.version !== undefined && groups.length > 0) {
       notAcquired = await this.askLeased(groups, servedVersion.version, verdicts, tally, input);
     }
     const askedAt = input.now();
 
-    const maxFailures = input.maxGroupFailures ?? DEFAULT_MAX_GROUP_FAILURES;
     const failureReason =
       tally.failures.length > 0 ? `${tally.failures.length} group(s) failed: ${tally.failures[0]}` : undefined;
     const unavailable = servedVersion.unavailable ?? notAcquired;
     const reason = unavailable ?? failureReason;
-    const skipped = unavailable !== undefined || tally.leaseLost || tally.failures.length > maxFailures;
+    const skipped = unavailable !== undefined || tally.leaseLost || tally.breakerTripped;
 
     const { edges, belowThreshold } = buildEdges(eligible, verdicts, provider);
     const applied = await input.graphDb.applyModelEdges(provider.id, edges);
@@ -147,6 +173,7 @@ export class ResidualResolutionPass {
       tooLong: tally.tooLong,
       failedGroups: tally.failures.length,
       abortedGroups: tally.aborted,
+      requeuedGroups: tally.requeued,
       belowThreshold,
       sitesEdged: edges.length,
       edgesApplied: applied.stored,
@@ -243,8 +270,9 @@ export class ResidualResolutionPass {
   }
 
   /**
-   * Pool of `concurrency` workers; each group's verdicts are stored as soon as it answers. A lost lease or more
-   * than `maxGroupFailures` failed groups aborts the asks still in flight; those count as aborted, not failed.
+   * Pool of `concurrency` workers over one queue; each group's verdicts are stored as soon as it answers. A group
+   * that timed out goes back to the tail once. A lost lease or a tripped breaker (see {@link tripsBreaker}) aborts
+   * the asks still in flight; those count as aborted, not failed.
    */
   private async askGroups(
     groups: PendingGroup[],
@@ -253,22 +281,36 @@ export class ResidualResolutionPass {
     tally: AskTally,
     input: ResidualPassInput,
   ): Promise<void> {
-    const maxFailures = input.maxGroupFailures ?? DEFAULT_MAX_GROUP_FAILURES;
+    const failureBudget = Math.max(
+      input.maxGroupFailures ?? DEFAULT_MAX_GROUP_FAILURES,
+      Math.ceil((input.maxGroupFailureRate ?? DEFAULT_MAX_GROUP_FAILURE_RATE) * groups.length),
+    );
+    const maxConsecutive = input.maxConsecutiveGroupFailures ?? DEFAULT_MAX_CONSECUTIVE_GROUP_FAILURES;
     const controller = new AbortController();
+    const pendingGroups = [...groups];
+    const requeued = new Set<PendingGroup>();
     let next = 0;
     let done = 0;
     const worker = async (): Promise<void> => {
-      while (next < groups.length && !controller.signal.aborted) {
-        const group = groups[next++];
-        tally.asked += group.questions.length;
+      while (next < pendingGroups.length && !controller.signal.aborted) {
+        const group = pendingGroups[next++];
+        if (!requeued.has(group)) tally.asked += group.questions.length;
         try {
           const fresh = await this.askGroup(group, modelVersion, input, controller.signal);
           await input.store.put(fresh);
           tally.answered += fresh.length;
+          tally.consecutiveFailures = 0;
           for (const verdict of fresh) verdicts.set(verdictKey(verdict.siteKey, verdict.menuHash), verdict);
         } catch (error) {
+          if (!controller.signal.aborted && !requeued.has(group) && REQUEUE_CODES.has(errorCode(error) ?? "")) {
+            requeued.add(group);
+            pendingGroups.push(group);
+            tally.requeued++;
+            continue;
+          }
           this.countFailure(group, error, tally, controller.signal);
-          if (tally.leaseLost || tally.failures.length > maxFailures) controller.abort();
+          tally.breakerTripped ||= tripsBreaker(tally, failureBudget, maxConsecutive);
+          if (tally.leaseLost || tally.breakerTripped) controller.abort();
         }
         done++;
         input.onProgress?.({
@@ -296,6 +338,7 @@ export class ResidualResolutionPass {
       return;
     }
     tally.failures.push(describeError(error));
+    tally.consecutiveFailures++;
     if (LEASE_LOST_CODES.has(code)) tally.leaseLost = true;
     console.error(
       `[Residual] group failed: method=${group.methodSymbolId} questions=${group.questions.length} code=${code || "UNKNOWN"}`,
@@ -320,6 +363,11 @@ export class ResidualResolutionPass {
     );
     return toVerdicts(group.questions, answers, input.provider.id, modelVersion, input.now());
   }
+}
+
+/** More failed groups than the budget, or `maxConsecutive` failed groups in a row. */
+function tripsBreaker(tally: AskTally, failureBudget: number, maxConsecutive: number): boolean {
+  return tally.failures.length > failureBudget || tally.consecutiveFailures >= maxConsecutive;
 }
 
 /** One group per enclosing method; a site asked twice with the same menu is asked once. */
