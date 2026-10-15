@@ -81,6 +81,7 @@ import {
   readPayloadFileCommitCounts,
   readPayloadImportSpecifiers,
   RequestScopedFileFactsReader,
+  ResidualResolutionOps,
   resolveDomainEnvCodeDefaults,
   ReviewChangesOps,
   ReviewFacade,
@@ -1218,6 +1219,8 @@ interface IngestSliceDeps {
   codegraphDeps?: CodegraphDeps;
   codegraphPool?: GraphDbClientPool;
   indexRunDaemonGuard?: IndexRunDaemonGuard;
+  /** Where the residual verdict stores live — the codegraph root. Set only when codegraph is wired. */
+  residualVerdictRootDir?: string;
   payloadSignals: CompositionContext["allPayloadSignalDescriptors"];
   statsAccumulators: CompositionContext["allStatsAccumulators"];
   reranker: CompositionContext["reranker"];
@@ -1321,6 +1324,16 @@ function createIngestFacade(
     envSnapshot: buildPinnedRegistryEnvSnapshot(zodConfig, resolveDomainEnvCodeDefaults()),
     enrichmentProviders,
     codegraphPool: shared.codegraphPool,
+    // Per configuration: a project whose env turns codegraph off gets no pass,
+    // and its own `CODEGRAPH_RESIDUAL_*` values drive the one it gets.
+    residualResolution:
+      zodConfig.codegraph?.enabled && shared.codegraphPool && shared.residualVerdictRootDir !== undefined
+        ? new ResidualResolutionOps({
+            rootDir: shared.residualVerdictRootDir,
+            codegraphPool: shared.codegraphPool,
+            config: zodConfig.codegraph.residual,
+          })
+        : undefined,
     indexRunDaemonGuard: shared.indexRunDaemonGuard,
     enrichmentExecutor: shared.enrichmentExecutor,
     footprintFactory: shared.footprintFactory,
@@ -2093,6 +2106,7 @@ function createIngestSection(deps: {
     codegraphDeps: codegraphContext?.deps,
     codegraphPool: codegraphContext?.pool,
     indexRunDaemonGuard: codegraphContext?.indexRunDaemonGuard,
+    ...(codegraphContext ? { residualVerdictRootDir } : {}),
     payloadSignals: composition.allPayloadSignalDescriptors,
     statsAccumulators: composition.allStatsAccumulators,
     reranker: composition.reranker,

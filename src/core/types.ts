@@ -10,6 +10,7 @@
  * New code should import from `contracts/` directly (or via `api/public`).
  */
 
+import type { ResidualPassReport } from "./contracts/types/codegraph-residual.js";
 import type { EnrichmentHealthMap } from "./contracts/types/enrichment.js";
 import type { ProviderRunMetrics } from "./contracts/types/provider.js";
 import type { RechunkTestFileScope } from "./contracts/types/rechunk.js";
@@ -87,6 +88,13 @@ export interface IndexOptions {
    * public DTO in `api/public/dto/ingest.ts`.
    */
   forceEnrichments?: string[];
+  /**
+   * After codegraph enrichment, ask this model (`kev`) about the call sites the
+   * static resolver left ambiguous or dynamic, and add its confident verdicts as
+   * model edges. Never fails the run: an unreachable model ends that pass
+   * skipped.
+   */
+  resolveResidual?: string;
 
   /**
    * Restrict the run to points of these languages. Valid with `forceEnrichments`
@@ -483,6 +491,11 @@ export interface IndexStatus {
    * `IndexStats.worktreeSeed` so `--json` reports it.
    */
   worktreeSeed?: WorktreeSeedReport;
+  /**
+   * The collection's last residual pass in this process (`--resolve-residual`,
+   * or the cache-only re-apply of an index run). Never persisted.
+   */
+  residualResolution?: ResidualPassReport;
   /**
    * Registered project alias for this collection, when one exists.
    * Intentionally unset in StatusModule to keep it registry-free (domain-boundary

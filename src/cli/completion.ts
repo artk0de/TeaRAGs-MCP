@@ -2,7 +2,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { resolveRegistryEnvCodeDefaults } from "../bootstrap/config/index.js";
-import { collectionHoldsCodegraphData, CollectionRegistry, resolveDomainEnvCodeDefaults } from "../core/api/index.js";
+import {
+  collectionHoldsCodegraphData,
+  CollectionRegistry,
+  RESIDUAL_MODELS,
+  resolveDomainEnvCodeDefaults,
+} from "../core/api/index.js";
 import { recallCallToolNames } from "./call/tool-name-cache.js";
 
 /**
@@ -81,6 +86,10 @@ export function maybeCompleteProjectName(
   // zero lines AND the `complete -c` registration is not `-f`/--no-files).
   if (last === "--path") {
     return [];
+  }
+
+  if (last === "--resolve-residual") {
+    return [...RESIDUAL_MODELS];
   }
 
   if (last === "--name" || last === "-n") {

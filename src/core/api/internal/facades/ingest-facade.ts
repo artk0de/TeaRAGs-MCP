@@ -59,6 +59,7 @@ import { enrichmentAlgorithmVersions } from "../composition.js";
 import { createCodegraphPayloadHealRunner } from "../infra/codegraph-payload-heal-runner.js";
 import { createIngestDependencies } from "../ingest-dependencies.js";
 import { IndexingOps, type IndexDriftConsumptionResetter } from "../ops/indexing-ops.js";
+import type { ResidualResolutionOps } from "../ops/residual-resolution-ops.js";
 import { WorktreeSeedOps } from "../ops/worktree-seed-ops.js";
 
 type ModelInfo = { model: string; contextLength: number; dimensions: number };
@@ -120,6 +121,8 @@ export interface IngestFacadeDeps {
    * when codegraph is disabled.
    */
   codegraphPool?: GraphDbClientPool;
+  /** The residual pass index runs end with. Omitted when codegraph is off for this configuration. */
+  residualResolution?: ResidualResolutionOps;
   /**
    * Enrichment dispatch seam (Phase 2 of unified-enrichment-worker-pool plan).
    * When omitted, the facade constructs a default `InlineEnrichmentExecutor`
@@ -213,6 +216,7 @@ export class IngestFacade {
       gitTimePeriods,
       modelGuard: deps.modelGuard,
       codegraphPool: deps.codegraphPool,
+      ...(deps.residualResolution ? { residualResolution: deps.residualResolution } : {}),
       healthCheckRetryAttempts: deps.healthCheckRetryAttempts,
       healthCheckRetryDelayMs: deps.healthCheckRetryDelayMs,
       languageVersionStamper: deps.collectionRegistry,

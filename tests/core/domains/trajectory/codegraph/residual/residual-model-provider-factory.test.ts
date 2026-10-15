@@ -36,4 +36,19 @@ describe("ResidualModelProviderFactory", () => {
   it("refuses kev without CODEGRAPH_RESIDUAL_KEV_URL", () => {
     expect(() => ResidualModelProviderFactory.create("kev", { kevThreshold: 0.7 })).toThrow(ConfigValueMissingError);
   });
+
+  it("builds a cache-only kev provider without a URL: its threshold applies, asking it throws", async () => {
+    const provider = ResidualModelProviderFactory.cacheOnly("kev", { kevThreshold: 0.8 });
+
+    expect(provider.id).toBe("kev");
+    expect(provider.threshold).toBe(0.8);
+    await expect(provider.health()).resolves.toEqual({ ok: false, reason: "cache-only provider is never asked" });
+    await expect(provider.version()).rejects.toThrow(/cache-only/);
+  });
+
+  it("refuses an unknown model for a cache-only provider too", () => {
+    expect(() => ResidualModelProviderFactory.cacheOnly("gpt-9", { kevThreshold: 0.7 })).toThrow(
+      ConfigValueInvalidError,
+    );
+  });
 });
