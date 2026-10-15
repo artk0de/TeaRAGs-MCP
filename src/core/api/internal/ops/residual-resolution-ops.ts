@@ -1,0 +1,118 @@
+/**
+ * Runs the residual resolution pass against one collection generation: opens
+ * the project's verdict store, takes the graph's write handle, builds the
+ * provider and reads method sources from the working tree. Never throws — a
+ * failure of any of those ends the pass `skipped`, and indexing carries on.
+ */
+
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import { ResidualVerdictStore } from "../../../adapters/duckdb/residual-verdict-store.js";
+import {
+  RESIDUAL_MODELS,
+  ResidualModelProviderFactory,
+} from "../../../domains/trajectory/codegraph/residual/residual-model-provider-factory.js";
+import { ResidualResolutionPass } from "../../../domains/trajectory/codegraph/residual/residual-resolution-pass.js";
+import type {
+  ResidualModelProvider,
+  ResidualPassReport,
+} from "../../../domains/trajectory/codegraph/residual/types.js";
+import {
+  skippedResidualReport,
+  type ResidualAfterIndexRequest,
+  type ResidualResolvePort,
+  type ResidualResolvePortRequest,
+} from "./residual-resolve-port.js";
+
+/** `codegraph.residual` as the pass reads it. */
+export interface ResidualResolutionConfig {
+  kevUrls?: readonly string[];
+  kevThreshold: number;
+  concurrency: number;
+  menuLimit: number;
+  retentionDays: number;
+  /** GPU session broker; set, an `ask` pass with uncached sites leases Kev from it. */
+  kevSessionUrl?: string;
+  kevSessionToken?: string;
+}
+
+type VerdictStoreHandle = Pick<ResidualVerdictStore, "find" | "findLatest" | "put" | "touch" | "expire" | "close">;
+
+export interface ResidualResolutionOpsDeps {
+  /** The codegraph root; the store lives at `<rootDir>/residual-verdicts/<logicalName>.duckdb`. */
+  rootDir: string;
+  codegraphPool: Pick<GraphDbClientPool, "acquireWrite">;
+  config: ResidualResolutionConfig;
+  /** Builds the provider an `ask` pass queries. Defaults to the factory over `config`. */
+  createProvider?: (model: string) => ResidualModelProvider;
+  now?: () => number;
+}
+
+/** Wave 1 records verdicts for one model only; a `cacheOnly` re-apply restores its edges. */
+const RECORDED_MODEL = RESIDUAL_MODELS[0];
+
+export class ResidualResolutionOps implements ResidualResolvePort {
+  private readonly createProvider: (model: string) => ResidualModelProvider;
+  private readonly now: () => number;
+
+  constructor(private readonly deps: ResidualResolutionOpsDeps) {
+    this.createProvider = deps.createProvider ?? ((model) => ResidualModelProviderFactory.create(model, deps.config));
+    this.now = deps.now ?? Date.now;
+  }
+
+  /**
+   * The pass an index run ends with: asks `model` when the run named one;
+   * otherwise re-applies the stored verdicts (`cacheOnly`) when the project has
+   * any, because the run's static re-walk dropped the changed files' model
+   * edges. No model and no verdicts → no pass, `undefined`.
+   */
+  async resolveAfterIndex(request: ResidualAfterIndexRequest): Promise<ResidualPassReport | undefined> {
+    if (request.model !== undefined) return this.resolve({ ...request, model: request.model, mode: "ask" });
+    if (!existsSync(ResidualVerdictStore.pathFor(this.deps.rootDir, request.logicalName))) return undefined;
+    return this.resolve({ ...request, model: RECORDED_MODEL, mode: "cacheOnly" });
+  }
+
+  async resolve(request: ResidualResolvePortRequest): Promise<ResidualPassReport> {
+    const mode = request.mode ?? "ask";
+    let store: VerdictStoreHandle | undefined;
+    try {
+      const provider =
+        mode === "ask"
+          ? this.createProvider(request.model)
+          : ResidualModelProviderFactory.cacheOnly(request.model, this.deps.config);
+      store = await ResidualVerdictStore.open(this.deps.rootDir, request.logicalName);
+      const { graphDb } = await this.deps.codegraphPool.acquireWrite(request.physicalCollectionName);
+      const pass = new ResidualResolutionPass();
+      const input = {
+        graphDb,
+        store,
+        provider,
+        mode,
+        concurrency: this.deps.config.concurrency,
+        menuLimit: this.deps.config.menuLimit,
+        retentionDays: this.deps.config.retentionDays,
+        readMethodSource: async (relPath: string, startLine: number, endLine: number) =>
+          sliceLines(await readFile(join(request.projectRoot, relPath), "utf8"), startLine, endLine),
+        now: this.now,
+        ...(request.onProgress ? { onProgress: request.onProgress } : {}),
+      };
+      // A brokered provider leases the GPU inside the pass, which alone knows whether any site misses the cache.
+      return await pass.run(input);
+    } catch (error) {
+      return skippedResidualReport(error instanceof Error ? error.message : String(error), mode);
+    } finally {
+      await store?.close().catch(() => undefined);
+    }
+  }
+}
+
+/** Lines `startLine..endLine`, 1-based and inclusive. */
+function sliceLines(text: string, startLine: number, endLine: number): string {
+  return text
+    .split("\n")
+    .slice(startLine - 1, endLine)
+    .join("\n");
+}

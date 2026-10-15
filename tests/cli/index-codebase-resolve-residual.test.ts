@@ -1,0 +1,97 @@
+/**
+ * `index-codebase --resolve-residual <model>`: the flag reaches the run, an
+ * unsupported model is refused at parse time, and the residual pass's report
+ * reaches both the human status block and the `--json` object.
+ */
+
+import { describe, expect, it } from "vitest";
+import yargs from "yargs";
+
+import { buildIndexOptions, indexCodebaseCommand } from "../../src/cli/commands/index-codebase.js";
+import { maybeCompleteProjectName } from "../../src/cli/completion.js";
+import { formatIndexStatus, formatIndexStatusJson } from "../../src/cli/index-progress/status-format.js";
+import { createColorizer } from "../../src/cli/infra/color.js";
+import type { IndexStatus, ResidualPassReport } from "../../src/core/api/public/index.js";
+
+function parse(argv: string[]): Record<string, unknown> {
+  let failure: string | undefined;
+  const parsed = yargs([])
+    .command({ ...indexCodebaseCommand, handler: () => undefined })
+    .exitProcess(false)
+    .fail((msg: string) => {
+      failure = msg;
+    })
+    .parse(argv) as Record<string, unknown>;
+  if (failure !== undefined) throw new Error(failure);
+  return parsed;
+}
+
+const REPORT: ResidualPassReport = {
+  outcome: "skipped",
+  reason: "provider kev unavailable: connect ECONNREFUSED",
+  mode: "ask",
+  sites: 120,
+  menuOverflow: 4,
+  cacheHits: 80,
+  groups: 12,
+  asked: 0,
+  answered: 0,
+  tooLong: 0,
+  failedGroups: 0,
+  belowThreshold: 3,
+  edgesApplied: 77,
+  durations: { readMs: 5, askMs: 0, applyMs: 20, totalMs: 25 },
+};
+
+const status: IndexStatus = { isIndexed: true, status: "indexed", collectionName: "code_repo" };
+
+describe("index-codebase --resolve-residual", () => {
+  it("carries the model into IndexOptions", () => {
+    expect(buildIndexOptions(parse(["index-codebase", "--resolve-residual", "kev"]) as never)).toMatchObject({
+      resolveResidual: "kev",
+    });
+  });
+
+  it("leaves IndexOptions without the key when the flag is absent", () => {
+    expect(buildIndexOptions(parse(["index-codebase"]) as never)).not.toHaveProperty("resolveResidual");
+  });
+
+  it("refuses a model outside the supported list", () => {
+    expect(() => parse(["index-codebase", "--resolve-residual", "gpt-9"])).toThrow(/Invalid values/);
+  });
+
+  it("completes the flag's value with the supported models", () => {
+    expect(
+      maybeCompleteProjectName(["index-codebase", "--resolve-residual", ""], ["tea-rags", "index-codebase"]),
+    ).toEqual(["kev"]);
+  });
+});
+
+describe("the residual pass in the run's output", () => {
+  it("is reported verbatim in the --json object", () => {
+    const json = formatIndexStatusJson({ ...status, residualResolution: REPORT }, { path: "/repo" }) as Record<
+      string,
+      unknown
+    >;
+
+    expect(json.residualResolution).toEqual(REPORT);
+  });
+
+  it("shows its outcome, edges and the skip reason in the status block", () => {
+    const text = formatIndexStatus(
+      { ...status, residualResolution: REPORT },
+      createColorizer({ env: { NO_COLOR: "1" }, isTTY: false }),
+    );
+
+    expect(text).toContain("Residual resolution");
+    expect(text).toContain("skipped (ask): provider kev unavailable: connect ECONNREFUSED");
+    expect(text).toContain("120 sites, 80 from cache, 0 asked, 77 model edges applied");
+  });
+
+  it("is absent from both when no pass ran", () => {
+    expect(formatIndexStatus(status, createColorizer({ env: { NO_COLOR: "1" }, isTTY: false }))).not.toContain(
+      "Residual resolution",
+    );
+    expect(formatIndexStatusJson(status, { path: "/repo" })).not.toHaveProperty("residualResolution");
+  });
+});

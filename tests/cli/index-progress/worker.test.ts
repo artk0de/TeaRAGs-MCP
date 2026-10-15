@@ -218,7 +218,7 @@ describe("runIndexWorker", () => {
     await runIndexWorker(
       app as never,
       "/repo",
-      {},
+      { resolveResidual: "kev" },
       (m) => sent.push(m),
       () => clock,
     );

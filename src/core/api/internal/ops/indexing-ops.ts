@@ -41,9 +41,11 @@ import {
   type HeldCollectionIndexingLockPort,
   type WorktreeSeedPending,
 } from "../../../domains/ingest/infra/index.js";
-import { resolvePhysicalCollection } from "../../../domains/ingest/operations/index.js";
-import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
-import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
+import {
+  resolvePhysicalCollection,
+  type IndexPipeline,
+  type ReindexPipeline,
+} from "../../../domains/ingest/operations/index.js";
 import {
   CODE_LANGUAGES,
   SELECTABLE_LANGUAGES,
@@ -144,7 +146,11 @@ export interface IndexingOpsDeps {
    * codegraph tools at call time. Omitted → nothing is stamped.
    */
   codegraphEnabledStamper?: CodegraphEnabledStamper;
-  /** Residual resolution; omitted when codegraph is off. */
+  /**
+   * Residual resolution: the pass an index run ends with (`--resolve-residual`,
+   * or the cache-only re-apply of stored verdicts) and the CLI-driven pass on
+   * the current generation. Omitted when codegraph is off.
+   */
   residualResolution?: ResidualResolvePort;
   /**
    * Where the settled embedding throughput optimum of an endpoint + model is
@@ -280,6 +286,8 @@ export class IndexingOps {
   private readonly gitTimePeriods?: { fileMonths: number; chunkMonths: number };
   private readonly modelGuard?: EmbeddingModelGuardPort;
   private readonly codegraphPool?: GraphDbClientPool;
+  /** The last residual pass per collection, reported on its status. */
+  private readonly residualReports = new Map<string, ResidualPassReport>();
   private readonly healthCheckRetryAttempts: number;
   private readonly healthCheckRetryDelayMs: number;
   private readonly status: StatusModule;
@@ -404,7 +412,10 @@ export class IndexingOps {
     try {
       const stats = await this.runClaimed(path, options, progressCallback, enrichmentProgress);
       heldUntilEnrichmentSettles = true;
-      const release = this.releaseCollectionWhenEnrichmentSettles(collectionName);
+      const release = this.releaseCollectionWhenEnrichmentSettles(
+        collectionName,
+        this.residualPassAfterSettle(collectionName, path, options, progressCallback),
+      );
       this.pendingCollectionReleases.add(release);
       void release.finally(() => this.pendingCollectionReleases.delete(release));
       return stats;
@@ -599,11 +610,15 @@ export class IndexingOps {
   }
 
   /**
-   * Hold the collection until the enrichment the operation detached has settled.
-   * Waits on the collection the run actually wrote — the alias target — because
-   * that is the name its completion is tracked under.
+   * Hold the collection until the enrichment the operation detached has settled,
+   * then run `afterSettle` while still holding it. Waits on the collection the
+   * run actually wrote — the alias target — because that is the name its
+   * completion is tracked under. Never rejects.
    */
-  private async releaseCollectionWhenEnrichmentSettles(collectionName: string): Promise<void> {
+  private async releaseCollectionWhenEnrichmentSettles(
+    collectionName: string,
+    afterSettle?: (physicalCollectionName: PhysicalCollectionName) => Promise<void>,
+  ): Promise<void> {
     try {
       let physicalCollectionName = resolvePhysicalCollection(collectionName, []);
       try {
@@ -616,10 +631,41 @@ export class IndexingOps {
       // as before for every run that started nothing afterwards.
       const trailing = this.trailingEnrichment.get(collectionName);
       if (trailing) await trailing;
+      // Same rule: a run with no pass afterwards must not gain a tick either.
+      if (afterSettle) {
+        await afterSettle(physicalCollectionName).catch((error: unknown) => {
+          console.error(`[IndexingOps] residual pass on ${collectionName} failed:`, error);
+        });
+      }
     } finally {
       this.trailingEnrichment.delete(collectionName);
       await this.releaseCollectionForIndexing(collectionName);
     }
+  }
+
+  /**
+   * The residual pass the run ends with, or none when codegraph is off for it.
+   * `--resolve-residual` names the model to ask; without it the residual ops
+   * decide whether stored verdicts need re-applying.
+   */
+  private residualPassAfterSettle(
+    collectionName: string,
+    path: string,
+    options: IndexOptions | undefined,
+    progressCallback: ProgressCallback | undefined,
+  ): ((physicalCollectionName: PhysicalCollectionName) => Promise<void>) | undefined {
+    const residual = this.residualResolution;
+    if (!residual?.resolveAfterIndex || !this.codegraphPool) return undefined;
+    return async (physicalCollectionName) => {
+      const report = await residual.resolveAfterIndex?.({
+        logicalName: collectionName,
+        physicalCollectionName,
+        projectRoot: await validatePath(path),
+        ...(options?.resolveResidual !== undefined ? { model: options.resolveResidual } : {}),
+        ...(progressCallback ? { onProgress: progressCallback } : {}),
+      });
+      if (report) this.residualReports.set(collectionName, report);
+    };
   }
 
   /**
@@ -699,7 +745,7 @@ export class IndexingOps {
   }
 
   /** The collection the alias currently points at; the name itself when aliases cannot be listed. */
-  private async physicalCollectionOf(collectionName: string): Promise<string> {
+  private async physicalCollectionOf(collectionName: string): Promise<PhysicalCollectionName> {
     try {
       return resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
     } catch {
@@ -829,7 +875,8 @@ export class IndexingOps {
     }
 
     const status = await this.status.getIndexStatus(path);
-    return { ...status, infraHealth };
+    const residualResolution = this.residualReports.get(aliasCollectionName);
+    return { ...status, infraHealth, ...(residualResolution ? { residualResolution } : {}) };
   }
 
   /** Drop all indexed data for a codebase and invalidate the model-guard cache. */

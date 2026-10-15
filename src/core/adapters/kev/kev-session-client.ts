@@ -54,7 +54,7 @@ export class KevSessionClient {
   }
 
   async state(): Promise<KevBrokerState> {
-    const response = await this.send("GET", "/v1/state", undefined, REQUEST_TIMEOUT_MS);
+    const response = await this.readResponse("GET", "/v1/state", undefined, REQUEST_TIMEOUT_MS);
     if (!response.ok) throw new KevSessionUnavailableError(this.url, `GET /v1/state answered HTTP ${response.status}`);
     const body = (await response.json()) as StateResponse;
     return {
@@ -65,7 +65,7 @@ export class KevSessionClient {
 
   /** Blocks until the embedders are stopped and Kev answers. */
   async acquire(holder: string, ttlSec: number): Promise<KevSession> {
-    const response = await this.send("POST", "/v1/session", { holder, ttlSec }, ACQUIRE_TIMEOUT_MS);
+    const response = await this.readResponse("POST", "/v1/session", { holder, ttlSec }, ACQUIRE_TIMEOUT_MS);
     if (response.status === 409) {
       const body = (await response.json()) as { holder?: string; state?: string };
       throw new KevSessionBusyError(this.url, body.holder, body.state);
@@ -86,7 +86,7 @@ export class KevSessionClient {
 
   /** Extends the lease by its ttl; a 404 means the broker dropped it. */
   async heartbeat(lease: string): Promise<void> {
-    const response = await this.send(
+    const response = await this.readResponse(
       "POST",
       `/v1/session/${encodeURIComponent(lease)}/heartbeat`,
       undefined,
@@ -98,7 +98,7 @@ export class KevSessionClient {
 
   /** The broker restores the embedders asynchronously; a lease it no longer knows (404) is already released. */
   async release(lease: string): Promise<void> {
-    const response = await this.send(
+    const response = await this.readResponse(
       "DELETE",
       `/v1/session/${encodeURIComponent(lease)}`,
       undefined,
@@ -109,7 +109,7 @@ export class KevSessionClient {
     }
   }
 
-  private async send(method: string, path: string, body: unknown, timeoutMs: number): Promise<Response> {
+  private async readResponse(method: string, path: string, body: unknown, timeoutMs: number): Promise<Response> {
     const headers: Record<string, string> = {};
     if (body !== undefined) headers["content-type"] = "application/json";
     if (this.token !== undefined) headers["x-broker-token"] = this.token;
