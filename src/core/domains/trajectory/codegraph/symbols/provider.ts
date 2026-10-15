@@ -147,6 +147,8 @@ export interface CodegraphProviderDeps {
    * the same leaf-domain reason.
    */
   composer: SymbolIdComposer;
+  /** Candidate-menu cap for residual call sites (`CODEGRAPH_RESIDUAL_MENU_LIMIT`); runner default when absent. */
+  residualMenuLimit?: number;
   /**
    * Symbol-range collector (yl9tv), a `domains/language/kernel` function injected
    * for the same reason. The chunker worker loads the SAME function through its
@@ -322,7 +324,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       collectInstantiationSiteResolvers(deps.languageFactory),
     );
     this.identifierFinderVocabulary = collectIdentifierFinderVocabulary(deps.languageFactory);
-    this.resolutionRunner = new CallEdgeResolutionRunner(deps.languageFactory, this.runState);
+    this.resolutionRunner = new CallEdgeResolutionRunner(deps.languageFactory, this.runState, deps.residualMenuLimit);
     this.graphFinalizer = new GraphBuildFinalizer(
       async (physicalCollectionName) => this.getStore(physicalCollectionName),
       this.resolutionRunner,

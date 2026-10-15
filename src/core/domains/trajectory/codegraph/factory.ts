@@ -131,6 +131,8 @@ export interface CodegraphWorkerConfig {
    * provider's resolver with the SAME mode as the main thread.
    */
   ambiguousResolveMode?: AmbiguousResolveMode;
+  /** `CODEGRAPH_RESIDUAL_MENU_LIMIT` for the in-thread provider's resolution runner. */
+  residualMenuLimit?: number;
   /**
    * Co-change build config for the temporal sub-graph (bd tea-rags-mcp-x4rpp) —
    * plain data, so the pinned worker rebuilds the SAME completion hook the
@@ -308,6 +310,7 @@ export async function createCodegraphProviderRuntime(
       derivedSignals: CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
       presets: CODEGRAPH_SYMBOLS_PRESETS,
       exclusion: { customPatterns: config.customExcludePatterns ?? [] },
+      ...(config.residualMenuLimit !== undefined ? { residualMenuLimit: config.residualMenuLimit } : {}),
       collectionCompletionHooks: createTemporalCochangeHooks(config.temporal),
     },
     descriptor,

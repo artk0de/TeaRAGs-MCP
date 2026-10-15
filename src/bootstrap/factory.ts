@@ -914,6 +914,7 @@ export function wireCodegraph(
     // Threaded to composition roots so NATIVE language providers (ruby, …) build
     // their resolver with the configured mode.
     ambiguousResolveMode: ambiguousMode,
+    residualMenuLimit: codegraph.residual.menuLimit,
     // Codegraph-layer exclusion (user-supplied patterns; generated + test
     // files are excluded unconditionally). The shape mirrors
     // `CodegraphExclusionOptions`; the provider builds the actual `Ignore`
@@ -1170,6 +1171,7 @@ function buildCodegraphWorkerDescriptor(deps: {
     dbMemoryLimit: codegraph.dbMemoryLimit,
     dbThreads: codegraph.dbThreads,
     ambiguousResolveMode: ambiguousMode,
+    residualMenuLimit: codegraph.residual.menuLimit,
     ...(temporal ? { temporal } : {}),
   };
   const workerDescriptor: WorkerEnrichmentDescriptor = {
