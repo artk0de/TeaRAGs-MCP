@@ -28,12 +28,12 @@ import type {
   ModelExternalSiteRow,
   ModelResolvedSiteCount,
   ResidualCallSiteRow,
-  ResidualClassTarget,
   ResidualKind,
   ResidualReason,
 } from "../../contracts/types/codegraph.js";
 import { METHOD_EDGE_KEYS, METHOD_EDGE_VALUES } from "./file-graph-store.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
+import { decodeResidualClassTargets } from "./residual-class-targets-codec.js";
 import { placeholders } from "./sql-binding.js";
 
 /** Values per `IN (…)` list — the bound the session's batched writers use. */
@@ -99,7 +99,7 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
       ...(r.reason === null ? {} : { reason: r.reason as ResidualReason }),
       ...(r.receiver_group === null || r.class_targets === null
         ? {}
-        : { receiverGroup: r.receiver_group, classTargets: JSON.parse(r.class_targets) as ResidualClassTarget[] }),
+        : { receiverGroup: r.receiver_group, classTargets: decodeResidualClassTargets(r.member, r.class_targets) }),
       ...(r.downstream_group === null ? {} : { downstreamGroup: r.downstream_group }),
     }));
   }

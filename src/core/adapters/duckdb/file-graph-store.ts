@@ -38,6 +38,7 @@ import {
 } from "./cg-pass1-aggregates-row.js";
 import { encodeFileEdgeExportNames, encodeReexportBindings } from "./file-edge-export-names-codec.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
+import { encodeResidualClassTargets } from "./residual-class-targets-codec.js";
 
 /**
  * Files per write group in {@link DuckDbFileGraphStore#writeFileRowsBulk}.
@@ -359,7 +360,7 @@ export class DuckDbFileGraphStore {
           r.receiverKind ?? null,
           r.reason ?? null,
           r.receiverGroup ?? null,
-          r.classTargets === undefined ? null : JSON.stringify(r.classTargets),
+          r.classTargets === undefined ? null : encodeResidualClassTargets(r.member, r.classTargets),
           r.downstreamGroup ?? null,
         ]);
       }

@@ -117,6 +117,56 @@ describe("DuckDbGraphClient — residual call-site persistence", () => {
     expect(plain).not.toHaveProperty("downstreamGroup");
   });
 
+  it("stores a class target reaching the default `Class#member` without its target, and reads it back whole", async () => {
+    const classTargets: ResidualClassTarget[] = [
+      ["Firm", "Firm#users"],
+      ["Team", "Team#users", "User"],
+      ["Bill", "Document#users"],
+      ["Plan", "Plan.users"],
+    ];
+    await client.upsertFile(
+      { relPath: "a.rb", language: "ruby" },
+      {
+        fileEdges: [],
+        methodEdges: [],
+        residualCallSites: [site("a.rb", "k1", { receiverGroup: "g-1", classTargets })],
+      },
+    );
+
+    const [stored] = await client.queryAll<{ class_targets: string }>(
+      "SELECT class_targets FROM cg_residual_call_sites",
+    );
+    expect(JSON.parse(stored.class_targets)).toEqual([
+      ["Firm"],
+      ["Team", null, "User"],
+      ["Bill", "Document#users"],
+      ["Plan", "Plan.users"],
+    ]);
+    const [row] = await client.readResidualCallSites();
+    expect(row.classTargets).toEqual(classTargets);
+  });
+
+  it("reads a row stored before the compact form, every target spelled out", async () => {
+    await client.upsertFile(
+      { relPath: "a.rb", language: "ruby" },
+      {
+        fileEdges: [],
+        methodEdges: [],
+        residualCallSites: [site("a.rb", "k1", { receiverGroup: "g-1", classTargets: [] })],
+      },
+    );
+    await client.run(
+      `UPDATE cg_residual_call_sites SET class_targets = '[["Firm","Firm#users"],["Team","Team#users","User"]]'`,
+    );
+
+    const [row] = await client.readResidualCallSites();
+
+    expect(row.classTargets).toEqual([
+      ["Firm", "Firm#users"],
+      ["Team", "Team#users", "User"],
+    ]);
+  });
+
   it("re-upserting a file replaces its slice", async () => {
     const node = { relPath: "a.rb", language: "ruby" };
     await client.upsertFile(node, {
