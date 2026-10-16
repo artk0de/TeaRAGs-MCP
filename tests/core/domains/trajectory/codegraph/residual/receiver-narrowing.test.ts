@@ -96,6 +96,49 @@ describe("ResidualSiteCollector — receiver narrowing", () => {
     expect(collector.narrowEmptyKinds()).toEqual([]);
   });
 
+  it("tags a group's rows with one receiver group and its class set, each class with the target it reaches", () => {
+    const defs = [
+      def("Invoice#save", "app/models/invoice.rb"),
+      def("Invoice#title", "app/models/invoice.rb"),
+      def("Document#save", "app/models/document.rb"),
+      def("Bill#title", "app/models/bill.rb"),
+      def("Estimate#save", "app/models/estimate.rb"),
+      def("Estimate#title", "app/models/estimate.rb"),
+    ];
+    const collector = collectorOf(defs, hierarchyOf([["Bill", "Document", "super"]]));
+
+    collector.observe(METHOD, call("rec", "save", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("rec", "title", 13), DYNAMIC_MISS);
+
+    const rows = collector.rows();
+    expect(rows).toHaveLength(2);
+    expect(rows[0].receiverGroup).toMatch(/^[0-9a-f]{40}$/);
+    expect(rows[1].receiverGroup).toBe(rows[0].receiverGroup);
+    expect(rows.find((r) => r.member === "save")?.classTargets).toEqual([
+      ["Bill", "Document#save"],
+      ["Estimate", "Estimate#save"],
+      ["Invoice", "Invoice#save"],
+    ]);
+    expect(rows.find((r) => r.member === "title")?.classTargets).toEqual([
+      ["Bill", "Bill#title"],
+      ["Estimate", "Estimate#title"],
+      ["Invoice", "Invoice#title"],
+    ]);
+  });
+
+  it("orders a group's class set by the receiver's naming prior and keeps it uncut past the menu limit", () => {
+    const defs = Array.from({ length: 45 }, (_, i) => def(`K${String(i).padStart(2, "0")}#save`, "app/k.rb"));
+    defs.push(def("Invoice#save", "app/models/invoice.rb"));
+    const collector = collectorOf(defs);
+
+    collector.observe(METHOD, call("invoice", "save", 12), DYNAMIC_MISS);
+
+    const [row] = collector.rows();
+    expect(row.menuOverflow).toBe(true);
+    expect(row.classTargets).toHaveLength(46);
+    expect(row.classTargets?.[0]).toEqual(["Invoice", "Invoice#save"]);
+  });
+
   it("keeps two receivers apart when the local is reassigned between the calls", () => {
     const collector = collectorOf(BASE_DEFS);
     const method = { ...METHOD, localAssignmentLines: { r: [14] } };

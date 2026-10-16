@@ -121,6 +121,9 @@ const RESIDUAL_VALUES = [
   // Migration 055 (bd tea-rags-mcp-2m83f.38): the run-stats bucket of the site.
   "language",
   "receiver_kind",
+  // Migration 061 (bd tea-rags-mcp-2m83f.46): the receiver group the pass asks once.
+  "receiver_group",
+  "class_targets",
 ] as const;
 // Migration 039 (bd tea-rags-mcp-7t2ee): one row per (file, type it asked about).
 const HIERARCHY_DEPENDENCY_KEYS = ["source_rel_path", "type_name"] as const;
@@ -343,6 +346,8 @@ export class DuckDbFileGraphStore {
           r.menuOverflow,
           r.language ?? null,
           r.receiverKind ?? null,
+          r.receiverGroup ?? null,
+          r.classTargets === undefined ? null : JSON.stringify(r.classTargets),
         ]);
       }
       // The pass-1 slice, keyed by the NODE's path rather than the slice's own,

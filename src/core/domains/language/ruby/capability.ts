@@ -117,7 +117,7 @@ export const capability: LanguageCapability = {
   // walker 20: bd tea-rags-mcp-2m83f.43 — def chunks carry `localAssignmentLines`,
   // so residual receiver narrowing splits a reassigned receiver; a walker-19
   // index groups the calls of a reassigned local as one receiver.
-  versions: { chunking: 2, walker: 20, codegraphSchema: 2 },
+  versions: { chunking: 2, walker: 21, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

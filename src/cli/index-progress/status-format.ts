@@ -117,6 +117,9 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
       `  ${r.menuOverflow} over the menu limit, ${r.menuTooSmall} under the menu floor, ${r.sitesEdged} sites edged, ${r.externalByModel} external by model, derived metrics ${r.derived}`,
     );
     lines.push(
+      `  ${r.receiverGroups} receiver groups (${r.receiverGroupSites} sites): ${r.sitesEdgedByVerdict} sites edged by verdict, ${r.sitesEdgedByPropagation} by propagation; ${r.tournamentGroups} tournaments (${r.tournamentQuestions} questions, ${r.tournamentRounds} rounds, ${r.groupsSkippedByBudget} skipped by budget), ${r.windowedGroups} windowed`,
+    );
+    lines.push(
       `  ${r.failedGroups} groups failed, ${r.requeuedGroups} requeued after a timeout, ${r.abortedGroups} aborted`,
     );
   }

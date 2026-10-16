@@ -101,9 +101,8 @@ function snakeClassName(owner: string): string {
 }
 
 /** 0 — the receiver is named after the class; 1 — one name ends in the other; 2 — no relation. */
-function namingPriorRank(receiverTail: string | undefined, symbolId: string): number {
+function namingPriorRank(receiverTail: string | undefined, owner: string): number {
   if (receiverTail === undefined) return 2;
-  const owner = symbolId.slice(0, Math.max(symbolId.lastIndexOf("#"), symbolId.lastIndexOf(".")));
   const snake = snakeClassName(owner);
   if (receiverTail === snake || receiverTail === `${snake}s`) return 0;
   if (receiverTail.endsWith(`_${snake}`) || snake.endsWith(`_${receiverTail}`)) return 1;
@@ -112,8 +111,19 @@ function namingPriorRank(receiverTail: string | undefined, symbolId: string): nu
 
 /** The menu ordered by the receiver's naming prior, then by symbolId; nothing is dropped. */
 export function orderByNamingPrior(receiverText: string, candidates: readonly string[]): string[] {
+  return rankByNamingPrior(receiverText, candidates, (id) =>
+    id.slice(0, Math.max(id.lastIndexOf("#"), id.lastIndexOf("."))),
+  );
+}
+
+/** Class names ordered by the receiver's naming prior, then by name; nothing is dropped. */
+export function orderClassesByNamingPrior(receiverText: string, classes: readonly string[]): string[] {
+  return rankByNamingPrior(receiverText, classes, (owner) => owner);
+}
+
+function rankByNamingPrior(receiverText: string, ids: readonly string[], ownerOf: (id: string) => string): string[] {
   const tail = RECEIVER_TAIL.exec(receiverText)?.[1]?.toLowerCase();
-  const ranked = candidates.map((id) => ({ id, rank: namingPriorRank(tail, id) }));
+  const ranked = ids.map((id) => ({ id, rank: namingPriorRank(tail, ownerOf(id)) }));
   ranked.sort((a, b) => a.rank - b.rank || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return ranked.map((r) => r.id);
 }

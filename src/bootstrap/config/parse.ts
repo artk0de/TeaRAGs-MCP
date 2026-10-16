@@ -175,6 +175,8 @@ function buildEnvInputs(env: EnvReader) {
       menuLimit: env("CODEGRAPH_RESIDUAL_MENU_LIMIT"),
       minMenu: env("CODEGRAPH_RESIDUAL_MIN_MENU"),
       noneThreshold: env("CODEGRAPH_RESIDUAL_NONE_THRESHOLD"),
+      tournamentFloor: env("CODEGRAPH_RESIDUAL_TOURNAMENT_FLOOR"),
+      tournamentBudget: env("CODEGRAPH_RESIDUAL_TOURNAMENT_BUDGET"),
       retentionDays: env("CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS"),
       kevSessionUrl: env("CODEGRAPH_RESIDUAL_KEV_SESSION_URL"),
       kevSessionToken: env("CODEGRAPH_RESIDUAL_KEV_SESSION_TOKEN"),

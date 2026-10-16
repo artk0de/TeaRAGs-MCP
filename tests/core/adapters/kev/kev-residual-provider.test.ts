@@ -167,6 +167,39 @@ describe("KevResidualProvider", () => {
     ]);
   });
 
+  it("asks a receiver-group question over class names as written, naming every call, and picks the class", async () => {
+    const { fetch, requests } = fakeFetch(() =>
+      json({
+        answers: { "g-1": { choice: "app.models.Firm", probabilities: { "app.models.Firm": 0.88, Client: 0.12 } } },
+      }),
+    );
+    const provider = new KevResidualProvider({ urls: ["http://gpu:8090"], threshold: 0.7 }, { fetch });
+    const group: ResidualQuestionGroup = {
+      ...GROUP,
+      questions: [
+        {
+          siteKey: "g-1",
+          menuHash: "menu-g",
+          receiverText: "rec",
+          member: "save",
+          kind: "dynamic",
+          candidates: ["app.models.Firm", "Client"],
+          subject: "class",
+          members: ["save", "users"],
+        },
+      ],
+    };
+
+    const [answer] = await provider.resolveGroup(group);
+
+    const sent = (requests[0].body as { questions: Record<string, { instructions: string; criteria: object }> })
+      .questions["g-1"];
+    expect(sent.instructions).toContain("the calls `rec.save`, `rec.users`");
+    expect(Object.keys(sent.criteria)).toEqual(["app.models.Firm", "Client", KEV_NONE_OPTION]);
+    expect(answer).toMatchObject({ siteKey: "g-1", pick: "app.models.Firm", p: 0.88 });
+    expect(answer.probabilities).toEqual({ "app.models.Firm": 0.88, Client: 0.12 });
+  });
+
   it("rejects an answer naming a class outside the menu", async () => {
     const { fetch } = fakeFetch(() =>
       json({

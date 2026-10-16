@@ -88,6 +88,28 @@ describe("DuckDbGraphClient — residual call-site persistence", () => {
     expect(JSON.parse(rows[0].candidates)).toEqual(["Firm#users", "Team#users"]);
   });
 
+  it("round-trips a site's receiver group and class targets, and reads none for a site without them", async () => {
+    const classTargets: [string, string][] = [
+      ["Bill", "Document#users"],
+      ["Firm", "Firm#users"],
+    ];
+    await client.upsertFile(
+      { relPath: "a.rb", language: "ruby" },
+      {
+        fileEdges: [],
+        methodEdges: [],
+        residualCallSites: [site("a.rb", "k1", { receiverGroup: "g-1", classTargets }), site("a.rb", "k2")],
+      },
+    );
+
+    const [grouped, plain] = await client.readResidualCallSites();
+
+    expect(grouped).toMatchObject({ siteKey: "k1", receiverGroup: "g-1", classTargets });
+    expect(plain.siteKey).toBe("k2");
+    expect(plain).not.toHaveProperty("receiverGroup");
+    expect(plain).not.toHaveProperty("classTargets");
+  });
+
   it("re-upserting a file replaces its slice", async () => {
     const node = { relPath: "a.rb", language: "ruby" };
     await client.upsertFile(node, {

@@ -19,7 +19,12 @@ import type {
   RelPath,
 } from "../../../../contracts/types/codegraph.js";
 import type { ReceiverKind } from "../symbols/receiver-kind.js";
-import { orderByNamingPrior, ReceiverClassClosure, receiverGroupKey } from "./receiver-closure.js";
+import {
+  orderByNamingPrior,
+  orderClassesByNamingPrior,
+  ReceiverClassClosure,
+  receiverGroupKey,
+} from "./receiver-closure.js";
 
 /** Menu size the wave-1 eval measured; `CODEGRAPH_RESIDUAL_MENU_LIMIT` overrides it. */
 export const DEFAULT_RESIDUAL_MENU_LIMIT = 40;
@@ -125,6 +130,31 @@ export function addResidualExclusionCounts(
   counts.schemaColumn += excluded.schemaColumn;
   counts.frameworkMember += excluded.frameworkMember;
   counts.timestampColumn += excluded.timestampColumn;
+}
+
+/**
+ * The group's classes in naming-prior order, each with the method target the
+ * member reaches on it; a class reaching the member only as a schema column has
+ * no method to edge to and is left out. A tie of definers at one depth takes the
+ * smallest symbolId.
+ */
+function classTargetsOf(
+  receiverText: string,
+  classes: ReadonlySet<string>,
+  own: ReadonlyMap<string, readonly { symbolId: string; isSchemaColumn?: boolean }[]>,
+): [string, string][] {
+  const targets = new Map<string, string>();
+  for (const owner of classes) {
+    const ids = (own.get(owner) ?? [])
+      .filter((d) => d.isSchemaColumn !== true)
+      .map((d) => d.symbolId)
+      .sort();
+    if (ids.length > 0) targets.set(owner, ids[0]);
+  }
+  return orderClassesByNamingPrior(receiverText, [...targets.keys()]).map((owner) => [
+    owner,
+    targets.get(owner) as string,
+  ]);
 }
 
 export class ResidualSiteCollector {
@@ -268,7 +298,10 @@ export class ResidualSiteCollector {
       site.call.receiver ?? "",
       methods.map(([id]) => id),
     );
-    this.pushRow(site.method, site.call, site.verdict, site.kind, menu);
+    this.pushRow(site.method, site.call, site.verdict, site.kind, menu, {
+      receiverGroup: sha1(site.groupKey),
+      classTargets: classTargetsOf(site.call.receiver ?? "", classes, own),
+    });
   }
 
   private pushRow(
@@ -277,6 +310,7 @@ export class ResidualSiteCollector {
     verdict: ResidualVerdictView,
     kind: ResidualKind,
     menu: string[],
+    group?: Pick<ResidualCallSiteRow, "receiverGroup" | "classTargets">,
   ): void {
     const menuOverflow = menu.length > this.menuLimit;
     const candidates = menuOverflow ? menu.slice(0, this.menuLimit) : menu;
@@ -306,6 +340,7 @@ export class ResidualSiteCollector {
       menuOverflow,
       language: this.language,
       receiverKind: verdict.receiverKind,
+      ...(group?.classTargets?.length ? group : {}),
     });
   }
 

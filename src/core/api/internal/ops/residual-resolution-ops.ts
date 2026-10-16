@@ -40,6 +40,10 @@ export interface ResidualResolutionConfig {
   minMenu: number;
   /** Smallest `p` of a "none of these" verdict that counts its site as external. */
   noneThreshold: number;
+  /** Smallest `p` of a tournament block winner that enters the next round. */
+  tournamentFloor?: number;
+  /** Tournament block questions one pass may send. */
+  tournamentBudget?: number;
   retentionDays: number;
   /** GPU session broker; set, an `ask` pass with uncached sites leases Kev from it. */
   kevSessionUrl?: string;
@@ -106,6 +110,12 @@ export class ResidualResolutionOps implements ResidualResolvePort {
         menuLimit: this.deps.config.menuLimit,
         minMenu: this.deps.config.minMenu,
         noneThreshold: this.deps.config.noneThreshold,
+        ...(this.deps.config.tournamentFloor === undefined
+          ? {}
+          : { tournamentFloor: this.deps.config.tournamentFloor }),
+        ...(this.deps.config.tournamentBudget === undefined
+          ? {}
+          : { tournamentBudget: this.deps.config.tournamentBudget }),
         retentionDays: this.deps.config.retentionDays,
         recomputeDerived: async () => recomputeGraphMetrics(graphDb),
         readMethodSource: async (relPath: string, startLine: number, endLine: number) =>

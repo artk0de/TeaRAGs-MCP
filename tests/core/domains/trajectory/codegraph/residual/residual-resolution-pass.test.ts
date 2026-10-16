@@ -291,7 +291,7 @@ describe("ResidualResolutionPass", () => {
     });
 
     it("keys verdicts by the menu hash folded with the question version, so wave-1 verdicts miss", async () => {
-      expect(RESIDUAL_QUESTION_VERSION).toBe(2);
+      expect(RESIDUAL_QUESTION_VERSION).toBe(3);
       expect(residualQuestionHash("menu-1")).not.toBe("menu-1");
       expect(residualQuestionHash("menu-1")).toBe(residualQuestionHash("menu-1"));
       await store.put([
