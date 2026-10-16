@@ -31,4 +31,4 @@ export {
   columnValueAccessor,
   RAILS_RESIDUAL_FRAMEWORK_MEMBERS,
 } from "./rails.js";
-export { RAILS_RUNTIME_BUILTINS } from "./rails-runtime.js";
+export { RAILS_RUNTIME_BUILTINS, RAILS_UNTYPED_RECEIVER_MEMBERS } from "./rails-runtime.js";
