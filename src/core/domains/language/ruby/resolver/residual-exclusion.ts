@@ -12,6 +12,7 @@ import {
   isRubyPath,
   lastConstantSegment,
   lookupRubySymbolsByShortName,
+  railsVocabularyActive,
   receiverLooksLikeArRelationChain,
   rubyMemberLookupRole,
 } from "./strategies/index.js";
@@ -94,20 +95,13 @@ function isModelColumnRead(call: CallRef, receiver: string, ctx: CallContext): b
   });
 }
 
-function railsDeclared(ctx: CallContext): boolean {
-  const gems = ctx.declaredDependencies;
-  if (gems === undefined) return true;
-  for (const gem of RAILS_RESIDUAL_FRAMEWORK_MEMBERS.gems) if (gems.has(gem)) return true;
-  return false;
-}
-
 /** A relation member on a relation, or an ActiveStorage member on an attachment proxy. */
 function isFrameworkMember(call: CallRef, receiver: string, ctx: CallContext): boolean {
   const { relationMembers, attachmentMembers } = RAILS_RESIDUAL_FRAMEWORK_MEMBERS;
   const relationMember = relationMembers.has(call.member);
   const attachmentMember = attachmentMembers.has(call.member);
   if (!relationMember && !attachmentMember) return false;
-  if (!railsDeclared(ctx)) return false;
+  if (!railsVocabularyActive(ctx)) return false;
   if (relationMember && receiverLooksLikeArRelationChain(receiver)) return true;
   const tail = RECEIVER_TAIL.exec(receiver)?.[1];
   if (tail === undefined || ctx.structuredReturnTypes === undefined) return false;
@@ -122,7 +116,7 @@ function isFrameworkMember(call: CallRef, receiver: string, ctx: CallContext): b
  */
 function isTimestampColumnRead(call: CallRef, receiver: string, ctx: CallContext): boolean {
   if (!AR_TIMESTAMP_COLUMNS.has(call.member) || !MODEL_NAMED_RECEIVER.test(receiver)) return false;
-  if (!railsDeclared(ctx)) return false;
+  if (!railsVocabularyActive(ctx)) return false;
   const role = rubyMemberLookupRole(call);
   const columns = lookupRubySymbolsByShortName(ctx, call.member, { role, includeSchemaColumns: true }).filter(
     (def) => def.isSchemaColumn === true,

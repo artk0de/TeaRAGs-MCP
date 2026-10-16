@@ -505,11 +505,13 @@ describe("seeded support versions", () => {
       // ActiveStorage proxy and Rails-generated callees leave the residual rows.
       // ruby 11: bd tea-rags-mcp-2m83f.35 — timestamp columns and attachment tails
       // beside non-project facts leave the residual rows.
+      // ruby 12: bd tea-rags-mcp-2m83f.32.3 — AR relation chains resolve scopes
+      // on the model.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
         ["python", 11],
-        ["ruby", 11],
+        ["ruby", 12],
         ["java", 4],
         ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a

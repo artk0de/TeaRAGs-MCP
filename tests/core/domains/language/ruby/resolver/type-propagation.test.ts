@@ -1102,3 +1102,45 @@ describe("typeOfReceiver — self-copy local (m99j1.1.91)", () => {
     expect(typeOfReceiver("app_client", 3, ctx)).toEqual({ form: "instance", name: "Octokit::Client" });
   });
 });
+
+// ── AR relation chain heads (bd tea-rags-mcp-2m83f.32.3) ────────────────────
+
+describe("typeOfReceiver — AR relation chain head", () => {
+  const relationOf = (name: string) => ({ form: "container", element: { form: "instance", name } }) as const;
+  const modelCtx = (over: Partial<CallContext> = {}): CallContext => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("lib/concerns/soft_deletable.rb", [
+      {
+        symbolId: "SoftDeletable",
+        fqName: "SoftDeletable",
+        shortName: "SoftDeletable",
+        relPath: "lib/concerns/soft_deletable.rb",
+        scope: [],
+        symbolKind: "module",
+      },
+    ]);
+    return emptyCtx({
+      symbolTable,
+      classAncestors: { Firm: ["ApplicationRecord", "SoftDeletable"], ApplicationRecord: ["ActiveRecord::Base"] },
+      structuredReturnTypes: { "SoftDeletable#without_deleted": relationOf("SoftDeletable") },
+      ...over,
+    });
+  };
+
+  it("a query method on an AR model is a relation of it", () => {
+    expect(typeOfReceiver("Firm.select(1)", 3, modelCtx())).toEqual(relationOf("Firm"));
+  });
+
+  it("a root-anchored head names the same constant", () => {
+    expect(typeOfReceiver("::Firm.where(id: 1)", 3, modelCtx())).toEqual(relationOf("Firm"));
+  });
+
+  it("a concern's scope on a model ranges over the model, through a query-method hop too", () => {
+    expect(typeOfReceiver("Firm.without_deleted", 3, modelCtx())).toEqual(relationOf("Firm"));
+    expect(typeOfReceiver("Firm.where(id: 1).without_deleted", 3, modelCtx())).toEqual(relationOf("Firm"));
+  });
+
+  it("a query method on a class that is no AR model stays untyped", () => {
+    expect(typeOfReceiver("Report.select(1)", 3, modelCtx())).toBeUndefined();
+  });
+});

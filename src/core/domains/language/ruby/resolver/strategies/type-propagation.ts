@@ -53,7 +53,6 @@ import {
   type CallContext,
   type CallRef,
   type CallResultBinding,
-  type SymbolDefinitionKind,
 } from "../../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import {
@@ -63,7 +62,12 @@ import {
   type ReceiverTypePorts,
 } from "../../../kernel/index.js";
 import { catalogueFor } from "../../dsl/index.js";
-import { activeRecordRelationModel } from "./ruby-active-record-return-types.js";
+import {
+  activeRecordQueryReturn,
+  activeRecordRelationModel,
+  createRubyTypeRefOverReceiver,
+  isModuleOnlyConstant,
+} from "./ruby-active-record-return-types.js";
 import { boundCallReturnTypeVia, isProjectDeclaredConstant } from "./ruby-bound-call-return-types.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
 import { declaredReturnType } from "./ruby-return-facts.js";
@@ -82,7 +86,7 @@ export { conventionReceiverType } from "./ruby-unbound-receiver-types.js";
 const IVAR_RECEIVER = /^@\w+$/;
 
 /** A bare constant chain head: `Foo`, `Mod::Svc`. Capitalized, optional `::` scope. */
-const CONST_HEAD = /^[A-Z]\w*(?:::[A-Z]\w*)*$/;
+const CONST_HEAD = /^(?:::)?[A-Z]\w*(?:::[A-Z]\w*)*$/;
 
 /**
  * Read the effective chain hop cap from env, falling back to `CHAIN_MAX_HOPS_DEFAULT`.
@@ -287,23 +291,6 @@ function callResultLocalType(receiver: string, atLine: number, ctx: CallContext)
   return isProjectDeclaredConstant(folded.name, ctx) ? folded : undefined;
 }
 
-const MODULE_KIND: ReadonlySet<SymbolDefinitionKind> = new Set(["module"]);
-const CLASS_KIND: ReadonlySet<SymbolDefinitionKind> = new Set(["class"]);
-
-/**
- * A constant the run declares as a MODULE and never as a class — whose
- * "instance" no Ruby program can hold (bd tea-rags-mcp-89k7k.35.29). A project
- * monkey-patch reopening a gem's namespace (`module Faraday; module Utils`)
- * declares the module, so `Faraday.new(…)` — a module function answering a gem
- * class — would otherwise type its result as a project `Faraday` instance.
- */
-function isModuleOnlyConstant(name: string, ctx: CallContext): boolean {
-  return (
-    ctx.symbolTable.lookup(name, { kinds: MODULE_KIND }).length > 0 &&
-    ctx.symbolTable.lookup(name, { kinds: CLASS_KIND }).length === 0
-  );
-}
-
 /**
  * A bare-constant chain head. Two ways the first link can be typed, declared
  * facts FIRST:
@@ -315,6 +302,10 @@ function isModuleOnlyConstant(name: string, ctx: CallContext): boolean {
  *  2. VOCABULARY (rvw34 gap b) — a framework/Ruby instance-returning verb
  *     (`new`/`find`/`create!`…) makes the chain an instance of the constant:
  *     `PostStatusService.new` is definitionally a PostStatusService.
+ *  3. RELATION (bd tea-rags-mcp-2m83f.32.3) — an ActiveRecord query method on an
+ *     AR model (`Message.select(1)`, `Firm.where(…)`) is a relation of it.
+ *
+ * A root-anchored head (`::Firm`) names the same constant as `Firm`.
  *
  * Both are zero-fabrication. A bare-const head that is neither declared nor
  * vocabulary (`Config.value`) is still NOT typed.
@@ -325,13 +316,17 @@ function rubySeedHead(
   ctx: CallContext,
 ): { type: RubyTypeRef; consumedMembers: 0 | 1 } | undefined {
   if (firstLink === undefined || !CONST_HEAD.test(head)) return undefined;
+  const constant = head.startsWith("::") ? head.slice(2) : head;
   const firstMember = stripCallArgs(firstLink);
-  const declared = declaredReturnType(head, firstMember, ctx);
-  if (declared !== undefined) return { type: declared, consumedMembers: 1 };
-  if (catalogueFor(ctx.declaredDependencies).instanceReturning.has(firstMember)) {
-    return { type: { form: "instance", name: head }, consumedMembers: 1 };
+  const declared = declaredReturnType(constant, firstMember, ctx);
+  if (declared !== undefined) {
+    return { type: createRubyTypeRefOverReceiver(declared, constant, ctx), consumedMembers: 1 };
   }
-  return undefined;
+  if (catalogueFor(ctx.declaredDependencies).instanceReturning.has(firstMember)) {
+    return { type: { form: "instance", name: constant }, consumedMembers: 1 };
+  }
+  const relation = activeRecordQueryReturn(constant, firstMember, ctx);
+  return relation === undefined ? undefined : { type: relation, consumedMembers: 1 };
 }
 
 /**

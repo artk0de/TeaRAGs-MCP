@@ -72,6 +72,7 @@ import {
   RubyLocalTypeSymbolResolutionStrategy,
   rubyMemberLookupRole,
   RubyReceiverSetDropSymbolResolutionStrategy,
+  RubyRelationChainSymbolResolutionStrategy,
   RubyReturnTypeBindingSymbolResolutionStrategy,
   RubySchemaColumnSymbolResolutionStrategy,
   RubySelfDispatchEntrySymbolResolutionStrategy,
@@ -108,6 +109,7 @@ export class RubyCallResolver implements CallResolver {
       new RubyConstantSymbolResolutionStrategy(cfg),
       new RubyExplicitRequireSymbolResolutionStrategy(cfg),
       new RubyChainTypeSymbolResolutionStrategy(cfg),
+      new RubyRelationChainSymbolResolutionStrategy(cfg),
       new RubyArRelationGuardSymbolResolutionStrategy(cfg),
       // Last chance before the catch-all DROP (bd tea-rags-mcp-wob7g): a bare
       // receiver no fact channel typed, named after a class the run declares.

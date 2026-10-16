@@ -25,7 +25,11 @@ import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import { MemberReturnTypeResolver } from "../../../kernel/index.js";
 import { rubyNonNilArms, rubyTypeRefEquals } from "../../type-ref.js";
 import { CONTAINER_ELEMENT_RETURNING_METHODS } from "../../walker/shared/index.js";
-import { activeRecordQueryReturn, activeRecordRelationModel } from "./ruby-active-record-return-types.js";
+import {
+  activeRecordQueryReturn,
+  activeRecordRelationModel,
+  createRubyTypeRefOverReceiver,
+} from "./ruby-active-record-return-types.js";
 import {
   declaredReturnType,
   flatReturnFactMayOverrideKnownReceiver,
@@ -110,7 +114,9 @@ export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext
     if (CONTAINER_ELEMENT_RETURNING_METHODS.has(member)) return recv.element;
     const model = activeRecordRelationModel(recv, ctx);
     if (model === undefined) return undefined;
-    return declaredReturnType(model, member, ctx) ?? activeRecordQueryReturn(model, member, ctx);
+    const declaredOnModel = declaredReturnType(model, member, ctx);
+    if (declaredOnModel !== undefined) return createRubyTypeRefOverReceiver(declaredOnModel, model, ctx);
+    return activeRecordQueryReturn(model, member, ctx);
   }
 
   // Union / nil receiver: the agreement fold (bd tea-rags-mcp-27q0z).
@@ -122,7 +128,7 @@ export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext
   // 1–4. Declared on the class, Rails association DSL, ancestor MRO, flat
   //      fallback — the kernel walk over Ruby's ports (bd tea-rags-mcp-m99j1.1.12).
   const declared = RUBY_MEMBER_RETURN_TYPES.returnTypeOf(recv, member, ctx);
-  if (declared !== null) return declared;
+  if (declared !== null) return createRubyTypeRefOverReceiver(declared, recv.name, ctx);
 
   // 5. ActiveRecord query-interface vocabulary — AR-model receivers only,
   //    consulted last so every declared fact above wins over it (G1b).
