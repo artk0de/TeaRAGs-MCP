@@ -39,6 +39,8 @@ const FILE_RESOLVE_STATS_VALUE_COLUMNS = [
   "core_ambiguous",
   "ambiguous_fanout",
   "unnarrowed_template",
+  "narrowed",
+  "narrow_empty",
 ] as const;
 
 const COUNTER_COLUMNS = FILE_RESOLVE_STATS_VALUE_COLUMNS.slice(1);
@@ -68,7 +70,7 @@ export class DuckDbRunStatsStore implements Pick<
       );
       for (const r of rows) {
         await this.session.run(
-          "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout, unnarrowed_template) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout, unnarrowed_template, narrowed, narrow_empty) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
             r.language,
             r.receiverKind,
@@ -80,6 +82,8 @@ export class DuckDbRunStatsStore implements Pick<
             r.coreAmbiguous ?? 0,
             r.ambiguousFanout ?? 0,
             r.unnarrowedTemplate ?? 0,
+            r.narrowed ?? 0,
+            r.narrowEmpty ?? 0,
           ],
         );
       }
@@ -119,6 +123,8 @@ export class DuckDbRunStatsStore implements Pick<
         r.coreAmbiguous ?? 0,
         r.ambiguousFanout ?? 0,
         r.unnarrowedTemplate ?? 0,
+        r.narrowed ?? 0,
+        r.narrowEmpty ?? 0,
       ]),
     );
 
@@ -160,6 +166,8 @@ export class DuckDbRunStatsStore implements Pick<
       core_ambiguous: number | bigint;
       ambiguous_fanout: number | bigint;
       unnarrowed_template: number | bigint;
+      narrowed: number | bigint;
+      narrow_empty: number | bigint;
     }>(
       `SELECT language, receiver_kind, ${counters} FROM cg_run_stats
          WHERE language NOT IN (SELECT language FROM cg_file_resolve_stats_coverage)
@@ -180,6 +188,8 @@ export class DuckDbRunStatsStore implements Pick<
       coreAmbiguous: Number(r.core_ambiguous),
       ambiguousFanout: Number(r.ambiguous_fanout),
       unnarrowedTemplate: Number(r.unnarrowed_template),
+      narrowed: Number(r.narrowed),
+      narrowEmpty: Number(r.narrow_empty),
     }));
   }
 

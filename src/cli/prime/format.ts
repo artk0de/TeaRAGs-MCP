@@ -726,7 +726,17 @@ function formatResolvePlain(resolve: CodegraphResolve): string[] {
     const unnarrowed = resolve.callsUnnarrowedTemplate ?? 0;
     if (unnarrowed > 0) lines.push(formatUnnarrowedWarning("", unnarrowed));
   }
+  const narrowed = formatNarrowedLine(resolve);
+  if (narrowed !== null) lines.push(narrowed);
   return lines;
+}
+
+/** Residual sites receiver narrowing settled statically (bd tea-rags-mcp-2m83f.43); `null` before any. */
+function formatNarrowedLine(resolve: CodegraphResolve): string | null {
+  const narrowed = resolve.callsNarrowed ?? 0;
+  const empty = resolve.callsNarrowEmpty ?? 0;
+  if (narrowed === 0 && empty === 0) return null;
+  return `narrowed: ${narrowed} residual calls settled by their receiver's other calls, ${empty} matched no class`;
 }
 
 function formatUnnarrowedWarning(languagePrefix: string, unnarrowed: number): string {
