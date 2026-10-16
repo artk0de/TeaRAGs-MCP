@@ -23,8 +23,10 @@
  * One measured widening exists, on the OWNER-KEYED channel only (bd
  * tea-rags-mcp-0qaht.54): a site carrying its {@link RubyMemberReturnOwner} also
  * types a receiverless `new` in a singleton method, a self-returning tail, and
- * qualifies a relative constant by the def's lexical nesting. The flat channel
- * passes no owner and answers exactly as before.
+ * qualifies a relative constant by the def's lexical nesting. A second (bd
+ * tea-rags-mcp-2m83f.32.5) splits an `if`/`unless`/ternary tail into its arms
+ * and types an arm reading one of the owner's singular association readers.
+ * The flat channel passes no owner and answers exactly as before.
  *
  * {@link rubyBodyTailExpression} (`shared/body-tail.ts`) is the ONE tail
  * selection both port sets use.
@@ -66,6 +68,8 @@ export interface RubyMemberReturnOwner {
   readonly declaredTypes: ReadonlySet<string>;
   /** The owner's own INSTANCE defs by name, for a self-returning sibling call. */
   readonly instanceMethods: ReadonlyMap<string, readonly AstNode[]>;
+  /** `"<fq>#<reader>"` → instance, for every singular association reader this FILE declares. */
+  readonly associationReaders: ReadonlyMap<string, string>;
 }
 
 /** The member channels' port set. Built per file (it closes over the catalogue). */
@@ -73,9 +77,10 @@ export function rubyMemberReturnPorts(
   catalogue: RubyDslCatalogue,
 ): ReturnInferencePorts<AstNode, RubyMemberReturnSite> {
   return {
-    terminalExpressions: (defNode) => {
+    terminalExpressions: (defNode, site) => {
       const tail = rubyBodyTailExpression(defNode);
-      return tail === null ? [] : [tail];
+      if (tail === null) return [];
+      return site.owner === undefined ? [tail] : conditionalArms(tail);
     },
     typeOfExpression: (node, site) =>
       memberExpressionType(node, site, catalogue) ??
@@ -114,7 +119,61 @@ function memberExpressionType(node: AstNode, site: RubyMemberReturnSite, catalog
   if (owner === undefined) return direct;
   if (direct !== null) return qualifyByLexicalNesting(direct, owner);
   if (!owner.isClass) return null;
-  return singletonNewInstanceType(node) ?? (selfReturning(node, site.method, owner, new Set()) ? owner.fq : null);
+  return (
+    singletonNewInstanceType(node) ??
+    associationReaderType(node, site.method, owner) ??
+    (selfReturning(node, site.method, owner, new Set()) ? owner.fq : null)
+  );
+}
+
+/** The branching shapes whose value is one of their arms: `if`/`unless`/`elsif` and the ternary. */
+const CONDITIONAL_TAILS: ReadonlySet<string> = new Set(["if", "unless", "elsif", "conditional"]);
+
+/**
+ * The value-producing arms of a conditional tail, nested conditionals expanded
+ * (bd tea-rags-mcp-2m83f.32.5); any other tail is its own single arm. A
+ * conditional with no `else`, or with an empty arm, stays one arm — the node
+ * itself, which types to nothing: its missing arm is `nil`.
+ */
+function conditionalArms(tail: AstNode): AstNode[] {
+  if (!CONDITIONAL_TAILS.has(tail.type)) return [tail];
+  const consequence = armValue(tail.childForFieldName("consequence"));
+  const alternative = armValue(tail.childForFieldName("alternative"));
+  if (consequence === null || alternative === null) return [tail];
+  return [...conditionalArms(consequence), ...conditionalArms(alternative)];
+}
+
+/** The value an arm yields: a ternary operand as is, a `then` / `else` block's last statement, an `elsif` itself. */
+function armValue(arm: AstNode | null): AstNode | null {
+  if (arm === null) return null;
+  if (arm.type !== "then" && arm.type !== "else") return arm;
+  const statements = arm.namedChildren.filter((n) => n.type !== "comment");
+  return statements.at(-1) ?? null;
+}
+
+/**
+ * A receiverless identifier in an INSTANCE method that names a singular
+ * association reader of the owner (`doc_dir` under `belongs_to :doc_dir`) is
+ * that association's model — unless the def binds the name itself, as a
+ * parameter or a local.
+ */
+function associationReaderType(node: AstNode, method: AstNode, owner: RubyMemberReturnOwner): string | null {
+  if (node.type !== "identifier" || inSingletonContext(method)) return null;
+  const type = owner.associationReaders.get(`${owner.fq}#${node.text}`);
+  if (type === undefined) return null;
+  return bindsLocally(method, node.text) ? null : type;
+}
+
+/** Whether `name` is a parameter of `method` or assigned anywhere in its body. */
+function bindsLocally(method: AstNode, name: string): boolean {
+  const params = method.childForFieldName("parameters");
+  if (params !== null && namesIdentifier(params, name)) return true;
+  return countAssignmentsTo(method, name, false) > 0;
+}
+
+function namesIdentifier(root: AstNode, name: string): boolean {
+  if (root.type === "identifier" && root.text === name) return true;
+  return root.namedChildren.some((child) => namesIdentifier(child, name));
 }
 
 /**

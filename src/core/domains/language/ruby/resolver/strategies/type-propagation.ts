@@ -71,7 +71,7 @@ import {
 import { boundCallReturnTypeVia, isProjectDeclaredConstant } from "./ruby-bound-call-return-types.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
 import { declaredReturnType } from "./ruby-return-facts.js";
-import { nullaryReceiverType } from "./ruby-unbound-receiver-types.js";
+import { conventionReceiverType, nullaryReceiverType } from "./ruby-unbound-receiver-types.js";
 
 export { isOwnAssignmentRightHandSide } from "./ruby-bound-call-return-types.js";
 export { CHAIN_MAX_HOPS_DEFAULT } from "../../../kernel/index.js";
@@ -144,6 +144,32 @@ export function typeOfReceiver(
   atColumn?: number,
 ): RubyTypeRef | undefined {
   return propagateReceiverType(receiver, atLine, ctx, RUBY_RECEIVER_TYPE_PORTS, atColumn);
+}
+
+/**
+ * {@link RUBY_RECEIVER_TYPE_PORTS} with the chain HEAD falling back to the naming
+ * convention (`document` → the `Document` the caller's scope reaches) when no
+ * fact types it (bd tea-rags-mcp-2m83f.32.5). Every later hop is still a fact.
+ */
+const RUBY_CONVENTION_ROOTED_RECEIVER_TYPE_PORTS: ReceiverTypePorts = Object.freeze({
+  ...RUBY_RECEIVER_TYPE_PORTS,
+  singleHopType: (receiver: string, atLine: number, ctx: CallContext, atColumn?: number) =>
+    rubySingleHopType(receiver, atLine, ctx, atColumn) ?? conventionReceiverType(receiver, ctx),
+});
+
+/**
+ * {@link typeOfReceiver} rooted on the naming convention when the head has no
+ * fact. For strategies that demand a pinned member on the answer only — never
+ * `chainType` or the dynamic-dispatch deferral, which treat a typed receiver as
+ * a fact (see {@link conventionReceiverType}).
+ */
+export function typeOfConventionRootedReceiver(
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+  atColumn?: number,
+): RubyTypeRef | undefined {
+  return propagateReceiverType(receiver, atLine, ctx, RUBY_CONVENTION_ROOTED_RECEIVER_TYPE_PORTS, atColumn);
 }
 
 /**
