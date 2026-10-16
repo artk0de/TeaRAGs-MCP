@@ -513,7 +513,7 @@ describe("seeded support versions", () => {
         ["typescript", 15],
         ["javascript", 5],
         ["python", 11],
-        ["ruby", 13],
+        ["ruby", 14],
         ["java", 4],
         ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a

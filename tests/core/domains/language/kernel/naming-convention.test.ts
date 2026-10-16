@@ -77,4 +77,28 @@ describe("conventionClassNameFor", () => {
     expect(conventionClassNameFor("payment", ctxOf([]), recording)).toBeUndefined();
     expect(asked).toEqual([]);
   });
+
+  describe("with a nearest-namesake port (2m83f.32.1)", () => {
+    const scoped: NamingConventionPorts<FakeCtx> = {
+      ...ports,
+      nearestNamesake: (className) => (className === "TimeEntry" ? "GettingPaid::TimeEntry" : undefined),
+    };
+
+    it("answers the namesake the caller's scope reaches", () => {
+      expect(conventionClassNameFor("time_entry", ctxOf(["TimeEntry"]), scoped)).toBe("GettingPaid::TimeEntry");
+    });
+
+    it("asks the subtype gate about the reached namesake, not the short name", () => {
+      expect(conventionClassNameFor("time_entry", ctxOf(["TimeEntry"], ["TimeEntry"]), scoped)).toBe(
+        "GettingPaid::TimeEntry",
+      );
+      expect(
+        conventionClassNameFor("time_entry", ctxOf(["TimeEntry"], ["GettingPaid::TimeEntry"]), scoped),
+      ).toBeUndefined();
+    });
+
+    it("keeps the short name when the scope reaches nothing", () => {
+      expect(conventionClassNameFor("blog_post", ctxOf(["BlogPost"]), scoped)).toBe("BlogPost");
+    });
+  });
 });

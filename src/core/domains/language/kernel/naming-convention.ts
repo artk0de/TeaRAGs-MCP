@@ -16,6 +16,10 @@
  *     `actor` in an app whose `Actor` is specialised by Guest / Employee is an
  *     `Employee`. That shape is where EVERY measured convention error came from.
  *
+ * A short name several namespaces declare is narrowed to the one the caller's
+ * lexical scope reaches, and gate 2 is asked about THAT class only — a namesake
+ * elsewhere with descendants says nothing about this variable.
+ *
  * The gates are ORDERED and each short-circuits: an empty camelization asks
  * nothing, and an unknown class is never asked about descendants. Both ports
  * scan run-global structures on some languages, so the order is a cost
@@ -34,6 +38,12 @@ export interface NamingConventionPorts<TCtx> {
   classExists: (className: string, ctx: TCtx) => boolean;
   /** Does it have DESCENDANTS? A polymorphic base named by a variable carries a concrete subtype. */
   hasSubtypes: (className: string, ctx: TCtx) => boolean;
+  /**
+   * The namesake the caller's lexical scope reaches (bd tea-rags-mcp-2m83f.32.1)
+   * — `kernel/lexical-scope-type.ts` over the language's scope chain — or
+   * `undefined` when it reaches none or ties. Absent, the short name stands.
+   */
+  nearestNamesake?: (className: string, ctx: TCtx) => string | undefined;
 }
 
 /**
@@ -49,6 +59,7 @@ export function conventionClassNameFor<TCtx>(
   const className = ports.camelize(receiverName);
   if (className.length === 0) return undefined;
   if (!ports.classExists(className, ctx)) return undefined;
-  if (ports.hasSubtypes(className, ctx)) return undefined;
-  return className;
+  const named = ports.nearestNamesake?.(className, ctx) ?? className;
+  if (ports.hasSubtypes(named, ctx)) return undefined;
+  return named;
 }

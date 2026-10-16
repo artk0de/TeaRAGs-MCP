@@ -30,11 +30,16 @@
 
 import type { CallContext, SymbolDefinitionKind } from "../../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
-import { conventionClassNameFor, type NamingConventionPorts } from "../../../kernel/index.js";
+import {
+  conventionClassNameFor,
+  nearestScopedTypeName,
+  type LexicalScopeTypePorts,
+  type NamingConventionPorts,
+} from "../../../kernel/index.js";
 import { catalogueFor } from "../../dsl/index.js";
 import { RUBY_SELF_COPY_METHODS } from "../../self-copy-methods.js";
 import { selfMemberReturnType } from "./ruby-return-facts.js";
-import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
+import { isRubyPath, lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 
 /**
  * A plain lowercase identifier — the only receiver text that can name a nullary
@@ -104,6 +109,30 @@ function camelizeScope(snake: string): string {
 }
 
 /**
+ * Ruby's lexical scope for the nearest-namesake lookup (bd
+ * tea-rags-mcp-2m83f.32.1): every namespace prefix of the caller's scope,
+ * innermost first, then the top level. A compact `class A::B::C` is walked as
+ * if nested — the variable names an object, not a constant reference, so the
+ * nearest namespace is the evidence, not Ruby's stricter compact-form nesting.
+ * Only a declared CLASS answers: a namespace module of the same name is never
+ * the class of an instance.
+ */
+const RUBY_LEXICAL_SCOPE_PORTS: LexicalScopeTypePorts<CallContext> = Object.freeze({
+  scopeChain: (ctx: CallContext) => {
+    const segments = ctx.callerScope.flatMap((scope) => scope.split("::"));
+    const chain: string[] = [];
+    for (let i = segments.length; i > 0; i--) chain.push(segments.slice(0, i).join("::"));
+    chain.push("");
+    return chain;
+  },
+  typesDeclaredIn: (name: string, scope: string, ctx: CallContext) => {
+    const qualified = scope.length === 0 ? name : `${scope}::${name}`;
+    const declared = ctx.symbolTable.lookup(qualified, { kinds: CLASS_KIND }).some((def) => isRubyPath(def.relPath));
+    return declared ? [qualified] : [];
+  },
+});
+
+/**
  * Ruby's three answers to the neutral gate in `kernel/naming-convention.ts` (bd
  * tea-rags-mcp-0g8g5). The gate — camelize, then existence, then subtypes — is
  * the same discipline in every OO language and now lives once; the SPELLING of
@@ -114,6 +143,7 @@ const RUBY_NAMING_CONVENTION_PORTS: NamingConventionPorts<CallContext> = Object.
   camelize: camelizeScope,
   classExists: (name: string, ctx: CallContext) => lookupRubySymbolsByShortName(ctx, name).length > 0,
   hasSubtypes: hasDeclaredSubtypes,
+  nearestNamesake: (name: string, ctx: CallContext) => nearestScopedTypeName(name, ctx, RUBY_LEXICAL_SCOPE_PORTS),
 });
 
 /**
@@ -124,10 +154,12 @@ const RUBY_NAMING_CONVENTION_PORTS: NamingConventionPorts<CallContext> = Object.
  * subclasses is still exactly the `User` devise returns. Sharing `camelize` and
  * `classExists` with {@link RUBY_NAMING_CONVENTION_PORTS} is what keeps the two
  * tiers from drifting on what "the class exists" means; overriding the one port
- * is how they stay different where they were always different.
+ * is how they stay different where they were always different. The scope a
+ * framework declares is not the caller's namespace, so no nearest-namesake port.
  */
 const RUBY_SCOPED_CONVENTION_PORTS: NamingConventionPorts<CallContext> = Object.freeze({
-  ...RUBY_NAMING_CONVENTION_PORTS,
+  camelize: RUBY_NAMING_CONVENTION_PORTS.camelize,
+  classExists: RUBY_NAMING_CONVENTION_PORTS.classExists,
   hasSubtypes: () => false,
 });
 
@@ -210,10 +242,16 @@ function hasDeclaredSubtypes(name: string, ctx: CallContext): boolean {
   const { hierarchy } = ctx;
   if (hierarchy === undefined) return false;
   if (hierarchy.getDescendants(name).length > 0) return true;
+  // A namesake the caller's scope reached: a header may write it bare (`< TimeEntry`).
+  if (name.includes("::")) return hierarchy.getDescendants(lastSegment(name)).length > 0;
   for (const def of lookupRubySymbolsByShortName(ctx, name)) {
     if (def.fqName !== name && hierarchy.getDescendants(def.fqName).length > 0) return true;
   }
   return false;
+}
+
+function lastSegment(qualified: string): string {
+  return qualified.slice(qualified.lastIndexOf("::") + 2);
 }
 
 /**

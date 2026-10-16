@@ -106,6 +106,7 @@ export {
   type IdentifierSyntacticType,
 } from "./identifier-declarations.js";
 export { importFileEdge, resolveImportFileEdges } from "./import-file-edges.js";
+export { nearestScopedTypeName, type LexicalScopeTypePorts } from "./lexical-scope-type.js";
 export { mergeExtraction, type ExtractionChannelMerger, type ExtractionMergeRulebook } from "./merge-extraction.js";
 export { methodKindFromClassify } from "./method-kind.js";
 export { conventionClassNameFor, type NamingConventionPorts } from "./naming-convention.js";
