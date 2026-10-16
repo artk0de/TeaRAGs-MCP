@@ -127,6 +127,70 @@ describe("IndexingOps — residual resolution after enrichment", () => {
     });
   });
 
+  it("heals the payload signals after a pass whose model edges changed, before releasing the collection", async () => {
+    vi.spyOn(StatusModule.prototype, "getIndexStatus").mockResolvedValue({ isIndexed: true, status: "indexed" });
+    const settled = gate();
+    settled.open();
+    const order: string[] = [];
+    const resolveAfterIndex = vi.fn(async () => {
+      order.push("residual");
+      return { ...REPORT, outcome: "completed" as const, derived: "recomputed" as const };
+    });
+    const heal = vi.fn(async () => {
+      order.push("heal");
+      return { pointsRewritten: 7, filesTouched: 2 };
+    });
+    const ops = new IndexingOps(
+      makeDeps(
+        {
+          residualResolution: { resolve: vi.fn(), resolveAfterIndex },
+          codegraphHeal: { run: heal },
+          qdrant: {
+            url: "http://qdrant",
+            collectionExists: vi.fn().mockResolvedValue(false),
+            aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+            listCollections: vi.fn().mockResolvedValue([]),
+            getPoint: vi.fn().mockResolvedValue(null),
+            getPointOrThrow: vi.fn().mockResolvedValue(null),
+            getServerVersion: vi.fn().mockResolvedValue("1.0.0"),
+          } as never,
+        },
+        settled.opened,
+        order,
+      ),
+    );
+
+    await ops.run("/repo", { resolveResidual: "kev" });
+    await ops.whenEnrichmentComplete();
+
+    expect(order).toEqual(["enrichment-settled", "residual", "heal"]);
+    expect(heal).toHaveBeenCalledWith(ALIAS, new Set());
+    expect((await ops.getStatus("/repo")).residualResolution).toMatchObject({
+      payloadHeal: { pointsRewritten: 7, filesTouched: 2 },
+    });
+  });
+
+  it("does not heal after a pass that left the model edges as they were", async () => {
+    const settled = gate();
+    settled.open();
+    const heal = vi.fn();
+    const ops = new IndexingOps(
+      makeDeps(
+        {
+          residualResolution: { resolve: vi.fn(), resolveAfterIndex: vi.fn().mockResolvedValue(REPORT) },
+          codegraphHeal: { run: heal },
+        },
+        settled.opened,
+        [],
+      ),
+    );
+
+    await ops.run("/repo");
+    await ops.whenEnrichmentComplete();
+
+    expect(heal).not.toHaveBeenCalled();
+  });
+
   it("hands a run without --resolve-residual to the residual ops with no model, so they decide on stored verdicts", async () => {
     const settled = gate();
     settled.open();

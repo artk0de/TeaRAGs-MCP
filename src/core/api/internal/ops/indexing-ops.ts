@@ -50,6 +50,7 @@ import {
   CODE_LANGUAGES,
   SELECTABLE_LANGUAGES,
 } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
+import type { CodegraphPayloadHealRunner } from "../../../domains/ingest/pipeline/enrichment/codegraph-payload-heal.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import type { DeferredChunkRecoveryHandoff } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import {
@@ -152,6 +153,12 @@ export interface IndexingOpsDeps {
    * the current generation. Omitted when codegraph is off.
    */
   residualResolution?: ResidualResolvePort;
+  /**
+   * Rewrites the `codegraph.*` payload a residual pass moved: the pass runs
+   * after the run's own heal, so its edges reach Qdrant only through this one.
+   * Omitted when codegraph or a deferring provider is off.
+   */
+  codegraphHeal?: CodegraphPayloadHealRunner;
   /**
    * Where the settled embedding throughput optimum of an endpoint + model is
    * read back for `infraHealth.embedding.throughputTune` (bd tea-rags-mcp-7ju66).
@@ -294,6 +301,7 @@ export class IndexingOps {
   private readonly languageVersionStamper?: LanguageVersionStamper;
   private readonly codegraphEnabledStamper?: CodegraphEnabledStamper;
   private readonly residualResolution?: ResidualResolvePort;
+  private readonly codegraphHeal?: CodegraphPayloadHealRunner;
   private readonly embeddingThroughputOptima?: Pick<CollectionRegistryPort, "readEmbeddingThroughputOptimum">;
   private readonly embeddingProducerStarvation?: Pick<CollectionRegistryPort, "readEmbeddingProducerStarvation">;
   private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
@@ -368,6 +376,7 @@ export class IndexingOps {
     this.languageVersionStamper = deps.languageVersionStamper;
     this.codegraphEnabledStamper = deps.codegraphEnabledStamper;
     this.residualResolution = deps.residualResolution;
+    this.codegraphHeal = deps.codegraphHeal;
     this.embeddingThroughputOptima = deps.embeddingThroughputOptima;
     this.embeddingProducerStarvation = deps.embeddingProducerStarvation;
     this.languageCodeVersions = deps.languageCodeVersions;
@@ -664,8 +673,29 @@ export class IndexingOps {
         ...(options?.resolveResidual !== undefined ? { model: options.resolveResidual } : {}),
         ...(progressCallback ? { onProgress: progressCallback } : {}),
       });
-      if (report) this.residualReports.set(collectionName, report);
+      if (report) {
+        this.residualReports.set(collectionName, await this.healAfterResidual(report, physicalCollectionName));
+      }
     };
+  }
+
+  /**
+   * Run the payload heal when the pass changed the model edges, so rerank sees
+   * the new fanIn / PageRank. A failed heal is logged and leaves the report as
+   * the pass made it; the next run's heal diffs against the same baseline.
+   */
+  private async healAfterResidual(
+    report: ResidualPassReport,
+    physicalCollectionName: PhysicalCollectionName,
+  ): Promise<ResidualPassReport> {
+    if (!this.codegraphHeal || report.derived === "unchanged") return report;
+    try {
+      const { pointsRewritten, filesTouched } = await this.codegraphHeal.run(physicalCollectionName, new Set());
+      return { ...report, payloadHeal: { pointsRewritten, filesTouched } };
+    } catch (error) {
+      console.error(`[IndexingOps] payload heal after the residual pass failed:`, error);
+      return report;
+    }
   }
 
   /**
@@ -731,14 +761,16 @@ export class IndexingOps {
     const projectRoot = await validatePath(path);
     const collectionName = await this.claimCollectionForIndexing(path, undefined);
     try {
-      return await this.residualResolution.resolve({
+      const physicalCollectionName = await this.physicalCollectionOf(collectionName);
+      const report = await this.residualResolution.resolve({
         logicalName: collectionName,
-        physicalCollectionName: await this.physicalCollectionOf(collectionName),
+        physicalCollectionName,
         projectRoot,
         model,
         mode,
         ...(options.onProgress ? { onProgress: options.onProgress } : {}),
       });
+      return await this.healAfterResidual(report, physicalCollectionName);
     } finally {
       await this.releaseCollectionForIndexing(collectionName);
     }

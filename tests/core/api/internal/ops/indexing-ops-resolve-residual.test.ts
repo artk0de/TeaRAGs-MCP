@@ -34,7 +34,10 @@ describe("IndexingOps#resolveResidual", () => {
     rmSync(lockDir, { recursive: true, force: true });
   });
 
-  function makeOps(residualResolution?: ResidualResolvePort): IndexingOps {
+  function makeOps(
+    residualResolution?: ResidualResolvePort,
+    codegraphHeal?: IndexingOpsDeps["codegraphHeal"],
+  ): IndexingOps {
     const deps: IndexingOpsDeps = {
       qdrant: {
         collectionExists: vi.fn().mockResolvedValue(true),
@@ -55,6 +58,7 @@ describe("IndexingOps#resolveResidual", () => {
       snapshotDir: lockDir,
       indexingLock: new CollectionIndexingLock({ lockDir }),
       ...(residualResolution ? { residualResolution } : {}),
+      ...(codegraphHeal ? { codegraphHeal } : {}),
     };
     return new IndexingOps(deps);
   }
@@ -98,6 +102,43 @@ describe("IndexingOps#resolveResidual", () => {
     await makeOps({ resolve: resolveFn }).resolveResidual("/repo", "kev", { mode: "cacheOnly", onProgress });
 
     expect(resolveFn).toHaveBeenCalledWith(expect.objectContaining({ mode: "cacheOnly", onProgress }));
+  });
+
+  it("heals the payload signals of the physical collection when the pass changed the model edges", async () => {
+    const changed = { ...skippedResidualReport("x", "ask"), outcome: "completed" as const, derived: "stale" as const };
+    const heal = vi.fn().mockResolvedValue({ pointsRewritten: 4, filesTouched: 1 });
+
+    const report = await makeOps({ resolve: vi.fn().mockResolvedValue(changed) }, { run: heal }).resolveResidual(
+      "/repo",
+      "kev",
+    );
+
+    expect(heal).toHaveBeenCalledWith(ALIAS, new Set());
+    expect(report.payloadHeal).toEqual({ pointsRewritten: 4, filesTouched: 1 });
+  });
+
+  it("keeps the pass's report when the heal fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const changed = { ...skippedResidualReport("x", "ask"), derived: "recomputed" as const };
+    const heal = vi.fn().mockRejectedValue(new Error("qdrant down"));
+
+    const report = await makeOps({ resolve: vi.fn().mockResolvedValue(changed) }, { run: heal }).resolveResidual(
+      "/repo",
+      "kev",
+    );
+
+    expect(report).toEqual(changed);
+  });
+
+  it("does not heal when the pass left the model edges as they were", async () => {
+    const heal = vi.fn();
+
+    await makeOps(
+      { resolve: vi.fn().mockResolvedValue(skippedResidualReport("x", "ask")) },
+      { run: heal },
+    ).resolveResidual("/repo", "kev");
+
+    expect(heal).not.toHaveBeenCalled();
   });
 
   it("reports skipped when codegraph is not wired", async () => {
