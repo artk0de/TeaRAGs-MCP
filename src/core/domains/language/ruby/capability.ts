@@ -107,7 +107,10 @@ export const capability: LanguageCapability = {
   // walker 17: bd tea-rags-mcp-2m83f.42 — an untyped owner's link is typed by the
   // return every candidate agrees on (`record.firm` → `Firm`), so a walker-16
   // index lacks the downstream edges of overflow hops (`record.firm.name`).
-  versions: { chunking: 2, walker: 17, codegraphSchema: 2 },
+  // walker 18: bd tea-rags-mcp-2m83f.44 — calls carry `argExprs` and a parameter
+  // is typed from its exact-edge callers (`perform(record)` called with an
+  // `Invoice`), so a walker-17 index lacks the edges of calls on parameters.
+  versions: { chunking: 2, walker: 18, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

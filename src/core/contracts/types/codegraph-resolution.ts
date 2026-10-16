@@ -28,7 +28,7 @@ import type { CallResultBinding, ConstructedLocalLines, LocalBinding } from "./c
 import type { SelfDispatchArgTemplate } from "./codegraph-pass1.js";
 import type { ResidualExclusionRule } from "./codegraph-residual.js";
 import type { GlobalSymbolTable, RelPath, SymbolId, SymbolKindRoles } from "./codegraph-symbols.js";
-import type { RubyTypeRef } from "./language.js";
+import type { RubyTypeRef, TypeRef } from "./language.js";
 
 /**
  * What a pass-2 run tells one language's resolver BEFORE its first call site —
@@ -227,6 +227,13 @@ export interface CallResolver {
    * resolvers that omit it keep every residual site.
    */
   residualExclusion?: (call: CallRef, ctx: CallContext) => ResidualExclusionRule | null;
+  /**
+   * Optional: the static type of one ARGUMENT expression at `call` (bd
+   * tea-rags-mcp-2m83f.44), read against the caller's bindings — the evidence a
+   * callee's parameter is typed from. `undefined` when the expression is not
+   * statically typed. Resolvers that omit it type no parameter from callers.
+   */
+  typeOfCallArgument?: (expr: string, call: CallRef, ctx: CallContext) => TypeRef | undefined;
   /**
    * Optional: a chunk's local bindings as this resolver reads them (bd
    * tea-rags-mcp-m99j1.1.30 regression). A binding the resolver cannot read at

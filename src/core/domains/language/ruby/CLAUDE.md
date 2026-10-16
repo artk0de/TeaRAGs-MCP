@@ -67,6 +67,17 @@
   `railsVocabularyActive`. The hop itself keeps no edge; only the links after it
   are typed. Why: on TaxDome `firm` alone has 1,164 candidates, and a wrong
   receiver type poisons every hop after it.
+- **A parameter is typed from its callers only through exact static edges, and
+  only on agreement.** The walker records `CallRef.argExprs` (receiver-shaped
+  argument texts, positional up to the first splat / keyword pair / block-pass,
+  keyword values by key); `RubyCallResolver#typeOfCallArgument` types each one
+  with `typeOfReceiver` — never the naming convention. The fold, its agreement
+  rule (one type, instance or class form, untyped callers ≤ typed ones) and the
+  3-round fixpoint live trajectory-side in `caller-param-pass.ts` /
+  `caller-param-types.ts` (bd tea-rags-mcp-2m83f.44); the barrier's
+  constructor-arg fold and any walker binding win a shared name. Why: a single
+  typed caller among many untyped ones is a sample, and a wrong parameter type
+  poisons every call on it.
 - **`resolver/strategies/ancestor-linearization.ts` keeps its signature, but the
   DRIVER moved.** `linearizeAncestors(klass, hierarchy)` and
   `RubyAncestorHierarchy` are unchanged for every importer; the recursion, cycle
