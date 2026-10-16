@@ -117,6 +117,17 @@ export interface FileDependencyEdge extends FileEdgeExportNames {
    */
   frameworkRoutedCallWeight?: number;
   /**
+   * The part of {@link callWeight} a residual model resolved (method edges
+   * with `origin: "model"`, each weighted by its `p`). Absent when no model
+   * call crosses the edge.
+   */
+  modelCallWeight?: number;
+  /**
+   * `"model"` on an edge no import produced: a residual model's call alone
+   * links the two files. Absent on every edge the walk recorded.
+   */
+  origin?: "model";
+  /**
    * The edge row's recorded reference (`cg_symbols_edges_file.import_text`):
    * the FIRST reference the walk saw — a module specifier, or for Ruby the
    * constant as written (`zeitwerk:BaseAdapter::RateLimitError`). One per

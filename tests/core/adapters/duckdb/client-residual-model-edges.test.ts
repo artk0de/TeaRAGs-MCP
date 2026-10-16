@@ -226,6 +226,167 @@ describe("DuckDbGraphClient — residual ops", () => {
     ]);
   });
 
+  describe("file edges from model calls", () => {
+    interface FileEdgeRow {
+      source_rel_path: string;
+      target_rel_path: string;
+      origin: string | null;
+    }
+
+    const readFileEdges = async (): Promise<FileEdgeRow[]> =>
+      client.queryAll<FileEdgeRow>(
+        `SELECT source_rel_path, target_rel_path, origin FROM cg_symbols_edges_file
+          ORDER BY source_rel_path, target_rel_path`,
+      );
+
+    const importFirm = {
+      targetRelPath: "app/models/firm.rb",
+      importText: "zeitwerk:Firm",
+      importedExportNames: [],
+      reexportedExportNames: [],
+    };
+
+    it("adds a model-marked file edge where no import edge links the two files", async () => {
+      await writeBilling();
+
+      await client.applyModelEdges("kev", [EDGE]);
+
+      expect(await readFileEdges()).toEqual([
+        { source_rel_path: "app/billing.rb", target_rel_path: "app/models/firm.rb", origin: "model" },
+      ]);
+    });
+
+    it("keeps an existing import edge static instead of marking it", async () => {
+      await client.upsertFile(
+        { relPath: "app/billing.rb", language: "ruby" },
+        { fileEdges: [importFirm], methodEdges: [], residualCallSites: [SITE] },
+      );
+
+      await client.applyModelEdges("kev", [EDGE]);
+
+      expect(await readFileEdges()).toEqual([
+        { source_rel_path: "app/billing.rb", target_rel_path: "app/models/firm.rb", origin: null },
+      ]);
+    });
+
+    it("removes the model file edge when the model edges are re-applied without it", async () => {
+      await writeBilling();
+      await client.applyModelEdges("kev", [EDGE]);
+
+      await client.applyModelEdges("kev", []);
+
+      expect(await readFileEdges()).toEqual([]);
+    });
+
+    it("moves the model file edge with the model edge's target", async () => {
+      await writeBilling();
+      await client.applyModelEdges("kev", [EDGE]);
+
+      await client.applyModelEdges("kev", [{ ...EDGE, targetSymbolId: "Team#users" }]);
+
+      expect(await readFileEdges()).toEqual([
+        { source_rel_path: "app/billing.rb", target_rel_path: "app/models/team.rb", origin: "model" },
+      ]);
+    });
+
+    it("a re-walked source file loses its model file edges", async () => {
+      await writeBilling();
+      await client.applyModelEdges("kev", [EDGE]);
+
+      await writeBilling();
+
+      expect(await readFileEdges()).toEqual([]);
+    });
+
+    it("an import edge the re-walk finds replaces the model file edge", async () => {
+      await writeBilling();
+      await client.applyModelEdges("kev", [EDGE]);
+
+      await client.upsertFile(
+        { relPath: "app/billing.rb", language: "ruby" },
+        { fileEdges: [importFirm], methodEdges: [], residualCallSites: [SITE] },
+      );
+
+      expect(await readFileEdges()).toEqual([
+        { source_rel_path: "app/billing.rb", target_rel_path: "app/models/firm.rb", origin: null },
+      ]);
+    });
+
+    it("removing the target file prunes the model file edge", async () => {
+      await writeBilling();
+      await client.applyModelEdges("kev", [EDGE]);
+
+      await client.removeFile("app/models/firm.rb");
+
+      expect(await readFileEdges()).toEqual([]);
+    });
+
+    it("file-scope lookups mark the model file edge and weigh its model calls", async () => {
+      await writeBilling();
+      await client.applyModelEdges("kev", [EDGE]);
+
+      const importers = await client.getFileImporters("app/models/firm.rb");
+
+      expect(importers.edges).toEqual([
+        {
+          sourceRelPath: "app/billing.rb",
+          targetRelPath: "app/models/firm.rb",
+          importText: null,
+          // `confidence` is a single-precision column.
+          callWeight: expect.closeTo(0.9, 5),
+          modelCallWeight: expect.closeTo(0.9, 5),
+          origin: "model",
+        },
+      ]);
+    });
+
+    it("an import edge carries the model share of its call weight and no origin", async () => {
+      await client.upsertFile(
+        { relPath: "app/billing.rb", language: "ruby" },
+        {
+          fileEdges: [importFirm],
+          methodEdges: [
+            {
+              sourceSymbolId: "Billing#run",
+              targetSymbolId: "Firm#users",
+              targetRelPath: "app/models/firm.rb",
+              callExpression: "firm.users",
+            },
+          ],
+          residualCallSites: [SITE],
+        },
+      );
+      await client.applyModelEdges("kev", [EDGE]);
+
+      const graph = await client.readFileDependencyGraph();
+
+      expect(graph.edges).toEqual([
+        expect.objectContaining({
+          sourceRelPath: "app/billing.rb",
+          targetRelPath: "app/models/firm.rb",
+          callWeight: expect.closeTo(1.9, 5),
+          modelCallWeight: expect.closeTo(0.9, 5),
+        }),
+      ]);
+      expect(graph.edges[0]).not.toHaveProperty("origin");
+    });
+
+    it("the file dependency graph marks a model-derived edge", async () => {
+      await writeBilling();
+      await client.applyModelEdges("kev", [EDGE]);
+
+      const graph = await client.readFileDependencyGraph();
+
+      expect(graph.edges).toEqual([
+        expect.objectContaining({
+          sourceRelPath: "app/billing.rb",
+          origin: "model",
+          modelCallWeight: expect.closeTo(0.9, 5),
+        }),
+      ]);
+    });
+  });
+
   it("markDerivedStale marks the derived tables stale", async () => {
     expect(await client.hasStaleDerivedTables()).toBe(false);
 

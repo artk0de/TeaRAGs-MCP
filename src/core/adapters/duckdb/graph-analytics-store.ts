@@ -98,7 +98,8 @@ const FRAMEWORK_ROUTED_CALL_SQL = String.raw`inh.source_rel_path IS NULL AND NOT
 
 /**
  * The CTEs (for a `WITH RECURSIVE` head) ending in `edge_call_weight(source_rel_path,
- * target_rel_path, call_weight, framework_routed_call_weight)`: the resolved
+ * target_rel_path, call_weight, framework_routed_call_weight, model_call_weight)`:
+ * `model_call_weight` is the part a residual model resolved (`origin = 'model'`). The resolved
  * calls crossing each `cg_symbols_edges_file` row (bd tea-rags-mcp-r8hme.52.1).
  *
  * A call lands on the file that DEFINES its target, but an import of a barrel
@@ -137,7 +138,8 @@ function edgeCallWeightCtes(callSourceFilter: string): string {
     call_pair AS (
       SELECT m.source_rel_path, m.target_rel_path, SUM(COALESCE(m.confidence, 1.0)) AS call_weight,
              SUM(CASE WHEN ${FRAMEWORK_ROUTED_CALL_SQL} THEN COALESCE(m.confidence, 1.0) ELSE 0 END)
-               AS framework_routed_call_weight
+               AS framework_routed_call_weight,
+             SUM(CASE WHEN m.origin = 'model' THEN COALESCE(m.confidence, 1.0) ELSE 0 END) AS model_call_weight
       FROM cg_symbols_edges_method m
       LEFT JOIN (
         SELECT DISTINCT i.source_rel_path, s.rel_path AS target_rel_path
@@ -149,11 +151,12 @@ function edgeCallWeightCtes(callSourceFilter: string): string {
     ),
     call_pair_credit AS (
       SELECT c.source_rel_path, c.target_rel_path AS definer_rel_path, e.target_rel_path AS credited_rel_path, 0 AS hops,
-             c.call_weight, c.framework_routed_call_weight
+             c.call_weight, c.framework_routed_call_weight, c.model_call_weight
       FROM call_pair c
       JOIN cg_symbols_edges_file e ON e.source_rel_path = c.source_rel_path AND e.target_rel_path = c.target_rel_path
       UNION ALL
-      SELECT c.source_rel_path, c.target_rel_path, e.target_rel_path, r.hops, c.call_weight, c.framework_routed_call_weight
+      SELECT c.source_rel_path, c.target_rel_path, e.target_rel_path, r.hops, c.call_weight, c.framework_routed_call_weight,
+             c.model_call_weight
       FROM call_pair c
       JOIN reexport_reach r ON r.definer_rel_path = c.target_rel_path
       JOIN cg_symbols_edges_file e ON e.source_rel_path = c.source_rel_path AND e.target_rel_path = r.barrel_rel_path
@@ -161,7 +164,8 @@ function edgeCallWeightCtes(callSourceFilter: string): string {
     ),
     edge_call_weight AS (
       SELECT source_rel_path, credited_rel_path AS target_rel_path, SUM(call_weight) AS call_weight,
-             SUM(framework_routed_call_weight) AS framework_routed_call_weight
+             SUM(framework_routed_call_weight) AS framework_routed_call_weight,
+             SUM(model_call_weight) AS model_call_weight
       FROM (
         SELECT * FROM call_pair_credit
         QUALIFY ROW_NUMBER() OVER (
@@ -170,6 +174,21 @@ function edgeCallWeightCtes(callSourceFilter: string): string {
       )
       GROUP BY source_rel_path, credited_rel_path
     )`;
+}
+
+/**
+ * A file edge's model provenance — `modelCallWeight` present only when a model
+ * call crosses it, `origin` only on an edge a model call alone produced.
+ */
+function modelProvenance(row: { model_call_weight: number | string | null; origin: string | null }): {
+  modelCallWeight?: number;
+  origin?: "model";
+} {
+  const modelCallWeight = Number(row.model_call_weight ?? 0);
+  return {
+    ...(modelCallWeight > 0 ? { modelCallWeight } : {}),
+    ...(row.origin === "model" ? { origin: "model" as const } : {}),
+  };
 }
 
 /** `rel_path` of a derived row carried over by migration 028 — its file is unknown. */
@@ -270,6 +289,8 @@ export class DuckDbGraphAnalyticsStore implements Omit<
       target_rel_path: string;
       call_weight: number | string;
       framework_routed_call_weight: number | string | null;
+      model_call_weight: number | string | null;
+      origin: string | null;
       import_text: string | null;
       imported_export_names: string | null;
       reexported_export_names: string | null;
@@ -277,7 +298,7 @@ export class DuckDbGraphAnalyticsStore implements Omit<
     }>(
       `WITH RECURSIVE ${edgeCallWeightCtes("")}
        SELECT e.source_rel_path, e.target_rel_path, COALESCE(c.call_weight, 0) AS call_weight,
-              c.framework_routed_call_weight,
+              c.framework_routed_call_weight, c.model_call_weight, e.origin,
               e.import_text, e.imported_export_names, e.reexported_export_names, e.reexported_export_bindings
        FROM cg_symbols_edges_file e
        LEFT JOIN edge_call_weight c ON c.source_rel_path = e.source_rel_path AND c.target_rel_path = e.target_rel_path
@@ -317,6 +338,7 @@ export class DuckDbGraphAnalyticsStore implements Omit<
           callWeight: Number(r.call_weight),
           // bd tea-rags-mcp-4vj2u — present only when a call went through a framework's interface.
           ...(frameworkRouted > 0 ? { frameworkRoutedCallWeight: frameworkRouted } : {}),
+          ...modelProvenance(r),
           // bd tea-rags-mcp-xb669.6 — the norms tell a nested-constant reference from a role edge.
           ...(r.import_text ? { importText: r.import_text } : {}),
           ...(imported ? { importedExportNames: imported } : {}),
@@ -489,6 +511,8 @@ export class DuckDbGraphAnalyticsStore implements Omit<
       target_rel_path: string;
       import_text: string | null;
       call_weight: number | string;
+      model_call_weight: number | string | null;
+      origin: string | null;
     }>(
       `WITH RECURSIVE ${edgeCallWeightCtes(
         // Crediting a call needs every file edge of its SOURCE, so an importer
@@ -497,7 +521,8 @@ export class DuckDbGraphAnalyticsStore implements Omit<
           ? "AND m.source_rel_path = ?"
           : "AND m.source_rel_path IN (SELECT source_rel_path FROM cg_symbols_edges_file WHERE target_rel_path = ?)",
       )}
-       SELECT e.source_rel_path, e.target_rel_path, e.import_text, COALESCE(c.call_weight, 0) AS call_weight
+       SELECT e.source_rel_path, e.target_rel_path, e.import_text, COALESCE(c.call_weight, 0) AS call_weight,
+              c.model_call_weight, e.origin
        FROM cg_symbols_edges_file e
        LEFT JOIN edge_call_weight c ON c.source_rel_path = e.source_rel_path AND c.target_rel_path = e.target_rel_path
        WHERE e.${anchor} = ?
@@ -515,6 +540,7 @@ export class DuckDbGraphAnalyticsStore implements Omit<
         targetRelPath: r.target_rel_path,
         importText: r.import_text,
         callWeight: Number(r.call_weight),
+        ...modelProvenance(r),
       })),
     };
   }

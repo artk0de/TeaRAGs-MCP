@@ -70,11 +70,14 @@ const FILE_EDGE_KEYS = ["source_rel_path", "target_rel_path"] as const;
 // Migration 030 (bd tea-rags-mcp-r8hme.2): the export names are VALUES, so a
 // re-walk that changes only them rewrites the row instead of keeping the first.
 // Migration 051 (bd tea-rags-mcp-zl3so): the alias table rides the same row.
+// Migration 056: the walk writes NULL origin, so an import it finds replaces a
+// model-derived edge, and a re-walk drops the file's model-derived edges.
 const FILE_EDGE_VALUES = [
   "import_text",
   "imported_export_names",
   "reexported_export_names",
   "reexported_export_bindings",
+  "origin",
 ] as const;
 // Migration 037 (bd tea-rags-mcp-r8hme.12): same key as the runtime file edge.
 const TYPE_ONLY_FILE_EDGE_VALUES = ["import_text"] as const;
@@ -250,6 +253,7 @@ export class DuckDbFileGraphStore {
           encodeFileEdgeExportNames(e.importedExportNames),
           encodeFileEdgeExportNames(e.reexportedExportNames),
           encodeReexportBindings(e.reexportedExportBindings),
+          null,
         ]);
       }
       for (const e of edges.typeOnlyFileEdges ?? []) {

@@ -66,6 +66,31 @@ describe("GraphFacade#getCallers — file scope", () => {
     });
   });
 
+  it("marks a model-derived importer and carries the model share of each call weight", async () => {
+    const graphDb = {
+      getFileImporters: vi.fn().mockResolvedValue({
+        fileKnown: true,
+        edges: [
+          { ...edge("src/m.ts", "src/b.ts", 0.9), modelCallWeight: 0.9, origin: "model" },
+          { ...edge("src/a.ts", "src/b.ts", 2.5, "./b.js"), modelCallWeight: 0.5 },
+        ],
+      }),
+    };
+    const { pool } = readerPool(graphDb);
+    const facade = new GraphFacade({ pool, collectionRegistry: registry });
+
+    const res = await facade.getCallers({ collection: "code_x", relativePath: "src/b.ts" });
+
+    expect(res).toEqual({
+      relativePath: "src/b.ts",
+      importers: [
+        { relativePath: "src/a.ts", importText: "./b.js", callWeight: 2.5, modelCallWeight: 0.5 },
+        { relativePath: "src/m.ts", importText: null, callWeight: 0.9, modelCallWeight: 0.9, origin: "model" },
+      ],
+      total: 2,
+    });
+  });
+
   it("applies limit after ordering and reports the untruncated total", async () => {
     const graphDb = {
       getFileImporters: vi.fn().mockResolvedValue({
