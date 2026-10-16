@@ -13,6 +13,11 @@ import type { PhysicalCollectionName } from "../../../../contracts/types/collect
 import { WorkingTreeGraphIncompleteError } from "../../errors.js";
 import type { CodegraphEnrichmentProvider } from "../symbols/index.js";
 import { readFileContentHash, readFileContentHashSync } from "./file-content-hash-reader.js";
+import {
+  reapplyTreeModelEdges,
+  type TreeModelEdges,
+  type WorkingTreeGraphResidualInput,
+} from "./tree-graph-model-edges.js";
 
 /** One opened clone a tree build writes: the provider over it and its client. */
 export interface TreeGraphClone {
@@ -21,12 +26,16 @@ export interface TreeGraphClone {
   provider: CodegraphEnrichmentProvider;
   graphDb: GraphDbClient;
   dbPath: string;
+  /** Where the project's verdicts are; absent, the walk's static edges are the graph's only edges. */
+  residual?: WorkingTreeGraphResidualInput;
 }
 
 /** What one delta application walked. */
 export interface TreeDeltaWalk {
   walkedFileCount: number;
   hierarchyDependentCount: number;
+  /** The model edges re-applied after the walk (absent: no verdict store, or no residual input). */
+  modelEdges?: TreeModelEdges;
 }
 
 /** Walked files hashed at once: one descriptor each, well inside any default fd limit. */
@@ -66,16 +75,28 @@ export async function walkTreeFiles(clone: TreeGraphClone, relPaths: readonly st
 }
 
 /**
- * Steps 4–5: refuse stale derived tables, then CHECKPOINT so the file carries
- * every write (closing never checkpoints).
+ * Steps 4–5: re-apply the cached model verdicts the walk's static rewrite
+ * dropped (`reapplyTreeModelEdges`, which recomputes the derived tables when
+ * the model edges moved), refuse stale derived tables, then CHECKPOINT so the
+ * file carries every write (closing never checkpoints).
  *
  * @throws WorkingTreeGraphIncompleteError when the derived tables are still stale.
  */
-export async function finishTreeGraph(clone: TreeGraphClone): Promise<void> {
+export async function finishTreeGraph(clone: TreeGraphClone): Promise<TreeModelEdges | undefined> {
+  const modelEdges = clone.residual ? await reapplyTreeModelEdges(clone.graphDb, clone.residual) : undefined;
   if (await clone.graphDb.hasStaleDerivedTables()) {
     throw new WorkingTreeGraphIncompleteError(clone.dbPath, "staleDerivedTables");
   }
   await clone.graphDb.checkpoint();
+  return modelEdges;
+}
+
+/** `modelEdges` as a {@link TreeDeltaWalk} carries it — omitted when absent. */
+export function withModelEdges(
+  walk: Omit<TreeDeltaWalk, "modelEdges">,
+  modelEdges: TreeModelEdges | undefined,
+): TreeDeltaWalk {
+  return modelEdges ? { ...walk, modelEdges } : walk;
 }
 
 /**

@@ -86,6 +86,21 @@ export class ResidualVerdictStore {
     return new ResidualVerdictStore(session);
   }
 
+  /**
+   * A READ_ONLY handle for a reader in another process (the working-tree graph
+   * build). Readers share the file; a process holding it READ_WRITE (a running
+   * pass) makes this open fail, and this handle makes that pass's open fail
+   * while it lives — so a reader closes it as soon as it has read.
+   */
+  static async openReadOnly(rootDir: string, logicalName: string): Promise<ResidualVerdictStore> {
+    const session = new DuckDbGraphSession({
+      path: ResidualVerdictStore.pathFor(rootDir, logicalName),
+      accessMode: "READ_ONLY",
+    });
+    await session.open();
+    return new ResidualVerdictStore(session);
+  }
+
   async find(keys: { siteKey: string; menuHash: string; modelVersion: string }[]): Promise<ResidualVerdict[]> {
     const verdicts: ResidualVerdict[] = [];
     for (let i = 0; i < keys.length; i += CHUNK_ROWS) {
