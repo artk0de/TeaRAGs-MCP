@@ -113,6 +113,10 @@ export interface FileImportResult {
    * re-export). Results are ordered by it, heaviest first.
    */
   callWeight: number;
+  /** The part of `callWeight` a residual model resolved; absent when none did. */
+  modelCallWeight?: number;
+  /** `"model"` when no import links the files — a residual model's call alone does. */
+  origin?: "model";
 }
 
 interface FileScopeResponseBase {

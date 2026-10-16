@@ -63,7 +63,13 @@ function shape(
   limit: number,
 ): { results: FileImportResult[]; total: number; message?: string } {
   const results = edges
-    .map((e) => ({ relativePath: otherEnd(e), importText: e.importText, callWeight: e.callWeight }))
+    .map((e) => ({
+      relativePath: otherEnd(e),
+      importText: e.importText,
+      callWeight: e.callWeight,
+      ...(e.modelCallWeight !== undefined ? { modelCallWeight: e.modelCallWeight } : {}),
+      ...(e.origin !== undefined ? { origin: e.origin } : {}),
+    }))
     .sort((a, b) => b.callWeight - a.callWeight || a.relativePath.localeCompare(b.relativePath));
   const message =
     !fileKnown && edges.length === 0

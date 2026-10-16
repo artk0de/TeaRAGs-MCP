@@ -10,6 +10,12 @@
  * `source_rel_path` and writes NULL provenance: a re-walked file drops its
  * model rows, a statically proven model key turns back into a static edge, and
  * an untouched file keeps its model rows.
+ *
+ * A model call between two files no import links also adds a file edge
+ * (migration 056: `cg_symbols_edges_file.origin = 'model'`), so file-scope
+ * lookups, file fan and the layout see the dependency. Those rows are rebuilt
+ * from the model method edges on every apply; the re-walk drops them with the
+ * file's other edges, and an import it finds replaces them.
  */
 import type {
   CodegraphResidualEdgeStore,
@@ -108,9 +114,32 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
         METHOD_EDGE_VALUES,
         rows,
       );
+      await this.syncModelFileEdges();
       const after = await this.storedModelEdges(model);
       return { stored: after.length, changed: after.join("\n") !== before.join("\n") };
     });
+  }
+
+  /**
+   * Make the model-derived rows of `cg_symbols_edges_file` equal the file pairs
+   * the model method edges cross where no import edge does — over every model,
+   * since a file edge belongs to no single one.
+   */
+  private async syncModelFileEdges(): Promise<void> {
+    const modelPairs = `SELECT DISTINCT m.source_rel_path, m.target_rel_path
+         FROM cg_symbols_edges_method m
+        WHERE m.origin = 'model' AND m.target_symbol_id IS NOT NULL AND m.source_rel_path <> m.target_rel_path`;
+    await this.session.run(
+      `DELETE FROM cg_symbols_edges_file e
+        WHERE e.origin = 'model'
+          AND NOT EXISTS (SELECT 1 FROM (${modelPairs}) p
+                           WHERE p.source_rel_path = e.source_rel_path AND p.target_rel_path = e.target_rel_path)`,
+    );
+    await this.session.run(
+      `INSERT INTO cg_symbols_edges_file (source_rel_path, target_rel_path, origin)
+       SELECT p.source_rel_path, p.target_rel_path, 'model' FROM (${modelPairs}) p
+       ON CONFLICT DO NOTHING`,
+    );
   }
 
   /** One sorted fingerprint (key and values) per stored edge of `model`. */

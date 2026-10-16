@@ -196,4 +196,10 @@ export interface ResidualPassReport {
   edgesApplied: number;
   derived: ResidualDerivedState;
   durations: ResidualPassDurations;
+  /**
+   * The Qdrant `codegraph.*` payload heal run after a pass that changed the
+   * model edges. Absent when the edges did not change, when no heal is wired,
+   * or when the heal failed (logged).
+   */
+  payloadHeal?: { pointsRewritten: number; filesTouched: number };
 }

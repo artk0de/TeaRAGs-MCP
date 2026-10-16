@@ -33,6 +33,7 @@ import type { ChunkerPoolFactory } from "../../../domains/ingest/pipeline/chunke
 import { SELECTABLE_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import type { BlobReaderFactory } from "../../../domains/ingest/pipeline/enrichment/chunk-phase.js";
+import type { CodegraphPayloadHealRunner } from "../../../domains/ingest/pipeline/enrichment/codegraph-payload-heal.js";
 import type { CodegraphStorageCompactionRunner } from "../../../domains/ingest/pipeline/enrichment/completion-runner.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { InlineEnrichmentExecutor } from "../../../domains/ingest/pipeline/enrichment/executor/index.js";
@@ -196,7 +197,7 @@ export class IngestFacade {
       ? createPathCollectionResolver(deps.collectionRegistry)
       : undefined;
 
-    const { enrichment, indexing, reindex, gitTimePeriods } = this.buildIngestPipeline(
+    const { enrichment, indexing, reindex, gitTimePeriods, codegraphHeal } = this.buildIngestPipeline(
       deps,
       snapshotDir,
       resolveCollectionForPath,
@@ -217,6 +218,8 @@ export class IngestFacade {
       modelGuard: deps.modelGuard,
       codegraphPool: deps.codegraphPool,
       ...(deps.residualResolution ? { residualResolution: deps.residualResolution } : {}),
+      // The residual pass lands after the run's own heal; the same runner heals what it moved.
+      ...(codegraphHeal ? { codegraphHeal } : {}),
       healthCheckRetryAttempts: deps.healthCheckRetryAttempts,
       healthCheckRetryDelayMs: deps.healthCheckRetryDelayMs,
       languageVersionStamper: deps.collectionRegistry,
@@ -320,6 +323,7 @@ export class IngestFacade {
     indexing: IndexPipeline;
     reindex: ReindexPipeline;
     gitTimePeriods?: { fileMonths: number; chunkMonths: number };
+    codegraphHeal?: CodegraphPayloadHealRunner;
   } {
     const { qdrant, embeddings, config, trajectoryConfig, deleteConfig, pipelineTuning, syncTuning } = deps;
 
@@ -454,7 +458,7 @@ export class IngestFacade {
       registryDeps,
     );
 
-    return { enrichment, indexing, reindex, gitTimePeriods };
+    return { enrichment, indexing, reindex, gitTimePeriods, ...(codegraphHeal ? { codegraphHeal } : {}) };
   }
 }
 

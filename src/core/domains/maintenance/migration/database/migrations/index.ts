@@ -58,6 +58,7 @@ import { SQL_051_CG_FILE_EDGE_REEXPORT_BINDINGS } from "./051-cg-file-edge-reexp
 import { SQL_052_CG_TEMPORAL_BUNDLE_RENAME_SWEEP } from "./052-cg-temporal-bundle-rename-sweep.js";
 import { SQL_053_CG_RESIDUAL_CALL_SITES } from "./053-cg-residual-call-sites.js";
 import { SQL_054_CG_METHOD_EDGES_ORIGIN } from "./054-cg-method-edges-origin.js";
+import { SQL_056_CG_FILE_EDGES_ORIGIN } from "./056-cg-file-edges-origin.js";
 
 export type { DatabaseMigration } from "../runner.js";
 
@@ -120,4 +121,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "052-cg-temporal-bundle-rename-sweep.sql", sql: SQL_052_CG_TEMPORAL_BUNDLE_RENAME_SWEEP },
   { filename: "053-cg-residual-call-sites.sql", sql: SQL_053_CG_RESIDUAL_CALL_SITES },
   { filename: "054-cg-method-edges-origin.sql", sql: SQL_054_CG_METHOD_EDGES_ORIGIN },
+  { filename: "056-cg-file-edges-origin.sql", sql: SQL_056_CG_FILE_EDGES_ORIGIN },
 ];

@@ -432,7 +432,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "MAY reach target among candidateCount candidates; not materialized as edges). " +
       "Entries with origin:'model' come from residual resolution: probabilistic (carry model, p), not compiler truth. " +
       "File scope: pass relativePath instead of symbolId → {relativePath, importers[], total} — " +
-      "files that import it, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
+      "files that import it, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
       "unknown file → empty importers + message.",
     schemaKey: "get_callers",
     invoke: async (app, request) =>
@@ -446,7 +446,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "Each callee carries the target's declared visibility (private|protected|public; absent = unknown). " +
       "Entries with origin:'model' come from residual resolution: probabilistic (carry model, p), not compiler truth. " +
       "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
-      "files it imports, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
+      "files it imports, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
       "unknown file → empty imports + message.",
     schemaKey: "get_callees",
     invoke: async (app, request) =>
