@@ -258,7 +258,9 @@ only if needed:
 **Model edges.** A `get_callers` / `get_callees` entry with `origin: "model"`
 was added by residual resolution (Kev) and carries `model` and `p`. Treat it as
 probabilistic: weigh `p`, never as compiler truth. Entries without `origin` are
-static. `trace_path` steps carry no `origin`.
+static. `trace_path` steps carry no `origin`. Prime's resolve rate counts the
+sites model edges resolve; the `static` share beside it is the floor the static
+edges alone guarantee.
 
 **Declared visibility.** `get_callees` targets, `get_callers` callers (+ queried
 symbol as top-level `visibility`), `trace_path` steps, find_symbol outline lines

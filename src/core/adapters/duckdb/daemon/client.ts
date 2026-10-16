@@ -46,6 +46,7 @@ import type {
   MethodTailVerbRow,
   ModelEdgeApplyResult,
   ModelEdgeRow,
+  ModelResolvedSiteCount,
   NonPublicMemberEdge,
   OntologyReportQuery,
   OntologyReportSectionRows,
@@ -214,6 +215,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async applyModelEdges(model: string, edges: ModelEdgeRow[]): Promise<ModelEdgeApplyResult> {
     return this.residualEdges.applyModelEdges(model, edges);
+  }
+
+  async getModelResolvedSiteCounts(thresholds: Readonly<Record<string, number>>): Promise<ModelResolvedSiteCount[]> {
+    return this.residualEdges.getModelResolvedSiteCounts(thresholds);
   }
 
   async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {

@@ -102,6 +102,11 @@ describe("CodegraphDaemonServer.handle — residual ops", () => {
       op: "getCallers",
       params: { collection: c, symbolId: "Firm#users" },
     });
+    const resolvedSites = await server.handle({
+      id: 8,
+      op: "getModelResolvedSiteCounts",
+      params: { collection: c, thresholds: { kev: 0.7 } },
+    });
     const marked = await server.handle({
       id: 6,
       op: "markDerivedStale",
@@ -121,6 +126,10 @@ describe("CodegraphDaemonServer.handle — residual ops", () => {
     expect((applied as { result: unknown }).result).toEqual({ stored: 1, changed: true });
     expect((callers as { result: { sourceSymbolId: string }[] }).result.map((e) => e.sourceSymbolId)).toEqual([
       "Billing#run",
+    ]);
+    expect(DAEMON_OP_COMMANDS.getModelResolvedSiteCounts.access).toBe("read");
+    expect((resolvedSites as { result: unknown }).result).toEqual([
+      { language: null, receiverKind: null, kind: SITE.kind, model: "kev", sites: 1 },
     ]);
     expect(marked.ok).toBe(true);
     expect((stale as { result: unknown }).result).toBe(true);

@@ -299,9 +299,14 @@ export interface GraphFileNode {
  */
 export type MethodEdgeKind = "exact" | "cone" | "poly-base" | "dynamic" | "registry";
 
-/** One row of the method-edge `edge_kind` count distribution (precision-confidence signal). */
+/**
+ * One row of the method-edge `edge_kind` count distribution (precision-confidence
+ * signal), split by origin: a model edge is stored as `exact` yet is
+ * probabilistic, so it is never counted with the static ones.
+ */
 export interface EdgeKindCount {
   edgeKind: MethodEdgeKind;
+  origin: EdgeOrigin;
   count: number;
 }
 

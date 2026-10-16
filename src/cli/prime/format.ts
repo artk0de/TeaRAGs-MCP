@@ -281,7 +281,7 @@ function formatLanguageCapabilitySection(
 ): string[] {
   if (!capabilities) return [];
   const rates = realizedResolveRates(primaries, resolve);
-  const rows: { languages: string[]; tiers: string; rate?: number | null }[] = [];
+  const rows: { languages: string[]; tiers: string; rate?: RealizedResolveRate }[] = [];
   for (const language of languages) {
     const capability = capabilities.get(language);
     if (!capability) continue;
@@ -300,7 +300,9 @@ function formatLanguageCapabilitySection(
     "## Language capability — ceiling tier · realized resolve",
     ...rows.map(
       (row) =>
-        `${row.languages.join(", ")}: ${row.tiers}${row.rate === undefined ? "" : ` · resolve ${renderRecall(row.rate)}`}`,
+        `${row.languages.join(", ")}: ${row.tiers}${
+          row.rate === undefined ? "" : ` · resolve ${renderRecallWithModel(row.rate, resolve?.modelResolution)}`
+        }`,
     ),
   ];
 }
@@ -325,16 +327,60 @@ function formatCapabilityTiers(capability: LanguageCapability): string {
 function realizedResolveRates(
   primaries: readonly string[],
   resolve: CodegraphResolve | undefined,
-): Map<string, number | null> {
-  const rates = new Map<string, number | null>();
+): Map<string, RealizedResolveRate> {
+  const rates = new Map<string, RealizedResolveRate>();
   if (!resolve) return rates;
   const byLanguage = resolve.byLanguage ?? [];
-  for (const row of byLanguage) rates.set(row.language, row.inProjectEdgeRecall);
+  for (const row of byLanguage) rates.set(row.language, realizedRateOf(row));
   const [primary] = primaries;
   if (byLanguage.length === 0 && primaries.length === 1 && primary !== undefined) {
-    rates.set(primary, resolve.inProjectEdgeRecall);
+    rates.set(primary, realizedRateOf(resolve));
   }
   return rates;
+}
+
+/**
+ * A realized recall and, when a model raised it, the static floor and the
+ * model-resolved sites behind it (bd tea-rags-mcp-2m83f.38).
+ */
+interface RealizedResolveRate {
+  recall: number | null;
+  staticRecall?: number | null;
+  modelSites?: number;
+}
+
+function realizedRateOf(row: {
+  inProjectEdgeRecall: number | null;
+  staticInProjectEdgeRecall?: number | null;
+  callsResolvedByModel?: number;
+}): RealizedResolveRate {
+  return {
+    recall: row.inProjectEdgeRecall,
+    ...(row.staticInProjectEdgeRecall === undefined ? {} : { staticRecall: row.staticInProjectEdgeRecall }),
+    ...(row.callsResolvedByModel === undefined ? {} : { modelSites: row.callsResolvedByModel }),
+  };
+}
+
+/**
+ * `0.92 (static 0.91 · model 117 sites, kev p>=0.7)` — the combined recall,
+ * then the static floor and the model-resolved sites when a model raised it;
+ * the bare recall otherwise.
+ */
+function renderRecallWithModel(rate: RealizedResolveRate, models: CodegraphResolve["modelResolution"]): string {
+  const recall = renderRecall(rate.recall);
+  if (rate.modelSites === undefined || rate.modelSites === 0) return recall;
+  const modelNames = (models ?? [])
+    .map((m) => (m.threshold === undefined ? m.model : `${m.model} p>=${m.threshold}`))
+    .join(" / ");
+  const staticPart = rate.staticRecall === undefined ? "" : `static ${renderRecall(rate.staticRecall)} · `;
+  return `${recall} (${staticPart}model ${rate.modelSites} sites${modelNames === "" ? "" : `, ${modelNames}`})`;
+}
+
+/** Model-resolved sites no receiver-kind row carries, or `null` when none. */
+function formatUnlabeledModelSites(resolve: CodegraphResolve): string | null {
+  const unlabeled = resolve.callsResolvedByModelUnlabeled ?? 0;
+  if (unlabeled === 0) return null;
+  return `${unlabeled} model-resolved sites predate migration 055 — in no receiver-kind row; a reindex labels them`;
 }
 
 function formatThresholdsSection(
@@ -662,10 +708,11 @@ function formatCodegraphResolveSection(resolve: CodegraphResolve | undefined, de
  */
 function formatResolvePlain(resolve: CodegraphResolve): string[] {
   const languages = resolve.byLanguage ?? [];
+  const models = resolve.modelResolution;
   const rate =
     languages.length > 0
-      ? languages.map((l) => `${l.language} ${renderRecall(l.inProjectEdgeRecall)}`).join(" · ")
-      : renderRecall(resolve.inProjectEdgeRecall);
+      ? languages.map((l) => `${l.language} ${renderRecallWithModel(realizedRateOf(l), models)}`).join(" · ")
+      : renderRecallWithModel(realizedRateOf(resolve), models);
   const lines = ["## Codegraph resolve", `resolve rate: ${rate}`];
   // Plain counterpart of the DEBUG ⚠ line (bd tea-rags-mcp-znxg8). The reader
   // needs the consequence — get_callers misses callers of those services — and
@@ -705,6 +752,8 @@ function formatResolveBreakdown(resolve: CodegraphResolve): string[] {
   if (!hasTopKinds && langsWithKinds.length === 0 && unnarrowed === 0) return [];
 
   const lines = ["## Codegraph resolve"];
+  const unlabeled = formatUnlabeledModelSites(resolve);
+  if (unlabeled !== null) lines.push(unlabeled);
   if (hasTopKinds) {
     for (const k of resolve.byReceiverKind ?? []) lines.push(formatResolveKind(k));
   } else {
@@ -762,7 +811,8 @@ function formatResolveKind(k: CodegraphResolveKindRow): string {
     counters: `${k.resolved}/${k.attempted}`,
     renderRate: (rate) => `${roundTwo(rate)}`,
   });
-  const base = `${k.receiverKind} ${cell}`;
+  const resolvedByModel = k.resolvedByModel ?? 0;
+  const base = `${k.receiverKind} ${cell}${resolvedByModel > 0 ? ` (model +${resolvedByModel})` : ""}`;
   const unnarrowed = k.callsUnnarrowedTemplate ?? 0;
   return unnarrowed > 0 ? `${base} · ${unnarrowed} unnarrowed` : base;
 }

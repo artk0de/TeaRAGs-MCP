@@ -190,6 +190,7 @@ export const DAEMON_OPS = [
   "getFileImports",
   "hasStaleDerivedTables",
   "readResidualCallSites",
+  "getModelResolvedSiteCounts",
   "getPageRank",
   "findSymbolChunk",
   // Declared visibility of a batch of symbols for the graph tools and the
@@ -375,6 +376,7 @@ export interface DaemonOpParamsMap {
   getFileImports: { relPath: RelPath };
   hasStaleDerivedTables: NoDaemonOpParams;
   readResidualCallSites: NoDaemonOpParams;
+  getModelResolvedSiteCounts: { thresholds: Readonly<Record<string, number>> };
   getPageRank: { symbolId: SymbolId; relPath?: RelPath };
   findSymbolChunk: { symbolId: SymbolId };
   getSymbolVisibilities: { symbolIds: SymbolId[] };

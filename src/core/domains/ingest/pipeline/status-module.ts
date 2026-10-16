@@ -19,11 +19,18 @@ import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { resolveRateMiss } from "../../../contracts/resolve-rate.js";
 import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-pool.js";
-import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
+import type {
+  EdgeKindCount,
+  GraphDbClient,
+  MethodEdgeKind,
+  ModelResolvedSiteCount,
+  ResolveRunStatsRow,
+} from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import type {
+  CodegraphModelResolutionRow,
   CodegraphResolveKindRow,
   CodegraphResolveLanguageRow,
   CodegraphResolveSummary,
@@ -36,8 +43,7 @@ import {
   STALE_INDEXING_THRESHOLD_MS,
   type IndexingLockLivenessProbe,
 } from "../infra/index.js";
-import { QuarantineStore } from "../sync/index.js";
-import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
+import { ParallelFileSynchronizer, QuarantineStore } from "../sync/index.js";
 import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
 
 // The threshold itself lives with the marker codec: `infra/alias-cleanup` reads
@@ -127,14 +133,84 @@ function coveredRecall(t: ResolveTally): number | null {
  * pinned) is reported but NOT counted as exact.
  */
 function buildEdgeKindBreakdown(counts: readonly EdgeKindCount[]): EdgeKindBreakdown {
-  const by = (k: MethodEdgeKind): number => counts.find((c) => c.edgeKind === k)?.count ?? 0;
+  // A model edge is stored as `exact` but is probabilistic: its own bucket (2m83f.38).
+  const isModel = (c: EdgeKindCount): boolean => c.origin === "model";
+  const by = (k: MethodEdgeKind): number =>
+    counts.filter((c) => c.edgeKind === k && !isModel(c)).reduce((sum, c) => sum + c.count, 0);
   const exact = by("exact");
   const cone = by("cone");
   const polyBase = by("poly-base");
   const dynamic = by("dynamic");
   const registry = by("registry");
-  const total = exact + cone + polyBase + dynamic + registry;
-  return { exact, cone, polyBase, dynamic, registry, total, exactRatio: total === 0 ? 0 : exact / total };
+  const model = counts.filter(isModel).reduce((sum, c) => sum + c.count, 0);
+  const total = exact + cone + polyBase + dynamic + registry + model;
+  return { exact, cone, polyBase, dynamic, registry, model, total, exactRatio: total === 0 ? 0 : exact / total };
+}
+
+/**
+ * What the residual pass resolved, folded into the resolve tally (bd
+ * tea-rags-mcp-2m83f.38). `thresholds` names the threshold each model's edges
+ * were counted at.
+ */
+export interface ModelResolvedSites {
+  counts: readonly ModelResolvedSiteCount[];
+  thresholds: Readonly<Record<string, number>>;
+}
+
+/** Model-resolved residual sites by the static bucket they leave. */
+interface ModelSiteTally {
+  ambiguous: number;
+  dynamic: number;
+}
+
+function addModelSites(tallies: Map<string, ModelSiteTally>, key: string, c: ModelResolvedSiteCount): void {
+  const t = tallies.get(key) ?? { ambiguous: 0, dynamic: 0 };
+  t[c.kind] += c.sites;
+  tallies.set(key, t);
+}
+
+/**
+ * The static tally with the model-resolved sites moved into `resolved`: an
+ * ambiguous site out of `ambiguousFanout`, a dynamic one out of the in-project
+ * miss. Never moves more than the bucket holds, so a residual table read
+ * against another generation's run stats cannot push recall past 1.
+ */
+function withModelSites(t: ResolveTally, m: ModelSiteTally | undefined): { combined: ResolveTally; moved: number } {
+  if (m === undefined) return { combined: t, moved: 0 };
+  const ambiguous = Math.min(m.ambiguous, t.ambiguousFanout);
+  const dynamic = Math.min(m.dynamic, Math.max(0, missWithInProjectDef(t) - t.ambiguousFanout));
+  const moved = ambiguous + dynamic;
+  return {
+    combined: { ...t, resolved: t.resolved + moved, ambiguousFanout: t.ambiguousFanout - ambiguous },
+    moved,
+  };
+}
+
+function modelResolutionRows(modelResolvedSites: ModelResolvedSites): CodegraphModelResolutionRow[] {
+  const sitesByModel = new Map<string, number>();
+  for (const c of modelResolvedSites.counts) sitesByModel.set(c.model, (sitesByModel.get(c.model) ?? 0) + c.sites);
+  return [...sitesByModel.entries()]
+    .filter(([, sites]) => sites > 0)
+    .map(([model, sites]) => {
+      const threshold = modelResolvedSites.thresholds[model];
+      return threshold === undefined ? { model, sites } : { model, threshold, sites };
+    })
+    .sort((a, b) => b.sites - a.sites);
+}
+
+/**
+ * Residual sites a model resolved; empty when the read fails, so a daemon
+ * without the op still reports the static figures.
+ */
+async function readModelResolvedSites(
+  graphDb: Pick<GraphDbClient, "getModelResolvedSiteCounts">,
+  thresholds: Readonly<Record<string, number>>,
+): Promise<ModelResolvedSiteCount[]> {
+  try {
+    return await graphDb.getModelResolvedSiteCounts(thresholds);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -144,15 +220,24 @@ function buildEdgeKindBreakdown(counts: readonly EdgeKindCount[]): EdgeKindBreak
  * Sorted by `attempted` DESC; per-kind `resolveSuccessRate` reuses the shared
  * {@link resolveRate} helper so the external-skip exclusion stays consistent.
  */
-function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolveKindRow[] {
+function buildByReceiverKind(
+  kinds: Map<string, ResolveTally>,
+  modelKinds?: ReadonlyMap<string, ModelSiteTally>,
+): CodegraphResolveKindRow[] {
   return [...kinds.entries()]
     .filter(([, t]) => t.attempted > 0)
-    .map(([receiverKind, t]) => ({
+    .map(([receiverKind, staticTally]) => {
+      const { combined: t, moved } = withModelSites(staticTally, modelKinds?.get(receiverKind));
+      return { receiverKind, staticTally, t, moved };
+    })
+    .map(({ receiverKind, staticTally, t, moved }) => ({
       receiverKind,
       inProjectEdgeRecall: edgeRecall(t),
       coveredRecall: coveredRecall(t),
+      ...(moved > 0 ? { staticInProjectEdgeRecall: edgeRecall(staticTally) } : {}),
       attempted: t.attempted,
       resolved: t.resolved,
+      ...(moved > 0 ? { resolvedByModel: moved } : {}),
       externalSkipped: t.externalSkipped,
       unresolvable: t.unresolvable,
       callsNoInProjectDef: t.noInProjectDef,
@@ -202,6 +287,7 @@ function addRow(t: ResolveTally, r: ResolveRunStatsRow): void {
 export function summarizeCodegraphResolve(
   rows: readonly ResolveRunStatsRow[],
   edgeCounts?: readonly EdgeKindCount[],
+  modelResolved?: ModelResolvedSites,
 ): CodegraphResolveSummary | undefined {
   if (rows.length === 0) return undefined;
   // tea-rags-mcp-7m5xz follow-up: byReceiverKind is verbose — it is computed and
@@ -229,44 +315,78 @@ export function summarizeCodegraphResolve(
     kinds.set(r.receiverKind, k);
     byLangKind.set(r.language, kinds);
   }
+  // bd tea-rags-mcp-2m83f.38 — model-resolved residual sites, keyed like the
+  // static tallies. A pre-055 row carries no receiver kind and so sits in no
+  // per-kind row; one with no language either folds into the aggregate only.
+  const modelTotal: ModelSiteTally = { ambiguous: 0, dynamic: 0 };
+  const modelByLang = new Map<string, ModelSiteTally>();
+  const modelByLangKind = new Map<string, Map<string, ModelSiteTally>>();
+  let modelUnlabeled = 0;
+  for (const c of modelResolved?.counts ?? []) {
+    modelTotal[c.kind] += c.sites;
+    if (c.receiverKind === null) modelUnlabeled += c.sites;
+    if (c.language === null) continue;
+    addModelSites(modelByLang, c.language, c);
+    if (c.receiverKind === null) continue;
+    const kinds = modelByLangKind.get(c.language) ?? new Map<string, ModelSiteTally>();
+    addModelSites(kinds, c.receiverKind, c);
+    modelByLangKind.set(c.language, kinds);
+  }
+  const staticTotal = total;
+  const { combined: combinedTotal, moved: movedTotal } = withModelSites(staticTotal, modelTotal);
   const summary: CodegraphResolveSummary = {
     // Recall is the always-on graph-completeness number. resolveSuccessRate is
     // kept DEBUG-only as the explicit-rate view; under cai0.2 (Option A) its
     // denominator also excludes noInProjectDef, so it now EQUALS
     // inProjectEdgeRecall (the former "denominator-polluted" gap is closed —
     // collapsing the two fields into one is a separate DTO decision).
-    inProjectEdgeRecall: edgeRecall(total),
+    inProjectEdgeRecall: edgeRecall(combinedTotal),
     // bd f2jsb / j0pki — dual recall: strict above (ambiguous stays a miss in
     // the denominator), covered below (the aggregate counts as coverage).
-    coveredRecall: coveredRecall(total),
-    callsAttempted: total.attempted,
-    callsResolved: total.resolved,
-    callsExternalSkipped: total.externalSkipped,
-    callsUnresolvable: total.unresolvable,
-    callsNoInProjectDef: total.noInProjectDef,
-    callsCoreAmbiguous: total.coreAmbiguous,
-    ambiguousFanout: total.ambiguousFanout,
-    callsUnnarrowedTemplate: total.unnarrowedTemplate,
-    ...(debug ? { resolveSuccessRate: resolveRate(total) } : {}),
+    coveredRecall: coveredRecall(combinedTotal),
+    callsAttempted: combinedTotal.attempted,
+    callsResolved: combinedTotal.resolved,
+    callsExternalSkipped: combinedTotal.externalSkipped,
+    callsUnresolvable: combinedTotal.unresolvable,
+    callsNoInProjectDef: combinedTotal.noInProjectDef,
+    callsCoreAmbiguous: combinedTotal.coreAmbiguous,
+    ambiguousFanout: combinedTotal.ambiguousFanout,
+    callsUnnarrowedTemplate: combinedTotal.unnarrowedTemplate,
+    ...(debug ? { resolveSuccessRate: resolveRate(combinedTotal) } : {}),
   };
+  if (movedTotal > 0 && modelResolved !== undefined) {
+    summary.staticInProjectEdgeRecall = edgeRecall(staticTotal);
+    summary.callsResolvedByModel = movedTotal;
+    summary.modelResolution = modelResolutionRows(modelResolved);
+    if (modelUnlabeled > 0) summary.callsResolvedByModelUnlabeled = modelUnlabeled;
+  }
   const byLanguage: CodegraphResolveLanguageRow[] = [...byLang.entries()]
     .filter(([, t]) => total.attempted > 0 && t.attempted / total.attempted >= MIN_LANGUAGE_SHARE)
-    .map(([language, t]) => ({
-      language,
-      inProjectEdgeRecall: edgeRecall(t),
-      callsAttempted: t.attempted,
-      callsResolved: t.resolved,
-      callsExternalSkipped: t.externalSkipped,
-      callsUnresolvable: t.unresolvable,
-      callsNoInProjectDef: t.noInProjectDef,
-      callsCoreAmbiguous: t.coreAmbiguous,
-      callsUnnarrowedTemplate: t.unnarrowedTemplate,
-      ...(debug ? { resolveSuccessRate: resolveRate(t) } : {}),
-      // Absent unless DEBUG built the tally above.
-      ...(debug
-        ? { byReceiverKind: buildByReceiverKind(byLangKind.get(language) ?? new Map<string, ResolveTally>()) }
-        : {}),
-    }))
+    .map(([language, staticTally]) => {
+      const { combined: t, moved } = withModelSites(staticTally, modelByLang.get(language));
+      return {
+        language,
+        inProjectEdgeRecall: edgeRecall(t),
+        ...(moved > 0 ? { staticInProjectEdgeRecall: edgeRecall(staticTally), callsResolvedByModel: moved } : {}),
+        callsAttempted: t.attempted,
+        callsResolved: t.resolved,
+        callsExternalSkipped: t.externalSkipped,
+        callsUnresolvable: t.unresolvable,
+        callsNoInProjectDef: t.noInProjectDef,
+        callsCoreAmbiguous: t.coreAmbiguous,
+        callsUnnarrowedTemplate: t.unnarrowedTemplate,
+        ...(debug ? { resolveSuccessRate: resolveRate(t) } : {}),
+        // Absent unless DEBUG built the tally above.
+        ...(debug
+          ? {
+              byReceiverKind: buildByReceiverKind(
+                byLangKind.get(language) ?? new Map<string, ResolveTally>(),
+                modelByLangKind.get(language),
+              ),
+            }
+          : {}),
+      };
+    })
     .sort((a, b) => b.callsAttempted - a.callsAttempted);
   if (byLanguage.length > 1) {
     summary.byLanguage = byLanguage;
@@ -311,6 +431,12 @@ export class StatusModule {
      * marker heartbeat ages out. Absent → the heartbeat timer alone decides.
      */
     private readonly writerLiveness?: IndexingLockLivenessProbe,
+    /**
+     * Threshold per residual model (`{ kev: 0.7 }`) of the running
+     * configuration (bd tea-rags-mcp-2m83f.38): a model edge counts as resolving
+     * its site only at `p` at or above it. Empty → every stored model edge counts.
+     */
+    private readonly residualThresholds: Readonly<Record<string, number>> = {},
   ) {}
 
   /**
@@ -349,11 +475,15 @@ export class StatusModule {
     try {
       const handle = await this.codegraphPool.acquireReader(physicalCollectionName);
       try {
-        const [rows, edgeCounts] = await Promise.all([
+        const [rows, edgeCounts, modelCounts] = await Promise.all([
           handle.graphDb.getRunStats(),
           handle.graphDb.getEdgeKindDistribution(),
+          readModelResolvedSites(handle.graphDb, this.residualThresholds),
         ]);
-        return summarizeCodegraphResolve(rows, edgeCounts);
+        return summarizeCodegraphResolve(rows, edgeCounts, {
+          counts: modelCounts,
+          thresholds: this.residualThresholds,
+        });
       } finally {
         await handle.graphDb.close();
       }

@@ -25,6 +25,11 @@ export interface ResidualResolvePort {
    * implementation without it ends index runs with no pass.
    */
   resolveAfterIndex?: (request: ResidualAfterIndexRequest) => Promise<ResidualPassReport | undefined>;
+  /**
+   * Threshold per model a pass applies edges at (`{ kev: 0.7 }`); the index
+   * status counts a model edge as resolving its site only at or above it.
+   */
+  readonly thresholds?: Readonly<Record<string, number>>;
 }
 
 /** Report of a pass that could not start; the same shape the pass itself returns when skipped. */

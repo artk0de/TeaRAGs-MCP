@@ -99,6 +99,8 @@ export class ResidualSiteCollector {
     private readonly sourceRelPath: RelPath,
     private readonly symbolTable: Pick<GlobalSymbolTable, "lookupByShortName">,
     private readonly menuLimit: number,
+    /** The `cg_run_stats` language this file's sites are counted under. */
+    private readonly language: string,
   ) {
     this.extension = extname(sourceRelPath);
   }
@@ -145,6 +147,8 @@ export class ResidualSiteCollector {
       candidates,
       menuHash: residualMenuHash(candidates),
       menuOverflow,
+      language: this.language,
+      receiverKind: verdict.receiverKind,
     });
   }
 

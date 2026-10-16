@@ -118,6 +118,9 @@ const RESIDUAL_VALUES = [
   "candidates",
   "menu_hash",
   "menu_overflow",
+  // Migration 055 (bd tea-rags-mcp-2m83f.38): the run-stats bucket of the site.
+  "language",
+  "receiver_kind",
 ] as const;
 // Migration 039 (bd tea-rags-mcp-7t2ee): one row per (file, type it asked about).
 const HIERARCHY_DEPENDENCY_KEYS = ["source_rel_path", "type_name"] as const;
@@ -337,6 +340,8 @@ export class DuckDbFileGraphStore {
           JSON.stringify(r.candidates),
           r.menuHash,
           r.menuOverflow,
+          r.language ?? null,
+          r.receiverKind ?? null,
         ]);
       }
       // The pass-1 slice, keyed by the NODE's path rather than the slice's own,

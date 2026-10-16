@@ -445,6 +445,7 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   getFileImports: read(async (graphDb, p) => graphDb.getFileImports(p.relPath)),
   hasStaleDerivedTables: read(async (graphDb) => graphDb.hasStaleDerivedTables()),
   readResidualCallSites: read(async (graphDb) => graphDb.readResidualCallSites()),
+  getModelResolvedSiteCounts: read(async (graphDb, p) => graphDb.getModelResolvedSiteCounts(p.thresholds)),
   getPageRank: read(async (graphDb, p) => graphDb.getPageRank(p.symbolId, p.relPath)),
 
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──

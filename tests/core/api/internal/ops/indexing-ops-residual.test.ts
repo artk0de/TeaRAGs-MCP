@@ -243,6 +243,17 @@ describe("IndexingOps — residual resolution after enrichment", () => {
     await expect(ops.run("/repo")).resolves.toBeDefined();
   });
 
+  it("hands the residual thresholds to the status it reports", () => {
+    const settled = gate();
+    const ops = new IndexingOps(
+      makeDeps({ residualResolution: { resolve: vi.fn(), thresholds: { kev: 0.7 } } }, settled.opened, []),
+    );
+
+    expect((ops as unknown as { status: { residualThresholds: unknown } }).status.residualThresholds).toEqual({
+      kev: 0.7,
+    });
+  });
+
   it("reports the collection's last residual pass on its status", async () => {
     vi.spyOn(StatusModule.prototype, "getIndexStatus").mockResolvedValue({ isIndexed: true, status: "indexed" });
     const settled = gate();

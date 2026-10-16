@@ -59,6 +59,7 @@ describe("DaemonGraphDbClient — residual ops", () => {
     const seen: DaemonRequest[] = [];
     await fakeDaemon(socketPath, (r) => {
       seen.push(r);
+      if (r.op === "getModelResolvedSiteCounts") return [{ language: "ruby", sites: 1 }];
       return r.op === "readResidualCallSites" ? [{ siteKey: "k1" }] : null;
     });
     const edge = {
@@ -74,6 +75,7 @@ describe("DaemonGraphDbClient — residual ops", () => {
     await client.init();
     const sites = await client.readResidualCallSites();
     await client.applyModelEdges("kev", [edge]);
+    const resolvedSites = await client.getModelResolvedSiteCounts({ kev: 0.7 });
     await client.markDerivedStale();
     await client.close();
 
@@ -82,6 +84,11 @@ describe("DaemonGraphDbClient — residual ops", () => {
       collection: "code_x_v1",
       model: "kev",
       edges: [edge],
+    });
+    expect(resolvedSites).toEqual([{ language: "ruby", sites: 1 }]);
+    expect(seen.find((r) => r.op === "getModelResolvedSiteCounts")?.params).toMatchObject({
+      collection: "code_x_v1",
+      thresholds: { kev: 0.7 },
     });
     expect(seen.map((r) => r.op)).toEqual(expect.arrayContaining(["readResidualCallSites", "markDerivedStale"]));
   });

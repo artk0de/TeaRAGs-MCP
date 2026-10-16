@@ -80,6 +80,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
       const byKind = Object.fromEntries(dist.map((r) => [r.edgeKind, r.count]));
       expect(byKind.exact).toBe(1);
       expect(byKind.cone).toBe(2);
+      expect(dist.map((r) => r.origin)).toEqual(["static", "static"]);
     });
 
     it("defaults omitted edgeKind/confidence to exact/1.0", async () => {

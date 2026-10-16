@@ -124,7 +124,10 @@ fact. The trust you actually get on YOUR index is prime's
 \`## Language capability — ceiling tier · realized resolve\` section: one line
 per language the index holds, its ceiling tiers, and \`· resolve <rate>\` where
 the index measured one (no rate → unmeasured, or split across several primary
-languages — read \`## Codegraph resolve\`). Variance is largest for dynamically
+languages — read \`## Codegraph resolve\`). A rate a model raised reads
+\`resolve 0.92 (static 0.91 · model 117 sites, kev p>=0.7)\`: the first number
+counts call sites residual resolution linked with a model edge; the static
+share is the floor — the compiler-truth edges alone. Variance is largest for dynamically
 typed languages: Ruby is **high** untyped, **maximum** YARD-annotated, and drops
 on un-annotated Rails — and that swing is a prime number, not a language
 property.

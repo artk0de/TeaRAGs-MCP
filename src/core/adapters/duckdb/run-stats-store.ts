@@ -21,6 +21,7 @@
 import type {
   CodegraphStorageMaintenance,
   EdgeKindCount,
+  EdgeOrigin,
   FileResolveStatsWrite,
   MethodEdgeKind,
   ResolveRunStatsRow,
@@ -183,9 +184,15 @@ export class DuckDbRunStatsStore implements Pick<
   }
 
   async getEdgeKindDistribution(): Promise<EdgeKindCount[]> {
-    const rows = await this.session.queryAll<{ edge_kind: string; cnt: number | bigint }>(
-      "SELECT edge_kind, COUNT(*) AS cnt FROM cg_symbols_edges_method GROUP BY edge_kind ORDER BY edge_kind",
+    // NULL origin is a static edge (054).
+    const rows = await this.session.queryAll<{ edge_kind: string; origin: string; cnt: number | bigint }>(
+      `SELECT edge_kind, COALESCE(origin, 'static') AS origin, COUNT(*) AS cnt
+         FROM cg_symbols_edges_method GROUP BY edge_kind, COALESCE(origin, 'static') ORDER BY edge_kind, origin`,
     );
-    return rows.map((r) => ({ edgeKind: r.edge_kind as MethodEdgeKind, count: Number(r.cnt) }));
+    return rows.map((r) => ({
+      edgeKind: r.edge_kind as MethodEdgeKind,
+      origin: r.origin as EdgeOrigin,
+      count: Number(r.cnt),
+    }));
   }
 }

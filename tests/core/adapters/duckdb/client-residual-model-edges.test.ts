@@ -387,6 +387,84 @@ describe("DuckDbGraphClient — residual ops", () => {
     });
   });
 
+  it("reads back the language and receiver kind a residual row was written with", async () => {
+    const labeled = { ...SITE, language: "ruby", receiverKind: "dynamic" };
+    await client.upsertFile(
+      { relPath: "app/billing.rb", language: "ruby" },
+      { fileEdges: [], methodEdges: [], residualCallSites: [labeled] },
+    );
+
+    expect(await client.readResidualCallSites()).toEqual([labeled]);
+  });
+
+  describe("getModelResolvedSiteCounts", () => {
+    const writeSites = async (sites: ResidualCallSiteRow[]) =>
+      client.upsertFile(
+        { relPath: "app/billing.rb", language: "ruby" },
+        { fileEdges: [], methodEdges: [], residualCallSites: sites },
+      );
+
+    it("counts each site a model edge resolves once, per language, receiver kind, residual kind and model", async () => {
+      await writeSites([
+        { ...SITE, language: "ruby", receiverKind: "ivar" },
+        { ...SITE, siteKey: "k2", column: 20, language: "ruby", receiverKind: "ivar" },
+        {
+          ...SITE,
+          siteKey: "k3",
+          line: 14,
+          receiverText: "firm",
+          kind: "ambiguous",
+          language: "ruby",
+          receiverKind: "dynamic",
+        },
+      ]);
+      // k1 and k2 make the same call, so they share one stored edge.
+      await client.applyModelEdges("kev", [EDGE, { ...EDGE, siteKey: "k2" }, { ...EDGE, siteKey: "k3" }]);
+
+      expect(await client.getModelResolvedSiteCounts({ kev: 0.7 })).toEqual([
+        { language: "ruby", receiverKind: "dynamic", kind: "ambiguous", model: "kev", sites: 1 },
+        { language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 2 },
+      ]);
+    });
+
+    it("leaves out a site whose model edge is under the model's threshold", async () => {
+      await writeSites([{ ...SITE, language: "ruby", receiverKind: "ivar" }]);
+      await client.applyModelEdges("kev", [{ ...EDGE, p: 0.6 }]);
+
+      expect(await client.getModelResolvedSiteCounts({ kev: 0.7 })).toEqual([]);
+      expect(await client.getModelResolvedSiteCounts({})).toEqual([
+        { language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 1 },
+      ]);
+    });
+
+    it("reports a row written before 055 with a null language and receiver kind", async () => {
+      await writeSites([SITE]);
+      await client.applyModelEdges("kev", [EDGE]);
+
+      expect(await client.getModelResolvedSiteCounts({ kev: 0.7 })).toEqual([
+        { language: null, receiverKind: null, kind: "dynamic", model: "kev", sites: 1 },
+      ]);
+    });
+
+    it("does not count a site with no model edge", async () => {
+      await writeSites([{ ...SITE, language: "ruby", receiverKind: "ivar" }]);
+
+      expect(await client.getModelResolvedSiteCounts({ kev: 0.7 })).toEqual([]);
+    });
+  });
+
+  it("getEdgeKindDistribution counts model edges apart from static edges of the same kind", async () => {
+    await writeBilling([
+      { targetSymbolId: "Team#users", targetRelPath: "app/models/team.rb", callExpression: "team.users" },
+    ]);
+    await client.applyModelEdges("kev", [EDGE]);
+
+    expect(await client.getEdgeKindDistribution()).toEqual([
+      { edgeKind: "exact", origin: "model", count: 1 },
+      { edgeKind: "exact", origin: "static", count: 1 },
+    ]);
+  });
+
   it("markDerivedStale marks the derived tables stale", async () => {
     expect(await client.hasStaleDerivedTables()).toBe(false);
 

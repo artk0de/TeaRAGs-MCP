@@ -62,10 +62,14 @@ const RECORDED_MODEL = RESIDUAL_MODELS[0];
 export class ResidualResolutionOps implements ResidualResolvePort {
   private readonly createProvider: (model: string) => ResidualModelProvider;
   private readonly now: () => number;
+  readonly thresholds: Readonly<Record<string, number>>;
 
   constructor(private readonly deps: ResidualResolutionOpsDeps) {
     this.createProvider = deps.createProvider ?? ((model) => ResidualModelProviderFactory.create(model, deps.config));
     this.now = deps.now ?? Date.now;
+    this.thresholds = Object.fromEntries(
+      RESIDUAL_MODELS.map((model) => [model, ResidualModelProviderFactory.cacheOnly(model, deps.config).threshold]),
+    );
   }
 
   /**
