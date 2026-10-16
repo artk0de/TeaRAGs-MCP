@@ -1164,6 +1164,67 @@ describe("StatusModule", () => {
       expect(langs).toEqual(["ruby", "typescript"]);
     });
 
+    // bd tea-rags-mcp-2m83f.38 — model-resolved residual sites, read at the
+    // configured thresholds, count as resolved beside the static share.
+    it("counts residual sites a model resolved, read at the residual thresholds", async () => {
+      await createTestFile(codebaseDir, "model.ts", "export const M = 1;\n");
+      await ingest.indexCodebase(codebaseDir);
+
+      const seenThresholds: unknown[] = [];
+      (ingest as any).indexingOps.status.residualThresholds = { kev: 0.7 };
+      (ingest as any).indexingOps.status.codegraphPool = {
+        listCollectionDbNames: () => ["code_cg_v1"],
+        acquireReader: async () => ({
+          graphDb: {
+            getRunStats: async () => [
+              { language: "ruby", receiverKind: "ivar", attempted: 100, resolved: 60, externalSkipped: 0 },
+            ],
+            getEdgeKindDistribution: async () => [],
+            getModelResolvedSiteCounts: async (thresholds: unknown) => {
+              seenThresholds.push(thresholds);
+              return [{ language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 10 }];
+            },
+            close: async () => undefined,
+          },
+        }),
+      };
+
+      const status = await ingest.getIndexStatus(codebaseDir);
+
+      expect(seenThresholds).toEqual([{ kev: 0.7 }]);
+      expect(status.codegraphResolve).toMatchObject({
+        callsResolved: 70,
+        callsResolvedByModel: 10,
+        modelResolution: [{ model: "kev", threshold: 0.7, sites: 10 }],
+      });
+      expect(status.codegraphResolve!.inProjectEdgeRecall).toBeCloseTo(0.7, 8);
+      expect(status.codegraphResolve!.staticInProjectEdgeRecall).toBeCloseTo(0.6, 8);
+    });
+
+    it("keeps the static figures when the model-resolved read fails", async () => {
+      await createTestFile(codebaseDir, "nomodel.ts", "export const N = 1;\n");
+      await ingest.indexCodebase(codebaseDir);
+
+      (ingest as any).indexingOps.status.codegraphPool = {
+        listCollectionDbNames: () => ["code_cg_v1"],
+        acquireReader: async () => ({
+          graphDb: {
+            getRunStats: async () => [
+              { language: "ruby", receiverKind: "ivar", attempted: 100, resolved: 60, externalSkipped: 0 },
+            ],
+            getEdgeKindDistribution: async () => [],
+            getModelResolvedSiteCounts: async () => Promise.reject(new Error("unknown op")),
+            close: async () => undefined,
+          },
+        }),
+      };
+
+      const status = await ingest.getIndexStatus(codebaseDir);
+
+      expect(status.codegraphResolve!.callsResolved).toBe(60);
+      expect(status.codegraphResolve!.callsResolvedByModel).toBeUndefined();
+    });
+
     // Exercises the empty-denominator branch: nothing scored → null, not 0 (bd qodqg).
     it("returns resolveSuccessRate=null and empty breakdown when all rows have attempted=0", async () => {
       await createTestFile(codebaseDir, "zero.ts", "export const Z = 0;\n");

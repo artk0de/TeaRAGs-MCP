@@ -175,6 +175,96 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
     expect(lines).toContain("markdown: ast partial · tests na · codegraph none");
   });
 
+  // bd tea-rags-mcp-2m83f.38 — the realized rate counts model-resolved sites;
+  // the static floor and the model's share ride beside it.
+  it("shows the static share and the model's sites beside a rate a model raised", () => {
+    const lines = section(
+      formatPrime(
+        data(
+          { metrics: metrics({ typescript: 60, ruby: 40 }, ["typescript", "ruby"]) },
+          {
+            codegraphResolve: {
+              inProjectEdgeRecall: 0.9,
+              coveredRecall: 0.9,
+              staticInProjectEdgeRecall: 0.89,
+              callsResolvedByModel: 117,
+              modelResolution: [{ model: "kev", threshold: 0.7, sites: 117 }],
+              callsAttempted: 100,
+              callsResolved: 90,
+              callsExternalSkipped: 0,
+              callsUnresolvable: 0,
+              callsNoInProjectDef: 0,
+              callsCoreAmbiguous: 0,
+              ambiguousFanout: 0,
+              callsUnnarrowedTemplate: 0,
+              byLanguage: [
+                {
+                  language: "typescript",
+                  inProjectEdgeRecall: 0.987,
+                  callsAttempted: 60,
+                  callsResolved: 59,
+                  callsExternalSkipped: 0,
+                  callsUnresolvable: 0,
+                  callsNoInProjectDef: 0,
+                  callsCoreAmbiguous: 0,
+                  callsUnnarrowedTemplate: 0,
+                },
+                {
+                  language: "ruby",
+                  inProjectEdgeRecall: 0.921,
+                  staticInProjectEdgeRecall: 0.913,
+                  callsResolvedByModel: 117,
+                  callsAttempted: 40,
+                  callsResolved: 37,
+                  callsExternalSkipped: 0,
+                  callsUnresolvable: 0,
+                  callsNoInProjectDef: 0,
+                  callsCoreAmbiguous: 0,
+                  callsUnnarrowedTemplate: 0,
+                },
+              ],
+            },
+          },
+        ),
+      ),
+    );
+    expect(lines).toContain("typescript: ast full · tests high · codegraph moderate · resolve 0.99");
+    expect(lines).toContain(
+      "ruby: ast full · tests medium · codegraph untyped high / yard maximum / rbs/sorbet tbd · " +
+        "resolve 0.92 (static 0.91 · model 117 sites, kev p>=0.7)",
+    );
+  });
+
+  it("shows the model's share on an unsplit rate of the single primary language", () => {
+    const lines = section(
+      formatPrime(
+        data(
+          {},
+          {
+            codegraphResolve: {
+              inProjectEdgeRecall: 0.93,
+              coveredRecall: 0.93,
+              staticInProjectEdgeRecall: 0.9,
+              callsResolvedByModel: 3,
+              modelResolution: [{ model: "kev", sites: 3 }],
+              callsAttempted: 100,
+              callsResolved: 93,
+              callsExternalSkipped: 0,
+              callsUnresolvable: 0,
+              callsNoInProjectDef: 0,
+              callsCoreAmbiguous: 0,
+              ambiguousFanout: 0,
+              callsUnnarrowedTemplate: 0,
+            },
+          },
+        ),
+      ),
+    );
+    expect(lines).toContain(
+      "typescript: ast full · tests high · codegraph moderate · resolve 0.93 (static 0.9 · model 3 sites, kev)",
+    );
+  });
+
   // bd tea-rags-mcp-stpvj — a null recall is "nothing scored": the marker, not a number.
   it("renders the empty-denominator marker for a language whose recall is null", () => {
     const lines = section(

@@ -1099,6 +1099,58 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     expect(out.indexOf("selfMember")).toBeLessThan(out.indexOf("constant"));
   });
 
+  // bd tea-rags-mcp-2m83f.38 — a bucket a model raised says by how many sites.
+  it("appends the model's sites to a receiver-kind line a model raised", () => {
+    const out = formatPrime(
+      {
+        path: "/p",
+        projectName: null,
+        status: indexed({
+          codegraphResolve: {
+            resolveSuccessRate: 0.85,
+            inProjectEdgeRecall: 0.85,
+            coveredRecall: 0.85,
+            staticInProjectEdgeRecall: 0.848,
+            callsResolvedByModel: 81,
+            modelResolution: [{ model: "kev", threshold: 0.7, sites: 81 }],
+            callsUnresolvable: 0,
+            callsNoInProjectDef: 0,
+            callsCoreAmbiguous: 0,
+            ambiguousFanout: 0,
+            callsUnnarrowedTemplate: 0,
+            callsAttempted: 61151,
+            callsResolved: 34179,
+            callsExternalSkipped: 20940,
+            byReceiverKind: [
+              {
+                receiverKind: "dynamic",
+                inProjectEdgeRecall: 0.85,
+                coveredRecall: 0.85,
+                staticInProjectEdgeRecall: 0.848,
+                attempted: 61151,
+                resolved: 34179,
+                resolvedByModel: 81,
+                externalSkipped: 20940,
+                unresolvable: 0,
+                callsNoInProjectDef: 0,
+                callsCoreAmbiguous: 0,
+                ambiguousFanout: 0,
+                callsUnnarrowedTemplate: 0,
+                resolveSuccessRate: 0.85,
+              },
+            ],
+          },
+        }),
+        metrics: monolingualMetricsFixture(),
+        drift: null,
+        update: null,
+      },
+      undefined,
+      DEBUG,
+    );
+    expect(out).toContain("dynamic 0.85 34179/61151 (model +81)");
+  });
+
   // bd tea-rags-mcp-qodqg — a kind whose every site was excluded (here: no
   // in-project def) has an empty rate denominator. summarizeCodegraphResolve
   // reports its rate as null; the row must say "nothing to score", never a
@@ -1484,6 +1536,39 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     it("renders no warning when every unnarrowed count is zero", () => {
       const out = render(multiLanguage(0, 0));
       expect(out).not.toContain("⚠");
+    });
+
+    // bd tea-rags-mcp-2m83f.38 — model-resolved sites: combined rate, static floor beside it.
+    it("renders the static share and the model's sites beside a per-language rate", () => {
+      const tally = multiLanguage(0, 0);
+      tally.modelResolution = [{ model: "kev", threshold: 0.7, sites: 117 }];
+      tally.byLanguage![1] = {
+        ...tally.byLanguage![1],
+        inProjectEdgeRecall: 0.921,
+        staticInProjectEdgeRecall: 0.913,
+        callsResolvedByModel: 117,
+      };
+
+      expect(render(tally)).toContain(
+        "resolve rate: typescript 0.99 · ruby 0.92 (static 0.91 · model 117 sites, kev p>=0.7)\n",
+      );
+    });
+
+    it("says how many model-resolved sites only the aggregate counts", () => {
+      const out = render(
+        summary({
+          inProjectEdgeRecall: 0.92,
+          staticInProjectEdgeRecall: 0.9,
+          callsResolvedByModel: 8,
+          callsResolvedByModelUnlabeled: 5,
+          modelResolution: [{ model: "kev", threshold: 0.7, sites: 8 }],
+        }),
+      );
+
+      expect(out).toContain("resolve rate: 0.92 (static 0.9 · model 8 sites, kev p>=0.7)\n");
+      expect(out).toContain(
+        "5 model-resolved sites predate migration 055 — counted in the aggregate only, in no language or receiver-kind row; a reindex labels them",
+      );
     });
   });
 });

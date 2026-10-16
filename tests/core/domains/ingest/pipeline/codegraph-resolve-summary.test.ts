@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ResolveRunStatsRow } from "../../../../../src/core/contracts/types/codegraph.js";
+import type { ModelResolvedSiteCount, ResolveRunStatsRow } from "../../../../../src/core/contracts/types/codegraph.js";
 import { summarizeCodegraphResolve } from "../../../../../src/core/domains/ingest/pipeline/status-module.js";
 import { setDebug } from "../../../../../src/core/primitives/diagnostics/debug-flag.js";
 
@@ -474,5 +474,129 @@ describe("summarizeCodegraphResolve — empty rate denominator (qodqg)", () => {
     const summary = summarizeCodegraphResolve([rowNoDef("swift", "index", 3, 0, 0)]);
     expect(summary?.resolveSuccessRate).toBe(0);
     expect(summary?.byReceiverKind?.[0]?.resolveSuccessRate).toBe(0);
+  });
+});
+
+// bd tea-rags-mcp-2m83f.38 — a residual site a model edge resolves counts as
+// resolved in the combined figures, moved out of its static miss bucket
+// (ambiguous fan-out or untyped in-project miss); the static share stays beside it.
+describe("summarizeCodegraphResolve — model-resolved residual sites (2m83f.38)", () => {
+  const rowB = (
+    language: string,
+    receiverKind: string,
+    attempted: number,
+    resolved: number,
+    ambiguousFanout = 0,
+  ): ResolveRunStatsRow => ({ language, receiverKind, attempted, resolved, externalSkipped: 0, ambiguousFanout });
+  const site = (
+    language: string | null,
+    receiverKind: string | null,
+    kind: "ambiguous" | "dynamic",
+    sites: number,
+  ): ModelResolvedSiteCount => ({ language, receiverKind, kind, model: "kev", sites });
+
+  afterEach(() => {
+    setDebug(true);
+  });
+
+  it("counts model-resolved sites as resolved in the aggregate and keeps the static recall beside it", () => {
+    // ivar: 100 attempted, 60 resolved, 10 ambiguous → static miss 40.
+    const summary = summarizeCodegraphResolve([rowB("ruby", "ivar", 100, 60, 10)], undefined, {
+      counts: [site("ruby", "ivar", "dynamic", 15), site("ruby", "ivar", "ambiguous", 4)],
+      thresholds: { kev: 0.7 },
+    });
+
+    expect(summary?.inProjectEdgeRecall).toBeCloseTo(79 / 100, 6);
+    expect(summary?.staticInProjectEdgeRecall).toBeCloseTo(60 / 100, 6);
+    expect(summary?.callsResolved).toBe(79);
+    expect(summary?.callsResolvedByModel).toBe(19);
+    expect(summary?.ambiguousFanout).toBe(6);
+    expect(summary?.modelResolution).toEqual([{ model: "kev", threshold: 0.7, sites: 19 }]);
+    expect(summary?.callsResolvedByModelUnlabeled).toBeUndefined();
+  });
+
+  it("moves model-resolved sites per language and per receiver kind", () => {
+    setDebug(true);
+    const summary = summarizeCodegraphResolve(
+      [rowB("ruby", "ivar", 100, 60), rowB("ruby", "dynamic", 50, 10), rowB("typescript", "constant", 100, 90)],
+      undefined,
+      { counts: [site("ruby", "dynamic", "dynamic", 20)], thresholds: { kev: 0.7 } },
+    );
+
+    const ruby = summary?.byLanguage?.find((l) => l.language === "ruby");
+    expect(ruby).toMatchObject({ callsResolved: 90, callsResolvedByModel: 20 });
+    expect(ruby?.inProjectEdgeRecall).toBeCloseTo(90 / 150, 6);
+    expect(ruby?.staticInProjectEdgeRecall).toBeCloseTo(70 / 150, 6);
+    const dynamic = ruby?.byReceiverKind?.find((k) => k.receiverKind === "dynamic");
+    expect(dynamic).toMatchObject({ resolved: 30, resolvedByModel: 20, attempted: 50 });
+    expect(dynamic?.inProjectEdgeRecall).toBeCloseTo(30 / 50, 6);
+    expect(dynamic?.staticInProjectEdgeRecall).toBeCloseTo(10 / 50, 6);
+    const ivar = ruby?.byReceiverKind?.find((k) => k.receiverKind === "ivar");
+    expect(ivar?.resolvedByModel).toBeUndefined();
+    const typescript = summary?.byLanguage?.find((l) => l.language === "typescript");
+    expect(typescript?.callsResolvedByModel).toBeUndefined();
+    expect(typescript?.staticInProjectEdgeRecall).toBeUndefined();
+  });
+
+  it("counts a site from a row written before 055 under the aggregate only and says how many", () => {
+    const summary = summarizeCodegraphResolve(
+      [rowB("ruby", "ivar", 100, 60), rowB("typescript", "constant", 100, 90)],
+      undefined,
+      {
+        counts: [site(null, null, "dynamic", 5), site("ruby", "ivar", "dynamic", 3)],
+        thresholds: { kev: 0.7 },
+      },
+    );
+
+    expect(summary?.callsResolved).toBe(158);
+    expect(summary?.callsResolvedByModel).toBe(8);
+    expect(summary?.callsResolvedByModelUnlabeled).toBe(5);
+    expect(summary?.byLanguage?.find((l) => l.language === "ruby")?.callsResolved).toBe(63);
+  });
+
+  it("never moves more sites than the static bucket holds", () => {
+    const summary = summarizeCodegraphResolve([rowB("ruby", "ivar", 10, 8, 1)], undefined, {
+      counts: [site("ruby", "ivar", "ambiguous", 5), site("ruby", "ivar", "dynamic", 5)],
+      thresholds: {},
+    });
+
+    // 1 ambiguous + 1 genuine miss are all that can move.
+    expect(summary?.callsResolved).toBe(10);
+    expect(summary?.inProjectEdgeRecall).toBe(1);
+    expect(summary?.ambiguousFanout).toBe(0);
+  });
+
+  it("names a model without a known threshold with no threshold", () => {
+    const summary = summarizeCodegraphResolve([rowB("ruby", "ivar", 100, 60)], undefined, {
+      counts: [site("ruby", "ivar", "dynamic", 2)],
+      thresholds: {},
+    });
+
+    expect(summary?.modelResolution).toEqual([{ model: "kev", sites: 2 }]);
+  });
+
+  it("adds no model fields when no site was resolved by a model", () => {
+    const summary = summarizeCodegraphResolve([rowB("ruby", "ivar", 100, 60)], undefined, {
+      counts: [],
+      thresholds: { kev: 0.7 },
+    });
+
+    expect(summary).not.toHaveProperty("staticInProjectEdgeRecall");
+    expect(summary).not.toHaveProperty("callsResolvedByModel");
+    expect(summary).not.toHaveProperty("modelResolution");
+  });
+
+  it("counts model edges as their own bucket in the edge-kind breakdown, not as exact", () => {
+    const summary = summarizeCodegraphResolve(
+      [rowB("ruby", "ivar", 100, 60)],
+      [
+        { edgeKind: "exact", origin: "static", count: 70 },
+        { edgeKind: "exact", origin: "model", count: 10 },
+        { edgeKind: "cone", origin: "static", count: 20 },
+      ],
+    );
+
+    expect(summary?.edgeKinds).toMatchObject({ exact: 70, cone: 20, model: 10, total: 100 });
+    expect(summary?.edgeKinds?.exactRatio).toBeCloseTo(0.7, 6);
   });
 });

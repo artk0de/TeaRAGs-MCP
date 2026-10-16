@@ -259,6 +259,29 @@ export interface CodegraphResolveSummary {
    */
   coveredRecall: number | null;
   /**
+   * bd tea-rags-mcp-2m83f.38 — {@link inProjectEdgeRecall} counts a residual
+   * site an applied model edge resolves (`origin = 'model'`, `p` at or above the
+   * provider threshold) as resolved; this is the static share alone, the floor
+   * the compiler-truth edges guarantee. Present only when a model resolved a
+   * site (absent = the combined figure IS the static one).
+   */
+  staticInProjectEdgeRecall?: number | null;
+  /**
+   * Sites counted in {@link callsResolved} because a model edge resolved them,
+   * moved out of {@link ambiguousFanout} or the in-project miss. A site counts
+   * once. Present only when non-zero.
+   */
+  callsResolvedByModel?: number;
+  /**
+   * Model-resolved sites from residual rows written before migration 055, which
+   * carry no language or receiver kind: counted in the aggregate only, in no
+   * per-language or per-kind row. Present only when non-zero; a re-walk of their
+   * files labels them.
+   */
+  callsResolvedByModelUnlabeled?: number;
+  /** Which model resolved the sites and at what threshold. Present with {@link callsResolvedByModel}. */
+  modelResolution?: CodegraphModelResolutionRow[];
+  /**
    * Raw resolver capability over ALL internal-attempted calls (denominator
    * polluted by no-in-project-def calls, so it reads far lower than recall).
    * Surfaced ONLY under DEBUG — it misleads a casual reader who expects it to
@@ -345,6 +368,14 @@ export interface CodegraphResolveSummary {
   edgeKinds?: EdgeKindBreakdown;
 }
 
+/** One model's share of {@link CodegraphResolveSummary.callsResolvedByModel}. */
+export interface CodegraphModelResolutionRow {
+  model: string;
+  /** The provider threshold its edges were counted at; absent when the running configuration names none. */
+  threshold?: number;
+  sites: number;
+}
+
 /**
  * Emitted method-edge `edge_kind` counts + the exact ratio. `exactRatio` is the
  * fraction of edges pinned to a single target (confidence 1) — the rest are
@@ -356,6 +387,8 @@ export interface EdgeKindBreakdown {
   polyBase: number;
   dynamic: number;
   registry: number;
+  /** Model edges (`origin = 'model'`) of any kind — probabilistic, never counted as exact. */
+  model: number;
   total: number;
   exactRatio: number;
 }
@@ -369,6 +402,10 @@ export interface CodegraphResolveLanguageRow {
   language: string;
   /** Graph-completeness for this language (always present; `null` = nothing scored). See {@link CodegraphResolveSummary.inProjectEdgeRecall}. */
   inProjectEdgeRecall: number | null;
+  /** Static share of {@link inProjectEdgeRecall}; see {@link CodegraphResolveSummary.staticInProjectEdgeRecall}. */
+  staticInProjectEdgeRecall?: number | null;
+  /** Sites of this language a model edge resolved; see {@link CodegraphResolveSummary.callsResolvedByModel}. */
+  callsResolvedByModel?: number;
   /** Raw resolver capability for this language. DEBUG-only; `null` = nothing scored (see summary). */
   resolveSuccessRate?: number | null;
   callsAttempted: number;
@@ -412,8 +449,12 @@ export interface CodegraphResolveKindRow {
    *  `(resolved + ambiguousFanout) / SAME denominator` as inProjectEdgeRecall;
    *  `null` exactly when inProjectEdgeRecall is. */
   coveredRecall: number | null;
+  /** Static share of {@link inProjectEdgeRecall}; see {@link CodegraphResolveSummary.staticInProjectEdgeRecall}. */
+  staticInProjectEdgeRecall?: number | null;
   attempted: number;
   resolved: number;
+  /** Sites in {@link resolved} a model edge resolved; see {@link CodegraphResolveSummary.callsResolvedByModel}. */
+  resolvedByModel?: number;
   externalSkipped: number;
   /** bd cai0 — unresolved dynamic-send calls in this bucket, excluded from the rate. */
   unresolvable: number;

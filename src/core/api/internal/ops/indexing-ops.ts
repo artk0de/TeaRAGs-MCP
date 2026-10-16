@@ -364,6 +364,8 @@ export class IndexingOps {
       // The lock the runs claim is the one status asks whether their writer
       // still lives (bd tea-rags-mcp-f93ao).
       deps.indexingLock,
+      // The thresholds a residual pass applies model edges at (2m83f.38).
+      deps.residualResolution?.thresholds,
     );
     this.languageVersionStamper = deps.languageVersionStamper;
     this.codegraphEnabledStamper = deps.codegraphEnabledStamper;

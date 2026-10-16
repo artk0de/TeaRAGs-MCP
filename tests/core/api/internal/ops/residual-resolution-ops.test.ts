@@ -116,6 +116,12 @@ describe("ResidualResolutionOps", () => {
     expect(existsSync(ResidualVerdictStore.pathFor(rootDir, "code_test"))).toBe(true);
   });
 
+  it("names the threshold each model's edges are applied at", () => {
+    const ops = new ResidualResolutionOps({ rootDir, codegraphPool: { acquireWrite } as never, config: CONFIG });
+
+    expect(ops.thresholds).toEqual({ kev: 0.7 });
+  });
+
   it("turns an unknown model into a skipped report instead of throwing", async () => {
     const ops = new ResidualResolutionOps({ rootDir, codegraphPool: { acquireWrite } as never, config: CONFIG });
 
