@@ -15,7 +15,7 @@ import type { TypeAbstractnessCensus } from "./codegraph-extraction.js";
 import type { InheritanceEdgeRow } from "./codegraph-hierarchy.js";
 import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
 import type { EdgeOrigin, ResidualCallSiteRow } from "./codegraph-residual.js";
-import type { RelPath, SymbolId } from "./codegraph-symbols.js";
+import type { FileScopedSymbolRef, RelPath, SymbolId } from "./codegraph-symbols.js";
 
 /**
  * Per-symbol graph metrics read back for chunk-level enrichment: confidence-
@@ -248,6 +248,10 @@ export interface CycleEntry {
    * by migration 028 and not yet recomputed.
    */
   memberLocations?: CycleMemberLocation[];
+  /** True when a member-to-member hop is supported only by residual-model edges; absent = every hop static. */
+  hasModelEdge?: boolean;
+  /** Count of those model-only hops; present with `hasModelEdge`. */
+  modelEdgeCount?: number;
 }
 
 /** One method-scope cycle member, addressed by `(relativePath, symbolId)`. */
@@ -581,6 +585,21 @@ export interface CalleeEdge {
   /** Provider id of a model edge. */
   model?: string;
   /** Provider probability of a model edge. */
+  p?: number;
+}
+
+/**
+ * One hop of the file-scoped adjacency `trace_path` walks (bd tea-rags-mcp-2m83f.40).
+ * Call sites collapse to one hop per (source, target): a hop any static site
+ * supports is static (no provenance); a hop only model sites support carries
+ * the strongest model verdict (highest `p`).
+ */
+export interface ScopedCalleeTarget extends FileScopedSymbolRef {
+  /** `"model"` when only residual-resolution verdicts support the hop; absent on a static hop. */
+  origin?: EdgeOrigin;
+  /** Provider id of the strongest model verdict on the hop. */
+  model?: string;
+  /** Highest provider probability among the hop's model sites. */
   p?: number;
 }
 

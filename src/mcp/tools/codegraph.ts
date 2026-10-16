@@ -461,7 +461,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "table — sub-millisecond per call. scope=method: members are symbol ids and " +
       "memberLocations lists {symbolId, relativePath} per member in the same order — " +
       "namesakes in different files are distinct members; an empty relativePath means " +
-      "the cycle was not recomputed since the index upgrade.",
+      "the cycle was not recomputed since the index upgrade. hasModelEdge:true + modelEdgeCount = " +
+      "hops inside the cycle only residual-model edges support (absent = all static).",
     schemaKey: "find_cycles",
     invoke: async (app, request) =>
       formatMcpText(JSON.stringify(await app.findCycles(request as FindCyclesRequest), null, 2)),
@@ -626,7 +627,9 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "Trace all simple call paths from one symbol to another, in execution order. " +
       "Lean path enumeration by default. Pass `rerank` danger preset to annotate each step " +
       "with git/churn overlay and sort paths most-dangerous first. Steps carry declared visibility " +
-      "when known (absent = unknown). Backed by codegraph DuckDB. " +
+      "when known (absent = unknown). Residual-model edges are walked and marked: a step reached by a " +
+      "model-only hop carries origin:'model', model, p; such a path carries minP (its weakest p). " +
+      "Backed by codegraph DuckDB. " +
       "from/to: host-class id with no node of its own → traced via the member's first definer up " +
       "hierarchy in MRO order; resolvedEndpoints names the id traced.",
     schemaKey: "trace_path",

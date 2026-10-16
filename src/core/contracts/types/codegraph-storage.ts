@@ -38,6 +38,7 @@ import type {
   NonPublicMemberEdge,
   PersistedHierarchyDescendantDependency,
   ResolveRunStatsRow,
+  ScopedCalleeTarget,
 } from "./codegraph-graph.js";
 import type { HierarchySnapshot, InheritanceEdge } from "./codegraph-hierarchy.js";
 import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
@@ -1252,10 +1253,12 @@ export interface CodegraphGraphReadStore {
    * `(relPath, symbolId)` instead of the bare symbolId. Top-level declarations
    * carry unqualified ids, so the bare form merges every namesake into one node
    * and lets a traced path cross between unrelated files; this form keeps them
-   * apart. Targets are DISTINCT — one entry per edge, not per call site.
-   * Sources with no visible callees are absent from the map.
+   * apart. Targets are DISTINCT — one entry per edge, not per call site; a
+   * hop only model sites support carries their strongest provenance
+   * ({@link ScopedCalleeTarget}). Sources with no visible callees are absent
+   * from the map.
    */
-  getCalleeEdgesScoped: (refs: FileScopedSymbolRef[]) => Promise<Map<FileScopedSymbolId, FileScopedSymbolRef[]>>;
+  getCalleeEdgesScoped: (refs: FileScopedSymbolRef[]) => Promise<Map<FileScopedSymbolId, ScopedCalleeTarget[]>>;
   /**
    * Files each symbol appears in, as call source or call target (bd
    * tea-rags-mcp-oxnvl). Resolves a bare symbolId to the concrete graph nodes

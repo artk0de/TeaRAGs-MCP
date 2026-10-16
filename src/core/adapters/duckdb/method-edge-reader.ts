@@ -30,6 +30,7 @@ import {
   type FileScopedSymbolRef,
   type MethodEdgeKind,
   type RelPath,
+  type ScopedCalleeTarget,
   type SymbolId,
 } from "../../contracts/types/codegraph.js";
 import { splitMethodSymbol } from "../../primitives/ids/index.js";
@@ -192,7 +193,7 @@ export class DuckDbMethodEdgeReader implements Pick<
    * apart, so a traced path can no longer enter through one namesake and leave
    * through another.
    *
-   * `DISTINCT` is load-bearing, not hygiene: the table holds one row per CALL
+   * The per-hop grouping is load-bearing, not hygiene: the table holds one row per CALL
    * SITE, so a source calling the same target from two expressions yielded two
    * identical adjacency targets and, downstream, two literally identical paths
    * in the trace_path output.
@@ -202,35 +203,50 @@ export class DuckDbMethodEdgeReader implements Pick<
    * in JS against the requested set. The over-fetch is bounded by the namesake
    * count of the frontier symbols (single digits in practice).
    */
-  async getCalleeEdgesScoped(refs: FileScopedSymbolRef[]): Promise<Map<FileScopedSymbolId, FileScopedSymbolRef[]>> {
-    const out = new Map<FileScopedSymbolId, FileScopedSymbolRef[]>();
+  async getCalleeEdgesScoped(refs: FileScopedSymbolRef[]): Promise<Map<FileScopedSymbolId, ScopedCalleeTarget[]>> {
+    const out = new Map<FileScopedSymbolId, ScopedCalleeTarget[]>();
     if (refs.length === 0) return out;
     const requested = new Set(refs.map(fileScopedSymbolKey));
     const sourceIds = [...new Set(refs.map((r) => r.symbolId))];
     for (let i = 0; i < sourceIds.length; i += SCOPED_EDGE_IN_LIST_CHUNK) {
       const batch = sourceIds.slice(i, i + SCOPED_EDGE_IN_LIST_CHUNK);
       const placeholders = batch.map(() => "?").join(", ");
-      const rows = await this.session.queryAll<{
-        source: SymbolId;
-        sourcePath: RelPath;
-        target: SymbolId;
-        targetPath: RelPath;
-      }>(
+      const rows = await this.session.queryAll<
+        {
+          source: SymbolId;
+          sourcePath: RelPath;
+          target: SymbolId;
+          targetPath: RelPath;
+          hasStatic: boolean;
+        } & EdgeOriginColumns
+      >(
         // Navigation filter mirrors isNavigationVisibleEdge() in graph-facade.ts (xlnub Task 5):
         // dynamic edges with confidence < 1 are hidden from BFS traversal; all other
         // edge kinds (cone/exact/poly-base/registry) and legacy NULL-edgeKind edges are traversable.
-        `SELECT DISTINCT source_symbol_id AS source, source_rel_path AS "sourcePath",
-                target_symbol_id AS target, target_rel_path AS "targetPath"
+        // One hop per (source, target): any static site keeps the hop static; a
+        // model-only hop carries its strongest verdict (bd tea-rags-mcp-2m83f.40).
+        `SELECT source_symbol_id AS source, source_rel_path AS "sourcePath",
+                target_symbol_id AS target, target_rel_path AS "targetPath",
+                bool_or(origin IS DISTINCT FROM 'model') AS "hasStatic",
+                max(origin) AS origin,
+                arg_max(model, p) AS model,
+                max(p) AS p
          FROM cg_symbols_edges_method
          WHERE source_symbol_id IN (${placeholders}) AND target_symbol_id IS NOT NULL
            AND NOT (edge_kind = 'dynamic' AND COALESCE(confidence, 1) < 1)
+         GROUP BY source_symbol_id, source_rel_path, target_symbol_id, target_rel_path
          ORDER BY source_rel_path, source_symbol_id, target_rel_path, target_symbol_id`,
         batch,
       );
       for (const row of rows) {
         const key = fileScopedSymbolKey({ relPath: row.sourcePath, symbolId: row.source });
         if (!requested.has(key)) continue; // namesake of a requested source, different file
-        const target: FileScopedSymbolRef = { relPath: row.targetPath, symbolId: row.target };
+        const target: ScopedCalleeTarget = { relPath: row.targetPath, symbolId: row.target };
+        if (!row.hasStatic && row.origin === "model" && row.model !== null && row.p !== null) {
+          target.origin = "model";
+          target.model = row.model;
+          target.p = row.p;
+        }
         const list = out.get(key);
         if (list) list.push(target);
         else out.set(key, [target]);

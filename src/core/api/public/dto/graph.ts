@@ -238,6 +238,14 @@ export interface CycleResult {
   memberLocations?: CycleMemberLocation[];
   /** Convenience — member count (always >= 2). */
   length: number;
+  /**
+   * True when at least one member-to-member hop is supported only by
+   * residual-model edges (a hop any static edge supports stays static).
+   * Absent when every hop is static.
+   */
+  hasModelEdge?: boolean;
+  /** Number of model-only hops inside the cycle; present with `hasModelEdge`. */
+  modelEdgeCount?: number;
 }
 
 export interface CycleMemberLocation {
@@ -296,6 +304,16 @@ export interface PathStep extends DeclaredVisibilityField {
   endLine: number;
   /** bugFixRate / churn / ownership labels from the chosen rerank preset. */
   dangerOverlay?: RankingOverlay;
+  /**
+   * `"model"` when the hop INTO this step is supported only by residual-model
+   * edges (a hop any static call site supports stays static); absent on the
+   * first step and on a static hop.
+   */
+  origin?: EdgeOrigin;
+  /** Provider id of the strongest model verdict on the incoming hop. */
+  model?: string;
+  /** Highest provider probability among the incoming hop's model call sites. */
+  p?: number;
 }
 
 export interface TracedPath {
@@ -312,6 +330,8 @@ export interface TracedPath {
    * ONLY when a `rerank` preset was supplied; absent for a lean trace.
    */
   aggregateDanger?: number;
+  /** Lowest `p` among the path's model hops; absent when every hop is static. */
+  minP?: number;
 }
 
 export interface PathTraceResult extends WorkingTreeMarkerField {

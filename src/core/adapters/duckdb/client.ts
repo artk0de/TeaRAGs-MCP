@@ -99,6 +99,7 @@ import type {
   RelPath,
   ResidualCallSiteRow,
   ResolveRunStatsRow,
+  ScopedCalleeTarget,
   StoredFieldAccessRow,
   SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
@@ -446,7 +447,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.methodEdges.getCalleeEdges(symbolIds);
   }
 
-  async getCalleeEdgesScoped(refs: FileScopedSymbolRef[]): Promise<Map<FileScopedSymbolId, FileScopedSymbolRef[]>> {
+  async getCalleeEdgesScoped(refs: FileScopedSymbolRef[]): Promise<Map<FileScopedSymbolId, ScopedCalleeTarget[]>> {
     return this.methodEdges.getCalleeEdgesScoped(refs);
   }
 
