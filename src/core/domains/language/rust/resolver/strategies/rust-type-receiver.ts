@@ -7,6 +7,7 @@ import {
   type ReceiverTypingPorts,
 } from "../../../kernel/index.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-constructor.js";
+import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
 import { resolveRustNominalType, rustDeclaredMemberReturnType } from "../declared-return-type.js";
 import { createRustTypeMemberLookup } from "../rust-type-member-lookup.js";
 import { lookupRustSymbolsByShortName, rustImportMatchesReceiver, type ResolverConfig } from "./shared.js";
@@ -42,6 +43,7 @@ const RUST_RECEIVER_TYPE_PORTS: ReceiverTypePorts = {
     const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine);
     const local = binding?.typeRef ?? (binding?.type ? { form: "instance" as const, name: binding.type } : undefined);
     if (local !== undefined) return resolveRustNominalType(local, ctx);
+    if (receiver === "self") return rustLexicalSelfType(ctx);
     const named = rustNamedType(receiver, ctx);
     if (named === undefined) return undefined;
     const exact = resolveRustNominalType(named, ctx);
@@ -53,7 +55,7 @@ const RUST_RECEIVER_TYPE_PORTS: ReceiverTypePorts = {
   },
   seedHead: () => undefined,
   memberTypeOf: rustDeclaredMemberReturnType,
-  memberAttributeTypeOf: () => undefined,
+  memberAttributeTypeOf: rustDeclaredFieldType,
   maxHops: () => 8,
 };
 

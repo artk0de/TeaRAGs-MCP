@@ -34,6 +34,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { TypeDeclarationFact } from "../../../../contracts/types/codegraph-extraction.js";
+import { rustDeclaredStructFields } from "./field-types.js";
 import { rustGenericParameters } from "./return-types.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
 
@@ -70,6 +71,7 @@ export function rustTypeDeclarationFactOf(node: AstNode, scope: readonly string[
   if (name === undefined || symbolKind === undefined) return null;
   const conforms = node.type === "trait_item" ? rustSupertraitNames(node) : [];
   const genericParameters = rustGenericParameters(node);
+  const { genericFieldParameters, fieldTypeArguments } = rustDeclaredStructFields(node, genericParameters);
   return {
     typeId: [...scope, name].join("::"),
     symbolKind,
@@ -77,6 +79,8 @@ export function rustTypeDeclarationFactOf(node: AstNode, scope: readonly string[
     reopens: false,
     ...(conforms.length > 0 ? { conforms } : {}),
     ...(genericParameters.length > 0 ? { genericParameters } : {}),
+    ...(Object.keys(genericFieldParameters).length > 0 ? { genericFieldParameters } : {}),
+    ...(Object.keys(fieldTypeArguments).length > 0 ? { fieldTypeArguments } : {}),
   };
 }
 

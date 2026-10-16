@@ -36,6 +36,7 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../associated-constructor.js";
+import { rustDeclaredStructFields } from "./field-types.js";
 import { rustNameOf } from "./name-of.js";
 import { collectRustReturnTypes, rustDeclaredTypeRef } from "./return-types.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
@@ -65,7 +66,11 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   // every in-method call once per ENCLOSING chunk as well — an `impl` inside a
   // `mod` gave three copies, each resolving against a different caller scope.
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
-  const { readings: symbolKindReadings, typeDeclarations } = collectRustDeclarationReadings(input.tree.rootNode);
+  const {
+    readings: symbolKindReadings,
+    typeDeclarations,
+    classFieldTypesByClassKey,
+  } = collectRustDeclarationReadings(input.tree.rootNode, input.relPath);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -95,6 +100,7 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   const structuredReturnTypes = collectRustReturnTypes(input.tree.rootNode, input.relPath);
   if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
+  if (Object.keys(classFieldTypesByClassKey).length > 0) out.classFieldTypesByClassKey = classFieldTypesByClassKey;
   if (moduleReexports.length > 0) out.moduleReexports = moduleReexports;
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
   if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
@@ -114,6 +120,7 @@ interface RustDeclarationReadings {
   readonly readings: RustSymbolKindReading[];
   /** The `typeDeclarations` channel (spec §1b) — see `./type-declarations.ts`. */
   readonly typeDeclarations: TypeDeclarationFact[];
+  readonly classFieldTypesByClassKey: Record<string, Record<string, string>>;
 }
 
 /**
@@ -130,13 +137,18 @@ interface RustDeclarationReadings {
  * (spec §1b) off the scope it already composes: `local` turns on below a `fn`,
  * a closure or a const/static initializer, whose declarations are not facts.
  */
-function collectRustDeclarationReadings(root: AstNode): RustDeclarationReadings {
+function collectRustDeclarationReadings(root: AstNode, relPath: string): RustDeclarationReadings {
   const out: RustSymbolKindReading[] = [];
   const typeDeclarations: TypeDeclarationFact[] = [];
+  const classFieldTypesByClassKey = createIdentifierRecord<Record<string, string>>();
   const visit = (node: AstNode, scope: readonly string[], local: boolean): void => {
     if (!local) {
       const fact = rustTypeDeclarationFactOf(node, scope);
-      if (fact !== null) typeDeclarations.push(fact);
+      if (fact !== null) {
+        typeDeclarations.push(fact);
+        const { fields } = rustDeclaredStructFields(node, fact.genericParameters ?? []);
+        if (Object.keys(fields).length > 0) classFieldTypesByClassKey[`${relPath}::${fact.typeId}`] = fields;
+      }
     }
     const named = rustNameOf(node);
     if (named !== null) {
@@ -153,7 +165,7 @@ function collectRustDeclarationReadings(root: AstNode): RustDeclarationReadings 
     for (const child of node.children) visit(child, childScope, childLocal);
   };
   visit(root, [], false);
-  return { readings: out, typeDeclarations };
+  return { readings: out, typeDeclarations, classFieldTypesByClassKey };
 }
 
 /** The kind of the first reading `chunk` was built from — first, as `collectSymbols` keeps the first node per id. */

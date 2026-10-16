@@ -20,7 +20,7 @@ export const capability: LanguageCapability = {
   testFiles,
   codegraph: {
     tier: "moderate",
-    tech: "7-strategy; trait-based dispatch; native declared return receiver chains (Self, proven owner generics)",
+    tech: "7-strategy; trait-based dispatch; native declared return receiver chains (Self, proven owner generics); explicitly declared struct-field receiver chains",
     // Generic return substitution reads the declaring owner's genericParameters.
     resolverReadsTypeDeclarations: true,
     // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
@@ -60,7 +60,9 @@ export const capability: LanguageCapability = {
   // owner generics without field, import-bound, wrapper or fixpoint propagation.
   // walker 7: bd tea-rags-mcp-2g2og.24 — annotated local bindings retain
   // nominal generic arguments for declared-return chain substitution.
-  versions: { chunking: 4, walker: 7, codegraphSchema: 2 },
+  // walker 8: bd tea-rags-mcp-2g2og.24 — placed declared struct fields and
+  // simple owner-generic field arguments feed bounded receiver chains.
+  versions: { chunking: 4, walker: 8, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
   // SCREAMING_SNAKE_CASE.

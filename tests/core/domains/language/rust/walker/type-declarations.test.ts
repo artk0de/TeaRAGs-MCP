@@ -222,7 +222,8 @@ describe("Rust walker — type declaration facts leave the rest of the extractio
   ].join("\n");
 
   it("keeps chunks, symbols, CallRefs, bindings and imports as they were", () => {
-    const { typeDeclarations, structuredReturnTypes, ...rest } = extract(src);
+    const { typeDeclarations, structuredReturnTypes, classFieldTypesByClassKey, ...rest } = extract(src);
+    expect(classFieldTypesByClassKey).toEqual({ "src/a.rs::Engine": { worker: "Worker" } });
     expect(structuredReturnTypes).toEqual({
       "src/a.rs::Engine.new": { form: "instance", name: "Self" },
     });
