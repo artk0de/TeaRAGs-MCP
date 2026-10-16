@@ -4,7 +4,9 @@
  * One DuckDB file per logical collection, outside every codegraph generation,
  * so `--force` and a generation swap never touch it; removed only with the
  * collection's footprint. Opened directly by the residual pass under the
- * collection's IndexingLock — never through the codegraph daemon.
+ * collection's IndexingLock — never through the codegraph daemon. A NULL
+ * `pick` is a "none of these" verdict; opening a store written before it drops
+ * the column's NOT NULL.
  */
 import { join } from "node:path";
 
@@ -20,14 +22,15 @@ CREATE TABLE IF NOT EXISTS residual_verdicts (
   menu_hash        VARCHAR NOT NULL,
   model            VARCHAR NOT NULL,
   model_version    VARCHAR NOT NULL,
-  pick             VARCHAR NOT NULL,
+  pick             VARCHAR,
   p                DOUBLE  NOT NULL,
   probabilities    VARCHAR NOT NULL,
   question_payload VARCHAR NOT NULL,
   created_at       BIGINT  NOT NULL,
   last_seen_at     BIGINT  NOT NULL,
   PRIMARY KEY (site_key, menu_hash, model, model_version)
-)`;
+);
+ALTER TABLE residual_verdicts ALTER COLUMN pick DROP NOT NULL`;
 
 const COLUMNS = [
   "site_key",
@@ -47,7 +50,7 @@ interface VerdictRow {
   menu_hash: string;
   model: string;
   model_version: string;
-  pick: string;
+  pick: string | null;
   p: number;
   probabilities: string;
   question_payload: string;

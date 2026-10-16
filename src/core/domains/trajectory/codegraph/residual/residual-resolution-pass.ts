@@ -12,10 +12,19 @@
  * best-effort.
  * A provider that leases its hardware (`acquire`) is leased only when some
  * site needs asking, and released however the asking ends.
+ * A "none of these" verdict at or above `noneThreshold` makes no edge: the site
+ * is stored as external (`applyModelExternalSites`), out of the recall denominator.
  */
 
+import { createHash } from "node:crypto";
+
 import type { ResidualVerdictStore } from "../../../../adapters/duckdb/residual-verdict-store.js";
-import type { ModelEdgeRow, ResidualCallSiteRow } from "../../../../contracts/types/codegraph-residual.js";
+import {
+  RESIDUAL_QUESTION_VERSION,
+  type ModelEdgeRow,
+  type ModelExternalSiteRow,
+  type ResidualCallSiteRow,
+} from "../../../../contracts/types/codegraph-residual.js";
 import type { GraphDbClient } from "../../../../contracts/types/codegraph-storage.js";
 import type { ProgressCallback } from "../../../../types.js";
 import type {
@@ -43,7 +52,10 @@ const STATE_TOO_LONG_CODES = new Set(["INFRA_KEV_STATE_TOO_LONG"]);
 const LEASE_LOST_CODES = new Set(["INFRA_KEV_SESSION_LOST"]);
 
 export interface ResidualPassInput {
-  graphDb: Pick<GraphDbClient, "readResidualCallSites" | "applyModelEdges" | "markDerivedStale">;
+  graphDb: Pick<
+    GraphDbClient,
+    "readResidualCallSites" | "applyModelEdges" | "applyModelExternalSites" | "markDerivedStale"
+  >;
   store: Pick<ResidualVerdictStore, "find" | "findLatest" | "put" | "touch" | "expire">;
   provider: ResidualModelProvider;
   mode: ResidualPassMode;
@@ -52,6 +64,8 @@ export interface ResidualPassInput {
   menuLimit: number;
   /** Smallest menu a site needs to be asked or applied. */
   minMenu: number;
+  /** Smallest `p` of a "none of these" verdict that counts its site as external. */
+  noneThreshold: number;
   retentionDays: number;
   /** Recompute cycles and PageRank over the current graph; clears the derived-stale mark. */
   recomputeDerived: () => Promise<void>;
@@ -93,6 +107,16 @@ interface AskTally {
 
 const verdictKey = (siteKey: string, menuHash: string): string => `${siteKey}\u0000${menuHash}`;
 
+/** The verdict-store menu hash: the row's menu hash under {@link RESIDUAL_QUESTION_VERSION}. */
+export function residualQuestionHash(menuHash: string): string {
+  return createHash("sha1").update(`${menuHash}\u0000q${RESIDUAL_QUESTION_VERSION}`).digest("hex");
+}
+
+/** An eligible row and the menu hash its verdict is stored under. */
+interface EligibleSite extends ResidualCallSiteRow {
+  questionHash: string;
+}
+
 export type SiteEligibility = "eligible" | "menuOverflow" | "menuTooSmall";
 
 /**
@@ -117,10 +141,12 @@ export class ResidualResolutionPass {
 
     const rows = await input.graphDb.readResidualCallSites();
     const eligibility = rows.map((r) => siteEligibility(r, input));
-    const eligible = rows.filter((_, i) => eligibility[i] === "eligible");
+    const eligible: EligibleSite[] = rows
+      .filter((_, i) => eligibility[i] === "eligible")
+      .map((r) => ({ ...r, questionHash: residualQuestionHash(r.menuHash) }));
     const verdicts = await this.cachedVerdicts(input, eligible, servedVersion.version);
-    const cacheHits = eligible.filter((r) => verdicts.has(verdictKey(r.siteKey, r.menuHash))).length;
-    const groups = groupQuestions(eligible.filter((r) => !verdicts.has(verdictKey(r.siteKey, r.menuHash))));
+    const cacheHits = eligible.filter((r) => verdicts.has(verdictKey(r.siteKey, r.questionHash))).length;
+    const groups = groupQuestions(eligible.filter((r) => !verdicts.has(verdictKey(r.siteKey, r.questionHash))));
     const readAt = input.now();
 
     const tally: AskTally = {
@@ -146,8 +172,9 @@ export class ResidualResolutionPass {
     const reason = unavailable ?? failureReason;
     const skipped = unavailable !== undefined || tally.leaseLost || tally.breakerTripped;
 
-    const { edges, belowThreshold } = buildEdges(eligible, verdicts, provider);
+    const { edges, external, belowThreshold } = buildEdges(eligible, verdicts, provider, input.noneThreshold);
     const applied = await input.graphDb.applyModelEdges(provider.id, edges);
+    await input.graphDb.applyModelExternalSites(provider.id, external);
     const recomputeStartedAt = input.now();
     const derived = applied.changed ? await this.recomputeDerived(input) : "unchanged";
     const recomputeMs = input.now() - recomputeStartedAt;
@@ -176,6 +203,7 @@ export class ResidualResolutionPass {
       requeuedGroups: tally.requeued,
       belowThreshold,
       sitesEdged: edges.length,
+      externalByModel: external.length,
       edgesApplied: applied.stored,
       derived,
       durations: {
@@ -252,16 +280,16 @@ export class ResidualResolutionPass {
   /** At the served version when asking; otherwise the newest verdict per site, whatever version gave it. */
   private async cachedVerdicts(
     input: ResidualPassInput,
-    eligible: ResidualCallSiteRow[],
+    eligible: EligibleSite[],
     modelVersion: string | undefined,
   ): Promise<Map<string, ResidualVerdict>> {
     const cached =
       modelVersion === undefined
         ? await input.store.findLatest(
-            eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.menuHash })),
+            eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.questionHash })),
             input.provider.id,
           )
-        : await input.store.find(eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.menuHash, modelVersion })));
+        : await input.store.find(eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.questionHash, modelVersion })));
     const verdicts = new Map<string, ResidualVerdict>();
     for (const verdict of cached) {
       if (verdict.model === input.provider.id) verdicts.set(verdictKey(verdict.siteKey, verdict.menuHash), verdict);
@@ -371,11 +399,11 @@ function tripsBreaker(tally: AskTally, failureBudget: number, maxConsecutive: nu
 }
 
 /** One group per enclosing method; a site asked twice with the same menu is asked once. */
-function groupQuestions(rows: ResidualCallSiteRow[]): PendingGroup[] {
+function groupQuestions(rows: EligibleSite[]): PendingGroup[] {
   const groups = new Map<string, PendingGroup>();
   const seen = new Set<string>();
   for (const r of rows) {
-    const key = verdictKey(r.siteKey, r.menuHash);
+    const key = verdictKey(r.siteKey, r.questionHash);
     if (seen.has(key)) continue;
     seen.add(key);
     const groupKey = `${r.sourceRelPath}\u0000${r.methodSymbolId}`;
@@ -392,7 +420,7 @@ function groupQuestions(rows: ResidualCallSiteRow[]): PendingGroup[] {
     }
     group.questions.push({
       siteKey: r.siteKey,
-      menuHash: r.menuHash,
+      menuHash: r.questionHash,
       receiverText: r.receiverText,
       member: r.member,
       kind: r.kind,
@@ -402,7 +430,7 @@ function groupQuestions(rows: ResidualCallSiteRow[]): PendingGroup[] {
   return [...groups.values()];
 }
 
-/** An answer for a site not asked, or picking off the menu, is dropped. */
+/** An answer for a site not asked, or picking off the menu, is dropped; a null pick (none) is kept. */
 function toVerdicts(
   questions: ResidualQuestion[],
   answers: ResidualAnswer[],
@@ -414,7 +442,7 @@ function toVerdicts(
   const verdicts: ResidualVerdict[] = [];
   for (const answer of answers) {
     const question = bySite.get(answer.siteKey);
-    if (!question?.candidates.includes(answer.pick)) continue;
+    if (!question || (answer.pick !== null && !question.candidates.includes(answer.pick))) continue;
     verdicts.push({
       siteKey: answer.siteKey,
       menuHash: question.menuHash,
@@ -431,19 +459,36 @@ function toVerdicts(
   return verdicts;
 }
 
+/** A pick at or above the provider threshold is an edge; a none at or above `noneThreshold` an external site. */
 function buildEdges(
-  rows: ResidualCallSiteRow[],
+  rows: EligibleSite[],
   verdicts: Map<string, ResidualVerdict>,
   provider: ResidualModelProvider,
-): { edges: ModelEdgeRow[]; belowThreshold: number } {
+  noneThreshold: number,
+): { edges: ModelEdgeRow[]; external: ModelExternalSiteRow[]; belowThreshold: number } {
   const edges: ModelEdgeRow[] = [];
+  const external: ModelExternalSiteRow[] = [];
   const emitted = new Set<string>();
   let belowThreshold = 0;
   for (const r of rows) {
-    const key = verdictKey(r.siteKey, r.menuHash);
+    const key = verdictKey(r.siteKey, r.questionHash);
     const verdict = verdicts.get(key);
     if (!verdict || emitted.has(key)) continue;
     emitted.add(key);
+    if (verdict.pick === null) {
+      if (verdict.p < noneThreshold) {
+        belowThreshold++;
+        continue;
+      }
+      external.push({
+        siteKey: r.siteKey,
+        sourceRelPath: r.sourceRelPath,
+        menuHash: r.menuHash,
+        model: provider.id,
+        p: verdict.p,
+      });
+      continue;
+    }
     if (verdict.p < provider.threshold || !r.candidates.includes(verdict.pick)) {
       belowThreshold++;
       continue;
@@ -457,7 +502,7 @@ function buildEdges(
       p: verdict.p,
     });
   }
-  return { edges, belowThreshold };
+  return { edges, external, belowThreshold };
 }
 
 function errorCode(error: unknown): string | undefined {

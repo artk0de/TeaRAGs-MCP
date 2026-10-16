@@ -227,8 +227,10 @@ export const codegraphResidualSchema = z.object({
   requestTimeoutSec: intWithDefault(300),
   /** A site with more candidates than this is not asked. */
   menuLimit: intWithDefault(40),
-  /** A site with fewer candidates than this is neither asked nor applied. */
-  minMenu: intWithDefault(4),
+  /** A site with fewer candidates than this is neither asked nor applied; 1 — a one-class menu plus "none" is asked. */
+  minMenu: intWithDefault(1),
+  /** Minimum probability of a "none of these" verdict for its site to count as external, out of the recall denominator. */
+  noneThreshold: floatWithDefault(0.8),
   /** Verdicts not seen by any run for this many days are dropped. */
   retentionDays: intWithDefault(180),
   /**

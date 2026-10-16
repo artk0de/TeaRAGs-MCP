@@ -18,6 +18,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { ResidualVerdictStore } from "../../../../../../src/core/adapters/duckdb/residual-verdict-store.js";
 import type { ResidualCallSiteRow } from "../../../../../../src/core/contracts/types/codegraph-residual.js";
+import { residualQuestionHash } from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-resolution-pass.js";
 import {
   buildWorkingTreeGraph,
   type WorkingTreeGraphBuildInput,
@@ -107,7 +108,15 @@ async function buildModelFixture(): Promise<ModelFixture> {
   if (existsSync(wal) && statSync(wal).size === 0) unlinkSync(wal);
   return {
     fixture,
-    residual: { verdictRootDir, logicalName: LOGICAL, model: MODEL, threshold: THRESHOLD, menuLimit: 16, minMenu: 2 },
+    residual: {
+      verdictRootDir,
+      logicalName: LOGICAL,
+      model: MODEL,
+      threshold: THRESHOLD,
+      menuLimit: 16,
+      minMenu: 2,
+      noneThreshold: 0.8,
+    },
   };
 }
 
@@ -115,7 +124,7 @@ function verdictFor(site: ResidualCallSiteRow) {
   const { pick, p } = PICKS[site.sourceRelPath];
   return {
     siteKey: site.siteKey,
-    menuHash: site.menuHash,
+    menuHash: residualQuestionHash(site.menuHash),
     model: MODEL,
     modelVersion: "v1",
     pick,

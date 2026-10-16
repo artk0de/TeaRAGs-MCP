@@ -88,6 +88,7 @@ import type {
   MethodTailVerbRow,
   ModelEdgeApplyResult,
   ModelEdgeRow,
+  ModelExternalSiteRow,
   ModelResolvedSiteCount,
   NonPublicMemberEdge,
   OntologyReportQuery,
@@ -601,6 +602,10 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async applyModelEdges(model: string, edges: ModelEdgeRow[]): Promise<ModelEdgeApplyResult> {
     return this.residualEdges.applyModelEdges(model, edges);
+  }
+
+  async applyModelExternalSites(model: string, sites: ModelExternalSiteRow[]): Promise<void> {
+    return this.residualEdges.applyModelExternalSites(model, sites);
   }
 
   async getModelResolvedSiteCounts(thresholds: Readonly<Record<string, number>>): Promise<ModelResolvedSiteCount[]> {

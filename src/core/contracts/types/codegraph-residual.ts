@@ -56,6 +56,8 @@ export interface ResidualCallSiteRow {
  * `cg_symbols_files` row either.
  */
 export interface ModelResolvedSiteCount {
+  /** `edge` — a model edge resolves the site; `external` — the model put its target outside the project (058). */
+  outcome: "edge" | "external";
   language: string | null;
   receiverKind: string | null;
   kind: ResidualKind;
@@ -86,14 +88,39 @@ export interface ModelEdgeApplyResult {
   changed: boolean;
 }
 
+/**
+ * A residual site the model answered "none of these — defined outside the
+ * project" for, at or above `CODEGRAPH_RESIDUAL_NONE_THRESHOLD` (058). `menuHash`
+ * is the residual row's: a re-walk that changes the menu un-counts it.
+ */
+export interface ModelExternalSiteRow {
+  siteKey: string;
+  sourceRelPath: string;
+  menuHash: string;
+  model: string;
+  p: number;
+}
+
 export type EdgeOrigin = "static" | "model";
+
+/**
+ * Shape of the question a residual model is asked. 2: every menu ends with a
+ * "none of these" option and a verdict's `pick` may be null. Folded into the
+ * verdict key, so a verdict given to another shape is never reused.
+ */
+export const RESIDUAL_QUESTION_VERSION = 2;
+
+/** Key of the none option's probability in `ResidualVerdict.probabilities` — never a symbol id. */
+export const RESIDUAL_NONE_PROBABILITY_KEY = "(none)";
 
 export interface ResidualVerdict {
   siteKey: string;
   menuHash: string;
   model: string;
   modelVersion: string;
-  pick: string;
+  /** Candidate symbolId; `null` — none of the menu, the target is outside the project. */
+  pick: string | null;
+  /** Probability of the pick, none included. */
   p: number;
   probabilities: Record<string, number>;
   questionPayload: string;
@@ -121,7 +148,8 @@ export interface ResidualQuestionGroup {
 
 export interface ResidualAnswer {
   siteKey: string;
-  pick: string;
+  /** `null` — none of the menu. */
+  pick: string | null;
   p: number;
   probabilities: Record<string, number>;
   questionPayload: string;
@@ -202,10 +230,12 @@ export interface ResidualPassReport {
   abortedGroups: number;
   /** Groups that timed out and were asked once more at the tail of the queue; a second timeout is a failure. */
   requeuedGroups: number;
-  /** Eligible rows whose verdict is under the provider threshold. */
+  /** Eligible rows whose verdict is under its threshold — the provider's for a pick, the none threshold for none. */
   belowThreshold: number;
   /** Eligible rows whose verdict is at or above the provider threshold. */
   sitesEdged: number;
+  /** Eligible rows the model answered "none of these" for at or above `CODEGRAPH_RESIDUAL_NONE_THRESHOLD`. */
+  externalByModel: number;
   /**
    * Distinct model edges stored. Until 2m83f.29 this counted sites (what
    * `sitesEdged` counts now); sites making the same call to the same target

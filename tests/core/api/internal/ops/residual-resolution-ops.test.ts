@@ -38,6 +38,7 @@ const CONFIG = {
   concurrency: 4,
   menuLimit: 40,
   minMenu: 2,
+  noneThreshold: 0.8,
   retentionDays: 180,
 };
 
@@ -79,6 +80,7 @@ describe("ResidualResolutionOps", () => {
           applied.push(edges);
           return { stored: edges.length, changed: true };
         },
+        applyModelExternalSites: async () => undefined,
         markDerivedStale: async () => undefined,
         computeAndPersistCyclesAndSignals: async () => undefined,
       },

@@ -22,6 +22,7 @@ import type {
   MethodNamePatternQuery,
   MethodTailVerbQuery,
   ModelEdgeRow,
+  ModelExternalSiteRow,
   OntologyReportQuery,
   RelPath,
   ResolveRunStatsRow,
@@ -85,6 +86,7 @@ export const DAEMON_OPS = [
   "pruneDerivedForDeletedFiles",
   // Residual pass: model edges + the derived recompute they force (bd tea-rags-mcp-2m83f).
   "applyModelEdges",
+  "applyModelExternalSites",
   "markDerivedStale",
   // Cone dependents of deleted files (bd tea-rags-mcp-7t2ee).
   "invalidateHierarchyDependentsOfDeletedFiles",
@@ -317,6 +319,7 @@ export interface DaemonOpParamsMap {
   removeSymbolsForFile: { relPath: RelPath };
   pruneDerivedForDeletedFiles: { relPaths: RelPath[] };
   applyModelEdges: { model: string; edges: ModelEdgeRow[] };
+  applyModelExternalSites: { model: string; sites: ModelExternalSiteRow[] };
   markDerivedStale: NoDaemonOpParams;
   invalidateHierarchyDependentsOfDeletedFiles: { relPaths: RelPath[] };
   upsertSymbols: { relPath: RelPath; definitions: SymbolDefinition[] };

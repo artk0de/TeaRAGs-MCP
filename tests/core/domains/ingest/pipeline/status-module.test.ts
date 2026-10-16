@@ -1182,7 +1182,9 @@ describe("StatusModule", () => {
             getEdgeKindDistribution: async () => [],
             getModelResolvedSiteCounts: async (thresholds: unknown) => {
               seenThresholds.push(thresholds);
-              return [{ language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 10 }];
+              return [
+                { outcome: "edge", language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 10 },
+              ];
             },
             close: async () => undefined,
           },

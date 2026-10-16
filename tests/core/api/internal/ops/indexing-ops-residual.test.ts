@@ -43,6 +43,7 @@ const REPORT: ResidualPassReport = {
   requeuedGroups: 0,
   belowThreshold: 0,
   sitesEdged: 1,
+  externalByModel: 0,
   edgesApplied: 1,
   derived: "unchanged",
   durations: { readMs: 1, askMs: 0, applyMs: 1, recomputeMs: 0, totalMs: 2 },
@@ -297,11 +298,12 @@ describe("IndexingOps — residual resolution after enrichment", () => {
               applied.push(model);
               return { stored: 0, changed: false };
             },
+            applyModelExternalSites: async () => undefined,
             markDerivedStale: async () => undefined,
           },
         }),
       } as never,
-      config: { kevThreshold: 0.7, concurrency: 1, menuLimit: 40, minMenu: 4, retentionDays: 180 },
+      config: { kevThreshold: 0.7, concurrency: 1, menuLimit: 40, minMenu: 4, noneThreshold: 0.8, retentionDays: 180 },
       createProvider: (model) => ({
         id: model,
         threshold: 0.7,

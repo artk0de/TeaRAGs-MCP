@@ -104,6 +104,7 @@ describe("isWorkingTreeGraphEntryRequest — residual verdicts (bd tea-rags-mcp-
     threshold: 0.5,
     menuLimit: 16,
     minMenu: 2,
+    noneThreshold: 0.8,
   };
   const withResidual = (value: unknown): Record<string, unknown> => {
     const req = validRequest();
@@ -120,6 +121,7 @@ describe("isWorkingTreeGraphEntryRequest — residual verdicts (bd tea-rags-mcp-
     ["a residual without its collection", { ...residual, logicalName: 3 }],
     ["a residual whose threshold is not a number", { ...residual, threshold: "0.5" }],
     ["a residual without its menu floor", { ...residual, minMenu: undefined }],
+    ["a residual without its none threshold", { ...residual, noneThreshold: undefined }],
   ])("refuses %s", (_label, value) => {
     expect(isWorkingTreeGraphEntryRequest(withResidual(value))).toBe(false);
   });

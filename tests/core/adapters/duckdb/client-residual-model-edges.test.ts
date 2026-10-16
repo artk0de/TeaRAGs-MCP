@@ -422,8 +422,8 @@ describe("DuckDbGraphClient — residual ops", () => {
       await client.applyModelEdges("kev", [EDGE, { ...EDGE, siteKey: "k2" }, { ...EDGE, siteKey: "k3" }]);
 
       expect(await client.getModelResolvedSiteCounts({ kev: 0.7 })).toEqual([
-        { language: "ruby", receiverKind: "dynamic", kind: "ambiguous", model: "kev", sites: 1 },
-        { language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 2 },
+        { outcome: "edge", language: "ruby", receiverKind: "dynamic", kind: "ambiguous", model: "kev", sites: 1 },
+        { outcome: "edge", language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 2 },
       ]);
     });
 
@@ -433,7 +433,7 @@ describe("DuckDbGraphClient — residual ops", () => {
 
       expect(await client.getModelResolvedSiteCounts({ kev: 0.7 })).toEqual([]);
       expect(await client.getModelResolvedSiteCounts({})).toEqual([
-        { language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 1 },
+        { outcome: "edge", language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 1 },
       ]);
     });
 
@@ -442,8 +442,46 @@ describe("DuckDbGraphClient — residual ops", () => {
       await client.applyModelEdges("kev", [EDGE]);
 
       expect(await client.getModelResolvedSiteCounts({ kev: 0.7 })).toEqual([
-        { language: null, receiverKind: null, kind: "dynamic", model: "kev", sites: 1 },
+        { outcome: "edge", language: null, receiverKind: null, kind: "dynamic", model: "kev", sites: 1 },
       ]);
+    });
+
+    it("counts a site the model put outside the project as external, unless a model edge resolves it", async () => {
+      await writeSites([
+        { ...SITE, language: "ruby", receiverKind: "ivar" },
+        { ...SITE, siteKey: "k3", line: 14, receiverText: "firm", language: "ruby", receiverKind: "ivar" },
+      ]);
+      await client.applyModelEdges("kev", [EDGE]);
+      await client.applyModelExternalSites("kev", [
+        { siteKey: "k1", sourceRelPath: "app/billing.rb", menuHash: SITE.menuHash, model: "kev", p: 0.9 },
+        { siteKey: "k3", sourceRelPath: "app/billing.rb", menuHash: SITE.menuHash, model: "kev", p: 0.85 },
+      ]);
+
+      expect(await client.getModelResolvedSiteCounts({ kev: 0.7 })).toEqual([
+        { outcome: "edge", language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 1 },
+        { outcome: "external", language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 1 },
+      ]);
+    });
+
+    it("replaces the model's external sites and drops one whose menu changed since", async () => {
+      await writeSites([{ ...SITE, language: "ruby", receiverKind: "ivar" }]);
+      await client.applyModelExternalSites("kev", [
+        { siteKey: "k1", sourceRelPath: "app/billing.rb", menuHash: "older-menu", model: "kev", p: 0.9 },
+      ]);
+      expect(await client.getModelResolvedSiteCounts({})).toEqual([]);
+
+      await client.applyModelExternalSites("kev", [
+        { siteKey: "k1", sourceRelPath: "app/billing.rb", menuHash: SITE.menuHash, model: "kev", p: 0.9 },
+      ]);
+      await client.applyModelExternalSites("kev", [
+        { siteKey: "k1", sourceRelPath: "app/billing.rb", menuHash: SITE.menuHash, model: "kev", p: 0.95 },
+      ]);
+      expect(await client.queryAll("SELECT site_key, p FROM cg_residual_external_sites")).toEqual([
+        { site_key: "k1", p: 0.95 },
+      ]);
+
+      await client.applyModelExternalSites("kev", []);
+      expect(await client.getModelResolvedSiteCounts({})).toEqual([]);
     });
 
     it("does not count a site with no model edge", async () => {
