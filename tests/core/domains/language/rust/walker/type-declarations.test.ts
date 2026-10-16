@@ -54,7 +54,7 @@ describe("Rust walker — type declaration facts", () => {
       { typeId: "Bits", symbolKind: "class", line: 2, reopens: false },
       { typeId: "Kind", symbolKind: "enum", line: 3, reopens: false },
       { typeId: "Store", symbolKind: "interface", line: 4, reopens: false },
-      { typeId: "Map", symbolKind: "type_alias", line: 5, reopens: false },
+      { typeId: "Map", symbolKind: "type_alias", line: 5, reopens: false, genericParameters: ["T"] },
       { typeId: "MAX", symbolKind: "constant", line: 6, reopens: false },
       { typeId: "COUNTER", symbolKind: "constant", line: 7, reopens: false },
       { typeId: "inner", symbolKind: "module", line: 8, reopens: false },
@@ -222,7 +222,10 @@ describe("Rust walker — type declaration facts leave the rest of the extractio
   ].join("\n");
 
   it("keeps chunks, symbols, CallRefs, bindings and imports as they were", () => {
-    const { typeDeclarations, ...rest } = extract(src);
+    const { typeDeclarations, structuredReturnTypes, ...rest } = extract(src);
+    expect(structuredReturnTypes).toEqual({
+      "src/a.rs::Engine.new": { form: "instance", name: "Self" },
+    });
 
     expect(typeDeclarations?.map((f) => f.typeId)).toEqual([
       "MAX",

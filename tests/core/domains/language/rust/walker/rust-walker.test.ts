@@ -350,7 +350,13 @@ describe("extractFromRustFile — localBindings", () => {
     expect(r.chunks[0].localBindings).toEqual({
       p: [{ line: 1, type: "Foo" }],
       q: [{ line: 1, type: "Bar" }],
-      v: [{ line: 1, type: "Vec" }],
+      v: [
+        {
+          line: 1,
+          type: "Vec",
+          typeRef: { form: "instance", name: "Vec", args: [{ form: "instance", name: "Thing" }] },
+        },
+      ],
     });
   });
 

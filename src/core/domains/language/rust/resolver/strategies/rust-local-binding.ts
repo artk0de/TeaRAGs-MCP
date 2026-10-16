@@ -8,9 +8,7 @@ const RUST_LOCAL_BINDING_TYPING: ReceiverTypingPorts = {
     const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine, call.startColumn);
     if (binding === undefined) return null;
     if (binding.typeRef !== undefined) {
-      return binding.typeRef.form === "instance" && binding.typeRef.name.length > 0
-        ? { form: "instance", name: binding.typeRef.name }
-        : null;
+      return binding.typeRef.form === "instance" && binding.typeRef.name.length > 0 ? binding.typeRef : null;
     }
     if (binding.type.length > 0) return { form: "instance", name: binding.type };
     const callBinding = nearestCallResultBinding(ctx.callResultBindings, call.receiver, call.startLine);

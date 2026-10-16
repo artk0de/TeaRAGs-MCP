@@ -37,6 +37,7 @@ import type {
 import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../associated-constructor.js";
 import { rustNameOf } from "./name-of.js";
+import { collectRustReturnTypes, rustDeclaredTypeRef } from "./return-types.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
 import { isRustLocalScopeBoundary, rustTypeDeclarationFactOf } from "./type-declarations.js";
 
@@ -91,6 +92,8 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
     chunks: byChunk,
     fileScope: [],
   };
+  const structuredReturnTypes = collectRustReturnTypes(input.tree.rootNode, input.relPath);
+  if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
   if (moduleReexports.length > 0) out.moduleReexports = moduleReexports;
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
@@ -225,7 +228,10 @@ function rustTypeRefFor(
   const type = readRustBareType(typeNode);
   if (type === null) return null;
   const bound = genericBounds[type];
-  return bound === undefined ? { type } : { type, typeRef: { form: "instance", name: bound, upperBound: true } };
+  const ref = rustDeclaredTypeRef(typeNode);
+  return bound === undefined
+    ? { type, ...(ref?.form === "instance" && ref.args !== undefined ? { typeRef: ref } : {}) }
+    : { type, typeRef: { form: "instance", name: bound, upperBound: true } };
 }
 
 /**

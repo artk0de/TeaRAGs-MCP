@@ -20,7 +20,9 @@ export const capability: LanguageCapability = {
   testFiles,
   codegraph: {
     tier: "moderate",
-    tech: "7-strategy; trait-based dispatch",
+    tech: "7-strategy; trait-based dispatch; native declared return receiver chains (Self, proven owner generics)",
+    // Generic return substitution reads the declaring owner's genericParameters.
+    resolverReadsTypeDeclarations: true,
     // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
     // A tuple struct is called (`Point(1, 2)`). A call spelled with an enum's name
     // builds a VARIANT (`SpecValue::Style(style)`), never the enum, so an enum is a
@@ -53,7 +55,10 @@ export const capability: LanguageCapability = {
   // `Self::f()` and `Type::new().m()` through an in-project type.
   // walker 3: release v1.44.2 shipped walker 2 and a release cycle gets ONE
   // walker bump, so every branch-local number above collapses into 3.
-  versions: { chunking: 4, walker: 5, codegraphSchema: 2 },
+  // walker 6: bd tea-rags-mcp-2g2og.24 — the walker publishes native declared
+  // returns for receiver chains; the resolver substitutes Self and proven
+  // owner generics without field, import-bound, wrapper or fixpoint propagation.
+  versions: { chunking: 4, walker: 6, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
   // SCREAMING_SNAKE_CASE.
