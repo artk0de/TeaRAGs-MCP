@@ -55,7 +55,21 @@ export function isWorkingTreeGraphEntryRequest(value: unknown): value is Working
     isRecord(input.providerConfig) &&
     typeof input.providerConfig.languageModulePath === "string" &&
     typeof input.providerConfig.migrationsModulePath === "string" &&
-    (input.seed === undefined || isSeed(input.seed))
+    (input.seed === undefined || isSeed(input.seed)) &&
+    (input.residual === undefined || isResidual(input.residual))
+  );
+}
+
+/** The optional `residual` of a request: where the verdicts are and how they apply. */
+function isResidual(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.verdictRootDir === "string" &&
+    typeof value.logicalName === "string" &&
+    typeof value.model === "string" &&
+    typeof value.threshold === "number" &&
+    typeof value.menuLimit === "number" &&
+    typeof value.minMenu === "number"
   );
 }
 

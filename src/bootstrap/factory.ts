@@ -81,6 +81,7 @@ import {
   readPayloadFileCommitCounts,
   readPayloadImportSpecifiers,
   RequestScopedFileFactsReader,
+  RESIDUAL_MODELS,
   ResidualResolutionOps,
   resolveDomainEnvCodeDefaults,
   ReviewChangesOps,
@@ -968,6 +969,15 @@ export function wireCodegraph(
       ambiguousResolveMode: codegraphWorkerConfig.ambiguousResolveMode,
       dbMemoryLimit: codegraphWorkerConfig.dbMemoryLimit,
       dbThreads: codegraphWorkerConfig.dbThreads,
+    },
+    // The verdicts an index run re-applies after its walk; the tree build
+    // re-applies them the same way (`cacheOnly`) to the files it re-walks.
+    residual: {
+      verdictRootDir: rootDir,
+      model: RESIDUAL_MODELS[0],
+      threshold: codegraph.residual.kevThreshold,
+      menuLimit: codegraph.residual.menuLimit,
+      minMenu: codegraph.residual.minMenu,
     },
   };
 

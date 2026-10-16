@@ -63,11 +63,17 @@ function pendingRowsReason(pending: number): string {
   return `${String(pending)} ${pending === 1 ? "row" : "rows"} pending`;
 }
 
+/** How a caller gets the changed files' model edges back when a tree graph was built without them. */
+const MODEL_EDGES_REMEDY =
+  "edges from the changed files lack their model (origin: model) edges; edges between untouched files keep theirs. " +
+  "The next change to the tree rebuilds its graph with them once the index run's residual pass releases the verdict store.";
+
 /**
  * `built` → `floors` gains `"codegraph"` and any earlier unavailability is
  * cleared (one request may read twice — for its rows and for a lookup — each
  * waiting at most {@link WORKING_TREE_SEARCH_GRAPH_WAIT_MS}, so an earlier
- * read's `unavailable` can be followed by a later read's `built`). `unavailable` → `treeGraphUnavailable` names why, unless another
+ * read's `unavailable` can be followed by a later read's `built`); a graph built without the changed files' model
+ * edges sets `degraded` saying so. `unavailable` → `treeGraphUnavailable` names why, unless another
  * read of the same answer did use the tree graph. Mutates `marker`: the view's
  * marker is per request, and its other late fields (`unparsed`) are set the same way.
  */
@@ -75,6 +81,9 @@ export function recordTreeGraphState(marker: WorkingTreeMarker, state: WorkingTr
   if (state.kind === "built") {
     if (!marker.floors.includes("codegraph")) marker.floors = [...marker.floors, "codegraph"];
     delete marker.treeGraphUnavailable;
+    if (state.modelEdgesUnavailable !== undefined && !marker.degraded) {
+      marker.degraded = { reason: state.modelEdgesUnavailable, remedy: MODEL_EDGES_REMEDY };
+    }
     return;
   }
   if (marker.floors.includes("codegraph")) return;
