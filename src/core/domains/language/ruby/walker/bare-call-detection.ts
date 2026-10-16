@@ -247,3 +247,47 @@ function collectParamName(node: AstNode, out: Set<string>): void {
     if (name?.type === "identifier") out.add(name.text);
   }
 }
+
+/**
+ * Every line a `def` assigns each local, ivar or cvar on — params reassigned
+ * in the body included — ascending (bd tea-rags-mcp-2m83f.43), the Ruby
+ * producer of `ChunkExtraction.localAssignmentLines`. Residual receiver
+ * narrowing reads it to split one receiver text into two receivers at an
+ * assignment between its calls. Nested `def` / `class` / `module` bodies are
+ * not entered; block bodies are.
+ */
+export function collectMethodAssignmentLines(methodNode: AstNode): Record<string, number[]> {
+  const lines = new Map<string, Set<number>>();
+  const assign = (target: AstNode | null | undefined): void => {
+    if (target === null || target === undefined) return;
+    if (target.type !== "identifier" && target.type !== "instance_variable" && target.type !== "class_variable") {
+      return;
+    }
+    let assigned = lines.get(target.text);
+    if (assigned === undefined) {
+      assigned = new Set();
+      lines.set(target.text, assigned);
+    }
+    assigned.add(target.startPosition.row + 1);
+  };
+  const assignTargets = (list: AstNode): void => {
+    for (const target of list.namedChildren) {
+      if (target.type === "rest_assignment") assign(target.namedChildren[0]);
+      else if (target.type === "destructured_left_assignment") assignTargets(target);
+      else assign(target);
+    }
+  };
+  const walk = (node: AstNode): void => {
+    if (node !== methodNode && FRESH_SCOPE_NODES.has(node.type)) return;
+    if (node.type === "assignment" || node.type === "operator_assignment") {
+      const lhs = node.childForFieldName("left");
+      if (lhs?.type === "left_assignment_list") assignTargets(lhs);
+      else assign(lhs);
+    }
+    for (const child of node.children) walk(child);
+  };
+  walk(methodNode);
+  const out: Record<string, number[]> = {};
+  for (const [name, assigned] of lines) out[name] = [...assigned].sort((a, b) => a - b);
+  return out;
+}

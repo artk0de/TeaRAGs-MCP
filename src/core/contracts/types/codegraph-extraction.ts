@@ -1169,6 +1169,14 @@ export interface ChunkExtraction {
    */
   assignedLocals?: string[];
   /**
+   * Per def chunk: every local and ivar the def assigns → the 1-based lines of
+   * its assignments, ascending (bd tea-rags-mcp-2m83f.43). Residual receiver
+   * narrowing splits one receiver text into two receivers at each assignment
+   * between its calls. Populated by the Ruby walker; absent when the def assigns
+   * nothing.
+   */
+  localAssignmentLines?: Record<string, number[]>;
+  /**
    * Which of this chunk's `localBindings` are EXACT constructions — name →
    * binding lines, see {@link ConstructedLocalLines} (bd tea-rags-mcp-0qaht.66).
    * Set by the walkers that can prove one; absent when the chunk has none.

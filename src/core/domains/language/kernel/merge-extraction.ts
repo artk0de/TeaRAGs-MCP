@@ -112,6 +112,15 @@ const CHUNK_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<ChunkExtraction> 
   callResultBindings: (base, pass) => mergeLocalBindings(base, pass),
   // A set of names (bd tea-rags-mcp-m99j1.1.57): union, base order first.
   assignedLocals: (base, pass) => [...new Set([...(base ?? []), ...pass])],
+  // Name → ascending assignment lines (bd tea-rags-mcp-2m83f.43): per name, the
+  // union of both sides' lines, re-sorted.
+  localAssignmentLines: (base, pass) => {
+    const out: Record<string, number[]> = { ...(base ?? {}) };
+    for (const [name, lines] of Object.entries(pass)) {
+      out[name] = [...new Set([...(out[name] ?? []), ...lines])].sort((a, b) => a - b);
+    }
+    return out;
+  },
   // Name → exact-construction binding lines (bd tea-rags-mcp-0qaht.66): union
   // of KEYS, the base's lines kept on a shared name.
   constructedLocals: (base, pass) => ({ ...pass, ...base }),

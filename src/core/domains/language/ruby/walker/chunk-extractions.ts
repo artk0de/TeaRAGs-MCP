@@ -19,7 +19,7 @@ import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph
 import type { CallRef, ChunkExtraction } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import type { RubyDslCatalogue } from "../dsl/index.js";
-import { collectMethodAssignedLocals } from "./bare-call-detection.js";
+import { collectMethodAssignedLocals, collectMethodAssignmentLines } from "./bare-call-detection.js";
 import type { RubyFileTypeEnv } from "./file-type-env.js";
 import {
   bindCompoundReceiverChains,
@@ -97,8 +97,11 @@ export function buildRubyChunkExtractions(
     // The innermost def CONTAINING the chunk, so a split window of a long def
     // carries its def's locals too. Not gated on `trackTypes`: membership is a
     // syntactic fact, like Python's.
-    const assignedLocals = innermostMethodLocals(methodLocals, c.startLine, c.endLine);
-    if (assignedLocals !== undefined) base.assignedLocals = assignedLocals;
+    const method = innermostMethod(methodLocals, c.startLine, c.endLine);
+    if (method !== undefined && method.names.length > 0) base.assignedLocals = method.names;
+    if (method !== undefined && Object.keys(method.assignmentLines).length > 0) {
+      base.localAssignmentLines = method.assignmentLines;
+    }
     if (trackTypes) {
       // Store provides YARD + AST param/local bindings (position-filtered to chunk).
       const localBindings = store.localBindingsForChunk(c.startLine, c.endLine);
@@ -171,6 +174,8 @@ interface RubyMethodAssignedLocals {
   readonly startLine: number;
   readonly endLine: number;
   readonly names: string[];
+  /** Name → ascending assignment lines (bd tea-rags-mcp-2m83f.43). */
+  readonly assignmentLines: Record<string, number[]>;
 }
 
 /**
@@ -186,6 +191,7 @@ function collectRubyMethodAssignedLocals(root: AstNode): RubyMethodAssignedLocal
         startLine: node.startPosition.row + 1,
         endLine: node.endPosition.row + 1,
         names: [...collectMethodAssignedLocals(node)].sort(),
+        assignmentLines: collectMethodAssignmentLines(node),
       });
     }
     for (const child of node.namedChildren) walk(child);
@@ -194,19 +200,16 @@ function collectRubyMethodAssignedLocals(root: AstNode): RubyMethodAssignedLocal
   return methods;
 }
 
-/**
- * Locals of the narrowest def whose lines contain `[startLine, endLine]`;
- * `undefined` when no def contains the chunk or that def assigns nothing.
- */
-function innermostMethodLocals(
+/** The narrowest def whose lines contain `[startLine, endLine]`; `undefined` when none does. */
+function innermostMethod(
   methods: readonly RubyMethodAssignedLocals[],
   startLine: number,
   endLine: number,
-): string[] | undefined {
+): RubyMethodAssignedLocals | undefined {
   let best: RubyMethodAssignedLocals | undefined;
   for (const m of methods) {
     if (startLine < m.startLine || endLine > m.endLine) continue;
     if (best === undefined || m.endLine - m.startLine < best.endLine - best.startLine) best = m;
   }
-  return best !== undefined && best.names.length > 0 ? best.names : undefined;
+  return best;
 }
