@@ -111,7 +111,10 @@ export const capability: LanguageCapability = {
   // untyped receiver (`form.save!`, `value.presence`) is externalSkipped unless a
   // namesake sits in the AR model hierarchy, so a walker-17 index holds residual
   // rows and recall misses for those calls.
-  versions: { chunking: 2, walker: 18, codegraphSchema: 2 },
+  // walker 19: bd tea-rags-mcp-2m83f.48 — every argument of `include A, B`, `send(:include, X)`,
+  // `X.include(Y)`, `X.class_eval { include Y }`, `base.include(Y)` in an `included` hook and a
+  // top-level `include` are recorded; an unreadable mixin publishes `unresolvedMixinClasses`.
+  versions: { chunking: 2, walker: 19, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

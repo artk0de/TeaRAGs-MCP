@@ -542,6 +542,13 @@ export class CodegraphRunState {
   compactClasses = new Set<string>();
 
   /**
+   * Per-run union of `FileExtraction.unresolvedMixinClasses` (bd
+   * tea-rags-mcp-2m83f.48): classes carrying a mixin the walker cannot read.
+   * Reset alongside `compactClasses`.
+   */
+  unresolvedMixinClasses = new Set<string>();
+
+  /**
    * Per-run aggregation of `FileExtraction.classPrependedAncestors` (bd
    * tea-rags-mcp-3jvn). Same lifecycle and family partitioning as `ancestors`;
    * walked BEFORE the bound class itself so prepended modules' methods shadow
@@ -1157,6 +1164,9 @@ export class CodegraphRunState {
     // the seal resolves them after hydration, over walked and hydrated alike.
     rubyInstantiationSites: (slice) => {
       this.addInstantiationSites(slice.language, slice.rubyInstantiationSites);
+    },
+    unresolvedMixinClasses: (slice) => {
+      for (const fq of slice.unresolvedMixinClasses ?? []) this.unresolvedMixinClasses.add(fq);
     },
     // Ruby `self.table_name` overrides (bd tea-rags-mcp-39xca.9). The schema-column
     // pre-pass reads this map at the barrier, and `seal` runs this hydration before
@@ -1893,6 +1903,8 @@ export class CodegraphRunState {
       this.stats = createEmptyRunStats();
       this.ancestorsByFamily = new LanguageFamilyRecord();
       this.compactClasses = new Set();
+      this.unresolvedMixinClasses = new Set();
+      this.unresolvedMixinClasses = new Set();
       this.declaredDependencies = NO_DECLARED_DEPENDENCIES;
       this.declaredDependenciesLoaded = false;
       this.projectRoot = undefined;
@@ -1980,6 +1992,7 @@ export class CodegraphRunState {
     this.stats = createEmptyRunStats();
     this.ancestorsByFamily = new LanguageFamilyRecord();
     this.compactClasses = new Set();
+    this.unresolvedMixinClasses = new Set();
     this.declaredDependencies = NO_DECLARED_DEPENDENCIES;
     this.declaredDependenciesLoaded = false;
     this.projectRoot = undefined;
@@ -2083,6 +2096,7 @@ export class CodegraphRunState {
     this.extractedCallSitesByRelPath.clear();
     this.mirroredRelPaths.clear();
     this.compactClasses = new Set();
+    this.unresolvedMixinClasses = new Set();
     this.declaredDependencies = NO_DECLARED_DEPENDENCIES;
     this.declaredDependenciesLoaded = false;
     this.projectRoot = undefined;
@@ -2134,6 +2148,7 @@ export class CodegraphRunState {
     this.extractedCallSitesByRelPath.clear();
     this.mirroredRelPaths.clear();
     this.compactClasses = new Set();
+    this.unresolvedMixinClasses = new Set();
     this.declaredDependencies = NO_DECLARED_DEPENDENCIES;
     this.declaredDependenciesLoaded = false;
     this.projectRoot = undefined;
@@ -2236,6 +2251,7 @@ export class CodegraphRunState {
     if (extraction.compactDeclaredClasses) {
       for (const fq of extraction.compactDeclaredClasses) this.compactClasses.add(fq);
     }
+    for (const fq of extraction.unresolvedMixinClasses ?? []) this.unresolvedMixinClasses.add(fq);
     if (openClasses) {
       this.mergeClassHeritage(extraction, "prependedAncestors");
       this.mergeClassHeritage(extraction, "classExtends");

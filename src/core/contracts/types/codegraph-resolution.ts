@@ -517,6 +517,12 @@ export interface CallContext {
    */
   compactDeclaredClasses?: ReadonlySet<string>;
   /**
+   * Ruby classes carrying a mixin the walker cannot read (bd
+   * tea-rags-mcp-2m83f.48), run-global from `FileExtraction.unresolvedMixinClasses`.
+   * Such a class and its descendants may reach any module.
+   */
+  unresolvedMixinClasses?: ReadonlySet<string>;
+  /**
    * Every dependency the project DECLARES in the CALLER file's language's
    * manifests, read once per run and normalized per language — the value a
    * framework vocabulary activates against (Ruby: the root `Gemfile`'s gems;

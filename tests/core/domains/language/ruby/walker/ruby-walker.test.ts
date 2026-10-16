@@ -1138,12 +1138,11 @@ describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => 
   // — must NOT be treated as a class-level mixin. mixinTargetFromStatement
   // bails on `node.childForFieldName("receiver")`. Drives the receiver-guard
   // false branch.
-  it("ignores mixin-shaped calls with an explicit receiver", () => {
+  it("reads `self.include Bar` as the class's own mixin (bd 2m83f.48)", () => {
     const src = "class Foo\n  self.include Bar\n  include Qux\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
-    // `self.include Bar` has a receiver — skipped. Only `include Qux` lands.
-    expect(r.classAncestors?.["Foo"]).toEqual(["Qux"]);
+    expect(r.classAncestors?.["Foo"]).toEqual(["Bar", "Qux"]);
   });
 });
 
@@ -1230,7 +1229,7 @@ describe("extractFromRubyFile — heritage inside class-body blocks", () => {
     const src = "class A\n  Helper.class_eval do\n    include Bar\n  end\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
-    expect(r.classAncestors).toBeUndefined();
+    expect(r.classAncestors).toEqual({ Helper: ["Bar"] });
   });
 
   it("keeps block-declared mixins in source order alongside body-declared ones", () => {

@@ -115,6 +115,9 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   // every seal, because a declaration in another file moves the class a site
   // names. Appended last.
   rubyInstantiationSites: { policy: "hydrate", sliceField: "rubyInstantiationSites" },
+  // Ruby unresolved mixins (bd 2m83f.48): the model that includes an opaque
+  // concern is usually walked in another file than the concern. Appended last.
+  unresolvedMixinClasses: { policy: "hydrate", sliceField: "unresolvedMixinClasses" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",

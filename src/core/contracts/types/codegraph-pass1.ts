@@ -377,4 +377,10 @@ export interface CodegraphPass1FileAggregates {
    * other row keeps its bytes.
    */
   rubyInstantiationSites?: readonly RubyInstantiationSite[];
+  /**
+   * Ruby classes carrying a mixin the walker cannot read (bd
+   * tea-rags-mcp-2m83f.48), as `FileExtraction.unresolvedMixinClasses`. Union-
+   * merged at hydration. Persisted LAST, so every other row keeps its bytes.
+   */
+  unresolvedMixinClasses?: readonly string[];
 }

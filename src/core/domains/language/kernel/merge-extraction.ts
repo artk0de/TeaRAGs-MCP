@@ -154,6 +154,7 @@ const FILE_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<FileExtraction> = 
   // (`Set` preserves insertion order; it never leaves this function, so the
   // NDJSON spill still sees a plain array).
   compactDeclaredClasses: (base, pass) => [...new Set([...(base ?? []), ...pass])],
+  unresolvedMixinClasses: (base, pass) => [...new Set([...(base ?? []), ...pass])],
   instantiatedTypes: (base, pass) => [...new Set([...(base ?? []), ...pass])],
   // Structured sites dedupe by VALUE (name, anchor, nesting), first kept.
   rubyInstantiationSites: (base, pass) => dedupeInstantiationSites([...(base ?? []), ...pass]),

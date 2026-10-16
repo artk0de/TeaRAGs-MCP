@@ -11,8 +11,13 @@
  * - any member on a LITERAL receiver — `7.days`, `"a,b".split`. The receiver's
  *   class is the literal's core class; only a project patch of that class (or of
  *   a module it mixes in) can be the callee.
+ *
+ * Both read the walker's ancestry, which cannot see every mixin: a class in the
+ * reachable set carrying an unresolved mixin (`include some_var`, bd
+ * tea-rags-mcp-2m83f.48) may reach any module, so then every namesake that may
+ * live on a module blocks the claim.
  */
-import type { CallContext } from "../../../../contracts/types/codegraph.js";
+import type { CallContext, SymbolDefinitionKind } from "../../../../contracts/types/codegraph.js";
 import { ACTIVE_RECORD_QUERY_INTERFACE, RAILS_UNTYPED_RECEIVER_MEMBERS } from "../dsl/index.js";
 import { lastConstantSegment, lookupRubySymbolsByShortName, railsVocabularyActive } from "./strategies/index.js";
 
@@ -89,6 +94,26 @@ function instanceOwnerOf(symbolId: string): string | null {
   return hash === -1 ? "" : symbolId.slice(0, hash);
 }
 
+const MODULE_KIND: ReadonlySet<SymbolDefinitionKind> = new Set(["module"]);
+const CLASS_KIND: ReadonlySet<SymbolDefinitionKind> = new Set(["class"]);
+
+/** A reachable class (full name or last segment) carries a mixin the walker could not read. */
+function reachesUnreadMixin(reachable: ReadonlySet<string>, ctx: CallContext): boolean {
+  for (const fq of ctx.unresolvedMixinClasses ?? []) {
+    if (reachable.has(fq) || reachable.has(lastConstantSegment(fq))) return true;
+  }
+  return false;
+}
+
+/** False only for an owner declared as a class and never as a module (a kindless row counts as either). */
+function mayBeModule(owner: string, ctx: CallContext): boolean {
+  const { symbolTable } = ctx;
+  return (
+    symbolTable.lookup(owner, { kinds: MODULE_KIND }).length > 0 ||
+    symbolTable.lookup(owner, { kinds: CLASS_KIND }).length === 0
+  );
+}
+
 /** Instance-method owners of every Ruby namesake of `member`, schema columns included. */
 function instanceOwners(member: string, ctx: CallContext): string[] {
   return lookupRubySymbolsByShortName(ctx, member, { role: "callee", includeSchemaColumns: true })
@@ -106,12 +131,14 @@ export function railsMemberTargetsFramework(member: string, ctx: CallContext): b
   const ancestors = ctx.classAncestors;
   if (ancestors === undefined) return false;
   const hierarchy = modelHierarchy(ancestors);
+  const open = reachesUnreadMixin(hierarchy, ctx);
   return instanceOwners(member, ctx).every(
     (owner) =>
       owner !== "" &&
       !REOPENED_RUNTIME_OWNERS.has(owner) &&
       !hierarchy.has(owner) &&
-      !hierarchy.has(lastConstantSegment(owner)),
+      !hierarchy.has(lastConstantSegment(owner)) &&
+      !(open && mayBeModule(owner, ctx)),
   );
 }
 
@@ -145,7 +172,12 @@ export function literalMemberIsExternal(literalClass: string, member: string, ct
     collectAncestors(core, ctx.classAncestors ?? {}, reachable);
   }
   for (const name of [...reachable]) reachable.add(lastConstantSegment(name));
+  const open = reachesUnreadMixin(reachable, ctx);
   return instanceOwners(member, ctx).every(
-    (owner) => owner !== "" && !reachable.has(owner) && !reachable.has(lastConstantSegment(owner)),
+    (owner) =>
+      owner !== "" &&
+      !reachable.has(owner) &&
+      !reachable.has(lastConstantSegment(owner)) &&
+      !(open && mayBeModule(owner, ctx)),
   );
 }
