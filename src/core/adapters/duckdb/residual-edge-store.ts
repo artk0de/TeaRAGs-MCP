@@ -77,8 +77,10 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
     const rows = await this.session.queryAll<ResidualSiteDbRow>(
       `SELECT site_key, source_rel_path, method_symbol_id, method_start_line, method_end_line, line, call_column,
               receiver_text, member, kind, candidates, menu_hash, menu_overflow, language, receiver_kind, reason,
-              receiver_group, class_targets, downstream_group
-         FROM cg_residual_call_sites ORDER BY source_rel_path, site_key`,
+              receiver_group, coalesce(r.class_targets, s.class_targets) AS class_targets, downstream_group
+         FROM cg_residual_call_sites r
+         LEFT JOIN cg_residual_class_sets s ON s.set_key = r.class_set
+        ORDER BY source_rel_path, site_key`,
     );
     return rows.map((r) => ({
       siteKey: r.site_key,

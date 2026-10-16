@@ -38,7 +38,11 @@ import {
 } from "./cg-pass1-aggregates-row.js";
 import { encodeFileEdgeExportNames, encodeReexportBindings } from "./file-edge-export-names-codec.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
-import { encodeResidualClassTargets } from "./residual-class-targets-codec.js";
+import {
+  encodeResidualClassTargets,
+  residualClassSetKey,
+  ROW_CLASS_TARGETS_LIMIT,
+} from "./residual-class-targets-codec.js";
 
 /**
  * Files per write group in {@link DuckDbFileGraphStore#writeFileRowsBulk}.
@@ -131,6 +135,8 @@ const RESIDUAL_VALUES = [
   "class_targets",
   // Migration 062 (bd tea-rags-mcp-2m83f.51): the chain hop an accepted class types.
   "downstream_group",
+  // Migration 063 (bd tea-rags-mcp-2m83f.52): the shared class set a large group's row names.
+  "class_set",
 ] as const;
 // Migration 039 (bd tea-rags-mcp-7t2ee): one row per (file, type it asked about).
 const HIERARCHY_DEPENDENCY_KEYS = ["source_rel_path", "type_name"] as const;
@@ -256,6 +262,8 @@ export class DuckDbFileGraphStore {
     const inheritanceRows: unknown[][] = [];
     const fanoutRows: unknown[][] = [];
     const residualRows: unknown[][] = [];
+    /** Encoded class sets over the row limit, by key: stored once in `cg_residual_class_sets`. */
+    const classSets = new Map<string, string>();
     const pass1Rows: unknown[][] = [];
     const typeOnlyFileEdgeRows: unknown[][] = [];
     const hierarchyDependencyRows: unknown[][] = [];
@@ -342,6 +350,12 @@ export class DuckDbFileGraphStore {
       // Residual call sites: the slice is keyed by the NODE's path, so a row can
       // only land under the file being written; an absent field clears it.
       for (const r of edges.residualCallSites ?? []) {
+        const encoded = r.classTargets === undefined ? null : encodeResidualClassTargets(r.member, r.classTargets);
+        const shared =
+          encoded !== null && (r.classTargets?.length ?? 0) > ROW_CLASS_TARGETS_LIMIT
+            ? residualClassSetKey(r.member, encoded)
+            : null;
+        if (shared !== null && encoded !== null) classSets.set(shared, encoded);
         residualRows.push([
           node.relPath,
           r.siteKey,
@@ -360,8 +374,9 @@ export class DuckDbFileGraphStore {
           r.receiverKind ?? null,
           r.reason ?? null,
           r.receiverGroup ?? null,
-          r.classTargets === undefined ? null : encodeResidualClassTargets(r.member, r.classTargets),
+          shared === null ? encoded : null,
           r.downstreamGroup ?? null,
+          shared,
         ]);
       }
       // The pass-1 slice, keyed by the NODE's path rather than the slice's own,
@@ -441,6 +456,7 @@ export class DuckDbFileGraphStore {
       RESIDUAL_VALUES,
       residualRows,
     );
+    if (classSets.size > 0) await this.storeResidualClassSets(classSets);
     // Pass-1 aggregate slice (bd tea-rags-mcp-znxg8). Scoped by `rel_path` like
     // the node table rather than `source_rel_path`, because the row IS the file.
     // Riding the same reconciliation as the edges is the point: the slice is
@@ -612,6 +628,31 @@ export class DuckDbFileGraphStore {
     return rows.map(fromCgPass1Row);
   }
 
+  /**
+   * Drops the class sets no residual row names any more, then adds this
+   * group's. A key the group stores is never deleted in the same transaction:
+   * a delete and re-insert of one key is the shape DuckDB aborts on (see
+   * {@link DuckDbGraphSession#applyScopedRowDiff}).
+   */
+  private async storeResidualClassSets(classSets: ReadonlyMap<string, string>): Promise<void> {
+    const keys = [...classSets.keys()];
+    await this.session.run(
+      `DELETE FROM cg_residual_class_sets
+        WHERE set_key NOT IN (SELECT class_set FROM cg_residual_call_sites WHERE class_set IS NOT NULL)
+          AND set_key NOT IN (${keys.map(() => "?").join(", ")})`,
+      keys,
+    );
+    await this.session.insertOrIgnoreBatched("cg_residual_class_sets", ["set_key", "class_targets"], [...classSets]);
+  }
+
+  /** Drops the class sets no residual row names any more; a removal only deletes, so no key comes back. */
+  private async pruneResidualClassSets(): Promise<void> {
+    await this.session.exec(
+      `DELETE FROM cg_residual_class_sets
+        WHERE set_key NOT IN (SELECT class_set FROM cg_residual_call_sites WHERE class_set IS NOT NULL)`,
+    );
+  }
+
   async removeFile(relPath: RelPath): Promise<void> {
     // Every table of the removed-file cascade (see REMOVED_FILE_EDGE_TABLES),
     // in one transaction so a partial failure leaves the DB consistent.
@@ -628,6 +669,7 @@ export class DuckDbFileGraphStore {
       for (const table of REMOVED_FILE_REL_PATH_TABLES) {
         await this.session.run(`DELETE FROM ${table} WHERE rel_path = ?`, [relPath]);
       }
+      await this.pruneResidualClassSets();
     });
   }
 
@@ -669,6 +711,7 @@ export class DuckDbFileGraphStore {
       for (const table of REMOVED_FILE_REL_PATH_TABLES) {
         await this.session.exec(`DELETE FROM ${table} WHERE rel_path IN ${removed}`);
       }
+      await this.pruneResidualClassSets();
       await this.session.exec(`DROP TABLE ${REMOVED_PATHS_TEMP_TABLE}`);
     });
   }
