@@ -42,6 +42,14 @@ export interface PythonTypeSourceInput {
    * `local` facts (bd tea-rags-mcp-m99j1.1.30); absent = arms stay bare.
    */
   readonly qualifyTypeName?: (written: string) => string;
+  /** The declared ORM's relation classes and query verbs (bd tea-rags-mcp-2m83f.32.4); absent = no ORM. */
+  readonly relation?: PythonRelationVocabulary;
+}
+
+/** What the `ast` source needs to read `return self.filter(…)` in a queryset as the receiver. */
+export interface PythonRelationVocabulary {
+  readonly classes: ReadonlySet<string>;
+  readonly verbs: ReadonlySet<string>;
 }
 
 export interface PythonTypedParam {

@@ -26,7 +26,11 @@ import {
   type NominalTypeRef,
   type ReceiverTypePorts,
 } from "../../../kernel/index.js";
-import { isPythonFrameworkAnswerClass, pythonVocabularyFor } from "../../vocabulary/frameworks/index.js";
+import {
+  isPythonFrameworkAnswerClass,
+  pythonVocabularyFor,
+  type PythonFrameworkMemberTypes,
+} from "../../vocabulary/frameworks/index.js";
 import { PYTHON_SELF_RETURN } from "../../walker/passes/python-type-annotation.js";
 import { pythonMemberReturnKey, pythonModuleReturnKey } from "../../walker/passes/python-type-channels.js";
 import { placePythonClassSpelling } from "./python-ancestor-policy.js";
@@ -441,6 +445,10 @@ function pythonFrameworkReturnType(
     ) {
       return owner;
     }
+    if (!isRelationClass && access === "call") {
+      const carried = pythonProjectRelationVerbType(owner, member, vocabulary, ctx, mapper, linearizer);
+      if (carried !== undefined) return carried;
+    }
     if (isRelationClass) {
       // Every relation-class answer is a verb's, so an attribute read gets none.
       if (access === "attribute" || model === undefined) continue;
@@ -459,6 +467,54 @@ function pythonFrameworkReturnType(
       : { form: "instance", name: attribute.className };
   }
   return null;
+}
+
+/**
+ * A query verb on a PROJECT queryset or manager (bd tea-rags-mcp-2m83f.32.4):
+ * `QuerySet._chain()` clones the receiver's own class, so
+ * `BookQuerySet.filter` is still a `BookQuerySet`, and a manager built by
+ * `from_queryset` hands out the queryset it copied — the first class of its
+ * MRO that is a queryset and no manager. A manager carrying none answers the
+ * framework's relation of its model, when it knows one. `.first()` and the
+ * other instance verbs yield the model and end the relation.
+ *
+ * `undefined` = not this owner's case (no verb, or not a relation subclass);
+ * the vocabulary loop goes on.
+ */
+function pythonProjectRelationVerbType(
+  owner: NominalTypeRef,
+  member: string,
+  vocabulary: PythonFrameworkMemberTypes,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): TypeRef | undefined {
+  const keepsRelation = vocabulary.relationReturning.has(member);
+  if (!keepsRelation && !vocabulary.instanceReturning.has(member)) return undefined;
+  if (!pythonDescendsFromAny(owner.name, vocabulary.relationClasses, ctx, mapper, linearizer)) return undefined;
+  const model = owner.args?.[0];
+  if (!keepsRelation) return model;
+  const queryset = new Set([lastSegment(vocabulary.relationClass)]);
+  const managers = new Set([...vocabulary.relationClasses].filter((name) => !queryset.has(name)));
+  if (!pythonDescendsFromAny(owner.name, managers, ctx, mapper, linearizer)) return owner;
+  const ownerKey = pythonReceiverClassKey(owner.name, ctx, mapper);
+  const carrier =
+    ownerKey === null || linearizer === undefined
+      ? undefined
+      : linearizer
+          .linearize(ownerKey)
+          .order.find(
+            (key) =>
+              key !== ownerKey &&
+              pythonDescendsFromAny(key, queryset, ctx, mapper, linearizer) &&
+              !pythonDescendsFromAny(key, managers, ctx, mapper, linearizer),
+          );
+  if (carrier !== undefined) {
+    return owner.args === undefined
+      ? { form: "instance", name: carrier }
+      : { form: "instance", name: carrier, args: owner.args };
+  }
+  return model === undefined ? undefined : { form: "instance", name: vocabulary.relationClass, args: [model] };
 }
 
 /**
@@ -486,7 +542,7 @@ export function pythonOwnerIndependentMemberType(member: string, ctx: CallContex
  * read as WRITTEN (`models.Model` → `Model`), because the model base is the
  * framework's and the hierarchy leaves the project exactly there.
  */
-function pythonDescendsFromAny(
+export function pythonDescendsFromAny(
   bareType: string,
   baseNames: ReadonlySet<string>,
   ctx: CallContext,

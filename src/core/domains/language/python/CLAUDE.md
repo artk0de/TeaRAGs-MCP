@@ -99,7 +99,8 @@
   BEFORE the project-wide declaration hop, which otherwise pinned polar's only
   `select` (a backoffice form helper) on every `sql.select(Model)` whose
   `sql.py` re-exports sqlalchemy's (bd tea-rags-mcp-m99j1.1.32).
-- **`chainType` is the ONLY reader of `structuredReturnTypes`.**
+- **`chainType` (and `relationChain`, through the same fold) are the ONLY
+  readers of `structuredReturnTypes`.**
   `resolver/strategies/python-chain-type.ts` sits between `localBinding` and
   `importedName` and folds the receiver through the kernel walk with
   `createPythonReceiverTypePorts(mapper)` — called once in the constructor, off
@@ -481,20 +482,30 @@
   once and must stay byte-identical. Every DEEPER hop of that walk, and every
   other reader of the map, still trusts a run-global short-name index (bd
   tea-rags-mcp-w205u, E4.4c — a channel defect, not a `super()` one).
-- **Chain order is a correctness argument, not a preference.** Ten passes:
+- **Chain order is a correctness argument, not a preference.** Eleven passes:
   `super`, `clsMember`, `selfField`, `selfMember`, `callableParam`,
-  `localBinding`, `chainType`, `namingConvention`, `importedName`,
-  `globalShortName`, composed in ONE place (`createPythonSymbolResolutionChain`
-  in `resolver/python-chain-factory.ts` — both offline harnesses call it,
-  because the hand-copied duplicates drifted and voided every number the oracle
-  printed; read the order there, never from this list). The guards (`super`,
-  `selfField`, `selfMember`, `localBinding`) DROP rather than fall through,
-  which is what keeps `serializer.is_valid()` off an unrelated class.
-  `callableParam` sits ahead of the import / naming / short-name passes because
-  a parameter shadows every module-scope name, and ahead of `localBinding` only
-  to keep `localBinding → chainType → namingConvention → importedName`
+  `localBinding`, `chainType`, `relationChain`, `namingConvention`,
+  `importedName`, `globalShortName`, composed in ONE place
+  (`createPythonSymbolResolutionChain` in `resolver/python-chain-factory.ts` —
+  both offline harnesses call it, because the hand-copied duplicates drifted and
+  voided every number the oracle printed; read the order there, never from this
+  list). The guards (`super`, `selfField`, `selfMember`, `localBinding`) DROP
+  rather than fall through, which is what keeps `serializer.is_valid()` off an
+  unrelated class. `callableParam` sits ahead of the import / naming /
+  short-name passes because a parameter shadows every module-scope name, and
+  ahead of `localBinding` only to keep
+  `localBinding → chainType → relationChain → namingConvention → importedName`
   contiguous: it DECLINES a call whose name the walker bound in the chunk, so a
   typed binding still answers first.
+- **A Django relation of a model is `relationChain`'s, never a guess's** (bd
+  tea-rags-mcp-2m83f.32.4). `chainType` spares a typed miss on Django's own
+  `QuerySet[Model]` / `Manager[Model]` from its DROP; `relationChain`
+  (`resolver/strategies/python-relation-chain.ts`, the kernel's
+  `OrmRelationChainSymbolResolutionStrategy`) resolves the member on the
+  queryset class one of the model's managers carries — pinned and agreed by
+  every manager — and DROPs otherwise. A PROJECT queryset or manager never
+  reaches it: query verbs keep the project class (`pythonFrameworkReturnType`),
+  so `chainType` resolves those directly.
 - **`cls` is the enclosing class, and `clsMember` is the only pass that says
   so.** It sits directly after `super` and asks `selfMember`'s question with
   `spellingOrder: "classFirst"`, because `classifyMethod` files a `@classmethod`

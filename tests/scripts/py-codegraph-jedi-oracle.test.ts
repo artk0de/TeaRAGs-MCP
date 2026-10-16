@@ -80,6 +80,7 @@ describe("buildPythonChain", () => {
       "callableParam",
       "localBinding",
       "chainType",
+      "relationChain",
       "namingConvention",
       "importedName",
       "globalShortName",

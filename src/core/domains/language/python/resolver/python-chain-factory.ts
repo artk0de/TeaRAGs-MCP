@@ -44,6 +44,7 @@ import { PythonAncestorLinearizerCache } from "./strategies/python-ancestor-poli
 import { PythonCallableParamTargets } from "./strategies/python-callable-param-targets.js";
 import { PythonCallableParamSymbolResolutionStrategy } from "./strategies/python-callable-param.js";
 import { PythonImportFileMapper } from "./strategies/python-import-file-mapper.js";
+import { PythonRelationChainSymbolResolutionStrategy } from "./strategies/python-relation-chain.js";
 
 /**
  * The production chain, in production order.
@@ -86,6 +87,7 @@ export function createPythonSymbolResolutionChain(
     new PythonCallableParamSymbolResolutionStrategy(new PythonCallableParamTargets(mapper)),
     new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonChainTypeSymbolResolutionStrategy(cfg, mapper, linearizers),
+    new PythonRelationChainSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonNamingConventionSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonImportedNameSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonGlobalShortNameSymbolResolutionStrategy(cfg),

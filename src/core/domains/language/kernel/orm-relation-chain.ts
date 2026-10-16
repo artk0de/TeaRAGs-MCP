@@ -21,7 +21,7 @@
  * Gates are ordered and short-circuit: an inactive vocabulary never types the
  * receiver, a non-relation never walks the model.
  */
-import { CONTINUE, resolved } from "../../../contracts/resolution.js";
+import { CONTINUE, DROP, resolved } from "../../../contracts/resolution.js";
 import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy, TypeRef } from "../../../contracts/types/language.js";
 import { hasReceiver, type ReceiverTypingPorts } from "./receiver-typed-strategies.js";
@@ -36,15 +36,27 @@ export interface OrmRelationPorts {
   memberOnModel: (model: string, member: string, ctx: CallContext) => SymbolResolutionTarget | null;
 }
 
+/** How a relation receiver whose model declares no pinned member ends. */
+interface OrmRelationChainOptions {
+  /**
+   * DROP instead of CONTINUE — for a language whose earlier typed pass spared
+   * the relation from its own typed-miss DROP, so no later guard holds the call
+   * back from the short-name passes.
+   */
+  readonly dropOnMiss?: boolean;
+}
+
 /**
  * Three-state verdict: `resolved` only on a member PINNED on the model's class
- * side; `CONTINUE` otherwise, so the language's later guards keep the call.
+ * side; `CONTINUE` otherwise, so the language's later guards keep the call —
+ * or `DROP` on a relation miss under {@link OrmRelationChainOptions.dropOnMiss}.
  */
 export class OrmRelationChainSymbolResolutionStrategy implements SymbolResolutionStrategy {
   constructor(
     readonly name: string,
     private readonly typing: ReceiverTypingPorts,
     private readonly ports: OrmRelationPorts,
+    private readonly options: OrmRelationChainOptions = {},
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
@@ -54,7 +66,8 @@ export class OrmRelationChainSymbolResolutionStrategy implements SymbolResolutio
     const model = this.ports.relationModelOf(type, ctx);
     if (model === undefined) return CONTINUE;
     const target = this.ports.memberOnModel(model, call.member, ctx);
-    return target?.targetSymbolId ? resolved(target) : CONTINUE;
+    if (target?.targetSymbolId) return resolved(target);
+    return this.options.dropOnMiss === true ? DROP : CONTINUE;
   }
 }
 

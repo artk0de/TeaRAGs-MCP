@@ -40,6 +40,8 @@ const PRODUCTION_ORDER = [
   "callableParam",
   "localBinding",
   "chainType",
+  // bd tea-rags-mcp-2m83f.32.4 — a framework relation of a model settles here.
+  "relationChain",
   "namingConvention",
   "importedName",
   "globalShortName",
@@ -81,9 +83,14 @@ describe("createPythonSymbolResolutionChain", () => {
    * After `chainType` so every typed channel answers first; before
    * `importedName` so a guess never preempts a binding the walker recorded.
    */
-  it("places namingConvention between chainType and importedName — the seam-5 insertion point", () => {
+  it("places relationChain directly after chainType — it settles the relations chainType spares", () => {
     const names = createPythonSymbolResolutionChain(cfg).map((pass) => pass.name);
-    expect(names.indexOf("namingConvention")).toBe(names.indexOf("chainType") + 1);
+    expect(names.indexOf("relationChain")).toBe(names.indexOf("chainType") + 1);
+  });
+
+  it("places namingConvention between the typed passes and importedName — the seam-5 insertion point", () => {
+    const names = createPythonSymbolResolutionChain(cfg).map((pass) => pass.name);
+    expect(names.indexOf("namingConvention")).toBe(names.indexOf("relationChain") + 1);
     expect(names.indexOf("importedName")).toBe(names.indexOf("namingConvention") + 1);
   });
 
