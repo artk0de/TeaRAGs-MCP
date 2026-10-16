@@ -4,7 +4,11 @@
  * bare receiver whose camelized name is the last segment of a model owning a
  * synthesized column named like the member, with no declared def on that model.
  * Rule B (`frameworkMember`): an ActiveRecord relation / ActiveStorage member on
- * a receiver chain that is a relation or an attachment proxy.
+ * a receiver chain that is a relation or an attachment proxy (bd tea-rags-mcp-2m83f.35:
+ * a tail fact naming a class the project does not declare cannot reach a menu
+ * candidate and leaves the agreement intact). Rule C (`timestampColumn`): the
+ * Rails-managed `created_at` / `updated_at` on a bare receiver when no model
+ * declares a def of that name.
  */
 import { describe, expect, it } from "vitest";
 
@@ -30,11 +34,29 @@ function modelTable(): InMemoryGlobalSymbolTable {
     sym("Payment#state", "state", "app/models/payment.rb", ["Payment"]),
   ]);
   table.upsertFile("app/models/invoice.rb", [sym("Invoice#amount", "amount", "app/models/invoice.rb", ["Invoice"])]);
+  table.upsertFile("app/models/document.rb", [
+    sym("Document", "Document", "app/models/document.rb", []),
+    sym("Document#attach", "attach", "app/models/document.rb", ["Document"]),
+  ]);
+  table.upsertFile("app/contracts/item.rb", [
+    sym("Api::Item#updated_at", "updated_at", "app/contracts/item.rb", ["Api", "Item"]),
+    sym("Api::Item#created_at", "created_at", "app/contracts/item.rb", ["Api", "Item"]),
+    sym("Api::Item#amount", "amount", "app/contracts/item.rb", ["Api", "Item"]),
+  ]);
   table.setSchemaColumns([
     column("GettingPaid::Refund#amount", "amount", "app/models/getting_paid/refund.rb", ["GettingPaid", "Refund"]),
     column("GettingPaid::Refund#amount=", "amount=", "app/models/getting_paid/refund.rb", ["GettingPaid", "Refund"]),
     column("GettingPaid::Refund#amount?", "amount?", "app/models/getting_paid/refund.rb", ["GettingPaid", "Refund"]),
     column("Payment#state", "state", "app/models/payment.rb", ["Payment"]),
+    column("GettingPaid::Refund#created_at", "created_at", "app/models/getting_paid/refund.rb", [
+      "GettingPaid",
+      "Refund",
+    ]),
+    column("GettingPaid::Refund#updated_at", "updated_at", "app/models/getting_paid/refund.rb", [
+      "GettingPaid",
+      "Refund",
+    ]),
+    column("Payment#updated_at", "updated_at", "app/models/payment.rb", ["Payment"]),
   ]);
   return table;
 }
@@ -138,5 +160,74 @@ describe("RubyCallResolver#residualExclusion — frameworkMember", () => {
 
   it("keeps a predicate member that is no framework member", () => {
     expect(exclusion(call("invitation", "pending?"), railsCtx())).toBeNull();
+  });
+});
+
+describe("RubyCallResolver#residualExclusion — frameworkMember tails (bd tea-rags-mcp-2m83f.35)", () => {
+  it("excludes a relation member on a scope a concern declares", () => {
+    const returns = {
+      "SoftDeletable.without_deleted": { form: "container", element: { form: "instance", name: "SoftDeletable" } },
+    } as const satisfies CallContext["structuredReturnTypes"];
+    const context = ctx({ structuredReturnTypes: returns });
+    expect(exclusion(call("@actor.firm.contacts.without_deleted", "includes"), context)).toBe("frameworkMember");
+  });
+
+  it("excludes an ActiveStorage member when the tail's other facts name a class the project does not declare", () => {
+    const returns = {
+      ...RELATION_RETURNS,
+      "Api::ShowSerializer::DocumentSerializer#file": { form: "instance", name: "File" },
+    } as const satisfies CallContext["structuredReturnTypes"];
+    expect(exclusion(call("document.file", "attach"), ctx({ structuredReturnTypes: returns }))).toBe("frameworkMember");
+  });
+
+  it("keeps an ActiveStorage member when another tail fact names a project class", () => {
+    const returns = {
+      ...RELATION_RETURNS,
+      "Holder#file": { form: "instance", name: "Document" },
+    } as const satisfies CallContext["structuredReturnTypes"];
+    expect(exclusion(call("holder.file", "attach"), ctx({ structuredReturnTypes: returns }))).toBeNull();
+  });
+
+  it("keeps an ActiveStorage member when every tail fact names a class the project does not declare", () => {
+    const returns = {
+      "Api::ShowSerializer::DocumentSerializer#file": { form: "instance", name: "File" },
+    } as const satisfies CallContext["structuredReturnTypes"];
+    expect(exclusion(call("document.file", "attach"), ctx({ structuredReturnTypes: returns }))).toBeNull();
+  });
+});
+
+describe("RubyCallResolver#residualExclusion — timestampColumn", () => {
+  it("excludes updated_at and created_at on a bare receiver no model is named after", () => {
+    expect(exclusion(call("doc", "updated_at"))).toBe("timestampColumn");
+    expect(exclusion(call("@doc", "created_at"))).toBe("timestampColumn");
+  });
+
+  it("keeps a timestamp a model shadows with a declared def", () => {
+    const table = modelTable();
+    table.upsertFile("app/models/payment.rb", [
+      sym("Payment", "Payment", "app/models/payment.rb", []),
+      sym("Payment#state", "state", "app/models/payment.rb", ["Payment"]),
+      sym("Payment#updated_at", "updated_at", "app/models/payment.rb", ["Payment"]),
+    ]);
+    expect(exclusion(call("record", "updated_at"), ctx({ symbolTable: table }))).toBeNull();
+  });
+
+  it("keeps a timestamp on a chain receiver", () => {
+    expect(exclusion(call("result.data", "updated_at"))).toBeNull();
+  });
+
+  it("keeps a column that is no Rails timestamp", () => {
+    expect(exclusion(call("doc", "amount"))).toBeNull();
+    expect(exclusion(call("auto_topup.settings", "amount"))).toBeNull();
+  });
+
+  it("keeps a timestamp no model owns as a column", () => {
+    const table = modelTable();
+    table.setSchemaColumns([]);
+    expect(exclusion(call("doc", "updated_at"), ctx({ symbolTable: table }))).toBeNull();
+  });
+
+  it("keeps a timestamp when the project declares no Rails gem", () => {
+    expect(exclusion(call("doc", "updated_at"), ctx({ declaredDependencies: new Set(["sinatra"]) }))).toBeNull();
   });
 });

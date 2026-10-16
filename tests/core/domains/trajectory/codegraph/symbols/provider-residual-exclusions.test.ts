@@ -1,5 +1,5 @@
 /**
- * End-to-end residual exclusions (bd tea-rags-mcp-2m83f.34) — a real project tree
+ * End-to-end residual exclusions (bd tea-rags-mcp-2m83f.34, .35) — a real project tree
  * whose Rails-generated callees no menu holds, run through the provider's two-pass
  * `buildFileSignals`. Pins the seam: Ruby `residualExclusion` → collector →
  * persisted residual rows.
@@ -27,6 +27,7 @@ const FILES: Record<string, string[]> = {
     "ActiveRecord::Schema[7.0].define(version: 2026_10_15_000000) do",
     '  create_table "refunds", force: :cascade do |t|',
     '    t.decimal "amount"',
+    '    t.datetime "updated_at", null: false',
     "  end",
     "end",
   ],
@@ -40,6 +41,20 @@ const FILES: Record<string, string[]> = {
   "app/models/contact.rb": [
     "class Contact < ApplicationRecord",
     "  scope :without_deleted, -> { where(deleted_at: nil) }",
+    "end",
+  ],
+  "app/models/concerns/soft_deletable.rb": [
+    "module SoftDeletable",
+    "  extend ActiveSupport::Concern",
+    "  included do",
+    "    scope :not_archived, -> { where(archived_at: nil) }",
+    "  end",
+    "end",
+  ],
+  // A serializer's `has_one :file` names `File`, a class the project does not declare.
+  "app/serializers/document_serializer.rb": [
+    "class DocumentSerializer < ActiveModel::Serializer",
+    "  has_one :file",
     "end",
   ],
   "app/models/firm.rb": ["class Firm < ApplicationRecord", "  has_many :contacts", "end"],
@@ -60,14 +75,17 @@ const FILES: Record<string, string[]> = {
     "  def includes(x); end",
     "  def attach(x); end",
     "  def pending?; end",
+    "  def updated_at; end",
     "end",
   ]).flat(),
   "app/services/sweep.rb": [
     "class Sweep",
-    "  def run(refund, holder, upload, invite, q, io)",
+    "  def run(refund, holder, upload, invite, q, io, items)",
     "    refund.amount",
     "    Product.ransack(q).result.ids",
     "    holder.contacts.without_deleted.includes(:firm)",
+    "    holder.contacts.not_archived.includes(:firm)",
+    "    items.each { |doc| doc.updated_at }",
     "    upload.file.attach(io)",
     "    @upload.scans.attach(io)",
     "    invite.pending?",
@@ -108,6 +126,7 @@ describe("CodegraphEnrichmentProvider — residual exclusions (bd tea-rags-mcp-2
   });
 
   it("persists no residual row for a Rails-generated callee and keeps the project-method site", async () => {
+    // .35: a concern-declared scope tail, an attachment tail beside a non-project `File` fact, a timestamp column.
     await provider.buildFileSignals(root);
 
     const rows = (await client.readResidualCallSites()).filter((r) => r.sourceRelPath === "app/services/sweep.rb");
