@@ -31,8 +31,9 @@ import { SUPER_RECEIVER_SENTINEL } from "../../super-receiver-sentinel.js";
 import { receiverLooksLikeArRelationChain } from "./ruby-ar-relation-guard.js";
 import { resolveConventionReceiverTarget } from "./ruby-convention-receiver.js";
 import { ivarFieldOwnsReceiver, resolveIvarFieldTarget } from "./ruby-ivar-field.js";
+import { RubyRelationChainSymbolResolutionStrategy } from "./ruby-relation-chain.js";
 import { resolveBoundCallTarget } from "./ruby-return-type-binding.js";
-import { receiverChainTailIsExternal, receiverIsIndexAccess, resolveConstant } from "./shared.js";
+import { receiverChainTailIsExternal, receiverIsIndexAccess, resolveConstant, type ResolverConfig } from "./shared.js";
 import { typeOfReceiver } from "./type-propagation.js";
 
 /**
@@ -153,13 +154,27 @@ function exactChainOwnsReceiverShape(receiver: string, ctx: CallContext): boolea
  * `dynamic` edges while the chain emitted their exact edge. Reading the
  * whole answer collapses them, 1173 of 1173 agreeing with what lands
  * (bd tea-rags-mcp-eaml5, `CODEGRAPH_C2COLLAPSE_ORACLE=1` cut 3).
+ *
+ * Relation chain the `relationChain` pass PINS (bd tea-rags-mcp-2m83f.32.5).
+ * Its head may be rooted on the naming convention, which `typeOfReceiver`
+ * deliberately withholds from the typed gate below — so
+ * `document.resolved_doc_dir.documents.ordered` fanned out to every `ordered`
+ * in the project (over the cap on taxdome: an ambiguous residual) before the
+ * chain ever ran. Same target gate: an unpinned member still fans out.
  */
 export class RubyExactPassAnswerProbe implements ExactChainAnswerProbe {
-  constructor(private readonly mode: AmbiguousResolveMode) {}
+  private readonly mode: AmbiguousResolveMode;
+  private readonly relationChain: RubyRelationChainSymbolResolutionStrategy;
+
+  constructor(cfg: ResolverConfig) {
+    this.mode = cfg.mode;
+    this.relationChain = new RubyRelationChainSymbolResolutionStrategy(cfg);
+  }
 
   answers(call: CallRef, ctx: CallContext): boolean {
     if (resolveBoundCallTarget(call, ctx, this.mode) !== null) return true;
-    return resolveIvarFieldTarget(call, ctx, this.mode) !== null;
+    if (resolveIvarFieldTarget(call, ctx, this.mode) !== null) return true;
+    return this.relationChain.attempt(call, ctx).kind === "resolved";
   }
 }
 

@@ -101,7 +101,10 @@ export const capability: LanguageCapability = {
   // walker 13: bd tea-rags-mcp-2m83f.36 — attr_reader / attr_accessor return the
   // type of the @ivar they read, so a walker-12 index holds residual rows for
   // reader calls on typed fields.
-  versions: { chunking: 2, walker: 15, codegraphSchema: 2 },
+  // walker 16: bd tea-rags-mcp-2m83f.32.5 — the dynamic fan-out defers a relation
+  // chain the `relationChain` pass pins, so a walker-15 index holds residual rows
+  // and namesake edges for convention-rooted chains (`document.….documents.ordered`).
+  versions: { chunking: 2, walker: 16, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.
