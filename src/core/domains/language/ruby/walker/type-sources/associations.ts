@@ -186,6 +186,27 @@ function collectAssociationReturnFacts(root: AstNode): RubyTypeFact[] {
   return facts;
 }
 
+/**
+ * `"<fqClass>#<reader>"` → the instance a singular association reader returns
+ * (`belongs_to` / `has_one` / an attachment), for the owner-keyed member returns
+ * (bd tea-rags-mcp-2m83f.32.5). A collection or scope reader is a relation, never
+ * an instance, and is left out; so is a reader one class declares twice with
+ * different targets.
+ */
+export function collectRubyAssociationReaderInstances(root: AstNode): ReadonlyMap<string, string> {
+  const out = new Map<string, string>();
+  const conflicting = new Set<string>();
+  for (const fact of collectAssociationReturnFacts(root)) {
+    if (fact.kind !== "return" || fact.type.form !== "instance") continue;
+    const key = `${fact.symbolScope.join("::")}#${fact.methodName}`;
+    const seen = out.get(key);
+    if (seen !== undefined && seen !== fact.type.name) conflicting.add(key);
+    out.set(key, fact.type.name);
+  }
+  for (const key of conflicting) out.delete(key);
+  return out;
+}
+
 export const rubyAssociationTypeSource: RubyInlineTypeSource = {
   name: "associations",
   extract(input: RubyExtractInput): RubyTypeFact[] {

@@ -269,3 +269,77 @@ describe("(c) relative constants qualified by the def's lexical nesting", () => 
     expect(flat(src)).toEqual({ query: "Query" });
   });
 });
+
+describe("(d) conditional tails split into arms (2m83f.32.5)", () => {
+  const model = (body: string[], params = "") => [
+    "class TaxPreparation::Document < ApplicationRecord",
+    "  belongs_to :doc_dir, class_name: 'TaxPreparation::DocDir'",
+    "  belongs_to :doc_dir_with_granular_access_attr, -> { with_sealed }, class_name: 'TaxPreparation::DocDir'",
+    "  belongs_to :owner, class_name: 'User'",
+    "  has_many :versions, class_name: 'TaxPreparation::DocDir'",
+    `  def resolved_doc_dir${params}`,
+    ...body.map((l) => `    ${l}`),
+    "  end",
+    "end",
+  ];
+  const resolved = (body: string[], params = "") =>
+    scoped(model(body, params))["TaxPreparation::Document#resolved_doc_dir"];
+
+  it("types an if/else whose arms read two associations of one model", () => {
+    const body = [
+      "if association(:doc_dir_with_granular_access_attr).loaded?",
+      "  doc_dir_with_granular_access_attr",
+      "else",
+      "  doc_dir",
+      "end",
+    ];
+    expect(resolved(body)).toEqual(inst("TaxPreparation::DocDir"));
+  });
+
+  it("types a ternary and an unless/else the same way", () => {
+    expect(resolved(["loaded? ? doc_dir_with_granular_access_attr : doc_dir"])).toEqual(inst("TaxPreparation::DocDir"));
+    expect(resolved(["unless loaded?", "  doc_dir", "else", "  doc_dir_with_granular_access_attr", "end"])).toEqual(
+      inst("TaxPreparation::DocDir"),
+    );
+  });
+
+  it("follows an elsif chain arm by arm", () => {
+    const body = [
+      "if a?",
+      "  doc_dir",
+      "elsif b?",
+      "  TaxPreparation::DocDir.new",
+      "else",
+      "  doc_dir_with_granular_access_attr",
+      "end",
+    ];
+    expect(resolved(body)).toEqual(inst("TaxPreparation::DocDir"));
+  });
+
+  it("stays silent on an if without else — the missing arm is nil", () => {
+    expect(resolved(["if loaded?", "  doc_dir", "end"])).toBeUndefined();
+    expect(resolved(["doc_dir if loaded?"])).toBeUndefined();
+  });
+
+  it("stays silent when the arms name different types", () => {
+    expect(resolved(["loaded? ? doc_dir : owner"])).toBeUndefined();
+  });
+
+  it("stays silent when an arm is opaque or a collection reader", () => {
+    expect(resolved(["loaded? ? doc_dir : fetch_dir"])).toBeUndefined();
+    expect(resolved(["loaded? ? doc_dir : versions"])).toBeUndefined();
+  });
+
+  it("stays silent when the arm name is a local or a parameter, not the reader", () => {
+    expect(resolved(["doc_dir = build", "loaded? ? doc_dir : doc_dir_with_granular_access_attr"])).toBeUndefined();
+    expect(resolved(["loaded? ? doc_dir : doc_dir_with_granular_access_attr"], "(doc_dir)")).toBeUndefined();
+  });
+
+  it("types a bare association reader tail", () => {
+    expect(resolved(["doc_dir"])).toEqual(inst("TaxPreparation::DocDir"));
+  });
+
+  it("leaves the flat channel untouched", () => {
+    expect(flat(model(["loaded? ? doc_dir : doc_dir_with_granular_access_attr"]))).toEqual({});
+  });
+});

@@ -12,6 +12,7 @@ import { collectMethodLocalBindings } from "./bare-call-detection.js";
 import { inferRubyMemberReturnType, type RubyMemberReturnOwner } from "./body-return.js";
 import { extractOperands } from "./macro-expansion.js";
 import { forEachClassScope, readScopeResolution, walk } from "./shared/index.js";
+import { collectRubyAssociationReaderInstances } from "./type-sources/associations.js";
 import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
 import { collectYardParamTypes, YARD_CONST } from "./type-sources/yard.js";
 
@@ -271,6 +272,7 @@ export function collectRubyScopedBodyReturnTypes(
   const scopes: { classNode: AstNode; fq: string; scope: readonly string[] }[] = [];
   forEachClassScope(root, (classNode, fq, scope) => scopes.push({ classNode, fq, scope }));
   const declaredTypes = new Set(scopes.map((s) => s.fq));
+  const associationReaders = collectRubyAssociationReaderInstances(root);
   const nestingByFq = new Map<string, readonly string[]>();
   for (const { classNode, fq, scope } of scopes) {
     const classBody = classNode.childForFieldName("body") ?? classNode;
@@ -283,6 +285,7 @@ export function collectRubyScopedBodyReturnTypes(
       nesting,
       declaredTypes,
       instanceMethods: instanceMethodsByName(methods),
+      associationReaders,
     };
     for (const def of methods) {
       const nameNode = def.childForFieldName("name");
