@@ -10,6 +10,7 @@ import type {
   ResidualCallSiteRow,
   ResidualExclusionRule,
   ResidualKind,
+  ResidualReason,
 } from "../../../../contracts/types/codegraph-residual.js";
 import type {
   CallRef,
@@ -70,6 +71,8 @@ interface PendingResidualSite {
   verdict: ResidualVerdictView;
   kind: ResidualKind;
   groupKey: string;
+  /** The `frameworkOverride` menu (sorted overrides); narrowing may only shrink it. */
+  overrideMenu?: readonly string[];
 }
 
 export interface ResidualSiteKeyParts {
@@ -155,21 +158,25 @@ export class ResidualSiteCollector {
 
   /**
    * Fed every call site of the file. `exclude` is asked only for a residual site
-   * with a non-empty menu; a rule drops the site. With narrowing on, every call
-   * joins its receiver's constraint set and residual rows are built on the
-   * first read of {@link rows}.
+   * with a non-empty menu; a rule drops the site. `overrideMenu` is asked for a
+   * site that stays: a non-empty answer (the project overrides of a framework
+   * member the receiver reaches) replaces the menu and marks the row
+   * `frameworkOverride`. With narrowing on, every call joins its receiver's
+   * constraint set and residual rows are built on the first read of {@link rows};
+   * narrowing only intersects an override menu, never adds to it.
    */
   observe(
     method: ResidualMethodView,
     call: CallRef,
     verdict: ResidualVerdictView,
     exclude?: () => ResidualExclusionRule | null,
+    overrideMenu?: () => readonly string[] | null,
   ): void {
     const groupKey = this.closure === undefined ? undefined : this.constrain(method, call, verdict);
     const kind = residualKindOf(verdict);
     if (kind === null) return;
-    const menu = this.menuFor(call.member);
-    if (menu.length === 0) return;
+    const fullMenu = this.menuFor(call.member);
+    if (fullMenu.length === 0) return;
     const rule = exclude?.() ?? null;
     if (rule !== null) {
       this.excludedCounts[rule] += 1;
@@ -177,11 +184,24 @@ export class ResidualSiteCollector {
       if (rule === "frameworkMember" && groupKey !== undefined) this.groups.get(groupKey)?.set(call.member, false);
       return;
     }
+    const overrides = overrideMenu?.() ?? null;
+    const reason: ResidualReason | undefined =
+      overrides !== null && overrides.length > 0 ? "frameworkOverride" : undefined;
+    const menu = reason === undefined ? fullMenu : [...new Set(overrides)].sort();
     if (groupKey === undefined) {
-      this.pushRow(method, call, verdict, kind, menu);
+      this.pushRow(method, call, verdict, kind, menu, reason);
       return;
     }
-    this.pendingSites.push({ method, call, verdict, kind, groupKey });
+    // Every project class inheriting the framework member answers it, not only the overriders.
+    if (reason !== undefined) this.groups.get(groupKey)?.set(call.member, false);
+    this.pendingSites.push({
+      method,
+      call,
+      verdict,
+      kind,
+      groupKey,
+      overrideMenu: reason === undefined ? undefined : menu,
+    });
   }
 
   /** Residual sites settled to a static edge by their receiver's constraint set. */
@@ -220,7 +240,9 @@ export class ResidualSiteCollector {
    * The classes answering every constraining member of the site's receiver.
    * A member no project class answers is external and constrains nothing; an
    * empty intersection keeps the single-member menu (precision first: never
-   * drop the true class).
+   * drop the true class). A `frameworkOverride` site's menu is its override
+   * menu intersected with the narrowed definitions — never more — and falls
+   * back to the whole override menu when the two share nothing.
    */
   private narrow(site: PendingResidualSite, closure: ReceiverClassClosure): void {
     const own = closure.answerers(site.call.member);
@@ -231,18 +253,27 @@ export class ResidualSiteCollector {
       if (answers.size === 0) continue;
       classes = new Set([...classes].filter((owner) => answers.has(owner)));
     }
+    const overrides = site.overrideMenu === undefined ? undefined : new Set(site.overrideMenu);
+    const reason: ResidualReason | undefined = overrides === undefined ? undefined : "frameworkOverride";
+    const keptMenu = site.overrideMenu ?? this.menuFor(site.call.member);
     if (classes.size === 0) {
       this.narrowEmpty.push(site.verdict.receiverKind);
-      this.pushRow(site.method, site.call, site.verdict, site.kind, this.menuFor(site.call.member));
+      this.pushRow(site.method, site.call, site.verdict, site.kind, [...keptMenu], reason);
       return;
     }
     const targets = new Map<string, { relPath: RelPath; isSchemaColumn: boolean }>();
     for (const owner of classes) {
       for (const def of own.get(owner) ?? []) {
+        if (overrides !== undefined && !overrides.has(def.symbolId)) continue;
         targets.set(def.symbolId, { relPath: def.relPath, isSchemaColumn: def.isSchemaColumn === true });
       }
     }
     const methods = [...targets].filter(([, t]) => !t.isSchemaColumn);
+    if (methods.length === 0 && site.overrideMenu !== undefined) {
+      this.narrowEmpty.push(site.verdict.receiverKind);
+      this.pushRow(site.method, site.call, site.verdict, site.kind, [...site.overrideMenu], reason);
+      return;
+    }
     if (methods.length === 0) {
       // Every narrowed class reads the member as a schema column: no method node to edge to.
       this.excludedCounts.schemaColumn += 1;
@@ -268,7 +299,7 @@ export class ResidualSiteCollector {
       site.call.receiver ?? "",
       methods.map(([id]) => id),
     );
-    this.pushRow(site.method, site.call, site.verdict, site.kind, menu);
+    this.pushRow(site.method, site.call, site.verdict, site.kind, menu, reason);
   }
 
   private pushRow(
@@ -277,6 +308,7 @@ export class ResidualSiteCollector {
     verdict: ResidualVerdictView,
     kind: ResidualKind,
     menu: string[],
+    reason?: ResidualReason,
   ): void {
     const menuOverflow = menu.length > this.menuLimit;
     const candidates = menuOverflow ? menu.slice(0, this.menuLimit) : menu;
@@ -306,6 +338,7 @@ export class ResidualSiteCollector {
       menuOverflow,
       language: this.language,
       receiverKind: verdict.receiverKind,
+      ...(reason === undefined ? {} : { reason }),
     });
   }
 

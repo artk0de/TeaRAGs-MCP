@@ -216,3 +216,45 @@ describe("ResidualSiteCollector — exclusions", () => {
     expect(collector.excluded()).toEqual({ schemaColumn: 0, frameworkMember: 0, timestampColumn: 0 });
   });
 });
+
+describe("ResidualSiteCollector — framework override (bd 2m83f.48)", () => {
+  const table = tableOf([
+    def("Lockable#with_lock", "app/models/concerns/lockable.rb"),
+    def("Reports::Form#with_lock", "app/forms/form.rb"),
+  ]);
+  const LOCK: CallRef = { ...CALL, callText: "record.with_lock", receiver: "record", member: "with_lock" };
+
+  it("narrows the menu to the reachable overrides and marks the row frameworkOverride", () => {
+    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT, "ruby");
+
+    collector.observe(METHOD, LOCK, DYNAMIC_MISS, undefined, () => ["Lockable#with_lock"]);
+
+    const [row] = collector.rows();
+    expect(row).toMatchObject({
+      reason: "frameworkOverride",
+      candidates: ["Lockable#with_lock"],
+      menuHash: sha1("Lockable#with_lock"),
+      menuOverflow: false,
+    });
+  });
+
+  it("keeps the full menu and no reason when the hook answers null", () => {
+    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT, "ruby");
+
+    collector.observe(METHOD, LOCK, DYNAMIC_MISS, undefined, () => null);
+
+    const [row] = collector.rows();
+    expect(row?.candidates).toEqual(["Lockable#with_lock", "Reports::Form#with_lock"]);
+    expect(row).not.toHaveProperty("reason");
+  });
+
+  it("never asks the override hook for an excluded site", () => {
+    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT, "ruby");
+    const override = vi.fn(() => ["Lockable#with_lock"]);
+
+    collector.observe(METHOD, LOCK, DYNAMIC_MISS, () => "frameworkMember", override);
+
+    expect(override).not.toHaveBeenCalled();
+    expect(collector.rows()).toEqual([]);
+  });
+});

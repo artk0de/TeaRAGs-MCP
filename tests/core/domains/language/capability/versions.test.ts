@@ -521,11 +521,13 @@ describe("seeded support versions", () => {
       // receivers on untyped receivers are externalSkipped, not residual.
       // ruby 19: bd tea-rags-mcp-2m83f.44 — a parameter is typed from its
       // exact-edge callers, so calls on parameters resolve.
+      // ruby 21: bd tea-rags-mcp-2m83f.48 — every readable mixin is recorded and an
+      // unreadable one is flagged, so frameworkOverride menus carry the reachable overrides.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
         ["python", 13],
-        ["ruby", 20],
+        ["ruby", 21],
         ["java", 4],
         ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a

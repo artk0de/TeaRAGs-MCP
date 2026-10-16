@@ -97,6 +97,7 @@ export class RubyCallResolver implements CallResolver {
   private readonly dynamic: RubyDynamicDispatchResolver;
   private readonly dispatchComponents: readonly DispatchResolverComponent[];
   private readonly externalClassifier: ExternalCallClassifier;
+  private readonly externalVocabulary = new RubyExternalVocabulary();
 
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const cfg = readResolverConfig(process.env, "CODEGRAPH_RB", mode);
@@ -137,7 +138,7 @@ export class RubyCallResolver implements CallResolver {
     // cone ensures typed union receivers resolve to their declared members without
     // being superseded by cone's generic subtype fan-out. Dynamic is last as always.
     this.dispatchComponents = [this.table, this.union, this.cone, this.dynamic];
-    this.externalClassifier = new ExternalCallClassifier(new RubyExternalVocabulary());
+    this.externalClassifier = new ExternalCallClassifier(this.externalVocabulary);
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
@@ -190,6 +191,12 @@ export class RubyCallResolver implements CallResolver {
    */
   typeOfCallArgument(expr: string, call: CallRef, ctx: CallContext): TypeRef | undefined {
     return typeOfReceiver(expr, call.startLine, ctx, call.startColumn);
+  }
+
+  /** A residual Rails framework member on an untyped receiver: only the overrides it reaches (bd 2m83f.48). */
+  residualOverrideMenu(call: CallRef, ctx: CallContext): readonly string[] | null {
+    if (call.receiver === undefined || call.receiver === null) return null;
+    return this.externalVocabulary.railsOverrideMenu(call.receiver, call.member, ctx, call.startLine);
   }
 
   /** Residual sites whose callee is a Rails-generated method (bd tea-rags-mcp-2m83f.34). */

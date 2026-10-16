@@ -121,6 +121,8 @@ const RESIDUAL_VALUES = [
   // Migration 055 (bd tea-rags-mcp-2m83f.38): the run-stats bucket of the site.
   "language",
   "receiver_kind",
+  // Migration 059 (bd tea-rags-mcp-2m83f.48): why the menu is narrowed.
+  "reason",
 ] as const;
 // Migration 039 (bd tea-rags-mcp-7t2ee): one row per (file, type it asked about).
 const HIERARCHY_DEPENDENCY_KEYS = ["source_rel_path", "type_name"] as const;
@@ -343,6 +345,7 @@ export class DuckDbFileGraphStore {
           r.menuOverflow,
           r.language ?? null,
           r.receiverKind ?? null,
+          r.reason ?? null,
         ]);
       }
       // The pass-1 slice, keyed by the NODE's path rather than the slice's own,

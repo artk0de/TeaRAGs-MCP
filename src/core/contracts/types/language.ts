@@ -817,6 +817,12 @@ export interface LanguageSymbolResolver {
    */
   typeOfCallArgument?: (expr: string, call: CallRef, ctx: CallContext) => TypeRef | undefined;
   /**
+   * Optional: the project overrides a residual site's framework callee can
+   * reach (bd tea-rags-mcp-2m83f.48); `null` = no such call. Mirrors
+   * `CallResolver.residualOverrideMenu`.
+   */
+  residualOverrideMenu?: (call: CallRef, ctx: CallContext) => readonly string[] | null;
+  /**
    * Optional: a chunk's local bindings as this language reads them — a binding
    * it cannot read at all is hidden from every call-site reader, as if never
    * emitted (bd tea-rags-mcp-m99j1.1.30 regression). Asked once per chunk by

@@ -29,6 +29,7 @@ import type {
   ModelResolvedSiteCount,
   ResidualCallSiteRow,
   ResidualKind,
+  ResidualReason,
 } from "../../contracts/types/codegraph.js";
 import { METHOD_EDGE_KEYS, METHOD_EDGE_VALUES } from "./file-graph-store.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
@@ -53,6 +54,7 @@ interface ResidualSiteDbRow {
   menu_overflow: boolean;
   language: string | null;
   receiver_kind: string | null;
+  reason: string | null;
 }
 
 interface ModelResolvedSiteCountDbRow {
@@ -70,7 +72,7 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
   async readResidualCallSites(): Promise<ResidualCallSiteRow[]> {
     const rows = await this.session.queryAll<ResidualSiteDbRow>(
       `SELECT site_key, source_rel_path, method_symbol_id, method_start_line, method_end_line, line, call_column,
-              receiver_text, member, kind, candidates, menu_hash, menu_overflow, language, receiver_kind
+              receiver_text, member, kind, candidates, menu_hash, menu_overflow, language, receiver_kind, reason
          FROM cg_residual_call_sites ORDER BY source_rel_path, site_key`,
     );
     return rows.map((r) => ({
@@ -89,6 +91,7 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
       menuOverflow: r.menu_overflow,
       ...(r.language === null ? {} : { language: r.language }),
       ...(r.receiver_kind === null ? {} : { receiverKind: r.receiver_kind }),
+      ...(r.reason === null ? {} : { reason: r.reason as ResidualReason }),
     }));
   }
 

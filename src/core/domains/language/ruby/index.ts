@@ -169,6 +169,8 @@ export class RubyLanguage implements LanguageProvider {
         callResolver.residualExclusion?.(call, ctx) ?? null,
       typeOfCallArgument: (expr: string, call: CallRef, ctx: CallContext): TypeRef | undefined =>
         callResolver.typeOfCallArgument?.(expr, call, ctx),
+      residualOverrideMenu: (call: CallRef, ctx: CallContext): readonly string[] | null =>
+        callResolver.residualOverrideMenu?.(call, ctx) ?? null,
     };
   }
 }

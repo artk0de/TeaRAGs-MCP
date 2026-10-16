@@ -146,6 +146,13 @@ export interface FileExtraction {
    */
   compactDeclaredClasses?: readonly string[];
   /**
+   * Ruby classes / modules carrying a mixin whose module the walker cannot read
+   * — `include some_var`, an `include` inside a block it cannot attribute
+   * (bd tea-rags-mcp-2m83f.48). Such a class, and everything that inherits or
+   * mixes it in, may reach any module. Array for NDJSON-spill round-trip.
+   */
+  unresolvedMixinClasses?: readonly string[];
+  /**
    * Explicit ORM table overrides declared in a class body, keyed by class FQ
    * (`Firm` → `companies` for `self.table_name = "companies"`). Consumed by the
    * project-scope schema-column pre-pass at the pass-1→pass-2 barrier: an
