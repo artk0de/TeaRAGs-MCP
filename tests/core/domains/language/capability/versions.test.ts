@@ -513,11 +513,13 @@ describe("seeded support versions", () => {
       // class several files declare takes the one the caller's scope reaches.
       // python 13: bd tea-rags-mcp-2m83f.32.4 — Django queryset chains resolve
       // on the model's queryset class.
+      // ruby 17: bd tea-rags-mcp-2m83f.42 — an untyped owner's link is typed by
+      // the return every candidate agrees on, so overflow hops type their tail.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
         ["python", 13],
-        ["ruby", 16],
+        ["ruby", 17],
         ["java", 4],
         ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a
