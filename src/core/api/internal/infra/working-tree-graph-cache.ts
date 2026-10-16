@@ -90,6 +90,7 @@ import {
   type WorkingTreeGraphBuildInput,
   type WorkingTreeGraphBuildOutcome,
   type WorkingTreeGraphProviderConfig,
+  type WorkingTreeGraphResidualInput,
   type WorkingTreeGraphSeed,
 } from "../../../domains/trajectory/codegraph/working-tree/index.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
@@ -173,6 +174,12 @@ export interface WorkingTreeGraphBasePool {
 export interface WorkingTreeGraphCodegraphRuntime {
   pool: WorkingTreeGraphBasePool;
   providerConfig: WorkingTreeGraphProviderConfig;
+  /**
+   * Where the residual verdicts live and how the index applies them; a build
+   * re-applies them to the changed files, naming the collection's store by the
+   * request's logical collection. Absent: tree graphs carry static edges only.
+   */
+  residual?: Omit<WorkingTreeGraphResidualInput, "logicalName">;
 }
 
 /** `WorkingTreeGraphProcessBuilder`'s surface; a test hands a fake. */
@@ -293,6 +300,8 @@ interface WorkingTreeGraphMeta {
   physicalCollectionName: string;
   /** The graph file, relative to the key dir. */
   dbRelPath: string;
+  /** Why the graph lacks the changed files' model edges (the build's `modelEdges.unavailable`). Absent: it has them, or there are none. */
+  modelEdgesUnavailable?: string;
   /** The base graph version the graph was built over ({@link baseGraphVersion}). Absent: an older publisher. */
   baseVersion?: string;
   /**
@@ -694,12 +703,14 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
       const seedInput = seed ? await this.seedInputFor(job, seed) : undefined;
       await fs.mkdir(staging, { recursive: true });
       let dbPath: string;
+      let modelEdgesUnavailable: string | undefined;
       if (seed && seedInput?.changedRelPaths.length === 0 && seedInput.deletedRelPaths.length === 0) {
         // The tree is the seed's tree under another key (e.g. a deletion that left
         // the delta without moving a file): its graph IS this key's graph.
         dbPath = join(staging, seed.meta.dbRelPath);
         await fs.mkdir(dirname(dbPath), { recursive: true });
         await fs.copyFile(seed.dbPath, dbPath, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
+        ({ modelEdgesUnavailable } = seed.meta);
         entry.outcomeArrived = true;
         logTreeGraph(job, "republished the seed's graph: nothing changed since it");
       } else {
@@ -717,6 +728,9 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
               deletedRelPaths: job.request.deleted,
               providerConfig: job.runtime.providerConfig,
               ...(seedInput ? { seed: seedInput } : {}),
+              ...(job.runtime.residual
+                ? { residual: { ...job.runtime.residual, logicalName: job.request.tree.baseIndex.collectionName } }
+                : {}),
             },
             this.deps.budget,
           );
@@ -727,13 +741,19 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
         const { graph } = outcome;
         const origin = graph.seeded ? "from the tree's previous graph" : "from the base";
         const rejection = graph.seedRejection ? ` seedRejected="${graph.seedRejection}"` : "";
+        const modelEdges = graph.modelEdges
+          ? "unavailable" in graph.modelEdges
+            ? ` modelEdgesUnavailable="${graph.modelEdges.unavailable}"`
+            : ` modelEdges=${String(graph.modelEdges.stored)}`
+          : "";
+        if (graph.modelEdges && "unavailable" in graph.modelEdges) modelEdgesUnavailable = graph.modelEdges.unavailable;
         const parses = graph.parseCache
           ? ` programCache=${graph.parseCache.state} parsesReused=${String(graph.parseCache.reused)} parsed=${String(graph.parseCache.parsed)}`
           : "";
         logTreeGraph(
           job,
           `built ${origin}: walked=${String(graph.walkedFileCount)} deleted=${String(graph.deletedFileCount)} ` +
-            `dependents=${String(graph.hierarchyDependentCount)} durationMs=${String(graph.durationMs)}${parses}${rejection}`,
+            `dependents=${String(graph.hierarchyDependentCount)} durationMs=${String(graph.durationMs)}${parses}${modelEdges}${rejection}`,
         );
         ({ dbPath } = graph);
       }
@@ -743,6 +763,7 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
         publishedAt: this.now(),
         physicalCollectionName: job.physical,
         dbRelPath: relative(staging, dbPath),
+        ...(modelEdgesUnavailable !== undefined ? { modelEdgesUnavailable } : {}),
         baseVersion: job.baseVersion,
         delta: job.delta,
       };
@@ -1182,6 +1203,7 @@ async function readMeta(keyDir: string): Promise<WorkingTreeGraphMeta | undefine
     return typeof meta.treeRoot === "string" &&
       typeof meta.publishedAt === "number" &&
       (meta.servedAt === undefined || typeof meta.servedAt === "number") &&
+      (meta.modelEdgesUnavailable === undefined || typeof meta.modelEdgesUnavailable === "string") &&
       typeof meta.physicalCollectionName === "string" &&
       typeof meta.dbRelPath === "string"
       ? withoutMalformedSeedRecord(meta as WorkingTreeGraphMeta)
@@ -1214,7 +1236,13 @@ async function readPublished(
   const meta = await readMeta(keyDir);
   if (!meta) return undefined;
   const dbPath = join(keyDir, meta.dbRelPath);
-  return existsSync(dbPath) ? { kind: "built", dbPath, physicalCollectionName: physical } : undefined;
+  if (!existsSync(dbPath)) return undefined;
+  return {
+    kind: "built",
+    dbPath,
+    physicalCollectionName: physical,
+    ...(meta.modelEdgesUnavailable !== undefined ? { modelEdgesUnavailable: meta.modelEdgesUnavailable } : {}),
+  };
 }
 
 async function listDir(dir: string): Promise<{ name: string; isDirectory: boolean }[]> {

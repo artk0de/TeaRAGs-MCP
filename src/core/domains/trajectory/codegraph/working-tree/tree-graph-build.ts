@@ -22,8 +22,17 @@ import type { PhysicalCollectionName } from "../../../../contracts/types/collect
 import type { LanguageCrossRunParseCache, LanguageCrossRunParseUsage } from "../../../../contracts/types/language.js";
 import { WorkingTreeGraphIncompleteError } from "../../errors.js";
 import { createCodegraphProviderRuntime, type CodegraphWorkerConfig } from "../factory.js";
+import type { TreeModelEdges, WorkingTreeGraphResidualInput } from "./tree-graph-model-edges.js";
 import { applySeedDelta, type TreeGraphSeedRejection, type WorkingTreeGraphSeed } from "./tree-graph-seed-apply.js";
-import { deleteThenWalk, finishTreeGraph, type TreeDeltaWalk, type TreeGraphClone } from "./tree-graph-walk.js";
+import {
+  deleteThenWalk,
+  finishTreeGraph,
+  withModelEdges,
+  type TreeDeltaWalk,
+  type TreeGraphClone,
+} from "./tree-graph-walk.js";
+
+export type { TreeModelEdges, WorkingTreeGraphResidualInput } from "./tree-graph-model-edges.js";
 
 /**
  * The plain-data slice of `CodegraphWorkerConfig` a tree build reuses. No
@@ -72,6 +81,13 @@ export interface WorkingTreeGraphBuildInput {
    * delta, as without a seed.
    */
   seed?: WorkingTreeGraphSeed;
+  /**
+   * The project's residual verdicts: present, the build re-applies their model
+   * edges after the walk (`reapplyTreeModelEdges`), as an index run's
+   * `cacheOnly` pass does. Absent (codegraph residual off), the graph holds the
+   * walk's static edges for the changed files.
+   */
+  residual?: WorkingTreeGraphResidualInput;
 }
 
 /** A finished tree build: where its graph is and what it took to make. */
@@ -90,6 +106,8 @@ export interface WorkingTreeGraphBuilt {
   seedRejection?: string;
   /** How the build used the cross-run parse cache it was handed (absent: none was). */
   parseCache?: WorkingTreeGraphParseCacheUse;
+  /** The model edges re-applied from the verdict store, or why none were (absent: no store, no residual input). */
+  modelEdges?: TreeModelEdges;
 }
 
 /**
@@ -131,8 +149,12 @@ export interface WorkingTreeGraphBuildDeps {
  *    over the whole graph (no language partition here). A deletion-only delta
  *    with nothing to re-walk goes through `finalizeSignals` with no run sink —
  *    the `runFinalizeOnly` seam — which recomputes exactly when a deletion left
- *    them stale. Still stale afterwards means the best-effort recompute failed,
- *    and the graph is refused rather than published with dead ranks.
+ *    them stale. Then the cached model verdicts are re-applied (`cacheOnly`,
+ *    the index run's own residual pass): the walk dropped the changed files'
+ *    `origin = 'model'` rows, and the pass recomputes the derived tables when
+ *    the model edges moved. Still stale afterwards means the best-effort
+ *    recompute failed, and the graph is refused rather than published with dead
+ *    ranks.
  * 5. **Self-contained**: CHECKPOINT through the client, then close every client.
  *    Closing never checkpoints by design (`PRAGMA disable_checkpoint_on_shutdown`
  *    in `DuckDbGraphSession#close`), so without the explicit one the build's
@@ -170,6 +192,7 @@ export async function buildWorkingTreeGraph(
     walkedFileCount: walked.walkedFileCount,
     deletedFileCount,
     hierarchyDependentCount: walked.hierarchyDependentCount,
+    ...(walked.modelEdges ? { modelEdges: walked.modelEdges } : {}),
     ...(parseCache && parsesBefore ? { parseCache: parseCacheUse(parsesBefore, parseCache.usage()) } : {}),
   });
 
@@ -201,8 +224,7 @@ export async function buildWorkingTreeGraph(
       input.changedRelPaths,
       input.deletedRelPaths,
     );
-    await finishTreeGraph(clone);
-    return { walkedFileCount: walked.length, hierarchyDependentCount };
+    return withModelEdges({ walkedFileCount: walked.length, hierarchyDependentCount }, await finishTreeGraph(clone));
   });
   return {
     ...built(attempt.dbPath, attempt.result, input.deletedRelPaths.length),
@@ -238,7 +260,14 @@ async function buildOnClone<T>(
       await mkdir(dirname(dbPath), { recursive: true });
       await copyFile(snapshotPath, dbPath, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
       const { graphDb } = await pool.acquire(physical);
-      result = await apply({ treeRoot: input.treeRoot, physical, provider, graphDb, dbPath });
+      result = await apply({
+        treeRoot: input.treeRoot,
+        physical,
+        provider,
+        graphDb,
+        dbPath,
+        ...(input.residual ? { residual: input.residual } : {}),
+      });
     } finally {
       await pool.closeAll();
     }

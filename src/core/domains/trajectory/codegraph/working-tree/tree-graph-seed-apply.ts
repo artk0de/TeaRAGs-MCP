@@ -49,6 +49,7 @@ import {
   deleteThenWalk,
   finishTreeGraph,
   walkTreeFiles,
+  withModelEdges,
   type TreeDeltaWalk,
   type TreeGraphClone,
 } from "./tree-graph-walk.js";
@@ -88,8 +89,7 @@ export async function applySeedDelta(
   const base = new BaseGraphProbe(baseSnapshotPath);
   try {
     if (touched.size === 0) {
-      await finishTreeGraph(clone);
-      return { walkedFileCount: 0, hierarchyDependentCount: 0 };
+      return withModelEdges({ walkedFileCount: 0, hierarchyDependentCount: 0 }, await finishTreeGraph(clone));
     }
     if (seed.restoredRelPaths.length > 0) {
       return { rejected: `${seed.restoredRelPaths[0]} is back at base content, whose rows only the base build keeps` };
@@ -133,8 +133,10 @@ export async function applySeedDelta(
       new Set(moved.map((definition) => definition.shortName)),
     );
     if (naming.length > 0) await walkTreeFiles(clone, naming);
-    await finishTreeGraph(clone);
-    return { walkedFileCount: walked.length + naming.length, hierarchyDependentCount };
+    return withModelEdges(
+      { walkedFileCount: walked.length + naming.length, hierarchyDependentCount },
+      await finishTreeGraph(clone),
+    );
   } finally {
     await base.close();
   }

@@ -96,6 +96,35 @@ describe("isWorkingTreeGraphEntryRequest", () => {
   });
 });
 
+describe("isWorkingTreeGraphEntryRequest — residual verdicts (bd tea-rags-mcp-2m83f.39)", () => {
+  const residual = {
+    verdictRootDir: "/data/codegraph",
+    logicalName: "code_abc",
+    model: "kev",
+    threshold: 0.5,
+    menuLimit: 16,
+    minMenu: 2,
+  };
+  const withResidual = (value: unknown): Record<string, unknown> => {
+    const req = validRequest();
+    return { ...req, input: { ...(req.input as object), residual: value } };
+  };
+
+  it("accepts a request naming the verdicts to re-apply", () => {
+    expect(isWorkingTreeGraphEntryRequest(withResidual(residual))).toBe(true);
+  });
+
+  it.each<[string, unknown]>([
+    ["a non-object residual", "kev"],
+    ["a residual without its store root", { ...residual, verdictRootDir: undefined }],
+    ["a residual without its collection", { ...residual, logicalName: 3 }],
+    ["a residual whose threshold is not a number", { ...residual, threshold: "0.5" }],
+    ["a residual without its menu floor", { ...residual, minMenu: undefined }],
+  ])("refuses %s", (_label, value) => {
+    expect(isWorkingTreeGraphEntryRequest(withResidual(value))).toBe(false);
+  });
+});
+
 describe("isWorkingTreeGraphEntryReply", () => {
   it("accepts a built reply carrying the graph's db path and a failed reply carrying its reason", () => {
     expect(isWorkingTreeGraphEntryReply({ kind: "built", outcome: { dbPath: "/tmp/tree.duckdb" } })).toBe(true);

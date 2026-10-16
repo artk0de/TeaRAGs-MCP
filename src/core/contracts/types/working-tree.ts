@@ -154,6 +154,12 @@ export type WorkingTreeGraphState =
       dbPath: string;
       /** The base graph's physical collection — the tree graph keeps its name. */
       physicalCollectionName: PhysicalCollectionName;
+      /**
+       * Why the changed files' model edges (`origin: "model"`) are missing from
+       * this graph — the verdict store could not be read when it was built.
+       * Absent when they were re-applied, or the project has none.
+       */
+      modelEdgesUnavailable?: string;
     }
   | { kind: "unavailable"; reason: string };
 

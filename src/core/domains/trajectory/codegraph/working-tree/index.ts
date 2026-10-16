@@ -11,6 +11,7 @@ export {
   type WorkingTreeGraphBuilt,
   type WorkingTreeGraphParseCacheUse,
   type WorkingTreeGraphProviderConfig,
+  type WorkingTreeGraphResidualInput,
 } from "./tree-graph-build.js";
 export {
   WORKING_TREE_GRAPH_CHILD_IDLE_MS,

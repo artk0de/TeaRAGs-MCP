@@ -1406,3 +1406,64 @@ describe("WorkingTreeGraphCache — seeded from the tree's previous graph", () =
     expect(existsSync(seedDb)).toBe(false);
   });
 });
+
+describe("WorkingTreeGraphCache — model edges of changed files (bd tea-rags-mcp-2m83f.39)", () => {
+  const RESIDUAL = { verdictRootDir: "/data/codegraph", model: "kev", threshold: 0.5, menuLimit: 16, minMenu: 2 };
+  const UNREADABLE = "model edges of changed files not re-applied: verdict store unreadable: lock held";
+
+  function residualHarness(shared?: Partial<Harness>): Harness {
+    const pool = shared?.pool ?? new FakeBasePool();
+    return harness(
+      { codegraph: () => ({ pool, providerConfig: PROVIDER_CONFIG, residual: RESIDUAL }) },
+      { ...shared, pool },
+    );
+  }
+
+  it("hands the build the verdicts of the request's logical collection", async () => {
+    const { cache, builder } = residualHarness();
+
+    expectBuilt(await cache.graphFor(request(treeDir("res-1")), 10_000));
+
+    expect(builder.inputs[0].residual).toEqual({ ...RESIDUAL, logicalName: COLLECTION });
+  });
+
+  it("hands the build no verdicts when the runtime names none", async () => {
+    const { cache, builder } = harness();
+
+    expectBuilt(await cache.graphFor(request(treeDir("res-2")), 10_000));
+
+    expect(builder.inputs[0].residual).toBeUndefined();
+  });
+
+  it("publishes why a graph lacks the model edges, and serves it after a restart", async () => {
+    const first = residualHarness();
+    first.builder.outcome = (input) => {
+      const built = defaultBuilt(input);
+      if (built.kind !== "built") return built;
+      return { kind: "built", graph: { ...built.graph, modelEdges: { unavailable: UNREADABLE } } };
+    };
+    const root = treeDir("res-3");
+
+    const state = await first.cache.graphFor(request(root), 10_000);
+    const second = residualHarness({ pool: first.pool, clock: first.clock });
+    const served = await second.cache.graphFor(request(root), 10_000);
+
+    expect(state).toMatchObject({ kind: "built", modelEdgesUnavailable: UNREADABLE });
+    expect(served).toMatchObject({ kind: "built", modelEdgesUnavailable: UNREADABLE });
+    expect(second.builder.inputs).toHaveLength(0);
+  });
+
+  it("publishes no note when the build re-applied the model edges", async () => {
+    const { cache, builder } = residualHarness();
+    builder.outcome = (input) => {
+      const built = defaultBuilt(input);
+      if (built.kind !== "built") return built;
+      return { kind: "built", graph: { ...built.graph, modelEdges: { stored: 3 } } };
+    };
+
+    const state = await cache.graphFor(request(treeDir("res-4")), 10_000);
+
+    expectBuilt(state);
+    expect(state).not.toHaveProperty("modelEdgesUnavailable");
+  });
+});
