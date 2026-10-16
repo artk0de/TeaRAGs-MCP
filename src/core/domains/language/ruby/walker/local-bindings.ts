@@ -10,6 +10,7 @@ import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { RUBY_SELF_COPY_METHODS } from "../self-copy-methods.js";
 import { collectMethodLocalBindings } from "./bare-call-detection.js";
 import { inferRubyMemberReturnType, type RubyMemberReturnOwner } from "./body-return.js";
+import { extractOperands } from "./macro-expansion.js";
 import { forEachClassScope, readScopeResolution, walk } from "./shared/index.js";
 import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
 import { collectYardParamTypes, YARD_CONST } from "./type-sources/yard.js";
@@ -291,6 +292,45 @@ export function collectRubyScopedBodyReturnTypes(
     }
   }
   return out;
+}
+
+/** Ruby-core macros whose reader answers the same-named `@ivar` verbatim. */
+const IVAR_READER_MACROS: ReadonlySet<string> = new Set(["attr_reader", "attr_accessor"]);
+
+/**
+ * `"<fqClass>#<reader>"` → the type of the `@ivar` an `attr_reader` /
+ * `attr_accessor` answers (bd tea-rags-mcp-2m83f.36), read off this file's own
+ * `ivarFieldTypes`. Keyed like every declared return fact, so a bare `model.x`
+ * in a subclass finds it through the caller's MRO exactly as an inherited
+ * `def model` would. A reader whose ivar the class never types is skipped.
+ */
+export function collectRubyIvarReaderReturnTypes(
+  root: AstNode,
+  ivarFieldTypes: Readonly<Record<string, Record<string, string>>>,
+): Record<string, RubyTypeRef> {
+  const out: Record<string, RubyTypeRef> = createIdentifierRecord();
+  forEachClassScope(root, (classNode, fq) => {
+    const fields = ivarFieldTypes[fq];
+    if (fields === undefined) return;
+    const scan = (n: AstNode): void => {
+      if (n.type === "class" || n.type === "module" || n.type === "method" || n.type === "singleton_method") return;
+      for (const reader of ivarReaderOperands(n)) {
+        const type = fields[`@${reader}`];
+        if (type !== undefined) out[`${fq}#${reader}`] = { form: "instance", name: type };
+      }
+      for (const child of n.children) scan(child);
+    };
+    for (const child of (classNode.childForFieldName("body") ?? classNode).children) scan(child);
+  });
+  return out;
+}
+
+/** The operands of a receiver-less `attr_reader` / `attr_accessor` call, else `[]`. */
+function ivarReaderOperands(node: AstNode): string[] {
+  if (node.type !== "call" || node.childForFieldName("receiver")) return [];
+  const macro = node.childForFieldName("method")?.text;
+  if (macro === undefined || !IVAR_READER_MACROS.has(macro)) return [];
+  return extractOperands(node.childForFieldName("arguments"), "leading-symbols");
 }
 
 /** The defs a class body owns — nested class / module bodies belong to their own fq. */

@@ -20,7 +20,11 @@ import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
 import type { RubyDslCatalogue } from "../dsl/index.js";
 import type { RubyFileTypeEnv } from "./file-type-env.js";
-import { collectRubyBodyReturnTypes, collectRubyScopedBodyReturnTypes } from "./local-bindings.js";
+import {
+  collectRubyBodyReturnTypes,
+  collectRubyIvarReaderReturnTypes,
+  collectRubyScopedBodyReturnTypes,
+} from "./local-bindings.js";
 import {
   collectKnownTargetCallArgs,
   collectRubyClassFieldParamLinks,
@@ -92,6 +96,11 @@ export function attachRubyTypeChannels(
     // nothing, so YARD / associations / the service-entry source keep precedence
     // exactly as `RUBY_TYPE_SOURCE_ORDER` states.
     for (const [key, ref] of Object.entries(collectRubyScopedBodyReturnTypes(root, catalogue))) {
+      if (!(key in structuredReturnTypes)) structuredReturnTypes[key] = ref;
+    }
+    // `attr_reader :x` answers what `@x` holds (bd tea-rags-mcp-2m83f.36). Last
+    // in line: a `def x` of the same name, or any declared fact, keeps its own.
+    for (const [key, ref] of Object.entries(collectRubyIvarReaderReturnTypes(root, ivarFieldTypes))) {
       if (!(key in structuredReturnTypes)) structuredReturnTypes[key] = ref;
     }
     if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;

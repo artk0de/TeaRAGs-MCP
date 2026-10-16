@@ -507,11 +507,13 @@ describe("seeded support versions", () => {
       // beside non-project facts leave the residual rows.
       // ruby 12: bd tea-rags-mcp-2m83f.32.3 — AR relation chains resolve scopes
       // on the model.
+      // ruby 13: bd tea-rags-mcp-2m83f.36 — attr_reader / attr_accessor return
+      // the type of the @ivar they read.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
         ["python", 11],
-        ["ruby", 12],
+        ["ruby", 13],
         ["java", 4],
         ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a
