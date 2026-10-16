@@ -195,3 +195,54 @@ describe("RubyExternalVocabulary — column-typed chain hop (bd tea-rags-mcp-2a5
     expect(vocab.isQualifiedReceiverExternal("firm.owner", callCtx, 5)).toBe(false);
   });
 });
+
+// bd tea-rags-mcp-2m83f.53 — `x.class` is a class object: a member on it reaches
+// a project definition only as a class method (or through a module a class can
+// extend). With none in the project the callee is a Module / Class member.
+describe("RubyExternalVocabulary — member on an untyped `x.class` receiver", () => {
+  const vocab = new RubyExternalVocabulary();
+  const def = (symbolId: string, relPath: string, symbolKind?: "class" | "module" | "method") => ({
+    symbolId,
+    fqName: symbolId.replace(/[#.]/, "::"),
+    shortName: symbolId.split(/[#.]|::/).pop() as string,
+    relPath,
+    scope: [],
+    ...(symbolKind === undefined ? {} : { symbolKind }),
+  });
+
+  it("is external when the project declares the member only as an instance method", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/automation.rb", [def("Automation#name", "app/models/automation.rb")]);
+    expect(vocab.isQualifiedReceiverExternal("error.class", ctx(table), 3, "name")).toBe(true);
+  });
+
+  it("is not external when a project class declares the member as a class method", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/application_record.rb", [
+      def("ApplicationRecord.db_name", "app/models/application_record.rb"),
+    ]);
+    expect(vocab.isQualifiedReceiverExternal("@actor.class", ctx(table), 3, "db_name")).toBe(false);
+  });
+
+  it("is not external when a project module declares the member — a class may extend it", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/concerns/naming.rb", [
+      def("Naming", "app/models/concerns/naming.rb", "module"),
+      def("Naming#ga4_name", "app/models/concerns/naming.rb"),
+    ]);
+    expect(vocab.isQualifiedReceiverExternal("item.class", ctx(table), 3, "ga4_name")).toBe(false);
+  });
+
+  it("leaves a typed `x.class` to the typed-receiver passes", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/firm.rb", [def("Firm", "app/models/firm.rb", "class")]);
+    const typed = ctx(table, { localBindings: { firm: [{ line: 1, type: "Firm", valueKind: "instance" }] } });
+    expect(vocab.isQualifiedReceiverExternal("firm.class", typed, 3, "name")).toBe(false);
+  });
+
+  it("reads `.class` only as the last hop — `x.class.name` is not a class object", () => {
+    expect(
+      vocab.isQualifiedReceiverExternal("error.class.name", ctx(new InMemoryGlobalSymbolTable()), 3, "custom_label"),
+    ).toBe(false);
+  });
+});

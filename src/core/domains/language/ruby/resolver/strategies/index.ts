@@ -23,6 +23,7 @@ export { RubyUnionDispatchResolver } from "./ruby-union-dispatch.js";
 export { RubyDynamicDispatchResolver } from "./ruby-dynamic-dispatch.js";
 export { RubyTableDispatchResolver } from "./ruby-table-dispatch.js";
 export { returnTypeOf } from "./ruby-member-return-types.js";
+export { isModuleOnlyConstant } from "./ruby-active-record-return-types.js";
 export {
   resolveConstant,
   collectAncestorChain,

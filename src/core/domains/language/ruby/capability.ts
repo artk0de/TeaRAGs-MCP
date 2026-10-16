@@ -131,7 +131,11 @@ export const capability: LanguageCapability = {
   // walker 24: bd tea-rags-mcp-2m83f.51 — each class target carries its return type and the
   // row names the group of the next chain hop, so an accepted class types `record.firm.name`;
   // a walker-23 index propagates nothing downstream.
-  versions: { chunking: 2, walker: 24, codegraphSchema: 2 },
+  // walker 25: bd tea-rags-mcp-2m83f.53 — a receiver splits into hops at bracket depth
+  // zero (`Serializer.new(result.data).as_json` types the constructor's class), `x.class`
+  // types as x's class, and a member on an untyped `x.class` with no project class method
+  // is external; a walker-24 index leaves those sites in the residual.
+  versions: { chunking: 2, walker: 25, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

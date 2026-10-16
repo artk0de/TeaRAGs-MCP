@@ -238,3 +238,38 @@ describe("RubyCallResolver.targetsExternalImport", () => {
     expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
   });
 });
+
+// bd tea-rags-mcp-2m83f.53 — a Module / Class member on an untyped `x.class`.
+describe("RubyCallResolver.targetsExternalImport — member on `x.class`", () => {
+  const resolver = new RubyCallResolver();
+  const table = new InMemoryGlobalSymbolTable();
+  table.upsertFile("app/models/automation.rb", [
+    {
+      symbolId: "Automation#name",
+      fqName: "Automation::name",
+      shortName: "name",
+      relPath: "app/models/automation.rb",
+      scope: [],
+    },
+  ]);
+  table.upsertFile("app/models/application_record.rb", [
+    {
+      symbolId: "ApplicationRecord.db_name",
+      fqName: "ApplicationRecord::db_name",
+      shortName: "db_name",
+      relPath: "app/models/application_record.rb",
+      scope: [],
+    },
+  ]);
+  const ctx: CallContext = { callerFile: "app/services/report.rb", callerScope: [], imports: [], symbolTable: table };
+
+  it("flags `error.class.name` when no project class method is named `name`", () => {
+    const call: CallRef = { callText: "error.class.name", receiver: "error.class", member: "name", startLine: 3 };
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(true);
+  });
+
+  it("keeps `actor.class.db_name` — a project class method answers it", () => {
+    const call: CallRef = { callText: "actor.class.db_name", receiver: "actor.class", member: "db_name", startLine: 3 };
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
+  });
+});

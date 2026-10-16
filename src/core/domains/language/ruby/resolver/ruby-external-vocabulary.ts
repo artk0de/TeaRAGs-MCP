@@ -1,14 +1,18 @@
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { ExternalVocabulary } from "../../../../contracts/types/language.js";
+import { splitReceiverHops } from "../../kernel/index.js";
 import { catalogueFor, isCoreAmbiguousMember, isExternalQualifiedMember } from "../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../super-receiver-sentinel.js";
 import {
   collectAncestorChain,
+  isModuleOnlyConstant,
   ivarTypeName,
+  lookupRubySymbolsByShortName,
   receiverChainTailIsExternal,
   receiverIsIndexAccess,
   resolveConstant,
   RUBY_RUNTIME_HOOKS,
+  symbolIdIsClassMethod,
   typeOfReceiver,
 } from "./strategies/index.js";
 import {
@@ -71,6 +75,7 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
     if (receiver === SUPER_RECEIVER_SENTINEL) return superTargetsExternal(ctx, member);
     const literalClass = rubyLiteralClass(receiver);
     if (literalClass !== undefined) return member !== undefined && literalMemberIsExternal(literalClass, member, ctx);
+    if (member !== undefined && classObjectMemberIsExternal(receiver, member, ctx, atLine)) return true;
     if (IVAR_RECEIVER.test(receiver)) return ivarTargetsExternal(receiver, ctx);
     if (/^[A-Z]/.test(receiver)) return resolveConstant(receiver, ctx) === null;
     // Lowercase receiver: check if it's a locally-typed core/gem variable (dnd9s).
@@ -110,6 +115,28 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
     if (atLine === undefined) return true;
     return typeOfReceiver(receiver, atLine, ctx) !== undefined;
   }
+}
+
+/**
+ * A member called on an UNTYPED `x.class` (bd tea-rags-mcp-2m83f.53): the
+ * receiver is a class object, so a project definition answers only as a class
+ * method or through a module a class can `extend` (or a `ClassMethods` block).
+ * With neither in the project the callee is a Module / Class member —
+ * `error.class.name` — and the call is external. A typed `x.class` is the
+ * typed-receiver passes' to resolve.
+ */
+function classObjectMemberIsExternal(receiver: string, member: string, ctx: CallContext, atLine?: number): boolean {
+  const hops = splitReceiverHops(receiver);
+  if (hops.length < 2 || hops[hops.length - 1] !== "class") return false;
+  if (atLine === undefined || typeOfReceiver(receiver, atLine, ctx) !== undefined) return false;
+  return !lookupRubySymbolsByShortName(ctx, member, { role: "callee" }).some(
+    (def) => symbolIdIsClassMethod(def.symbolId, member) || isModuleOnlyConstant(ownerOf(def.symbolId), ctx),
+  );
+}
+
+/** `Owner#member` → `Owner`; a top-level `member` → `""`. */
+function ownerOf(symbolId: string): string {
+  return symbolId.slice(0, Math.max(symbolId.lastIndexOf("#"), symbolId.lastIndexOf("."), 0));
 }
 
 /** A single instance-variable receiver (`@client`); a chained `@a.b` is out of scope. */

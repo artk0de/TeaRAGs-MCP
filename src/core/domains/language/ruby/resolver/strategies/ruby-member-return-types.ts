@@ -125,6 +125,9 @@ export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext
   // Tuple receiver: read by position, never dispatched on — no member type.
   if (recv.form === "tuple") return undefined;
 
+  // `x.class` is the class x is an instance of (bd tea-rags-mcp-2m83f.53).
+  if (member === "class" && recv.form === "instance") return { form: "class", name: recv.name };
+
   // 1–4. Declared on the class, Rails association DSL, ancestor MRO, flat
   //      fallback — the kernel walk over Ruby's ports (bd tea-rags-mcp-m99j1.1.12).
   const declared = RUBY_MEMBER_RETURN_TYPES.returnTypeOf(recv, member, ctx);

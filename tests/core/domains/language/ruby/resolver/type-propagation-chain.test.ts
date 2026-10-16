@@ -312,3 +312,16 @@ describe("typeOfReceiver — a dot inside a call's arguments is not a hop", () =
     });
   });
 });
+
+// ── `x.class` is the class of x (bd tea-rags-mcp-2m83f.53) ──────────────────
+
+describe("typeOfReceiver — `.class` on a typed instance", () => {
+  it("types `x.class` as the class form of x's type", () => {
+    const ctx = emptyCtx({ localBindings: { firm: [{ line: 1, type: "Firm", valueKind: "instance" }] } });
+    expect(typeOfReceiver("firm.class", 5, ctx)).toEqual({ form: "class", name: "Firm" });
+  });
+
+  it("leaves `x.class` untyped when x is untyped", () => {
+    expect(typeOfReceiver("error.class", 5, emptyCtx())).toBeUndefined();
+  });
+});
