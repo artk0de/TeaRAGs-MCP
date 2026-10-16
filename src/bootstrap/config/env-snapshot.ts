@@ -129,6 +129,8 @@ export function buildRegistryEnvSnapshot(
   put("CODEGRAPH_RESIDUAL_MENU_LIMIT", codegraph.residual.menuLimit);
   put("CODEGRAPH_RESIDUAL_MIN_MENU", codegraph.residual.minMenu);
   put("CODEGRAPH_RESIDUAL_NONE_THRESHOLD", codegraph.residual.noneThreshold);
+  put("CODEGRAPH_RESIDUAL_TOURNAMENT_FLOOR", codegraph.residual.tournamentFloor);
+  put("CODEGRAPH_RESIDUAL_TOURNAMENT_BUDGET", codegraph.residual.tournamentBudget);
   put("CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS", codegraph.residual.retentionDays);
   put("CODEGRAPH_RESIDUAL_KEV_SESSION_URL", codegraph.residual.kevSessionUrl);
 

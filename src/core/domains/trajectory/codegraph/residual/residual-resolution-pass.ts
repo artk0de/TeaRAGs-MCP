@@ -14,6 +14,10 @@
  * site needs asking, and released however the asking ends.
  * A "none of these" verdict at or above `noneThreshold` makes no edge: the site
  * is stored as external (`applyModelExternalSites`), out of the recall denominator.
+ * Sites carrying a receiver group are asked once per group over its class set
+ * (see `receiver-group-tournament.ts`); asking runs in rounds, the tournament's
+ * next round built from the previous one's verdicts. A method refused as too
+ * long is asked once more over a window around its call lines.
  */
 
 import { createHash } from "node:crypto";
@@ -27,6 +31,15 @@ import {
 } from "../../../../contracts/types/codegraph-residual.js";
 import type { GraphDbClient } from "../../../../contracts/types/codegraph-storage.js";
 import type { ProgressCallback } from "../../../../types.js";
+import {
+  collectReceiverGroups,
+  DEFAULT_TOURNAMENT_BUDGET,
+  DEFAULT_TOURNAMENT_FLOOR,
+  GroupTournament,
+  MAX_TOURNAMENT_ROUNDS,
+  windowMethodSource,
+} from "./receiver-group-tournament.js";
+import { propagateTypeFacts, receiverGroupAddress, type AcceptedGroupVerdict } from "./type-fact-propagation.js";
 import type {
   ResidualAnswer,
   ResidualDerivedState,
@@ -79,6 +92,10 @@ export interface ResidualPassInput {
   maxGroupFailureRate?: number;
   /** Failed groups in a row (in completion order) that trip the breaker whatever the budget. */
   maxConsecutiveGroupFailures?: number;
+  /** Smallest `p` of a tournament block winner that enters the next round. */
+  tournamentFloor?: number;
+  /** Tournament block questions this run may send; a group that would exceed it is skipped. */
+  tournamentBudget?: number;
 }
 
 interface PendingGroup {
@@ -86,7 +103,19 @@ interface PendingGroup {
   methodSymbolId: string;
   methodStartLine: number;
   methodEndLine: number;
+  /** Call lines of the questions, for the window a too-long method is asked over. */
+  lines: number[];
   questions: ResidualQuestion[];
+}
+
+/** A question and the method it is asked in. */
+interface PendingQuestion {
+  sourceRelPath: string;
+  methodSymbolId: string;
+  methodStartLine: number;
+  methodEndLine: number;
+  lines: readonly number[];
+  question: ResidualQuestion;
 }
 
 interface AskTally {
@@ -103,6 +132,10 @@ interface AskTally {
   leaseLost: boolean;
   /** The failure budget or the consecutive-failure limit was exceeded. */
   breakerTripped: boolean;
+  /** Method batches refused as too long and asked again over a window. */
+  windowed: number;
+  /** Method batches with an uncached question, over every round. */
+  batches: number;
 }
 
 const verdictKey = (siteKey: string, menuHash: string): string => `${siteKey}\u0000${menuHash}`;
@@ -140,13 +173,23 @@ export class ResidualResolutionPass {
     const servedVersion = input.mode === "ask" ? await this.servedVersion(provider) : { version: undefined };
 
     const rows = await input.graphDb.readResidualCallSites();
-    const eligibility = rows.map((r) => siteEligibility(r, input));
-    const eligible: EligibleSite[] = rows
+    const { groups: receiverGroups, ungrouped } = collectReceiverGroups(rows);
+    const eligibility = ungrouped.map((r) => siteEligibility(r, input));
+    const eligible: EligibleSite[] = ungrouped
       .filter((_, i) => eligibility[i] === "eligible")
       .map((r) => ({ ...r, questionHash: residualQuestionHash(r.menuHash) }));
-    const verdicts = await this.cachedVerdicts(input, eligible, servedVersion.version);
+    const askable = receiverGroups.filter((g) => g.classes.length >= input.minMenu);
+    const groupTooSmall = receiverGroups.filter((g) => g.classes.length < input.minMenu);
+    const tournaments = askable.map((g) => new GroupTournament(g, input.menuLimit, residualQuestionHash));
+    const verdicts = await this.cachedVerdicts(
+      input,
+      eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.questionHash })),
+      servedVersion.version,
+    );
     const cacheHits = eligible.filter((r) => verdicts.has(verdictKey(r.siteKey, r.questionHash))).length;
-    const groups = groupQuestions(eligible.filter((r) => !verdicts.has(verdictKey(r.siteKey, r.questionHash))));
+    const siteQuestions = eligible
+      .filter((r) => !verdicts.has(verdictKey(r.siteKey, r.questionHash)))
+      .map(siteQuestion);
     const readAt = input.now();
 
     const tally: AskTally = {
@@ -159,30 +202,34 @@ export class ResidualResolutionPass {
       consecutiveFailures: 0,
       leaseLost: false,
       breakerTripped: false,
+      windowed: 0,
+      batches: 0,
     };
-    let notAcquired: string | undefined;
-    if (servedVersion.version !== undefined && groups.length > 0) {
-      notAcquired = await this.askLeased(groups, servedVersion.version, verdicts, tally, input);
-    }
+    const rounds = await this.askRounds(siteQuestions, tournaments, servedVersion.version, verdicts, tally, input);
     const askedAt = input.now();
 
     const failureReason =
       tally.failures.length > 0 ? `${tally.failures.length} group(s) failed: ${tally.failures[0]}` : undefined;
-    const unavailable = servedVersion.unavailable ?? notAcquired;
+    const unavailable = servedVersion.unavailable ?? rounds.notAcquired;
     const reason = unavailable ?? failureReason;
     const skipped = unavailable !== undefined || tally.leaseLost || tally.breakerTripped;
 
-    const { edges, external, belowThreshold } = buildEdges(eligible, verdicts, provider, input.noneThreshold);
+    const siteOutcome = buildEdges(eligible, verdicts, provider, input.noneThreshold);
+    const groupOutcome = buildGroupEdges(tournaments, provider, input.noneThreshold);
+    const propagation = propagateTypeFacts(
+      receiverGroups,
+      acceptedGroupVerdicts(tournaments, provider, input.noneThreshold),
+      provider.id,
+    );
+    const edges = [...siteOutcome.edges, ...groupOutcome.edges, ...propagation.edges];
+    const external = [...siteOutcome.external, ...groupOutcome.external];
+    const belowThreshold = siteOutcome.belowThreshold + groupOutcome.belowThreshold;
     const applied = await input.graphDb.applyModelEdges(provider.id, edges);
     await input.graphDb.applyModelExternalSites(provider.id, external);
     const recomputeStartedAt = input.now();
     const derived = applied.changed ? await this.recomputeDerived(input) : "unchanged";
     const recomputeMs = input.now() - recomputeStartedAt;
-    await input.store.touch(
-      rows.map((r) => r.siteKey),
-      provider.id,
-      input.now(),
-    );
+    await input.store.touch([...rows.map((r) => r.siteKey), ...rounds.questionKeys], provider.id, input.now());
     await input.store.expire(input.retentionDays, input.now());
     const finishedAt = input.now();
 
@@ -192,9 +239,10 @@ export class ResidualResolutionPass {
       mode: input.mode,
       sites: rows.length,
       menuOverflow: eligibility.filter((e) => e === "menuOverflow").length,
-      menuTooSmall: eligibility.filter((e) => e === "menuTooSmall").length,
+      menuTooSmall:
+        eligibility.filter((e) => e === "menuTooSmall").length + groupTooSmall.reduce((n, g) => n + g.rows.length, 0),
       cacheHits,
-      groups: groups.length,
+      groups: tally.batches,
       asked: tally.asked,
       answered: tally.answered,
       tooLong: tally.tooLong,
@@ -203,6 +251,16 @@ export class ResidualResolutionPass {
       requeuedGroups: tally.requeued,
       belowThreshold,
       sitesEdged: edges.length,
+      receiverGroups: tournaments.length,
+      receiverGroupSites: tournaments.reduce((n, t) => n + t.group.rows.length, 0),
+      sitesEdgedByVerdict: groupOutcome.edges.length,
+      sitesEdgedByPropagation: propagation.edges.length,
+      propagationConflicts: propagation.conflicts,
+      tournamentGroups: tournaments.filter((t) => t.isTournament).length,
+      tournamentRounds: Math.max(0, ...tournaments.filter((t) => t.isTournament).map((t) => t.round)),
+      tournamentQuestions: rounds.tournamentQuestions,
+      groupsSkippedByBudget: rounds.skippedByBudget,
+      windowedGroups: tally.windowed,
       externalByModel: external.length,
       edgesApplied: applied.stored,
       derived,
@@ -243,53 +301,102 @@ export class ResidualResolutionPass {
     }
   }
 
-  /** Asks under the provider's lease when it has one; returns why the lease was not taken. */
-  private async askLeased(
-    groups: PendingGroup[],
-    modelVersion: string,
+  /**
+   * Asks round by round: the site questions and every group's first round, then
+   * each tournament's next round from the verdicts the previous one left. The
+   * provider's lease is taken on the first round with an uncached question and
+   * held until the last; a tournament whose uncached block questions exceed the
+   * remaining budget is abandoned and counted.
+   */
+  private async askRounds(
+    siteQuestions: PendingQuestion[],
+    tournaments: GroupTournament[],
+    modelVersion: string | undefined,
     verdicts: Map<string, ResidualVerdict>,
     tally: AskTally,
     input: ResidualPassInput,
-  ): Promise<string | undefined> {
-    const { provider } = input;
-    if (!provider.acquire) {
-      await this.askGroups(groups, modelVersion, verdicts, tally, input);
-      return undefined;
+  ): Promise<{ questionKeys: string[]; tournamentQuestions: number; skippedByBudget: number; notAcquired?: string }> {
+    const floor = input.tournamentFloor ?? DEFAULT_TOURNAMENT_FLOOR;
+    let budget = input.tournamentBudget ?? DEFAULT_TOURNAMENT_BUDGET;
+    const questionKeys: string[] = [];
+    let tournamentQuestions = 0;
+    let skippedByBudget = 0;
+    let lease: ResidualProviderLease | undefined;
+    let notAcquired: string | undefined;
+    const canAsk = () =>
+      modelVersion !== undefined && notAcquired === undefined && !tally.leaseLost && !tally.breakerTripped;
+    try {
+      for (let round = 1; round <= MAX_TOURNAMENT_ROUNDS; round++) {
+        const asking = tournaments
+          .filter((t) => t.outcome === undefined)
+          .map((t) => ({ tournament: t, questions: t.questions() }))
+          .filter((a) => a.questions.length > 0);
+        const keys = asking.flatMap((a) => a.questions.map((q) => ({ siteKey: q.siteKey, menuHash: q.menuHash })));
+        questionKeys.push(...keys.map((k) => k.siteKey));
+        for (const [key, verdict] of await this.cachedVerdicts(input, keys, modelVersion)) verdicts.set(key, verdict);
+        const pending = round === 1 ? [...siteQuestions] : [];
+        for (const { tournament, questions } of asking) {
+          const uncached = questions.filter((q) => !verdicts.has(verdictKey(q.siteKey, q.menuHash)));
+          if (uncached.length === 0) continue;
+          if (tournament.isTournament && canAsk()) {
+            if (uncached.length > budget) {
+              tournament.abandon();
+              skippedByBudget++;
+              continue;
+            }
+            budget -= uncached.length;
+            tournamentQuestions += uncached.length;
+          }
+          pending.push(...uncached.map((question) => groupQuestion(tournament, question)));
+        }
+        const batches = batchQuestions(pending);
+        tally.batches += batches.length;
+        if (batches.length > 0 && canAsk()) {
+          if (lease === undefined && input.provider.acquire) {
+            const taken = await this.acquireLease(input, batches.length);
+            if (typeof taken === "string") notAcquired = taken;
+            else lease = taken;
+          }
+          if (notAcquired === undefined) await this.askGroups(batches, modelVersion as string, verdicts, tally, input);
+        }
+        for (const { tournament } of asking) {
+          tournament.advance((q) => verdicts.get(verdictKey(q.siteKey, q.menuHash)), floor);
+        }
+      }
+    } finally {
+      await lease?.release();
     }
+    return { questionKeys, tournamentQuestions, skippedByBudget, ...(notAcquired ? { notAcquired } : {}) };
+  }
+
+  /** The provider's lease, or why it was not taken. */
+  private async acquireLease(input: ResidualPassInput, total: number): Promise<ResidualProviderLease | string> {
+    const { provider } = input;
     input.onProgress?.({
       phase: "resolving-residual",
       current: 0,
-      total: groups.length,
+      total,
       percentage: 0,
       message: "Residual resolution: acquiring GPU session (switching embedders → Kev)",
     });
-    let lease: ResidualProviderLease;
     try {
-      lease = await provider.acquire();
+      return await (provider.acquire as () => Promise<ResidualProviderLease>)();
     } catch (error) {
       return `provider ${provider.id} session not acquired: ${describeError(error)}`;
     }
-    try {
-      await this.askGroups(groups, modelVersion, verdicts, tally, input);
-    } finally {
-      await lease.release();
-    }
-    return undefined;
   }
 
   /** At the served version when asking; otherwise the newest verdict per site, whatever version gave it. */
   private async cachedVerdicts(
     input: ResidualPassInput,
-    eligible: EligibleSite[],
+    keys: { siteKey: string; menuHash: string }[],
     modelVersion: string | undefined,
   ): Promise<Map<string, ResidualVerdict>> {
+    if (keys.length === 0) return new Map();
     const cached =
       modelVersion === undefined
-        ? await input.store.findLatest(
-            eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.questionHash })),
-            input.provider.id,
-          )
-        : await input.store.find(eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.questionHash, modelVersion })));
+        ? await input.store.findLatest(keys, input.provider.id)
+        : await input.store.find(keys.map((k) => ({ ...k, modelVersion })));
     const verdicts = new Map<string, ResidualVerdict>();
     for (const verdict of cached) {
       if (verdict.model === input.provider.id) verdicts.set(verdictKey(verdict.siteKey, verdict.menuHash), verdict);
@@ -324,7 +431,7 @@ export class ResidualResolutionPass {
         const group = pendingGroups[next++];
         if (!requeued.has(group)) tally.asked += group.questions.length;
         try {
-          const fresh = await this.askGroup(group, modelVersion, input, controller.signal);
+          const fresh = await this.askGroup(group, modelVersion, input, controller.signal, tally);
           await input.store.put(fresh);
           tally.answered += fresh.length;
           tally.consecutiveFailures = 0;
@@ -378,17 +485,28 @@ export class ResidualResolutionPass {
     modelVersion: string,
     input: ResidualPassInput,
     signal: AbortSignal,
+    tally: AskTally,
   ): Promise<ResidualVerdict[]> {
     const methodSource = await input.readMethodSource(group.sourceRelPath, group.methodStartLine, group.methodEndLine);
-    const answers = await input.provider.resolveGroup(
-      {
-        sourceRelPath: group.sourceRelPath,
-        methodSymbolId: group.methodSymbolId,
-        methodSource,
-        questions: group.questions,
-      },
-      signal,
-    );
+    const ask = async (source: string) =>
+      input.provider.resolveGroup(
+        {
+          sourceRelPath: group.sourceRelPath,
+          methodSymbolId: group.methodSymbolId,
+          methodSource: source,
+          questions: group.questions,
+        },
+        signal,
+      );
+    let answers: ResidualAnswer[];
+    try {
+      answers = await ask(methodSource);
+    } catch (error) {
+      const windowed = windowMethodSource(methodSource, group.methodStartLine, group.lines);
+      if (!STATE_TOO_LONG_CODES.has(errorCode(error) ?? "") || windowed.length >= methodSource.length) throw error;
+      tally.windowed++;
+      answers = await ask(windowed);
+    }
     return toVerdicts(group.questions, answers, input.provider.id, modelVersion, input.now());
   }
 }
@@ -398,36 +516,128 @@ function tripsBreaker(tally: AskTally, failureBudget: number, maxConsecutive: nu
   return tally.failures.length > failureBudget || tally.consecutiveFailures >= maxConsecutive;
 }
 
-/** One group per enclosing method; a site asked twice with the same menu is asked once. */
-function groupQuestions(rows: EligibleSite[]): PendingGroup[] {
-  const groups = new Map<string, PendingGroup>();
-  const seen = new Set<string>();
-  for (const r of rows) {
-    const key = verdictKey(r.siteKey, r.questionHash);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const groupKey = `${r.sourceRelPath}\u0000${r.methodSymbolId}`;
-    let group = groups.get(groupKey);
-    if (!group) {
-      group = {
-        sourceRelPath: r.sourceRelPath,
-        methodSymbolId: r.methodSymbolId,
-        methodStartLine: r.methodStartLine,
-        methodEndLine: r.methodEndLine,
-        questions: [],
-      };
-      groups.set(groupKey, group);
-    }
-    group.questions.push({
+/** A site's own question, in its method. */
+function siteQuestion(r: EligibleSite): PendingQuestion {
+  return {
+    sourceRelPath: r.sourceRelPath,
+    methodSymbolId: r.methodSymbolId,
+    methodStartLine: r.methodStartLine,
+    methodEndLine: r.methodEndLine,
+    lines: [r.line],
+    question: {
       siteKey: r.siteKey,
       menuHash: r.questionHash,
       receiverText: r.receiverText,
       member: r.member,
       kind: r.kind,
       candidates: r.candidates,
-    });
+    },
+  };
+}
+
+/** A receiver group's question, in its method. */
+function groupQuestion(tournament: GroupTournament, question: ResidualQuestion): PendingQuestion {
+  const { group } = tournament;
+  return {
+    sourceRelPath: group.sourceRelPath,
+    methodSymbolId: group.methodSymbolId,
+    methodStartLine: group.methodStartLine,
+    methodEndLine: group.methodEndLine,
+    lines: group.lines,
+    question,
+  };
+}
+
+/** One batch per enclosing method; a question asked twice with the same menu is asked once. */
+function batchQuestions(pendingQuestions: readonly PendingQuestion[]): PendingGroup[] {
+  const groups = new Map<string, PendingGroup>();
+  const seen = new Set<string>();
+  for (const p of pendingQuestions) {
+    const key = verdictKey(p.question.siteKey, p.question.menuHash);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const groupKey = `${p.sourceRelPath}\u0000${p.methodSymbolId}`;
+    let group = groups.get(groupKey);
+    if (!group) {
+      group = {
+        sourceRelPath: p.sourceRelPath,
+        methodSymbolId: p.methodSymbolId,
+        methodStartLine: p.methodStartLine,
+        methodEndLine: p.methodEndLine,
+        lines: [],
+        questions: [],
+      };
+      groups.set(groupKey, group);
+    }
+    for (const line of p.lines) if (!group.lines.includes(line)) group.lines.push(line);
+    group.questions.push(p.question);
   }
   return [...groups.values()];
+}
+
+/** Every group's verdict at or above its threshold — the provider's for a class, `noneThreshold` for none. */
+function acceptedGroupVerdicts(
+  tournaments: readonly GroupTournament[],
+  provider: ResidualModelProvider,
+  noneThreshold: number,
+): Map<string, AcceptedGroupVerdict> {
+  const accepted = new Map<string, AcceptedGroupVerdict>();
+  for (const { group, outcome } of tournaments) {
+    if (outcome === undefined || outcome === "residual") continue;
+    if (outcome.p < (outcome.pick === null ? noneThreshold : provider.threshold)) continue;
+    accepted.set(receiverGroupAddress(group), outcome);
+  }
+  return accepted;
+}
+
+/**
+ * Edges and external sites of the groups that reached a verdict: a class at or
+ * above the provider threshold edges every site of the group to the target its
+ * member reaches on that class; a none at or above `noneThreshold` makes every
+ * site external.
+ */
+function buildGroupEdges(
+  tournaments: readonly GroupTournament[],
+  provider: ResidualModelProvider,
+  noneThreshold: number,
+): { edges: ModelEdgeRow[]; external: ModelExternalSiteRow[]; belowThreshold: number } {
+  const edges: ModelEdgeRow[] = [];
+  const external: ModelExternalSiteRow[] = [];
+  let belowThreshold = 0;
+  for (const { group, outcome } of tournaments) {
+    if (outcome === undefined || outcome === "residual") continue;
+    const { pick, p } = outcome;
+    if (pick === null ? p < noneThreshold : p < provider.threshold) {
+      belowThreshold += group.rows.length;
+      continue;
+    }
+    for (const r of group.rows) {
+      if (pick === null) {
+        external.push({
+          siteKey: r.siteKey,
+          sourceRelPath: r.sourceRelPath,
+          menuHash: r.menuHash,
+          model: provider.id,
+          p,
+        });
+        continue;
+      }
+      const target = r.classTargets?.find(([cls]) => cls === pick)?.[1];
+      if (target === undefined) {
+        belowThreshold++;
+        continue;
+      }
+      edges.push({
+        siteKey: r.siteKey,
+        sourceRelPath: r.sourceRelPath,
+        sourceSymbolId: r.methodSymbolId,
+        targetSymbolId: target,
+        model: provider.id,
+        p,
+      });
+    }
+  }
+  return { edges, external, belowThreshold };
 }
 
 /** An answer for a site not asked, or picking off the menu, is dropped; a null pick (none) is kept. */

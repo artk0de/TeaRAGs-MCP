@@ -97,6 +97,49 @@ describe("ResidualSiteCollector — receiver narrowing", () => {
     expect(collector.narrowEmptyKinds()).toEqual([]);
   });
 
+  it("tags a group's rows with one receiver group and its class set, each class with the target it reaches", () => {
+    const defs = [
+      def("Invoice#save", "app/models/invoice.rb"),
+      def("Invoice#title", "app/models/invoice.rb"),
+      def("Document#save", "app/models/document.rb"),
+      def("Bill#title", "app/models/bill.rb"),
+      def("Estimate#save", "app/models/estimate.rb"),
+      def("Estimate#title", "app/models/estimate.rb"),
+    ];
+    const collector = collectorOf(defs, hierarchyOf([["Bill", "Document", "super"]]));
+
+    collector.observe(METHOD, call("rec", "save", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("rec", "title", 13), DYNAMIC_MISS);
+
+    const rows = collector.rows();
+    expect(rows).toHaveLength(2);
+    expect(rows[0].receiverGroup).toMatch(/^[0-9a-f]{40}$/);
+    expect(rows[1].receiverGroup).toBe(rows[0].receiverGroup);
+    expect(rows.find((r) => r.member === "save")?.classTargets).toEqual([
+      ["Bill", "Document#save"],
+      ["Estimate", "Estimate#save"],
+      ["Invoice", "Invoice#save"],
+    ]);
+    expect(rows.find((r) => r.member === "title")?.classTargets).toEqual([
+      ["Bill", "Bill#title"],
+      ["Estimate", "Estimate#title"],
+      ["Invoice", "Invoice#title"],
+    ]);
+  });
+
+  it("orders a group's class set by the receiver's naming prior and keeps it uncut past the menu limit", () => {
+    const defs = Array.from({ length: 45 }, (_, i) => def(`K${String(i).padStart(2, "0")}#save`, "app/k.rb"));
+    defs.push(def("Invoice#save", "app/models/invoice.rb"));
+    const collector = collectorOf(defs);
+
+    collector.observe(METHOD, call("invoice", "save", 12), DYNAMIC_MISS);
+
+    const [row] = collector.rows();
+    expect(row.menuOverflow).toBe(true);
+    expect(row.classTargets).toHaveLength(46);
+    expect(row.classTargets?.[0]).toEqual(["Invoice", "Invoice#save"]);
+  });
+
   it("keeps two receivers apart when the local is reassigned between the calls", () => {
     const collector = collectorOf(BASE_DEFS);
     const method = { ...METHOD, localAssignmentLines: { r: [14] } };
@@ -206,6 +249,103 @@ describe("ResidualSiteCollector — receiver narrowing", () => {
   });
 });
 
+describe("ResidualSiteCollector — type facts for the downstream hop", () => {
+  const DEFS = [
+    def("Client#firm", "app/models/client.rb"),
+    def("Contact#firm", "app/models/contact.rb"),
+    def("Agency#name", "app/models/agency.rb"),
+    def("Firm#name", "app/models/firm.rb"),
+  ];
+  const RETURNS: Record<string, string> = { "Client#firm": "Firm", "Contact#firm": "Agency" };
+  const returnTypes = (owner: string, member: string): string | undefined => RETURNS[`${owner}#${member}`];
+  const chainCall = (receiver: string, member: string, callText: string): CallRef => ({
+    callText,
+    receiver,
+    member,
+    startLine: 14,
+    startColumn: 4,
+  });
+
+  it("records each class target's return type and the group of the hop whose receiver is the call", () => {
+    const collector = collectorOf(DEFS);
+
+    collector.observe(
+      METHOD,
+      chainCall("record", "firm", "record.firm"),
+      DYNAMIC_MISS,
+      undefined,
+      undefined,
+      returnTypes,
+    );
+    collector.observe(
+      METHOD,
+      chainCall("record.firm", "name", "record.firm.name"),
+      DYNAMIC_MISS,
+      undefined,
+      undefined,
+      returnTypes,
+    );
+
+    const firm = collector.rows().find((r) => r.member === "firm");
+    const name = collector.rows().find((r) => r.member === "name");
+    expect(firm?.classTargets).toEqual([
+      ["Client", "Client#firm", "Firm"],
+      ["Contact", "Contact#firm", "Agency"],
+    ]);
+    expect(firm?.downstreamGroup).toBe(name?.receiverGroup);
+    expect(name?.classTargets).toEqual([
+      ["Firm", "Firm#name"],
+      ["Agency", "Agency#name"],
+    ]);
+    expect(name?.downstreamGroup).toBeUndefined();
+  });
+
+  it("keys the downstream group off the call's source text, argument list included", () => {
+    const collector = collectorOf(DEFS);
+
+    collector.observe(
+      METHOD,
+      chainCall("record", "firm", "record.firm(x,  y)"),
+      DYNAMIC_MISS,
+      undefined,
+      undefined,
+      returnTypes,
+    );
+    collector.observe(
+      METHOD,
+      chainCall("record.firm(x, y)", "name", "record.firm(x, y).name"),
+      DYNAMIC_MISS,
+      undefined,
+      undefined,
+      returnTypes,
+    );
+
+    const firm = collector.rows().find((r) => r.member === "firm");
+    const name = collector.rows().find((r) => r.member === "name");
+    expect(firm?.downstreamGroup).toBe(name?.receiverGroup);
+  });
+
+  it("leaves the return type and the downstream group out when no class target's return is known", () => {
+    const collector = collectorOf(DEFS);
+
+    collector.observe(
+      METHOD,
+      chainCall("record", "firm", "record.firm"),
+      DYNAMIC_MISS,
+      undefined,
+      undefined,
+      () => undefined,
+    );
+
+    const [row] = collector.rows();
+    expect(row?.classTargets).toEqual([
+      ["Client", "Client#firm"],
+      ["Contact", "Contact#firm"],
+    ]);
+    expect(row?.downstreamGroup).toBeUndefined();
+  });
+});
+
 describe("ResidualSiteCollector — receiver narrowing of a frameworkOverride menu", () => {
   const SAVE_DEFS = [
     def("Invoice#save!", "app/models/invoice.rb"),
@@ -275,5 +415,33 @@ describe("ResidualSiteCollector — receiver narrowing of a frameworkOverride me
     const [row] = collector.rows().filter((r) => r.member === "number");
     expect(row?.candidates.slice().sort()).toEqual(["Estimate#number", "Invoice#number"]);
     expect(collector.narrowed().map((n) => n.edge.targetSymbolId)).toEqual(["Invoice#save!"]);
+  });
+
+  it("offers a grouped override site only the classes that reach a reachable override, keeping its reason", () => {
+    const collector = collectorOf([
+      ...SAVE_DEFS,
+      def("Estimate#total", "app/models/estimate.rb"),
+      def("Payment#total", "app/models/payment.rb"),
+    ]);
+
+    collector.observe(METHOD, call("r", "total", 12), DYNAMIC_MISS);
+    collector.observe(
+      METHOD,
+      call("r", "save!", 13),
+      DYNAMIC_MISS,
+      undefined,
+      overridesOf(["Invoice#save!", "Estimate#save!"]),
+    );
+
+    const rows = collector.rows();
+    const save = rows.find((r) => r.member === "save!");
+    const total = rows.find((r) => r.member === "total");
+    expect(save?.reason).toBe("frameworkOverride");
+    expect(save?.receiverGroup).toBe(total?.receiverGroup);
+    expect(save?.classTargets).toEqual([
+      ["Estimate", "Estimate#save!"],
+      ["Invoice", "Invoice#save!"],
+    ]);
+    expect(total?.classTargets?.map(([cls]) => cls)).toEqual(["Estimate", "Invoice", "Payment"]);
   });
 });

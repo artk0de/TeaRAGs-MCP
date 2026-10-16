@@ -28,6 +28,7 @@ import type {
   ModelExternalSiteRow,
   ModelResolvedSiteCount,
   ResidualCallSiteRow,
+  ResidualClassTarget,
   ResidualKind,
   ResidualReason,
 } from "../../contracts/types/codegraph.js";
@@ -55,6 +56,9 @@ interface ResidualSiteDbRow {
   language: string | null;
   receiver_kind: string | null;
   reason: string | null;
+  receiver_group: string | null;
+  class_targets: string | null;
+  downstream_group: string | null;
 }
 
 interface ModelResolvedSiteCountDbRow {
@@ -72,7 +76,8 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
   async readResidualCallSites(): Promise<ResidualCallSiteRow[]> {
     const rows = await this.session.queryAll<ResidualSiteDbRow>(
       `SELECT site_key, source_rel_path, method_symbol_id, method_start_line, method_end_line, line, call_column,
-              receiver_text, member, kind, candidates, menu_hash, menu_overflow, language, receiver_kind, reason
+              receiver_text, member, kind, candidates, menu_hash, menu_overflow, language, receiver_kind, reason,
+              receiver_group, class_targets, downstream_group
          FROM cg_residual_call_sites ORDER BY source_rel_path, site_key`,
     );
     return rows.map((r) => ({
@@ -92,6 +97,10 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
       ...(r.language === null ? {} : { language: r.language }),
       ...(r.receiver_kind === null ? {} : { receiverKind: r.receiver_kind }),
       ...(r.reason === null ? {} : { reason: r.reason as ResidualReason }),
+      ...(r.receiver_group === null || r.class_targets === null
+        ? {}
+        : { receiverGroup: r.receiver_group, classTargets: JSON.parse(r.class_targets) as ResidualClassTarget[] }),
+      ...(r.downstream_group === null ? {} : { downstreamGroup: r.downstream_group }),
     }));
   }
 

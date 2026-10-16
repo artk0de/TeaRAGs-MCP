@@ -31,6 +31,9 @@ export type ResidualReason = "frameworkOverride";
  */
 export type ResidualExclusionRule = "schemaColumn" | "frameworkMember" | "timestampColumn";
 
+/** One class of a receiver group: the class, the target its member reaches there, and that target's return type when known. */
+export type ResidualClassTarget = [className: string, targetSymbolId: string, returnType?: string];
+
 /** One row of `cg_residual_call_sites` (053). */
 export interface ResidualCallSiteRow {
   /** sha1(relPath, methodSymbolId, line, column, receiverText, member). */
@@ -54,6 +57,28 @@ export interface ResidualCallSiteRow {
   language?: string;
   /** The `cg_run_stats` receiver kind the site was counted under, e.g. `"ivar"` (055); absent on a row written before it. */
   receiverKind?: string;
+  /**
+   * sha1 of the site's receiver group (`receiverGroupKey`): every residual call on
+   * one receiver in one method shares it, and the pass asks the group one class
+   * question (061). Absent — the site is asked on its own `candidates`.
+   */
+  receiverGroup?: string;
+  /**
+   * The receiver group's narrowed class set, uncut, in menu order (naming prior,
+   * then name), each class with the target it reaches this site's member through
+   * — its own definition or the nearest ancestor's: `[["Invoice", "Invoice#save"],
+   * ["Bill", "Document#save"]]` (061). Present with {@link receiverGroup}. A
+   * third element is the class the target returns on that class, when the walk
+   * knows it — `["Client", "Client#firm", "Firm"]` (bd 2m83f.51).
+   */
+  classTargets?: ResidualClassTarget[];
+  /**
+   * {@link receiverGroup} of the next hop whose receiver is this call
+   * (`record.firm` for `record.firm.name`): an accepted class's return type is a
+   * type fact on that group (bd 2m83f.51). Absent on a row whose call starts no
+   * chain hop the walk saw as a group.
+   */
+  downstreamGroup?: string;
   /** Why the menu is narrowed (059); absent = the ordinary short-name menu. */
   reason?: ResidualReason;
 }
@@ -114,10 +139,11 @@ export type EdgeOrigin = "static" | "model";
 
 /**
  * Shape of the question a residual model is asked. 2: every menu ends with a
- * "none of these" option and a verdict's `pick` may be null. Folded into the
- * verdict key, so a verdict given to another shape is never reused.
+ * "none of these" option and a verdict's `pick` may be null. 3: a receiver
+ * group is asked once, its menu is classes (`subject: "class"`). Folded into
+ * the verdict key, so a verdict given to another shape is never reused.
  */
-export const RESIDUAL_QUESTION_VERSION = 2;
+export const RESIDUAL_QUESTION_VERSION = 3;
 
 /** Key of the none option's probability in `ResidualVerdict.probabilities` — never a symbol id. */
 export const RESIDUAL_NONE_PROBABILITY_KEY = "(none)";
@@ -140,12 +166,18 @@ export interface ResidualVerdict {
 }
 
 export interface ResidualQuestion {
+  /** The site's key; for a receiver-group question, the group's question key. */
   siteKey: string;
   menuHash: string;
   receiverText: string;
   member: string;
   kind: ResidualKind;
+  /** Target method symbolIds; class names when `subject` is `"class"`. */
   candidates: string[];
+  /** `"class"` — a receiver-group question: `candidates` are classes and the pick is one of them. */
+  subject?: "class";
+  /** Every member called on the receiver in the method, for a receiver-group question. */
+  members?: string[];
 }
 
 export interface ResidualQuestionGroup {
@@ -243,6 +275,26 @@ export interface ResidualPassReport {
   belowThreshold: number;
   /** Eligible rows whose verdict is at or above the provider threshold. */
   sitesEdged: number;
+  /** Receiver groups holding a class menu, asked or answered from the store. */
+  receiverGroups: number;
+  /** Rows of those groups. */
+  receiverGroupSites: number;
+  /** Rows edged by their own receiver group's class verdict. */
+  sitesEdgedByVerdict: number;
+  /** Rows edged by a type fact propagated from another group's verdict (a chain hop downstream). */
+  sitesEdgedByPropagation: number;
+  /** Groups whose own accepted verdict disagreed with a propagated type fact; the direct verdict stood. */
+  propagationConflicts: number;
+  /** Receiver groups whose class set exceeded the menu limit and went to a tournament. */
+  tournamentGroups: number;
+  /** Most rounds any tournament ran. */
+  tournamentRounds: number;
+  /** Tournament block questions sent to the model this run. */
+  tournamentQuestions: number;
+  /** Tournament groups not asked because the run's budget (`CODEGRAPH_RESIDUAL_TOURNAMENT_BUDGET`) ran out. */
+  groupsSkippedByBudget: number;
+  /** Method batches the model refused as too long, asked again over a window around their call lines. */
+  windowedGroups: number;
   /** Eligible rows the model answered "none of these" for at or above `CODEGRAPH_RESIDUAL_NONE_THRESHOLD`. */
   externalByModel: number;
   /**

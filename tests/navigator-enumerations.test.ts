@@ -48,6 +48,7 @@ const PINNED_CAPABILITY_LANGUAGES: Readonly<Record<string, readonly string[]>> =
   prepareResolvePass: ["go", "typescript"],
   residualExclusion: ["ruby"],
   residualOverrideMenu: ["ruby"],
+  residualReturnType: ["ruby"],
   resolveFileEdges: ["java", "javascript", "python", "ruby", "swift", "typescript"],
   targetsCoreAmbiguousMember: ["python", "ruby"],
   targetsExternalImport: ["java", "javascript", "python", "ruby", "typescript"],

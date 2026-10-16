@@ -22,6 +22,7 @@ export { RubyConeTypeLocator } from "./ruby-cone-type-locator.js";
 export { RubyUnionDispatchResolver } from "./ruby-union-dispatch.js";
 export { RubyDynamicDispatchResolver } from "./ruby-dynamic-dispatch.js";
 export { RubyTableDispatchResolver } from "./ruby-table-dispatch.js";
+export { returnTypeOf } from "./ruby-member-return-types.js";
 export {
   resolveConstant,
   collectAncestorChain,

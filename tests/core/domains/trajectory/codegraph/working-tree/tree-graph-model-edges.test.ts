@@ -18,6 +18,10 @@ import { afterAll, describe, expect, it } from "vitest";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { ResidualVerdictStore } from "../../../../../../src/core/adapters/duckdb/residual-verdict-store.js";
 import type { ResidualCallSiteRow } from "../../../../../../src/core/contracts/types/codegraph-residual.js";
+import {
+  collectReceiverGroups,
+  GroupTournament,
+} from "../../../../../../src/core/domains/trajectory/codegraph/residual/receiver-group-tournament.js";
 import { residualQuestionHash } from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-resolution-pass.js";
 import {
   buildWorkingTreeGraph,
@@ -85,7 +89,7 @@ async function buildModelFixture(): Promise<ModelFixture> {
     expect(sites.map((s) => s.sourceRelPath).sort()).toEqual(["caller.ts", "watcher.ts"]);
     const store = await ResidualVerdictStore.open(verdictRootDir, LOGICAL);
     try {
-      await store.put(sites.map(verdictFor));
+      await store.put(verdictsFor(sites));
     } finally {
       await store.close();
     }
@@ -120,11 +124,22 @@ async function buildModelFixture(): Promise<ModelFixture> {
   };
 }
 
-function verdictFor(site: ResidualCallSiteRow) {
-  const { pick, p } = PICKS[site.sourceRelPath];
+/** What a Kev pass stored: one class verdict per receiver group (each file holds one `h.ping()` group). */
+function verdictsFor(sites: ResidualCallSiteRow[]) {
+  const { groups, ungrouped } = collectReceiverGroups(sites);
+  expect(ungrouped).toEqual([]);
+  return groups.map((group) => {
+    const [question] = new GroupTournament(group, 16, residualQuestionHash).questions();
+    const { pick, p } = PICKS[group.sourceRelPath];
+    const pickedClass = pick.slice(0, pick.indexOf("#"));
+    return verdictFor(question.siteKey, question.menuHash, pickedClass, p);
+  });
+}
+
+function verdictFor(siteKey: string, menuHash: string, pick: string, p: number) {
   return {
-    siteKey: site.siteKey,
-    menuHash: residualQuestionHash(site.menuHash),
+    siteKey,
+    menuHash,
     model: MODEL,
     modelVersion: "v1",
     pick,

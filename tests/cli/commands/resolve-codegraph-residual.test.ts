@@ -25,6 +25,16 @@ const COMPLETED = {
   belowThreshold: 5,
   sitesEdged: 97,
   externalByModel: 31,
+  receiverGroups: 12,
+  receiverGroupSites: 30,
+  sitesEdgedByVerdict: 25,
+  sitesEdgedByPropagation: 4,
+  propagationConflicts: 1,
+  tournamentGroups: 2,
+  tournamentRounds: 3,
+  tournamentQuestions: 9,
+  groupsSkippedByBudget: 1,
+  windowedGroups: 6,
   edgesApplied: 95,
   derived: "recomputed" as const,
   durations: { readMs: 1, askMs: 2, applyMs: 3, recomputeMs: 2, totalMs: 6 },
@@ -58,6 +68,10 @@ describe("formatResidualReport", () => {
     expect(text).toContain("apply 3 (recompute 2), total 6");
     expect(text).toContain("  aborted groups:   2\n");
     expect(text).toContain("  requeued groups:  4\n");
+    expect(text).toContain("  receiver groups:  12 (30 sites)\n");
+    expect(text).toContain("  edged by group:   25 by verdict, 4 by propagation (1 conflicts)\n");
+    expect(text).toContain("  tournaments:      2 groups, 3 rounds, 9 questions, 1 skipped by budget\n");
+    expect(text).toContain("  windowed groups:  6\n");
     expect(text).toContain("total 6");
   });
 

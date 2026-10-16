@@ -243,6 +243,13 @@ export interface CallResolver {
    */
   residualOverrideMenu?: (call: CallRef, ctx: CallContext) => readonly string[] | null;
   /**
+   * Optional: the class `owner#member` returns on an `owner` instance (bd
+   * tea-rags-mcp-2m83f.51) — `"Firm"` for `Client#firm` under `belongs_to
+   * :firm`; `undefined` when no fact says. Stored on each class target of a
+   * grouped residual row. Mirrors `LanguageSymbolResolver.residualReturnType`.
+   */
+  residualReturnType?: (owner: string, member: string, ctx: CallContext) => string | undefined;
+  /**
    * Optional: a chunk's local bindings as this resolver reads them (bd
    * tea-rags-mcp-m99j1.1.30 regression). A binding the resolver cannot read at
    * all — a fact standing on nothing it can place — is ABSENCE of evidence, and

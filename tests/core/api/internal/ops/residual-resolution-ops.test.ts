@@ -8,6 +8,7 @@ import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-i
 import { ResidualVerdictStore } from "../../../../../src/core/adapters/duckdb/residual-verdict-store.js";
 import { ResidualResolutionOps } from "../../../../../src/core/api/internal/ops/residual-resolution-ops.js";
 import type { ModelEdgeRow, ResidualCallSiteRow } from "../../../../../src/core/contracts/types/codegraph-residual.js";
+import { ResidualResolutionPass } from "../../../../../src/core/domains/trajectory/codegraph/residual/residual-resolution-pass.js";
 import type {
   ResidualModelProvider,
   ResidualQuestionGroup,
@@ -116,6 +117,21 @@ describe("ResidualResolutionOps", () => {
     expect(applied[0].map((e) => e.targetSymbolId)).toEqual(["Firm#users"]);
     expect(progress.at(-1)).toMatchObject({ phase: "resolving-residual" });
     expect(existsSync(ResidualVerdictStore.pathFor(rootDir, "code_test"))).toBe(true);
+  });
+
+  it("hands the configured tournament floor and budget to the pass", async () => {
+    const run = vi.spyOn(ResidualResolutionPass.prototype, "run");
+    const ops = new ResidualResolutionOps({
+      rootDir,
+      codegraphPool: { acquireWrite } as never,
+      config: { ...CONFIG, tournamentFloor: 0.4, tournamentBudget: 12 },
+      createProvider: () => answeringProvider([]),
+    });
+
+    await ops.resolve({ ...request(), model: "kev" });
+
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ tournamentFloor: 0.4, tournamentBudget: 12 }));
+    run.mockRestore();
   });
 
   it("names the threshold each model's edges are applied at", () => {

@@ -8,6 +8,7 @@ import { extname } from "node:path";
 
 import type {
   ResidualCallSiteRow,
+  ResidualClassTarget,
   ResidualExclusionRule,
   ResidualKind,
   ResidualReason,
@@ -20,7 +21,12 @@ import type {
   RelPath,
 } from "../../../../contracts/types/codegraph.js";
 import type { ReceiverKind } from "../symbols/receiver-kind.js";
-import { orderByNamingPrior, ReceiverClassClosure, receiverGroupKey } from "./receiver-closure.js";
+import {
+  orderByNamingPrior,
+  orderClassesByNamingPrior,
+  ReceiverClassClosure,
+  receiverGroupKey,
+} from "./receiver-closure.js";
 
 /** Menu size the wave-1 eval measured; `CODEGRAPH_RESIDUAL_MENU_LIMIT` overrides it. */
 export const DEFAULT_RESIDUAL_MENU_LIMIT = 40;
@@ -73,7 +79,11 @@ interface PendingResidualSite {
   groupKey: string;
   /** The `frameworkOverride` menu (sorted overrides); narrowing may only shrink it. */
   overrideMenu?: readonly string[];
+  returnTypeOf?: ResidualReturnTypeOf;
 }
+
+/** The class `owner#member` returns on an `owner` instance, or `undefined` when no fact says. */
+export type ResidualReturnTypeOf = (owner: string, member: string) => string | undefined;
 
 export interface ResidualSiteKeyParts {
   relPath: string;
@@ -130,6 +140,44 @@ export function addResidualExclusionCounts(
   counts.timestampColumn += excluded.timestampColumn;
 }
 
+/**
+ * The group's classes in naming-prior order, each with the method target the
+ * member reaches on it; a class reaching the member only as a schema column has
+ * no method to edge to and is left out. A tie of definers at one depth takes the
+ * smallest symbolId. With `allowed` (a `frameworkOverride` site's override
+ * menu) a class whose target is not a reachable override is left out too. A
+ * class whose member's return `returnTypeOf` knows carries it third.
+ */
+function classTargetsOf(
+  receiverText: string,
+  member: string,
+  classes: ReadonlySet<string>,
+  own: ReadonlyMap<string, readonly { symbolId: string; isSchemaColumn?: boolean }[]>,
+  allowed?: ReadonlySet<string>,
+  returnTypeOf?: ResidualReturnTypeOf,
+): ResidualClassTarget[] {
+  const targets = new Map<string, string>();
+  for (const owner of classes) {
+    const ids = (own.get(owner) ?? [])
+      .filter((d) => d.isSchemaColumn !== true && (allowed === undefined || allowed.has(d.symbolId)))
+      .map((d) => d.symbolId)
+      .sort();
+    if (ids.length > 0) targets.set(owner, ids[0]);
+  }
+  return orderClassesByNamingPrior(receiverText, [...targets.keys()]).map((owner): ResidualClassTarget => {
+    const returnType = returnTypeOf?.(owner, member);
+    const target = targets.get(owner) as string;
+    return returnType === undefined ? [owner, target] : [owner, target, returnType];
+  });
+}
+
+/** The receiver group of the hop whose receiver is this call — `record.firm(x)` for `record.firm(x).name`. */
+function downstreamGroupOf(site: PendingResidualSite): string {
+  return sha1(
+    receiverGroupKey(site.method.symbolId, site.call.callText, site.call.startLine, site.method.localAssignmentLines),
+  );
+}
+
 export class ResidualSiteCollector {
   private readonly collected: ResidualCallSiteRow[] = [];
   private readonly excludedCounts = emptyResidualExclusionCounts();
@@ -163,7 +211,9 @@ export class ResidualSiteCollector {
    * member the receiver reaches) replaces the menu and marks the row
    * `frameworkOverride`. With narrowing on, every call joins its receiver's
    * constraint set and residual rows are built on the first read of {@link rows};
-   * narrowing only intersects an override menu, never adds to it.
+   * narrowing only intersects an override menu, never adds to it. `returnTypeOf`
+   * types each class target of a grouped row, so an accepted class can type the
+   * next chain hop.
    */
   observe(
     method: ResidualMethodView,
@@ -171,6 +221,7 @@ export class ResidualSiteCollector {
     verdict: ResidualVerdictView,
     exclude?: () => ResidualExclusionRule | null,
     overrideMenu?: () => readonly string[] | null,
+    returnTypeOf?: ResidualReturnTypeOf,
   ): void {
     const groupKey = this.closure === undefined ? undefined : this.constrain(method, call, verdict);
     const kind = residualKindOf(verdict);
@@ -201,6 +252,7 @@ export class ResidualSiteCollector {
       kind,
       groupKey,
       overrideMenu: reason === undefined ? undefined : menu,
+      returnTypeOf,
     });
   }
 
@@ -299,7 +351,19 @@ export class ResidualSiteCollector {
       site.call.receiver ?? "",
       methods.map(([id]) => id),
     );
-    this.pushRow(site.method, site.call, site.verdict, site.kind, menu, reason);
+    const classTargets = classTargetsOf(
+      site.call.receiver ?? "",
+      site.call.member,
+      classes,
+      own,
+      overrides,
+      site.returnTypeOf,
+    );
+    this.pushRow(site.method, site.call, site.verdict, site.kind, menu, reason, {
+      receiverGroup: sha1(site.groupKey),
+      classTargets,
+      ...(classTargets.some((t) => t.length > 2) ? { downstreamGroup: downstreamGroupOf(site) } : {}),
+    });
   }
 
   private pushRow(
@@ -309,6 +373,7 @@ export class ResidualSiteCollector {
     kind: ResidualKind,
     menu: string[],
     reason?: ResidualReason,
+    group?: Pick<ResidualCallSiteRow, "receiverGroup" | "classTargets" | "downstreamGroup">,
   ): void {
     const menuOverflow = menu.length > this.menuLimit;
     const candidates = menuOverflow ? menu.slice(0, this.menuLimit) : menu;
@@ -339,6 +404,7 @@ export class ResidualSiteCollector {
       language: this.language,
       receiverKind: verdict.receiverKind,
       ...(reason === undefined ? {} : { reason }),
+      ...(group?.classTargets?.length ? group : {}),
     });
   }
 

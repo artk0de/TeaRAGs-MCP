@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
-import type { ResidualCallSiteRow } from "../../../../src/core/contracts/types/codegraph-residual.js";
+import type {
+  ResidualCallSiteRow,
+  ResidualClassTarget,
+} from "../../../../src/core/contracts/types/codegraph-residual.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
@@ -86,6 +89,32 @@ describe("DuckDbGraphClient — residual call-site persistence", () => {
       menu_overflow: true,
     });
     expect(JSON.parse(rows[0].candidates)).toEqual(["Firm#users", "Team#users"]);
+  });
+
+  it("round-trips a site's receiver group and class targets, and reads none for a site without them", async () => {
+    const classTargets: ResidualClassTarget[] = [
+      ["Bill", "Document#users"],
+      ["Firm", "Firm#users", "Team"],
+    ];
+    await client.upsertFile(
+      { relPath: "a.rb", language: "ruby" },
+      {
+        fileEdges: [],
+        methodEdges: [],
+        residualCallSites: [
+          site("a.rb", "k1", { receiverGroup: "g-1", classTargets, downstreamGroup: "g-2" }),
+          site("a.rb", "k2"),
+        ],
+      },
+    );
+
+    const [grouped, plain] = await client.readResidualCallSites();
+
+    expect(grouped).toMatchObject({ siteKey: "k1", receiverGroup: "g-1", classTargets, downstreamGroup: "g-2" });
+    expect(plain.siteKey).toBe("k2");
+    expect(plain).not.toHaveProperty("receiverGroup");
+    expect(plain).not.toHaveProperty("classTargets");
+    expect(plain).not.toHaveProperty("downstreamGroup");
   });
 
   it("re-upserting a file replaces its slice", async () => {

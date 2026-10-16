@@ -61,11 +61,19 @@ export function candidateClass(symbolId: string): string {
   return cut > 0 ? symbolId.slice(0, cut) : symbolId;
 }
 
-export function kevQuestion(receiverText: string, member: string, classes: readonly string[]): KevChoiceQuestion {
+/** `members` — every call on the receiver, for a receiver-group question; absent, the one call on `member`. */
+export function kevQuestion(
+  receiverText: string,
+  member: string,
+  classes: readonly string[],
+  members?: readonly string[],
+): KevChoiceQuestion {
+  const calls = members !== undefined && members.length > 1 ? members : [member];
+  const named = calls.map((m) => `\`${receiverText}.${m}\``).join(", ");
   return {
     type: "choice",
     instructions:
-      `In this Ruby method, \`${receiverText}\` is the receiver of the call \`${receiverText}.${member}\`. ` +
+      `In this Ruby method, \`${receiverText}\` is the receiver of the call${calls.length > 1 ? "s" : ""} ${named}. ` +
       `Which class is the object passed as \`${receiverText}\`?`,
     criteria: Object.fromEntries([...classes, KEV_NONE_OPTION].map((name) => [name, null])),
   };
@@ -112,9 +120,13 @@ export class KevResidualProvider implements ResidualModelProvider {
   }
 
   async resolveGroup(group: ResidualQuestionGroup, signal?: AbortSignal): Promise<ResidualAnswer[]> {
-    const menus = group.questions.map((question) => classMenu(question.candidates));
+    const menus = group.questions.map((question) =>
+      question.subject === "class"
+        ? new Map(question.candidates.map((name) => [name, name]))
+        : classMenu(question.candidates),
+    );
     const questions = group.questions.map((question, i) =>
-      kevQuestion(question.receiverText, question.member, [...menus[i].keys()]),
+      kevQuestion(question.receiverText, question.member, [...menus[i].keys()], question.members),
     );
     const body = JSON.stringify({
       model: MODEL_NAME,

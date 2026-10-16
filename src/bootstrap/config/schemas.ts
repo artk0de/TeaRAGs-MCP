@@ -231,6 +231,10 @@ export const codegraphResidualSchema = z.object({
   minMenu: intWithDefault(1),
   /** Minimum probability of a "none of these" verdict for its site to count as external, out of the recall denominator. */
   noneThreshold: floatWithDefault(0.8),
+  /** Minimum probability of a tournament block winner for it to enter the next round. */
+  tournamentFloor: floatWithDefault(0.5),
+  /** Tournament block questions one run may send; a receiver group the rest cannot cover is skipped and counted. */
+  tournamentBudget: intWithDefault(5000),
   /** Verdicts not seen by any run for this many days are dropped. */
   retentionDays: intWithDefault(180),
   /**

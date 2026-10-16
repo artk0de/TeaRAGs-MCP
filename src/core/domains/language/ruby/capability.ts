@@ -125,7 +125,13 @@ export const capability: LanguageCapability = {
   // canonical literals, so a parameter is typed from `perform(Firm)` (class form)
   // and a literal caller disagrees with a project-typed one; a walker-21 index
   // lacks those parameter types and their edges.
-  versions: { chunking: 2, walker: 22, codegraphSchema: 2 },
+  // walker 23: bd tea-rags-mcp-2m83f.46 — residual rows carry their receiver group and its
+  // class targets (`[["Invoice", "Invoice#save"]]`), so the pass asks one class question per
+  // group; a walker-22 index holds ungrouped rows and asks per site.
+  // walker 24: bd tea-rags-mcp-2m83f.51 — each class target carries its return type and the
+  // row names the group of the next chain hop, so an accepted class types `record.firm.name`;
+  // a walker-23 index propagates nothing downstream.
+  versions: { chunking: 2, walker: 24, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

@@ -125,6 +125,11 @@ const RESIDUAL_VALUES = [
   "receiver_kind",
   // Migration 059 (bd tea-rags-mcp-2m83f.48): why the menu is narrowed.
   "reason",
+  // Migration 061 (bd tea-rags-mcp-2m83f.46): the receiver group the pass asks once.
+  "receiver_group",
+  "class_targets",
+  // Migration 062 (bd tea-rags-mcp-2m83f.51): the chain hop an accepted class types.
+  "downstream_group",
 ] as const;
 // Migration 039 (bd tea-rags-mcp-7t2ee): one row per (file, type it asked about).
 const HIERARCHY_DEPENDENCY_KEYS = ["source_rel_path", "type_name"] as const;
@@ -353,6 +358,9 @@ export class DuckDbFileGraphStore {
           r.language ?? null,
           r.receiverKind ?? null,
           r.reason ?? null,
+          r.receiverGroup ?? null,
+          r.classTargets === undefined ? null : JSON.stringify(r.classTargets),
+          r.downstreamGroup ?? null,
         ]);
       }
       // The pass-1 slice, keyed by the NODE's path rather than the slice's own,
