@@ -20,6 +20,7 @@
  * `ArchitectureReportSummary`.
  */
 
+import type { EdgeOrigin } from "./codegraph-residual.js";
 import type { ChangeReasonsUnavailable, CochangeBurstWindowMethod, ModuleChangeReasons, RelPath } from "./codegraph.js";
 import type { WorkingTreeMarker } from "./working-tree.js";
 
@@ -221,6 +222,12 @@ export interface ConventionPrivacyViolationEvidence {
   sourceSymbolId: string;
   targetSymbolId: string;
   rule: ConventionPrivacyRule;
+  /** `"model"` when a residual-resolution verdict produced the edge; absent on a static edge. */
+  origin?: EdgeOrigin;
+  /** Provider id of a model edge. */
+  model?: string;
+  /** Provider probability of a model edge. */
+  p?: number;
 }
 
 /** A member private only by convention, reached from where the convention forbids. */

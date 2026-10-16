@@ -498,7 +498,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "adoption >0.5 and >= adaptive cut (Otsu when adoptions split bimodally, else the floor; summary gives threshold, method, separability); kind " +
       "bypass = facade re-exports what import takes (by imported names when indexed, else target file), " +
       "internal-reach = it does not (nonExportedNames), conventionPrivacy = Python _name " +
-      "used from other package or Ruby send(:private) from outside its class; rootCauses per module. " +
+      'used from other package or Ruby send(:private) from outside its class (evidence carries origin:"model", model, p only when a residual ' +
+      "model verdict produced the edge — a verdict with probability p, not a static fact); rootCauses per module. " +
       "silentCoupling: file pair co-changing strongly in git history with no import/re-export/resolved call " +
       "between them (support, P(B|A), P(A|B), lift, strength = Wilson lower bound, sample commits, " +
       "structuralVisibility); a pair is judged only when it beats the configuration null n_p*n_q*Qs/M^2 " +

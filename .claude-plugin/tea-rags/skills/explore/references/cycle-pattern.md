@@ -19,6 +19,10 @@ from a pre-computed table, sub-millisecond per call.
   `find_symbol` instead of guessing the file. An empty `relativePath` means the
   cycle was not recomputed since the index upgrade — reindex, don't search for
   the file.
+- **Model-closed cycles** — a cycle with `hasModelEdge` (+ `modelEdgeCount`) may
+  be closed only by a model verdict (probability `p`), not a static edge; say so
+  when rendering the loop, and read `trace_path` `minP` the same way (the
+  weakest link of a path).
 - **Scope the result to a module** → add `pathPattern` (picomatch glob), e.g.
   `find_cycles scope=file pathPattern="**/domains/ingest/**"`. A cycle is kept
   if AT LEAST ONE member's own file matches, so cross-boundary cycles (one file

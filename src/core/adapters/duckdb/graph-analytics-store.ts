@@ -508,9 +508,12 @@ export class DuckDbGraphAnalyticsStore implements Omit<
       visibility: string | null;
       language: string;
       call_expression: string;
+      origin: string | null;
+      model: string | null;
+      p: number | null;
     }>(
       `SELECT m.source_rel_path, m.source_symbol_id, m.target_rel_path, m.target_symbol_id,
-              s.short_name, s.visibility, f.language, m.call_expression
+              s.short_name, s.visibility, f.language, m.call_expression, m.origin, m.model, m.p
        FROM cg_symbols_edges_method m
        JOIN cg_symbols s ON s.rel_path = m.target_rel_path AND s.symbol_id = m.target_symbol_id
        JOIN cg_symbols_files f ON f.rel_path = m.target_rel_path
@@ -529,6 +532,9 @@ export class DuckDbGraphAnalyticsStore implements Omit<
       targetVisibility: r.visibility,
       targetLanguage: r.language,
       callExpression: r.call_expression,
+      ...(r.origin === "model" && r.model !== null && r.p !== null
+        ? { origin: "model" as const, model: r.model, p: r.p }
+        : {}),
     }));
   }
 

@@ -65,6 +65,7 @@ export function detectConventionPrivacyLeaks(
         sourceSymbolId: edge.sourceSymbolId,
         targetSymbolId: edge.targetSymbolId,
         rule,
+        ...(edge.origin === "model" ? { origin: edge.origin, model: edge.model, p: edge.p } : {}),
       });
     }
   }

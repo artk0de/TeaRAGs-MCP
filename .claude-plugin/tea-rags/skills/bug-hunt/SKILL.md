@@ -226,6 +226,10 @@ an absent tool as a fact.
    `dangerOverlay` = same `bugHunt` overlay as search → apply Signal triage to
    EVERY step, both classes.
 
+   A step with `origin: "model"` (+ `model`, `p`) is a model verdict with
+   probability `p`, not a static fact; path `minP` is its weakest link — a low
+   `minP` means the route may not exist at runtime.
+
 **Read trace response:**
 
 - `dangerRanking[0]` → **inspect-first step** — riskiest hop on the route.
@@ -249,7 +253,9 @@ an absent tool as a fact.
 **State-loop / re-entrancy smell (`find_cycles`).** Symptom is infinite loop,
 runaway recursion, repeated re-entry →
 `find_cycles scope=method pathPattern=<scope>` surfaces circular call paths — a
-cycle through the suspect is the structural form of that hypothesis.
+cycle through the suspect is the structural form of that hypothesis. A cycle
+with `hasModelEdge` may be closed only by a model verdict — verify the model hop
+before trusting the loop.
 
 ### Codegraph off
 

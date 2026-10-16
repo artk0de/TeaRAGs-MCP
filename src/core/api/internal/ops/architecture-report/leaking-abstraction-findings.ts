@@ -111,7 +111,12 @@ export function leakViolations(
       kind: "conventionPrivacy",
       sourceRelPath: v.sourceRelPath,
       targetRelPath: v.targetRelPath,
-      evidence: { sourceSymbolId: v.sourceSymbolId, targetSymbolId: v.targetSymbolId, rule: v.rule },
+      evidence: {
+        sourceSymbolId: v.sourceSymbolId,
+        targetSymbolId: v.targetSymbolId,
+        rule: v.rule,
+        ...(v.origin === "model" ? { origin: v.origin, model: v.model, p: v.p } : {}),
+      },
     }),
   );
   // One detector, one cap: facade leaks first, then convention-privacy leaks.

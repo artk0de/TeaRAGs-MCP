@@ -205,6 +205,12 @@ export interface NonPublicMemberEdge {
   targetLanguage: string;
   /** The call as written (`callText`) — for a Ruby `send(:x)` unwrap, the `send` call itself. */
   callExpression: string;
+  /** `"model"` on an edge a residual-resolution verdict produced; absent on a static edge. */
+  origin?: EdgeOrigin;
+  /** Provider id of a model edge. */
+  model?: string;
+  /** Provider probability of a model edge. */
+  p?: number;
 }
 
 /**

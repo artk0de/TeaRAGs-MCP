@@ -125,6 +125,45 @@ describe("DuckDbGraphClient — readNonPublicMemberEdges (bd tea-rags-mcp-r8hme.
     ]);
   });
 
+  it("carries origin, model and p on a model edge and nothing on a static one", async () => {
+    await db.upsertFile(
+      { relPath: "app/caller.py", language: "python" },
+      {
+        fileEdges: [],
+        methodEdges: [
+          {
+            sourceSymbolId: "run",
+            targetSymbolId: "Repo#_load",
+            targetRelPath: "pkg/repo.py",
+            callExpression: "r._load()",
+          },
+          {
+            sourceSymbolId: "run",
+            targetSymbolId: "Repo#_save",
+            targetRelPath: "pkg/repo.py",
+            callExpression: "r._save()",
+          },
+        ],
+      },
+    );
+    await db.upsertFile({ relPath: "pkg/repo.py", language: "python" }, { fileEdges: [], methodEdges: [] });
+    await db.upsertSymbols("pkg/repo.py", [def("pkg/repo.py", "Repo#_load"), def("pkg/repo.py", "Repo#_save")]);
+    await db.run(
+      "UPDATE cg_symbols_edges_method SET origin = 'model', model = 'kev', p = 0.8 WHERE call_expression = ?",
+      ["r._load()"],
+    );
+
+    const rows = await db.readNonPublicMemberEdges(["python"]);
+
+    const load = rows.find((r) => r.targetSymbolId === "Repo#_load");
+    const save = rows.find((r) => r.targetSymbolId === "Repo#_save");
+    expect(load).toMatchObject({ origin: "model", model: "kev", p: 0.8 });
+    expect(save).toBeDefined();
+    expect(save).not.toHaveProperty("origin");
+    expect(save).not.toHaveProperty("model");
+    expect(save).not.toHaveProperty("p");
+  });
+
   it("returns nothing when no language is requested", async () => {
     expect(await db.readNonPublicMemberEdges([])).toEqual([]);
   });
