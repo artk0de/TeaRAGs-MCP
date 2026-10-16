@@ -45,13 +45,16 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
       // ambiguous_fanout added by migration 013 (f2jsb / j0pki dual recall);
       // core_ambiguous added by migration 015 (83cl7 core-homonym denominator);
       // unnarrowed_template added by migration 022 (znxg8) — the one column here
-      // that counts RESOLVED calls rather than misses, and feeds no rate.
+      // that counts RESOLVED calls rather than misses, and feeds no rate;
+      // narrowed / narrow_empty added by migration 057 (2m83f.43).
       [
         "ambiguous_fanout",
         "attempted",
         "core_ambiguous",
         "external_skipped",
         "language",
+        "narrow_empty",
+        "narrowed",
         "no_in_project_def",
         "receiver_kind",
         "resolved",

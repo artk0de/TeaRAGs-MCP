@@ -1538,6 +1538,18 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
       expect(out).not.toContain("⚠");
     });
 
+    // bd tea-rags-mcp-2m83f.43 — residual sites receiver narrowing settled statically.
+    it("renders the narrowed line when a run narrowed residual sites", () => {
+      const out = render(summary({ inProjectEdgeRecall: 0.9, callsNarrowed: 138, callsNarrowEmpty: 12 }));
+      expect(out).toContain(
+        "resolve rate: 0.9\nnarrowed: 138 residual calls settled by their receiver's other calls, 12 matched no class\n",
+      );
+    });
+
+    it("renders no narrowed line before any site was narrowed", () => {
+      expect(render(summary({ inProjectEdgeRecall: 0.9 }))).not.toContain("narrowed:");
+    });
+
     // bd tea-rags-mcp-2m83f.38 — model-resolved sites: combined rate, static floor beside it.
     it("renders the static share and the model's sites beside a per-language rate", () => {
       const tally = multiLanguage(0, 0);

@@ -122,6 +122,14 @@ export interface ReceiverKindTally {
   // miss and read by no rate: an invariant that sits near zero while entry
   // narrowing works. Persisted to cg_run_stats.unnarrowed_template.
   unnarrowedTemplate: number;
+  // bd tea-rags-mcp-2m83f.43 — residual sites whose receiver's constraint set
+  // settled them to ONE target: a static edge, counted in `resolved` too.
+  // Persisted to cg_run_stats.narrowed.
+  narrowed: number;
+  // bd tea-rags-mcp-2m83f.43 — residual sites whose receiver's constraint set
+  // intersected to no project class; they keep the single-member menu. A
+  // diagnostic, read by no rate. Persisted to cg_run_stats.narrow_empty.
+  narrowEmpty: number;
 }
 
 export interface RunStats {
@@ -214,6 +222,8 @@ function zeroReceiverKindTally(): ReceiverKindTally {
     coreAmbiguous: 0,
     ambiguousFanout: 0,
     unnarrowedTemplate: 0,
+    narrowed: 0,
+    narrowEmpty: 0,
   };
 }
 
@@ -243,6 +253,8 @@ function addReceiverKindTally(target: ReceiverKindTally, source: ReceiverKindTal
   target.coreAmbiguous += source.coreAmbiguous;
   target.ambiguousFanout += source.ambiguousFanout;
   target.unnarrowedTemplate += source.unnarrowedTemplate;
+  target.narrowed += source.narrowed;
+  target.narrowEmpty += source.narrowEmpty;
 }
 
 /**
@@ -2088,6 +2100,8 @@ export class CodegraphRunState {
           coreAmbiguous: t.coreAmbiguous,
           ambiguousFanout: t.ambiguousFanout,
           unnarrowedTemplate: t.unnarrowedTemplate,
+          narrowed: t.narrowed,
+          narrowEmpty: t.narrowEmpty,
         });
       }
     }
@@ -2114,6 +2128,8 @@ export class CodegraphRunState {
         coreAmbiguous: t.coreAmbiguous,
         ambiguousFanout: t.ambiguousFanout,
         unnarrowedTemplate: t.unnarrowedTemplate,
+        narrowed: t.narrowed,
+        narrowEmpty: t.narrowEmpty,
       })),
     }));
   }

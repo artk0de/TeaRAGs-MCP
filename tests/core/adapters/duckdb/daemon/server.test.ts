@@ -503,6 +503,8 @@ describe("CodegraphDaemonServer.handle", () => {
         coreAmbiguous: 0,
         ambiguousFanout: 0,
         unnarrowedTemplate: 0,
+        narrowed: 0,
+        narrowEmpty: 0,
       },
       {
         language: "typescript",
@@ -515,6 +517,8 @@ describe("CodegraphDaemonServer.handle", () => {
         coreAmbiguous: 0,
         ambiguousFanout: 0,
         unnarrowedTemplate: 0,
+        narrowed: 0,
+        narrowEmpty: 0,
       },
     ]);
     await pool.closeAll();
@@ -562,6 +566,8 @@ describe("CodegraphDaemonServer.handle", () => {
         coreAmbiguous: 0,
         ambiguousFanout: 0,
         unnarrowedTemplate: 0,
+        narrowed: 0,
+        narrowEmpty: 0,
       },
     ]);
     await pool.closeAll();

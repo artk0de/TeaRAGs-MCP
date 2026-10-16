@@ -63,6 +63,10 @@ interface ResolveTally {
   // bd tea-rags-mcp-znxg8 — RESOLVED calls that stopped at a shared self-dispatch
   // entry node. Feeds no rate: it is an invariant, not a miss bucket.
   unnarrowedTemplate: number;
+  // bd tea-rags-mcp-2m83f.43 — residual sites settled statically by receiver
+  // narrowing (a subset of `resolved`), and those that intersected to no class.
+  narrowed: number;
+  narrowEmpty: number;
 }
 
 function emptyTally(): ResolveTally {
@@ -75,6 +79,8 @@ function emptyTally(): ResolveTally {
     coreAmbiguous: 0,
     ambiguousFanout: 0,
     unnarrowedTemplate: 0,
+    narrowed: 0,
+    narrowEmpty: 0,
   };
 }
 
@@ -296,6 +302,11 @@ function buildByReceiverKind(
     .sort((a, b) => b.attempted - a.attempted);
 }
 
+/** Receiver-narrowing counters, present only once a run narrowed or failed to narrow a site. */
+function narrowingCounts(t: ResolveTally): { callsNarrowed?: number; callsNarrowEmpty?: number } {
+  return t.narrowed > 0 || t.narrowEmpty > 0 ? { callsNarrowed: t.narrowed, callsNarrowEmpty: t.narrowEmpty } : {};
+}
+
 /**
  * Accumulate one persisted row into a tally. Columns added by a later migration
  * default to 0 for rows written before it (`unresolvable` 010, `no_in_project_def`
@@ -311,6 +322,8 @@ function addRow(t: ResolveTally, r: ResolveRunStatsRow): void {
   t.coreAmbiguous += r.coreAmbiguous ?? 0;
   t.ambiguousFanout += r.ambiguousFanout ?? 0;
   t.unnarrowedTemplate += r.unnarrowedTemplate ?? 0;
+  t.narrowed += r.narrowed ?? 0;
+  t.narrowEmpty += r.narrowEmpty ?? 0;
 }
 
 /**
@@ -403,6 +416,7 @@ export function summarizeCodegraphResolve(
     callsCoreAmbiguous: combinedTotal.coreAmbiguous,
     ambiguousFanout: combinedTotal.ambiguousFanout,
     callsUnnarrowedTemplate: combinedTotal.unnarrowedTemplate,
+    ...narrowingCounts(combinedTotal),
     ...(debug ? { resolveSuccessRate: resolveRate(combinedTotal) } : {}),
   };
   if (movedTotal + externalTotal > 0 && modelResolved !== undefined) {
@@ -429,6 +443,7 @@ export function summarizeCodegraphResolve(
         callsNoInProjectDef: t.noInProjectDef,
         callsCoreAmbiguous: t.coreAmbiguous,
         callsUnnarrowedTemplate: t.unnarrowedTemplate,
+        ...narrowingCounts(t),
         ...(debug ? { resolveSuccessRate: resolveRate(t) } : {}),
         // Absent unless DEBUG built the tally above.
         ...(debug

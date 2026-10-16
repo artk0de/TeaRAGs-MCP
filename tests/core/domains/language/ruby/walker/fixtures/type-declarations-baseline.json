@@ -234,6 +234,10 @@
       "visibility": "public",
       "acceptsBlock": false,
       "assignedLocals": ["limit"],
+      "localAssignmentLines": {
+        "@user": [25],
+        "limit": [26]
+      },
       "localBindings": {
         "limit": [
           {

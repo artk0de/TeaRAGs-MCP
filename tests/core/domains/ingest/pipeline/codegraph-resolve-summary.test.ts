@@ -650,3 +650,30 @@ describe("summarizeCodegraphResolve — model-resolved residual sites (2m83f.38)
     expect(summary?.edgeKinds?.exactRatio).toBeCloseTo(0.7, 6);
   });
 });
+
+// bd tea-rags-mcp-2m83f.43 — residual sites receiver narrowing settled
+// statically (a subset of resolved) and those that matched no class.
+describe("summarizeCodegraphResolve — receiver narrowing (2m83f.43)", () => {
+  const rowN = (language: string, narrowed: number, narrowEmpty: number): ResolveRunStatsRow => ({
+    language,
+    receiverKind: "dynamic",
+    attempted: 100,
+    resolved: 60,
+    externalSkipped: 0,
+    narrowed,
+    narrowEmpty,
+  });
+
+  it("carries the narrowed and narrow-empty totals on the summary and per language", () => {
+    const summary = summarizeCodegraphResolve([rowN("ruby", 7, 3), rowN("typescript", 2, 0)]);
+    expect(summary).toMatchObject({ callsNarrowed: 9, callsNarrowEmpty: 3 });
+    const ruby = (summary?.byLanguage ?? []).find((l) => l.language === "ruby");
+    expect(ruby).toMatchObject({ callsNarrowed: 7, callsNarrowEmpty: 3 });
+  });
+
+  it("omits both counters when no site was narrowed or failed to narrow", () => {
+    const summary = summarizeCodegraphResolve([rowN("ruby", 0, 0)]);
+    expect(summary).not.toHaveProperty("callsNarrowed");
+    expect(summary).not.toHaveProperty("callsNarrowEmpty");
+  });
+});

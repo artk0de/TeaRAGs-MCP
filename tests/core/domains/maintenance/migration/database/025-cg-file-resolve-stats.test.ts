@@ -34,21 +34,16 @@ describe("025 cg file resolve stats migration", () => {
     // The pre-upgrade index: every migration before this one, plus a real run's rows.
     await runMigrations(
       db,
-      DATABASE_MIGRATIONS.filter((m) => m.filename !== FILENAME),
+      DATABASE_MIGRATIONS.filter((m) => m.filename < FILENAME),
     );
-    await db.recordRunStats([
-      {
-        language: "typescript",
-        receiverKind: "bareCall",
-        attempted: 175773,
-        resolved: 122777,
-        externalSkipped: 0,
-        unresolvable: 0,
-      },
-    ]);
+    // Raw insert: the store writes columns later migrations add (057).
+    await db.run(
+      "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable) VALUES (?, ?, ?, ?, ?, ?)",
+      ["typescript", "bareCall", 175773, 122777, 0, 0],
+    );
 
     const upgrade = await runMigrations(db, DATABASE_MIGRATIONS);
-    expect(upgrade.applied).toEqual([FILENAME]);
+    expect(upgrade.applied[0]).toBe(FILENAME);
 
     const stats = await db.getRunStats();
     expect(stats).toHaveLength(1);
@@ -75,6 +70,8 @@ describe("025 cg file resolve stats migration", () => {
         "core_ambiguous",
         "external_skipped",
         "language",
+        "narrow_empty",
+        "narrowed",
         "no_in_project_def",
         "receiver_kind",
         "rel_path",

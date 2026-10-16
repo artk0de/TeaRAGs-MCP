@@ -114,7 +114,10 @@ export const capability: LanguageCapability = {
   // walker 19: bd tea-rags-mcp-2m83f.44 — calls carry `argExprs` and a parameter
   // is typed from its exact-edge callers (`perform(record)` called with an
   // `Invoice`), so a walker-18 index lacks the edges of calls on parameters.
-  versions: { chunking: 2, walker: 19, codegraphSchema: 2 },
+  // walker 20: bd tea-rags-mcp-2m83f.43 — def chunks carry `localAssignmentLines`,
+  // so residual receiver narrowing splits a reassigned receiver; a walker-19
+  // index groups the calls of a reassigned local as one receiver.
+  versions: { chunking: 2, walker: 20, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

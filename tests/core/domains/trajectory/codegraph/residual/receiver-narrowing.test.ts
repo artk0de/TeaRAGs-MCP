@@ -1,0 +1,206 @@
+import { describe, expect, it } from "vitest";
+
+import type {
+  CallRef,
+  GlobalSymbolTable,
+  HierarchyQuery,
+  HierarchyView,
+  InheritanceEdge,
+  InheritanceKind,
+  SymbolDefinition,
+  SymbolLookupOptions,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
+import {
+  DEFAULT_RESIDUAL_MENU_LIMIT,
+  ResidualSiteCollector,
+  type ResidualVerdictView,
+} from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-site-builder.js";
+
+function def(symbolId: string, relPath: string, isSchemaColumn = false): SymbolDefinition {
+  const shortName = symbolId.split(/[#.]/).pop() ?? symbolId;
+  const d: SymbolDefinition = { symbolId, fqName: symbolId, shortName, relPath, scope: [] };
+  if (isSchemaColumn) d.isSchemaColumn = true;
+  return d;
+}
+
+function tableOf(defs: SymbolDefinition[]): Pick<GlobalSymbolTable, "lookupByShortName"> {
+  return {
+    lookupByShortName: (name: string, options?: SymbolLookupOptions) =>
+      defs.filter((d) => d.shortName === name && (options?.includeSchemaColumns === true || d.isSchemaColumn !== true)),
+  };
+}
+
+/** `[descendant, ancestor, kind]` rows; getDescendants answers transitively with depth. */
+function hierarchyOf(rows: [string, string, InheritanceKind][]): HierarchyView {
+  const getDescendants = (fqName: string, opts?: HierarchyQuery): InheritanceEdge[] => {
+    const out: InheritanceEdge[] = [];
+    const visit = (ancestor: string, depth: number): void => {
+      for (const [source, anc, kind] of rows) {
+        if (anc !== ancestor) continue;
+        if (opts?.kinds !== undefined && !opts.kinds.includes(kind)) continue;
+        out.push({ sourceFqName: source, ancestorFqName: fqName, ancestorSymbolId: null, kind, depth });
+        if (opts?.transitive === true) visit(source, depth + 1);
+      }
+    };
+    visit(fqName, 1);
+    return out;
+  };
+  return { getAncestors: () => [], getDescendants };
+}
+
+const METHOD = { symbolId: "Billing#run", startLine: 10, endLine: 30 };
+const DYNAMIC_MISS: ResidualVerdictView = {
+  receiverKind: "dynamic",
+  outcome: "unresolved",
+  missBucket: "missWithInProjectDef",
+};
+
+function call(receiver: string, member: string, line: number): CallRef {
+  return { callText: `${receiver}.${member}`, receiver, member, startLine: line, startColumn: 4 };
+}
+
+const BASE_DEFS = [
+  def("Invoice#number", "app/models/invoice.rb"),
+  def("Estimate#number", "app/models/estimate.rb"),
+  def("Payment#firm_id", "app/models/payment.rb"),
+  def("Invoice#firm_id", "db/schema.rb", true),
+];
+
+function collectorOf(defs: SymbolDefinition[], hierarchy?: HierarchyView): ResidualSiteCollector {
+  return new ResidualSiteCollector("app/services/billing.rb", tableOf(defs), DEFAULT_RESIDUAL_MENU_LIMIT, "ruby", {
+    hierarchy,
+  });
+}
+
+describe("ResidualSiteCollector — receiver narrowing", () => {
+  it("narrows `r.firm_id; r.number` to Invoice and settles the site as a static edge", () => {
+    const collector = collectorOf(BASE_DEFS);
+
+    collector.observe(METHOD, call("r", "firm_id", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("r", "number", 13), DYNAMIC_MISS);
+
+    expect(collector.narrowed()).toEqual([
+      {
+        receiverKind: "dynamic",
+        edge: {
+          sourceSymbolId: "Billing#run",
+          targetSymbolId: "Invoice#number",
+          targetRelPath: "app/models/invoice.rb",
+          callExpression: "r.number",
+        },
+      },
+    ]);
+    // The column read narrows to Invoice too, but its callee is the column accessor: excluded.
+    expect(collector.rows()).toEqual([]);
+    expect(collector.excluded().schemaColumn).toBe(1);
+    expect(collector.narrowEmptyKinds()).toEqual([]);
+  });
+
+  it("keeps two receivers apart when the local is reassigned between the calls", () => {
+    const collector = collectorOf(BASE_DEFS);
+    const method = { ...METHOD, localAssignmentLines: { r: [14] } };
+
+    collector.observe(method, call("r", "number", 13), DYNAMIC_MISS);
+    collector.observe(method, call("r", "firm_id", 15), DYNAMIC_MISS);
+
+    expect(collector.narrowed().map((n) => n.edge.targetSymbolId)).toEqual([]);
+    const numberRow = collector.rows().find((row) => row.member === "number");
+    expect(numberRow?.candidates).toEqual(["Estimate#number", "Invoice#number"]);
+  });
+
+  it("counts a member inherited through a superclass", () => {
+    const defs = [...BASE_DEFS, def("Document#total", "app/models/document.rb")];
+    const collector = collectorOf(defs, hierarchyOf([["Invoice", "Document", "super"]]));
+
+    collector.observe(METHOD, call("r", "total", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("r", "number", 13), DYNAMIC_MISS);
+
+    expect(collector.narrowed().map((n) => n.edge.targetSymbolId)).toEqual(["Document#total", "Invoice#number"]);
+    expect(collector.rows()).toEqual([]);
+  });
+
+  it("counts a member brought in by an included concern", () => {
+    const defs = [...BASE_DEFS, def("Billable#total", "app/models/concerns/billable.rb")];
+    const collector = collectorOf(defs, hierarchyOf([["Invoice", "Billable", "include"]]));
+
+    collector.observe(METHOD, call("r", "total", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("r", "number", 13), DYNAMIC_MISS);
+
+    expect(collector.narrowed().map((n) => n.edge.targetSymbolId)).toEqual(["Billable#total", "Invoice#number"]);
+  });
+
+  it("does not let a member classified external constrain the receiver", () => {
+    const defs = [...BASE_DEFS, def("Importer#save!", "app/services/importer.rb")];
+    const collector = collectorOf(defs);
+
+    collector.observe(METHOD, call("r", "save!", 12), {
+      receiverKind: "dynamic",
+      outcome: "unresolved",
+      missBucket: "externalSkipped",
+    });
+    collector.observe(METHOD, call("r", "firm_id", 13), DYNAMIC_MISS);
+    collector.observe(METHOD, call("r", "number", 14), DYNAMIC_MISS);
+
+    expect(collector.narrowed().map((n) => n.edge.targetSymbolId)).toEqual(["Invoice#number"]);
+  });
+
+  it("keeps the single-member menu when the constraints intersect to no class", () => {
+    const defs = [...BASE_DEFS, def("Importer#save!", "app/services/importer.rb")];
+    const collector = collectorOf(defs);
+
+    collector.observe(METHOD, call("r", "save!", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("r", "number", 13), DYNAMIC_MISS);
+
+    const numberRow = collector.rows().find((row) => row.member === "number");
+    expect(numberRow?.candidates).toEqual(["Estimate#number", "Invoice#number"]);
+    expect(collector.narrowed()).toEqual([]);
+    expect(collector.narrowEmptyKinds()).toEqual(["dynamic", "dynamic"]);
+  });
+
+  it("never edges a member one class answers on its own, however the other calls agree", () => {
+    const defs = [
+      def("TaskHelper.filter", "app/helpers/task_helper.rb"),
+      def("TaskHelper.map", "app/helpers/task_helper.rb"),
+    ];
+    const collector = collectorOf(defs);
+
+    collector.observe(METHOD, call("items", "filter", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("items", "map", 13), DYNAMIC_MISS);
+
+    expect(collector.narrowed()).toEqual([]);
+    expect(collector.rows().map((row) => row.candidates)).toEqual([["TaskHelper.filter"], ["TaskHelper.map"]]);
+  });
+
+  it("does not narrow a self receiver", () => {
+    const collector = collectorOf(BASE_DEFS);
+
+    collector.observe(METHOD, call("self", "firm_id", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("self", "number", 13), DYNAMIC_MISS);
+
+    expect(collector.narrowed()).toEqual([]);
+    expect(collector.rows().find((row) => row.member === "number")?.candidates).toEqual([
+      "Estimate#number",
+      "Invoice#number",
+    ]);
+  });
+
+  it("orders a narrowed menu by the receiver's naming prior without dropping a candidate", () => {
+    const collector = collectorOf(BASE_DEFS);
+
+    collector.observe(METHOD, call("invoice", "number", 12), DYNAMIC_MISS);
+
+    expect(collector.rows()[0]?.candidates).toEqual(["Invoice#number", "Estimate#number"]);
+  });
+
+  it("computes overflow after narrowing", () => {
+    const many = Array.from({ length: 5 }, (_, i) => def(`Model${i}#number`, `app/models/model${i}.rb`));
+    const defs = [...many, def("Model0#total", "app/models/model0.rb"), def("Model1#total", "app/models/model1.rb")];
+    const collector = new ResidualSiteCollector("app/services/billing.rb", tableOf(defs), 3, "ruby", {});
+
+    collector.observe(METHOD, call("r", "total", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("r", "number", 13), DYNAMIC_MISS);
+
+    const numberRow = collector.rows().find((row) => row.member === "number");
+    expect(numberRow).toMatchObject({ candidates: ["Model0#number", "Model1#number"], menuOverflow: false });
+  });
+});

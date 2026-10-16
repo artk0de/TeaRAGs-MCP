@@ -331,6 +331,14 @@ describe("mergeExtraction — chunks merge by symbolId", () => {
     expect(merged.chunks[0].assignedLocals).toEqual(["client", "loader", "factor"]);
   });
 
+  it("unions localAssignmentLines per name, ascending (bd tea-rags-mcp-2m83f.43)", () => {
+    const base = baseExtraction({ chunks: [chunk("User#save", { localAssignmentLines: { r: [3, 7], a: [4] } })] });
+    const merged = mergeExtraction(base, {
+      chunks: [chunk("User#save", { localAssignmentLines: { r: [5, 7], b: [6] } })],
+    });
+    expect(merged.chunks[0].localAssignmentLines).toEqual({ r: [3, 5, 7], a: [4], b: [6] });
+  });
+
   it("keeps the base's chunk scalars and lets a pass FILL one the base left absent", () => {
     const base = baseExtraction({
       chunks: [
