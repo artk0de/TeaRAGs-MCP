@@ -211,18 +211,16 @@
   bound, and `pythonSingleHopType` skips a binding established on the call's own
   line WHEN an import bound that same name. Narrow the gate any less and
   `x = Foo(); x.run()` on one line loses its type.
-- **The hop split is a PORT, and Python is the only language that took the
-  bracket-aware one.** `kernel/receiver-type-propagation.ts` still defaults to
-  `receiver.split(".")`; `createPythonReceiverTypePorts` supplies
-  `splitReceiverHops`, which splits on `.` at bracket depth 0 and counts quotes,
-  so `Notification(user=self.user, …)` is ONE hop and
-  `datatable.Datatable[Benefit, S](…)` is two. It is a port rather than the
-  fold's own rule because the same scan newly types 34 mastodon receivers
-  (`StatusFilter.new(quote.quoted_status, account).filter_state_for_quote`) —
-  gains, but unmeasured ones, and Ruby's gate is parity. An UNBALANCED receiver,
-  which a truncated call text produces, yields the whole string as one hop.
-  `splitAtBracketDepthZero` is the one scanner; the `cast` argument reader asks
-  it for `,` rather than growing a second.
+- **The hop split is a PORT; Python and Ruby both take the bracket-aware one.**
+  `kernel/receiver-type-propagation.ts` still defaults to `receiver.split(".")`;
+  `createPythonReceiverTypePorts` supplies `splitReceiverHops`, which splits on
+  `.` at bracket depth 0 and counts quotes, so `Notification(user=self.user, …)`
+  is ONE hop and `datatable.Datatable[Benefit, S](…)` is two. Ruby opted in on
+  445 taxdome residual sites (`Serializer.new(result.data).as_json`, bd
+  tea-rags-mcp-2m83f.53). An UNBALANCED receiver, which a truncated call text
+  produces, yields the whole string as one hop. `splitAtBracketDepthZero` is the
+  one scanner; the `cast` argument reader asks it for `,` rather than growing a
+  second.
 - **A chain HEAD can be a call, and three arms answer one.**
   `pythonSingleHopType`'s `endsWith(")")` branch strips the generic subscript
   before the class test (`Datatable[Benefit, S](…)` → `Datatable`), then tries

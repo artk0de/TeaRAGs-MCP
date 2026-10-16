@@ -573,8 +573,7 @@ export function createPythonReceiverTypePorts(
       pythonElementTypeOf(container, ctx, memberTypeOf),
     ownerIndependentMemberType: pythonOwnerIndependentMemberType,
     maxHops: pythonMaxHops,
-    // Python opts INTO the bracket-aware hop split; Ruby keeps `split(".")`.
-    // See the port's docblock for the 34 mastodon sites that decided it.
+    // Python opts INTO the bracket-aware hop split, as Ruby does.
     splitReceiverHops,
   });
   return ports;

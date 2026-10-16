@@ -284,3 +284,31 @@ describe("typeOfReceiver — ancestor MRO inheritance", () => {
     expect(typeOfReceiver("u.account", 5, ctx)).toEqual({ form: "instance", name: "UserAccount" });
   });
 });
+
+// ── bracket-aware hop split (bd tea-rags-mcp-2m83f.53) ─────────────────────
+
+describe("typeOfReceiver — a dot inside a call's arguments is not a hop", () => {
+  it("types `Const.new(result.data)` as an instance of the constant", () => {
+    expect(typeOfReceiver("ShowSerializer.new(result.data)", 5, emptyCtx())).toEqual({
+      form: "instance",
+      name: "ShowSerializer",
+    });
+  });
+
+  it("types a multi-line hash argument holding a chain", () => {
+    expect(typeOfReceiver("Api::ShowSerializer.new(\n  {invoice: bill.reload},\n  actor)", 5, emptyCtx())).toEqual({
+      form: "instance",
+      name: "Api::ShowSerializer",
+    });
+  });
+
+  it("threads the hop after a constructor whose arguments carry dots", () => {
+    const ctx = emptyCtx({
+      structuredReturnTypes: { "BillPolicy#result": { form: "instance", name: "PolicyResult" } },
+    });
+    expect(typeOfReceiver("::BillPolicy.new(nil, actor.user, bill).result(:update)", 5, ctx)).toEqual({
+      form: "instance",
+      name: "PolicyResult",
+    });
+  });
+});

@@ -58,6 +58,7 @@ import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import {
   CHAIN_MAX_HOPS_DEFAULT,
   propagateReceiverType,
+  splitReceiverHops,
   stripCallArgs,
   type ReceiverTypePorts,
 } from "../../../kernel/index.js";
@@ -113,6 +114,9 @@ export const RUBY_RECEIVER_TYPE_PORTS: ReceiverTypePorts = Object.freeze({
   // An untyped owner's link typed by what every candidate agrees on (bd tea-rags-mcp-2m83f.42).
   ownerIndependentMemberType: rubyConsensusMemberType,
   maxHops: chainMaxHops,
+  // A dot inside a call's arguments is not a hop: `Serializer.new(result.data).as_json`
+  // is two links, not three (bd tea-rags-mcp-2m83f.53 — 445 taxdome residual sites).
+  splitReceiverHops,
 });
 
 /**

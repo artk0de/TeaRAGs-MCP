@@ -101,11 +101,9 @@ export interface ReceiverTypePorts {
    * whose receivers carry bracketed groups supplies {@link splitReceiverHops}
    * instead (bd tea-rags-mcp-w205u, E4.6b-1).
    *
-   * It is a PORT and not the fold's own rule because Ruby measured a real
-   * difference: `StatusFilter.new(quote.quoted_status, account).filter_state`
-   * is 34 mastodon sites the bracket-aware split newly types, and none of them
-   * is measured. Python opts in on 44 measured rows; Ruby keeps the split it
-   * shipped until a Ruby increment measures the change.
+   * It is a PORT and not the fold's own rule because each language opted in on
+   * its own measurement: Python on 44 rows, Ruby on 445 taxdome residual sites
+   * shaped `Serializer.new(result.data).as_json` (bd tea-rags-mcp-2m83f.53).
    */
   splitReceiverHops?: (receiver: string) => string[];
 }

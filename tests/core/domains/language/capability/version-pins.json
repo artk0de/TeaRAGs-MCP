@@ -6,7 +6,7 @@
     },
     "walker": {
       "version": 6,
-      "digest": "sha256:9d18f929f59f146bb5c3f5826163d2c5b917453df695d58619530b33a444e8c1"
+      "digest": "sha256:78ae1e9a2e9e2c089357774bc63ae14053c12fd6b1ec9a54b5be0bbb46022678"
     }
   },
   "bash": {
@@ -54,7 +54,7 @@
   "python": {
     "walker": {
       "version": 13,
-      "digest": "sha256:9646b9aeb879ff7da98937c46c190edbbee6a7b3c9e495ea8fa4e774c704349f"
+      "digest": "sha256:79ede3b23258a04bc7b36f6530cf55d990eba7d6a3c07fece10ebd1596b40ce8"
     }
   },
   "ruby": {
@@ -64,7 +64,7 @@
     },
     "walker": {
       "version": 24,
-      "digest": "sha256:3b76991f2b1ae13c56bd7ab47ebb1e325a49a56d8bb86cfe33bfdeb4a62045ce"
+      "digest": "sha256:25990d0b49bb8c535a03cbac339ee7739f88837c20ed5c009a4b56ebfb643c6b"
     }
   },
   "rust": {
