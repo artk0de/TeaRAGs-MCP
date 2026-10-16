@@ -252,7 +252,9 @@ to system memory), and smaller 512-token buckets (more padding, not less).
 - `GET /v1/models` — health check; `models[0].run` is the model revision
   (`jaredpalmer/kev-4b@v1.0`). A new revision invalidates cached verdicts.
 - `POST /v1/systemone` — one request per enclosing method, one `choice` question
-  per call site.
+  per call site; its criteria are the candidate classes plus `none of these —
+  defined outside the project`. Verdicts cached before that option existed are
+  not reused.
 
 ## Configure tea-rags
 
@@ -263,7 +265,8 @@ to system memory), and smaller 512-token buckets (more padding, not less).
 | `CODEGRAPH_RESIDUAL_CONCURRENCY`            | `16`    | Requests in flight (one per method); Kev packs a few states per pass, so more only queue |
 | `CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC`    | `300`   | Seconds one request may take, including its wait behind the batches Kev is running; a group that times out is asked once more at the end of the pass |
 | `CODEGRAPH_RESIDUAL_MENU_LIMIT`             | `40`    | Call sites with more candidates are not asked              |
-| `CODEGRAPH_RESIDUAL_MIN_MENU`               | `4`     | Call sites with fewer candidates are neither asked nor given an edge, even from a stored verdict |
+| `CODEGRAPH_RESIDUAL_MIN_MENU`               | `1`     | Call sites with fewer candidates are neither asked nor given an edge, even from a stored verdict |
+| `CODEGRAPH_RESIDUAL_NONE_THRESHOLD`         | `0.8`   | Every question ends with "none of these — defined outside the project"; a site answered so at this confidence or above counts as external and leaves the recall denominator |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | `180`   | Cached verdicts unseen this long are dropped               |
 | `CODEGRAPH_RESIDUAL_KEV_SESSION_URL`        | —       | GPU session broker; set, Kev is leased per pass and asked at the URL the lease names (`CODEGRAPH_RESIDUAL_KEV_URL` is then not needed) |
 | `CODEGRAPH_RESIDUAL_KEV_SESSION_TOKEN`      | —       | Broker `X-Broker-Token`; a secret, never stored with the project |
@@ -299,7 +302,7 @@ tea-rags resolve-codegraph-residual --model kev --project my-app
 Add `--cache-only` to re-apply stored verdicts without contacting Kev, and
 `--json` to print the report as JSON. The command prints a report: call sites
 found, menu overflow, menu too small, cache hits, groups, asked, answered, too
-long, failed groups, below threshold, sites edged, edges applied, the state of the
+long, failed groups, below threshold, sites edged, external (model), edges applied, the state of the
 derived metrics, and timings. It exits 0 when the pass completed and 1 when it
 was skipped.
 
