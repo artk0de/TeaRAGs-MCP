@@ -69,7 +69,8 @@ function isResidual(value: unknown): boolean {
     typeof value.model === "string" &&
     typeof value.threshold === "number" &&
     typeof value.menuLimit === "number" &&
-    typeof value.minMenu === "number"
+    typeof value.minMenu === "number" &&
+    typeof value.noneThreshold === "number"
   );
 }
 

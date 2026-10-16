@@ -42,6 +42,7 @@ const CONFIG = {
   concurrency: 2,
   menuLimit: 40,
   minMenu: 2,
+  noneThreshold: 0.8,
   retentionDays: 180,
 };
 

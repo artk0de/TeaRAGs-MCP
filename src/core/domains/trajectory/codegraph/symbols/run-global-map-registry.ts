@@ -162,6 +162,15 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   },
   paramTypes: { policy: "batchOnly", reason: "derived at seal from the hydrated param family" },
   derivedClassFieldTypes: { policy: "batchOnly", reason: "derived at seal from the hydrated param family" },
+  callerParamTypes: {
+    policy: "batchOnly",
+    reason:
+      "derived before pass-2 from the exact edges of the walked call sites; an unwalked caller is not re-observed",
+  },
+  callerParamEvidence: {
+    policy: "batchOnly",
+    reason: "the evidence callerParamTypes is folded from, scoped the same way",
+  },
 } as const satisfies Record<RunGlobalMapField, RunGlobalMapPersistence>;
 
 type RegistryEntry = (typeof RUN_GLOBAL_MAP_PERSISTENCE)[RunGlobalMapField];

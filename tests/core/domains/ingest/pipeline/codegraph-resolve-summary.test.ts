@@ -493,7 +493,8 @@ describe("summarizeCodegraphResolve — model-resolved residual sites (2m83f.38)
     receiverKind: string | null,
     kind: "ambiguous" | "dynamic",
     sites: number,
-  ): ModelResolvedSiteCount => ({ language, receiverKind, kind, model: "kev", sites });
+    outcome: "edge" | "external" = "edge",
+  ): ModelResolvedSiteCount => ({ outcome, language, receiverKind, kind, model: "kev", sites });
 
   afterEach(() => {
     setDebug(true);
@@ -570,6 +571,39 @@ describe("summarizeCodegraphResolve — model-resolved residual sites (2m83f.38)
     expect(summary?.callsResolvedByModelUnlabeled).toBe(5);
   });
 
+  it("takes sites a model put outside the project out of the recall denominator (2m83f.45)", () => {
+    // ivar: 100 attempted, 60 resolved, 10 ambiguous → static miss 40.
+    const summary = summarizeCodegraphResolve([rowB("ruby", "ivar", 100, 60, 10)], undefined, {
+      counts: [
+        site("ruby", "ivar", "dynamic", 5),
+        site("ruby", "ivar", "dynamic", 15, "external"),
+        site("ruby", "ivar", "ambiguous", 4, "external"),
+      ],
+      thresholds: { kev: 0.7 },
+    });
+
+    expect(summary?.callsResolved).toBe(65);
+    expect(summary?.callsExternalByModel).toBe(19);
+    expect(summary?.callsExternalSkipped).toBe(19);
+    expect(summary?.ambiguousFanout).toBe(6);
+    expect(summary?.inProjectEdgeRecall).toBeCloseTo(65 / (65 + 16), 6);
+    expect(summary?.staticInProjectEdgeRecall).toBeCloseTo(60 / 100, 6);
+    expect(summary?.modelResolution).toEqual([{ model: "kev", threshold: 0.7, sites: 5, external: 19 }]);
+  });
+
+  it("reports external sites per language and caps them at what the miss holds", () => {
+    const summary = summarizeCodegraphResolve(
+      [rowB("ruby", "ivar", 10, 8, 1), rowB("typescript", "constant", 10, 9)],
+      undefined,
+      { counts: [site("ruby", "ivar", "dynamic", 9, "external")], thresholds: {} },
+    );
+
+    const ruby = summary?.byLanguage?.find((l) => l.language === "ruby");
+    expect(ruby).toMatchObject({ callsExternalByModel: 1, callsResolved: 8 });
+    expect(ruby?.inProjectEdgeRecall).toBeCloseTo(8 / 9, 6);
+    expect(summary?.callsResolvedByModel).toBeUndefined();
+  });
+
   it("never moves more sites than the static bucket holds", () => {
     const summary = summarizeCodegraphResolve([rowB("ruby", "ivar", 10, 8, 1)], undefined, {
       counts: [site("ruby", "ivar", "ambiguous", 5), site("ruby", "ivar", "dynamic", 5)],
@@ -614,5 +648,32 @@ describe("summarizeCodegraphResolve — model-resolved residual sites (2m83f.38)
 
     expect(summary?.edgeKinds).toMatchObject({ exact: 70, cone: 20, model: 10, total: 100 });
     expect(summary?.edgeKinds?.exactRatio).toBeCloseTo(0.7, 6);
+  });
+});
+
+// bd tea-rags-mcp-2m83f.43 — residual sites receiver narrowing settled
+// statically (a subset of resolved) and those that matched no class.
+describe("summarizeCodegraphResolve — receiver narrowing (2m83f.43)", () => {
+  const rowN = (language: string, narrowed: number, narrowEmpty: number): ResolveRunStatsRow => ({
+    language,
+    receiverKind: "dynamic",
+    attempted: 100,
+    resolved: 60,
+    externalSkipped: 0,
+    narrowed,
+    narrowEmpty,
+  });
+
+  it("carries the narrowed and narrow-empty totals on the summary and per language", () => {
+    const summary = summarizeCodegraphResolve([rowN("ruby", 7, 3), rowN("typescript", 2, 0)]);
+    expect(summary).toMatchObject({ callsNarrowed: 9, callsNarrowEmpty: 3 });
+    const ruby = (summary?.byLanguage ?? []).find((l) => l.language === "ruby");
+    expect(ruby).toMatchObject({ callsNarrowed: 7, callsNarrowEmpty: 3 });
+  });
+
+  it("omits both counters when no site was narrowed or failed to narrow", () => {
+    const summary = summarizeCodegraphResolve([rowN("ruby", 0, 0)]);
+    expect(summary).not.toHaveProperty("callsNarrowed");
+    expect(summary).not.toHaveProperty("callsNarrowEmpty");
   });
 });

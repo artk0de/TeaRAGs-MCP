@@ -1,15 +1,17 @@
 /**
  * Kev (`/v1/systemone`) as a residual-resolution model. One request per
  * enclosing method: `state` is the method source, one `choice` question per
- * call site, the menu is the candidates' classes. Kev caches the state as a
- * prefix, so the questions of one method cost one prefill.
+ * call site, the menu is the candidates' classes plus {@link KEV_NONE_OPTION}.
+ * Kev caches the state as a prefix, so the questions of one method cost one
+ * prefill.
  */
 
-import type {
-  ResidualAnswer,
-  ResidualModelProvider,
-  ResidualQuestion,
-  ResidualQuestionGroup,
+import {
+  RESIDUAL_NONE_PROBABILITY_KEY,
+  type ResidualAnswer,
+  type ResidualModelProvider,
+  type ResidualQuestion,
+  type ResidualQuestionGroup,
 } from "../../contracts/types/codegraph-residual.js";
 import {
   KevRequestCancelledError,
@@ -22,6 +24,9 @@ import {
 const MODEL_NAME = "kev-latest";
 const RESOLVE_TIMEOUT_MS = 300_000;
 const MODELS_TIMEOUT_MS = 5_000;
+
+/** The last criterion of every question; Kev normalises its probabilities over the classes and this. */
+export const KEV_NONE_OPTION = "none of these — defined outside the project";
 
 export interface KevChoiceQuestion {
   type: "choice";
@@ -62,7 +67,7 @@ export function kevQuestion(receiverText: string, member: string, classes: reado
     instructions:
       `In this Ruby method, \`${receiverText}\` is the receiver of the call \`${receiverText}.${member}\`. ` +
       `Which class is the object passed as \`${receiverText}\`?`,
-    criteria: Object.fromEntries(classes.map((name) => [name, null])),
+    criteria: Object.fromEntries([...classes, KEV_NONE_OPTION].map((name) => [name, null])),
   };
 }
 
@@ -196,14 +201,14 @@ function toAnswer(
 ): ResidualAnswer {
   const answer = response.answers?.[question.siteKey];
   const choice = answer?.choice;
-  const pick = choice === undefined ? undefined : menu.get(choice);
+  const pick = choice === KEV_NONE_OPTION ? null : choice === undefined ? undefined : menu.get(choice);
   if (choice === undefined || pick === undefined) {
     throw new KevResponseError(url, `site ${question.siteKey}: choice ${String(choice)} is not on the menu`);
   }
   const probabilities: Record<string, number> = {};
   for (const [name, p] of Object.entries(answer?.probabilities ?? {})) {
-    const symbolId = menu.get(name);
-    if (symbolId !== undefined) probabilities[symbolId] = p;
+    const key = name === KEV_NONE_OPTION ? RESIDUAL_NONE_PROBABILITY_KEY : menu.get(name);
+    if (key !== undefined) probabilities[key] = p;
   }
   return {
     siteKey: question.siteKey,

@@ -38,6 +38,8 @@ export interface ResidualResolutionConfig {
   menuLimit: number;
   /** Smallest menu the pass asks about or applies. */
   minMenu: number;
+  /** Smallest `p` of a "none of these" verdict that counts its site as external. */
+  noneThreshold: number;
   retentionDays: number;
   /** GPU session broker; set, an `ask` pass with uncached sites leases Kev from it. */
   kevSessionUrl?: string;
@@ -103,6 +105,7 @@ export class ResidualResolutionOps implements ResidualResolvePort {
         concurrency: this.deps.config.concurrency,
         menuLimit: this.deps.config.menuLimit,
         minMenu: this.deps.config.minMenu,
+        noneThreshold: this.deps.config.noneThreshold,
         retentionDays: this.deps.config.retentionDays,
         recomputeDerived: async () => recomputeGraphMetrics(graphDb),
         readMethodSource: async (relPath: string, startLine: number, endLine: number) =>

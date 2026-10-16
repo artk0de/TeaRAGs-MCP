@@ -1176,6 +1176,14 @@ export interface ChunkExtraction {
    */
   assignedLocals?: string[];
   /**
+   * Per def chunk: every local and ivar the def assigns → the 1-based lines of
+   * its assignments, ascending (bd tea-rags-mcp-2m83f.43). Residual receiver
+   * narrowing splits one receiver text into two receivers at each assignment
+   * between its calls. Populated by the Ruby walker; absent when the def assigns
+   * nothing.
+   */
+  localAssignmentLines?: Record<string, number[]>;
+  /**
    * Which of this chunk's `localBindings` are EXACT constructions — name →
    * binding lines, see {@link ConstructedLocalLines} (bd tea-rags-mcp-0qaht.66).
    * Set by the walkers that can prove one; absent when the chunk has none.
@@ -1374,6 +1382,16 @@ export interface CallRef {
    */
   positionalArgAtoms?: readonly (CallArgAtom | null)[];
   /**
+   * The source text of each argument a parameter could be typed from (bd
+   * tea-rags-mcp-2m83f.44): `positional` per position, truncated at the first
+   * argument that breaks positional correspondence (splat, keyword pair,
+   * block-pass), `null` for a literal; `keyword` per passed key. Typed in pass 2
+   * by the language's resolver against the caller's bindings, then bound to the
+   * callee's parameters once the call has a single exact edge. Absent when no
+   * argument is typeable.
+   */
+  argExprs?: CallArgExprs;
+  /**
    * The dispatched-name TEMPLATE of a `send` / `public_send` / `__send__` whose
    * name is an interpolated string or symbol with exactly ONE interpolation of a
    * bare identifier — `send("can_#{ability}?")` →
@@ -1381,6 +1399,12 @@ export interface CallRef {
    * tea-rags-mcp-emazx). Absent for anything computed.
    */
   sendNameTemplate?: SendNameTemplate;
+}
+
+/** Argument expressions a callee's parameters may be typed from (bd tea-rags-mcp-2m83f.44). */
+export interface CallArgExprs {
+  readonly positional?: readonly (string | null)[];
+  readonly keyword?: Readonly<Record<string, string>>;
 }
 
 /** One positional call argument, as far as the self-dispatch argument channel reads it (bd emazx). */

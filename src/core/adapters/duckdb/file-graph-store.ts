@@ -159,6 +159,7 @@ export const REMOVED_FILE_SOURCE_TABLES = [
   "cg_hierarchy_dependencies",
   "cg_symbols_edges_field",
   "cg_residual_call_sites",
+  "cg_residual_external_sites",
 ] as const;
 export const REMOVED_FILE_REL_PATH_TABLES = [
   "cg_symbols",

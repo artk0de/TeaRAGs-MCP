@@ -397,6 +397,19 @@ export interface ResolveRunStatsRow {
    */
   unnarrowedTemplate?: number;
   /**
+   * bd tea-rags-mcp-2m83f.43 — residual sites whose receiver's constraint set
+   * (every member called on it in the method, inheritance counted) settled them
+   * to one target, emitted as a static edge. A subset of `resolved`. Defaults to
+   * 0 for rows persisted before migration 057.
+   */
+  narrowed?: number;
+  /**
+   * bd tea-rags-mcp-2m83f.43 — residual sites whose constraint set intersected
+   * to no project class; they keep the single-member menu. Diagnostic only, in
+   * no rate. Defaults to 0 before migration 057.
+   */
+  narrowEmpty?: number;
+  /**
    * bd tea-rags-mcp-f2jsb / j0pki — of the `attempted − resolved` misses in
    * this bucket, how many the dispatch kernel judged over-cap AMBIGUOUS
    * (survivors > corpus-adaptive fan-out cap) and recorded as an aggregate

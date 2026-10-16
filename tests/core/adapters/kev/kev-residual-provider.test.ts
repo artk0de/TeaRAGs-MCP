@@ -12,10 +12,14 @@ import {
 } from "../../../../src/core/adapters/kev/errors.js";
 import {
   candidateClass,
+  KEV_NONE_OPTION,
   kevQuestion,
   KevResidualProvider,
 } from "../../../../src/core/adapters/kev/kev-residual-provider.js";
-import type { ResidualQuestionGroup } from "../../../../src/core/contracts/types/codegraph-residual.js";
+import {
+  RESIDUAL_NONE_PROBABILITY_KEY,
+  type ResidualQuestionGroup,
+} from "../../../../src/core/contracts/types/codegraph-residual.js";
 
 const FIXTURES = join(import.meta.dirname, "../../../fixtures/kev");
 const fixture = (name: string): unknown => JSON.parse(readFileSync(join(FIXTURES, name), "utf8"));
@@ -111,8 +115,32 @@ describe("KevResidualProvider", () => {
       instructions:
         "In this Ruby method, `firm` is the receiver of the call `firm.users`. " +
         "Which class is the object passed as `firm`?",
-      criteria: { Firm: null, Client: null },
+      criteria: { Firm: null, Client: null, [KEV_NONE_OPTION]: null },
     });
+    expect(KEV_NONE_OPTION).toBe("none of these — defined outside the project");
+  });
+
+  it("maps a none answer to a null pick, p = probability of none", async () => {
+    const { fetch } = fakeFetch(() =>
+      json({
+        answers: {
+          "site-a": { choice: KEV_NONE_OPTION, probabilities: { Firm: 0.05, Client: 0.03, [KEV_NONE_OPTION]: 0.92 } },
+          "site-b": { choice: "Client", probabilities: { Firm: 0.1, Client: 0.8, [KEV_NONE_OPTION]: 0.1 } },
+        },
+      }),
+    );
+    const provider = new KevResidualProvider({ urls: ["http://gpu:8090"], threshold: 0.7 }, { fetch });
+
+    const [none, client] = await provider.resolveGroup(GROUP);
+
+    expect(none).toMatchObject({
+      siteKey: "site-a",
+      pick: null,
+      p: 0.92,
+      probabilities: { "Firm#users": 0.05, "Client#users": 0.03, [RESIDUAL_NONE_PROBABILITY_KEY]: 0.92 },
+    });
+    expect(client).toMatchObject({ pick: "Client#users", p: 0.8 });
+    expect(client.probabilities[RESIDUAL_NONE_PROBABILITY_KEY]).toBe(0.1);
   });
 
   it("maps each answer's class back to the candidate symbolId, p = probability of the choice", async () => {

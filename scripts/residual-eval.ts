@@ -38,8 +38,8 @@ export interface EvalSite {
 
 export interface EvalOutcome {
   site: EvalSite;
-  /** Picked class. */
-  pick: string;
+  /** Picked class; `null` — the model answered "none of these", never correct here (every site's truth is a project class). */
+  pick: string | null;
   p: number;
 }
 
@@ -120,7 +120,11 @@ export async function evaluateSites(
     while (next < sites.length) {
       const index = next++;
       const [answer] = await provider.resolveGroup(siteGroup(sites[index], index));
-      outcomes[index] = { site: sites[index], pick: candidateClass(answer.pick), p: answer.p };
+      outcomes[index] = {
+        site: sites[index],
+        pick: answer.pick === null ? null : candidateClass(answer.pick),
+        p: answer.p,
+      };
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, async () => worker()));

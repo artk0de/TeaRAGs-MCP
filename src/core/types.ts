@@ -273,6 +273,14 @@ export interface CodegraphResolveSummary {
    */
   callsResolvedByModel?: number;
   /**
+   * bd tea-rags-mcp-2m83f.45 — sites a model answered "none of these — defined
+   * outside the project" for at or above `CODEGRAPH_RESIDUAL_NONE_THRESHOLD`:
+   * moved out of {@link ambiguousFanout} or the in-project miss into
+   * {@link callsExternalSkipped}, so out of the recall denominator. Present only
+   * when non-zero.
+   */
+  callsExternalByModel?: number;
+  /**
    * Model-resolved sites from residual rows written before migration 055, which
    * carry no receiver kind: counted in no per-kind row (055 labels their language
    * from the file row). Present only when non-zero; a re-walk of their files
@@ -341,6 +349,14 @@ export interface CodegraphResolveSummary {
    */
   callsUnnarrowedTemplate: number;
   /**
+   * bd tea-rags-mcp-2m83f.43 — residual sites whose receiver's constraint set
+   * settled them to one target, written as static edges (a subset of the
+   * resolved calls), and residual sites whose constraint set intersected to no
+   * project class. Absent until a run narrowed or failed to narrow a site.
+   */
+  callsNarrowed?: number;
+  callsNarrowEmpty?: number;
+  /**
    * tea-rags-mcp-cnqrg — per-code-language breakdown of the same rate, so a
    * polyglot index reveals WHICH language's resolver carries the gap. Test
    * call-sites are excluded from every tally (production-code capability only).
@@ -374,6 +390,8 @@ export interface CodegraphModelResolutionRow {
   /** The provider threshold its edges were counted at; absent when the running configuration names none. */
   threshold?: number;
   sites: number;
+  /** Sites the model put outside the project; see {@link CodegraphResolveSummary.callsExternalByModel}. Absent when zero. */
+  external?: number;
 }
 
 /**
@@ -406,6 +424,8 @@ export interface CodegraphResolveLanguageRow {
   staticInProjectEdgeRecall?: number | null;
   /** Sites of this language a model edge resolved; see {@link CodegraphResolveSummary.callsResolvedByModel}. */
   callsResolvedByModel?: number;
+  /** Sites of this language a model put outside the project; see {@link CodegraphResolveSummary.callsExternalByModel}. */
+  callsExternalByModel?: number;
   /** Raw resolver capability for this language. DEBUG-only; `null` = nothing scored (see summary). */
   resolveSuccessRate?: number | null;
   callsAttempted: number;
@@ -424,6 +444,14 @@ export interface CodegraphResolveLanguageRow {
    * languages with no self-dispatch registry.
    */
   callsUnnarrowedTemplate: number;
+  /**
+   * bd tea-rags-mcp-2m83f.43 — residual sites whose receiver's constraint set
+   * settled them to one target, written as static edges (a subset of the
+   * resolved calls), and residual sites whose constraint set intersected to no
+   * project class. Absent until a run narrowed or failed to narrow a site.
+   */
+  callsNarrowed?: number;
+  callsNarrowEmpty?: number;
   /**
    * tea-rags-mcp-7m5xz — per-receiver-kind breakdown scoped to this language's
    * call-sites. Present only in the multi-language case (precise lang×kind).
@@ -455,6 +483,8 @@ export interface CodegraphResolveKindRow {
   resolved: number;
   /** Sites in {@link resolved} a model edge resolved; see {@link CodegraphResolveSummary.callsResolvedByModel}. */
   resolvedByModel?: number;
+  /** Sites a model put outside the project; see {@link CodegraphResolveSummary.callsExternalByModel}. */
+  externalByModel?: number;
   externalSkipped: number;
   /** bd cai0 — unresolved dynamic-send calls in this bucket, excluded from the rate. */
   unresolvable: number;

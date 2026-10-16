@@ -16,11 +16,16 @@
  * lookups, file fan and the layout see the dependency. Those rows are rebuilt
  * from the model method edges on every apply; the re-walk drops them with the
  * file's other edges, and an import it finds replaces them.
+ *
+ * Sites a model put outside the project ("none of these") live in
+ * `cg_residual_external_sites` (058), replaced per model on every apply and
+ * counted only while the residual row keeps the same menu.
  */
 import type {
   CodegraphResidualEdgeStore,
   ModelEdgeApplyResult,
   ModelEdgeRow,
+  ModelExternalSiteRow,
   ModelResolvedSiteCount,
   ResidualCallSiteRow,
   ResidualKind,
@@ -53,6 +58,7 @@ interface ResidualSiteDbRow {
 }
 
 interface ModelResolvedSiteCountDbRow {
+  outcome: string;
   language: string | null;
   receiver_kind: string | null;
   kind: string;
@@ -93,7 +99,8 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
    * A site is resolved when a model edge holds its call: same method, file and
    * call text — the method-edge key, which one edge shares between sites making
    * the same call. Each site counts once, under the model of its most probable
-   * edge.
+   * edge. A site no edge resolves is external when a model put it outside the
+   * project under its current menu.
    */
   async getModelResolvedSiteCounts(thresholds: Readonly<Record<string, number>>): Promise<ModelResolvedSiteCount[]> {
     const models = Object.entries(thresholds);
@@ -103,7 +110,7 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
         : `CASE e.model ${models.map(() => "WHEN ? THEN CAST(? AS DOUBLE)").join(" ")} ELSE 0 END`;
     const rows = await this.session.queryAll<ModelResolvedSiteCountDbRow>(
       `WITH resolved AS (
-         SELECT r.language, r.receiver_kind, r.kind, arg_max(e.model, e.p) AS model
+         SELECT r.source_rel_path, r.site_key, r.language, r.receiver_kind, r.kind, arg_max(e.model, e.p) AS model
            FROM cg_residual_call_sites r
            JOIN cg_symbols_edges_method e
              ON e.origin = 'model'
@@ -113,14 +120,29 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
                                          ELSE r.receiver_text || '.' || r.member END
             AND e.p >= ${minP}
           GROUP BY r.source_rel_path, r.site_key, r.language, r.receiver_kind, r.kind
+       ),
+       external AS (
+         SELECT r.language, r.receiver_kind, r.kind, arg_max(x.model, x.p) AS model
+           FROM cg_residual_call_sites r
+           JOIN cg_residual_external_sites x
+             ON x.source_rel_path = r.source_rel_path AND x.site_key = r.site_key AND x.menu_hash = r.menu_hash
+          WHERE NOT EXISTS (SELECT 1 FROM resolved s
+                             WHERE s.source_rel_path = r.source_rel_path AND s.site_key = r.site_key)
+          GROUP BY r.source_rel_path, r.site_key, r.language, r.receiver_kind, r.kind
+       ),
+       outcomes AS (
+         SELECT 'edge' AS outcome, language, receiver_kind, kind, model FROM resolved
+         UNION ALL
+         SELECT 'external' AS outcome, language, receiver_kind, kind, model FROM external
        )
-       SELECT language, receiver_kind, kind, model, COUNT(*) AS sites
-         FROM resolved
-        GROUP BY language, receiver_kind, kind, model
-        ORDER BY language NULLS FIRST, receiver_kind NULLS FIRST, kind, model`,
+       SELECT outcome, language, receiver_kind, kind, model, COUNT(*) AS sites
+         FROM outcomes
+        GROUP BY outcome, language, receiver_kind, kind, model
+        ORDER BY outcome, language NULLS FIRST, receiver_kind NULLS FIRST, kind, model`,
       models.flatMap(([model, threshold]) => [model, threshold]),
     );
     return rows.map((r) => ({
+      outcome: r.outcome === "external" ? "external" : "edge",
       language: r.language,
       receiverKind: r.receiver_kind,
       kind: r.kind as ResidualKind,
@@ -173,6 +195,21 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
       await this.syncModelFileEdges();
       const after = await this.storedModelEdges(model);
       return { stored: after.length, changed: after.join("\n") !== before.join("\n") };
+    });
+  }
+
+  /** Make the rows of `model` in `cg_residual_external_sites` equal `sites`. */
+  async applyModelExternalSites(model: string, sites: readonly ModelExternalSiteRow[]): Promise<void> {
+    await this.session.transaction(async () => {
+      await this.session.run("DELETE FROM cg_residual_external_sites WHERE model = ?", [model]);
+      for (let i = 0; i < sites.length; i += RESIDUAL_IN_LIST_CHUNK) {
+        const chunk = sites.slice(i, i + RESIDUAL_IN_LIST_CHUNK);
+        await this.session.run(
+          `INSERT OR REPLACE INTO cg_residual_external_sites (model, source_rel_path, site_key, menu_hash, p)
+           VALUES ${chunk.map(() => "(?, ?, ?, ?, ?)").join(", ")}`,
+          chunk.flatMap((x) => [model, x.sourceRelPath, x.siteKey, x.menuHash, x.p]),
+        );
+      }
     });
   }
 

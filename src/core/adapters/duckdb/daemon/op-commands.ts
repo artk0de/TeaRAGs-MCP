@@ -232,6 +232,10 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   pruneDerivedForDeletedFiles: write(async (graphDb, p) => graphDb.pruneDerivedForDeletedFiles(p.relPaths)),
   // A write whose result the residual pass reads: whether the model's edges changed.
   applyModelEdges: { access: "write", run: async (graphDb, p) => graphDb.applyModelEdges(p.model, p.edges) },
+  applyModelExternalSites: {
+    access: "write",
+    run: async (graphDb, p) => graphDb.applyModelExternalSites(p.model, p.sites),
+  },
   markDerivedStale: write(async (graphDb) => graphDb.markDerivedStale()),
   upsertSymbols: write(async (graphDb, p) => graphDb.upsertSymbols(p.relPath, p.definitions)),
   upsertSymbolsBulk: write(async (graphDb, p) => graphDb.upsertSymbolsBulk(p.entries)),

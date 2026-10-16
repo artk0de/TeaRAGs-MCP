@@ -35,6 +35,7 @@ import {
   CodegraphSpillIoError,
   type CodegraphMetricsStage,
 } from "../../errors.js";
+import { runCallerParamPass } from "./caller-param-pass.js";
 import {
   countCappedGraphEdges,
   countedGraphEdgesByKind,
@@ -159,8 +160,8 @@ async function collectAdjacency(
  * without it streams the spill in write order, exactly as before closure-batch
  * ordering existed (bd tea-rags-mcp-vtuu4).
  */
-export type Pass2ResolutionRunner = Omit<CallEdgeResolutionRunner, "resolveVisitPlans"> &
-  Partial<Pick<CallEdgeResolutionRunner, "resolveVisitPlans">>;
+export type Pass2ResolutionRunner = Omit<CallEdgeResolutionRunner, "resolveVisitPlans" | "observeCallerArgs"> &
+  Partial<Pick<CallEdgeResolutionRunner, "resolveVisitPlans" | "observeCallerArgs">>;
 
 /**
  * Feed `processLine` every spill line in the order `plans` ask for (bd
@@ -260,6 +261,7 @@ export class GraphBuildFinalizer {
       lastRelPath: null,
     };
     try {
+      await this.typeParamsFromCallers(spillPath, symbolTable);
       await this.visitSpill(spillPath, async (line) => this.processSpillLine(run, line));
       await this.finishPass(run);
     } catch (err) {
@@ -292,6 +294,19 @@ export class GraphBuildFinalizer {
     // it on taxdome), but it is not a file, and charging it as one would move
     // the ms/file figure this accumulator exists to report.
     this.timings.record("pass2", Date.now() - preparedAtMs, { count: 0 });
+  }
+
+  /**
+   * Type method parameters from their statically resolved callers before any
+   * edge is written (bd tea-rags-mcp-2m83f.44), so pass-2 resolves the calls on
+   * them once, with their types seeded. Charged to pass-2's wall clock.
+   */
+  private async typeParamsFromCallers(spillPath: string, symbolTable: GlobalSymbolTable): Promise<void> {
+    const observeCallerArgs = this.resolutionRunner.observeCallerArgs?.bind(this.resolutionRunner);
+    if (observeCallerArgs === undefined) return;
+    const startedAtMs = Date.now();
+    await runCallerParamPass(spillPath, { observeCallerArgs }, this.runState, symbolTable);
+    this.timings.record("pass2", Date.now() - startedAtMs, { count: 0 });
   }
 
   /**

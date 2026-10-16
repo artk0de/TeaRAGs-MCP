@@ -141,6 +141,8 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           coreAmbiguous: 0,
           ambiguousFanout: 0,
           unnarrowedTemplate: 0,
+          narrowed: 0,
+          narrowEmpty: 0,
         },
         {
           language: "typescript",
@@ -153,6 +155,8 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           coreAmbiguous: 0,
           ambiguousFanout: 0,
           unnarrowedTemplate: 0,
+          narrowed: 0,
+          narrowEmpty: 0,
         },
       ]);
     });
@@ -199,6 +203,8 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           coreAmbiguous: 0,
           ambiguousFanout: 0,
           unnarrowedTemplate: 0,
+          narrowed: 0,
+          narrowEmpty: 0,
         },
       ]);
     });

@@ -35,6 +35,8 @@ export interface WorkingTreeGraphResidualInput {
   threshold: number;
   menuLimit: number;
   minMenu: number;
+  /** Smallest `p` of a "none of these" verdict that counts its site as external. */
+  noneThreshold: number;
 }
 
 /** What the re-apply left: the model edges the tree graph holds, or why the changed files have none. */
@@ -59,6 +61,7 @@ export async function reapplyTreeModelEdges(
     concurrency: 1,
     menuLimit: residual.menuLimit,
     minMenu: residual.minMenu,
+    noneThreshold: residual.noneThreshold,
     retentionDays: 0,
     recomputeDerived: async () => recomputeGraphMetrics(graphDb),
     readMethodSource: async () => Promise.reject(new Error("a cacheOnly pass reads no method source")),

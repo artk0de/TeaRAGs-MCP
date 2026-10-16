@@ -81,6 +81,8 @@ const EXPECTED_POLICY = {
   unresolvedMixinClasses: "hydrate",
   paramTypes: "batchOnly",
   derivedClassFieldTypes: "batchOnly",
+  callerParamTypes: "batchOnly",
+  callerParamEvidence: "batchOnly",
 } as const satisfies Record<RunGlobalMapField, "hydrate" | "batchOnly">;
 
 /**

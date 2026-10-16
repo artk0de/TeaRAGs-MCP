@@ -111,10 +111,17 @@ export const capability: LanguageCapability = {
   // untyped receiver (`form.save!`, `value.presence`) is externalSkipped unless a
   // namesake sits in the AR model hierarchy, so a walker-17 index holds residual
   // rows and recall misses for those calls.
-  // walker 19: bd tea-rags-mcp-2m83f.48 — every argument of `include A, B`, `send(:include, X)`,
+  // walker 19: bd tea-rags-mcp-2m83f.44 — calls carry `argExprs` and a parameter
+  // is typed from its exact-edge callers (`perform(record)` called with an
+  // `Invoice`), so a walker-18 index lacks the edges of calls on parameters.
+  // walker 20: bd tea-rags-mcp-2m83f.43 — def chunks carry `localAssignmentLines`,
+  // so residual receiver narrowing splits a reassigned receiver; a walker-19
+  // index groups the calls of a reassigned local as one receiver.
+  // walker 21: bd tea-rags-mcp-2m83f.48 — every argument of `include A, B`, `send(:include, X)`,
   // `X.include(Y)`, `X.class_eval { include Y }`, `base.include(Y)` in an `included` hook and a
-  // top-level `include` are recorded; an unreadable mixin publishes `unresolvedMixinClasses`.
-  versions: { chunking: 2, walker: 19, codegraphSchema: 2 },
+  // top-level `include` are recorded; an unreadable mixin publishes `unresolvedMixinClasses`,
+  // so a walker-20 index misses the reachable overrides of frameworkOverride residual sites.
+  versions: { chunking: 2, walker: 21, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

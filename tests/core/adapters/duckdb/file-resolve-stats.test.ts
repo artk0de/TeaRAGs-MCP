@@ -29,6 +29,8 @@ function kind(receiverKind: string, attempted: number, resolved: number): FileRe
     coreAmbiguous: 0,
     ambiguousFanout: 0,
     unnarrowedTemplate: 0,
+    narrowed: 0,
+    narrowEmpty: 0,
   };
 }
 
@@ -161,6 +163,8 @@ describe("DuckDbGraphClient — per-file resolve stats (xpmwg)", () => {
       coreAmbiguous: 1,
       ambiguousFanout: 1,
       unnarrowedTemplate: 1,
+      narrowed: 1,
+      narrowEmpty: 1,
     };
     await db.recordFileResolveStats({
       files: [file("a.rb", "ruby", [full]), file("b.rb", "ruby", [full])],
@@ -179,6 +183,8 @@ describe("DuckDbGraphClient — per-file resolve stats (xpmwg)", () => {
         coreAmbiguous: 2,
         ambiguousFanout: 2,
         unnarrowedTemplate: 2,
+        narrowed: 2,
+        narrowEmpty: 2,
       },
     ]);
   });

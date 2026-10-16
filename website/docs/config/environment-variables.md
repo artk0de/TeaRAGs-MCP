@@ -140,7 +140,8 @@ project and replayed on later runs. See
 | `CODEGRAPH_RESIDUAL_CONCURRENCY`    | Residual requests in flight (one per enclosing method)                       | `16`       |
 | `CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC` | Seconds one residual request may run; a timed-out group is retried once at the end of the pass | `300` |
 | `CODEGRAPH_RESIDUAL_MENU_LIMIT`     | Call sites with more candidates than this are not asked                      | `40`       |
-| `CODEGRAPH_RESIDUAL_MIN_MENU`      | Call sites with fewer candidates than this are neither asked nor given an edge | `4`        |
+| `CODEGRAPH_RESIDUAL_MIN_MENU`      | Call sites with fewer candidates than this are neither asked nor given an edge | `1`        |
+| `CODEGRAPH_RESIDUAL_NONE_THRESHOLD` | Minimum confidence of a "none of these" answer for its site to count as external, out of the recall denominator | `0.8` |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | Cached verdicts unseen this many days are dropped                    | `180`      |
 
 **`CODEGRAPH_TS_TYPECHECKER`.** TypeScript call resolution builds a

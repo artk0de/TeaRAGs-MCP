@@ -1408,7 +1408,14 @@ describe("WorkingTreeGraphCache — seeded from the tree's previous graph", () =
 });
 
 describe("WorkingTreeGraphCache — model edges of changed files (bd tea-rags-mcp-2m83f.39)", () => {
-  const RESIDUAL = { verdictRootDir: "/data/codegraph", model: "kev", threshold: 0.5, menuLimit: 16, minMenu: 2 };
+  const RESIDUAL = {
+    verdictRootDir: "/data/codegraph",
+    model: "kev",
+    threshold: 0.5,
+    menuLimit: 16,
+    minMenu: 2,
+    noneThreshold: 0.8,
+  };
   const UNREADABLE = "model edges of changed files not re-applied: verdict store unreadable: lock held";
 
   function residualHarness(shared?: Partial<Harness>): Harness {

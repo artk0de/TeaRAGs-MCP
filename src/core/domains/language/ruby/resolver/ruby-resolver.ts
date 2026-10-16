@@ -46,7 +46,11 @@ import {
   type ResidualExclusionRule,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
-import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import type {
+  DispatchResolverComponent,
+  SymbolResolutionStrategy,
+  TypeRef,
+} from "../../../../contracts/types/language.js";
 import {
   ExternalCallClassifier,
   readResolverConfig,
@@ -80,6 +84,7 @@ import {
   RubySuperSymbolResolutionStrategy,
   RubyTableDispatchResolver,
   RubyUnionDispatchResolver,
+  typeOfReceiver,
 } from "./strategies/index.js";
 import { redirectSelfDispatchTemplate } from "./template-redirect.js";
 
@@ -177,6 +182,15 @@ export class RubyCallResolver implements CallResolver {
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
     return lookupRubySymbolsByShortName(ctx, call.member, { role: rubyMemberLookupRole(call) }).length > 0;
+  }
+
+  /**
+   * An argument's type as a receiver of that text would be typed at the call's
+   * position (bd tea-rags-mcp-2m83f.44) — the same facts static resolution
+   * trusts, never the naming convention.
+   */
+  typeOfCallArgument(expr: string, call: CallRef, ctx: CallContext): TypeRef | undefined {
+    return typeOfReceiver(expr, call.startLine, ctx, call.startColumn);
   }
 
   /** A residual Rails framework member on an untyped receiver: only the overrides it reaches (bd 2m83f.48). */

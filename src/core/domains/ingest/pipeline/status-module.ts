@@ -63,6 +63,10 @@ interface ResolveTally {
   // bd tea-rags-mcp-znxg8 — RESOLVED calls that stopped at a shared self-dispatch
   // entry node. Feeds no rate: it is an invariant, not a miss bucket.
   unnarrowedTemplate: number;
+  // bd tea-rags-mcp-2m83f.43 — residual sites settled statically by receiver
+  // narrowing (a subset of `resolved`), and those that intersected to no class.
+  narrowed: number;
+  narrowEmpty: number;
 }
 
 function emptyTally(): ResolveTally {
@@ -75,6 +79,8 @@ function emptyTally(): ResolveTally {
     coreAmbiguous: 0,
     ambiguousFanout: 0,
     unnarrowedTemplate: 0,
+    narrowed: 0,
+    narrowEmpty: 0,
   };
 }
 
@@ -157,43 +163,89 @@ export interface ModelResolvedSites {
   thresholds: Readonly<Record<string, number>>;
 }
 
-/** Model-resolved residual sites by the static bucket they leave. */
+/** Model-resolved and model-external (2m83f.45) residual sites by the static bucket they leave. */
 interface ModelSiteTally {
   ambiguous: number;
   dynamic: number;
+  externalAmbiguous: number;
+  externalDynamic: number;
+}
+
+function emptyModelSiteTally(): ModelSiteTally {
+  return { ambiguous: 0, dynamic: 0, externalAmbiguous: 0, externalDynamic: 0 };
 }
 
 function addModelSites(tallies: Map<string, ModelSiteTally>, key: string, c: ModelResolvedSiteCount): void {
-  const t = tallies.get(key) ?? { ambiguous: 0, dynamic: 0 };
-  t[c.kind] += c.sites;
+  const t = tallies.get(key) ?? emptyModelSiteTally();
+  addModelSiteCount(t, c);
   tallies.set(key, t);
 }
 
+function addModelSiteCount(t: ModelSiteTally, c: ModelResolvedSiteCount): void {
+  if (c.outcome === "external") {
+    if (c.kind === "ambiguous") t.externalAmbiguous += c.sites;
+    else t.externalDynamic += c.sites;
+    return;
+  }
+  t[c.kind] += c.sites;
+}
+
 /**
- * The static tally with the model-resolved sites moved into `resolved`: an
- * ambiguous site out of `ambiguousFanout`, a dynamic one out of the in-project
- * miss. Never moves more than the bucket holds, so a residual table read
- * against another generation's run stats cannot push recall past 1.
+ * The static tally with the model-resolved sites moved into `resolved`, then
+ * the sites a model put outside the project moved into `externalSkipped` (out
+ * of the denominator): an ambiguous site out of `ambiguousFanout`, a dynamic
+ * one out of the in-project miss. Never moves more than the bucket holds, so a
+ * residual table read against another generation's run stats cannot push recall
+ * past 1.
  */
-function withModelSites(t: ResolveTally, m: ModelSiteTally | undefined): { combined: ResolveTally; moved: number } {
-  if (m === undefined) return { combined: t, moved: 0 };
+function withModelSites(
+  t: ResolveTally,
+  m: ModelSiteTally | undefined,
+): { combined: ResolveTally; moved: number; external: number } {
+  if (m === undefined) return { combined: t, moved: 0, external: 0 };
   const ambiguous = Math.min(m.ambiguous, t.ambiguousFanout);
   const dynamic = Math.min(m.dynamic, Math.max(0, missWithInProjectDef(t) - t.ambiguousFanout));
   const moved = ambiguous + dynamic;
+  const afterEdges: ResolveTally = {
+    ...t,
+    resolved: t.resolved + moved,
+    ambiguousFanout: t.ambiguousFanout - ambiguous,
+  };
+  const externalAmbiguous = Math.min(m.externalAmbiguous, afterEdges.ambiguousFanout);
+  const externalDynamic = Math.min(
+    m.externalDynamic,
+    Math.max(0, missWithInProjectDef(afterEdges) - afterEdges.ambiguousFanout),
+  );
+  const external = externalAmbiguous + externalDynamic;
   return {
-    combined: { ...t, resolved: t.resolved + moved, ambiguousFanout: t.ambiguousFanout - ambiguous },
+    combined: {
+      ...afterEdges,
+      externalSkipped: afterEdges.externalSkipped + external,
+      ambiguousFanout: afterEdges.ambiguousFanout - externalAmbiguous,
+    },
     moved,
+    external,
   };
 }
 
 function modelResolutionRows(modelResolvedSites: ModelResolvedSites): CodegraphModelResolutionRow[] {
-  const sitesByModel = new Map<string, number>();
-  for (const c of modelResolvedSites.counts) sitesByModel.set(c.model, (sitesByModel.get(c.model) ?? 0) + c.sites);
-  return [...sitesByModel.entries()]
-    .filter(([, sites]) => sites > 0)
-    .map(([model, sites]) => {
+  const byModel = new Map<string, { sites: number; external: number }>();
+  for (const c of modelResolvedSites.counts) {
+    const m = byModel.get(c.model) ?? { sites: 0, external: 0 };
+    if (c.outcome === "external") m.external += c.sites;
+    else m.sites += c.sites;
+    byModel.set(c.model, m);
+  }
+  return [...byModel.entries()]
+    .filter(([, m]) => m.sites + m.external > 0)
+    .map(([model, m]) => {
       const threshold = modelResolvedSites.thresholds[model];
-      return threshold === undefined ? { model, sites } : { model, threshold, sites };
+      return {
+        model,
+        ...(threshold === undefined ? {} : { threshold }),
+        sites: m.sites,
+        ...(m.external > 0 ? { external: m.external } : {}),
+      };
     })
     .sort((a, b) => b.sites - a.sites);
 }
@@ -227,17 +279,18 @@ function buildByReceiverKind(
   return [...kinds.entries()]
     .filter(([, t]) => t.attempted > 0)
     .map(([receiverKind, staticTally]) => {
-      const { combined: t, moved } = withModelSites(staticTally, modelKinds?.get(receiverKind));
-      return { receiverKind, staticTally, t, moved };
+      const { combined: t, moved, external } = withModelSites(staticTally, modelKinds?.get(receiverKind));
+      return { receiverKind, staticTally, t, moved, external };
     })
-    .map(({ receiverKind, staticTally, t, moved }) => ({
+    .map(({ receiverKind, staticTally, t, moved, external }) => ({
       receiverKind,
       inProjectEdgeRecall: edgeRecall(t),
       coveredRecall: coveredRecall(t),
-      ...(moved > 0 ? { staticInProjectEdgeRecall: edgeRecall(staticTally) } : {}),
+      ...(moved + external > 0 ? { staticInProjectEdgeRecall: edgeRecall(staticTally) } : {}),
       attempted: t.attempted,
       resolved: t.resolved,
       ...(moved > 0 ? { resolvedByModel: moved } : {}),
+      ...(external > 0 ? { externalByModel: external } : {}),
       externalSkipped: t.externalSkipped,
       unresolvable: t.unresolvable,
       callsNoInProjectDef: t.noInProjectDef,
@@ -247,6 +300,11 @@ function buildByReceiverKind(
       resolveSuccessRate: resolveRate(t),
     }))
     .sort((a, b) => b.attempted - a.attempted);
+}
+
+/** Receiver-narrowing counters, present only once a run narrowed or failed to narrow a site. */
+function narrowingCounts(t: ResolveTally): { callsNarrowed?: number; callsNarrowEmpty?: number } {
+  return t.narrowed > 0 || t.narrowEmpty > 0 ? { callsNarrowed: t.narrowed, callsNarrowEmpty: t.narrowEmpty } : {};
 }
 
 /**
@@ -264,6 +322,8 @@ function addRow(t: ResolveTally, r: ResolveRunStatsRow): void {
   t.coreAmbiguous += r.coreAmbiguous ?? 0;
   t.ambiguousFanout += r.ambiguousFanout ?? 0;
   t.unnarrowedTemplate += r.unnarrowedTemplate ?? 0;
+  t.narrowed += r.narrowed ?? 0;
+  t.narrowEmpty += r.narrowEmpty ?? 0;
 }
 
 /**
@@ -318,13 +378,13 @@ export function summarizeCodegraphResolve(
   // bd tea-rags-mcp-2m83f.38 — model-resolved residual sites, keyed like the
   // static tallies. A pre-055 row carries no receiver kind and so sits in no
   // per-kind row; one with no language either folds into the aggregate only.
-  const modelTotal: ModelSiteTally = { ambiguous: 0, dynamic: 0 };
+  const modelTotal = emptyModelSiteTally();
   const modelByLang = new Map<string, ModelSiteTally>();
   const modelByLangKind = new Map<string, Map<string, ModelSiteTally>>();
   let modelUnlabeled = 0;
   for (const c of modelResolved?.counts ?? []) {
-    modelTotal[c.kind] += c.sites;
-    if (c.receiverKind === null) modelUnlabeled += c.sites;
+    addModelSiteCount(modelTotal, c);
+    if (c.receiverKind === null && c.outcome !== "external") modelUnlabeled += c.sites;
     if (c.language === null) continue;
     addModelSites(modelByLang, c.language, c);
     if (c.receiverKind === null) continue;
@@ -333,7 +393,11 @@ export function summarizeCodegraphResolve(
     modelByLangKind.set(c.language, kinds);
   }
   const staticTotal = total;
-  const { combined: combinedTotal, moved: movedTotal } = withModelSites(staticTotal, modelTotal);
+  const {
+    combined: combinedTotal,
+    moved: movedTotal,
+    external: externalTotal,
+  } = withModelSites(staticTotal, modelTotal);
   const summary: CodegraphResolveSummary = {
     // Recall is the always-on graph-completeness number. resolveSuccessRate is
     // kept DEBUG-only as the explicit-rate view; under cai0.2 (Option A) its
@@ -352,22 +416,26 @@ export function summarizeCodegraphResolve(
     callsCoreAmbiguous: combinedTotal.coreAmbiguous,
     ambiguousFanout: combinedTotal.ambiguousFanout,
     callsUnnarrowedTemplate: combinedTotal.unnarrowedTemplate,
+    ...narrowingCounts(combinedTotal),
     ...(debug ? { resolveSuccessRate: resolveRate(combinedTotal) } : {}),
   };
-  if (movedTotal > 0 && modelResolved !== undefined) {
+  if (movedTotal + externalTotal > 0 && modelResolved !== undefined) {
     summary.staticInProjectEdgeRecall = edgeRecall(staticTotal);
-    summary.callsResolvedByModel = movedTotal;
+    if (movedTotal > 0) summary.callsResolvedByModel = movedTotal;
+    if (externalTotal > 0) summary.callsExternalByModel = externalTotal;
     summary.modelResolution = modelResolutionRows(modelResolved);
     if (modelUnlabeled > 0) summary.callsResolvedByModelUnlabeled = modelUnlabeled;
   }
   const byLanguage: CodegraphResolveLanguageRow[] = [...byLang.entries()]
     .filter(([, t]) => total.attempted > 0 && t.attempted / total.attempted >= MIN_LANGUAGE_SHARE)
     .map(([language, staticTally]) => {
-      const { combined: t, moved } = withModelSites(staticTally, modelByLang.get(language));
+      const { combined: t, moved, external } = withModelSites(staticTally, modelByLang.get(language));
       return {
         language,
         inProjectEdgeRecall: edgeRecall(t),
-        ...(moved > 0 ? { staticInProjectEdgeRecall: edgeRecall(staticTally), callsResolvedByModel: moved } : {}),
+        ...(moved + external > 0 ? { staticInProjectEdgeRecall: edgeRecall(staticTally) } : {}),
+        ...(moved > 0 ? { callsResolvedByModel: moved } : {}),
+        ...(external > 0 ? { callsExternalByModel: external } : {}),
         callsAttempted: t.attempted,
         callsResolved: t.resolved,
         callsExternalSkipped: t.externalSkipped,
@@ -375,6 +443,7 @@ export function summarizeCodegraphResolve(
         callsNoInProjectDef: t.noInProjectDef,
         callsCoreAmbiguous: t.coreAmbiguous,
         callsUnnarrowedTemplate: t.unnarrowedTemplate,
+        ...narrowingCounts(t),
         ...(debug ? { resolveSuccessRate: resolveRate(t) } : {}),
         // Absent unless DEBUG built the tally above.
         ...(debug

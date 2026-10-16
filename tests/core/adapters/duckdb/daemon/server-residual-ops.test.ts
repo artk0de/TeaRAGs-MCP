@@ -129,7 +129,7 @@ describe("CodegraphDaemonServer.handle — residual ops", () => {
     ]);
     expect(DAEMON_OP_COMMANDS.getModelResolvedSiteCounts.access).toBe("read");
     expect((resolvedSites as { result: unknown }).result).toEqual([
-      { language: null, receiverKind: null, kind: SITE.kind, model: "kev", sites: 1 },
+      { outcome: "edge", language: null, receiverKind: null, kind: SITE.kind, model: "kev", sites: 1 },
     ]);
     expect(marked.ok).toBe(true);
     expect((stale as { result: unknown }).result).toBe(true);

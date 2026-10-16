@@ -1538,6 +1538,18 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
       expect(out).not.toContain("⚠");
     });
 
+    // bd tea-rags-mcp-2m83f.43 — residual sites receiver narrowing settled statically.
+    it("renders the narrowed line when a run narrowed residual sites", () => {
+      const out = render(summary({ inProjectEdgeRecall: 0.9, callsNarrowed: 138, callsNarrowEmpty: 12 }));
+      expect(out).toContain(
+        "resolve rate: 0.9\nnarrowed: 138 residual calls settled by their receiver's other calls, 12 matched no class\n",
+      );
+    });
+
+    it("renders no narrowed line before any site was narrowed", () => {
+      expect(render(summary({ inProjectEdgeRecall: 0.9 }))).not.toContain("narrowed:");
+    });
+
     // bd tea-rags-mcp-2m83f.38 — model-resolved sites: combined rate, static floor beside it.
     it("renders the static share and the model's sites beside a per-language rate", () => {
       const tally = multiLanguage(0, 0);
@@ -1552,6 +1564,34 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
       expect(render(tally)).toContain(
         "resolve rate: typescript 0.99 · ruby 0.92 (static 0.91 · model 117 sites, kev p>=0.7)\n",
       );
+    });
+
+    // bd tea-rags-mcp-2m83f.45 — sites the model put outside the project, beside the model share.
+    it("renders the model's external sites next to its edged sites", () => {
+      const out = render(
+        summary({
+          inProjectEdgeRecall: 0.93,
+          staticInProjectEdgeRecall: 0.9,
+          callsResolvedByModel: 101,
+          callsExternalByModel: 340,
+          modelResolution: [{ model: "kev", threshold: 0.7, sites: 101, external: 340 }],
+        }),
+      );
+
+      expect(out).toContain("resolve rate: 0.93 (static 0.9 · model 101 sites · external 340, kev p>=0.7)\n");
+    });
+
+    it("renders external sites when the model edged none", () => {
+      const out = render(
+        summary({
+          inProjectEdgeRecall: 0.91,
+          staticInProjectEdgeRecall: 0.9,
+          callsExternalByModel: 12,
+          modelResolution: [{ model: "kev", threshold: 0.7, sites: 0, external: 12 }],
+        }),
+      );
+
+      expect(out).toContain("resolve rate: 0.91 (static 0.9 · model 0 sites · external 12, kev p>=0.7)\n");
     });
 
     it("leaves the receiver-kind gap of pre-055 model sites out of the plain form", () => {

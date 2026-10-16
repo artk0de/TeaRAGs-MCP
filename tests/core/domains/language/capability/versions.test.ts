@@ -509,6 +509,8 @@ describe("seeded support versions", () => {
       // on the model.
       // ruby 13: bd tea-rags-mcp-2m83f.36 — attr_reader / attr_accessor return
       // the type of the @ivar they read.
+      // ruby 20: bd tea-rags-mcp-2m83f.43 — def chunks carry localAssignmentLines
+      // for residual receiver narrowing.
       // python 12: bd tea-rags-mcp-2m83f.32.6 — a convention receiver whose
       // class several files declare takes the one the caller's scope reaches.
       // python 13: bd tea-rags-mcp-2m83f.32.4 — Django queryset chains resolve
@@ -517,11 +519,15 @@ describe("seeded support versions", () => {
       // the return every candidate agrees on, so overflow hops type their tail.
       // ruby 18: bd tea-rags-mcp-2m83f.41 — Rails framework members and literal
       // receivers on untyped receivers are externalSkipped, not residual.
+      // ruby 19: bd tea-rags-mcp-2m83f.44 — a parameter is typed from its
+      // exact-edge callers, so calls on parameters resolve.
+      // ruby 21: bd tea-rags-mcp-2m83f.48 — every readable mixin is recorded and an
+      // unreadable one is flagged, so frameworkOverride menus carry the reachable overrides.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
         ["python", 13],
-        ["ruby", 19],
+        ["ruby", 21],
         ["java", 4],
         ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a

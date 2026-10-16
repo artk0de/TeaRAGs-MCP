@@ -45,6 +45,7 @@ import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
 import type {
   ModelEdgeApplyResult,
   ModelEdgeRow,
+  ModelExternalSiteRow,
   ModelResolvedSiteCount,
   ResidualCallSiteRow,
 } from "./codegraph-residual.js";
@@ -1748,10 +1749,14 @@ export interface CodegraphResidualEdgeStore {
    */
   applyModelEdges: (model: string, edges: ModelEdgeRow[]) => Promise<ModelEdgeApplyResult>;
 
+  /** Replace every residual site `model` put outside the project with `sites` (058). */
+  applyModelExternalSites: (model: string, sites: ModelExternalSiteRow[]) => Promise<void>;
+
   /**
-   * Residual sites whose call a model edge resolves, counted once per site. An
-   * edge of a model named in `thresholds` counts only at `p` at or above its
-   * threshold; an unnamed model's edges count as stored.
+   * Residual sites whose call a model edge resolves (`outcome: "edge"`), counted
+   * once per site. An edge of a model named in `thresholds` counts only at `p` at
+   * or above its threshold; an unnamed model's edges count as stored. Sites a
+   * model put outside the project and no edge resolves come as `"external"`.
    */
   getModelResolvedSiteCounts: (thresholds: Readonly<Record<string, number>>) => Promise<ModelResolvedSiteCount[]>;
 }

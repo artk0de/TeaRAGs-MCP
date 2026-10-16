@@ -141,7 +141,11 @@
           "member": "attr_reader",
           "startLine": 16,
           "argCount": 1,
-          "positionalArgAtoms": [{ "literal": "user" }]
+          "positionalArgAtoms": [
+            {
+              "literal": "user"
+            }
+          ]
         }
       ],
       "symbolKind": "method"
@@ -171,7 +175,14 @@
           "member": "new",
           "startLine": 20,
           "argCount": 1,
-          "positionalArgAtoms": [{ "identifier": "params" }]
+          "positionalArgAtoms": [
+            {
+              "identifier": "params"
+            }
+          ],
+          "argExprs": {
+            "positional": ["params"]
+          }
         }
       ],
       "symbolKind": "method",
@@ -203,7 +214,14 @@
           "member": "record",
           "startLine": 27,
           "argCount": 1,
-          "positionalArgAtoms": [{ "identifier": "limit" }]
+          "positionalArgAtoms": [
+            {
+              "identifier": "limit"
+            }
+          ],
+          "argExprs": {
+            "positional": ["limit"]
+          }
         }
       ],
       "symbolKind": "method",
@@ -216,6 +234,10 @@
       "visibility": "public",
       "acceptsBlock": false,
       "assignedLocals": ["limit"],
+      "localAssignmentLines": {
+        "@user": [25],
+        "limit": [26]
+      },
       "localBindings": {
         "limit": [
           {
@@ -238,7 +260,10 @@
           "member": "send",
           "startLine": 31,
           "dynamicSend": true,
-          "argCount": 1
+          "argCount": 1,
+          "argExprs": {
+            "positional": ["HANDLERS.fetch(kind)"]
+          }
         },
         {
           "callText": "HANDLERS.fetch(kind)",
@@ -246,7 +271,14 @@
           "member": "fetch",
           "startLine": 31,
           "argCount": 1,
-          "positionalArgAtoms": [{ "identifier": "kind" }]
+          "positionalArgAtoms": [
+            {
+              "identifier": "kind"
+            }
+          ],
+          "argExprs": {
+            "positional": ["kind"]
+          }
         }
       ],
       "symbolKind": "method",

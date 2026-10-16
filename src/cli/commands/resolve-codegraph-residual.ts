@@ -52,6 +52,7 @@ export function formatResidualReport(report: ResidualReport): string {
     `  requeued groups:  ${report.requeuedGroups}\n` +
     `  below threshold:  ${report.belowThreshold}\n` +
     `  sites edged:      ${report.sitesEdged}\n` +
+    `  external (model): ${report.externalByModel}\n` +
     `  edges applied:    ${report.edgesApplied}\n` +
     `  derived metrics:  ${report.derived}\n` +
     `  time (ms):        read ${report.durations.readMs}, ask ${report.durations.askMs}, apply ${report.durations.applyMs} (recompute ${report.durations.recomputeMs}), total ${report.durations.totalMs}\n`

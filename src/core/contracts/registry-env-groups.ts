@@ -104,6 +104,7 @@ const REGISTRY_ENV_GROUP_TABLE = [
   { canonical: "CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_MENU_LIMIT", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_MIN_MENU", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_RESIDUAL_NONE_THRESHOLD", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS", aliases: [], consequence: "runtime" },
   // CODEGRAPH_RESIDUAL_KEV_SESSION_TOKEN is a secret and stays outside the registry.
   { canonical: "CODEGRAPH_RESIDUAL_KEV_SESSION_URL", aliases: [], consequence: "runtime" },
