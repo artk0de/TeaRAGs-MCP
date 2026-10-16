@@ -10,6 +10,7 @@
  */
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import { TypeFactStore, type ExtractionFacetPass, type InlineTypeSource } from "../../../kernel/index.js";
+import { pythonVocabularyFor } from "../../vocabulary/frameworks/index.js";
 import { pythonLocalTypeTrackingEnabled, pythonTypeNameQualifier } from "../walker.js";
 import {
   PYTHON_ANNOTATION_SOURCE,
@@ -58,9 +59,22 @@ export const pythonAnnotationTypeFacetPass: ExtractionFacetPass = {
       trackLocalTypes: pythonLocalTypeTrackingEnabled(),
       moduleValues: pythonModuleValuesEnabled(),
       qualifyTypeName: pythonTypeNameQualifier(root),
+      ...pythonRelationInput(ctx.declaredDependencies),
     };
     const facts = PYTHON_INLINE_TYPE_SOURCES.flatMap((source) => source.extract(input));
     if (facts.length === 0) return {};
     return pythonTypeChannels(TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER), ctx);
   },
 };
+
+/** The declared ORMs' relation classes and query verbs, unioned — absent where none is declared. */
+function pythonRelationInput(declared: ReadonlySet<string> | undefined): Pick<PythonTypeSourceInput, "relation"> {
+  const { memberTypes } = pythonVocabularyFor(declared);
+  if (memberTypes.length === 0) return {};
+  return {
+    relation: {
+      classes: new Set(memberTypes.flatMap((types) => [...types.relationClasses])),
+      verbs: new Set(memberTypes.flatMap((types) => [...types.relationReturning])),
+    },
+  };
+}

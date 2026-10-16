@@ -79,6 +79,8 @@ export const DJANGO_VOCABULARY: PythonFrameworkVocabulary = definePythonFramewor
       "difference",
       "extra",
       "alias",
+      // A manager's own entry into its queryset class (bd tea-rags-mcp-2m83f.32.4).
+      "get_queryset",
     ]),
     // `Manager.db_manager(using, hints)` returns a copy of the manager, same type.
     // `using` stays in `relationReturning`: it is a QuerySet verb that Manager proxies.

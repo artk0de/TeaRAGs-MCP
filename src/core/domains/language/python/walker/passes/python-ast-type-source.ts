@@ -22,7 +22,7 @@ import {
   type ReturnUnionPolicy,
   type TypeFact,
 } from "../../../kernel/index.js";
-import type { PythonTypeSourceInput } from "./python-annotation-type-source.js";
+import type { PythonRelationVocabulary, PythonTypeSourceInput } from "./python-annotation-type-source.js";
 import {
   isPythonClassFormDef,
   pythonAnnotationExpression,
@@ -175,6 +175,8 @@ interface PythonClassDelegates {
    * augmented, tuple target — is `null`.
    */
   readonly fieldWrites: Map<string, (AstNode | null)[]>;
+  /** A direct base names one of the active ORM's relation classes (`models.QuerySet`, `Manager.from_queryset(…)`). */
+  relationBased: boolean;
 }
 
 /** The lookup tables the return inference reads before it starts. */
@@ -187,6 +189,8 @@ interface PythonAstScopeTables {
   readonly fileDefs: Map<string, AstNode[]>;
   /** Per-class sibling methods and field writes; a short name two classes share is absent. */
   readonly classDelegates: Map<string, PythonClassDelegates>;
+  /** The active ORM's query verbs, read in a relation-based class only; absent where no ORM is declared. */
+  readonly relationVerbs?: ReadonlySet<string>;
 }
 
 /**
@@ -296,7 +300,7 @@ function sharedClassNames(root: AstNode): Set<string> {
  * and write disjoint maps; the delegate tables (bd tea-rags-mcp-m99j1.1.36)
  * ride the same `onDef` and scan each class body once, keyed by its node.
  */
-function collectPythonAstScopeTables(root: AstNode): PythonAstScopeTables {
+function collectPythonAstScopeTables(root: AstNode, relation?: PythonRelationVocabulary): PythonAstScopeTables {
   const byClass = new Map<string, Map<string, string>>();
   const returns = new Map<string, string>();
   const fileDefs = new Map<string, AstNode[]>();
@@ -306,7 +310,7 @@ function collectPythonAstScopeTables(root: AstNode): PythonAstScopeTables {
   const delegatesOf = (className: string): PythonClassDelegates => {
     let delegates = classDelegates.get(className);
     if (delegates === undefined) {
-      delegates = { methods: new Map(), fieldWrites: new Map() };
+      delegates = { methods: new Map(), fieldWrites: new Map(), relationBased: false };
       classDelegates.set(className, delegates);
     }
     return delegates;
@@ -330,6 +334,7 @@ function collectPythonAstScopeTables(root: AstNode): PythonAstScopeTables {
     if (!classBodiesScanned.has(classNode)) {
       classBodiesScanned.add(classNode);
       collectClassBodyWrites(classNode, delegates.fieldWrites);
+      delegates.relationBased ||= relation !== undefined && namesRelationBase(classNode, relation.classes);
     }
   };
   walkPythonScopes(root, {
@@ -366,7 +371,20 @@ function collectPythonAstScopeTables(root: AstNode): PythonAstScopeTables {
       if (nominal !== undefined) returns.set(site.name, nominal);
     },
   });
-  return { fieldTypes: byClass, fileReturnTypes: returns, fileDefs, classDelegates };
+  return {
+    fieldTypes: byClass,
+    fileReturnTypes: returns,
+    fileDefs,
+    classDelegates,
+    ...(relation === undefined ? {} : { relationVerbs: relation.verbs }),
+  };
+}
+
+/** Does a direct base of the class name one of `classes` by an identifier in its spelling? */
+function namesRelationBase(classNode: AstNode, classes: ReadonlySet<string>): boolean {
+  const bases = classNode.childForFieldName("superclasses");
+  if (bases === null) return false;
+  return bases.namedChildren.some((base) => (base.text.match(/\w+/g) ?? []).some((word) => classes.has(word)));
 }
 
 /** Marks a fixpoint node whose answer is being computed — re-entry is a cycle, and a cycle is silence. */
@@ -425,6 +443,9 @@ class PythonReturnFixpoint {
       selfClass,
       fieldType: (field) => (selfClass === undefined ? null : this.fieldType(selfClass, field)),
       selfMethodReturn: (method) => (selfClass === undefined ? null : this.methodReturn(selfClass, method)),
+      ...(selfClass !== undefined && this.tables.classDelegates.get(selfClass)?.relationBased === true
+        ? { relationVerbs: this.tables.relationVerbs }
+        : {}),
       fileReturn: (name) => this.fileReturn(name),
       writtenSpelling: (bare, written) => {
         this.recordSpelling(bare, written);
@@ -572,7 +593,7 @@ function singleName(typed: ReturnArmTypes | null): string | null {
  * name the file writes two ways is seen as such before any arm is spelled.
  */
 function extractPythonAstFacts(input: PythonTypeSourceInput): TypeFact[] {
-  const fixpoint = new PythonReturnFixpoint(collectPythonAstScopeTables(input.root));
+  const fixpoint = new PythonReturnFixpoint(collectPythonAstScopeTables(input.root, input.relation));
   const inferred: { readonly site: PythonDefSite; readonly names: readonly string[] }[] = [];
   walkPythonScopes(input.root, {
     onDef: (site) => {

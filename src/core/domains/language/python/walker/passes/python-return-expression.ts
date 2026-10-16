@@ -42,6 +42,12 @@ export interface PythonReturnScope {
    * inference keeps the bare name; only the publish path qualifies by it.
    */
   readonly writtenSpelling?: (bare: string, written: string) => void;
+  /**
+   * The ORM's query verbs, present only inside a class whose base is one of the
+   * ORM's relation classes (bd tea-rags-mcp-2m83f.32.4): there
+   * `self.filter(…).order_by(…)` is a clone of the receiver.
+   */
+  readonly relationVerbs?: ReadonlySet<string>;
 }
 
 /**
@@ -114,6 +120,9 @@ export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnSco
       if (returned !== null) return returned;
     }
   }
+  if (scope.relationVerbs !== undefined && isRelationChainOnSelf(node, scope.relationVerbs)) {
+    return PYTHON_RETURNS_RECEIVER;
+  }
   // `mod.Widget()` — the dotted spelling of a constructor; the LAST segment decides.
   if (fn.type === "attribute" || fn.type === "dotted_name") {
     // A VALUE receiver (`self._lib.Client(…)`) names no class (bd tea-rags-mcp-m99j1.1.85).
@@ -124,4 +133,22 @@ export function pythonReturnExpressionType(node: AstNode, scope: PythonReturnSco
     return bare;
   }
   return null;
+}
+
+/**
+ * `self.get_queryset().filter(…).order_by(…)`: every hop a query verb, rooted at
+ * the receiver. A queryset's verb clones its own class and a `from_queryset`
+ * manager's copied verb yields the queryset its MRO carries, so the chain is
+ * the receiver for the reader to place.
+ */
+function isRelationChainOnSelf(node: AstNode, verbs: ReadonlySet<string>): boolean {
+  let hop: AstNode | null = node;
+  while (hop?.type === "call") {
+    const fn = hop.childForFieldName("function");
+    const verb = fn?.type === "attribute" ? fn.childForFieldName("attribute")?.text : undefined;
+    if (fn === null || verb === undefined || !verbs.has(verb)) return false;
+    hop = fn.childForFieldName("object");
+    if (isReceiverIdentifier(hop)) return true;
+  }
+  return false;
 }

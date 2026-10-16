@@ -7,7 +7,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { CONTINUE, resolved } from "../../../../../src/core/contracts/resolution.js";
+import { CONTINUE, DROP, resolved } from "../../../../../src/core/contracts/resolution.js";
 import type {
   CallContext,
   CallRef,
@@ -121,6 +121,23 @@ describe("OrmRelationChainSymbolResolutionStrategy", () => {
       ports({ memberOnModel: () => fileOnly }),
     );
     expect(strategy.attempt(call("dir.documents"), ctx)).toBe(CONTINUE);
+  });
+
+  it("dropOnMiss: a relation receiver whose model declares no pinned member DROPs", () => {
+    const strategy = new OrmRelationChainSymbolResolutionStrategy(
+      "s",
+      typing(relationOf("Document")),
+      ports({ memberOnModel: () => null }),
+      { dropOnMiss: true },
+    );
+    expect(strategy.attempt(call("dir.documents"), ctx)).toBe(DROP);
+  });
+
+  it("dropOnMiss still CONTINUEs on a receiver that reads as no relation", () => {
+    const strategy = new OrmRelationChainSymbolResolutionStrategy("s", typing({ form: "nil" }), ports(), {
+      dropOnMiss: true,
+    });
+    expect(strategy.attempt(call("x"), ctx)).toBe(CONTINUE);
   });
 });
 

@@ -9,6 +9,7 @@ import {
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { createPythonReceiverTypePorts } from "./python-receiver-type-ports.js";
+import { pythonRelationModelOf } from "./python-relation-chain.js";
 import {
   resolvePythonMemberOnType,
   resolvePythonMemberOnTypeThroughMro,
@@ -79,7 +80,8 @@ export class PythonChainTypeSymbolResolutionStrategy extends ChainTypeSymbolReso
       "chainType",
       pythonChainTypeTyping(mapper, linearizers),
       createPythonChainTypeMemberLookup(cfg.mode, mapper, linearizers),
-      { dropOnTypedMiss: true },
+      // A framework relation of a model is `relationChain`'s to settle.
+      { dropOnTypedMiss: (type, _call, ctx) => pythonRelationModelOf(type, ctx) === undefined },
     );
   }
 }

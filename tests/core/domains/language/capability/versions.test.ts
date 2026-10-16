@@ -511,10 +511,12 @@ describe("seeded support versions", () => {
       // the type of the @ivar they read.
       // python 12: bd tea-rags-mcp-2m83f.32.6 — a convention receiver whose
       // class several files declare takes the one the caller's scope reaches.
+      // python 13: bd tea-rags-mcp-2m83f.32.4 — Django queryset chains resolve
+      // on the model's queryset class.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
-        ["python", 12],
+        ["python", 13],
         ["ruby", 15],
         ["java", 4],
         ["rust", 5],
