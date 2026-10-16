@@ -228,6 +228,14 @@ export interface CallResolver {
    */
   residualExclusion?: (call: CallRef, ctx: CallContext) => ResidualExclusionRule | null;
   /**
+   * Optional: the project overrides a residual site's framework callee can
+   * reach (bd tea-rags-mcp-2m83f.48) — symbolIds, or `null` when the site is no
+   * such call. Asked only for a site that stays residual; a non-empty answer
+   * narrows its menu and marks it `frameworkOverride`. Mirrors
+   * `LanguageSymbolResolver.residualOverrideMenu`.
+   */
+  residualOverrideMenu?: (call: CallRef, ctx: CallContext) => readonly string[] | null;
+  /**
    * Optional: a chunk's local bindings as this resolver reads them (bd
    * tea-rags-mcp-m99j1.1.30 regression). A binding the resolver cannot read at
    * all — a fact standing on nothing it can place — is ABSENCE of evidence, and

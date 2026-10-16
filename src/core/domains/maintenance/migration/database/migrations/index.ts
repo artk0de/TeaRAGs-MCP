@@ -60,6 +60,7 @@ import { SQL_053_CG_RESIDUAL_CALL_SITES } from "./053-cg-residual-call-sites.js"
 import { SQL_054_CG_METHOD_EDGES_ORIGIN } from "./054-cg-method-edges-origin.js";
 import { SQL_055_CG_RESIDUAL_CALL_SITES_RECEIVER } from "./055-cg-residual-call-sites-receiver.js";
 import { SQL_056_CG_FILE_EDGES_ORIGIN } from "./056-cg-file-edges-origin.js";
+import { SQL_059_CG_RESIDUAL_CALL_SITES_REASON } from "./059-cg-residual-call-sites-reason.js";
 
 export type { DatabaseMigration } from "../runner.js";
 
@@ -124,4 +125,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "054-cg-method-edges-origin.sql", sql: SQL_054_CG_METHOD_EDGES_ORIGIN },
   { filename: "055-cg-residual-call-sites-receiver.sql", sql: SQL_055_CG_RESIDUAL_CALL_SITES_RECEIVER },
   { filename: "056-cg-file-edges-origin.sql", sql: SQL_056_CG_FILE_EDGES_ORIGIN },
+  { filename: "059-cg-residual-call-sites-reason.sql", sql: SQL_059_CG_RESIDUAL_CALL_SITES_REASON },
 ];

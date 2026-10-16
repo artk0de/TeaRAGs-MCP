@@ -166,6 +166,8 @@ export class RubyLanguage implements LanguageProvider {
         callResolver.hasInProjectDefinition?.(call, ctx) ?? false,
       residualExclusion: (call: CallRef, ctx: CallContext): ResidualExclusionRule | null =>
         callResolver.residualExclusion?.(call, ctx) ?? null,
+      residualOverrideMenu: (call: CallRef, ctx: CallContext): readonly string[] | null =>
+        callResolver.residualOverrideMenu?.(call, ctx) ?? null,
     };
   }
 }

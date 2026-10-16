@@ -117,3 +117,33 @@ describe("incomplete mixin hierarchy keeps the Rails-member rule conservative (2
     expect(resolver.targetsExternalImport(call("record", "with_lock"), ctx(lockable(), walked))).toBe(true);
   });
 });
+
+describe("residualOverrideMenu: a blocked Rails-member claim narrows the residual menu (2m83f.48)", () => {
+  const withPoro = (): InMemoryGlobalSymbolTable =>
+    table([
+      sym("Lockable", "app/lib/lockable.rb", "module"),
+      sym("Lockable#with_lock", "app/lib/lockable.rb", "method"),
+      sym("Reports::Form", "app/forms/form.rb", "class"),
+      sym("Reports::Form#with_lock", "app/forms/form.rb", "method"),
+    ]);
+
+  it("answers only the namesake an AR model instance reaches", () => {
+    const walked = walkedAncestors("class Invoice < ApplicationRecord\n  include Auditable, Lockable\nend\n");
+    expect(resolver.residualOverrideMenu(call("record", "with_lock"), ctx(withPoro(), walked))).toEqual([
+      "Lockable#with_lock",
+    ]);
+  });
+
+  it("answers every module namesake when the model hierarchy carries an unreadable mixin", () => {
+    const walked = walkedAncestors("class Invoice < ApplicationRecord\n  include some_var\nend\n");
+    expect(resolver.residualOverrideMenu(call("record", "with_lock"), ctx(withPoro(), walked))).toEqual([
+      "Lockable#with_lock",
+    ]);
+  });
+
+  it("answers null for a member outside the Rails vocabulary or a typed receiver", () => {
+    const walked = walkedAncestors("class Invoice < ApplicationRecord\n  include Lockable\nend\n");
+    expect(resolver.residualOverrideMenu(call("record", "not_a_rails_member"), ctx(withPoro(), walked))).toBeNull();
+    expect(resolver.residualOverrideMenu(call("Invoice", "with_lock"), ctx(withPoro(), walked))).toBeNull();
+  });
+});

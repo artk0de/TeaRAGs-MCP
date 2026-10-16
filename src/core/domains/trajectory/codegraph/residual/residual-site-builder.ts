@@ -10,6 +10,7 @@ import type {
   ResidualCallSiteRow,
   ResidualExclusionRule,
   ResidualKind,
+  ResidualReason,
 } from "../../../../contracts/types/codegraph-residual.js";
 import type { CallRef, GlobalSymbolTable, RelPath } from "../../../../contracts/types/codegraph.js";
 import type { ReceiverKind } from "../symbols/receiver-kind.js";
@@ -105,22 +106,32 @@ export class ResidualSiteCollector {
     this.extension = extname(sourceRelPath);
   }
 
-  /** `exclude` is asked only for a residual site with a non-empty menu; a rule drops the site. */
+  /**
+   * `exclude` is asked only for a residual site with a non-empty menu; a rule
+   * drops the site. `overrideMenu` is asked for a site that stays: a non-empty
+   * answer (the project overrides of a framework member the receiver reaches)
+   * replaces the menu and marks the row `frameworkOverride`.
+   */
   observe(
     method: ResidualMethodView,
     call: CallRef,
     verdict: ResidualVerdictView,
     exclude?: () => ResidualExclusionRule | null,
+    overrideMenu?: () => readonly string[] | null,
   ): void {
     const kind = residualKindOf(verdict);
     if (kind === null) return;
-    const menu = this.menuFor(call.member);
-    if (menu.length === 0) return;
+    const fullMenu = this.menuFor(call.member);
+    if (fullMenu.length === 0) return;
     const rule = exclude?.() ?? null;
     if (rule !== null) {
       this.excludedCounts[rule] += 1;
       return;
     }
+    const overrides = overrideMenu?.() ?? null;
+    const reason: ResidualReason | undefined =
+      overrides !== null && overrides.length > 0 ? "frameworkOverride" : undefined;
+    const menu = reason === undefined ? fullMenu : [...new Set(overrides)].sort();
     const menuOverflow = menu.length > this.menuLimit;
     const candidates = menuOverflow ? menu.slice(0, this.menuLimit) : menu;
     const line = call.startLine;
@@ -149,6 +160,7 @@ export class ResidualSiteCollector {
       menuOverflow,
       language: this.language,
       receiverKind: verdict.receiverKind,
+      ...(reason === undefined ? {} : { reason }),
     });
   }
 

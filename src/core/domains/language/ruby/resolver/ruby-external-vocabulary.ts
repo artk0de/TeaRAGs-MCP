@@ -11,7 +11,12 @@ import {
   RUBY_RUNTIME_HOOKS,
   typeOfReceiver,
 } from "./strategies/index.js";
-import { literalMemberIsExternal, railsMemberTargetsFramework, rubyLiteralClass } from "./unreachable-namesakes.js";
+import {
+  literalMemberIsExternal,
+  railsMemberTargetsFramework,
+  railsReachableOverrides,
+  rubyLiteralClass,
+} from "./unreachable-namesakes.js";
 
 /**
  * Ruby implementation of `ExternalVocabulary`, bridging the `dsl/` framework
@@ -43,6 +48,17 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
     return (
       member !== undefined && !this.isReceiverTyped(receiver, ctx, atLine) && railsMemberTargetsFramework(member, ctx)
     );
+  }
+
+  /**
+   * The project overrides a Rails framework member on an untyped receiver may
+   * land on, when they are what kept the call from being external (bd
+   * tea-rags-mcp-2m83f.48); `null` for any other call.
+   */
+  railsOverrideMenu(receiver: string, member: string, ctx: CallContext, atLine?: number): string[] | null {
+    if (this.isReceiverTyped(receiver, ctx, atLine)) return null;
+    const overrides = railsReachableOverrides(member, ctx);
+    return overrides !== null && overrides.length > 0 ? overrides : null;
   }
 
   private receiverTargetsExternal(receiver: string, ctx: CallContext, atLine?: number, member?: string): boolean {

@@ -690,11 +690,11 @@ export function attachRubyClassHierarchyChannels(
 
 /** Foreign mixins as hierarchy edges, numbered after the target's own declarations in this file. */
 function foreignInheritanceEdges(
-  own: readonly InheritanceEdgeDecl[],
+  ownEdges: readonly InheritanceEdgeDecl[],
   foreign: readonly RubyForeignMixin[],
 ): InheritanceEdgeDecl[] {
   const ordinals = new Map<string, number>();
-  for (const edge of own) {
+  for (const edge of ownEdges) {
     const key = `${edge.kind}:${edge.source}`;
     ordinals.set(key, Math.max(ordinals.get(key) ?? 0, edge.ordinal + 1));
   }

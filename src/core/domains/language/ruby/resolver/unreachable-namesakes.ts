@@ -114,32 +114,46 @@ function mayBeModule(owner: string, ctx: CallContext): boolean {
   );
 }
 
+/** Instance-method namesakes of `member` with their owners, schema columns included. */
+function instanceNamesakes(member: string, ctx: CallContext): { symbolId: string; owner: string }[] {
+  return lookupRubySymbolsByShortName(ctx, member, { role: "callee", includeSchemaColumns: true }).flatMap((def) => {
+    const owner = instanceOwnerOf(def.symbolId);
+    return owner === null ? [] : [{ symbolId: def.symbolId, owner }];
+  });
+}
+
 /** Instance-method owners of every Ruby namesake of `member`, schema columns included. */
 function instanceOwners(member: string, ctx: CallContext): string[] {
-  return lookupRubySymbolsByShortName(ctx, member, { role: "callee", includeSchemaColumns: true })
-    .map((def) => instanceOwnerOf(def.symbolId))
-    .filter((owner): owner is string => owner !== null);
+  return instanceNamesakes(member, ctx).map(({ owner }) => owner);
 }
 
 /**
- * The receiver is untyped (the caller's check). True when Rails is active, the
- * member is in {@link RAILS_UNTYPED_RECEIVER_MEMBERS} and no namesake can be the
- * override the call reaches. No ancestry facts → no claim.
+ * The receiver is untyped (the caller's check). `null` when the rule does not
+ * apply — Rails inactive, the member outside {@link RAILS_UNTYPED_RECEIVER_MEMBERS},
+ * no ancestry facts. Otherwise the namesakes an AR model instance may reach,
+ * sorted: empty means the call targets the framework, non-empty is the menu of
+ * overrides the call may land on (bd tea-rags-mcp-2m83f.48).
  */
-export function railsMemberTargetsFramework(member: string, ctx: CallContext): boolean {
-  if (!RAILS_UNTYPED_RECEIVER_MEMBERS.has(member) || !railsVocabularyActive(ctx)) return false;
+export function railsReachableOverrides(member: string, ctx: CallContext): string[] | null {
+  if (!RAILS_UNTYPED_RECEIVER_MEMBERS.has(member) || !railsVocabularyActive(ctx)) return null;
   const ancestors = ctx.classAncestors;
-  if (ancestors === undefined) return false;
+  if (ancestors === undefined) return null;
   const hierarchy = modelHierarchy(ancestors);
   const open = reachesUnreadMixin(hierarchy, ctx);
-  return instanceOwners(member, ctx).every(
-    (owner) =>
-      owner !== "" &&
-      !REOPENED_RUNTIME_OWNERS.has(owner) &&
-      !hierarchy.has(owner) &&
-      !hierarchy.has(lastConstantSegment(owner)) &&
-      !(open && mayBeModule(owner, ctx)),
+  const reachable = instanceNamesakes(member, ctx).filter(
+    ({ owner }) =>
+      owner === "" ||
+      REOPENED_RUNTIME_OWNERS.has(owner) ||
+      hierarchy.has(owner) ||
+      hierarchy.has(lastConstantSegment(owner)) ||
+      (open && mayBeModule(owner, ctx)),
   );
+  return [...new Set(reachable.map(({ symbolId }) => symbolId))].sort();
+}
+
+/** True when the rule applies and no namesake can be the override the call reaches. */
+export function railsMemberTargetsFramework(member: string, ctx: CallContext): boolean {
+  return railsReachableOverrides(member, ctx)?.length === 0;
 }
 
 /** The core class a literal receiver evaluates to: `7` → Integer, `"a"` → String, `%w[a]` → Array. */

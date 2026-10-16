@@ -397,6 +397,16 @@ describe("DuckDbGraphClient — residual ops", () => {
     expect(await client.readResidualCallSites()).toEqual([labeled]);
   });
 
+  it("reads back the frameworkOverride reason a residual row was written with (2m83f.48)", async () => {
+    const override = { ...SITE, reason: "frameworkOverride" as const };
+    await client.upsertFile(
+      { relPath: "app/billing.rb", language: "ruby" },
+      { fileEdges: [], methodEdges: [], residualCallSites: [override] },
+    );
+
+    expect(await client.readResidualCallSites()).toEqual([override]);
+  });
+
   describe("getModelResolvedSiteCounts", () => {
     const writeSites = async (sites: ResidualCallSiteRow[]) =>
       client.upsertFile(
