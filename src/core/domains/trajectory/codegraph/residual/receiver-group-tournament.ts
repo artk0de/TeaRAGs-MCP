@@ -2,10 +2,11 @@
  * Receiver-group questions (codegraph residual wave 1.5, design §3): the residual
  * sites on one receiver in one method are asked ONE question — "which class is
  * this receiver" — over the group's narrowed class set. A class set beyond the
- * menu limit goes to a tournament: blocks of `menuLimit`, each asked with
- * "none"; block winners at or above the floor form the next round; at most
- * {@link MAX_TOURNAMENT_ROUNDS} rounds, and only the last round's single block
- * yields the group's verdict.
+ * menu limit goes to a tournament: the classes the receiver's name matches are
+ * asked first (block 1, early accept); then blocks of `menuLimit`, each asked
+ * with "none"; block winners at or above the floor form the next round; at most
+ * {@link MAX_TOURNAMENT_ROUNDS} rounds after block 1, and only the last round's
+ * single block yields the group's verdict.
  *
  * Spec: `docs/superpowers/specs/2026-10-16-codegraph-residual-wave-1-5-design.md`
  */
@@ -17,6 +18,7 @@ import type {
   ResidualQuestion,
   ResidualVerdict,
 } from "../../../../contracts/types/codegraph-residual.js";
+import { nameMatchedClasses } from "./receiver-name-prior.js";
 import { residualMenuHash } from "./residual-site-builder.js";
 
 /** Smallest `p` of a block winner that carries it into the next round; `CODEGRAPH_RESIDUAL_TOURNAMENT_FLOOR`. */
@@ -98,13 +100,27 @@ export function collectReceiverGroups(rows: readonly ResidualCallSiteRow[]): {
   return { groups, ungrouped };
 }
 
-/** One group's run through the rounds; `questions()` and `advance()` alternate once per round. */
+/**
+ * One group's run through the rounds; `questions()` and `advance()` alternate
+ * once per round. A tournament whose receiver name matches some of its classes
+ * opens with those classes alone (block 1, at most `menuLimit`, best match
+ * first): a winner at or above the accept threshold ends it after one question;
+ * otherwise the remaining classes run the ordinary rounds and the block-1 winner,
+ * when it clears the floor, joins the first round it fits into without adding a
+ * block. The name orders the asking; it never removes a class.
+ */
 export class GroupTournament {
   private entrants: string[];
   private roundNo = 1;
   private result: GroupOutcome | undefined;
   /** The current round's questions, built once per round. */
   private current: ResidualQuestion[] | undefined;
+  /** Block 1: the name-matched classes, asked before every other round. */
+  private readonly prior: string[] | undefined;
+  private priorPending: boolean;
+  /** The block-1 winner waiting for a round it fits into. */
+  private seed: string | undefined;
+  private accepted = false;
 
   constructor(
     readonly group: ReceiverGroup,
@@ -112,6 +128,9 @@ export class GroupTournament {
     private readonly questionHash: (menuHash: string) => string,
   ) {
     this.entrants = group.classes;
+    const matched = this.isTournament ? nameMatchedClasses(group.receiverText, group.classes) : [];
+    this.prior = matched.length > 0 ? matched.slice(0, menuLimit) : undefined;
+    this.priorPending = this.prior !== undefined;
   }
 
   /** The class set exceeds one menu. */
@@ -119,8 +138,20 @@ export class GroupTournament {
     return this.group.classes.length > this.menuLimit;
   }
 
+  /** The tournament opens with the classes the receiver's name matches. */
+  get hasNamePrior(): boolean {
+    return this.prior !== undefined;
+  }
+
+  /** Block 1's winner cleared the accept threshold and ended the tournament. */
+  get earlyAccepted(): boolean {
+    return this.accepted;
+  }
+
+  /** Rounds asked so far, block 1 included. */
   get round(): number {
-    return this.roundNo;
+    if (this.prior === undefined) return this.roundNo;
+    return this.priorPending || this.accepted ? 1 : 1 + this.roundNo;
   }
 
   get outcome(): GroupOutcome | undefined {
@@ -134,41 +165,46 @@ export class GroupTournament {
   }
 
   /**
-   * The current round's questions — blocks of `menuLimit` entrants. A round
-   * that is the last allowed but still needs more than one block can never
-   * produce a verdict, so the group is abandoned instead of asked.
+   * The current round's questions — block 1 first when there is one, then
+   * blocks of `menuLimit` entrants. A round that is the last allowed but still
+   * needs more than one block can never produce a verdict, so the group is
+   * abandoned instead of asked. Block 1 does not count against the round cap.
    */
   questions(): ResidualQuestion[] {
     if (this.result !== undefined) return [];
     if (this.current !== undefined) return this.current;
+    if (this.priorPending && this.prior !== undefined) {
+      this.current = [this.question(this.prior, `${this.group.id}/0.0`)];
+      return this.current;
+    }
     const blocks: string[][] = [];
-    for (let i = 0; i < this.entrants.length; i += this.menuLimit) {
-      blocks.push(this.entrants.slice(i, i + this.menuLimit));
+    if (this.seed !== undefined && this.entrants.length < this.menuLimit) {
+      blocks.push([this.seed, ...this.entrants]);
+      this.seed = undefined;
+    } else {
+      for (let i = 0; i < this.entrants.length; i += this.menuLimit) {
+        blocks.push(this.entrants.slice(i, i + this.menuLimit));
+      }
     }
     if (blocks.length > 1 && this.roundNo >= MAX_TOURNAMENT_ROUNDS) {
       this.abandon();
       return [];
     }
     const single = !this.isTournament;
-    this.current = blocks.map((block, index) => ({
-      siteKey: single ? this.group.id : `${this.group.id}/${this.roundNo}.${index}`,
-      menuHash: this.questionHash(residualMenuHash(block)),
-      receiverText: this.group.receiverText,
-      member: this.group.members[0] ?? "",
-      kind: this.group.kind,
-      candidates: block,
-      subject: "class",
-      members: this.group.members,
-    }));
+    this.current = blocks.map((block, index) =>
+      this.question(block, single ? this.group.id : `${this.group.id}/${this.roundNo}.${index}`),
+    );
     return this.current;
   }
 
   /**
-   * Reads the round's verdicts: a single block settles the group; otherwise the
-   * winners at or above `floor` enter the next round. An unanswered block
-   * leaves the group without a verdict this run.
+   * Reads the round's verdicts. Block 1: a class at or above `accept` settles
+   * the group, anything else hands it to the remaining classes. Otherwise a
+   * single block with no seed waiting settles the group, and the winners at or
+   * above `floor` (the seed among them) enter the next round. An unanswered
+   * block leaves the group without a verdict this run.
    */
-  advance(verdictOf: (question: ResidualQuestion) => ResidualVerdict | undefined, floor: number): void {
+  advance(verdictOf: (question: ResidualQuestion) => ResidualVerdict | undefined, floor: number, accept: number): void {
     const questions = this.questions();
     if (this.result !== undefined || questions.length === 0) return;
     const verdicts = questions.map(verdictOf);
@@ -177,18 +213,49 @@ export class GroupTournament {
       return;
     }
     const answered = verdicts as ResidualVerdict[];
-    if (questions.length === 1) {
+    this.current = undefined;
+    if (this.priorPending) {
+      this.advancePrior(answered[0], floor, accept);
+      return;
+    }
+    if (questions.length === 1 && this.seed === undefined) {
       this.result = { pick: answered[0].pick, p: answered[0].p };
       return;
     }
     const winners = answered.filter((v) => v.pick !== null && v.p >= floor).map((v) => v.pick as string);
+    if (this.seed !== undefined) winners.unshift(this.seed);
+    this.seed = undefined;
     if (winners.length === 0) {
       this.abandon();
       return;
     }
     this.entrants = winners;
     this.roundNo++;
-    this.current = undefined;
+  }
+
+  private advancePrior(verdict: ResidualVerdict, floor: number, accept: number): void {
+    this.priorPending = false;
+    if (verdict.pick !== null && verdict.p >= accept) {
+      this.result = { pick: verdict.pick, p: verdict.p };
+      this.accepted = true;
+      return;
+    }
+    const asked = new Set(this.prior);
+    this.entrants = this.group.classes.filter((c) => !asked.has(c));
+    if (verdict.pick !== null && verdict.p >= floor) this.seed = verdict.pick;
+  }
+
+  private question(block: string[], siteKey: string): ResidualQuestion {
+    return {
+      siteKey,
+      menuHash: this.questionHash(residualMenuHash(block)),
+      receiverText: this.group.receiverText,
+      member: this.group.members[0] ?? "",
+      kind: this.group.kind,
+      candidates: block,
+      subject: "class",
+      members: this.group.members,
+    };
   }
 }
 

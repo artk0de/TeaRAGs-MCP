@@ -14,6 +14,7 @@ import type {
   InheritanceKind,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
+import { orderByReceiverName } from "./receiver-name-prior.js";
 
 /** Kinds through which an instance member reaches a class: its superclass chain, included / prepended modules. */
 const INSTANCE_MEMBER_KINDS: readonly InheritanceKind[] = ["super", "include", "prepend", "implements"];
@@ -22,8 +23,6 @@ const CLASS_MEMBER_KINDS: readonly InheritanceKind[] = ["super", "extend"];
 
 /** A receiver root: a local, an ivar or a cvar. */
 const RECEIVER_ROOT = /^@{0,2}[A-Za-z_]\w*/;
-/** The last name of a receiver expression: `@invoice` → `invoice`, `order.line_items` → `line_items`. */
-const RECEIVER_TAIL = /([A-Za-z_]\w*)[?!]?\s*(?:\([^()]*\))?\s*$/;
 
 /** The member's separator in `symbolId`, or `null` when the id does not end in `member`. */
 function memberSeparator(symbolId: string, member: string): "#" | "." | null {
@@ -91,39 +90,14 @@ export function receiverGroupKey(
   return [methodSymbolId, normalized, String(generation)].join("\u0000");
 }
 
-/** `Billing::InvoiceItem` → `invoice_item`. */
-function snakeClassName(owner: string): string {
-  const last = owner.slice(owner.lastIndexOf(":") + 1);
-  return last
-    .replace(/([a-z\d])([A-Z])/g, "$1_$2")
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
-    .toLowerCase();
-}
-
-/** 0 — the receiver is named after the class; 1 — one name ends in the other; 2 — no relation. */
-function namingPriorRank(receiverTail: string | undefined, owner: string): number {
-  if (receiverTail === undefined) return 2;
-  const snake = snakeClassName(owner);
-  if (receiverTail === snake || receiverTail === `${snake}s`) return 0;
-  if (receiverTail.endsWith(`_${snake}`) || snake.endsWith(`_${receiverTail}`)) return 1;
-  return 2;
-}
-
-/** The menu ordered by the receiver's naming prior, then by symbolId; nothing is dropped. */
+/** The menu ordered by the receiver-name prior of each target's class, then by symbolId; nothing is dropped. */
 export function orderByNamingPrior(receiverText: string, candidates: readonly string[]): string[] {
-  return rankByNamingPrior(receiverText, candidates, (id) =>
+  return orderByReceiverName(receiverText, candidates, (id) =>
     id.slice(0, Math.max(id.lastIndexOf("#"), id.lastIndexOf("."))),
   );
 }
 
-/** Class names ordered by the receiver's naming prior, then by name; nothing is dropped. */
+/** Class names ordered by the receiver-name prior, then by name; nothing is dropped. */
 export function orderClassesByNamingPrior(receiverText: string, classes: readonly string[]): string[] {
-  return rankByNamingPrior(receiverText, classes, (owner) => owner);
-}
-
-function rankByNamingPrior(receiverText: string, ids: readonly string[], ownerOf: (id: string) => string): string[] {
-  const tail = RECEIVER_TAIL.exec(receiverText)?.[1]?.toLowerCase();
-  const ranked = ids.map((id) => ({ id, rank: namingPriorRank(tail, ownerOf(id)) }));
-  ranked.sort((a, b) => a.rank - b.rank || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return ranked.map((r) => r.id);
+  return orderByReceiverName(receiverText, classes, (owner) => owner);
 }

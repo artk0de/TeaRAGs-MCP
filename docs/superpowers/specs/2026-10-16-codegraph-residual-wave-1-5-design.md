@@ -106,13 +106,28 @@ receiver", answered once per (method, receiver):
 - **Parameter receivers** — when the receiver is a method parameter, the
   argument types at the method's statically resolved call sites join the
   constraint (a union over callers; a single typed caller pins it).
-- **Naming prior** — the naming convention orders the menu; it never removes a
-  candidate.
+- **Naming prior** — the receiver's last name (arguments, indexing and sigils
+  dropped, the text after the last `.` / `::`) is matched against each class's
+  short name as word tokens, best first: exact (`invoice` → `Invoice`), singular
+  (`invoices` → `Invoice`, `companies` → `Company`), class suffix (`result` →
+  `PaymentResult`, name ≥ 4 letters), reverse suffix (`current_user` → `User`,
+  `signatory_users` → `User`). It orders the menu and opens the tournament; it
+  never removes a candidate. On the TaxDome rows (7,919 grouped sites) it
+  narrows 2,567 sites to 1..40 classes; of the 6,105 sites in groups over 40
+  classes, 1,972 get a block 1 of 1..40 classes and 302 more a block 1 of the
+  best-ranked 40.
 - **Exactly one class** after narrowing → static edge (origin static, new run-
   stats bucket `narrowed`), no question.
-- **Still > 40** → tournament: blocks of 40, each block asked with "none"; block
-  winners above the floor form the next round; at most 3 rounds; no winner →
-  site stays residual.
+- **Still > 40** → tournament. Block 1 is the name-matched classes (at most 40,
+  best-ranked first) plus "none": a winner with p ≥ the provider threshold ends
+  the tournament on one question (`earlyAcceptedGroups`). Otherwise the
+  remaining classes run in blocks of 40, each asked with "none"; block winners
+  above the floor form the next round, and the block-1 winner (when above the
+  floor) joins the first round it fits into without adding a block; at most 3
+  rounds after block 1; no winner → site stays residual. A group with no name
+  match runs the plain rounds. `CODEGRAPH_RESIDUAL_TOURNAMENT_BUDGET` is spent
+  on name-matched tournaments first; the others start once every name-matched
+  one has its outcome.
 - **Answer becomes a type fact** for the receiver in that method: static
   resolution re-runs for every call on it and for chain hops downstream (two
   fixpoint rounds). Every edge derived this way is `origin = 'model'` with the

@@ -166,6 +166,9 @@ export function siteEligibility(
   return "eligible";
 }
 
+/** Asking steps one run can need: name-matched tournaments (block 1 + rounds), then the others' rounds. */
+const MAX_ASK_STEPS = 2 * MAX_TOURNAMENT_ROUNDS + 2;
+
 export class ResidualResolutionPass {
   async run(input: ResidualPassInput): Promise<ResidualPassReport> {
     const { provider } = input;
@@ -259,6 +262,8 @@ export class ResidualResolutionPass {
       tournamentGroups: tournaments.filter((t) => t.isTournament).length,
       tournamentRounds: Math.max(0, ...tournaments.filter((t) => t.isTournament).map((t) => t.round)),
       tournamentQuestions: rounds.tournamentQuestions,
+      namePriorGroups: tournaments.filter((t) => t.hasNamePrior).length,
+      earlyAcceptedGroups: tournaments.filter((t) => t.earlyAccepted).length,
       groupsSkippedByBudget: rounds.skippedByBudget,
       windowedGroups: tally.windowed,
       externalByModel: external.length,
@@ -303,7 +308,9 @@ export class ResidualResolutionPass {
 
   /**
    * Asks round by round: the site questions and every group's first round, then
-   * each tournament's next round from the verdicts the previous one left. The
+   * each tournament's next round from the verdicts the previous one left.
+   * Name-matched tournaments go first and are charged first; the other
+   * tournaments start once every name-matched one has its outcome. The
    * provider's lease is taken on the first round with an uncached question and
    * held until the last; a tournament whose uncached block questions exceed the
    * remaining budget is abandoned and counted.
@@ -326,15 +333,19 @@ export class ResidualResolutionPass {
     const canAsk = () =>
       modelVersion !== undefined && notAcquired === undefined && !tally.leaseLost && !tally.breakerTripped;
     try {
-      for (let round = 1; round <= MAX_TOURNAMENT_ROUNDS; round++) {
+      for (let step = 0; step < MAX_ASK_STEPS; step++) {
+        // A name-matched tournament is cheap; the others wait until every one of them has its outcome.
+        const namedOpen = tournaments.some((t) => t.hasNamePrior && t.outcome === undefined);
         const asking = tournaments
-          .filter((t) => t.outcome === undefined)
+          .filter((t) => t.outcome === undefined && !(namedOpen && t.isTournament && !t.hasNamePrior))
+          .sort((a, b) => Number(b.hasNamePrior) - Number(a.hasNamePrior))
           .map((t) => ({ tournament: t, questions: t.questions() }))
           .filter((a) => a.questions.length > 0);
+        if (step > 0 && asking.length === 0) break;
         const keys = asking.flatMap((a) => a.questions.map((q) => ({ siteKey: q.siteKey, menuHash: q.menuHash })));
         questionKeys.push(...keys.map((k) => k.siteKey));
         for (const [key, verdict] of await this.cachedVerdicts(input, keys, modelVersion)) verdicts.set(key, verdict);
-        const pending = round === 1 ? [...siteQuestions] : [];
+        const pending = step === 0 ? [...siteQuestions] : [];
         for (const { tournament, questions } of asking) {
           const uncached = questions.filter((q) => !verdicts.has(verdictKey(q.siteKey, q.menuHash)));
           if (uncached.length === 0) continue;
@@ -360,7 +371,7 @@ export class ResidualResolutionPass {
           if (notAcquired === undefined) await this.askGroups(batches, modelVersion as string, verdicts, tally, input);
         }
         for (const { tournament } of asking) {
-          tournament.advance((q) => verdicts.get(verdictKey(q.siteKey, q.menuHash)), floor);
+          tournament.advance((q) => verdicts.get(verdictKey(q.siteKey, q.menuHash)), floor, input.provider.threshold);
         }
       }
     } finally {
