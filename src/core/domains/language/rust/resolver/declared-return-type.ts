@@ -52,12 +52,9 @@ export function rustExactMember(owner: NominalTypeRef, member: string, ctx: Call
   if (boundary < 0) return undefined;
   const relPath = owner.name.slice(0, boundary + 3);
   const fq = owner.name.slice(boundary + 5);
-  for (const separator of owner.form === "class" ? [".", "#"] : ["#", "."]) {
-    const matches = ctx.symbolTable.lookup(`${fq}${separator}${member}`).filter((def) => def.relPath === relPath);
-    if (matches.length === 1) return matches[0];
-    if (matches.length > 1) return undefined;
-  }
-  return undefined;
+  const separator = owner.form === "class" ? "." : "#";
+  const matches = ctx.symbolTable.lookup(`${fq}${separator}${member}`).filter((def) => def.relPath === relPath);
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({

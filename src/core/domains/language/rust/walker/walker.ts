@@ -36,6 +36,7 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../associated-constructor.js";
+import { collectRustCallResultBindings } from "./call-result-bindings.js";
 import { rustDeclaredStructFields } from "./field-types.js";
 import { rustNameOf } from "./name-of.js";
 import { collectRustReturnTypes, rustDeclaredTypeRef } from "./return-types.js";
@@ -71,6 +72,7 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
     typeDeclarations,
     classFieldTypesByClassKey,
   } = collectRustDeclarationReadings(input.tree.rootNode, input.relPath);
+  const callResultBindingsByRange = collectRustCallResultBindings(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -88,6 +90,10 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
     // parameter type annotations (`fn bar(p: Foo)`).
     const bindings = collectRustLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
     if (Object.keys(bindings).length > 0) base.localBindings = bindings;
+    const callResultBindings = callResultBindingsByRange.get(`${c.startLine}:${c.endLine}`);
+    if (callResultBindings !== undefined && Object.keys(callResultBindings).length > 0) {
+      base.callResultBindings = callResultBindings;
+    }
     return base;
   });
   const out: FileExtraction = {
