@@ -11,6 +11,7 @@ import {
   RUBY_RUNTIME_HOOKS,
   typeOfReceiver,
 } from "./strategies/index.js";
+import { literalMemberIsExternal, railsMemberTargetsFramework, rubyLiteralClass } from "./unreachable-namesakes.js";
 
 /**
  * Ruby implementation of `ExternalVocabulary`, bridging the `dsl/` framework
@@ -36,6 +37,15 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
   }
 
   isQualifiedReceiverExternal(receiver: string, ctx: CallContext, atLine?: number, member?: string): boolean {
+    if (this.receiverTargetsExternal(receiver, ctx, atLine, member)) return true;
+    // bd tea-rags-mcp-2m83f.24 — LAST, for what the receiver arms declined: a
+    // Rails framework member on a receiver no static evidence types.
+    return (
+      member !== undefined && !this.isReceiverTyped(receiver, ctx, atLine) && railsMemberTargetsFramework(member, ctx)
+    );
+  }
+
+  private receiverTargetsExternal(receiver: string, ctx: CallContext, atLine?: number, member?: string): boolean {
     // Index-access receiver (`opts[k]`): element type untrackable → external.
     // Paired with the dynamic-dispatch suppression (mktkk increment A) so the
     // suppressed call leaves the inProjectEdgeRecall denominator as
@@ -43,6 +53,8 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
     if (receiverIsIndexAccess(receiver)) return true;
     if (receiverChainTailIsExternal(receiver)) return true; // provably-external chain tail (B-suppress)
     if (receiver === SUPER_RECEIVER_SENTINEL) return superTargetsExternal(ctx, member);
+    const literalClass = rubyLiteralClass(receiver);
+    if (literalClass !== undefined) return member !== undefined && literalMemberIsExternal(literalClass, member, ctx);
     if (IVAR_RECEIVER.test(receiver)) return ivarTargetsExternal(receiver, ctx);
     if (/^[A-Z]/.test(receiver)) return resolveConstant(receiver, ctx) === null;
     // Lowercase receiver: check if it's a locally-typed core/gem variable (dnd9s).
@@ -63,6 +75,7 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
    * so every branch that cannot PROVE the receiver is untyped answers `true`.
    *
    * - `self` / `super` — typed by the enclosing class (`ctx.callerScope`).
+   * - a literal (`7`, `"a"`, `:sym`, `%w[a]`) — typed by its core class.
    * - a CONSTANT (`Report.each`) — self-identifying. If it names no project file
    *   the external arm already claimed the call; if it does, the miss is real.
    * - `@ivar` / local var / chain — delegated to {@link typeOfReceiver} and
@@ -76,7 +89,7 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
    */
   isReceiverTyped(receiver: string, ctx: CallContext, atLine?: number): boolean {
     if (receiver === SUPER_RECEIVER_SENTINEL || receiver === "self") return true;
-    if (/^[A-Z]/.test(receiver)) return true;
+    if (/^[A-Z]/.test(receiver) || rubyLiteralClass(receiver) !== undefined) return true;
     if (IVAR_RECEIVER.test(receiver)) return ivarTypeName(receiver, ctx) !== undefined;
     if (atLine === undefined) return true;
     return typeOfReceiver(receiver, atLine, ctx) !== undefined;
