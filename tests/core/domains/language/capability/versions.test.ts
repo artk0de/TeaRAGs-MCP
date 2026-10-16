@@ -99,7 +99,9 @@ describe("resolveLanguageCodeVersions", () => {
     // type a project class extends, when the locator answers `isProjectType`.
     // walker 6: bd tea-rags-mcp-44cpv (c-1=a) — the census facet grows the
     // shared behaviour-free fold over class bodies.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 5, walker: 6, codegraphSchema: 2 });
+    // walker 7: bd tea-rags-mcp-2g2og.28 — extraction merges preserve own
+    // prototype-named keys in local bindings and nested maps.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 5, walker: 7, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -109,7 +111,7 @@ describe("resolveLanguageCodeVersions", () => {
     const stamp = resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE);
     if (stamp) stamp.walker = 99;
 
-    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(6);
+    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(7);
   });
 });
 
@@ -507,7 +509,7 @@ describe("seeded support versions", () => {
         ["python", 11],
         ["ruby", 9],
         ["java", 4],
-        ["rust", 5],
+        ["rust", 9],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a
         // nested-checkout or gitignored go.mod.
         ["go", 6],

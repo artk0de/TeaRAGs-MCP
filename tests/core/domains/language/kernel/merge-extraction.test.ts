@@ -200,6 +200,30 @@ describe("mergeExtraction — Records union, base wins on a conflicting key", ()
 });
 
 describe("mergeExtraction — nested Records union per outer THEN inner key", () => {
+  it("keeps prototype-named outer and inner keys as own data without changing the prototype", () => {
+    const base = baseExtraction({
+      classFieldTypes: JSON.parse('{"constructor":{"toString":"Base"},"__proto__":{"constructor":"BaseProto"}}'),
+    });
+    const partial = {
+      classFieldTypes: JSON.parse(
+        '{"constructor":{"toString":"WRONG","__proto__":"Pass"},"toString":{"constructor":"PassOnly"},"__proto__":{"constructor":"PassProto","hasOwnProperty":"Pass"}}',
+      ),
+    };
+    const merged = mergeExtraction(base, partial);
+    expect(merged.classFieldTypes).toEqual({
+      constructor: { toString: "Base", ["__proto__"]: "Pass" },
+      toString: { constructor: "PassOnly" },
+      ["__proto__"]: { constructor: "BaseProto", hasOwnProperty: "Pass" },
+    });
+    expect(Object.keys(merged.classFieldTypes ?? {}).sort()).toEqual(["__proto__", "constructor", "toString"]);
+    expect([null, Object.prototype]).toContain(Object.getPrototypeOf(merged.classFieldTypes));
+    expect(mergeExtraction(merged, partial).classFieldTypes).toEqual(merged.classFieldTypes);
+    expect(base.classFieldTypes).toEqual(
+      JSON.parse('{"constructor":{"toString":"Base"},"__proto__":{"constructor":"BaseProto"}}'),
+    );
+    expect(partial.classFieldTypes.constructor.toString).toBe("WRONG");
+  });
+
   it("merges inner maps and keeps the base's value on an inner conflict", () => {
     const base = baseExtraction({
       classFieldTypes: { User: { account: "Account" } },
@@ -281,6 +305,52 @@ describe("mergeExtraction — chunks merge by symbolId", () => {
     });
     expect(merged.chunks).toHaveLength(1);
     expect(merged.chunks[0].calls.map((c) => c.member)).toEqual(["persist", "audit"]);
+  });
+
+  it("retains prototype-named local bindings as own sorted timelines through repeated merges", () => {
+    const base = baseExtraction({
+      chunks: [
+        chunk("User#save", {
+          localBindings: JSON.parse('{"toString":[{"line":10,"type":"BaseType"}]}'),
+          callResultBindings: JSON.parse('{"constructor":[{"line":10,"callee":"BaseCall"}]}'),
+        }),
+      ],
+    });
+    const partial = {
+      chunks: [
+        chunk("User#save", {
+          localBindings: JSON.parse(
+            '{"constructor":[{"line":4,"type":"PassType"}],"toString":[{"line":2,"type":"Earlier"}],"__proto__":[{"line":7,"type":"ProtoType"}]}',
+          ),
+          callResultBindings: JSON.parse(
+            '{"constructor":[{"line":2,"callee":"EarlierCall"}],"__proto__":[{"line":6,"callee":"ProtoCall"}]}',
+          ),
+        }),
+      ],
+    };
+    const merged = mergeExtraction(base, partial);
+    const [bindings] = merged.chunks;
+    expect(bindings.localBindings?.constructor).toEqual([{ line: 4, type: "PassType" }]);
+    expect(bindings.localBindings?.toString).toEqual([
+      { line: 2, type: "Earlier" },
+      { line: 10, type: "BaseType" },
+    ]);
+    expect(bindings.localBindings?.["__proto__"]).toEqual([{ line: 7, type: "ProtoType" }]);
+    expect(bindings.callResultBindings?.constructor).toEqual([
+      { line: 2, callee: "EarlierCall" },
+      { line: 10, callee: "BaseCall" },
+    ]);
+    expect(bindings.callResultBindings?.["__proto__"]).toEqual([{ line: 6, callee: "ProtoCall" }]);
+    expect(Object.keys(bindings.localBindings ?? {}).sort()).toEqual(["__proto__", "constructor", "toString"]);
+    expect([null, Object.prototype]).toContain(Object.getPrototypeOf(bindings.localBindings));
+    expect([null, Object.prototype]).toContain(Object.getPrototypeOf(bindings.callResultBindings));
+    expect(base.chunks[0].localBindings?.toString).toEqual([{ line: 10, type: "BaseType" }]);
+    expect(base.chunks[0].callResultBindings?.constructor).toEqual([{ line: 10, callee: "BaseCall" }]);
+    expect(partial.chunks[0].localBindings?.toString).toEqual([{ line: 2, type: "Earlier" }]);
+    expect(mergeExtraction(merged, partial).chunks[0].localBindings?.constructor).toEqual([
+      { line: 4, type: "PassType" },
+      { line: 4, type: "PassType" },
+    ]);
   });
 
   it("unions localBindings per variable and re-sorts a shared variable by line", () => {
