@@ -1546,6 +1546,12 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
       );
     });
 
+    // bd tea-rags-mcp-2m83f.49 — calls resolved on a parameter its callers typed.
+    it("renders the paramTyped line when calls resolved on caller-typed parameters", () => {
+      const out = render(summary({ inProjectEdgeRecall: 0.9, callsParamTyped: 42 }));
+      expect(out).toContain("resolve rate: 0.9\nparamTyped: 42 calls resolved on a parameter typed by its callers\n");
+    });
+
     it("renders no narrowed line before any site was narrowed", () => {
       expect(render(summary({ inProjectEdgeRecall: 0.9 }))).not.toContain("narrowed:");
     });

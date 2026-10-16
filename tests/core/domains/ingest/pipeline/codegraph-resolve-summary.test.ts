@@ -677,3 +677,26 @@ describe("summarizeCodegraphResolve — receiver narrowing (2m83f.43)", () => {
     expect(summary).not.toHaveProperty("callsNarrowEmpty");
   });
 });
+
+// bd tea-rags-mcp-2m83f.49 — calls resolved on a parameter its callers typed.
+describe("summarizeCodegraphResolve — caller-typed parameters (2m83f.49)", () => {
+  const rowP = (language: string, paramTyped: number): ResolveRunStatsRow => ({
+    language,
+    receiverKind: "local",
+    attempted: 100,
+    resolved: 60,
+    externalSkipped: 0,
+    paramTyped,
+  });
+
+  it("carries the paramTyped total on the summary and per language", () => {
+    const summary = summarizeCodegraphResolve([rowP("ruby", 5), rowP("typescript", 0)]);
+    expect(summary).toMatchObject({ callsParamTyped: 5 });
+    const ruby = (summary?.byLanguage ?? []).find((l) => l.language === "ruby");
+    expect(ruby).toMatchObject({ callsParamTyped: 5 });
+  });
+
+  it("omits the counter when no call resolved on a caller-typed parameter", () => {
+    expect(summarizeCodegraphResolve([rowP("ruby", 0)])).not.toHaveProperty("callsParamTyped");
+  });
+});

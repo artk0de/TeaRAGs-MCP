@@ -73,6 +73,7 @@ describe("025 cg file resolve stats migration", () => {
         "narrow_empty",
         "narrowed",
         "no_in_project_def",
+        "param_typed",
         "receiver_kind",
         "rel_path",
         "resolved",

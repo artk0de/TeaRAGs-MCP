@@ -1426,3 +1426,23 @@ export interface ExtractionSink {
   write: (extraction: FileExtraction) => Promise<void>;
   finish: () => Promise<void>;
 }
+
+/** One call site whose callee is a single exact static edge, with each argument's type or `null` when untyped (bd tea-rags-mcp-2m83f.44). */
+export interface CallerArgObservation {
+  /** The callee's symbolId — the parameter-typing coordinate. */
+  readonly target: string;
+  /** Per position, up to the first argument that breaks positional correspondence. */
+  readonly positional: readonly (RubyTypeRef | null)[];
+  /** Keyword argument name → type. */
+  readonly keyword?: Readonly<Record<string, RubyTypeRef | null>>;
+  /** Positional argument count; absent when a splat makes it unknowable. */
+  readonly argCount?: number;
+  readonly hasKwargSplat?: boolean;
+}
+
+/** A persisted {@link CallerArgObservation} with the file that made it and that file's language (bd tea-rags-mcp-2m83f.49). */
+export interface PersistedCallerArgObservation {
+  readonly sourceRelPath: string;
+  readonly language: string;
+  readonly observation: CallerArgObservation;
+}

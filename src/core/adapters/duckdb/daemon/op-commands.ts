@@ -229,6 +229,9 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   invalidateHierarchyDependentsOfDeletedFiles: write(async (graphDb, p) =>
     graphDb.invalidateHierarchyDependentsOfDeletedFiles(p.relPaths),
   ),
+  invalidateCallerParamDependentsOfDeletedFiles: write(async (graphDb, p) =>
+    graphDb.invalidateCallerParamDependentsOfDeletedFiles(p.relPaths),
+  ),
   pruneDerivedForDeletedFiles: write(async (graphDb, p) => graphDb.pruneDerivedForDeletedFiles(p.relPaths)),
   // A write whose result the residual pass reads: whether the model's edges changed.
   applyModelEdges: { access: "write", run: async (graphDb, p) => graphDb.applyModelEdges(p.model, p.edges) },
@@ -401,6 +404,7 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   listAllSymbols: read(async (graphDb) => graphDb.listAllSymbols()),
   listPass1Aggregates: read(async (graphDb, p) => graphDb.listPass1Aggregates(p.scope)),
   listHierarchyDependencies: read(async (graphDb, p) => graphDb.listHierarchyDependencies(p.scope)),
+  listCallerParamObservations: read(async (graphDb, p) => graphDb.listCallerParamObservations(p.scope)),
   listFileContentHashes: read(async (graphDb) => graphDb.listFileContentHashes()),
   getTransitiveImpact: read(async (graphDb, p) => graphDb.getTransitiveImpact(p.relPath, p.maxDepth)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.

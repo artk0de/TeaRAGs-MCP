@@ -95,6 +95,7 @@ import type {
   OntologyReportSectionRows,
   OntologyReportSummaryRows,
   Pass1AggregateReadScope,
+  PersistedCallerArgObservation,
   PersistedHierarchyDescendantDependency,
   PersistedSymbolLineRanges,
   RelPath,
@@ -317,6 +318,14 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async invalidateHierarchyDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
     return this.symbolFiles.invalidateHierarchyDependentsOfDeletedFiles(relPaths);
+  }
+
+  async listCallerParamObservations(scope: Pass1AggregateReadScope): Promise<PersistedCallerArgObservation[]> {
+    return this.symbolFiles.listCallerParamObservations(scope);
+  }
+
+  async invalidateCallerParamDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    return this.symbolFiles.invalidateCallerParamDependentsOfDeletedFiles(relPaths);
   }
 
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {

@@ -330,6 +330,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.resolutionRunner,
       this.runState,
       this.phaseTimings,
+      async (relPaths) => this.extractUnchangedFiles(relPaths),
     );
     this.codegraphExclusionFilter = buildCodegraphExclusionFilter(
       deps.exclusion ?? { customPatterns: [] },
@@ -498,6 +499,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // lose their hash, so the drift repair re-resolves them — also BEFORE the
     // base rows go, because the declared names are read from `cg_symbols`.
     await graphDb.invalidateHierarchyDependentsOfDeletedFiles(paths);
+    // Callees these files passed arguments to (bd tea-rags-mcp-2m83f.49) lose
+    // their hash too: their parameter types lose this evidence.
+    await graphDb.invalidateCallerParamDependentsOfDeletedFiles(paths);
     // One set-based call for the whole batch (bd tea-rags-mcp-b4drg): edges in
     // both directions, `cg_symbols` and every per-file row, in one transaction —
     // a per-path loop was two store round trips per deleted file.
@@ -617,23 +621,35 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       walkedRelPaths: walked,
       declaredByWalkedFile: typeDeclaredByAnyOf(symbolTable, walked),
     });
-    const extractions: FileExtraction[] = [];
-    for (const relPath of this.filterExtractablePaths(relPaths)) {
-      try {
-        extractions.push(await this.extractOneFile(root, relPath));
-      } catch (err) {
-        // Gone or unreadable since it was indexed: the deletion path owns it.
-        if (process.env.DEBUG === "true") {
-          process.stderr.write(`[codegraph] skip dependent ${relPath}: ${(err as Error).message}\n`);
-        }
-      }
-    }
+    const extractions = await this.extractUnchangedFiles(relPaths);
     if (isDebug() && extractions.length > 0) {
       console.error("[GitEnrich] PHASE: CODEGRAPH_HIERARCHY_DEPENDENTS", {
         dependencies: dependencies.length,
         walkedFiles: walked.size,
         reresolved: extractions.length,
       });
+    }
+    return extractions;
+  }
+
+  /**
+   * Unchanged files parsed fresh for pass-2 only — hierarchy dependents (bd
+   * tea-rags-mcp-7t2ee) and callees whose callers' parameter types moved (bd
+   * tea-rags-mcp-2m83f.49). A file gone or unreadable since it was indexed is
+   * skipped: the deletion path owns it.
+   */
+  private async extractUnchangedFiles(relPaths: readonly string[]): Promise<FileExtraction[]> {
+    const root = this.runState.projectRoot;
+    if (root === undefined) return [];
+    const extractions: FileExtraction[] = [];
+    for (const relPath of this.filterExtractablePaths(relPaths)) {
+      try {
+        extractions.push(await this.extractOneFile(root, relPath));
+      } catch (err) {
+        if (process.env.DEBUG === "true") {
+          process.stderr.write(`[codegraph] skip dependent ${relPath}: ${(err as Error).message}\n`);
+        }
+      }
     }
     return extractions;
   }

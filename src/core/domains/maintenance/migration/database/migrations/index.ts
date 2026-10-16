@@ -63,6 +63,7 @@ import { SQL_056_CG_FILE_EDGES_ORIGIN } from "./056-cg-file-edges-origin.js";
 import { SQL_057_CG_RUN_STATS_NARROWED } from "./057-cg-run-stats-narrowed.js";
 import { SQL_058_CG_RESIDUAL_EXTERNAL_SITES } from "./058-cg-residual-external-sites.js";
 import { SQL_059_CG_RESIDUAL_CALL_SITES_REASON } from "./059-cg-residual-call-sites-reason.js";
+import { SQL_060_CG_CALLER_PARAM_OBSERVATIONS } from "./060-cg-caller-param-observations.js";
 
 export type { DatabaseMigration } from "../runner.js";
 
@@ -130,4 +131,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "057-cg-run-stats-narrowed.sql", sql: SQL_057_CG_RUN_STATS_NARROWED },
   { filename: "058-cg-residual-external-sites.sql", sql: SQL_058_CG_RESIDUAL_EXTERNAL_SITES },
   { filename: "059-cg-residual-call-sites-reason.sql", sql: SQL_059_CG_RESIDUAL_CALL_SITES_REASON },
+  { filename: "060-cg-caller-param-observations.sql", sql: SQL_060_CG_CALLER_PARAM_OBSERVATIONS },
 ];

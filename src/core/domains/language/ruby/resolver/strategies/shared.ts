@@ -182,7 +182,7 @@ function declaringFileOf(qualified: string, defs: readonly SymbolDefinition[]): 
  * no declarer is conventional). The member lookup therefore ranges over all of
  * them (bd tea-rags-mcp-89k7k.35.32).
  */
-function rubyConstantDeclarers(qualified: string, ctx: CallContext): { fq: string; files: Set<string> } | null {
+export function rubyConstantDeclarers(qualified: string, ctx: CallContext): { fq: string; files: Set<string> } | null {
   const probes = [qualified];
   if (!qualified.includes("::")) {
     for (let i = ctx.callerScope.length; i > 0; i--) {

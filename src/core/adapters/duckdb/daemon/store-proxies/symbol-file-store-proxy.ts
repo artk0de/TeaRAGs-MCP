@@ -6,6 +6,7 @@ import type {
   GraphEdges,
   GraphFileNode,
   Pass1AggregateReadScope,
+  PersistedCallerArgObservation,
   PersistedHierarchyDescendantDependency,
   PersistedSymbolLineRanges,
   RelPath,
@@ -95,6 +96,14 @@ export class DaemonSymbolFileStoreProxy implements CodegraphSymbolFileStore {
 
   async invalidateHierarchyDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
     await this.ops.call("invalidateHierarchyDependentsOfDeletedFiles", { relPaths: [...relPaths] });
+  }
+
+  async listCallerParamObservations(scope: Pass1AggregateReadScope): Promise<PersistedCallerArgObservation[]> {
+    return (await this.ops.call("listCallerParamObservations", { scope })) as PersistedCallerArgObservation[];
+  }
+
+  async invalidateCallerParamDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    await this.ops.call("invalidateCallerParamDependentsOfDeletedFiles", { relPaths: [...relPaths] });
   }
 
   async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {

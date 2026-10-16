@@ -187,6 +187,22 @@
   ancestor reads are not recorded (a different dependency, not the cone's). Case
   matrix: `provider-incremental-cone-invalidation.test.ts`.
 
+- **Parameter types read from callers are a function of every caller, not of the
+  run's spill — full and incremental runs fold the same callers (bd
+  tea-rags-mcp-2m83f.49).** Pass-2 persists each file's caller observations
+  (`GraphEdges.callerParamObservations` → `cg_caller_param_observations`,
+  migration 060, per-source-file lifecycle). `runCallerParamPass` folds the
+  persisted rows of the files the run did not walk with the fresh observations
+  of the spill, and compares the agreed types against what the persisted rows
+  alone agree on — the types the unwalked callees' edges were resolved with. A
+  callee whose agreed types differ has its file appended to the spill for pass-2
+  (`GraphBuildFinalizer#appendUnwalked`, counted, never re-absorbed), inside the
+  same 3-round bound; a file appended in the last round is still observed once
+  so its rows stay current. A deletion goes through
+  `invalidateCallerParamDependentsOfDeletedFiles` from `handleDeletedPaths`
+  (every callee the deleted file observed loses its hash). Case matrix:
+  `provider-incremental-caller-param-types.test.ts`.
+
 - **A pooled graph client is valid only while its path still names the file it
   holds open, and closing one never checkpoints.** `GraphDbClientPool#acquire` —
   the daemon's per-op path through `CodegraphDaemonServer#handle` — and

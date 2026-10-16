@@ -33,6 +33,7 @@ export {
   receiverIsIndexAccess,
   receiverChainTailIsExternal,
   resolveSelfDispatchHookTarget,
+  rubyConstantDeclarers,
   resolveTypeInstanceMethod,
   resolveTypeStaticMethod,
   symbolIdIsClassMethod,

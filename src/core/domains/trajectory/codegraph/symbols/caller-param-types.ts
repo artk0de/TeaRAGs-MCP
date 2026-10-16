@@ -11,23 +11,13 @@
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import { typeRefEquals } from "../../../../contracts/type-ref-equals.js";
+import type { CallerArgObservation } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+
+export type { CallerArgObservation };
 
 /** Rounds of caller → parameter → forwarded-argument propagation, the first one included. */
 export const CALLER_PARAM_MAX_ROUNDS = 3;
-
-/** One call site whose callee is a single exact static edge, with each argument's type or `null` when untyped. */
-export interface CallerArgObservation {
-  /** The callee's symbolId — the parameter-typing coordinate. */
-  readonly target: string;
-  /** Per position, up to the first argument that breaks positional correspondence. */
-  readonly positional: readonly (RubyTypeRef | null)[];
-  /** Keyword argument name → type. */
-  readonly keyword?: Readonly<Record<string, RubyTypeRef | null>>;
-  /** Positional argument count; absent when a splat makes it unknowable. */
-  readonly argCount?: number;
-  readonly hasKwargSplat?: boolean;
-}
 
 /** What the binder needs to know about the callee's parameter list. */
 export interface CalleeParamShape {

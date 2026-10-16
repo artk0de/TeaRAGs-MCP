@@ -58,6 +58,7 @@ import {
   resolveViaChain,
 } from "../../kernel/index.js";
 import { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
+import { typeOfRubyCallArgument } from "./call-argument-type.js";
 import { rubyResidualExclusion } from "./residual-exclusion.js";
 import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
 import {
@@ -84,7 +85,6 @@ import {
   RubySuperSymbolResolutionStrategy,
   RubyTableDispatchResolver,
   RubyUnionDispatchResolver,
-  typeOfReceiver,
 } from "./strategies/index.js";
 import { redirectSelfDispatchTemplate } from "./template-redirect.js";
 
@@ -185,12 +185,12 @@ export class RubyCallResolver implements CallResolver {
   }
 
   /**
-   * An argument's type as a receiver of that text would be typed at the call's
-   * position (bd tea-rags-mcp-2m83f.44) — the same facts static resolution
-   * trusts, never the naming convention.
+   * An argument's type (bd tea-rags-mcp-2m83f.44 / .49): a canonical literal's
+   * core class, a declared constant's class form, else the type a receiver of
+   * that text would have at the call — never the naming convention.
    */
   typeOfCallArgument(expr: string, call: CallRef, ctx: CallContext): TypeRef | undefined {
-    return typeOfReceiver(expr, call.startLine, ctx, call.startColumn);
+    return typeOfRubyCallArgument(expr, call, ctx);
   }
 
   /** A residual Rails framework member on an untyped receiver: only the overrides it reaches (bd 2m83f.48). */

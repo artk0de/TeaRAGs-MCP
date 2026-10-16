@@ -25,14 +25,31 @@ function callTo(line: string, member: string): CallRef | undefined {
 }
 
 describe("ruby walker — call argument expressions (2m83f.44)", () => {
-  it("records identifiers, ivars and call chains by position, a literal as null", () => {
-    expect(callTo("W.new.perform(record, 42, @firm, Invoice.find(1))", "perform")?.argExprs).toEqual({
+  it("records identifiers, ivars and call chains by position, nil as null", () => {
+    expect(callTo("W.new.perform(record, nil, @firm, Invoice.find(1))", "perform")?.argExprs).toEqual({
       positional: ["record", null, "@firm", "Invoice.find(1)"],
     });
   });
 
+  // bd tea-rags-mcp-2m83f.49 — constants and literals are typed evidence too.
+  it("records a constant argument by its path text", () => {
+    expect(callTo("W.new.perform(Firm, Billing::Invoice, ::Root)", "perform")?.argExprs).toEqual({
+      positional: ["Firm", "Billing::Invoice", "::Root"],
+    });
+  });
+
+  it("records a literal as the canonical literal of its core class", () => {
+    expect(callTo("W.new.perform(42, 1.5, 'x', \"y#{record}\", :s, [1, 2], { a: 1 })", "perform")?.argExprs).toEqual({
+      positional: ["0", "0.0", '""', '""', ":_", "[]", "{}"],
+    });
+  });
+
+  it("records a literal keyword value", () => {
+    expect(callTo("W.new.perform(n: 1)", "perform")?.argExprs).toEqual({ keyword: { n: "0" } });
+  });
+
   it("records keyword values under their key", () => {
-    expect(callTo("W.new.perform(record: record, n: 1)", "perform")?.argExprs).toEqual({
+    expect(callTo("W.new.perform(record: record, n: nil)", "perform")?.argExprs).toEqual({
       keyword: { record: "record" },
     });
   });
@@ -42,6 +59,6 @@ describe("ruby walker — call argument expressions (2m83f.44)", () => {
   });
 
   it("is absent when nothing is typeable", () => {
-    expect(callTo("W.new.perform(1, 'x')", "perform")?.argExprs).toBeUndefined();
+    expect(callTo("W.new.perform(nil, true)", "perform")?.argExprs).toBeUndefined();
   });
 });

@@ -121,7 +121,11 @@ export const capability: LanguageCapability = {
   // `X.include(Y)`, `X.class_eval { include Y }`, `base.include(Y)` in an `included` hook and a
   // top-level `include` are recorded; an unreadable mixin publishes `unresolvedMixinClasses`,
   // so a walker-20 index misses the reachable overrides of frameworkOverride residual sites.
-  versions: { chunking: 2, walker: 21, codegraphSchema: 2 },
+  // walker 22: bd tea-rags-mcp-2m83f.49 — `argExprs` carry constant paths and
+  // canonical literals, so a parameter is typed from `perform(Firm)` (class form)
+  // and a literal caller disagrees with a project-typed one; a walker-21 index
+  // lacks those parameter types and their edges.
+  versions: { chunking: 2, walker: 22, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

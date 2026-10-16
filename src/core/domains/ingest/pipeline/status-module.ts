@@ -67,6 +67,8 @@ interface ResolveTally {
   // narrowing (a subset of `resolved`), and those that intersected to no class.
   narrowed: number;
   narrowEmpty: number;
+  // bd tea-rags-mcp-2m83f.49 — resolved calls on a caller-typed parameter (a subset of `resolved`).
+  paramTyped: number;
 }
 
 function emptyTally(): ResolveTally {
@@ -81,6 +83,7 @@ function emptyTally(): ResolveTally {
     unnarrowedTemplate: 0,
     narrowed: 0,
     narrowEmpty: 0,
+    paramTyped: 0,
   };
 }
 
@@ -302,6 +305,11 @@ function buildByReceiverKind(
     .sort((a, b) => b.attempted - a.attempted);
 }
 
+/** Calls resolved on a caller-typed parameter (bd tea-rags-mcp-2m83f.49), present only once a run resolved one. */
+function paramTypedCount(t: ResolveTally): { callsParamTyped?: number } {
+  return t.paramTyped > 0 ? { callsParamTyped: t.paramTyped } : {};
+}
+
 /** Receiver-narrowing counters, present only once a run narrowed or failed to narrow a site. */
 function narrowingCounts(t: ResolveTally): { callsNarrowed?: number; callsNarrowEmpty?: number } {
   return t.narrowed > 0 || t.narrowEmpty > 0 ? { callsNarrowed: t.narrowed, callsNarrowEmpty: t.narrowEmpty } : {};
@@ -324,6 +332,7 @@ function addRow(t: ResolveTally, r: ResolveRunStatsRow): void {
   t.unnarrowedTemplate += r.unnarrowedTemplate ?? 0;
   t.narrowed += r.narrowed ?? 0;
   t.narrowEmpty += r.narrowEmpty ?? 0;
+  t.paramTyped += r.paramTyped ?? 0;
 }
 
 /**
@@ -417,6 +426,7 @@ export function summarizeCodegraphResolve(
     ambiguousFanout: combinedTotal.ambiguousFanout,
     callsUnnarrowedTemplate: combinedTotal.unnarrowedTemplate,
     ...narrowingCounts(combinedTotal),
+    ...paramTypedCount(combinedTotal),
     ...(debug ? { resolveSuccessRate: resolveRate(combinedTotal) } : {}),
   };
   if (movedTotal + externalTotal > 0 && modelResolved !== undefined) {
@@ -444,6 +454,7 @@ export function summarizeCodegraphResolve(
         callsCoreAmbiguous: t.coreAmbiguous,
         callsUnnarrowedTemplate: t.unnarrowedTemplate,
         ...narrowingCounts(t),
+        ...paramTypedCount(t),
         ...(debug ? { resolveSuccessRate: resolveRate(t) } : {}),
         // Absent unless DEBUG built the tally above.
         ...(debug

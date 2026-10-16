@@ -19,10 +19,12 @@
 
 import type {
   BulkFileUpsertEntry,
+  CallerArgObservation,
   CodegraphPass1FileAggregates,
   GraphEdges,
   GraphFileNode,
   Pass1AggregateReadScope,
+  PersistedCallerArgObservation,
   PersistedHierarchyDescendantDependency,
   RelPath,
 } from "../../contracts/types/codegraph.js";
@@ -127,6 +129,8 @@ const RESIDUAL_VALUES = [
 // Migration 039 (bd tea-rags-mcp-7t2ee): one row per (file, type it asked about).
 const HIERARCHY_DEPENDENCY_KEYS = ["source_rel_path", "type_name"] as const;
 const HIERARCHY_DEPENDENCY_VALUES = ["descendant_names"] as const;
+const CALLER_PARAM_OBSERVATION_KEYS = ["source_rel_path"] as const;
+const CALLER_PARAM_OBSERVATION_VALUES = ["observations"] as const;
 /**
  * What removing a file clears — the ONE table list both {@link
  * DuckDbFileGraphStore#removeFile} and its set-based form
@@ -139,7 +143,8 @@ const HIERARCHY_DEPENDENCY_VALUES = ["descendant_names"] as const;
  *   edges among them (bd tea-rags-mcp-zy6hx): they carry no target path, the
  *   owner is a type NAME, so only the accessing file's removal clears them.
  *   So are the residual call sites (bd tea-rags-mcp-2m83f): the residual pass
- *   must not ask about calls in a file that is gone.
+ *   must not ask about calls in a file that is gone. So are the caller
+ *   observations (bd tea-rags-mcp-2m83f.49): a gone caller types no parameter.
  * - Per-file tables, keyed by `rel_path`: the symbols; pass-1 aggregates; the
  *   resolve tallies (bd tea-rags-mcp-xpmwg — `getRunStats` sums them per
  *   language, so a deleted file's calls must stop counting); the declared
@@ -160,6 +165,7 @@ export const REMOVED_FILE_SOURCE_TABLES = [
   "cg_symbols_edges_field",
   "cg_residual_call_sites",
   "cg_residual_external_sites",
+  "cg_caller_param_observations",
 ] as const;
 export const REMOVED_FILE_REL_PATH_TABLES = [
   "cg_symbols",
@@ -247,6 +253,7 @@ export class DuckDbFileGraphStore {
     const pass1Rows: unknown[][] = [];
     const typeOnlyFileEdgeRows: unknown[][] = [];
     const hierarchyDependencyRows: unknown[][] = [];
+    const callerObservationRows: unknown[][] = [];
     for (const { node, edges } of group) {
       // A file may re-import the same module on different lines, so the same
       // (source, target) can arrive twice in one extraction — the diff keeps
@@ -356,6 +363,9 @@ export class DuckDbFileGraphStore {
       for (const d of edges.hierarchyDependencies ?? []) {
         hierarchyDependencyRows.push([node.relPath, d.typeName, encodeDescendantNames(d.descendantNames)]);
       }
+      if (edges.callerParamObservations !== undefined && edges.callerParamObservations.length > 0) {
+        callerObservationRows.push([node.relPath, JSON.stringify(edges.callerParamObservations)]);
+      }
     }
 
     await this.session.applyScopedRowDiff(
@@ -445,6 +455,71 @@ export class DuckDbFileGraphStore {
       HIERARCHY_DEPENDENCY_KEYS,
       HIERARCHY_DEPENDENCY_VALUES,
       hierarchyDependencyRows,
+    );
+    // Caller observations (bd tea-rags-mcp-2m83f.49) — what this file passes to
+    // its exact-edge callees; a re-walk replaces them.
+    await this.session.applyScopedRowDiff(
+      "cg_caller_param_observations",
+      "source_rel_path",
+      relPaths,
+      CALLER_PARAM_OBSERVATION_KEYS,
+      CALLER_PARAM_OBSERVATION_VALUES,
+      callerObservationRows,
+    );
+  }
+
+  /**
+   * The persisted caller observations whose SOURCE file is of one of `scope`'s
+   * languages (bd tea-rags-mcp-2m83f.49), in (file, site) order. Once per run,
+   * before pass-2; scoped like {@link listHierarchyDependencies}.
+   */
+  async listCallerParamObservations(scope: Pass1AggregateReadScope): Promise<PersistedCallerArgObservation[]> {
+    const select = `SELECT o.source_rel_path, f.language, o.observations
+      FROM cg_caller_param_observations o JOIN cg_symbols_files f ON f.rel_path = o.source_rel_path`;
+    const order = " ORDER BY o.source_rel_path";
+    type Row = { source_rel_path: string; language: string; observations: string };
+    let rows: Row[];
+    if (scope.kind === "allLanguages") {
+      rows = await this.session.queryAll<Row>(select + order);
+    } else {
+      if (scope.languages.length === 0) return [];
+      const placeholders = scope.languages.map(() => "?").join(", ");
+      rows = await this.session.queryAll<Row>(`${select} WHERE f.language IN (${placeholders})${order}`, [
+        ...scope.languages,
+      ]);
+    }
+    return rows.flatMap((r) =>
+      (JSON.parse(r.observations) as CallerArgObservation[]).map((observation) => ({
+        sourceRelPath: r.source_rel_path,
+        language: r.language,
+        observation,
+      })),
+    );
+  }
+
+  /**
+   * Clear the content hash of every surviving file that declares a callee one
+   * of `relPaths` observed (bd tea-rags-mcp-2m83f.49), so the drift repair
+   * re-resolves it without that caller's evidence. Over-approximates — every
+   * observed callee, not only those whose agreed type moves. Must run before
+   * those files' observation rows are removed.
+   */
+  async invalidateCallerParamDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    if (relPaths.length === 0) return;
+    const placeholders = relPaths.map(() => "?").join(", ");
+    const rows = await this.session.queryAll<{ observations: string }>(
+      `SELECT observations FROM cg_caller_param_observations WHERE source_rel_path IN (${placeholders})`,
+      [...relPaths],
+    );
+    const targets = [
+      ...new Set(rows.flatMap((r) => (JSON.parse(r.observations) as CallerArgObservation[]).map((o) => o.target))),
+    ];
+    if (targets.length === 0) return;
+    await this.session.run(
+      `UPDATE cg_symbols_files SET content_hash = NULL
+        WHERE rel_path NOT IN (${placeholders})
+          AND rel_path IN (SELECT rel_path FROM cg_symbols WHERE symbol_id IN (${targets.map(() => "?").join(", ")}))`,
+      [...relPaths, ...targets],
     );
   }
 

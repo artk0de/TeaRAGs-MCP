@@ -830,7 +830,10 @@ export class CallEdgeResolutionRunner {
       }
       if (verdict.outcome === "resolved") {
         stats.callsResolved += 1;
-        if (this.receivesCallerTypedParam(site)) stats.callerParamTyping.sitesResolved += 1;
+        if (this.receivesCallerTypedParam(site)) {
+          stats.callerParamTyping.sitesResolved += 1;
+          kindTally[verdict.receiverKind].paramTyped += 1;
+        }
         return;
       }
       const bucket = verdict.missBucket;
