@@ -274,9 +274,9 @@ export interface CodegraphResolveSummary {
   callsResolvedByModel?: number;
   /**
    * Model-resolved sites from residual rows written before migration 055, which
-   * carry no language or receiver kind: counted in the aggregate only, in no
-   * per-language or per-kind row. Present only when non-zero; a re-walk of their
-   * files labels them.
+   * carry no receiver kind: counted in no per-kind row (055 labels their language
+   * from the file row). Present only when non-zero; a re-walk of their files
+   * labels them.
    */
   callsResolvedByModelUnlabeled?: number;
   /** Which model resolved the sites and at what threshold. Present with {@link callsResolvedByModel}. */

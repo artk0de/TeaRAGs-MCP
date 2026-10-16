@@ -1554,7 +1554,7 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
       );
     });
 
-    it("says how many model-resolved sites only the aggregate counts", () => {
+    it("leaves the receiver-kind gap of pre-055 model sites out of the plain form", () => {
       const out = render(
         summary({
           inProjectEdgeRecall: 0.92,
@@ -1566,8 +1566,46 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
       );
 
       expect(out).toContain("resolve rate: 0.92 (static 0.9 · model 8 sites, kev p>=0.7)\n");
+      expect(out).not.toContain("predate migration 055");
+    });
+
+    it("says under DEBUG how many model-resolved sites no receiver-kind row counts", () => {
+      const out = formatPrime(
+        {
+          path: "/p",
+          projectName: null,
+          status: indexed({
+            codegraphResolve: summary({
+              callsResolvedByModel: 8,
+              callsResolvedByModelUnlabeled: 5,
+              byReceiverKind: [
+                {
+                  receiverKind: "constant",
+                  inProjectEdgeRecall: 0.75,
+                  coveredRecall: 0.75,
+                  attempted: 80,
+                  resolved: 60,
+                  externalSkipped: 0,
+                  unresolvable: 0,
+                  callsNoInProjectDef: 0,
+                  callsCoreAmbiguous: 0,
+                  ambiguousFanout: 0,
+                  callsUnnarrowedTemplate: 0,
+                  resolveSuccessRate: 0.75,
+                },
+              ],
+            }),
+          }),
+          metrics: metricsFixture(),
+          drift: null,
+          update: null,
+        },
+        undefined,
+        DEBUG,
+      );
+
       expect(out).toContain(
-        "5 model-resolved sites predate migration 055 — counted in the aggregate only, in no language or receiver-kind row; a reindex labels them",
+        "5 model-resolved sites predate migration 055 — in no receiver-kind row; a reindex labels them",
       );
     });
   });

@@ -376,14 +376,11 @@ function renderRecallWithModel(rate: RealizedResolveRate, models: CodegraphResol
   return `${recall} (${staticPart}model ${rate.modelSites} sites${modelNames === "" ? "" : `, ${modelNames}`})`;
 }
 
-/** Model-resolved sites no language or receiver-kind row carries, or `null` when none. */
+/** Model-resolved sites no receiver-kind row carries, or `null` when none. */
 function formatUnlabeledModelSites(resolve: CodegraphResolve): string | null {
   const unlabeled = resolve.callsResolvedByModelUnlabeled ?? 0;
   if (unlabeled === 0) return null;
-  return (
-    `${unlabeled} model-resolved sites predate migration 055 — counted in the aggregate only, ` +
-    "in no language or receiver-kind row; a reindex labels them"
-  );
+  return `${unlabeled} model-resolved sites predate migration 055 — in no receiver-kind row; a reindex labels them`;
 }
 
 function formatThresholdsSection(
@@ -717,8 +714,6 @@ function formatResolvePlain(resolve: CodegraphResolve): string[] {
       ? languages.map((l) => `${l.language} ${renderRecallWithModel(realizedRateOf(l), models)}`).join(" · ")
       : renderRecallWithModel(realizedRateOf(resolve), models);
   const lines = ["## Codegraph resolve", `resolve rate: ${rate}`];
-  const unlabeled = formatUnlabeledModelSites(resolve);
-  if (unlabeled !== null) lines.push(unlabeled);
   // Plain counterpart of the DEBUG ⚠ line (bd tea-rags-mcp-znxg8). The reader
   // needs the consequence — get_callers misses callers of those services — and
   // the workaround, not the receiver-kind mechanics behind the count.

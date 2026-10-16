@@ -316,17 +316,16 @@ export function summarizeCodegraphResolve(
     byLangKind.set(r.language, kinds);
   }
   // bd tea-rags-mcp-2m83f.38 — model-resolved residual sites, keyed like the
-  // static tallies. A pre-055 row (no language) folds into the aggregate only.
+  // static tallies. A pre-055 row carries no receiver kind and so sits in no
+  // per-kind row; one with no language either folds into the aggregate only.
   const modelTotal: ModelSiteTally = { ambiguous: 0, dynamic: 0 };
   const modelByLang = new Map<string, ModelSiteTally>();
   const modelByLangKind = new Map<string, Map<string, ModelSiteTally>>();
   let modelUnlabeled = 0;
   for (const c of modelResolved?.counts ?? []) {
     modelTotal[c.kind] += c.sites;
-    if (c.language === null) {
-      modelUnlabeled += c.sites;
-      continue;
-    }
+    if (c.receiverKind === null) modelUnlabeled += c.sites;
+    if (c.language === null) continue;
     addModelSites(modelByLang, c.language, c);
     if (c.receiverKind === null) continue;
     const kinds = modelByLangKind.get(c.language) ?? new Map<string, ModelSiteTally>();

@@ -48,7 +48,7 @@ describe("055 adds language and receiver kind to residual call sites", () => {
     ]);
   });
 
-  it("keeps a residual row written before it, reading both new columns as NULL", async () => {
+  it("keeps a residual row of a file it has no language for, reading both new columns as NULL", async () => {
     await runMigrations(db, BEFORE_055);
     await db.run(
       `INSERT INTO cg_residual_call_sites
@@ -64,6 +64,28 @@ describe("055 adds language and receiver kind to residual call sites", () => {
       "SELECT site_key, language, receiver_kind FROM cg_residual_call_sites",
     );
     expect(rows).toEqual([{ site_key: "k1", language: null, receiver_kind: null }]);
+  });
+
+  it("labels a row written before it with its file's language, leaving the receiver kind NULL", async () => {
+    await runMigrations(db, BEFORE_055);
+    await db.run("INSERT INTO cg_symbols_files (rel_path, language) VALUES ('a.rb', 'ruby')");
+    await db.run(
+      `INSERT INTO cg_residual_call_sites
+         (source_rel_path, site_key, method_symbol_id, method_start_line, method_end_line, line, call_column,
+          receiver_text, member, kind, candidates, menu_hash, menu_overflow)
+       VALUES ('a.rb', 'k1', 'A#run', 1, 9, 3, 4, 'account', 'users', 'dynamic', '["Firm#users"]', 'h', false),
+              ('gone.rb', 'k2', 'B#run', 1, 9, 3, 4, 'account', 'users', 'dynamic', '["Firm#users"]', 'h', false)`,
+    );
+
+    await runMigrations(db, DATABASE_MIGRATIONS);
+
+    const rows = await db.queryAll<{ site_key: string; language: string | null; receiver_kind: string | null }>(
+      "SELECT site_key, language, receiver_kind FROM cg_residual_call_sites ORDER BY site_key",
+    );
+    expect(rows).toEqual([
+      { site_key: "k1", language: "ruby", receiver_kind: null },
+      { site_key: "k2", language: null, receiver_kind: null },
+    ]);
   });
 
   it("is idempotent", async () => {

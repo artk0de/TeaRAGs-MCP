@@ -43,7 +43,7 @@ export interface ResidualCallSiteRow {
   menuHash: string;
   /** The candidates were cut at the menu limit. */
   menuOverflow: boolean;
-  /** The `cg_run_stats` language the site was counted under (055); absent on a row written before it. */
+  /** The `cg_run_stats` language the site was counted under (055 backfills it from the file row). */
   language?: string;
   /** The `cg_run_stats` receiver kind the site was counted under, e.g. `"ivar"` (055); absent on a row written before it. */
   receiverKind?: string;
@@ -51,8 +51,9 @@ export interface ResidualCallSiteRow {
 
 /**
  * Residual sites a model edge resolves, per `cg_run_stats` bucket and model. A
- * site counts once, under the model of its most probable edge. `language` and
- * `receiverKind` are `null` for a row written before 055.
+ * site counts once, under the model of its most probable edge. `receiverKind` is
+ * `null` for a row written before 055; `language` only when its file has no
+ * `cg_symbols_files` row either.
  */
 export interface ModelResolvedSiteCount {
   language: string | null;

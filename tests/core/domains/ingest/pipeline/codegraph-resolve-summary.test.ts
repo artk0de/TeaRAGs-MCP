@@ -554,6 +554,22 @@ describe("summarizeCodegraphResolve — model-resolved residual sites (2m83f.38)
     expect(summary?.byLanguage?.find((l) => l.language === "ruby")?.callsResolved).toBe(63);
   });
 
+  it("counts a pre-055 site that 055 labelled with its language under that language, in no receiver-kind row", () => {
+    const summary = summarizeCodegraphResolve(
+      [rowB("ruby", "ivar", 100, 60), rowB("ruby", "dynamic", 50, 10), rowB("typescript", "constant", 100, 90)],
+      undefined,
+      {
+        counts: [site("ruby", null, "dynamic", 5), site("ruby", "dynamic", "dynamic", 3)],
+        thresholds: { kev: 0.7 },
+      },
+    );
+
+    const ruby = summary?.byLanguage?.find((l) => l.language === "ruby");
+    expect(ruby).toMatchObject({ callsResolved: 78, callsResolvedByModel: 8 });
+    expect(ruby?.byReceiverKind?.find((k) => k.receiverKind === "dynamic")?.resolvedByModel).toBe(3);
+    expect(summary?.callsResolvedByModelUnlabeled).toBe(5);
+  });
+
   it("never moves more sites than the static bucket holds", () => {
     const summary = summarizeCodegraphResolve([rowB("ruby", "ivar", 10, 8, 1)], undefined, {
       counts: [site("ruby", "ivar", "ambiguous", 5), site("ruby", "ivar", "dynamic", 5)],
