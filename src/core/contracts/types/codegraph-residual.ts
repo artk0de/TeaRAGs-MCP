@@ -31,6 +31,9 @@ export type ResidualReason = "frameworkOverride";
  */
 export type ResidualExclusionRule = "schemaColumn" | "frameworkMember" | "timestampColumn";
 
+/** One class of a receiver group: the class, the target its member reaches there, and that target's return type when known. */
+export type ResidualClassTarget = [className: string, targetSymbolId: string, returnType?: string];
+
 /** One row of `cg_residual_call_sites` (053). */
 export interface ResidualCallSiteRow {
   /** sha1(relPath, methodSymbolId, line, column, receiverText, member). */
@@ -64,9 +67,18 @@ export interface ResidualCallSiteRow {
    * The receiver group's narrowed class set, uncut, in menu order (naming prior,
    * then name), each class with the target it reaches this site's member through
    * — its own definition or the nearest ancestor's: `[["Invoice", "Invoice#save"],
-   * ["Bill", "Document#save"]]` (061). Present with {@link receiverGroup}.
+   * ["Bill", "Document#save"]]` (061). Present with {@link receiverGroup}. A
+   * third element is the class the target returns on that class, when the walk
+   * knows it — `["Client", "Client#firm", "Firm"]` (bd 2m83f.51).
    */
-  classTargets?: [string, string][];
+  classTargets?: ResidualClassTarget[];
+  /**
+   * {@link receiverGroup} of the next hop whose receiver is this call
+   * (`record.firm` for `record.firm.name`): an accepted class's return type is a
+   * type fact on that group (bd 2m83f.51). Absent on a row whose call starts no
+   * chain hop the walk saw as a group.
+   */
+  downstreamGroup?: string;
   /** Why the menu is narrowed (059); absent = the ordinary short-name menu. */
   reason?: ResidualReason;
 }
@@ -271,6 +283,8 @@ export interface ResidualPassReport {
   sitesEdgedByVerdict: number;
   /** Rows edged by a type fact propagated from another group's verdict (a chain hop downstream). */
   sitesEdgedByPropagation: number;
+  /** Groups whose own accepted verdict disagreed with a propagated type fact; the direct verdict stood. */
+  propagationConflicts: number;
   /** Receiver groups whose class set exceeded the menu limit and went to a tournament. */
   tournamentGroups: number;
   /** Most rounds any tournament ran. */

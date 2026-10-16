@@ -823,6 +823,12 @@ export interface LanguageSymbolResolver {
    */
   residualOverrideMenu?: (call: CallRef, ctx: CallContext) => readonly string[] | null;
   /**
+   * Optional: the class `owner#member` returns on an `owner` instance (bd
+   * tea-rags-mcp-2m83f.51), so an accepted residual class types the next chain
+   * hop; `undefined` when no fact says. Mirrors `CallResolver.residualReturnType`.
+   */
+  residualReturnType?: (owner: string, member: string, ctx: CallContext) => string | undefined;
+  /**
    * Optional: a chunk's local bindings as this language reads them — a binding
    * it cannot read at all is hidden from every call-site reader, as if never
    * emitted (bd tea-rags-mcp-m99j1.1.30 regression). Asked once per chunk by

@@ -29,6 +29,7 @@ const COMPLETED = {
   receiverGroupSites: 30,
   sitesEdgedByVerdict: 25,
   sitesEdgedByPropagation: 4,
+  propagationConflicts: 1,
   tournamentGroups: 2,
   tournamentRounds: 3,
   tournamentQuestions: 9,
@@ -68,7 +69,7 @@ describe("formatResidualReport", () => {
     expect(text).toContain("  aborted groups:   2\n");
     expect(text).toContain("  requeued groups:  4\n");
     expect(text).toContain("  receiver groups:  12 (30 sites)\n");
-    expect(text).toContain("  edged by group:   25 by verdict, 4 by propagation\n");
+    expect(text).toContain("  edged by group:   25 by verdict, 4 by propagation (1 conflicts)\n");
     expect(text).toContain("  tournaments:      2 groups, 3 rounds, 9 questions, 1 skipped by budget\n");
     expect(text).toContain("  windowed groups:  6\n");
     expect(text).toContain("total 6");

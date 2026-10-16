@@ -171,6 +171,8 @@ export class RubyLanguage implements LanguageProvider {
         callResolver.typeOfCallArgument?.(expr, call, ctx),
       residualOverrideMenu: (call: CallRef, ctx: CallContext): readonly string[] | null =>
         callResolver.residualOverrideMenu?.(call, ctx) ?? null,
+      residualReturnType: (owner: string, member: string, ctx: CallContext): string | undefined =>
+        callResolver.residualReturnType?.(owner, member, ctx),
     };
   }
 }

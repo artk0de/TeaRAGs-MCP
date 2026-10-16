@@ -98,6 +98,42 @@ function groupedRow(siteKey: string, member: string, line: number, classes = CLA
   };
 }
 
+/** A site on `receiverText` in `A#run` whose class targets carry the target's return type. */
+function hopRow(
+  siteKey: string,
+  receiverText: string,
+  member: string,
+  classes: [string, string, string?][],
+  downstreamGroup?: string,
+): ResidualCallSiteRow {
+  return {
+    siteKey,
+    sourceRelPath: "app/a.rb",
+    methodSymbolId: "A#run",
+    methodStartLine: 1,
+    methodEndLine: 20,
+    line: 5,
+    column: 4,
+    receiverText,
+    member,
+    kind: "dynamic",
+    candidates: classes.map(([, t]) => t),
+    menuHash: `menu-${siteKey}`,
+    menuOverflow: false,
+    receiverGroup: `group-${receiverText}`,
+    classTargets: classes,
+    ...(downstreamGroup === undefined ? {} : { downstreamGroup }),
+  };
+}
+
+/** Answers each receiver's class question from `byReceiver`; any other receiver gets a low-p first class. */
+const answerByReceiver =
+  (byReceiver: Record<string, { pick: string | null; p: number }>): Answer =>
+  (q) =>
+    byReceiver[q.receiverText] ?? { pick: q.candidates[0] ?? null, p: 0.3 };
+
+const edgeOf = (edges: ModelEdgeRow[] | undefined, siteKey: string) => edges?.find((e) => e.siteKey === siteKey);
+
 const manyClasses = (n: number): [string, string][] =>
   Array.from({ length: n }, (_, i) => [`K${String(i).padStart(3, "0")}`, `K${String(i).padStart(3, "0")}#M`]);
 
@@ -265,5 +301,121 @@ describe("ResidualResolutionPass — receiver groups", () => {
     expect(windowed).toContain("L152");
     expect(windowed.length).toBeLessThanOrEqual(60);
     expect(report).toMatchObject({ tooLong: 0, windowedGroups: 1, sitesEdged: 2 });
+  });
+  describe("an accepted class propagates to the downstream hop", () => {
+    const upstream = (returnType?: string) =>
+      hopRow(
+        "u1",
+        "record",
+        "firm",
+        [
+          returnType === undefined ? ["Client", "Client#firm"] : ["Client", "Client#firm", returnType],
+          ["Contact", "Contact#firm", "Agency"],
+        ],
+        "group-record.firm",
+      );
+    const downstream = () =>
+      hopRow("d1", "record.firm", "name", [
+        ["Agency", "Agency#name"],
+        ["Firm", "Firm#name"],
+      ]);
+
+    it("edges `record.firm.name` to Firm#name with the upstream verdict's p", async () => {
+      const graphDb = fakeGraphDb([upstream("Firm"), downstream()]);
+      const provider = new FakeProvider(answerByReceiver({ record: { pick: "Client", p: 0.9 } }));
+
+      const report = await run(graphDb, provider);
+
+      expect(edgeOf(graphDb.applied.at(-1), "u1")).toMatchObject({ targetSymbolId: "Client#firm", p: 0.9 });
+      expect(edgeOf(graphDb.applied.at(-1), "d1")).toEqual({
+        siteKey: "d1",
+        sourceRelPath: "app/a.rb",
+        sourceSymbolId: "A#run",
+        targetSymbolId: "Firm#name",
+        model: "kev",
+        p: 0.9,
+      });
+      expect(report).toMatchObject({ sitesEdgedByVerdict: 1, sitesEdgedByPropagation: 1, propagationConflicts: 0 });
+    });
+
+    it("keeps the downstream group's own accepted verdict and counts the conflict", async () => {
+      const graphDb = fakeGraphDb([upstream("Firm"), downstream()]);
+      const provider = new FakeProvider(
+        answerByReceiver({ record: { pick: "Client", p: 0.9 }, "record.firm": { pick: "Agency", p: 0.95 } }),
+      );
+
+      const report = await run(graphDb, provider);
+
+      expect(edgeOf(graphDb.applied.at(-1), "d1")).toMatchObject({ targetSymbolId: "Agency#name", p: 0.95 });
+      expect(report).toMatchObject({ sitesEdgedByVerdict: 2, sitesEdgedByPropagation: 0, propagationConflicts: 1 });
+    });
+
+    it("propagates nothing when the accepted class's return type is unknown", async () => {
+      const graphDb = fakeGraphDb([upstream(), downstream()]);
+      const provider = new FakeProvider(answerByReceiver({ record: { pick: "Client", p: 0.9 } }));
+
+      const report = await run(graphDb, provider);
+
+      expect(edgeOf(graphDb.applied.at(-1), "d1")).toBeUndefined();
+      expect(report).toMatchObject({ sitesEdgedByPropagation: 0, propagationConflicts: 0 });
+    });
+
+    it("propagates nothing from a group accepted below the provider threshold", async () => {
+      const graphDb = fakeGraphDb([upstream("Firm"), downstream()]);
+      const provider = new FakeProvider(answerByReceiver({ record: { pick: "Client", p: 0.6 } }));
+
+      const report = await run(graphDb, provider);
+
+      expect(edgeOf(graphDb.applied.at(-1), "d1")).toBeUndefined();
+      expect(report.sitesEdgedByPropagation).toBe(0);
+    });
+
+    it("carries `a.b.c.d` through two rounds and stops before a third", async () => {
+      const graphDb = fakeGraphDb([
+        hopRow(
+          "s-b",
+          "a",
+          "b",
+          [
+            ["A", "A#b", "B"],
+            ["W", "W#b"],
+          ],
+          "group-a.b",
+        ),
+        hopRow(
+          "s-c",
+          "a.b",
+          "c",
+          [
+            ["B", "B#c", "C"],
+            ["X", "X#c"],
+          ],
+          "group-a.b.c",
+        ),
+        hopRow(
+          "s-d",
+          "a.b.c",
+          "d",
+          [
+            ["C", "C#d", "D"],
+            ["Y", "Y#d"],
+          ],
+          "group-a.b.c.d",
+        ),
+        hopRow("s-e", "a.b.c.d", "e", [
+          ["D", "D#e"],
+          ["Z", "Z#e"],
+        ]),
+      ]);
+      const provider = new FakeProvider(answerByReceiver({ a: { pick: "A", p: 0.88 } }));
+
+      const report = await run(graphDb, provider);
+
+      const applied = graphDb.applied.at(-1);
+      expect(edgeOf(applied, "s-c")).toMatchObject({ targetSymbolId: "B#c", p: 0.88 });
+      expect(edgeOf(applied, "s-d")).toMatchObject({ targetSymbolId: "C#d", p: 0.88 });
+      expect(edgeOf(applied, "s-e")).toBeUndefined();
+      expect(report.sitesEdgedByPropagation).toBe(2);
+    });
   });
 });

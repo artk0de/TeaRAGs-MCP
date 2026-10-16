@@ -525,11 +525,13 @@ describe("seeded support versions", () => {
       // unreadable one is flagged, so frameworkOverride menus carry the reachable overrides.
       // ruby 22: bd tea-rags-mcp-2m83f.46 — residual rows carry their receiver
       // group and its class targets, so the pass asks one class question per group.
+      // ruby 23: bd tea-rags-mcp-2m83f.51 — class targets carry their return type and
+      // rows name the next hop's group, so an accepted class types the chain downstream.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
         ["python", 13],
-        ["ruby", 22],
+        ["ruby", 23],
         ["java", 4],
         ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a

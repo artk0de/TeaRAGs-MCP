@@ -817,6 +817,7 @@ export class CallEdgeResolutionRunner {
         verdict,
         () => resolver.residualExclusion?.(site.call, site.classifierCtx) ?? null,
         () => resolver.residualOverrideMenu?.(site.call, site.classifierCtx) ?? null,
+        (owner, member) => resolver.residualReturnType?.(owner, member, site.classifierCtx),
       );
       methodEdges.push(...verdict.edges);
       if (verdict.ambiguousFanout !== undefined) ambiguousFanouts.push(verdict.ambiguousFanout);

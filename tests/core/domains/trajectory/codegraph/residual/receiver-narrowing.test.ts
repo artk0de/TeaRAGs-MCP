@@ -249,6 +249,103 @@ describe("ResidualSiteCollector — receiver narrowing", () => {
   });
 });
 
+describe("ResidualSiteCollector — type facts for the downstream hop", () => {
+  const DEFS = [
+    def("Client#firm", "app/models/client.rb"),
+    def("Contact#firm", "app/models/contact.rb"),
+    def("Agency#name", "app/models/agency.rb"),
+    def("Firm#name", "app/models/firm.rb"),
+  ];
+  const RETURNS: Record<string, string> = { "Client#firm": "Firm", "Contact#firm": "Agency" };
+  const returnTypes = (owner: string, member: string): string | undefined => RETURNS[`${owner}#${member}`];
+  const chainCall = (receiver: string, member: string, callText: string): CallRef => ({
+    callText,
+    receiver,
+    member,
+    startLine: 14,
+    startColumn: 4,
+  });
+
+  it("records each class target's return type and the group of the hop whose receiver is the call", () => {
+    const collector = collectorOf(DEFS);
+
+    collector.observe(
+      METHOD,
+      chainCall("record", "firm", "record.firm"),
+      DYNAMIC_MISS,
+      undefined,
+      undefined,
+      returnTypes,
+    );
+    collector.observe(
+      METHOD,
+      chainCall("record.firm", "name", "record.firm.name"),
+      DYNAMIC_MISS,
+      undefined,
+      undefined,
+      returnTypes,
+    );
+
+    const firm = collector.rows().find((r) => r.member === "firm");
+    const name = collector.rows().find((r) => r.member === "name");
+    expect(firm?.classTargets).toEqual([
+      ["Client", "Client#firm", "Firm"],
+      ["Contact", "Contact#firm", "Agency"],
+    ]);
+    expect(firm?.downstreamGroup).toBe(name?.receiverGroup);
+    expect(name?.classTargets).toEqual([
+      ["Firm", "Firm#name"],
+      ["Agency", "Agency#name"],
+    ]);
+    expect(name?.downstreamGroup).toBeUndefined();
+  });
+
+  it("keys the downstream group off the call's source text, argument list included", () => {
+    const collector = collectorOf(DEFS);
+
+    collector.observe(
+      METHOD,
+      chainCall("record", "firm", "record.firm(x,  y)"),
+      DYNAMIC_MISS,
+      undefined,
+      undefined,
+      returnTypes,
+    );
+    collector.observe(
+      METHOD,
+      chainCall("record.firm(x, y)", "name", "record.firm(x, y).name"),
+      DYNAMIC_MISS,
+      undefined,
+      undefined,
+      returnTypes,
+    );
+
+    const firm = collector.rows().find((r) => r.member === "firm");
+    const name = collector.rows().find((r) => r.member === "name");
+    expect(firm?.downstreamGroup).toBe(name?.receiverGroup);
+  });
+
+  it("leaves the return type and the downstream group out when no class target's return is known", () => {
+    const collector = collectorOf(DEFS);
+
+    collector.observe(
+      METHOD,
+      chainCall("record", "firm", "record.firm"),
+      DYNAMIC_MISS,
+      undefined,
+      undefined,
+      () => undefined,
+    );
+
+    const [row] = collector.rows();
+    expect(row?.classTargets).toEqual([
+      ["Client", "Client#firm"],
+      ["Contact", "Contact#firm"],
+    ]);
+    expect(row?.downstreamGroup).toBeUndefined();
+  });
+});
+
 describe("ResidualSiteCollector — receiver narrowing of a frameworkOverride menu", () => {
   const SAVE_DEFS = [
     def("Invoice#save!", "app/models/invoice.rb"),

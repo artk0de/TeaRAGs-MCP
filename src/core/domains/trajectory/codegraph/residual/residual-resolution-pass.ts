@@ -39,6 +39,7 @@ import {
   MAX_TOURNAMENT_ROUNDS,
   windowMethodSource,
 } from "./receiver-group-tournament.js";
+import { propagateTypeFacts, receiverGroupAddress, type AcceptedGroupVerdict } from "./type-fact-propagation.js";
 import type {
   ResidualAnswer,
   ResidualDerivedState,
@@ -215,7 +216,12 @@ export class ResidualResolutionPass {
 
     const siteOutcome = buildEdges(eligible, verdicts, provider, input.noneThreshold);
     const groupOutcome = buildGroupEdges(tournaments, provider, input.noneThreshold);
-    const edges = [...siteOutcome.edges, ...groupOutcome.edges];
+    const propagation = propagateTypeFacts(
+      receiverGroups,
+      acceptedGroupVerdicts(tournaments, provider, input.noneThreshold),
+      provider.id,
+    );
+    const edges = [...siteOutcome.edges, ...groupOutcome.edges, ...propagation.edges];
     const external = [...siteOutcome.external, ...groupOutcome.external];
     const belowThreshold = siteOutcome.belowThreshold + groupOutcome.belowThreshold;
     const applied = await input.graphDb.applyModelEdges(provider.id, edges);
@@ -248,7 +254,8 @@ export class ResidualResolutionPass {
       receiverGroups: tournaments.length,
       receiverGroupSites: tournaments.reduce((n, t) => n + t.group.rows.length, 0),
       sitesEdgedByVerdict: groupOutcome.edges.length,
-      sitesEdgedByPropagation: 0,
+      sitesEdgedByPropagation: propagation.edges.length,
+      propagationConflicts: propagation.conflicts,
       tournamentGroups: tournaments.filter((t) => t.isTournament).length,
       tournamentRounds: Math.max(0, ...tournaments.filter((t) => t.isTournament).map((t) => t.round)),
       tournamentQuestions: rounds.tournamentQuestions,
@@ -566,6 +573,21 @@ function batchQuestions(pendingQuestions: readonly PendingQuestion[]): PendingGr
     group.questions.push(p.question);
   }
   return [...groups.values()];
+}
+
+/** Every group's verdict at or above its threshold — the provider's for a class, `noneThreshold` for none. */
+function acceptedGroupVerdicts(
+  tournaments: readonly GroupTournament[],
+  provider: ResidualModelProvider,
+  noneThreshold: number,
+): Map<string, AcceptedGroupVerdict> {
+  const accepted = new Map<string, AcceptedGroupVerdict>();
+  for (const { group, outcome } of tournaments) {
+    if (outcome === undefined || outcome === "residual") continue;
+    if (outcome.p < (outcome.pick === null ? noneThreshold : provider.threshold)) continue;
+    accepted.set(receiverGroupAddress(group), outcome);
+  }
+  return accepted;
 }
 
 /**

@@ -63,6 +63,7 @@ import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
 import {
   lookupRubySymbolsByShortName,
   resolveConstant,
+  returnTypeOf,
   RubyArRelationGuardSymbolResolutionStrategy,
   RubyBareCallSymbolResolutionStrategy,
   RubyChainTypeSymbolResolutionStrategy,
@@ -197,6 +198,12 @@ export class RubyCallResolver implements CallResolver {
   residualOverrideMenu(call: CallRef, ctx: CallContext): readonly string[] | null {
     if (call.receiver === undefined || call.receiver === null) return null;
     return this.externalVocabulary.railsOverrideMenu(call.receiver, call.member, ctx, call.startLine);
+  }
+
+  /** The class `owner#member` returns on an `owner` instance, through the static return channel (bd 2m83f.51). */
+  residualReturnType(owner: string, member: string, ctx: CallContext): string | undefined {
+    const returned = returnTypeOf({ form: "instance", name: owner }, member, ctx);
+    return returned?.form === "instance" ? returned.name : undefined;
   }
 
   /** Residual sites whose callee is a Rails-generated method (bd tea-rags-mcp-2m83f.34). */

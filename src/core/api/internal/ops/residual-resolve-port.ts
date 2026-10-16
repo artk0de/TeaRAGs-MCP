@@ -55,6 +55,7 @@ export function skippedResidualReport(reason: string, mode: ResidualPassMode): R
     receiverGroupSites: 0,
     sitesEdgedByVerdict: 0,
     sitesEdgedByPropagation: 0,
+    propagationConflicts: 0,
     tournamentGroups: 0,
     tournamentRounds: 0,
     tournamentQuestions: 0,
