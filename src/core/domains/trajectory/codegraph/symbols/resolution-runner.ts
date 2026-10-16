@@ -23,12 +23,14 @@ import {
   type GraphEdges,
   type HierarchyView,
   type RelPath,
+  type SymbolDefinition,
   type SymbolDefinitionKind,
 } from "../../../../contracts/types/codegraph.js";
 import type {
   LanguageCapability,
   LanguageFactoryDescriptor,
   LanguageSymbolResolver,
+  RubyTypeRef,
 } from "../../../../contracts/types/language.js";
 import {
   addResidualExclusionCounts,
@@ -36,6 +38,7 @@ import {
   ResidualSiteCollector,
 } from "../residual/residual-site-builder.js";
 import { mergeDerivedClassFieldTypes, paramTypesOfChunk, seedParamLocalBindings } from "./call-arg-param-types.js";
+import type { CallerArgObservation } from "./caller-param-types.js";
 import { descendantNamesOf, HierarchyDependencyRecorder } from "./hierarchy-dependencies.js";
 import { runtimeImportExtraction, typeOnlyImportExtraction } from "./import-channels.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
@@ -296,6 +299,22 @@ function unionExportNamesInto(into: GraphEdges["fileEdges"][number], other: Grap
   if (imported) into.importedExportNames = imported;
   if (reexported) into.reexportedExportNames = reexported;
   if (bindings) into.reexportedExportBindings = bindings;
+}
+
+/** Does a definition take any parameter a caller's argument could bind? */
+function definesParams(def: SymbolDefinition): boolean {
+  const { arity, kwargs } = def;
+  return (arity !== undefined && (arity.maxPositional > 0 || arity.hasSplat)) || kwargs !== undefined;
+}
+
+/** The barrier's parameter types over the caller-derived ones: the barrier wins a shared name. */
+function mergeSeedParamTypes(
+  barrier: Readonly<Record<string, RubyTypeRef>> | undefined,
+  callers: Readonly<Record<string, RubyTypeRef>> | undefined,
+): Readonly<Record<string, RubyTypeRef>> | undefined {
+  if (callers === undefined) return barrier;
+  if (barrier === undefined) return callers;
+  return { ...callers, ...barrier };
 }
 
 export class CallEdgeResolutionRunner {
@@ -809,6 +828,7 @@ export class CallEdgeResolutionRunner {
       }
       if (verdict.outcome === "resolved") {
         stats.callsResolved += 1;
+        if (this.receivesCallerTypedParam(site)) stats.callerParamTyping.sitesResolved += 1;
         return;
       }
       const bucket = verdict.missBucket;
@@ -817,6 +837,69 @@ export class CallEdgeResolutionRunner {
       else if (bucket === "noInProjectDef") stats.callsNoInProjectDef += 1;
       else if (bucket === "coreAmbiguous") stats.callsCoreAmbiguous += 1;
     });
+  }
+
+  /**
+   * Is this site's receiver rooted at a parameter only the caller-derived seed
+   * typed (bd tea-rags-mcp-2m83f.44) — not the barrier's fold, not a walker
+   * binding? The `paramTyped` diagnosis counter.
+   */
+  private receivesCallerTypedParam({ chunk, call }: ResolvableCallSite): boolean {
+    if (call.receiver === null) return false;
+    const seeded = paramTypesOfChunk(this.runState.callerParamTypes, chunk);
+    if (seeded === undefined) return false;
+    const root = /^[a-z_][A-Za-z0-9_]*/.exec(call.receiver)?.[0];
+    if (root === undefined || seeded[root] === undefined) return false;
+    if (paramTypesOfChunk(this.runState.paramTypes, chunk)?.[root] !== undefined) return false;
+    return chunk.localBindings?.[root] === undefined;
+  }
+
+  /**
+   * The call sites of one file whose callee is a SINGLE EXACT edge, each with
+   * its arguments typed by the language (bd tea-rags-mcp-2m83f.44) — what the
+   * caller-parameter pass folds. Decided by the same {@link judgeCallSite} as
+   * {@link resolve}, against the same seeded bindings, moving no counter. A
+   * call whose member no definition takes a parameter for is never judged.
+   */
+  observeCallerArgs(extraction: FileExtraction, symbolTable: GlobalSymbolTable): CallerArgObservation[] {
+    const resolver = this.resolverFor(extraction.language);
+    const typeOf = resolver?.typeOfCallArgument;
+    if (resolver === undefined || typeOf === undefined) return [];
+    const out: CallerArgObservation[] = [];
+    const calleeKinds = this.calleeKindsFor(extraction.language);
+    const takesParams = new Map<string, boolean>();
+    const memberTakesParams = (member: string): boolean => {
+      let known = takesParams.get(member);
+      if (known === undefined) {
+        known = symbolTable.lookupByShortName(member).some(definesParams);
+        takesParams.set(member, known);
+      }
+      return known;
+    };
+    this.forEachCallSite(extraction, symbolTable, resolver, this.buildResolverInputs(extraction), (site) => {
+      const { call } = site;
+      if (call.dispatch !== undefined || !memberTakesParams(call.member)) return;
+      const verdict = this.judgeCallSite(site, resolver, symbolTable, calleeKinds);
+      if (verdict.outcome !== "resolved" || verdict.edges.length !== 1) return;
+      const [edge] = verdict.edges;
+      if (edge.targetSymbolId === null || (edge.edgeKind ?? "exact") !== "exact") return;
+      if (edge.confidence !== undefined && edge.confidence < 1) return;
+      const typed = (expr: string | null | undefined): CallerArgObservation["positional"][number] =>
+        expr === null || expr === undefined ? null : (typeOf(expr, call, site.ctx) ?? null);
+      const exprs = call.argExprs;
+      const keyword =
+        exprs?.keyword === undefined
+          ? undefined
+          : Object.fromEntries(Object.entries(exprs.keyword).map(([key, expr]) => [key, typed(expr)]));
+      out.push({
+        target: edge.targetSymbolId,
+        positional: (exprs?.positional ?? []).map(typed),
+        ...(keyword === undefined ? {} : { keyword }),
+        ...(call.argCount === undefined ? {} : { argCount: call.argCount }),
+        ...(call.hasKwargSplat === true ? { hasKwargSplat: true } : {}),
+      });
+    });
+    return out;
   }
 
   /**
@@ -898,7 +981,12 @@ export class CallEdgeResolutionRunner {
       // at all is gone before seeding, exactly as if the walker never wrote it
       // (bd tea-rags-mcp-m99j1.1.30 regression).
       const visible = this.visibleLocalBindings(extraction, chunk, symbolTable, resolver, inputs);
-      const paramTypes = paramTypesOfChunk(this.runState.paramTypes, chunk);
+      // Caller-derived parameter types (bd tea-rags-mcp-2m83f.44) ride the same
+      // seed, under the barrier's: a constructor-arg fold answer wins a name.
+      const paramTypes = mergeSeedParamTypes(
+        paramTypesOfChunk(this.runState.paramTypes, chunk),
+        paramTypesOfChunk(this.runState.callerParamTypes, chunk),
+      );
       const localBindings = seedParamLocalBindings(visible, paramTypes, chunk.startLine);
       // The classifiers read the map seeded the same way from what the language
       // keeps for classification, so where it hides nothing they read the very

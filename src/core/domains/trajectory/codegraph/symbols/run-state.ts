@@ -65,6 +65,7 @@ import {
   type InheritedConstructor,
   type KnownTargetParamTypes,
 } from "./call-arg-param-types.js";
+import type { CallerParamEvidence, CallerParamTypes } from "./caller-param-types.js";
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { languageFamilyOf, LanguageFamilyRecord, languagesSharingFamilyWith } from "./language-family-record.js";
 import { paramFamilyFactsOf, paramFamilyFieldChannelOf, type ParamFamilyFieldChannel } from "./param-family.js";
@@ -152,6 +153,8 @@ export interface RunStats {
   // bd tea-rags-mcp-2m83f.34 — residual sites a language kept out of
   // cg_residual_call_sites because no menu holds their callee, per rule.
   residualSitesExcluded: ResidualExclusionCounts;
+  // bd tea-rags-mcp-2m83f.44 — parameters typed from statically resolved callers.
+  callerParamTyping: CallerParamTypingStats;
   // Per-(language, receiver kind) tally (bd tea-rags-mcp-cnqrg, extends j431): the
   // source every aggregate above and every per-kind / per-language summary sums
   // from; persisted per cell to cg_run_stats. Test files never reach it — the
@@ -166,6 +169,36 @@ export interface RunStats {
 }
 
 /** One caller file's resolve tally (bd tea-rags-mcp-xpmwg). */
+/** What the caller-parameter pass did (bd tea-rags-mcp-2m83f.44); in-memory, read by debug and diagnosis. */
+export interface CallerParamTypingStats {
+  /** Observation rounds run, the first included; 0 when the pass had nothing to observe. */
+  rounds: number;
+  /** Exact-edge call sites observed in the last fold. */
+  observedSites: number;
+  /** (callee, parameter) pairs typed and seeded. */
+  paramsTyped: number;
+  /** (callee, parameter) pairs with typed callers that did not agree on one type. */
+  paramsDisagreed: number;
+  /** (callee, parameter) pairs refused because untyped callers outnumbered typed ones. */
+  paramsOutnumbered: number;
+  /** Untyped caller bindings across every observed parameter. */
+  untypedCallers: number;
+  /** Call sites resolved on a receiver rooted at a caller-typed parameter — `paramTyped`. */
+  sitesResolved: number;
+}
+
+export function emptyCallerParamTypingStats(): CallerParamTypingStats {
+  return {
+    rounds: 0,
+    observedSites: 0,
+    paramsTyped: 0,
+    paramsDisagreed: 0,
+    paramsOutnumbered: 0,
+    untypedCallers: 0,
+    sitesResolved: 0,
+  };
+}
+
 export interface FileResolveTally {
   language: string;
   kinds: Map<ReceiverKind, ReceiverKindTally>;
@@ -269,6 +302,7 @@ export function createEmptyRunStats(): RunStats {
     callsCoreAmbiguous: 0,
     callsAmbiguousFanout: 0,
     residualSitesExcluded: emptyResidualExclusionCounts(),
+    callerParamTyping: emptyCallerParamTypingStats(),
     byLanguageKind: new Map(),
     byFile: new Map(),
   };
@@ -968,6 +1002,27 @@ export class CodegraphRunState {
    * barrier runs — an empty overlay leaves the channel byte-identical.
    */
   derivedClassFieldTypes: Record<string, Record<string, string>> = createIdentifierRecord();
+
+  /**
+   * Run-global `callee symbolId → param → type` the caller-parameter pass typed
+   * from statically resolved call sites (bd tea-rags-mcp-2m83f.44). Seeded into
+   * `localBindings` under {@link paramTypes}, which wins a shared name. Empty
+   * until that pass runs.
+   */
+  callerParamTypes: KnownTargetParamTypes = createIdentifierRecord();
+
+  /**
+   * Everything the callers said per (callee, parameter) — agreed type, every
+   * distinct type, typed and untyped caller counts (bd tea-rags-mcp-2m83f.44).
+   * The port the receiver constraint set reads: a parameter whose callers
+   * disagree is still a union worth intersecting there.
+   */
+  callerParamEvidence: CallerParamTypes = createIdentifierRecord();
+
+  /** The callers' evidence for one parameter of `symbolId`, or `undefined` when no exact-edge caller bound it. */
+  callerParamEvidenceOf(symbolId: string, param: string): CallerParamEvidence | undefined {
+    return identifierEntry(this.callerParamEvidence, symbolId)?.[param];
+  }
 
   /**
    * Every dependency this run's project DECLARES, per language from that
@@ -1864,6 +1919,8 @@ export class CodegraphRunState {
     this.typedClassFields.clear();
     this.paramTypes = createIdentifierRecord();
     this.derivedClassFieldTypes = createIdentifierRecord();
+    this.callerParamTypes = createIdentifierRecord();
+    this.callerParamEvidence = createIdentifierRecord();
   }
 
   /**

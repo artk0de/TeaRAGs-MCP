@@ -810,6 +810,13 @@ export interface LanguageSymbolResolver {
    */
   residualExclusion?: (call: CallRef, ctx: CallContext) => ResidualExclusionRule | null;
   /**
+   * Optional: the static type of one ARGUMENT expression at `call` (bd
+   * tea-rags-mcp-2m83f.44), read against the caller's bindings — the evidence a
+   * callee's parameter is typed from. `undefined` when the expression is not
+   * statically typed. Resolvers that omit it type no parameter from callers.
+   */
+  typeOfCallArgument?: (expr: string, call: CallRef, ctx: CallContext) => TypeRef | undefined;
+  /**
    * Optional: a chunk's local bindings as this language reads them — a binding
    * it cannot read at all is hidden from every call-site reader, as if never
    * emitted (bd tea-rags-mcp-m99j1.1.30 regression). Asked once per chunk by

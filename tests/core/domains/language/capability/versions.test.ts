@@ -517,11 +517,13 @@ describe("seeded support versions", () => {
       // the return every candidate agrees on, so overflow hops type their tail.
       // ruby 18: bd tea-rags-mcp-2m83f.41 — Rails framework members and literal
       // receivers on untyped receivers are externalSkipped, not residual.
+      // ruby 19: bd tea-rags-mcp-2m83f.44 — a parameter is typed from its
+      // exact-edge callers, so calls on parameters resolve.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
         ["python", 13],
-        ["ruby", 18],
+        ["ruby", 19],
         ["java", 4],
         ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a

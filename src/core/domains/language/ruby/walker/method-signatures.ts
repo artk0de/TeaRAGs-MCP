@@ -21,6 +21,7 @@ import type { AstNode } from "../../../../contracts/types/ast.js";
 import type {
   AritySignature,
   CallArgAtom,
+  CallArgExprs,
   KwargSignature,
   SendNameTemplate,
 } from "../../../../contracts/types/codegraph.js";
@@ -488,6 +489,57 @@ export function computePositionalArgAtoms(callNode: AstNode): (CallArgAtom | nul
   }
   while (atoms.length > 0 && atoms[atoms.length - 1] === null) atoms.pop();
   return atoms.length > 0 ? atoms : undefined;
+}
+
+/** Argument node types whose text the resolver can type as a receiver expression. */
+const TYPEABLE_ARG_TYPES: ReadonlySet<string> = new Set(["identifier", "instance_variable", "call"]);
+
+/** Longest argument text worth carrying: a receiver chain, not a block or a literal blob. */
+const MAX_ARG_EXPR_LENGTH = 160;
+
+/** `node`'s text when it is a receiver-shaped expression the resolver can type, else `null`. */
+function typeableArgText(node: AstNode | null | undefined): string | null {
+  if (!node || !TYPEABLE_ARG_TYPES.has(node.type)) return null;
+  const { text } = node;
+  if (text.length > MAX_ARG_EXPR_LENGTH || text.includes("\n")) return null;
+  if (node.type === "call" && node.children.some((c) => c.type === "block" || c.type === "do_block")) return null;
+  return text;
+}
+
+/**
+ * The argument expressions a callee's parameters may be typed from (bd
+ * tea-rags-mcp-2m83f.44): positional texts up to the first splat, keyword pair
+ * or block-pass (an untypeable slot is `null`, trailing nulls trimmed), and
+ * each keyword pair's value under its key. Undefined when nothing is typeable.
+ */
+export function computeCallArgExprs(callNode: AstNode): CallArgExprs | undefined {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return undefined;
+  const positional: (string | null)[] = [];
+  const keyword: Record<string, string> = {};
+  let positionalOpen = true;
+  let hasKeyword = false;
+  for (const child of args.namedChildren) {
+    if (child.type === "comment") continue;
+    if (child.type === "pair") {
+      positionalOpen = false;
+      const key = child.childForFieldName("key") ?? child.namedChildren[0];
+      const text = typeableArgText(child.childForFieldName("value") ?? child.namedChildren[1]);
+      if (key && text !== null && (key.type === "hash_key_symbol" || key.type === "simple_symbol")) {
+        keyword[key.text.replace(/:$/, "").replace(/^:/, "")] = text;
+        hasKeyword = true;
+      }
+      continue;
+    }
+    if (child.type === "splat_argument" || NON_POSITIONAL_ARG_TYPES.has(child.type)) positionalOpen = false;
+    if (positionalOpen) positional.push(typeableArgText(child));
+  }
+  while (positional.length > 0 && positional[positional.length - 1] === null) positional.pop();
+  if (positional.length === 0 && !hasKeyword) return undefined;
+  return {
+    ...(positional.length > 0 ? { positional } : {}),
+    ...(hasKeyword ? { keyword } : {}),
+  };
 }
 
 /**

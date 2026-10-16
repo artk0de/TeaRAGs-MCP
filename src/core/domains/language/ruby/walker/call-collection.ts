@@ -24,6 +24,7 @@ import { collectMethodLocalBindings, isBareIdentifierCallSite } from "./bare-cal
 import { emitDslEdges } from "./dsl-edge-emitters.js";
 import {
   computeArgCount,
+  computeCallArgExprs,
   computeCallKwargs,
   computeCallPassesBlock,
   computePositionalArgAtoms,
@@ -257,6 +258,9 @@ function emitMethodCallRef(
   // literals / identifiers everywhere, the name template on a dynamic send only.
   const atoms = computePositionalArgAtoms(node);
   if (atoms !== undefined) callRef.positionalArgAtoms = atoms;
+  // Argument expressions a callee's parameters are typed from (bd tea-rags-mcp-2m83f.44).
+  const argExprs = computeCallArgExprs(node);
+  if (argExprs !== undefined) callRef.argExprs = argExprs;
   if (dynamicSend) {
     const template = computeSendNameTemplate(node);
     if (template !== undefined) callRef.sendNameTemplate = template;

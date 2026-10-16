@@ -42,6 +42,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
   TestDependencyManifestSource,
+  TypeRef,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
 import { isRubyModuleImport, rubyHooks } from "./chunking/index.js";
@@ -166,6 +167,8 @@ export class RubyLanguage implements LanguageProvider {
         callResolver.hasInProjectDefinition?.(call, ctx) ?? false,
       residualExclusion: (call: CallRef, ctx: CallContext): ResidualExclusionRule | null =>
         callResolver.residualExclusion?.(call, ctx) ?? null,
+      typeOfCallArgument: (expr: string, call: CallRef, ctx: CallContext): TypeRef | undefined =>
+        callResolver.typeOfCallArgument?.(expr, call, ctx),
     };
   }
 }
