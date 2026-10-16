@@ -12,6 +12,7 @@ export {
   RubyArRelationGuardSymbolResolutionStrategy,
 } from "./ruby-ar-relation-guard.js";
 export { RubyChainTypeSymbolResolutionStrategy } from "./ruby-chain-type.js";
+export { railsVocabularyActive, RubyRelationChainSymbolResolutionStrategy } from "./ruby-relation-chain.js";
 export { RubyConventionReceiverSymbolResolutionStrategy } from "./ruby-convention-receiver.js";
 export { RubyReceiverSetDropSymbolResolutionStrategy } from "./ruby-receiver-set-drop.js";
 export { RubyBareCallSymbolResolutionStrategy } from "./ruby-bare-call.js";

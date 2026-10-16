@@ -104,6 +104,15 @@ describe("RubyCallResolver#residualExclusion — frameworkMember", () => {
     expect(exclusion(call("contacts.without_deleted", "includes"), railsCtx())).toBe("frameworkMember");
   });
 
+  it("excludes a relation member on a concern scope tail, stated over the concern", () => {
+    const concernScope = railsCtx({
+      structuredReturnTypes: {
+        "SoftDeletable#with_deleted": { form: "container", element: { form: "instance", name: "SoftDeletable" } },
+      },
+    });
+    expect(exclusion(call("Contact.with_deleted", "pluck"), concernScope)).toBe("frameworkMember");
+  });
+
   it("excludes a relation member on a collection association tail", () => {
     expect(exclusion(call("firm.contacts", "pluck"), railsCtx())).toBe("frameworkMember");
   });

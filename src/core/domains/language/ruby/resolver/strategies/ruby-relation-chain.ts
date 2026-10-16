@@ -1,0 +1,44 @@
+import type { CallContext } from "../../../../../contracts/types/codegraph.js";
+import { OrmRelationChainSymbolResolutionStrategy, type OrmRelationPorts } from "../../../kernel/index.js";
+import { RAILS_RESIDUAL_FRAMEWORK_MEMBERS } from "../../dsl/index.js";
+import { activeRecordRelationModel } from "./ruby-active-record-return-types.js";
+import { resolveTypeStaticMethod, type ResolverConfig } from "./shared.js";
+import { typeOfReceiver } from "./type-propagation.js";
+
+/** Rails is in the Gemfile — or there is no Gemfile, which reads every vocabulary as active. */
+export function railsVocabularyActive(ctx: CallContext): boolean {
+  const gems = ctx.declaredDependencies;
+  if (gems === undefined) return true;
+  for (const gem of RAILS_RESIDUAL_FRAMEWORK_MEMBERS.gems) if (gems.has(gem)) return true;
+  return false;
+}
+
+/**
+ * The Rails port of the kernel's ORM relation chain (bd tea-rags-mcp-2m83f.32.3):
+ * a relation of an AR model forwards a scope or `def self.` to the model's class,
+ * so `Firm.without_deleted.available_for(x)` is `Firm.available_for` and
+ * `dir.documents.ordered` the scope on the association's model.
+ *
+ * The receiver is typed by the same propagation engine `chainType` uses — query
+ * methods keep the relation, a scope returns it, a concern's scope is
+ * substituted with the receiver's model. The member is looked up class-side
+ * through the model's MRO (the model, its concerns, `ApplicationRecord`); only a
+ * pinned definition is an edge.
+ *
+ * Placed right after `chainType`, which CONTINUEs on any container, and before
+ * `arRelationGuard`, which DROPs a query-builder chain it cannot type.
+ */
+export class RubyRelationChainSymbolResolutionStrategy extends OrmRelationChainSymbolResolutionStrategy {
+  constructor(cfg: ResolverConfig) {
+    const ports: OrmRelationPorts = {
+      vocabularyActive: railsVocabularyActive,
+      relationModelOf: activeRecordRelationModel,
+      memberOnModel: (model, member, ctx) => resolveTypeStaticMethod(model, member, ctx, cfg.mode),
+    };
+    super(
+      "relationChain",
+      { typeOfReceiver: (call, ctx) => typeOfReceiver(call.receiver, call.startLine, ctx, call.startColumn) ?? null },
+      ports,
+    );
+  }
+}

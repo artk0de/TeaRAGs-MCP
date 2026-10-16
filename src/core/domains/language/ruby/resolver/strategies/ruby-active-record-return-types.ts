@@ -13,8 +13,9 @@
  */
 
 import { identifierEntry } from "../../../../../contracts/identifier-record.js";
-import type { CallContext } from "../../../../../contracts/types/codegraph.js";
+import type { CallContext, SymbolDefinitionKind } from "../../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import { substituteRelationSelf } from "../../../kernel/index.js";
 import { ACTIVE_RECORD_QUERY_INTERFACE, catalogueFor } from "../../dsl/index.js";
 
 /**
@@ -56,6 +57,36 @@ export function activeRecordRelationModel(ref: RubyTypeRef | undefined, ctx: Cal
   if (ref?.form !== "container" || ref.element.form !== "instance") return undefined;
   const model = ref.element.name;
   return ancestryReaches(model, ACTIVE_RECORD_QUERY_INTERFACE.modelBaseClasses, ctx) ? model : undefined;
+}
+
+const MODULE_KIND: ReadonlySet<SymbolDefinitionKind> = new Set(["module"]);
+const CLASS_KIND: ReadonlySet<SymbolDefinitionKind> = new Set(["class"]);
+
+/**
+ * A constant the run declares as a MODULE and never as a class — whose
+ * "instance" no Ruby program can hold (bd tea-rags-mcp-89k7k.35.29). A project
+ * monkey-patch reopening a gem's namespace (`module Faraday; module Utils`)
+ * declares the module, so `Faraday.new(…)` — a module function answering a gem
+ * class — would otherwise type its result as a project `Faraday` instance.
+ */
+export function isModuleOnlyConstant(name: string, ctx: CallContext): boolean {
+  return (
+    ctx.symbolTable.lookup(name, { kinds: MODULE_KIND }).length > 0 &&
+    ctx.symbolTable.lookup(name, { kinds: CLASS_KIND }).length === 0
+  );
+}
+
+/**
+ * `type` as answered for a member called on `receiverModel` (bd
+ * tea-rags-mcp-2m83f.32.3): a scope a concern declares in `included do` is
+ * stated over the CONCERN (`SoftDeletable#without_deleted` → relation of
+ * `SoftDeletable`), but sent to an AR model it is a relation of that model.
+ * Only a relation that then reads as an AR relation is substituted; any other
+ * answer is returned as is.
+ */
+export function createRubyTypeRefOverReceiver(type: RubyTypeRef, receiverModel: string, ctx: CallContext): RubyTypeRef {
+  const substituted = substituteRelationSelf(type, receiverModel, (name) => isModuleOnlyConstant(name, ctx));
+  return substituted !== type && activeRecordRelationModel(substituted, ctx) !== undefined ? substituted : type;
 }
 
 /** `find_by_<attr>` / `find_by_<attr>!` — a dynamic finder (requires an attr suffix). */

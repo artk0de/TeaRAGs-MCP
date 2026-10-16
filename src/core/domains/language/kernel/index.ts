@@ -110,6 +110,11 @@ export { mergeExtraction, type ExtractionChannelMerger, type ExtractionMergeRule
 export { methodKindFromClassify } from "./method-kind.js";
 export { conventionClassNameFor, type NamingConventionPorts } from "./naming-convention.js";
 export {
+  OrmRelationChainSymbolResolutionStrategy,
+  substituteRelationSelf,
+  type OrmRelationPorts,
+} from "./orm-relation-chain.js";
+export {
   CHAIN_MAX_HOPS_DEFAULT,
   callArgumentText,
   propagateReceiverType,
