@@ -473,7 +473,12 @@ export class CallEdgeResolutionRunner {
     const view = this.runState.hierarchyViewFor(extraction.language);
     const recorder = view === undefined ? undefined : new HierarchyDependencyRecorder(view);
     this.activeHierarchy = recorder === undefined ? undefined : { relPath: extraction.relPath, recorder };
-    const residual = new ResidualSiteCollector(extraction.relPath, symbolTable, this.residualMenuLimit);
+    const residual = new ResidualSiteCollector(
+      extraction.relPath,
+      symbolTable,
+      this.residualMenuLimit,
+      extraction.language,
+    );
     this.activeResidual = residual;
     try {
       // Call sites FIRST, file edges second (bd tea-rags-mcp-y99pg.38): a

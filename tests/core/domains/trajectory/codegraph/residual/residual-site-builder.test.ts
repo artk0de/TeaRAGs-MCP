@@ -90,7 +90,7 @@ describe("ResidualSiteCollector", () => {
       def("users", "app/helpers/users.rb"),
       def("Firm#users", "web/src/firm.ts"),
     ]);
-    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT);
+    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT, "ruby");
 
     collector.observe(METHOD, CALL, DYNAMIC_MISS);
 
@@ -116,13 +116,15 @@ describe("ResidualSiteCollector", () => {
         candidates: ["Firm#users", "Team#users"],
         menuHash: residualMenuHash(["Firm#users", "Team#users"]),
         menuOverflow: false,
+        language: "ruby",
+        receiverKind: "dynamic",
       },
     ]);
   });
 
   it("cuts a menu over the limit and marks it overflowed", () => {
     const defs = ["A", "B", "C"].map((owner) => def(`${owner}#users`, `app/models/${owner}.rb`));
-    const collector = new ResidualSiteCollector("app/services/billing.rb", tableOf(defs), 2);
+    const collector = new ResidualSiteCollector("app/services/billing.rb", tableOf(defs), 2, "ruby");
 
     collector.observe(METHOD, CALL, {
       receiverKind: "chain",
@@ -132,6 +134,7 @@ describe("ResidualSiteCollector", () => {
     const [row] = collector.rows();
     expect(row).toMatchObject({
       kind: "ambiguous",
+      receiverKind: "chain",
       candidates: ["A#users", "B#users"],
       menuOverflow: true,
     });
@@ -139,7 +142,12 @@ describe("ResidualSiteCollector", () => {
   });
 
   it("records nothing for a non-residual verdict or an empty menu", () => {
-    const collector = new ResidualSiteCollector("app/services/billing.rb", tableOf([]), DEFAULT_RESIDUAL_MENU_LIMIT);
+    const collector = new ResidualSiteCollector(
+      "app/services/billing.rb",
+      tableOf([]),
+      DEFAULT_RESIDUAL_MENU_LIMIT,
+      "ruby",
+    );
 
     collector.observe(METHOD, CALL, DYNAMIC_MISS);
     collector.observe(METHOD, CALL, {
@@ -155,6 +163,7 @@ describe("ResidualSiteCollector", () => {
       "app/services/billing.rb",
       tableOf([def("Firm#users", "app/models/firm.rb")]),
       DEFAULT_RESIDUAL_MENU_LIMIT,
+      "ruby",
     );
 
     collector.observe(
@@ -176,7 +185,7 @@ describe("ResidualSiteCollector — exclusions", () => {
   const table = tableOf([def("Firm#users", "app/models/firm.rb")]);
 
   it("drops an excluded site and counts it under its rule", () => {
-    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT);
+    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT, "ruby");
 
     collector.observe(METHOD, CALL, DYNAMIC_MISS, () => "frameworkMember");
     collector.observe(METHOD, CALL, DYNAMIC_MISS, () => "schemaColumn");
@@ -188,7 +197,7 @@ describe("ResidualSiteCollector — exclusions", () => {
   });
 
   it("keeps a site the exclusion answers null for", () => {
-    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT);
+    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT, "ruby");
 
     collector.observe(METHOD, CALL, DYNAMIC_MISS, () => null);
 
@@ -197,7 +206,7 @@ describe("ResidualSiteCollector — exclusions", () => {
   });
 
   it("never asks the exclusion for a site that is not residual or has no menu", () => {
-    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT);
+    const collector = new ResidualSiteCollector("app/services/billing.rb", table, DEFAULT_RESIDUAL_MENU_LIMIT, "ruby");
     const exclude = vi.fn(() => "frameworkMember" as const);
 
     collector.observe(METHOD, CALL, { receiverKind: "dynamic", outcome: "resolved" }, exclude);

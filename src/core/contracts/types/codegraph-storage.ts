@@ -41,7 +41,12 @@ import type {
 } from "./codegraph-graph.js";
 import type { HierarchySnapshot, InheritanceEdge } from "./codegraph-hierarchy.js";
 import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
-import type { ModelEdgeApplyResult, ModelEdgeRow, ResidualCallSiteRow } from "./codegraph-residual.js";
+import type {
+  ModelEdgeApplyResult,
+  ModelEdgeRow,
+  ModelResolvedSiteCount,
+  ResidualCallSiteRow,
+} from "./codegraph-residual.js";
 import type {
   CallableSymbolKind,
   FileScopedSymbolId,
@@ -1739,6 +1744,13 @@ export interface CodegraphResidualEdgeStore {
    * not a current residual row or whose target symbol is unknown is skipped.
    */
   applyModelEdges: (model: string, edges: ModelEdgeRow[]) => Promise<ModelEdgeApplyResult>;
+
+  /**
+   * Residual sites whose call a model edge resolves, counted once per site. An
+   * edge of a model named in `thresholds` counts only at `p` at or above its
+   * threshold; an unnamed model's edges count as stored.
+   */
+  getModelResolvedSiteCounts: (thresholds: Readonly<Record<string, number>>) => Promise<ModelResolvedSiteCount[]>;
 }
 
 /**

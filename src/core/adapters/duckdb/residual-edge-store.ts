@@ -15,6 +15,7 @@ import type {
   CodegraphResidualEdgeStore,
   ModelEdgeApplyResult,
   ModelEdgeRow,
+  ModelResolvedSiteCount,
   ResidualCallSiteRow,
   ResidualKind,
 } from "../../contracts/types/codegraph.js";
@@ -39,6 +40,16 @@ interface ResidualSiteDbRow {
   candidates: string;
   menu_hash: string;
   menu_overflow: boolean;
+  language: string | null;
+  receiver_kind: string | null;
+}
+
+interface ModelResolvedSiteCountDbRow {
+  language: string | null;
+  receiver_kind: string | null;
+  kind: string;
+  model: string;
+  sites: number | bigint;
 }
 
 export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
@@ -47,7 +58,7 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
   async readResidualCallSites(): Promise<ResidualCallSiteRow[]> {
     const rows = await this.session.queryAll<ResidualSiteDbRow>(
       `SELECT site_key, source_rel_path, method_symbol_id, method_start_line, method_end_line, line, call_column,
-              receiver_text, member, kind, candidates, menu_hash, menu_overflow
+              receiver_text, member, kind, candidates, menu_hash, menu_overflow, language, receiver_kind
          FROM cg_residual_call_sites ORDER BY source_rel_path, site_key`,
     );
     return rows.map((r) => ({
@@ -64,6 +75,48 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
       candidates: JSON.parse(r.candidates) as string[],
       menuHash: r.menu_hash,
       menuOverflow: r.menu_overflow,
+      ...(r.language === null ? {} : { language: r.language }),
+      ...(r.receiver_kind === null ? {} : { receiverKind: r.receiver_kind }),
+    }));
+  }
+
+  /**
+   * A site is resolved when a model edge holds its call: same method, file and
+   * call text — the method-edge key, which one edge shares between sites making
+   * the same call. Each site counts once, under the model of its most probable
+   * edge.
+   */
+  async getModelResolvedSiteCounts(thresholds: Readonly<Record<string, number>>): Promise<ModelResolvedSiteCount[]> {
+    const models = Object.entries(thresholds);
+    const minP =
+      models.length === 0
+        ? "0"
+        : `CASE e.model ${models.map(() => "WHEN ? THEN CAST(? AS DOUBLE)").join(" ")} ELSE 0 END`;
+    const rows = await this.session.queryAll<ModelResolvedSiteCountDbRow>(
+      `WITH resolved AS (
+         SELECT r.language, r.receiver_kind, r.kind, arg_max(e.model, e.p) AS model
+           FROM cg_residual_call_sites r
+           JOIN cg_symbols_edges_method e
+             ON e.origin = 'model'
+            AND e.source_symbol_id = r.method_symbol_id
+            AND e.source_rel_path = r.source_rel_path
+            AND e.call_expression = CASE WHEN r.receiver_text = '' THEN r.member
+                                         ELSE r.receiver_text || '.' || r.member END
+            AND e.p >= ${minP}
+          GROUP BY r.source_rel_path, r.site_key, r.language, r.receiver_kind, r.kind
+       )
+       SELECT language, receiver_kind, kind, model, COUNT(*) AS sites
+         FROM resolved
+        GROUP BY language, receiver_kind, kind, model
+        ORDER BY language NULLS FIRST, receiver_kind NULLS FIRST, kind, model`,
+      models.flatMap(([model, threshold]) => [model, threshold]),
+    );
+    return rows.map((r) => ({
+      language: r.language,
+      receiverKind: r.receiver_kind,
+      kind: r.kind as ResidualKind,
+      model: r.model,
+      sites: Number(r.sites),
     }));
   }
 
