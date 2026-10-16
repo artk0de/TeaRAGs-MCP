@@ -1554,6 +1554,34 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
       );
     });
 
+    // bd tea-rags-mcp-2m83f.45 — sites the model put outside the project, beside the model share.
+    it("renders the model's external sites next to its edged sites", () => {
+      const out = render(
+        summary({
+          inProjectEdgeRecall: 0.93,
+          staticInProjectEdgeRecall: 0.9,
+          callsResolvedByModel: 101,
+          callsExternalByModel: 340,
+          modelResolution: [{ model: "kev", threshold: 0.7, sites: 101, external: 340 }],
+        }),
+      );
+
+      expect(out).toContain("resolve rate: 0.93 (static 0.9 · model 101 sites · external 340, kev p>=0.7)\n");
+    });
+
+    it("renders external sites when the model edged none", () => {
+      const out = render(
+        summary({
+          inProjectEdgeRecall: 0.91,
+          staticInProjectEdgeRecall: 0.9,
+          callsExternalByModel: 12,
+          modelResolution: [{ model: "kev", threshold: 0.7, sites: 0, external: 12 }],
+        }),
+      );
+
+      expect(out).toContain("resolve rate: 0.91 (static 0.9 · model 0 sites · external 12, kev p>=0.7)\n");
+    });
+
     it("leaves the receiver-kind gap of pre-055 model sites out of the plain form", () => {
       const out = render(
         summary({

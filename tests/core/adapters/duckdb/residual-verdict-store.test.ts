@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { DuckDBInstance } from "@duckdb/node-api";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { ResidualVerdictStore } from "../../../../src/core/adapters/duckdb/residual-verdict-store.js";
@@ -147,9 +148,28 @@ describe("ResidualVerdictStore", () => {
 
     expect(await store.find([{ siteKey: "k1", menuHash: "m1", modelVersion: "kev-4b@v1.0" }])).toHaveLength(1);
   });
+  it("stores a none verdict as a null pick, also in a store written before none existed", async () => {
+    await store.close();
+    const file = ResidualVerdictStore.pathFor(root, "code_a");
+    rmSync(file, { force: true });
+    const instance = await DuckDBInstance.create(file);
+    const conn = await instance.connect();
+    await conn.run(
+      "CREATE TABLE residual_verdicts (site_key VARCHAR NOT NULL, menu_hash VARCHAR NOT NULL, model VARCHAR NOT NULL, model_version VARCHAR NOT NULL, pick VARCHAR NOT NULL, p DOUBLE NOT NULL, probabilities VARCHAR NOT NULL, question_payload VARCHAR NOT NULL, created_at BIGINT NOT NULL, last_seen_at BIGINT NOT NULL, PRIMARY KEY (site_key, menu_hash, model, model_version))",
+    );
+    conn.closeSync();
+    instance.closeSync();
+    store = await ResidualVerdictStore.open(root, "code_a");
+
+    await store.put([verdict({ pick: null, p: 0.93 })]);
+
+    const [stored] = await store.find([{ siteKey: verdict().siteKey, menuHash: "m1", modelVersion: "kev-4b@v1.0" }]);
+    expect(stored).toMatchObject({ pick: null, p: 0.93 });
+  });
+
   it("a batch that fails part-way stores none of its verdicts", async () => {
     const batch = Array.from({ length: 250 }, (_, i) => verdict({ siteKey: `s${i}` }));
-    batch[249] = verdict({ siteKey: "s249", pick: null as unknown as string });
+    batch[249] = verdict({ siteKey: "s249", model: null as unknown as string });
 
     await expect(store.put(batch)).rejects.toThrow();
 

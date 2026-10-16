@@ -347,33 +347,40 @@ interface RealizedResolveRate {
   recall: number | null;
   staticRecall?: number | null;
   modelSites?: number;
+  /** Sites the model put outside the project (bd tea-rags-mcp-2m83f.45). */
+  externalSites?: number;
 }
 
 function realizedRateOf(row: {
   inProjectEdgeRecall: number | null;
   staticInProjectEdgeRecall?: number | null;
   callsResolvedByModel?: number;
+  callsExternalByModel?: number;
 }): RealizedResolveRate {
   return {
     recall: row.inProjectEdgeRecall,
     ...(row.staticInProjectEdgeRecall === undefined ? {} : { staticRecall: row.staticInProjectEdgeRecall }),
     ...(row.callsResolvedByModel === undefined ? {} : { modelSites: row.callsResolvedByModel }),
+    ...(row.callsExternalByModel === undefined ? {} : { externalSites: row.callsExternalByModel }),
   };
 }
 
 /**
- * `0.92 (static 0.91 · model 117 sites, kev p>=0.7)` — the combined recall,
- * then the static floor and the model-resolved sites when a model raised it;
- * the bare recall otherwise.
+ * `0.92 (static 0.91 · model 117 sites · external 340, kev p>=0.7)` — the
+ * combined recall, then the static floor, the model-resolved sites and the sites
+ * the model put outside the project when a model moved it; the bare recall otherwise.
  */
 function renderRecallWithModel(rate: RealizedResolveRate, models: CodegraphResolve["modelResolution"]): string {
   const recall = renderRecall(rate.recall);
-  if (rate.modelSites === undefined || rate.modelSites === 0) return recall;
+  const modelSites = rate.modelSites ?? 0;
+  const externalSites = rate.externalSites ?? 0;
+  if (modelSites === 0 && externalSites === 0) return recall;
   const modelNames = (models ?? [])
     .map((m) => (m.threshold === undefined ? m.model : `${m.model} p>=${m.threshold}`))
     .join(" / ");
   const staticPart = rate.staticRecall === undefined ? "" : `static ${renderRecall(rate.staticRecall)} · `;
-  return `${recall} (${staticPart}model ${rate.modelSites} sites${modelNames === "" ? "" : `, ${modelNames}`})`;
+  const externalPart = externalSites === 0 ? "" : ` · external ${externalSites}`;
+  return `${recall} (${staticPart}model ${modelSites} sites${externalPart}${modelNames === "" ? "" : `, ${modelNames}`})`;
 }
 
 /** Model-resolved sites no receiver-kind row carries, or `null` when none. */

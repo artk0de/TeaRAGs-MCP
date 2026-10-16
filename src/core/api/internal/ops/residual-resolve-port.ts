@@ -51,6 +51,7 @@ export function skippedResidualReport(reason: string, mode: ResidualPassMode): R
     requeuedGroups: 0,
     belowThreshold: 0,
     sitesEdged: 0,
+    externalByModel: 0,
     edgesApplied: 0,
     derived: "unchanged",
     durations: { readMs: 0, askMs: 0, applyMs: 0, recomputeMs: 0, totalMs: 0 },

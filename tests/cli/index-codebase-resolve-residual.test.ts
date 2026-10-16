@@ -43,6 +43,7 @@ const REPORT: ResidualPassReport = {
   requeuedGroups: 0,
   belowThreshold: 3,
   sitesEdged: 79,
+  externalByModel: 12,
   edgesApplied: 77,
   derived: "stale",
   durations: { readMs: 5, askMs: 0, applyMs: 20, recomputeMs: 15, totalMs: 25 },
@@ -91,7 +92,9 @@ describe("the residual pass in the run's output", () => {
     expect(text).toContain("Residual resolution");
     expect(text).toContain("skipped (ask): provider kev unavailable: connect ECONNREFUSED");
     expect(text).toContain("120 sites, 80 from cache, 0 asked, 77 model edges applied");
-    expect(text).toContain("4 over the menu limit, 9 under the menu floor, 79 sites edged, derived metrics stale");
+    expect(text).toContain(
+      "4 over the menu limit, 9 under the menu floor, 79 sites edged, 12 external by model, derived metrics stale",
+    );
   });
 
   it("shows the failed, requeued and aborted groups in the status block", () => {

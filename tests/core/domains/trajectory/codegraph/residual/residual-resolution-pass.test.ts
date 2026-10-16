@@ -11,11 +11,14 @@ import {
   KevStateTooLongError,
   KevTimeoutError,
 } from "../../../../../../src/core/adapters/kev/errors.js";
-import type {
-  ModelEdgeRow,
-  ResidualCallSiteRow,
+import {
+  RESIDUAL_QUESTION_VERSION,
+  type ModelEdgeRow,
+  type ModelExternalSiteRow,
+  type ResidualCallSiteRow,
 } from "../../../../../../src/core/contracts/types/codegraph-residual.js";
 import {
+  residualQuestionHash,
   ResidualResolutionPass,
   type ResidualPassInput,
 } from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-resolution-pass.js";
@@ -67,7 +70,7 @@ class FakeProvider implements ResidualModelProvider {
   versionCalls = 0;
   healthCalls = 0;
 
-  constructor(private readonly answer: (q: ResidualQuestion) => { pick: string; p: number }) {}
+  constructor(private readonly answer: (q: ResidualQuestion) => { pick: string | null; p: number }) {}
 
   version = async (): Promise<string> => {
     this.versionCalls++;
@@ -102,7 +105,13 @@ class FakeProvider implements ResidualModelProvider {
     if (this.tooLongOn.has(group.methodSymbolId)) throw new KevStateTooLongError("http://gpu:1", "too long");
     return group.questions.map((q) => {
       const { pick, p } = this.answer(q);
-      return { siteKey: q.siteKey, pick, p, probabilities: { [pick]: p }, questionPayload: JSON.stringify(q) };
+      return {
+        siteKey: q.siteKey,
+        pick,
+        p,
+        probabilities: { [pick ?? "(none)"]: p },
+        questionPayload: JSON.stringify(q),
+      };
     });
   };
 }
@@ -123,7 +132,7 @@ class LeasedProvider extends FakeProvider {
     };
   };
 
-  constructor(answer: (q: ResidualQuestion) => { pick: string; p: number }) {
+  constructor(answer: (q: ResidualQuestion) => { pick: string | null; p: number }) {
     super(answer);
     const ask = this.resolveGroup;
     this.resolveGroup = async (group, signal) => {
@@ -137,10 +146,12 @@ class LeasedProvider extends FakeProvider {
 /** `stored` defaults to one edge per site, `changed` to true; a test sets either to model the adapter's diff. */
 function fakeGraphDb(rows: ResidualCallSiteRow[]) {
   const applied: { model: string; edges: ModelEdgeRow[] }[] = [];
+  const external: { model: string; sites: ModelExternalSiteRow[] }[] = [];
   const events: string[] = [];
   const state: { stored?: number; changed: boolean; recomputeError?: Error } = { changed: true };
   return {
     applied,
+    external,
     events,
     state,
     staleMarks: () => events.filter((e) => e === "markStale").length,
@@ -149,6 +160,9 @@ function fakeGraphDb(rows: ResidualCallSiteRow[]) {
     applyModelEdges: async (model: string, edges: ModelEdgeRow[]) => {
       applied.push({ model, edges });
       return { stored: state.stored ?? edges.length, changed: state.changed };
+    },
+    applyModelExternalSites: async (model: string, sites: ModelExternalSiteRow[]) => {
+      external.push({ model, sites });
     },
     markDerivedStale: async () => {
       events.push("markStale");
@@ -193,6 +207,7 @@ describe("ResidualResolutionPass", () => {
       concurrency: 4,
       menuLimit: 40,
       minMenu: 1,
+      noneThreshold: 0.8,
       retentionDays: 180,
       recomputeDerived: graphDb.recomputeDerived,
       readMethodSource: async (relPath, startLine, endLine) => {
@@ -233,6 +248,75 @@ describe("ResidualResolutionPass", () => {
     expect(report.reason).toBeUndefined();
   });
 
+  describe("none of these", () => {
+    it("counts a none verdict at or above the none threshold as externalByModel and stores it, not as an edge", async () => {
+      const graphDb = fakeGraphDb([
+        row({ siteKey: "ext" }),
+        row({ siteKey: "unsure", line: 4 }),
+        row({ siteKey: "firm", line: 5 }),
+      ]);
+      const provider = new FakeProvider((q) =>
+        q.siteKey === "firm" ? { pick: "Firm#users", p: 0.9 } : { pick: null, p: q.siteKey === "ext" ? 0.8 : 0.79 },
+      );
+
+      const report = await run(graphDb, provider);
+
+      expect(appliedSites(graphDb)).toEqual(["firm"]);
+      expect(graphDb.external).toEqual([
+        {
+          model: "kev",
+          sites: [{ siteKey: "ext", sourceRelPath: "app/a.rb", menuHash: "menu-1", model: "kev", p: 0.8 }],
+        },
+      ]);
+      expect(report).toMatchObject({ answered: 3, sitesEdged: 1, externalByModel: 1, belowThreshold: 1 });
+    });
+
+    it("stores a none verdict with a null pick and re-applies it from the cache", async () => {
+      const graphDb = fakeGraphDb([row({ siteKey: "ext" })]);
+      await run(graphDb, new FakeProvider(() => ({ pick: null, p: 0.95 })));
+
+      const report = await run(graphDb, new FakeProvider(firmPick), { mode: "cacheOnly" });
+
+      expect(report).toMatchObject({ cacheHits: 1, externalByModel: 1, sitesEdged: 0 });
+      expect(graphDb.external.at(-1)?.sites.map((s) => s.siteKey)).toEqual(["ext"]);
+    });
+
+    it("asks a one-entry menu: one class plus none is a binary question", async () => {
+      const graphDb = fakeGraphDb([row({ siteKey: "solo", candidates: ["Firm#users"] })]);
+      const provider = new FakeProvider(firmPick);
+
+      const report = await run(graphDb, provider, { minMenu: 1 });
+
+      expect(report).toMatchObject({ menuTooSmall: 0, asked: 1, sitesEdged: 1 });
+    });
+
+    it("keys verdicts by the menu hash folded with the question version, so wave-1 verdicts miss", async () => {
+      expect(RESIDUAL_QUESTION_VERSION).toBe(2);
+      expect(residualQuestionHash("menu-1")).not.toBe("menu-1");
+      expect(residualQuestionHash("menu-1")).toBe(residualQuestionHash("menu-1"));
+      await store.put([
+        {
+          siteKey: "s1",
+          menuHash: "menu-1",
+          model: "kev",
+          modelVersion: "fake@1",
+          pick: "Firm#users",
+          p: 0.99,
+          probabilities: {},
+          questionPayload: "{}",
+          createdAt: 1,
+          lastSeenAt: 1,
+        },
+      ]);
+      const provider = new FakeProvider(firmPick);
+
+      const report = await run(fakeGraphDb([row({ siteKey: "s1" })]), provider);
+
+      expect(report).toMatchObject({ cacheHits: 0, asked: 1 });
+      expect(provider.calls[0].questions[0].menuHash).toBe(residualQuestionHash("menu-1"));
+    });
+  });
+
   it("applies only verdicts at or above the provider threshold, then marks derived metrics stale", async () => {
     const graphDb = fakeGraphDb([row({ siteKey: "sure" }), row({ siteKey: "unsure", line: 4 })]);
     const provider = new FakeProvider((q) =>
@@ -267,7 +351,7 @@ describe("ResidualResolutionPass", () => {
     const report = await run(graphDb, provider);
 
     expect(report).toMatchObject({ asked: 1, answered: 0, edgesApplied: 0 });
-    expect(await store.findLatest([{ siteKey: "s1", menuHash: "menu-1" }], "kev")).toEqual([]);
+    expect(await store.findLatest([{ siteKey: "s1", menuHash: residualQuestionHash("menu-1") }], "kev")).toEqual([]);
   });
 
   it("reuses cached verdicts for the same site, menu and model version, and re-applies the full edge set", async () => {
@@ -660,8 +744,8 @@ describe("ResidualResolutionPass", () => {
 
     const left = await store.findLatest(
       [
-        { siteKey: "kept", menuHash: "menu-1" },
-        { siteKey: "gone", menuHash: "menu-1" },
+        { siteKey: "kept", menuHash: residualQuestionHash("menu-1") },
+        { siteKey: "gone", menuHash: residualQuestionHash("menu-1") },
       ],
       "kev",
     );
