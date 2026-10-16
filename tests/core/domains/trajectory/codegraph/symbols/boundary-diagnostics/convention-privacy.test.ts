@@ -216,3 +216,25 @@ describe("detectConventionPrivacyLeaks (bd tea-rags-mcp-r8hme.1)", () => {
     });
   });
 });
+
+describe("detectConventionPrivacyLeaks — model edge provenance (bd tea-rags-mcp-2m83f.40)", () => {
+  it("carries origin, model and p from a model edge onto its violation", () => {
+    const modelEdge: NonPublicMemberEdge = {
+      ...py("app/views.py", "render", "pkg/repo.py", "Repo#_load"),
+      origin: "model",
+      model: "kev",
+      p: 0.8,
+    };
+    const report = detectConventionPrivacyLeaks([modelEdge]);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0]).toMatchObject({ origin: "model", model: "kev", p: 0.8 });
+  });
+
+  it("leaves a static edge's violation without provenance fields", () => {
+    const report = detectConventionPrivacyLeaks([py("app/views.py", "render", "pkg/repo.py", "Repo#_load")]);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0]).not.toHaveProperty("origin");
+    expect(report.violations[0]).not.toHaveProperty("model");
+    expect(report.violations[0]).not.toHaveProperty("p");
+  });
+});

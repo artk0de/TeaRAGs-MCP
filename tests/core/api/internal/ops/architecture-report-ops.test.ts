@@ -709,6 +709,22 @@ describe("ArchitectureReportOps#build — conventionPrivacy (bd tea-rags-mcp-r8h
     });
   });
 
+  it("marks a finding a model edge produced with origin, model and p, and leaves a static one unmarked", async () => {
+    const modelEdge: NonPublicMemberEdge = { ...underscoreEdge, origin: "model", model: "kev", p: 0.8 };
+    const report = await new ArchitectureReportOps().build(graphDb(facadeGraph(), [modelEdge]), {});
+    const [finding] = report.violations.filter(
+      (v) => v.detector === "leakingAbstraction" && v.kind === "conventionPrivacy",
+    );
+    expect(finding?.evidence).toEqual({
+      sourceSymbolId: "render",
+      targetSymbolId: "Repo#_load",
+      rule: "python-underscore",
+      origin: "model",
+      model: "kev",
+      p: 0.8,
+    });
+  });
+
   it("exempts a subclass calling its inherited _member through self, reading the persisted hierarchy (bd tea-rags-mcp-r8hme.41)", async () => {
     const inherited: NonPublicMemberEdge = {
       sourceRelPath: "src/flask/app.py",

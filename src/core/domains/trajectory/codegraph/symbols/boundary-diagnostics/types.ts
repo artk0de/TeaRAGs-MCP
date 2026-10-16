@@ -16,6 +16,7 @@ import type {
   MainSequenceVolatilityCut,
   MainSequenceZone,
 } from "../../../../../contracts/types/architecture-report.js";
+import type { EdgeOrigin } from "../../../../../contracts/types/codegraph-residual.js";
 import type {
   FileDependencyEdge,
   FileDependencyGraphFile,
@@ -386,6 +387,12 @@ export interface ConventionPrivacyViolation {
   sourceSymbolId: string;
   targetSymbolId: string;
   rule: ConventionPrivacyRule;
+  /** `"model"` when a residual-resolution verdict produced the edge; absent on a static edge. */
+  origin?: EdgeOrigin;
+  /** Provider id of a model edge. */
+  model?: string;
+  /** Provider probability of a model edge. */
+  p?: number;
 }
 
 export interface ConventionPrivacySummary {
