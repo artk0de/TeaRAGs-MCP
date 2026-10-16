@@ -39,6 +39,8 @@ export interface ResidualVerdictView {
   receiverKind: ReceiverKind;
   outcome: "resolved" | "unresolved" | "ambiguous";
   missBucket?: string;
+  /** The over-cap aggregate an ambiguous site recorded; a narrowed edge replaces it. */
+  ambiguousFanout?: AmbiguousFanout;
 }
 
 /** The enclosing method of a call site — a `ChunkExtraction` fits it. */
@@ -59,7 +61,11 @@ export interface ResidualNarrowingOptions {
 export interface NarrowedResidualSite {
   receiverKind: ReceiverKind;
   edge: GraphEdges["methodEdges"][number];
+  /** The ambiguous site's over-cap aggregate the edge stands in for; absent for a dynamic site. */
+  replacesFanout?: AmbiguousFanout;
 }
+
+type AmbiguousFanout = NonNullable<GraphEdges["ambiguousFanouts"]>[number];
 
 /**
  * Misses that say nothing about the receiver's class: the classifier put the
@@ -335,7 +341,10 @@ export class ResidualSiteCollector {
     // An edge needs the OTHER calls to have done the narrowing: a member only one
     // class answers on its own is a namesake as often as not (`filter`, `save!`).
     const narrowedByConstraints = own.size > 1 && classes.size === 1;
-    if (narrowedByConstraints && targets.size === 1 && site.kind === "dynamic" && sole !== undefined) {
+    const fanout = site.kind === "ambiguous" ? site.verdict.ambiguousFanout : undefined;
+    // An ambiguous site's edge must replace its aggregate, or the site would count twice.
+    const replaceable = site.kind === "dynamic" || fanout !== undefined;
+    if (narrowedByConstraints && targets.size === 1 && replaceable && sole !== undefined) {
       this.narrowedSites.push({
         receiverKind: site.verdict.receiverKind,
         edge: {
@@ -344,6 +353,7 @@ export class ResidualSiteCollector {
           targetRelPath: sole[1].relPath,
           callExpression: site.call.callText,
         },
+        ...(fanout === undefined ? {} : { replacesFanout: fanout }),
       });
       return;
     }

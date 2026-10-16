@@ -213,4 +213,49 @@ describe("CallEdgeResolutionRunner.resolve — receiver narrowing", () => {
     expect(dynamic).toMatchObject({ attempted: 2, resolved: 1, narrowed: 1, narrowEmpty: 0 });
     expect(runState.stats.callsResolved).toBe(1);
   });
+
+  it("replaces an ambiguous site's over-cap aggregate with the exact edge once narrowing leaves one target", () => {
+    const resolver = {
+      resolve: () => null,
+      hasInProjectDefinition: () => true,
+      resolveDispatch: (call: { member: string }) =>
+        call.member === "users" ? { kind: "ambiguous", member: "users", candidateCount: 17 } : undefined,
+    };
+    const runState = new CodegraphRunState();
+    const runner = new CallEdgeResolutionRunner(factoryWith(resolver), runState);
+
+    const edges = runner.resolve(twoCalls, NARROW_TABLE);
+
+    expect(edges.methodEdges).toEqual([
+      {
+        sourceSymbolId: "Billing#run",
+        targetSymbolId: "Firm#users",
+        targetRelPath: "app/models/firm.rb",
+        callExpression: "account.users",
+      },
+    ]);
+    expect(edges.ambiguousFanouts).toBeUndefined();
+    expect(edges.residualCallSites?.map((row) => row.member)).toEqual(["plan"]);
+    const [dynamic] = runState.toResolveRunStatsRows().filter((r) => r.receiverKind === "dynamic");
+    expect(dynamic).toMatchObject({ attempted: 2, resolved: 1, narrowed: 1, ambiguousFanout: 0 });
+    expect(runState.stats.callsResolved).toBe(1);
+    expect(runState.stats.callsAmbiguousFanout).toBe(0);
+  });
+
+  it("keeps an ambiguous site's aggregate when only its own member narrows the receiver", () => {
+    const resolver = {
+      resolve: () => null,
+      hasInProjectDefinition: () => true,
+      resolveDispatch: (call: { member: string }) =>
+        call.member === "plan" ? { kind: "ambiguous", member: "plan", candidateCount: 17 } : undefined,
+    };
+    const runState = new CodegraphRunState();
+    const runner = new CallEdgeResolutionRunner(factoryWith(resolver), runState);
+
+    const edges = runner.resolve(twoCalls, NARROW_TABLE);
+
+    expect(edges.ambiguousFanouts?.map((a) => a.member)).toEqual(["plan"]);
+    expect(edges.methodEdges.map((e) => e.callExpression)).toEqual(["account.users"]);
+    expect(runState.stats.callsAmbiguousFanout).toBe(1);
+  });
 });

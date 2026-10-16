@@ -843,19 +843,32 @@ export class CallEdgeResolutionRunner {
       else if (bucket === "noInProjectDef") stats.callsNoInProjectDef += 1;
       else if (bucket === "coreAmbiguous") stats.callsCoreAmbiguous += 1;
     });
-    this.settleNarrowedResidual(methodEdges, kindTally);
+    this.settleNarrowedResidual(methodEdges, ambiguousFanouts, kindTally);
   }
 
   /**
    * Residual sites their receiver's constraint set settled (wave 1.5 §3): each
    * becomes a static edge and moves from the in-project miss it was tallied as
-   * to `resolved`, counted again under `narrowed`. A site whose constraints
+   * to `resolved`, counted again under `narrowed`. An ambiguous site's edge
+   * replaces its over-cap aggregate, so the site leaves `ambiguousFanout`
+   * instead. A site whose constraints
    * intersected to no class is counted under `narrowEmpty` and keeps its row.
    */
-  private settleNarrowedResidual(methodEdges: MethodEdges, kindTally: Record<ReceiverKind, ReceiverKindTally>): void {
+  private settleNarrowedResidual(
+    methodEdges: MethodEdges,
+    ambiguousFanouts: AmbiguousFanouts,
+    kindTally: Record<ReceiverKind, ReceiverKindTally>,
+  ): void {
     const residual = this.activeResidual;
     if (residual === undefined) return;
-    for (const { receiverKind, edge } of residual.narrowed()) {
+    for (const { receiverKind, edge, replacesFanout } of residual.narrowed()) {
+      if (replacesFanout !== undefined) {
+        const at = ambiguousFanouts.indexOf(replacesFanout);
+        if (at < 0) continue;
+        ambiguousFanouts.splice(at, 1);
+        kindTally[receiverKind].ambiguousFanout -= 1;
+        this.runState.stats.callsAmbiguousFanout -= 1;
+      }
       methodEdges.push(edge);
       kindTally[receiverKind].resolved += 1;
       kindTally[receiverKind].narrowed += 1;

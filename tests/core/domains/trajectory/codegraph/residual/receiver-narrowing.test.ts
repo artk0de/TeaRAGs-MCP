@@ -97,6 +97,33 @@ describe("ResidualSiteCollector — receiver narrowing", () => {
     expect(collector.narrowEmptyKinds()).toEqual([]);
   });
 
+  it("settles an ambiguous site narrowed to one target as an edge carrying the aggregate it replaces", () => {
+    const collector = collectorOf(BASE_DEFS);
+    const fanout = { sourceSymbolId: "Billing#run", callExpression: "r.number", member: "number", candidateCount: 17 };
+
+    collector.observe(METHOD, call("r", "firm_id", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("r", "number", 13), {
+      receiverKind: "dynamic",
+      outcome: "ambiguous",
+      ambiguousFanout: fanout,
+    });
+
+    const [narrowed] = collector.narrowed();
+    expect(narrowed?.edge.targetSymbolId).toBe("Invoice#number");
+    expect(narrowed?.replacesFanout).toBe(fanout);
+    expect(collector.rows()).toEqual([]);
+  });
+
+  it("keeps an ambiguous site with no aggregate to replace as a row", () => {
+    const collector = collectorOf(BASE_DEFS);
+
+    collector.observe(METHOD, call("r", "firm_id", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("r", "number", 13), { receiverKind: "dynamic", outcome: "ambiguous" });
+
+    expect(collector.narrowed()).toEqual([]);
+    expect(collector.rows().map((row) => [row.kind, row.candidates])).toEqual([["ambiguous", ["Invoice#number"]]]);
+  });
+
   it("tags a group's rows with one receiver group and its class set, each class with the target it reaches", () => {
     const defs = [
       def("Invoice#save", "app/models/invoice.rb"),
