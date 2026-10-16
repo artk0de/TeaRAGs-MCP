@@ -626,7 +626,9 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "Trace all simple call paths from one symbol to another, in execution order. " +
       "Lean path enumeration by default. Pass `rerank` danger preset to annotate each step " +
       "with git/churn overlay and sort paths most-dangerous first. Steps carry declared visibility " +
-      "when known (absent = unknown). Backed by codegraph DuckDB. " +
+      "when known (absent = unknown). Residual-model edges are walked and marked: a step reached by a " +
+      "model-only hop carries origin:'model', model, p; such a path carries minP (its weakest p). " +
+      "Backed by codegraph DuckDB. " +
       "from/to: host-class id with no node of its own → traced via the member's first definer up " +
       "hierarchy in MRO order; resolvedEndpoints names the id traced.",
     schemaKey: "trace_path",

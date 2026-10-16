@@ -99,6 +99,23 @@ export interface TracePathOpsDeps {
 
 const EMPTY: PathTraceResult = { paths: [], truncated: false };
 
+/** The model verdict behind a hop only model edges support (bd tea-rags-mcp-2m83f.40). */
+interface ModelHop {
+  model: string;
+  p: number;
+}
+
+/** Key of one (source → target) hop in {@link BoundedAdjacency.modelHops}. */
+function hopKey(source: FileScopedSymbolId, target: FileScopedSymbolId): string {
+  return `${source}\u0000${target}`;
+}
+
+/** The partial adjacency of one trace, with the provenance of every model-only hop. */
+interface BoundedAdjacency {
+  adjacency: Map<FileScopedSymbolId, FileScopedSymbolId[]>;
+  modelHops: Map<string, ModelHop>;
+}
+
 /** One endpoint resolved to the graph nodes its bare symbolId can denote. */
 interface EndpointCandidates {
   /** Files kept after the caller's optional exact-path filter. */
@@ -178,6 +195,7 @@ export class TracePathOps {
     let truncated: boolean;
     let visibility: DeclaredVisibilityIndex;
     let graphRanges: Map<FileScopedSymbolId, StepLineRange>;
+    let modelHops: Map<string, ModelHop>;
     try {
       ({ from, to } = await this.resolveEndpoints(handle, req));
       if (from.refs.length === 0 || to.refs.length === 0) {
@@ -186,7 +204,8 @@ export class TracePathOps {
         // caller can correct the request rather than guess.
         return this.withEndpointFacts({ paths: [], truncated: false }, from, to);
       }
-      const adjacency = await this.buildBoundedAdjacency(handle, from.refs, maxDepth);
+      let adjacency: Map<FileScopedSymbolId, FileScopedSymbolId[]>;
+      ({ adjacency, modelHops } = await this.buildBoundedAdjacency(handle, from.refs, maxDepth));
       // 2. Enumerate simple paths over the partial map (pure), once per
       //    candidate pair under one shared budget.
       ({ paths, truncated } = this.enumerateAcrossCandidates(adjacency, from.refs, to.refs, maxDepth, maxPaths));
@@ -232,7 +251,9 @@ export class TracePathOps {
 
     // 5. Assemble TracedPath per enumerated path. With danger, sort by
     //    aggregateDanger desc; without, keep enumeration order.
-    const traced: TracedPath[] = paths.map((p) => this.assemble(p, byNode, graphRanges, visibility, dangerByNode));
+    const traced: TracedPath[] = paths.map((p) =>
+      this.assemble(p, byNode, graphRanges, visibility, modelHops, dangerByNode),
+    );
     if (dangerByNode) traced.sort((a, b) => (b.aggregateDanger ?? 0) - (a.aggregateDanger ?? 0));
     return this.withEndpointFacts({ paths: traced, truncated }, from, to);
   }
@@ -338,14 +359,16 @@ export class TracePathOps {
    * Level-by-level BFS from every from-candidate, calling
    * `getCalleeEdgesScoped(frontier)` at most `maxDepth` times. Builds a PARTIAL
    * adjacency map reachable within `maxDepth` hops — never materialises the full
-   * call graph.
+   * call graph. Model-only hops are walked like any other and recorded in
+   * `modelHops` so the assembled steps can mark them.
    */
   private async buildBoundedAdjacency(
     handle: CollectionGraphHandle,
     seeds: FileScopedSymbolRef[],
     maxDepth: number,
-  ): Promise<Map<FileScopedSymbolId, FileScopedSymbolId[]>> {
+  ): Promise<BoundedAdjacency> {
     const adjacency = new Map<FileScopedSymbolId, FileScopedSymbolId[]>();
+    const modelHops = new Map<string, ModelHop>();
     const visited = new Set<FileScopedSymbolId>(seeds.map(fileScopedSymbolKey));
     let frontier: FileScopedSymbolRef[] = [...seeds];
     for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
@@ -360,6 +383,9 @@ export class TracePathOps {
         );
         for (const target of targets) {
           const targetKey = fileScopedSymbolKey(target);
+          if (target.origin === "model" && target.model !== undefined && target.p !== undefined) {
+            modelHops.set(hopKey(key, targetKey), { model: target.model, p: target.p });
+          }
           if (!visited.has(targetKey)) {
             visited.add(targetKey);
             next.push(target);
@@ -368,7 +394,7 @@ export class TracePathOps {
       }
       frontier = next;
     }
-    return adjacency;
+    return { adjacency, modelHops };
   }
 
   /**
@@ -474,9 +500,11 @@ export class TracePathOps {
     byNode: Map<FileScopedSymbolId, HydratedChunk>,
     graphRanges: Map<FileScopedSymbolId, StepLineRange>,
     visibility: DeclaredVisibilityIndex,
+    modelHops: ReadonlyMap<string, ModelHop>,
     dangerByNode?: Map<FileScopedSymbolId, StepDanger>,
   ): TracedPath {
-    const steps: PathStep[] = path.map((node) => {
+    let minP: number | undefined;
+    const steps: PathStep[] = path.map((node, i) => {
       // relativePath comes from the GRAPH node, never from a hydrated chunk:
       // the chunk is best-effort (it may be missing entirely), the graph edge
       // is what actually determined the walk.
@@ -494,15 +522,24 @@ export class TracePathOps {
       // Omitted, never null, when the graph states no level (bd tea-rags-mcp-sqqkz).
       const level = visibility.at(ref.relPath, ref.symbolId);
       if (level !== undefined) step.visibility = level;
+      // The hop that reached this step, when only a model verdict supports it.
+      const hop = i > 0 ? modelHops.get(hopKey(path[i - 1], node)) : undefined;
+      if (hop) {
+        step.origin = "model";
+        step.model = hop.model;
+        step.p = hop.p;
+        minP = minP === undefined ? hop.p : Math.min(minP, hop.p);
+      }
       const overlay = dangerByNode?.get(node)?.overlay;
       if (overlay) step.dangerOverlay = overlay;
       return step;
     });
-    if (!dangerByNode) return { steps }; // lean — no dangerRanking / aggregateDanger
+    const provenance = minP === undefined ? {} : { minP };
+    if (!dangerByNode) return { steps, ...provenance }; // lean — no dangerRanking / aggregateDanger
     const dangers = path.map((node) => dangerByNode.get(node)?.score ?? 0);
     const dangerRanking = steps.map((_, i) => i).sort((a, b) => dangers[b] - dangers[a]);
     const aggregateDanger = dangers.length > 0 ? Math.max(...dangers) : 0;
-    return { steps, dangerRanking, aggregateDanger };
+    return { steps, dangerRanking, aggregateDanger, ...provenance };
   }
 }
 

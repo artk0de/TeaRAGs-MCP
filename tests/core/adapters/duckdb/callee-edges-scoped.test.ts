@@ -242,3 +242,65 @@ describe("DuckDbGraphClient — getSymbolRelPaths (oxnvl seed resolution)", () =
     expect(await db.getSymbolRelPaths([])).toEqual(new Map());
   });
 });
+
+/**
+ * bd tea-rags-mcp-2m83f.40 — trace_path hops carry model provenance. The scoped
+ * adjacency collapses call sites to one hop per (source, target); a hop any
+ * static site supports stays static, a hop only model sites support carries the
+ * strongest model verdict.
+ */
+describe("DuckDbGraphClient — getCalleeEdgesScoped provenance (2m83f.40)", () => {
+  let dir: string;
+  let db: DuckDbGraphClient;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), "cg-callee-scoped-origin-"));
+    db = new DuckDbGraphClient({ path: join(dir, "g.duckdb") });
+    await db.init();
+    await runMigrations(db, DATABASE_MIGRATIONS);
+    const edge = (targetSymbolId: string, callExpression: string) => ({
+      sourceSymbolId: "Billing#run",
+      targetSymbolId,
+      targetRelPath: `app/${targetSymbolId.split("#")[0].toLowerCase()}.rb`,
+      callExpression,
+      edgeKind: "exact" as const,
+      confidence: 1,
+    });
+    await db.upsertFile(
+      { relPath: "app/billing.rb", language: "ruby" },
+      {
+        fileEdges: [],
+        methodEdges: [
+          edge("Firm#users", "firm.users"),
+          edge("Firm#users", "account.users"),
+          edge("Team#members", "a.members"),
+          edge("Team#members", "b.members"),
+          edge("Plan#price", "plan.price"),
+        ],
+      },
+    );
+    const mark = async (callExpression: string, p: number) =>
+      db.run("UPDATE cg_symbols_edges_method SET origin = 'model', model = 'kev', p = ? WHERE call_expression = ?", [
+        p,
+        callExpression,
+      ]);
+    await mark("account.users", 0.7);
+    await mark("a.members", 0.6);
+    await mark("b.members", 0.8);
+  });
+
+  afterEach(async () => {
+    await db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("marks a model-only hop with its strongest verdict, keeps a static-supported hop static", async () => {
+    const out = await db.getCalleeEdgesScoped([{ relPath: "app/billing.rb", symbolId: "Billing#run" }]);
+
+    expect(out.get(fileScopedSymbolKey({ relPath: "app/billing.rb", symbolId: "Billing#run" }))).toEqual([
+      { relPath: "app/firm.rb", symbolId: "Firm#users" },
+      { relPath: "app/plan.rb", symbolId: "Plan#price" },
+      { relPath: "app/team.rb", symbolId: "Team#members", origin: "model", model: "kev", p: 0.8 },
+    ]);
+  });
+});

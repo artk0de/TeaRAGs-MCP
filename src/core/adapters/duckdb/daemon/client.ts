@@ -56,6 +56,7 @@ import type {
   RelPath,
   ResidualCallSiteRow,
   ResolveRunStatsRow,
+  ScopedCalleeTarget,
   StoredFieldAccessRow,
   SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
@@ -424,7 +425,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return this.graphReads.getCalleeEdges(symbolIds);
   }
 
-  async getCalleeEdgesScoped(refs: FileScopedSymbolRef[]): Promise<Map<FileScopedSymbolId, FileScopedSymbolRef[]>> {
+  async getCalleeEdgesScoped(refs: FileScopedSymbolRef[]): Promise<Map<FileScopedSymbolId, ScopedCalleeTarget[]>> {
     return this.graphReads.getCalleeEdgesScoped(refs);
   }
 
