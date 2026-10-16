@@ -77,7 +77,7 @@ export function residualMenuHash(candidates: readonly string[]): string {
 export type ResidualExclusionCounts = Record<ResidualExclusionRule, number>;
 
 export function emptyResidualExclusionCounts(): ResidualExclusionCounts {
-  return { schemaColumn: 0, frameworkMember: 0 };
+  return { schemaColumn: 0, frameworkMember: 0, timestampColumn: 0 };
 }
 
 export function addResidualExclusionCounts(
@@ -86,6 +86,7 @@ export function addResidualExclusionCounts(
 ): void {
   counts.schemaColumn += excluded.schemaColumn;
   counts.frameworkMember += excluded.frameworkMember;
+  counts.timestampColumn += excluded.timestampColumn;
 }
 
 export class ResidualSiteCollector {

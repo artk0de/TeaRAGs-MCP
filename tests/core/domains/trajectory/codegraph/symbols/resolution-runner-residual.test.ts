@@ -151,7 +151,7 @@ describe("CallEdgeResolutionRunner.resolve — residual exclusions", () => {
 
     expect(edges).not.toHaveProperty("residualCallSites");
     expect(residualExclusion).toHaveBeenCalledWith(expect.objectContaining({ member: "users" }), expect.anything());
-    expect(runState.stats.residualSitesExcluded).toEqual({ schemaColumn: 0, frameworkMember: 1 });
+    expect(runState.stats.residualSitesExcluded).toEqual({ schemaColumn: 0, frameworkMember: 1, timestampColumn: 0 });
   });
 
   it("keeps the site when the language answers no exclusion", () => {
@@ -166,6 +166,6 @@ describe("CallEdgeResolutionRunner.resolve — residual exclusions", () => {
     const edges = runner.resolve(EXTRACTION, TABLE);
 
     expect(edges.residualCallSites).toHaveLength(1);
-    expect(runState.stats.residualSitesExcluded).toEqual({ schemaColumn: 0, frameworkMember: 0 });
+    expect(runState.stats.residualSitesExcluded).toEqual({ schemaColumn: 0, frameworkMember: 0, timestampColumn: 0 });
   });
 });

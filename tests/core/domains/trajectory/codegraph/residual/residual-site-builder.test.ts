@@ -181,9 +181,10 @@ describe("ResidualSiteCollector — exclusions", () => {
     collector.observe(METHOD, CALL, DYNAMIC_MISS, () => "frameworkMember");
     collector.observe(METHOD, CALL, DYNAMIC_MISS, () => "schemaColumn");
     collector.observe(METHOD, CALL, DYNAMIC_MISS, () => "frameworkMember");
+    collector.observe(METHOD, CALL, DYNAMIC_MISS, () => "timestampColumn");
 
     expect(collector.rows()).toEqual([]);
-    expect(collector.excluded()).toEqual({ schemaColumn: 1, frameworkMember: 2 });
+    expect(collector.excluded()).toEqual({ schemaColumn: 1, frameworkMember: 2, timestampColumn: 1 });
   });
 
   it("keeps a site the exclusion answers null for", () => {
@@ -192,7 +193,7 @@ describe("ResidualSiteCollector — exclusions", () => {
     collector.observe(METHOD, CALL, DYNAMIC_MISS, () => null);
 
     expect(collector.rows()).toHaveLength(1);
-    expect(collector.excluded()).toEqual({ schemaColumn: 0, frameworkMember: 0 });
+    expect(collector.excluded()).toEqual({ schemaColumn: 0, frameworkMember: 0, timestampColumn: 0 });
   });
 
   it("never asks the exclusion for a site that is not residual or has no menu", () => {
@@ -203,6 +204,6 @@ describe("ResidualSiteCollector — exclusions", () => {
     collector.observe(METHOD, { ...CALL, member: "nobody" }, DYNAMIC_MISS, exclude);
 
     expect(exclude).not.toHaveBeenCalled();
-    expect(collector.excluded()).toEqual({ schemaColumn: 0, frameworkMember: 0 });
+    expect(collector.excluded()).toEqual({ schemaColumn: 0, frameworkMember: 0, timestampColumn: 0 });
   });
 });
