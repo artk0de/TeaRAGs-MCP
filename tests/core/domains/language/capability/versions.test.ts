@@ -509,6 +509,8 @@ describe("seeded support versions", () => {
       // on the model.
       // ruby 13: bd tea-rags-mcp-2m83f.36 — attr_reader / attr_accessor return
       // the type of the @ivar they read.
+      // ruby 21: bd tea-rags-mcp-2m83f.49 — argExprs carry constant paths and
+      // canonical literals, so constant and literal callers type a parameter.
       // ruby 20: bd tea-rags-mcp-2m83f.43 — def chunks carry localAssignmentLines
       // for residual receiver narrowing.
       // python 12: bd tea-rags-mcp-2m83f.32.6 — a convention receiver whose
@@ -525,7 +527,7 @@ describe("seeded support versions", () => {
         ["typescript", 15],
         ["javascript", 5],
         ["python", 13],
-        ["ruby", 20],
+        ["ruby", 21],
         ["java", 4],
         ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a

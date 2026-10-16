@@ -70,11 +70,16 @@
 - **A parameter is typed from its callers only through exact static edges, and
   only on agreement.** The walker records `CallRef.argExprs` (receiver-shaped
   argument texts, positional up to the first splat / keyword pair / block-pass,
-  keyword values by key); `RubyCallResolver#typeOfCallArgument` types each one
-  with `typeOfReceiver` — never the naming convention. The fold, its agreement
-  rule (one type, instance or class form, untyped callers ≤ typed ones) and the
-  3-round fixpoint live trajectory-side in `caller-param-pass.ts` /
-  `caller-param-types.ts` (bd tea-rags-mcp-2m83f.44); the barrier's
+  keyword values by key; a constant as its path, a literal as the canonical
+  literal of its core class — `0`, `0.0`, `""`, `:_`, `[]`, `{}`);
+  `resolver/call-argument-type.ts` types each one: a literal as an instance of
+  its core class, a declared class/module constant in class form, anything else
+  with `typeOfReceiver` — never the naming convention. A literal caller is a
+  TYPED caller (bd tea-rags-mcp-2m83f.49): it disagrees with a project-typed one
+  instead of letting that caller type the parameter alone. The fold, its
+  agreement rule (one type, instance or class form, untyped callers ≤ typed
+  ones) and the 3-round fixpoint live trajectory-side in `caller-param-pass.ts`
+  / `caller-param-types.ts` (bd tea-rags-mcp-2m83f.44); the barrier's
   constructor-arg fold and any walker binding win a shared name. Why: a single
   typed caller among many untyped ones is a sample, and a wrong parameter type
   poisons every call on it.

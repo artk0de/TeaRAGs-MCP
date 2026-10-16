@@ -101,21 +101,30 @@
           "receiver": null,
           "member": "include",
           "startLine": 13,
-          "argCount": 1
+          "argCount": 1,
+          "argExprs": {
+            "positional": ["Trackable"]
+          }
         },
         {
           "callText": "prepend Instrumented",
           "receiver": null,
           "member": "prepend",
           "startLine": 14,
-          "argCount": 1
+          "argCount": 1,
+          "argExprs": {
+            "positional": ["Instrumented"]
+          }
         },
         {
           "callText": "extend Finders",
           "receiver": null,
           "member": "extend",
           "startLine": 15,
-          "argCount": 1
+          "argCount": 1,
+          "argExprs": {
+            "positional": ["Finders"]
+          }
         }
       ],
       "symbolKind": "class",
@@ -145,7 +154,10 @@
             {
               "literal": "user"
             }
-          ]
+          ],
+          "argExprs": {
+            "positional": [":_"]
+          }
         }
       ],
       "symbolKind": "method"

@@ -497,9 +497,33 @@ const TYPEABLE_ARG_TYPES: ReadonlySet<string> = new Set(["identifier", "instance
 /** Longest argument text worth carrying: a receiver chain, not a block or a literal blob. */
 const MAX_ARG_EXPR_LENGTH = 160;
 
+/** Constant path argument node types (bd tea-rags-mcp-2m83f.49): `Firm`, `Billing::Invoice`, `::Root`. */
+const CONSTANT_ARG_TYPES: ReadonlySet<string> = new Set(["constant", "scope_resolution"]);
+
+/**
+ * Literal argument node type → the canonical literal of its core class (bd
+ * tea-rags-mcp-2m83f.49). The resolver types the canonical text, so the value
+ * itself never rides the spill. `nil` / `true` / `false` stay untyped.
+ */
+const LITERAL_ARG_TEXT: ReadonlyMap<string, string> = new Map([
+  ["integer", "0"],
+  ["float", "0.0"],
+  ["string", '""'],
+  ["simple_symbol", ":_"],
+  ["delimited_symbol", ":_"],
+  ["array", "[]"],
+  ["string_array", "[]"],
+  ["symbol_array", "[]"],
+  ["hash", "{}"],
+]);
+
 /** `node`'s text when it is a receiver-shaped expression the resolver can type, else `null`. */
 function typeableArgText(node: AstNode | null | undefined): string | null {
-  if (!node || !TYPEABLE_ARG_TYPES.has(node.type)) return null;
+  if (!node) return null;
+  const literal = LITERAL_ARG_TEXT.get(node.type);
+  if (literal !== undefined) return literal;
+  if (CONSTANT_ARG_TYPES.has(node.type)) return node.text.length > MAX_ARG_EXPR_LENGTH ? null : node.text;
+  if (!TYPEABLE_ARG_TYPES.has(node.type)) return null;
   const { text } = node;
   if (text.length > MAX_ARG_EXPR_LENGTH || text.includes("\n")) return null;
   if (node.type === "call" && node.children.some((c) => c.type === "block" || c.type === "do_block")) return null;

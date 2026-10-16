@@ -132,6 +132,23 @@ describe("CodegraphEnrichmentProvider — parameter receivers typed from callers
     expect(paramTyped).toBe(2);
   });
 
+  it("types a parameter from a constant argument, in class form (2m83f.49)", async () => {
+    write("builder.rb", ["class Builder", "  def build(klass)", "    klass.make", "  end", "end"]);
+    write("maker_a.rb", ["class MakerA", "  def self.make", "    :a", "  end", "end"]);
+    write("maker_b.rb", ["class MakerB", "  def self.make", "    :b", "  end", "end"]);
+    write("build_job.rb", ["class BuildJob", "  def run", "    Builder.new.build(MakerA)", "  end", "end"]);
+    const edges = await run();
+    expect(targetsOf(edges, "Builder#build", "klass.make")).toEqual(["MakerA.make"]);
+  });
+
+  it("a literal argument is typed evidence: it disagrees with a project type (2m83f.49)", async () => {
+    worker("Literal", "record");
+    write("delta_job.rb", ["class DeltaJob", "  def run", "    Literal.new.perform(Invoice.new)", "  end", "end"]);
+    write("eps_job.rb", ["class EpsJob", "  def run", "    Literal.new.perform(42)", "  end", "end"]);
+    const edges = await run();
+    expect(targetsOf(edges, "Literal#perform", "record.firm")).not.toEqual(["Invoice#firm"]);
+  });
+
   it("callers that disagree type nothing: the call keeps its untyped reading", async () => {
     worker("Mixed", "record");
     write("gamma_job.rb", [
