@@ -203,6 +203,13 @@ describe("a convention-rooted relation chain resolves the scope on the model (2m
     });
   });
 
+  it("the dynamic fan-out leaves the site to the exact chain — the provider asks the fan-out first", () => {
+    const chunk = showChunk("document.resolved_doc_dir.documents.ordered");
+    const site = chunk.calls.find((c) => c.member === "ordered");
+    if (site === undefined) throw new Error("walker emitted no call to ordered");
+    expect(resolver.resolveDispatch(site, contextFor(chunk))).toEqual({ kind: "edges", edges: [] });
+  });
+
   it("silent on a scope called on the convention instance itself — an instance is not a relation", () => {
     expect(attempt("document.ordered", "ordered")).toBeNull();
   });

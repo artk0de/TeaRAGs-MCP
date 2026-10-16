@@ -70,7 +70,7 @@ export function classifyRubyLiteralReceiver(receiver: string | null): string | n
  */
 export class RubyDynamicDispatchResolver extends DynamicDispatchResolver {
   constructor(cfg: ResolverConfig) {
-    const exactPass = new RubyExactPassAnswerProbe(cfg.mode);
+    const exactPass = new RubyExactPassAnswerProbe(cfg);
     const assignedLocalGate = cfg.assignedLocalGate ?? RUBY_ASSIGNED_LOCAL_GATE_DEFAULT;
     super({
       suppressed: (call, ctx) => rubyDynamicFanoutSuppressed(call, ctx, cfg.mode, exactPass, assignedLocalGate),
