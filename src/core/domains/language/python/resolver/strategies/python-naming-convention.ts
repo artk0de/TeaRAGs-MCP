@@ -8,12 +8,15 @@
  *
  *  - `camelize`: `snake_case` → `CamelCase`, and nothing else. A receiver
  *    already spelled `CamelCase` is a CONSTANT and belongs to `importedName`.
- *  - `classExists`: exactly one project declaration of that short name. Ruby
- *    accepts several because Zeitwerk makes the FQ recoverable; Python has no
- *    such guarantee, so two same-named classes in two packages are ambiguous
- *    and the convention declines.
+ *  - `classExists`: one project declaration of that short name, or several of
+ *    which the caller's lexical scope reaches exactly one.
+ *  - `nearestNamesake` (bd tea-rags-mcp-2m83f.32.6): the namesake
+ *    `kernel/lexical-scope-type.ts` reaches over {@link pythonScopeChain} —
+ *    the enclosing frames innermost first, the caller's module, then the
+ *    module's import binding for the name. Two same-named classes in two
+ *    packages that no scope reaches stay ambiguous, and the convention declines.
  *  - `hasSubtypes`: any `classAncestors` VALUE whose bare last segment equals
- *    the candidate. The channel seam 4 built is the hierarchy evidence Python
+ *    the candidate's. The channel seam 4 built is the hierarchy evidence Python
  *    has; there is no `ctx.hierarchy` snapshot on this path.
  *
  * Gate 3, the terminal, is Ruby's and is restated verbatim in intent: the
@@ -51,8 +54,10 @@ import {
   conventionClassNameFor,
   ConventionReceiverSymbolResolutionStrategy,
   createTypeMemberLookup,
+  nearestScopedTypeName,
   RunScopedMemo,
   type ConventionReceiverTypingPorts,
+  type LexicalScopeTypePorts,
   type NamingConventionPorts,
   type ReceiverCallRef,
   type ReceiverTypePorts,
@@ -60,6 +65,7 @@ import {
 } from "../../../kernel/index.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
+import { isPythonPlacedClassKey } from "./python-class-key.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
@@ -69,9 +75,14 @@ import {
 } from "./python-iteration-types.js";
 import { createPythonCallBindingPorts } from "./python-receiver-type-ports.js";
 import {
+  findPythonImportBinding,
+  lastSegment,
   lookupPythonSymbolsByShortName,
   pythonBoundClassKey,
   pythonBoundToForeignCall,
+  pythonClassKey,
+  pythonDeclaredClassFq,
+  pythonImportBoundFile,
   pythonModuleValueBound,
   resolvePythonInheritedMember,
   resolveTypeFile,
@@ -119,8 +130,23 @@ class PythonConventionReceiverTyping implements ConventionReceiverTypingPorts {
    */
   private readonly conventionPorts: NamingConventionPorts<CallContext> = {
     camelize: pythonCamelize,
-    classExists: (className, ctx) => lookupPythonSymbolsByShortName(ctx, className).length === 1,
-    hasSubtypes: (className, ctx) => this.declaredBases(ctx).has(className),
+    classExists: (className, ctx) => {
+      const declared = lookupPythonSymbolsByShortName(ctx, className).length;
+      return declared === 1 || (declared > 1 && this.nearestNamesake(className, ctx) !== undefined);
+    },
+    hasSubtypes: (className, ctx) => this.declaredBases(ctx).has(lastSegment(className)),
+    nearestNamesake: (className, ctx) => this.nearestNamesake(className, ctx),
+  };
+
+  /**
+   * Python's lexical scope for the nearest-namesake lookup. The import-binding
+   * scope reads the file the caller's binding for the name lands on, one
+   * re-export hop on — the same funnel `resolveTypeFile` narrows through.
+   */
+  private readonly scopePorts: LexicalScopeTypePorts<CallContext> = {
+    scopeChain: pythonScopeChain,
+    typesDeclaredIn: (name, scope, ctx) =>
+      scope === IMPORT_BINDING_SCOPE ? this.importBoundTypes(name, ctx) : pythonFrameTypes(name, scope, ctx),
   };
 
   /** The receiver fold a loop target's iterable is typed through. */
@@ -177,6 +203,20 @@ class PythonConventionReceiverTyping implements ConventionReceiverTypingPorts {
     return pythonBoundToForeignCall(receiver, call.startLine, ctx, this.mapper);
   }
 
+  /** A short name several files declare, as the class key the caller's scope reaches; a unique one stands as written. */
+  private nearestNamesake(className: string, ctx: CallContext): string | undefined {
+    if (lookupPythonSymbolsByShortName(ctx, className).length < 2) return undefined;
+    return nearestScopedTypeName(className, ctx, this.scopePorts);
+  }
+
+  private importBoundTypes(name: string, ctx: CallContext): readonly string[] {
+    if (findPythonImportBinding(ctx.imports, name) === null) return [];
+    const candidates = lookupPythonSymbolsByShortName(ctx, name).map((def) => def.relPath);
+    const boundFile = pythonImportBoundFile(name, candidates, ctx, this.mapper);
+    const classKey = boundFile === null ? null : pythonBoundClassKey(name, boundFile, ctx);
+    return classKey === null ? [] : [classKey];
+  }
+
   private declaredBases(ctx: CallContext): ReadonlySet<string> {
     const ancestors = ctx.classAncestors;
     if (ancestors === undefined) return EMPTY_BASES;
@@ -208,7 +248,7 @@ function createPythonConventionMemberLookup(
   return createTypeMemberLookup((type, member, ctx) => {
     const targetFile = resolveTypeFile(type.name, ctx, mapper);
     if (targetFile === null) return null;
-    const classKey = pythonBoundClassKey(type.name, targetFile, ctx);
+    const classKey = isPythonPlacedClassKey(type.name) ? type.name : pythonBoundClassKey(type.name, targetFile, ctx);
     if (classKey === null) return null;
     const linearizer = linearizers?.for(ctx);
     if (linearizer === undefined) return null;
@@ -217,6 +257,29 @@ function createPythonConventionMemberLookup(
 }
 
 const EMPTY_BASES: ReadonlySet<string> = new Set<string>();
+
+/** The scope-chain entry for the module's import bindings — never a dotted frame spelling. */
+const IMPORT_BINDING_SCOPE = "<imports>";
+
+/**
+ * The caller's scopes, innermost first: every frame prefix of `callerScope`
+ * (classes and the defs a class may be declared in), the module (`""`), then
+ * the module's import bindings.
+ */
+function pythonScopeChain(ctx: CallContext): readonly string[] {
+  const chain: string[] = [];
+  for (let depth = ctx.callerScope.length; depth > 0; depth--) chain.push(ctx.callerScope.slice(0, depth).join("."));
+  chain.push("", IMPORT_BINDING_SCOPE);
+  return chain;
+}
+
+/** The class keys `frame` of the caller's own file declares under `name` — one per declaration, so a tie shows. */
+function pythonFrameTypes(name: string, frame: string, ctx: CallContext): readonly string[] {
+  const classFq = frame.length === 0 ? name : `${frame}.${name}`;
+  return lookupPythonSymbolsByShortName(ctx, name)
+    .filter((def) => def.relPath === ctx.callerFile && pythonDeclaredClassFq(def) === classFq)
+    .map(() => pythonClassKey(ctx.callerFile, classFq));
+}
 
 /** `data_source` → `DataSource`: upcase each `_`-separated segment, join. */
 function pythonCamelize(snake: string): string {

@@ -53,8 +53,8 @@
   },
   "python": {
     "walker": {
-      "version": 11,
-      "digest": "sha256:5726e37e8b94f7454e945512f2c1ca8eb54e372c39d7b03a8d7bff7b957d5e86"
+      "version": 12,
+      "digest": "sha256:34684f402eaae13b434458e206ce2ba9d762811821258c60fdb06eed601cec9d"
     }
   },
   "ruby": {

@@ -104,7 +104,7 @@ export const capability: LanguageCapability = {
   // `__init__`, field assignments and property accessors — an Exception
   // subclass, a dataclass — leaves the type-abstractness census. Recompute:
   // `--force-enrichments codegraph --languages python`.
-  versions: { chunking: 1, walker: 11, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 12, codegraphSchema: 2 },
   // PEP 8: classes CapWords, modules short lowercase (underscores allowed),
   // functions, methods, variables and attributes snake_case, module-level
   // constants SCREAMING_SNAKE.

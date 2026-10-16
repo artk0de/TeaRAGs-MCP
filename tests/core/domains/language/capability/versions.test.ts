@@ -509,10 +509,12 @@ describe("seeded support versions", () => {
       // on the model.
       // ruby 13: bd tea-rags-mcp-2m83f.36 — attr_reader / attr_accessor return
       // the type of the @ivar they read.
+      // python 12: bd tea-rags-mcp-2m83f.32.6 — a convention receiver whose
+      // class several files declare takes the one the caller's scope reaches.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
-        ["python", 11],
+        ["python", 12],
         ["ruby", 14],
         ["java", 4],
         ["rust", 5],
