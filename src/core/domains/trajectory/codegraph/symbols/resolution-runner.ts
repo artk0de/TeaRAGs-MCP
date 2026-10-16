@@ -816,6 +816,7 @@ export class CallEdgeResolutionRunner {
         site.call,
         verdict,
         () => resolver.residualExclusion?.(site.call, site.classifierCtx) ?? null,
+        () => resolver.residualOverrideMenu?.(site.call, site.classifierCtx) ?? null,
       );
       methodEdges.push(...verdict.edges);
       if (verdict.ambiguousFanout !== undefined) ambiguousFanouts.push(verdict.ambiguousFanout);
@@ -1149,6 +1150,7 @@ export class CallEdgeResolutionRunner {
       // bd tea-rags-mcp-0qaht.66 — per-chunk, read beside `localBindings`.
       constructedLocals: chunk.constructedLocals,
       compactDeclaredClasses: this.runState.compactClasses,
+      unresolvedMixinClasses: this.runState.unresolvedMixinClasses,
       declaredDependencies: this.runState.declaredDependenciesFor(extraction.language),
       projectRoot: this.runState.projectRoot,
       // bd tea-rags-mcp-n0zj — run-global dispatch tables + callback

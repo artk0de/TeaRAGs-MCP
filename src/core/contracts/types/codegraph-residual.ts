@@ -15,6 +15,13 @@
 export type ResidualKind = "ambiguous" | "dynamic";
 
 /**
+ * Why a residual row carries a narrowed menu (059). `frameworkOverride`: the
+ * callee is a framework member, and the menu holds only the project overrides
+ * the receiver can reach (bd tea-rags-mcp-2m83f.48).
+ */
+export type ResidualReason = "frameworkOverride";
+
+/**
  * Why a language keeps a residual site out of `cg_residual_call_sites`: the true
  * callee is outside the menu, so no model pick can be right. `schemaColumn` — a
  * column accessor on a receiver named after the model owning it; `frameworkMember`
@@ -60,6 +67,8 @@ export interface ResidualCallSiteRow {
    * ["Bill", "Document#save"]]` (061). Present with {@link receiverGroup}.
    */
   classTargets?: [string, string][];
+  /** Why the menu is narrowed (059); absent = the ordinary short-name menu. */
+  reason?: ResidualReason;
 }
 
 /**

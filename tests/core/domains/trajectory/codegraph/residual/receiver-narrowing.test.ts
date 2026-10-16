@@ -12,6 +12,7 @@ import type {
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   DEFAULT_RESIDUAL_MENU_LIMIT,
+  residualMenuHash,
   ResidualSiteCollector,
   type ResidualVerdictView,
 } from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-site-builder.js";
@@ -245,5 +246,105 @@ describe("ResidualSiteCollector — receiver narrowing", () => {
 
     const numberRow = collector.rows().find((row) => row.member === "number");
     expect(numberRow).toMatchObject({ candidates: ["Model0#number", "Model1#number"], menuOverflow: false });
+  });
+});
+
+describe("ResidualSiteCollector — receiver narrowing of a frameworkOverride menu", () => {
+  const SAVE_DEFS = [
+    def("Invoice#save!", "app/models/invoice.rb"),
+    def("Estimate#save!", "app/models/estimate.rb"),
+    def("Payment#save!", "app/models/payment.rb"),
+    def("Invoice#total", "app/models/invoice.rb"),
+  ];
+  const overridesOf = (ids: string[]) => () => ids;
+
+  it("settles an override site narrowed to one class whose definition is an override as a static edge", () => {
+    const collector = collectorOf(SAVE_DEFS);
+
+    collector.observe(METHOD, call("r", "total", 12), DYNAMIC_MISS);
+    collector.observe(
+      METHOD,
+      call("r", "save!", 13),
+      DYNAMIC_MISS,
+      undefined,
+      overridesOf(["Invoice#save!", "Estimate#save!"]),
+    );
+
+    expect(collector.narrowed().map((n) => n.edge.targetSymbolId)).toEqual(["Invoice#save!"]);
+    expect(collector.rows().filter((r) => r.member === "save!")).toEqual([]);
+  });
+
+  it("keeps the override menu when the narrowed class has no override — narrowing never adds a candidate", () => {
+    const collector = collectorOf(SAVE_DEFS);
+
+    collector.observe(METHOD, call("r", "total", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("r", "save!", 13), DYNAMIC_MISS, undefined, overridesOf(["Estimate#save!"]));
+
+    const [row] = collector.rows().filter((r) => r.member === "save!");
+    expect(row?.candidates).toEqual(["Estimate#save!"]);
+    expect(row?.reason).toBe("frameworkOverride");
+    expect(collector.narrowed()).toEqual([]);
+    expect(collector.narrowEmptyKinds()).toEqual(["dynamic"]);
+  });
+
+  it("intersects the override menu with the narrowed classes and hashes the final menu", () => {
+    const collector = collectorOf([...SAVE_DEFS, def("Payment#total", "app/models/payment.rb")]);
+
+    collector.observe(METHOD, call("r", "total", 12), DYNAMIC_MISS);
+    collector.observe(
+      METHOD,
+      call("r", "save!", 13),
+      DYNAMIC_MISS,
+      undefined,
+      overridesOf(["Invoice#save!", "Estimate#save!"]),
+    );
+
+    const [row] = collector.rows().filter((r) => r.member === "save!");
+    expect(row?.candidates).toEqual(["Invoice#save!"]);
+    expect(row?.reason).toBe("frameworkOverride");
+    expect(row?.menuHash).toBe(residualMenuHash(["Invoice#save!"]));
+  });
+
+  it("does not let an override site constrain its receiver's other calls", () => {
+    const collector = collectorOf([
+      ...BASE_DEFS,
+      def("Invoice#save!", "app/models/invoice.rb"),
+      def("Payment#save!", "app/models/payment.rb"),
+    ]);
+
+    collector.observe(METHOD, call("r", "save!", 12), DYNAMIC_MISS, undefined, overridesOf(["Invoice#save!"]));
+    collector.observe(METHOD, call("r", "number", 13), DYNAMIC_MISS);
+
+    const [row] = collector.rows().filter((r) => r.member === "number");
+    expect(row?.candidates.slice().sort()).toEqual(["Estimate#number", "Invoice#number"]);
+    expect(collector.narrowed().map((n) => n.edge.targetSymbolId)).toEqual(["Invoice#save!"]);
+  });
+
+  it("offers a grouped override site only the classes that reach a reachable override, keeping its reason", () => {
+    const collector = collectorOf([
+      ...SAVE_DEFS,
+      def("Estimate#total", "app/models/estimate.rb"),
+      def("Payment#total", "app/models/payment.rb"),
+    ]);
+
+    collector.observe(METHOD, call("r", "total", 12), DYNAMIC_MISS);
+    collector.observe(
+      METHOD,
+      call("r", "save!", 13),
+      DYNAMIC_MISS,
+      undefined,
+      overridesOf(["Invoice#save!", "Estimate#save!"]),
+    );
+
+    const rows = collector.rows();
+    const save = rows.find((r) => r.member === "save!");
+    const total = rows.find((r) => r.member === "total");
+    expect(save?.reason).toBe("frameworkOverride");
+    expect(save?.receiverGroup).toBe(total?.receiverGroup);
+    expect(save?.classTargets).toEqual([
+      ["Estimate", "Estimate#save!"],
+      ["Invoice", "Invoice#save!"],
+    ]);
+    expect(total?.classTargets?.map(([cls]) => cls)).toEqual(["Estimate", "Invoice", "Payment"]);
   });
 });

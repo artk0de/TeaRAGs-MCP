@@ -121,6 +121,8 @@ const RESIDUAL_VALUES = [
   // Migration 055 (bd tea-rags-mcp-2m83f.38): the run-stats bucket of the site.
   "language",
   "receiver_kind",
+  // Migration 059 (bd tea-rags-mcp-2m83f.48): why the menu is narrowed.
+  "reason",
   // Migration 061 (bd tea-rags-mcp-2m83f.46): the receiver group the pass asks once.
   "receiver_group",
   "class_targets",
@@ -346,6 +348,7 @@ export class DuckDbFileGraphStore {
           r.menuOverflow,
           r.language ?? null,
           r.receiverKind ?? null,
+          r.reason ?? null,
           r.receiverGroup ?? null,
           r.classTargets === undefined ? null : JSON.stringify(r.classTargets),
         ]);

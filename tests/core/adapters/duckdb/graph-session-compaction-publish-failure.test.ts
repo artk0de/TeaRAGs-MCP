@@ -44,7 +44,8 @@ describe("DuckDbGraphClient#compactStorage — a failed publish", () => {
     db = new DuckDbGraphClient({ path, compactionPolicy: { minFileBytes: 0, minStoredToLiveRatio: 2 } });
     await db.init();
     await runMigrations(db, DATABASE_MIGRATIONS);
-    for (let run = 0; run < 4; run++) {
+    // Enough dead versions that stored/live clears 2 however wide the migrated schema grows.
+    for (let run = 0; run < 8; run++) {
       await db.run("DELETE FROM cg_symbols_files");
       for (let f = 0; f < 30; f++) {
         await db.run("INSERT INTO cg_symbols_files (rel_path, language) VALUES (?, 'ruby')", [`app/f${f}.rb`]);
