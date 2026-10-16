@@ -275,7 +275,15 @@ describe("extractFromRustFile — localBindings", () => {
       language: "rust",
       chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ v: [{ line: 2, type: "Vec" }] });
+    expect(r.chunks[0].localBindings).toEqual({
+      v: [
+        {
+          line: 2,
+          type: "Vec",
+          typeRef: { form: "instance", name: "Vec", args: [{ form: "instance", name: "Thing" }] },
+        },
+      ],
+    });
   });
 
   it("records associated-fn constructor `let y = Worker::new()` → { y: 'Worker' }", () => {

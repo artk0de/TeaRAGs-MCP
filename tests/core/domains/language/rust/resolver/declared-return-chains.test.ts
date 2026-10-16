@@ -115,6 +115,90 @@ fn run(holder: Holder<Product>) { holder.get().finish(); }
     });
   });
 
+  it.each(["Holder<Product>", "&Holder<Product>"])(
+    "retains generic arguments from an annotated let binding %s",
+    (annotation) => {
+      const f = fixture(
+        {
+          "src/main.rs": `
+struct Holder<T> { value: T }
+struct Product; struct Other;
+impl<T> Holder<T> { fn get(&self) -> T { todo!() } }
+impl Product { fn finish(&self) {} } impl Other { fn finish(&self) {} }
+fn run() {
+    let holder: ${annotation} = todo!();
+    holder.get().finish();
+}
+`,
+        },
+        materialized,
+      );
+      expect(f.extractions[0].chunks.find((chunk) => chunk.symbolId === "run")?.localBindings?.holder[0]).toMatchObject(
+        {
+          type: "Holder",
+          typeRef: { form: "instance", name: "Holder", args: [{ form: "instance", name: "Product" }] },
+        },
+      );
+      expect(f.resolve("holder.get().finish()")).toEqual({
+        targetRelPath: "src/main.rs",
+        targetSymbolId: "Product#finish",
+      });
+    },
+  );
+
+  it("keeps a bounded type parameter's annotated let binding as its original bare type", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `
+struct Worker;
+fn run<T: Worker>() { let value: T = todo!(); value.go(); }
+`,
+      },
+      materialized,
+    );
+    expect(f.extractions[0].chunks.find((chunk) => chunk.symbolId === "run")?.localBindings?.value).toEqual([
+      { line: 3, type: "T" },
+    ]);
+  });
+
+  it("declines an imported generic argument even when a local type has the same name", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `
+use external::Product;
+struct Holder<T> { value: T } struct Product; struct Other;
+impl<T> Holder<T> { fn get(&self) -> T { todo!() } }
+impl Product { fn finish(&self) {} } impl Other { fn finish(&self) {} }
+fn run() { let holder: Holder<Product> = todo!(); holder.get().finish(); }
+`,
+      },
+      materialized,
+    );
+    expect(f.extractions[0].chunks.find((chunk) => chunk.symbolId === "run")?.localBindings?.holder[0].typeRef).toEqual(
+      { form: "instance", name: "Holder", args: [{ form: "instance", name: "Product" }] },
+    );
+    expect(f.resolve("holder.get().finish()")).toBeNull();
+  });
+
+  it("declines an ambiguous generic argument without selecting a global namesake", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `
+struct Holder<T> { value: T }
+impl<T> Holder<T> { fn get(&self) -> T { todo!() } }
+fn run() { let holder: Holder<Product> = todo!(); holder.get().finish(); }
+`,
+        "src/a.rs": "struct Product; impl Product { fn finish(&self) {} }",
+        "src/b.rs": "struct Product; impl Product { fn finish(&self) {} }",
+      },
+      materialized,
+    );
+    expect(f.extractions[0].chunks.find((chunk) => chunk.symbolId === "run")?.localBindings?.holder[0].typeRef).toEqual(
+      { form: "instance", name: "Holder", args: [{ form: "instance", name: "Product" }] },
+    );
+    expect(f.resolve("holder.get().finish()")).toBeNull();
+  });
+
   it("uses a constructor's declared non-Self return for new compound inference", () => {
     const f = fixture(
       {

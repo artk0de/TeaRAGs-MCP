@@ -58,7 +58,9 @@ export const capability: LanguageCapability = {
   // walker 6: bd tea-rags-mcp-2g2og.24 — the walker publishes native declared
   // returns for receiver chains; the resolver substitutes Self and proven
   // owner generics without field, import-bound, wrapper or fixpoint propagation.
-  versions: { chunking: 4, walker: 6, codegraphSchema: 2 },
+  // walker 7: bd tea-rags-mcp-2g2og.24 — annotated local bindings retain
+  // nominal generic arguments for declared-return chain substitution.
+  versions: { chunking: 4, walker: 7, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
   // SCREAMING_SNAKE_CASE.

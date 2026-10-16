@@ -367,8 +367,15 @@ function collectRustLocalBindingsForChunk(
     // Typed `let x: Foo = ...` — explicit annotation wins.
     const typeNode = node.childForFieldName("type");
     if (typeNode) {
-      const typeName = readRustBareType(typeNode);
-      if (typeName) (bindings[varName] ??= []).push({ line: node.startPosition.row + 1, type: typeName });
+      const typed = rustTypeRefFor(typeNode, genericBounds);
+      if (typed) {
+        const { typeRef } = typed;
+        (bindings[varName] ??= []).push({
+          line: node.startPosition.row + 1,
+          type: typed.type,
+          ...(typeRef?.form === "instance" && typeRef.args !== undefined ? { typeRef } : {}),
+        });
+      }
       return;
     }
 
