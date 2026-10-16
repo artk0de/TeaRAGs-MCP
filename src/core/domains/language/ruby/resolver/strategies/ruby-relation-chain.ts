@@ -1,17 +1,10 @@
-import type { CallContext } from "../../../../../contracts/types/codegraph.js";
 import { OrmRelationChainSymbolResolutionStrategy, type OrmRelationPorts } from "../../../kernel/index.js";
-import { RAILS_RESIDUAL_FRAMEWORK_MEMBERS } from "../../dsl/index.js";
+import { railsVocabularyActive } from "./rails-vocabulary-gate.js";
 import { activeRecordRelationModel } from "./ruby-active-record-return-types.js";
 import { resolveTypeStaticMethod, type ResolverConfig } from "./shared.js";
 import { typeOfConventionRootedReceiver, typeOfReceiver } from "./type-propagation.js";
 
-/** Rails is in the Gemfile — or there is no Gemfile, which reads every vocabulary as active. */
-export function railsVocabularyActive(ctx: CallContext): boolean {
-  const gems = ctx.declaredDependencies;
-  if (gems === undefined) return true;
-  for (const gem of RAILS_RESIDUAL_FRAMEWORK_MEMBERS.gems) if (gems.has(gem)) return true;
-  return false;
-}
+export { railsVocabularyActive } from "./rails-vocabulary-gate.js";
 
 /**
  * The Rails port of the kernel's ORM relation chain (bd tea-rags-mcp-2m83f.32.3):

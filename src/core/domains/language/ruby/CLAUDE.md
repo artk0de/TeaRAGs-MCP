@@ -57,6 +57,16 @@
   `scripts/spikes/ruby-resolver-parity.ts --before-root <pre-seam checkout>`.
   Why: reading this file for the hop threading finds only the ports, and editing
   the kernel to fix a Ruby-shaped miss moves every other language with it.
+- **An untyped owner's link is typed by consensus, never by a single namesake.**
+  Ruby's `ownerIndependentMemberType` port (`ruby-consensus-member-type.ts`, bd
+  tea-rags-mcp-2m83f.42) answers only when at least two candidates
+  `Owner#member` exist, every one of them is an instance method whose return
+  `returnTypeOf` reads on its owner, and all of them agree (`belongs_to :firm`
+  everywhere → `Firm`). A class-method or top-level namesake, a schema column,
+  or one unreadable return refuses the whole answer, and the port is gated on
+  `railsVocabularyActive`. The hop itself keeps no edge; only the links after it
+  are typed. Why: on TaxDome `firm` alone has 1,164 candidates, and a wrong
+  receiver type poisons every hop after it.
 - **`resolver/strategies/ancestor-linearization.ts` keeps its signature, but the
   DRIVER moved.** `linearizeAncestors(klass, hierarchy)` and
   `RubyAncestorHierarchy` are unchanged for every importer; the recursion, cycle

@@ -69,6 +69,7 @@ import {
   isModuleOnlyConstant,
 } from "./ruby-active-record-return-types.js";
 import { boundCallReturnTypeVia, isProjectDeclaredConstant } from "./ruby-bound-call-return-types.js";
+import { rubyConsensusMemberType } from "./ruby-consensus-member-type.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
 import { declaredReturnType } from "./ruby-return-facts.js";
 import { conventionReceiverType, nullaryReceiverType } from "./ruby-unbound-receiver-types.js";
@@ -101,7 +102,7 @@ function chainMaxHops(): number {
 }
 
 /**
- * Ruby's four answers for the shared chain fold
+ * Ruby's answers for the shared chain fold
  * (`kernel/receiver-type-propagation.ts`). Frozen module-level singleton: the
  * fold threads `ctx` as an argument, so nothing is allocated per call site.
  */
@@ -109,6 +110,8 @@ export const RUBY_RECEIVER_TYPE_PORTS: ReceiverTypePorts = Object.freeze({
   singleHopType: rubySingleHopType,
   seedHead: rubySeedHead,
   memberTypeOf: (recv: RubyTypeRef, member: string, ctx: CallContext) => returnTypeOf(recv, member, ctx),
+  // An untyped owner's link typed by what every candidate agrees on (bd tea-rags-mcp-2m83f.42).
+  ownerIndependentMemberType: rubyConsensusMemberType,
   maxHops: chainMaxHops,
 });
 

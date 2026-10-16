@@ -25,6 +25,7 @@ export { fileEdgesFromResolvedCalls } from "./call-derived-file-edges.js";
 export { SHARED_LANGUAGE, sharedChunkSetBumpScopes, sharedVersions } from "./capability.js";
 export { collectSymbols } from "./collect-symbols.js";
 export { ConeDispatchResolver } from "./cone-dispatch.js";
+export { CONSENSUS_MIN_CANDIDATES, consensusType } from "./consensus-type.js";
 export {
   DynamicDispatchResolver,
   receiverIsAssignedLocal,
