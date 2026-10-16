@@ -353,5 +353,11 @@
     "Acme::Auth::Login": {
       "@user": "User"
     }
+  },
+  "structuredReturnTypes": {
+    "Acme::Auth::Login#user": {
+      "form": "instance",
+      "name": "User"
+    }
   }
 }
