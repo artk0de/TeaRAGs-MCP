@@ -11,8 +11,15 @@ import type {
   ResidualExclusionRule,
   ResidualKind,
 } from "../../../../contracts/types/codegraph-residual.js";
-import type { CallRef, GlobalSymbolTable, RelPath } from "../../../../contracts/types/codegraph.js";
+import type {
+  CallRef,
+  GlobalSymbolTable,
+  GraphEdges,
+  HierarchyView,
+  RelPath,
+} from "../../../../contracts/types/codegraph.js";
 import type { ReceiverKind } from "../symbols/receiver-kind.js";
+import { orderByNamingPrior, ReceiverClassClosure, receiverGroupKey } from "./receiver-closure.js";
 
 /** Menu size the wave-1 eval measured; `CODEGRAPH_RESIDUAL_MENU_LIMIT` overrides it. */
 export const DEFAULT_RESIDUAL_MENU_LIMIT = 40;
@@ -32,6 +39,37 @@ export interface ResidualMethodView {
   symbolId: string;
   startLine?: number;
   endLine?: number;
+  /** Lines assigning each local / ivar in the method, so a reassigned receiver splits in two. */
+  localAssignmentLines?: Readonly<Record<string, readonly number[]>>;
+}
+
+/** Turns receiver narrowing on: the closure reads the run's class hierarchy when there is one. */
+export interface ResidualNarrowingOptions {
+  hierarchy?: HierarchyView;
+}
+
+/** A residual site its receiver's constraint set settled to one target: a static edge, no question. */
+export interface NarrowedResidualSite {
+  receiverKind: ReceiverKind;
+  edge: GraphEdges["methodEdges"][number];
+}
+
+/**
+ * Misses that say nothing about the receiver's class: the classifier put the
+ * callee outside the project, or out of static reach. Such a call never
+ * constrains its receiver.
+ */
+const NON_CONSTRAINING_BUCKETS: ReadonlySet<string> = new Set(["externalSkipped", "coreAmbiguous", "unresolvable"]);
+
+/** Receivers that name the enclosing object: their class is the caller's, never a narrowing question. */
+const SELF_RECEIVERS: ReadonlySet<string> = new Set(["", "self", "this", "super"]);
+
+interface PendingResidualSite {
+  method: ResidualMethodView;
+  call: CallRef;
+  verdict: ResidualVerdictView;
+  kind: ResidualKind;
+  groupKey: string;
 }
 
 export interface ResidualSiteKeyParts {
@@ -68,7 +106,7 @@ export function residualSiteKey(parts: ResidualSiteKeyParts): string {
   );
 }
 
-/** `candidates` must already be sorted — the row stores them sorted. */
+/** `candidates` in the row's menu order — sorted, or by naming prior once narrowed. */
 export function residualMenuHash(candidates: readonly string[]): string {
   return sha1(candidates.join("\n"));
 }
@@ -94,6 +132,13 @@ export class ResidualSiteCollector {
   private readonly excludedCounts = emptyResidualExclusionCounts();
   private readonly menus = new Map<string, string[]>();
   private readonly extension: string;
+  private readonly closure: ReceiverClassClosure | undefined;
+  /** Receiver group → member → whether every call of it on the receiver may constrain the class. */
+  private readonly groups = new Map<string, Map<string, boolean>>();
+  private readonly pendingSites: PendingResidualSite[] = [];
+  private readonly narrowedSites: NarrowedResidualSite[] = [];
+  private readonly narrowEmpty: ReceiverKind[] = [];
+  private settled = false;
 
   constructor(
     private readonly sourceRelPath: RelPath,
@@ -101,17 +146,26 @@ export class ResidualSiteCollector {
     private readonly menuLimit: number,
     /** The `cg_run_stats` language this file's sites are counted under. */
     private readonly language: string,
+    narrowing?: ResidualNarrowingOptions,
   ) {
     this.extension = extname(sourceRelPath);
+    this.closure =
+      narrowing === undefined ? undefined : new ReceiverClassClosure(symbolTable, this.extension, narrowing.hierarchy);
   }
 
-  /** `exclude` is asked only for a residual site with a non-empty menu; a rule drops the site. */
+  /**
+   * Fed every call site of the file. `exclude` is asked only for a residual site
+   * with a non-empty menu; a rule drops the site. With narrowing on, every call
+   * joins its receiver's constraint set and residual rows are built on the
+   * first read of {@link rows}.
+   */
   observe(
     method: ResidualMethodView,
     call: CallRef,
     verdict: ResidualVerdictView,
     exclude?: () => ResidualExclusionRule | null,
   ): void {
+    const groupKey = this.closure === undefined ? undefined : this.constrain(method, call, verdict);
     const kind = residualKindOf(verdict);
     if (kind === null) return;
     const menu = this.menuFor(call.member);
@@ -119,8 +173,111 @@ export class ResidualSiteCollector {
     const rule = exclude?.() ?? null;
     if (rule !== null) {
       this.excludedCounts[rule] += 1;
+      // A framework member says nothing about which project class the receiver is.
+      if (rule === "frameworkMember" && groupKey !== undefined) this.groups.get(groupKey)?.set(call.member, false);
       return;
     }
+    if (groupKey === undefined) {
+      this.pushRow(method, call, verdict, kind, menu);
+      return;
+    }
+    this.pendingSites.push({ method, call, verdict, kind, groupKey });
+  }
+
+  /** Residual sites settled to a static edge by their receiver's constraint set. */
+  narrowed(): NarrowedResidualSite[] {
+    this.settle();
+    return this.narrowedSites;
+  }
+
+  /** Receiver kinds of residual sites whose constraint set intersected to no class (old menu kept). */
+  narrowEmptyKinds(): ReceiverKind[] {
+    this.settle();
+    return this.narrowEmpty;
+  }
+
+  /** Record `call` against its receiver; the receiver's group key, or `undefined` for a receiverless call. */
+  private constrain(method: ResidualMethodView, call: CallRef, verdict: ResidualVerdictView): string | undefined {
+    if (call.receiver === null || SELF_RECEIVERS.has(call.receiver)) return undefined;
+    const key = receiverGroupKey(method.symbolId, call.receiver, call.startLine, method.localAssignmentLines);
+    let members = this.groups.get(key);
+    if (members === undefined) {
+      members = new Map();
+      this.groups.set(key, members);
+    }
+    const constrains = verdict.missBucket === undefined || !NON_CONSTRAINING_BUCKETS.has(verdict.missBucket);
+    members.set(call.member, (members.get(call.member) ?? true) && constrains);
+    return key;
+  }
+
+  private settle(): void {
+    if (this.settled || this.closure === undefined) return;
+    this.settled = true;
+    for (const site of this.pendingSites) this.narrow(site, this.closure);
+  }
+
+  /**
+   * The classes answering every constraining member of the site's receiver.
+   * A member no project class answers is external and constrains nothing; an
+   * empty intersection keeps the single-member menu (precision first: never
+   * drop the true class).
+   */
+  private narrow(site: PendingResidualSite, closure: ReceiverClassClosure): void {
+    const own = closure.answerers(site.call.member);
+    let classes = new Set(own.keys());
+    for (const [member, constrains] of this.groups.get(site.groupKey) ?? []) {
+      if (!constrains || member === site.call.member) continue;
+      const answers = closure.answerers(member);
+      if (answers.size === 0) continue;
+      classes = new Set([...classes].filter((owner) => answers.has(owner)));
+    }
+    if (classes.size === 0) {
+      this.narrowEmpty.push(site.verdict.receiverKind);
+      this.pushRow(site.method, site.call, site.verdict, site.kind, this.menuFor(site.call.member));
+      return;
+    }
+    const targets = new Map<string, { relPath: RelPath; isSchemaColumn: boolean }>();
+    for (const owner of classes) {
+      for (const def of own.get(owner) ?? []) {
+        targets.set(def.symbolId, { relPath: def.relPath, isSchemaColumn: def.isSchemaColumn === true });
+      }
+    }
+    const methods = [...targets].filter(([, t]) => !t.isSchemaColumn);
+    if (methods.length === 0) {
+      // Every narrowed class reads the member as a schema column: no method node to edge to.
+      this.excludedCounts.schemaColumn += 1;
+      return;
+    }
+    const [sole] = methods;
+    // An edge needs the OTHER calls to have done the narrowing: a member only one
+    // class answers on its own is a namesake as often as not (`filter`, `save!`).
+    const narrowedByConstraints = own.size > 1 && classes.size === 1;
+    if (narrowedByConstraints && targets.size === 1 && site.kind === "dynamic" && sole !== undefined) {
+      this.narrowedSites.push({
+        receiverKind: site.verdict.receiverKind,
+        edge: {
+          sourceSymbolId: site.method.symbolId,
+          targetSymbolId: sole[0],
+          targetRelPath: sole[1].relPath,
+          callExpression: site.call.callText,
+        },
+      });
+      return;
+    }
+    const menu = orderByNamingPrior(
+      site.call.receiver ?? "",
+      methods.map(([id]) => id),
+    );
+    this.pushRow(site.method, site.call, site.verdict, site.kind, menu);
+  }
+
+  private pushRow(
+    method: ResidualMethodView,
+    call: CallRef,
+    verdict: ResidualVerdictView,
+    kind: ResidualKind,
+    menu: string[],
+  ): void {
     const menuOverflow = menu.length > this.menuLimit;
     const candidates = menuOverflow ? menu.slice(0, this.menuLimit) : menu;
     const line = call.startLine;
@@ -153,10 +310,12 @@ export class ResidualSiteCollector {
   }
 
   rows(): ResidualCallSiteRow[] {
+    this.settle();
     return this.collected;
   }
 
   excluded(): Readonly<ResidualExclusionCounts> {
+    this.settle();
     return this.excludedCounts;
   }
 

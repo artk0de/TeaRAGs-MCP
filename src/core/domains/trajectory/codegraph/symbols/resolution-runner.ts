@@ -478,6 +478,7 @@ export class CallEdgeResolutionRunner {
       symbolTable,
       this.residualMenuLimit,
       extraction.language,
+      { hierarchy: recorder ?? view },
     );
     this.activeResidual = residual;
     try {
@@ -817,6 +818,25 @@ export class CallEdgeResolutionRunner {
       else if (bucket === "noInProjectDef") stats.callsNoInProjectDef += 1;
       else if (bucket === "coreAmbiguous") stats.callsCoreAmbiguous += 1;
     });
+    this.settleNarrowedResidual(methodEdges, kindTally);
+  }
+
+  /**
+   * Residual sites their receiver's constraint set settled (wave 1.5 §3): each
+   * becomes a static edge and moves from the in-project miss it was tallied as
+   * to `resolved`, counted again under `narrowed`. A site whose constraints
+   * intersected to no class is counted under `narrowEmpty` and keeps its row.
+   */
+  private settleNarrowedResidual(methodEdges: MethodEdges, kindTally: Record<ReceiverKind, ReceiverKindTally>): void {
+    const residual = this.activeResidual;
+    if (residual === undefined) return;
+    for (const { receiverKind, edge } of residual.narrowed()) {
+      methodEdges.push(edge);
+      kindTally[receiverKind].resolved += 1;
+      kindTally[receiverKind].narrowed += 1;
+      this.runState.stats.callsResolved += 1;
+    }
+    for (const receiverKind of residual.narrowEmptyKinds()) kindTally[receiverKind].narrowEmpty += 1;
   }
 
   /**

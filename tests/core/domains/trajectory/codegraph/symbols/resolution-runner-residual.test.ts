@@ -169,3 +169,48 @@ describe("CallEdgeResolutionRunner.resolve — residual exclusions", () => {
     expect(runState.stats.residualSitesExcluded).toEqual({ schemaColumn: 0, frameworkMember: 0, timestampColumn: 0 });
   });
 });
+
+describe("CallEdgeResolutionRunner.resolve — receiver narrowing", () => {
+  const NARROW_DEFS: SymbolDefinition[] = [
+    ...DEFS,
+    { symbolId: "Firm#plan", fqName: "Firm#plan", shortName: "plan", relPath: "app/models/firm.rb", scope: ["Firm"] },
+  ];
+  const NARROW_TABLE = {
+    lookup: () => [],
+    lookupByShortName: (name: string) => NARROW_DEFS.filter((d) => d.shortName === name),
+  } as unknown as GlobalSymbolTable;
+  const twoCalls: FileExtraction = {
+    ...EXTRACTION,
+    chunks: [
+      {
+        ...EXTRACTION.chunks[0],
+        calls: [
+          { callText: "account.plan", receiver: "account", member: "plan", startLine: 11, startColumn: 6 },
+          { callText: "account.users", receiver: "account", member: "users", startLine: 12, startColumn: 6 },
+        ],
+      },
+    ],
+  };
+
+  it("settles a site its receiver's other calls narrow to one class as a static edge, tallied narrowed", () => {
+    const resolver = { resolve: () => null, hasInProjectDefinition: () => true };
+    const runState = new CodegraphRunState();
+    const runner = new CallEdgeResolutionRunner(factoryWith(resolver), runState);
+
+    const edges = runner.resolve(twoCalls, NARROW_TABLE);
+
+    expect(edges.methodEdges).toEqual([
+      {
+        sourceSymbolId: "Billing#run",
+        targetSymbolId: "Firm#users",
+        targetRelPath: "app/models/firm.rb",
+        callExpression: "account.users",
+      },
+    ]);
+    // `plan` has one answering class on its own: no narrowing happened, so it stays a question.
+    expect(edges.residualCallSites?.map((row) => [row.member, row.candidates])).toEqual([["plan", ["Firm#plan"]]]);
+    const [dynamic] = runState.toResolveRunStatsRows().filter((r) => r.receiverKind === "dynamic");
+    expect(dynamic).toMatchObject({ attempted: 2, resolved: 1, narrowed: 1, narrowEmpty: 0 });
+    expect(runState.stats.callsResolved).toBe(1);
+  });
+});
