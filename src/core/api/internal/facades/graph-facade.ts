@@ -644,6 +644,7 @@ export class GraphFacade {
             members: e.members,
             ...(e.memberLocations ? { memberLocations: e.memberLocations } : {}),
             length: e.members.length,
+            ...(e.hasModelEdge ? { hasModelEdge: true, modelEdgeCount: e.modelEdgeCount ?? 0 } : {}),
           })),
         };
       },

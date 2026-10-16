@@ -199,6 +199,42 @@ function methodVertex(relPath: unknown, symbolId: unknown): string {
   return fileScopedSymbolKey({ relPath: String(relPath), symbolId: String(symbolId) });
 }
 
+/**
+ * Member-to-member hops of each method cycle that only model edges support (bd
+ * tea-rags-mcp-2m83f.40) — a hop any static call site also supports is static,
+ * the rule trace_path applies. Read at query time from the edge table, so no
+ * provenance is persisted with the cycle; the `origin = 'model'` scan comes
+ * first and the cycle joins run over its few rows.
+ */
+const METHOD_CYCLE_MODEL_HOPS_SQL = `
+  WITH model_hops AS (
+    SELECT DISTINCT c1.cycle_id, e.source_rel_path, e.source_symbol_id, e.target_rel_path, e.target_symbol_id
+      FROM cg_symbols_edges_method e
+      JOIN cg_symbols_cycles c1
+        ON c1.scope = 'method' AND c1.member_rel_path = e.source_rel_path AND c1.member = e.source_symbol_id
+      JOIN cg_symbols_cycles c2
+        ON c2.scope = 'method' AND c2.cycle_id = c1.cycle_id
+       AND c2.member_rel_path = e.target_rel_path AND c2.member = e.target_symbol_id
+     WHERE e.origin = 'model'
+  )
+  SELECT h.cycle_id, COUNT(*) AS n
+    FROM model_hops h
+   WHERE NOT EXISTS (
+     SELECT 1 FROM cg_symbols_edges_method s
+      WHERE s.source_rel_path = h.source_rel_path AND s.source_symbol_id = h.source_symbol_id
+        AND s.target_rel_path = h.target_rel_path AND s.target_symbol_id = h.target_symbol_id
+        AND s.origin IS DISTINCT FROM 'model')
+   GROUP BY h.cycle_id`;
+
+/** File-cycle counterpart: a model file edge exists only where no import does (migration 056). */
+const FILE_CYCLE_MODEL_HOPS_SQL = `
+  SELECT c1.cycle_id, COUNT(DISTINCT (e.source_rel_path, e.target_rel_path)) AS n
+    FROM cg_symbols_edges_file e
+    JOIN cg_symbols_cycles c1 ON c1.scope = 'file' AND c1.member = e.source_rel_path
+    JOIN cg_symbols_cycles c2 ON c2.scope = 'file' AND c2.cycle_id = c1.cycle_id AND c2.member = e.target_rel_path
+   WHERE e.origin = 'model'
+   GROUP BY c1.cycle_id`;
+
 export class DuckDbGraphAnalyticsStore implements Omit<
   CodegraphGraphAnalyticsStore,
   "diffSymbolSignals" | "refreshSymbolSignalsPrev" | "computeAndPersistCyclesAndSignals"
@@ -226,6 +262,17 @@ export class DuckDbGraphAnalyticsStore implements Omit<
       }
       entry.members.push(row.member);
       entry.memberLocations?.push({ symbolId: row.member, relativePath: row.member_rel_path });
+    }
+    if (grouped.size > 0) {
+      for (const { cycle_id, n } of await this.session.queryAll<{ cycle_id: number | bigint; n: number | bigint }>(
+        scope === "file" ? FILE_CYCLE_MODEL_HOPS_SQL : METHOD_CYCLE_MODEL_HOPS_SQL,
+      )) {
+        const entry = grouped.get(Number(cycle_id));
+        if (entry) {
+          entry.hasModelEdge = true;
+          entry.modelEdgeCount = Number(n);
+        }
+      }
     }
     const entries = [...grouped.values()];
     if (!pathPattern) return entries;

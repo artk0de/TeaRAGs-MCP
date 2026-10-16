@@ -238,6 +238,14 @@ export interface CycleResult {
   memberLocations?: CycleMemberLocation[];
   /** Convenience — member count (always >= 2). */
   length: number;
+  /**
+   * True when at least one member-to-member hop is supported only by
+   * residual-model edges (a hop any static edge supports stays static).
+   * Absent when every hop is static.
+   */
+  hasModelEdge?: boolean;
+  /** Number of model-only hops inside the cycle; present with `hasModelEdge`. */
+  modelEdgeCount?: number;
 }
 
 export interface CycleMemberLocation {

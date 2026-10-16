@@ -248,6 +248,10 @@ export interface CycleEntry {
    * by migration 028 and not yet recomputed.
    */
   memberLocations?: CycleMemberLocation[];
+  /** True when a member-to-member hop is supported only by residual-model edges; absent = every hop static. */
+  hasModelEdge?: boolean;
+  /** Count of those model-only hops; present with `hasModelEdge`. */
+  modelEdgeCount?: number;
 }
 
 /** One method-scope cycle member, addressed by `(relativePath, symbolId)`. */
