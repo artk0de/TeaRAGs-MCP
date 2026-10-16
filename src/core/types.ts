@@ -357,6 +357,12 @@ export interface CodegraphResolveSummary {
   callsNarrowed?: number;
   callsNarrowEmpty?: number;
   /**
+   * bd tea-rags-mcp-2m83f.49 — calls resolved on a receiver rooted at a
+   * parameter only its callers typed (a subset of the resolved calls). Absent
+   * until a run resolved one.
+   */
+  callsParamTyped?: number;
+  /**
    * tea-rags-mcp-cnqrg — per-code-language breakdown of the same rate, so a
    * polyglot index reveals WHICH language's resolver carries the gap. Test
    * call-sites are excluded from every tally (production-code capability only).
@@ -452,6 +458,12 @@ export interface CodegraphResolveLanguageRow {
    */
   callsNarrowed?: number;
   callsNarrowEmpty?: number;
+  /**
+   * bd tea-rags-mcp-2m83f.49 — calls resolved on a receiver rooted at a
+   * parameter only its callers typed (a subset of the resolved calls). Absent
+   * until a run resolved one.
+   */
+  callsParamTyped?: number;
   /**
    * tea-rags-mcp-7m5xz — per-receiver-kind breakdown scoped to this language's
    * call-sites. Present only in the multi-language case (precise lang×kind).

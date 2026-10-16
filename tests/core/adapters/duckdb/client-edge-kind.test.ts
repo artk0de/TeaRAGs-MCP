@@ -143,6 +143,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           unnarrowedTemplate: 0,
           narrowed: 0,
           narrowEmpty: 0,
+          paramTyped: 0,
         },
         {
           language: "typescript",
@@ -157,6 +158,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           unnarrowedTemplate: 0,
           narrowed: 0,
           narrowEmpty: 0,
+          paramTyped: 0,
         },
       ]);
     });
@@ -205,6 +207,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           unnarrowedTemplate: 0,
           narrowed: 0,
           narrowEmpty: 0,
+          paramTyped: 0,
         },
       ]);
     });

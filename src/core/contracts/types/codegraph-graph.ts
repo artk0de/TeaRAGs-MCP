@@ -11,7 +11,7 @@
  * `GraphDbClient`. Re-exported verbatim by the `codegraph.ts` barrel.
  */
 
-import type { TypeAbstractnessCensus } from "./codegraph-extraction.js";
+import type { CallerArgObservation, TypeAbstractnessCensus } from "./codegraph-extraction.js";
 import type { InheritanceEdgeRow } from "./codegraph-hierarchy.js";
 import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
 import type { EdgeOrigin, ResidualCallSiteRow } from "./codegraph-residual.js";
@@ -410,6 +410,12 @@ export interface ResolveRunStatsRow {
    */
   narrowEmpty?: number;
   /**
+   * bd tea-rags-mcp-2m83f.49 — call sites resolved on a receiver rooted at a
+   * parameter only its callers typed (2m83f.44). A subset of `resolved`, in no
+   * rate. Defaults to 0 before migration 060.
+   */
+  paramTyped?: number;
+  /**
    * bd tea-rags-mcp-f2jsb / j0pki — of the `attempted − resolved` misses in
    * this bucket, how many the dispatch kernel judged over-cap AMBIGUOUS
    * (survivors > corpus-adaptive fan-out cap) and recorded as an aggregate
@@ -541,6 +547,14 @@ export interface GraphEdges {
    * equal to a full run's. Present only when non-empty.
    */
   hierarchyDependencies?: HierarchyDescendantDependency[];
+  /**
+   * The call sites of this file whose callee is one exact static edge, with
+   * their argument types (bd tea-rags-mcp-2m83f.49) — persisted to
+   * `cg_caller_param_observations` on the same per-file reconciliation as the
+   * edges, so a later run that does not walk this file still folds what it
+   * passes into its callees' parameter types. Present only when non-empty.
+   */
+  callerParamObservations?: CallerArgObservation[];
 }
 
 /**

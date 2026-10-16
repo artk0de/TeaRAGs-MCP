@@ -18,6 +18,7 @@ import type {
   IdentifierDeclarationKind,
   IdentifierTypeMultiplicity,
   IdentifierTypeSource,
+  PersistedCallerArgObservation,
   PersistedIdentifierTypeSource,
 } from "./codegraph-extraction.js";
 import type {
@@ -1143,6 +1144,23 @@ export interface CodegraphSymbolFileStore {
    * {@link pruneDerivedForDeletedFiles}.
    */
   invalidateHierarchyDependentsOfDeletedFiles: (relPaths: readonly RelPath[]) => Promise<void>;
+
+  /**
+   * The persisted caller observations of `scope`'s languages (bd
+   * tea-rags-mcp-2m83f.49), in (file, site) order: what each file passes to its
+   * exact-edge callees. The caller-parameter pass folds the rows of every file
+   * the run does not walk with its fresh observations. Scoped like
+   * {@link listHierarchyDependencies}.
+   */
+  listCallerParamObservations: (scope: Pass1AggregateReadScope) => Promise<PersistedCallerArgObservation[]>;
+
+  /**
+   * Before `relPaths` are removed (bd tea-rags-mcp-2m83f.49): clear the content
+   * hash of every OTHER file declaring a callee one of `relPaths` observed, so
+   * the drift repair re-resolves it without that caller's evidence. Called by
+   * `handleDeletedPaths` before the base rows go.
+   */
+  invalidateCallerParamDependentsOfDeletedFiles: (relPaths: readonly RelPath[]) => Promise<void>;
 
   /**
    * Every file row with the content hash persisted alongside it, `null` where

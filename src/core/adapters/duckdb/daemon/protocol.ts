@@ -90,6 +90,8 @@ export const DAEMON_OPS = [
   "markDerivedStale",
   // Cone dependents of deleted files (bd tea-rags-mcp-7t2ee).
   "invalidateHierarchyDependentsOfDeletedFiles",
+  // Callees observed by deleted callers (bd tea-rags-mcp-2m83f.49).
+  "invalidateCallerParamDependentsOfDeletedFiles",
   "upsertSymbols",
   "upsertSymbolsBulk",
   "upsertFilesBulk",
@@ -154,6 +156,9 @@ export const DAEMON_OPS = [
   // Hierarchy dependencies read at the barrier (bd tea-rags-mcp-7t2ee). REQUIRED:
   // an empty answer would read as "no caller depends on any cone".
   "listHierarchyDependencies",
+  // Caller observations folded before pass-2 (bd tea-rags-mcp-2m83f.49). REQUIRED:
+  // an empty answer would read as "no unwalked file calls anything".
+  "listCallerParamObservations",
   "listFileContentHashes",
   "getTransitiveImpact",
   "getFileMetricsBulk",
@@ -322,6 +327,7 @@ export interface DaemonOpParamsMap {
   applyModelExternalSites: { model: string; sites: ModelExternalSiteRow[] };
   markDerivedStale: NoDaemonOpParams;
   invalidateHierarchyDependentsOfDeletedFiles: { relPaths: RelPath[] };
+  invalidateCallerParamDependentsOfDeletedFiles: { relPaths: RelPath[] };
   upsertSymbols: { relPath: RelPath; definitions: SymbolDefinition[] };
   upsertSymbolsBulk: { entries: BulkSymbolUpsertEntry[] };
   upsertFilesBulk: { entries: readonly BulkFileUpsertEntry[] };
@@ -362,6 +368,7 @@ export interface DaemonOpParamsMap {
   listAllSymbols: NoDaemonOpParams;
   listPass1Aggregates: { scope: Pass1AggregateReadScope };
   listHierarchyDependencies: { scope: Pass1AggregateReadScope };
+  listCallerParamObservations: { scope: Pass1AggregateReadScope };
   listFileContentHashes: NoDaemonOpParams;
   getTransitiveImpact: { relPath: RelPath; maxDepth?: number };
   getFileMetricsBulk: { relPaths: readonly RelPath[]; maxDepth?: number };

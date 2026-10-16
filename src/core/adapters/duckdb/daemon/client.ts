@@ -53,6 +53,7 @@ import type {
   OntologyReportSectionRows,
   OntologyReportSummaryRows,
   Pass1AggregateReadScope,
+  PersistedCallerArgObservation,
   PersistedHierarchyDescendantDependency,
   PersistedSymbolLineRanges,
   RelPath,
@@ -485,6 +486,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async invalidateHierarchyDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
     return this.symbolFiles.invalidateHierarchyDependentsOfDeletedFiles(relPaths);
+  }
+
+  async listCallerParamObservations(scope: Pass1AggregateReadScope): Promise<PersistedCallerArgObservation[]> {
+    return this.symbolFiles.listCallerParamObservations(scope);
+  }
+
+  async invalidateCallerParamDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    return this.symbolFiles.invalidateCallerParamDependentsOfDeletedFiles(relPaths);
   }
 
   async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {

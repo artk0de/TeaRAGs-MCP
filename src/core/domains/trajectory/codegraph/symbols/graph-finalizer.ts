@@ -20,10 +20,13 @@ import { createInterface } from "node:readline";
 
 import type {
   BulkFileUpsertEntry,
+  CallerArgObservation,
   FileExtraction,
   GlobalSymbolTable,
   GraphDbClient,
   GraphEdges,
+  PersistedCallerArgObservation,
+  RelPath,
 } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
@@ -36,6 +39,7 @@ import {
   type CodegraphMetricsStage,
 } from "../../errors.js";
 import { runCallerParamPass } from "./caller-param-pass.js";
+import { CodegraphExtractionSpillWriter } from "./extraction-spill-writer.js";
 import {
   countCappedGraphEdges,
   countedGraphEdgesByKind,
@@ -227,11 +231,20 @@ export class GraphBuildFinalizer {
    *   caller that only wants the loop (tests, direct mode) need not supply one;
    *   production passes the provider's instance.
    */
+  /** The caller-parameter pass's fresh observations by caller file, persisted with each file's edges. */
+  private callerObservations: ReadonlyMap<string, readonly CallerArgObservation[]> = new Map();
+
+  /**
+   * @param extractUnwalked Parses unchanged files fresh for pass-2 — an unwalked
+   *   callee whose callers' agreed parameter types moved (bd
+   *   tea-rags-mcp-2m83f.49). Absent → such a callee keeps its edges.
+   */
   constructor(
     private readonly resolveStore: GraphStoreResolver,
     private readonly resolutionRunner: Pass2ResolutionRunner,
     private readonly runState: CodegraphRunState,
     private readonly timings: CodegraphPhaseTimings = new CodegraphPhaseTimings(),
+    private readonly extractUnwalked?: (relPaths: readonly RelPath[]) => Promise<FileExtraction[]>,
   ) {}
 
   /**
@@ -261,7 +274,7 @@ export class GraphBuildFinalizer {
       lastRelPath: null,
     };
     try {
-      await this.typeParamsFromCallers(spillPath, symbolTable);
+      await this.typeParamsFromCallers(spillPath, graphDb, symbolTable);
       await this.visitSpill(spillPath, async (line) => this.processSpillLine(run, line));
       await this.finishPass(run);
     } catch (err) {
@@ -301,12 +314,51 @@ export class GraphBuildFinalizer {
    * edge is written (bd tea-rags-mcp-2m83f.44), so pass-2 resolves the calls on
    * them once, with their types seeded. Charged to pass-2's wall clock.
    */
-  private async typeParamsFromCallers(spillPath: string, symbolTable: GlobalSymbolTable): Promise<void> {
+  private async typeParamsFromCallers(
+    spillPath: string,
+    graphDb: GraphDbClient,
+    symbolTable: GlobalSymbolTable,
+  ): Promise<void> {
+    this.callerObservations = new Map();
     const observeCallerArgs = this.resolutionRunner.observeCallerArgs?.bind(this.resolutionRunner);
     if (observeCallerArgs === undefined) return;
     const startedAtMs = Date.now();
-    await runCallerParamPass(spillPath, { observeCallerArgs }, this.runState, symbolTable);
+    this.callerObservations = await runCallerParamPass(spillPath, { observeCallerArgs }, this.runState, symbolTable, {
+      persisted: await this.persistedCallerObservations(graphDb),
+      appendToSpill: async (relPaths) => this.appendUnwalked(spillPath, relPaths),
+    });
     this.timings.record("pass2", Date.now() - startedAtMs, { count: 0 });
+  }
+
+  /**
+   * The persisted caller observations of the languages this run walked (bd
+   * tea-rags-mcp-2m83f.49). A read failure degrades to "the spill is every
+   * caller" with a stderr line — the trade the hierarchy-dependency read makes.
+   */
+  private async persistedCallerObservations(graphDb: GraphDbClient): Promise<PersistedCallerArgObservation[]> {
+    try {
+      return await graphDb.listCallerParamObservations(this.runState.walkedFamilyScope());
+    } catch (err) {
+      process.stderr.write(
+        `[tea-rags] codegraph caller-observation read failed: ${(err as Error).message}\n` +
+          "[tea-rags] parameters are typed from this run's callers only — a later incremental or --force-enrichments codegraph heals them\n",
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Unchanged callees whose parameter types moved join pass-2 only, appended to
+   * the closed spill — counted, never re-absorbed, like a hierarchy dependent.
+   */
+  private async appendUnwalked(spillPath: string, relPaths: readonly RelPath[]): Promise<RelPath[]> {
+    if (this.extractUnwalked === undefined) return [];
+    const extractions = await this.extractUnwalked(relPaths);
+    if (extractions.length === 0) return [];
+    await new CodegraphExtractionSpillWriter(spillPath).appendAfterClose(extractions);
+    for (const extraction of extractions) this.runState.admitReresolvedFile(extraction);
+    this.runState.stats.extractedFiles += extractions.length;
+    return extractions.map((e) => e.relPath);
   }
 
   /**
@@ -336,6 +388,8 @@ export class GraphBuildFinalizer {
     const extraction = parseSpillLine(line, run.processed);
     run.lastRelPath = extraction.relPath;
     const edges = this.cappedEdgesOf(extraction, run.symbolTable, run.processed);
+    const observations = this.callerObservations.get(extraction.relPath);
+    if (observations !== undefined && observations.length > 0) edges.callerParamObservations = [...observations];
     // A repeat relPath already has an entry pending in this batch — flush it
     // out first so the repeat starts its own transaction instead of sharing one
     // with its own earlier self (see `Pass2BulkWriteBuffer#bufferedRelPaths`).

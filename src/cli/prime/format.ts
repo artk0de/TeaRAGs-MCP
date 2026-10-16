@@ -733,6 +733,8 @@ function formatResolvePlain(resolve: CodegraphResolve): string[] {
     const unnarrowed = resolve.callsUnnarrowedTemplate ?? 0;
     if (unnarrowed > 0) lines.push(formatUnnarrowedWarning("", unnarrowed));
   }
+  const paramTyped = resolve.callsParamTyped ?? 0;
+  if (paramTyped > 0) lines.push(`paramTyped: ${paramTyped} calls resolved on a parameter typed by its callers`);
   const narrowed = formatNarrowedLine(resolve);
   if (narrowed !== null) lines.push(narrowed);
   return lines;

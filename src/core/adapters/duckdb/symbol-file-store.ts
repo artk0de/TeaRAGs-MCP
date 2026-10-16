@@ -14,6 +14,7 @@ import type {
   GraphEdges,
   GraphFileNode,
   Pass1AggregateReadScope,
+  PersistedCallerArgObservation,
   PersistedHierarchyDescendantDependency,
   PersistedSymbolLineRanges,
   RelPath,
@@ -92,6 +93,14 @@ export class DuckDbSymbolFileStore implements CodegraphSymbolFileStore {
 
   async invalidateHierarchyDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
     return this.fileGraph.invalidateHierarchyDependentsOfDeletedFiles(relPaths);
+  }
+
+  async listCallerParamObservations(scope: Pass1AggregateReadScope): Promise<PersistedCallerArgObservation[]> {
+    return this.fileGraph.listCallerParamObservations(scope);
+  }
+
+  async invalidateCallerParamDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    return this.fileGraph.invalidateCallerParamDependentsOfDeletedFiles(relPaths);
   }
 
   // ── Symbol persistence ──

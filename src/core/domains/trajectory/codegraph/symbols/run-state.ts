@@ -130,6 +130,10 @@ export interface ReceiverKindTally {
   // intersected to no project class; they keep the single-member menu. A
   // diagnostic, read by no rate. Persisted to cg_run_stats.narrow_empty.
   narrowEmpty: number;
+  // bd tea-rags-mcp-2m83f.49 — RESOLVED calls whose receiver is rooted at a
+  // parameter only its callers typed (2m83f.44). Counted in `resolved` too, in
+  // no rate. Persisted to cg_run_stats.param_typed.
+  paramTyped: number;
 }
 
 export interface RunStats {
@@ -224,6 +228,7 @@ function zeroReceiverKindTally(): ReceiverKindTally {
     unnarrowedTemplate: 0,
     narrowed: 0,
     narrowEmpty: 0,
+    paramTyped: 0,
   };
 }
 
@@ -255,6 +260,7 @@ function addReceiverKindTally(target: ReceiverKindTally, source: ReceiverKindTal
   target.unnarrowedTemplate += source.unnarrowedTemplate;
   target.narrowed += source.narrowed;
   target.narrowEmpty += source.narrowEmpty;
+  target.paramTyped += source.paramTyped;
 }
 
 /**
@@ -2102,6 +2108,7 @@ export class CodegraphRunState {
           unnarrowedTemplate: t.unnarrowedTemplate,
           narrowed: t.narrowed,
           narrowEmpty: t.narrowEmpty,
+          paramTyped: t.paramTyped,
         });
       }
     }
@@ -2130,6 +2137,7 @@ export class CodegraphRunState {
         unnarrowedTemplate: t.unnarrowedTemplate,
         narrowed: t.narrowed,
         narrowEmpty: t.narrowEmpty,
+        paramTyped: t.paramTyped,
       })),
     }));
   }

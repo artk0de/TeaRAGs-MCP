@@ -46,7 +46,8 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
       // core_ambiguous added by migration 015 (83cl7 core-homonym denominator);
       // unnarrowed_template added by migration 022 (znxg8) — the one column here
       // that counts RESOLVED calls rather than misses, and feeds no rate;
-      // narrowed / narrow_empty added by migration 057 (2m83f.43).
+      // narrowed / narrow_empty added by migration 057 (2m83f.43);
+      // param_typed added by migration 060 (2m83f.49).
       [
         "ambiguous_fanout",
         "attempted",
@@ -56,6 +57,7 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
         "narrow_empty",
         "narrowed",
         "no_in_project_def",
+        "param_typed",
         "receiver_kind",
         "resolved",
         "unnarrowed_template",

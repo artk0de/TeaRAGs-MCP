@@ -68,6 +68,9 @@ export const GRAPH_EDGE_CAP_POLICY = {
   // Call sites left for the residual pass, not edges; each menu is cut at the
   // residual menu limit, and an over-cap file drops them with every other kind.
   residualCallSites: "exempt",
+  // Observations of call sites that already resolved, not edges; bounded by the
+  // file's exact-edge calls and kept past the cap so the callee's types survive.
+  callerParamObservations: "exempt",
 } as const satisfies GraphEdgeCapPolicy;
 
 /** The kinds {@link GRAPH_EDGE_CAP_POLICY} counts against the cap. */
