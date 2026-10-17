@@ -29,36 +29,41 @@ import type {
 } from "../../adapters/qdrant/ports.js";
 import type { RerankerPort } from "../../domains/explore/reranker-port.js";
 import { formatIndexDriftReport, type IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
-// The handler TYPES arrive through the api barrel (`../index.js`), which
-// aggregates composition + facades — a type-only edge this factory keeps
-// (bd tea-rags-mcp-0qaht.12). No deep `../public/` path beyond the contract
-// itself is imported.
+import type { App } from "../public/app.js";
+import type { IndexStatus, PresetDetail, WorkingTreeIndexTarget } from "../public/dto/index.js";
+import {
+  createPathCollectionResolver as createPathCollectionResolverImpl,
+  resolveBaseIndexEntry as resolveBaseIndexEntryImpl,
+} from "./collection-resolver.js";
+// Handler types arrive from the declaring modules directly, and the
+// composition values from their own files — NOT through the api barrel: the
+// barrel re-exports `createApp` from this file, so a barrel import here would
+// close a runtime import cycle (bd tea-rags-mcp-54xwd.14). The old
+// through-the-barrel edge (bd tea-rags-mcp-0qaht.12) predates the factory's
+// move from api/public into internal/, where these are siblings. No deep
+// `../public/` path beyond the contract itself is imported.
 import {
   composeAppOps,
-  createPathCollectionResolver as createPathCollectionResolverImpl,
   emptyArchitectureReport,
   emptyCochangeResult,
   emptyOntologyReport,
   emptyReviewChangesResult,
-  resolveBaseIndexEntry as resolveBaseIndexEntryImpl,
   resolveLanguageCapabilities as resolveDomainLanguageCapabilities,
   unjudgedPlannedArchitectureEdges,
   unplannedArchitectureRestructure,
   unsimulatedArchitectureRestructure,
-  type CollectionOps,
-  type DocumentOps,
-  type ExploreFacade,
-  type GraphFacade,
-  type IngestFacade,
-  type NamingLexiconOps,
-  type OntologyReportOps,
-  type ProjectRegistryOps,
-  type ReviewFacade,
-  type TracePathOps,
-} from "../index.js";
-import type { App } from "../public/app.js";
-import type { IndexStatus, PresetDetail, WorkingTreeIndexTarget } from "../public/dto/index.js";
+} from "./composition.js";
+import type { ExploreFacade } from "./facades/explore-facade.js";
+import type { GraphFacade } from "./facades/graph-facade.js";
+import type { IngestFacade } from "./facades/ingest-facade.js";
+import type { ReviewFacade } from "./facades/review-facade.js";
+import type { CollectionOps } from "./ops/collection-ops.js";
+import type { DocumentOps } from "./ops/document-ops.js";
+import type { NamingLexiconOps } from "./ops/naming-lexicon-ops.js";
+import type { OntologyReportOps } from "./ops/ontology-report-ops.js";
+import type { ProjectRegistryOps } from "./ops/project-registry-ops.js";
 import { reviewSectionIds as reviewSectionIdsValue } from "./ops/review-sections/index.js";
+import type { TracePathOps } from "./ops/trace-path-ops.js";
 
 // ---------------------------------------------------------------------------
 // Dependency interface — what bootstrap provides to create an App. Assembly
