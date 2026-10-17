@@ -25,7 +25,7 @@ import { assignSymbolMass } from "./chunker/symbol-mass.js";
 import { generateChunkId } from "./chunker/utils/chunk-id.js";
 import { extractImportsExports } from "./chunker/utils/import-extractor.js";
 import { sourceContentSkipReason } from "./file-chunk-points.js";
-import type { FileProcessCallbacks, FileProcessorOptions, FileProcessResult } from "./file-processor.js";
+import type { FileProcessCallbacks, FileProcessorOptions, FileProcessResult } from "./file-process-types.js";
 import { pipelineLog, type FileIngestRecord } from "./infra/debug-log/index.js";
 
 /** Reasons a file is dropped BEFORE it is parsed — cheapest gates first. */
