@@ -20,6 +20,16 @@ import { orderByReceiverName } from "./receiver-name-prior.js";
 const INSTANCE_MEMBER_KINDS: readonly InheritanceKind[] = ["super", "include", "prepend", "implements"];
 /** Kinds through which a class-level member reaches a class: superclass chain and `extend`. */
 const CLASS_MEMBER_KINDS: readonly InheritanceKind[] = ["super", "extend"];
+/** Kinds through which an instance method of a module becomes a class-level member: `extend`. */
+const EXTEND_KINDS: readonly InheritanceKind[] = ["extend"];
+/** Kinds that make a class's instances instances of a module: mixing it in, or subclassing a class that does. */
+const MODULE_INSTANCE_KINDS: readonly InheritanceKind[] = ["include", "prepend", "implements", "super"];
+
+/**
+ * Who the receiver is: an instance (`record`), or a class object read off an
+ * untyped instance (`record.class`), which answers class-level members only.
+ */
+export type ReceiverSide = "instance" | "class";
 
 /** A receiver root: a local, an ivar or a cvar. */
 const RECEIVER_ROOT = /^@{0,2}[A-Za-z_]\w*/;
@@ -39,6 +49,7 @@ function memberSeparator(symbolId: string, member: string): "#" | "." | null {
  */
 export class ReceiverClassClosure {
   private readonly cache = new Map<string, ReadonlyMap<string, readonly SymbolDefinition[]>>();
+  private readonly includers = new Map<string, ReadonlySet<string>>();
 
   constructor(
     private readonly symbolTable: Pick<GlobalSymbolTable, "lookupByShortName">,
@@ -46,8 +57,14 @@ export class ReceiverClassClosure {
     private readonly hierarchy?: HierarchyView,
   ) {}
 
-  answerers(member: string): ReadonlyMap<string, readonly SymbolDefinition[]> {
-    const cached = this.cache.get(member);
+  /**
+   * On the `class` side an instance method answers only the classes that
+   * `extend` its module — never its own owner; a class method answers as on
+   * the instance side.
+   */
+  answerers(member: string, side: ReceiverSide = "instance"): ReadonlyMap<string, readonly SymbolDefinition[]> {
+    const cacheKey = `${side}\u0000${member}`;
+    const cached = this.cache.get(cacheKey);
     if (cached !== undefined) return cached;
     const nearest = new Map<string, { depth: number; defs: SymbolDefinition[] }>();
     const offer = (owner: string, depth: number, def: SymbolDefinition): void => {
@@ -60,15 +77,32 @@ export class ReceiverClassClosure {
       const separator = memberSeparator(def.symbolId, member);
       if (separator === null) continue;
       const owner = def.symbolId.slice(0, def.symbolId.length - member.length - 1);
-      offer(owner, 0, def);
-      const kinds = separator === "#" ? INSTANCE_MEMBER_KINDS : CLASS_MEMBER_KINDS;
+      const extendedOnly = side === "class" && separator === "#";
+      if (!extendedOnly) offer(owner, 0, def);
+      const kinds = extendedOnly ? EXTEND_KINDS : separator === "#" ? INSTANCE_MEMBER_KINDS : CLASS_MEMBER_KINDS;
       for (const edge of this.hierarchy?.getDescendants(owner, { transitive: true, kinds }) ?? []) {
         offer(edge.sourceFqName, edge.depth, def);
       }
     }
     const answer = new Map([...nearest].map(([owner, { defs }]) => [owner, defs]));
-    this.cache.set(member, answer);
+    this.cache.set(cacheKey, answer);
     return answer;
+  }
+
+  /** Classes whose instances are instances of the module `moduleFqName`: its includers and their subclasses. */
+  instancesOf(moduleFqName: string): ReadonlySet<string> {
+    const cached = this.includers.get(moduleFqName);
+    if (cached !== undefined) return cached;
+    const edges =
+      this.hierarchy?.getDescendants(moduleFqName, { transitive: true, kinds: MODULE_INSTANCE_KINDS }) ?? [];
+    const answer = new Set(edges.map((e) => e.sourceFqName));
+    this.includers.set(moduleFqName, answer);
+    return answer;
+  }
+
+  /** The module has a class that `extend`s it, so its instance methods are some class's class methods. */
+  isExtended(moduleFqName: string): boolean {
+    return (this.hierarchy?.getDescendants(moduleFqName, { kinds: EXTEND_KINDS }).length ?? 0) > 0;
   }
 }
 

@@ -472,3 +472,107 @@ describe("ResidualSiteCollector — receiver narrowing of a frameworkOverride me
     expect(total?.classTargets?.map(([cls]) => cls)).toEqual(["Estimate", "Invoice", "Payment"]);
   });
 });
+
+describe("ResidualSiteCollector — a receiver named after a project module", () => {
+  const moduleDef = (name: string, symbolKind: "module" | "class"): SymbolDefinition => ({
+    ...def(name, `app/models/concerns/${name.toLowerCase()}.rb`),
+    shortName: name,
+    symbolKind,
+  });
+  const FIRM_DEFS = [
+    def("User#firm", "app/models/user.rb"),
+    def("Client#firm", "app/models/client.rb"),
+    def("Invoice#firm", "app/models/invoice.rb"),
+    def("Estimate#firm", "app/models/estimate.rb"),
+  ];
+  const ACTOR_HIERARCHY: [string, string, InheritanceKind][] = [
+    ["Guest", "User", "super"],
+    ["Owner", "User", "super"],
+    ["Admin", "Owner", "super"],
+    ["Guest", "Actor", "include"],
+    ["Owner", "Actor", "include"],
+    ["Client", "Actor", "include"],
+  ];
+  const classesOf = (collector: ResidualSiteCollector) =>
+    collector.rows()[0]?.classTargets?.map(([c, t]) => `${c}=${t}`);
+
+  it("narrows `actor.firm` to the module's includers and their subclasses — sound only because Actor is a module", () => {
+    const collector = collectorOf([...FIRM_DEFS, moduleDef("Actor", "module")], hierarchyOf(ACTOR_HIERARCHY));
+
+    collector.observe(METHOD, call("actor", "firm", 12), DYNAMIC_MISS);
+
+    expect(classesOf(collector)).toEqual([
+      "Admin=User#firm",
+      "Client=Client#firm",
+      "Guest=User#firm",
+      "Owner=User#firm",
+    ]);
+  });
+
+  it("leaves the class set whole when the name is also a class", () => {
+    const defs = [...FIRM_DEFS, moduleDef("Actor", "module"), moduleDef("Actor", "class")];
+    const collector = collectorOf(defs, hierarchyOf(ACTOR_HIERARCHY));
+
+    collector.observe(METHOD, call("actor", "firm", 12), DYNAMIC_MISS);
+
+    expect(classesOf(collector)).toHaveLength(7);
+  });
+
+  it("leaves the class set whole when no includer answers the member", () => {
+    const collector = collectorOf(
+      [...FIRM_DEFS, moduleDef("Actor", "module")],
+      hierarchyOf([["Plan", "Actor", "include"]]),
+    );
+
+    collector.observe(METHOD, call("actor", "firm", 12), DYNAMIC_MISS);
+
+    expect(classesOf(collector)).toHaveLength(4);
+  });
+});
+
+describe("ResidualSiteCollector — a member answered only by overrides of a framework member", () => {
+  const RESOLVED: ResidualVerdictView = { receiverKind: "dynamic", outcome: "resolved" };
+  const defs = [
+    def("Presenter#blank?", "app/presenters/presenter.rb"),
+    def("Invoice#firm_id", "app/models/invoice.rb"),
+    def("Payment#firm_id", "app/models/payment.rb"),
+  ];
+
+  it("does not constrain the receiver, so its other calls still narrow", () => {
+    const collector = collectorOf(defs);
+
+    collector.observe(METHOD, call("resource", "blank?", 12), RESOLVED, undefined, () => ["Presenter#blank?"]);
+    collector.observe(METHOD, call("resource", "firm_id", 13), DYNAMIC_MISS);
+
+    expect(collector.narrowEmptyKinds()).toEqual([]);
+    expect(collector.rows()[0]?.classTargets?.map(([c]) => c)).toEqual(["Invoice", "Payment"]);
+  });
+});
+
+describe("ResidualSiteCollector — an untyped `x.class` receiver", () => {
+  const defs = [
+    def("Invoice#table_label", "app/models/invoice.rb"),
+    def("Estimate.table_label", "app/models/estimate.rb"),
+    def("Reportable#table_label", "app/models/concerns/reportable.rb"),
+  ];
+  const hierarchy = hierarchyOf([["Payment", "Reportable", "extend"]]);
+
+  it("offers only class methods when there is no hierarchy to show an extended module", () => {
+    const collector = new ResidualSiteCollector("app/services/billing.rb", tableOf(defs), 40, "ruby");
+
+    collector.observe(METHOD, call("record.class", "table_label", 12), DYNAMIC_MISS);
+
+    expect(collector.rows()[0]?.candidates).toEqual(["Estimate.table_label"]);
+  });
+
+  it("narrows a grouped `x.class` receiver to the classes the member reaches as a class method", () => {
+    const collector = collectorOf(defs, hierarchy);
+
+    collector.observe(METHOD, call("record.class", "table_label", 12), DYNAMIC_MISS);
+
+    expect(collector.rows()[0]?.classTargets?.map(([c, t]) => `${c}=${t}`)).toEqual([
+      "Estimate=Estimate.table_label",
+      "Payment=Reportable#table_label",
+    ]);
+  });
+});

@@ -26,7 +26,9 @@ import {
   orderClassesByNamingPrior,
   ReceiverClassClosure,
   receiverGroupKey,
+  type ReceiverSide,
 } from "./receiver-closure.js";
+import { receiverNameOf, typeNameOf } from "./receiver-name-prior.js";
 
 /** Menu size the wave-1 eval measured; `CODEGRAPH_RESIDUAL_MENU_LIMIT` overrides it. */
 export const DEFAULT_RESIDUAL_MENU_LIMIT = 40;
@@ -76,6 +78,16 @@ const NON_CONSTRAINING_BUCKETS: ReadonlySet<string> = new Set(["externalSkipped"
 
 /** Receivers that name the enclosing object: their class is the caller's, never a narrowing question. */
 const SELF_RECEIVERS: ReadonlySet<string> = new Set(["", "self", "this", "super"]);
+
+/** A class object read off an instance — `record.class`: it answers class-level members only. */
+const CLASS_OBJECT_RECEIVER = /\.\s*class$/;
+
+/** Declaration kinds of a type that is never instantiated itself: its instances are its includers'. */
+const MIXIN_KINDS: ReadonlySet<string> = new Set(["module", "interface"]);
+
+function sideOf(receiver: string | null): ReceiverSide {
+  return receiver !== null && CLASS_OBJECT_RECEIVER.test(receiver.trim()) ? "class" : "instance";
+}
 
 interface PendingResidualSite {
   method: ResidualMethodView;
@@ -229,10 +241,17 @@ export class ResidualSiteCollector {
     overrideMenu?: () => readonly string[] | null,
     returnTypeOf?: ResidualReturnTypeOf,
   ): void {
-    const groupKey = this.closure === undefined ? undefined : this.constrain(method, call, verdict);
+    let overridesRead = false;
+    let overridesValue: readonly string[] | null = null;
+    const overridesOf = (): readonly string[] | null => {
+      if (!overridesRead) overridesValue = overrideMenu?.() ?? null;
+      overridesRead = true;
+      return overridesValue;
+    };
+    const groupKey = this.closure === undefined ? undefined : this.constrain(method, call, verdict, overridesOf);
     const kind = residualKindOf(verdict);
     if (kind === null) return;
-    const fullMenu = this.menuFor(call.member);
+    const fullMenu = this.menuFor(call.member, sideOf(call.receiver));
     if (fullMenu.length === 0) return;
     const rule = exclude?.() ?? null;
     if (rule !== null) {
@@ -241,7 +260,7 @@ export class ResidualSiteCollector {
       if (rule === "frameworkMember" && groupKey !== undefined) this.groups.get(groupKey)?.set(call.member, false);
       return;
     }
-    const overrides = overrideMenu?.() ?? null;
+    const overrides = overridesOf();
     const reason: ResidualReason | undefined =
       overrides !== null && overrides.length > 0 ? "frameworkOverride" : undefined;
     const menu = reason === undefined ? fullMenu : [...new Set(overrides)].sort();
@@ -274,8 +293,19 @@ export class ResidualSiteCollector {
     return this.narrowEmpty;
   }
 
-  /** Record `call` against its receiver; the receiver's group key, or `undefined` for a receiverless call. */
-  private constrain(method: ResidualMethodView, call: CallRef, verdict: ResidualVerdictView): string | undefined {
+  /**
+   * Record `call` against its receiver; the receiver's group key, or
+   * `undefined` for a receiverless call. A member whose project definitions the
+   * receiver reaches only as overrides of a framework member (`overrides` non-
+   * empty) constrains nothing: every class inheriting the framework member
+   * answers it, project overrider or not.
+   */
+  private constrain(
+    method: ResidualMethodView,
+    call: CallRef,
+    verdict: ResidualVerdictView,
+    overrides: () => readonly string[] | null,
+  ): string | undefined {
     if (call.receiver === null || SELF_RECEIVERS.has(call.receiver)) return undefined;
     const key = receiverGroupKey(method.symbolId, call.receiver, call.startLine, method.localAssignmentLines);
     let members = this.groups.get(key);
@@ -283,8 +313,11 @@ export class ResidualSiteCollector {
       members = new Map();
       this.groups.set(key, members);
     }
-    const constrains = verdict.missBucket === undefined || !NON_CONSTRAINING_BUCKETS.has(verdict.missBucket);
-    members.set(call.member, (members.get(call.member) ?? true) && constrains);
+    const constrains =
+      (members.get(call.member) ?? true) &&
+      (verdict.missBucket === undefined || !NON_CONSTRAINING_BUCKETS.has(verdict.missBucket)) &&
+      (overrides()?.length ?? 0) === 0;
+    members.set(call.member, constrains);
     return key;
   }
 
@@ -303,17 +336,23 @@ export class ResidualSiteCollector {
    * back to the whole override menu when the two share nothing.
    */
   private narrow(site: PendingResidualSite, closure: ReceiverClassClosure): void {
-    const own = closure.answerers(site.call.member);
+    const side = sideOf(site.call.receiver);
+    const own = closure.answerers(site.call.member, side);
     let classes = new Set(own.keys());
     for (const [member, constrains] of this.groups.get(site.groupKey) ?? []) {
       if (!constrains || member === site.call.member) continue;
-      const answers = closure.answerers(member);
+      const answers = closure.answerers(member, side);
       if (answers.size === 0) continue;
       classes = new Set([...classes].filter((owner) => answers.has(owner)));
     }
+    const instances = side === "instance" ? this.moduleInstances(site.call.receiver, closure) : undefined;
+    if (instances !== undefined) {
+      const kept = [...classes].filter((owner) => instances.has(owner));
+      if (kept.length > 0) classes = new Set(kept);
+    }
     const overrides = site.overrideMenu === undefined ? undefined : new Set(site.overrideMenu);
     const reason: ResidualReason | undefined = overrides === undefined ? undefined : "frameworkOverride";
-    const keptMenu = site.overrideMenu ?? this.menuFor(site.call.member);
+    const keptMenu = site.overrideMenu ?? this.menuFor(site.call.member, side);
     if (classes.size === 0) {
       this.narrowEmpty.push(site.verdict.receiverKind);
       this.pushRow(site.method, site.call, site.verdict, site.kind, [...keptMenu], reason);
@@ -428,20 +467,49 @@ export class ResidualSiteCollector {
     return this.excludedCounts;
   }
 
-  /** Same-language method ids named `member`, deduplicated and sorted; cached per member. */
-  private menuFor(member: string): string[] {
-    const cached = this.menus.get(member);
+  /**
+   * The classes whose instances the receiver's name says it holds: the
+   * receiver is named exactly after a project module (`actor` → `Actor`, every
+   * same-language definition of that name a module or interface), so its
+   * class is one of the module's includers or their subclasses. `undefined`
+   * when the name is not such a module — the class set is then left whole.
+   */
+  private moduleInstances(receiver: string | null, closure: ReceiverClassClosure): ReadonlySet<string> | undefined {
+    const name = receiver === null ? undefined : receiverNameOf(receiver);
+    if (name === undefined) return undefined;
+    const defs = this.symbolTable
+      .lookupByShortName(typeNameOf(name))
+      .filter((d) => extname(d.relPath) === this.extension);
+    if (defs.length === 0 || defs.some((d) => d.symbolKind === undefined || !MIXIN_KINDS.has(d.symbolKind))) {
+      return undefined;
+    }
+    const instances = new Set<string>();
+    for (const d of defs) for (const owner of closure.instancesOf(d.fqName)) instances.add(owner);
+    return instances;
+  }
+
+  /**
+   * Same-language method ids named `member`, deduplicated and sorted; cached
+   * per member and side. A `class` receiver is offered class methods only,
+   * plus instance methods of a module some class `extend`s.
+   */
+  private menuFor(member: string, side: ReceiverSide = "instance"): string[] {
+    const cacheKey = `${side}\u0000${member}`;
+    const cached = this.menus.get(cacheKey);
     if (cached !== undefined) return cached;
     const ids = new Set<string>();
     for (const def of this.symbolTable.lookupByShortName(member)) {
       if (extname(def.relPath) !== this.extension) continue;
-      if (!def.symbolId.endsWith(`#${member}`) && !def.symbolId.endsWith(`.${member}`)) {
-        continue;
+      const instanceMethod = def.symbolId.endsWith(`#${member}`);
+      if (!instanceMethod && !def.symbolId.endsWith(`.${member}`)) continue;
+      if (side === "class" && instanceMethod) {
+        const owner = def.symbolId.slice(0, def.symbolId.length - member.length - 1);
+        if (this.closure?.isExtended(owner) !== true) continue;
       }
       ids.add(def.symbolId);
     }
     const menu = [...ids].sort();
-    this.menus.set(member, menu);
+    this.menus.set(cacheKey, menu);
     return menu;
   }
 }

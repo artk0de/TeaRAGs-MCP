@@ -74,6 +74,13 @@ function same(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && endsWith(a, b);
 }
 
+/** The type name the receiver's name spells exactly: `actor` → `Actor`, `line_item` → `LineItem`. */
+export function typeNameOf(name: string): string {
+  return tokensOf(name)
+    .map((t) => t.charAt(0).toUpperCase() + t.slice(1))
+    .join("");
+}
+
 /** How the receiver name relates to the class's short name (its last `::` / `.` component). */
 export function receiverNameRank(name: string | undefined, className: string): number {
   if (name === undefined) return NAME_PRIOR.none;
