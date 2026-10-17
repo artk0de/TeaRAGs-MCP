@@ -70,6 +70,8 @@ export function skippedResidualReport(reason: string, mode: ResidualPassMode): R
     requestLatencyP95Ms: 0,
     peakInFlight: 0,
     externalByModel: 0,
+    attributeByModel: 0,
+    externalByPropagation: 0,
     edgesApplied: 0,
     derived: "unchanged",
     durations: { readMs: 0, askMs: 0, applyMs: 0, recomputeMs: 0, totalMs: 0 },

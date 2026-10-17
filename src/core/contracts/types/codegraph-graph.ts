@@ -416,6 +416,13 @@ export interface ResolveRunStatsRow {
    */
   paramTyped?: number;
   /**
+   * bd tea-rags-mcp-2m83f.55 — residual sites whose callee is a schema column
+   * accessor on every class their receiver narrowed to (or a model column read
+   * the language excluded). A subset of `noInProjectDef`: a column has no
+   * in-project definition. Defaults to 0 before migration 064.
+   */
+  schemaAttribute?: number;
+  /**
    * bd tea-rags-mcp-f2jsb / j0pki — of the `attempted − resolved` misses in
    * this bucket, how many the dispatch kernel judged over-cap AMBIGUOUS
    * (survivors > corpus-adaptive fan-out cap) and recorded as an aggregate

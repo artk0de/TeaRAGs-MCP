@@ -576,3 +576,101 @@ describe("ResidualSiteCollector — an untyped `x.class` receiver", () => {
     ]);
   });
 });
+
+describe("ResidualSiteCollector — schema columns answer a receiver group", () => {
+  const COLUMN_TYPES: Record<string, string> = { "Invoice#firm_id": "Integer", "User#email": "String" };
+  const returnTypes = (owner: string, member: string): string | undefined => COLUMN_TYPES[`${owner}#${member}`];
+
+  it("keeps a class reading the member as a column in the group, with no target and the column type", () => {
+    const collector = collectorOf(BASE_DEFS);
+
+    collector.observe(METHOD, call("r", "firm_id", 12), DYNAMIC_MISS, undefined, undefined, returnTypes);
+
+    const [row] = collector.rows();
+    expect(row?.classTargets).toEqual([
+      ["Invoice", null, "Integer"],
+      ["Payment", "Payment#firm_id"],
+    ]);
+    // The row's own menu stays the method targets: only the class question changes.
+    expect(row?.candidates).toEqual(["Payment#firm_id"]);
+    expect(row?.downstreamGroup).toBeDefined();
+    expect(collector.schemaAttributes()).toEqual([]);
+  });
+
+  it("settles a site every narrowed class reads as a column as a schema attribute, not a row", () => {
+    const collector = collectorOf(BASE_DEFS);
+
+    collector.observe(METHOD, call("r", "firm_id", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("r", "number", 13), DYNAMIC_MISS);
+
+    expect(collector.rows()).toEqual([]);
+    expect(collector.schemaAttributes()).toEqual([{ receiverKind: "dynamic", kind: "dynamic" }]);
+  });
+
+  it("carries the over-cap aggregate an ambiguous schema-attribute site stood for", () => {
+    const collector = collectorOf(BASE_DEFS);
+    const fanout = { sourceSymbolId: "Billing#run", callExpression: "r.firm_id", member: "firm_id", candidateCount: 9 };
+
+    collector.observe(METHOD, call("r", "number", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("r", "firm_id", 13), {
+      receiverKind: "ivar",
+      outcome: "ambiguous",
+      ambiguousFanout: fanout,
+    });
+
+    expect(collector.schemaAttributes()).toEqual([{ receiverKind: "ivar", kind: "ambiguous", replacesFanout: fanout }]);
+  });
+
+  it("counts a site the language excluded as a model column read as a schema attribute", () => {
+    const collector = collectorOf(BASE_DEFS);
+
+    collector.observe(METHOD, call("invoice", "firm_id", 12), DYNAMIC_MISS, () => "schemaColumn");
+
+    expect(collector.excluded().schemaColumn).toBe(1);
+    expect(collector.schemaAttributes()).toEqual([{ receiverKind: "dynamic", kind: "dynamic" }]);
+  });
+
+  it("groups an override site whose narrowed classes all read the member as a column", () => {
+    const collector = collectorOf([
+      def("User#email", "db/schema.rb", true),
+      def("Mailer#email", "app/mailers/mailer.rb"),
+      def("User#login", "app/models/user.rb"),
+    ]);
+
+    collector.observe(METHOD, call("u", "login", 12), DYNAMIC_MISS);
+    collector.observe(METHOD, call("u", "email", 13), DYNAMIC_MISS, undefined, () => ["Mailer#email"], returnTypes);
+
+    const email = collector.rows().find((r) => r.member === "email");
+    expect(email?.classTargets).toEqual([["User", null, "String"]]);
+    expect(email?.candidates).toEqual(["Mailer#email"]);
+    expect(email?.reason).toBe("frameworkOverride");
+    expect(collector.narrowEmptyKinds()).toEqual([]);
+  });
+
+  it("leaves column readers out when they would push a menu that fit past the limit and outnumber it", () => {
+    const defs = [
+      def("Payment#firm_id", "app/models/payment.rb"),
+      def("A#firm_id", "db/schema.rb", true),
+      def("B#firm_id", "db/schema.rb", true),
+      def("C#firm_id", "db/schema.rb", true),
+    ];
+    const collector = new ResidualSiteCollector("app/services/billing.rb", tableOf(defs), 2, "ruby", {});
+
+    collector.observe(METHOD, call("r", "firm_id", 12), DYNAMIC_MISS);
+
+    expect(collector.rows()[0]?.classTargets).toEqual([["Payment", "Payment#firm_id"]]);
+  });
+
+  it("keeps column readers within the limit even when they overflow the menu", () => {
+    const defs = [
+      def("Payment#firm_id", "app/models/payment.rb"),
+      def("A#firm_id", "db/schema.rb", true),
+      def("B#firm_id", "db/schema.rb", true),
+    ];
+    const collector = new ResidualSiteCollector("app/services/billing.rb", tableOf(defs), 2, "ruby", {});
+
+    collector.observe(METHOD, call("r", "firm_id", 12), DYNAMIC_MISS);
+
+    expect(collector.rows()[0]?.classTargets?.map(([cls]) => cls)).toEqual(["A", "B", "Payment"]);
+  });
+});

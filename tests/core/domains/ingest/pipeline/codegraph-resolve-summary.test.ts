@@ -493,7 +493,7 @@ describe("summarizeCodegraphResolve — model-resolved residual sites (2m83f.38)
     receiverKind: string | null,
     kind: "ambiguous" | "dynamic",
     sites: number,
-    outcome: "edge" | "external" = "edge",
+    outcome: "edge" | "external" | "attribute" = "edge",
   ): ModelResolvedSiteCount => ({ outcome, language, receiverKind, kind, model: "kev", sites });
 
   afterEach(() => {
@@ -589,6 +589,22 @@ describe("summarizeCodegraphResolve — model-resolved residual sites (2m83f.38)
     expect(summary?.inProjectEdgeRecall).toBeCloseTo(65 / (65 + 16), 6);
     expect(summary?.staticInProjectEdgeRecall).toBeCloseTo(60 / 100, 6);
     expect(summary?.modelResolution).toEqual([{ model: "kev", threshold: 0.7, sites: 5, external: 19 }]);
+  });
+
+  it("takes sites whose picked class reads the member as a schema column out of the denominator too (2m83f.55)", () => {
+    // ivar: 100 attempted, 60 resolved, 10 ambiguous → static miss 40.
+    const summary = summarizeCodegraphResolve([rowB("ruby", "ivar", 100, 60, 10)], undefined, {
+      counts: [
+        site("ruby", "ivar", "dynamic", 5),
+        site("ruby", "ivar", "dynamic", 12, "attribute"),
+        site("ruby", "ivar", "ambiguous", 3, "external"),
+      ],
+      thresholds: { kev: 0.7 },
+    });
+
+    expect(summary?.callsResolved).toBe(65);
+    expect(summary?.inProjectEdgeRecall).toBeCloseTo(65 / (65 + 20), 6);
+    expect(summary?.modelResolution).toEqual([{ model: "kev", threshold: 0.7, sites: 5, external: 3, attribute: 12 }]);
   });
 
   it("reports external sites per language and caps them at what the miss holds", () => {
@@ -698,5 +714,30 @@ describe("summarizeCodegraphResolve — caller-typed parameters (2m83f.49)", () 
 
   it("omits the counter when no call resolved on a caller-typed parameter", () => {
     expect(summarizeCodegraphResolve([rowP("ruby", 0)])).not.toHaveProperty("callsParamTyped");
+  });
+});
+
+// bd tea-rags-mcp-2m83f.55 — residual sites whose callee is a schema column accessor.
+describe("summarizeCodegraphResolve — schema attributes (2m83f.55)", () => {
+  const rowS = (language: string, schemaAttribute: number): ResolveRunStatsRow => ({
+    language,
+    receiverKind: "dynamic",
+    attempted: 100,
+    resolved: 60,
+    externalSkipped: 0,
+    noInProjectDef: 20 + schemaAttribute,
+    schemaAttribute,
+  });
+
+  it("carries the schemaAttribute total on the summary and per language, its sites out of the denominator", () => {
+    const summary = summarizeCodegraphResolve([rowS("ruby", 7), rowS("typescript", 0)]);
+    expect(summary).toMatchObject({ callsSchemaAttribute: 7 });
+    const ruby = (summary?.byLanguage ?? []).find((l) => l.language === "ruby");
+    expect(ruby).toMatchObject({ callsSchemaAttribute: 7 });
+    expect(ruby?.inProjectEdgeRecall).toBeCloseTo(60 / (100 - 27), 6);
+  });
+
+  it("omits the counter when no site was a schema attribute", () => {
+    expect(summarizeCodegraphResolve([rowS("ruby", 0)])).not.toHaveProperty("callsSchemaAttribute");
   });
 });

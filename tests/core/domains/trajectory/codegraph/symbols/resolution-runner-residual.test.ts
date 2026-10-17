@@ -259,3 +259,80 @@ describe("CallEdgeResolutionRunner.resolve — receiver narrowing", () => {
     expect(runState.stats.callsAmbiguousFanout).toBe(1);
   });
 });
+
+describe("CallEdgeResolutionRunner.resolve — schema attributes", () => {
+  const COLUMN_DEFS: SymbolDefinition[] = [
+    { symbolId: "Firm#plan", fqName: "Firm#plan", shortName: "plan", relPath: "app/models/firm.rb", scope: ["Firm"] },
+    {
+      symbolId: "Firm#owner_id",
+      fqName: "Firm#owner_id",
+      shortName: "owner_id",
+      relPath: "db/schema.rb",
+      scope: ["Firm"],
+      isSchemaColumn: true,
+    },
+    {
+      symbolId: "Team#owner_id",
+      fqName: "Team#owner_id",
+      shortName: "owner_id",
+      relPath: "app/models/team.rb",
+      scope: ["Team"],
+    },
+  ];
+  const COLUMN_TABLE = {
+    lookup: () => [],
+    lookupByShortName: (name: string, options?: { includeSchemaColumns?: boolean }) =>
+      COLUMN_DEFS.filter(
+        (d) => d.shortName === name && (options?.includeSchemaColumns === true || d.isSchemaColumn !== true),
+      ),
+  } as unknown as GlobalSymbolTable;
+  const columnRead: FileExtraction = {
+    ...EXTRACTION,
+    chunks: [
+      {
+        ...EXTRACTION.chunks[0],
+        calls: [
+          { callText: "account.plan", receiver: "account", member: "plan", startLine: 11, startColumn: 6 },
+          { callText: "account.owner_id", receiver: "account", member: "owner_id", startLine: 12, startColumn: 6 },
+        ],
+      },
+    ],
+  };
+
+  it("moves a site every narrowed class reads as a column out of the miss into noInProjectDef, tallied schemaAttribute", () => {
+    const resolver = { resolve: () => null, hasInProjectDefinition: () => true };
+    const runState = new CodegraphRunState();
+    const runner = new CallEdgeResolutionRunner(factoryWith(resolver), runState);
+
+    const edges = runner.resolve(columnRead, COLUMN_TABLE);
+
+    expect(edges.residualCallSites?.map((row) => row.member)).toEqual(["plan"]);
+    const [dynamic] = runState.toResolveRunStatsRows().filter((r) => r.receiverKind === "dynamic");
+    expect(dynamic).toMatchObject({ attempted: 2, resolved: 0, noInProjectDef: 1, schemaAttribute: 1 });
+    expect(runState.stats.callsNoInProjectDef).toBe(1);
+    const [file] = runState.toFileResolveStatsEntries();
+    expect(file?.rows.find((r) => r.receiverKind === "dynamic")).toMatchObject({
+      noInProjectDef: 1,
+      schemaAttribute: 1,
+    });
+  });
+
+  it("drops an ambiguous schema-attribute site's over-cap aggregate with it", () => {
+    const resolver = {
+      resolve: () => null,
+      hasInProjectDefinition: () => true,
+      resolveDispatch: (call: { member: string }) =>
+        call.member === "owner_id" ? { kind: "ambiguous", member: "owner_id", candidateCount: 17 } : undefined,
+    };
+    const runState = new CodegraphRunState();
+    const runner = new CallEdgeResolutionRunner(factoryWith(resolver), runState);
+
+    const edges = runner.resolve(columnRead, COLUMN_TABLE);
+
+    expect(edges.ambiguousFanouts).toBeUndefined();
+    const [dynamic] = runState.toResolveRunStatsRows().filter((r) => r.receiverKind === "dynamic");
+    expect(dynamic).toMatchObject({ ambiguousFanout: 0, noInProjectDef: 1, schemaAttribute: 1 });
+    expect(runState.stats.callsAmbiguousFanout).toBe(0);
+    expect(runState.stats.callsNoInProjectDef).toBe(1);
+  });
+});

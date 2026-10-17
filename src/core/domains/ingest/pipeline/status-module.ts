@@ -69,6 +69,8 @@ interface ResolveTally {
   narrowEmpty: number;
   // bd tea-rags-mcp-2m83f.49 — resolved calls on a caller-typed parameter (a subset of `resolved`).
   paramTyped: number;
+  // bd tea-rags-mcp-2m83f.55 — residual sites reading a schema column (a subset of `noInProjectDef`).
+  schemaAttribute: number;
 }
 
 function emptyTally(): ResolveTally {
@@ -84,6 +86,7 @@ function emptyTally(): ResolveTally {
     narrowed: 0,
     narrowEmpty: 0,
     paramTyped: 0,
+    schemaAttribute: 0,
   };
 }
 
@@ -184,8 +187,9 @@ function addModelSites(tallies: Map<string, ModelSiteTally>, key: string, c: Mod
   tallies.set(key, t);
 }
 
+/** An `attribute` site (a schema column, 2m83f.55) leaves the denominator exactly like an `external` one. */
 function addModelSiteCount(t: ModelSiteTally, c: ModelResolvedSiteCount): void {
-  if (c.outcome === "external") {
+  if (c.outcome === "external" || c.outcome === "attribute") {
     if (c.kind === "ambiguous") t.externalAmbiguous += c.sites;
     else t.externalDynamic += c.sites;
     return;
@@ -232,15 +236,16 @@ function withModelSites(
 }
 
 function modelResolutionRows(modelResolvedSites: ModelResolvedSites): CodegraphModelResolutionRow[] {
-  const byModel = new Map<string, { sites: number; external: number }>();
+  const byModel = new Map<string, { sites: number; external: number; attribute: number }>();
   for (const c of modelResolvedSites.counts) {
-    const m = byModel.get(c.model) ?? { sites: 0, external: 0 };
+    const m = byModel.get(c.model) ?? { sites: 0, external: 0, attribute: 0 };
     if (c.outcome === "external") m.external += c.sites;
+    else if (c.outcome === "attribute") m.attribute += c.sites;
     else m.sites += c.sites;
     byModel.set(c.model, m);
   }
   return [...byModel.entries()]
-    .filter(([, m]) => m.sites + m.external > 0)
+    .filter(([, m]) => m.sites + m.external + m.attribute > 0)
     .map(([model, m]) => {
       const threshold = modelResolvedSites.thresholds[model];
       return {
@@ -248,6 +253,7 @@ function modelResolutionRows(modelResolvedSites: ModelResolvedSites): CodegraphM
         ...(threshold === undefined ? {} : { threshold }),
         sites: m.sites,
         ...(m.external > 0 ? { external: m.external } : {}),
+        ...(m.attribute > 0 ? { attribute: m.attribute } : {}),
       };
     })
     .sort((a, b) => b.sites - a.sites);
@@ -310,6 +316,11 @@ function paramTypedCount(t: ResolveTally): { callsParamTyped?: number } {
   return t.paramTyped > 0 ? { callsParamTyped: t.paramTyped } : {};
 }
 
+/** Residual sites reading a schema column (bd tea-rags-mcp-2m83f.55), present only once a run settled one. */
+function schemaAttributeCount(t: ResolveTally): { callsSchemaAttribute?: number } {
+  return t.schemaAttribute > 0 ? { callsSchemaAttribute: t.schemaAttribute } : {};
+}
+
 /** Receiver-narrowing counters, present only once a run narrowed or failed to narrow a site. */
 function narrowingCounts(t: ResolveTally): { callsNarrowed?: number; callsNarrowEmpty?: number } {
   return t.narrowed > 0 || t.narrowEmpty > 0 ? { callsNarrowed: t.narrowed, callsNarrowEmpty: t.narrowEmpty } : {};
@@ -333,6 +344,7 @@ function addRow(t: ResolveTally, r: ResolveRunStatsRow): void {
   t.narrowed += r.narrowed ?? 0;
   t.narrowEmpty += r.narrowEmpty ?? 0;
   t.paramTyped += r.paramTyped ?? 0;
+  t.schemaAttribute += r.schemaAttribute ?? 0;
 }
 
 /**
@@ -427,6 +439,7 @@ export function summarizeCodegraphResolve(
     callsUnnarrowedTemplate: combinedTotal.unnarrowedTemplate,
     ...narrowingCounts(combinedTotal),
     ...paramTypedCount(combinedTotal),
+    ...schemaAttributeCount(combinedTotal),
     ...(debug ? { resolveSuccessRate: resolveRate(combinedTotal) } : {}),
   };
   if (movedTotal + externalTotal > 0 && modelResolved !== undefined) {
@@ -455,6 +468,7 @@ export function summarizeCodegraphResolve(
         callsUnnarrowedTemplate: t.unnarrowedTemplate,
         ...narrowingCounts(t),
         ...paramTypedCount(t),
+        ...schemaAttributeCount(t),
         ...(debug ? { resolveSuccessRate: resolveRate(t) } : {}),
         // Absent unless DEBUG built the tally above.
         ...(debug

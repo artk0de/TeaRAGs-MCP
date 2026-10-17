@@ -506,6 +506,7 @@ describe("CodegraphDaemonServer.handle", () => {
         narrowed: 0,
         narrowEmpty: 0,
         paramTyped: 0,
+        schemaAttribute: 0,
       },
       {
         language: "typescript",
@@ -521,6 +522,7 @@ describe("CodegraphDaemonServer.handle", () => {
         narrowed: 0,
         narrowEmpty: 0,
         paramTyped: 0,
+        schemaAttribute: 0,
       },
     ]);
     await pool.closeAll();
@@ -571,6 +573,7 @@ describe("CodegraphDaemonServer.handle", () => {
         narrowed: 0,
         narrowEmpty: 0,
         paramTyped: 0,
+        schemaAttribute: 0,
       },
     ]);
     await pool.closeAll();

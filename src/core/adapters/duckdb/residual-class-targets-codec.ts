@@ -10,13 +10,18 @@ import { createHash } from "node:crypto";
 
 import type { ResidualClassTarget } from "../../contracts/types/codegraph-residual.js";
 
-/** Stored entry: `[class]`, `[class, null, returnType]` when the target is `class#member`, else `[class, target, returnType?]`. */
-type StoredClassTarget = [className: string, targetSymbolId?: string | null, returnType?: string];
+/**
+ * Stored entry: `[class]`, `[class, null, returnType]` when the target is
+ * `class#member`; `[class, 0, returnType?]` when the class reads the member as a
+ * schema column (no target, bd 2m83f.55); else `[class, target, returnType?]`.
+ */
+type StoredClassTarget = [className: string, targetSymbolId?: string | null | 0, returnType?: string];
 
 /** `member` is the row's member: a target spelled `${class}#${member}` is stored as null, or dropped when last. */
 export function encodeResidualClassTargets(member: string, targets: readonly ResidualClassTarget[]): string {
   const stored = targets.map(([cls, target, returnType]): StoredClassTarget => {
-    if (target !== `${cls}#${member}`) return returnType === undefined ? [cls, target] : [cls, target, returnType];
+    const spelled = target === null ? 0 : target;
+    if (spelled !== `${cls}#${member}`) return returnType === undefined ? [cls, spelled] : [cls, spelled, returnType];
     return returnType === undefined ? [cls] : [cls, null, returnType];
   });
   return JSON.stringify(stored);
@@ -25,7 +30,7 @@ export function encodeResidualClassTargets(member: string, targets: readonly Res
 /** Reads the compact form and the full form written before it. */
 export function decodeResidualClassTargets(member: string, value: string): ResidualClassTarget[] {
   return (JSON.parse(value) as StoredClassTarget[]).map(([cls, target, returnType]): ResidualClassTarget => {
-    const symbolId = target ?? `${cls}#${member}`;
+    const symbolId = target === 0 ? null : (target ?? `${cls}#${member}`);
     return returnType === undefined ? [cls, symbolId] : [cls, symbolId, returnType];
   });
 }

@@ -142,7 +142,12 @@ export const capability: LanguageCapability = {
   // walker 27: bd tea-rags-mcp-2m83f.56 — `assoc.first` / `.find_by(...)` on a has_many / habtm
   // reader (and `@x ||= ` over it) returns the association's element class, read from
   // `source_type:` on a polymorphic through; a walker-26 index leaves `firm.owner.user` untyped.
-  versions: { chunking: 2, walker: 27, codegraphSchema: 2 },
+  // walker 28: bd tea-rags-mcp-2m83f.55 — a class reading a member as a schema column stays in
+  // the group's class targets (no target, the column type as its return), and a site every
+  // narrowed class reads as a column moves to `noInProjectDef` (`schemaAttribute`) with its
+  // over-cap aggregate dropped; a walker-26/27 index keeps column readers out of the menus and
+  // the column reads in the miss.
+  versions: { chunking: 2, walker: 28, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

@@ -363,6 +363,12 @@ export interface CodegraphResolveSummary {
    */
   callsParamTyped?: number;
   /**
+   * bd tea-rags-mcp-2m83f.55 — residual calls whose callee is a schema column accessor:
+   * a subset of the no-in-project-def calls, out of the recall denominator. Absent
+   * until a run settled one.
+   */
+  callsSchemaAttribute?: number;
+  /**
    * tea-rags-mcp-cnqrg — per-code-language breakdown of the same rate, so a
    * polyglot index reveals WHICH language's resolver carries the gap. Test
    * call-sites are excluded from every tally (production-code capability only).
@@ -398,6 +404,12 @@ export interface CodegraphModelResolutionRow {
   sites: number;
   /** Sites the model put outside the project; see {@link CodegraphResolveSummary.callsExternalByModel}. Absent when zero. */
   external?: number;
+  /**
+   * Sites whose picked class reads the member as a schema column (bd 2m83f.55):
+   * no edge, out of the recall denominator like {@link external}, and counted in
+   * `callsExternalByModel` with it. Absent when zero.
+   */
+  attribute?: number;
 }
 
 /**
@@ -464,6 +476,12 @@ export interface CodegraphResolveLanguageRow {
    * until a run resolved one.
    */
   callsParamTyped?: number;
+  /**
+   * bd tea-rags-mcp-2m83f.55 — residual calls whose callee is a schema column accessor:
+   * a subset of the no-in-project-def calls, out of the recall denominator. Absent
+   * until a run settled one.
+   */
+  callsSchemaAttribute?: number;
   /**
    * tea-rags-mcp-7m5xz — per-receiver-kind breakdown scoped to this language's
    * call-sites. Present only in the multi-language case (precise lang×kind).

@@ -44,6 +44,8 @@ const REPORT: ResidualPassReport = {
   belowThreshold: 0,
   sitesEdged: 1,
   externalByModel: 0,
+  attributeByModel: 0,
+  externalByPropagation: 0,
   receiverGroups: 0,
   receiverGroupSites: 0,
   sitesEdgedByVerdict: 0,

@@ -70,6 +70,19 @@ export interface NarrowedResidualSite {
 type AmbiguousFanout = NonNullable<GraphEdges["ambiguousFanouts"]>[number];
 
 /**
+ * A residual site whose callee is a schema column accessor — every class its
+ * receiver narrowed to reads the member as a column, or the language excluded it
+ * as a model column read: no in-project definition to edge to, so the site
+ * leaves the miss for the `schemaAttribute` bucket (bd tea-rags-mcp-2m83f.55).
+ */
+export interface SchemaAttributeSite {
+  receiverKind: ReceiverKind;
+  kind: ResidualKind;
+  /** The ambiguous site's over-cap aggregate; the site leaves `ambiguousFanout` with it. */
+  replacesFanout?: AmbiguousFanout;
+}
+
+/**
  * Misses that say nothing about the receiver's class: the classifier put the
  * callee outside the project, or out of static reach. Such a call never
  * constrains its receiver.
@@ -160,31 +173,42 @@ export function addResidualExclusionCounts(
 
 /**
  * The group's classes in naming-prior order, each with the method target the
- * member reaches on it; a class reaching the member only as a schema column has
- * no method to edge to and is left out. A tie of definers at one depth takes the
- * smallest symbolId. With `allowed` (a `frameworkOverride` site's override
- * menu) a class whose target is not a reachable override is left out too. A
- * class whose member's return `returnTypeOf` knows carries it third.
+ * member reaches on it. A tie of definers at one depth takes the smallest
+ * symbolId. With `allowed` (a `frameworkOverride` site's override menu) a class
+ * whose method is not a reachable override is left out. A class reaching the
+ * member only as a schema column answers too, with a `null` target — unless the
+ * column readers outnumber `menuLimit` and would push a menu that fit past it.
+ * A class whose member's return `returnTypeOf` knows (a column's value type
+ * included) carries it third.
  */
 function classTargetsOf(
   receiverText: string,
   member: string,
   classes: ReadonlySet<string>,
   own: ReadonlyMap<string, readonly { symbolId: string; isSchemaColumn?: boolean }[]>,
+  menuLimit: number,
   allowed?: ReadonlySet<string>,
   returnTypeOf?: ResidualReturnTypeOf,
 ): ResidualClassTarget[] {
-  const targets = new Map<string, string>();
+  const targets = new Map<string, string | null>();
+  const columnReaders: string[] = [];
   for (const owner of classes) {
-    const ids = (own.get(owner) ?? [])
+    const defs = own.get(owner) ?? [];
+    const ids = defs
       .filter((d) => d.isSchemaColumn !== true && (allowed === undefined || allowed.has(d.symbolId)))
       .map((d) => d.symbolId)
       .sort();
     if (ids.length > 0) targets.set(owner, ids[0]);
+    else if (defs.some((d) => d.isSchemaColumn === true)) columnReaders.push(owner);
+  }
+  const methodClasses = targets.size;
+  const overflowsAFittingMenu = methodClasses <= menuLimit && methodClasses + columnReaders.length > menuLimit;
+  if (!(overflowsAFittingMenu && columnReaders.length > menuLimit)) {
+    for (const owner of columnReaders) targets.set(owner, null);
   }
   return orderClassesByNamingPrior(receiverText, [...targets.keys()]).map((owner): ResidualClassTarget => {
     const returnType = returnTypeOf?.(owner, member);
-    const target = targets.get(owner) as string;
+    const target = targets.get(owner) ?? null;
     return returnType === undefined ? [owner, target] : [owner, target, returnType];
   });
 }
@@ -207,6 +231,7 @@ export class ResidualSiteCollector {
   private readonly pendingSites: PendingResidualSite[] = [];
   private readonly narrowedSites: NarrowedResidualSite[] = [];
   private readonly narrowEmpty: ReceiverKind[] = [];
+  private readonly schemaAttributeSites: SchemaAttributeSite[] = [];
   private settled = false;
 
   constructor(
@@ -256,6 +281,7 @@ export class ResidualSiteCollector {
     const rule = exclude?.() ?? null;
     if (rule !== null) {
       this.excludedCounts[rule] += 1;
+      if (rule === "schemaColumn") this.addSchemaAttribute(verdict, kind);
       // A framework member says nothing about which project class the receiver is.
       if (rule === "frameworkMember" && groupKey !== undefined) this.groups.get(groupKey)?.set(call.member, false);
       return;
@@ -291,6 +317,21 @@ export class ResidualSiteCollector {
   narrowEmptyKinds(): ReceiverKind[] {
     this.settle();
     return this.narrowEmpty;
+  }
+
+  /** Residual sites whose callee is a schema column accessor, settled as `schemaAttribute`. */
+  schemaAttributes(): SchemaAttributeSite[] {
+    this.settle();
+    return this.schemaAttributeSites;
+  }
+
+  private addSchemaAttribute(verdict: ResidualVerdictView, kind: ResidualKind): void {
+    const fanout = kind === "ambiguous" ? verdict.ambiguousFanout : undefined;
+    this.schemaAttributeSites.push({
+      receiverKind: verdict.receiverKind,
+      kind,
+      ...(fanout === undefined ? {} : { replacesFanout: fanout }),
+    });
   }
 
   /**
@@ -366,14 +407,24 @@ export class ResidualSiteCollector {
       }
     }
     const methods = [...targets].filter(([, t]) => !t.isSchemaColumn);
-    if (methods.length === 0 && site.overrideMenu !== undefined) {
-      this.narrowEmpty.push(site.verdict.receiverKind);
-      this.pushRow(site.method, site.call, site.verdict, site.kind, [...site.overrideMenu], reason);
-      return;
-    }
-    if (methods.length === 0) {
+    if (methods.length === 0 && site.overrideMenu === undefined) {
       // Every narrowed class reads the member as a schema column: no method node to edge to.
       this.excludedCounts.schemaColumn += 1;
+      this.addSchemaAttribute(site.verdict, site.kind);
+      return;
+    }
+    const classTargets = classTargetsOf(
+      site.call.receiver ?? "",
+      site.call.member,
+      classes,
+      own,
+      this.menuLimit,
+      overrides,
+      site.returnTypeOf,
+    );
+    if (methods.length === 0 && classTargets.length === 0) {
+      this.narrowEmpty.push(site.verdict.receiverKind);
+      this.pushRow(site.method, site.call, site.verdict, site.kind, [...(site.overrideMenu ?? [])], reason);
       return;
     }
     const [sole] = methods;
@@ -396,18 +447,13 @@ export class ResidualSiteCollector {
       });
       return;
     }
-    const menu = orderByNamingPrior(
-      site.call.receiver ?? "",
-      methods.map(([id]) => id),
-    );
-    const classTargets = classTargetsOf(
-      site.call.receiver ?? "",
-      site.call.member,
-      classes,
-      own,
-      overrides,
-      site.returnTypeOf,
-    );
+    const menu =
+      methods.length === 0
+        ? [...(site.overrideMenu ?? [])]
+        : orderByNamingPrior(
+            site.call.receiver ?? "",
+            methods.map(([id]) => id),
+          );
     this.pushRow(site.method, site.call, site.verdict, site.kind, menu, reason, {
       receiverGroup: sha1(site.groupKey),
       classTargets,
