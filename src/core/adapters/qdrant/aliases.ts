@@ -2,7 +2,8 @@
  * Qdrant alias CRUD operations.
  *
  * Wraps the Qdrant alias API with typed methods and error handling. Every op goes
- * through {@link QdrantConnection.call}, so a transport failure gets the same
+ * through the connection transport's `call` ({@link QdrantConnectionTransport}),
+ * so a transport failure gets the same
  * classification (stale-socket retry, reconnect, typed unavailable error) as any
  * other collaborator; the client is read from the connection at call time
  * because a reconnect replaces it.
@@ -13,12 +14,11 @@
 
 import type { CollectionAliasEntry, PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import { collectionAliasEntryFromQdrant, resolvePhysicalCollection } from "../../primitives/ids/index.js";
-import type { QdrantConnection } from "./connection.js";
 import { AliasOperationError } from "./errors.js";
-import type { QdrantAliasAdmin } from "./ports.js";
+import type { QdrantAliasAdmin, QdrantConnectionTransport } from "./ports.js";
 
 export class QdrantAliasManager implements QdrantAliasAdmin {
-  constructor(private readonly connection: QdrantConnection) {}
+  constructor(private readonly connection: QdrantConnectionTransport) {}
 
   async createAlias(alias: string, collection: string): Promise<void> {
     try {

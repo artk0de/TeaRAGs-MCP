@@ -24,6 +24,8 @@
  * from `client.ts` or `embedding-model-guard.ts` — the arrow runs one way,
  * concrete class → port (pinned by tests/core/adapters/qdrant/qdrant-ports-direction.test.ts).
  */
+import type { QdrantClient } from "@qdrant/js-client-rest";
+
 import type { CollectionAliasEntry, PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { EmbeddingCallOptions } from "../embeddings/base.js";
 import type {
@@ -361,6 +363,17 @@ export interface QdrantAliasAdmin {
  */
 export interface QdrantAliasAccess {
   readonly aliases: QdrantAliasAdmin;
+}
+
+/**
+ * The transport the alias manager drives: retry-wrapped calls plus the raw
+ * client for the operations that bypass the wrapper — the structural slice of
+ * `QdrantConnection` (bd tea-rags-mcp-54xwd.14; naming the class from
+ * `aliases.ts` would close an import cycle with `connection.ts`).
+ */
+export interface QdrantConnectionTransport {
+  call: <T>(fn: () => Promise<T>) => Promise<T>;
+  client: QdrantClient;
 }
 
 /** Options for {@link EmbeddingModelGuardPort.ensureMatch} — the port owns its parameter type. */
