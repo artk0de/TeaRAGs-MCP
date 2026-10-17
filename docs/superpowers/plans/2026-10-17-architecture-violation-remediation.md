@@ -244,6 +244,39 @@ None (no MISFIT verdicts; the single addEdge pair targets a new file —
   ×2 and hubLike ×1 (escalated; beads .6/.7). The Deferred re-plan ("after Tasks
   1–2 land") is due now against this graph.
 
+## Tracking — Wave 1.5 outcome (2026-10-18)
+
+- **Task 3 / bead 54xwd.4** — landed: commit `1b1811fed` (D2 absorb). Hypothesis
+  tested and REFUTED by numbers: the presets' own instability (0.933) far
+  exceeds the api composition's (0.66), so absorbing them into
+  `api/internal/composite-presets/` (git mv, contracts imports retargeted to the
+  facade) is the honest direction, not a presets-facing port.
+- **Task 4 / bead 54xwd.16** — landed: commit `37e5467cd`. composition.ts
+  de-leaked: 12 deep domain imports retargeted onto the domain facades
+  (contracts/trajectory/language), 3 facade exports added where the barrel
+  lacked a name. Gate round 2 clean.
+- **Task 5 / bead 54xwd.3** — landed: commit `79923653c` (D1 injection). The
+  auto-update hint takes `McpAutoUpdateApiResolvers` injected from the
+  composition root; trigger.ts and mcp-hint.ts declare registry/freshness
+  leaves, never the api barrel. Target SDP edge resolved; bonus working-tree
+  edge resolved. Residual auto-update → registry Δ 0.217 (fresh ledger; 0.278 at
+  filing) accepted with the bootstrap-composition rule — design bead `54xwd.17`.
+- **Bead 54xwd.5 (hubLike ingest/pipeline)** — closed as FP acceptance,
+  simulation-evidenced (pattern of .12–.15). Structure: Ce counts 6 of the hub's
+  own descendant components (containment — counted by hubLike, excluded by SDP);
+  2 of 3 operations Ca files extend `BaseIndexingPipeline` (template method —
+  interface extraction cannot replace an `extends` edge); the api/index.ts
+  barrel edge is facade composition. Recipe-ops restructure simulation:
+  types-to-contracts alone resolves nothing (Ca 9 → 8, otsu cut 6); the full
+  19-op remedy resolves pipeline but introduces 4 hubLike findings on components
+  whose edges no op touched (otsu reclassification) — net +3, the violation set
+  is not convergent under the recipe. Detector bead filed as `54xwd.18`.
+- **Ledger after incremental re-index (post-`79923653c`)**: stableDependencies
+  ×1 (the .17 residual), leakingAbstraction 0, layering 0, hubLike ×1
+  (accepted-FP per .5), mainSequence ×2 (beads .6/.7), silentCoupling ×22 and
+  shotgun ×13 (history-only; beads .8–.11). Above-low actionable remainder:
+  beads .6, .7, .17 design, and the history-only quartet.
+
 ## Execution contract (refactoring-planning):
 
 ```text
