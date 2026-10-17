@@ -2,7 +2,7 @@ import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolutio
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { mapImportToFile, type TSProgramCache } from "../program/index.js";
+import { mapImportToFile, type TSProgramCachePort } from "../program/index.js";
 import { reexportOriginFile, type ResolverConfig } from "./shared.js";
 import { targetsExternalImport } from "./ts-external-call.js";
 
@@ -38,7 +38,7 @@ import { targetsExternalImport } from "./ts-external-call.js";
  * array (`includes` / `slice` are left out of the container vocabulary because a
  * namespace object may own them), zustand's `useStore.getState()`, React's
  * `<ThemeContext.Provider>`. On taxdome those parked 318 phantom edges onto the
- * module declaring the receiver; with the resolver's `TSProgramCache` the guard
+ * module declaring the receiver; with the resolver's `TSProgramCachePort` the guard
  * reads the receiver's type and the member's declaration, and a member the
  * checker declares IN the project keeps its park.
  */
@@ -46,7 +46,7 @@ export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionSt
   readonly name = "namedImport";
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache | null = null,
+    private readonly programCache: TSProgramCachePort | null = null,
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {

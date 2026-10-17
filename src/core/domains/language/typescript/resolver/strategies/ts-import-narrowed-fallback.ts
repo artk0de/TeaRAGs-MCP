@@ -2,7 +2,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import type { TSProgramCache } from "../program/index.js";
+import type { TSProgramCachePort } from "../program/index.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
 import { targetsExternalImport } from "./ts-external-call.js";
 import { calleeIsLocalValueBinding } from "./ts-local-callee.js";
@@ -45,7 +45,7 @@ export class TSImportNarrowedFallbackSymbolResolutionStrategy implements SymbolR
   readonly name = "importNarrowedFallback";
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache | null = null,
+    private readonly programCache: TSProgramCachePort | null = null,
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {

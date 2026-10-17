@@ -41,7 +41,7 @@ import type ts from "typescript";
 
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
+import { loadTypeScriptCompiler, type TSProgramCachePort } from "../program/index.js";
 import { findCallExpression } from "./ts-type-checker-fallback.js";
 import { isFunctionValuedInitializer, sameWalkerScope, walkerScopeOf } from "./ts-walker-scope.js";
 
@@ -76,7 +76,7 @@ import { isFunctionValuedInitializer, sameWalkerScope, walkerScopeOf } from "./t
 export function calleeIsLocalValueBinding(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): boolean {
   if (call.receiver !== null) return false;
   if (lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).length === 0) return false;
@@ -109,7 +109,7 @@ export function calleeIsLocalValueBinding(
 export function calleeIsExternalLocalBinding(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): boolean {
   return classifyLocalCallee(call, ctx, programCache) === "externalSignature";
 }
@@ -148,7 +148,7 @@ const NO_LEXICAL_BINDING: TSLexicalCalleeBinding = { kind: "none" };
 export function classifyLexicalCallee(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): TSLexicalCalleeBinding {
   if (programCache === null || call.receiver !== null || call.member.length === 0) return NO_LEXICAL_BINDING;
   const handle = programCache.acquire(ctx.callerFile);
@@ -218,7 +218,7 @@ type TSLocalCalleeBinding = "notLocalBinding" | "unresolvable" | "externalSignat
 function classifyLocalCallee(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): TSLocalCalleeBinding {
   if (programCache === null || call.receiver !== null || call.member.length === 0) return "notLocalBinding";
   const handle = programCache.acquire(ctx.callerFile);
@@ -258,7 +258,7 @@ function classifyLocalCallee(
 function signaturesDeclaredOutsideProject(
   checker: ts.TypeChecker,
   callee: ts.Identifier,
-  programCache: TSProgramCache,
+  programCache: TSProgramCachePort,
 ): boolean {
   const signatures = checker.getTypeAtLocation(callee).getCallSignatures();
   if (signatures.length === 0) return false;

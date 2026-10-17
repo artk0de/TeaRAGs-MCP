@@ -26,7 +26,7 @@
  * is declared at, which is exactly the set a name lookup cannot see.
  *
  * It sits after {@link TSTypeCheckerFallbackSymbolResolutionStrategy} and
- * shares that pass's {@link TSProgramCache} — one set of Programs per run, not
+ * shares that pass's {@link TSProgramCachePort} — one set of Programs per run, not
  * two — so on a file the fallback already typed this pass costs two checker
  * queries and no I/O. `CODEGRAPH_TS_TYPECHECKER=0` removes both passes.
  *
@@ -62,7 +62,7 @@ import {
   mapImportToFile,
   type ProjectFileProbe,
   type TsCompilerOptions,
-  type TSProgramCache,
+  type TSProgramCachePort,
 } from "../program/index.js";
 import type { ResolverConfig } from "./shared.js";
 import { declarationOwnerName, findReceiverExpression, TS_SCOPE_SEPARATOR } from "./ts-type-checker-shared.js";
@@ -116,7 +116,7 @@ export class TSStructuralTypingSymbolResolutionStrategy implements SymbolResolut
 
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache,
+    private readonly programCache: TSProgramCachePort,
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {

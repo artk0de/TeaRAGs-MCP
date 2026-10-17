@@ -59,7 +59,7 @@ type TSCallSiteIndex = Map<string, TSCallSiteEntry>;
 /**
  * One index per SourceFile, discarded with it (bd tea-rags-mcp-skzu9).
  *
- * A `WeakMap` rather than a keyed cache because `TSProgramCache` already owns
+ * A `WeakMap` rather than a keyed cache because `TSProgramCachePort` already owns
  * SourceFile lifetime: it drops a file's parse when the file's mtime moves and
  * clears everything at a run boundary, so a re-parse yields a NEW SourceFile
  * object and the stale index becomes unreachable on its own. Keying by file NAME

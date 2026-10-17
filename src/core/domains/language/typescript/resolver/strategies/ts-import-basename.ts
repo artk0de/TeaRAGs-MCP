@@ -2,7 +2,7 @@ import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolutio
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { mapImportToFile, type TSProgramCache } from "../program/index.js";
+import { mapImportToFile, type TSProgramCachePort } from "../program/index.js";
 import type { ResolverConfig } from "./shared.js";
 import { targetsExternalImport } from "./ts-external-call.js";
 import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
@@ -21,7 +21,7 @@ import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
  * external classifier can recognise the same receivers without importing this
  * strategy back (bd tea-rags-mcp-4kx9f).
  *
- * The guard on that park reads the resolver's `TSProgramCache` (bd
+ * The guard on that park reads the resolver's `TSProgramCachePort` (bd
  * tea-rags-mcp-83iz5), for the reason passes 9-10 do. Matching on the specifier
  * BASENAME means the receiver need not be an import at all — `const cache =
  * this.ensureBlameCache(root)` collides with the `./infra/cache.js` the same
@@ -36,7 +36,7 @@ export class TSImportBasenameSymbolResolutionStrategy implements SymbolResolutio
   readonly name = "importBasename";
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache | null = null,
+    private readonly programCache: TSProgramCachePort | null = null,
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {

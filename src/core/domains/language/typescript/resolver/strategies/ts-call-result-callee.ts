@@ -84,7 +84,7 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
+import { loadTypeScriptCompiler, type TSProgramCachePort } from "../program/index.js";
 import type { ResolverConfig } from "./shared.js";
 import { composeSymbolId, findCallExpression } from "./ts-type-checker-fallback.js";
 
@@ -93,7 +93,7 @@ export class TSCallResultCalleeSymbolResolutionStrategy implements SymbolResolut
 
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache,
+    private readonly programCache: TSProgramCachePort,
   ) {}
 
   /**

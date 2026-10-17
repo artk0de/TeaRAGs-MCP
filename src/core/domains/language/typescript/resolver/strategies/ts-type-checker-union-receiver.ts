@@ -40,7 +40,7 @@
  * `GlobalSymbolTable` confirms it, and a declaration outside the project
  * (`node_modules`, the default lib) is skipped so the external classifier keeps
  * its bucket. `CODEGRAPH_TS_TYPECHECKER=0` removes the component entirely —
- * it is only constructed when the shared {@link TSProgramCache} exists.
+ * it is only constructed when the shared {@link TSProgramCachePort} exists.
  */
 
 import type ts from "typescript";
@@ -57,7 +57,7 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import type { TSProgramCache } from "../program/index.js";
+import type { TSProgramCachePort } from "../program/index.js";
 import { CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
 import { declarationOwnerName, findReceiverExpression } from "./ts-type-checker-shared.js";
 
@@ -75,7 +75,7 @@ interface PinnedBranchTarget {
 export class TSTypeCheckerUnionReceiverDispatchResolver implements DispatchResolverComponent {
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache,
+    private readonly programCache: TSProgramCachePort,
   ) {}
 
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {

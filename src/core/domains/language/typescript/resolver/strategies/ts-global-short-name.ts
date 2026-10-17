@@ -2,7 +2,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import type { TSProgramCache } from "../program/index.js";
+import type { TSProgramCachePort } from "../program/index.js";
 import type { ResolverConfig } from "./shared.js";
 import { targetsExternalImport } from "./ts-external-call.js";
 import { checkerDeclaresCalleeIn, importBoundProjectFile } from "./ts-import-bound-callee.js";
@@ -80,7 +80,7 @@ import { memberCandidateLacksReceiverEvidence } from "./ts-receiver-member-evide
  * literal to the project's lone `Message#title`. A bare call is exempt — its
  * name IS the callee.
  *
- * The guard reads the resolver's `TSProgramCache` when one exists (bd
+ * The guard reads the resolver's `TSProgramCachePort` when one exists (bd
  * tea-rags-mcp-335eu), which is what lets it decline a receiver only the checker
  * could type — `const map = readRegistry(); map.set(k, v)`. The cache arrives as
  * its own constructor argument rather than through {@link ResolverConfig}, for
@@ -92,7 +92,7 @@ export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
   readonly name = "globalShortName";
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache | null = null,
+    private readonly programCache: TSProgramCachePort | null = null,
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {

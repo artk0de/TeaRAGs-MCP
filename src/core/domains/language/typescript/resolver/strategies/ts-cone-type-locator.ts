@@ -8,7 +8,7 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import type { ConeTypeLocator } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { mapImportToFile, type TSProgramCache } from "../program/index.js";
+import { mapImportToFile, type TSProgramCachePort } from "../program/index.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
 import { structuralDescendantIsAssignable } from "./ts-structural-assignability.js";
 
@@ -38,7 +38,7 @@ export class TSConeTypeLocator implements ConeTypeLocator {
    */
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache | null = null,
+    private readonly programCache: TSProgramCachePort | null = null,
   ) {}
 
   /**

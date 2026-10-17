@@ -41,7 +41,7 @@ import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbolsByShortName, resolveViaChain } from "../../../kernel/index.js";
-import type { TSProgramCache } from "../program/index.js";
+import type { TSProgramCachePort } from "../program/index.js";
 import { classifyLexicalCallee } from "./ts-local-callee.js";
 import { sameWalkerScope } from "./ts-walker-scope.js";
 
@@ -55,7 +55,7 @@ export class TSLexicalCalleeSymbolResolutionStrategy implements SymbolResolution
    *   short-name passes declined it.
    */
   constructor(
-    private readonly programCache: TSProgramCache,
+    private readonly programCache: TSProgramCachePort,
     private readonly checkerTier: readonly SymbolResolutionStrategy[],
   ) {}
 
