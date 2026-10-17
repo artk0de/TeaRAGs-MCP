@@ -70,6 +70,8 @@ export interface RubyMemberReturnOwner {
   readonly instanceMethods: ReadonlyMap<string, readonly AstNode[]>;
   /** `"<fq>#<reader>"` → instance, for every singular association reader this FILE declares. */
   readonly associationReaders: ReadonlyMap<string, string>;
+  /** `"<fq>#<reader>"` → element class, for every `has_many` / habtm reader this FILE declares. */
+  readonly associationCollections: ReadonlyMap<string, string>;
 }
 
 /** The member channels' port set. Built per file (it closes over the catalogue). */
@@ -122,6 +124,7 @@ function memberExpressionType(node: AstNode, site: RubyMemberReturnSite, catalog
   return (
     singletonNewInstanceType(node) ??
     associationReaderType(node, site.method, owner) ??
+    associationElementType(node, site.method, owner) ??
     (selfReturning(node, site.method, owner, new Set()) ? owner.fq : null)
   );
 }
@@ -162,6 +165,44 @@ function associationReaderType(node: AstNode, method: AstNode, owner: RubyMember
   const type = owner.associationReaders.get(`${owner.fq}#${node.text}`);
   if (type === undefined) return null;
   return bindsLocally(method, node.text) ? null : type;
+}
+
+/** Relation readers that answer one record (or nil) when called without a count. */
+const NULLARY_ELEMENT_READERS: ReadonlySet<string> = new Set(["first", "last", "take", "sole"]);
+
+/** Relation readers that answer one record (or raise / nil) for any argument list. */
+const KEYED_ELEMENT_READERS: ReadonlySet<string> = new Set(["find_by", "find_by!"]);
+
+/**
+ * The element class of `assoc.first` / `.last` / `.take` / `.sole` / `.find(id)` /
+ * `.find_by(...)` / `.find_by!(...)` on a collection association reader of the
+ * owner (bd tea-rags-mcp-2m83f.56) — `@owner ||= __owners.first` is an `Owner`.
+ * A count argument (`first(2)`) or a multi-id `find` answers an array: silence.
+ */
+function associationElementType(node: AstNode, method: AstNode, owner: RubyMemberReturnOwner): string | null {
+  if (node.type !== "call" || inSingletonContext(method)) return null;
+  const name = node.childForFieldName("method")?.text;
+  if (name === undefined || !answersOneElement(name, node.childForFieldName("arguments"))) return null;
+  const reader = collectionReaderName(node.childForFieldName("receiver"), method);
+  if (reader === null) return null;
+  return owner.associationCollections.get(`${owner.fq}#${reader}`) ?? null;
+}
+
+function answersOneElement(name: string, args: AstNode | null): boolean {
+  if (NULLARY_ELEMENT_READERS.has(name)) return args === null;
+  if (KEYED_ELEMENT_READERS.has(name)) return args !== null;
+  if (name !== "find" || args === null) return false;
+  const operands = args.namedChildren.filter((n) => n.type !== "comment");
+  return operands.length === 1 && operands[0].type !== "array" && operands[0].type !== "splat_argument";
+}
+
+/** The reader a receiver names: a bare identifier not bound in `method`, or `self.<reader>`. */
+function collectionReaderName(receiver: AstNode | null, method: AstNode): string | null {
+  if (receiver === null) return null;
+  if (receiver.type === "identifier") return bindsLocally(method, receiver.text) ? null : receiver.text;
+  if (receiver.type !== "call" || receiver.childForFieldName("receiver")?.type !== "self") return null;
+  if (receiver.childForFieldName("arguments") !== null) return null;
+  return receiver.childForFieldName("method")?.text ?? null;
 }
 
 /** Whether `name` is a parameter of `method` or assigned anywhere in its body. */

@@ -156,7 +156,8 @@
   binding and type an expression by `constInstanceType` alone — deliberately
   narrower than the service-entry ports in `body-last-expr.ts`. The owner-keyed
   channel's extra shapes (receiverless `new` in a singleton method,
-  self-returning tails, constants qualified by lexical nesting) need a
+  self-returning tails, constants qualified by lexical nesting, association
+  readers and `assoc.first` / `.find_by(...)` element reads) need a
   `RubyMemberReturnOwner`, so the flat channel answers as before; they name the
   DECLARING class, so a subclass receiver of a fluent method gets its parent's
   type. Widening a port set is a measured behaviour change, never a cleanup.

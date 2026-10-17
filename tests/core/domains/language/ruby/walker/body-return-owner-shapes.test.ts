@@ -343,3 +343,82 @@ describe("(d) conditional tails split into arms (2m83f.32.5)", () => {
     expect(flat(model(["loaded? ? doc_dir : doc_dir_with_granular_access_attr"]))).toEqual({});
   });
 });
+
+describe("(e) a collection association read down to one element (2m83f.56)", () => {
+  const model = (body: string[], params = "", extra: string[] = []) => [
+    "class Firm < ApplicationRecord",
+    "  has_many :__owners, through: :users, source: :actor, source_type: 'Owner'",
+    "  has_many :admins, through: :users, source: :actor, source_type: 'Staff::Admin'",
+    "  has_many :versions, class_name: 'TaxPreparation::DocDir'",
+    "  has_many :blog_posts",
+    "  has_and_belongs_to_many :tags",
+    "  has_many :things, as: :subject, polymorphic: true",
+    "  has_many :dynamics, class_name: name_for(:x)",
+    "  belongs_to :account",
+    ...extra,
+    `  def picked${params}`,
+    ...body.map((l) => `    ${l}`),
+    "  end",
+    "end",
+  ];
+  const picked = (body: string[], params = "", extra: string[] = []) =>
+    scoped(model(body, params, extra))["Firm#picked"];
+
+  it("types the memoised `@x ||= assoc.first` reader as the element class (Firm#owner)", () => {
+    expect(picked(["@owner ||= __owners.first"])).toEqual(inst("Owner"));
+  });
+
+  it("reads the element class from `source_type:` on a through association", () => {
+    expect(picked(["admins.first"])).toEqual(inst("Staff::Admin"));
+  });
+
+  it("types every single-element reader on has_many and habtm", () => {
+    for (const tail of ["first", "last", "take", "sole", "find(id)", "find_by(name: x)", "find_by!(name: x)"]) {
+      expect(picked([`versions.${tail}`]), tail).toEqual(inst("TaxPreparation::DocDir"));
+    }
+    expect(picked(["blog_posts.first"])).toEqual(inst("BlogPost"));
+    expect(picked(["tags.last"])).toEqual(inst("Tag"));
+  });
+
+  it("reads through an explicit `self.` receiver", () => {
+    expect(picked(["self.versions.first"])).toEqual(inst("TaxPreparation::DocDir"));
+  });
+
+  it("stays silent when the reader returns many elements", () => {
+    for (const tail of ["first(2)", "last(3)", "take(5)", "find(1, 2)", "find([1, 2])", "to_a", "where(a: 1)"]) {
+      expect(picked([`versions.${tail}`]), tail).toBeUndefined();
+    }
+  });
+
+  it("stays silent on a chain past the association, a singular association and an unresolvable class", () => {
+    expect(picked(["versions.where(a: 1).first"])).toBeUndefined();
+    expect(picked(["account.first"])).toBeUndefined();
+    expect(picked(["things.first"])).toBeUndefined();
+    expect(picked(["dynamics.first"])).toBeUndefined();
+  });
+
+  it("stays silent when the name is a local or a parameter, not the association", () => {
+    expect(picked(["versions = load", "versions.first"])).toBeUndefined();
+    expect(picked(["versions.first"], "(versions)")).toBeUndefined();
+  });
+
+  it("stays silent when another method writes the memoised ivar", () => {
+    expect(picked(["@owner ||= __owners.first"], "", ["  def reset!; @owner = nil; end"])).toBeUndefined();
+  });
+
+  it("stays silent in a singleton method", () => {
+    const code = [
+      "class Firm < ApplicationRecord",
+      "  has_many :versions",
+      "  def self.picked",
+      "    versions.first",
+      "  end",
+      "end",
+    ];
+    expect(scoped(code)["Firm#picked"]).toBeUndefined();
+  });
+
+  it("leaves the flat channel untouched", () => {
+    expect(flat(model(["__owners.first"]))).toEqual({});
+  });
+});
