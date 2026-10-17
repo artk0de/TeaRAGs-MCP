@@ -283,11 +283,35 @@ None (no MISFIT verdicts; the single addEdge pair targets a new file —
   threshold-flap acceptance per the recipe's No-remedy flap rule: 0.503 vs 0.5 =
   0.003 over, inside the 0.02 band; the provider port seam already exists (4
   abstract types). Reopen: distance > 0.52 on a future full report.
+- **Bead 54xwd.10 / .11 (silentCoupling roots)** — closed: every root ≥0.55
+  judged per recipe, verdict = lifecycle acceptance. The duckdb cluster (facade
+  ↔ daemon protocol/client/op-commands up to 0.703, sup 26) is the codegraph
+  storage vertical: sample commits (`3da9aa11`, `73889c47`, `3d534c89`) each
+  edit contract + store + facade + daemon protocol + daemon client as one
+  storage-surface change; the shared contract (`codegraph-storage.ts`) is
+  structurally linked to the facade (support 19), `daemon/client.ts` imports the
+  protocol (line 73), and the facade must not import the daemon layer.
+  Temporal-cochange and ruby self-dispatch pairs: data-file pipeline and
+  designed cross-domain boundary. The 0.51–0.55 band (.11) sits below the owner
+  cut (LOW); the marginal `api/tools/codegraph.ts` 0.552 root judged anyway:
+  SKILL.md doc pair + data-driven tool→ops dispatch.
+- **Bead 54xwd.8 / .9 (shotgun families)** — closed: three family classes, all
+  vertical slices. Cross-language sweeps (exp ≈ 0; sample `f6f89d2b`, "return
+  rows for every language") are the mirrored capability/pass structure of the
+  consolidation epic — intentional sync, not chance coupling. Python resolver
+  slice = table-driven strategy dispatch (compositionTable class). Temporal
+  slice = the same feature vertical as .10.
 - **Ledger after incremental re-index (post-`79923653c`)**: stableDependencies
   ×1 (the .17 residual), leakingAbstraction 0, layering 0, hubLike ×1
   (accepted-FP per .5), mainSequence ×2 (both closed per above), silentCoupling
-  ×22 and shotgun ×13 (history-only; beads .8–.11). Above-low actionable
-  remainder: the history-only quartet (.8–.11) and the .17 design.
+  ×22 and shotgun ×13 (history-only; beads .8–.11).
+- **Terminal ledger (post-`d75e32212`)**: every above-low finding is
+  dispositioned — repaired (waves 1–1.5) or evidence-backed acceptance with
+  recorded reopen conditions (.5, .6, .7, .8, .9, .10, .11) or filed as detector
+  defects (`54xwd.15`, `.18`, `.19`). Standing report findings are exactly the
+  accepted set plus the `.17` bootstrap residual (bootstrap composition-root
+  rule). Open P3 beads are follow-up engineering (detector fixes, optional
+  registry-port design), not violation elimination.
 
 ## Execution contract (refactoring-planning):
 
