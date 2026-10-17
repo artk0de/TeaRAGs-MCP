@@ -48,6 +48,8 @@ export interface ResidualResolutionConfig {
   tournamentFloor?: number;
   /** Tournament block questions one pass may send. */
   tournamentBudget?: number;
+  /** Ask mid picks once more as `[pick, none]`; plain tournament rounds off. */
+  confirmStage?: boolean;
   retentionDays: number;
   /** GPU session broker; set, an `ask` pass with uncached sites leases Kev from it. */
   kevSessionUrl?: string;
@@ -126,6 +128,7 @@ export class ResidualResolutionOps implements ResidualResolvePort {
         ...(this.deps.config.tournamentBudget === undefined
           ? {}
           : { tournamentBudget: this.deps.config.tournamentBudget }),
+        ...(this.deps.config.confirmStage === undefined ? {} : { confirmStage: this.deps.config.confirmStage }),
         retentionDays: this.deps.config.retentionDays,
         recomputeDerived: async () => recomputeGraphMetrics(graphDb),
         readMethodSource: async (relPath: string, startLine: number, endLine: number) =>

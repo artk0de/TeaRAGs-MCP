@@ -340,7 +340,13 @@ describe("ResidualResolutionPass — receiver groups", () => {
       expect(questions.map((q) => q.candidates.length)).toEqual([1, 40, 40, 40, 4]);
       expect(questions[4].candidates).toEqual(["Invoice", "K000", "K040", "K080"]);
       expect(graphDb.applied.at(-1)?.map((e) => e.targetSymbolId)).toEqual(["Invoice#save"]);
-      expect(report).toMatchObject({ earlyAcceptedGroups: 0, tournamentQuestions: 5, tournamentRounds: 3 });
+      expect(report).toMatchObject({
+        earlyAcceptedGroups: 0,
+        tournamentQuestions: 5,
+        tournamentRounds: 3,
+        confirmQuestions: 0,
+        confirmAccepted: 0,
+      });
     });
 
     it("never drops a class the name leaves out: a confident none in block 1 hands the group to the rest", async () => {
@@ -401,6 +407,124 @@ describe("ResidualResolutionPass — receiver groups", () => {
 
       expect(provider.questions().map((q) => q.candidates)).toEqual([["Invoice", "Bill", "Estimate"]]);
       expect(report).toMatchObject({ namePriorGroups: 0, earlyAcceptedGroups: 0 });
+    });
+  });
+
+  describe("the confirm stage re-asks a mid pick as [pick, none]", () => {
+    const named = (): ResidualCallSiteRow => {
+      const classes = manyClasses(120);
+      classes.splice(60, 0, ["Invoice", "Invoice#M"]);
+      return { ...groupedRow("s1", "save", 2, classes), receiverText: "invoice", receiverGroup: "group-invoice" };
+    };
+    const isConfirm = (q: ResidualQuestion): boolean => q.siteKey.endsWith("/c.0");
+    /** The first class at `first` for every block or menu, at `confirm` for the confirm question. */
+    const answerWith =
+      (first: { pick: "first" | null; p: number }, confirm: { pick: "first" | null; p: number }): Answer =>
+      (q) => {
+        const v = isConfirm(q) ? confirm : first;
+        return { pick: v.pick === null ? null : (q.candidates[0] ?? null), p: v.p };
+      };
+    const confirmOn = { confirmStage: true };
+
+    it("asks the mid block-1 pick again under its own key and accepts it on a confident confirm", async () => {
+      const graphDb = fakeGraphDb([named()]);
+      const provider = new FakeProvider(answerWith({ pick: "first", p: 0.6 }, { pick: "first", p: 0.9 }));
+
+      const report = await run(graphDb, provider, confirmOn);
+
+      const questions = provider.questions();
+      expect(questions.map((q) => q.candidates)).toEqual([["Invoice"], ["Invoice"]]);
+      expect(questions[0].siteKey).toMatch(/\/0\.0$/);
+      expect(questions[1].siteKey).toMatch(/\/c\.0$/);
+      expect(graphDb.applied.at(-1)?.map((e) => e.targetSymbolId)).toEqual(["Invoice#save"]);
+      expect(report).toMatchObject({
+        earlyAcceptedGroups: 0,
+        tournamentQuestions: 2,
+        confirmQuestions: 1,
+        confirmAccepted: 1,
+      });
+    });
+
+    it("settles the group on a confirm below the accept threshold without asking a plain round", async () => {
+      const provider = new FakeProvider(answerWith({ pick: "first", p: 0.6 }, { pick: "first", p: 0.6 }));
+
+      const report = await run(fakeGraphDb([named()]), provider, confirmOn);
+
+      expect(provider.questions()).toHaveLength(2);
+      expect(report).toMatchObject({ sitesEdged: 0, confirmQuestions: 1, confirmAccepted: 0 });
+    });
+
+    it("keeps a confident none on the confirm question from marking the group's sites external", async () => {
+      const graphDb = fakeGraphDb([named()]);
+      const provider = new FakeProvider(answerWith({ pick: "first", p: 0.6 }, { pick: null, p: 0.95 }));
+
+      const report = await run(graphDb, provider, confirmOn);
+
+      expect(provider.questions()).toHaveLength(2);
+      expect(report).toMatchObject({ sitesEdged: 0, externalByModel: 0, confirmAccepted: 0 });
+    });
+
+    it("leaves a tournament residual when block 1 is neither accepted nor mid, asking no plain round", async () => {
+      const provider = new FakeProvider(answerWith({ pick: "first", p: 0.3 }, { pick: "first", p: 0.9 }));
+
+      const report = await run(fakeGraphDb([named()]), provider, confirmOn);
+
+      expect(provider.questions().map((q) => q.candidates)).toEqual([["Invoice"]]);
+      expect(report).toMatchObject({ sitesEdged: 0, confirmQuestions: 0 });
+    });
+
+    it("asks nothing for a tournament the receiver's name does not open", async () => {
+      const provider = new FakeProvider(answerWith({ pick: "first", p: 0.6 }, { pick: "first", p: 0.9 }));
+
+      const report = await run(fakeGraphDb([groupedRow("u1", "save", 7, manyClasses(120))]), provider, confirmOn);
+
+      expect(provider.calls).toHaveLength(0);
+      expect(report).toMatchObject({ tournamentGroups: 1, tournamentQuestions: 0, sitesEdged: 0 });
+    });
+
+    it("asks a mid full-menu pick again and edges the group on a confident confirm", async () => {
+      const graphDb = fakeGraphDb([groupedRow("s1", "save", 2)]);
+      const provider = new FakeProvider(answerWith({ pick: "first", p: 0.6 }, { pick: "first", p: 0.9 }));
+
+      const report = await run(graphDb, provider, confirmOn);
+
+      const questions = provider.questions();
+      expect(questions.map((q) => q.candidates)).toEqual([["Invoice", "Bill", "Estimate"], ["Invoice"]]);
+      expect(questions[0].siteKey).not.toContain("/");
+      expect(questions[1].siteKey).toBe(`${questions[0].siteKey}/c.0`);
+      expect(graphDb.applied.at(-1)?.map((e) => e.targetSymbolId)).toEqual(["Invoice#save"]);
+      expect(report).toMatchObject({ confirmQuestions: 1, confirmAccepted: 1 });
+    });
+
+    it("keeps a confident full-menu none marking the group's sites external, with no confirm asked", async () => {
+      const graphDb = fakeGraphDb([groupedRow("s1", "save", 2)]);
+      const provider = new FakeProvider(answerWith({ pick: null, p: 0.95 }, { pick: "first", p: 0.9 }));
+
+      const report = await run(graphDb, provider, confirmOn);
+
+      expect(provider.questions()).toHaveLength(1);
+      expect(report).toMatchObject({ externalByModel: 1, confirmQuestions: 0 });
+    });
+
+    it("charges the confirm question to the tournament budget", async () => {
+      const provider = new FakeProvider(answerWith({ pick: "first", p: 0.6 }, { pick: "first", p: 0.9 }));
+
+      const report = await run(fakeGraphDb([named()]), provider, { ...confirmOn, tournamentBudget: 1 });
+
+      expect(provider.questions().map((q) => q.siteKey.slice(-4))).toEqual(["/0.0"]);
+      expect(report).toMatchObject({ tournamentQuestions: 1, confirmQuestions: 0, sitesEdged: 0 });
+    });
+
+    it("resumes from the stored confirm verdict on the next run", async () => {
+      const answer = answerWith({ pick: "first", p: 0.6 }, { pick: "first", p: 0.9 });
+      await run(fakeGraphDb([named()]), new FakeProvider(answer), confirmOn);
+
+      const graphDb = fakeGraphDb([named()]);
+      const rerunProvider = new FakeProvider(answer);
+      await run(graphDb, rerunProvider, confirmOn);
+
+      expect(rerunProvider.calls).toHaveLength(0);
+      expect(graphDb.applied.at(-1)?.map((e) => e.targetSymbolId)).toEqual(["Invoice#save"]);
     });
   });
 

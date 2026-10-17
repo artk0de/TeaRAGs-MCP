@@ -68,6 +68,8 @@ export interface AskQueueInput {
   tournamentFloor?: number;
   /** Tournament block questions this run may send; a group that would exceed it is skipped. */
   tournamentBudget?: number;
+  /** Ask a mid block-1 or full-menu pick once more as `[pick, none]`; plain tournament rounds are never asked. */
+  confirmStage?: boolean;
   /** Questions one request may carry. */
   maxQuestionsPerRequest?: number;
   /** Candidates one request may carry over all its questions; a larger single question travels alone. */
@@ -339,7 +341,7 @@ export class ResidualAskQueue {
           if (tournament.outcome === undefined) next.push(tournament);
           continue;
         }
-        if (tournament.isTournament && this.canAsk()) {
+        if (tournament.chargesBudget && this.canAsk()) {
           const charge = this.charge(tournament, uncached.length);
           if (charge === "wait") this.waiting.push({ tournament, uncached });
           if (charge !== "charged") continue;
@@ -356,7 +358,7 @@ export class ResidualAskQueue {
     tournament.advance((q) => this.verdicts.get(questionKey(q)), this.floor, this.input.provider.threshold);
   }
 
-  /** Charges `count` block questions, holding back what open name-matched tournaments may still need. */
+  /** Charges `count` block or confirm questions, holding back what open name-matched tournaments may still need. */
   private charge(tournament: GroupTournament, count: number): Charge {
     const reserve = tournament.hasNamePrior
       ? 0

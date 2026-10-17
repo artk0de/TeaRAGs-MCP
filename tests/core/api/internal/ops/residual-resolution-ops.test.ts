@@ -119,18 +119,20 @@ describe("ResidualResolutionOps", () => {
     expect(existsSync(ResidualVerdictStore.pathFor(rootDir, "code_test"))).toBe(true);
   });
 
-  it("hands the configured tournament floor and budget to the pass", async () => {
+  it("hands the configured tournament floor, budget and confirm stage to the pass", async () => {
     const run = vi.spyOn(ResidualResolutionPass.prototype, "run");
     const ops = new ResidualResolutionOps({
       rootDir,
       codegraphPool: { acquireWrite } as never,
-      config: { ...CONFIG, tournamentFloor: 0.4, tournamentBudget: 12 },
+      config: { ...CONFIG, tournamentFloor: 0.4, tournamentBudget: 12, confirmStage: true },
       createProvider: () => answeringProvider([]),
     });
 
     await ops.resolve({ ...request(), model: "kev" });
 
-    expect(run).toHaveBeenCalledWith(expect.objectContaining({ tournamentFloor: 0.4, tournamentBudget: 12 }));
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ tournamentFloor: 0.4, tournamentBudget: 12, confirmStage: true }),
+    );
     run.mockRestore();
   });
 

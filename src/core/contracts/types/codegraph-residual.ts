@@ -299,6 +299,10 @@ export interface ResidualPassReport {
   earlyAcceptedGroups: number;
   /** Tournament groups not asked because the run's budget (`CODEGRAPH_RESIDUAL_TOURNAMENT_BUDGET`) ran out. */
   groupsSkippedByBudget: number;
+  /** Receiver groups whose `[pick, none]` confirm question (`CODEGRAPH_RESIDUAL_CONFIRM_STAGE`) was answered, from the store or the model. */
+  confirmQuestions: number;
+  /** Receiver groups settled by a confirm answer at or above the provider threshold. */
+  confirmAccepted: number;
   /** Method batches the model refused as too long, asked again over a window around their call lines. */
   windowedGroups: number;
   /** Provider requests sent, a requeued one counted each time. */

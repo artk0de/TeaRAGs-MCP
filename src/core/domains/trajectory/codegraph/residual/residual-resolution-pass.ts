@@ -114,7 +114,9 @@ export class ResidualResolutionPass {
       .map((r) => ({ ...r, questionHash: residualQuestionHash(r.menuHash) }));
     const askable = receiverGroups.filter((g) => g.classes.length >= input.minMenu);
     const groupTooSmall = receiverGroups.filter((g) => g.classes.length < input.minMenu);
-    const tournaments = askable.map((g) => new GroupTournament(g, input.menuLimit, residualQuestionHash));
+    const tournaments = askable.map(
+      (g) => new GroupTournament(g, input.menuLimit, residualQuestionHash, input.confirmStage),
+    );
     const verdicts = await cachedVerdicts(
       input,
       eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.questionHash })),
@@ -187,6 +189,8 @@ export class ResidualResolutionPass {
       namePriorGroups: tournaments.filter((t) => t.hasNamePrior).length,
       earlyAcceptedGroups: tournaments.filter((t) => t.earlyAccepted).length,
       groupsSkippedByBudget: rounds.skippedByBudget,
+      confirmQuestions: tournaments.filter((t) => t.confirmAnswered).length,
+      confirmAccepted: tournaments.filter((t) => t.confirmAccepted).length,
       windowedGroups: tally.windowed,
       requests: tally.requests,
       maxQuestionsPerRequest: tally.maxQuestionsPerRequest,
