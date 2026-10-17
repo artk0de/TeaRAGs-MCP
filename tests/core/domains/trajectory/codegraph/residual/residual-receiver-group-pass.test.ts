@@ -103,7 +103,7 @@ function hopRow(
   siteKey: string,
   receiverText: string,
   member: string,
-  classes: [string, string, string?][],
+  classes: [string, string | null, string?][],
   downstreamGroup?: string,
 ): ResidualCallSiteRow {
   return {
@@ -117,7 +117,7 @@ function hopRow(
     receiverText,
     member,
     kind: "dynamic",
-    candidates: classes.map(([, t]) => t),
+    candidates: classes.flatMap(([, t]) => (t === null ? [] : [t])),
     menuHash: `menu-${siteKey}`,
     menuOverflow: false,
     receiverGroup: `group-${receiverText}`,
@@ -518,6 +518,108 @@ describe("ResidualResolutionPass — receiver groups", () => {
       expect(edgeOf(applied, "s-d")).toMatchObject({ targetSymbolId: "C#d", p: 0.88 });
       expect(edgeOf(applied, "s-e")).toBeUndefined();
       expect(report.sitesEdgedByPropagation).toBe(2);
+    });
+  });
+
+  describe("a class that reads the member as a schema column", () => {
+    const externalOf = (graphDb: ReturnType<typeof fakeGraphDb>, siteKey: string) =>
+      graphDb.external.at(-1)?.find((x) => x.siteKey === siteKey);
+
+    it("moves a site whose picked class reads the member as a column to attributeByModel, with no edge", async () => {
+      const graphDb = fakeGraphDb([
+        hopRow("s-email", "user", "email", [
+          ["User", null, "String"],
+          ["Mailer", "Mailer#email"],
+        ]),
+        hopRow("s-login", "user", "login", [
+          ["User", "User#login"],
+          ["Mailer", "Mailer#login"],
+        ]),
+      ]);
+      const provider = new FakeProvider(answerByReceiver({ user: { pick: "User", p: 0.9 } }));
+
+      const report = await run(graphDb, provider);
+
+      expect(edgeOf(graphDb.applied.at(-1), "s-email")).toBeUndefined();
+      expect(edgeOf(graphDb.applied.at(-1), "s-login")).toMatchObject({ targetSymbolId: "User#login", p: 0.9 });
+      expect(externalOf(graphDb, "s-email")).toEqual({
+        siteKey: "s-email",
+        sourceRelPath: "app/a.rb",
+        menuHash: "menu-s-email",
+        model: "kev",
+        p: 0.9,
+        outcome: "attribute",
+      });
+      expect(report).toMatchObject({ attributeByModel: 1, externalByModel: 0, sitesEdged: 1, belowThreshold: 0 });
+    });
+
+    it("settles `record.user.email` as an attribute from the upstream pick's return type", async () => {
+      const graphDb = fakeGraphDb([
+        hopRow("u1", "record", "user", [["Client", "Client#user", "User"]], "group-record.user"),
+        hopRow("d1", "record.user", "email", [
+          ["Admin", "Admin#email"],
+          ["User", null, "String"],
+        ]),
+      ]);
+      const provider = new FakeProvider(answerByReceiver({ record: { pick: "Client", p: 0.9 } }));
+
+      const report = await run(graphDb, provider);
+
+      expect(edgeOf(graphDb.applied.at(-1), "d1")).toBeUndefined();
+      expect(externalOf(graphDb, "d1")).toMatchObject({ outcome: "attribute", p: 0.9 });
+      expect(report).toMatchObject({ attributeByModel: 1, sitesEdgedByPropagation: 0 });
+    });
+
+    it("settles the hop after a core value type as external instead of searching a project menu", async () => {
+      const graphDb = fakeGraphDb([
+        hopRow(
+          "u1",
+          "record",
+          "amount",
+          [
+            ["Invoice", null, "Integer"],
+            ["Payment", "Payment#amount"],
+          ],
+          "group-record.amount",
+        ),
+        hopRow("d1", "record.amount", "round", [
+          ["Money", "Money#round"],
+          ["Calc", "Calc#round"],
+        ]),
+      ]);
+      const provider = new FakeProvider(answerByReceiver({ record: { pick: "Invoice", p: 0.9 } }));
+
+      const report = await run(graphDb, provider);
+
+      expect(externalOf(graphDb, "u1")).toMatchObject({ outcome: "attribute", p: 0.9 });
+      expect(externalOf(graphDb, "d1")).toEqual({
+        siteKey: "d1",
+        sourceRelPath: "app/a.rb",
+        menuHash: "menu-d1",
+        model: "kev",
+        p: 0.9,
+      });
+      expect(edgeOf(graphDb.applied.at(-1), "d1")).toBeUndefined();
+      expect(report).toMatchObject({ attributeByModel: 1, externalByPropagation: 1, externalByModel: 0 });
+    });
+
+    it("lets the downstream group's own accepted verdict stand over a core value type", async () => {
+      const graphDb = fakeGraphDb([
+        hopRow("u1", "record", "amount", [["Invoice", null, "Integer"]], "group-record.amount"),
+        hopRow("d1", "record.amount", "round", [
+          ["Money", "Money#round"],
+          ["Calc", "Calc#round"],
+        ]),
+      ]);
+      const provider = new FakeProvider(
+        answerByReceiver({ record: { pick: "Invoice", p: 0.9 }, "record.amount": { pick: "Money", p: 0.95 } }),
+      );
+
+      const report = await run(graphDb, provider);
+
+      expect(edgeOf(graphDb.applied.at(-1), "d1")).toMatchObject({ targetSymbolId: "Money#round" });
+      expect(externalOf(graphDb, "d1")).toBeUndefined();
+      expect(report).toMatchObject({ externalByPropagation: 0, propagationConflicts: 1 });
     });
   });
 });

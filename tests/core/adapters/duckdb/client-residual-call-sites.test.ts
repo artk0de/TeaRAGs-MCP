@@ -147,6 +147,29 @@ describe("DuckDbGraphClient — residual call-site persistence", () => {
     expect(row.classTargets).toEqual(classTargets);
   });
 
+  it("stores a class reading the member as a schema column as `0`, and reads it back with no target", async () => {
+    const classTargets: ResidualClassTarget[] = [
+      ["User", null, "String"],
+      ["Account", null],
+      ["Mailer", "Mailer#users"],
+    ];
+    await client.upsertFile(
+      { relPath: "a.rb", language: "ruby" },
+      {
+        fileEdges: [],
+        methodEdges: [],
+        residualCallSites: [site("a.rb", "k1", { receiverGroup: "g-1", classTargets })],
+      },
+    );
+
+    const [stored] = await client.queryAll<{ class_targets: string }>(
+      "SELECT class_targets FROM cg_residual_call_sites",
+    );
+    expect(JSON.parse(stored.class_targets)).toEqual([["User", 0, "String"], ["Account", 0], ["Mailer"]]);
+    const [row] = await client.readResidualCallSites();
+    expect(row.classTargets).toEqual(classTargets);
+  });
+
   it("reads a row stored before the compact form, every target spelled out", async () => {
     await client.upsertFile(
       { relPath: "a.rb", language: "ruby" },
@@ -250,8 +273,8 @@ describe("DuckDbGraphClient — residual call-site persistence", () => {
         const classTargets = sets[i % 6].map(
           ([cls, target, returnType]): ResidualClassTarget =>
             returnType === undefined
-              ? [cls, target.replace("#users", `#${member}`)]
-              : [cls, target.replace("#users", `#${member}`), returnType],
+              ? [cls, target?.replace("#users", `#${member}`) ?? null]
+              : [cls, target?.replace("#users", `#${member}`) ?? null, returnType],
         );
         return site(`app/f${i % 50}.rb`, `k${i}`, { member, receiverGroup: `g-${i % 500}`, classTargets });
       });

@@ -144,6 +144,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           narrowed: 0,
           narrowEmpty: 0,
           paramTyped: 0,
+          schemaAttribute: 0,
         },
         {
           language: "typescript",
@@ -159,6 +160,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           narrowed: 0,
           narrowEmpty: 0,
           paramTyped: 0,
+          schemaAttribute: 0,
         },
       ]);
     });
@@ -208,6 +210,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           narrowed: 0,
           narrowEmpty: 0,
           paramTyped: 0,
+          schemaAttribute: 0,
         },
       ]);
     });

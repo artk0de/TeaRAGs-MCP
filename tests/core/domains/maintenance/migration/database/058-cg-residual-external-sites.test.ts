@@ -37,7 +37,15 @@ describe("058 stores the residual sites a model put outside the project", () => 
       `SELECT column_name FROM information_schema.columns
         WHERE table_name = 'cg_residual_external_sites' ORDER BY ordinal_position`,
     );
-    expect(cols.map((c) => c.column_name)).toEqual(["model", "source_rel_path", "site_key", "menu_hash", "p"]);
+    // `outcome` added by migration 064 (2m83f.55).
+    expect(cols.map((c) => c.column_name)).toEqual([
+      "model",
+      "source_rel_path",
+      "site_key",
+      "menu_hash",
+      "p",
+      "outcome",
+    ]);
   });
 
   it("is idempotent", async () => {

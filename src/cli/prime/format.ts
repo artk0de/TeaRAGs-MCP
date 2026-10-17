@@ -735,6 +735,10 @@ function formatResolvePlain(resolve: CodegraphResolve): string[] {
   }
   const paramTyped = resolve.callsParamTyped ?? 0;
   if (paramTyped > 0) lines.push(`paramTyped: ${paramTyped} calls resolved on a parameter typed by its callers`);
+  const schemaAttribute = resolve.callsSchemaAttribute ?? 0;
+  if (schemaAttribute > 0) {
+    lines.push(`schemaAttribute: ${schemaAttribute} residual calls read a schema column (no in-project def)`);
+  }
   const narrowed = formatNarrowedLine(resolve);
   if (narrowed !== null) lines.push(narrowed);
   return lines;

@@ -19,7 +19,9 @@
  *
  * Sites a model put outside the project ("none of these") live in
  * `cg_residual_external_sites` (058), replaced per model on every apply and
- * counted only while the residual row keeps the same menu.
+ * counted only while the residual row keeps the same menu; so do sites whose
+ * picked class reads the member as a schema column, under `outcome =
+ * 'attribute'` (064).
  */
 import type {
   CodegraphResidualEdgeStore,
@@ -111,7 +113,8 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
    * call text — the method-edge key, which one edge shares between sites making
    * the same call. Each site counts once, under the model of its most probable
    * edge. A site no edge resolves is external when a model put it outside the
-   * project under its current menu.
+   * project under its current menu, or an attribute when the model's class reads
+   * the member as a schema column.
    */
   async getModelResolvedSiteCounts(thresholds: Readonly<Record<string, number>>): Promise<ModelResolvedSiteCount[]> {
     const models = Object.entries(thresholds);
@@ -133,7 +136,8 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
           GROUP BY r.source_rel_path, r.site_key, r.language, r.receiver_kind, r.kind
        ),
        external AS (
-         SELECT r.language, r.receiver_kind, r.kind, arg_max(x.model, x.p) AS model
+         SELECT r.language, r.receiver_kind, r.kind, arg_max(x.model, x.p) AS model,
+                arg_max(coalesce(x.outcome, 'external'), x.p) AS outcome
            FROM cg_residual_call_sites r
            JOIN cg_residual_external_sites x
              ON x.source_rel_path = r.source_rel_path AND x.site_key = r.site_key AND x.menu_hash = r.menu_hash
@@ -144,7 +148,7 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
        outcomes AS (
          SELECT 'edge' AS outcome, language, receiver_kind, kind, model FROM resolved
          UNION ALL
-         SELECT 'external' AS outcome, language, receiver_kind, kind, model FROM external
+         SELECT outcome, language, receiver_kind, kind, model FROM external
        )
        SELECT outcome, language, receiver_kind, kind, model, COUNT(*) AS sites
          FROM outcomes
@@ -153,7 +157,7 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
       models.flatMap(([model, threshold]) => [model, threshold]),
     );
     return rows.map((r) => ({
-      outcome: r.outcome === "external" ? "external" : "edge",
+      outcome: r.outcome === "external" || r.outcome === "attribute" ? r.outcome : "edge",
       language: r.language,
       receiverKind: r.receiver_kind,
       kind: r.kind as ResidualKind,
@@ -209,16 +213,16 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
     });
   }
 
-  /** Make the rows of `model` in `cg_residual_external_sites` equal `sites`. */
+  /** Make the rows of `model` in `cg_residual_external_sites` equal `sites`, attribute sites included. */
   async applyModelExternalSites(model: string, sites: readonly ModelExternalSiteRow[]): Promise<void> {
     await this.session.transaction(async () => {
       await this.session.run("DELETE FROM cg_residual_external_sites WHERE model = ?", [model]);
       for (let i = 0; i < sites.length; i += RESIDUAL_IN_LIST_CHUNK) {
         const chunk = sites.slice(i, i + RESIDUAL_IN_LIST_CHUNK);
         await this.session.run(
-          `INSERT OR REPLACE INTO cg_residual_external_sites (model, source_rel_path, site_key, menu_hash, p)
-           VALUES ${chunk.map(() => "(?, ?, ?, ?, ?)").join(", ")}`,
-          chunk.flatMap((x) => [model, x.sourceRelPath, x.siteKey, x.menuHash, x.p]),
+          `INSERT OR REPLACE INTO cg_residual_external_sites (model, source_rel_path, site_key, menu_hash, p, outcome)
+           VALUES ${chunk.map(() => "(?, ?, ?, ?, ?, ?)").join(", ")}`,
+          chunk.flatMap((x) => [model, x.sourceRelPath, x.siteKey, x.menuHash, x.p, x.outcome ?? "external"]),
         );
       }
     });

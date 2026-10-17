@@ -31,8 +31,13 @@ export type ResidualReason = "frameworkOverride";
  */
 export type ResidualExclusionRule = "schemaColumn" | "frameworkMember" | "timestampColumn";
 
-/** One class of a receiver group: the class, the target its member reaches there, and that target's return type when known. */
-export type ResidualClassTarget = [className: string, targetSymbolId: string, returnType?: string];
+/**
+ * One class of a receiver group: the class, the target its member reaches there,
+ * and that target's return type when known. A `null` target is a schema column
+ * the class reads the member as — an answer with no method node to edge to; its
+ * return type is the column's value type (bd tea-rags-mcp-2m83f.55).
+ */
+export type ResidualClassTarget = [className: string, targetSymbolId: string | null, returnType?: string];
 
 /** One row of `cg_residual_call_sites` (053). */
 export interface ResidualCallSiteRow {
@@ -90,8 +95,12 @@ export interface ResidualCallSiteRow {
  * `cg_symbols_files` row either.
  */
 export interface ModelResolvedSiteCount {
-  /** `edge` — a model edge resolves the site; `external` — the model put its target outside the project (058). */
-  outcome: "edge" | "external";
+  /**
+   * `edge` — a model edge resolves the site; `external` — the model put its target
+   * outside the project (058); `attribute` — the model's class reads the member as
+   * a schema column, which has no method node (064).
+   */
+  outcome: "edge" | "external" | "attribute";
   language: string | null;
   receiverKind: string | null;
   kind: ResidualKind;
@@ -133,6 +142,8 @@ export interface ModelExternalSiteRow {
   menuHash: string;
   model: string;
   p: number;
+  /** `attribute` — the picked class reads the member as a schema column (064); absent — outside the project. */
+  outcome?: "attribute";
 }
 
 export type EdgeOrigin = "static" | "model";
@@ -313,6 +324,14 @@ export interface ResidualPassReport {
   peakInFlight: number;
   /** Eligible rows the model answered "none of these" for at or above `CODEGRAPH_RESIDUAL_NONE_THRESHOLD`. */
   externalByModel: number;
+  /**
+   * Rows whose accepted class — picked, or propagated from an upstream pick —
+   * reads the member as a schema column: no edge, out of the recall denominator
+   * like {@link externalByModel} (bd tea-rags-mcp-2m83f.55).
+   */
+  attributeByModel: number;
+  /** Rows of a downstream hop whose receiver an accepted pick types as a core value (`Integer`, `String`): external. */
+  externalByPropagation: number;
   /**
    * Distinct model edges stored. Until 2m83f.29 this counted sites (what
    * `sitesEdged` counts now); sites making the same call to the same target

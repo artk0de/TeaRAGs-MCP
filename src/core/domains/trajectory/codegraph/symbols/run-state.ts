@@ -134,6 +134,10 @@ export interface ReceiverKindTally {
   // parameter only its callers typed (2m83f.44). Counted in `resolved` too, in
   // no rate. Persisted to cg_run_stats.param_typed.
   paramTyped: number;
+  // bd tea-rags-mcp-2m83f.55 — residual sites whose callee is a schema column
+  // accessor: moved into `noInProjectDef` (a column has no in-project def) and
+  // counted here too. Persisted to cg_run_stats.schema_attribute.
+  schemaAttribute: number;
 }
 
 export interface RunStats {
@@ -229,6 +233,7 @@ function zeroReceiverKindTally(): ReceiverKindTally {
     narrowed: 0,
     narrowEmpty: 0,
     paramTyped: 0,
+    schemaAttribute: 0,
   };
 }
 
@@ -261,6 +266,7 @@ function addReceiverKindTally(target: ReceiverKindTally, source: ReceiverKindTal
   target.narrowed += source.narrowed;
   target.narrowEmpty += source.narrowEmpty;
   target.paramTyped += source.paramTyped;
+  target.schemaAttribute += source.schemaAttribute;
 }
 
 /**
@@ -2122,6 +2128,7 @@ export class CodegraphRunState {
           narrowed: t.narrowed,
           narrowEmpty: t.narrowEmpty,
           paramTyped: t.paramTyped,
+          schemaAttribute: t.schemaAttribute,
         });
       }
     }
@@ -2151,6 +2158,7 @@ export class CodegraphRunState {
         narrowed: t.narrowed,
         narrowEmpty: t.narrowEmpty,
         paramTyped: t.paramTyped,
+        schemaAttribute: t.schemaAttribute,
       })),
     }));
   }

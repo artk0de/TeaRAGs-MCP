@@ -77,6 +77,7 @@ describe("025 cg file resolve stats migration", () => {
         "receiver_kind",
         "rel_path",
         "resolved",
+        "schema_attribute",
         "unnarrowed_template",
         "unresolvable",
       ].sort(),

@@ -53,6 +53,7 @@ export function formatResidualReport(report: ResidualReport): string {
     `  below threshold:  ${report.belowThreshold}\n` +
     `  sites edged:      ${report.sitesEdged}\n` +
     `  external (model): ${report.externalByModel}\n` +
+    `  attribute (model): ${report.attributeByModel}, external by propagation: ${report.externalByPropagation}\n` +
     `  receiver groups:  ${report.receiverGroups} (${report.receiverGroupSites} sites)\n` +
     `  edged by group:   ${report.sitesEdgedByVerdict} by verdict, ${report.sitesEdgedByPropagation} by propagation (${report.propagationConflicts} conflicts)\n` +
     `  tournaments:      ${report.tournamentGroups} groups, ${report.tournamentRounds} rounds, ${report.tournamentQuestions} questions, ${report.groupsSkippedByBudget} skipped by budget; ${report.namePriorGroups} opened by name, ${report.earlyAcceptedGroups} accepted on block 1\n` +

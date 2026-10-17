@@ -1552,6 +1552,14 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
       expect(out).toContain("resolve rate: 0.9\nparamTyped: 42 calls resolved on a parameter typed by its callers\n");
     });
 
+    // bd tea-rags-mcp-2m83f.55 — residual sites whose callee is a schema column accessor.
+    it("renders the schemaAttribute line when residual sites read a schema column", () => {
+      const out = render(summary({ inProjectEdgeRecall: 0.9, callsSchemaAttribute: 31 }));
+      expect(out).toContain(
+        "resolve rate: 0.9\nschemaAttribute: 31 residual calls read a schema column (no in-project def)\n",
+      );
+    });
+
     it("renders no narrowed line before any site was narrowed", () => {
       expect(render(summary({ inProjectEdgeRecall: 0.9 }))).not.toContain("narrowed:");
     });

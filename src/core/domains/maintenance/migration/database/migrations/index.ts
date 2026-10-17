@@ -67,6 +67,7 @@ import { SQL_060_CG_CALLER_PARAM_OBSERVATIONS } from "./060-cg-caller-param-obse
 import { SQL_061_CG_RESIDUAL_RECEIVER_GROUPS } from "./061-cg-residual-receiver-groups.js";
 import { SQL_062_CG_RESIDUAL_DOWNSTREAM_GROUP } from "./062-cg-residual-downstream-group.js";
 import { SQL_063_CG_RESIDUAL_CLASS_SETS } from "./063-cg-residual-class-sets.js";
+import { SQL_064_CG_RESIDUAL_SCHEMA_ATTRIBUTES } from "./064-cg-residual-schema-attributes.js";
 
 export type { DatabaseMigration } from "../runner.js";
 
@@ -138,4 +139,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "061-cg-residual-receiver-groups.sql", sql: SQL_061_CG_RESIDUAL_RECEIVER_GROUPS },
   { filename: "062-cg-residual-downstream-group.sql", sql: SQL_062_CG_RESIDUAL_DOWNSTREAM_GROUP },
   { filename: "063-cg-residual-class-sets.sql", sql: SQL_063_CG_RESIDUAL_CLASS_SETS },
+  { filename: "064-cg-residual-schema-attributes.sql", sql: SQL_064_CG_RESIDUAL_SCHEMA_ATTRIBUTES },
 ];

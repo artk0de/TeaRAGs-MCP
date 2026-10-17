@@ -133,6 +133,19 @@ receiver", answered once per (method, receiver):
   fixpoint rounds). Every edge derived this way is `origin = 'model'` with the
   verdict's p, so `trace_path` `minP` and `find_cycles` `hasModelEdge` stay
   truthful.
+- **Schema columns answer** (bd 2m83f.55). A class that reads the member as a
+  schema column stays in the group's class set with no target and the column's
+  value type as its return type. An accepted pick (direct or propagated) whose
+  member is a column on that class emits no edge: the site moves to
+  `attributeByModel`, which leaves the recall denominator like `externalByModel`
+  (stored in `cg_residual_external_sites` with `outcome = 'attribute'`, 064). A
+  propagated core value type (`Integer`, `String`, `Hash`, `Time`, …) settles
+  the next hop as external (`externalByPropagation`). Column readers are left
+  out of a menu only when they number more than the menu limit and would push a
+  menu that fit past it. A site whose every narrowed class reads the member as a
+  column — or the language excluded as a model column read — has no in-project
+  definition: it moves to `noInProjectDef`, counted under `schemaAttribute`
+  (`cg_run_stats.schema_attribute`, 064), and gets no row.
 - **Too-long methods** — `methodSource` is windowed around the receiver's call
   lines instead of failing the group (`STATE_TOO_LONG`, 15 groups in the A/B).
 

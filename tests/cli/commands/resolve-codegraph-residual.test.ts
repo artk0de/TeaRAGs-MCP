@@ -26,6 +26,8 @@ const COMPLETED = {
   belowThreshold: 5,
   sitesEdged: 97,
   externalByModel: 31,
+  attributeByModel: 17,
+  externalByPropagation: 5,
   receiverGroups: 12,
   receiverGroupSites: 30,
   sitesEdgedByVerdict: 25,
@@ -72,6 +74,7 @@ describe("formatResidualReport", () => {
     expect(text).toContain("  menu too small:   7\n");
     expect(text).toContain("  sites edged:      97\n");
     expect(text).toContain("  external (model): 31\n");
+    expect(text).toContain("  attribute (model): 17, external by propagation: 5\n");
     expect(text).toContain("  derived metrics:  recomputed\n");
     expect(text).toContain("apply 3 (recompute 2), total 6");
     expect(text).toContain("  aborted groups:   2\n");

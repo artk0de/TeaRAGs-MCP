@@ -473,6 +473,33 @@ describe("DuckDbGraphClient — residual ops", () => {
       ]);
     });
 
+    it("counts a site whose picked class reads the member as a schema column as an attribute", async () => {
+      await writeSites([
+        { ...SITE, language: "ruby", receiverKind: "ivar" },
+        { ...SITE, siteKey: "k3", line: 14, receiverText: "firm", language: "ruby", receiverKind: "ivar" },
+      ]);
+      await client.applyModelExternalSites("kev", [
+        {
+          siteKey: "k1",
+          sourceRelPath: "app/billing.rb",
+          menuHash: SITE.menuHash,
+          model: "kev",
+          p: 0.9,
+          outcome: "attribute",
+        },
+        { siteKey: "k3", sourceRelPath: "app/billing.rb", menuHash: SITE.menuHash, model: "kev", p: 0.85 },
+      ]);
+
+      expect(await client.getModelResolvedSiteCounts({ kev: 0.7 })).toEqual([
+        { outcome: "attribute", language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 1 },
+        { outcome: "external", language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 1 },
+      ]);
+      expect(await client.queryAll("SELECT site_key, outcome FROM cg_residual_external_sites ORDER BY 1")).toEqual([
+        { site_key: "k1", outcome: "attribute" },
+        { site_key: "k3", outcome: "external" },
+      ]);
+    });
+
     it("replaces the model's external sites and drops one whose menu changed since", async () => {
       await writeSites([{ ...SITE, language: "ruby", receiverKind: "ivar" }]);
       await client.applyModelExternalSites("kev", [

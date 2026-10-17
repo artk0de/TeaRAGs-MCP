@@ -533,11 +533,13 @@ describe("seeded support versions", () => {
       // x's class, and a member on an untyped `x.class` with no project class method is external.
       // ruby 26: bd tea-rags-mcp-2m83f.52 — module-named receivers narrow to the module's
       // includers, framework-override members stop constraining, `x.class` gets class members.
+      // ruby 28: bd tea-rags-mcp-2m83f.55 — schema-column readers answer class questions, and an
+      // all-column site moves to noInProjectDef (`schemaAttribute`).
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
         ["python", 13],
-        ["ruby", 26],
+        ["ruby", 28],
         ["java", 4],
         ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a

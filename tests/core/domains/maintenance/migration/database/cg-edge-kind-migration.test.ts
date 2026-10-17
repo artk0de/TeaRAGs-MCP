@@ -47,7 +47,8 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
       // unnarrowed_template added by migration 022 (znxg8) — the one column here
       // that counts RESOLVED calls rather than misses, and feeds no rate;
       // narrowed / narrow_empty added by migration 057 (2m83f.43);
-      // param_typed added by migration 060 (2m83f.49).
+      // param_typed added by migration 060 (2m83f.49);
+      // schema_attribute added by migration 064 (2m83f.55).
       [
         "ambiguous_fanout",
         "attempted",
@@ -60,6 +61,7 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
         "param_typed",
         "receiver_kind",
         "resolved",
+        "schema_attribute",
         "unnarrowed_template",
         "unresolvable",
       ].sort(),

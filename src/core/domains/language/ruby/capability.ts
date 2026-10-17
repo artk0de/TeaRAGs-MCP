@@ -139,7 +139,12 @@ export const capability: LanguageCapability = {
   // includers, a member reached only as a framework override no longer empties the constraint
   // set, and an `x.class` receiver is offered class-level members only; a walker-25 index keeps
   // the wider sets and offers `x.class` instance methods.
-  versions: { chunking: 2, walker: 26, codegraphSchema: 2 },
+  // walker 28: bd tea-rags-mcp-2m83f.55 — a class reading a member as a schema column stays in
+  // the group's class targets (no target, the column type as its return), and a site every
+  // narrowed class reads as a column moves to `noInProjectDef` (`schemaAttribute`) with its
+  // over-cap aggregate dropped; a walker-26/27 index keeps column readers out of the menus and
+  // the column reads in the miss. (27 is 2m83f.56's, landing in parallel.)
+  versions: { chunking: 2, walker: 28, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

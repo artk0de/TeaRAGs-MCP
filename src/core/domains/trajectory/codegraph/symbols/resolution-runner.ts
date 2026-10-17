@@ -853,6 +853,9 @@ export class CallEdgeResolutionRunner {
    * replaces its over-cap aggregate, so the site leaves `ambiguousFanout`
    * instead. A site whose constraints
    * intersected to no class is counted under `narrowEmpty` and keeps its row.
+   * A site whose callee is a schema column accessor has no in-project
+   * definition: it moves to `noInProjectDef`, counted again under
+   * `schemaAttribute`, an ambiguous one taking its aggregate along.
    */
   private settleNarrowedResidual(
     methodEdges: MethodEdges,
@@ -875,6 +878,19 @@ export class CallEdgeResolutionRunner {
       this.runState.stats.callsResolved += 1;
     }
     for (const receiverKind of residual.narrowEmptyKinds()) kindTally[receiverKind].narrowEmpty += 1;
+    for (const { receiverKind, kind, replacesFanout } of residual.schemaAttributes()) {
+      if (kind === "ambiguous") {
+        if (replacesFanout !== undefined) {
+          const at = ambiguousFanouts.indexOf(replacesFanout);
+          if (at >= 0) ambiguousFanouts.splice(at, 1);
+        }
+        kindTally[receiverKind].ambiguousFanout -= 1;
+        this.runState.stats.callsAmbiguousFanout -= 1;
+      }
+      kindTally[receiverKind].noInProjectDef += 1;
+      kindTally[receiverKind].schemaAttribute += 1;
+      this.runState.stats.callsNoInProjectDef += 1;
+    }
   }
 
   /**

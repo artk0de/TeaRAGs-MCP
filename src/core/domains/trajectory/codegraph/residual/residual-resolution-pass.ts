@@ -147,9 +147,10 @@ export class ResidualResolutionPass {
     );
     const edges = [...siteOutcome.edges, ...groupOutcome.edges, ...propagation.edges];
     const external = [...siteOutcome.external, ...groupOutcome.external];
+    const attributes = [...groupOutcome.attributes, ...propagation.attributes];
     const belowThreshold = siteOutcome.belowThreshold + groupOutcome.belowThreshold;
     const applied = await input.graphDb.applyModelEdges(provider.id, edges);
-    await input.graphDb.applyModelExternalSites(provider.id, external);
+    await input.graphDb.applyModelExternalSites(provider.id, [...external, ...attributes, ...propagation.externals]);
     const recomputeStartedAt = input.now();
     const derived = applied.changed ? await this.recomputeDerived(input) : "unchanged";
     const recomputeMs = input.now() - recomputeStartedAt;
@@ -194,6 +195,8 @@ export class ResidualResolutionPass {
       requestLatencyP95Ms: percentile(tally.latenciesMs, 0.95),
       peakInFlight: tally.peakInFlight,
       externalByModel: external.length,
+      attributeByModel: attributes.length,
+      externalByPropagation: propagation.externals.length,
       edgesApplied: applied.stored,
       derived,
       durations: {
@@ -271,16 +274,23 @@ function acceptedGroupVerdicts(
 /**
  * Edges and external sites of the groups that reached a verdict: a class at or
  * above the provider threshold edges every site of the group to the target its
- * member reaches on that class; a none at or above `noneThreshold` makes every
+ * member reaches on that class, or makes it an attribute where the class reads
+ * the member as a schema column; a none at or above `noneThreshold` makes every
  * site external.
  */
 function buildGroupEdges(
   tournaments: readonly GroupTournament[],
   provider: ResidualModelProvider,
   noneThreshold: number,
-): { edges: ModelEdgeRow[]; external: ModelExternalSiteRow[]; belowThreshold: number } {
+): {
+  edges: ModelEdgeRow[];
+  external: ModelExternalSiteRow[];
+  attributes: ModelExternalSiteRow[];
+  belowThreshold: number;
+} {
   const edges: ModelEdgeRow[] = [];
   const external: ModelExternalSiteRow[] = [];
+  const attributes: ModelExternalSiteRow[] = [];
   let belowThreshold = 0;
   for (const { group, outcome } of tournaments) {
     if (outcome === undefined || outcome === "residual") continue;
@@ -300,9 +310,21 @@ function buildGroupEdges(
         });
         continue;
       }
-      const target = r.classTargets?.find(([cls]) => cls === pick)?.[1];
-      if (target === undefined) {
+      const entry = r.classTargets?.find(([cls]) => cls === pick);
+      if (entry === undefined) {
         belowThreshold++;
+        continue;
+      }
+      const target = entry[1];
+      if (target === null) {
+        attributes.push({
+          siteKey: r.siteKey,
+          sourceRelPath: r.sourceRelPath,
+          menuHash: r.menuHash,
+          model: provider.id,
+          p,
+          outcome: "attribute",
+        });
         continue;
       }
       edges.push({
@@ -315,7 +337,7 @@ function buildGroupEdges(
       });
     }
   }
-  return { edges, external, belowThreshold };
+  return { edges, external, attributes, belowThreshold };
 }
 
 /** A pick at or above the provider threshold is an edge; a none at or above `noneThreshold` an external site. */

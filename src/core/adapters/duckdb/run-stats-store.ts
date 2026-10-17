@@ -42,6 +42,7 @@ const FILE_RESOLVE_STATS_VALUE_COLUMNS = [
   "narrowed",
   "narrow_empty",
   "param_typed",
+  "schema_attribute",
 ] as const;
 
 const COUNTER_COLUMNS = FILE_RESOLVE_STATS_VALUE_COLUMNS.slice(1);
@@ -71,7 +72,7 @@ export class DuckDbRunStatsStore implements Pick<
       );
       for (const r of rows) {
         await this.session.run(
-          "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout, unnarrowed_template, narrowed, narrow_empty, param_typed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout, unnarrowed_template, narrowed, narrow_empty, param_typed, schema_attribute) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
             r.language,
             r.receiverKind,
@@ -86,6 +87,7 @@ export class DuckDbRunStatsStore implements Pick<
             r.narrowed ?? 0,
             r.narrowEmpty ?? 0,
             r.paramTyped ?? 0,
+            r.schemaAttribute ?? 0,
           ],
         );
       }
@@ -128,6 +130,7 @@ export class DuckDbRunStatsStore implements Pick<
         r.narrowed ?? 0,
         r.narrowEmpty ?? 0,
         r.paramTyped ?? 0,
+        r.schemaAttribute ?? 0,
       ]),
     );
 
@@ -172,6 +175,7 @@ export class DuckDbRunStatsStore implements Pick<
       narrowed: number | bigint;
       narrow_empty: number | bigint;
       param_typed: number | bigint;
+      schema_attribute: number | bigint;
     }>(
       `SELECT language, receiver_kind, ${counters} FROM cg_run_stats
          WHERE language NOT IN (SELECT language FROM cg_file_resolve_stats_coverage)
@@ -195,6 +199,7 @@ export class DuckDbRunStatsStore implements Pick<
       narrowed: Number(r.narrowed),
       narrowEmpty: Number(r.narrow_empty),
       paramTyped: Number(r.param_typed),
+      schemaAttribute: Number(r.schema_attribute),
     }));
   }
 
