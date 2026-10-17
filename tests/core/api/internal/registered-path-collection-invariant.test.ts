@@ -29,8 +29,12 @@ import { runPrime } from "../../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../../src/cli/update-check/types.js";
 import { validatePath } from "../../../../src/core/adapters/filesystem/path-canonicalization.js";
-import { createPathCollectionResolver, IngestFacade } from "../../../../src/core/api/index.js";
-import { resolveCollection } from "../../../../src/core/api/internal/collection-resolver.js";
+import {
+  createPathCollectionResolver,
+  IngestFacade,
+  resolveCollection,
+  resolveDomainEnvCodeDefaults,
+} from "../../../../src/core/api/index.js";
 import { resolveLanguageCapabilities } from "../../../../src/core/domains/language/capability/resolve.js";
 import { CollectionRegistry } from "../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import { resolveCollectionName } from "../../../../src/core/primitives/ids/collection-identity.js";
@@ -42,6 +46,9 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../../domains/ingest/__helpers__/test-helpers.js";
+
+// The hint takes its api-side resolvers injected (bd tea-rags-mcp-54xwd.3).
+const REAL_RESOLVERS = { resolveCollection, resolveDomainEnvCodeDefaults };
 
 const { pingMock, createAppContextMock } = vi.hoisted(() => ({
   pingMock: vi.fn(),
@@ -316,7 +323,7 @@ describe("the MCP auto-update hint for a relocated project's path", () => {
       autoUpdate: { enabled: true, targetBranch: "main" },
     });
 
-    const trigger = buildMcpAutoUpdateTrigger(dataDir);
+    const trigger = buildMcpAutoUpdateTrigger(REAL_RESOLVERS, dataDir);
 
     expect(trigger.hintFor({ path: canonicalPath })).toBe(
       "auto-update paused — HEAD not on target main; run index_codebase to switch the index",

@@ -81,6 +81,7 @@ import {
   readPayloadImportSpecifiers,
   registerAllTools,
   RequestScopedFileFactsReader,
+  resolveCollection,
   resolveDomainEnvCodeDefaults,
   ReviewChangesOps,
   ReviewFacade,
@@ -2408,7 +2409,11 @@ export function createConfiguredServer(
     healthProbes: ctx.healthProbes,
     // Auto-update trigger (hpg2): fires on search tools, spawns the detached
     // updater when the freshness verdict allows. Config lives in the registry.
-    ...(options.autoUpdate === false ? {} : { autoUpdate: buildMcpAutoUpdateTrigger() }),
+    // The api-side resolvers are injected here (bd tea-rags-mcp-54xwd.3) —
+    // bootstrap already imports them; the hint must not import the api barrel.
+    ...(options.autoUpdate === false
+      ? {}
+      : { autoUpdate: buildMcpAutoUpdateTrigger({ resolveCollection, resolveDomainEnvCodeDefaults }) }),
   });
   registerAllResources(server, ctx.app);
   registerAllPrompts(server, promptsConfig);

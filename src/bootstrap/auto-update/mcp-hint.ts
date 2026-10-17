@@ -16,21 +16,31 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import {
-  CollectionRegistry,
-  IndexFreshnessCheck,
-  outerEnvForRegistryEntry,
-  resolveCollection,
-  resolveDomainEnvCodeDefaults,
-} from "../../core/api/index.js";
 import type { McpAutoUpdateTrigger } from "../../core/api/public/index.js";
+import type { RegistryLookup } from "../../core/contracts/types/registry.js";
+import { IndexFreshnessCheck } from "../../core/domains/maintenance/freshness/index.js";
+// Declaring leaves, not the api barrel (bd tea-rags-mcp-54xwd.3): the api
+// barrel re-exports these — importing it here closed the SDP auto-update -> api edge.
+import { CollectionRegistry, outerEnvForRegistryEntry } from "../../core/domains/maintenance/registry/index.js";
 import { resolveRegistryEnvCodeDefaults } from "../config/index.js";
 import { spawnDetachedUpdater } from "./spawner.js";
 import { AutoUpdateTrigger } from "./trigger.js";
 import { closeAutoUpdateLog, openAutoUpdateLog } from "./updater-log.js";
 
+/**
+ * The api-side resolvers this hint builds with — injected by the composition
+ * root (bd tea-rags-mcp-54xwd.3): naming them from the api barrel here closed
+ * the SDP auto-update -> api edge. The env-defaults shape is derived from the
+ * bootstrap config's own signature, so no api type is named either.
+ */
+export interface McpAutoUpdateApiResolvers {
+  resolveCollection: (registry: RegistryLookup, input: { path: string }) => { collectionName: string };
+  resolveDomainEnvCodeDefaults: () => Parameters<typeof resolveRegistryEnvCodeDefaults>[0];
+}
+
 function resolveRequestCollection(
   registry: CollectionRegistry,
+  resolvers: Pick<McpAutoUpdateApiResolvers, "resolveCollection">,
   request: { collection?: string; project?: string; path?: string },
 ): string | null {
   if (request.collection !== undefined && request.collection.length > 0) return request.collection;
@@ -42,7 +52,7 @@ function resolveRequestCollection(
       // Through the owner, not the path hash: a project that moved keeps the
       // collection its registry entry recorded, and the hint has to name the
       // collection the SEARCH just queried (bd tea-rags-mcp-dxa9w).
-      return resolveCollection(registry, { path: request.path }).collectionName;
+      return resolvers.resolveCollection(registry, { path: request.path }).collectionName;
     } catch {
       return null;
     }
@@ -56,11 +66,12 @@ function resolveDataDir(): string {
 }
 
 export function buildMcpAutoUpdateTrigger(
+  resolvers: McpAutoUpdateApiResolvers,
   dataDir: string = resolveDataDir(),
   spawnImpl?: (project: string) => void,
 ): McpAutoUpdateTrigger {
   const registry = new CollectionRegistry(dataDir, {
-    envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
+    envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolvers.resolveDomainEnvCodeDefaults()),
   });
   // The MCP server is LONG-LIVED and CollectionRegistry caches registry.json
   // in memory — without the watcher, `tea-rags auto-update` config written
@@ -88,7 +99,7 @@ export function buildMcpAutoUpdateTrigger(
 
   return {
     hintFor(request) {
-      const collectionName = resolveRequestCollection(registry, request);
+      const collectionName = resolveRequestCollection(registry, resolvers, request);
       if (collectionName === null) return null;
       const outcome = trigger.maybeSpawn(collectionName);
       if (outcome === "eligible") return "index updating in background";
