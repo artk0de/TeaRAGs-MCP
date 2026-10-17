@@ -271,11 +271,23 @@ None (no MISFIT verdicts; the single addEdge pair targets a new file —
   19-op remedy resolves pipeline but introduces 4 hubLike findings on components
   whose edges no op touched (otsu reclassification) — net +3, the violation set
   is not convergent under the recipe. Detector bead filed as `54xwd.18`.
+- **Bead 54xwd.6 (mainSequence 0.964, typescript/resolver/program)** — closed as
+  detector-defect acceptance, D3 seam-audit followed. The 0.964 distance reads
+  A=0 because the detector measures module-kind components on the facade file —
+  a re-export barrel declaring nothing; the component itself declares 18
+  exported interfaces vs 5 classes (directory-kind A ≈ 0.78, distance ≈ 0.18),
+  and 24 of 27 consumers already hold the seam via
+  `import type { TSProgramCache }`. Detector bead filed as `54xwd.19`. Reopen: a
+  directory-kind measurement still above 0.5.
+- **Bead 54xwd.7 (mainSequence 0.503, adapters/embeddings)** — closed as
+  threshold-flap acceptance per the recipe's No-remedy flap rule: 0.503 vs 0.5 =
+  0.003 over, inside the 0.02 band; the provider port seam already exists (4
+  abstract types). Reopen: distance > 0.52 on a future full report.
 - **Ledger after incremental re-index (post-`79923653c`)**: stableDependencies
   ×1 (the .17 residual), leakingAbstraction 0, layering 0, hubLike ×1
-  (accepted-FP per .5), mainSequence ×2 (beads .6/.7), silentCoupling ×22 and
-  shotgun ×13 (history-only; beads .8–.11). Above-low actionable remainder:
-  beads .6, .7, .17 design, and the history-only quartet.
+  (accepted-FP per .5), mainSequence ×2 (both closed per above), silentCoupling
+  ×22 and shotgun ×13 (history-only; beads .8–.11). Above-low actionable
+  remainder: the history-only quartet (.8–.11) and the .17 design.
 
 ## Execution contract (refactoring-planning):
 
