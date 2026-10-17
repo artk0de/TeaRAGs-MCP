@@ -361,6 +361,20 @@ class RubyLocalTypeFactRecorder {
   }
 }
 
+/** Ruby core `Proc` — the value of a `&block` parameter and of a proc / lambda literal. */
+const PROC_INSTANCE: RubyTypeRef = Object.freeze({ form: "instance", name: "Proc" });
+
+/** Kernel methods that turn their block into a `Proc`. */
+const PROC_BUILDERS: ReadonlySet<string> = new Set(["proc", "lambda"]);
+
+/** `-> { }`, or a receiverless `proc { }` / `lambda { }` that carries its block. */
+function isProcLiteral(node: AstNode): boolean {
+  if (node.type === "lambda") return true;
+  if (node.type !== "call" || node.childForFieldName("receiver") !== null) return false;
+  const method = node.childForFieldName("method")?.text;
+  return method !== undefined && PROC_BUILDERS.has(method) && carriesBlock(node);
+}
+
 // Param-default inference: `def f(x = User.new)` binds `x` for the body at
 // the `def` line. Block params / untyped params are skipped (VTA scope).
 function inferRubyParamDefaultFacts(
@@ -372,6 +386,11 @@ function inferRubyParamDefaultFacts(
   const params = node.childForFieldName("parameters");
   if (params) {
     for (const param of params.namedChildren) {
+      if (param.type === "block_parameter") {
+        const blockName = param.childForFieldName("name");
+        if (blockName?.type === "identifier") recorder.emit(blockName.text, PROC_INSTANCE, line);
+        continue;
+      }
       if (param.type !== "optional_parameter") continue;
       const nameNode = param.childForFieldName("name");
       const valueNode = param.childForFieldName("value");
@@ -518,6 +537,11 @@ function inferRubySingleAssignmentFact(
   const relElement = relationElementConst(rhs, catalogue);
   if (relElement) {
     recorder.emit(varName, { form: "container", element: { form: "instance", name: relElement } }, line);
+    return;
+  }
+
+  if (isProcLiteral(rhs)) {
+    recorder.emit(varName, PROC_INSTANCE, line);
     return;
   }
 

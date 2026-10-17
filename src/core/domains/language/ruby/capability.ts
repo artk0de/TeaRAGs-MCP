@@ -153,6 +153,10 @@ export const capability: LanguageCapability = {
   // walker 10: bd tea-rags-mcp-2m83f.59 — a constant receiver's `new` (`C.new`, `A::B.new`) follows
   // the same constructor rule: a declared singleton `new`, else the `initialize` C's ancestry finds;
   // a walker-9 index leaves those calls on C's file-only edge.
+  // walker 10: bd tea-rags-mcp-2m83f.60 — a `&block` parameter and a `proc { }` / `lambda { }` /
+  // `-> { }` local are typed as core `Proc`, so their `.call` is external; a module's singleton
+  // method is never reached through `x.class`, and a `::A::B` receiver reads as a constant; a
+  // walker-9 index leaves those calls in the residual.
   versions: { chunking: 2, walker: 10, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or

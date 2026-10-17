@@ -1,7 +1,12 @@
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { ExternalVocabulary } from "../../../../contracts/types/language.js";
 import { splitReceiverHops } from "../../kernel/index.js";
-import { catalogueFor, isCoreAmbiguousMember, isExternalQualifiedMember } from "../dsl/index.js";
+import {
+  catalogueFor,
+  isCoreAmbiguousMember,
+  isExternalQualifiedMember,
+  RUBY_CLASS_OBJECT_MEMBERS,
+} from "../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../super-receiver-sentinel.js";
 import {
   collectAncestorChain,
@@ -77,7 +82,7 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
     if (literalClass !== undefined) return member !== undefined && literalMemberIsExternal(literalClass, member, ctx);
     if (member !== undefined && classObjectMemberIsExternal(receiver, member, ctx, atLine)) return true;
     if (IVAR_RECEIVER.test(receiver)) return ivarTargetsExternal(receiver, ctx);
-    if (/^[A-Z]/.test(receiver)) return resolveConstant(receiver, ctx) === null;
+    if (CONSTANT_RECEIVER.test(receiver)) return resolveConstant(receiver.replace(TOP_LEVEL_SCOPE, ""), ctx) === null;
     // Lowercase receiver: check if it's a locally-typed core/gem variable (dnd9s).
     // Only when atLine is provided (threaded from CallRef.startLine by ExternalCallClassifier).
     if (atLine !== undefined) return localBindingTypedReceiverIsExternal(receiver, atLine, ctx);
@@ -110,7 +115,7 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
    */
   isReceiverTyped(receiver: string, ctx: CallContext, atLine?: number): boolean {
     if (receiver === SUPER_RECEIVER_SENTINEL || receiver === "self") return true;
-    if (/^[A-Z]/.test(receiver) || rubyLiteralClass(receiver) !== undefined) return true;
+    if (CONSTANT_RECEIVER.test(receiver) || rubyLiteralClass(receiver) !== undefined) return true;
     if (IVAR_RECEIVER.test(receiver)) return ivarTypeName(receiver, ctx) !== undefined;
     if (atLine === undefined) return true;
     return typeOfReceiver(receiver, atLine, ctx) !== undefined;
@@ -122,17 +127,29 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
  * receiver is a class object, so a project definition answers only as a class
  * method or through a module a class can `extend` (or a `ClassMethods` block).
  * With neither in the project the callee is a Module / Class member —
- * `error.class.name` — and the call is external. A typed `x.class` is the
- * typed-receiver passes' to resolve.
+ * `error.class.name` — and the call is external. A module's own singleton
+ * method is never one of them: a class object is no module. A core
+ * Module / Class member ({@link RUBY_CLASS_OBJECT_MEMBERS}) is answered by a
+ * project class method only — a module instance method of that name is read as
+ * an include, not an extend. A typed `x.class` is the typed-receiver passes' to
+ * resolve.
  */
 function classObjectMemberIsExternal(receiver: string, member: string, ctx: CallContext, atLine?: number): boolean {
   const hops = splitReceiverHops(receiver);
   if (hops.length < 2 || hops[hops.length - 1] !== "class") return false;
   if (atLine === undefined || typeOfReceiver(receiver, atLine, ctx) !== undefined) return false;
-  return !lookupRubySymbolsByShortName(ctx, member, { role: "callee" }).some(
-    (def) => symbolIdIsClassMethod(def.symbolId, member) || isModuleOnlyConstant(ownerOf(def.symbolId), ctx),
-  );
+  const extendable = !RUBY_CLASS_OBJECT_MEMBERS.has(member);
+  return !lookupRubySymbolsByShortName(ctx, member, { role: "callee" }).some((def) => {
+    const moduleOwned = isModuleOnlyConstant(ownerOf(def.symbolId), ctx);
+    return symbolIdIsClassMethod(def.symbolId, member) ? !moduleOwned : extendable && moduleOwned;
+  });
 }
+
+/** A constant receiver, top-level scoped (`::Api::Types`) or not. */
+const CONSTANT_RECEIVER = /^(?:::)?[A-Z]/;
+
+/** The `::` that scopes a constant path to the top level. */
+const TOP_LEVEL_SCOPE = /^::/;
 
 /** `Owner#member` → `Owner`; a top-level `member` → `""`. */
 function ownerOf(symbolId: string): string {
