@@ -135,7 +135,11 @@ export const capability: LanguageCapability = {
   // zero (`Serializer.new(result.data).as_json` types the constructor's class), `x.class`
   // types as x's class, and a member on an untyped `x.class` with no project class method
   // is external; a walker-24 index leaves those sites in the residual.
-  versions: { chunking: 2, walker: 25, codegraphSchema: 2 },
+  // walker 26: bd tea-rags-mcp-2m83f.52 — a receiver named after a project module narrows to its
+  // includers, a member reached only as a framework override no longer empties the constraint
+  // set, and an `x.class` receiver is offered class-level members only; a walker-25 index keeps
+  // the wider sets and offers `x.class` instance methods.
+  versions: { chunking: 2, walker: 26, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

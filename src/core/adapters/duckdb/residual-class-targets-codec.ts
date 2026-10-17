@@ -1,8 +1,12 @@
 /**
  * Column codec for `cg_residual_call_sites.class_targets` (061, bd
  * tea-rags-mcp-2m83f.50): the receiver group's class set repeats on every row
- * of the group, so the default target spelling is left out.
+ * of the group, so the default target spelling is left out. A set over
+ * {@link ROW_CLASS_TARGETS_LIMIT} classes is stored once in
+ * `cg_residual_class_sets` (063, bd tea-rags-mcp-2m83f.52) under
+ * {@link residualClassSetKey}, and the row carries the key.
  */
+import { createHash } from "node:crypto";
 
 import type { ResidualClassTarget } from "../../contracts/types/codegraph-residual.js";
 
@@ -24,4 +28,12 @@ export function decodeResidualClassTargets(member: string, value: string): Resid
     const symbolId = target ?? `${cls}#${member}`;
     return returnType === undefined ? [cls, symbolId] : [cls, symbolId, returnType];
   });
+}
+
+/** Most classes a row keeps inline; a larger set is shared through `cg_residual_class_sets`. */
+export const ROW_CLASS_TARGETS_LIMIT = 40;
+
+/** Key of an encoded class set: the same set reached through the same member is one row of `cg_residual_class_sets`. */
+export function residualClassSetKey(member: string, encoded: string): string {
+  return createHash("sha1").update(`${member}\u0000${encoded}`).digest("hex");
 }

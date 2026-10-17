@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
+import { encodeResidualClassTargets } from "../../../../src/core/adapters/duckdb/residual-class-targets-codec.js";
 import type {
   ResidualCallSiteRow,
   ResidualClassTarget,
@@ -165,6 +166,117 @@ describe("DuckDbGraphClient — residual call-site persistence", () => {
       ["Firm", "Firm#users"],
       ["Team", "Team#users", "User"],
     ]);
+  });
+
+  describe("a class set over 40 classes", () => {
+    /** `n` classes: every 7th inherits `Base#users`, every 5th returns `User`. */
+    const bigSet = (n: number, prefix = "K"): ResidualClassTarget[] =>
+      Array.from({ length: n }, (_, i): ResidualClassTarget => {
+        const cls = `${prefix}${String(i).padStart(3, "0")}`;
+        const target = i % 7 === 0 ? "Base#users" : `${cls}#users`;
+        return i % 5 === 0 ? [cls, target, "User"] : [cls, target];
+      });
+    const grouped = (relPath: string, siteKey: string, classTargets: ResidualClassTarget[], group = "g-1") =>
+      site(relPath, siteKey, { receiverGroup: group, classTargets });
+    const setCount = async () =>
+      Number((await client.queryAll<{ n: bigint }>("SELECT count(*) AS n FROM cg_residual_class_sets"))[0].n);
+
+    it("is stored once for every row with the same member and set, and read back whole", async () => {
+      const classTargets = bigSet(300);
+      await client.upsertFile(
+        { relPath: "a.rb", language: "ruby" },
+        {
+          fileEdges: [],
+          methodEdges: [],
+          residualCallSites: [grouped("a.rb", "k1", classTargets), grouped("a.rb", "k2", classTargets, "g-2")],
+        },
+      );
+      await client.upsertFile(
+        { relPath: "b.rb", language: "ruby" },
+        { fileEdges: [], methodEdges: [], residualCallSites: [grouped("b.rb", "k1", classTargets)] },
+      );
+
+      const stored = await client.queryAll<{ class_targets: string | null; class_set: string | null }>(
+        "SELECT class_targets, class_set FROM cg_residual_call_sites",
+      );
+      expect(stored.every((r) => r.class_targets === null && r.class_set !== null)).toBe(true);
+      expect(new Set(stored.map((r) => r.class_set)).size).toBe(1);
+      expect(await setCount()).toBe(1);
+      const rows = await client.readResidualCallSites();
+      expect(rows.map((r) => r.classTargets)).toEqual([classTargets, classTargets, classTargets]);
+    });
+
+    it("keeps a set of 40 classes on the row", async () => {
+      await client.upsertFile(
+        { relPath: "a.rb", language: "ruby" },
+        { fileEdges: [], methodEdges: [], residualCallSites: [grouped("a.rb", "k1", bigSet(40))] },
+      );
+
+      const [stored] = await client.queryAll<{ class_targets: string | null; class_set: string | null }>(
+        "SELECT class_targets, class_set FROM cg_residual_call_sites",
+      );
+      expect(stored.class_set).toBeNull();
+      expect(stored.class_targets).not.toBeNull();
+      expect(await setCount()).toBe(0);
+    });
+
+    it("drops a set no row refers to once its file is re-walked into another set or removed", async () => {
+      const node = { relPath: "a.rb", language: "ruby" };
+      await client.upsertFile(node, {
+        fileEdges: [],
+        methodEdges: [],
+        residualCallSites: [grouped("a.rb", "k1", bigSet(300))],
+      });
+      await client.upsertFile(node, {
+        fileEdges: [],
+        methodEdges: [],
+        residualCallSites: [grouped("a.rb", "k1", bigSet(200, "J"))],
+      });
+
+      expect(await setCount()).toBe(1);
+      const [row] = await client.readResidualCallSites();
+      expect(row.classTargets?.[0][0]).toBe("J000");
+
+      await client.removeFiles(["a.rb"]);
+      expect(await setCount()).toBe(0);
+    });
+
+    it("costs a small fraction of the per-row form on rows shaped like a large Rails app", async () => {
+      // 600 rows over 500 groups; 6 class sets of 300..550 classes, each reached by two members.
+      const sets = Array.from({ length: 6 }, (_, i) => bigSet(300 + i * 50, `Api::V1::Serializers::Klass${i}x`));
+      const members = ["users", "firm"];
+      const rows = Array.from({ length: 600 }, (_, i) => {
+        const member = members[Math.floor(i / 6) % 2];
+        const classTargets = sets[i % 6].map(
+          ([cls, target, returnType]): ResidualClassTarget =>
+            returnType === undefined
+              ? [cls, target.replace("#users", `#${member}`)]
+              : [cls, target.replace("#users", `#${member}`), returnType],
+        );
+        return site(`app/f${i % 50}.rb`, `k${i}`, { member, receiverGroup: `g-${i % 500}`, classTargets });
+      });
+      const perRowBytes = rows.reduce(
+        (n, r) => n + encodeResidualClassTargets(r.member, r.classTargets ?? []).length,
+        0,
+      );
+
+      await client.upsertFilesBulk(
+        [...new Set(rows.map((r) => r.sourceRelPath))].map((relPath) => ({
+          node: { relPath, language: "ruby" },
+          edges: { fileEdges: [], methodEdges: [], residualCallSites: rows.filter((r) => r.sourceRelPath === relPath) },
+        })),
+      );
+
+      const [{ bytes }] = await client.queryAll<{ bytes: bigint }>(
+        `SELECT (SELECT coalesce(sum(length(class_targets)), 0) + coalesce(sum(length(class_set)), 0)
+                   FROM cg_residual_call_sites)
+              + (SELECT coalesce(sum(length(class_targets) + length(set_key)), 0) FROM cg_residual_class_sets) AS bytes`,
+      );
+      expect(await setCount()).toBe(12);
+      expect(Number(bytes)).toBeLessThan(perRowBytes / 20);
+      const read = await client.readResidualCallSites();
+      expect(read.find((r) => r.siteKey === "k7")?.classTargets).toEqual(rows[7].classTargets);
+    });
   });
 
   it("re-upserting a file replaces its slice", async () => {

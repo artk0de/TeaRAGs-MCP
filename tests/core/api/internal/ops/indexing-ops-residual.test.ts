@@ -52,6 +52,8 @@ const REPORT: ResidualPassReport = {
   tournamentGroups: 0,
   tournamentRounds: 0,
   tournamentQuestions: 0,
+  namePriorGroups: 0,
+  earlyAcceptedGroups: 0,
   groupsSkippedByBudget: 0,
   windowedGroups: 0,
   edgesApplied: 1,

@@ -302,6 +302,93 @@ describe("ResidualResolutionPass — receiver groups", () => {
     expect(windowed.length).toBeLessThanOrEqual(60);
     expect(report).toMatchObject({ tooLong: 0, windowedGroups: 1, sitesEdged: 2 });
   });
+
+  describe("the receiver's name opens the tournament", () => {
+    /** `invoice` over 120 unrelated classes with `Invoice` in the middle. */
+    const named = (siteKey = "s1", line = 2): ResidualCallSiteRow => {
+      const classes = manyClasses(120);
+      classes.splice(60, 0, ["Invoice", "Invoice#M"]);
+      return { ...groupedRow(siteKey, "save", line, classes), receiverText: "invoice", receiverGroup: "group-invoice" };
+    };
+    const unnamed = (): ResidualCallSiteRow => groupedRow("u1", "save", 7, manyClasses(120));
+
+    it("asks the name-matched classes alone first and ends the tournament on a confident winner", async () => {
+      const graphDb = fakeGraphDb([named()]);
+      const provider = new FakeProvider((q) => ({ pick: q.candidates[0], p: 0.9 }));
+
+      const report = await run(graphDb, provider);
+
+      expect(provider.questions().map((q) => q.candidates)).toEqual([["Invoice"]]);
+      expect(graphDb.applied.at(-1)?.map((e) => e.targetSymbolId)).toEqual(["Invoice#save"]);
+      expect(report).toMatchObject({
+        namePriorGroups: 1,
+        earlyAcceptedGroups: 1,
+        tournamentQuestions: 1,
+        tournamentRounds: 1,
+      });
+    });
+
+    it("runs the remaining classes when block 1 is not confident, its winner joining their winners", async () => {
+      const answer: Answer = (q) =>
+        q.candidates.length === 4 ? { pick: q.candidates[0], p: 0.9 } : { pick: q.candidates[0], p: 0.6 };
+      const graphDb = fakeGraphDb([named()]);
+      const provider = new FakeProvider(answer);
+
+      const report = await run(graphDb, provider);
+
+      const questions = provider.questions();
+      expect(questions.map((q) => q.candidates.length)).toEqual([1, 40, 40, 40, 4]);
+      expect(questions[4].candidates).toEqual(["Invoice", "K000", "K040", "K080"]);
+      expect(graphDb.applied.at(-1)?.map((e) => e.targetSymbolId)).toEqual(["Invoice#save"]);
+      expect(report).toMatchObject({ earlyAcceptedGroups: 0, tournamentQuestions: 5, tournamentRounds: 3 });
+    });
+
+    it("never drops a class the name leaves out: a confident none in block 1 hands the group to the rest", async () => {
+      const answer: Answer = (q) =>
+        q.candidates.length === 1 ? { pick: null, p: 0.95 } : { pick: q.candidates.at(-1) ?? null, p: 0.9 };
+      const graphDb = fakeGraphDb([named()]);
+      const provider = new FakeProvider(answer);
+
+      const report = await run(graphDb, provider);
+
+      expect(provider.questions().map((q) => q.candidates.length)).toEqual([1, 40, 40, 40, 3]);
+      expect(graphDb.applied.at(-1)?.map((e) => e.targetSymbolId)).toEqual(["K119#save"]);
+      expect(report.externalByModel).toBe(0);
+    });
+
+    it("spends the budget on name-matched groups before the others", async () => {
+      const graphDb = fakeGraphDb([unnamed(), named()]);
+      const provider = new FakeProvider((q) => ({ pick: q.candidates[0], p: 0.9 }));
+
+      const report = await run(graphDb, provider, { tournamentBudget: 1 });
+
+      expect(provider.questions().map((q) => q.receiverText)).toEqual(["invoice"]);
+      expect(report).toMatchObject({ earlyAcceptedGroups: 1, groupsSkippedByBudget: 1, tournamentQuestions: 1 });
+    });
+
+    it("starts the other tournaments only once every name-matched one has its outcome", async () => {
+      const answer: Answer = (q) =>
+        q.candidates.length === 4 ? { pick: q.candidates[0], p: 0.9 } : { pick: q.candidates[0], p: 0.6 };
+      const provider = new FakeProvider(answer);
+
+      await run(fakeGraphDb([unnamed(), named()]), provider);
+
+      const receivers = provider.questions().map((q) => q.receiverText);
+      expect(receivers.lastIndexOf("invoice")).toBeLessThan(receivers.indexOf("record"));
+      expect(receivers.filter((r) => r === "record")).toHaveLength(4);
+    });
+
+    it("leaves a group within the menu limit to its single question", async () => {
+      const row = { ...groupedRow("s1", "save", 2), receiverText: "invoice" };
+      const provider = new FakeProvider((q) => ({ pick: q.candidates[0], p: 0.9 }));
+
+      const report = await run(fakeGraphDb([row]), provider);
+
+      expect(provider.questions().map((q) => q.candidates)).toEqual([["Invoice", "Bill", "Estimate"]]);
+      expect(report).toMatchObject({ namePriorGroups: 0, earlyAcceptedGroups: 0 });
+    });
+  });
+
   describe("an accepted class propagates to the downstream hop", () => {
     const upstream = (returnType?: string) =>
       hopRow(

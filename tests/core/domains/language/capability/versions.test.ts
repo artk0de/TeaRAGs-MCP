@@ -531,11 +531,13 @@ describe("seeded support versions", () => {
       // rows name the next hop's group, so an accepted class types the chain downstream.
       // ruby 25: bd tea-rags-mcp-2m83f.53 — bracket-aware receiver hops, `x.class` typed as
       // x's class, and a member on an untyped `x.class` with no project class method is external.
+      // ruby 26: bd tea-rags-mcp-2m83f.52 — module-named receivers narrow to the module's
+      // includers, framework-override members stop constraining, `x.class` gets class members.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
         ["python", 13],
-        ["ruby", 25],
+        ["ruby", 26],
         ["java", 4],
         ["rust", 5],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a

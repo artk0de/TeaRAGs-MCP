@@ -289,8 +289,12 @@ export interface ResidualPassReport {
   tournamentGroups: number;
   /** Most rounds any tournament ran. */
   tournamentRounds: number;
-  /** Tournament block questions sent to the model this run. */
+  /** Tournament block questions sent to the model this run, block 1 included. */
   tournamentQuestions: number;
+  /** Tournament groups opened by block 1 — the classes the receiver's name matches. */
+  namePriorGroups: number;
+  /** Tournament groups settled by block 1 alone: its winner cleared the provider threshold. */
+  earlyAcceptedGroups: number;
   /** Tournament groups not asked because the run's budget (`CODEGRAPH_RESIDUAL_TOURNAMENT_BUDGET`) ran out. */
   groupsSkippedByBudget: number;
   /** Method batches the model refused as too long, asked again over a window around their call lines. */
