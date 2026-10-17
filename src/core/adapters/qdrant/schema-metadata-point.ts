@@ -27,7 +27,7 @@
  */
 
 import type { SchemaMetadataPayload } from "../../contracts/types/schema-metadata.js";
-import type { QdrantManager } from "./client.js";
+import type { QdrantCollectionCatalog, QdrantPointReader, QdrantPointWriter } from "./ports.js";
 
 /** Reserved point id — named nowhere else in `src/`. */
 const SCHEMA_METADATA_POINT_ID = "__schema_metadata__";
@@ -36,7 +36,12 @@ const SCHEMA_METADATA_POINT_ID = "__schema_metadata__";
 type SchemaMetadataVersionFields = Partial<Pick<SchemaMetadataPayload, "schemaVersion" | "indexes" | "sparseVersion">>;
 
 export class SchemaMetadataPointStore {
-  constructor(private readonly qdrant: QdrantManager) {}
+  /**
+   * The structural slice of the qdrant facade this store drives (bd
+   * tea-rags-mcp-54xwd.14) — naming `QdrantManager` here would close an import
+   * cycle with `client.ts`, which constructs this store.
+   */
+  constructor(private readonly qdrant: QdrantCollectionCatalog & QdrantPointReader & QdrantPointWriter) {}
 
   /**
    * The stored payload, or null when the collection has no metadata point.
