@@ -37,6 +37,8 @@ export interface WorkingTreeGraphResidualInput {
   minMenu: number;
   /** Smallest `p` of a "none of these" verdict that counts its site as external. */
   noneThreshold: number;
+  /** The verdicts were asked with receiver-origin context; they are keyed under that variant. */
+  originContext?: boolean;
 }
 
 /** What the re-apply left: the model edges the tree graph holds, or why the changed files have none. */
@@ -62,6 +64,7 @@ export async function reapplyTreeModelEdges(
     menuLimit: residual.menuLimit,
     minMenu: residual.minMenu,
     noneThreshold: residual.noneThreshold,
+    ...(residual.originContext === undefined ? {} : { originContext: residual.originContext }),
     retentionDays: 0,
     recomputeDerived: async () => recomputeGraphMetrics(graphDb),
     readMethodSource: async () => Promise.reject(new Error("a cacheOnly pass reads no method source")),

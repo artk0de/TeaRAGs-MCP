@@ -80,8 +80,25 @@ export function kevQuestion(
   };
 }
 
+/** The state of a request: the file path, then the method source as the pass built it. */
+export function kevState(sourceRelPath: string, methodSource: string): string {
+  return `# file: ${sourceRelPath}\n${methodSource}`;
+}
+
+/**
+ * Every text Kev is asked in, rendered over placeholders — the state, a
+ * one-call and a multi-call question with its none option. Built from the same
+ * functions a request is, so any wording change changes it.
+ */
+export const KEV_PROMPT_TEMPLATE = JSON.stringify([
+  kevState("{file}", "{source}"),
+  kevQuestion("{receiver}", "{member}", ["{class}"]),
+  kevQuestion("{receiver}", "{member}", ["{class}"], ["{member}", "{member2}"]),
+]);
+
 export class KevResidualProvider implements ResidualModelProvider {
   readonly id = "kev";
+  readonly promptTemplate = KEV_PROMPT_TEMPLATE;
   readonly threshold: number;
   private readonly urls: readonly string[];
   private readonly fetchFn: typeof fetch;
@@ -131,7 +148,7 @@ export class KevResidualProvider implements ResidualModelProvider {
     );
     const body = JSON.stringify({
       model: MODEL_NAME,
-      state: `# file: ${group.sourceRelPath}\n${group.methodSource}`,
+      state: kevState(group.sourceRelPath, group.methodSource),
       questions: Object.fromEntries(group.questions.map((question, i) => [question.siteKey, questions[i]])),
     });
     const { url, response } = await this.postAcrossUrls(body, signal);

@@ -21,9 +21,11 @@ import type { ProgressCallback } from "../../../../types.js";
 import {
   DEFAULT_TOURNAMENT_BUDGET,
   DEFAULT_TOURNAMENT_FLOOR,
+  windowLineIndexes,
   windowMethodSource,
   type GroupTournament,
 } from "./receiver-group-tournament.js";
+import { sourceWithOrigins } from "./residual-origin-context.js";
 import type {
   ResidualAnswer,
   ResidualModelProvider,
@@ -55,6 +57,10 @@ export interface AskQueueInput {
   /** Requests in flight at once. */
   concurrency: number;
   readMethodSource: (relPath: string, startLine: number, endLine: number) => Promise<string>;
+  /** The whole file, for the receiver-origin section; read only when `originContext` is on. */
+  readSourceFile?: (relPath: string) => Promise<string>;
+  /** Append receiver origins to each state (`CODEGRAPH_RESIDUAL_ORIGIN_CONTEXT`); folded into the verdict key. */
+  originContext?: boolean;
   /** Epoch ms. */
   now: () => number;
   onProgress?: ProgressCallback;
@@ -84,6 +90,48 @@ export interface PendingQuestion {
   methodEndLine: number;
   lines: readonly number[];
   question: ResidualQuestion;
+}
+
+/** What a request's state is built from. */
+export interface RequestStateInput {
+  sourceRelPath: string;
+  methodStartLine: number;
+  methodEndLine: number;
+  /** Call lines of the questions, for the window a too-long method is asked over. */
+  lines: readonly number[];
+  questions: readonly ResidualQuestion[];
+}
+
+/**
+ * The method source a request is asked over, and the window it falls back to
+ * when the model refuses it as too long (`undefined` when the window keeps
+ * every line). With `fileText` (the origin-context variant) each gets the
+ * receiver-origin section for the lines it does not show.
+ */
+export function requestSources(
+  request: RequestStateInput,
+  methodSource: string,
+  fileText: string | undefined,
+): { whole: string; windowed: string | undefined } {
+  const origins = {
+    sourceRelPath: request.sourceRelPath,
+    methodStartLine: request.methodStartLine,
+    methodEndLine: request.methodEndLine,
+    receivers: request.questions.map((q) => q.receiverText),
+    fileText,
+  };
+  const whole = sourceWithOrigins(methodSource, {
+    ...origins,
+    visibleLines: (line) => line >= request.methodStartLine && line <= request.methodEndLine,
+  });
+  const windowed = windowMethodSource(methodSource, request.methodStartLine, request.lines);
+  if (windowed.length >= methodSource.length) return { whole, windowed: undefined };
+  const kept = new Set(
+    windowLineIndexes(methodSource.split("\n").length, request.methodStartLine, request.lines).map(
+      (i) => i + request.methodStartLine,
+    ),
+  );
+  return { whole, windowed: sourceWithOrigins(windowed, { ...origins, visibleLines: (line) => kept.has(line) }) };
 }
 
 /** One provider request: questions of one method, within the caps. */
@@ -585,14 +633,18 @@ export class ResidualAskQueue {
         },
         signal,
       );
+    const fileText =
+      input.originContext === true && input.readSourceFile !== undefined
+        ? await input.readSourceFile(request.sourceRelPath)
+        : undefined;
+    const sources = requestSources(request, methodSource, fileText);
     let answers: ResidualAnswer[];
     try {
-      answers = await ask(methodSource);
+      answers = await ask(sources.whole);
     } catch (error) {
-      const windowed = windowMethodSource(methodSource, request.methodStartLine, request.lines);
-      if (!STATE_TOO_LONG_CODES.has(errorCode(error) ?? "") || windowed.length >= methodSource.length) throw error;
+      if (!STATE_TOO_LONG_CODES.has(errorCode(error) ?? "") || sources.windowed === undefined) throw error;
       this.tally.windowed++;
-      answers = await ask(windowed);
+      answers = await ask(sources.windowed);
     }
     return toVerdicts(request.questions, answers, input.provider.id, this.modelVersion as string, input.now());
   }

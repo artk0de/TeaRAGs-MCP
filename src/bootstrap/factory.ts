@@ -979,6 +979,7 @@ export function wireCodegraph(
       menuLimit: codegraph.residual.menuLimit,
       minMenu: codegraph.residual.minMenu,
       noneThreshold: codegraph.residual.noneThreshold,
+      originContext: codegraph.residual.originContext,
     },
   };
 

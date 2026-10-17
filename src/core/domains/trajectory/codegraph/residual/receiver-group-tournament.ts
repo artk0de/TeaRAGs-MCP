@@ -357,17 +357,27 @@ export function windowMethodSource(
   radius = METHOD_WINDOW_LINES,
 ): string {
   const lines = source.split("\n");
-  const keep = new Set<number>([0]);
-  for (const line of callLines) {
-    const at = line - methodStartLine;
-    for (let i = Math.max(0, at - radius); i <= Math.min(lines.length - 1, at + radius); i++) keep.add(i);
-  }
   const out: string[] = [];
   let previous = -1;
-  for (const i of [...keep].sort((a, b) => a - b)) {
+  for (const i of windowLineIndexes(lines.length, methodStartLine, callLines, radius)) {
     if (i > previous + 1) out.push("…");
     out.push(lines[i]);
     previous = i;
   }
   return out.join("\n");
+}
+
+/** 0-based indexes into the method source that {@link windowMethodSource} keeps, ascending. */
+export function windowLineIndexes(
+  lineCount: number,
+  methodStartLine: number,
+  callLines: readonly number[],
+  radius = METHOD_WINDOW_LINES,
+): number[] {
+  const keep = new Set<number>([0]);
+  for (const line of callLines) {
+    const at = line - methodStartLine;
+    for (let i = Math.max(0, at - radius); i <= Math.min(lineCount - 1, at + radius); i++) keep.add(i);
+  }
+  return [...keep].sort((a, b) => a - b);
 }

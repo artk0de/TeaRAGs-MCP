@@ -24,6 +24,7 @@ import { createHash } from "node:crypto";
 import type { ResidualVerdictStore } from "../../../../adapters/duckdb/residual-verdict-store.js";
 import {
   RESIDUAL_QUESTION_VERSION,
+  RESIDUAL_STATE_BUILDER_VERSION,
   type ModelEdgeRow,
   type ModelExternalSiteRow,
   type ResidualCallSiteRow,
@@ -74,9 +75,41 @@ export interface ResidualPassInput extends AskQueueInput {
   recomputeDerived: () => Promise<void>;
 }
 
-/** The verdict-store menu hash: the row's menu hash under {@link RESIDUAL_QUESTION_VERSION}. */
-export function residualQuestionHash(menuHash: string): string {
-  return createHash("sha1").update(`${menuHash}\u0000q${RESIDUAL_QUESTION_VERSION}`).digest("hex");
+/**
+ * sha1 of the Kev prompt template the version-3 verdicts were asked under
+ * (`KEV_PROMPT_TEMPLATE` when this fold was introduced). Never update it: a
+ * template that no longer hashes to it re-keys every question, which is the
+ * point.
+ */
+const RESIDUAL_V3_PROMPT_HASH = "35978f0544d30972eccbf7ede05b36ebaadd2d4b";
+
+const sha1 = (text: string): string => createHash("sha1").update(text).digest("hex");
+
+function foldOf(promptHash: string, stateBuilderVersion: number, originContext: boolean): string {
+  return sha1(`${promptHash}\u0000s${stateBuilderVersion}\u0000o${originContext ? 1 : 0}`);
+}
+
+/** The fold of the version-3 question: its prompt, state builder 1, no origin context. Keys under it keep their version-3 form. */
+export const RESIDUAL_V3_DEFAULT_FOLD = foldOf(RESIDUAL_V3_PROMPT_HASH, 1, false);
+
+/**
+ * Hash of everything around the menu that shapes a question: the provider's
+ * prompt template (absent = the version-3 one), {@link RESIDUAL_STATE_BUILDER_VERSION}
+ * and the origin-context variant.
+ */
+export function residualQuestionFold(parts: { promptTemplate?: string; originContext?: boolean }): string {
+  const promptHash = parts.promptTemplate === undefined ? RESIDUAL_V3_PROMPT_HASH : sha1(parts.promptTemplate);
+  return foldOf(promptHash, RESIDUAL_STATE_BUILDER_VERSION, parts.originContext ?? false);
+}
+
+/**
+ * The verdict-store menu hash: the row's menu hash under
+ * {@link RESIDUAL_QUESTION_VERSION} and the question `fold`. The default fold
+ * keeps the version-3 key, so the verdicts cached before the fold stay valid.
+ */
+export function residualQuestionHash(menuHash: string, fold: string = RESIDUAL_V3_DEFAULT_FOLD): string {
+  const key = `${menuHash}\u0000q${RESIDUAL_QUESTION_VERSION}`;
+  return sha1(fold === RESIDUAL_V3_DEFAULT_FOLD ? key : `${key}\u0000f${fold}`);
 }
 
 /** An eligible row and the menu hash its verdict is stored under. */
@@ -106,17 +139,20 @@ export class ResidualResolutionPass {
     const startedAt = input.now();
     const servedVersion = input.mode === "ask" ? await this.servedVersion(provider) : { version: undefined };
 
+    const fold = residualQuestionFold({
+      ...(provider.promptTemplate === undefined ? {} : { promptTemplate: provider.promptTemplate }),
+      originContext: input.originContext ?? false,
+    });
+    const questionHash = (menuHash: string): string => residualQuestionHash(menuHash, fold);
     const rows = await input.graphDb.readResidualCallSites();
     const { groups: receiverGroups, ungrouped } = collectReceiverGroups(rows);
     const eligibility = ungrouped.map((r) => siteEligibility(r, input));
     const eligible: EligibleSite[] = ungrouped
       .filter((_, i) => eligibility[i] === "eligible")
-      .map((r) => ({ ...r, questionHash: residualQuestionHash(r.menuHash) }));
+      .map((r) => ({ ...r, questionHash: questionHash(r.menuHash) }));
     const askable = receiverGroups.filter((g) => g.classes.length >= input.minMenu);
     const groupTooSmall = receiverGroups.filter((g) => g.classes.length < input.minMenu);
-    const tournaments = askable.map(
-      (g) => new GroupTournament(g, input.menuLimit, residualQuestionHash, input.confirmStage),
-    );
+    const tournaments = askable.map((g) => new GroupTournament(g, input.menuLimit, questionHash, input.confirmStage));
     const verdicts = await cachedVerdicts(
       input,
       eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.questionHash })),

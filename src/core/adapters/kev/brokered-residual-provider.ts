@@ -15,6 +15,7 @@ import type {
   ResidualQuestionGroup,
 } from "../../contracts/types/codegraph-residual.js";
 import { KevSessionLostError, KevSessionUnavailableError } from "./errors.js";
+import { KEV_PROMPT_TEMPLATE } from "./kev-residual-provider.js";
 import type { KevSession, KevSessionClient } from "./kev-session-client.js";
 
 const DEFAULT_TTL_SEC = 120;
@@ -59,6 +60,7 @@ interface ActiveLease {
 
 export class BrokeredResidualProvider implements ResidualModelProvider {
   readonly id = "kev";
+  readonly promptTemplate = KEV_PROMPT_TEMPLATE;
   readonly threshold: number;
   private readonly session: KevSessionClient;
   private readonly kevProvider: (kevUrl: string) => ResidualModelProvider;
