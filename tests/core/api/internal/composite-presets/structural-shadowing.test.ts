@@ -10,14 +10,14 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { RerankPreset } from "../../../../../../src/core/contracts/types/reranker.js";
-import { resolvePresets } from "../../../../../../src/core/domains/explore/rerank/presets/index.js";
 import {
   buildCompositePresets,
   DecompositionCompositePreset,
   GodModuleCompositePreset,
-} from "../../../../../../src/core/domains/trajectory/composite/presets/index.js";
-import { STATIC_PRESETS } from "../../../../../../src/core/domains/trajectory/static/rerank/presets/index.js";
+} from "../../../../../src/core/api/internal/composite-presets/index.js";
+import type { RerankPreset } from "../../../../../src/core/contracts/types/reranker.js";
+import { resolvePresets } from "../../../../../src/core/domains/explore/rerank/presets/index.js";
+import { STATIC_PRESETS } from "../../../../../src/core/domains/trajectory/static/rerank/presets/index.js";
 
 const WITH_CODEGRAPH = new Set(["static", "git", "codegraph.symbols"]);
 const WITHOUT_CODEGRAPH = new Set(["static", "git"]);

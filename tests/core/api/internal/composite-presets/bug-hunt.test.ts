@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { RerankPreset } from "../../../../../../src/core/contracts/types/reranker.js";
-import { resolvePresets } from "../../../../../../src/core/domains/explore/rerank/presets/index.js";
 import {
   BugHuntCompositePreset,
   buildCompositePresets,
-} from "../../../../../../src/core/domains/trajectory/composite/presets/index.js";
-import { BugHuntPreset } from "../../../../../../src/core/domains/trajectory/git/rerank/presets/bug-hunt.js";
-import { GIT_PRESETS } from "../../../../../../src/core/domains/trajectory/git/rerank/presets/index.js";
-import { STATIC_PRESETS } from "../../../../../../src/core/domains/trajectory/static/rerank/presets/index.js";
+} from "../../../../../src/core/api/internal/composite-presets/index.js";
+import type { CompositeRerankPreset, RerankPreset } from "../../../../../src/core/contracts/types/reranker.js";
+import { resolvePresets } from "../../../../../src/core/domains/explore/rerank/presets/index.js";
+import { BugHuntPreset, GIT_PRESETS } from "../../../../../src/core/domains/trajectory/git/rerank/presets/index.js";
+import { STATIC_PRESETS } from "../../../../../src/core/domains/trajectory/static/rerank/presets/index.js";
 
 const WITH_CODEGRAPH = new Set(["static", "git", "codegraph.symbols"]);
 const WITHOUT_CODEGRAPH = new Set(["static", "git"]);
@@ -25,7 +24,7 @@ function resolveFor(registeredKeys: ReadonlySet<string>, tool: string): RerankPr
  * zone that is also central outranks an equally bug-prone leaf.
  */
 describe("BugHuntCompositePreset", () => {
-  const composite = new BugHuntCompositePreset();
+  const composite: CompositeRerankPreset = new BugHuntCompositePreset();
   const base = new BugHuntPreset();
 
   it("shares the git preset's name so it overrides by (name, tool)", () => {

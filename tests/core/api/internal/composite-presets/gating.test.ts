@@ -15,7 +15,6 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { CompositeRerankPreset } from "../../../../../../src/core/contracts/types/reranker.js";
 import {
   ArchitecturalHubPreset,
   BlastRadiusPreset,
@@ -31,7 +30,8 @@ import {
   OwnershipCompositePreset,
   SecurityAuditCompositePreset,
   TechDebtCompositePreset,
-} from "../../../../../../src/core/domains/trajectory/composite/presets/index.js";
+} from "../../../../../src/core/api/internal/composite-presets/index.js";
+import type { CompositeRerankPreset } from "../../../../../src/core/contracts/types/reranker.js";
 
 describe("CompositeRerankPreset contract", () => {
   it("every composite preset declares mandatory requires[] referencing trajectory keys", () => {

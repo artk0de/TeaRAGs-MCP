@@ -1,6 +1,10 @@
-import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
-import type { ScoringWeights } from "../../../../contracts/types/provider.js";
-import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../../contracts/types/reranker.js";
+import {
+  CODEGRAPH_SYMBOLS_PROVIDER_KEY,
+  type CompositeRerankPreset,
+  type OverlayMask,
+  type ScoringWeights,
+  type SignalLevel,
+} from "../../../contracts/index.js";
 
 /**
  * `architecturalHub` — files at the centre of the dependency graph

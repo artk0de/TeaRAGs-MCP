@@ -27,7 +27,7 @@
  * every composite that declares it gets the new dependency for free.
  */
 
-import type { CompositeRerankPreset, RerankPreset } from "../../../../contracts/types/reranker.js";
+import type { CompositeRerankPreset, RerankPreset } from "../../../contracts/index.js";
 import { ArchitecturalHubPreset } from "./architectural-hub.js";
 import { BlastRadiusPreset } from "./blast-radius.js";
 import { BugHuntCompositePreset } from "./bug-hunt.js";

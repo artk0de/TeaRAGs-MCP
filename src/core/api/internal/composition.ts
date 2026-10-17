@@ -61,7 +61,6 @@ import {
   CODEGRAPH_SYMBOLS_FILE_SIGNALS,
   codegraphFilters,
 } from "../../domains/trajectory/codegraph/symbols/index.js";
-import { buildCompositePresets } from "../../domains/trajectory/composite/presets/index.js";
 import { filterPayloadKeys } from "../../domains/trajectory/filter-payload-keys.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
 import {
@@ -94,6 +93,7 @@ import type {
 import type { FindCoChangedRequest, FindCoChangedResult } from "../public/dto/cochange.js";
 import type { GetOntologyReportRequest, GetOntologyReportResponse } from "../public/dto/ontology.js";
 import type { ReviewChangesRequest, ReviewChangesResult } from "../public/dto/review.js";
+import { buildCompositePresets } from "./composite-presets/index.js";
 import { ArchitecturePlannedEdgeOps } from "./ops/architecture-planned-edge-ops.js";
 import { ArchitectureReportOps } from "./ops/architecture-report-ops.js";
 import { ArchitectureRestructureOps } from "./ops/architecture-restructure-ops.js";
@@ -389,7 +389,8 @@ export function createComposition(options: CompositionOptions = {}): Composition
   // Trajectory presets come from the registry (one trajectory per preset);
   // composite presets cross trajectories (e.g. blastRadius weights
   // codegraph.fanIn + git.churn) and live in their own namespace under
-  // `domains/trajectory/composite/presets/`. The resolver merges by
+  // `internal/composite-presets/` (absorbed into api, bd tea-rags-mcp-54xwd.4).
+  // The resolver merges by
   // (name, tools[i]) and the composite list wins, so composites override
   // trajectory presets of the same name without modifying them in place.
   // Gating: buildCompositePresets filters each composite against the

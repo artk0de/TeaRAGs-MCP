@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import type { RerankPreset } from "../../../../src/core/contracts/types/reranker.js";
-import { CODEGRAPH_SYMBOLS_PRESETS } from "../../../../src/core/domains/trajectory/codegraph/symbols/rerank/presets/index.js";
 import {
   ArchitecturalHubPreset,
   BlastRadiusPreset,
@@ -16,7 +14,9 @@ import {
   OwnershipCompositePreset,
   SecurityAuditCompositePreset,
   TechDebtCompositePreset,
-} from "../../../../src/core/domains/trajectory/composite/presets/index.js";
+} from "../../../../src/core/api/internal/composite-presets/index.js";
+import type { RerankPreset } from "../../../../src/core/contracts/types/reranker.js";
+import { CODEGRAPH_SYMBOLS_PRESETS } from "../../../../src/core/domains/trajectory/codegraph/symbols/rerank/presets/index.js";
 import { GIT_PRESETS } from "../../../../src/core/domains/trajectory/git/rerank/presets/index.js";
 import { STATIC_PRESETS } from "../../../../src/core/domains/trajectory/static/rerank/presets/index.js";
 

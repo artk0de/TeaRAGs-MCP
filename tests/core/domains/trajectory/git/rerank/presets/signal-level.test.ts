@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { buildCompositePresets } from "../../../../../../../src/core/api/internal/composite-presets/index.js";
 import type { RerankPreset } from "../../../../../../../src/core/contracts/types/reranker.js";
-import { buildCompositePresets } from "../../../../../../../src/core/domains/trajectory/composite/presets/index.js";
 import { CodeReviewPreset } from "../../../../../../../src/core/domains/trajectory/git/rerank/presets/code-review.js";
 import { HotspotsPreset } from "../../../../../../../src/core/domains/trajectory/git/rerank/presets/hotspots.js";
 import { GIT_PRESETS } from "../../../../../../../src/core/domains/trajectory/git/rerank/presets/index.js";

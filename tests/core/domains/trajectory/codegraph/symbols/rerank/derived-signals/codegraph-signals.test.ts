@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { BlastRadiusPreset } from "../../../../../../../../src/core/api/internal/composite-presets/blast-radius.js";
 import {
   ChunkFanInSignal,
   ChunkFanOutSignal,
@@ -13,7 +14,6 @@ import {
   PageRankSignal,
   TransitiveImpactSignal,
 } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/rerank/derived-signals/index.js";
-import { BlastRadiusPreset } from "../../../../../../../../src/core/domains/trajectory/composite/presets/blast-radius.js";
 
 describe("codegraph derived signals", () => {
   it("FanInSignal normalizes codegraph.file.fanIn against bounds", () => {

@@ -16,12 +16,12 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { ExploreFacade, type SchemaBuilder } from "../../../../src/core/api/index.js";
-import { createSearchSchemas, TYPED_FILTER_PARAM_NAMES } from "../../../../src/core/api/tools/schemas.js";
-import type { RerankPreset } from "../../../../src/core/contracts/types/reranker.js";
 import {
   BugHuntCompositePreset,
   OwnershipCompositePreset,
-} from "../../../../src/core/domains/trajectory/composite/presets/index.js";
+} from "../../../../src/core/api/internal/composite-presets/index.js";
+import { createSearchSchemas, TYPED_FILTER_PARAM_NAMES } from "../../../../src/core/api/tools/schemas.js";
+import type { RerankPreset } from "../../../../src/core/contracts/types/reranker.js";
 import { TechDebtPreset } from "../../../../src/core/domains/trajectory/git/rerank/presets/tech-debt.js";
 import { TrajectoryRegistry } from "../../../../src/core/domains/trajectory/index.js";
 import { STATIC_FILTER_PRESETS } from "../../../../src/core/domains/trajectory/static/filter-presets/index.js";

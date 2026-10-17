@@ -1,6 +1,10 @@
-import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
-import type { ScoringWeights } from "../../../../contracts/types/provider.js";
-import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../../contracts/types/reranker.js";
+import {
+  CODEGRAPH_SYMBOLS_PROVIDER_KEY,
+  type CompositeRerankPreset,
+  type OverlayMask,
+  type ScoringWeights,
+  type SignalLevel,
+} from "../../../contracts/index.js";
 
 /**
  * `criticalPath` — the QA lens: methods that are central in the call graph AND

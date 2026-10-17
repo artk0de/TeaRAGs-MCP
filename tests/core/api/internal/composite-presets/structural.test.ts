@@ -1,6 +1,6 @@
 /**
  * Structural invariant — every preset class file under
- * `domains/trajectory/composite/presets/` MUST export a class implementing
+ * `api/internal/composite-presets/` MUST export a class implementing
  * `CompositeRerankPreset` with a non-empty `requires` field.
  *
  * Prevents the "I forgot the requires" regression: a composite preset
@@ -15,11 +15,11 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import * as compositesBarrel from "../../../../../../src/core/domains/trajectory/composite/presets/index.js";
+import * as compositesBarrel from "../../../../../src/core/api/internal/composite-presets/index.js";
 
 const COMPOSITE_PRESETS_SOURCE_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../../../../../src/core/domains/trajectory/composite/presets",
+  "../../../../../src/core/api/internal/composite-presets",
 );
 
 function listPresetSourceFiles(): string[] {
@@ -29,9 +29,14 @@ function listPresetSourceFiles(): string[] {
 }
 
 function getExportedPresetClasses(): (new () => unknown)[] {
-  return Object.values(compositesBarrel).filter(
-    (v): v is new () => unknown => typeof v === "function" && (v as { name: string }).name.endsWith("Preset"),
-  );
+  return Object.values(compositesBarrel)
+    .filter(
+      (v) =>
+        typeof v === "function" &&
+        (v as { prototype?: unknown }).prototype !== undefined &&
+        (v as { name: string }).name.endsWith("Preset"),
+    )
+    .map((v) => v as new () => unknown);
 }
 
 describe("composite/presets/ structural invariant", () => {

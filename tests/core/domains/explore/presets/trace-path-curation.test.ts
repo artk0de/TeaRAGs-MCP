@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  getPresetNames,
-  resolvePresets,
-} from "../../../../../src/core/domains/explore/rerank/presets/index.js";
-import { buildCompositePresets } from "../../../../../src/core/domains/trajectory/composite/presets/index.js";
+import { buildCompositePresets } from "../../../../../src/core/api/internal/composite-presets/index.js";
+import { getPresetNames, resolvePresets } from "../../../../../src/core/domains/explore/rerank/presets/index.js";
 import { GIT_PRESETS } from "../../../../../src/core/domains/trajectory/git/rerank/presets/index.js";
 import { STATIC_PRESETS } from "../../../../../src/core/domains/trajectory/static/rerank/presets/index.js";
 
@@ -24,10 +21,7 @@ import { STATIC_PRESETS } from "../../../../../src/core/domains/trajectory/stati
  */
 describe("trace_path curated preset set", () => {
   const CODEGRAPH_ON = new Set(["git", "static", "codegraph.symbols"]);
-  const resolved = resolvePresets(
-    [...GIT_PRESETS, ...STATIC_PRESETS],
-    buildCompositePresets(CODEGRAPH_ON),
-  );
+  const resolved = resolvePresets([...GIT_PRESETS, ...STATIC_PRESETS], buildCompositePresets(CODEGRAPH_ON));
   const tracePathPresets = getPresetNames(resolved, "trace_path").sort();
 
   const EXPECTED = [

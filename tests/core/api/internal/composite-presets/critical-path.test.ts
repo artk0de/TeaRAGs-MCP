@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { RerankPreset } from "../../../../../../src/core/contracts/types/reranker.js";
-import { resolvePresets } from "../../../../../../src/core/domains/explore/rerank/presets/index.js";
 import {
   buildCompositePresets,
   CriticalPathPreset,
-} from "../../../../../../src/core/domains/trajectory/composite/presets/index.js";
-import { GIT_PRESETS } from "../../../../../../src/core/domains/trajectory/git/rerank/presets/index.js";
-import { STATIC_PRESETS } from "../../../../../../src/core/domains/trajectory/static/rerank/presets/index.js";
+} from "../../../../../src/core/api/internal/composite-presets/index.js";
+import type { CompositeRerankPreset, RerankPreset } from "../../../../../src/core/contracts/types/reranker.js";
+import { resolvePresets } from "../../../../../src/core/domains/explore/rerank/presets/index.js";
+import { GIT_PRESETS } from "../../../../../src/core/domains/trajectory/git/rerank/presets/index.js";
+import { STATIC_PRESETS } from "../../../../../src/core/domains/trajectory/static/rerank/presets/index.js";
 
 const WITH_BOTH = new Set(["static", "git", "codegraph.symbols"]);
 const CODEGRAPH_ONLY = new Set(["static", "codegraph.symbols"]);
@@ -24,7 +24,7 @@ function resolve(registeredKeys: ReadonlySet<string>): Map<string, RerankPreset>
  * it, so it either appears or it does not.
  */
 describe("CriticalPathPreset", () => {
-  const preset = new CriticalPathPreset();
+  const preset: CompositeRerankPreset = new CriticalPathPreset();
 
   it("is named criticalPath", () => {
     expect(preset.name).toBe("criticalPath");
