@@ -1,0 +1,552 @@
+/**
+ * Provider-gating test for `registerCodegraphTools` — RFC
+ * docs/superpowers/specs/2026-05-21-codegraph-provider-gating-design.md.
+ *
+ * When `app.hasProvider("codegraph.symbols") === false`, the registrar must
+ * be a complete no-op — neither `get_callers`, `get_callees`, `find_cycles`,
+ * `trace_path`, `get_architecture_report`, `get_naming_lexicon`,
+ * `get_ontology_report` nor `find_co_changed` appears in the MCP tool list.
+ * When true, all of them register.
+ */
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+
+import type { App, SchemaBuilder } from "../../../../src/core/api/index.js";
+import { registerCodegraphTools } from "../../../../src/core/api/tools/codegraph.js";
+
+function makeApp(hasCodegraph: boolean): App {
+  return {
+    hasProvider: vi.fn().mockImplementation((key: string) => key === "codegraph.symbols" && hasCodegraph),
+    getCallers: vi.fn(),
+    getCallees: vi.fn(),
+    findCycles: vi.fn(),
+    tracePath: vi.fn(),
+    getArchitectureReport: vi.fn(),
+    judgePlannedArchitectureEdges: vi.fn(),
+    simulateArchitectureRestructure: vi.fn(),
+    planArchitectureRestructure: vi.fn(),
+    getOntologyReport: vi.fn(),
+    findCoChanged: vi.fn(),
+  } as unknown as App;
+}
+
+/**
+ * Minimal SchemaBuilder stub. `buildPresetSchema("trace_path")` returns the
+ * curated enum the tool exposes — assertions on accept/reject mirror what the
+ * real registry-derived enum does at the MCP boundary.
+ */
+function makeSchemaBuilder(): SchemaBuilder {
+  return {
+    buildPresetSchema: vi.fn((tool: string) => {
+      expect(tool).toBe("trace_path");
+      return z.enum(["bugHunt", "dangerous", "hotspots"]);
+    }),
+  } as unknown as SchemaBuilder;
+}
+
+function makeServer(): McpServer {
+  return {} as McpServer;
+}
+
+describe("registerCodegraphTools — provider gating", () => {
+  it("registers all 8 codegraph tools when hasProvider('codegraph.symbols') is true", () => {
+    const register = vi.fn();
+    const app = makeApp(true);
+
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+
+    expect(register).toHaveBeenCalledTimes(8);
+    const names = register.mock.calls.map((c) => c[1] as string).sort();
+    expect(names).toEqual([
+      "find_co_changed",
+      "find_cycles",
+      "get_architecture_report",
+      "get_callees",
+      "get_callers",
+      "get_naming_lexicon",
+      "get_ontology_report",
+      "trace_path",
+    ]);
+  });
+
+  it("registers trace_path when codegraph.symbols is present", () => {
+    const register = vi.fn();
+    const app = makeApp(true);
+
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+
+    const names = register.mock.calls.map((c) => c[1] as string);
+    expect(names).toContain("trace_path");
+  });
+
+  it("does NOT register trace_path when codegraph.symbols is absent", () => {
+    const register = vi.fn();
+    const app = makeApp(false);
+
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+
+    const names = register.mock.calls.map((c) => c[1] as string);
+    expect(names).not.toContain("trace_path");
+  });
+
+  it("is a complete no-op when hasProvider('codegraph.symbols') is false", () => {
+    const register = vi.fn();
+    const app = makeApp(false);
+
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+
+    expect(register).not.toHaveBeenCalled();
+  });
+
+  it("queries hasProvider exactly once with 'codegraph.symbols' (no other keys)", () => {
+    const register = vi.fn();
+    const app = makeApp(true);
+
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+
+    expect(app.hasProvider).toHaveBeenCalledTimes(1);
+    expect(app.hasProvider).toHaveBeenCalledWith("codegraph.symbols");
+  });
+
+  it("find_cycles handler forwards the pathPattern scope filter into app.findCycles", async () => {
+    const register = vi.fn();
+    const app = makeApp(true);
+    (app.findCycles as ReturnType<typeof vi.fn>).mockResolvedValue({ cycles: [] });
+
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+
+    // register(server, name, config, handler) — pull the find_cycles handler.
+    const call = register.mock.calls.find((c) => c[1] === "find_cycles");
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<unknown>;
+    await handler({ path: "/proj", scope: "file", pathPattern: "**/domains/ingest/**" });
+
+    expect(app.findCycles).toHaveBeenCalledWith({
+      project: undefined,
+      collection: undefined,
+      path: "/proj",
+      scope: "file",
+      pathPattern: "**/domains/ingest/**",
+    });
+  });
+
+  // bd tea-rags-mcp-z3bcv (f2jsb A4) — opt-in lazy ambiguous expansion.
+  it("get_callers schema exposes optional boolean includeAmbiguous", () => {
+    const register = vi.fn();
+    const app = makeApp(true);
+
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+
+    const call = register.mock.calls.find((c) => c[1] === "get_callers");
+    const { inputSchema } = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny> };
+    const { includeAmbiguous } = inputSchema;
+    expect(includeAmbiguous).toBeDefined();
+    expect(includeAmbiguous.safeParse(true).success).toBe(true);
+    expect(includeAmbiguous.safeParse(false).success).toBe(true);
+    expect(includeAmbiguous.safeParse(undefined).success).toBe(true); // optional
+    expect(includeAmbiguous.safeParse("yes").success).toBe(false);
+  });
+
+  it("get_callers handler forwards includeAmbiguous into app.getCallers", async () => {
+    const register = vi.fn();
+    const app = makeApp(true);
+    (app.getCallers as ReturnType<typeof vi.fn>).mockResolvedValue({ callers: [] });
+
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+
+    const call = register.mock.calls.find((c) => c[1] === "get_callers");
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<unknown>;
+    await handler({ path: "/proj", symbolId: "Account#firm", includeAmbiguous: true });
+
+    expect(app.getCallers).toHaveBeenCalledWith({
+      project: undefined,
+      collection: undefined,
+      path: "/proj",
+      symbolId: "Account#firm",
+      limit: undefined,
+      includeAmbiguous: true,
+    });
+  });
+
+  it("trace_path rerank is a curated enum: accepts a tagged preset, rejects a bogus one", () => {
+    const register = vi.fn();
+    const app = makeApp(true);
+
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+
+    const traceCall = register.mock.calls.find((c) => c[1] === "trace_path");
+    expect(traceCall).toBeDefined();
+    const { inputSchema } = traceCall?.[2] as { inputSchema: Record<string, z.ZodTypeAny> };
+    const { rerank: rerankSchema } = inputSchema;
+
+    // Curated preset accepted; undefined accepted (optional → defaults to bugHunt downstream).
+    expect(rerankSchema.safeParse("bugHunt").success).toBe(true);
+    expect(rerankSchema.safeParse(undefined).success).toBe(true);
+    // Typo rejected at the MCP boundary — no more silent no-op.
+    expect(rerankSchema.safeParse("totally_bogus").success).toBe(false);
+  });
+});
+
+// bd tea-rags-mcp-94hd9 — architecture diagnostics report, codegraph-gated like find_cycles.
+describe("get_architecture_report", () => {
+  function registered(hasCodegraph = true) {
+    const register = vi.fn();
+    const app = makeApp(hasCodegraph);
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+    const call = register.mock.calls.find((c) => c[1] === "get_architecture_report");
+    return { app, call };
+  }
+
+  it("is not registered when codegraph.symbols is absent", () => {
+    expect(registered(false).call).toBeUndefined();
+  });
+
+  it("is a read-only tool whose schema takes the address triad, an optional pathPattern and limit", () => {
+    const { call } = registered();
+    const config = call?.[2] as {
+      inputSchema: Record<string, z.ZodTypeAny>;
+      annotations: Record<string, boolean>;
+      description: string;
+    };
+    const schema = z.object(config.inputSchema);
+
+    expect(config.annotations).toMatchObject({ readOnlyHint: true, idempotentHint: true });
+    expect(config.description).toMatch(/Stable Dependencies/);
+    expect(schema.safeParse({ project: "tea-rags" }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", pathPattern: "src/core/**", limit: 20 }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", limit: 0 }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", limit: 501 }).success).toBe(false);
+  });
+
+  it("takes a knotOf component paged by offset, and names drillDown in the description (bd tea-rags-mcp-r8hme.38)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+
+    expect(config.description).toMatch(/drillDown/);
+    expect(schema.safeParse({ project: "tea-rags", knotOf: "src/core/domains/explore" }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", knotOf: "app", limit: 100, offset: 200 }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", knotOf: "app", offset: 0 }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", knotOf: "app", offset: -1 }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", knotOf: "app", offset: 1.5 }).success).toBe(false);
+  });
+
+  it("takes a domain root judged as its own system, and names it in the description (bd tea-rags-mcp-xb669.1)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+
+    expect(config.description).toMatch(/AS ITS OWN SYSTEM/);
+    expect(schema.safeParse({ project: "tea-rags", domain: "src/core/domains/explore" }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", domain: "" }).success).toBe(false);
+  });
+
+  it("takes a norms flag, and names MISFIT as a direction inversion in the description (bd tea-rags-mcp-xb669.8)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+
+    expect(config.description).toMatch(/MISFIT/);
+    expect(config.description).toMatch(/established direction/);
+    // NEW_PATTERN is never a whole-repo verdict: the description names it only
+    // as a planned-edges answer (bd tea-rags-mcp-xb669.2), never under norms.
+    const normsClause = config.description.slice(config.description.indexOf("norms option"));
+    expect(normsClause.slice(0, normsClause.indexOf("plannedEdges"))).not.toMatch(/NEW_PATTERN/);
+    expect(schema.safeParse({ project: "tea-rags", norms: true }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", norms: "yes" }).success).toBe(false);
+  });
+
+  it("forwards the address, pathPattern and limit into app.getArchitectureReport and returns its report as text", async () => {
+    const { app, call } = registered();
+    const report = { summary: {}, rootCauses: [], violations: [] };
+    (app.getArchitectureReport as ReturnType<typeof vi.fn>).mockResolvedValue(report);
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+
+    const result = await handler({ project: "tea-rags", pathPattern: "src/core/**", limit: 10 });
+
+    expect(app.getArchitectureReport).toHaveBeenCalledWith({
+      project: "tea-rags",
+      collection: undefined,
+      path: undefined,
+      pathPattern: "src/core/**",
+      limit: 10,
+    });
+    expect(JSON.parse(result.content[0].text)).toEqual(report);
+  });
+
+  // bd tea-rags-mcp-89k7k.25 — the wire shape and GetArchitectureReportRequest
+  // are ONE contract, declared in the tool file (compile-time alignment pin),
+  // not co-changed in heads. These two tests pin the declaration from both
+  // sides: the runtime wire keys, and the source-level alignment type that
+  // turns a one-sided field addition into a tsc error.
+  it("wire shape carries exactly the request DTO fields (bd tea-rags-mcp-89k7k.25)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny> };
+
+    expect(Object.keys(config.inputSchema).sort()).toEqual(
+      [
+        "changeReasons",
+        "collection",
+        "domain",
+        "knotOf",
+        "layerMap",
+        "limit",
+        "norms",
+        "offset",
+        "path",
+        "pathPattern",
+        "plannedEdges",
+        "project",
+        "restructure",
+        "restructurePlan",
+      ].sort(),
+    );
+  });
+
+  // bd tea-rags-mcp-xb669.2: plannedEdges is the write-time verdict MODE of
+  // the report — capped, file pairs, routed to its own App method so the
+  // answer is the verdicts, never a partial report.
+  it("takes capped plannedEdges and names their verdicts in the description (bd tea-rags-mcp-xb669.2)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+    const edge = { source: "src/a.ts", target: "src/b.ts" };
+
+    expect(config.description).toMatch(/plannedEdges/);
+    expect(config.description).toMatch(/NEW_PATTERN/);
+    expect(config.description).toMatch(/UNJUDGED/);
+    expect(schema.safeParse({ project: "tea-rags", plannedEdges: [edge] }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", plannedEdges: [{ ...edge, reference: "B::Error" }] }).success).toBe(
+      true,
+    );
+    expect(schema.safeParse({ project: "tea-rags", plannedEdges: [] }).success).toBe(false);
+    expect(
+      schema.safeParse({ project: "tea-rags", plannedEdges: Array.from({ length: 51 }, () => edge) }).success,
+    ).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", plannedEdges: [{ source: "src/a.ts" }] }).success).toBe(false);
+  });
+
+  it("routes a plannedEdges call to app.judgePlannedArchitectureEdges, never to the report", async () => {
+    const { app, call } = registered();
+    const verdicts = { mode: "plannedEdges", detectorFamilies: "notRun", plannedEdgeVerdicts: [] };
+    (app.judgePlannedArchitectureEdges as ReturnType<typeof vi.fn>).mockResolvedValue(verdicts);
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+
+    const result = await handler({ project: "tea-rags", plannedEdges: [{ source: "src/a.ts", target: "src/b.ts" }] });
+
+    expect(app.judgePlannedArchitectureEdges).toHaveBeenCalledWith(
+      expect.objectContaining({ plannedEdges: [{ source: "src/a.ts", target: "src/b.ts" }] }),
+    );
+    expect(app.getArchitectureReport).not.toHaveBeenCalled();
+    expect(JSON.parse(result.content[0].text)).toEqual(verdicts);
+  });
+
+  // bd tea-rags-mcp-r8hme.21: restructure is the what-if MODE of the report —
+  // capped ops of three shapes, routed to its own App method so the answer is
+  // the delta, never a partial report.
+  it("takes capped restructure ops of three shapes and names the delta in the description (bd tea-rags-mcp-r8hme.21)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+    const move = { move: { files: ["src/a.ts"], toComponent: "src/b" } };
+    const parse = (restructure: unknown) => schema.safeParse({ project: "tea-rags", restructure }).success;
+
+    expect(config.description).toMatch(/restructure mode/);
+    expect(config.description).toMatch(/introduced\/resolved/);
+    expect(parse([move])).toBe(true);
+    expect(parse([{ merge: { components: ["src/a", "src/b"] } }])).toBe(true);
+    expect(parse([{ split: { component: "src/a", groups: [["src/a/x.ts"], ["src/a/y.ts"]] } }])).toBe(true);
+    expect(parse([])).toBe(false);
+    expect(parse(Array.from({ length: 21 }, () => move))).toBe(false);
+    expect(parse([{ merge: { components: ["src/a"] } }])).toBe(false);
+    expect(parse([{ move: { files: [], toComponent: "src/b" } }])).toBe(false);
+    expect(parse([{ rename: { from: "a", to: "b" } }])).toBe(false);
+  });
+
+  // bd tea-rags-mcp-cm9gt.1: edge ops ride the same union; the description says
+  // they move structural detectors only.
+  it("takes the addFile / addEdge / removeEdge edge ops and says co-change does not respond (bd tea-rags-mcp-cm9gt.1)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+    const parse = (restructure: unknown) => schema.safeParse({ project: "tea-rags", restructure }).success;
+
+    expect(config.description).toMatch(/co-change detectors read history and do not respond/);
+    expect(parse([{ addFile: { file: "src/contracts/port.ts" } }])).toBe(true);
+    expect(parse([{ addFile: { file: "src/a/port.ts", component: "src/a" } }])).toBe(true);
+    expect(parse([{ addEdge: { from: "src/a.ts", to: "src/b.ts" } }])).toBe(true);
+    expect(parse([{ removeEdge: { from: "src/a.ts", to: "src/b.ts" } }])).toBe(true);
+    expect(parse([{ addFile: { file: "src/contracts/port.ts", abstract: true } }])).toBe(true);
+    expect(config.description).toMatch(/addFile\{file,component\?,abstract\?\}/);
+    expect(parse([{ addFile: { file: "src/contracts/port.ts", abstract: "yes" } }])).toBe(false);
+    expect(parse([{ addFile: { file: "" } }])).toBe(false);
+    expect(parse([{ addEdge: { from: "src/a.ts" } }])).toBe(false);
+    expect(parse([{ removeEdge: { from: "", to: "src/b.ts" } }])).toBe(false);
+  });
+
+  it("routes a restructure call to app.simulateArchitectureRestructure, never to the report", async () => {
+    const { app, call } = registered();
+    const answer = { mode: "restructure", hypothesis: [], unavailable: "noCodegraph" };
+    (app.simulateArchitectureRestructure as ReturnType<typeof vi.fn>).mockResolvedValue(answer);
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+    const restructure = [{ merge: { components: ["src/a", "src/b"] } }];
+
+    const result = await handler({ project: "tea-rags", restructure });
+
+    expect(app.simulateArchitectureRestructure).toHaveBeenCalledWith(expect.objectContaining({ restructure }));
+    expect(app.getArchitectureReport).not.toHaveBeenCalled();
+    expect(app.judgePlannedArchitectureEdges).not.toHaveBeenCalled();
+    expect(JSON.parse(result.content[0].text)).toEqual(answer);
+  });
+
+  // bd tea-rags-mcp-cm9gt.2: restructurePlan is the ordering MODE of the report.
+  it("takes restructurePlan candidates of the restructure op union, capped, and names the plan in the description", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const schema = z.object(config.inputSchema);
+    const cut = { removeEdge: { from: "src/a.ts", to: "src/b.ts" } };
+    const parse = (restructurePlan: unknown) => schema.safeParse({ project: "tea-rags", restructurePlan }).success;
+
+    expect(config.description).toMatch(/restructurePlan mode/);
+    expect(config.description).toMatch(/trade-offs/);
+    expect(parse({ candidates: [{ id: "c", rationale: "why", ops: [cut] }] })).toBe(true);
+    expect(parse({ candidates: [], includeReportCandidates: true })).toBe(true);
+    expect(parse({ candidates: [{ id: "c", ops: [] }] })).toBe(false);
+    expect(parse({ candidates: [{ id: "c", ops: Array.from({ length: 21 }, () => cut) }] })).toBe(false);
+    expect(parse({ candidates: Array.from({ length: 51 }, (_, k) => ({ id: `c${k}`, ops: [cut] })) })).toBe(false);
+    expect(parse({ candidates: [{ id: "", ops: [cut] }] })).toBe(false);
+    expect(parse({ candidates: [{ id: "c", ops: [{ rename: { from: "a", to: "b" } }] }] })).toBe(false);
+  });
+
+  it("routes a restructurePlan call to app.planArchitectureRestructure, never to the report", async () => {
+    const { app, call } = registered();
+    const answer = { mode: "restructurePlan", steps: [], tradeOffs: [], unselected: [], unavailable: "noCodegraph" };
+    (app.planArchitectureRestructure as ReturnType<typeof vi.fn>).mockResolvedValue(answer);
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+    const restructurePlan = { candidates: [{ id: "m", ops: [{ merge: { components: ["src/a", "src/b"] } }] }] };
+
+    const result = await handler({ project: "tea-rags", restructurePlan });
+
+    expect(app.planArchitectureRestructure).toHaveBeenCalledWith(expect.objectContaining({ restructurePlan }));
+    expect(app.simulateArchitectureRestructure).not.toHaveBeenCalled();
+    expect(app.getArchitectureReport).not.toHaveBeenCalled();
+    expect(JSON.parse(result.content[0].text)).toEqual(answer);
+  });
+
+  it("declares the shape↔DTO alignment pin over GetArchitectureReportInputShape (bd tea-rags-mcp-89k7k.25)", () => {
+    const text = readFileSync(join(import.meta.dirname, "../../../../src/core/api/tools/codegraph.ts"), "utf-8");
+    const pin = text.match(
+      /type\s+(\w*Shape\w*Alignment\w*|GetArchitectureReport\w*Alignment\w*)[\s\S]{0,600}?GetArchitectureReportRequest/,
+    );
+    expect(pin, "the compile-time shape↔DTO alignment pin must be declared").not.toBeNull();
+    expect(text).toMatch(/GetArchitectureReportInputShape/);
+  });
+});
+
+// bd tea-rags-mcp-gfvr8 — get_callers / get_callees at FILE scope.
+describe("get_callers / get_callees — file scope", () => {
+  function registered(tool: "get_callers" | "get_callees") {
+    const register = vi.fn();
+    const app = makeApp(true);
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+    const call = register.mock.calls.find((c) => c[1] === tool);
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<unknown>;
+    return { app, config, handler };
+  }
+
+  for (const tool of ["get_callers", "get_callees"] as const) {
+    it(`${tool} schema accepts relativePath without symbolId, and symbolId without relativePath`, () => {
+      const schema = z.object(registered(tool).config.inputSchema);
+      expect(schema.safeParse({ project: "p", relativePath: "src/a.ts" }).success).toBe(true);
+      expect(schema.safeParse({ project: "p", symbolId: "A#b" }).success).toBe(true);
+    });
+
+    it(`${tool} description documents the file-scope answer`, () => {
+      const { description } = registered(tool).config;
+      expect(description).toMatch(/relativePath/);
+      expect(description).toMatch(/import/);
+    });
+  }
+
+  it("get_callers handler forwards relativePath into app.getCallers", async () => {
+    const { app, handler } = registered("get_callers");
+    (app.getCallers as ReturnType<typeof vi.fn>).mockResolvedValue({
+      relativePath: "src/a.ts",
+      importers: [],
+      total: 0,
+    });
+
+    await handler({ project: "p", relativePath: "src/a.ts", limit: 5 });
+
+    expect(app.getCallers).toHaveBeenCalledWith(
+      expect.objectContaining({ project: "p", relativePath: "src/a.ts", limit: 5 }),
+    );
+  });
+
+  it("get_callees handler forwards relativePath into app.getCallees", async () => {
+    const { app, handler } = registered("get_callees");
+    (app.getCallees as ReturnType<typeof vi.fn>).mockResolvedValue({ relativePath: "src/a.ts", imports: [], total: 0 });
+
+    await handler({ project: "p", relativePath: "src/a.ts" });
+
+    expect(app.getCallees).toHaveBeenCalledWith(expect.objectContaining({ project: "p", relativePath: "src/a.ts" }));
+  });
+});
+
+// bd tea-rags-mcp-l1ot.1 — co-change partners from the temporal sub-graph.
+describe("find_co_changed", () => {
+  function registered(hasCodegraph = true) {
+    const register = vi.fn();
+    const app = makeApp(hasCodegraph);
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+    const call = register.mock.calls.find((c) => c[1] === "find_co_changed");
+    const config = call?.[2] as {
+      inputSchema: Record<string, z.ZodTypeAny>;
+      description: string;
+      annotations: Record<string, boolean>;
+    };
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+    return { app, config, handler };
+  }
+
+  it("is not registered when codegraph.symbols is absent", () => {
+    expect(registered(false).config).toBeUndefined();
+  });
+
+  it("is a read-only tool whose schema requires files and takes the address triad and an optional limit", () => {
+    const { config } = registered();
+    const schema = z.object(config.inputSchema);
+
+    expect(config.annotations).toMatchObject({ readOnlyHint: true, idempotentHint: true });
+    expect(config.description).toMatch(/co-change/);
+    expect(config.description).toMatch(/built:false/);
+    // files is the one required field; the address triad stays optional.
+    expect(schema.safeParse({ project: "tea-rags", files: ["src/a.ts"] }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", files: ["src/a.ts", "src/b.ts"], limit: 5 }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags" }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", files: [] }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", files: ["src/a.ts"], limit: 0 }).success).toBe(false);
+  });
+
+  it("forwards the address, files and limit into app.findCoChanged and returns the result as text", async () => {
+    const { app, handler } = registered();
+    const result = { built: true, files: [] };
+    (app.findCoChanged as ReturnType<typeof vi.fn>).mockResolvedValue(result);
+
+    const response = await handler({ project: "tea-rags", files: ["src/a.ts"], limit: 5 });
+
+    expect(app.findCoChanged).toHaveBeenCalledWith({
+      project: "tea-rags",
+      collection: undefined,
+      path: undefined,
+      files: ["src/a.ts"],
+      limit: 5,
+    });
+    expect(JSON.parse(response.content[0].text)).toEqual(result);
+  });
+});

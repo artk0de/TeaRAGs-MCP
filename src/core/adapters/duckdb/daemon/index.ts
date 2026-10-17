@@ -33,6 +33,7 @@ export {
   isDaemonPidAlive,
   listDaemonKeyDirs,
   openDaemonLogFd,
+  readDaemonPid,
   readRefs,
   resolveDaemonClientTarget,
   scheduleIdleWatcher,
@@ -47,3 +48,5 @@ export {
   DEFAULT_MEMORY_LIMIT_MAX,
   type DaemonMemoryGovernorOptions,
 } from "./memory-governor.js";
+export { DaemonDatabaseFileReplacer } from "./database-file-replacer.js";
+export { getBuildFingerprint, readOnDiskBuildFingerprint } from "./build-fingerprint.js";

@@ -79,6 +79,7 @@ import {
   QuarantineStore,
   readPayloadFileCommitCounts,
   readPayloadImportSpecifiers,
+  registerAllTools,
   RequestScopedFileFactsReader,
   resolveDomainEnvCodeDefaults,
   ReviewChangesOps,
@@ -110,6 +111,7 @@ import {
   type CodegraphDeps,
   type CodegraphWorkerConfig,
   type GraphFacadeDeps,
+  type HealthProbes,
   type ReviewChangesOpsDeps,
   type TemporalCochangeConfig,
   type WorkingTreeGitSignalConfig,
@@ -125,10 +127,8 @@ import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
 import type { WorkingTree } from "../core/contracts/types/working-tree.js";
 import { setDebug } from "../core/primitives/diagnostics/index.js";
 import { installFileClassificationSettings } from "../core/primitives/paths/index.js";
-import type { HealthProbes } from "../mcp/middleware/error-handler.js";
 import { loadPromptsConfig, registerAllPrompts, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllResources } from "../mcp/resources/index.js";
-import { registerAllTools } from "../mcp/tools/index.js";
 import { buildMcpAutoUpdateTrigger } from "./auto-update/mcp-hint.js";
 import { hydrateCodegraphSymbolTable } from "./codegraph-symbol-table-hydration.js";
 import {
@@ -677,7 +677,7 @@ export function createIndexRunDaemonGuard(deps: {
   const acquireKeepAlive = async (physicalCollectionName: PhysicalCollectionName): Promise<DaemonKeepAliveSocket> => {
     deps.ensure();
     await deps.verifyDaemonBuild(physicalCollectionName);
-    const { DaemonGraphDbClient } = await import("../core/adapters/duckdb/daemon/client.js");
+    const { DaemonGraphDbClient } = await import("../core/adapters/duckdb/daemon/index.js");
     const client = new DaemonGraphDbClient(deps.socketPath, physicalCollectionName);
     await client.init(); // bounded 5s connect retry absorbs the spawn race
     return client;

@@ -1,12 +1,13 @@
-import type { CollectionMemoryBytes, CollectionMemoryMetrics } from "../../core/api/public/dto/collection.js";
-import type { IndexStatus } from "../../core/api/public/dto/ingest.js";
-import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
 import {
   formatResolveRate,
   formatResolveRateCell,
   isOptimizerFailure,
   renderOptimizerRecoveryCommand,
   resolveRateMiss,
+  type CollectionMemoryBytes,
+  type CollectionMemoryMetrics,
+  type IndexMetrics,
+  type IndexStatus,
   type LanguageCapability,
   type OptimizerRecoveryTarget,
 } from "../../core/api/public/index.js";

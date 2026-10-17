@@ -16,7 +16,7 @@
  * 2. Add method to the App interface in public/app.ts
  * 3. Implement in internal/facades/ or internal/ops/
  * 4. Wire via internal/composition.ts (ops construction) + createApp() below
- * 5. Register MCP tool in src/mcp/tools/
+ * 5. Register MCP tool in src/core/api/tools/
  */
 
 import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
@@ -33,35 +33,31 @@ import { formatIndexDriftReport, type IndexDriftReporter } from "../../domains/m
 // aggregates composition + facades — a type-only edge this factory keeps
 // (bd tea-rags-mcp-0qaht.12). No deep `../public/` path beyond the contract
 // itself is imported.
-import type {
-  CollectionOps,
-  DocumentOps,
-  ExploreFacade,
-  GraphFacade,
-  IngestFacade,
-  NamingLexiconOps,
-  OntologyReportOps,
-  ProjectRegistryOps,
-  ReviewFacade,
-  TracePathOps,
-} from "../index.js";
-import type { App } from "../public/app.js";
-import type { IndexStatus, PresetDetail, WorkingTreeIndexTarget } from "../public/dto/index.js";
-import {
-  createPathCollectionResolver as createPathCollectionResolverImpl,
-  resolveBaseIndexEntry as resolveBaseIndexEntryImpl,
-} from "./collection-resolver.js";
 import {
   composeAppOps,
+  createPathCollectionResolver as createPathCollectionResolverImpl,
   emptyArchitectureReport,
   emptyCochangeResult,
   emptyOntologyReport,
   emptyReviewChangesResult,
+  resolveBaseIndexEntry as resolveBaseIndexEntryImpl,
   resolveLanguageCapabilities as resolveDomainLanguageCapabilities,
   unjudgedPlannedArchitectureEdges,
   unplannedArchitectureRestructure,
   unsimulatedArchitectureRestructure,
-} from "./composition.js";
+  type CollectionOps,
+  type DocumentOps,
+  type ExploreFacade,
+  type GraphFacade,
+  type IngestFacade,
+  type NamingLexiconOps,
+  type OntologyReportOps,
+  type ProjectRegistryOps,
+  type ReviewFacade,
+  type TracePathOps,
+} from "../index.js";
+import type { App } from "../public/app.js";
+import type { IndexStatus, PresetDetail, WorkingTreeIndexTarget } from "../public/dto/index.js";
 import { reviewSectionIds as reviewSectionIdsValue } from "./ops/review-sections/index.js";
 
 // ---------------------------------------------------------------------------

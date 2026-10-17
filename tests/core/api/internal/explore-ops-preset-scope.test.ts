@@ -15,8 +15,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import type { SchemaBuilder } from "../../../../src/core/api/index.js";
-import { ExploreFacade } from "../../../../src/core/api/internal/facades/explore-facade.js";
+import { ExploreFacade, type SchemaBuilder } from "../../../../src/core/api/index.js";
+import { createSearchSchemas, TYPED_FILTER_PARAM_NAMES } from "../../../../src/core/api/tools/schemas.js";
 import type { RerankPreset } from "../../../../src/core/contracts/types/reranker.js";
 import {
   BugHuntCompositePreset,
@@ -27,7 +27,6 @@ import { TrajectoryRegistry } from "../../../../src/core/domains/trajectory/inde
 import { STATIC_FILTER_PRESETS } from "../../../../src/core/domains/trajectory/static/filter-presets/index.js";
 import { StaticTrajectory } from "../../../../src/core/domains/trajectory/static/index.js";
 import { DecompositionPreset } from "../../../../src/core/domains/trajectory/static/rerank/presets/decomposition.js";
-import { createSearchSchemas, TYPED_FILTER_PARAM_NAMES } from "../../../../src/mcp/tools/schemas.js";
 
 const PRESETS: Record<string, RerankPreset> = {
   bugHunt: new BugHuntCompositePreset(),

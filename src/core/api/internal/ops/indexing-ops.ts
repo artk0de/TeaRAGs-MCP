@@ -8,7 +8,7 @@
  * orchestration lives here; the facade only dispatches.
  */
 
-import { getBuildFingerprint, readOnDiskBuildFingerprint } from "../../../adapters/duckdb/daemon/build-fingerprint.js";
+import { getBuildFingerprint, readOnDiskBuildFingerprint } from "../../../adapters/duckdb/daemon/index.js";
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import { isProviderRecoveryWaitSpent } from "../../../adapters/embeddings/errors.js";
@@ -41,9 +41,11 @@ import {
   type HeldCollectionIndexingLockPort,
   type WorktreeSeedPending,
 } from "../../../domains/ingest/infra/index.js";
-import { resolvePhysicalCollection } from "../../../domains/ingest/operations/index.js";
-import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
-import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
+import {
+  resolvePhysicalCollection,
+  type IndexPipeline,
+  type ReindexPipeline,
+} from "../../../domains/ingest/operations/index.js";
 import {
   CODE_LANGUAGES,
   SELECTABLE_LANGUAGES,

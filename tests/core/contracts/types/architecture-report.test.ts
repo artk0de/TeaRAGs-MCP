@@ -23,7 +23,7 @@ const CONTRACT_MODULE = "../../../../src/core/contracts/types/architecture-repor
 const DOMAIN_TYPES = "../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/types.ts";
 const TEMPORAL_TYPES = "../../../../src/core/domains/trajectory/codegraph/temporal/boundary-diagnostics/types.ts";
 const DTO = "../../../../src/core/api/public/dto/architecture.ts";
-const MCP_TOOL = "../../../../src/mcp/tools/codegraph.ts";
+const MCP_TOOL = "../../../../src/core/api/tools/codegraph.ts";
 const REPORT_OPS = "../../../../src/core/api/internal/ops/architecture-report-ops.ts";
 
 describe("architecture-report contract (bd tea-rags-mcp-0e4vf)", () => {
@@ -94,7 +94,7 @@ describe("architecture-report contract (bd tea-rags-mcp-0e4vf)", () => {
 
   it("reaches the report through api/public only (MCP tool surface)", () => {
     const source = readSource(MCP_TOOL);
-    expect(source).toContain('from "../../core/api/public/index.js"');
+    expect(source).toContain('from "../public/index.js"');
     expect(source).not.toMatch(/from\s+"[^"]*domains\//);
     expect(source).not.toMatch(/from\s+"[^"]*contracts\//);
   });
