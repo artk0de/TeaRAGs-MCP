@@ -313,6 +313,34 @@ None (no MISFIT verdicts; the single addEdge pair targets a new file —
   rule). Open P3 beads are follow-up engineering (detector fixes, optional
   registry-port design), not violation elimination.
 
+## Tracking — fix wave (2026-10-18, "фикси, потом лайв валидируй")
+
+The three detector-defect beads were verified against the detector code before
+fixing; ALL THREE REFUTED, and one acceptance reversed:
+
+- **Bead 54xwd.6 — reopened and remediated as a REAL finding** (commit
+  `eaea7affd`). The census aggregates `typeAbstractness` per file over the
+  component's members — never the facade; the TS abstractness reader keeps
+  data-shape interfaces out of both counts as Martin-neutral (verified:
+  `TSProgramHandle`, `TSProgramImportGraph` are pure data shapes). A=0 was an
+  honest reading. Remedy: `TSProgramCachePort` extracted — the four-member role
+  (repoRoot, acquire, isProjectSourceFile, toProjectSourceRelPath) the 22
+  consumer files program against; the class implements it, the barrel exports
+  it. Residual concreteness (LRU/memo/store/planner, no substituting consumers)
+  accepted — porting them would be metric-gaming.
+- **Beads 54xwd.15 / .18 / .19 — closed as refuted.** .15: the app-factory deep
+  imports were true positives (external deep imports — api/internal has no
+  assembly barrel), fixed by .16's own remedies. .18: hubLike already excludes
+  containment from both axes (bd j5gti) — the pipeline Ce 14 is the post-filter
+  count; otsu reclassification under a modified graph is faithful
+  re-measurement, not a defect. .19: mechanism claim false (per above).
+- **Live validation** (in-process `tea-rags call` on the local build, real
+  corpus): `program/` reads A=0.125 / abstract=1 / D=0.839 (was A=0 / D= 0.964)
+  — exactly the predicted 1/(1+7) and |A+I−1|; no new violations anywhere;
+  embeddings and the pipeline hub unchanged. Functional line: full suite 4701
+  green via the pre-commit hook; version-pins re-pinned with "Versions:
+  unchanged" (type-only retype).
+
 ## Execution contract (refactoring-planning):
 
 ```text
