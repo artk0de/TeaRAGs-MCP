@@ -88,4 +88,28 @@ describe("receiverOriginSection", () => {
   it("follows the chain head of a receiver chain", () => {
     expect(section(["@chat_thread.owner"])).toContain("@chat_thread = Communication::Chat::Channel");
   });
+
+  it("shows the declaration line of a receiver an association or attribute macro defines", () => {
+    const file = [
+      "class RemovedJobAssignment < ApplicationRecord",
+      "  belongs_to :actor, polymorphic: true",
+      "  attr_reader :automation",
+      "",
+      "  def same_firm?",
+      "    automation.firm_id == actor.user.firm_id",
+      "  end",
+      "end",
+    ].join("\n");
+    const out = receiverOriginSection({
+      fileText: file,
+      methodStartLine: 5,
+      methodEndLine: 7,
+      visibleLines: (line) => line >= 5 && line <= 7,
+      receivers: ["actor.user", "automation"],
+      maxTokens: 400,
+    });
+
+    expect(out).toContain("  belongs_to :actor, polymorphic: true");
+    expect(out).toContain("  attr_reader :automation");
+  });
 });

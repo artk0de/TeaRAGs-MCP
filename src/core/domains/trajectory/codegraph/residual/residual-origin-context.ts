@@ -5,10 +5,30 @@
  * (same method for a local, anywhere in the file for an ivar, at most
  * {@link MAX_ASSIGNMENT_LINES}), and, when that value is the result of a call
  * to a method defined in the same file (`foo`, `self.foo`, the collection a
- * block parameter iterates), the head of that method's definition. Ruby only;
+ * block parameter iterates), the head of that method's definition — or, with
+ * no `def`, the macro line declaring it (`belongs_to :x`, `attr_reader :x`,
+ * `delegate :x, to:`). Ruby only;
  * read from the file text, no walker pass. The section lives within a token
  * budget: an entry that does not fit is dropped, never cut.
  */
+
+/**
+ * Version of the section's content, folded into the verdict key only while the
+ * variant is on — bump it when the section changes, the default key never moves.
+ */
+export const RESIDUAL_ORIGIN_CONTEXT_VERSION = 2;
+
+/** Class-body macros that define a reader for their symbol arguments. */
+const DECLARING_MACROS = [
+  "belongs_to",
+  "has_one",
+  "has_many",
+  "has_and_belongs_to_many",
+  "attr_reader",
+  "attr_accessor",
+  "attribute",
+  "delegate",
+];
 
 /** Kev refuses a state over this many tokens (`LEAN_MAX_STATE`). */
 export const RESIDUAL_MAX_STATE_TOKENS = 2048;
@@ -99,7 +119,7 @@ export function receiverOriginSection(input: OriginContextInput): string {
     if (definedShown.has(name)) return;
     definedShown.add(name);
     const lines = definitionHead(fileLines, name, input);
-    if (lines !== undefined) add(`def ${name}`, lines);
+    if (lines !== undefined) add(/^\s*def\b/u.test(fileLines[lines[0] - 1]) ? `def ${name}` : name, lines);
   };
 
   const heads = [...new Set(input.receivers.map(receiverHead).filter((h): h is string => h !== undefined))];
@@ -157,6 +177,14 @@ function definitionHead(fileLines: readonly string[], name: string, input: Origi
       if (fileLines[k - 1] === `${indent}end`) break;
     }
     return lines;
+  }
+  const declared = new RegExp(
+    `^\\s*(?:${DECLARING_MACROS.join("|")})\\b[\\s(].*?(?<![\\w:]):${escape(name)}(?![\\w?!])`,
+    "u",
+  );
+  for (let n = 1; n <= fileLines.length; n++) {
+    if (n >= input.methodStartLine && n <= input.methodEndLine) continue;
+    if (declared.test(fileLines[n - 1])) return [n];
   }
   return undefined;
 }

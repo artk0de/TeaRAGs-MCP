@@ -41,6 +41,7 @@ import {
   type AskQueueInput,
   type PendingQuestion,
 } from "./residual-ask-queue.js";
+import { RESIDUAL_ORIGIN_CONTEXT_VERSION } from "./residual-origin-context.js";
 import { propagateTypeFacts, receiverGroupAddress, type AcceptedGroupVerdict } from "./type-fact-propagation.js";
 import type {
   ResidualDerivedState,
@@ -85,21 +86,26 @@ const RESIDUAL_V3_PROMPT_HASH = "35978f0544d30972eccbf7ede05b36ebaadd2d4b";
 
 const sha1 = (text: string): string => createHash("sha1").update(text).digest("hex");
 
-function foldOf(promptHash: string, stateBuilderVersion: number, originContext: boolean): string {
-  return sha1(`${promptHash}\u0000s${stateBuilderVersion}\u0000o${originContext ? 1 : 0}`);
+/** `originVersion` 0 = the origin-context variant is off. */
+function foldOf(promptHash: string, stateBuilderVersion: number, originVersion: number): string {
+  return sha1(`${promptHash}\u0000s${stateBuilderVersion}\u0000o${originVersion}`);
 }
 
 /** The fold of the version-3 question: its prompt, state builder 1, no origin context. Keys under it keep their version-3 form. */
-export const RESIDUAL_V3_DEFAULT_FOLD = foldOf(RESIDUAL_V3_PROMPT_HASH, 1, false);
+export const RESIDUAL_V3_DEFAULT_FOLD = foldOf(RESIDUAL_V3_PROMPT_HASH, 1, 0);
 
 /**
  * Hash of everything around the menu that shapes a question: the provider's
  * prompt template (absent = the version-3 one), {@link RESIDUAL_STATE_BUILDER_VERSION}
- * and the origin-context variant.
+ * and, when on, the origin-context variant's {@link RESIDUAL_ORIGIN_CONTEXT_VERSION}.
  */
 export function residualQuestionFold(parts: { promptTemplate?: string; originContext?: boolean }): string {
   const promptHash = parts.promptTemplate === undefined ? RESIDUAL_V3_PROMPT_HASH : sha1(parts.promptTemplate);
-  return foldOf(promptHash, RESIDUAL_STATE_BUILDER_VERSION, parts.originContext ?? false);
+  return foldOf(
+    promptHash,
+    RESIDUAL_STATE_BUILDER_VERSION,
+    parts.originContext === true ? RESIDUAL_ORIGIN_CONTEXT_VERSION : 0,
+  );
 }
 
 /**
