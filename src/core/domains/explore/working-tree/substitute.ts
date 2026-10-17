@@ -10,12 +10,24 @@
  */
 import type { WorkingTreeState } from "../../../contracts/types/working-tree.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
-import type { WorkingTreeView } from "./overlay.js";
+
+/**
+ * The view fields the substitute predicates read — the structural slice of
+ * WorkingTreeView (bd tea-rags-mcp-54xwd.14; importing the interface from
+ * overlay.ts would close a cycle with the module whose views it substitutes
+ * for). Any full view satisfies it.
+ */
+export interface SubstitutableView {
+  touchedPaths: ReadonlySet<string>;
+  deletedPaths: ReadonlySet<string>;
+  indexServedPaths?: ReadonlySet<string>;
+  renamedFrom?: ReadonlyMap<string, string>;
+}
 
 /** Drop rows of touched files, add delta rows passing `keep`. Pure. */
 export function substituteWorkingTreeRows(
   scrolled: readonly ScrollChunk[],
-  view: WorkingTreeView,
+  view: SubstitutableView,
   deltaRows: readonly ScrollChunk[],
   keep: (row: ScrollChunk) => boolean,
 ): ScrollChunk[] {
@@ -42,7 +54,7 @@ function symbolFamilyOf(payload: Record<string, unknown> | undefined): string | 
  */
 export function retargetWorkingTreeRows<R extends { payload?: Record<string, unknown> }>(
   rows: readonly R[],
-  view: WorkingTreeView,
+  view: SubstitutableView,
   deltaRows: readonly ScrollChunk[],
   toResult: (row: ScrollChunk) => R,
 ): R[] {
@@ -65,7 +77,7 @@ export function retargetWorkingTreeRows<R extends { payload?: Record<string, unk
  * did not touch has none. Pure.
  */
 export function workingTreeCounterpartIds(
-  view: WorkingTreeView,
+  view: SubstitutableView,
   deltaRows: readonly ScrollChunk[],
   basePayloads: readonly (Record<string, unknown> | undefined)[],
 ): Set<string> {
@@ -125,7 +137,7 @@ function lineOf(value: unknown): number {
  * (`indexServedPaths`) is "modified": the tree changed it, the row is the index's.
  */
 export function workingTreeStateOf(
-  view: WorkingTreeView,
+  view: SubstitutableView,
   relativePath: string | undefined,
 ): WorkingTreeState | undefined {
   if (relativePath === undefined) return undefined;
@@ -141,7 +153,7 @@ export function workingTreeStateOf(
  * holds in every strategy: a floor replaces only touched files, never these.
  */
 export function indexServedStateOf(
-  view: WorkingTreeView,
+  view: SubstitutableView,
   relativePath: string | undefined,
 ): WorkingTreeState | undefined {
   return relativePath !== undefined && view.indexServedPaths?.has(relativePath) ? "modified" : undefined;
