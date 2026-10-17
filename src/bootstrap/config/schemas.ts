@@ -225,6 +225,14 @@ export const codegraphResidualSchema = z.object({
   concurrency: intWithDefault(16),
   /** Seconds one provider request may run; Kev answers one batch at a time, so a request also waits for the batches ahead of it. */
   requestTimeoutSec: intWithDefault(300),
+  /**
+   * Questions one provider request may carry. Kev re-encodes the method state
+   * per question, so a request costs about questions × (state + candidates);
+   * capping it keeps one request to seconds, far under `requestTimeoutSec`.
+   */
+  maxQuestionsPerRequest: intWithDefault(8),
+  /** Candidates one provider request may carry over all its questions — three full 40-class blocks. */
+  maxCriteriaPerRequest: intWithDefault(120),
   /** A site with more candidates than this is not asked. */
   menuLimit: intWithDefault(40),
   /** A site with fewer candidates than this is neither asked nor applied; 1 — a one-class menu plus "none" is asked. */

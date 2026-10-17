@@ -258,6 +258,8 @@ export interface ResidualPassReport {
   menuTooSmall: number;
   /** Eligible rows answered from the verdict store. */
   cacheHits: number;
+  /** Receiver-group questions (tournament blocks included) answered from the verdict store. */
+  groupCacheHits: number;
   /** Methods holding at least one uncached question. */
   groups: number;
   /** Deduplicated questions sent to the model this run, failed groups included. */
@@ -299,6 +301,16 @@ export interface ResidualPassReport {
   groupsSkippedByBudget: number;
   /** Method batches the model refused as too long, asked again over a window around their call lines. */
   windowedGroups: number;
+  /** Provider requests sent, a requeued one counted each time. */
+  requests: number;
+  /** Most questions any sent request carried (`CODEGRAPH_RESIDUAL_MAX_QUESTIONS_PER_REQUEST` caps it). */
+  maxQuestionsPerRequest: number;
+  /** Median request latency, ms. */
+  requestLatencyP50Ms: number;
+  /** 95th-percentile request latency, ms. */
+  requestLatencyP95Ms: number;
+  /** Most requests in flight at once; `CODEGRAPH_RESIDUAL_CONCURRENCY` caps it. */
+  peakInFlight: number;
   /** Eligible rows the model answered "none of these" for at or above `CODEGRAPH_RESIDUAL_NONE_THRESHOLD`. */
   externalByModel: number;
   /**

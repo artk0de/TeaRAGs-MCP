@@ -42,7 +42,7 @@ export function formatResidualReport(report: ResidualReport): string {
     `${head}  sites:            ${report.sites}\n` +
     `  menu overflow:    ${report.menuOverflow}\n` +
     `  menu too small:   ${report.menuTooSmall}\n` +
-    `  cache hits:       ${report.cacheHits}\n` +
+    `  cache hits:       ${report.cacheHits} (+${report.groupCacheHits} group questions)\n` +
     `  groups:           ${report.groups}\n` +
     `  asked:            ${report.asked}\n` +
     `  answered:         ${report.answered}\n` +
@@ -57,6 +57,7 @@ export function formatResidualReport(report: ResidualReport): string {
     `  edged by group:   ${report.sitesEdgedByVerdict} by verdict, ${report.sitesEdgedByPropagation} by propagation (${report.propagationConflicts} conflicts)\n` +
     `  tournaments:      ${report.tournamentGroups} groups, ${report.tournamentRounds} rounds, ${report.tournamentQuestions} questions, ${report.groupsSkippedByBudget} skipped by budget; ${report.namePriorGroups} opened by name, ${report.earlyAcceptedGroups} accepted on block 1\n` +
     `  windowed groups:  ${report.windowedGroups}\n` +
+    `  requests:         ${report.requests} (at most ${report.maxQuestionsPerRequest} questions), latency p50 ${report.requestLatencyP50Ms} ms / p95 ${report.requestLatencyP95Ms} ms, peak in flight ${report.peakInFlight}\n` +
     `  edges applied:    ${report.edgesApplied}\n` +
     `  derived metrics:  ${report.derived}\n` +
     `  time (ms):        read ${report.durations.readMs}, ask ${report.durations.askMs}, apply ${report.durations.applyMs} (recompute ${report.durations.recomputeMs}), total ${report.durations.totalMs}\n`

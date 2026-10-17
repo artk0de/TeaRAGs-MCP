@@ -15,6 +15,7 @@ const COMPLETED = {
   menuOverflow: 3,
   menuTooSmall: 7,
   cacheHits: 80,
+  groupCacheHits: 12,
   groups: 10,
   asked: 40,
   answered: 38,
@@ -37,6 +38,11 @@ const COMPLETED = {
   earlyAcceptedGroups: 1,
   groupsSkippedByBudget: 1,
   windowedGroups: 6,
+  requests: 140,
+  maxQuestionsPerRequest: 8,
+  requestLatencyP50Ms: 2100,
+  requestLatencyP95Ms: 5400,
+  peakInFlight: 48,
   edgesApplied: 95,
   derived: "recomputed" as const,
   durations: { readMs: 1, askMs: 2, applyMs: 3, recomputeMs: 2, totalMs: 6 },
@@ -60,7 +66,7 @@ describe("formatResidualReport", () => {
   it("prints the counts of a completed pass", () => {
     const text = formatResidualReport(COMPLETED);
     expect(text).toContain("Residual resolution (ask): completed\n");
-    expect(text).toContain("  cache hits:       80\n");
+    expect(text).toContain("  cache hits:       80 (+12 group questions)\n");
     expect(text).toContain("  edges applied:    95\n");
     expect(text).toContain("  menu overflow:    3\n");
     expect(text).toContain("  menu too small:   7\n");
@@ -76,6 +82,9 @@ describe("formatResidualReport", () => {
       "  tournaments:      2 groups, 3 rounds, 9 questions, 1 skipped by budget; 2 opened by name, 1 accepted on block 1\n",
     );
     expect(text).toContain("  windowed groups:  6\n");
+    expect(text).toContain(
+      "  requests:         140 (at most 8 questions), latency p50 2100 ms / p95 5400 ms, peak in flight 48\n",
+    );
     expect(text).toContain("total 6");
   });
 

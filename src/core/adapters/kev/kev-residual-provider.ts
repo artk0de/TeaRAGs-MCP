@@ -1,9 +1,10 @@
 /**
- * Kev (`/v1/systemone`) as a residual-resolution model. One request per
- * enclosing method: `state` is the method source, one `choice` question per
- * call site, the menu is the candidates' classes plus {@link KEV_NONE_OPTION}.
- * Kev caches the state as a prefix, so the questions of one method cost one
- * prefill.
+ * Kev (`/v1/systemone`) as a residual-resolution model. One request carries
+ * questions of one enclosing method (the pass caps how many): `state` is the
+ * method source, one `choice` question per call site, the menu is the
+ * candidates' classes plus {@link KEV_NONE_OPTION}. Whether the questions of a
+ * request share one prefill of the state depends on the server: with state
+ * sharing off (`LEAN_SHARE_STATE=0`) the state is re-encoded per question.
  */
 
 import {

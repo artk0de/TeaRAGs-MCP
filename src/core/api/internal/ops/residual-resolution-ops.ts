@@ -35,6 +35,10 @@ export interface ResidualResolutionConfig {
   concurrency: number;
   /** Per-request Kev budget, seconds. */
   requestTimeoutSec?: number;
+  /** Questions one provider request may carry. */
+  maxQuestionsPerRequest?: number;
+  /** Candidates one provider request may carry over all its questions. */
+  maxCriteriaPerRequest?: number;
   menuLimit: number;
   /** Smallest menu the pass asks about or applies. */
   minMenu: number;
@@ -107,6 +111,12 @@ export class ResidualResolutionOps implements ResidualResolvePort {
         provider,
         mode,
         concurrency: this.deps.config.concurrency,
+        ...(this.deps.config.maxQuestionsPerRequest === undefined
+          ? {}
+          : { maxQuestionsPerRequest: this.deps.config.maxQuestionsPerRequest }),
+        ...(this.deps.config.maxCriteriaPerRequest === undefined
+          ? {}
+          : { maxCriteriaPerRequest: this.deps.config.maxCriteriaPerRequest }),
         menuLimit: this.deps.config.menuLimit,
         minMenu: this.deps.config.minMenu,
         noneThreshold: this.deps.config.noneThreshold,

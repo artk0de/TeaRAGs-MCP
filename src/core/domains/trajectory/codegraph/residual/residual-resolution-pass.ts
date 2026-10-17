@@ -5,8 +5,8 @@
  * `applyModelEdges` replaces the model's edges, and a static re-walk of a file
  * drops that file's model edges. A provider that is down or keeps failing ends
  * the pass `skipped`, cancelling the asks still in flight; the verdicts already
- * held are applied all the same. A group that timed out is asked once more at
- * the tail of the queue, since it usually only waited behind a slow batch. Only eligible sites (see
+ * held are applied all the same. Asking — capped requests, one shared queue,
+ * no round barrier — lives in `residual-ask-queue.ts`. Only eligible sites (see
  * {@link siteEligibility}) are asked or applied. The pass runs after finalize,
  * so when the applied edges change it recomputes the derived metrics itself,
  * best-effort.
@@ -15,9 +15,8 @@
  * A "none of these" verdict at or above `noneThreshold` makes no edge: the site
  * is stored as external (`applyModelExternalSites`), out of the recall denominator.
  * Sites carrying a receiver group are asked once per group over its class set
- * (see `receiver-group-tournament.ts`); asking runs in rounds, the tournament's
- * next round built from the previous one's verdicts. A method refused as too
- * long is asked once more over a window around its call lines.
+ * (see `receiver-group-tournament.ts`); a tournament's next round is built from
+ * the previous one's verdicts as soon as that round is answered.
  */
 
 import { createHash } from "node:crypto";
@@ -30,50 +29,41 @@ import {
   type ResidualCallSiteRow,
 } from "../../../../contracts/types/codegraph-residual.js";
 import type { GraphDbClient } from "../../../../contracts/types/codegraph-storage.js";
-import type { ProgressCallback } from "../../../../types.js";
+import { collectReceiverGroups, GroupTournament } from "./receiver-group-tournament.js";
 import {
-  collectReceiverGroups,
-  DEFAULT_TOURNAMENT_BUDGET,
-  DEFAULT_TOURNAMENT_FLOOR,
-  GroupTournament,
-  MAX_TOURNAMENT_ROUNDS,
-  windowMethodSource,
-} from "./receiver-group-tournament.js";
+  cachedVerdicts,
+  describeError,
+  emptyTally,
+  percentile,
+  ResidualAskQueue,
+  verdictKey,
+  type AskQueueInput,
+  type PendingQuestion,
+} from "./residual-ask-queue.js";
 import { propagateTypeFacts, receiverGroupAddress, type AcceptedGroupVerdict } from "./type-fact-propagation.js";
 import type {
-  ResidualAnswer,
   ResidualDerivedState,
   ResidualModelProvider,
   ResidualPassMode,
   ResidualPassReport,
-  ResidualProviderLease,
-  ResidualQuestion,
   ResidualVerdict,
 } from "./types.js";
 
-export const DEFAULT_MAX_GROUP_FAILURES = 3;
-export const DEFAULT_MAX_GROUP_FAILURE_RATE = 0.02;
-export const DEFAULT_MAX_CONSECUTIVE_GROUP_FAILURES = 5;
+export {
+  DEFAULT_MAX_CONSECUTIVE_GROUP_FAILURES,
+  DEFAULT_MAX_CRITERIA_PER_REQUEST,
+  DEFAULT_MAX_GROUP_FAILURE_RATE,
+  DEFAULT_MAX_GROUP_FAILURES,
+  DEFAULT_MAX_QUESTIONS_PER_REQUEST,
+} from "./residual-ask-queue.js";
 
-/** Provider error codes for a group that may answer when asked again later; it is requeued once. */
-const REQUEUE_CODES = new Set(["INFRA_KEV_TIMEOUT"]);
-
-/** Provider error codes that mean "this method source is too long to ask"; its sites are skipped, not failed. */
-const STATE_TOO_LONG_CODES = new Set(["INFRA_KEV_STATE_TOO_LONG"]);
-
-/** Provider error codes that mean the hardware lease is gone; no further group can be answered. */
-const LEASE_LOST_CODES = new Set(["INFRA_KEV_SESSION_LOST"]);
-
-export interface ResidualPassInput {
+export interface ResidualPassInput extends AskQueueInput {
   graphDb: Pick<
     GraphDbClient,
     "readResidualCallSites" | "applyModelEdges" | "applyModelExternalSites" | "markDerivedStale"
   >;
   store: Pick<ResidualVerdictStore, "find" | "findLatest" | "put" | "touch" | "expire">;
-  provider: ResidualModelProvider;
   mode: ResidualPassMode;
-  /** Method groups in flight at once. */
-  concurrency: number;
   menuLimit: number;
   /** Smallest menu a site needs to be asked or applied. */
   minMenu: number;
@@ -82,63 +72,7 @@ export interface ResidualPassInput {
   retentionDays: number;
   /** Recompute cycles and PageRank over the current graph; clears the derived-stale mark. */
   recomputeDerived: () => Promise<void>;
-  readMethodSource: (relPath: string, startLine: number, endLine: number) => Promise<string>;
-  /** Epoch ms. */
-  now: () => number;
-  onProgress?: ProgressCallback;
-  /** Failed groups tolerated however few groups the pass has; the budget is the larger of this and the rate. */
-  maxGroupFailures?: number;
-  /** Failed groups tolerated as a share of the pass's groups, e.g. 0.02. */
-  maxGroupFailureRate?: number;
-  /** Failed groups in a row (in completion order) that trip the breaker whatever the budget. */
-  maxConsecutiveGroupFailures?: number;
-  /** Smallest `p` of a tournament block winner that enters the next round. */
-  tournamentFloor?: number;
-  /** Tournament block questions this run may send; a group that would exceed it is skipped. */
-  tournamentBudget?: number;
 }
-
-interface PendingGroup {
-  sourceRelPath: string;
-  methodSymbolId: string;
-  methodStartLine: number;
-  methodEndLine: number;
-  /** Call lines of the questions, for the window a too-long method is asked over. */
-  lines: number[];
-  questions: ResidualQuestion[];
-}
-
-/** A question and the method it is asked in. */
-interface PendingQuestion {
-  sourceRelPath: string;
-  methodSymbolId: string;
-  methodStartLine: number;
-  methodEndLine: number;
-  lines: readonly number[];
-  question: ResidualQuestion;
-}
-
-interface AskTally {
-  asked: number;
-  answered: number;
-  tooLong: number;
-  failures: string[];
-  /** Groups cancelled in flight when the pass stopped asking. */
-  aborted: number;
-  /** Groups asked again at the tail after a timeout. */
-  requeued: number;
-  /** Failed groups in a row; an answered group restarts it. */
-  consecutiveFailures: number;
-  leaseLost: boolean;
-  /** The failure budget or the consecutive-failure limit was exceeded. */
-  breakerTripped: boolean;
-  /** Method batches refused as too long and asked again over a window. */
-  windowed: number;
-  /** Method batches with an uncached question, over every round. */
-  batches: number;
-}
-
-const verdictKey = (siteKey: string, menuHash: string): string => `${siteKey}\u0000${menuHash}`;
 
 /** The verdict-store menu hash: the row's menu hash under {@link RESIDUAL_QUESTION_VERSION}. */
 export function residualQuestionHash(menuHash: string): string {
@@ -166,9 +100,6 @@ export function siteEligibility(
   return "eligible";
 }
 
-/** Asking steps one run can need: name-matched tournaments (block 1 + rounds), then the others' rounds. */
-const MAX_ASK_STEPS = 2 * MAX_TOURNAMENT_ROUNDS + 2;
-
 export class ResidualResolutionPass {
   async run(input: ResidualPassInput): Promise<ResidualPassReport> {
     const { provider } = input;
@@ -184,7 +115,7 @@ export class ResidualResolutionPass {
     const askable = receiverGroups.filter((g) => g.classes.length >= input.minMenu);
     const groupTooSmall = receiverGroups.filter((g) => g.classes.length < input.minMenu);
     const tournaments = askable.map((g) => new GroupTournament(g, input.menuLimit, residualQuestionHash));
-    const verdicts = await this.cachedVerdicts(
+    const verdicts = await cachedVerdicts(
       input,
       eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.questionHash })),
       servedVersion.version,
@@ -195,20 +126,10 @@ export class ResidualResolutionPass {
       .map(siteQuestion);
     const readAt = input.now();
 
-    const tally: AskTally = {
-      asked: 0,
-      answered: 0,
-      tooLong: 0,
-      failures: [],
-      aborted: 0,
-      requeued: 0,
-      consecutiveFailures: 0,
-      leaseLost: false,
-      breakerTripped: false,
-      windowed: 0,
-      batches: 0,
-    };
-    const rounds = await this.askRounds(siteQuestions, tournaments, servedVersion.version, verdicts, tally, input);
+    const tally = emptyTally();
+    const rounds = await new ResidualAskQueue(input, servedVersion.version, verdicts, tally, tournaments).run(
+      siteQuestions,
+    );
     const askedAt = input.now();
 
     const failureReason =
@@ -245,6 +166,7 @@ export class ResidualResolutionPass {
       menuTooSmall:
         eligibility.filter((e) => e === "menuTooSmall").length + groupTooSmall.reduce((n, g) => n + g.rows.length, 0),
       cacheHits,
+      groupCacheHits: tally.groupCacheHits,
       groups: tally.batches,
       asked: tally.asked,
       answered: tally.answered,
@@ -266,6 +188,11 @@ export class ResidualResolutionPass {
       earlyAcceptedGroups: tournaments.filter((t) => t.earlyAccepted).length,
       groupsSkippedByBudget: rounds.skippedByBudget,
       windowedGroups: tally.windowed,
+      requests: tally.requests,
+      maxQuestionsPerRequest: tally.maxQuestionsPerRequest,
+      requestLatencyP50Ms: percentile(tally.latenciesMs, 0.5),
+      requestLatencyP95Ms: percentile(tally.latenciesMs, 0.95),
+      peakInFlight: tally.peakInFlight,
       externalByModel: external.length,
       edgesApplied: applied.stored,
       derived,
@@ -305,226 +232,6 @@ export class ResidualResolutionPass {
       return unavailable(describeError(error));
     }
   }
-
-  /**
-   * Asks round by round: the site questions and every group's first round, then
-   * each tournament's next round from the verdicts the previous one left.
-   * Name-matched tournaments go first and are charged first; the other
-   * tournaments start once every name-matched one has its outcome. The
-   * provider's lease is taken on the first round with an uncached question and
-   * held until the last; a tournament whose uncached block questions exceed the
-   * remaining budget is abandoned and counted.
-   */
-  private async askRounds(
-    siteQuestions: PendingQuestion[],
-    tournaments: GroupTournament[],
-    modelVersion: string | undefined,
-    verdicts: Map<string, ResidualVerdict>,
-    tally: AskTally,
-    input: ResidualPassInput,
-  ): Promise<{ questionKeys: string[]; tournamentQuestions: number; skippedByBudget: number; notAcquired?: string }> {
-    const floor = input.tournamentFloor ?? DEFAULT_TOURNAMENT_FLOOR;
-    let budget = input.tournamentBudget ?? DEFAULT_TOURNAMENT_BUDGET;
-    const questionKeys: string[] = [];
-    let tournamentQuestions = 0;
-    let skippedByBudget = 0;
-    let lease: ResidualProviderLease | undefined;
-    let notAcquired: string | undefined;
-    const canAsk = () =>
-      modelVersion !== undefined && notAcquired === undefined && !tally.leaseLost && !tally.breakerTripped;
-    try {
-      for (let step = 0; step < MAX_ASK_STEPS; step++) {
-        // A name-matched tournament is cheap; the others wait until every one of them has its outcome.
-        const namedOpen = tournaments.some((t) => t.hasNamePrior && t.outcome === undefined);
-        const asking = tournaments
-          .filter((t) => t.outcome === undefined && !(namedOpen && t.isTournament && !t.hasNamePrior))
-          .sort((a, b) => Number(b.hasNamePrior) - Number(a.hasNamePrior))
-          .map((t) => ({ tournament: t, questions: t.questions() }))
-          .filter((a) => a.questions.length > 0);
-        if (step > 0 && asking.length === 0) break;
-        const keys = asking.flatMap((a) => a.questions.map((q) => ({ siteKey: q.siteKey, menuHash: q.menuHash })));
-        questionKeys.push(...keys.map((k) => k.siteKey));
-        for (const [key, verdict] of await this.cachedVerdicts(input, keys, modelVersion)) verdicts.set(key, verdict);
-        const pending = step === 0 ? [...siteQuestions] : [];
-        for (const { tournament, questions } of asking) {
-          const uncached = questions.filter((q) => !verdicts.has(verdictKey(q.siteKey, q.menuHash)));
-          if (uncached.length === 0) continue;
-          if (tournament.isTournament && canAsk()) {
-            if (uncached.length > budget) {
-              tournament.abandon();
-              skippedByBudget++;
-              continue;
-            }
-            budget -= uncached.length;
-            tournamentQuestions += uncached.length;
-          }
-          pending.push(...uncached.map((question) => groupQuestion(tournament, question)));
-        }
-        const batches = batchQuestions(pending);
-        tally.batches += batches.length;
-        if (batches.length > 0 && canAsk()) {
-          if (lease === undefined && input.provider.acquire) {
-            const taken = await this.acquireLease(input, batches.length);
-            if (typeof taken === "string") notAcquired = taken;
-            else lease = taken;
-          }
-          if (notAcquired === undefined) await this.askGroups(batches, modelVersion as string, verdicts, tally, input);
-        }
-        for (const { tournament } of asking) {
-          tournament.advance((q) => verdicts.get(verdictKey(q.siteKey, q.menuHash)), floor, input.provider.threshold);
-        }
-      }
-    } finally {
-      await lease?.release();
-    }
-    return { questionKeys, tournamentQuestions, skippedByBudget, ...(notAcquired ? { notAcquired } : {}) };
-  }
-
-  /** The provider's lease, or why it was not taken. */
-  private async acquireLease(input: ResidualPassInput, total: number): Promise<ResidualProviderLease | string> {
-    const { provider } = input;
-    input.onProgress?.({
-      phase: "resolving-residual",
-      current: 0,
-      total,
-      percentage: 0,
-      message: "Residual resolution: acquiring GPU session (switching embedders → Kev)",
-    });
-    try {
-      return await (provider.acquire as () => Promise<ResidualProviderLease>)();
-    } catch (error) {
-      return `provider ${provider.id} session not acquired: ${describeError(error)}`;
-    }
-  }
-
-  /** At the served version when asking; otherwise the newest verdict per site, whatever version gave it. */
-  private async cachedVerdicts(
-    input: ResidualPassInput,
-    keys: { siteKey: string; menuHash: string }[],
-    modelVersion: string | undefined,
-  ): Promise<Map<string, ResidualVerdict>> {
-    if (keys.length === 0) return new Map();
-    const cached =
-      modelVersion === undefined
-        ? await input.store.findLatest(keys, input.provider.id)
-        : await input.store.find(keys.map((k) => ({ ...k, modelVersion })));
-    const verdicts = new Map<string, ResidualVerdict>();
-    for (const verdict of cached) {
-      if (verdict.model === input.provider.id) verdicts.set(verdictKey(verdict.siteKey, verdict.menuHash), verdict);
-    }
-    return verdicts;
-  }
-
-  /**
-   * Pool of `concurrency` workers over one queue; each group's verdicts are stored as soon as it answers. A group
-   * that timed out goes back to the tail once. A lost lease or a tripped breaker (see {@link tripsBreaker}) aborts
-   * the asks still in flight; those count as aborted, not failed.
-   */
-  private async askGroups(
-    groups: PendingGroup[],
-    modelVersion: string,
-    verdicts: Map<string, ResidualVerdict>,
-    tally: AskTally,
-    input: ResidualPassInput,
-  ): Promise<void> {
-    const failureBudget = Math.max(
-      input.maxGroupFailures ?? DEFAULT_MAX_GROUP_FAILURES,
-      Math.ceil((input.maxGroupFailureRate ?? DEFAULT_MAX_GROUP_FAILURE_RATE) * groups.length),
-    );
-    const maxConsecutive = input.maxConsecutiveGroupFailures ?? DEFAULT_MAX_CONSECUTIVE_GROUP_FAILURES;
-    const controller = new AbortController();
-    const pendingGroups = [...groups];
-    const requeued = new Set<PendingGroup>();
-    let next = 0;
-    let done = 0;
-    const worker = async (): Promise<void> => {
-      while (next < pendingGroups.length && !controller.signal.aborted) {
-        const group = pendingGroups[next++];
-        if (!requeued.has(group)) tally.asked += group.questions.length;
-        try {
-          const fresh = await this.askGroup(group, modelVersion, input, controller.signal, tally);
-          await input.store.put(fresh);
-          tally.answered += fresh.length;
-          tally.consecutiveFailures = 0;
-          for (const verdict of fresh) verdicts.set(verdictKey(verdict.siteKey, verdict.menuHash), verdict);
-        } catch (error) {
-          if (!controller.signal.aborted && !requeued.has(group) && REQUEUE_CODES.has(errorCode(error) ?? "")) {
-            requeued.add(group);
-            pendingGroups.push(group);
-            tally.requeued++;
-            continue;
-          }
-          this.countFailure(group, error, tally, controller.signal);
-          tally.breakerTripped ||= tripsBreaker(tally, failureBudget, maxConsecutive);
-          if (tally.leaseLost || tally.breakerTripped) controller.abort();
-        }
-        done++;
-        input.onProgress?.({
-          phase: "resolving-residual",
-          current: done,
-          total: groups.length,
-          percentage: Math.round((done / groups.length) * 100),
-          message: `Residual resolution: ${done}/${groups.length} methods`,
-        });
-      }
-    };
-    const workerCount = Math.max(1, Math.min(input.concurrency, groups.length));
-    await Promise.all(Array.from({ length: workerCount }, async () => worker()));
-  }
-
-  /** An error that lands after the pass aborted is the cancellation itself, not a failure of the group. */
-  private countFailure(group: PendingGroup, error: unknown, tally: AskTally, signal: AbortSignal): void {
-    if (signal.aborted) {
-      tally.aborted++;
-      return;
-    }
-    const code = errorCode(error) ?? "";
-    if (STATE_TOO_LONG_CODES.has(code)) {
-      tally.tooLong += group.questions.length;
-      return;
-    }
-    tally.failures.push(describeError(error));
-    tally.consecutiveFailures++;
-    if (LEASE_LOST_CODES.has(code)) tally.leaseLost = true;
-    console.error(
-      `[Residual] group failed: method=${group.methodSymbolId} questions=${group.questions.length} code=${code || "UNKNOWN"}`,
-    );
-  }
-
-  private async askGroup(
-    group: PendingGroup,
-    modelVersion: string,
-    input: ResidualPassInput,
-    signal: AbortSignal,
-    tally: AskTally,
-  ): Promise<ResidualVerdict[]> {
-    const methodSource = await input.readMethodSource(group.sourceRelPath, group.methodStartLine, group.methodEndLine);
-    const ask = async (source: string) =>
-      input.provider.resolveGroup(
-        {
-          sourceRelPath: group.sourceRelPath,
-          methodSymbolId: group.methodSymbolId,
-          methodSource: source,
-          questions: group.questions,
-        },
-        signal,
-      );
-    let answers: ResidualAnswer[];
-    try {
-      answers = await ask(methodSource);
-    } catch (error) {
-      const windowed = windowMethodSource(methodSource, group.methodStartLine, group.lines);
-      if (!STATE_TOO_LONG_CODES.has(errorCode(error) ?? "") || windowed.length >= methodSource.length) throw error;
-      tally.windowed++;
-      answers = await ask(windowed);
-    }
-    return toVerdicts(group.questions, answers, input.provider.id, modelVersion, input.now());
-  }
-}
-
-/** More failed groups than the budget, or `maxConsecutive` failed groups in a row. */
-function tripsBreaker(tally: AskTally, failureBudget: number, maxConsecutive: number): boolean {
-  return tally.failures.length > failureBudget || tally.consecutiveFailures >= maxConsecutive;
 }
 
 /** A site's own question, in its method. */
@@ -544,46 +251,6 @@ function siteQuestion(r: EligibleSite): PendingQuestion {
       candidates: r.candidates,
     },
   };
-}
-
-/** A receiver group's question, in its method. */
-function groupQuestion(tournament: GroupTournament, question: ResidualQuestion): PendingQuestion {
-  const { group } = tournament;
-  return {
-    sourceRelPath: group.sourceRelPath,
-    methodSymbolId: group.methodSymbolId,
-    methodStartLine: group.methodStartLine,
-    methodEndLine: group.methodEndLine,
-    lines: group.lines,
-    question,
-  };
-}
-
-/** One batch per enclosing method; a question asked twice with the same menu is asked once. */
-function batchQuestions(pendingQuestions: readonly PendingQuestion[]): PendingGroup[] {
-  const groups = new Map<string, PendingGroup>();
-  const seen = new Set<string>();
-  for (const p of pendingQuestions) {
-    const key = verdictKey(p.question.siteKey, p.question.menuHash);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const groupKey = `${p.sourceRelPath}\u0000${p.methodSymbolId}`;
-    let group = groups.get(groupKey);
-    if (!group) {
-      group = {
-        sourceRelPath: p.sourceRelPath,
-        methodSymbolId: p.methodSymbolId,
-        methodStartLine: p.methodStartLine,
-        methodEndLine: p.methodEndLine,
-        lines: [],
-        questions: [],
-      };
-      groups.set(groupKey, group);
-    }
-    for (const line of p.lines) if (!group.lines.includes(line)) group.lines.push(line);
-    group.questions.push(p.question);
-  }
-  return [...groups.values()];
 }
 
 /** Every group's verdict at or above its threshold — the provider's for a class, `noneThreshold` for none. */
@@ -651,35 +318,6 @@ function buildGroupEdges(
   return { edges, external, belowThreshold };
 }
 
-/** An answer for a site not asked, or picking off the menu, is dropped; a null pick (none) is kept. */
-function toVerdicts(
-  questions: ResidualQuestion[],
-  answers: ResidualAnswer[],
-  model: string,
-  modelVersion: string,
-  now: number,
-): ResidualVerdict[] {
-  const bySite = new Map(questions.map((q) => [q.siteKey, q]));
-  const verdicts: ResidualVerdict[] = [];
-  for (const answer of answers) {
-    const question = bySite.get(answer.siteKey);
-    if (!question || (answer.pick !== null && !question.candidates.includes(answer.pick))) continue;
-    verdicts.push({
-      siteKey: answer.siteKey,
-      menuHash: question.menuHash,
-      model,
-      modelVersion,
-      pick: answer.pick,
-      p: answer.p,
-      probabilities: answer.probabilities,
-      questionPayload: answer.questionPayload,
-      createdAt: now,
-      lastSeenAt: now,
-    });
-  }
-  return verdicts;
-}
-
 /** A pick at or above the provider threshold is an edge; a none at or above `noneThreshold` an external site. */
 function buildEdges(
   rows: EligibleSite[],
@@ -724,18 +362,4 @@ function buildEdges(
     });
   }
   return { edges, external, belowThreshold };
-}
-
-function errorCode(error: unknown): string | undefined {
-  if (typeof error === "object" && error !== null && "code" in error) {
-    const { code } = error;
-    return typeof code === "string" ? code : undefined;
-  }
-  return undefined;
-}
-
-/** The message, and the cause's when the error carries one (a typed error wraps the transport failure there). */
-function describeError(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-  return error.cause instanceof Error ? `${error.message} (cause: ${error.cause.message})` : error.message;
 }

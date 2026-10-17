@@ -366,7 +366,21 @@ describe("ResidualResolutionPass — receiver groups", () => {
       expect(report).toMatchObject({ earlyAcceptedGroups: 1, groupsSkippedByBudget: 1, tournamentQuestions: 1 });
     });
 
-    it("starts the other tournaments only once every name-matched one has its outcome", async () => {
+    it("holds the other tournaments back while the budget could not cover the name-matched ones", async () => {
+      // Block 1 accepts at once; the other tournament needs 3 + 1 questions of a budget of 5.
+      const answer: Answer = (q) =>
+        q.candidates.length === 1 ? { pick: q.candidates[0], p: 0.9 } : { pick: q.candidates[0], p: 0.6 };
+      const provider = new FakeProvider(answer);
+
+      const report = await run(fakeGraphDb([unnamed(), named()]), provider, { tournamentBudget: 5 });
+
+      const receivers = provider.questions().map((q) => q.receiverText);
+      expect(receivers.lastIndexOf("invoice")).toBeLessThan(receivers.indexOf("record"));
+      expect(receivers.filter((r) => r === "record")).toHaveLength(4);
+      expect(report.groupsSkippedByBudget).toBe(0);
+    });
+
+    it("starts the other tournaments alongside the name-matched ones when the budget covers both", async () => {
       const answer: Answer = (q) =>
         q.candidates.length === 4 ? { pick: q.candidates[0], p: 0.9 } : { pick: q.candidates[0], p: 0.6 };
       const provider = new FakeProvider(answer);
@@ -374,8 +388,9 @@ describe("ResidualResolutionPass — receiver groups", () => {
       await run(fakeGraphDb([unnamed(), named()]), provider);
 
       const receivers = provider.questions().map((q) => q.receiverText);
-      expect(receivers.lastIndexOf("invoice")).toBeLessThan(receivers.indexOf("record"));
+      expect(new Set(provider.calls[0].questions.map((q) => q.receiverText))).toEqual(new Set(["invoice", "record"]));
       expect(receivers.filter((r) => r === "record")).toHaveLength(4);
+      expect(receivers.filter((r) => r === "invoice")).toHaveLength(5);
     });
 
     it("leaves a group within the menu limit to its single question", async () => {
