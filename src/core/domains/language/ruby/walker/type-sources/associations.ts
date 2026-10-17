@@ -79,14 +79,18 @@ function literalClassName(value: AstNode | null): string | null {
  */
 function deriveAssociationModel(args: AstNode, shape: string): string | null {
   let classNameModel: string | null | undefined; // undefined ⇒ no class_name: pair seen
+  let sourceTypeModel: string | null | undefined; // undefined ⇒ no source_type: pair seen
   for (const arg of args.namedChildren) {
     if (arg.type !== "pair") continue;
     const key = arg.childForFieldName("key");
     const value = arg.childForFieldName("value");
     if (key?.text === "polymorphic" && value?.type === "true") return null; // no single static target
     if (key?.text === "class_name") classNameModel = literalClassName(value);
+    if (key?.text === "source_type") sourceTypeModel = literalClassName(value);
   }
   if (classNameModel !== undefined) return classNameModel; // present: literal wins, non-literal silences
+  // A `through:` over a polymorphic source names its class in `source_type:`, not the reader.
+  if (sourceTypeModel !== undefined) return sourceTypeModel;
   const sym = firstSymbolName(args);
   if (sym === null) return null;
   // Rails: a collection's class is `name.singularize.camelize`, a singular
@@ -122,14 +126,19 @@ function returnTypeForShape(args: AstNode, shape: string, scope: readonly string
 }
 
 /** Emit the return fact for a single class-body macro call, if it declares one. */
-function emitMacroReturnFact(node: AstNode, scope: readonly string[], out: RubyTypeFact[]): void {
+function emitMacroReturnFact(
+  node: AstNode,
+  scope: readonly string[],
+  out: RubyTypeFact[],
+  shapes: ReadonlySet<string> | undefined,
+): void {
   // Class-body macro form only: bare call, or an explicit `self` receiver.
   const receiver = node.childForFieldName("receiver");
   if (receiver && receiver.type !== "self") return;
   const method = node.childForFieldName("method") ?? node.children.find((c) => c.type === "identifier");
   if (!method) return;
   const shape = RUBY_DSL[method.text]?.returnShape;
-  if (!shape) return;
+  if (!shape || (shapes !== undefined && !shapes.has(shape))) return;
   const args = macroArgs(node);
   if (!args) return;
   const accessor = firstSymbolName(args);
@@ -163,7 +172,7 @@ const DEF_SCOPE_STOPS: ReadonlySet<string> = new Set(["method", "singleton_metho
  * the CONCERN, which the includer reaches via its ancestor MRO. Descent ends at a
  * `def` — see {@link DEF_SCOPE_STOPS} for where the scope stops and why.
  */
-function collectAssociationReturnFacts(root: AstNode): RubyTypeFact[] {
+function collectAssociationReturnFacts(root: AstNode, shapes?: ReadonlySet<string>): RubyTypeFact[] {
   const facts: RubyTypeFact[] = [];
   const walkScope = (node: AstNode, scope: readonly string[]): void => {
     if (DEF_SCOPE_STOPS.has(node.type)) return;
@@ -179,7 +188,7 @@ function collectAssociationReturnFacts(root: AstNode): RubyTypeFact[] {
       for (const child of node.children) walkScope(child, scope);
       return;
     }
-    if (node.type === "call" || node.type === "method_call") emitMacroReturnFact(node, scope, facts);
+    if (node.type === "call" || node.type === "method_call") emitMacroReturnFact(node, scope, facts, shapes);
     for (const child of node.children) walkScope(child, scope);
   };
   walkScope(root, []);
@@ -194,14 +203,35 @@ function collectAssociationReturnFacts(root: AstNode): RubyTypeFact[] {
  * different targets.
  */
 export function collectRubyAssociationReaderInstances(root: AstNode): ReadonlyMap<string, string> {
+  return readerMap(collectAssociationReturnFacts(root), (type) => (type.form === "instance" ? type.name : null));
+}
+
+const COLLECTION_ASSOCIATION_SHAPES: ReadonlySet<string> = new Set(["association-collection"]);
+
+/**
+ * `"<fqClass>#<reader>"` → the element class of a `has_many` /
+ * `has_and_belongs_to_many` reader (bd tea-rags-mcp-2m83f.56), so `assoc.first`
+ * types as one element. A `scope` relation is left out.
+ */
+export function collectRubyAssociationCollectionElements(root: AstNode): ReadonlyMap<string, string> {
+  const facts = collectAssociationReturnFacts(root, COLLECTION_ASSOCIATION_SHAPES);
+  return readerMap(facts, (type) =>
+    type.form === "container" && type.element.form === "instance" ? type.element.name : null,
+  );
+}
+
+/** Reader key → picked type name; a reader one class declares twice with different targets is dropped. */
+function readerMap(facts: readonly RubyTypeFact[], pick: (type: RubyTypeRef) => string | null): Map<string, string> {
   const out = new Map<string, string>();
   const conflicting = new Set<string>();
-  for (const fact of collectAssociationReturnFacts(root)) {
-    if (fact.kind !== "return" || fact.type.form !== "instance") continue;
+  for (const fact of facts) {
+    if (fact.kind !== "return") continue;
+    const name = pick(fact.type);
+    if (name === null) continue;
     const key = `${fact.symbolScope.join("::")}#${fact.methodName}`;
     const seen = out.get(key);
-    if (seen !== undefined && seen !== fact.type.name) conflicting.add(key);
-    out.set(key, fact.type.name);
+    if (seen !== undefined && seen !== name) conflicting.add(key);
+    out.set(key, name);
   }
   for (const key of conflicting) out.delete(key);
   return out;

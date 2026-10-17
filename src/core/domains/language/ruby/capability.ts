@@ -139,7 +139,10 @@ export const capability: LanguageCapability = {
   // includers, a member reached only as a framework override no longer empties the constraint
   // set, and an `x.class` receiver is offered class-level members only; a walker-25 index keeps
   // the wider sets and offers `x.class` instance methods.
-  versions: { chunking: 2, walker: 26, codegraphSchema: 2 },
+  // walker 27: bd tea-rags-mcp-2m83f.56 — `assoc.first` / `.find_by(...)` on a has_many / habtm
+  // reader (and `@x ||= ` over it) returns the association's element class, read from
+  // `source_type:` on a polymorphic through; a walker-26 index leaves `firm.owner.user` untyped.
+  versions: { chunking: 2, walker: 27, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.
