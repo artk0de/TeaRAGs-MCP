@@ -869,6 +869,21 @@ export function resolveTypeStaticMethod(
 }
 
 /**
+ * The constructor `C.new` reaches when C declares no singleton `new`: the
+ * `initialize` C's instance ancestry finds. Method-level or `null` — a class
+ * with no project `initialize` keeps the caller's file-only edge. Shared by the
+ * constant and `self.class` receivers (bd tea-rags-mcp-2m83f.59).
+ */
+export function resolveRubyInitializer(
+  klass: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  const initializer = resolveTypeInstanceMethod(klass, "initialize", ctx, mode);
+  return initializer?.targetSymbolId ? initializer : null;
+}
+
+/**
  * Narrow a self-dispatch HOOK to its concrete definition on `typeName` — the ONE
  * choke point both narrow-to-1 consumers route through (the constant-entry
  * strategy `RubySelfDispatchEntrySymbolResolutionStrategy` and the

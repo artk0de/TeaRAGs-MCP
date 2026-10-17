@@ -249,3 +249,82 @@ describe("RubyCallResolver — a `self.class` receiver in an instance method is 
     expect(edgesOf(resolver.resolveDispatch(selfClass("kind"), at))).toEqual([]);
   });
 });
+
+describe("RubyCallResolver — a constant receiver's `new` is the class's constructor (bd 2m83f.59)", () => {
+  const resolver = new RubyCallResolver();
+  const constNew = (receiver: string, startLine = 5): CallRef => ({
+    callText: `${receiver}.new(params)`,
+    receiver,
+    member: "new",
+    startLine,
+  });
+  const symbolTable = tableWith(
+    [
+      "lib/endpoint.rb",
+      [
+        sym("Endpoint", "Endpoint", "lib/endpoint.rb", []),
+        sym("Endpoint#initialize", "initialize", "lib/endpoint.rb", ["Endpoint"]),
+      ],
+    ],
+    ["lib/admin_endpoint.rb", [sym("AdminEndpoint", "AdminEndpoint", "lib/admin_endpoint.rb", [])]],
+    [
+      "lib/factory.rb",
+      [
+        sym("Factory", "Factory", "lib/factory.rb", []),
+        sym("Factory.new", "new", "lib/factory.rb", ["Factory"]),
+        sym("Factory#initialize", "initialize", "lib/factory.rb", ["Factory"]),
+      ],
+    ],
+    ["lib/bare_error.rb", [sym("BareError", "BareError", "lib/bare_error.rb", [])]],
+    [
+      "lib/api/client.rb",
+      [
+        { ...sym("Api::Client", "Client", "lib/api/client.rb", ["Api"]), fqName: "Api::Client" },
+        {
+          ...sym("Api::Client#initialize", "initialize", "lib/api/client.rb", ["Api", "Client"]),
+          fqName: "Api::Client#initialize",
+        },
+      ],
+    ],
+  );
+  const classAncestors = { AdminEndpoint: ["Endpoint"] };
+  const at = (callerScope: string[] = []) => ctx({ symbolTable, classAncestors, callerScope });
+
+  it("`C.new(...)` lands on the class's `initialize`", () => {
+    expect(resolver.resolve(constNew("Endpoint"), at())).toEqual({
+      targetRelPath: "lib/endpoint.rb",
+      targetSymbolId: "Endpoint#initialize",
+    });
+  });
+
+  it("`C.new` on a subclass reaches the `initialize` it inherits", () => {
+    expect(resolver.resolve(constNew("AdminEndpoint"), at())?.targetSymbolId).toBe("Endpoint#initialize");
+  });
+
+  it("a declared singleton `new` wins over `initialize`", () => {
+    expect(resolver.resolve(constNew("Factory"), at())?.targetSymbolId).toBe("Factory.new");
+  });
+
+  it("`A::B.new` lands on the namespaced class's `initialize`", () => {
+    expect(resolver.resolve(constNew("Api::Client"), at())).toEqual({
+      targetRelPath: "lib/api/client.rb",
+      targetSymbolId: "Api::Client#initialize",
+    });
+  });
+
+  it("a constant relative to the caller's namespace lands on its `initialize`", () => {
+    expect(resolver.resolve(constNew("Client"), at(["Api", "Worker"]))?.targetSymbolId).toBe("Api::Client#initialize");
+  });
+
+  it("`C.new` with no declared constructor keeps the class's file-only edge", () => {
+    expect(resolver.resolve(constNew("BareError"), at())).toEqual({
+      targetRelPath: "lib/bare_error.rb",
+      targetSymbolId: null,
+    });
+  });
+
+  it("an external constant's `new` (`Struct.new`, `Faraday.new`) stays unresolved", () => {
+    expect(resolver.resolve(constNew("Struct"), at())).toBeNull();
+    expect(resolver.resolve(constNew("Faraday"), at())).toBeNull();
+  });
+});

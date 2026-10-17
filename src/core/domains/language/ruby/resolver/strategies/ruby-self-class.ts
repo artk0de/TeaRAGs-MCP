@@ -18,7 +18,7 @@ import {
   lastConstantSegment,
   lookupRubySymbolsByShortName,
   resolveConstant,
-  resolveTypeInstanceMethod,
+  resolveRubyInitializer,
   resolveTypeStaticMethod,
   symbolIdIsClassMethod,
   type ResolverConfig,
@@ -58,9 +58,7 @@ export function resolveSelfClassTarget(
 ): SymbolResolutionTarget | null {
   const singleton = resolveTypeStaticMethod(klass, member, ctx, mode);
   if (singleton?.targetSymbolId) return singleton;
-  if (member !== "new") return null;
-  const initializer = resolveTypeInstanceMethod(klass, "initialize", ctx, mode);
-  return initializer?.targetSymbolId ? initializer : null;
+  return member === "new" ? resolveRubyInitializer(klass, ctx, mode) : null;
 }
 
 /**
