@@ -12,6 +12,7 @@ export {
   RUBY_INSTANCE_RETURNING,
   RUBY_RELATION_RETURNING,
 } from "./catalogue.js";
+export { RUBY_CLASS_OBJECT_MEMBERS } from "./core-members.js";
 export { defineFrameworkVocabulary } from "./framework-module.js";
 export type {
   DeclaredMethodSpec,

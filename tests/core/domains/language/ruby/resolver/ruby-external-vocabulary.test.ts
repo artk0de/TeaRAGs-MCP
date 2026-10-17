@@ -240,9 +240,78 @@ describe("RubyExternalVocabulary — member on an untyped `x.class` receiver", (
     expect(vocab.isQualifiedReceiverExternal("firm.class", typed, 3, "name")).toBe(false);
   });
 
+  it("never reaches a project module's singleton method through `x.class` — a class object is no module", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/lib/return_type.rb", [
+      def("ReturnType", "app/lib/return_type.rb", "module"),
+      def("ReturnType.name", "app/lib/return_type.rb"),
+      def("ReturnType.label", "app/lib/return_type.rb"),
+    ]);
+    expect(vocab.isQualifiedReceiverExternal("receiver.class", ctx(table), 3, "name")).toBe(true);
+    expect(vocab.isQualifiedReceiverExternal("receiver.class", ctx(table), 3, "label")).toBe(true);
+  });
+
+  it("keeps a core Class member external although a project module declares it as an instance method", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/concerns/naming.rb", [
+      def("Naming", "app/models/concerns/naming.rb", "module"),
+      def("Naming#name", "app/models/concerns/naming.rb"),
+    ]);
+    expect(vocab.isQualifiedReceiverExternal("item.class", ctx(table), 3, "name")).toBe(true);
+  });
+
+  it("is not external for a core Class member a project class redefines as a class method", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/widget.rb", [
+      def("Widget", "app/models/widget.rb", "class"),
+      def("Widget.name", "app/models/widget.rb"),
+    ]);
+    expect(vocab.isQualifiedReceiverExternal("item.class", ctx(table), 3, "name")).toBe(false);
+  });
+
   it("reads `.class` only as the last hop — `x.class.name` is not a class object", () => {
     expect(
       vocab.isQualifiedReceiverExternal("error.class.name", ctx(new InMemoryGlobalSymbolTable()), 3, "custom_label"),
     ).toBe(false);
+  });
+});
+
+describe("RubyExternalVocabulary — constant receivers outside the project's declarations", () => {
+  const vocab = new RubyExternalVocabulary();
+  const typesTable = (): InMemoryGlobalSymbolTable => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("lib/api/contracts/types.rb", [
+      { symbolId: "Api", fqName: "Api", shortName: "Api", relPath: "lib/api/contracts/types.rb", scope: [] },
+      {
+        symbolId: "Api::Contracts::Types",
+        fqName: "Api::Contracts::Types",
+        shortName: "Types",
+        relPath: "lib/api/contracts/types.rb",
+        scope: ["Api", "Contracts"],
+      },
+    ]);
+    table.upsertFile("app/models/catalog.rb", [
+      { symbolId: "Catalog", fqName: "Catalog", shortName: "Catalog", relPath: "app/models/catalog.rb", scope: [] },
+    ]);
+    return table;
+  };
+
+  it("reads a top-level constant path (`::A::B`) as a constant: one no project file declares is external", () => {
+    expect(
+      vocab.isQualifiedReceiverExternal("::Api::Contracts::Types::String.optional", ctx(typesTable()), 3, "default"),
+    ).toBe(true);
+  });
+
+  it("does not flag a top-level constant path that names a project class", () => {
+    expect(vocab.isQualifiedReceiverExternal("::Catalog", ctx(typesTable()), 3, "lookup")).toBe(false);
+  });
+
+  it("flags a constant bound to a value (`Types = Builder.call`) — it declares no project class or module", () => {
+    expect(vocab.isQualifiedReceiverExternal("Types::String.optional", ctx(typesTable()), 3, "default")).toBe(true);
+  });
+
+  it("flags any member on a local bound to a Proc (`&block`, `proc { }`, `-> { }`)", () => {
+    const callCtx = ctx(typesTable(), { localBindings: { block: [{ line: 1, type: "Proc" }] } });
+    expect(vocab.isQualifiedReceiverExternal("block", callCtx, 3, "call")).toBe(true);
   });
 });

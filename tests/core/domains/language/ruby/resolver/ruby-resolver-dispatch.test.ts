@@ -196,6 +196,21 @@ describe("RubyCallResolver — a `self.class` receiver in an instance method is 
     expect(resolver.targetsExternalImport(selfClass("name"), at)).toBe(true);
   });
 
+  it("`self.class.name` stays external when only a module declares a singleton `name`", () => {
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("lib/endpoint.rb", [
+      sym("Endpoint", "Endpoint", "lib/endpoint.rb", []),
+      sym("Endpoint#protagonist", "protagonist", "lib/endpoint.rb", ["Endpoint"]),
+    ]);
+    t.upsertFile("lib/return_type.rb", [
+      { ...sym("ReturnType", "ReturnType", "lib/return_type.rb", []), symbolKind: "module" as const },
+      sym("ReturnType.name", "name", "lib/return_type.rb", ["ReturnType"]),
+    ]);
+    const at = ctx({ symbolTable: t, callerSymbolId: "Endpoint#protagonist", callerScope: ["Endpoint"] });
+    expect(resolver.resolve(selfClass("name"), at)).toBeNull();
+    expect(resolver.targetsExternalImport(selfClass("name"), at)).toBe(true);
+  });
+
   it("inside a class method `self.class` is `Class`, never the enclosing class", () => {
     const target = resolver.resolve(
       selfClass("kind"),

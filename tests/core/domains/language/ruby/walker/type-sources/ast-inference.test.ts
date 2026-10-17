@@ -415,4 +415,32 @@ describe("rubyAstInferenceTypeSource", () => {
       expect(facts.find((f) => f.name === "err")?.type).toEqual({ form: "instance", name: "Widget" });
     });
   });
+  describe("Proc-valued locals (core Proc, external callee)", () => {
+    const procFacts = (code: string) =>
+      rubyAstInferenceTypeSource
+        .extract(makeInput(code))
+        .filter((f) => f.type.form === "instance" && f.type.name === "Proc")
+        .map((f) => [f.name, f.line]);
+
+    it("binds a method's `&block` parameter to Proc at the def line", () => {
+      expect(procFacts("def run(item, &block)\n  block.call(item)\nend\n")).toEqual([["block", 1]]);
+    });
+
+    it("binds `x = proc { }`, `x = lambda { }` and `x = -> { }` to Proc", () => {
+      const code = "def run\n  a = proc { 1 }\n  b = lambda { |v| v }\n  c = ->(v) { v }\nend\n";
+      expect(procFacts(code)).toEqual([
+        ["a", 2],
+        ["b", 3],
+        ["c", 4],
+      ]);
+    });
+
+    it("leaves a block's own parameter untyped — `|chain|` is whatever the yielder passes", () => {
+      expect(procFacts("def run\n  each_link { |chain| chain.call }\nend\n")).toEqual([]);
+    });
+
+    it("leaves `x = proc` with no block untyped — a receiverless `proc` may be a project method", () => {
+      expect(procFacts("def run\n  a = proc\nend\n")).toEqual([]);
+    });
+  });
 });
