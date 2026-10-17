@@ -20,8 +20,9 @@ import { CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
 export class RubyConeDispatchResolver implements DispatchResolverComponent {
   private readonly engine: ConeDispatchResolver;
 
-  constructor(cfg: ResolverConfig) {
-    this.engine = new ConeDispatchResolver(new RubyConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
+  /** `memberForm`: see {@link RubyConeTypeLocator} — a class-valued receiver cones over `Type.m` only. */
+  constructor(cfg: ResolverConfig, memberForm?: (symbolId: string, member: string) => boolean) {
+    this.engine = new ConeDispatchResolver(new RubyConeTypeLocator(cfg, memberForm), cfg.coneMax ?? CONE_MAX_DEFAULT);
   }
 
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {

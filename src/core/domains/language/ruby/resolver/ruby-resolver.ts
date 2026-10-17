@@ -81,6 +81,8 @@ import {
   RubyRelationChainSymbolResolutionStrategy,
   RubyReturnTypeBindingSymbolResolutionStrategy,
   RubySchemaColumnSymbolResolutionStrategy,
+  RubySelfClassConeDispatchResolver,
+  RubySelfClassSymbolResolutionStrategy,
   RubySelfDispatchEntrySymbolResolutionStrategy,
   RubySelfMemberSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
@@ -95,6 +97,7 @@ export class RubyCallResolver implements CallResolver {
   private readonly table: RubyTableDispatchResolver;
   private readonly union: RubyUnionDispatchResolver;
   private readonly cone: RubyConeDispatchResolver;
+  private readonly selfClassCone: RubySelfClassConeDispatchResolver;
   private readonly dynamic: RubyDynamicDispatchResolver;
   private readonly dispatchComponents: readonly DispatchResolverComponent[];
   private readonly externalClassifier: ExternalCallClassifier;
@@ -105,6 +108,7 @@ export class RubyCallResolver implements CallResolver {
     this.strategies = [
       new RubySuperSymbolResolutionStrategy(cfg),
       new RubySelfMemberSymbolResolutionStrategy(cfg),
+      new RubySelfClassSymbolResolutionStrategy(cfg),
       new RubyLocalTypeSymbolResolutionStrategy(cfg),
       new RubyIvarFieldSymbolResolutionStrategy(cfg),
       new RubyReturnTypeBindingSymbolResolutionStrategy(cfg),
@@ -133,12 +137,14 @@ export class RubyCallResolver implements CallResolver {
     this.table = new RubyTableDispatchResolver(cfg);
     this.union = new RubyUnionDispatchResolver(cfg);
     this.cone = new RubyConeDispatchResolver(cfg);
+    this.selfClassCone = new RubySelfClassConeDispatchResolver(cfg);
     this.dynamic = new RubyDynamicDispatchResolver(cfg);
     // union: before cone — union receiver types have static evidence (YARD [A, B]),
     // which is stronger than the cone's CHA subtype inference. Placing union before
     // cone ensures typed union receivers resolve to their declared members without
     // being superseded by cone's generic subtype fan-out. Dynamic is last as always.
-    this.dispatchComponents = [this.table, this.union, this.cone, this.dynamic];
+    // selfClassCone: a `self.class` receiver typed as the enclosing class value (bd 2m83f.58).
+    this.dispatchComponents = [this.table, this.union, this.selfClassCone, this.cone, this.dynamic];
     this.externalClassifier = new ExternalCallClassifier(this.externalVocabulary);
   }
 
