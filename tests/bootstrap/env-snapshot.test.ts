@@ -206,7 +206,12 @@ describe("buildRegistryEnvSnapshot", () => {
     cfg.codegraph = codegraphSchema.parse({
       dbPath: "/tmp/cg",
       customExcludePatterns: "vendor/**",
-      residual: { kevUrls: "http://gpu:8090", kevSessionUrl: "http://gpu:8008", kevSessionToken: "s3cret" },
+      residual: {
+        kevUrls: "http://gpu:8090",
+        kevSessionUrl: "http://gpu:8008",
+        kevSessionToken: "s3cret",
+        namePriorAcceptThreshold: "0.55",
+      },
     });
     cfg.qdrantTune = qdrantTuneSchema.parse({ maxResidentMemoryPercent: "80", searchMaxBatchsize: "64" });
     const snapshot = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());

@@ -69,6 +69,13 @@ export function intWithDefault(defaultValue: number) {
     .pipe(z.number().int());
 }
 
+/** Parse string to float, returning undefined for absent/empty values */
+export const optionalFloat = z
+  .string()
+  .optional()
+  .transform((v) => (v !== undefined && v !== "" ? parseFloat(v) : undefined))
+  .pipe(z.number().optional());
+
 /** Parse string to float with a default */
 export function floatWithDefault(defaultValue: number) {
   return z

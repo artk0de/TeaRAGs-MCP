@@ -526,6 +526,55 @@ describe("ResidualResolutionPass — receiver groups", () => {
       expect(rerunProvider.calls).toHaveLength(0);
       expect(graphDb.applied.at(-1)?.map((e) => e.targetSymbolId)).toEqual(["Invoice#save"]);
     });
+
+    describe("a separate accept threshold for name-prior picks", () => {
+      const namePrior = { namePriorAcceptThreshold: 0.55 };
+
+      it("accepts a block-1 pick at the name-prior threshold, below the provider's", async () => {
+        const graphDb = fakeGraphDb([named()]);
+        const provider = new FakeProvider(answerWith({ pick: "first", p: 0.6 }, { pick: "first", p: 0.9 }));
+
+        const report = await run(graphDb, provider, namePrior);
+
+        expect(provider.questions().map((q) => q.siteKey.slice(-4))).toEqual(["/0.0"]);
+        expect(graphDb.applied.at(-1)?.map((e) => e.targetSymbolId)).toEqual(["Invoice#save"]);
+        expect(report).toMatchObject({ earlyAcceptedGroups: 1, sitesEdged: 1 });
+      });
+
+      it("accepts a confirm of a block-1 pick at the name-prior threshold", async () => {
+        const graphDb = fakeGraphDb([named()]);
+        const provider = new FakeProvider(answerWith({ pick: "first", p: 0.52 }, { pick: "first", p: 0.6 }));
+
+        const report = await run(graphDb, provider, { ...confirmOn, ...namePrior });
+
+        expect(provider.questions().map((q) => q.siteKey.slice(-4))).toEqual(["/0.0", "/c.0"]);
+        expect(graphDb.applied.at(-1)?.map((e) => e.targetSymbolId)).toEqual(["Invoice#save"]);
+        expect(report).toMatchObject({ confirmAccepted: 1, sitesEdged: 1 });
+      });
+
+      it("leaves a full-menu pick and its confirm to the provider's threshold", async () => {
+        const plain = new FakeProvider(answerWith({ pick: "first", p: 0.6 }, { pick: "first", p: 0.6 }));
+        const confirmed = new FakeProvider(answerWith({ pick: "first", p: 0.6 }, { pick: "first", p: 0.6 }));
+
+        const plainReport = await run(fakeGraphDb([groupedRow("s1", "save", 2)]), plain, namePrior);
+        const confirmReport = await run(fakeGraphDb([groupedRow("s2", "save", 3)]), confirmed, {
+          ...confirmOn,
+          ...namePrior,
+        });
+
+        expect(plainReport).toMatchObject({ sitesEdged: 0, belowThreshold: 1 });
+        expect(confirmReport).toMatchObject({ sitesEdged: 0, confirmQuestions: 1, confirmAccepted: 0 });
+      });
+
+      it("leaves a block-1 none to the none threshold", async () => {
+        const graphDb = fakeGraphDb([named()]);
+        const provider = new FakeProvider(answerWith({ pick: null, p: 0.6 }, { pick: "first", p: 0.9 }));
+
+        const report = await run(graphDb, provider, { ...confirmOn, ...namePrior });
+
+        expect(report).toMatchObject({ earlyAcceptedGroups: 0, externalByModel: 0, sitesEdged: 0 });
+      });
+    });
   });
 
   describe("an accepted class propagates to the downstream hop", () => {

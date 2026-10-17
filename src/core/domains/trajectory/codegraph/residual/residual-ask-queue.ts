@@ -76,6 +76,12 @@ export interface AskQueueInput {
   tournamentBudget?: number;
   /** Ask a mid block-1 or full-menu pick once more as `[pick, none]`; plain tournament rounds are never asked. */
   confirmStage?: boolean;
+  /**
+   * Accept threshold for a class picked by a name-prior block-1 question or by
+   * the confirm of one; default the provider's threshold. Full-menu and round
+   * picks, and none, keep their own thresholds.
+   */
+  namePriorAcceptThreshold?: number;
   /** Questions one request may carry. */
   maxQuestionsPerRequest?: number;
   /** Candidates one request may carry over all its questions; a larger single question travels alone. */
@@ -403,7 +409,13 @@ export class ResidualAskQueue {
   }
 
   private advance(tournament: GroupTournament): void {
-    tournament.advance((q) => this.verdicts.get(questionKey(q)), this.floor, this.input.provider.threshold);
+    const accept = this.input.provider.threshold;
+    tournament.advance(
+      (q) => this.verdicts.get(questionKey(q)),
+      this.floor,
+      accept,
+      this.input.namePriorAcceptThreshold ?? accept,
+    );
   }
 
   /** Charges `count` block or confirm questions, holding back what open name-matched tournaments may still need. */

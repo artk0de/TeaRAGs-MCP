@@ -10,6 +10,7 @@ import {
   booleanFromEnvWithDefault,
   floatWithDefault,
   intWithDefault,
+  optionalFloat,
   optionalInt,
   optionalPositiveInt,
 } from "./utils.js";
@@ -247,6 +248,8 @@ export const codegraphResidualSchema = z.object({
   confirmStage: booleanFromEnvWithDefault(false),
   /** Append receiver-origin lines (assignments, the returning method's head) to each question's state. */
   originContext: booleanFromEnvWithDefault(false),
+  /** Accept threshold for a name-prior block-1 pick and the confirm of one; unset = `kevThreshold`. */
+  namePriorAcceptThreshold: optionalFloat,
   /** Verdicts not seen by any run for this many days are dropped. */
   retentionDays: intWithDefault(180),
   /**

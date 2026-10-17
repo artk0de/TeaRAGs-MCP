@@ -177,10 +177,12 @@ export class ResidualResolutionPass {
     const skipped = unavailable !== undefined || tally.leaseLost || tally.breakerTripped;
 
     const siteOutcome = buildEdges(eligible, verdicts, provider, input.noneThreshold);
-    const groupOutcome = buildGroupEdges(tournaments, provider, input.noneThreshold);
+    const namePriorAccept = input.namePriorAcceptThreshold ?? provider.threshold;
+    const acceptOf = (t: GroupTournament): number => (t.pickedByNamePrior ? namePriorAccept : provider.threshold);
+    const groupOutcome = buildGroupEdges(tournaments, provider, acceptOf, input.noneThreshold);
     const propagation = propagateTypeFacts(
       receiverGroups,
-      acceptedGroupVerdicts(tournaments, provider, input.noneThreshold),
+      acceptedGroupVerdicts(tournaments, acceptOf, input.noneThreshold),
       provider.id,
     );
     const edges = [...siteOutcome.edges, ...groupOutcome.edges, ...propagation.edges];
@@ -296,16 +298,17 @@ function siteQuestion(r: EligibleSite): PendingQuestion {
   };
 }
 
-/** Every group's verdict at or above its threshold — the provider's for a class, `noneThreshold` for none. */
+/** Every group's verdict at or above its threshold — `acceptOf` for a class, `noneThreshold` for none. */
 function acceptedGroupVerdicts(
   tournaments: readonly GroupTournament[],
-  provider: ResidualModelProvider,
+  acceptOf: (tournament: GroupTournament) => number,
   noneThreshold: number,
 ): Map<string, AcceptedGroupVerdict> {
   const accepted = new Map<string, AcceptedGroupVerdict>();
-  for (const { group, outcome } of tournaments) {
+  for (const tournament of tournaments) {
+    const { group, outcome } = tournament;
     if (outcome === undefined || outcome === "residual") continue;
-    if (outcome.p < (outcome.pick === null ? noneThreshold : provider.threshold)) continue;
+    if (outcome.p < (outcome.pick === null ? noneThreshold : acceptOf(tournament))) continue;
     accepted.set(receiverGroupAddress(group), outcome);
   }
   return accepted;
@@ -313,7 +316,7 @@ function acceptedGroupVerdicts(
 
 /**
  * Edges and external sites of the groups that reached a verdict: a class at or
- * above the provider threshold edges every site of the group to the target its
+ * above its accept threshold (`acceptOf`) edges every site of the group to the target its
  * member reaches on that class, or makes it an attribute where the class reads
  * the member as a schema column; a none at or above `noneThreshold` makes every
  * site external.
@@ -321,6 +324,7 @@ function acceptedGroupVerdicts(
 function buildGroupEdges(
   tournaments: readonly GroupTournament[],
   provider: ResidualModelProvider,
+  acceptOf: (tournament: GroupTournament) => number,
   noneThreshold: number,
 ): {
   edges: ModelEdgeRow[];
@@ -332,10 +336,11 @@ function buildGroupEdges(
   const external: ModelExternalSiteRow[] = [];
   const attributes: ModelExternalSiteRow[] = [];
   let belowThreshold = 0;
-  for (const { group, outcome } of tournaments) {
+  for (const tournament of tournaments) {
+    const { group, outcome } = tournament;
     if (outcome === undefined || outcome === "residual") continue;
     const { pick, p } = outcome;
-    if (pick === null ? p < noneThreshold : p < provider.threshold) {
+    if (pick === null ? p < noneThreshold : p < acceptOf(tournament)) {
       belowThreshold += group.rows.length;
       continue;
     }
