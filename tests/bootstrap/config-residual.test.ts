@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parseAppConfigZod } from "../../src/bootstrap/config/index.js";
 
 describe("codegraph.residual config", () => {
-  it("defaults: no Kev URL, threshold 0.7, concurrency 16, request timeout 300 s, menu limit 40, menu floor 1, none threshold 0.8, tournament floor 0.5 and budget 5000, confirm stage off, retention 180 days", () => {
+  it("defaults: no Kev URL, threshold 0.7, concurrency 16, request timeout 300 s, menu limit 40, menu floor 1, none threshold 0.8, tournament floor 0.5 and budget 5000, confirm stage and origin context off, retention 180 days", () => {
     const { codegraph } = parseAppConfigZod({});
 
     expect(codegraph.residual).toEqual({
@@ -19,6 +19,7 @@ describe("codegraph.residual config", () => {
       tournamentFloor: 0.5,
       tournamentBudget: 5000,
       confirmStage: false,
+      originContext: false,
       retentionDays: 180,
       kevSessionUrl: undefined,
       kevSessionToken: undefined,
@@ -39,6 +40,8 @@ describe("codegraph.residual config", () => {
       CODEGRAPH_RESIDUAL_TOURNAMENT_FLOOR: "0.4",
       CODEGRAPH_RESIDUAL_TOURNAMENT_BUDGET: "200",
       CODEGRAPH_RESIDUAL_CONFIRM_STAGE: "true",
+      CODEGRAPH_RESIDUAL_ORIGIN_CONTEXT: "true",
+      CODEGRAPH_RESIDUAL_NAME_PRIOR_ACCEPT_THRESHOLD: "0.55",
       CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS: "30",
       CODEGRAPH_RESIDUAL_KEV_SESSION_URL: "http://192.168.1.71:8008",
       CODEGRAPH_RESIDUAL_KEV_SESSION_TOKEN: "s3cret",
@@ -57,6 +60,8 @@ describe("codegraph.residual config", () => {
       tournamentFloor: 0.4,
       tournamentBudget: 200,
       confirmStage: true,
+      originContext: true,
+      namePriorAcceptThreshold: 0.55,
       retentionDays: 30,
       kevSessionUrl: "http://192.168.1.71:8008",
       kevSessionToken: "s3cret",

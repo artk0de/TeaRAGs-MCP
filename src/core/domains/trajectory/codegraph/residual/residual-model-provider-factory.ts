@@ -1,5 +1,9 @@
 import { BrokeredResidualProvider } from "../../../../adapters/kev/brokered-residual-provider.js";
-import { KevResidualProvider, type KevResidualProviderDeps } from "../../../../adapters/kev/kev-residual-provider.js";
+import {
+  KEV_PROMPT_TEMPLATE,
+  KevResidualProvider,
+  type KevResidualProviderDeps,
+} from "../../../../adapters/kev/kev-residual-provider.js";
 import { KevSessionClient } from "../../../../adapters/kev/kev-session-client.js";
 import { ConfigValueInvalidError, ConfigValueMissingError } from "../../../../primitives/errors/index.js";
 import type { ResidualModelProvider } from "./types.js";
@@ -59,18 +63,19 @@ export class ResidualModelProviderFactory {
   static cacheOnly(model: string, config: Pick<ResidualProviderConfig, "kevThreshold">): ResidualModelProvider {
     switch (model) {
       case "kev":
-        return cacheOnlyProvider(model, config.kevThreshold);
+        return cacheOnlyProvider(model, config.kevThreshold, KEV_PROMPT_TEMPLATE);
       default:
         throw new ConfigValueInvalidError("residualModel", model, RESIDUAL_MODELS.join(" | "));
     }
   }
 }
 
-function cacheOnlyProvider(id: string, threshold: number): ResidualModelProvider {
+function cacheOnlyProvider(id: string, threshold: number, promptTemplate: string): ResidualModelProvider {
   const neverAsked = async (): Promise<never> => Promise.reject(new Error(`${id}: cache-only provider is never asked`));
   return {
     id,
     threshold,
+    promptTemplate,
     version: neverAsked,
     health: async () => ({ ok: false, reason: "cache-only provider is never asked" }),
     resolveGroup: neverAsked,

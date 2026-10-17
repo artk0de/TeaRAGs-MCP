@@ -156,6 +156,14 @@ export type EdgeOrigin = "static" | "model";
  */
 export const RESIDUAL_QUESTION_VERSION = 3;
 
+/**
+ * Version of the code that turns a request into the model's state (method
+ * source, window, origin section). Folded into the verdict key with the
+ * provider's prompt template; bump it when the state a question is asked over
+ * changes shape.
+ */
+export const RESIDUAL_STATE_BUILDER_VERSION = 1;
+
 /** Key of the none option's probability in `ResidualVerdict.probabilities` — never a symbol id. */
 export const RESIDUAL_NONE_PROBABILITY_KEY = "(none)";
 
@@ -215,6 +223,12 @@ export interface ResidualProviderLease {
 export interface ResidualModelProvider {
   readonly id: string;
   readonly threshold: number;
+  /**
+   * The text the provider wraps a question and its state in, placeholders
+   * included; its hash is folded into the verdict key, so a reworded prompt
+   * never reuses an answer given to the old one. Absent = the version-3 prompt.
+   */
+  readonly promptTemplate?: string;
   version: () => Promise<string>;
   health: () => Promise<{ ok: true } | { ok: false; reason: string }>;
   /**

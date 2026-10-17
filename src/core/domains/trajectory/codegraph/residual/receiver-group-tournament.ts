@@ -131,6 +131,9 @@ export class GroupTournament {
   private confirmPick: string | undefined;
   private confirmAnsweredFlag = false;
   private confirmAcceptedFlag = false;
+  /** The confirm question re-asks a block-1 (name-prior) pick. */
+  private confirmFromPrior = false;
+  private namePriorPick = false;
 
   constructor(
     readonly group: ReceiverGroup,
@@ -178,6 +181,11 @@ export class GroupTournament {
   /** The confirm answer cleared the accept threshold and settled the group on its pick. */
   get confirmAccepted(): boolean {
     return this.confirmAcceptedFlag;
+  }
+
+  /** The verdict's class came from block 1 — directly or through its confirm — and is judged by the name-prior threshold. */
+  get pickedByNamePrior(): boolean {
+    return this.namePriorPick;
   }
 
   /** Its next questions draw on the tournament budget: tournament blocks and confirm questions. */
@@ -258,9 +266,15 @@ export class GroupTournament {
    * the group, anything else hands it to the remaining classes. Otherwise a
    * single block with no seed waiting settles the group, and the winners at or
    * above `floor` (the seed among them) enter the next round. An unanswered
-   * block leaves the group without a verdict this run.
+   * block leaves the group without a verdict this run. `priorAccept` replaces
+   * `accept` for a block-1 pick and the confirm of one.
    */
-  advance(verdictOf: (question: ResidualQuestion) => ResidualVerdict | undefined, floor: number, accept: number): void {
+  advance(
+    verdictOf: (question: ResidualQuestion) => ResidualVerdict | undefined,
+    floor: number,
+    accept: number,
+    priorAccept = accept,
+  ): void {
     const questions = this.questions();
     if (this.result !== undefined || questions.length === 0) return;
     const verdicts = questions.map(verdictOf);
@@ -271,11 +285,11 @@ export class GroupTournament {
     const answered = verdicts as ResidualVerdict[];
     this.current = undefined;
     if (this.confirmPick !== undefined) {
-      this.settleConfirm(answered[0], accept);
+      this.settleConfirm(answered[0], this.confirmFromPrior ? priorAccept : accept);
       return;
     }
     if (this.priorPending) {
-      this.advancePrior(answered[0], floor, accept);
+      this.advancePrior(answered[0], floor, priorAccept);
       return;
     }
     if (questions.length === 1 && this.seed === undefined) {
@@ -299,11 +313,14 @@ export class GroupTournament {
     if (verdict.pick !== null && verdict.p >= accept) {
       this.result = { pick: verdict.pick, p: verdict.p };
       this.accepted = true;
+      this.namePriorPick = true;
       return;
     }
     if (this.confirmStage) {
-      if (isMidPick(verdict, floor, accept)) this.confirmPick = verdict.pick as string;
-      else this.abandon();
+      if (isMidPick(verdict, floor, accept)) {
+        this.confirmPick = verdict.pick as string;
+        this.confirmFromPrior = true;
+      } else this.abandon();
       return;
     }
     const asked = new Set(this.prior);
@@ -321,6 +338,7 @@ export class GroupTournament {
     }
     this.result = { pick: verdict.pick, p: verdict.p };
     this.confirmAcceptedFlag = verdict.p >= accept;
+    this.namePriorPick = this.confirmFromPrior;
   }
 
   private question(block: string[], siteKey: string): ResidualQuestion {
@@ -357,17 +375,27 @@ export function windowMethodSource(
   radius = METHOD_WINDOW_LINES,
 ): string {
   const lines = source.split("\n");
-  const keep = new Set<number>([0]);
-  for (const line of callLines) {
-    const at = line - methodStartLine;
-    for (let i = Math.max(0, at - radius); i <= Math.min(lines.length - 1, at + radius); i++) keep.add(i);
-  }
   const out: string[] = [];
   let previous = -1;
-  for (const i of [...keep].sort((a, b) => a - b)) {
+  for (const i of windowLineIndexes(lines.length, methodStartLine, callLines, radius)) {
     if (i > previous + 1) out.push("…");
     out.push(lines[i]);
     previous = i;
   }
   return out.join("\n");
+}
+
+/** 0-based indexes into the method source that {@link windowMethodSource} keeps, ascending. */
+export function windowLineIndexes(
+  lineCount: number,
+  methodStartLine: number,
+  callLines: readonly number[],
+  radius = METHOD_WINDOW_LINES,
+): number[] {
+  const keep = new Set<number>([0]);
+  for (const line of callLines) {
+    const at = line - methodStartLine;
+    for (let i = Math.max(0, at - radius); i <= Math.min(lineCount - 1, at + radius); i++) keep.add(i);
+  }
+  return [...keep].sort((a, b) => a - b);
 }

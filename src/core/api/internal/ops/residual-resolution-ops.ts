@@ -50,6 +50,10 @@ export interface ResidualResolutionConfig {
   tournamentBudget?: number;
   /** Ask mid picks once more as `[pick, none]`; plain tournament rounds off. */
   confirmStage?: boolean;
+  /** Append receiver origins to each question's state; verdicts are keyed under the variant. */
+  originContext?: boolean;
+  /** Accept threshold for a name-prior block-1 pick and the confirm of one; unset = `kevThreshold`. */
+  namePriorAcceptThreshold?: number;
   retentionDays: number;
   /** GPU session broker; set, an `ask` pass with uncached sites leases Kev from it. */
   kevSessionUrl?: string;
@@ -129,10 +133,15 @@ export class ResidualResolutionOps implements ResidualResolvePort {
           ? {}
           : { tournamentBudget: this.deps.config.tournamentBudget }),
         ...(this.deps.config.confirmStage === undefined ? {} : { confirmStage: this.deps.config.confirmStage }),
+        ...(this.deps.config.originContext === undefined ? {} : { originContext: this.deps.config.originContext }),
+        ...(this.deps.config.namePriorAcceptThreshold === undefined
+          ? {}
+          : { namePriorAcceptThreshold: this.deps.config.namePriorAcceptThreshold }),
         retentionDays: this.deps.config.retentionDays,
         recomputeDerived: async () => recomputeGraphMetrics(graphDb),
         readMethodSource: async (relPath: string, startLine: number, endLine: number) =>
           sliceLines(await readFile(join(request.projectRoot, relPath), "utf8"), startLine, endLine),
+        readSourceFile: async (relPath: string) => readFile(join(request.projectRoot, relPath), "utf8"),
         now: this.now,
         ...(request.onProgress ? { onProgress: request.onProgress } : {}),
       };

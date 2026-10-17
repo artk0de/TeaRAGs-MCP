@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import {
   KevStateTooLongError,
   KevTimeoutError,
 } from "../../../../../../src/core/adapters/kev/errors.js";
+import { KEV_PROMPT_TEMPLATE } from "../../../../../../src/core/adapters/kev/kev-residual-provider.js";
 import {
   RESIDUAL_QUESTION_VERSION,
   type ModelEdgeRow,
@@ -18,6 +20,8 @@ import {
   type ResidualCallSiteRow,
 } from "../../../../../../src/core/contracts/types/codegraph-residual.js";
 import {
+  RESIDUAL_V3_DEFAULT_FOLD,
+  residualQuestionFold,
   residualQuestionHash,
   ResidualResolutionPass,
   type ResidualPassInput,
@@ -314,6 +318,62 @@ describe("ResidualResolutionPass", () => {
 
       expect(report).toMatchObject({ cacheHits: 0, asked: 1 });
       expect(provider.calls[0].questions[0].menuHash).toBe(residualQuestionHash("menu-1"));
+    });
+
+    it("keeps the version-3 key under the shipped Kev prompt with origin context off", () => {
+      const fold = residualQuestionFold({ promptTemplate: KEV_PROMPT_TEMPLATE, originContext: false });
+
+      expect(fold).toBe(RESIDUAL_V3_DEFAULT_FOLD);
+      expect(residualQuestionHash("menu-1", fold)).toBe(createHash("sha1").update("menu-1\u0000q3").digest("hex"));
+    });
+
+    it("re-keys every question when the prompt template or the origin context changes", () => {
+      const base = residualQuestionHash("menu-1", RESIDUAL_V3_DEFAULT_FOLD);
+      const origins = residualQuestionFold({ promptTemplate: KEV_PROMPT_TEMPLATE, originContext: true });
+      const reworded = residualQuestionFold({ promptTemplate: `${KEV_PROMPT_TEMPLATE} `, originContext: false });
+
+      expect(residualQuestionHash("menu-1", origins)).not.toBe(base);
+      expect(residualQuestionHash("menu-1", reworded)).not.toBe(base);
+      expect(residualQuestionHash("menu-1", origins)).not.toBe(residualQuestionHash("menu-1", reworded));
+    });
+
+    it("asks under the origin-context key when the variant is on, missing the default verdicts", async () => {
+      const provider = new FakeProvider(firmPick);
+
+      const report = await run(fakeGraphDb([row({ siteKey: "s1" })]), provider, {
+        originContext: true,
+        readSourceFile: async () => "class A\n  def run\n    firm.users\n  end\nend",
+      });
+
+      expect(report).toMatchObject({ asked: 1 });
+      expect(provider.calls[0].questions[0].menuHash).toBe(
+        residualQuestionHash("menu-1", residualQuestionFold({ originContext: true })),
+      );
+    });
+
+    it("appends the receiver origins to the method source only when the variant is on", async () => {
+      const file = [
+        "class A",
+        "  def run",
+        "    firm.users",
+        "  end",
+        "",
+        "  def firm",
+        "    Firm.current",
+        "  end",
+        "end",
+      ];
+      const site = row({ siteKey: "s1", methodStartLine: 2, methodEndLine: 4, line: 3 });
+      const readSourceFile = async () => file.join("\n");
+      const plain = new FakeProvider(firmPick);
+      const variant = new FakeProvider(firmPick);
+
+      await run(fakeGraphDb([site]), plain, { readSourceFile });
+      await run(fakeGraphDb([site]), variant, { readSourceFile, originContext: true });
+
+      expect(plain.calls[0].methodSource).toBe("# source of app/a.rb");
+      expect(variant.calls[0].methodSource).toMatch(/^# source of app\/a\.rb\n# --- receiver origins/u);
+      expect(variant.calls[0].methodSource).toContain("    Firm.current");
     });
   });
 

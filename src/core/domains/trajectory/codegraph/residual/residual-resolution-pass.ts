@@ -24,6 +24,7 @@ import { createHash } from "node:crypto";
 import type { ResidualVerdictStore } from "../../../../adapters/duckdb/residual-verdict-store.js";
 import {
   RESIDUAL_QUESTION_VERSION,
+  RESIDUAL_STATE_BUILDER_VERSION,
   type ModelEdgeRow,
   type ModelExternalSiteRow,
   type ResidualCallSiteRow,
@@ -40,6 +41,7 @@ import {
   type AskQueueInput,
   type PendingQuestion,
 } from "./residual-ask-queue.js";
+import { RESIDUAL_ORIGIN_CONTEXT_VERSION } from "./residual-origin-context.js";
 import { propagateTypeFacts, receiverGroupAddress, type AcceptedGroupVerdict } from "./type-fact-propagation.js";
 import type {
   ResidualDerivedState,
@@ -74,9 +76,46 @@ export interface ResidualPassInput extends AskQueueInput {
   recomputeDerived: () => Promise<void>;
 }
 
-/** The verdict-store menu hash: the row's menu hash under {@link RESIDUAL_QUESTION_VERSION}. */
-export function residualQuestionHash(menuHash: string): string {
-  return createHash("sha1").update(`${menuHash}\u0000q${RESIDUAL_QUESTION_VERSION}`).digest("hex");
+/**
+ * sha1 of the Kev prompt template the version-3 verdicts were asked under
+ * (`KEV_PROMPT_TEMPLATE` when this fold was introduced). Never update it: a
+ * template that no longer hashes to it re-keys every question, which is the
+ * point.
+ */
+const RESIDUAL_V3_PROMPT_HASH = "35978f0544d30972eccbf7ede05b36ebaadd2d4b";
+
+const sha1 = (text: string): string => createHash("sha1").update(text).digest("hex");
+
+/** `originVersion` 0 = the origin-context variant is off. */
+function foldOf(promptHash: string, stateBuilderVersion: number, originVersion: number): string {
+  return sha1(`${promptHash}\u0000s${stateBuilderVersion}\u0000o${originVersion}`);
+}
+
+/** The fold of the version-3 question: its prompt, state builder 1, no origin context. Keys under it keep their version-3 form. */
+export const RESIDUAL_V3_DEFAULT_FOLD = foldOf(RESIDUAL_V3_PROMPT_HASH, 1, 0);
+
+/**
+ * Hash of everything around the menu that shapes a question: the provider's
+ * prompt template (absent = the version-3 one), {@link RESIDUAL_STATE_BUILDER_VERSION}
+ * and, when on, the origin-context variant's {@link RESIDUAL_ORIGIN_CONTEXT_VERSION}.
+ */
+export function residualQuestionFold(parts: { promptTemplate?: string; originContext?: boolean }): string {
+  const promptHash = parts.promptTemplate === undefined ? RESIDUAL_V3_PROMPT_HASH : sha1(parts.promptTemplate);
+  return foldOf(
+    promptHash,
+    RESIDUAL_STATE_BUILDER_VERSION,
+    parts.originContext === true ? RESIDUAL_ORIGIN_CONTEXT_VERSION : 0,
+  );
+}
+
+/**
+ * The verdict-store menu hash: the row's menu hash under
+ * {@link RESIDUAL_QUESTION_VERSION} and the question `fold`. The default fold
+ * keeps the version-3 key, so the verdicts cached before the fold stay valid.
+ */
+export function residualQuestionHash(menuHash: string, fold: string = RESIDUAL_V3_DEFAULT_FOLD): string {
+  const key = `${menuHash}\u0000q${RESIDUAL_QUESTION_VERSION}`;
+  return sha1(fold === RESIDUAL_V3_DEFAULT_FOLD ? key : `${key}\u0000f${fold}`);
 }
 
 /** An eligible row and the menu hash its verdict is stored under. */
@@ -106,17 +145,20 @@ export class ResidualResolutionPass {
     const startedAt = input.now();
     const servedVersion = input.mode === "ask" ? await this.servedVersion(provider) : { version: undefined };
 
+    const fold = residualQuestionFold({
+      ...(provider.promptTemplate === undefined ? {} : { promptTemplate: provider.promptTemplate }),
+      originContext: input.originContext ?? false,
+    });
+    const questionHash = (menuHash: string): string => residualQuestionHash(menuHash, fold);
     const rows = await input.graphDb.readResidualCallSites();
     const { groups: receiverGroups, ungrouped } = collectReceiverGroups(rows);
     const eligibility = ungrouped.map((r) => siteEligibility(r, input));
     const eligible: EligibleSite[] = ungrouped
       .filter((_, i) => eligibility[i] === "eligible")
-      .map((r) => ({ ...r, questionHash: residualQuestionHash(r.menuHash) }));
+      .map((r) => ({ ...r, questionHash: questionHash(r.menuHash) }));
     const askable = receiverGroups.filter((g) => g.classes.length >= input.minMenu);
     const groupTooSmall = receiverGroups.filter((g) => g.classes.length < input.minMenu);
-    const tournaments = askable.map(
-      (g) => new GroupTournament(g, input.menuLimit, residualQuestionHash, input.confirmStage),
-    );
+    const tournaments = askable.map((g) => new GroupTournament(g, input.menuLimit, questionHash, input.confirmStage));
     const verdicts = await cachedVerdicts(
       input,
       eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.questionHash })),
@@ -141,10 +183,12 @@ export class ResidualResolutionPass {
     const skipped = unavailable !== undefined || tally.leaseLost || tally.breakerTripped;
 
     const siteOutcome = buildEdges(eligible, verdicts, provider, input.noneThreshold);
-    const groupOutcome = buildGroupEdges(tournaments, provider, input.noneThreshold);
+    const namePriorAccept = input.namePriorAcceptThreshold ?? provider.threshold;
+    const acceptOf = (t: GroupTournament): number => (t.pickedByNamePrior ? namePriorAccept : provider.threshold);
+    const groupOutcome = buildGroupEdges(tournaments, provider, acceptOf, input.noneThreshold);
     const propagation = propagateTypeFacts(
       receiverGroups,
-      acceptedGroupVerdicts(tournaments, provider, input.noneThreshold),
+      acceptedGroupVerdicts(tournaments, acceptOf, input.noneThreshold),
       provider.id,
     );
     const edges = [...siteOutcome.edges, ...groupOutcome.edges, ...propagation.edges];
@@ -260,16 +304,17 @@ function siteQuestion(r: EligibleSite): PendingQuestion {
   };
 }
 
-/** Every group's verdict at or above its threshold — the provider's for a class, `noneThreshold` for none. */
+/** Every group's verdict at or above its threshold — `acceptOf` for a class, `noneThreshold` for none. */
 function acceptedGroupVerdicts(
   tournaments: readonly GroupTournament[],
-  provider: ResidualModelProvider,
+  acceptOf: (tournament: GroupTournament) => number,
   noneThreshold: number,
 ): Map<string, AcceptedGroupVerdict> {
   const accepted = new Map<string, AcceptedGroupVerdict>();
-  for (const { group, outcome } of tournaments) {
+  for (const tournament of tournaments) {
+    const { group, outcome } = tournament;
     if (outcome === undefined || outcome === "residual") continue;
-    if (outcome.p < (outcome.pick === null ? noneThreshold : provider.threshold)) continue;
+    if (outcome.p < (outcome.pick === null ? noneThreshold : acceptOf(tournament))) continue;
     accepted.set(receiverGroupAddress(group), outcome);
   }
   return accepted;
@@ -277,7 +322,7 @@ function acceptedGroupVerdicts(
 
 /**
  * Edges and external sites of the groups that reached a verdict: a class at or
- * above the provider threshold edges every site of the group to the target its
+ * above its accept threshold (`acceptOf`) edges every site of the group to the target its
  * member reaches on that class, or makes it an attribute where the class reads
  * the member as a schema column; a none at or above `noneThreshold` makes every
  * site external.
@@ -285,6 +330,7 @@ function acceptedGroupVerdicts(
 function buildGroupEdges(
   tournaments: readonly GroupTournament[],
   provider: ResidualModelProvider,
+  acceptOf: (tournament: GroupTournament) => number,
   noneThreshold: number,
 ): {
   edges: ModelEdgeRow[];
@@ -296,10 +342,11 @@ function buildGroupEdges(
   const external: ModelExternalSiteRow[] = [];
   const attributes: ModelExternalSiteRow[] = [];
   let belowThreshold = 0;
-  for (const { group, outcome } of tournaments) {
+  for (const tournament of tournaments) {
+    const { group, outcome } = tournament;
     if (outcome === undefined || outcome === "residual") continue;
     const { pick, p } = outcome;
-    if (pick === null ? p < noneThreshold : p < provider.threshold) {
+    if (pick === null ? p < noneThreshold : p < acceptOf(tournament)) {
       belowThreshold += group.rows.length;
       continue;
     }

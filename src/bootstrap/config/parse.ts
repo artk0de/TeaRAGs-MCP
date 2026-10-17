@@ -180,6 +180,8 @@ function buildEnvInputs(env: EnvReader) {
       tournamentFloor: env("CODEGRAPH_RESIDUAL_TOURNAMENT_FLOOR"),
       tournamentBudget: env("CODEGRAPH_RESIDUAL_TOURNAMENT_BUDGET"),
       confirmStage: env("CODEGRAPH_RESIDUAL_CONFIRM_STAGE"),
+      originContext: env("CODEGRAPH_RESIDUAL_ORIGIN_CONTEXT"),
+      namePriorAcceptThreshold: env("CODEGRAPH_RESIDUAL_NAME_PRIOR_ACCEPT_THRESHOLD"),
       retentionDays: env("CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS"),
       kevSessionUrl: env("CODEGRAPH_RESIDUAL_KEV_SESSION_URL"),
       kevSessionToken: env("CODEGRAPH_RESIDUAL_KEV_SESSION_TOKEN"),
