@@ -234,6 +234,15 @@ None (no MISFIT verdicts; the single addEdge pair targets a new file —
   (bead `54xwd.15`) — the detector reads member-side barrel de-cycling as
   consumer bypass; `find_cycles` over `src/core/api/**` is empty after the fix,
   which is the invariant the de-cycling enforces.
+- **Wave-boundary full report** (post-`8f0de85fe` graph): both Wave-1 SDP
+  targets ABSENT from the report (resolved); leakingAbstraction 0; layering
+  violations 0 (the review-sections pair informational only); no runtime SCC.
+  Remaining findings, all Wave 2/3 scope: SDP ×3 (`bootstrap/auto-update → api`
+  Δ 0.329 — design D1; `api → trajectory/composite/presets` Δ 0.271 — design D2;
+  `api → trajectory/codegraph/working-tree` Δ 0.212 — wave-2 identification),
+  silentCoupling ×22 and shotgun ×13 (history-only; beads .8/.10), mainSequence
+  ×2 and hubLike ×1 (escalated; beads .6/.7). The Deferred re-plan ("after Tasks
+  1–2 land") is due now against this graph.
 
 ## Execution contract (refactoring-planning):
 
