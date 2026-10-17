@@ -183,11 +183,57 @@ rounds ≈ 78 s).
   (`api → api/internal/ops/review-sections`, `cli → cli/commands`, adapter
   subfolders, resolver/strategies pairs). No recipe family; layout triage data,
   not planned.
+  - Reclassified LOW (bd 54xwd.12 closed, 2026-10-17):
+    `api → api/internal/ops/review-sections` — fresh graph shows no file-level
+    SCC (only the app-factory ↔ index pair, bead .14), all 21 nested imports are
+    specific (no barrel bypass), and the domain-scoped report counts the pair
+    informational (containment = composition). Both structural exits reverse the
+    F3 registry-canonical design or reshuffle ~10 shared readers for zero
+    behavior gain. Reopen if the wave-boundary full report counts it as a
+    violation; remedy then: self-contained nested component for the shared
+    readers.
+  - Reclassified LOW (bd 54xwd.13 closed, 2026-10-17): `cli → cli/commands` —
+    find_cycles over src/cli/\*\* is EMPTY (DAG); create-cli composes the
+    command builders (containment) and commands import specific parent leaf
+    modules — no barrel bypass either direction. The cycle exists only in the
+    component projection of mutual parent-nested composition. Same reopen
+    condition and remedy family (wiring inversion) as the review-sections pair.
 
 ## Dropped
 
 None (no MISFIT verdicts; the single addEdge pair targets a new file —
 `UNJUDGED newFile`, kept).
+
+## Tracking — Wave 1 outcome (2026-10-17)
+
+- **Task 1 / bead 54xwd.1** — landed: commits `b714169fd` (plan + design) and
+  `0ca855309` (the merge). Gate round 4: architecture findings empty; resolved =
+  SDP `bootstrap → src/mcp/tools` (structural) + shotgun w8 → w5; introduced =
+  the planned shotgun w5 (exp 0.001). Two pre-existing `ingest/operations` deep
+  imports repaired with the detector's own `retargetImport` remedies en route.
+- **Task 2 / bead 54xwd.2** — landed: commit `8f0de85fe`. Design refined as
+  landed (see Task 2's note): the port lives in the existing contracts
+  `footprint.ts`, speaks intent (clone/remove), and the saga takes a structural
+  `FootprintBuilder` so no import cycle closes back into the factory. Gate round
+  2: findings empty; resolved = SDP `worktree → footprint` (structural).
+- **Beads 54xwd.12 / .13** — closed, reclassified LOW per the owner-approved
+  severity cut (barrel-vs-subfolder layout): fresh graph shows no file-level SCC
+  in either pair and no barrel bypass; the composition cycle exists only in the
+  component projection of mutual parent-nested composition. Reopen condition
+  recorded on both beads.
+- **Bead 54xwd.14** — five commits, one per runtime cycle: app-factory de-cycled
+  from the api barrel (`ca88e927c`), the alias manager typed against a
+  `QdrantConnectionTransport` port, the schema-metadata store against the
+  Catalog/Reader/Writer port intersection, the substitute predicates against a
+  structural view slice, and the file-process batch contract moved to the
+  `file-process-types` leaf. Two SCCs reclassified LOW (type-only closing edges;
+  the runtime graph is a DAG): the symbols triangle and the 12-file
+  contracts/types cycle.
+- **Accepted FP classes**: 16 naming COLLISIONs on move diffs (bead 54xwd.15's
+  sibling `jzexs`); 12 leakingAbstraction findings on the app-factory de-cycling
+  (bead `54xwd.15`) — the detector reads member-side barrel de-cycling as
+  consumer bypass; `find_cycles` over `src/core/api/**` is empty after the fix,
+  which is the invariant the de-cycling enforces.
 
 ## Execution contract (refactoring-planning):
 
