@@ -57,6 +57,7 @@ export function formatResidualReport(report: ResidualReport): string {
     `  receiver groups:  ${report.receiverGroups} (${report.receiverGroupSites} sites)\n` +
     `  edged by group:   ${report.sitesEdgedByVerdict} by verdict, ${report.sitesEdgedByPropagation} by propagation (${report.propagationConflicts} conflicts)\n` +
     `  tournaments:      ${report.tournamentGroups} groups, ${report.tournamentRounds} rounds, ${report.tournamentQuestions} questions, ${report.groupsSkippedByBudget} skipped by budget; ${report.namePriorGroups} opened by name, ${report.earlyAcceptedGroups} accepted on block 1\n` +
+    `  confirm stage:    ${report.confirmQuestions} questions, ${report.confirmAccepted} accepted\n` +
     `  windowed groups:  ${report.windowedGroups}\n` +
     `  requests:         ${report.requests} (at most ${report.maxQuestionsPerRequest} questions), latency p50 ${report.requestLatencyP50Ms} ms / p95 ${report.requestLatencyP95Ms} ms, peak in flight ${report.peakInFlight}\n` +
     `  edges applied:    ${report.edgesApplied}\n` +

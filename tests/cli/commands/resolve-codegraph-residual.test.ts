@@ -39,6 +39,8 @@ const COMPLETED = {
   namePriorGroups: 2,
   earlyAcceptedGroups: 1,
   groupsSkippedByBudget: 1,
+  confirmQuestions: 3,
+  confirmAccepted: 2,
   windowedGroups: 6,
   requests: 140,
   maxQuestionsPerRequest: 8,
@@ -84,6 +86,7 @@ describe("formatResidualReport", () => {
     expect(text).toContain(
       "  tournaments:      2 groups, 3 rounds, 9 questions, 1 skipped by budget; 2 opened by name, 1 accepted on block 1\n",
     );
+    expect(text).toContain("  confirm stage:    3 questions, 2 accepted\n");
     expect(text).toContain("  windowed groups:  6\n");
     expect(text).toContain(
       "  requests:         140 (at most 8 questions), latency p50 2100 ms / p95 5400 ms, peak in flight 48\n",

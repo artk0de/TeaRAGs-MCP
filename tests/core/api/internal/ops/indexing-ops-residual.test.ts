@@ -57,6 +57,8 @@ const REPORT: ResidualPassReport = {
   namePriorGroups: 0,
   earlyAcceptedGroups: 0,
   groupsSkippedByBudget: 0,
+  confirmQuestions: 0,
+  confirmAccepted: 0,
   windowedGroups: 0,
   groupCacheHits: 0,
   requests: 0,

@@ -63,6 +63,8 @@ export function skippedResidualReport(reason: string, mode: ResidualPassMode): R
     namePriorGroups: 0,
     earlyAcceptedGroups: 0,
     groupsSkippedByBudget: 0,
+    confirmQuestions: 0,
+    confirmAccepted: 0,
     windowedGroups: 0,
     requests: 0,
     maxQuestionsPerRequest: 0,

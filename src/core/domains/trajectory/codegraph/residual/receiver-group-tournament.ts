@@ -8,6 +8,12 @@
  * {@link MAX_TOURNAMENT_ROUNDS} rounds after block 1, and only the last round's
  * single block yields the group's verdict.
  *
+ * Confirm stage (`CODEGRAPH_RESIDUAL_CONFIRM_STAGE`): a block-1 or full-menu
+ * pick at or above the floor but below the accept threshold is asked once more
+ * as `[pick, none]`, and that answer settles the group; plain round blocks are
+ * never asked, so a tournament without a name prior, or whose block 1 is
+ * neither accepted nor confirmable, ends without a verdict.
+ *
  * Spec: `docs/superpowers/specs/2026-10-16-codegraph-residual-wave-1-5-design.md`
  */
 import { createHash } from "node:crypto";
@@ -121,16 +127,22 @@ export class GroupTournament {
   /** The block-1 winner waiting for a round it fits into. */
   private seed: string | undefined;
   private accepted = false;
+  /** The mid pick waiting for its `[pick, none]` question. */
+  private confirmPick: string | undefined;
+  private confirmAnsweredFlag = false;
+  private confirmAcceptedFlag = false;
 
   constructor(
     readonly group: ReceiverGroup,
     private readonly menuLimit: number,
     private readonly questionHash: (menuHash: string) => string,
+    private readonly confirmStage = false,
   ) {
     this.entrants = group.classes;
     const matched = this.isTournament ? nameMatchedClasses(group.receiverText, group.classes) : [];
     this.prior = matched.length > 0 ? matched.slice(0, menuLimit) : undefined;
     this.priorPending = this.prior !== undefined;
+    if (confirmStage && this.isTournament && this.prior === undefined) this.abandon();
   }
 
   /** The class set exceeds one menu. */
@@ -158,12 +170,31 @@ export class GroupTournament {
     return this.result;
   }
 
+  /** The group's `[pick, none]` question was answered. */
+  get confirmAnswered(): boolean {
+    return this.confirmAnsweredFlag;
+  }
+
+  /** The confirm answer cleared the accept threshold and settled the group on its pick. */
+  get confirmAccepted(): boolean {
+    return this.confirmAcceptedFlag;
+  }
+
+  /** Its next questions draw on the tournament budget: tournament blocks and confirm questions. */
+  get chargesBudget(): boolean {
+    return this.isTournament || this.confirmPick !== undefined;
+  }
+
   /**
    * Upper bound on the block questions this tournament may still ask, the
    * current round included: every block winner is assumed to clear the floor.
    */
   get questionsLeftAtMost(): number {
     if (this.result !== undefined) return 0;
+    if (this.confirmStage) {
+      if (this.confirmPick !== undefined) return 1;
+      return this.priorPending ? 2 : 0;
+    }
     let entrants = this.entrants.length;
     let total = 0;
     if (this.priorPending && this.prior !== undefined) {
@@ -194,6 +225,10 @@ export class GroupTournament {
   questions(): ResidualQuestion[] {
     if (this.result !== undefined) return [];
     if (this.current !== undefined) return this.current;
+    if (this.confirmPick !== undefined) {
+      this.current = [this.question([this.confirmPick], `${this.group.id}/c.0`)];
+      return this.current;
+    }
     if (this.priorPending && this.prior !== undefined) {
       this.current = [this.question(this.prior, `${this.group.id}/0.0`)];
       return this.current;
@@ -235,12 +270,17 @@ export class GroupTournament {
     }
     const answered = verdicts as ResidualVerdict[];
     this.current = undefined;
+    if (this.confirmPick !== undefined) {
+      this.settleConfirm(answered[0], accept);
+      return;
+    }
     if (this.priorPending) {
       this.advancePrior(answered[0], floor, accept);
       return;
     }
     if (questions.length === 1 && this.seed === undefined) {
-      this.result = { pick: answered[0].pick, p: answered[0].p };
+      if (this.confirmStage && isMidPick(answered[0], floor, accept)) this.confirmPick = answered[0].pick as string;
+      else this.result = { pick: answered[0].pick, p: answered[0].p };
       return;
     }
     const winners = answered.filter((v) => v.pick !== null && v.p >= floor).map((v) => v.pick as string);
@@ -261,9 +301,26 @@ export class GroupTournament {
       this.accepted = true;
       return;
     }
+    if (this.confirmStage) {
+      if (isMidPick(verdict, floor, accept)) this.confirmPick = verdict.pick as string;
+      else this.abandon();
+      return;
+    }
     const asked = new Set(this.prior);
     this.entrants = this.group.classes.filter((c) => !asked.has(c));
     if (verdict.pick !== null && verdict.p >= floor) this.seed = verdict.pick;
+  }
+
+  /** A pick settles the group with its own `p`; a none leaves it without a verdict, never external. */
+  private settleConfirm(verdict: ResidualVerdict, accept: number): void {
+    this.confirmPick = undefined;
+    this.confirmAnsweredFlag = true;
+    if (verdict.pick === null) {
+      this.result = "residual";
+      return;
+    }
+    this.result = { pick: verdict.pick, p: verdict.p };
+    this.confirmAcceptedFlag = verdict.p >= accept;
   }
 
   private question(block: string[], siteKey: string): ResidualQuestion {
@@ -278,6 +335,11 @@ export class GroupTournament {
       members: this.group.members,
     };
   }
+}
+
+/** A class pick at or above `floor` but below `accept`: worth one confirm question. */
+function isMidPick(verdict: ResidualVerdict, floor: number, accept: number): boolean {
+  return verdict.pick !== null && verdict.p >= floor && verdict.p < accept;
 }
 
 /** Lines of context kept on each side of a call line when a method is too long to ask whole. */

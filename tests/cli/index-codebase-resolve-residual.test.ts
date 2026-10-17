@@ -57,6 +57,8 @@ const REPORT: ResidualPassReport = {
   namePriorGroups: 2,
   earlyAcceptedGroups: 1,
   groupsSkippedByBudget: 1,
+  confirmQuestions: 3,
+  confirmAccepted: 2,
   windowedGroups: 3,
   groupCacheHits: 9,
   requests: 140,
@@ -116,7 +118,7 @@ describe("the residual pass in the run's output", () => {
       "4 over the menu limit, 9 under the menu floor, 79 sites edged, 12 external by model, derived metrics stale",
     );
     expect(text).toContain(
-      "15 receiver groups (40 sites): 33 sites edged by verdict, 5 by propagation (1 conflicts); 2 tournaments (8 questions, 2 rounds, 1 skipped by budget, 2 opened by name, 1 accepted on block 1), 3 windowed",
+      "15 receiver groups (40 sites): 33 sites edged by verdict, 5 by propagation (1 conflicts); 2 tournaments (8 questions, 2 rounds, 1 skipped by budget, 2 opened by name, 1 accepted on block 1), 3 confirm questions (2 accepted), 3 windowed",
     );
   });
 

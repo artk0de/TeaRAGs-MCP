@@ -243,6 +243,8 @@ export const codegraphResidualSchema = z.object({
   tournamentFloor: floatWithDefault(0.5),
   /** Tournament block questions one run may send; a receiver group the rest cannot cover is skipped and counted. */
   tournamentBudget: intWithDefault(5000),
+  /** Ask a mid block-1 or full-menu pick once more as `[pick, none]` and never run plain tournament rounds. */
+  confirmStage: booleanFromEnvWithDefault(false),
   /** Verdicts not seen by any run for this many days are dropped. */
   retentionDays: intWithDefault(180),
   /**
