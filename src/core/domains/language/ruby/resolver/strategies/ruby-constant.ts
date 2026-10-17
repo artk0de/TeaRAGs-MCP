@@ -8,7 +8,12 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupRubySymbolsByShortName, resolveConstant, type ResolverConfig } from "./shared.js";
+import {
+  lookupRubySymbolsByShortName,
+  resolveConstant,
+  resolveRubyInitializer,
+  type ResolverConfig,
+} from "./shared.js";
 import { rubyMemberLookupRole } from "./short-name-lookup.js";
 
 /**
@@ -27,6 +32,10 @@ import { rubyMemberLookupRole } from "./short-name-lookup.js";
  * `conventionReceiver` sit further down the chain and may still pin the member,
  * and `receiverSetDrop` — the catch-all at position 13 — emits the park rather
  * than clearing it, so the module edge survives either way.
+ *
+ * `C.new` with no singleton `new` lands on the `initialize` C's ancestry finds,
+ * the same constructor rule as `self.class.new`; no `initialize` keeps the
+ * deferred file-only edge.
  */
 export class RubyConstantSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "constant";
@@ -54,6 +63,8 @@ export class RubyConstantSymbolResolutionStrategy implements SymbolResolutionStr
       new Set([call.receiver]),
     );
     if (inherited) return resolved(inherited);
+    const initializer = call.member === "new" ? resolveRubyInitializer(call.receiver, ctx, this.cfg.mode) : null;
+    if (initializer) return resolved(initializer);
     return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
 

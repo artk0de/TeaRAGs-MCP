@@ -150,7 +150,10 @@ export const capability: LanguageCapability = {
   // walker 29: bd tea-rags-mcp-2m83f.58 — a `self.class` receiver in an instance method is the
   // enclosing class: `self.class.m` lands on its singleton `m` (coned over subclasses redefining
   // it) and `self.class.new` on its `initialize`; a walker-28 index leaves both to the residual.
-  versions: { chunking: 2, walker: 29, codegraphSchema: 2 },
+  // walker 30: bd tea-rags-mcp-2m83f.59 — a constant receiver's `new` (`C.new`, `A::B.new`) follows
+  // the same constructor rule: a declared singleton `new`, else the `initialize` C's ancestry finds;
+  // a walker-29 index leaves those calls on C's file-only edge.
+  versions: { chunking: 2, walker: 30, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.
