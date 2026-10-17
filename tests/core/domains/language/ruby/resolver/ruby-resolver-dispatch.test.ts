@@ -110,3 +110,142 @@ describe("RubyCallResolver.resolveDispatch — cone-first, then dynamic fan-out 
     expect(edgesOf(resolver.resolveDispatch(call, ctx({ symbolTable })))).toEqual([]);
   });
 });
+
+describe("RubyCallResolver — a `self.class` receiver in an instance method is the enclosing class (bd 2m83f.58)", () => {
+  const resolver = new RubyCallResolver();
+  const selfClass = (member: string, startLine = 5): CallRef => ({
+    callText: `self.class.${member}`,
+    receiver: "self.class",
+    member,
+    startLine,
+  });
+  const symbolTable = (() => {
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("lib/policy_error.rb", [
+      sym("PolicyError", "PolicyError", "lib/policy_error.rb", []),
+      sym("PolicyError.kind", "kind", "lib/policy_error.rb", ["PolicyError"]),
+      sym("PolicyError#kind", "kind", "lib/policy_error.rb", ["PolicyError"]),
+      sym("PolicyError.build", "build", "lib/policy_error.rb", ["PolicyError"]),
+    ]);
+    t.upsertFile("lib/forbidden_error.rb", [
+      sym("ForbiddenError", "ForbiddenError", "lib/forbidden_error.rb", []),
+      sym("ForbiddenError#details", "details", "lib/forbidden_error.rb", ["ForbiddenError"]),
+    ]);
+    t.upsertFile("lib/endpoint.rb", [
+      sym("Endpoint", "Endpoint", "lib/endpoint.rb", []),
+      sym("Endpoint#initialize", "initialize", "lib/endpoint.rb", ["Endpoint"]),
+      sym("Endpoint#protagonist", "protagonist", "lib/endpoint.rb", ["Endpoint"]),
+    ]);
+    t.upsertFile("lib/admin_endpoint.rb", [
+      sym("AdminEndpoint", "AdminEndpoint", "lib/admin_endpoint.rb", []),
+      sym("AdminEndpoint#mirror", "mirror", "lib/admin_endpoint.rb", ["AdminEndpoint"]),
+    ]);
+    t.upsertFile("lib/kinded.rb", [
+      { ...sym("Kinded", "Kinded", "lib/kinded.rb", []), symbolKind: "module" as const },
+      sym("Kinded#describe", "describe", "lib/kinded.rb", ["Kinded"]),
+    ]);
+    return t;
+  })();
+  const classAncestors = { ForbiddenError: ["PolicyError"], AdminEndpoint: ["Endpoint"] };
+  const inMethod = (callerSymbolId: string, scope: string[], file: string, hierarchy?: HierarchyView) =>
+    ctx({ symbolTable, classAncestors, callerSymbolId, callerScope: scope, callerFile: file, hierarchy });
+
+  it("`self.class.kind` lands on the class's singleton `kind`, not its instance namesake", () => {
+    const target = resolver.resolve(
+      selfClass("kind"),
+      inMethod("PolicyError#kind", ["PolicyError"], "lib/policy_error.rb"),
+    );
+    expect(target).toEqual({ targetRelPath: "lib/policy_error.rb", targetSymbolId: "PolicyError.kind" });
+  });
+
+  it("a subclass's `self.class.kind` finds the singleton `kind` an ancestor declares", () => {
+    const target = resolver.resolve(
+      selfClass("kind"),
+      inMethod("ForbiddenError#details", ["ForbiddenError"], "lib/forbidden_error.rb"),
+    );
+    expect(target?.targetSymbolId).toBe("PolicyError.kind");
+  });
+
+  it("`self.class.new(...)` lands on the class's `initialize`", () => {
+    const target = resolver.resolve(
+      { ...selfClass("new"), callText: "self.class.new('patch', path)" },
+      inMethod("Endpoint#protagonist", ["Endpoint"], "lib/endpoint.rb"),
+    );
+    expect(target).toEqual({ targetRelPath: "lib/endpoint.rb", targetSymbolId: "Endpoint#initialize" });
+  });
+
+  it("`self.class.new` in a subclass reaches the `initialize` it inherits", () => {
+    const target = resolver.resolve(
+      selfClass("new"),
+      inMethod("AdminEndpoint#mirror", ["AdminEndpoint"], "lib/admin_endpoint.rb"),
+    );
+    expect(target?.targetSymbolId).toBe("Endpoint#initialize");
+  });
+
+  it("`self.class.new` with no declared constructor takes the class's file-only edge, like `C.new`", () => {
+    const target = resolver.resolve(
+      selfClass("new"),
+      inMethod("ForbiddenError#details", ["ForbiddenError"], "lib/forbidden_error.rb"),
+    );
+    expect(target).toEqual({ targetRelPath: "lib/forbidden_error.rb", targetSymbolId: null });
+  });
+
+  it("a core member the project never declares (`self.class.name`) stays external", () => {
+    const at = inMethod("Endpoint#protagonist", ["Endpoint"], "lib/endpoint.rb");
+    expect(resolver.resolve(selfClass("name"), at)).toBeNull();
+    expect(resolver.targetsExternalImport(selfClass("name"), at)).toBe(true);
+  });
+
+  it("inside a class method `self.class` is `Class`, never the enclosing class", () => {
+    const target = resolver.resolve(
+      selfClass("kind"),
+      inMethod("PolicyError.build", ["PolicyError"], "lib/policy_error.rb"),
+    );
+    expect(target?.targetSymbolId ?? null).not.toBe("PolicyError.kind");
+  });
+
+  it("inside a module's instance method `self.class` is the includer, so nothing is pinned", () => {
+    const target = resolver.resolve(selfClass("kind"), inMethod("Kinded#describe", ["Kinded"], "lib/kinded.rb"));
+    expect(target?.targetSymbolId ?? null).toBeNull();
+  });
+
+  it("fans `self.class.kind` out over the subclasses that redefine the singleton `kind`", () => {
+    const overriding = new InMemoryGlobalSymbolTable();
+    overriding.upsertFile("lib/policy_error.rb", [
+      sym("PolicyError", "PolicyError", "lib/policy_error.rb", []),
+      sym("PolicyError.kind", "kind", "lib/policy_error.rb", ["PolicyError"]),
+      sym("PolicyError#kind", "kind", "lib/policy_error.rb", ["PolicyError"]),
+    ]);
+    overriding.upsertFile("lib/forbidden_error.rb", [
+      sym("ForbiddenError", "ForbiddenError", "lib/forbidden_error.rb", []),
+      sym("ForbiddenError.kind", "kind", "lib/forbidden_error.rb", ["ForbiddenError"]),
+    ]);
+    overriding.upsertFile("lib/missing_error.rb", [
+      sym("MissingError", "MissingError", "lib/missing_error.rb", []),
+      sym("MissingError#kind", "kind", "lib/missing_error.rb", ["MissingError"]),
+    ]);
+    const at = ctx({
+      symbolTable: overriding,
+      classAncestors: { ForbiddenError: ["PolicyError"], MissingError: ["PolicyError"] },
+      callerSymbolId: "PolicyError#kind",
+      callerScope: ["PolicyError"],
+      callerFile: "lib/policy_error.rb",
+      hierarchy: hierarchyOf({ PolicyError: ["ForbiddenError", "MissingError"] }),
+    });
+    const edges = edgesOf(resolver.resolveDispatch(selfClass("kind"), at));
+    expect(edges.map((e) => [e.targetSymbolId, e.edgeKind]).sort()).toEqual([
+      ["ForbiddenError.kind", "cone"],
+      ["PolicyError.kind", "cone"],
+    ]);
+  });
+
+  it("no cone when no subclass redefines the singleton member", () => {
+    const at = inMethod(
+      "PolicyError#kind",
+      ["PolicyError"],
+      "lib/policy_error.rb",
+      hierarchyOf({ PolicyError: ["ForbiddenError"] }),
+    );
+    expect(edgesOf(resolver.resolveDispatch(selfClass("kind"), at))).toEqual([]);
+  });
+});

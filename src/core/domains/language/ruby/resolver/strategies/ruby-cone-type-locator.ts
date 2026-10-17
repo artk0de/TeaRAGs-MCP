@@ -20,7 +20,15 @@ import { lastConstantSegment, lookupRubySymbolsByShortName, resolveConstant, typ
  * locator carries ONLY the Ruby naming/resolution conventions.
  */
 export class RubyConeTypeLocator implements ConeTypeLocator {
-  constructor(private readonly cfg: ResolverConfig) {}
+  /**
+   * `memberForm` narrows a direct method to one dispatch side — a class-valued
+   * receiver dispatches to `Type.m` only (`symbolIdIsClassMethod`). Absent, both
+   * `Type#m` and `Type.m` count.
+   */
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly memberForm?: (symbolId: string, member: string) => boolean,
+  ) {}
 
   /** Resolve a (possibly qualified) Ruby constant to its declaring file, or null. */
   resolveTypeFile(typeName: string, ctx: CallContext): RelPath | null {
@@ -38,6 +46,7 @@ export class RubyConeTypeLocator implements ConeTypeLocator {
     const bareType = lastConstantSegment(typeName);
     const candidates = lookupRubySymbolsByShortName(ctx, member, { role: "callee" }).filter((def) => {
       if (def.relPath !== file) return false;
+      if (this.memberForm && !this.memberForm(def.symbolId, member)) return false;
       const tail = def.scope[def.scope.length - 1];
       return tail === typeName || tail === bareType;
     });

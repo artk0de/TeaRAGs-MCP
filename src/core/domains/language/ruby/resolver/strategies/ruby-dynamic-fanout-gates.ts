@@ -33,6 +33,7 @@ import { resolveConventionReceiverTarget } from "./ruby-convention-receiver.js";
 import { ivarFieldOwnsReceiver, resolveIvarFieldTarget } from "./ruby-ivar-field.js";
 import { RubyRelationChainSymbolResolutionStrategy } from "./ruby-relation-chain.js";
 import { resolveBoundCallTarget } from "./ruby-return-type-binding.js";
+import { resolveSelfClassTarget, selfClassReceiverType } from "./ruby-self-class.js";
 import { receiverChainTailIsExternal, receiverIsIndexAccess, resolveConstant, type ResolverConfig } from "./shared.js";
 import { typeOfReceiver } from "./type-propagation.js";
 
@@ -161,6 +162,9 @@ function exactChainOwnsReceiverShape(receiver: string, ctx: CallContext): boolea
  * `document.resolved_doc_dir.documents.ordered` fanned out to every `ordered`
  * in the project (over the cap on taxdome: an ambiguous residual) before the
  * chain ever ran. Same target gate: an unpinned member still fans out.
+ *
+ * `self.class` receiver the `selfClass` pass PINS (bd tea-rags-mcp-2m83f.58) —
+ * `self.class.kind` fanned out to every `kind`, instance namesakes included.
  */
 export class RubyExactPassAnswerProbe implements ExactChainAnswerProbe {
   private readonly mode: AmbiguousResolveMode;
@@ -174,6 +178,8 @@ export class RubyExactPassAnswerProbe implements ExactChainAnswerProbe {
   answers(call: CallRef, ctx: CallContext): boolean {
     if (resolveBoundCallTarget(call, ctx, this.mode) !== null) return true;
     if (resolveIvarFieldTarget(call, ctx, this.mode) !== null) return true;
+    const selfClass = selfClassReceiverType(call, ctx);
+    if (selfClass !== null && resolveSelfClassTarget(selfClass, call.member, ctx, this.mode) !== null) return true;
     return this.relationChain.attempt(call, ctx).kind === "resolved";
   }
 }
