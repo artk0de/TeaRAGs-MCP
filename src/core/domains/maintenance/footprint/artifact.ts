@@ -1,4 +1,8 @@
-import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { ResolvedCollection } from "../../../contracts/types/footprint.js";
+
+// The resolved-collection vocabulary lives on the contracts footprint seam —
+// footprint consumers name it from there; re-exported here for the domain's own surface.
+export type { ResolvedCollection } from "../../../contracts/types/footprint.js";
 
 export type ArtifactId = "qdrant" | "codegraph" | "snapshot" | "stats" | "quarantine" | "indexing-lock";
 
@@ -19,16 +23,6 @@ export type ArtifactId = "qdrant" | "codegraph" | "snapshot" | "stats" | "quaran
  * shadow-DuckDB defect (bd 6goqa) diverged in the first place.
  */
 export type ArtifactAddressing = "physical" | "logical";
-
-export interface ResolvedCollection {
-  logicalName: string;
-  physicalName: PhysicalCollectionName;
-  path: string;
-  embeddingModel: string;
-  embeddingDimensions: number;
-  qdrantUrl: string;
-  codegraphEnabled: boolean;
-}
 
 export interface FootprintContext {
   source: ResolvedCollection;

@@ -85,6 +85,20 @@ addEdge  { from: "src/core/domains/maintenance/worktree/worktree-provisioner.ts"
 addEdge  { from: "src/core/domains/maintenance/footprint/index.ts", to: "src/core/contracts/types/collection-footprint.ts" }
 ```
 
+- **As landed** (design refined during implementation): the port lives in the
+  EXISTING `contracts/types/footprint.ts` — the footprint store-contract seam —
+  not a new `collection-footprint.ts`; only `ResolvedCollection` moved there
+  (the artifact protocol stayed private to footprint). The port speaks intent:
+  `clone(source, target)` / `remove(source, target)`; the reverse teardown walk
+  moved from `WorktreeProvisioner#remove` into a new `removeCollectionFootprint`
+  beside the clone saga, and
+  `CollectionFootprintFactory implements CollectionFootprintPort` by delegation.
+  The saga-level tests (clone order, rollback, forgiving teardown) moved to
+  `tests/core/domains/maintenance/footprint/clone-saga.test.ts`; the provisioner
+  suite now asserts the port seam, and the footprint facade guard asserts the
+  provisioner imports footprint NEVER. Same SDP delta, smaller contracts
+  surface.
+
 - **Expected delta** (from simulation): resolved (1): SDP
   `maintenance/worktree → maintenance/footprint` (structural). Introduced: none.
   byTier: structural 1/0. net **−1**, persisting 42.

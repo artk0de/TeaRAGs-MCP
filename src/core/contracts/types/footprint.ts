@@ -71,3 +71,36 @@ export type SnapshotArtifactStoreFactory = (baseDir: string, logicalName: string
 
 /** Builds a {@link QuarantineArtifactStore} bound to (baseDir, logicalName). */
 export type QuarantineArtifactStoreFactory = (baseDir: string, logicalName: string) => QuarantineArtifactStore;
+
+/** A collection resolved for footprint work: the logical alias plus the physical generation it currently fronts. */
+export interface ResolvedCollection {
+  logicalName: string;
+  physicalName: PhysicalCollectionName;
+  path: string;
+  embeddingModel: string;
+  embeddingDimensions: number;
+  qdrantUrl: string;
+  codegraphEnabled: boolean;
+}
+
+/**
+ * What a footprint consumer (the worktree provisioner) may ask of a collection's
+ * footprint: clone the whole artifact set onto a fresh target, or tear the
+ * target's artifacts down. Intent-level on purpose — the artifact protocol
+ * (context, ordered artifacts, per-artifact clone/remove) is the footprint
+ * domain's own vocabulary and stays inside it; consumers name the two outcomes,
+ * never the mechanism (bd tea-rags-mcp-54xwd.2).
+ */
+export interface CollectionFootprintPort {
+  /**
+   * Copy every footprint artifact of `source` onto `target`. On failure the
+   * clone rolls back what it already created and rethrows — a half-cloned
+   * target is never left behind.
+   */
+  clone: (source: ResolvedCollection, target: ResolvedCollection) => Promise<void>;
+  /**
+   * Best-effort teardown of the TARGET artifacts, walked in reverse clone
+   * order. Per-artifact failures are non-fatal skips; removal continues.
+   */
+  remove: (source: ResolvedCollection, target: ResolvedCollection) => Promise<void>;
+}

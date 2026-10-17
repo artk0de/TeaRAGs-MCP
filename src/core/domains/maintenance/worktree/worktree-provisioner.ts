@@ -2,7 +2,13 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import { validatePathSync } from "../../../adapters/filesystem/path-canonicalization.js";
 import type { QdrantAliasAccess } from "../../../adapters/qdrant/ports.js";
-import type { WorktreeCreateInput, WorktreeCreateResult, WorktreeRemoveInput } from "../../../contracts/index.js";
+import type {
+  CollectionFootprintPort,
+  ResolvedCollection,
+  WorktreeCreateInput,
+  WorktreeCreateResult,
+  WorktreeRemoveInput,
+} from "../../../contracts/index.js";
 import {
   collectionAliasOfRegistryEntry,
   resolveCollectionName,
@@ -10,11 +16,6 @@ import {
   versionedPhysicalCollectionName,
 } from "../../../primitives/ids/index.js";
 import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
-import {
-  cloneCollectionFootprint,
-  type CollectionFootprintFactory,
-  type ResolvedCollection,
-} from "../footprint/index.js";
 import type { CollectionRegistry } from "../registry/index.js";
 import {
   ensureGitWorktree as defaultEnsureGitWorktree,
@@ -24,7 +25,7 @@ import {
 export interface WorktreeProvisionerDeps {
   registry: CollectionRegistry;
   qdrant: QdrantAliasAccess;
-  footprintFactory: CollectionFootprintFactory;
+  footprint: CollectionFootprintPort;
   dataDir: string;
   /** Injectable for testing — defaults to the real git-worktree implementation. */
   ensureGitWorktree?: (repoRoot: string, name: string, targetPath: string, branch?: string) => boolean;
@@ -49,7 +50,7 @@ export class WorktreeProvisioner {
   }
 
   async create(input: WorktreeCreateInput): Promise<WorktreeCreateResult> {
-    const { registry, qdrant, footprintFactory } = this.deps;
+    const { registry, qdrant, footprint } = this.deps;
 
     const sourceEntry = input.from ? registry.findByName(input.from) : registry.findByPath(process.cwd());
     if (!sourceEntry) throw new WorktreeSourceNotFoundError(input.from ?? "cwd");
@@ -110,7 +111,7 @@ export class WorktreeProvisioner {
 
     try {
       // C2 lives in the saga: each artifact joins the rollback BEFORE its clone.
-      await cloneCollectionFootprint(footprintFactory, source, target);
+      await footprint.clone(source, target);
     } catch (err) {
       // C1: roll back the git worktree if we created it.
       if (gitCreated) {
@@ -186,7 +187,7 @@ export class WorktreeProvisioner {
   }
 
   async remove(input: WorktreeRemoveInput): Promise<{ removed: boolean }> {
-    const { registry, qdrant, footprintFactory } = this.deps;
+    const { registry, qdrant, footprint } = this.deps;
 
     const entry = registry.findWorktree(input.name);
     if (!entry) throw new WorktreeNotFoundError(input.name);
@@ -220,8 +221,7 @@ export class WorktreeProvisioner {
       path: entry.path,
     };
 
-    const { context, artifacts } = footprintFactory.build(source, target);
-    for (const a of [...artifacts].reverse()) await a.remove(context).catch(() => undefined);
+    await footprint.remove(source, target);
 
     registry.remove(entry.collectionName);
 

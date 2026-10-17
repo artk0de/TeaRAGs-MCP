@@ -20,20 +20,7 @@ import {
 } from "../../../../src/core/domains/maintenance/worktree/worktree-provisioner.js";
 import { resolveCollectionName } from "../../../../src/core/primitives/ids/collection-identity.js";
 
-function fakeArtifact(id: string, calls: string[], failOn?: string) {
-  return {
-    id,
-    clone: vi.fn(async () => {
-      calls.push(`clone:${id}`);
-      if (failOn === id) throw new Error(`boom ${id}`);
-    }),
-    remove: vi.fn(async () => {
-      calls.push(`remove:${id}`);
-    }),
-  };
-}
-
-function makeDeps(over: Partial<Record<string, unknown>> = {}, calls: string[] = [], failOn?: string) {
+function makeDeps(over: Partial<Record<string, unknown>> = {}, opts: { failCloneWith?: string } = {}) {
   const sourceEntry = {
     collectionName: "code_src",
     path: "/repo",
@@ -52,12 +39,13 @@ function makeDeps(over: Partial<Record<string, unknown>> = {}, calls: string[] =
     chunksCount: 5,
   };
   const recorded: Record<string, unknown>[] = [];
-  // Track what footprintFactory.build() was called with for assertion
-  const buildCalls: { source: unknown; target: unknown }[] = [];
+  // Track what the footprint port was asked with for assertion
+  const cloneCalls: { source: unknown; target: unknown }[] = [];
+  const removeCalls: { source: unknown; target: unknown }[] = [];
   return {
-    calls,
     recorded,
-    buildCalls,
+    cloneCalls,
+    removeCalls,
     sourceEntry,
     deps: {
       registry: {
@@ -78,15 +66,13 @@ function makeDeps(over: Partial<Record<string, unknown>> = {}, calls: string[] =
         aliases: { resolveActive: vi.fn(async () => "code_src_v1") },
         listCollections: vi.fn(async () => []),
       },
-      footprintFactory: {
-        build: vi.fn((source: unknown, target: unknown) => {
-          buildCalls.push({ source, target });
-          return {
-            context: { source: {}, target: { logicalName: "code_dst" } },
-            artifacts: ["qdrant", "codegraph", "snapshot", "stats", "quarantine"].map((id) =>
-              fakeArtifact(id, calls, failOn),
-            ),
-          };
+      footprint: {
+        clone: vi.fn(async (source: unknown, target: unknown) => {
+          cloneCalls.push({ source, target });
+          if (opts.failCloneWith) throw new Error(opts.failCloneWith);
+        }),
+        remove: vi.fn(async (source: unknown, target: unknown) => {
+          removeCalls.push({ source, target });
         }),
       },
       dataDir: "/data",
@@ -96,11 +82,21 @@ function makeDeps(over: Partial<Record<string, unknown>> = {}, calls: string[] =
 }
 
 describe("WorktreeProvisioner.create saga", () => {
-  it("clones all artifacts then commits the registry entry with provenance", async () => {
-    const { deps, calls, recorded } = makeDeps();
+  it("clones through the footprint port then commits the registry entry with provenance", async () => {
+    // The per-artifact clone order is the footprint saga's behavior
+    // (clone-saga.test.ts); the provisioner's own contract is that create
+    // goes through the port with the resolved source/target and only then
+    // records.
+    const { deps, recorded, cloneCalls } = makeDeps();
     const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     const res = await ops.create({ name: "x", createGit: false });
-    expect(calls).toEqual(["clone:qdrant", "clone:codegraph", "clone:snapshot", "clone:stats", "clone:quarantine"]);
+    expect(cloneCalls).toHaveLength(1);
+    expect((cloneCalls[0].source as { logicalName: string }).logicalName).toBe("code_src");
+    // The clone's alias is the worktree path's hash — what every collection
+    // resolver reads the clone back by.
+    expect((cloneCalls[0].target as { logicalName: string }).logicalName).toBe(
+      resolveCollectionName(join(process.cwd(), "x")),
+    );
     expect(recorded).toHaveLength(1);
     expect(deps.registry.setWorktreeProvenance).toHaveBeenCalled();
     expect(res.alias).toContain("worktree-x");
@@ -213,19 +209,10 @@ describe("WorktreeProvisioner.create saga", () => {
     expect(stampTrajectoryVersions).not.toHaveBeenCalled();
   });
 
-  it("rolls back ALL artifacts including the failing one in reverse on failure", async () => {
-    // C2: the failing artifact (snapshot) must participate in rollback
-    const { deps, calls, recorded } = makeDeps({}, [], "snapshot");
+  it("does not record when the footprint clone rejects (rollback is the port's saga)", async () => {
+    const { deps, recorded } = makeDeps({}, { failCloneWith: "boom snapshot" });
     const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(/boom snapshot/);
-    expect(calls).toEqual([
-      "clone:qdrant",
-      "clone:codegraph",
-      "clone:snapshot",
-      "remove:snapshot", // failing artifact participates in rollback
-      "remove:codegraph",
-      "remove:qdrant",
-    ]);
     expect(recorded).toHaveLength(0);
   });
 
@@ -233,15 +220,14 @@ describe("WorktreeProvisioner.create saga", () => {
     // I1: typed error for target-exists guard. Asked BY PATH (bd tea-rags-mcp-dxa9w):
     // the entry that claims a directory is the one that says it is taken, and a
     // relocated entry's collection is not what its path hashes to.
-    const calls: string[] = [];
-    const { deps, sourceEntry } = makeDeps({}, calls);
+    const { deps, sourceEntry } = makeDeps();
     deps.registry.findByPath = vi.fn((p: string) =>
       p === process.cwd() ? sourceEntry : { ...sourceEntry, collectionName: "code_dst" },
     );
     const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(WorktreeCollectionExistsError);
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(/already exists/);
-    expect(calls).toEqual([]);
+    expect(deps.footprint.clone).not.toHaveBeenCalled();
   });
 
   it("throws WorktreeCollectionExistsError when the target NAME belongs to a relocated project", async () => {
@@ -252,8 +238,7 @@ describe("WorktreeProvisioner.create saga", () => {
     // saga would clone into that live project's collection, overwrite its
     // registry entry, take its alias, and stamp it `worktreeOf` — after which
     // `worktree remove` deletes a real project.
-    const calls: string[] = [];
-    const { deps, sourceEntry } = makeDeps({}, calls);
+    const { deps, sourceEntry } = makeDeps();
     const targetLogical = resolveCollectionName(join(process.cwd(), "x"));
     deps.registry.findByPath = vi.fn((p: string) => (p === process.cwd() ? sourceEntry : null));
     deps.registry.get = vi.fn((name: string) =>
@@ -262,7 +247,7 @@ describe("WorktreeProvisioner.create saga", () => {
     const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
 
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(WorktreeCollectionExistsError);
-    expect(calls).toEqual([]);
+    expect(deps.footprint.clone).not.toHaveBeenCalled();
     expect(deps.registry.record).not.toHaveBeenCalled();
   });
 
@@ -283,11 +268,10 @@ describe("WorktreeProvisioner.create saga", () => {
 
 describe("WorktreeProvisioner.create with git (C1)", () => {
   it("calls injected removeGitWorktree when gitCreated=true and artifact clone fails", async () => {
-    const calls: string[] = [];
     const removeGitWorktree = vi.fn();
     const ensureGitWorktree = vi.fn(() => true); // returns true = worktree was created
 
-    const { deps } = makeDeps({}, calls, "qdrant");
+    const { deps } = makeDeps({}, { failCloneWith: "boom qdrant" });
     const ops = new WorktreeProvisioner({
       ...deps,
       ensureGitWorktree,
@@ -301,11 +285,10 @@ describe("WorktreeProvisioner.create with git (C1)", () => {
   });
 
   it("does NOT call removeGitWorktree when gitCreated=false (attach path) and artifact fails", async () => {
-    const calls: string[] = [];
     const removeGitWorktree = vi.fn();
     const ensureGitWorktree = vi.fn(() => false); // returns false = attached to existing dir
 
-    const { deps } = makeDeps({}, calls, "qdrant");
+    const { deps } = makeDeps({}, { failCloneWith: "boom qdrant" });
     const ops = new WorktreeProvisioner({
       ...deps,
       ensureGitWorktree,
@@ -319,11 +302,10 @@ describe("WorktreeProvisioner.create with git (C1)", () => {
   });
 
   it("does NOT call removeGitWorktree when createGit=false and artifact fails", async () => {
-    const calls: string[] = [];
     const removeGitWorktree = vi.fn();
     const ensureGitWorktree = vi.fn(() => false);
 
-    const { deps } = makeDeps({}, calls, "qdrant");
+    const { deps } = makeDeps({}, { failCloneWith: "boom qdrant" });
     const ops = new WorktreeProvisioner({
       ...deps,
       ensureGitWorktree,
@@ -503,7 +485,7 @@ describe("WorktreeProvisioner.remove indexing lock", () => {
 
     const ops = new WorktreeProvisioner({
       ...deps,
-      footprintFactory,
+      footprint: footprintFactory,
     } as unknown as WorktreeProvisionerDeps);
     const result = await ops.remove({ name: "feat", force: false, keepGit: true });
 
@@ -528,7 +510,7 @@ describe("WorktreeProvisioner.remove physical resolution", () => {
       qdrantUrl: "http://h",
       codegraphEnabled: true,
     };
-    const { deps, buildCalls } = makeDeps();
+    const { deps, removeCalls } = makeDeps();
     // Stub findWorktree to return a worktree entry
     deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
     // resolveActive returns _v2 for the TARGET collection (simulating post-reindex state)
@@ -541,9 +523,9 @@ describe("WorktreeProvisioner.remove physical resolution", () => {
     const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await ops.remove({ name: "feat", force: false, keepGit: true });
 
-    // footprintFactory.build must receive target with physicalName = "code_dst_v2"
-    expect(buildCalls).toHaveLength(1);
-    expect((buildCalls[0].target as { physicalName: string }).physicalName).toBe("code_dst_v2");
+    // The port must receive target with physicalName = "code_dst_v2"
+    expect(removeCalls).toHaveLength(1);
+    expect((removeCalls[0].target as { physicalName: string }).physicalName).toBe("code_dst_v2");
   });
 
   it("falls back to _v1 when resolveActive throws for the target", async () => {
@@ -558,7 +540,7 @@ describe("WorktreeProvisioner.remove physical resolution", () => {
       qdrantUrl: "http://h",
       codegraphEnabled: false,
     };
-    const { deps, buildCalls } = makeDeps();
+    const { deps, removeCalls } = makeDeps();
     deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
     deps.qdrant.aliases.resolveActive = vi.fn(async (name: string) => {
       if (name === "code_src") return "code_src_v1";
@@ -568,16 +550,18 @@ describe("WorktreeProvisioner.remove physical resolution", () => {
     const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     await ops.remove({ name: "feat", force: false, keepGit: true });
 
-    expect(buildCalls).toHaveLength(1);
-    expect((buildCalls[0].target as { physicalName: string }).physicalName).toBe("code_dst_v1");
+    expect(removeCalls).toHaveLength(1);
+    expect((removeCalls[0].target as { physicalName: string }).physicalName).toBe("code_dst_v1");
   });
 });
 
 // ── Best-effort teardown paths ────────────────────────────────────────────────
 //
-// Rollback and teardown are deliberately forgiving: a half-written artifact must
-// not be able to strand the operation. These pin that forgiveness so a future
-// refactor cannot turn a swallowed cleanup failure into a thrown one.
+// The per-artifact forgiveness (reverse walk, swallowed teardown failures,
+// rollback of a failing remove) is the footprint saga's own behavior and is
+// pinned in footprint/clone-saga.test.ts. What the provisioner owns here: the
+// ResolvedCollection it hands the port degrades instead of aborting, and the
+// clone is deregistered once the port teardown ran.
 
 describe("WorktreeProvisioner teardown resilience", () => {
   const worktreeEntry = {
@@ -591,46 +575,8 @@ describe("WorktreeProvisioner teardown resilience", () => {
     codegraphEnabled: false,
   };
 
-  it("create rollback survives an artifact whose remove also fails, and still surfaces the clone error", async () => {
-    const calls: string[] = [];
-    const { deps } = makeDeps({}, calls);
-    deps.footprintFactory.build = vi.fn(() => ({
-      context: { source: {}, target: { logicalName: "code_dst" } },
-      artifacts: [
-        {
-          id: "qdrant",
-          clone: vi.fn(async () => {
-            calls.push("clone:qdrant");
-          }),
-          // Rollback of this one fails — must be swallowed, not masked over the real cause.
-          remove: vi.fn(async () => {
-            calls.push("remove:qdrant");
-            throw new Error("qdrant delete refused");
-          }),
-        },
-        {
-          id: "codegraph",
-          clone: vi.fn(async () => {
-            calls.push("clone:codegraph");
-            throw new Error("boom codegraph");
-          }),
-          remove: vi.fn(async () => {
-            calls.push("remove:codegraph");
-          }),
-        },
-      ],
-    }));
-
-    const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
-
-    await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow("boom codegraph");
-    // Reverse order, and the failing rollback did not stop the earlier artifact from being undone.
-    expect(calls).toEqual(["clone:qdrant", "clone:codegraph", "remove:codegraph", "remove:qdrant"]);
-    expect(deps.registry.record).not.toHaveBeenCalled();
-  });
-
   it("remove falls back to the logical source name when the source alias cannot be resolved", async () => {
-    const { deps, buildCalls } = makeDeps();
+    const { deps, removeCalls } = makeDeps();
     deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
     deps.registry.get = vi.fn(() => ({ path: "/repo" })) as unknown as typeof deps.registry.get;
     deps.qdrant.aliases.resolveActive = vi.fn(async () => {
@@ -642,41 +588,20 @@ describe("WorktreeProvisioner teardown resilience", () => {
 
     expect(res).toEqual({ removed: true });
     // Source physical name degrades to the logical name rather than aborting teardown.
-    expect((buildCalls[0].source as { physicalName: string }).physicalName).toBe("code_src");
-    expect((buildCalls[0].target as { physicalName: string }).physicalName).toBe("code_dst_v1");
+    expect((removeCalls[0].source as { physicalName: string }).physicalName).toBe("code_src");
+    expect((removeCalls[0].target as { physicalName: string }).physicalName).toBe("code_dst_v1");
   });
 
-  it("remove deregisters the clone even when an artifact teardown rejects", async () => {
-    const { deps } = makeDeps();
+  it("remove deregisters the clone once the footprint teardown has run", async () => {
+    const { deps, removeCalls } = makeDeps();
     deps.registry.findWorktree = vi.fn(() => worktreeEntry) as unknown as typeof deps.registry.findWorktree;
     deps.registry.get = vi.fn(() => ({ path: "/repo" })) as unknown as typeof deps.registry.get;
-    const removed: string[] = [];
-    deps.footprintFactory.build = vi.fn(() => ({
-      context: { source: {}, target: { logicalName: "code_dst" } },
-      artifacts: [
-        {
-          id: "qdrant",
-          clone: vi.fn(),
-          remove: vi.fn(async () => {
-            removed.push("qdrant");
-          }),
-        },
-        {
-          id: "stats",
-          clone: vi.fn(),
-          remove: vi.fn(async () => {
-            removed.push("stats");
-            throw new Error("stats file locked");
-          }),
-        },
-      ],
-    }));
 
     const ops = new WorktreeProvisioner(deps as unknown as WorktreeProvisionerDeps);
     const res = await ops.remove({ name: "feat", force: false, keepGit: true });
 
     expect(res).toEqual({ removed: true });
-    expect(removed).toEqual(["stats", "qdrant"]);
+    expect(removeCalls).toHaveLength(1);
     expect(deps.registry.remove).toHaveBeenCalledWith("code_dst");
   });
 });

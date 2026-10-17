@@ -2113,7 +2113,7 @@ function createIngestSection(deps: {
   const worktreeProvisioner = new WorktreeProvisioner({
     registry: collectionRegistry,
     qdrant: infra.qdrant,
-    footprintFactory,
+    footprint: footprintFactory,
     dataDir: config.paths.appData,
   });
   const worktreeOps = new WorktreeOps(worktreeProvisioner);
