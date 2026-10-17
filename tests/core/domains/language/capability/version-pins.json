@@ -53,7 +53,7 @@
   },
   "python": {
     "walker": {
-      "version": 13,
+      "version": 12,
       "digest": "sha256:79ede3b23258a04bc7b36f6530cf55d990eba7d6a3c07fece10ebd1596b40ce8"
     }
   },
@@ -63,17 +63,17 @@
       "digest": "sha256:816f6a8bc8de1d1cb6d7fca5a0b2c2d256530ac4c8db262e687230ec5fbc3484"
     },
     "walker": {
-      "version": 30,
+      "version": 10,
       "digest": "sha256:318485ee00139142a65c1f0077fed741610ef65364627408102d5b05649a8b15"
     }
   },
   "rust": {
     "chunking": {
-      "version": 4,
+      "version": 2,
       "digest": "sha256:e0b33c5196c520c0a681fbdd648255f2ece989426b18a88c04c583b36251ecd9"
     },
     "walker": {
-      "version": 5,
+      "version": 4,
       "digest": "sha256:c286d23df8ed666c75b40ccc8b4bcb023c6c8f97a7f1157e036041a1a4d8266e"
     }
   },

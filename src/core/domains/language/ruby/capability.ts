@@ -92,68 +92,68 @@ export const capability: LanguageCapability = {
   // readers return `ActiveStorage::Attached::One` / `::Many`, and the facade answers
   // `residualExclusion`, so a walker-9 index holds residual rows for column and
   // Rails-framework callees no menu can name.
-  // walker 11: bd tea-rags-mcp-2m83f.35 — timestamp columns and attachment tails
+  // walker 10: bd tea-rags-mcp-2m83f.35 — timestamp columns and attachment tails
   // beside non-project facts leave the residual rows.
-  // walker 12: bd tea-rags-mcp-2m83f.32.3 — an AR relation chain resolves the
+  // walker 10: bd tea-rags-mcp-2m83f.32.3 — an AR relation chain resolves the
   // next scope on its model (`Firm.without_deleted.available_for`, a query-method
-  // head, a concern's scope typed over the includer), so a walker-11 index holds
+  // head, a concern's scope typed over the includer), so a walker-9 index holds
   // residual rows and namesake edges for those calls.
-  // walker 13: bd tea-rags-mcp-2m83f.36 — attr_reader / attr_accessor return the
-  // type of the @ivar they read, so a walker-12 index holds residual rows for
+  // walker 10: bd tea-rags-mcp-2m83f.36 — attr_reader / attr_accessor return the
+  // type of the @ivar they read, so a walker-9 index holds residual rows for
   // reader calls on typed fields.
-  // walker 16: bd tea-rags-mcp-2m83f.32.5 — the dynamic fan-out defers a relation
-  // chain the `relationChain` pass pins, so a walker-15 index holds residual rows
+  // walker 10: bd tea-rags-mcp-2m83f.32.5 — the dynamic fan-out defers a relation
+  // chain the `relationChain` pass pins, so a walker-9 index holds residual rows
   // and namesake edges for convention-rooted chains (`document.….documents.ordered`).
-  // walker 17: bd tea-rags-mcp-2m83f.42 — an untyped owner's link is typed by the
+  // walker 10: bd tea-rags-mcp-2m83f.42 — an untyped owner's link is typed by the
   // return every candidate agrees on (`record.firm` → `Firm`), so a walker-16
   // index lacks the downstream edges of overflow hops (`record.firm.name`).
-  // walker 18: bd tea-rags-mcp-2m83f.24 — a Rails framework instance member on an
+  // walker 10: bd tea-rags-mcp-2m83f.24 — a Rails framework instance member on an
   // untyped receiver (`form.save!`, `value.presence`) is externalSkipped unless a
-  // namesake sits in the AR model hierarchy, so a walker-17 index holds residual
+  // namesake sits in the AR model hierarchy, so a walker-9 index holds residual
   // rows and recall misses for those calls.
-  // walker 19: bd tea-rags-mcp-2m83f.44 — calls carry `argExprs` and a parameter
+  // walker 10: bd tea-rags-mcp-2m83f.44 — calls carry `argExprs` and a parameter
   // is typed from its exact-edge callers (`perform(record)` called with an
-  // `Invoice`), so a walker-18 index lacks the edges of calls on parameters.
-  // walker 20: bd tea-rags-mcp-2m83f.43 — def chunks carry `localAssignmentLines`,
+  // `Invoice`), so a walker-9 index lacks the edges of calls on parameters.
+  // walker 10: bd tea-rags-mcp-2m83f.43 — def chunks carry `localAssignmentLines`,
   // so residual receiver narrowing splits a reassigned receiver; a walker-19
   // index groups the calls of a reassigned local as one receiver.
-  // walker 21: bd tea-rags-mcp-2m83f.48 — every argument of `include A, B`, `send(:include, X)`,
+  // walker 10: bd tea-rags-mcp-2m83f.48 — every argument of `include A, B`, `send(:include, X)`,
   // `X.include(Y)`, `X.class_eval { include Y }`, `base.include(Y)` in an `included` hook and a
   // top-level `include` are recorded; an unreadable mixin publishes `unresolvedMixinClasses`,
-  // so a walker-20 index misses the reachable overrides of frameworkOverride residual sites.
-  // walker 22: bd tea-rags-mcp-2m83f.49 — `argExprs` carry constant paths and
+  // so a walker-9 index misses the reachable overrides of frameworkOverride residual sites.
+  // walker 10: bd tea-rags-mcp-2m83f.49 — `argExprs` carry constant paths and
   // canonical literals, so a parameter is typed from `perform(Firm)` (class form)
-  // and a literal caller disagrees with a project-typed one; a walker-21 index
+  // and a literal caller disagrees with a project-typed one; a walker-9 index
   // lacks those parameter types and their edges.
-  // walker 23: bd tea-rags-mcp-2m83f.46 — residual rows carry their receiver group and its
+  // walker 10: bd tea-rags-mcp-2m83f.46 — residual rows carry their receiver group and its
   // class targets (`[["Invoice", "Invoice#save"]]`), so the pass asks one class question per
-  // group; a walker-22 index holds ungrouped rows and asks per site.
-  // walker 24: bd tea-rags-mcp-2m83f.51 — each class target carries its return type and the
+  // group; a walker-9 index holds ungrouped rows and asks per site.
+  // walker 10: bd tea-rags-mcp-2m83f.51 — each class target carries its return type and the
   // row names the group of the next chain hop, so an accepted class types `record.firm.name`;
-  // a walker-23 index propagates nothing downstream.
-  // walker 25: bd tea-rags-mcp-2m83f.53 — a receiver splits into hops at bracket depth
+  // a walker-9 index propagates nothing downstream.
+  // walker 10: bd tea-rags-mcp-2m83f.53 — a receiver splits into hops at bracket depth
   // zero (`Serializer.new(result.data).as_json` types the constructor's class), `x.class`
   // types as x's class, and a member on an untyped `x.class` with no project class method
-  // is external; a walker-24 index leaves those sites in the residual.
-  // walker 26: bd tea-rags-mcp-2m83f.52 — a receiver named after a project module narrows to its
+  // is external; a walker-9 index leaves those sites in the residual.
+  // walker 10: bd tea-rags-mcp-2m83f.52 — a receiver named after a project module narrows to its
   // includers, a member reached only as a framework override no longer empties the constraint
-  // set, and an `x.class` receiver is offered class-level members only; a walker-25 index keeps
+  // set, and an `x.class` receiver is offered class-level members only; a walker-9 index keeps
   // the wider sets and offers `x.class` instance methods.
-  // walker 27: bd tea-rags-mcp-2m83f.56 — `assoc.first` / `.find_by(...)` on a has_many / habtm
+  // walker 10: bd tea-rags-mcp-2m83f.56 — `assoc.first` / `.find_by(...)` on a has_many / habtm
   // reader (and `@x ||= ` over it) returns the association's element class, read from
-  // `source_type:` on a polymorphic through; a walker-26 index leaves `firm.owner.user` untyped.
-  // walker 28: bd tea-rags-mcp-2m83f.55 — a class reading a member as a schema column stays in
+  // `source_type:` on a polymorphic through; a walker-9 index leaves `firm.owner.user` untyped.
+  // walker 10: bd tea-rags-mcp-2m83f.55 — a class reading a member as a schema column stays in
   // the group's class targets (no target, the column type as its return), and a site every
   // narrowed class reads as a column moves to `noInProjectDef` (`schemaAttribute`) with its
-  // over-cap aggregate dropped; a walker-26/27 index keeps column readers out of the menus and
+  // over-cap aggregate dropped; a walker-9 index keeps column readers out of the menus and
   // the column reads in the miss.
-  // walker 29: bd tea-rags-mcp-2m83f.58 — a `self.class` receiver in an instance method is the
+  // walker 10: bd tea-rags-mcp-2m83f.58 — a `self.class` receiver in an instance method is the
   // enclosing class: `self.class.m` lands on its singleton `m` (coned over subclasses redefining
-  // it) and `self.class.new` on its `initialize`; a walker-28 index leaves both to the residual.
-  // walker 30: bd tea-rags-mcp-2m83f.59 — a constant receiver's `new` (`C.new`, `A::B.new`) follows
+  // it) and `self.class.new` on its `initialize`; a walker-9 index leaves both to the residual.
+  // walker 10: bd tea-rags-mcp-2m83f.59 — a constant receiver's `new` (`C.new`, `A::B.new`) follows
   // the same constructor rule: a declared singleton `new`, else the `initialize` C's ancestry finds;
-  // a walker-29 index leaves those calls on C's file-only edge.
-  versions: { chunking: 2, walker: 30, codegraphSchema: 2 },
+  // a walker-9 index leaves those calls on C's file-only edge.
+  versions: { chunking: 2, walker: 10, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

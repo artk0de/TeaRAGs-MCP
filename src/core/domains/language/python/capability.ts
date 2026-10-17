@@ -106,12 +106,12 @@ export const capability: LanguageCapability = {
   // `--force-enrichments codegraph --languages python`.
   // walker 12: bd tea-rags-mcp-2m83f.32.6 — a convention receiver whose class
   // several files declare takes the one the caller's scope reaches.
-  // walker 13: bd tea-rags-mcp-2m83f.32.4 — a Django queryset's
+  // walker 12: bd tea-rags-mcp-2m83f.32.4 — a Django queryset's
   // `return self.<verb>(…)` is the receiver, a query verb on a project queryset
   // or manager keeps its queryset class, and Django's own relation of a model
-  // resolves on the queryset the model's manager carries; a walker-12 index
+  // resolves on the queryset the model's manager carries; a walker-11 index
   // holds residual rows and namesake edges for those calls.
-  versions: { chunking: 1, walker: 13, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 12, codegraphSchema: 2 },
   // PEP 8: classes CapWords, modules short lowercase (underscores allowed),
   // functions, methods, variables and attributes snake_case, module-level
   // constants SCREAMING_SNAKE.

@@ -538,10 +538,10 @@ describe("seeded support versions", () => {
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
-        ["python", 13],
-        ["ruby", 30],
+        ["python", 12],
+        ["ruby", 10],
         ["java", 4],
-        ["rust", 5],
+        ["rust", 4],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a
         // nested-checkout or gitignored go.mod.
         ["go", 6],
@@ -578,7 +578,7 @@ describe("seeded support versions", () => {
         ["swift", 4],
         ["bash", 2],
         ["ruby", 2],
-        ["rust", 4],
+        ["rust", 2],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);
