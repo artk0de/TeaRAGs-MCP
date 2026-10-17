@@ -172,6 +172,8 @@ function buildEnvInputs(env: EnvReader) {
       kevThreshold: env("CODEGRAPH_RESIDUAL_KEV_THRESHOLD"),
       concurrency: env("CODEGRAPH_RESIDUAL_CONCURRENCY"),
       requestTimeoutSec: env("CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC"),
+      maxQuestionsPerRequest: env("CODEGRAPH_RESIDUAL_MAX_QUESTIONS_PER_REQUEST"),
+      maxCriteriaPerRequest: env("CODEGRAPH_RESIDUAL_MAX_CRITERIA_PER_REQUEST"),
       menuLimit: env("CODEGRAPH_RESIDUAL_MENU_LIMIT"),
       minMenu: env("CODEGRAPH_RESIDUAL_MIN_MENU"),
       noneThreshold: env("CODEGRAPH_RESIDUAL_NONE_THRESHOLD"),
