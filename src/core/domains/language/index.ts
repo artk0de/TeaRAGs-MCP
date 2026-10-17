@@ -14,6 +14,7 @@ export { LanguageFactory } from "./factory.js";
 export { CrossRunParseCache } from "./cross-run-parse-cache.js";
 export { languageTestFileConventions, nativeLanguageCapabilities } from "./capability/native.js";
 export { resolveLanguageCapabilities } from "./capability/resolve.js";
+export { resolveChunkSetBumpScopes, resolveLanguageCodeVersions } from "./capability/versions.js";
 export { GrammarPackageNotInstalledError, LanguageError, UnsupportedLanguageError } from "./errors.js";
 export { RubyLanguage } from "./ruby/index.js";
 export { TypeScriptLanguage } from "./typescript/index.js";

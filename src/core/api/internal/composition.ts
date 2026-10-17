@@ -20,35 +20,36 @@ import {
   SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS,
   type PayloadFieldIndexSchema,
 } from "../../adapters/qdrant/schema-manager.js";
-import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../contracts/index.js";
-import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
-import type { TemporalSymbolCommitBuffer } from "../../contracts/types/codegraph.js";
-import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
-import type {
-  IdentifierNamingConvention,
-  LanguageCodeVersions,
-  LanguageFactoryDescriptor,
-} from "../../contracts/types/language.js";
-import type {
-  EnrichmentProvider,
-  FilterDescriptor,
-  WorkerEnrichmentDescriptor,
-} from "../../contracts/types/provider.js";
-import type { ChunkSetBumpScopes } from "../../contracts/types/rechunk.js";
-import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
-import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
-import type {
-  PayloadSignalDescriptor,
-  PayloadSignalTreeRecompute,
-  SignalFloors,
-} from "../../contracts/types/trajectory.js";
+import {
+  CODEGRAPH_SYMBOLS_PROVIDER_KEY,
+  toPhysicalPayloadKey,
+  type ChunkSetBumpScopes,
+  type DerivedSignalDescriptor,
+  type EnrichmentProvider,
+  type FilterDescriptor,
+  type FilterPresetDef,
+  type IdentifierNamingConvention,
+  type LanguageCodeVersions,
+  type LanguageFactoryDescriptor,
+  type PayloadSignalDescriptor,
+  type PayloadSignalTreeRecompute,
+  type RerankPreset,
+  type SignalFloors,
+  type StatsAccumulatorDescriptor,
+  type TemporalSymbolCommitBuffer,
+  type WorkerEnrichmentDescriptor,
+} from "../../contracts/index.js";
 import { OrderByFieldResolver } from "../../domains/explore/rank-module.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import type { RerankerPort } from "../../domains/explore/reranker-port.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/index.js";
-import { resolveChunkSetBumpScopes, resolveLanguageCodeVersions } from "../../domains/language/capability/versions.js";
-import { LanguageFactory, resolveLanguageCapabilities } from "../../domains/language/index.js";
+import {
+  LanguageFactory,
+  resolveChunkSetBumpScopes,
+  resolveLanguageCapabilities,
+  resolveLanguageCodeVersions,
+} from "../../domains/language/index.js";
 import type { DeclaredPayloadIndexSet } from "../../domains/maintenance/migration/payload_index_migrations/index.js";
 import {
   CODEGRAPH_FILTER_PRESETS,
@@ -61,8 +62,6 @@ import {
   CODEGRAPH_SYMBOLS_FILE_SIGNALS,
   codegraphFilters,
 } from "../../domains/trajectory/codegraph/symbols/index.js";
-import { filterPayloadKeys } from "../../domains/trajectory/filter-payload-keys.js";
-import { GitTrajectory } from "../../domains/trajectory/git.js";
 import {
   GIT_FILTER_PRESETS,
   gitDerivedSignals,
@@ -76,6 +75,8 @@ import {
 import {
   ALL_COMPOSITE_FILTER_PRESETS,
   buildCompositeFilterPresets,
+  filterPayloadKeys,
+  GitTrajectory,
   TrajectoryRegistry,
 } from "../../domains/trajectory/index.js";
 import {

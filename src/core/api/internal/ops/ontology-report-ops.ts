@@ -70,10 +70,7 @@ import {
   type NamingShape,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import { LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
-import {
-  languageTestFileConventions,
-  nativeLanguageCapabilities,
-} from "../../../domains/language/capability/native.js";
+import { languageTestFileConventions, nativeLanguageCapabilities } from "../../../domains/language/index.js";
 import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import {
   buildNonProductionPathFilter,
