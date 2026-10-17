@@ -122,6 +122,9 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
     lines.push(
       `  ${r.failedGroups} groups failed, ${r.requeuedGroups} requeued after a timeout, ${r.abortedGroups} aborted`,
     );
+    lines.push(
+      `  ${r.requests} requests (at most ${r.maxQuestionsPerRequest} questions), latency p50 ${r.requestLatencyP50Ms} ms / p95 ${r.requestLatencyP95Ms} ms, peak ${r.peakInFlight} in flight, ${r.groupCacheHits} group questions from cache`,
+    );
   }
 
   return lines.join("\n");

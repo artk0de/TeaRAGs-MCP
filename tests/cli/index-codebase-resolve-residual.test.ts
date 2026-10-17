@@ -56,6 +56,12 @@ const REPORT: ResidualPassReport = {
   earlyAcceptedGroups: 1,
   groupsSkippedByBudget: 1,
   windowedGroups: 3,
+  groupCacheHits: 9,
+  requests: 140,
+  maxQuestionsPerRequest: 8,
+  requestLatencyP50Ms: 2100,
+  requestLatencyP95Ms: 5400,
+  peakInFlight: 48,
   edgesApplied: 77,
   derived: "stale",
   durations: { readMs: 5, askMs: 0, applyMs: 20, recomputeMs: 15, totalMs: 25 },
@@ -119,6 +125,17 @@ describe("the residual pass in the run's output", () => {
     );
 
     expect(text).toContain("2 groups failed, 3 requeued after a timeout, 5 aborted");
+  });
+
+  it("shows the request shape, latency and peak in flight in the status block", () => {
+    const text = formatIndexStatus(
+      { ...status, residualResolution: REPORT },
+      createColorizer({ env: { NO_COLOR: "1" }, isTTY: false }),
+    );
+
+    expect(text).toContain(
+      "140 requests (at most 8 questions), latency p50 2100 ms / p95 5400 ms, peak 48 in flight, 9 group questions from cache",
+    );
   });
 
   it("is absent from both when no pass ran", () => {

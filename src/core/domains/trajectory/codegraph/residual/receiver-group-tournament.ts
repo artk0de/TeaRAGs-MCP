@@ -158,6 +158,27 @@ export class GroupTournament {
     return this.result;
   }
 
+  /**
+   * Upper bound on the block questions this tournament may still ask, the
+   * current round included: every block winner is assumed to clear the floor.
+   */
+  get questionsLeftAtMost(): number {
+    if (this.result !== undefined) return 0;
+    let entrants = this.entrants.length;
+    let total = 0;
+    if (this.priorPending && this.prior !== undefined) {
+      total = 1;
+      entrants = this.group.classes.length - this.prior.length + 1;
+    }
+    for (let round = this.roundNo; round <= MAX_TOURNAMENT_ROUNDS; round++) {
+      const blocks = Math.ceil(entrants / this.menuLimit);
+      total += blocks;
+      if (blocks <= 1) break;
+      entrants = blocks;
+    }
+    return total;
+  }
+
   /** Stop without a verdict: the budget ran out or the round could not be answered. */
   abandon(): void {
     this.result = "residual";
