@@ -9,6 +9,7 @@ import {
   type EnrichmentLevelHealth,
   type EnrichmentMetrics,
   type IndexStatus,
+  type ResidualThresholdReport,
 } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
 import type { EnrichmentOutcome } from "./ipc-protocol.js";
@@ -122,6 +123,7 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
     lines.push(
       `  ${r.receiverGroups} receiver groups (${r.receiverGroupSites} sites): ${r.sitesEdgedByVerdict} sites edged by verdict (${r.fanoutGroups} groups fanned out, ${r.fanoutEdges} fan-out edges), ${r.sitesEdgedByPropagation} by propagation (${r.propagationConflicts} conflicts); ${r.tournamentGroups} tournaments (${r.tournamentQuestions} questions, ${r.tournamentRounds} rounds, ${r.groupsSkippedByBudget} skipped by budget, ${r.namePriorGroups} opened by name, ${r.earlyAcceptedGroups} accepted on block 1), ${r.confirmQuestions} confirm questions (${r.confirmAccepted} accepted), ${r.windowedGroups} windowed`,
     );
+    if (r.thresholds !== undefined) lines.push(`  ${formatResidualThresholds(r.thresholds)}`);
     lines.push(
       `  ${r.failedGroups} groups failed, ${r.requeuedGroups} requeued after a timeout, ${r.abortedGroups} aborted`,
     );
@@ -270,4 +272,13 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
   }
 
   return base;
+}
+
+/** `thresholds: block1 0.50 (calibrated) · full 0.80 (calibrated) · none 0.50 (default)`, then why a stratum kept its default. */
+export function formatResidualThresholds(thresholds: ResidualThresholdReport): string {
+  const one = (name: string, t: ResidualThresholdReport["block1"]) => `${name} ${t.threshold.toFixed(2)} (${t.source})`;
+  const line = [one("block1", thresholds.block1), one("full", thresholds.fullMenu), one("none", thresholds.none)].join(
+    " · ",
+  );
+  return `thresholds: ${line}${thresholds.reason === undefined ? "" : ` — ${thresholds.reason}`}`;
 }

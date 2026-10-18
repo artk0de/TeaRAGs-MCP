@@ -14,6 +14,7 @@ import {
   resolveRegistryEnv,
   type ResidualCalibrationReport,
 } from "../../core/api/index.js";
+import { formatResidualThresholds } from "../index-progress/status-format.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
 
 export interface ResolveResidualArgs {
@@ -66,6 +67,7 @@ export function formatResidualReport(report: ResidualReport): string {
     `  tournaments:      ${report.tournamentGroups} groups, ${report.tournamentRounds} rounds, ${report.tournamentQuestions} questions, ${report.groupsSkippedByBudget} skipped by budget; ${report.namePriorGroups} opened by name, ${report.earlyAcceptedGroups} accepted on block 1\n` +
     `  confirm stage:    ${report.confirmQuestions} questions, ${report.confirmAccepted} accepted\n` +
     `  windowed groups:  ${report.windowedGroups}\n` +
+    `${report.thresholds === undefined ? "" : `  ${formatResidualThresholds(report.thresholds)}\n`}` +
     `  requests:         ${report.requests} (at most ${report.maxQuestionsPerRequest} questions), latency p50 ${report.requestLatencyP50Ms} ms / p95 ${report.requestLatencyP95Ms} ms, peak in flight ${report.peakInFlight}\n` +
     `  edges applied:    ${report.edgesApplied}\n` +
     `  derived metrics:  ${report.derived}\n` +

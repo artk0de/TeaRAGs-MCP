@@ -27,6 +27,12 @@ function parse(argv: string[]): Record<string, unknown> {
 }
 
 const REPORT: ResidualPassReport = {
+  thresholds: {
+    block1: { threshold: 0.5, source: "calibrated", lowerBound: 0.95, n: 140 },
+    fullMenu: { threshold: 0.8, source: "calibrated", lowerBound: 0.93, n: 210 },
+    none: { threshold: 0.5, source: "calibrated", lowerBound: 0.91, n: 160 },
+    pi: 0.18,
+  },
   outcome: "skipped",
   reason: "provider kev unavailable: connect ECONNREFUSED",
   mode: "ask",
@@ -119,6 +125,7 @@ describe("the residual pass in the run's output", () => {
     expect(text).toContain(
       "4 over the menu limit, 9 under the menu floor, 79 sites edged, 12 external by model, derived metrics stale",
     );
+    expect(text).toContain("thresholds: block1 0.50 (calibrated) · full 0.80 (calibrated) · none 0.50 (calibrated)");
     expect(text).toContain(
       "15 receiver groups (40 sites): 33 sites edged by verdict (4 groups fanned out, 9 fan-out edges), 5 by propagation (1 conflicts); 2 tournaments (8 questions, 2 rounds, 1 skipped by budget, 2 opened by name, 1 accepted on block 1), 3 confirm questions (2 accepted), 3 windowed",
     );

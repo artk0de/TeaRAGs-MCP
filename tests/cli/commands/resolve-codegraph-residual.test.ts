@@ -10,6 +10,12 @@ import {
 import { skippedResidualReport } from "../../../src/core/api/internal/ops/residual-resolve-port.js";
 
 const COMPLETED = {
+  thresholds: {
+    block1: { threshold: 0.5, source: "calibrated" as const, lowerBound: 0.95, n: 140 },
+    fullMenu: { threshold: 0.8, source: "calibrated" as const, lowerBound: 0.93, n: 210 },
+    none: { threshold: 0.5, source: "calibrated" as const, lowerBound: 0.91, n: 160 },
+    pi: 0.18,
+  },
   ...skippedResidualReport("", "ask"),
   outcome: "completed" as const,
   sites: 120,
@@ -70,6 +76,23 @@ function parse(argv: string[]): Record<string, unknown> {
 }
 
 describe("formatResidualReport", () => {
+  it("names a default threshold and why calibration left it", () => {
+    const text = formatResidualReport({
+      ...COMPLETED,
+      thresholds: {
+        block1: { threshold: 0.7, source: "default" as const },
+        fullMenu: { threshold: 0.8, source: "calibrated" as const, lowerBound: 0.93, n: 210 },
+        none: { threshold: 0.8, source: "default" as const },
+        pi: 0.18,
+        reason: "applies from the next run: block 1 fit 0.50 decides early accept while asking",
+      },
+    });
+
+    expect(text).toContain(
+      "  thresholds: block1 0.70 (default) · full 0.80 (calibrated) · none 0.80 (default) — applies from the next run: block 1 fit 0.50 decides early accept while asking\n",
+    );
+  });
+
   it("prints the counts of a completed pass", () => {
     const text = formatResidualReport(COMPLETED);
     expect(text).toContain("Residual resolution (ask): completed\n");
@@ -92,6 +115,9 @@ describe("formatResidualReport", () => {
     );
     expect(text).toContain("  confirm stage:    3 questions, 2 accepted\n");
     expect(text).toContain("  windowed groups:  6\n");
+    expect(text).toContain(
+      "  thresholds: block1 0.50 (calibrated) · full 0.80 (calibrated) · none 0.50 (calibrated)\n",
+    );
     expect(text).toContain(
       "  requests:         140 (at most 8 questions), latency p50 2100 ms / p95 5400 ms, peak in flight 48\n",
     );
