@@ -9,14 +9,15 @@
  * throws and never blocks — the caller is a serving query path.
  */
 
-// Declaring leaves, not the api barrel (bd tea-rags-mcp-54xwd.3): the api
-// barrel re-exports these — importing it here closed the SDP auto-update -> api edge.
+// The auto-update entry point, not the api barrel (bd tea-rags-mcp-54xwd.3): the
+// barrel gave auto-update an SDP edge into api, and the declaring domain leaves
+// break the bootstrap -> core/api direction pin.
 import {
   AUTO_UPDATE_RUN_TTL_MS,
+  type CollectionEntry,
   type IndexFreshnessCheck,
   type IndexFreshnessVerdict,
-} from "../../core/domains/maintenance/freshness/index.js";
-import type { CollectionEntry } from "../../core/domains/maintenance/registry/index.js";
+} from "../../core/api/entry-points/auto-update/index.js";
 
 export interface AutoUpdateTriggerDeps {
   registry: { get: (collectionName: string) => CollectionEntry | null };

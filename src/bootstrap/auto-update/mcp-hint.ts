@@ -16,16 +16,17 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { McpAutoUpdateTrigger } from "../../core/api/public/index.js";
-import type { RegistryLookup } from "../../core/contracts/types/registry.js";
-import { IndexFreshnessCheck } from "../../core/domains/maintenance/freshness/index.js";
-// Declaring leaves, not the api barrel (bd tea-rags-mcp-54xwd.3): the api
-// barrel re-exports these — importing it here closed the SDP auto-update -> api edge.
+// The auto-update entry point, not the api barrel (bd tea-rags-mcp-54xwd.3): the
+// barrel gave auto-update an SDP edge into api, and the declaring domain leaves
+// break the bootstrap -> core/api direction pin.
 import {
   collectionHoldsCodegraphData,
   CollectionRegistry,
+  IndexFreshnessCheck,
   outerEnvForRegistryEntry,
-} from "../../core/domains/maintenance/registry/index.js";
+} from "../../core/api/entry-points/auto-update/index.js";
+import type { McpAutoUpdateTrigger } from "../../core/api/public/index.js";
+import type { RegistryLookup } from "../../core/contracts/types/registry.js";
 import { resolveRegistryEnvCodeDefaults } from "../config/index.js";
 import { spawnDetachedUpdater } from "./spawner.js";
 import { AutoUpdateTrigger } from "./trigger.js";
