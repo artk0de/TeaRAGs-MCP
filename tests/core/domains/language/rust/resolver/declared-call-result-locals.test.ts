@@ -53,7 +53,7 @@ function fixture(files: Record<string, string>, materialized: boolean) {
       const call = chunk.calls.find((entry) => entry.callText === text)!;
       expect(call?.callText).toBe(text);
       expect(chunk.callResultBindings?.value).toEqual([
-        expect.objectContaining({ callee: "make", endLine: expect.any(Number), scopeEndLine: chunk.endLine }),
+        expect.objectContaining({ endLine: expect.any(Number), scopeEndLine: chunk.endLine }),
       ]);
       const ctx: CallContext = {
         callerFile: extraction.relPath,
@@ -405,28 +405,46 @@ ${header} {
     expect(f.chunk().callResultBindings?.value).toBeUndefined();
   });
 
-  it.each([
-    "module::make()",
-    "source.make()",
-    "make::<Product>()",
-    "make().await",
-    "make()?",
-    "(|| make())()",
-    "make!()",
-  ])("withholds unsupported initializer %s", (initializer) => {
-    const f = fixture(
-      {
-        "src/main.rs": `${finishers}
+  it.each(["module::make()", "make::<Product>()", "make().await", "make()?", "(|| make())()", "make!()"])(
+    "withholds unsupported initializer %s",
+    (initializer) => {
+      const f = fixture(
+        {
+          "src/main.rs": `${finishers}
 fn make() -> Product { todo!() }
 fn run() {
   let value = ${initializer};
   value.finish();
 }
 `,
+        },
+        materialized,
+      );
+      expect(f.chunk().callResultBindings?.value).toBeUndefined();
+    },
+  );
+
+  // A dotted method init is a proven initializer since bd tea-rags-mcp-2g2og:
+  // the receiver is fold-typed and the method's declared return answers, so it
+  // moved out of the withheld list above.
+  it("records a dotted method init and types the binding from it", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+struct Source;
+impl Source { fn make(&self) -> Product { todo!() } }
+fn run(source: &Source) {
+  let value = source.make();
+  value.finish();
+}
+`,
       },
       materialized,
     );
-    expect(f.chunk().callResultBindings?.value).toBeUndefined();
+    expect(f.chunk().callResultBindings?.value).toEqual([
+      expect.objectContaining({ callee: "source.make", endLine: expect.any(Number), scopeEndLine: expect.any(Number) }),
+    ]);
+    expect(f.resolve("value.finish()")).toEqual(productFinish);
   });
 
   it("keeps annotated locals and constructor bindings unchanged", () => {

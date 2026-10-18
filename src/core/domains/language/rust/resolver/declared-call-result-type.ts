@@ -1,16 +1,19 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext } from "../../../../contracts/types/codegraph.js";
+import type { CallContext, CallResultBinding } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { resolveRustNominalType } from "./declared-return-type.js";
 import { lookupRustSymbolsByShortName, rustImportBindings } from "./strategies/shared.js";
 
-/** Consume only the walker's proven single-assignment channel and an exact same-file free-function return. */
-export function rustDeclaredCallResultType(
-  receiverName: string | null,
+/**
+ * The validated single call-result binding behind `receiverName` — the channel
+ * read plus the proven-window guards, shared with the strategy-layer method
+ * arm (`rustMethodCallResultType` in `strategies/rust-type-receiver.ts`).
+ */
+export function rustCallResultBindingOf(
+  receiverName: string,
   atLine: number,
   ctx: CallContext,
-): TypeRef | undefined {
-  if (receiverName === null) return undefined;
+): CallResultBinding | undefined {
   const bindings = identifierEntry(ctx.callResultBindings, receiverName);
   if (bindings?.length !== 1) return undefined;
   const binding = bindings[0];
@@ -23,6 +26,18 @@ export function rustDeclaredCallResultType(
   ) {
     return undefined;
   }
+  return binding;
+}
+
+/** Consume only the walker's proven single-assignment channel and an exact same-file free-function return. */
+export function rustDeclaredCallResultType(
+  receiverName: string | null,
+  atLine: number,
+  ctx: CallContext,
+): TypeRef | undefined {
+  if (receiverName === null) return undefined;
+  const binding = rustCallResultBindingOf(receiverName, atLine, ctx);
+  if (binding === undefined) return undefined;
   if (
     ctx.imports.some((imp) => {
       const importBindings = rustImportBindings(imp.importText);

@@ -85,11 +85,14 @@ function rustFunctionCallResultBindings(
       declare(pattern);
       const value = node.childForFieldName("value");
       const callee = value?.type === "call_expression" ? value.childForFieldName("function") : null;
+      // A method init (`let wb = e.write_batch();`) records its dotted path
+      // beside the bare free-function one — the resolver types the receiver
+      // and reads the method's declared return (bd tea-rags-mcp-2g2og).
       if (
         isSameAstNode(node.parent, body) &&
         pattern?.type === "identifier" &&
         node.childForFieldName("type") === null &&
-        callee?.type === "identifier"
+        (callee?.type === "identifier" || callee?.type === "field_expression")
       ) {
         candidates.set(pattern.text, {
           line: node.startPosition.row + 1,
