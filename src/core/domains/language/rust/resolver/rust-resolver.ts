@@ -47,6 +47,7 @@ import {
 } from "../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ConeDispatchResolver, resolveDispatchViaComponents, resolveViaChain } from "../../kernel/index.js";
+import { RustExternalVocabulary } from "../vocabulary/external-call.js";
 import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
 import {
   RustBareSelfMethodSymbolResolutionStrategy,
@@ -58,11 +59,13 @@ import {
   RustTypeReceiverSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
+import { rustCalleeShortNameCandidates } from "./strategies/shared.js";
 
 export class RustCallResolver implements CallResolver {
   readonly language = "rust";
   private readonly strategies: SymbolResolutionStrategy[];
   private readonly dispatchComponents: readonly DispatchResolverComponent[];
+  private readonly external = new RustExternalVocabulary();
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const cfg: ResolverConfig = { mode };
@@ -84,5 +87,26 @@ export class RustCallResolver implements CallResolver {
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     return resolveViaChain(this.strategies, call, ctx);
+  }
+
+  /**
+   * The miss classifier's first gate: a call the vocabulary can PROVE
+   * targets std or an external crate leaves the resolve-rate denominator.
+   * Every verdict is proof-based — a project namesake vetoes the std
+   * reading, and absence of evidence is never a `true`.
+   */
+  targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
+    return this.external.targetsExternal(call, ctx);
+  }
+
+  /**
+   * The miss classifier's denominator question: does a RUST file declare a
+   * callable of this member's name (bd tea-rags-mcp-t5cji)? The chain only
+   * lands on Rust files, so a namesake a `.py` / `.ts` file declares is no
+   * edge this call can have — the runner's unfiltered fallback charged it
+   * as an in-project miss anyway.
+   */
+  hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
+    return rustCalleeShortNameCandidates(ctx, call.member).length > 0;
   }
 }

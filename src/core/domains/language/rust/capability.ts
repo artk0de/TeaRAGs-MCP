@@ -69,6 +69,11 @@ export const capability: LanguageCapability = {
   // expression's start in UTF-16 code units) and turbofish callees
   // (`f::<T>()`) keep their free/scoped/qualified/method shapes; rows written
   // by earlier walkers carry neither, so only the recompute adds them.
+  // Also under walker 9 (same release cycle, re-pinned, no second bump): bd
+  // tea-rags-mcp-2g2og — direct import-bound bare-call resolution, the
+  // language-filtered short-name fallback and the facade's external
+  // classification (std prelude + import heads via `hasInProjectDefinition` /
+  // `targetsExternalImport`).
   versions: { chunking: 4, walker: 9, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
