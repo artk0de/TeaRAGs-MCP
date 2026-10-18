@@ -403,12 +403,34 @@ export interface ResidualPassReport {
   edgesApplied: number;
   derived: ResidualDerivedState;
   durations: ResidualPassDurations;
+  /** The accept thresholds the pass judged answers by; absent on a report of a pass that never started. */
+  thresholds?: ResidualThresholdReport;
   /**
    * The Qdrant `codegraph.*` payload heal run after a pass that changed the
    * model edges. Absent when the edges did not change, when no heal is wired,
    * or when the heal failed (logged).
    */
   payloadHeal?: { pointsRewritten: number; filesTouched: number };
+}
+
+/** One accept threshold as applied: the calibrated cut with its evidence, or the configured default. */
+export interface ResidualAppliedThreshold {
+  threshold: number;
+  source: "calibrated" | "default";
+  /** Bootstrap / Wilson lower bound of the precision at the cut; calibrated only. */
+  lowerBound?: number;
+  /** Calibration answers the cut was fitted on; calibrated only. */
+  n?: number;
+}
+
+/** Per stratum, the threshold a pass applied; `pi` — the fitted outside share, `null` when not fitted. */
+export interface ResidualThresholdReport {
+  block1: ResidualAppliedThreshold;
+  fullMenu: ResidualAppliedThreshold;
+  none: ResidualAppliedThreshold;
+  pi: number | null;
+  /** Why a stratum kept its default although calibration was on. */
+  reason?: string;
 }
 
 /** A calibrated accept threshold's question shape (`cg_residual_calibration.stratum`). */

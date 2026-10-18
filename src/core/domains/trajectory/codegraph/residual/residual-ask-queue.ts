@@ -82,6 +82,8 @@ export interface AskQueueInput {
    * picks, and none, keep their own thresholds.
    */
   namePriorAcceptThreshold?: number;
+  /** Accept threshold for every other class pick — full menu, round, confirm of one; default the provider's threshold. */
+  acceptThreshold?: number;
   /** Questions one request may carry. */
   maxQuestionsPerRequest?: number;
   /** Candidates one request may carry over all its questions; a larger single question travels alone. */
@@ -409,7 +411,7 @@ export class ResidualAskQueue {
   }
 
   private advance(tournament: GroupTournament): void {
-    const accept = this.input.provider.threshold;
+    const accept = this.input.acceptThreshold ?? this.input.provider.threshold;
     tournament.advance(
       (q) => this.verdicts.get(questionKey(q)),
       this.floor,

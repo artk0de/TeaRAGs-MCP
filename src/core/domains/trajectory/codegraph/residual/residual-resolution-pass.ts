@@ -17,6 +17,12 @@
  * Sites carrying a receiver group are asked once per group over its class set
  * (see `receiver-group-tournament.ts`); a tournament's next round is built from
  * the previous one's verdicts as soon as that round is answered.
+ * Accept thresholds come from `thresholdSource` (see `residual-thresholds.ts`):
+ * a stored calibration valid for the run judges the asking and the edges alike;
+ * a calibration fitted after the asking, from the run's own full-menu answers,
+ * moves only what the asking did not branch on — none always, full menu unless
+ * the confirm stage asked mid picks by the default — and block 1, which decides
+ * early accept, waits for the next run.
  */
 
 import { createHash } from "node:crypto";
@@ -27,16 +33,19 @@ import {
   RESIDUAL_STATE_BUILDER_VERSION,
   type ModelEdgeRow,
   type ModelExternalSiteRow,
+  type ResidualAppliedThreshold,
   type ResidualCallSiteRow,
+  type ResidualThresholdReport,
 } from "../../../../contracts/types/codegraph-residual.js";
 import type { GraphDbClient } from "../../../../contracts/types/codegraph-storage.js";
+import { menuSizeBucket, type MenuSizeBucket } from "./calibration-answer.js";
 import {
   DEFAULT_FANOUT_FLOOR,
   interfaceFanout,
   type InterfaceFanout,
   type ResidualClassTieReader,
 } from "./interface-fanout.js";
-import { collectReceiverGroups, GroupTournament } from "./receiver-group-tournament.js";
+import { collectReceiverGroups, GroupTournament, receiverClassQuestion } from "./receiver-group-tournament.js";
 import {
   cachedVerdicts,
   describeError,
@@ -47,7 +56,13 @@ import {
   type AskQueueInput,
   type PendingQuestion,
 } from "./residual-ask-queue.js";
+import type { ResidualAnswerMix, StratumFit } from "./residual-calibration-fit.js";
 import { RESIDUAL_ORIGIN_CONTEXT_VERSION } from "./residual-origin-context.js";
+import type {
+  ResidualCalibratedThresholds,
+  ResidualCalibrationKey,
+  ResidualThresholdSource,
+} from "./residual-thresholds.js";
 import { propagateTypeFacts, receiverGroupAddress, type AcceptedGroupVerdict } from "./type-fact-propagation.js";
 import type {
   ResidualDerivedState,
@@ -84,6 +99,8 @@ export interface ResidualPassInput extends AskQueueInput {
   fanoutFloor?: number;
   /** Recompute cycles and PageRank over the current graph; clears the derived-stale mark. */
   recomputeDerived: () => Promise<void>;
+  /** Calibrated accept thresholds; absent — every stratum keeps its default. */
+  thresholdSource?: ResidualThresholdSource;
 }
 
 /**
@@ -169,6 +186,19 @@ export class ResidualResolutionPass {
     const askable = receiverGroups.filter((g) => g.classes.length >= input.minMenu);
     const groupTooSmall = receiverGroups.filter((g) => g.classes.length < input.minMenu);
     const tournaments = askable.map((g) => new GroupTournament(g, input.menuLimit, questionHash, input.confirmStage));
+    const defaults: Thresholds = {
+      block1: input.namePriorAcceptThreshold ?? provider.threshold,
+      fullMenu: provider.threshold,
+      none: input.noneThreshold,
+    };
+    const { language, reason: noLanguage } = runLanguage(rows);
+    const key: ResidualCalibrationKey = {
+      providerId: provider.id,
+      ...(servedVersion.version === undefined ? {} : { servedVersion: servedVersion.version }),
+      templateHash: fold,
+    };
+    const stored = await storedThresholds(input.thresholdSource, language, key);
+    const asking = stored.thresholds === undefined ? defaults : judged(stored.thresholds, defaults).values;
     const verdicts = await cachedVerdicts(
       input,
       eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.questionHash })),
@@ -181,9 +211,13 @@ export class ResidualResolutionPass {
     const readAt = input.now();
 
     const tally = emptyTally();
-    const rounds = await new ResidualAskQueue(input, servedVersion.version, verdicts, tally, tournaments).run(
-      siteQuestions,
-    );
+    const rounds = await new ResidualAskQueue(
+      { ...input, namePriorAcceptThreshold: asking.block1, acceptThreshold: asking.fullMenu },
+      servedVersion.version,
+      verdicts,
+      tally,
+      tournaments,
+    ).run(siteQuestions);
     const askedAt = input.now();
 
     const failureReason =
@@ -192,14 +226,26 @@ export class ResidualResolutionPass {
     const reason = unavailable ?? failureReason;
     const skipped = unavailable !== undefined || tally.leaseLost || tally.breakerTripped;
 
-    const siteOutcome = buildEdges(eligible, verdicts, provider, input.noneThreshold);
-    const namePriorAccept = input.namePriorAcceptThreshold ?? provider.threshold;
-    const acceptOf = (t: GroupTournament): number => (t.pickedByNamePrior ? namePriorAccept : provider.threshold);
-    const fanouts = await groupFanouts(tournaments, input, namePriorAccept, provider.threshold);
-    const groupOutcome = buildGroupEdges(tournaments, provider, acceptOf, input.noneThreshold, fanouts);
+    const thresholds = await resolveThresholds({
+      source: input.thresholdSource,
+      stored,
+      defaults,
+      calibrable: input.mode === "ask" && !skipped,
+      confirmStage: input.confirmStage === true,
+      language,
+      noLanguage,
+      key,
+      mix: () => runAnswerMix(tournaments, verdicts, questionHash),
+      graphFingerprint: () => sha1([...rows.map((r) => r.siteKey)].sort().join("\n")),
+    });
+    const accept = thresholds.values;
+    const siteOutcome = buildEdges(eligible, verdicts, provider, accept.fullMenu, accept.none);
+    const acceptOf = (t: GroupTournament): number => (t.pickedByNamePrior ? accept.block1 : accept.fullMenu);
+    const fanouts = await groupFanouts(tournaments, input, accept);
+    const groupOutcome = buildGroupEdges(tournaments, provider, acceptOf, accept.none, fanouts);
     const propagation = propagateTypeFacts(
       receiverGroups,
-      acceptedGroupVerdicts(tournaments, acceptOf, input.noneThreshold, fanouts),
+      acceptedGroupVerdicts(tournaments, acceptOf, accept.none, fanouts),
       provider.id,
     );
     const edges = [...siteOutcome.edges, ...groupOutcome.edges, ...propagation.edges];
@@ -260,6 +306,7 @@ export class ResidualResolutionPass {
       externalByPropagation: propagation.externals.length,
       edgesApplied: applied.stored,
       derived,
+      thresholds: thresholds.report,
       durations: {
         readMs: readAt - startedAt,
         askMs: askedAt - readAt,
@@ -328,9 +375,8 @@ const distinctSites = (edges: readonly ModelEdgeRow[]): number => new Set(edges.
  */
 async function groupFanouts(
   tournaments: readonly GroupTournament[],
-  input: Pick<ResidualPassInput, "classTies" | "fanoutFloor" | "noneThreshold">,
-  namePriorAccept: number,
-  accept: number,
+  input: Pick<ResidualPassInput, "classTies" | "fanoutFloor">,
+  thresholds: Thresholds,
 ): Promise<Map<GroupTournament, InterfaceFanout>> {
   const fanouts = new Map<GroupTournament, InterfaceFanout>();
   const { classTies } = input;
@@ -339,7 +385,7 @@ async function groupFanouts(
   for (const tournament of tournaments) {
     const { spread, outcome } = tournament;
     if (spread === undefined) continue;
-    if (outcome !== undefined && outcome !== "residual" && outcome.pick === null && outcome.p >= input.noneThreshold) {
+    if (outcome !== undefined && outcome !== "residual" && outcome.pick === null && outcome.p >= thresholds.none) {
       continue;
     }
     const likely = spread.menu.filter((cls) => (spread.probabilities[cls] ?? 0) >= floor);
@@ -350,7 +396,7 @@ async function groupFanouts(
       probabilities: spread.probabilities,
       ties: await classTies.tiesOf(likely),
       floor,
-      accept: spread.fromPrior ? namePriorAccept : accept,
+      accept: spread.fromPrior ? thresholds.block1 : thresholds.fullMenu,
     });
     if (fanout !== undefined) fanouts.set(tournament, fanout);
   }
@@ -507,11 +553,12 @@ function fanoutSiteEdges(r: ResidualCallSiteRow, fanout: InterfaceFanout, model:
   }));
 }
 
-/** A pick at or above the provider threshold is an edge; a none at or above `noneThreshold` an external site. */
+/** A pick at or above `accept` is an edge; a none at or above `noneThreshold` an external site. */
 function buildEdges(
   rows: EligibleSite[],
   verdicts: Map<string, ResidualVerdict>,
   provider: ResidualModelProvider,
+  accept: number,
   noneThreshold: number,
 ): { edges: ModelEdgeRow[]; external: ModelExternalSiteRow[]; belowThreshold: number } {
   const edges: ModelEdgeRow[] = [];
@@ -537,7 +584,7 @@ function buildEdges(
       });
       continue;
     }
-    if (verdict.p < provider.threshold || !r.candidates.includes(verdict.pick)) {
+    if (verdict.p < accept || !r.candidates.includes(verdict.pick)) {
       belowThreshold++;
       continue;
     }
@@ -551,4 +598,155 @@ function buildEdges(
     });
   }
   return { edges, external, belowThreshold };
+}
+
+/** The accept threshold of each stratum. */
+interface Thresholds {
+  block1: number;
+  fullMenu: number;
+  none: number;
+}
+
+type Stratum = keyof Thresholds;
+
+const STRATA: readonly Stratum[] = ["block1", "fullMenu", "none"];
+
+/** The one language of the run's residual sites — a calibration is per language — or why there is none. */
+function runLanguage(rows: readonly ResidualCallSiteRow[]): { language?: string; reason?: string } {
+  const languages = [...new Set(rows.flatMap((r) => (r.language === undefined ? [] : [r.language])))];
+  if (languages.length === 1) return { language: languages[0] };
+  if (languages.length === 0) return { reason: "no language on the residual sites" };
+  return { reason: `${languages.length} languages in one run (${languages.sort().join(", ")})` };
+}
+
+/** The stored calibration valid for the run, or why none is read. A read failure never fails the pass. */
+async function storedThresholds(
+  source: ResidualThresholdSource | undefined,
+  language: string | undefined,
+  key: ResidualCalibrationKey,
+): Promise<{ thresholds?: ResidualCalibratedThresholds; reason?: string }> {
+  if (source === undefined || language === undefined) return {};
+  try {
+    const thresholds = await source.stored(language, key);
+    return thresholds === undefined ? {} : { thresholds };
+  } catch (error) {
+    return { reason: `stored calibration unreadable: ${describeError(error)}` };
+  }
+}
+
+/** Each stratum's calibrated cut where `fits` has one (`only` limits which), else its default. */
+function judged(
+  fits: ResidualCalibratedThresholds,
+  defaults: Thresholds,
+  only: readonly Stratum[] = STRATA,
+): { values: Thresholds; report: ResidualThresholdReport } {
+  const one = (stratum: Stratum): ResidualAppliedThreshold => {
+    const fit: StratumFit | null = only.includes(stratum) ? fits[stratum] : null;
+    return fit === null
+      ? { threshold: defaults[stratum], source: "default" }
+      : { threshold: fit.threshold, source: "calibrated", lowerBound: fit.lowerBound, n: fit.n };
+  };
+  const report: ResidualThresholdReport = {
+    block1: one("block1"),
+    fullMenu: one("fullMenu"),
+    none: one("none"),
+    pi: fits.pi,
+  };
+  return { values: valuesOf(report), report };
+}
+
+function valuesOf(report: ResidualThresholdReport): Thresholds {
+  return { block1: report.block1.threshold, fullMenu: report.fullMenu.threshold, none: report.none.threshold };
+}
+
+function defaultThresholds(
+  defaults: Thresholds,
+  reason?: string,
+): { values: Thresholds; report: ResidualThresholdReport } {
+  const one = (stratum: Stratum): ResidualAppliedThreshold => ({ threshold: defaults[stratum], source: "default" });
+  return {
+    values: defaults,
+    report: {
+      block1: one("block1"),
+      fullMenu: one("fullMenu"),
+      none: one("none"),
+      pi: null,
+      ...(reason === undefined ? {} : { reason }),
+    },
+  };
+}
+
+/**
+ * The thresholds the edges are built with. A stored calibration applies whole —
+ * the asking already ran under it. Otherwise a calibration fitted now applies
+ * only where the asking did not branch on the threshold: none always; full menu
+ * unless the confirm stage sent mid picks to a confirm by the default; block 1
+ * never — it decided early accept — so its fit waits for the next run.
+ */
+async function resolveThresholds(run: {
+  source: ResidualThresholdSource | undefined;
+  stored: { thresholds?: ResidualCalibratedThresholds; reason?: string };
+  defaults: Thresholds;
+  calibrable: boolean;
+  confirmStage: boolean;
+  language: string | undefined;
+  noLanguage: string | undefined;
+  key: ResidualCalibrationKey;
+  mix: () => ResidualAnswerMix;
+  graphFingerprint: () => string;
+}): Promise<{ values: Thresholds; report: ResidualThresholdReport }> {
+  const { source, stored, defaults } = run;
+  if (stored.thresholds !== undefined) return judged(stored.thresholds, defaults);
+  if (source === undefined) return defaultThresholds(defaults);
+  if (stored.reason !== undefined) return defaultThresholds(defaults, stored.reason);
+  if (run.language === undefined) return defaultThresholds(defaults, `not calibrated: ${run.noLanguage}`);
+  if (source.calibrate === undefined || !run.calibrable) return defaultThresholds(defaults);
+  let fits: ResidualCalibratedThresholds;
+  try {
+    fits = await source.calibrate({
+      language: run.language,
+      key: run.key,
+      mix: run.mix(),
+      graphFingerprint: run.graphFingerprint(),
+    });
+  } catch (error) {
+    return defaultThresholds(defaults, `calibration failed: ${describeError(error)}`);
+  }
+  const deferred: string[] = [];
+  if (fits.block1 !== null) {
+    deferred.push(`block 1 fit ${fits.block1.threshold.toFixed(2)} decides early accept while asking`);
+  }
+  if (fits.fullMenu !== null && run.confirmStage) {
+    deferred.push(`full-menu fit ${fits.fullMenu.threshold.toFixed(2)} decides the confirm stage while asking`);
+  }
+  const applied = judged(fits, defaults, run.confirmStage ? ["none"] : ["fullMenu", "none"]);
+  if (deferred.length === 0) return applied;
+  return { ...applied, report: { ...applied.report, reason: `applies from the next run: ${deferred.join("; ")}` } };
+}
+
+/**
+ * The run's own full-menu answers — the receiver groups asked one question over
+ * their whole class set — as the calibration fit reads them: how many, how many
+ * none, and their menu sizes.
+ */
+function runAnswerMix(
+  tournaments: readonly GroupTournament[],
+  verdicts: ReadonlyMap<string, ResidualVerdict>,
+  questionHash: (menuHash: string) => string,
+): ResidualAnswerMix {
+  let answered = 0;
+  let noneAnswers = 0;
+  const menuSizeMix: Partial<Record<MenuSizeBucket, number>> = {};
+  for (const tournament of tournaments) {
+    if (tournament.isTournament) continue;
+    const { group } = tournament;
+    const question = receiverClassQuestion(group, group.classes, group.id, questionHash);
+    const verdict = verdicts.get(verdictKey(question.siteKey, question.menuHash));
+    if (verdict === undefined) continue;
+    answered++;
+    if (verdict.pick === null) noneAnswers++;
+    const bucket = menuSizeBucket(group.classes.length);
+    menuSizeMix[bucket] = (menuSizeMix[bucket] ?? 0) + 1;
+  }
+  return { answered, noneAnswers, menuSizeMix };
 }
