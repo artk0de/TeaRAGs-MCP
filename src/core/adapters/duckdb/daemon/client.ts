@@ -57,6 +57,7 @@ import type {
   PersistedHierarchyDescendantDependency,
   PersistedSymbolLineRanges,
   RelPath,
+  ResidualCalibrationRow,
   ResidualCallSiteRow,
   ResolveRunStatsRow,
   ScopedCalleeTarget,
@@ -84,6 +85,7 @@ import {
   DaemonGraphReadStoreProxy,
   DaemonIdentifierStoreProxy,
   DaemonOntologyReportStoreProxy,
+  DaemonResidualCalibrationStoreProxy,
   DaemonResidualEdgeStoreProxy,
   DaemonStorageMaintenanceProxy,
   DaemonSymbolFileStoreProxy,
@@ -130,6 +132,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
   private readonly ontology: DaemonOntologyReportStoreProxy;
   private readonly temporal: DaemonTemporalStoreProxy;
   private readonly residualEdges: DaemonResidualEdgeStoreProxy;
+  private readonly residualCalibration: DaemonResidualCalibrationStoreProxy;
 
   constructor(socketPath: string, physicalCollectionName: PhysicalCollectionName, opts?: DaemonClientOptions) {
     this.channel = new DaemonOpChannel(socketPath, physicalCollectionName, opts);
@@ -142,6 +145,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     this.ontology = new DaemonOntologyReportStoreProxy(this.channel);
     this.temporal = new DaemonTemporalStoreProxy(this.channel);
     this.residualEdges = new DaemonResidualEdgeStoreProxy(this.channel);
+    this.residualCalibration = new DaemonResidualCalibrationStoreProxy(this.channel);
   }
 
   /** Connect to the daemon socket with bounded retry — see `DaemonConnectionLifecycle#init`. */
@@ -226,6 +230,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getModelResolvedSiteCounts(thresholds: Readonly<Record<string, number>>): Promise<ModelResolvedSiteCount[]> {
     return this.residualEdges.getModelResolvedSiteCounts(thresholds);
+  }
+
+  async readResidualCalibration(language: string): Promise<ResidualCalibrationRow[]> {
+    return this.residualCalibration.readResidualCalibration(language);
+  }
+
+  async writeResidualCalibration(language: string, rows: ResidualCalibrationRow[]): Promise<void> {
+    return this.residualCalibration.writeResidualCalibration(language, rows);
   }
 
   async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {

@@ -240,6 +240,7 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
     run: async (graphDb, p) => graphDb.applyModelExternalSites(p.model, p.sites),
   },
   markDerivedStale: write(async (graphDb) => graphDb.markDerivedStale()),
+  writeResidualCalibration: write(async (graphDb, p) => graphDb.writeResidualCalibration(p.language, p.rows)),
   upsertSymbols: write(async (graphDb, p) => graphDb.upsertSymbols(p.relPath, p.definitions)),
   upsertSymbolsBulk: write(async (graphDb, p) => graphDb.upsertSymbolsBulk(p.entries)),
   upsertFilesBulk: write(async (graphDb, p) => graphDb.upsertFilesBulk(p.entries)),
@@ -454,6 +455,7 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   hasStaleDerivedTables: read(async (graphDb) => graphDb.hasStaleDerivedTables()),
   readResidualCallSites: read(async (graphDb) => graphDb.readResidualCallSites()),
   getModelResolvedSiteCounts: read(async (graphDb, p) => graphDb.getModelResolvedSiteCounts(p.thresholds)),
+  readResidualCalibration: read(async (graphDb, p) => graphDb.readResidualCalibration(p.language)),
   getPageRank: read(async (graphDb, p) => graphDb.getPageRank(p.symbolId, p.relPath)),
 
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──

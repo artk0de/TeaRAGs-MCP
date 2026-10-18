@@ -8,6 +8,7 @@ export { DaemonFieldAccessStoreProxy } from "./field-access-store-proxy.js";
 export { DaemonGraphReadStoreProxy } from "./graph-read-store-proxy.js";
 export { DaemonIdentifierStoreProxy } from "./identifier-store-proxy.js";
 export { DaemonOntologyReportStoreProxy } from "./ontology-report-store-proxy.js";
+export { DaemonResidualCalibrationStoreProxy } from "./residual-calibration-store-proxy.js";
 export { DaemonResidualEdgeStoreProxy } from "./residual-edge-store-proxy.js";
 export { DaemonStorageMaintenanceProxy } from "./storage-maintenance-proxy.js";
 export { DaemonSymbolFileStoreProxy } from "./symbol-file-store-proxy.js";
