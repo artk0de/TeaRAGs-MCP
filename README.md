@@ -389,23 +389,6 @@ was opt-in keep the state they were indexed with; turn it on for one with
 `CODEGRAPH_ENABLED=true` in the same command. Details:
 [Codegraph Enrichments](https://artk0de.github.io/TeaRAGs-MCP/usage/advanced/codegraph-enrichments).
 
-#### 🧪 Model-assisted call resolution with Kev (experimental)
-
-Static resolution leaves some calls without an edge: ambiguous receivers and
-dynamic dispatch, mostly in Ruby. Residual resolution sends those call sites to
-[Kev](https://github.com/jaredpalmer/kev), a local 4B classifier, and adds the
-confident picks to the graph as `origin: "model"` edges. Verdicts are cached per
-project, so later runs only ask about new call sites.
-
-Kev runs separately on a GPU host. On a 12 GB AMD RX 7800M (Windows + ROCm,
-tuned serving) it answers ~18 questions/s, so a ~30k-file Rails project's ~13k
-residual questions take ~12 minutes. Accuracy on the bundled Ruby fixture is
-0.934, and the default 0.7 confidence threshold kept every wrong pick out of the
-graph (70 of 70 picks above it correct).
-
-Host setup, hardware tuning and configuration:
-[Kev: Model-Assisted Call Resolution](https://artk0de.github.io/TeaRAGs-MCP/config/kev-setup).
-
 ## 🚀 Quick Start
 
 ```bash
