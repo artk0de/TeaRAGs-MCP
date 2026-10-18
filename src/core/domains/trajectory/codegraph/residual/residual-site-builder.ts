@@ -12,6 +12,7 @@ import type {
   ResidualExclusionRule,
   ResidualKind,
   ResidualReason,
+  StaticSiteSampleRow,
 } from "../../../../contracts/types/codegraph-residual.js";
 import type {
   CallRef,
@@ -28,7 +29,7 @@ import {
   receiverGroupKey,
   type ReceiverSide,
 } from "./receiver-closure.js";
-import { receiverNameOf, typeNameOf } from "./receiver-name-prior.js";
+import { nameMatchedClasses, receiverNameOf, typeNameOf } from "./receiver-name-prior.js";
 
 /** Menu size the wave-1 eval measured; `CODEGRAPH_RESIDUAL_MENU_LIMIT` overrides it. */
 export const DEFAULT_RESIDUAL_MENU_LIMIT = 40;
@@ -36,11 +37,32 @@ export const DEFAULT_RESIDUAL_MENU_LIMIT = 40;
 /** Receivers with no type evidence: an unbound name or method result, an ivar, a call chain. */
 const DYNAMIC_RECEIVER_KINDS: ReadonlySet<ReceiverKind> = new Set<ReceiverKind>(["dynamic", "ivar", "chain"]);
 
+/** Receivers a calibration question can hide the class of: never a named constant. */
+const SAMPLED_RECEIVER_KINDS: ReadonlySet<ReceiverKind> = new Set<ReceiverKind>([
+  "localVar",
+  "ivar",
+  "chain",
+  "dynamic",
+]);
+
+/** Share of eligible static sites the sample admits; calibration draws the lowest priorities. */
+export const STATIC_SAMPLE_ADMIT = 0.25;
+
+/** Fixed seed: the sample is the same for the same sites in every run. */
+const STATIC_SAMPLE_SEED = "20261018";
+
+/** A site's draw priority in [0, 1), from its key alone. */
+export function staticSamplePriority(siteKey: string): number {
+  return Number.parseInt(sha1(`${STATIC_SAMPLE_SEED}\u0000${siteKey}`).slice(0, 8), 16) / 0x1_0000_0000;
+}
+
 /** The part of a `CallSiteVerdict` the residual decision reads. */
 export interface ResidualVerdictView {
   receiverKind: ReceiverKind;
   outcome: "resolved" | "unresolved" | "ambiguous";
   missBucket?: string;
+  /** The static edges a resolved site produced; the sample reads the target. */
+  edges?: readonly { targetSymbolId: string | null }[];
   /** The over-cap aggregate an ambiguous site recorded; a narrowed edge replaces it. */
   ambiguousFanout?: AmbiguousFanout;
 }
@@ -222,6 +244,7 @@ function downstreamGroupOf(site: PendingResidualSite): string {
 
 export class ResidualSiteCollector {
   private readonly collected: ResidualCallSiteRow[] = [];
+  private readonly sampled: StaticSiteSampleRow[] = [];
   private readonly excludedCounts = emptyResidualExclusionCounts();
   private readonly menus = new Map<string, string[]>();
   private readonly extension: string;
@@ -503,6 +526,62 @@ export class ResidualSiteCollector {
     });
   }
 
+  /**
+   * Keeps a site the static resolver settled — one in-project target, or an
+   * external skip — on a non-constant receiver whose member a project class
+   * defines, when its priority is under `admit`. Same menu as a residual row.
+   */
+  sampleStatic(
+    method: ResidualMethodView,
+    call: CallRef,
+    verdict: ResidualVerdictView,
+    admit: number = STATIC_SAMPLE_ADMIT,
+  ): void {
+    if (!SAMPLED_RECEIVER_KINDS.has(verdict.receiverKind)) return;
+    const target = staticTargetOf(verdict);
+    if (target === undefined) return;
+    const line = call.startLine;
+    const column = call.startColumn ?? 0;
+    const receiverText = call.receiver ?? "";
+    const siteKey = residualSiteKey({
+      relPath: this.sourceRelPath,
+      methodSymbolId: method.symbolId,
+      line,
+      column,
+      receiverText,
+      member: call.member,
+    });
+    const priority = staticSamplePriority(siteKey);
+    if (priority >= admit) return;
+    const menu = this.menuFor(call.member, sideOf(call.receiver));
+    if (menu.length === 0 || (target !== null && !menu.includes(target))) return;
+    const menuOverflow = menu.length > this.menuLimit;
+    this.sampled.push({
+      siteKey,
+      sourceRelPath: this.sourceRelPath,
+      language: this.language,
+      methodSymbolId: method.symbolId,
+      methodStartLine: method.startLine ?? line,
+      methodEndLine: method.endLine ?? line,
+      line,
+      column,
+      receiverText,
+      receiverKind: verdict.receiverKind,
+      member: call.member,
+      outcome: target === null ? "externalSkipped" : "resolved",
+      targetSymbolId: target,
+      reason: target === null ? (verdict.missBucket ?? null) : null,
+      owners: menu.length,
+      candidates: menuOverflow ? blockOneMenu(receiverText, menu) : menu,
+      menuOverflow,
+      priority,
+    });
+  }
+
+  staticSample(): StaticSiteSampleRow[] {
+    return this.sampled;
+  }
+
   rows(): ResidualCallSiteRow[] {
     this.settle();
     return this.collected;
@@ -558,4 +637,21 @@ export class ResidualSiteCollector {
     this.menus.set(cacheKey, menu);
     return menu;
   }
+}
+
+/** A resolved site's single target, `null` for an external skip, `undefined` when the site is no sample. */
+function staticTargetOf(verdict: ResidualVerdictView): string | null | undefined {
+  if (verdict.outcome === "unresolved") return verdict.missBucket === "externalSkipped" ? null : undefined;
+  if (verdict.outcome !== "resolved") return undefined;
+  const targets = new Set((verdict.edges ?? []).map((e) => e.targetSymbolId));
+  if (targets.size !== 1) return undefined;
+  const [target] = targets;
+  return target ?? undefined;
+}
+
+/** The methods of the classes the receiver's name matches — the block-1 menu of an overflowing site. */
+function blockOneMenu(receiverText: string, menu: readonly string[]): string[] {
+  const ownerOf = (id: string): string => id.slice(0, Math.max(id.lastIndexOf("#"), id.lastIndexOf(".")));
+  const matched = new Set(nameMatchedClasses(receiverText, [...new Set(menu.map(ownerOf))]));
+  return menu.filter((id) => matched.has(ownerOf(id)));
 }

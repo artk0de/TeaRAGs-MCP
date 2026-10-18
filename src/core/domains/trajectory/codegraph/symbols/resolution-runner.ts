@@ -544,6 +544,8 @@ export class CallEdgeResolutionRunner {
     if (ambiguousFanouts.length > 0) edges.ambiguousFanouts = ambiguousFanouts;
     const residualCallSites = residual.rows();
     if (residualCallSites.length > 0) edges.residualCallSites = residualCallSites;
+    const staticSiteSample = residual.staticSample();
+    if (staticSiteSample.length > 0) edges.staticSiteSample = staticSiteSample;
     // What the call sites read from the hierarchy (bd tea-rags-mcp-7t2ee), so a
     // later run can re-resolve this file when one of those answers moves.
     if (view !== undefined && recorder !== undefined) {
@@ -819,6 +821,7 @@ export class CallEdgeResolutionRunner {
         () => resolver.residualOverrideMenu?.(site.call, site.classifierCtx) ?? null,
         (owner, member) => resolver.residualReturnType?.(owner, member, site.classifierCtx),
       );
+      this.activeResidual?.sampleStatic(site.chunk, site.call, verdict);
       methodEdges.push(...verdict.edges);
       if (verdict.ambiguousFanout !== undefined) ambiguousFanouts.push(verdict.ambiguousFanout);
       tallyCallSiteVerdict(kindTally, verdict);

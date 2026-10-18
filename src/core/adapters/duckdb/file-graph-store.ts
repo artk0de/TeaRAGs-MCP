@@ -112,6 +112,25 @@ const INHERITANCE_VALUES = ["source_symbol_id", "ancestor_symbol_id", "ordinal"]
 // namesake caller's aggregate in another file is a distinct row, not a collision.
 const FANOUT_KEYS = ["source_symbol_id", "source_rel_path", "call_expression"] as const;
 const FANOUT_VALUES = ["member", "candidate_count"] as const;
+const STATIC_SAMPLE_KEYS = ["source_rel_path", "site_key"] as const;
+const STATIC_SAMPLE_VALUES = [
+  "language",
+  "method_symbol_id",
+  "method_start_line",
+  "method_end_line",
+  "line",
+  "call_column",
+  "receiver_text",
+  "receiver_kind",
+  "member",
+  "outcome",
+  "target_symbol_id",
+  "reason",
+  "owners",
+  "candidates",
+  "menu_overflow",
+  "priority",
+] as const;
 const RESIDUAL_KEYS = ["source_rel_path", "site_key"] as const;
 const RESIDUAL_VALUES = [
   "method_symbol_id",
@@ -178,6 +197,7 @@ export const REMOVED_FILE_SOURCE_TABLES = [
   "cg_residual_call_sites",
   "cg_residual_external_sites",
   "cg_caller_param_observations",
+  "cg_static_site_sample",
 ] as const;
 export const REMOVED_FILE_REL_PATH_TABLES = [
   "cg_symbols",
@@ -262,6 +282,7 @@ export class DuckDbFileGraphStore {
     const inheritanceRows: unknown[][] = [];
     const fanoutRows: unknown[][] = [];
     const residualRows: unknown[][] = [];
+    const staticSampleRows: unknown[][] = [];
     /** Encoded class sets over the row limit, by key: stored once in `cg_residual_class_sets`. */
     const classSets = new Map<string, string>();
     const pass1Rows: unknown[][] = [];
@@ -379,6 +400,28 @@ export class DuckDbFileGraphStore {
           shared,
         ]);
       }
+      for (const r of edges.staticSiteSample ?? []) {
+        staticSampleRows.push([
+          node.relPath,
+          r.siteKey,
+          r.language,
+          r.methodSymbolId,
+          r.methodStartLine,
+          r.methodEndLine,
+          r.line,
+          r.column,
+          r.receiverText,
+          r.receiverKind,
+          r.member,
+          r.outcome,
+          r.targetSymbolId,
+          r.reason,
+          r.owners,
+          JSON.stringify(r.candidates),
+          r.menuOverflow,
+          r.priority,
+        ]);
+      }
       // The pass-1 slice, keyed by the NODE's path rather than the slice's own,
       // so the row can only ever land under the file being written.
       if (edges.pass1Aggregates !== undefined) {
@@ -457,6 +500,14 @@ export class DuckDbFileGraphStore {
       residualRows,
     );
     if (classSets.size > 0) await this.storeResidualClassSets(classSets);
+    await this.session.applyScopedRowDiff(
+      "cg_static_site_sample",
+      "source_rel_path",
+      relPaths,
+      STATIC_SAMPLE_KEYS,
+      STATIC_SAMPLE_VALUES,
+      staticSampleRows,
+    );
     // Pass-1 aggregate slice (bd tea-rags-mcp-znxg8). Scoped by `rel_path` like
     // the node table rather than `source_rel_path`, because the row IS the file.
     // Riding the same reconciliation as the edges is the point: the slice is

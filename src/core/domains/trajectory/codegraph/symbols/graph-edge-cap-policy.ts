@@ -71,6 +71,8 @@ export const GRAPH_EDGE_CAP_POLICY = {
   // Observations of call sites that already resolved, not edges; bounded by the
   // file's exact-edge calls and kept past the cap so the callee's types survive.
   callerParamObservations: "exempt",
+  // A sample of call sites that already settled, not edges; a quarter of them at most.
+  staticSiteSample: "exempt",
 } as const satisfies GraphEdgeCapPolicy;
 
 /** The kinds {@link GRAPH_EDGE_CAP_POLICY} counts against the cap. */

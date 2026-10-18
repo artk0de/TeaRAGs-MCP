@@ -45,6 +45,7 @@ describe("GRAPH_EDGE_CAP_POLICY", () => {
         "pass1Aggregates",
         "residualCallSites",
         "callerParamObservations",
+        "staticSiteSample",
         "typeOnlyFileEdges",
       ].sort(),
     );

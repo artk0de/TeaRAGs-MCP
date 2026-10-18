@@ -14,7 +14,7 @@
 import type { CallerArgObservation, TypeAbstractnessCensus } from "./codegraph-extraction.js";
 import type { InheritanceEdgeRow } from "./codegraph-hierarchy.js";
 import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
-import type { EdgeOrigin, ResidualCallSiteRow } from "./codegraph-residual.js";
+import type { EdgeOrigin, ResidualCallSiteRow, StaticSiteSampleRow } from "./codegraph-residual.js";
 import type { FileScopedSymbolRef, RelPath, SymbolId } from "./codegraph-symbols.js";
 
 /**
@@ -532,6 +532,8 @@ export interface GraphEdges {
    * Persisted to `cg_residual_call_sites` by the per-file reconciliation.
    */
   residualCallSites?: ResidualCallSiteRow[];
+  /** This file's share of the static site sample (`cg_static_site_sample`), on the same reconciliation. */
+  staticSiteSample?: StaticSiteSampleRow[];
   /**
    * This file's pass-1 aggregate slice (bd tea-rags-mcp-znxg8), persisted to
    * `cg_pass1_aggregates` on the same per-file reconciliation as the rows above
