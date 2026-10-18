@@ -1,5 +1,6 @@
 import type { CodegraphTier, LanguageCapability, TypingTieredCodegraph } from "../../../contracts/types/language.js";
 import { UNSUPPORTED_FALLBACK } from "./fallback.js";
+import { renderLanguageVersionPolicies } from "./version-policy.js";
 
 /** Display order + human label (NOT the supported()/Map order). Also the stable
  *  secondary key: rows with an equal capability score keep this order. */
@@ -127,6 +128,8 @@ Rows are ordered by overall capability, richest support first.
 | --- | --- | --- | --- |
 ${rows}
 ${fallbackRows}
+
+${renderLanguageVersionPolicies(caps)}
 
 </details>
 <!-- markdownlint-enable MD033 -->`;

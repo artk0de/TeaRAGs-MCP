@@ -10,6 +10,11 @@ import type { LanguageCapability } from "../../../contracts/types/language.js";
 export function unsupportedLanguageCapability(language: string): LanguageCapability {
   return {
     language,
+    languageVersion: {
+      policy: "unversioned",
+      evidence: "tests/core/domains/language/capability/version-policy.test.ts",
+      limitations: "Syntax-blind CharacterChunker fallback; no language release support claimed",
+    },
     ast: { tier: "none", engine: "CharacterChunker" },
     tests: { tier: "na", detection: "—", tech: "—" },
     codegraph: { tier: "none", tech: "—", symbolKindRoles: { callee: new Set(), receiver: new Set() } },

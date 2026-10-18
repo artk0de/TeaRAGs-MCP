@@ -3,6 +3,13 @@ import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "rust",
+  languageVersion: {
+    policy: "fixture-validated",
+    target: "Rust 1.88.0 / edition 2024",
+    evidence: "tests/core/domains/language/capability/version-policy.test.ts",
+    limitations:
+      "Syntax fixtures only, not compiler conformance; latest upstream release unverified; macro expansion and nightly syntax not certified",
+  },
   ast: {
     tier: "full",
     engine: "tree-sitter",

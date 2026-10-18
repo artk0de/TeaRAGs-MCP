@@ -2,6 +2,12 @@ import type { LanguageCapability } from "../../../contracts/types/language.js";
 
 export const capability: LanguageCapability = {
   language: "bash",
+  languageVersion: {
+    policy: "grammar-bounded",
+    evidence: "tests/core/domains/language/capability/version-policy.test.ts",
+    limitations:
+      "Installed Bash grammar and project fixtures bound shell syntax; no Bash release range or POSIX-shell runtime conformance certified",
+  },
   ast: { tier: "full", engine: "tree-sitter", grammarPackage: "tree-sitter-bash" },
   tests: { tier: "low", detection: "—", tech: "generic AST (bats/shunit not recognized)" },
   codegraph: {

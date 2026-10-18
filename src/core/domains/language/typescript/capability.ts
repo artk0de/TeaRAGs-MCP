@@ -3,6 +3,12 @@ import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "typescript",
+  languageVersion: {
+    policy: "grammar-bounded",
+    evidence: "tests/core/domains/language/capability/version-policy.test.ts",
+    limitations:
+      "Installed TypeScript/TSX grammar and project fixtures bound syntax; TypeScript compiler package version does not certify a language release range",
+  },
   ast: {
     tier: "full",
     engine: "tree-sitter",

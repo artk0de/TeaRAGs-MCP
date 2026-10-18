@@ -3,6 +3,12 @@ import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "go",
+  languageVersion: {
+    policy: "grammar-bounded",
+    evidence: "tests/core/domains/language/capability/version-policy.test.ts",
+    limitations:
+      "Installed grammar and project fixtures bound Go syntax; no Go toolchain release range or compiler conformance certified",
+  },
   ast: {
     tier: "full",
     engine: "tree-sitter",

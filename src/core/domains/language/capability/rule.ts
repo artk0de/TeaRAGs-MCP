@@ -1,5 +1,6 @@
 import type { CodegraphTier, LanguageCapability, TypingTieredCodegraph } from "../../../contracts/types/language.js";
 import { UNSUPPORTED_FALLBACK } from "./fallback.js";
+import { renderLanguageVersionPolicies } from "./version-policy.js";
 
 /** Display order + human label for the matrix (NOT the supported()/Map order). */
 const DISPLAY: readonly (readonly [string, string])[] = [
@@ -81,6 +82,8 @@ here. Per-project realized numbers live in **prime**, never in this file.
 | --- | --- | --- | --- |
 ${rows}
 ${fallbackRow()}
+
+${renderLanguageVersionPolicies(caps)}
 
 ## Scales — what each tier means for the agent
 

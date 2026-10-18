@@ -16,6 +16,7 @@ function cap(
 ): LanguageCapability {
   return {
     language,
+    languageVersion: { policy: "unversioned", evidence: "fixture", limitations: "fixture only" },
     ast: { tier: ast, engine: "e" },
     tests: { tier: tests, detection: "d", tech: "t" },
     codegraph: { tier: codegraph, tech: "t", symbolKindRoles: { callee: new Set(), receiver: new Set() } },

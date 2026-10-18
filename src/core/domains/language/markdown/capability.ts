@@ -2,6 +2,12 @@ import type { LanguageCapability } from "../../../contracts/types/language.js";
 
 export const capability: LanguageCapability = {
   language: "markdown",
+  languageVersion: {
+    policy: "unversioned",
+    evidence: "tests/core/domains/language/capability/version-policy.test.ts",
+    limitations:
+      "remark with GFM/frontmatter dialect plugins, not a compiler release; no complete CommonMark/GFM conformance certification",
+  },
   ast: { tier: "full", engine: "MarkdownChunker (ToC + smart chunking)" },
   tests: { tier: "na", detection: "doc-only", tech: "—" },
   codegraph: {

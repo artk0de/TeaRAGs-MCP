@@ -1305,8 +1305,22 @@ export interface LanguageCodeVersions extends LanguageSupportVersions {
   grammar?: string;
 }
 
+/**
+ * Source-language compatibility, NOT parser package semver or indexed-output
+ * revisions. A fixture-validated target names the highest release exercised by
+ * the cited evidence; it never certifies compiler/runtime conformance. A
+ * grammar-bounded policy makes no release-range claim. Unversioned covers
+ * dialect-based documents and syntax-blind fallback chunking.
+ */
+export type LanguageVersionPolicy = {
+  evidence: string;
+  limitations: string;
+} & ({ policy: "fixture-validated"; target: string } | { policy: "grammar-bounded" | "unversioned"; target?: never });
+
 export interface LanguageCapability {
   language: string;
+  /** Authoritative source-language/toolchain policy; not an index drift axis. */
+  languageVersion: LanguageVersionPolicy;
   ast: {
     tier: "full" | "partial" | "none";
     engine: string;

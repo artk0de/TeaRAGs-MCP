@@ -3,6 +3,12 @@ import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "java",
+  languageVersion: {
+    policy: "grammar-bounded",
+    evidence: "tests/core/domains/language/capability/version-policy.test.ts",
+    limitations:
+      "Installed grammar and project fixtures bound Java syntax; no JDK release range, preview-feature support or compiler conformance certified",
+  },
   ast: { tier: "full", engine: "tree-sitter", grammarPackage: "tree-sitter-java" },
   tests: { tier: "medium", detection: "*Test.java / *IT.java", tech: "generic AST" },
   testFiles,

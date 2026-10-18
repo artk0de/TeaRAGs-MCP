@@ -28,8 +28,9 @@ describe("renderRule", () => {
   });
 
   it("does NOT bake measured resolveSuccessRate numbers into the static rule", () => {
-    expect(out).not.toContain("0.83");
-    expect(out).not.toContain("0.25");
+    // Parser semvers (e.g. 0.25.0) are compatibility metadata, not resolve rates.
+    expect(out).not.toMatch(/(?<![\d.])0\.83(?![\d.])/);
+    expect(out).not.toMatch(/(?<![\d.])0\.25(?![\d.])/);
   });
 
   it("keeps the realized-trust prose that points the agent at prime", () => {

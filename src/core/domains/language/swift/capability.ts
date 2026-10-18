@@ -3,6 +3,12 @@ import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "swift",
+  languageVersion: {
+    policy: "grammar-bounded",
+    evidence: "tests/core/domains/language/capability/version-policy.test.ts",
+    limitations:
+      "Installed grammar and project fixtures bound Swift syntax; no Swift toolchain release range or compiler conformance certified",
+  },
   ast: { tier: "full", engine: "tree-sitter", grammarPackage: "tree-sitter-swift" },
   tests: {
     tier: "high",

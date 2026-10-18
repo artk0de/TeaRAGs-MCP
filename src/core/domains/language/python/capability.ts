@@ -3,6 +3,12 @@ import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "python",
+  languageVersion: {
+    policy: "grammar-bounded",
+    evidence: "tests/core/domains/language/capability/version-policy.test.ts",
+    limitations:
+      "Installed grammar and project fixtures bound Python syntax; no Python/CPython release range or runtime conformance certified",
+  },
   ast: { tier: "full", engine: "tree-sitter", grammarPackage: "tree-sitter-python" },
   tests: { tier: "medium", detection: "test_*.py / *_test.py / conftest.py", tech: "generic AST" },
   testFiles,
