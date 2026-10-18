@@ -34,7 +34,7 @@ function artifact(rows: unknown[] = []) {
       loadMonitoring: { status: "sampled", samples: 3, maxLoadPerCpu: 0.2 },
       loadPerCpu: 0.2,
     },
-    identityScheme: "tally-line-callText-v1",
+    identityScheme: "tally-line-callText-startColumn-v1",
     measurementScope: "fresh-extraction-and-production-resolver",
     chainDrift: { status: "not-run", reason: "time-only production runner" },
     oracle: { status: "not-run", reason: "independent Rust oracle pending" },
@@ -125,7 +125,7 @@ describe("Rust codegraph baseline/after gate", () => {
     after.oracle = {
       status: "ingested",
       source: "fixture-independent-oracle",
-      identityScheme: "tally-line-callText-v1",
+      identityScheme: "tally-line-callText-startColumn-v1",
       sites: [
         {
           relPath: "src/main.rs",
@@ -162,7 +162,7 @@ describe("Rust codegraph baseline/after gate", () => {
   it("retains TSV mapping and ignores answer rows when diffing persisted predictions", () => {
     expect(sut.parseRustTallyDump).toBeTypeOf("function");
     const rows = sut.parseRustTallyDump(
-      "src/main.rs\t1\ta.run()\ttyped\tsrc/a.rs\tA::run\texact\nsrc/main.rs\t1\ta.run()\ttyped\tsrc/a.rs\tA::run\trunner:exact@1\n#kind-stats\nopaque stats\n",
+      "src/main.rs\t1\ta.run()\t-\ttyped\tsrc/a.rs\tA::run\texact\nsrc/main.rs\t1\ta.run()\t-\ttyped\tsrc/a.rs\tA::run\trunner:exact@1\n#kind-stats\nopaque stats\n",
     );
     expect(rows).toHaveLength(2);
     expect(compare(artifact(rows), artifact()).edges.exact.lost).toHaveLength(1);
@@ -190,7 +190,7 @@ describe("Rust codegraph baseline/after gate", () => {
       async (...args: unknown[]) => {
         calls.push(args);
         return {
-          rows: [{}],
+          rows: [{ relPath: "src/main.rs", startLine: 1, callText: "a.run()" }],
           files: 1,
           symbols: 2,
           timeOnly: true,
@@ -220,6 +220,97 @@ describe("Rust codegraph baseline/after gate", () => {
     expect(result.workload.siteDigest).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it("keys same-line duplicate calls apart by their start column", () => {
+    expect(sut.rustTallySiteKey, "site key exists").toBeTypeOf("function");
+    const first = sut.rustTallySiteKey({ relPath: "a.rs", line: 2, callText: "ping()", startColumn: 4 });
+    const second = sut.rustTallySiteKey({ relPath: "a.rs", line: 2, callText: "ping()", startColumn: 12 });
+    expect(first).not.toBe(second);
+    expect(sut.rustTallySiteKey({ relPath: "a.rs", line: 2, callText: "ping()" })).toBe(
+      sut.rustTallySiteKey({ relPath: "a.rs", line: 2, callText: "ping()", startColumn: undefined }),
+    );
+  });
+
+  it("keeps same-line duplicate sites and fan-out sites truthful in capture", async () => {
+    const entryUrl = new URL("../../scripts/rust-codegraph-regression.ts", import.meta.url);
+    const cli = await import(entryUrl.href);
+    const row = (startColumn?: number) => ({ relPath: "src/main.rs", startLine: 5, callText: "ping()", startColumn });
+    const dump = (startColumn: number, symbol: string) => ({
+      relPath: "src/main.rs",
+      line: 5,
+      callText: "ping()",
+      startColumn,
+      receiverKind: "typed",
+      targetRelPath: "src/a.rs",
+      targetSymbolId: symbol,
+      edgeKind: "runner:exact",
+    });
+    const result = await cli.captureRustCodegraphArtifact(
+      cli.selectRustCorpus("ripgrep-rust", "/fixture"),
+      { commit: "b".repeat(40), dirty: false },
+      async () => ({
+        rows: [row(4), row(12)],
+        files: 1,
+        symbols: 2,
+        timeOnly: true,
+        chainDrift: 0,
+        parseFailures: 0,
+        symbolTableOnlyFiles: 0,
+        ingestIgnored: 0,
+        codegraphExcluded: 0,
+        timing: { pass1Ms: 100, pass2Ms: 100, totalMs: 200, peakRssMb: 50, loc: 10 },
+        edgeDump: [dump(4, "A::ping"), dump(12, "A::ping"), dump(4, "B::ping")],
+        kindStats: {},
+      }),
+    );
+    expect(result.rows).toHaveLength(3);
+  });
+
+  it("refuses a capture whose edge dump carries a site the tally rows never saw", async () => {
+    const entryUrl = new URL("../../scripts/rust-codegraph-regression.ts", import.meta.url);
+    const cli = await import(entryUrl.href);
+    await expect(
+      cli.captureRustCodegraphArtifact(
+        cli.selectRustCorpus("ripgrep-rust", "/fixture"),
+        { commit: "b".repeat(40), dirty: false },
+        async () => ({
+          rows: [{ relPath: "src/main.rs", startLine: 5, callText: "ping()", startColumn: 4 }],
+          files: 1,
+          symbols: 2,
+          timeOnly: true,
+          chainDrift: 0,
+          parseFailures: 0,
+          symbolTableOnlyFiles: 0,
+          ingestIgnored: 0,
+          codegraphExcluded: 0,
+          timing: { pass1Ms: 100, pass2Ms: 100, totalMs: 200, peakRssMb: 50, loc: 10 },
+          edgeDump: [
+            {
+              relPath: "src/main.rs",
+              line: 5,
+              callText: "ping()",
+              startColumn: 4,
+              receiverKind: "typed",
+              targetRelPath: "src/a.rs",
+              targetSymbolId: "A::ping",
+              edgeKind: "runner:exact",
+            },
+            {
+              relPath: "src/main.rs",
+              line: 9,
+              callText: "orphan()",
+              startColumn: 0,
+              receiverKind: "typed",
+              targetRelPath: "src/a.rs",
+              targetSymbolId: "A::orphan",
+              edgeKind: "runner:exact",
+            },
+          ],
+          kindStats: {},
+        }),
+      ),
+    ).rejects.toThrow(/site identity/);
+  });
+
   it("refuses silent truth gaps when a valid-loss gate is configured", () => {
     const result = compare(artifact([edge()]), artifact(), { maxValidEdgeLoss: 0 });
     expect(result.failures).toContain("valid-edge-loss-unmeasured:1");
@@ -236,7 +327,7 @@ describe("Rust codegraph baseline/after gate", () => {
     before.oracle = {
       status: "ingested",
       source: "independent",
-      identityScheme: "tally-line-callText-v1",
+      identityScheme: "tally-line-callText-startColumn-v1",
       sites: [
         {
           relPath: "src/main.rs",
@@ -304,7 +395,7 @@ describe("Rust codegraph baseline/after gate", () => {
     const corpus = cli.selectRustCorpus("ripgrep-rust", "/fixture");
     const engine = { commit: "b".repeat(40), dirty: false };
     const result = {
-      rows: [{}],
+      rows: [{ relPath: "src/main.rs", startLine: 1, callText: "a.run()" }],
       files: 1,
       symbols: 2,
       timeOnly: true,
@@ -337,7 +428,7 @@ describe("Rust codegraph baseline/after gate", () => {
       { commit: "b".repeat(40), dirty: false },
       async () =>
         ({
-          rows: [{}],
+          rows: [{ relPath: "src/main.rs", startLine: 1, callText: "a.run()" }],
           files: 1,
           symbols: 2,
           timeOnly: true,
@@ -367,7 +458,7 @@ describe("Rust codegraph baseline/after gate", () => {
           engine,
           async () =>
             ({
-              rows: [{}],
+              rows: [{ relPath: "src/main.rs", startLine: 1, callText: "a.run()" }],
               files: 1,
               symbols: 2,
               timeOnly: true,
@@ -423,7 +514,7 @@ describe("Rust codegraph baseline/after gate", () => {
     const oracle = (classification = "inProject", source = "independent") => ({
       status: "ingested",
       source,
-      identityScheme: "tally-line-callText-v1",
+      identityScheme: "tally-line-callText-startColumn-v1",
       sites: [
         {
           relPath: "src/main.rs",

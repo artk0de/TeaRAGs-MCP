@@ -14,6 +14,8 @@ import {
   type SymbolDefinition,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
+import { capability } from "../../capability.js";
+import { rustTextIsStdPathHead } from "../../vocabulary/std-prelude.js";
 
 export interface ResolverConfig {
   mode: AmbiguousResolveMode;
@@ -68,6 +70,44 @@ export function pickSameFileThenSingle(
  */
 export function lookupRustSymbolsByShortName(ctx: CallContext, name: string): SymbolDefinition[] {
   return ctx.symbolTable.lookupByShortName(name).filter((def) => def.relPath.endsWith(".rs"));
+}
+
+/**
+ * The callee-role slice of the same lookup — what a CALL can land on, asked
+ * with the capability's own role set (bd tea-rags-mcp-jqvbn) so a trait,
+ * enum or constant sharing the name never turns a sole function ambiguous.
+ * The one helper every member-keyed consumer shares: the strategies, the
+ * facade's `hasInProjectDefinition` and the external vocabulary.
+ */
+export function rustCalleeShortNameCandidates(ctx: CallContext, name: string): SymbolDefinition[] {
+  return ctx.symbolTable
+    .lookupByShortName(name, { kinds: capability.codegraph.symbolKindRoles.callee })
+    .filter((def) => def.relPath.endsWith(".rs"));
+}
+
+/**
+ * Whether a `use` import names something OUTSIDE the project — the proof the
+ * external vocabulary and the import gates both read. A prefixed path
+ * (`crate::` / `self::` / `super::`) is project by definition; a reserved std
+ * head is external by definition; any other bare head is a crate name, and the
+ * only crate name that can be ours is one the project holds a module file for
+ * (`<head>.rs` / `<head>/mod.rs`) — asked through the symbol table, never the
+ * disk. A malformed import proves nothing and reads internal.
+ */
+export function rustImportIsExternal(importText: string, ctx: CallContext): boolean {
+  const bindings = rustImportBindings(importText);
+  const binding = bindings?.[0];
+  if (!binding) return false;
+  if (binding.prefix !== null) return false;
+  const head = binding.moduleSegments[0];
+  if (!head) return false;
+  if (rustTextIsStdPathHead(head)) return true;
+  // A workspace crate is a DIRECTORY (`script_bindings/lib.rs`); `hasFile` can
+  // never see `<crate>.rs`, so without the directory arm every bare-head
+  // `use script_bindings::Str` classified external and the type left the
+  // placement channel.
+  if (ctx.symbolTable.hasDirNamed?.(head) === true) return false;
+  return !(ctx.symbolTable.hasFile(`${head}.rs`) || ctx.symbolTable.hasFile(`${head}/mod.rs`));
 }
 
 type RustImportPrefix = "crate" | "self" | "super" | null;
@@ -225,6 +265,27 @@ function rustImportRoot(prefix: RustImportPrefix, callerFile: string): string {
   return prefix === "crate" ? crateRoot : prefix === "self" ? callerDir : prefix === "super" ? parentRoot : "";
 }
 
+/**
+ * The candidate crate roots for a `crate::` import, most specific first:
+ * every ancestor directory of the caller, qualified where the table holds a
+ * crate-root marker (`lib.rs` / `main.rs`). A corpus that indexes no marker
+ * still answers — every ancestor is scanned, because the caller's own
+ * directory chain is the only place a crate root can sit. Membership is
+ * asked through the symbol table, never the disk.
+ */
+function rustTableCrateRoots(callerFile: string, ctx: CallContext): string[] | null {
+  if (typeof ctx.symbolTable.hasFile !== "function") return null;
+  const segments = callerFile.split("/");
+  const dirs: string[] = [];
+  for (let i = segments.length - 1; i >= 1; i--) dirs.push(segments.slice(0, i).join("/"));
+  dirs.push("");
+  const marked = dirs.filter((dir) => {
+    const prefix = dir ? `${dir}/` : "";
+    return ctx.symbolTable.hasFile(`${prefix}lib.rs`) || ctx.symbolTable.hasFile(`${prefix}main.rs`);
+  });
+  return marked.length > 0 ? marked : dirs;
+}
+
 export function rustModuleCandidatePaths(importText: string, callerFile: string): string[] | null {
   const bindings = rustImportBindings(importText);
   const binding = bindings?.find((entry) => !entry.globImport) ?? bindings?.[0];
@@ -239,25 +300,55 @@ export function rustPathCandidatePaths(
   prefix: RustImportPrefix,
   moduleSegments: readonly string[],
   callerFile: string,
+  ctx?: CallContext,
 ): string[] {
-  const root = rustImportRoot(prefix, callerFile);
   const suffix = moduleSegments.join("/");
+  const tableRoots = prefix === "crate" && ctx ? rustTableCrateRoots(callerFile, ctx) : null;
+  if (tableRoots) {
+    return [
+      ...new Set(
+        tableRoots.flatMap((root) => {
+          const base = root ? `${root}/${suffix}` : suffix;
+          return [`${base}.rs`, `${base}/mod.rs`];
+        }),
+      ),
+    ];
+  }
+  const root = rustImportRoot(prefix, callerFile);
   const candidate = root ? `${root}/${suffix}` : suffix;
   return [`${candidate}.rs`, `${candidate}/mod.rs`];
 }
 
-export function rustImportCandidatePaths(importText: string, receiver: string, callerFile: string): string[] | null {
+export function rustImportCandidatePaths(
+  importText: string,
+  receiver: string,
+  callerFile: string,
+  ctx?: CallContext,
+): string[] | null {
   const parsed = parseRustImport(importText, receiver);
   if (!parsed?.receiverMatches) return parsed ? [] : null;
+  const tableRoots = parsed.prefix === "crate" && ctx ? rustTableCrateRoots(callerFile, ctx) : null;
   const root = rustImportRoot(parsed.prefix, callerFile);
+  const candidates: string[] = [];
+  const push = (suffix: string): void => {
+    if (tableRoots) {
+      for (const tableRoot of tableRoots) {
+        const base = tableRoot ? `${tableRoot}/${suffix}` : suffix;
+        candidates.push(`${base}.rs`, `${base}/mod.rs`);
+      }
+      return;
+    }
+    const base = root ? `${root}/${suffix}` : suffix;
+    candidates.push(`${base}.rs`, `${base}/mod.rs`);
+  };
   const moduleSuffix = parsed.moduleSegments.join("/");
-  const moduleCandidate = root ? `${root}/${moduleSuffix}` : moduleSuffix;
-  const candidates = [`${moduleCandidate}.rs`, `${moduleCandidate}/mod.rs`];
-  if (parsed.sourceName !== null) {
-    const memberSuffix = `${moduleSuffix}/${parsed.sourceName}`;
-    const memberCandidate = root ? `${root}/${memberSuffix}` : memberSuffix;
-    candidates.push(`${memberCandidate}.rs`, `${memberCandidate}/mod.rs`);
-  }
+  push(moduleSuffix);
+  if (parsed.sourceName !== null) push(`${moduleSuffix}/${parsed.sourceName}`);
+  // A plain binding `use crate::a::b::item` can bind an ITEM inside module
+  // `a::b`, whose file is `a/b.rs` — the last segment is the item, not the
+  // module. Without the parent candidates the bare-call arm found no file
+  // for every direct function import (bd tea-rags-mcp-2g2og).
+  if (!parsed.groupImport && parsed.moduleSegments.length > 1) push(parsed.moduleSegments.slice(0, -1).join("/"));
   return [...new Set(candidates)];
 }
 

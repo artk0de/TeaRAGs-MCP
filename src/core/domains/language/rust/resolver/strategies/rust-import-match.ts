@@ -4,6 +4,7 @@ import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../..
 import { capability } from "../../capability.js";
 import {
   parseRustImportPath,
+  rustCalleeShortNameCandidates,
   rustImportBindings,
   rustImportCandidatePaths,
   rustImportContainsReceiver,
@@ -30,13 +31,26 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
         rustImportBindings(imp.importText)?.some((binding) => binding.localName === call.member && !binding.globImport),
       );
       if (!matchingImport) return CONTINUE;
+      // A DIRECT binding names the file the callee lives in — the same
+      // candidate paths the receiver arm filters by. Only a `pub use`
+      // indirection needs the reexport walk; asking it first made every
+      // direct `use crate::mod::fn` + bare call a DROP whenever the run's
+      // reexport channel was absent (bd tea-rags-mcp-2g2og).
+      const candidatePaths = rustImportCandidatePaths(matchingImport.importText, call.member, ctx.callerFile, ctx);
+      if (candidatePaths !== null) {
+        const candidates = rustCalleeShortNameCandidates(ctx, call.member).filter((def) =>
+          candidatePaths.includes(def.relPath),
+        );
+        const direct = pickSingleCandidate(candidates, this.cfg.mode);
+        if (direct) return resolved({ targetRelPath: direct.relPath, targetSymbolId: direct.symbolId });
+      }
       const reexport = this.resolveReexport(call, matchingImport.importText, call.member, ctx);
       return reexport ? resolved(reexport) : DROP;
     }
     const { receiver } = call;
     const matchingImport = ctx.imports.find((imp) => parseRustImportPath(imp.importText, receiver)?.receiverMatches);
     if (matchingImport) {
-      const candidatePaths = rustImportCandidatePaths(matchingImport.importText, receiver, ctx.callerFile);
+      const candidatePaths = rustImportCandidatePaths(matchingImport.importText, receiver, ctx.callerFile, ctx);
       if (candidatePaths === null) return CONTINUE;
       const candidates = ctx.symbolTable
         .lookupByShortName(call.member, { kinds: capability.codegraph.symbolKindRoles.callee })
@@ -69,7 +83,7 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
     if (!parsed || ctx.moduleReexports === undefined) return null;
     const ownerSegments = parsed.sourceName === null ? parsed.moduleSegments.slice(0, -1) : parsed.moduleSegments;
     const exportedName = parsed.sourceName === null ? (parsed.moduleSegments.at(-1) ?? receiver) : parsed.sourceName;
-    const ownerPaths = rustPathCandidatePaths(parsed.prefix, ownerSegments, ctx.callerFile);
+    const ownerPaths = rustPathCandidatePaths(parsed.prefix, ownerSegments, ctx.callerFile, ctx);
     const candidates: { targetRelPath: string; targetSymbolId: string }[] = [];
     const visited = new Set<string>();
     const visit = (moduleFile: string, name: string, depth: number): void => {
@@ -80,7 +94,12 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
         if (entry.exportedName !== name && entry.exportedName !== "*") continue;
         const sourceBinding = rustImportBindings(entry.sourceModule)?.[0];
         if (!sourceBinding) continue;
-        const sourcePaths = rustPathCandidatePaths(sourceBinding.prefix, sourceBinding.moduleSegments, ctx.callerFile);
+        const sourcePaths = rustPathCandidatePaths(
+          sourceBinding.prefix,
+          sourceBinding.moduleSegments,
+          ctx.callerFile,
+          ctx,
+        );
         if (entry.sourceName !== undefined) {
           sourcePaths.push(
             ...rustPathCandidatePaths(

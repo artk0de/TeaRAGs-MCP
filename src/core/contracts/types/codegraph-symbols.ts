@@ -210,6 +210,20 @@ export interface GlobalSymbolTable {
    */
   hasFilesUnder: (dirRelPath: string) => boolean;
   /**
+   * Does any directory the table holds carry this NAME as its final segment?
+   * Crate/package directories are named after what they contain
+   * (`components/script_bindings` holds the `script_bindings` crate; a
+   * `grep-searcher` directory normalizes to `grep_searcher`), and an import
+   * head is only provably external when NO such directory exists — a bare
+   * `use` names a crate, and a workspace crate's files never spell
+   * `<crate>.rs` for `hasFile` to find.
+   *
+   * Optional capability: a table that omits it leaves every bare-head import
+   * classified external unless `hasFile` answers, which is the pre-workspace
+   * behaviour. O(1), maintained as an index, never a scan.
+   */
+  hasDirNamed?: (dirName: string) => boolean;
+  /**
    * Replace the run's schema-column index with `definitions` (each carrying
    * `isSchemaColumn: true`). Optional capability: a table that omits it simply
    * never holds synthesized columns, and the pre-pass no-ops (bd

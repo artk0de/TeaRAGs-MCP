@@ -52,9 +52,10 @@ function fixture(files: Record<string, string>, materialized: boolean) {
       expect(chunk?.symbolId).toBe(symbolId);
       const call = chunk.calls.find((entry) => entry.callText === text)!;
       expect(call?.callText).toBe(text);
-      expect(chunk.callResultBindings?.value).toEqual([
-        expect.objectContaining({ callee: "make", endLine: expect.any(Number), scopeEndLine: chunk.endLine }),
-      ]);
+      // The channel is keyed by the LOCAL VARIABLE's name (`.value` matched
+      // the original fixtures' `let value = make()`); tests assert their own
+      // binding shapes — here only that the chunk carries one.
+      expect(Object.keys(chunk.callResultBindings ?? {}).length).toBeGreaterThan(0);
       const ctx: CallContext = {
         callerFile: extraction.relPath,
         callerScope: chunk.scope,
@@ -163,6 +164,66 @@ fn run() {
       materialized,
     );
     expect(f.resolve("value.finish()")).toBeNull();
+  });
+
+  it("borrows a cross-file free function's return when an internal import binds it", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+use crate::makers::make;
+fn run() {
+  let value = make();
+  value.finish();
+}
+`,
+        "src/makers.rs": `
+pub struct Product;
+impl Product { pub fn finish(&self) {} }
+pub fn make() -> Product { todo!() }
+`,
+      },
+      materialized,
+    );
+    // Two `Product` types exist; the return spelling is the callee file's own,
+    // placed there — not the caller's namesake.
+    expect(f.resolve("value.finish()")).toEqual({
+      targetRelPath: "src/makers.rs",
+      targetSymbolId: "Product#finish",
+    });
+  });
+
+  it("borrows a lifetime-generic cross-file return the way servo's enter_auto_realm reads", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `
+mod realms;
+use crate::realms::{enter_auto_realm, Realm};
+struct Ctx;
+impl Ctx {
+    fn restore(&self, cx: &mut JSContext) {
+        let mut realm = enter_auto_realm(cx, self);
+        let inner = realm.current_realm();
+    }
+}
+`,
+        "src/realms.rs": `
+pub struct JSContext;
+pub struct Realm;
+impl Realm { pub fn current_realm(&self) {} }
+pub struct Root<'cx, T> { value: &'cx T }
+impl<T> Deref for Root<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target { todo!() }
+}
+pub(crate) fn enter_auto_realm<'cx>(cx: &'cx mut JSContext, o: &Ctx) -> Root<'cx, Realm> { todo!() }
+`,
+      },
+      materialized,
+    );
+    expect(f.resolve("realm.current_realm()", "Ctx#restore")).toEqual({
+      targetRelPath: "src/realms.rs",
+      targetSymbolId: "Realm#current_realm",
+    });
   });
 
   it("refuses an imported callee despite an exact same-file namesake", () => {
@@ -405,28 +466,46 @@ ${header} {
     expect(f.chunk().callResultBindings?.value).toBeUndefined();
   });
 
-  it.each([
-    "module::make()",
-    "source.make()",
-    "make::<Product>()",
-    "make().await",
-    "make()?",
-    "(|| make())()",
-    "make!()",
-  ])("withholds unsupported initializer %s", (initializer) => {
-    const f = fixture(
-      {
-        "src/main.rs": `${finishers}
+  it.each(["module::make()", "make::<Product>()", "make().await", "make()?", "(|| make())()", "make!()"])(
+    "withholds unsupported initializer %s",
+    (initializer) => {
+      const f = fixture(
+        {
+          "src/main.rs": `${finishers}
 fn make() -> Product { todo!() }
 fn run() {
   let value = ${initializer};
   value.finish();
 }
 `,
+        },
+        materialized,
+      );
+      expect(f.chunk().callResultBindings?.value).toBeUndefined();
+    },
+  );
+
+  // A dotted method init is a proven initializer since bd tea-rags-mcp-2g2og:
+  // the receiver is fold-typed and the method's declared return answers, so it
+  // moved out of the withheld list above.
+  it("records a dotted method init and types the binding from it", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+struct Source;
+impl Source { fn make(&self) -> Product { todo!() } }
+fn run(source: &Source) {
+  let value = source.make();
+  value.finish();
+}
+`,
       },
       materialized,
     );
-    expect(f.chunk().callResultBindings?.value).toBeUndefined();
+    expect(f.chunk().callResultBindings?.value).toEqual([
+      expect.objectContaining({ callee: "source.make", endLine: expect.any(Number), scopeEndLine: expect.any(Number) }),
+    ]);
+    expect(f.resolve("value.finish()")).toEqual(productFinish);
   });
 
   it("keeps annotated locals and constructor bindings unchanged", () => {

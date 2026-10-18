@@ -2,12 +2,19 @@ import { nearestCallResultBinding, resolveLocalBinding } from "../../../../../co
 import { LocalBindingSymbolResolutionStrategy, type ReceiverTypingPorts } from "../../../kernel/index.js";
 import { rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { createRustTypeMemberLookup } from "../rust-type-member-lookup.js";
+import { rustMethodCallResultType } from "./rust-type-receiver.js";
 import type { ResolverConfig } from "./shared.js";
 
 const RUST_LOCAL_BINDING_TYPING: ReceiverTypingPorts = {
   typeOfReceiver: (call, ctx) => {
     const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine, call.startColumn);
-    if (binding === undefined) return rustDeclaredCallResultType(call.receiver, call.startLine, ctx) ?? null;
+    if (binding === undefined) {
+      return (
+        rustDeclaredCallResultType(call.receiver, call.startLine, ctx) ??
+        rustMethodCallResultType(call.receiver, call.startLine, ctx) ??
+        null
+      );
+    }
     if (binding.typeRef !== undefined) {
       return binding.typeRef.form === "instance" && binding.typeRef.name.length > 0 ? binding.typeRef : null;
     }

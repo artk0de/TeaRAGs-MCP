@@ -1,7 +1,7 @@
 import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { MemberReturnTypeResolver, type NominalTypeRef } from "../../kernel/index.js";
-import { lookupRustSymbolsByShortName, rustImportBindings } from "./strategies/shared.js";
+import { lookupRustSymbolsByShortName, rustImportBindings, rustImportIsExternal } from "./strategies/shared.js";
 
 /** File-qualified nominal identity is kept inside the existing TypeRef channel, never a bare global namesake. */
 export function resolveRustNominalType(nominalType: TypeRef, ctx: CallContext): NominalTypeRef | undefined {
@@ -10,8 +10,17 @@ export function resolveRustNominalType(nominalType: TypeRef, ctx: CallContext): 
   if (/^(?:::)?(?:std|core|alloc)::/.test(name)) return undefined;
   if (
     !name.includes(".rs::") &&
-    ctx.imports.some((imp) => rustImportBindings(imp.importText)?.some((binding) => binding.localName === name))
+    ctx.imports.some(
+      (imp) =>
+        rustImportBindings(imp.importText)?.some((binding) => binding.localName === name) === true &&
+        rustImportIsExternal(imp.importText, ctx),
+    )
   ) {
+    // Only an EXTERNAL binding vetoes placement now. An import-bound project
+    // type (`use script_bindings::Str2`) reaches the candidate lookup below,
+    // where the sole-match and lexical-scope gates keep it honest — the old
+    // blanket veto dropped every import-bound type from the chain fold no
+    // matter where its definition lived.
     return undefined;
   }
   const shortName = name.split("::").at(-1);
@@ -69,15 +78,16 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
     );
     const substitute = (recv: TypeRef): TypeRef | undefined => {
       if (recv.form !== "instance" && recv.form !== "class") return undefined;
-      if (recv.name === "Self") return { ...owner, form: "instance" };
+      // `Self` and `Self::Target`-style associated paths answer the OWNER;
+      // rustDerefTarget turns the degenerate owner answer into its single
+      // generic argument, which is what `type Target = T` means for a
+      // one-parameter smart pointer (`Root<T>`'s `-> &Self::Target`).
+      if (recv.name === "Self" || recv.name.startsWith("Self::")) return { ...owner, form: "instance" };
       const parameter = declaration?.genericParameters?.indexOf(recv.name) ?? -1;
       if (parameter >= 0) return owner.args?.[parameter];
-      // Only the caller's imports are in scope. Another file's nominal spelling
-      // cannot be resolved safely without that file's own import environment.
-      if (target.relPath !== ctx.callerFile) return undefined;
       const typeArguments = recv.args?.map(substitute);
       if (typeArguments?.some((arg) => arg === undefined)) return undefined;
-      return resolveRustNominalType(
+      const placed = resolveRustNominalType(
         { ...recv, ...(typeArguments === undefined ? {} : { args: typeArguments as TypeRef[] }) },
         {
           ...ctx,
@@ -85,6 +95,16 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
           callerScope: target.scope.slice(0, -1),
         },
       );
+      if (placed === undefined) return undefined;
+      // Cross-file, only a type the DECLARING file declares in its own lexical
+      // scope is safe: the callee's import environment was never loaded, so a
+      // name it bound through `use` must decline rather than land on a caller
+      // -file namesake (`use external::Product` in lib.rs naming main.rs's
+      // Product fabricated an edge before this constraint).
+      if (target.relPath !== ctx.callerFile && !placed.name.startsWith(`${target.relPath}::`)) {
+        return undefined;
+      }
+      return placed;
     };
     return substitute(declared) ?? null;
   },
@@ -98,5 +118,53 @@ export function rustDeclaredMemberReturnType(
   ctx: CallContext,
 ): TypeRef | undefined {
   const owner = resolveRustNominalType(nominalType, ctx);
-  return owner === undefined ? undefined : (RUST_MEMBER_RETURN_TYPES.returnTypeOf(owner, member, ctx) ?? undefined);
+  if (owner === undefined) return undefined;
+  // Rust method resolution auto-derefs: a member the owner misses is retried
+  // on its `Deref::deref` declared return (a project smart pointer whose
+  // `fn deref(&self) -> &T` was walked). Only true misses deref — a member the
+  // owner declares is answered by the precedence walk above, byte-identically.
+  let current: NominalTypeRef | undefined = owner;
+  for (let hop = 0; current !== undefined && hop < 3; hop++) {
+    const found = RUST_MEMBER_RETURN_TYPES.returnTypeOf(current, member, ctx);
+    if (found !== null) return found ?? undefined;
+    if (member === "deref") return undefined;
+    const next = rustDerefTarget(current, ctx);
+    if (next === undefined || next.name === current.name) return undefined;
+    current = next;
+  }
+  return undefined;
+}
+
+/**
+ * The placed `Deref` target of a project smart pointer — the `deref` method's
+ * declared return, generic parameters substituted with the owner's own
+ * (`Dom<Window>` derefs to the placed `Window`). The owner is placed first when
+ * the typing port handed a raw binding annotation, so `Dom` resolves to its
+ * declaring file before the `deref` return is read. Answers only a project
+ * target: std smart pointers' `deref` lives outside the indexed source, so
+ * `Rc<T>` / `Box<T>` receivers decline here exactly as before.
+ */
+export function rustDerefTarget(owner: NominalTypeRef, ctx: CallContext): NominalTypeRef | undefined {
+  const placed = owner.name.includes(".rs::")
+    ? owner
+    : (resolveRustNominalType({ ...owner, form: owner.form === "class" ? "class" : "instance" }, ctx) ?? undefined);
+  if (!placed?.name.includes(".rs::")) return undefined;
+  const declared = RUST_MEMBER_RETURN_TYPES.returnTypeOf(placed, "deref", ctx);
+  if (declared === null) return undefined;
+  if (declared.form !== "instance" && declared.form !== "class") return undefined;
+  if (declared.name === placed.name) {
+    // The substitution answered the owner itself (`-> &Self::Target`): the
+    // deref target is the pointer's single generic argument.
+    const argument = placed.args?.[0];
+    if (argument === undefined || placed.args?.length !== 1) return undefined;
+    if (argument.form !== "instance" && argument.form !== "class") return undefined;
+    const argumentPlaced = argument.name.includes(".rs::")
+      ? argument
+      : (resolveRustNominalType(argument, ctx) ?? undefined);
+    if (!argumentPlaced?.name.includes(".rs::")) return undefined;
+    return argumentPlaced;
+  }
+  const target = declared.name.includes(".rs::") ? declared : resolveRustNominalType(declared, ctx);
+  if (!target?.name.includes(".rs::")) return undefined;
+  return target;
 }

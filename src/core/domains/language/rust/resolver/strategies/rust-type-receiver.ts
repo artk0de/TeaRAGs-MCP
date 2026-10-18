@@ -7,7 +7,7 @@ import {
   type ReceiverTypingPorts,
 } from "../../../kernel/index.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-constructor.js";
-import { rustDeclaredCallResultType } from "../declared-call-result-type.js";
+import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
 import { resolveRustNominalType, rustDeclaredMemberReturnType } from "../declared-return-type.js";
 import { createRustTypeMemberLookup } from "../rust-type-member-lookup.js";
@@ -44,7 +44,8 @@ const RUST_RECEIVER_TYPE_PORTS: ReceiverTypePorts = {
     const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine);
     const local = binding?.typeRef ?? (binding?.type ? { form: "instance" as const, name: binding.type } : undefined);
     if (local !== undefined) return resolveRustNominalType(local, ctx);
-    const produced = rustDeclaredCallResultType(receiver, atLine, ctx);
+    const produced =
+      rustDeclaredCallResultType(receiver, atLine, ctx) ?? rustMethodCallResultType(receiver, atLine, ctx);
     if (produced !== undefined) return produced;
     if (receiver === "self") return rustLexicalSelfType(ctx);
     const named = rustNamedType(receiver, ctx);
@@ -66,6 +67,41 @@ export function rustReceiverChainType(call: CallRef, ctx: CallContext): TypeRef 
   return call.receiver === null
     ? undefined
     : propagateReceiverType(call.receiver, call.startLine, ctx, RUST_RECEIVER_TYPE_PORTS, call.startColumn);
+}
+
+/**
+ * A dotted call-result init (`let wb = e.write_batch();`): the receiver is
+ * typed through the same fold the chain strategies use and the method's
+ * declared return answers, auto-deref included. Recursion terminates because
+ * a valid Rust init only names bindings declared EARLIER (use-before-declare
+ * is E0425), so following untyped receivers walks strictly backwards through
+ * the chunk's declarations (bd tea-rags-mcp-2g2og).
+ */
+export function rustMethodCallResultType(
+  receiverName: string | null,
+  atLine: number,
+  ctx: CallContext,
+): TypeRef | undefined {
+  if (receiverName === null) return undefined;
+  const binding = rustCallResultBindingOf(receiverName, atLine, ctx);
+  if (binding === undefined) return undefined;
+  const lastDot = binding.callee.lastIndexOf(".");
+  if (lastDot <= 0) return undefined;
+  const receiverText = binding.callee.slice(0, lastDot);
+  const memberName = binding.callee.slice(lastDot + 1);
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(memberName)) return undefined;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(receiverText)) return undefined;
+  const ownerType = rustReceiverChainType(
+    {
+      callText: `${binding.callee}(…)`,
+      receiver: receiverText,
+      member: memberName,
+      startLine: binding.line,
+    },
+    ctx,
+  );
+  if (ownerType === undefined) return undefined;
+  return rustDeclaredMemberReturnType(ownerType, memberName, ctx);
 }
 
 const RUST_TYPE_RECEIVER_TYPING: ReceiverTypingPorts = {

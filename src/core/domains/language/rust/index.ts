@@ -144,6 +144,10 @@ export class RustLanguage implements LanguageProvider {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
         callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
+      targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.targetsExternalImport?.(call, ctx) ?? false,
+      hasInProjectDefinition: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.hasInProjectDefinition?.(call, ctx) ?? false,
     };
   }
 }

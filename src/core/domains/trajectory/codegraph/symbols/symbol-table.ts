@@ -73,6 +73,17 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
    */
   private readonly dirRefCounts = new Map<string, number>();
 
+  /**
+   * Final directory segments -> file refcounts, dashes normalized to
+   * underscores. A crate directory is usually named after the crate
+   * (`components/script_bindings` holds `script_bindings`), and Rust crate
+   * names underscore what their directories dash (`grep-searcher` vs
+   * `grep_searcher`), so the query side normalizes and this index stores the
+   * normalized segment — one entry per ancestor directory per file, the same
+   * bound as {@link dirRefCounts}.
+   */
+  private readonly dirNameRefCounts = new Map<string, number>();
+
   upsertFile(relPath: RelPath, definitions: SymbolDefinition[]): void {
     this.removeFile(relPath);
     // An empty list still RECORDS the file. Returning early here is what made
@@ -83,6 +94,8 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     this.definitionCount += definitions.length;
     for (const dir of ancestorDirs(relPath)) {
       this.dirRefCounts.set(dir, (this.dirRefCounts.get(dir) ?? 0) + 1);
+      const segment = dirSegmentName(dir);
+      this.dirNameRefCounts.set(segment, (this.dirNameRefCounts.get(segment) ?? 0) + 1);
     }
     for (const def of definitions) {
       pushTo(this.byFq, def.fqName, def);
@@ -99,6 +112,10 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
       const next = (this.dirRefCounts.get(dir) ?? 0) - 1;
       if (next <= 0) this.dirRefCounts.delete(dir);
       else this.dirRefCounts.set(dir, next);
+      const segment = dirSegmentName(dir);
+      const nextSegment = (this.dirNameRefCounts.get(segment) ?? 0) - 1;
+      if (nextSegment <= 0) this.dirNameRefCounts.delete(segment);
+      else this.dirNameRefCounts.set(segment, nextSegment);
     }
     for (const def of existing) {
       removeFrom(this.byFq, def.fqName, def);
@@ -108,6 +125,10 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
 
   hasFile(relPath: RelPath): boolean {
     return this.byFile.has(relPath);
+  }
+
+  hasDirNamed(dirName: string): boolean {
+    return this.dirNameRefCounts.has(dirName.replace(/-/g, "_"));
   }
 
   /**
@@ -233,6 +254,12 @@ function ancestorDirs(relPath: RelPath): string[] {
   const dirs: string[] = [];
   for (let i = 1; i < segments.length; i++) dirs.push(segments.slice(0, i).join("/"));
   return dirs;
+}
+
+/** The final segment of a directory path, dashes normalized to underscores. */
+function dirSegmentName(dir: string): string {
+  const last = dir.split("/").at(-1) ?? dir;
+  return last.replace(/-/g, "_");
 }
 
 function pushTo(map: Map<string, SymbolDefinition[]>, key: string, def: SymbolDefinition): void {

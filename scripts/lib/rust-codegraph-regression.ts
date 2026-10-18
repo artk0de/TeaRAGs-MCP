@@ -8,7 +8,9 @@ const cost = z.number().finite().nonnegative();
 const text = z.string().min(1);
 const sha = z.string().regex(/^[a-f0-9]{40}$/);
 const targetSchema = z.object({ targetRelPath: text, targetSymbolId: text.nullable() }).strict();
-const siteSchema = z.object({ relPath: text, line: count.min(1), callText: text }).strict();
+const siteSchema = z
+  .object({ relPath: text, line: count.min(1), callText: text, startColumn: count.optional() })
+  .strict();
 const edgeKinds =
   /^(exact|fileOnly|none|dispatchTable|runner:(exact|cone|poly-base|dynamic|registry)(@(0(\.\d+)?|1(\.0+)?))?)$/;
 const rowSchema = siteSchema
@@ -48,7 +50,7 @@ const oracleSchema = z.discriminatedUnion("status", [
     .object({
       status: z.literal("ingested"),
       source: text,
-      identityScheme: z.literal("tally-line-callText-v1"),
+      identityScheme: z.literal("tally-line-callText-startColumn-v1"),
       sites: z.array(oracleSiteSchema).superRefine((sites, ctx) => {
         const seen = new Set<string>();
         for (const site of sites) {
@@ -108,7 +110,7 @@ export const rustCodegraphArtifactSchema = z
         loadPerCpu: cost,
       })
       .strict(),
-    identityScheme: z.literal("tally-line-callText-v1"),
+    identityScheme: z.literal("tally-line-callText-startColumn-v1"),
     measurementScope: z.literal("fresh-extraction-and-production-resolver"),
     chainDrift: z.object({ status: z.literal("not-run"), reason: text }).strict(),
     oracle: oracleSchema,
@@ -148,9 +150,18 @@ const policySchema = z
   })
   .strict();
 
-/** Legacy tally coordinates, not a source-span or pre-extraction inventory. */
-export function rustTallySiteKey(site: { relPath: string; line: number; callText: string }): string {
-  return JSON.stringify([site.relPath, site.line, site.callText.replace(/[\t\r\n]/g, " ")]);
+/**
+ * Legacy tally coordinates with the one span the walker proves: a walker that
+ * records `startColumn` (Rust today) keys two identical calls on one line
+ * apart; an absent column keys as null, so older shapes stay comparable.
+ */
+export function rustTallySiteKey(site: {
+  relPath: string;
+  line: number;
+  callText: string;
+  startColumn?: number;
+}): string {
+  return JSON.stringify([site.relPath, site.line, site.callText.replace(/[\t\r\n]/g, " "), site.startColumn ?? null]);
 }
 function targetKey(target: OracleAnswer): string {
   return JSON.stringify([target.targetRelPath, target.targetSymbolId]);
@@ -424,12 +435,13 @@ export function parseRustTallyDump(tsv: string): TallyEdgeDumpRow[] {
     .filter(Boolean)
     .map((line) => {
       const cells = line.split("\t");
-      if (cells.length !== 7) throw new Error("tally row requires seven TSV cells");
-      const [relPath, startLine, callText, receiverKind, targetRelPath, targetSymbolId, edgeKind] = cells;
+      if (cells.length !== 8) throw new Error("tally row requires eight TSV cells");
+      const [relPath, startLine, callText, startColumn, receiverKind, targetRelPath, targetSymbolId, edgeKind] = cells;
       return rowSchema.parse({
         relPath,
         line: Number(startLine),
         callText,
+        startColumn: startColumn === "-" ? undefined : Number(startColumn),
         receiverKind,
         targetRelPath: targetRelPath === "-" ? null : targetRelPath,
         targetSymbolId: targetSymbolId === "-" ? null : targetSymbolId,
