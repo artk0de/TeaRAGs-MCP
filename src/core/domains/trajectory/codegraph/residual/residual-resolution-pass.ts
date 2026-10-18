@@ -30,6 +30,12 @@ import {
   type ResidualCallSiteRow,
 } from "../../../../contracts/types/codegraph-residual.js";
 import type { GraphDbClient } from "../../../../contracts/types/codegraph-storage.js";
+import {
+  DEFAULT_FANOUT_FLOOR,
+  interfaceFanout,
+  type InterfaceFanout,
+  type ResidualClassTieReader,
+} from "./interface-fanout.js";
 import { collectReceiverGroups, GroupTournament } from "./receiver-group-tournament.js";
 import {
   cachedVerdicts,
@@ -72,6 +78,10 @@ export interface ResidualPassInput extends AskQueueInput {
   /** Smallest `p` of a "none of these" verdict that counts its site as external. */
   noneThreshold: number;
   retentionDays: number;
+  /** Reads the structural ties a fan-out needs; absent — no group fans out. */
+  classTies?: ResidualClassTieReader;
+  /** Smallest `p` of a class for it to join an interface fan-out; default {@link DEFAULT_FANOUT_FLOOR}. */
+  fanoutFloor?: number;
   /** Recompute cycles and PageRank over the current graph; clears the derived-stale mark. */
   recomputeDerived: () => Promise<void>;
 }
@@ -185,10 +195,11 @@ export class ResidualResolutionPass {
     const siteOutcome = buildEdges(eligible, verdicts, provider, input.noneThreshold);
     const namePriorAccept = input.namePriorAcceptThreshold ?? provider.threshold;
     const acceptOf = (t: GroupTournament): number => (t.pickedByNamePrior ? namePriorAccept : provider.threshold);
-    const groupOutcome = buildGroupEdges(tournaments, provider, acceptOf, input.noneThreshold);
+    const fanouts = await groupFanouts(tournaments, input, namePriorAccept, provider.threshold);
+    const groupOutcome = buildGroupEdges(tournaments, provider, acceptOf, input.noneThreshold, fanouts);
     const propagation = propagateTypeFacts(
       receiverGroups,
-      acceptedGroupVerdicts(tournaments, acceptOf, input.noneThreshold),
+      acceptedGroupVerdicts(tournaments, acceptOf, input.noneThreshold, fanouts),
       provider.id,
     );
     const edges = [...siteOutcome.edges, ...groupOutcome.edges, ...propagation.edges];
@@ -222,10 +233,12 @@ export class ResidualResolutionPass {
       abortedGroups: tally.aborted,
       requeuedGroups: tally.requeued,
       belowThreshold,
-      sitesEdged: edges.length,
+      sitesEdged: distinctSites(edges),
       receiverGroups: tournaments.length,
       receiverGroupSites: tournaments.reduce((n, t) => n + t.group.rows.length, 0),
-      sitesEdgedByVerdict: groupOutcome.edges.length,
+      sitesEdgedByVerdict: distinctSites(groupOutcome.edges),
+      fanoutGroups: fanouts.size,
+      fanoutEdges: edges.filter((e) => (e.fanout ?? 0) >= 2).length,
       sitesEdgedByPropagation: propagation.edges.length,
       propagationConflicts: propagation.conflicts,
       tournamentGroups: tournaments.filter((t) => t.isTournament).length,
@@ -304,15 +317,75 @@ function siteQuestion(r: EligibleSite): PendingQuestion {
   };
 }
 
-/** Every group's verdict at or above its threshold — `acceptOf` for a class, `noneThreshold` for none. */
+const distinctSites = (edges: readonly ModelEdgeRow[]): number => new Set(edges.map((e) => e.siteKey)).size;
+
+/**
+ * The groups whose answer fans out over one interface (see `interface-fanout.ts`),
+ * judged by the threshold of the answer's own question. A none accepted as
+ * external never fans out.
+ */
+async function groupFanouts(
+  tournaments: readonly GroupTournament[],
+  input: Pick<ResidualPassInput, "classTies" | "fanoutFloor" | "noneThreshold">,
+  namePriorAccept: number,
+  accept: number,
+): Promise<Map<GroupTournament, InterfaceFanout>> {
+  const fanouts = new Map<GroupTournament, InterfaceFanout>();
+  const { classTies } = input;
+  if (classTies === undefined) return fanouts;
+  const floor = input.fanoutFloor ?? DEFAULT_FANOUT_FLOOR;
+  for (const tournament of tournaments) {
+    const { spread, outcome } = tournament;
+    if (spread === undefined) continue;
+    if (outcome !== undefined && outcome !== "residual" && outcome.pick === null && outcome.p >= input.noneThreshold) {
+      continue;
+    }
+    const likely = spread.menu.filter((cls) => (spread.probabilities[cls] ?? 0) >= floor);
+    if (likely.length < 2) continue;
+    const fanout = interfaceFanout({
+      receiverText: tournament.group.receiverText,
+      menu: spread.menu,
+      probabilities: spread.probabilities,
+      ties: await classTies.tiesOf(likely),
+      floor,
+      accept: spread.fromPrior ? namePriorAccept : accept,
+    });
+    if (fanout !== undefined) fanouts.set(tournament, fanout);
+  }
+  return fanouts;
+}
+
+/**
+ * A fanned-out group types the next chain hop only when every fanned class
+ * returns the same class on every site; the verdict then names the first of them.
+ */
+function fanoutVerdict(tournament: GroupTournament, fanout: InterfaceFanout): AcceptedGroupVerdict | undefined {
+  for (const row of tournament.group.rows) {
+    const returns = new Set(fanout.classes.map((cls) => row.classTargets?.find(([c]) => c === cls)?.[2]));
+    if (returns.size !== 1 || returns.has(undefined)) return undefined;
+  }
+  return { pick: fanout.classes[0], p: fanout.p };
+}
+
+/**
+ * Every group's verdict at or above its threshold — `acceptOf` for a class,
+ * `noneThreshold` for none; a fanned-out group's per {@link fanoutVerdict}.
+ */
 function acceptedGroupVerdicts(
   tournaments: readonly GroupTournament[],
   acceptOf: (tournament: GroupTournament) => number,
   noneThreshold: number,
+  fanouts: ReadonlyMap<GroupTournament, InterfaceFanout>,
 ): Map<string, AcceptedGroupVerdict> {
   const accepted = new Map<string, AcceptedGroupVerdict>();
   for (const tournament of tournaments) {
     const { group, outcome } = tournament;
+    const fanout = fanouts.get(tournament);
+    if (fanout !== undefined) {
+      const verdict = fanoutVerdict(tournament, fanout);
+      if (verdict !== undefined) accepted.set(receiverGroupAddress(group), verdict);
+      continue;
+    }
     if (outcome === undefined || outcome === "residual") continue;
     if (outcome.p < (outcome.pick === null ? noneThreshold : acceptOf(tournament))) continue;
     accepted.set(receiverGroupAddress(group), outcome);
@@ -325,13 +398,14 @@ function acceptedGroupVerdicts(
  * above its accept threshold (`acceptOf`) edges every site of the group to the target its
  * member reaches on that class, or makes it an attribute where the class reads
  * the member as a schema column; a none at or above `noneThreshold` makes every
- * site external.
+ * site external. A fanned-out group replaces its class verdict: see {@link fanoutSiteEdges}.
  */
 function buildGroupEdges(
   tournaments: readonly GroupTournament[],
   provider: ResidualModelProvider,
   acceptOf: (tournament: GroupTournament) => number,
   noneThreshold: number,
+  fanouts: ReadonlyMap<GroupTournament, InterfaceFanout>,
 ): {
   edges: ModelEdgeRow[];
   external: ModelExternalSiteRow[];
@@ -344,6 +418,17 @@ function buildGroupEdges(
   let belowThreshold = 0;
   for (const tournament of tournaments) {
     const { group, outcome } = tournament;
+    const fanout = fanouts.get(tournament);
+    if (fanout !== undefined) {
+      for (const r of group.rows) {
+        const site = fanoutSiteEdges(r, fanout, provider.id);
+        if (site === "attribute") {
+          attributes.push({ ...siteRef(r), model: provider.id, p: fanout.p, outcome: "attribute" });
+        } else if (site.length === 0) belowThreshold++;
+        else edges.push(...site);
+      }
+      continue;
+    }
     if (outcome === undefined || outcome === "residual") continue;
     const { pick, p } = outcome;
     if (pick === null ? p < noneThreshold : p < acceptOf(tournament)) {
@@ -389,6 +474,35 @@ function buildGroupEdges(
     }
   }
   return { edges, external, attributes, belowThreshold };
+}
+
+const siteRef = (r: ResidualCallSiteRow) => ({
+  siteKey: r.siteKey,
+  sourceRelPath: r.sourceRelPath,
+  menuHash: r.menuHash,
+});
+
+/**
+ * One site's edges under a fan-out: one per distinct target the fanned classes
+ * reach the member through, each with the summed `p`, marked with the target
+ * count when it is two or more. Every fanned class reading the member as a
+ * schema column makes the site an attribute; no fanned class on the row, no edge.
+ */
+function fanoutSiteEdges(r: ResidualCallSiteRow, fanout: InterfaceFanout, model: string): ModelEdgeRow[] | "attribute" {
+  const entries = fanout.classes
+    .map((cls) => r.classTargets?.find(([c]) => c === cls))
+    .filter((entry) => entry !== undefined);
+  const targets = [...new Set(entries.flatMap(([, target]) => (target === null ? [] : [target])))];
+  if (targets.length === 0) return entries.length > 0 ? "attribute" : [];
+  return targets.map((targetSymbolId) => ({
+    siteKey: r.siteKey,
+    sourceRelPath: r.sourceRelPath,
+    sourceSymbolId: r.methodSymbolId,
+    targetSymbolId,
+    model,
+    p: fanout.p,
+    ...(targets.length > 1 ? { fanout: targets.length } : {}),
+  }));
 }
 
 /** A pick at or above the provider threshold is an edge; a none at or above `noneThreshold` an external site. */

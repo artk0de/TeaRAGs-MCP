@@ -109,6 +109,7 @@ const REGISTRY_ENV_GROUP_TABLE = [
   { canonical: "CODEGRAPH_RESIDUAL_NONE_THRESHOLD", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_TOURNAMENT_FLOOR", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_TOURNAMENT_BUDGET", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_RESIDUAL_FANOUT_FLOOR", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_CONFIRM_STAGE", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_ORIGIN_CONTEXT", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_NAME_PRIOR_ACCEPT_THRESHOLD", aliases: [], consequence: "runtime" },

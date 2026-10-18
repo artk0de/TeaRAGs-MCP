@@ -136,6 +136,26 @@ describe("ResidualResolutionOps", () => {
     run.mockRestore();
   });
 
+  it("hands the fan-out floor and a class tie reader to the pass", async () => {
+    const run = vi.spyOn(ResidualResolutionPass.prototype, "run");
+    const ops = new ResidualResolutionOps({
+      rootDir,
+      codegraphPool: { acquireWrite } as never,
+      config: { ...CONFIG, fanoutFloor: 0.2 },
+      createProvider: () => answeringProvider([]),
+    });
+
+    await ops.resolve({ ...request(), model: "kev" });
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fanoutFloor: 0.2,
+        classTies: expect.objectContaining({ tiesOf: expect.any(Function) }),
+      }),
+    );
+    run.mockRestore();
+  });
+
   it("names the threshold each model's edges are applied at", () => {
     const ops = new ResidualResolutionOps({ rootDir, codegraphPool: { acquireWrite } as never, config: CONFIG });
 

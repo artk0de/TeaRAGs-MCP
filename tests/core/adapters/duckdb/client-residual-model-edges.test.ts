@@ -131,6 +131,25 @@ describe("DuckDbGraphClient — residual ops", () => {
     ]);
   });
 
+  it("stores a fan-out edge as a cone edge whose confidence shares the summed p over the fan-out", async () => {
+    await writeBilling();
+
+    await client.applyModelEdges("kev", [
+      { ...EDGE, p: 0.9, fanout: 2 },
+      { ...EDGE, targetSymbolId: "Team#users", p: 0.9, fanout: 2 },
+    ]);
+
+    const rows = await client.queryAll<{ target_symbol_id: string; edge_kind: string; confidence: number; p: number }>(
+      `SELECT target_symbol_id, edge_kind, confidence, p FROM cg_symbols_edges_method ORDER BY target_symbol_id`,
+    );
+    expect(rows.map((r) => [r.target_symbol_id, r.edge_kind, r.p])).toEqual([
+      ["Firm#users", "cone", 0.9],
+      ["Team#users", "cone", 0.9],
+    ]);
+    // `confidence` is a single-precision column.
+    for (const r of rows) expect(r.confidence).toBeCloseTo(0.45, 5);
+  });
+
   it("replaces the model's edges and leaves static edges alone", async () => {
     await writeBilling([
       {
@@ -434,6 +453,18 @@ describe("DuckDbGraphClient — residual ops", () => {
       expect(await client.getModelResolvedSiteCounts({ kev: 0.7 })).toEqual([
         { outcome: "edge", language: "ruby", receiverKind: "dynamic", kind: "ambiguous", model: "kev", sites: 1 },
         { outcome: "edge", language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 2 },
+      ]);
+    });
+
+    it("counts a fanned-out site once, whatever the number of its edges", async () => {
+      await writeSites([{ ...SITE, language: "ruby", receiverKind: "ivar" }]);
+      await client.applyModelEdges("kev", [
+        { ...EDGE, fanout: 2 },
+        { ...EDGE, targetSymbolId: "Team#users", fanout: 2 },
+      ]);
+
+      expect(await client.getModelResolvedSiteCounts({ kev: 0.7 })).toEqual([
+        { outcome: "edge", language: "ruby", receiverKind: "ivar", kind: "dynamic", model: "kev", sites: 1 },
       ]);
     });
 

@@ -52,6 +52,13 @@ export interface ReceiverGroup {
   rows: ResidualCallSiteRow[];
 }
 
+/** One answered class question: its menu, the model's probabilities, and whether it was block 1 (judged by the name-prior threshold). */
+export interface GroupSpread {
+  menu: string[];
+  probabilities: Record<string, number>;
+  fromPrior: boolean;
+}
+
 /** The group's outcome: a verdict of the last round, or `residual` — no verdict this run. */
 export type GroupOutcome = { pick: string | null; p: number } | "residual";
 
@@ -134,6 +141,8 @@ export class GroupTournament {
   /** The confirm question re-asks a block-1 (name-prior) pick. */
   private confirmFromPrior = false;
   private namePriorPick = false;
+  /** The last answer over two or more classes that picked a class: a full menu, a final block, or block 1. */
+  private spreadAnswer: GroupSpread | undefined;
 
   constructor(
     readonly group: ReceiverGroup,
@@ -171,6 +180,15 @@ export class GroupTournament {
 
   get outcome(): GroupOutcome | undefined {
     return this.result;
+  }
+
+  /**
+   * The menu and probabilities of the answer the group's pick came from, before
+   * any confirm question; the interface fan-out reads it. Absent until such an
+   * answer arrives.
+   */
+  get spread(): GroupSpread | undefined {
+    return this.spreadAnswer;
   }
 
   /** The group's `[pick, none]` question was answered. */
@@ -293,6 +311,7 @@ export class GroupTournament {
       return;
     }
     if (questions.length === 1 && this.seed === undefined) {
+      this.keepSpread(questions[0].candidates, answered[0], false);
       if (this.confirmStage && isMidPick(answered[0], floor, accept)) this.confirmPick = answered[0].pick as string;
       else this.result = { pick: answered[0].pick, p: answered[0].p };
       return;
@@ -310,6 +329,7 @@ export class GroupTournament {
 
   private advancePrior(verdict: ResidualVerdict, floor: number, accept: number): void {
     this.priorPending = false;
+    if (this.prior !== undefined) this.keepSpread(this.prior, verdict, true);
     if (verdict.pick !== null && verdict.p >= accept) {
       this.result = { pick: verdict.pick, p: verdict.p };
       this.accepted = true;
@@ -339,6 +359,11 @@ export class GroupTournament {
     this.result = { pick: verdict.pick, p: verdict.p };
     this.confirmAcceptedFlag = verdict.p >= accept;
     this.namePriorPick = this.confirmFromPrior;
+  }
+
+  private keepSpread(menu: string[], verdict: ResidualVerdict, fromPrior: boolean): void {
+    if (verdict.pick === null || menu.length < 2) return;
+    this.spreadAnswer = { menu, probabilities: verdict.probabilities, fromPrior };
   }
 
   private question(block: string[], siteKey: string): ResidualQuestion {

@@ -118,6 +118,13 @@ export interface ModelEdgeRow {
   targetSymbolId: string;
   model: string;
   p: number;
+  /**
+   * Targets the site's edges span when the model's answer fanned the receiver
+   * out over a polymorphic interface (bd 2m83f.64): each edge carries the
+   * summed `p` and is stored as a `cone` edge of confidence `p / fanout`.
+   * Absent — a single-target edge.
+   */
+  fanout?: number;
 }
 
 /**
@@ -308,6 +315,10 @@ export interface ResidualPassReport {
   receiverGroupSites: number;
   /** Rows edged by their own receiver group's class verdict. */
   sitesEdgedByVerdict: number;
+  /** Receiver groups whose verdict fanned out over the classes of one interface instead of one class. */
+  fanoutGroups: number;
+  /** Model edges of fanned-out sites that span two or more targets. */
+  fanoutEdges: number;
   /** Rows edged by a type fact propagated from another group's verdict (a chain hop downstream). */
   sitesEdgedByPropagation: number;
   /** Groups whose own accepted verdict disagreed with a propagated type fact; the direct verdict stood. */
