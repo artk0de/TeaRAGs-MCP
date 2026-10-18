@@ -165,6 +165,32 @@ fn run() {
     expect(f.resolve("value.finish()")).toBeNull();
   });
 
+  it("borrows a cross-file free function's return when an internal import binds it", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+use crate::makers::make;
+fn run() {
+  let value = make();
+  value.finish();
+}
+`,
+        "src/makers.rs": `
+pub struct Product;
+impl Product { pub fn finish(&self) {} }
+pub fn make() -> Product { todo!() }
+`,
+      },
+      materialized,
+    );
+    // Two `Product` types exist; the return spelling is the callee file's own,
+    // placed there — not the caller's namesake.
+    expect(f.resolve("value.finish()")).toEqual({
+      targetRelPath: "src/makers.rs",
+      targetSymbolId: "Product#finish",
+    });
+  });
+
   it("refuses an imported callee despite an exact same-file namesake", () => {
     const f = fixture(
       {
