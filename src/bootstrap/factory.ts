@@ -982,6 +982,12 @@ export function wireCodegraph(
       minMenu: codegraph.residual.minMenu,
       noneThreshold: codegraph.residual.noneThreshold,
       originContext: codegraph.residual.originContext,
+      ...(codegraph.residual.namePriorAcceptThreshold === undefined
+        ? {}
+        : { namePriorAcceptThreshold: codegraph.residual.namePriorAcceptThreshold }),
+      confirmStage: codegraph.residual.confirmStage,
+      fanoutFloor: codegraph.residual.fanoutFloor,
+      autoCalibrate: codegraph.residual.autoCalibrate,
     },
   };
 

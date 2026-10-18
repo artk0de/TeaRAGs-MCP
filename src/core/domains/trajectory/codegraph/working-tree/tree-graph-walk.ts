@@ -83,7 +83,9 @@ export async function walkTreeFiles(clone: TreeGraphClone, relPaths: readonly st
  * @throws WorkingTreeGraphIncompleteError when the derived tables are still stale.
  */
 export async function finishTreeGraph(clone: TreeGraphClone): Promise<TreeModelEdges | undefined> {
-  const modelEdges = clone.residual ? await reapplyTreeModelEdges(clone.graphDb, clone.residual) : undefined;
+  const modelEdges = clone.residual
+    ? await reapplyTreeModelEdges(clone.graphDb, clone.residual, clone.treeRoot)
+    : undefined;
   if (await clone.graphDb.hasStaleDerivedTables()) {
     throw new WorkingTreeGraphIncompleteError(clone.dbPath, "staleDerivedTables");
   }

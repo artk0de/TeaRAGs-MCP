@@ -14,13 +14,22 @@
  * file read-write (and the other way round), so the build never keeps a pass
  * from opening it longer than one read, and a refused open degrades to "no
  * model edges for the changed files" instead of failing the graph.
+ *
+ * The pass gets every input the index run's pass judges verdicts by — the
+ * name-prior threshold, the confirm stage, the fan-out tie reader and floor,
+ * the stored threshold calibration (read only, never asked) — so tree edges
+ * match index edges.
  */
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { ResidualVerdictStore } from "../../../../adapters/duckdb/residual-verdict-store.js";
 import type { GraphDbClient } from "../../../../contracts/types/codegraph-storage.js";
+import { GraphClassTieReader } from "../residual/interface-fanout.js";
 import { ResidualModelProviderFactory } from "../residual/residual-model-provider-factory.js";
 import { ResidualResolutionPass, type ResidualPassInput } from "../residual/residual-resolution-pass.js";
+import { StoredResidualThresholds } from "../residual/residual-thresholds.js";
 import type { ResidualVerdict } from "../residual/types.js";
 import { recomputeGraphMetrics } from "../symbols/index.js";
 
@@ -39,6 +48,14 @@ export interface WorkingTreeGraphResidualInput {
   noneThreshold: number;
   /** The verdicts were asked with receiver-origin context; they are keyed under that variant. */
   originContext?: boolean;
+  /** Accept threshold for a name-prior block-1 pick and the confirm of one; unset = `threshold`. */
+  namePriorAcceptThreshold?: number;
+  /** The index run asks mid picks once more as `[pick, none]`; its tournaments replay the same way. */
+  confirmStage?: boolean;
+  /** Smallest `p` of a class for it to join an interface fan-out. */
+  fanoutFloor?: number;
+  /** Judge verdicts by the stored threshold calibration; unset = on. */
+  autoCalibrate?: boolean;
 }
 
 /** What the re-apply left: the model edges the tree graph holds, or why the changed files have none. */
@@ -53,6 +70,7 @@ export type TreeModelEdges = { stored: number } | { unavailable: string };
 export async function reapplyTreeModelEdges(
   graphDb: GraphDbClient,
   residual: WorkingTreeGraphResidualInput,
+  treeRoot: string,
 ): Promise<TreeModelEdges | undefined> {
   if (!existsSync(ResidualVerdictStore.pathFor(residual.verdictRootDir, residual.logicalName))) return undefined;
   const input: ResidualPassInput = {
@@ -65,6 +83,13 @@ export async function reapplyTreeModelEdges(
     minMenu: residual.minMenu,
     noneThreshold: residual.noneThreshold,
     ...(residual.originContext === undefined ? {} : { originContext: residual.originContext }),
+    ...(residual.namePriorAcceptThreshold === undefined
+      ? {}
+      : { namePriorAcceptThreshold: residual.namePriorAcceptThreshold }),
+    ...(residual.confirmStage === undefined ? {} : { confirmStage: residual.confirmStage }),
+    ...(residual.fanoutFloor === undefined ? {} : { fanoutFloor: residual.fanoutFloor }),
+    classTies: new GraphClassTieReader(graphDb, async (relPath) => readFile(join(treeRoot, relPath), "utf8")),
+    ...(residual.autoCalibrate === false ? {} : { thresholdSource: new StoredResidualThresholds(graphDb) }),
     retentionDays: 0,
     recomputeDerived: async () => recomputeGraphMetrics(graphDb),
     readMethodSource: async () => Promise.reject(new Error("a cacheOnly pass reads no method source")),
