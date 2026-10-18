@@ -74,6 +74,12 @@ export const capability: LanguageCapability = {
   // language-filtered short-name fallback and the facade's external
   // classification (std prelude + import heads via `hasInProjectDefinition` /
   // `targetsExternalImport`).
+  // Also under walker 9 (same release cycle, re-pinned, no second bump): bd
+  // tea-rags-mcp-2g2og — workspace-crate types participate in placement: the
+  // symbol table answers `hasDirNamed` (a crate dir named after the crate) and
+  // the nominal-type veto fires only for EXTERNALLY-bound imports, so a
+  // declared return type bound from a workspace crate resolves across the
+  // chain fold.
   versions: { chunking: 4, walker: 9, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

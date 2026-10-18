@@ -135,4 +135,69 @@ impl Frame {
       targetSymbolId: "Window#upper",
     });
   });
+
+  it("places a type bound from a workspace crate the table knows only as a directory", () => {
+    const f = fixture({
+      "script_bindings/lib.rs": `
+pub struct Str;
+impl Str { pub fn as_ref(&self) -> &str { todo!() } }
+`,
+      "src/main.rs": `
+use script_bindings::Str;
+fn describe(s: Str) {
+    s.as_ref();
+}
+`,
+    });
+    expect(f.resolve("s.as_ref()").target).toEqual({
+      targetRelPath: "script_bindings/lib.rs",
+      targetSymbolId: "Str#as_ref",
+    });
+  });
+
+  it("places a DECLARED RETURN type bound from a workspace crate across the chain fold", () => {
+    const f = fixture({
+      "script_bindings/lib.rs": `
+pub struct Str;
+impl Str { pub fn as_ref(&self) -> &str { todo!() } }
+pub struct Str2;
+impl Str2 { pub fn same_name(&self) {} }
+`,
+      "src/decoy.rs": `
+pub struct Decoy;
+impl Decoy { pub fn same_name(&self) {} }
+`,
+      "src/main.rs": `
+mod decoy;
+use crate::decoy::Decoy;
+use script_bindings::Str2;
+struct Frame;
+impl Frame {
+    fn s(&self) -> Str2 { todo!() }
+}
+fn paint(fr: Frame) {
+    fr.s().same_name();
+}
+`,
+    });
+    expect(f.resolve("fr.s().same_name()").target).toEqual({
+      targetRelPath: "script_bindings/lib.rs",
+      targetSymbolId: "Str2#same_name",
+    });
+  });
+
+  it("keeps a std-rooted return type unplaced and leaves the chain to decline", () => {
+    const f = fixture({
+      "src/main.rs": `
+struct Counter;
+impl Counter {
+    fn name(&self) -> String { todo!() }
+    fn run(&self) {
+        self.name().as_ref();
+    }
+}
+`,
+    });
+    expect(f.resolve("self.name().as_ref()").target).toBeNull();
+  });
 });

@@ -102,6 +102,11 @@ export function rustImportIsExternal(importText: string, ctx: CallContext): bool
   const head = binding.moduleSegments[0];
   if (!head) return false;
   if (rustTextIsStdPathHead(head)) return true;
+  // A workspace crate is a DIRECTORY (`script_bindings/lib.rs`); `hasFile` can
+  // never see `<crate>.rs`, so without the directory arm every bare-head
+  // `use script_bindings::Str` classified external and the type left the
+  // placement channel.
+  if (ctx.symbolTable.hasDirNamed?.(head) === true) return false;
   return !(ctx.symbolTable.hasFile(`${head}.rs`) || ctx.symbolTable.hasFile(`${head}/mod.rs`));
 }
 
