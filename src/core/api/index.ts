@@ -93,6 +93,8 @@ export { WorktreeOps } from "./internal/ops/worktree-ops.js";
 export { ResidualResolutionOps } from "./internal/ops/residual-resolution-ops.js";
 export type { ResidualResolutionConfig } from "./internal/ops/residual-resolution-ops.js";
 export { RESIDUAL_MODELS } from "../domains/trajectory/codegraph/residual/residual-model-provider-factory.js";
+export { calibrationAccuracy } from "../domains/trajectory/codegraph/residual/residual-calibration.js";
+export type { ResidualCalibrationReport } from "../domains/trajectory/codegraph/residual/residual-calibration.js";
 export { ReviewChangesOps } from "./internal/ops/review-changes-ops.js";
 export type { ReviewChangesOpsDeps } from "./internal/ops/review-changes-ops.js";
 export type { ReviewEdgeExtractionDeps } from "./internal/ops/review-edge-overlay.js";

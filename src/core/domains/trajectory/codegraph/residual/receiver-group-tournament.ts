@@ -342,17 +342,27 @@ export class GroupTournament {
   }
 
   private question(block: string[], siteKey: string): ResidualQuestion {
-    return {
-      siteKey,
-      menuHash: this.questionHash(residualMenuHash(block)),
-      receiverText: this.group.receiverText,
-      member: this.group.members[0] ?? "",
-      kind: this.group.kind,
-      candidates: block,
-      subject: "class",
-      members: this.group.members,
-    };
+    return receiverClassQuestion(this.group, block, siteKey, this.questionHash);
   }
+}
+
+/** A question over `block`, a set of the receiver's classes, keyed `siteKey`. */
+export function receiverClassQuestion(
+  group: Pick<ReceiverGroup, "receiverText" | "kind" | "members">,
+  block: string[],
+  siteKey: string,
+  questionHash: (menuHash: string) => string,
+): ResidualQuestion {
+  return {
+    siteKey,
+    menuHash: questionHash(residualMenuHash(block)),
+    receiverText: group.receiverText,
+    member: group.members[0] ?? "",
+    kind: group.kind,
+    candidates: block,
+    subject: "class",
+    members: group.members,
+  };
 }
 
 /** A class pick at or above `floor` but below `accept`: worth one confirm question. */

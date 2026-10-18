@@ -63,6 +63,7 @@ import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-log/in
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { advanceChunkSetStamp } from "../../../domains/maintenance/drift/index.js";
 import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/index.js";
+import type { ResidualCalibrationReport } from "../../../domains/trajectory/codegraph/residual/residual-calibration.js";
 import type { ResidualPassMode, ResidualPassReport } from "../../../domains/trajectory/codegraph/residual/types.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import { computeScoreBackground } from "../../../primitives/math/index.js";
@@ -80,7 +81,7 @@ import { isEnrichmentRecompute, rechunkSelectorOf } from "../../public/dto/index
 import type { PathCollectionResolver } from "../collection-resolver.js";
 import { assertRequestedLanguagesPresent } from "./language-presence-guard.js";
 import { bindLanguagePresencePorts } from "./language-presence-ports.js";
-import { skippedResidualReport, type ResidualResolvePort } from "./residual-resolve-port.js";
+import { skippedCalibrationReport, skippedResidualReport, type ResidualResolvePort } from "./residual-resolve-port.js";
 import type { WorktreeSeedAttempt, WorktreeSeedOps, WorktreeSeedSourceRelease } from "./worktree-seed-ops.js";
 
 type ModelInfo = { model: string; contextLength: number; dimensions: number };
@@ -773,6 +774,35 @@ export class IndexingOps {
         ...(options.onProgress ? { onProgress: options.onProgress } : {}),
       });
       return await this.healAfterResidual(report, physicalCollectionName);
+    } finally {
+      await this.releaseCollectionForIndexing(collectionName);
+    }
+  }
+
+  /**
+   * Calibration of `model` over the collection's static site sample
+   * (`resolve-codegraph-residual --calibrate`). Holds the collection like a
+   * pass; writes verdicts only, never edges.
+   */
+  async calibrateResidual(
+    path: string,
+    model: string,
+    options: { onProgress?: ProgressCallback } = {},
+  ): Promise<ResidualCalibrationReport> {
+    if (!this.residualResolution?.calibrate) {
+      return skippedCalibrationReport("codegraph is disabled (CODEGRAPH_ENABLED=false)");
+    }
+    this.assertProcessBuildCurrent();
+    const projectRoot = await validatePath(path);
+    const collectionName = await this.claimCollectionForIndexing(path, undefined);
+    try {
+      return await this.residualResolution.calibrate({
+        logicalName: collectionName,
+        physicalCollectionName: await this.physicalCollectionOf(collectionName),
+        projectRoot,
+        model,
+        ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+      });
     } finally {
       await this.releaseCollectionForIndexing(collectionName);
     }

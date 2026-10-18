@@ -41,6 +41,7 @@ import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
 import type { CollectionFootprintFactory } from "../../../domains/maintenance/footprint/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
+import type { ResidualCalibrationReport } from "../../../domains/trajectory/codegraph/residual/residual-calibration.js";
 import type { ResidualPassMode, ResidualPassReport } from "../../../domains/trajectory/codegraph/residual/types.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/index.js";
 import type {
@@ -280,6 +281,15 @@ export class IngestFacade {
     options?: { mode?: ResidualPassMode; onProgress?: ProgressCallback },
   ): Promise<ResidualPassReport> {
     return this.indexingOps.resolveResidual(path, model, options);
+  }
+
+  /** Calibration of the residual model on the static site sample (CLI `resolve-codegraph-residual --calibrate`). */
+  async calibrateCodegraphResidual(
+    path: string,
+    model: string,
+    options?: { onProgress?: ProgressCallback },
+  ): Promise<ResidualCalibrationReport> {
+    return this.indexingOps.calibrateResidual(path, model, options);
   }
 
   /** Resolve once the current run's background enrichment has settled (CLI worker). */

@@ -208,6 +208,8 @@ export interface AppContext {
   worktreeOps: WorktreeOps;
   /** CLI-only residual resolution on the current generation (`resolve-codegraph-residual`). */
   resolveCodegraphResidual: IngestFacade["resolveCodegraphResidual"];
+  /** CLI-only residual calibration over the static site sample (`resolve-codegraph-residual --calibrate`). */
+  calibrateCodegraphResidual: IngestFacade["calibrateCodegraphResidual"];
   schemaBuilder: SchemaBuilder;
   healthProbes?: HealthProbes;
   embeddedRelease?: () => void;
@@ -1593,6 +1595,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     app,
     worktreeOps,
     resolveCodegraphResidual: async (path, model, options) => ingest.resolveCodegraphResidual(path, model, options),
+    calibrateCodegraphResidual: async (path, model, options) => ingest.calibrateCodegraphResidual(path, model, options),
     schemaBuilder: composition.schemaBuilder,
     healthProbes: {
       checkQdrant: async () => infra.qdrant.checkHealth(),
