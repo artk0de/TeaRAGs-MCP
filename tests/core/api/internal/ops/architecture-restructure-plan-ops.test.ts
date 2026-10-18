@@ -359,6 +359,42 @@ describe("ArchitectureRestructurePlanOps — validation", () => {
       ),
     ).rejects.toBeInstanceOf(UnknownRestructureEdgeError);
   });
+
+  // bd tea-rags-mcp-54xwd.22: candidates may share a file a sibling's addFile
+  // creates - the hubLike recipe's extracted-interface pattern is one
+  // candidate per consumer cluster, every one of them importing the same new
+  // interface file. Every caller addFile is pre-registered before candidates
+  // compile, so a cross-candidate reference is judged like any other
+  // hypothesis instead of rejecting the whole plan as an input bug.
+  it("compiles a candidate against sibling addFiles instead of rejecting the plan", async () => {
+    const ops = new ArchitectureRestructurePlanOps(tieredJudge());
+    const answer = await ops.plan(
+      graphDb(),
+      planRequest([
+        { id: "a-extract", ops: [{ addFile: { file: "contracts/ports.ts", component: "core", abstract: true } }] },
+        { id: "b-adopt", ops: [{ addEdge: { from: "core/a.ts", to: "contracts/ports.ts" } }] },
+      ]),
+    );
+
+    expect(answer.mode).toBe("restructurePlan");
+    // Both candidates were JUDGED: a lone file and a lone edge improve
+    // nothing, so each lands in unselected rather than the call throwing.
+    const fates = [...answer.unselected, ...answer.steps, ...answer.tradeOffs].map((entry) => entry.candidateId).sort();
+    expect(fates).toEqual(["a-extract", "b-adopt"]);
+  });
+
+  it("rejects two candidates adding the same file into different components", async () => {
+    const ops = new ArchitectureRestructurePlanOps(tieredJudge());
+    await expect(
+      ops.plan(
+        graphDb(),
+        planRequest([
+          { id: "a", ops: [{ addFile: { file: "contracts/ports.ts", component: "core" } }] },
+          { id: "b", ops: [{ addFile: { file: "contracts/ports.ts", component: "lib" } }] },
+        ]),
+      ),
+    ).rejects.toBeInstanceOf(InvalidParameterError);
+  });
 });
 
 describe("ArchitectureRestructurePlanOps.unavailable", () => {
