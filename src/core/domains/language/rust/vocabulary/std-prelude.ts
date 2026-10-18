@@ -75,8 +75,54 @@ export const rustStdMacros: ReadonlySet<string> = new Set([
   "thread_local",
 ]);
 
+/** Traits the std prelude binds in every module without a `use`. */
+export const rustStdTraits: ReadonlySet<string> = new Set([
+  "Default",
+  "Clone",
+  "Copy",
+  "Debug",
+  "Display",
+  "From",
+  "Into",
+  "FromStr",
+  "FromIterator",
+  "ToString",
+  "Extend",
+  "AsRef",
+  "AsMut",
+  "Borrow",
+  "BorrowMut",
+  "TryFrom",
+  "TryInto",
+  "ToOwned",
+  "Ord",
+  "PartialOrd",
+  "Eq",
+  "PartialEq",
+  "Hash",
+  "Send",
+  "Sync",
+  "Unpin",
+  "Drop",
+  "Deref",
+  "DerefMut",
+  "Index",
+  "IndexMut",
+  "Iterator",
+  "IntoIterator",
+  "ExactSizeIterator",
+  "DoubleEndedIterator",
+  "Fn",
+  "FnMut",
+  "FnOnce",
+]);
+
 export function rustTextIsStdPathHead(text: string): boolean {
   return rustStdPathHeads.has(text);
+}
+
+export function rustTextIsStdTrait(text: string): boolean {
+  return rustStdTraits.has(text);
 }
 
 export function rustTextIsStdPreludeType(text: string): boolean {

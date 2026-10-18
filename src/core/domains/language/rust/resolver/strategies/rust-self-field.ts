@@ -28,6 +28,11 @@ export class RustSelfFieldSymbolResolutionStrategy implements SymbolResolutionSt
     const fieldSegment = call.receiver.slice("self.".length);
     // Chained access (`self.foo.bar()`) is out of scope — defer to later passes.
     if (fieldSegment.includes(".")) return CONTINUE;
+    // A segment carrying an argument list (`self.window()`) is a METHOD head,
+    // never a field: fields are bare identifiers. The chain fold types the
+    // call's result and the typed strategy answers the member — dropping here
+    // hid every `self.<method>()…` chain behind this guard (bd tea-rags-mcp-2g2og).
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(fieldSegment)) return CONTINUE;
 
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
     const typeName = identifierEntry(identifierEntry(ctx.classFieldTypes, enclosing), fieldSegment);
