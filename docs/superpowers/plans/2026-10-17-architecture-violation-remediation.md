@@ -356,3 +356,27 @@ Execution contract (refactoring-planning):
    tree; replace remaining Tasks with the new steps + expected deltas.
    Never continue on the stale plan.
 ```
+
+## Tracking — detector wave 2 (2026-10-18, "делай дальше")
+
+The three detector beads filed from this audit were worked per the standing
+"фикси, потом лайв валидируй" directive:
+
+- **Bead 54xwd.20 — fixed** (`47febbe3e`): the hubLike evidence lists pass the
+  same exclusions the fan counts apply (containment, foundation, all-inheritance
+  rows); live-validated on the self-index — the ingest/pipeline hub's
+  topDependencies list 5 disjoint entries, its 6 descendants gone from the
+  display, dependencyComponentCount 21 → 11, Ca/Ce unchanged.
+- **Bead 54xwd.21 — closed INVALID before any code change**: the SKILL.md pair
+  appeared only in the raw `find_co_changed` output (tests and docs shown by
+  design); the violation's own partners were production files — the language-
+  table documentation exclusion had already excluded the doc. Lesson recorded: a
+  raw partner query is not evidence of an exclusion gap — check the violation's
+  partner list first.
+- **Bead 54xwd.22 — fixed** (`575301445`): restructurePlan pre-registers every
+  caller addFile into a prelude partition; candidates referencing a sibling's
+  new file are judged, not rejected. Live-validated: the exact .5 remedy shape
+  completes with no INPUT_UNKNOWN_RESTRUCTURE.
+- Wave accounting: of 3 filed detector beads, 2 real (fixed, live-validated) and
+  1 invalid — the same verify-before-fixing discipline that refuted .15/.18/.19,
+  applied before writing code this time.
