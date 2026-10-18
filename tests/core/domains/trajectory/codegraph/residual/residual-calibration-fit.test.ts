@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { ResidualCalibrationRow } from "../../../../../../src/core/contracts/types/codegraph-residual.js";
+import type { CalibrationAnswer } from "../../../../../../src/core/domains/trajectory/codegraph/residual/calibration-answer.js";
 import {
   bootstrapLowerBounds,
   CALIBRATION_CUTS,
@@ -13,7 +14,6 @@ import {
   mixtureModel,
   validResidualCalibration,
   wilsonLower,
-  type CalibrationAnswer,
   type ResidualAnswerMix,
 } from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-calibration-fit.js";
 

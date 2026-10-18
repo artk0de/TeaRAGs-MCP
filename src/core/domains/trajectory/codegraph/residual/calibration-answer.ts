@@ -20,3 +20,10 @@ export interface CalibrationAnswer {
 }
 
 export type CalibrationStratum = CalibrationAnswer["stratum"];
+
+export type MenuSizeBucket = "1" | "2-4" | "5+";
+
+export function menuSizeBucket(menuSize: number): MenuSizeBucket {
+  if (menuSize <= 1) return "1";
+  return menuSize <= 4 ? "2-4" : "5+";
+}

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { StaticSiteSampleRow } from "../../../../../../src/core/contracts/types/codegraph-residual.js";
+import { menuSizeBucket } from "../../../../../../src/core/domains/trajectory/codegraph/residual/calibration-answer.js";
 import {
   buildCalibrationStrata,
   calibrationKey,
   DEFAULT_CALIBRATION_STRATA_SIZES,
-  menuSizeBucket,
 } from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-calibration-strata.js";
 
 let seq = 0;

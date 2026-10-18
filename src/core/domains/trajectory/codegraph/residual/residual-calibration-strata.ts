@@ -6,7 +6,7 @@
  */
 
 import type { StaticSiteSampleRow } from "../../../../contracts/types/codegraph-residual.js";
-import type { CalibrationStratum } from "./calibration-answer.js";
+import { menuSizeBucket, type CalibrationStratum, type MenuSizeBucket } from "./calibration-answer.js";
 import { orderClassesByNamingPrior } from "./receiver-closure.js";
 import { nameMatchedClasses } from "./receiver-name-prior.js";
 
@@ -28,8 +28,6 @@ export const DEFAULT_CALIBRATION_STRATA_SIZES: Readonly<CalibrationStrataSizes> 
 /** Receiver kinds the full-menu stratum is balanced over, in draw order. */
 export const CALIBRATION_RECEIVER_KINDS = ["localVar", "ivar", "chain", "dynamic"] as const;
 
-export type MenuSizeBucket = "1" | "2-4" | "5+";
-
 /** One calibration question: the menu it asks and the answer the static resolver knows. */
 export interface CalibrationItem {
   key: string;
@@ -46,11 +44,6 @@ export interface CalibrationItem {
 
 export function calibrationKey(stratum: CalibrationStratum, siteKey: string): string {
   return `cal:${stratum}:${siteKey}`;
-}
-
-export function menuSizeBucket(size: number): MenuSizeBucket {
-  if (size <= 1) return "1";
-  return size <= 4 ? "2-4" : "5+";
 }
 
 /** `Billing::Invoice#total` → `Billing::Invoice`. */

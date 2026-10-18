@@ -21,22 +21,12 @@ import type {
   ResidualCalibrationRow,
 } from "../../../../contracts/types/codegraph-residual.js";
 import { mulberry32 } from "../../../../primitives/math/index.js";
-
-/** The sample a calibration answer came from. */
-export type CalibrationAnswerStratum = "fullMenu" | "block1" | "external";
-
-/** Kev's top answer on one sampled site, scored against the static truth. */
-export interface CalibrationAnswer {
-  stratum: CalibrationAnswerStratum;
-  /** Probability of the top answer. */
-  p: number;
-  top: "class" | "none";
-  correct: boolean;
-  /** Classes on the menu, `none` excluded. */
-  menuSize: number;
-}
-
-export type MenuSizeBucket = "1" | "2-4" | "5+";
+import {
+  menuSizeBucket,
+  type CalibrationAnswer,
+  type CalibrationStratum,
+  type MenuSizeBucket,
+} from "./calibration-answer.js";
 
 /** The residual run's own answers: its none share and menu-size mix. */
 export interface ResidualAnswerMix {
@@ -150,11 +140,6 @@ export function cumulativeThreshold(
     }
   }
   return null;
-}
-
-export function menuSizeBucket(menuSize: number): MenuSizeBucket {
-  if (menuSize <= 1) return "1";
-  return menuSize <= 4 ? "2-4" : "5+";
 }
 
 /**
@@ -284,7 +269,7 @@ export function fitResidualThresholds(
   const minRecords = options.minRecords ?? CALIBRATION_MIN_RECORDS;
   const floor = options.floor ?? CALIBRATION_FLOOR;
   const cuts = (options.bootstrap?.cuts ?? CALIBRATION_CUTS).filter((cut) => cut >= floor);
-  const of = (s: CalibrationAnswerStratum): CalibrationAnswer[] => records.filter((r) => r.stratum === s);
+  const of = (s: CalibrationStratum): CalibrationAnswer[] => records.filter((r) => r.stratum === s);
   const block1 = of("block1");
   const onMenu = of("fullMenu");
   const external = of("external");
