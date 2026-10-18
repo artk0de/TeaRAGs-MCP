@@ -118,6 +118,13 @@ export interface ModelEdgeRow {
   targetSymbolId: string;
   model: string;
   p: number;
+  /**
+   * Targets the site's edges span when the model's answer fanned the receiver
+   * out over a polymorphic interface (bd 2m83f.64): each edge carries the
+   * summed `p` and is stored as a `cone` edge of confidence `p / fanout`.
+   * Absent — a single-target edge.
+   */
+  fanout?: number;
 }
 
 /**

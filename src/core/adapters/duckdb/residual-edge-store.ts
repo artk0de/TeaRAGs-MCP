@@ -167,7 +167,9 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
   }
 
   /**
-   * Make the `model` rows of `cg_symbols_edges_method` equal `edges`. An edge
+   * Make the `model` rows of `cg_symbols_edges_method` equal `edges`. A fan-out
+   * edge (`fanout` ≥ 2) is stored as `cone` with confidence `p / fanout`, so the
+   * site's edges share the weight of one. An edge
    * whose site is not a current residual row or whose target symbol is unknown
    * is skipped; one whose key a static edge already holds is ignored by the
    * diff's `INSERT OR IGNORE`. Reports what the model holds afterwards and
@@ -184,6 +186,7 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
         const callExpression = callTexts.get(e.siteKey);
         const targetRelPath = targetPaths.get(e.targetSymbolId);
         if (callExpression === undefined || targetRelPath === undefined) continue;
+        const fanned = (e.fanout ?? 0) >= 2;
         rows.push([
           e.sourceSymbolId,
           e.sourceRelPath,
@@ -191,8 +194,8 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
           targetRelPath,
           e.targetSymbolId,
           e.targetSymbolId,
-          "exact",
-          e.p,
+          fanned ? "cone" : "exact",
+          fanned ? e.p / (e.fanout ?? 1) : e.p,
           "model",
           model,
           e.p,
