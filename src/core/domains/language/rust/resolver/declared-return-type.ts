@@ -78,7 +78,11 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
     );
     const substitute = (recv: TypeRef): TypeRef | undefined => {
       if (recv.form !== "instance" && recv.form !== "class") return undefined;
-      if (recv.name === "Self") return { ...owner, form: "instance" };
+      // `Self` and `Self::Target`-style associated paths answer the OWNER;
+      // rustDerefTarget turns the degenerate owner answer into its single
+      // generic argument, which is what `type Target = T` means for a
+      // one-parameter smart pointer (`Root<T>`'s `-> &Self::Target`).
+      if (recv.name === "Self" || recv.name.startsWith("Self::")) return { ...owner, form: "instance" };
       const parameter = declaration?.genericParameters?.indexOf(recv.name) ?? -1;
       if (parameter >= 0) return owner.args?.[parameter];
       const typeArguments = recv.args?.map(substitute);
@@ -148,6 +152,18 @@ export function rustDerefTarget(owner: NominalTypeRef, ctx: CallContext): Nomina
   const declared = RUST_MEMBER_RETURN_TYPES.returnTypeOf(placed, "deref", ctx);
   if (declared === null) return undefined;
   if (declared.form !== "instance" && declared.form !== "class") return undefined;
+  if (declared.name === placed.name) {
+    // The substitution answered the owner itself (`-> &Self::Target`): the
+    // deref target is the pointer's single generic argument.
+    const argument = placed.args?.[0];
+    if (argument === undefined || placed.args?.length !== 1) return undefined;
+    if (argument.form !== "instance" && argument.form !== "class") return undefined;
+    const argumentPlaced = argument.name.includes(".rs::")
+      ? argument
+      : (resolveRustNominalType(argument, ctx) ?? undefined);
+    if (!argumentPlaced?.name.includes(".rs::")) return undefined;
+    return argumentPlaced;
+  }
   const target = declared.name.includes(".rs::") ? declared : resolveRustNominalType(declared, ctx);
   if (!target?.name.includes(".rs::")) return undefined;
   return target;

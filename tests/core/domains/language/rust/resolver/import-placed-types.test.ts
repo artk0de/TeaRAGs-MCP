@@ -294,4 +294,63 @@ fn render(d: Dom<Window>) {
       targetSymbolId: "Dom#paint",
     });
   });
+
+  it("derefs through an impl whose generic parameter carries a trait bound", () => {
+    const f = fixture({
+      "src/smart.rs": `
+pub trait DomObject {}
+pub struct Dom<T> { value: T }
+impl<T: DomObject> Deref for Dom<T> {
+    type Target = T;
+    fn deref(&self) -> &T { todo!() }
+}
+`,
+      "src/window.rs": `
+pub struct Window;
+impl Window { pub fn paint(&self) {} }
+`,
+      "src/main.rs": `
+mod smart;
+mod window;
+use crate::smart::Dom;
+use crate::window::Window;
+fn render(d: Dom<Window>) {
+    d.paint();
+}
+`,
+    });
+    expect(f.resolve("d.paint()").target).toEqual({
+      targetRelPath: "src/window.rs",
+      targetSymbolId: "Window#paint",
+    });
+  });
+
+  it("derefs through a Self::Target declared return", () => {
+    const f = fixture({
+      "src/smart.rs": `
+pub struct Root<T> { value: T }
+impl<T> Deref for Root<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target { todo!() }
+}
+`,
+      "src/window.rs": `
+pub struct Window;
+impl Window { pub fn focus(&self) {} }
+`,
+      "src/main.rs": `
+mod smart;
+mod window;
+use crate::smart::Root;
+use crate::window::Window;
+fn render(w: Root<Window>) {
+    w.focus();
+}
+`,
+    });
+    expect(f.resolve("w.focus()").target).toEqual({
+      targetRelPath: "src/window.rs",
+      targetSymbolId: "Window#focus",
+    });
+  });
 });
