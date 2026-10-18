@@ -39,7 +39,10 @@ export const capability: LanguageCapability = {
   // indexed Rust project carries duplicate call rows until it recomputes.
   // walker 9: bd tea-rags-mcp-2g2og.24 — proven same-file declared bare-call
   // result locals feed receiver typing; .32 keeps placed instance/class dispatch exact.
-  versions: { chunking: 4, walker: 9, codegraphSchema: 2 },
+  // walker 10: bd tea-rags-mcp-2g2og.33 — `self`/`super` paths start from the
+  // file's own module (`x.rs` is module x, not its directory) and repeated
+  // `super::` prefixes climb one module each.
+  versions: { chunking: 4, walker: 10, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
   // SCREAMING_SNAKE_CASE.

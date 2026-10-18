@@ -543,7 +543,7 @@ describe("seeded support versions", () => {
         ["python", 12],
         ["ruby", 10],
         ["java", 4],
-        ["rust", 9],
+        ["rust", 10],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a
         // nested-checkout or gitignored go.mod.
         ["go", 6],

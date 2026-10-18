@@ -34,7 +34,7 @@ describe("RustCallResolver", () => {
     ]);
     const target = r.resolve(
       { callText: "foo::bar()", receiver: "foo", member: "bar", startLine: 1 },
-      ctx("src/sub/x.rs", [{ importText: "super::foo", startLine: 1 }], t),
+      ctx("src/sub/mod.rs", [{ importText: "super::foo", startLine: 1 }], t),
     );
     expect(target?.targetRelPath).toBe("src/foo.rs");
   });
@@ -548,6 +548,141 @@ describe("RustCallResolver", () => {
         symbolTable: t,
         classFieldTypes: { Worker: { engine: "Engine" } },
       },
+    );
+    expect(target).toBeNull();
+  });
+
+  it("resolves a nested crate module from the caller's Rust source root", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("project/src/lib.rs", []);
+    t.upsertFile("project/src/domain/http/client.rs", [
+      {
+        symbolId: "Client#send",
+        fqName: "Client#send",
+        shortName: "send",
+        relPath: "project/src/domain/http/client.rs",
+        scope: ["Client"],
+      },
+    ]);
+    t.upsertFile("dependency/src/domain/http/client.rs", [
+      {
+        symbolId: "Client#send",
+        fqName: "Client#send",
+        shortName: "send",
+        relPath: "dependency/src/domain/http/client.rs",
+        scope: ["Client"],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "client::send()", receiver: "client", member: "send", startLine: 1 },
+      ctx("project/src/main.rs", [{ importText: "crate::domain::http::client", startLine: 1 }], t),
+    );
+    expect(target?.targetRelPath).toBe("project/src/domain/http/client.rs");
+  });
+
+  it("resolves self imports relative to the caller module, not by global suffix", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("project/src/lib.rs", []);
+    t.upsertFile("project/src/domain/mod.rs", []);
+    t.upsertFile("project/src/domain/client.rs", [
+      { symbolId: "run", fqName: "run", shortName: "run", relPath: "project/src/domain/client.rs", scope: [] },
+    ]);
+    t.upsertFile("other/src/domain/client.rs", [
+      { symbolId: "run", fqName: "run", shortName: "run", relPath: "other/src/domain/client.rs", scope: [] },
+    ]);
+    const target = r.resolve(
+      { callText: "client::run()", receiver: "client", member: "run", startLine: 1 },
+      ctx("project/src/domain/mod.rs", [{ importText: "self::client", startLine: 1 }], t),
+    );
+    expect(target?.targetRelPath).toBe("project/src/domain/client.rs");
+  });
+
+  it("resolves repeated super prefixes from a nested file module", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("project/src/lib.rs", []);
+    t.upsertFile("project/src/domain/client.rs", [
+      { symbolId: "run", fqName: "run", shortName: "run", relPath: "project/src/domain/client.rs", scope: [] },
+    ]);
+    const target = r.resolve(
+      { callText: "client::run()", receiver: "client", member: "run", startLine: 1 },
+      ctx("project/src/domain/http/session.rs", [{ importText: "super::super::client", startLine: 1 }], t),
+    );
+    expect(target?.targetRelPath).toBe("project/src/domain/client.rs");
+  });
+
+  it("resolves a self import from a file module to the module's own child", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    for (const relPath of ["src/flags/parse.rs", "src/flags/defs/parse.rs"]) {
+      t.upsertFile(relPath, [{ symbolId: "run", fqName: "run", shortName: "run", relPath, scope: [] }]);
+    }
+    const target = r.resolve(
+      { callText: "parse::run()", receiver: "parse", member: "run", startLine: 1 },
+      ctx("src/flags/defs.rs", [{ importText: "self::parse", startLine: 1 }], t),
+    );
+    expect(target?.targetRelPath).toBe("src/flags/defs/parse.rs");
+  });
+
+  it("counts a mod.rs caller as its directory's module when climbing super prefixes", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("project/src/lib.rs", []);
+    for (const relPath of ["project/src/client.rs", "project/src/domain/client.rs"]) {
+      t.upsertFile(relPath, [{ symbolId: "run", fqName: "run", shortName: "run", relPath, scope: [] }]);
+    }
+    const target = r.resolve(
+      { callText: "client::run()", receiver: "client", member: "run", startLine: 1 },
+      ctx("project/src/domain/http/mod.rs", [{ importText: "super::super::client", startLine: 1 }], t),
+    );
+    expect(target?.targetRelPath).toBe("project/src/client.rs");
+  });
+
+  it("does not resolve when both foo.rs and foo/mod.rs exist", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("project/src/lib.rs", []);
+    for (const relPath of ["project/src/foo.rs", "project/src/foo/mod.rs"]) {
+      t.upsertFile(relPath, [{ symbolId: "run", fqName: "run", shortName: "run", relPath, scope: [] }]);
+    }
+    const target = r.resolve(
+      { callText: "foo::run()", receiver: "foo", member: "run", startLine: 1 },
+      ctx("project/src/lib.rs", [{ importText: "crate::foo", startLine: 1 }], t),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("declines malformed module paths and external absolute paths", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("project/src/lib.rs", []);
+    t.upsertFile("project/src/foo.rs", [
+      { symbolId: "run", fqName: "run", shortName: "run", relPath: "project/src/foo.rs", scope: [] },
+    ]);
+    const malformed = r.resolve(
+      { callText: "foo::run()", receiver: "foo", member: "run", startLine: 1 },
+      ctx("project/src/lib.rs", [{ importText: "crate::::foo", startLine: 1 }], t),
+    );
+    const external = r.resolve(
+      { callText: "foo::run()", receiver: "foo", member: "run", startLine: 1 },
+      ctx("project/src/lib.rs", [{ importText: "::foreign::foo", startLine: 1 }], t),
+    );
+    expect(malformed).toBeNull();
+    expect(external).toBeNull();
+  });
+
+  it("does not use a foreign-language namesake for a Rust module path", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("project/src/lib.rs", []);
+    t.upsertFile("project/src/foo.ts", [
+      { symbolId: "run", fqName: "run", shortName: "run", relPath: "project/src/foo.ts", scope: [] },
+    ]);
+    const target = r.resolve(
+      { callText: "foo::run()", receiver: "foo", member: "run", startLine: 1 },
+      ctx("project/src/lib.rs", [{ importText: "crate::foo", startLine: 1 }], t),
     );
     expect(target).toBeNull();
   });

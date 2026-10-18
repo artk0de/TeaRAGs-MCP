@@ -114,6 +114,8 @@ type RustImportPrefix = "crate" | "self" | "super" | null;
 
 export interface RustImportPath {
   prefix: RustImportPrefix;
+  /** How many leading `super::` segments the path climbs; 0 unless `prefix` is `super`. */
+  superDepth: number;
   moduleSegments: string[];
   sourceName: string | null;
   receiverMatches: boolean;
@@ -123,6 +125,8 @@ export interface RustImportPath {
 
 export interface RustImportBinding {
   prefix: RustImportPrefix;
+  /** How many leading `super::` segments the path climbs; 0 unless `prefix` is `super`. */
+  superDepth: number;
   moduleSegments: string[];
   sourceName: string | null;
   localName: string;
@@ -140,10 +144,15 @@ function stripRustUsePrefix(importText: string): string {
     .replace(/^::/, "");
 }
 
-function splitRustPrefix(segments: string[]): { prefix: RustImportPrefix; segments: string[] } {
+function splitRustPrefix(segments: string[]): { prefix: RustImportPrefix; superDepth: number; segments: string[] } {
   const first = segments[0];
-  if (first === "crate" || first === "self" || first === "super") return { prefix: first, segments: segments.slice(1) };
-  return { prefix: null, segments };
+  if (first === "super") {
+    let depth = 1;
+    while (segments[depth] === "super") depth++;
+    return { prefix: "super", superDepth: depth, segments: segments.slice(depth) };
+  }
+  if (first === "crate" || first === "self") return { prefix: first, superDepth: 0, segments: segments.slice(1) };
+  return { prefix: null, superDepth: 0, segments };
 }
 
 function validRustSegments(segments: readonly string[]): boolean {
@@ -156,7 +165,7 @@ export function rustImportBindings(importText: string): RustImportBinding[] | nu
     .split("::")
     .map((segment) => segment.trim());
   if (segments.some((segment) => segment.length === 0)) return null;
-  const { prefix, segments: pathSegments } = splitRustPrefix(segments);
+  const { prefix, superDepth, segments: pathSegments } = splitRustPrefix(segments);
   if (pathSegments.length === 0) return null;
   const last = pathSegments.at(-1) ?? "";
 
@@ -171,13 +180,21 @@ export function rustImportBindings(importText: string): RustImportBinding[] | nu
     if (members.length === 0) return null;
     const bindings = members.map((member): RustImportBinding | null => {
       if (member === "*") {
-        return { prefix, moduleSegments, sourceName: null, localName: "*", groupImport: true, globImport: true };
+        return {
+          prefix,
+          superDepth,
+          moduleSegments,
+          sourceName: null,
+          localName: "*",
+          groupImport: true,
+          globImport: true,
+        };
       }
       const alias = member.match(RUST_ALIAS);
       const sourceName = (alias?.[1] ?? member).trim();
       const localName = alias?.[2] ?? sourceName;
       if (!RUST_PATH_SEGMENT.test(sourceName) || !RUST_PATH_SEGMENT.test(localName)) return null;
-      return { prefix, moduleSegments, sourceName, localName, groupImport: true, globImport: false };
+      return { prefix, superDepth, moduleSegments, sourceName, localName, groupImport: true, globImport: false };
     });
     return bindings.every((binding): binding is RustImportBinding => binding !== null) ? bindings : null;
   }
@@ -185,7 +202,7 @@ export function rustImportBindings(importText: string): RustImportBinding[] | nu
   if (last === "*") {
     const moduleSegments = pathSegments.slice(0, -1);
     return validRustSegments(moduleSegments)
-      ? [{ prefix, moduleSegments, sourceName: null, localName: "*", groupImport: false, globImport: true }]
+      ? [{ prefix, superDepth, moduleSegments, sourceName: null, localName: "*", groupImport: false, globImport: true }]
       : null;
   }
 
@@ -196,6 +213,7 @@ export function rustImportBindings(importText: string): RustImportBinding[] | nu
     return [
       {
         prefix,
+        superDepth,
         moduleSegments: [...pathSegments.slice(0, -1), ...sourcePath],
         sourceName: null,
         localName: alias[2],
@@ -208,6 +226,7 @@ export function rustImportBindings(importText: string): RustImportBinding[] | nu
   return [
     {
       prefix,
+      superDepth,
       moduleSegments: pathSegments,
       sourceName: null,
       localName: pathSegments.at(-1) ?? "",
@@ -256,13 +275,30 @@ export function rustImportCandidateSuffix(importText: string, receiver: string):
   return parsed.moduleSegments.join("/");
 }
 
-function rustImportRoot(prefix: RustImportPrefix, callerFile: string): string {
-  const callerDir = callerFile.includes("/") ? callerFile.slice(0, callerFile.lastIndexOf("/")) : "";
+/** Where a path's prefix resolves from: the import origin a binding carries. */
+export type RustImportOrigin = Pick<RustImportBinding, "prefix" | "superDepth">;
+
+/** Module roots own their directory; any other `x.rs` is module `x`, whose children sit under `x/`. */
+const RUST_DIRECTORY_MODULE_FILES = new Set(["mod.rs", "lib.rs", "main.rs"]);
+
+function parentDir(dir: string): string {
+  return dir.includes("/") ? dir.slice(0, dir.lastIndexOf("/")) : "";
+}
+
+function rustImportRoot(origin: RustImportOrigin, callerFile: string): string {
+  const callerDir = parentDir(callerFile);
   const segments = callerFile.split("/");
   const srcIndex = segments.indexOf("src");
-  const crateRoot = srcIndex >= 0 ? segments.slice(0, srcIndex + 1).join("/") : callerDir;
-  const parentRoot = callerDir.includes("/") ? callerDir.slice(0, callerDir.lastIndexOf("/")) : "";
-  return prefix === "crate" ? crateRoot : prefix === "self" ? callerDir : prefix === "super" ? parentRoot : "";
+  if (origin.prefix === "crate") return srcIndex >= 0 ? segments.slice(0, srcIndex + 1).join("/") : callerDir;
+  const fileName = segments.at(-1) ?? "";
+  const moduleDir = RUST_DIRECTORY_MODULE_FILES.has(fileName)
+    ? callerDir
+    : `${callerDir ? `${callerDir}/` : ""}${fileName.replace(/\.rs$/, "")}`;
+  if (origin.prefix === "self") return moduleDir;
+  if (origin.prefix !== "super") return "";
+  let root = moduleDir;
+  for (let climbed = 0; climbed < origin.superDepth; climbed++) root = parentDir(root);
+  return root;
 }
 
 /**
@@ -290,20 +326,20 @@ export function rustModuleCandidatePaths(importText: string, callerFile: string)
   const bindings = rustImportBindings(importText);
   const binding = bindings?.find((entry) => !entry.globImport) ?? bindings?.[0];
   if (!binding) return bindings === null ? null : [];
-  const root = rustImportRoot(binding.prefix, callerFile);
+  const root = rustImportRoot(binding, callerFile);
   const suffix = binding.moduleSegments.join("/");
   const candidate = root ? `${root}/${suffix}` : suffix;
   return [`${candidate}.rs`, `${candidate}/mod.rs`];
 }
 
 export function rustPathCandidatePaths(
-  prefix: RustImportPrefix,
+  origin: RustImportOrigin,
   moduleSegments: readonly string[],
   callerFile: string,
   ctx?: CallContext,
 ): string[] {
   const suffix = moduleSegments.join("/");
-  const tableRoots = prefix === "crate" && ctx ? rustTableCrateRoots(callerFile, ctx) : null;
+  const tableRoots = origin.prefix === "crate" && ctx ? rustTableCrateRoots(callerFile, ctx) : null;
   if (tableRoots) {
     return [
       ...new Set(
@@ -314,7 +350,7 @@ export function rustPathCandidatePaths(
       ),
     ];
   }
-  const root = rustImportRoot(prefix, callerFile);
+  const root = rustImportRoot(origin, callerFile);
   const candidate = root ? `${root}/${suffix}` : suffix;
   return [`${candidate}.rs`, `${candidate}/mod.rs`];
 }
@@ -328,7 +364,7 @@ export function rustImportCandidatePaths(
   const parsed = parseRustImport(importText, receiver);
   if (!parsed?.receiverMatches) return parsed ? [] : null;
   const tableRoots = parsed.prefix === "crate" && ctx ? rustTableCrateRoots(callerFile, ctx) : null;
-  const root = rustImportRoot(parsed.prefix, callerFile);
+  const root = rustImportRoot(parsed, callerFile);
   const candidates: string[] = [];
   const push = (suffix: string): void => {
     if (tableRoots) {
@@ -356,7 +392,7 @@ export function rustImportGlobCandidatePaths(importText: string, callerFile: str
   const bindings = rustImportBindings(importText);
   const glob = bindings?.find((binding) => binding.globImport);
   if (!glob) return bindings === null ? null : [];
-  const root = rustImportRoot(glob.prefix, callerFile);
+  const root = rustImportRoot(glob, callerFile);
   const suffix = glob.moduleSegments.join("/");
   const candidate = root ? `${root}/${suffix}` : suffix;
   return [`${candidate}.rs`, `${candidate}/mod.rs`];

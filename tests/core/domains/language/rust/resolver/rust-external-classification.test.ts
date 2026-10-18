@@ -53,7 +53,7 @@ describe("Rust resolver — import-bound bare calls and external classification"
     def(t, "src/flags/parse.rs", "parse_low_raw");
     const target = r.resolve(
       { callText: "parse_low_raw(args)", receiver: null, member: "parse_low_raw", startLine: 201 },
-      ctx("src/flags/defs.rs", [{ importText: "self::parse::parse_low_raw", startLine: 35 }], t),
+      ctx("src/flags/mod.rs", [{ importText: "self::parse::parse_low_raw", startLine: 35 }], t),
     );
     expect(target?.targetRelPath).toBe("src/flags/parse.rs");
   });

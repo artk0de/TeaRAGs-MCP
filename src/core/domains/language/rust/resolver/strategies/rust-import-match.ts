@@ -83,7 +83,7 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
     if (!parsed || ctx.moduleReexports === undefined) return null;
     const ownerSegments = parsed.sourceName === null ? parsed.moduleSegments.slice(0, -1) : parsed.moduleSegments;
     const exportedName = parsed.sourceName === null ? (parsed.moduleSegments.at(-1) ?? receiver) : parsed.sourceName;
-    const ownerPaths = rustPathCandidatePaths(parsed.prefix, ownerSegments, ctx.callerFile, ctx);
+    const ownerPaths = rustPathCandidatePaths(parsed, ownerSegments, ctx.callerFile, ctx);
     const candidates: { targetRelPath: string; targetSymbolId: string }[] = [];
     const visited = new Set<string>();
     const visit = (moduleFile: string, name: string, depth: number): void => {
@@ -94,16 +94,11 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
         if (entry.exportedName !== name && entry.exportedName !== "*") continue;
         const sourceBinding = rustImportBindings(entry.sourceModule)?.[0];
         if (!sourceBinding) continue;
-        const sourcePaths = rustPathCandidatePaths(
-          sourceBinding.prefix,
-          sourceBinding.moduleSegments,
-          ctx.callerFile,
-          ctx,
-        );
+        const sourcePaths = rustPathCandidatePaths(sourceBinding, sourceBinding.moduleSegments, ctx.callerFile, ctx);
         if (entry.sourceName !== undefined) {
           sourcePaths.push(
             ...rustPathCandidatePaths(
-              sourceBinding.prefix,
+              sourceBinding,
               [...sourceBinding.moduleSegments, entry.sourceName],
               ctx.callerFile,
             ),
