@@ -75,14 +75,15 @@ describe("Rust walker — trait and impl dispatch facts", () => {
 
     const invoke = extraction.chunks.find(({ symbolId }) => symbolId === "invoke");
     expect(invoke?.calls).toEqual([
-      { callText: "r.run()", receiver: "r", member: "run", startLine: 5 },
+      { callText: "r.run()", receiver: "r", member: "run", startLine: 5, startColumn: 4 },
       {
         callText: "<Worker as Runner>::run(&worker)",
         receiver: "<Worker as Runner>",
         member: "run",
         startLine: 6,
+        startColumn: 4,
       },
-      { callText: "run()", receiver: null, member: "run", startLine: 7 },
+      { callText: "run()", receiver: null, member: "run", startLine: 7, startColumn: 4 },
     ]);
     expect(extraction.inheritanceEdges).toEqual([
       { source: "Worker", ancestor: "Runner", kind: "implements", ordinal: 0 },

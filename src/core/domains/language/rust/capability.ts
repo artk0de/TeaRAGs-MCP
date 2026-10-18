@@ -64,6 +64,11 @@ export const capability: LanguageCapability = {
   // simple owner-generic field arguments feed bounded receiver chains.
   // walker 9: bd tea-rags-mcp-2g2og.24 — proven same-file declared bare-call
   // result locals feed receiver typing; .32 keeps placed instance/class dispatch exact.
+  // Also under walker 9 (same release cycle, re-pinned, no second bump): bd
+  // tea-rags-mcp-2g2og.25 — every CallRef carries `startColumn` (the call
+  // expression's start in UTF-16 code units) and turbofish callees
+  // (`f::<T>()`) keep their free/scoped/qualified/method shapes; rows written
+  // by earlier walkers carry neither, so only the recompute adds them.
   versions: { chunking: 4, walker: 9, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
