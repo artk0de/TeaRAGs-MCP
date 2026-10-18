@@ -62,6 +62,38 @@ graph: the 70 picks at or above it are all correct. For a sense of scale, Claude
 
 A rough budget: ~13k residual questions take 12–13 minutes at 18 questions/s.
 
+## Results on a production monolith
+
+Measured end to end on a production Rails monolith (~170k Ruby call sites),
+with thresholds self-calibrated per language and every number below checked
+against the edges actually written to the graph.
+
+| Measure                                   | Static only | With Kev   |
+| ----------------------------------------- | ----------- | ---------- |
+| Ruby edge recall                          | 0.9266      | **0.9358** |
+| Unresolved call sites settled             | —           | 1,589 of 12,546 (12.7%) |
+| — as call edges                           | —           | 1,209      |
+| — as external receivers (gems, stdlib)    | —           | 223        |
+| — as schema attributes                    | —           | 157        |
+
+Precision, against hand-labelled samples: model edges at p ≥ 0.70 are ~0.975
+correct, picks between 0.65 and 0.70 were 23 of 23, "none of these" verdicts
+100 of 100 and attribute verdicts 60 of 60. The self-calibrated thresholds
+(0.70 for a first-block pick, 0.65 for a full-menu pick) landed on the same
+values the labels support.
+
+The gain is real but small: **+0.92 pp recall**, and model edges are 0.4% of
+the ~285k static edges in that graph. The cost is not small. The first run asks
+~30k questions — about 1.5–2 hours on one 12 GB RX 7800M with the embedding
+servers stopped, because large candidate menus split into many tournament
+rounds. Later runs read the verdict cache and ask only about new or changed
+sites (a rerun after an unrelated change asked 2 questions).
+
+Turn it on when callers of widely shared method names on dynamic receivers
+matter more to you than a GPU-hour per full index. Otherwise the static graph
+alone is the better trade; its remaining misses are tracked as static resolver
+work.
+
 ## Reference host: Windows 11 + ROCm
 
 Everything in this section is one specific setup: Windows 11, an AMD RDNA3 GPU
