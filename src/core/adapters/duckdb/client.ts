@@ -102,6 +102,7 @@ import type {
   ResidualCallSiteRow,
   ResolveRunStatsRow,
   ScopedCalleeTarget,
+  StaticSiteSampleRow,
   StoredFieldAccessRow,
   SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
@@ -607,6 +608,10 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async readResidualCallSites(): Promise<ResidualCallSiteRow[]> {
     return this.residualEdges.readResidualCallSites();
+  }
+
+  async readStaticSiteSample(): Promise<StaticSiteSampleRow[]> {
+    return this.residualEdges.readStaticSiteSample();
   }
 
   async applyModelEdges(model: string, edges: ModelEdgeRow[]): Promise<ModelEdgeApplyResult> {

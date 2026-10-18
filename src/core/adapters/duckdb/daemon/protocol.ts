@@ -197,6 +197,7 @@ export const DAEMON_OPS = [
   "getFileImports",
   "hasStaleDerivedTables",
   "readResidualCallSites",
+  "readStaticSiteSample",
   "getModelResolvedSiteCounts",
   "getPageRank",
   "findSymbolChunk",
@@ -386,6 +387,7 @@ export interface DaemonOpParamsMap {
   getFileImports: { relPath: RelPath };
   hasStaleDerivedTables: NoDaemonOpParams;
   readResidualCallSites: NoDaemonOpParams;
+  readStaticSiteSample: NoDaemonOpParams;
   getModelResolvedSiteCounts: { thresholds: Readonly<Record<string, number>> };
   getPageRank: { symbolId: SymbolId; relPath?: RelPath };
   findSymbolChunk: { symbolId: SymbolId };

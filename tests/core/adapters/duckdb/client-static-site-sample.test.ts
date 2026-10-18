@@ -107,4 +107,20 @@ describe("DuckDbGraphClient — static site sample persistence", () => {
 
     expect(await readRows()).toEqual([]);
   });
+
+  it("readStaticSiteSample returns every row, lowest priority first", async () => {
+    const external = row("k2", {
+      priority: 0.05,
+      outcome: "externalSkipped",
+      targetSymbolId: null,
+      reason: "externalSkipped",
+      menuOverflow: true,
+    });
+    await client.upsertFile(
+      { relPath: "a.rb", language: "ruby" },
+      { fileEdges: [], methodEdges: [], staticSiteSample: [row("k1"), external] },
+    );
+
+    expect(await client.readStaticSiteSample()).toEqual([external, row("k1")]);
+  });
 });

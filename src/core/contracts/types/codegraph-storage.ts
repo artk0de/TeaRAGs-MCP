@@ -49,6 +49,7 @@ import type {
   ModelExternalSiteRow,
   ModelResolvedSiteCount,
   ResidualCallSiteRow,
+  StaticSiteSampleRow,
 } from "./codegraph-residual.js";
 import type {
   CallableSymbolKind,
@@ -1759,6 +1760,9 @@ export interface CodegraphTemporalStore {
 export interface CodegraphResidualEdgeStore {
   /** Every residual call site of the generation, ordered by file then site key. */
   readResidualCallSites: () => Promise<ResidualCallSiteRow[]>;
+
+  /** Every row of the static site sample (`cg_static_site_sample`), lowest priority first. */
+  readStaticSiteSample: () => Promise<StaticSiteSampleRow[]>;
 
   /**
    * Replace every `origin = 'model'` method edge of `model` with `edges`;
