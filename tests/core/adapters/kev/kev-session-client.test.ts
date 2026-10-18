@@ -40,6 +40,35 @@ describe("KevSessionClient", () => {
     expect((error as Error).message).toBe(`gpu-session-busy: someone-else:1 (KEV) at ${broker.url}`);
   });
 
+  it("waits out a card switch still in progress and then acquires", async () => {
+    let switching = 2;
+    broker.onAcquire = () => {
+      if (switching-- > 0) return { status: 409, body: { holder: "laptop:42", state: "SWITCHING_TO_EMBED" } };
+      return { status: 200, body: { lease: "lease-9", kevUrl: broker.kevUrl, expiresAt: 1_900_000_000 } };
+    };
+    const waits: number[] = [];
+    const client = new KevSessionClient({ url: broker.url }, { sleep: async (ms) => void waits.push(ms) });
+
+    const session = await client.acquire("laptop:42", 120);
+
+    expect(session.lease).toBe("lease-9");
+    expect(waits).toHaveLength(2);
+  });
+
+  it("gives up as busy when the card switch outlasts the wait budget", async () => {
+    broker.onAcquire = () => ({ status: 409, body: { holder: "laptop:42", state: "SWITCHING_TO_KEV" } });
+    let clock = 0;
+    const client = new KevSessionClient(
+      { url: broker.url },
+      { sleep: async (ms) => void (clock += ms), now: () => clock },
+    );
+
+    const error = await client.acquire("laptop:42", 120).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(KevSessionBusyError);
+    expect((error as Error).message).toBe(`gpu-session-busy: laptop:42 (SWITCHING_TO_KEV) at ${broker.url}`);
+  });
+
   it("carries the broker's refusal reason when it cannot switch to Kev (503)", async () => {
     broker.onAcquire = () => ({ status: 503, body: { reason: "embedding run in flight on 8091" } });
     const client = new KevSessionClient({ url: broker.url });

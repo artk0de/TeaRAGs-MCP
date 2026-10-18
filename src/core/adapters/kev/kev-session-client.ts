@@ -12,6 +12,9 @@ import { KevSessionBusyError, KevSessionLostError, KevSessionUnavailableError } 
  */
 const ACQUIRE_TIMEOUT_MS = 480_000;
 const REQUEST_TIMEOUT_MS = 10_000;
+/** A 409 during a card switch clears once the broker settles; waited out, then reported busy. */
+const SWITCH_WAIT_MS = 120_000;
+const SWITCH_POLL_MS = 2_000;
 
 export interface KevSessionClientOptions {
   url: string;
@@ -21,6 +24,8 @@ export interface KevSessionClientOptions {
 
 export interface KevSessionClientDeps {
   fetch?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
 }
 
 export interface KevSession {
@@ -46,11 +51,15 @@ export class KevSessionClient {
   readonly url: string;
   private readonly token: string | undefined;
   private readonly fetchFn: typeof fetch;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly now: () => number;
 
   constructor(options: KevSessionClientOptions, deps: KevSessionClientDeps = {}) {
     this.url = options.url.replace(/\/+$/, "");
     this.token = options.token;
     this.fetchFn = deps.fetch ?? (async (input, init) => fetch(input, init));
+    this.sleep = deps.sleep ?? (async (ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.now = deps.now ?? Date.now;
   }
 
   async state(): Promise<KevBrokerState> {
@@ -63,13 +72,21 @@ export class KevSessionClient {
     };
   }
 
-  /** Blocks until the embedders are stopped and Kev answers. */
+  /** Blocks until the embedders are stopped and Kev answers; a switch in progress is waited out. */
   async acquire(holder: string, ttlSec: number): Promise<KevSession> {
-    const response = await this.readResponse("POST", "/v1/session", { holder, ttlSec }, ACQUIRE_TIMEOUT_MS);
-    if (response.status === 409) {
+    const deadline = this.now() + SWITCH_WAIT_MS;
+    for (;;) {
+      const response = await this.readResponse("POST", "/v1/session", { holder, ttlSec }, ACQUIRE_TIMEOUT_MS);
+      if (response.status !== 409) return this.readLease(response);
       const body = (await response.json()) as { holder?: string; state?: string };
-      throw new KevSessionBusyError(this.url, body.holder, body.state);
+      if (!body.state?.startsWith("SWITCHING_") || this.now() >= deadline) {
+        throw new KevSessionBusyError(this.url, body.holder, body.state);
+      }
+      await this.sleep(SWITCH_POLL_MS);
     }
+  }
+
+  private async readLease(response: Response): Promise<KevSession> {
     if (response.status === 503) {
       const body = (await response.json()) as { reason?: string };
       throw new KevSessionUnavailableError(this.url, body.reason ?? "broker refused the session");
