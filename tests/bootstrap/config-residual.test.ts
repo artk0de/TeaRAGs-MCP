@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parseAppConfigZod } from "../../src/bootstrap/config/index.js";
 
 describe("codegraph.residual config", () => {
-  it("defaults: no Kev URL, threshold 0.7, concurrency 16, request timeout 300 s, menu limit 40, menu floor 1, none threshold 0.8, tournament floor 0.5 and budget 5000, fan-out floor 0.15, confirm stage and origin context off, auto-calibration on, retention 180 days", () => {
+  it("defaults: no Kev URL, threshold 0.7, concurrency 16, request timeout 300 s, menu limit 40, menu floor 1, none threshold 0.8, tournament floor 0.5 and budget 5000, fan-out floor 0.4, confirm stage and origin context off, auto-calibration on, retention 180 days", () => {
     const { codegraph } = parseAppConfigZod({});
 
     expect(codegraph.residual).toEqual({
@@ -18,7 +18,7 @@ describe("codegraph.residual config", () => {
       noneThreshold: 0.8,
       tournamentFloor: 0.5,
       tournamentBudget: 5000,
-      fanoutFloor: 0.15,
+      fanoutFloor: 0.4,
       confirmStage: false,
       originContext: false,
       autoCalibrate: true,

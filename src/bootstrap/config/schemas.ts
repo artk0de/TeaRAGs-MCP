@@ -245,7 +245,7 @@ export const codegraphResidualSchema = z.object({
   /** Tournament block questions one run may send; a receiver group the rest cannot cover is skipped and counted. */
   tournamentBudget: intWithDefault(5000),
   /** Smallest probability of a class for it to join a polymorphic-interface fan-out of its receiver group. */
-  fanoutFloor: floatWithDefault(0.15),
+  fanoutFloor: floatWithDefault(0.4),
   /** Ask a mid block-1 or full-menu pick once more as `[pick, none]` and never run plain tournament rounds. */
   confirmStage: booleanFromEnvWithDefault(false),
   /** Append receiver-origin lines (assignments, the returning method's head) to each question's state. */

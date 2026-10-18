@@ -22,7 +22,7 @@ import { RESIDUAL_NONE_PROBABILITY_KEY } from "../../../../contracts/types/codeg
 import type { GraphDbClient } from "../../../../contracts/types/codegraph-storage.js";
 
 /** Smallest `p` of a class for it to join a fan-out; `CODEGRAPH_RESIDUAL_FANOUT_FLOOR`. */
-export const DEFAULT_FANOUT_FLOOR = 0.15;
+export const DEFAULT_FANOUT_FLOOR = 0.4;
 
 /** Superclass hops walked per class. */
 const MAX_SUPER_DEPTH = 8;

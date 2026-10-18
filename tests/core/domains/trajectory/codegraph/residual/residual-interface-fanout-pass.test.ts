@@ -126,7 +126,7 @@ describe("ResidualResolutionPass — polymorphic interface fan-out", () => {
     const graphDb = fakeGraphDb([actorRow("s1", 2)]);
     const provider = new DistributionProvider({ Beta: 0.55, Delta: 0.35, Alpha: 0.05, Gamma: 0.05 });
 
-    const report = await run(graphDb, provider, { classTies: POLYMORPHIC });
+    const report = await run(graphDb, provider, { classTies: POLYMORPHIC, fanoutFloor: 0.15 });
 
     expect(graphDb.applied.at(-1)).toEqual([
       {
@@ -161,7 +161,7 @@ describe("ResidualResolutionPass — polymorphic interface fan-out", () => {
     const graphDb = fakeGraphDb([actorRow("s1", 2), actorRow("s2", 3)]);
     const provider = new DistributionProvider({ Beta: 0.75, Delta: 0.2, Alpha: 0.05 });
 
-    const report = await run(graphDb, provider, { classTies: POLYMORPHIC });
+    const report = await run(graphDb, provider, { classTies: POLYMORPHIC, fanoutFloor: 0.15 });
 
     expect(graphDb.applied.at(-1)?.map((e) => [e.siteKey, e.targetSymbolId, e.fanout])).toEqual([
       ["s1", "Beta#firm", 2],
@@ -202,7 +202,7 @@ describe("ResidualResolutionPass — polymorphic interface fan-out", () => {
     const graphDb = fakeGraphDb([actorRow("s1", 2, shared)]);
     const provider = new DistributionProvider({ Beta: 0.5, Delta: 0.4, Alpha: 0.1 });
 
-    const report = await run(graphDb, provider, { classTies: POLYMORPHIC });
+    const report = await run(graphDb, provider, { classTies: POLYMORPHIC, fanoutFloor: 0.15 });
 
     expect(graphDb.applied.at(-1)?.map((e) => [e.targetSymbolId, e.p, e.fanout])).toEqual([
       ["Person#firm", 0.9, undefined],
@@ -214,7 +214,7 @@ describe("ResidualResolutionPass — polymorphic interface fan-out", () => {
     const graphDb = fakeGraphDb([actorRow("s1", 2)]);
     const provider = new DistributionProvider({ Beta: 0.55, Delta: 0.35, Alpha: 0.1 });
 
-    const report = await run(graphDb, provider, { classTies: POLYMORPHIC, confirmStage: true });
+    const report = await run(graphDb, provider, { classTies: POLYMORPHIC, confirmStage: true, fanoutFloor: 0.15 });
 
     expect(provider.asked).toBe(2);
     expect(graphDb.applied.at(-1)?.map((e) => [e.targetSymbolId, e.p])).toEqual([
@@ -239,7 +239,7 @@ describe("ResidualResolutionPass — polymorphic interface fan-out", () => {
     expect(provider.asked).toBe(1);
 
     const graphDb = fakeGraphDb([actorRow("s1", 2)]);
-    await run(graphDb, provider, { classTies: POLYMORPHIC });
+    await run(graphDb, provider, { classTies: POLYMORPHIC, fanoutFloor: 0.15 });
 
     expect(provider.asked).toBe(1);
     expect(graphDb.applied.at(-1)?.map((e) => e.targetSymbolId)).toEqual(["Beta#firm", "Delta#firm"]);
