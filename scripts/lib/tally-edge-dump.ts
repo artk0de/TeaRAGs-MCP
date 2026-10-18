@@ -12,6 +12,13 @@ export interface TallyEdgeDumpRow {
   relPath: string;
   line: number;
   callText: string;
+  /**
+   * 0-based column of the call expression's start on `line`, straight from the
+   * walker's `CallRef.startColumn`. Languages whose walker records no column
+   * leave it absent, and the dump renders the absent cell — two identical
+   * calls on one line then stay one site key, exactly as before.
+   */
+  startColumn?: number;
   receiverKind: string;
   targetRelPath: string | null;
   targetSymbolId: string | null;
@@ -29,6 +36,7 @@ function renderRow(row: TallyEdgeDumpRow): string {
     row.relPath,
     String(row.line),
     callText,
+    row.startColumn === undefined ? ABSENT_CELL : String(row.startColumn),
     row.receiverKind,
     row.targetRelPath ?? ABSENT_CELL,
     row.targetSymbolId ?? ABSENT_CELL,
@@ -40,6 +48,9 @@ function compareRows(a: { row: TallyEdgeDumpRow; text: string }, b: { row: Tally
   if (a.row.relPath !== b.row.relPath) return a.row.relPath < b.row.relPath ? -1 : 1;
   if (a.row.line !== b.row.line) return a.row.line - b.row.line;
   if (a.row.callText !== b.row.callText) return a.row.callText < b.row.callText ? -1 : 1;
+  const aColumn = a.row.startColumn ?? -1;
+  const bColumn = b.row.startColumn ?? -1;
+  if (aColumn !== bColumn) return aColumn - bColumn;
   if (a.text === b.text) return 0;
   return a.text < b.text ? -1 : 1;
 }

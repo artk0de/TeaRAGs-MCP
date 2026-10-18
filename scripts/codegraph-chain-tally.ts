@@ -307,6 +307,12 @@ export interface ChainOutputTally {
 export interface CallSiteRow {
   relPath: string;
   startLine: number;
+  /**
+   * 0-based column of the call expression's start, straight from the walker's
+   * `CallRef.startColumn`. Present only where the walker records one (Rust
+   * today); two identical calls on one line then key apart.
+   */
+  startColumn?: number;
   callText: string;
   receiver: string | null;
   member: string;
@@ -606,7 +612,13 @@ function edgeDumpRowsOf(site: {
   dispatchTable: boolean;
 }): TallyEdgeDumpRow[] {
   const { relPath, call, verdict, answer } = site;
-  const base = { relPath, line: call.startLine, callText: call.callText, receiverKind: verdict.receiverKind };
+  const base = {
+    relPath,
+    line: call.startLine,
+    callText: call.callText,
+    startColumn: call.startColumn,
+    receiverKind: verdict.receiverKind,
+  };
   const answerKind =
     answer !== null
       ? answer.targetSymbolId === null
@@ -808,6 +820,7 @@ export async function run(
         relPath: extraction.relPath,
         startLine: call.startLine,
         callText: call.callText,
+        startColumn: call.startColumn,
         receiver: call.receiver,
         member: call.member,
         baseline,

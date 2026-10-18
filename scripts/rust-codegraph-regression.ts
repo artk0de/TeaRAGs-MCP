@@ -103,9 +103,27 @@ export async function captureRustCodegraphArtifact(
   }
   if (result.parseFailures > 0) throw new Error(`capture parse failures: ${result.parseFailures}`);
   const { loc, ...timing } = result.timing;
+  // Set equality between the tally's site rows and the dump's site keys: every
+  // site scored must have reached the dump and the dump must carry no site the
+  // run never scored. Counts stay free to differ — a fan-out site legitimately
+  // dumps one row per pushed edge.
+  const rowSiteKeys = [
+    ...new Set(
+      result.rows.map((row) =>
+        rustTallySiteKey({
+          relPath: row.relPath,
+          line: row.startLine,
+          callText: row.callText,
+          startColumn: row.startColumn,
+        }),
+      ),
+    ),
+  ].sort();
   const siteKeys = [...new Set(result.edgeDump.map(rustTallySiteKey))].sort();
-  if (siteKeys.length !== result.rows.length) {
-    throw new Error("legacy tally site identity collision or missing dump row");
+  if (rowSiteKeys.join("\n") !== siteKeys.join("\n")) {
+    throw new Error(
+      `tally site identity mismatch: rows carry ${rowSiteKeys.length} sites, edge dump carries ${siteKeys.length}`,
+    );
   }
   const processors = cpus();
   return rustCodegraphArtifactSchema.parse({
@@ -136,7 +154,7 @@ export async function captureRustCodegraphArtifact(
       },
       loadPerCpu: loadavg()[0] / Math.max(processors.length, 1),
     },
-    identityScheme: "tally-line-callText-v1",
+    identityScheme: "tally-line-callText-startColumn-v1",
     measurementScope: "fresh-extraction-and-production-resolver",
     chainDrift: {
       status: "not-run",

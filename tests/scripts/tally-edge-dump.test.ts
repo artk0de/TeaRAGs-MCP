@@ -33,8 +33,8 @@ describe("formatTallyEdgeDump", () => {
       "bareCall 1.000 1/1",
     );
     expect(out.split("\n")).toEqual([
-      "a.rb\t9\tfoo\tbareCall\ta.rb\tA#foo\texact",
-      "b.rb\t2\tx.y\tdynamic\t-\t-\tnone",
+      "a.rb\t9\tfoo\t-\tbareCall\ta.rb\tA#foo\texact",
+      "b.rb\t2\tx.y\t-\tdynamic\t-\t-\tnone",
       "#kind-stats",
       "bareCall 1.000 1/1",
       "",
@@ -56,7 +56,7 @@ describe("formatTallyEdgeDump", () => {
       ],
       "",
     );
-    expect(out.split("\n")[0]).toBe("a.py\t1\tf( a,  b)\tbareCall\t-\t-\tnone");
+    expect(out.split("\n")[0]).toBe("a.py\t1\tf( a,  b)\t-\tbareCall\t-\t-\tnone");
   });
 
   it("orders rows on the same file and line by callText, then by the full line", () => {
@@ -77,9 +77,41 @@ describe("formatTallyEdgeDump", () => {
       "k",
     );
     expect(out.split("\n").slice(0, 3)).toEqual([
-      "a.rb\t3\talpha\tbareCall\t-\t-\tcandidate",
-      "a.rb\t3\talpha\tbareCall\t-\t-\texact",
-      "a.rb\t3\tzed\tbareCall\t-\t-\tnone",
+      "a.rb\t3\talpha\t-\tbareCall\t-\t-\tcandidate",
+      "a.rb\t3\talpha\t-\tbareCall\t-\t-\texact",
+      "a.rb\t3\tzed\t-\tbareCall\t-\t-\tnone",
+    ]);
+  });
+
+  it("renders the start column when present and orders rows that differ only by column", () => {
+    const out = formatTallyEdgeDump(
+      [
+        {
+          relPath: "a.rs",
+          line: 2,
+          callText: "ping()",
+          startColumn: 12,
+          receiverKind: "typed",
+          targetRelPath: null,
+          targetSymbolId: null,
+          edgeKind: "none",
+        },
+        {
+          relPath: "a.rs",
+          line: 2,
+          callText: "ping()",
+          startColumn: 4,
+          receiverKind: "typed",
+          targetRelPath: null,
+          targetSymbolId: null,
+          edgeKind: "none",
+        },
+      ],
+      "k",
+    );
+    expect(out.split("\n").slice(0, 2)).toEqual([
+      "a.rs\t2\tping()\t4\ttyped\t-\t-\tnone",
+      "a.rs\t2\tping()\t12\ttyped\t-\t-\tnone",
     ]);
   });
 });
