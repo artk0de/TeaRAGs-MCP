@@ -33,7 +33,7 @@
 import type ts from "typescript";
 
 import type { CallContext, CallRef, RelPath } from "../../../../../contracts/types/codegraph.js";
-import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
+import { loadTypeScriptCompiler, type TSProgramCachePort } from "../program/index.js";
 import { findReceiverExpression } from "./ts-type-checker-shared.js";
 import { typeConstituents } from "./ts-type-constituents.js";
 
@@ -43,7 +43,7 @@ export function structuralDescendantIsAssignable(
   descendantFile: RelPath | null,
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): boolean {
   if (programCache === null || descendantFile === null || !call.receiver) return true;
   const handle = programCache.acquire(ctx.callerFile);

@@ -31,6 +31,7 @@
  * drop a facet somebody added to the contract.
  */
 
+import { createIdentifierRecord, identifierEntry } from "../../../contracts/identifier-record.js";
 import {
   rubyInstantiationSiteKey,
   type ChunkExtraction,
@@ -72,9 +73,9 @@ function unionNestedBaseWins<V>(
   base: Record<string, Record<string, V>> | undefined,
   pass: Record<string, Record<string, V>>,
 ): Record<string, Record<string, V>> {
-  const out: Record<string, Record<string, V>> = { ...(base ?? {}) };
+  const out: Record<string, Record<string, V>> = Object.assign(createIdentifierRecord<Record<string, V>>(), base);
   for (const [outerKey, inner] of Object.entries(pass)) {
-    out[outerKey] = unionBaseWins(out[outerKey], inner);
+    out[outerKey] = unionBaseWins(identifierEntry(out, outerKey), inner);
   }
   return out;
 }
@@ -89,9 +90,9 @@ function mergeLocalBindings<T extends { readonly line: number }>(
   base: Record<string, T[]> | undefined,
   pass: Record<string, T[]>,
 ): Record<string, T[]> {
-  const out: Record<string, T[]> = { ...(base ?? {}) };
+  const out: Record<string, T[]> = Object.assign(createIdentifierRecord<T[]>(), base);
   for (const [variable, incoming] of Object.entries(pass)) {
-    const existing = out[variable];
+    const existing = identifierEntry(out, variable);
     out[variable] = existing === undefined ? incoming : [...existing, ...incoming].sort((a, b) => a.line - b.line);
   }
   return out;

@@ -636,18 +636,18 @@ describe("mainSequence", () => {
   it("names no entry by path: a component under the retired declared mcp dir stays unannotated", () => {
     const nested = new Map<string, ComponentFact>([
       [
-        "src/mcp/tools/register.ts",
-        { name: "src/mcp/tools", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 },
+        "src/core/api/tools/register.ts",
+        { name: "src/core/api/tools", instability: 0.5, distanceFromMainSequence: 0.3, connectionCount: 9 },
       ],
       ["src/lib/b.ts", { name: "lib", instability: 0.2, distanceFromMainSequence: 0.1, connectionCount: 9 }],
     ]);
     const result = runWith(
       { catalog: catalogOf(nested) },
-      ["src/mcp/tools/register.ts"],
-      [["src/mcp/tools/register.ts", "src/lib/b.ts"]],
+      ["src/core/api/tools/register.ts"],
+      [["src/core/api/tools/register.ts", "src/lib/b.ts"]],
     );
     const finding = result.findings.find((f) => f.detector === "mainSequence");
-    expect(finding?.subject).toBe("src/mcp/tools");
+    expect(finding?.subject).toBe("src/core/api/tools");
     expect("entryPoint" in (finding ?? {})).toBe(false);
   });
 

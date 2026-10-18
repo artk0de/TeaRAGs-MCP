@@ -15,7 +15,7 @@
  * 3. Implement in internal/facades/ or internal/ops/
  * 4. Wire via internal/composition.ts (ops construction) + createApp() in
  *    internal/app-factory.ts
- * 5. Register MCP tool in src/mcp/tools/
+ * 5. Register MCP tool in src/core/api/tools/
  */
 
 import type { QdrantPointReader } from "../../adapters/qdrant/ports.js";

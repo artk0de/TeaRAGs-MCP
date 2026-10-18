@@ -54,7 +54,7 @@ describe("Rust walker — type declaration facts", () => {
       { typeId: "Bits", symbolKind: "class", line: 2, reopens: false },
       { typeId: "Kind", symbolKind: "enum", line: 3, reopens: false },
       { typeId: "Store", symbolKind: "interface", line: 4, reopens: false },
-      { typeId: "Map", symbolKind: "type_alias", line: 5, reopens: false },
+      { typeId: "Map", symbolKind: "type_alias", line: 5, reopens: false, genericParameters: ["T"] },
       { typeId: "MAX", symbolKind: "constant", line: 6, reopens: false },
       { typeId: "COUNTER", symbolKind: "constant", line: 7, reopens: false },
       { typeId: "inner", symbolKind: "module", line: 8, reopens: false },
@@ -222,7 +222,11 @@ describe("Rust walker — type declaration facts leave the rest of the extractio
   ].join("\n");
 
   it("keeps chunks, symbols, CallRefs, bindings and imports as they were", () => {
-    const { typeDeclarations, ...rest } = extract(src);
+    const { typeDeclarations, structuredReturnTypes, classFieldTypesByClassKey, ...rest } = extract(src);
+    expect(classFieldTypesByClassKey).toEqual({ "src/a.rs::Engine": { worker: "Worker" } });
+    expect(structuredReturnTypes).toEqual({
+      "src/a.rs::Engine.new": { form: "instance", name: "Self" },
+    });
 
     expect(typeDeclarations?.map((f) => f.typeId)).toEqual([
       "MAX",
@@ -266,7 +270,7 @@ const BASELINE_EXTRACTION = {
       scope: ["Engine"],
       startLine: 14,
       endLine: 14,
-      calls: [{ callText: "Worker::new()", receiver: "Worker", member: "new", startLine: 14 }],
+      calls: [{ callText: "Worker::new()", receiver: "Worker", member: "new", startLine: 14, startColumn: 44 }],
       symbolKind: "method",
       visibility: "public",
     },
@@ -276,10 +280,10 @@ const BASELINE_EXTRACTION = {
       startLine: 15,
       endLine: 21,
       calls: [
-        { callText: "Worker::new()", receiver: "Worker", member: "new", startLine: 16 },
-        { callText: "w.start()", receiver: "w", member: "start", startLine: 17 },
-        { callText: "self.worker.tick()", receiver: "self.worker", member: "tick", startLine: 18 },
-        { callText: 'println!("{}", p.id())', receiver: null, member: "println", startLine: 19 },
+        { callText: "Worker::new()", receiver: "Worker", member: "new", startLine: 16, startColumn: 16 },
+        { callText: "w.start()", receiver: "w", member: "start", startLine: 17, startColumn: 8 },
+        { callText: "self.worker.tick()", receiver: "self.worker", member: "tick", startLine: 18, startColumn: 8 },
+        { callText: 'println!("{}", p.id())', receiver: null, member: "println", startLine: 19, startColumn: 8 },
       ],
       symbolKind: "method",
       localBindings: { p: [{ line: 15, type: "Worker" }], w: [{ line: 16, type: "Worker" }] },
@@ -308,7 +312,7 @@ const BASELINE_EXTRACTION = {
       scope: ["inner"],
       startLine: 26,
       endLine: 26,
-      calls: [{ callText: "super::free()", receiver: "super", member: "free", startLine: 26 }],
+      calls: [{ callText: "super::free()", receiver: "super", member: "free", startLine: 26, startColumn: 22 }],
       symbolKind: "function",
       visibility: "public",
     },

@@ -20,16 +20,22 @@
  * reported, never selected, out of the pool. A candidate whose ops no longer
  * compile on the prefix (its edge already removed, its file already moved)
  * conflicts with the prefix and leaves the pool; a caller candidate that does
- * not compile against the base is an input bug and throws. Every violation is
- * kept on BASE paths (`withCanonicalPaths`), so consecutive prefixes compare
- * by key however many moves they hold.
+ * not compile against the base is an input bug and throws - against the
+ * partition every caller addFile is pre-registered into (bd
+ * tea-rags-mcp-54xwd.22), so a candidate referencing a sibling's new file is
+ * judged, not rejected. Every violation is kept on BASE paths
+ * (`withCanonicalPaths`), so consecutive prefixes compare by key however many
+ * moves they hold.
  */
 
+import type { ArchitectureRestructureCompiledOp } from "../../../contracts/types/architecture-report.js";
 import type { RelPath } from "../../../contracts/types/codegraph.js";
 import {
   applyArchitectureRestructure,
   compileArchitectureRestructure,
   type ArchitectureRestructureCompilation,
+  type ArchitectureRestructureEdgeBase,
+  type ArchitectureRestructurePartition,
   type ArchitectureRestructureRelabel,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
@@ -95,6 +101,7 @@ interface PlanPrefix {
 /** A candidate judged on the current prefix and admitted to the round's pick. */
 interface JudgedPlanCandidate {
   candidate: PlanPoolCandidate;
+  /** The candidate's ops in compiled form - prelude addFiles spliced back in. */
   ops: ArchitectureRestructurePlanStep["ops"];
   violations: readonly ArchitectureViolation[];
   delta: ArchitectureRestructurePlanDelta;
@@ -120,15 +127,55 @@ export class ArchitectureRestructurePlanOps {
       lookups.readTreeFileText,
     );
     const factsMs = Math.round(performance.now() - startedAt);
-    const { partition, edgeBase } = deriveArchitectureRestructureBase(facts);
+    const { partition: basePartition, edgeBase } = deriveArchitectureRestructureBase(facts);
+    // bd tea-rags-mcp-54xwd.22: candidates may share a file a sibling's addFile
+    // creates - the hubLike recipe's extracted-interface pattern is one
+    // candidate per consumer cluster, all of them importing the same new
+    // interface file. Every caller addFile is pre-registered into the
+    // partition before anything compiles, so a cross-candidate reference is
+    // judged like any other hypothesis; each candidate's own addFile ops drop
+    // out of compilation (the prelude holds the file) and stay in the
+    // reported ops.
+    const { partition, compiledAddFileOf } = preludeCallerAddFiles(candidates, basePartition, edgeBase);
+    // An addFile the prelude registered compiles to nothing - the file is
+    // already in the partition; its compiled form splices back into the
+    // step's displayed ops.
+    const dropsPreludeAddFile = (op: ArchitectureRestructureOp): boolean =>
+      "addFile" in op && compiledAddFileOf.has(op.addFile.file);
+    const compileOps = (ops: readonly ArchitectureRestructureOp[]) =>
+      compileArchitectureRestructure(
+        ops.filter((op) => !dropsPreludeAddFile(op)),
+        partition,
+        edgeBase,
+      );
+    /** The candidate's ops as compiled ops: the filtered compile's forms, with the prelude's addFile forms spliced in. */
+    const displayOpsOf = (
+      ops: readonly ArchitectureRestructureOp[],
+      compiled: readonly ArchitectureRestructureCompiledOp[],
+    ): ArchitectureRestructureCompiledOp[] => {
+      const queue = [...compiled];
+      const compiledOps: ArchitectureRestructureCompiledOp[] = [];
+      for (const op of ops) {
+        if ("addFile" in op) {
+          const registered = compiledAddFileOf.get(op.addFile.file);
+          if (registered !== undefined) {
+            compiledOps.push(registered);
+            continue;
+          }
+        }
+        const next = queue.shift();
+        if (next !== undefined) compiledOps.push(next);
+      }
+      return compiledOps;
+    };
     for (const candidate of candidates) {
-      const compilation = compileArchitectureRestructure(candidate.ops, partition, edgeBase);
+      const compilation = compileOps(candidate.ops);
       if (compilation.kind !== "compiled") throwArchitectureRestructureCompileFailure(compilation);
     }
     const baseSignals = lookups.readFileMaintenanceSignals && readOnce(lookups.readFileMaintenanceSignals);
     let judgeCount = 0;
     const judgeOps = async (ops: readonly ArchitectureRestructureOp[]) => {
-      const compilation = compileArchitectureRestructure(ops, partition, edgeBase);
+      const compilation = compileOps(ops);
       if (compilation.kind !== "compiled") return compilation;
       judgeCount++;
       const run = await this.report.judge(applyArchitectureRestructure(facts, compilation.relabel), UNCAPPED, {
@@ -145,7 +192,7 @@ export class ArchitectureRestructurePlanOps {
         ...candidates.map((candidate) => ({ ...candidate, source: "caller" as const })),
         ...(includeReportCandidates ? reportPlanCandidates(base) : []),
       ],
-      (ops) => compileArchitectureRestructure(ops, partition, edgeBase),
+      compileOps,
       lookups.readFileTransitiveImpacts,
     );
     const limit = request.limit ?? DEFAULT_SUBJECT_LIMIT;
@@ -173,7 +220,7 @@ export class ArchitectureRestructurePlanOps {
         }
         judgedCandidates.push({
           candidate,
-          ops: answer.compilation.ops.slice(prefix.ops.length),
+          ops: displayOpsOf(candidate.ops, answer.compilation.ops),
           violations: answer.violations,
           delta,
           vector: PLAN_TIERS.map((tier) => delta.byTier[tier].resolved - delta.byTier[tier].introduced),
@@ -382,6 +429,58 @@ function planStep(pick: JudgedPlanCandidate): ArchitectureRestructurePlanStep {
     touchedFiles: candidate.touchedFiles,
     blastRadius: candidate.blastRadius,
   };
+}
+
+/**
+ * The partition every candidate compiles against: the base plus every caller
+ * addFile that names a component (bd tea-rags-mcp-54xwd.22) - candidates
+ * share files a sibling's addFile creates, so the file must be known before
+ * the first op compiles. Two candidates adding the same file into different
+ * components is an input conflict; an addFile the graph already holds is one
+ * too. A component-less addFile cannot enter the partition and keeps the
+ * base-only compile semantics. Returns each registered file's compiled addFile
+ * op, so a step's displayed ops keep the form the caller asked for.
+ */
+function preludeCallerAddFiles(
+  candidates: readonly ArchitectureRestructurePlanCandidate[],
+  partition: ArchitectureRestructurePartition,
+  edgeBase: ArchitectureRestructureEdgeBase,
+): {
+  partition: ArchitectureRestructurePartition;
+  compiledAddFileOf: ReadonlyMap<RelPath, ArchitectureRestructureCompiledOp>;
+} {
+  const componentOf = new Map<RelPath, string>();
+  const order: ArchitectureRestructureOp[] = [];
+  for (const { id, ops } of candidates) {
+    for (const op of ops) {
+      if (!("addFile" in op) || op.addFile.component === undefined) continue;
+      const { file, component } = op.addFile;
+      const claimed = componentOf.get(file);
+      if (claimed !== undefined && claimed !== component) {
+        throw new InvalidParameterError(
+          "restructurePlan",
+          `candidates add "${file}" into different components: "${claimed}" and "${component}" (${id})`,
+        );
+      }
+      if (claimed === undefined) {
+        if (partition.componentOf.has(file)) {
+          throw new InvalidParameterError(
+            "restructurePlan",
+            `candidate "${id}" adds "${file}", which the production graph already holds`,
+          );
+        }
+        componentOf.set(file, component);
+        order.push(op);
+      }
+    }
+  }
+  const compilation = compileArchitectureRestructure(order, partition, edgeBase);
+  if (compilation.kind !== "compiled") throwArchitectureRestructureCompileFailure(compilation);
+  const compiledAddFileOf = new Map<RelPath, ArchitectureRestructureCompiledOp>();
+  for (const compiled of compilation.ops) {
+    if (compiled.op === "addFile" && compiled.file !== undefined) compiledAddFileOf.set(compiled.file, compiled);
+  }
+  return { partition: { componentOf: new Map([...partition.componentOf, ...componentOf]) }, compiledAddFileOf };
 }
 
 /** The message the typed compile error carries — a conflict is reported, not thrown. */

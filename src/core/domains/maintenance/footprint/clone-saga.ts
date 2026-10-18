@@ -1,5 +1,16 @@
 import type { CollectionArtifact, FootprintContext, ResolvedCollection } from "./artifact.js";
-import type { CollectionFootprintFactory } from "./factory.js";
+
+/**
+ * The saga reads only the factory's artifact set — the consumer-side structural
+ * view (bd tea-rags-mcp-54xwd.2). `CollectionFootprintFactory` satisfies it;
+ * naming the factory class here would close an import cycle back into it.
+ */
+interface FootprintBuilder {
+  build: (
+    source: ResolvedCollection,
+    target: ResolvedCollection,
+  ) => { context: FootprintContext; artifacts: CollectionArtifact[] };
+}
 
 /**
  * Clone a collection's whole footprint onto `target`, or leave nothing behind.
@@ -20,7 +31,7 @@ import type { CollectionFootprintFactory } from "./factory.js";
  * own: it lives on the collection the Qdrant artifact's rollback removes.
  */
 export async function cloneCollectionFootprint(
-  factory: Pick<CollectionFootprintFactory, "build">,
+  factory: FootprintBuilder,
   source: ResolvedCollection,
   target: ResolvedCollection,
   targetIndexingMarkerPatch?: Readonly<Record<string, unknown>>,
@@ -39,4 +50,20 @@ export async function cloneCollectionFootprint(
     for (const artifact of [...done].reverse()) await artifact.remove(context).catch(() => undefined);
     throw error;
   }
+}
+
+/**
+ * Tear the TARGET footprint down — the remove half of the saga, walked in
+ * reverse clone order with every per-artifact failure swallowed (the
+ * `CollectionArtifact.remove` contract). `WorktreeProvisioner#remove` runs this
+ * through the port; the rollback inside {@link cloneCollectionFootprint} is the
+ * same walk over the artifacts it managed to start.
+ */
+export async function removeCollectionFootprint(
+  factory: FootprintBuilder,
+  source: ResolvedCollection,
+  target: ResolvedCollection,
+): Promise<void> {
+  const { context, artifacts } = factory.build(source, target);
+  for (const artifact of [...artifacts].reverse()) await artifact.remove(context).catch(() => undefined);
 }

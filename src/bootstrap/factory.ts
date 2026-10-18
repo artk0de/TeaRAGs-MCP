@@ -80,9 +80,11 @@ import {
   QuarantineStore,
   readPayloadFileCommitCounts,
   readPayloadImportSpecifiers,
+  registerAllTools,
   RequestScopedFileFactsReader,
   RESIDUAL_MODELS,
   ResidualResolutionOps,
+  resolveCollection,
   resolveDomainEnvCodeDefaults,
   ReviewChangesOps,
   ReviewFacade,
@@ -113,6 +115,7 @@ import {
   type CodegraphDeps,
   type CodegraphWorkerConfig,
   type GraphFacadeDeps,
+  type HealthProbes,
   type ReviewChangesOpsDeps,
   type TemporalCochangeConfig,
   type WorkingTreeGitSignalConfig,
@@ -128,10 +131,8 @@ import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
 import type { WorkingTree } from "../core/contracts/types/working-tree.js";
 import { setDebug } from "../core/primitives/diagnostics/index.js";
 import { installFileClassificationSettings } from "../core/primitives/paths/index.js";
-import type { HealthProbes } from "../mcp/middleware/error-handler.js";
 import { loadPromptsConfig, registerAllPrompts, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllResources } from "../mcp/resources/index.js";
-import { registerAllTools } from "../mcp/tools/index.js";
 import { buildMcpAutoUpdateTrigger } from "./auto-update/mcp-hint.js";
 import { hydrateCodegraphSymbolTable } from "./codegraph-symbol-table-hydration.js";
 import {
@@ -684,7 +685,7 @@ export function createIndexRunDaemonGuard(deps: {
   const acquireKeepAlive = async (physicalCollectionName: PhysicalCollectionName): Promise<DaemonKeepAliveSocket> => {
     deps.ensure();
     await deps.verifyDaemonBuild(physicalCollectionName);
-    const { DaemonGraphDbClient } = await import("../core/adapters/duckdb/daemon/client.js");
+    const { DaemonGraphDbClient } = await import("../core/adapters/duckdb/daemon/index.js");
     const client = new DaemonGraphDbClient(deps.socketPath, physicalCollectionName);
     await client.init(); // bounded 5s connect retry absorbs the spawn race
     return client;
@@ -2163,7 +2164,7 @@ function createIngestSection(deps: {
   const worktreeProvisioner = new WorktreeProvisioner({
     registry: collectionRegistry,
     qdrant: infra.qdrant,
-    footprintFactory,
+    footprint: footprintFactory,
     dataDir: config.paths.appData,
   });
   const worktreeOps = new WorktreeOps(worktreeProvisioner);
@@ -2458,7 +2459,11 @@ export function createConfiguredServer(
     healthProbes: ctx.healthProbes,
     // Auto-update trigger (hpg2): fires on search tools, spawns the detached
     // updater when the freshness verdict allows. Config lives in the registry.
-    ...(options.autoUpdate === false ? {} : { autoUpdate: buildMcpAutoUpdateTrigger() }),
+    // The api-side resolvers are injected here (bd tea-rags-mcp-54xwd.3) —
+    // bootstrap already imports them; the hint must not import the api barrel.
+    ...(options.autoUpdate === false
+      ? {}
+      : { autoUpdate: buildMcpAutoUpdateTrigger({ resolveCollection, resolveDomainEnvCodeDefaults }) }),
   });
   registerAllResources(server, ctx.app);
   registerAllPrompts(server, promptsConfig);

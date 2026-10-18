@@ -238,14 +238,14 @@ describe("detectMainSequenceDeviations — entry-point annotation (bd tea-rags-m
   it("names no entry by path: components at the retired declared cli/mcp dirs carry no annotation", () => {
     const g = entryGraph("src/cli/commands");
     for (let i = 1; i <= 5; i++) {
-      g.files.push(file(`src/mcp/tools/t${i}.ts`, census(1, 0)));
-      g.edges.push(edge(`src/mcp/tools/t${i}.ts`, "vendor/v.ts"));
+      g.files.push(file(`src/core/api/tools/t${i}.ts`, census(1, 0)));
+      g.edges.push(edge(`src/core/api/tools/t${i}.ts`, "vendor/v.ts"));
     }
 
     const report = judge(g);
 
     const cli = report.violations.find((v) => v.component === "src/cli/commands");
-    const mcp = report.violations.find((v) => v.component === "src/mcp/tools");
+    const mcp = report.violations.find((v) => v.component === "src/core/api/tools");
     expect(cli && "entryPoint" in cli).toBe(false);
     expect(mcp && "entryPoint" in mcp).toBe(false);
   });

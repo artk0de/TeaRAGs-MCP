@@ -10,6 +10,17 @@
  * and every `-np` slot stays busy without the pipeline raising its own
  * concurrency.
  *
+ * The slot cap holds ACROSS calls: the pipeline runs several embedBatch calls
+ * at once, and every request of every call first takes a lease of its
+ * endpoint from one `EmbeddingEndpointSlotLimiter` per provider, `total_slots`
+ * wide, handed out first come, first served. A worker pulls its next
+ * micro-batch only once it holds a lease, so an endpoint whose slots are all
+ * busy leaves the queue to the endpoints that are free. At most `total_slots`
+ * requests per endpoint are on the wire, and the request timeout is armed only
+ * once the lease is held, so it measures server time, never client-side
+ * queueing — a slow-but-alive GPU does not time out requests still waiting
+ * for one of its slots.
+ *
  * Failure classes, decided per request:
  * - ENDPOINT failure (refused, timeout, 5xx unrelated to size, malformed body):
  *   recorded on the pool, the micro-batch goes back to the FRONT of the queue,
@@ -33,6 +44,7 @@
 import {
   effectiveRecoveryWaitMs,
   type EmbeddingCallOptions,
+  type EmbeddingEndpointFailure,
   type EmbeddingProvider,
   type EmbeddingResult,
   type EmbeddingServerBatchFailure,
@@ -41,6 +53,7 @@ import {
 import { planEmbeddingMicroBatches } from "../batch-fanout.js";
 import type { EmbeddingEndpointDownVerdictStore } from "../endpoint-down-verdicts.js";
 import { EmbeddingEndpointPool, parseEmbeddingEndpointList } from "../endpoint-pool.js";
+import { EmbeddingEndpointSlotLimiter } from "../endpoint-slot-limiter.js";
 import { describeConnectFailure, isConnectClassFailure, isTimeoutAbort } from "../utils/connect-failure.js";
 import { getModelDimensions, resolveStartingDimensions } from "../utils/model-dimensions.js";
 import {
@@ -73,6 +86,8 @@ const DEFAULT_DIMENSIONS = 768;
 
 /** Body of an HTTP error that says the input did not fit the server's batch / context. */
 const SIZE_FAILURE_BODY = /too large|exceeds|context|n_ubatch|batch size/i;
+/** Longest server body a failure cause quotes. */
+const FAILURE_BODY_EXCERPT_CHARS = 200;
 /** undici codes for a connection the server dropped mid-request. */
 const SOCKET_RESET_CODES = new Set(["ECONNRESET", "UND_ERR_SOCKET", "EPIPE"]);
 
@@ -95,6 +110,8 @@ export interface LlamaServerEmbeddingsDeps {
    * discovers a dead endpoint on its own.
    */
   endpointDownVerdicts?: EmbeddingEndpointDownVerdictStore;
+  /** Deadline signal of one embeddings request, armed once its slot lease is held. Default: `AbortSignal.timeout`. */
+  requestTimeoutSignal?: (ms: number) => AbortSignal;
 }
 
 interface LlamaServerEmbeddingsResponse {
@@ -107,6 +124,8 @@ class EndpointRequestFailure extends Error {
     readonly url: string,
     readonly kind: "refused" | "transient",
     readonly reason: unknown,
+    /** How long the request ran on the wire before it failed; undefined when none was sent. */
+    readonly elapsedMs?: number,
   ) {
     super(`llama-server endpoint ${url} failed (${kind}): ${describe(reason)}`);
   }
@@ -155,6 +174,8 @@ class BatchSizeFailure extends Error {
     readonly url: string,
     readonly status: number | undefined,
     readonly body: string,
+    /** What the server answered, as `EmbeddingServerBatchFailure#cause` reports it. */
+    readonly serverCause: string,
   ) {
     super(`llama-server at ${url} failed a batch on size: ${body}`);
   }
@@ -162,6 +183,22 @@ class BatchSizeFailure extends Error {
 
 function describe(value: unknown): string {
   return value instanceof Error ? value.message : String(value);
+}
+
+function bodyExcerpt(body: string): string {
+  return body.slice(0, FAILURE_BODY_EXCERPT_CHARS);
+}
+
+/** An endpoint failure's reason as an observer reads it: the HTTP line as is, an error by its errno / timeout / message. */
+function describeEndpointFailureReason(reason: unknown): string {
+  return typeof reason === "string" ? reason : describeConnectFailure(reason);
+}
+
+/** Message of the innermost `cause` — undici wraps the socket error in a generic "fetch failed". */
+function innermostErrorMessage(error: unknown): string {
+  let current = error;
+  while (current instanceof Error && current.cause instanceof Error) current = current.cause;
+  return describe(current);
 }
 
 function isLlamaServerHealthBody(body: string): boolean {
@@ -222,6 +259,10 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   private cachedModelInfo?: { model: string; contextLength: number; dimensions: number };
   private modelInfoInFlight?: Promise<{ model: string; contextLength: number; dimensions: number } | undefined>;
   private readonly serverBatchFailureObservers = new Set<(event: EmbeddingServerBatchFailure) => void>();
+  private readonly endpointFailureObservers = new Set<(event: EmbeddingEndpointFailure) => void>();
+  /** Slot leases per endpoint, shared by every concurrent call of this provider. */
+  private readonly slotLimiter = new EmbeddingEndpointSlotLimiter();
+  private readonly requestTimeoutSignal: (ms: number) => AbortSignal;
 
   /** Connection-recovery wait visibility for the CLI (same contract as the Ollama provider's). */
   onRecoveryWait?: (event: LlamaServerRecoveryWaitEvent) => void;
@@ -244,6 +285,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
 
     this.fetchFn = deps.fetch ?? (async (input, init) => fetch(input, init));
     this.now = deps.now ?? Date.now;
+    this.requestTimeoutSignal = deps.requestTimeoutSignal ?? ((ms) => AbortSignal.timeout(ms));
     this.sleep = deps.sleep ?? (async (ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.startInterval = deps.setInterval ?? ((fn, ms) => setInterval(fn, ms));
     this.stopInterval =
@@ -355,6 +397,13 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
     };
   }
 
+  observeEndpointFailures(observer: (event: EmbeddingEndpointFailure) => void): () => void {
+    this.endpointFailureObservers.add(observer);
+    return () => {
+      this.endpointFailureObservers.delete(observer);
+    };
+  }
+
   /**
    * Context length is the per-slot window from `/props`; the width is pinned
    * config, else the dimension registry, else measured from one probe embed.
@@ -379,8 +428,9 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
    * endpoint drains it with one worker per slot. A micro-batch whose endpoint
    * failed returns to the front of the queue for the endpoints still standing.
    * An endpoint that failed in this call is not asked again until the call has
-   * backed off (see `EndpointCallExclusions`), and the tier is chosen among the
-   * endpoints left, so a failure below the failover threshold cannot spin.
+   * backed off (see `EndpointCallExclusions`). Fallbacks are admitted only
+   * after the current call has exhausted its peer endpoints, so a remaining
+   * healthy peer always stays ahead of fallback capacity.
    */
   private async embedAcrossEndpoints(
     texts: readonly string[],
@@ -390,12 +440,16 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   ): Promise<void> {
     const wait: RecoveryWaitState = { start: this.now(), budgetMs: recoveryBudgetMs, attempt: 0 };
     const exclusions = new EndpointCallExclusions();
+    let allowFallback = false;
     let queue: number[][] | undefined;
 
     while (queue === undefined || queue.length > 0) {
       const active = this.pool.activeEndpoints(exclusions.urls);
+      if (allowFallback && active.length === 0 && this.pool.activeTier() === "peer") {
+        active.push(...this.pool.activeFallbackEndpoints(exclusions.urls));
+      }
       if (active.length === 0) {
-        await this.waitForEndpoint(wait, exclusions);
+        await this.waitForEndpoint(wait, exclusions, allowFallback);
         continue;
       }
 
@@ -414,6 +468,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       for (const failure of round.endpointFailures) {
         this.noteEndpointFailure(failure);
         exclusions.exclude(failure);
+        allowFallback = true;
         wait.lastError = failure;
       }
       if (round.callerError !== undefined) throw round.callerError;
@@ -425,11 +480,16 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
 
   /**
    * One drain round: `slots` workers per endpoint pull micro-batches off the
-   * front of `queue` until it is empty. An endpoint failure puts its
-   * micro-batch back at the front and stops that endpoint's workers (their
-   * in-flight micro-batches finish or fail on their own); a caller failure
-   * stops every worker from pulling more. Resolves once all in-flight work has
-   * settled; never rejects.
+   * front of `queue` until it is empty. A worker takes a lease of its endpoint
+   * from the provider-wide slot limiter BEFORE it pulls and holds it for that
+   * one micro-batch (its size-failure halves included), so `slots` caps the
+   * endpoint across every concurrent call and a saturated endpoint does not
+   * hoard queued micro-batches. An endpoint failure puts its micro-batch back
+   * at the front and stops that endpoint's workers (their in-flight
+   * micro-batches finish or fail on their own); a caller failure stops every
+   * worker from pulling more. Workers still waiting for a lease give up once
+   * the queue is empty with nothing of this round in flight — nothing can be
+   * requeued then. Resolves once all in-flight work has settled; never rejects.
    */
   private async drainMicroBatchQueue(
     queue: number[][],
@@ -439,29 +499,51 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   ): Promise<{ endpointFailures: EndpointRequestFailure[]; callerError?: Error }> {
     const endpointFailures: EndpointRequestFailure[] = [];
     const stopped = new Set<string>();
+    const leaseWaits = new Map(endpoints.map((endpoint) => [endpoint.url, new AbortController()]));
     let callerError: Error | undefined;
+    let inFlight = 0;
 
-    const worker = async (url: string): Promise<void> => {
-      while (!stopped.has(url) && callerError === undefined) {
-        const microBatch = queue.shift();
-        if (microBatch === undefined) return;
+    /** Cancel the lease waits of `url`, or of every endpoint. */
+    const stopWaiting = (url?: string): void => {
+      for (const [waitUrl, controller] of leaseWaits) if (url === undefined || url === waitUrl) controller.abort();
+    };
+
+    const worker = async (url: string, slots: number): Promise<void> => {
+      while (!stopped.has(url) && callerError === undefined && queue.length > 0) {
+        const release = await this.slotLimiter.acquire(url, slots, leaseWaits.get(url)?.signal);
+        if (release === undefined) return;
         try {
-          await this.embedOnEndpoint(url, texts, microBatch, vectors);
-        } catch (error) {
-          if (error instanceof EndpointRequestFailure) {
-            queue.unshift(microBatch);
-            endpointFailures.push(error);
-            stopped.add(url);
-          } else {
-            callerError ??= error instanceof Error ? error : new Error(describe(error));
+          if (stopped.has(url) || callerError !== undefined) return;
+          const microBatch = queue.shift();
+          if (microBatch === undefined) return;
+          inFlight += 1;
+          try {
+            await this.embedOnEndpoint(url, texts, microBatch, vectors);
+          } catch (error) {
+            if (error instanceof EndpointRequestFailure) {
+              queue.unshift(microBatch);
+              endpointFailures.push(error);
+              stopped.add(url);
+              stopWaiting(url);
+            } else {
+              callerError ??= error instanceof Error ? error : new Error(describe(error));
+              stopWaiting();
+            }
+            return;
+          } finally {
+            inFlight -= 1;
+            if (queue.length === 0 && inFlight === 0) stopWaiting();
           }
-          return;
+        } finally {
+          release();
         }
       }
     };
 
     await Promise.all(
-      endpoints.flatMap((endpoint) => Array.from({ length: endpoint.slots }, async () => worker(endpoint.url))),
+      endpoints.flatMap((endpoint) =>
+        Array.from({ length: endpoint.slots }, async () => worker(endpoint.url, endpoint.slots)),
+      ),
     );
     return { endpointFailures, callerError };
   }
@@ -493,8 +575,14 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       }
       const half = Math.ceil(indices.length / 2);
       this.log(`[llama-server] ${url} failed a ${indices.length}-text batch on size; retrying in batches of ${half}`);
-      const event: EmbeddingServerBatchFailure = { failedSize: indices.length, retrySize: half, endpointUrl: url };
+      const event: EmbeddingServerBatchFailure = {
+        failedSize: indices.length,
+        retrySize: half,
+        endpointUrl: url,
+        cause: error.serverCause,
+      };
       for (const observer of this.serverBatchFailureObservers) observer(event);
+      // Still under the caller's slot lease: the halves never wait for another slot.
       await this.embedOnEndpoint(url, texts, indices.slice(0, half), vectors);
       await this.embedOnEndpoint(url, texts, indices.slice(half), vectors);
     }
@@ -507,29 +595,33 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       throw new EndpointRequestFailure(url, "transient", `serves ${this.servedModelMismatches.get(url)}`);
     }
     let response: Response;
+    const sentAt = this.now();
+    const elapsedMs = (): number => this.now() - sentAt;
     try {
       response = await this.fetchFn(`${url}/v1/embeddings`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...this.authHeaders() },
         body: JSON.stringify({ input: batch, model: this.model }),
-        signal: AbortSignal.timeout(REQUEST_BASE_TIMEOUT_MS + batch.length * REQUEST_PER_TEXT_TIMEOUT_MS),
+        // Armed here, under the caller's slot lease: the deadline counts server time only.
+        signal: this.requestTimeoutSignal(REQUEST_BASE_TIMEOUT_MS + batch.length * REQUEST_PER_TEXT_TIMEOUT_MS),
       });
     } catch (error) {
       const code = errorCode(error);
-      if (code === "ECONNREFUSED") throw new EndpointRequestFailure(url, "refused", error);
+      if (code === "ECONNREFUSED") throw new EndpointRequestFailure(url, "refused", error, elapsedMs());
       if (code !== undefined && SOCKET_RESET_CODES.has(code) && batch.length > 1) {
-        throw new BatchSizeFailure(url, undefined, describe(error));
+        throw new BatchSizeFailure(url, undefined, describe(error), `${code}: ${innermostErrorMessage(error)}`);
       }
-      throw new EndpointRequestFailure(url, "transient", error);
+      throw new EndpointRequestFailure(url, "transient", error, elapsedMs());
     }
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
+      const httpCause = `HTTP ${response.status}: ${bodyExcerpt(body)}`;
       if ((response.status === 400 || response.status === 500) && SIZE_FAILURE_BODY.test(body)) {
-        throw new BatchSizeFailure(url, response.status, body);
+        throw new BatchSizeFailure(url, response.status, body, httpCause);
       }
       if (response.status >= 500 || response.status === 429) {
-        throw new EndpointRequestFailure(url, "transient", `HTTP ${response.status}: ${body}`);
+        throw new EndpointRequestFailure(url, "transient", httpCause, elapsedMs());
       }
       throw new LlamaServerResponseError(url, response.status, body);
     }
@@ -538,7 +630,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
     try {
       parsed = (await response.json()) as LlamaServerEmbeddingsResponse;
     } catch (error) {
-      throw new EndpointRequestFailure(url, "transient", error);
+      throw new EndpointRequestFailure(url, "transient", error, elapsedMs());
     }
     const data = parsed.data ?? [];
     const embeddings = new Array<number[] | undefined>(batch.length);
@@ -551,6 +643,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
         url,
         "transient",
         `malformed response: expected ${batch.length} vectors, got ${data.length}`,
+        elapsedMs(),
       );
     }
     return embeddings as number[][];
@@ -561,6 +654,13 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   // ---------------------------------------------------------------------------
 
   private noteEndpointFailure(failure: EndpointRequestFailure): void {
+    const event: EmbeddingEndpointFailure = {
+      endpointUrl: failure.url,
+      kind: failure.kind,
+      reason: describeEndpointFailureReason(failure.reason),
+      ...(failure.elapsedMs === undefined ? {} : { elapsedMs: failure.elapsedMs }),
+    };
+    for (const observer of this.endpointFailureObservers) observer(event);
     if (isConnectClassFailure(failure.reason)) this.recordDownVerdict(failure.url, failure.reason);
     this.pool.recordEndpointFailure(failure.url, failure.kind);
     this.propsCache.delete(failure.url);
@@ -575,11 +675,19 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
    * every excluded endpoint another chance. A zero budget still makes that one
    * direct probe: an endpoint that is back answers.
    */
-  private async waitForEndpoint(wait: RecoveryWaitState, exclusions: EndpointCallExclusions): Promise<void> {
+  private async waitForEndpoint(
+    wait: RecoveryWaitState,
+    exclusions: EndpointCallExclusions,
+    allowFallback: boolean,
+  ): Promise<void> {
     this.failWhenNoEndpointServesModel();
     await this.reprobeAll();
     exclusions.liftReachable((url) => this.pool.snapshot().some((e) => e.url === url && e.healthy));
-    if (this.pool.activeEndpoints(exclusions.urls).length > 0) return;
+    const active = this.pool.activeEndpoints(exclusions.urls);
+    if (allowFallback && this.pool.activeTier() === "peer") {
+      active.push(...this.pool.activeFallbackEndpoints(exclusions.urls));
+    }
+    if (active.length > 0) return;
     const remainingMs = wait.start + wait.budgetMs - this.now();
     if (remainingMs <= 0) {
       const recoveryWaitMs = wait.attempt > 0 ? this.now() - wait.start : 0;

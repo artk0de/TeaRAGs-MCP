@@ -11,4 +11,6 @@ export {
   buildIndexingGuide,
   buildFiltersDoc,
   buildSignalLabelsGuide,
+  FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS,
+  META_ONLY_CONTRACT,
 } from "./registry.js";

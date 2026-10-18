@@ -9,14 +9,12 @@
 
 import { join } from "node:path";
 
-import type { FileExtraction } from "../../../contracts/types/codegraph.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import type { ChunkLookupEntry } from "../../../types.js";
-import type { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
-import type { QuarantineStore } from "../sync/index.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
 import type { ChunkerPoolPort } from "./chunker/infra/pool.js";
 import { SourceFileIngestor } from "./file-ingestor.js";
+import type { FileProcessCallbacks, FileProcessorOptions, FileProcessResult } from "./file-process-types.js";
 import { parallelLimit } from "./infra/parallel.js";
 
 // Historical import path for the post-chunk navigation pass — it now lives
@@ -24,52 +22,10 @@ import { parallelLimit } from "./infra/parallel.js";
 // can call it without importing this module back.
 export { assignNavigationAndDocSymbolId } from "./chunker/chunk-navigation.js";
 
-export interface FileProcessorOptions {
-  enableGitMetadata: boolean;
-  maxChunksPerFile?: number;
-  maxTotalChunks?: number;
-  concurrency?: number;
-  /**
-   * Optional per-file barrier. When set, files whose delete silently failed
-   * (tracked by the coordinator) are skipped from upsert to prevent orphan
-   * duplicates. Pass ONLY for the modified-files pass — added files have no
-   * old chunks to collide with. See reindex-resilience plan Phase 3.2.
-   */
-  coordinator?: ReindexCoordinator;
-  /**
-   * Optional poison-pill quarantine. When set, files that fail to read or parse
-   * are recorded here (instead of silently dropping out of the index) and
-   * retried automatically on every subsequent indexing pass.
-   */
-  quarantineStore?: QuarantineStore;
-  /**
-   * Paths (relative to basePath) that were quarantined on a prior pass and are
-   * being retried this pass. A file in this set that now processes successfully
-   * is cleared from the quarantine. Files NOT in this set never trigger a clear,
-   * so the common (never-failed) case pays no extra write.
-   */
-  quarantinedRetry?: Set<string>;
-  /**
-   * yl9tv cross-pass. When set (codegraph enabled), the chunker worker also
-   * emits a codegraph `FileExtraction` from the SAME parse it chunks with, and
-   * this hook forwards it (with a root-relative `relPath`) to the enrichment
-   * coordinator → codegraph provider spill — eliminating the provider's
-   * main-thread re-parse. Presence of this hook is what flips the worker's
-   * `emitExtraction` on.
-   */
-  onFileExtraction?: (extraction: FileExtraction) => void;
-}
-
-export interface FileProcessResult {
-  chunksCreated: number;
-  filesProcessed: number;
-  chunkMap: Map<string, ChunkLookupEntry[]>;
-  errors: string[];
-}
-
-export interface FileProcessCallbacks {
-  onFileProcessed?: (filePath: string, chunksCount: number) => void;
-}
+// The option/result/callback contract declares in file-process-types.ts (bd
+// tea-rags-mcp-54xwd.14) — the ingestor constructs nothing of this module, but
+// its functions take these types, so a declaration here would close a cycle.
+export type { FileProcessCallbacks, FileProcessorOptions, FileProcessResult } from "./file-process-types.js";
 
 /**
  * Process a batch of files: read → secrets check → chunk → pipeline submit → enrichment track.

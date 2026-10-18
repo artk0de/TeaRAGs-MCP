@@ -49,7 +49,7 @@ import type ts from "typescript";
 
 import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
+import { loadTypeScriptCompiler, type TSProgramCachePort } from "../program/index.js";
 import { isLocalValueBinding } from "./ts-local-callee.js";
 import { findReceiverExpression } from "./ts-type-checker-shared.js";
 import { typeConstituents } from "./ts-type-constituents.js";
@@ -121,7 +121,7 @@ export function receiverBoundToProjectType(call: CallRef, ctx: CallContext): boo
 export function receiverIsUnpinnableLocalValueBinding(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): boolean {
   const { receiver } = call;
   if (programCache === null || receiver === null || call.member.length === 0) return false;
@@ -175,7 +175,11 @@ function isBareIdentifierText(receiver: string): boolean {
  * `getApparentType` matches what the external guard reads, so a receiver's
  * primitive or type-parameter constraint is resolved the same way in both.
  */
-function typeNamesProjectDeclaration(checker: ts.TypeChecker, type: ts.Type, programCache: TSProgramCache): boolean {
+function typeNamesProjectDeclaration(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  programCache: TSProgramCachePort,
+): boolean {
   for (const constituent of typeConstituents(checker, type)) {
     const declarations = constituent.getSymbol()?.getDeclarations() ?? [];
     for (const declaration of declarations) {

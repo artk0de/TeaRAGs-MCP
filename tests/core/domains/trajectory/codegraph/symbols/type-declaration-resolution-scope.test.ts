@@ -41,7 +41,7 @@ const EMPTY_TABLE = { lookup: () => [], lookupByShortName: () => [] } as unknown
 
 describe("collectTypeDeclarationReaders", () => {
   it("names exactly the languages whose capability says their resolver reads type declarations", () => {
-    expect([...collectTypeDeclarationReaders(new LanguageFactory())]).toEqual(["swift"]);
+    expect([...collectTypeDeclarationReaders(new LanguageFactory())]).toEqual(["rust", "swift"]);
   });
 
   it("names none without a factory, or with one that publishes no capabilities", () => {
@@ -55,6 +55,16 @@ describe("CodegraphRunState bound to the type-declaration readers", () => {
     const runState = new CodegraphRunState([], new Map(), new Map(), new Set(["swift"]));
     runState.absorb(extraction("Sources/Account.swift", "swift"), []);
     expect(runState.typeDeclarations).toEqual({ "Sources/Account.swift": DECLARATIONS });
+  });
+
+  it("retains Rust generic parameters through native reader selection", () => {
+    const readers = collectTypeDeclarationReaders(new LanguageFactory());
+    const runState = new CodegraphRunState([], new Map(), new Map(), readers);
+    const rustDeclarations: readonly TypeDeclarationFact[] = [
+      { typeId: "Holder", symbolKind: "class", line: 1, reopens: false, genericParameters: ["T"] },
+    ];
+    runState.absorb({ ...extraction("src/holder.rs", "rust"), typeDeclarations: rustDeclarations }, []);
+    expect(runState.typeDeclarations).toEqual({ "src/holder.rs": rustDeclarations });
   });
 
   it("leaves another language's declarations out of the run-global map", () => {

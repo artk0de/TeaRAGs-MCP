@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { RateLimitConfig } from "../../../../../src/core/adapters/embeddings/base.js";
+import type {
+  EmbeddingEndpointFailure,
+  EmbeddingServerBatchFailure,
+  RateLimitConfig,
+} from "../../../../../src/core/adapters/embeddings/base.js";
 import {
   EMBEDDING_ENDPOINT_DOWN_VERDICT_TTL_MS,
   EmbeddingEndpointDownVerdictStore,
@@ -130,6 +134,10 @@ function fakeCluster(servers: Record<string, FakeLlamaServer>) {
     embeddedTexts,
     peakInFlight: (url: string) => peakInFlight.get(url) ?? 0,
   };
+}
+
+function requestUrl(input: string | URL | Request): string {
+  return input instanceof Request ? input.url : input.toString();
 }
 
 function texts(n: number): string[] {
@@ -575,6 +583,21 @@ describe("LlamaServerEmbeddings", () => {
       expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3]);
     });
 
+    it("keeps a healthy peer ahead of fallback after another peer fails in the call", async () => {
+      const cluster = fakeCluster({
+        [PEER_A]: { health: true, embed: () => new Response("model loading", { status: 503 }) },
+        [PEER_B]: healthy(),
+        [FALLBACK]: healthy(),
+      });
+      const provider = makeProvider(cluster);
+
+      const results = await provider.embedBatch(texts(4));
+
+      expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3]);
+      expect(cluster.embedCalls(PEER_B).length).toBeGreaterThan(0);
+      expect(cluster.embedCalls(FALLBACK)).toHaveLength(0);
+    });
+
     describe("a peer that answers /health but fails every post (bd hgghf)", () => {
       /** Every bounded test gets this timeout; the livelock it guards against spun forever. */
       const LIVELOCK_TIMEOUT_MS = 5_000;
@@ -713,7 +736,14 @@ describe("LlamaServerEmbeddings", () => {
 
       expect(results.map((r) => r.embedding[0])).toEqual(Array.from({ length: 16 }, (_, i) => i));
       expect(events.length).toBeGreaterThan(0);
-      for (const event of events) expect(event).toEqual({ failedSize: 4, retrySize: 2, endpointUrl: PEER_A });
+      for (const event of events) {
+        expect(event).toEqual({
+          failedSize: 4,
+          retrySize: 2,
+          endpointUrl: PEER_A,
+          cause: expect.stringMatching(/^HTTP 500: /),
+        });
+      }
       expect(provider.getBaseUrl()).toBe(PEER_A);
 
       const observed = events.length;
@@ -735,7 +765,14 @@ describe("LlamaServerEmbeddings", () => {
 
       expect(results.map((r) => r.embedding[0])).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
       expect(events.length).toBeGreaterThan(0);
-      for (const event of events) expect(event).toEqual({ failedSize: 2, retrySize: 1, endpointUrl: PEER_A });
+      for (const event of events) {
+        expect(event).toEqual({
+          failedSize: 2,
+          retrySize: 1,
+          endpointUrl: PEER_A,
+          cause: expect.stringMatching(/^UND_ERR_SOCKET: /),
+        });
+      }
     });
 
     it("reports a single text the server rejects on size as a context overflow", async () => {
@@ -1263,6 +1300,133 @@ describe("LlamaServerEmbeddings", () => {
           .liveVerdicts()
           .map((v) => v.url),
       ).toEqual([PEER_A]);
+    });
+  });
+
+  describe("cross-call slot cap", () => {
+    it("never has more than an endpoint's total_slots requests in flight across concurrent embedBatch calls", async () => {
+      const cluster = fakeCluster({
+        [PEER_A]: { ...healthy({ total_slots: 2 }), delayMsPerText: 2 },
+        [PEER_B]: { ...healthy({ total_slots: 2 }), delayMsPerText: 2 },
+      });
+      const provider = makeProvider(cluster);
+
+      const calls = Array.from({ length: 4 }, async (_, c) =>
+        provider.embedBatch(Array.from({ length: 8 }, (_, i) => `t${c * 8 + i}`)),
+      );
+      const results = await Promise.all(calls);
+
+      expect(results.flat().map((r) => r.embedding[0])).toEqual(Array.from({ length: 32 }, (_, i) => i));
+      expect(cluster.peakInFlight(PEER_A)).toBe(2);
+      expect(cluster.peakInFlight(PEER_B)).toBe(2);
+    });
+
+    it("arms the request timeout only once the slot lease is held, so queueing behind a slow request is not timed", async () => {
+      const cluster = fakeCluster({ [PEER_A]: { ...healthy({ total_slots: 1 }), delayMsPerText: 5 } });
+      const timeline: string[] = [];
+      const fetchFn: typeof fetch = async (input, init) => {
+        const embeds = requestUrl(input).endsWith("/v1/embeddings");
+        if (embeds) timeline.push("send");
+        const response = await cluster.fetch(input, init);
+        if (embeds) timeline.push("answer");
+        return response;
+      };
+      const provider = new LlamaServerEmbeddings(
+        MODEL,
+        undefined,
+        { unavailableRetryMaxWaitMs: 0 },
+        PEER_A,
+        undefined,
+        undefined,
+        {
+          fetch: fetchFn,
+          ...fakeTime().deps,
+          log: () => {},
+          requestTimeoutSignal: (ms) => {
+            timeline.push("arm");
+            return AbortSignal.timeout(ms);
+          },
+        },
+      );
+
+      await Promise.all([provider.embedBatch(["t1"]), provider.embedBatch(["t2"]), provider.embedBatch(["t3"])]);
+
+      expect(timeline).toEqual(["arm", "send", "answer", "arm", "send", "answer", "arm", "send", "answer"]);
+    });
+  });
+
+  describe("failure causes", () => {
+    it("names the HTTP status and body excerpt of a size failure on the event", async () => {
+      const body = `{"error":{"message":"input is too large to process"}}${"x".repeat(400)}`;
+      const cluster = fakeCluster({
+        [PEER_A]: {
+          health: true,
+          embed: (input) => (input.length > 1 ? new Response(body, { status: 500 }) : undefined),
+        },
+      });
+      const provider = makeProvider(cluster, { peers: PEER_A });
+      const events: EmbeddingServerBatchFailure[] = [];
+      provider.observeServerBatchFailures((event) => events.push(event));
+
+      // One slot -> four micro-batches of 2 texts, each failing once on size.
+      await provider.embedBatch(texts(8));
+
+      expect(events).toHaveLength(4);
+      expect(events[0].cause).toBe(`HTTP 500: ${body.slice(0, 200)}`);
+    });
+
+    it("names the socket error code of a reset on the size-failure event", async () => {
+      const cluster = fakeCluster({
+        [PEER_A]: { health: true, embed: (input) => (input.length > 1 ? "reset" : undefined) },
+      });
+      const provider = makeProvider(cluster, { peers: PEER_A });
+      const events: EmbeddingServerBatchFailure[] = [];
+      provider.observeServerBatchFailures((event) => events.push(event));
+
+      await provider.embedBatch(texts(8));
+
+      expect(events[0].cause).toMatch(/^UND_ERR_SOCKET: /);
+      expect(events[0].cause).toContain("other side closed");
+    });
+
+    it("reports every endpoint failure with its kind, reason and time on the wire, until detached", async () => {
+      const time = fakeTime();
+      let outcome: "5xx" | "refused" = "5xx";
+      const cluster = fakeCluster({
+        [PEER_A]: {
+          health: true,
+          embed: () => (outcome === "refused" ? "refused" : new Response("model loading", { status: 503 })),
+        },
+        [PEER_B]: healthy(),
+      });
+      const fetchFn: typeof fetch = async (input, init) => {
+        if (requestUrl(input) === `${PEER_A}/v1/embeddings`) time.advance(250);
+        return cluster.fetch(input, init);
+      };
+      const provider = new LlamaServerEmbeddings(
+        MODEL,
+        undefined,
+        { failoverConsecutiveFailures: 3, unavailableRetryMaxWaitMs: 0 },
+        `${PEER_A},${PEER_B}`,
+        undefined,
+        undefined,
+        { fetch: fetchFn, ...time.deps, log: () => {} },
+      );
+      const events: EmbeddingEndpointFailure[] = [];
+      const detach = provider.observeEndpointFailures((event) => events.push(event));
+
+      await provider.embedBatch(texts(4));
+      outcome = "refused";
+      await provider.embedBatch(texts(4));
+
+      expect(events).toEqual([
+        { endpointUrl: PEER_A, kind: "transient", reason: "HTTP 503: model loading", elapsedMs: 250 },
+        { endpointUrl: PEER_A, kind: "refused", reason: expect.stringContaining("ECONNREFUSED"), elapsedMs: 250 },
+      ]);
+
+      detach();
+      await provider.embedBatch(texts(4));
+      expect(events).toHaveLength(2);
     });
   });
 });

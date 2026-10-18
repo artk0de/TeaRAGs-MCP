@@ -7,6 +7,7 @@ export type * from "./types/reranker.js";
 export type * from "./types/stats-accumulator.js";
 export type * from "./types/trajectory.js";
 export type * from "./types/codegraph.js";
+export type { ChunkSetBumpScopes } from "./types/rechunk.js";
 export type * from "./types/chunker.js";
 export type * from "./types/language.js";
 export type * from "./types/enrichment.js";

@@ -38,14 +38,14 @@ import type ts from "typescript";
 
 import type { CallContext, CallRef, SymbolDefinition } from "../../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
+import { loadTypeScriptCompiler, type TSProgramCachePort } from "../program/index.js";
 import { findReceiverExpression } from "./ts-type-checker-shared.js";
 import { typeConstituents } from "./ts-type-constituents.js";
 
 export function receiverProjectInterfaceNames(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): readonly string[] {
   const { receiver } = call;
   if (programCache === null || receiver === null || receiver.length === 0) return [];
@@ -120,7 +120,7 @@ function contractSymbolOf(type: ts.Type): ts.Symbol | undefined {
 export function interfaceReceiverExcludesCandidate(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
   candidate: Pick<SymbolDefinition, "scope">,
 ): boolean {
   const interfaces = receiverProjectInterfaceNames(call, ctx, programCache);

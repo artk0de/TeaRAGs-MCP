@@ -34,9 +34,14 @@
   an observer is attached `OllamaEmbeddings` keeps no run-long ceiling of its
   own — the tuner owns stickiness and recovery. `EMBEDDING_TUNE_STATIC` builds
   no tuner (`BaseIndexingPipeline#createThroughputTuner`), which restores the
-  adapter's own ceiling. Why: two independent "sticky" sizes on one batch never
-  recover together — the adapter's run-long cap silently undid every upward
-  probe of the tuner.
+  adapter's own ceiling. Transport-level endpoint failures reach the pipeline
+  through `EmbeddingProvider.observeEndpointFailures` (attached even without a
+  tuner, logged as `EMBED_ENDPOINT_FAILURE`) and feed
+  `EmbeddingThroughputTuner#noteEndpointFailure` (taint only, never a size
+  downshift); size failures are logged with their server cause as
+  `EMBED_SERVER_BATCH_FAILURE`. Why: two independent "sticky" sizes on one batch
+  never recover together — the adapter's run-long cap silently undid every
+  upward probe of the tuner.
 - **The tuner keys on embedding IDENTITY and holds its concurrency climb while
   the producer starves.** `ChunkPipeline#currentEmbeddingEndpoint` builds the
   key from `getProviderName`, the endpoint a fan-out provider reports through

@@ -23,7 +23,7 @@
  * lives in rather than to the derived class the receiver happens to name.
  *
  * **Ordered ahead of `typeCheckerFallback`, behind everything cheaper.** Both
- * checker passes share ONE {@link TSProgramCache}, so between them the cost is
+ * checker passes share ONE {@link TSProgramCachePort}, so between them the cost is
  * identical and only precision decides the order. The signature route
  * (`getResolvedSignature`) answers a superset of call shapes but pins only the
  * declaration a signature belongs to; the receiver-type route pins the receiver
@@ -76,7 +76,7 @@ import {
   lookupEcmascriptSymbols,
   lookupEcmascriptSymbolsByShortName,
 } from "../../../kernel/index.js";
-import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
+import { loadTypeScriptCompiler, type TSProgramCachePort } from "../program/index.js";
 import type { ResolverConfig } from "./shared.js";
 import { declarationAccountsFor } from "./ts-receiver-member-evidence.js";
 import { memberSeparator, prefixWithNamespaces } from "./ts-type-checker-shared.js";
@@ -86,7 +86,7 @@ export class TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy implements
 
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache,
+    private readonly programCache: TSProgramCachePort,
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {

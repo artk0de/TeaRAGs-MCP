@@ -1,0 +1,50 @@
+import {
+  CODEGRAPH_SYMBOLS_PROVIDER_KEY,
+  type CompositeRerankPreset,
+  type OverlayMask,
+  type ScoringWeights,
+  type SignalLevel,
+} from "../../../contracts/index.js";
+
+/**
+ * Composite override for `godModule` — the file axis of structural debt,
+ * with the call graph folded in.
+ *
+ * Symbol mass stays dominant at 0.5, because that is what defines a god
+ * module; demoting it would turn this into a second `architecturalHub`. The
+ * three structural signals (0.35 combined) amplify the mass ranking by how
+ * deeply the file is wired in — mass × blast radius is what separates "big
+ * file nobody depends on" from "big file everything runs through".
+ *
+ * No new derived signals: `fanIn`, `transitiveImpact` and `isHub` already
+ * ship with the codegraph trajectory. Collections without codegraph resolve
+ * the static, mass-only variant unchanged.
+ *
+ * Like the static variant, the overlay carries file-level numbers only: a
+ * file-level result never emits a chunk bucket. Class-vs-module attribution
+ * is left to the consumer, through the file outline.
+ */
+export class GodModuleCompositePreset implements CompositeRerankPreset {
+  readonly name = "godModule";
+  readonly description = "Files carrying too much interface mass, weighted by how deeply they are wired in";
+  readonly signalLevel: SignalLevel = "file";
+  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
+  readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY] as const;
+  readonly weights: ScoringWeights = {
+    similarity: 0.15,
+    symbolCount: 0.5,
+    fanIn: 0.15,
+    transitiveImpact: 0.1,
+    isHub: 0.1,
+  };
+  readonly overlayMask: OverlayMask = {
+    file: [
+      "moduleLines",
+      "moduleMethodCount",
+      "codegraph.file.fanIn",
+      "codegraph.file.fanOut",
+      "codegraph.file.transitiveImpact",
+      "codegraph.file.isHub",
+    ],
+  };
+}

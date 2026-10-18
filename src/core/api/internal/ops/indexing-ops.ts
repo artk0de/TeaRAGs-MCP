@@ -8,7 +8,7 @@
  * orchestration lives here; the facade only dispatches.
  */
 
-import { getBuildFingerprint, readOnDiskBuildFingerprint } from "../../../adapters/duckdb/daemon/build-fingerprint.js";
+import { getBuildFingerprint, readOnDiskBuildFingerprint } from "../../../adapters/duckdb/daemon/index.js";
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import { isProviderRecoveryWaitSpent } from "../../../adapters/embeddings/errors.js";

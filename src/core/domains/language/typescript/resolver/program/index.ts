@@ -27,6 +27,7 @@ export {
   TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
   TSProgramCache,
   type TSProgramCacheOptions,
+  type TSProgramCachePort,
   type TSProgramHandle,
   type TSProgramStrategy,
 } from "./ts-program-cache.js";

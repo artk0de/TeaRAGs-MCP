@@ -39,7 +39,7 @@ describe("buildNonProductionPathFilter", () => {
 
   it.each([
     "src/core/domains/ingest/pipeline/enrichment/executor/worker-pool.ts",
-    "src/mcp/tools/codegraph.ts",
+    "src/core/api/tools/codegraph.ts",
     "src/cli/index.ts",
     "bin/tea-rags.ts",
     "lib/tasks/billing.rake",

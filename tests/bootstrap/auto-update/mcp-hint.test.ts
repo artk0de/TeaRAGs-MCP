@@ -7,8 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildMcpAutoUpdateTrigger } from "../../../src/bootstrap/auto-update/mcp-hint.js";
 import { spawnDetachedUpdater } from "../../../src/bootstrap/auto-update/spawner.js";
 import { closeAutoUpdateLog, openAutoUpdateLog } from "../../../src/bootstrap/auto-update/updater-log.js";
-import { CollectionRegistry } from "../../../src/core/api/index.js";
+import { CollectionRegistry, resolveCollection, resolveDomainEnvCodeDefaults } from "../../../src/core/api/index.js";
 import { resolveCollectionName } from "../../../src/core/primitives/ids/collection-identity.js";
+
+// The hint takes its api-side resolvers injected (bd tea-rags-mcp-54xwd.3);
+// these tests exercise the real wiring, so they pass the real functions.
+const REAL_RESOLVERS = { resolveCollection, resolveDomainEnvCodeDefaults };
 
 // The default spawn path (no injected impl) really forks a detached CLI and
 // opens a log fd. Both are stubbed so the wiring can be asserted without a
@@ -59,7 +63,7 @@ describe("buildMcpAutoUpdateTrigger", () => {
     const dataDir = tmpDir("mcp-hint-data-");
     const repo = writeRepoOnMaster();
     const spawn = vi.fn();
-    const trigger = buildMcpAutoUpdateTrigger(dataDir, spawn);
+    const trigger = buildMcpAutoUpdateTrigger(REAL_RESOLVERS, dataDir, spawn);
 
     // Server is up, project not registered yet → inert.
     expect(trigger.hintFor({ project: "p" })).toBeNull();
@@ -134,7 +138,7 @@ describe("buildMcpAutoUpdateTrigger request resolution", () => {
     register(dataDir, "code_verbatim", "verbatim", repo, { enabled: true, targetBranch: "master" });
 
     // No spawn impl injected — this exercises the production wiring.
-    const trigger = buildMcpAutoUpdateTrigger(dataDir);
+    const trigger = buildMcpAutoUpdateTrigger(REAL_RESOLVERS, dataDir);
 
     expect(trigger.hintFor({ collection: "code_verbatim" })).toBe("index updating in background");
     // The log is named after the human-facing project alias, not the hash.
@@ -172,7 +176,9 @@ describe("buildMcpAutoUpdateTrigger request resolution", () => {
     const previous = process.env.CODE_CHUNK_SIZE;
     try {
       process.env.CODE_CHUNK_SIZE = "2000";
-      expect(buildMcpAutoUpdateTrigger(dataDir).hintFor({ project: "stamped" })).toBe("index updating in background");
+      expect(buildMcpAutoUpdateTrigger(REAL_RESOLVERS, dataDir).hintFor({ project: "stamped" })).toBe(
+        "index updating in background",
+      );
     } finally {
       if (had) process.env.CODE_CHUNK_SIZE = previous;
       else delete process.env.CODE_CHUNK_SIZE;
@@ -193,7 +199,7 @@ describe("buildMcpAutoUpdateTrigger request resolution", () => {
     const repo = realpathSync(writeRepoOnMaster());
     register(dataDir, resolveCollectionName(repo), "paused", repo, { enabled: true, targetBranch: "main" });
 
-    const trigger = buildMcpAutoUpdateTrigger(dataDir);
+    const trigger = buildMcpAutoUpdateTrigger(REAL_RESOLVERS, dataDir);
 
     expect(trigger.hintFor({ path: repo })).toBe(
       "auto-update paused — HEAD not on target main; run index_codebase to switch the index",
@@ -207,7 +213,7 @@ describe("buildMcpAutoUpdateTrigger request resolution", () => {
     // Registered and indexed, but the operator never enabled auto-update.
     register(dataDir, "code_off", "off", repo);
 
-    const trigger = buildMcpAutoUpdateTrigger(dataDir);
+    const trigger = buildMcpAutoUpdateTrigger(REAL_RESOLVERS, dataDir);
 
     // Nothing named at all.
     expect(trigger.hintFor({})).toBeNull();

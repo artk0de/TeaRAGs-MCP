@@ -1,10 +1,10 @@
 /**
  * The `domains/maintenance/footprint` facade contract (bd
- * tea-rags-mcp-0qaht.34): `WorktreeProvisioner` imported the clone saga past
- * `index.ts`; the facade must own that surface and the provisioner must reach
- * it only there. The boundary guard scans the provisioner's source — a deep
- * import re-appearing turns this red even though `export *` already covers the
- * name.
+ * tea-rags-mcp-0qaht.34): `WorktreeProvisioner` used to import the clone saga
+ * from this domain; since the `CollectionFootprintPort` seam (bd
+ * tea-rags-mcp-54xwd.2) the provisioner reaches the footprint through the
+ * contracts port and imports this domain NEVER. The boundary guard scans the
+ * provisioner's source — any footprint import re-appearing turns this red.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,7 @@ const PROVISIONER_PATH = fileURLToPath(
 );
 
 describe("footprint facade", () => {
-  it("exposes the clone saga the worktree provisioner needs", () => {
+  it("exposes the clone saga the worktree seed path needs", () => {
     expect(typeof cloneCollectionFootprint).toBe("function");
   });
 
@@ -27,12 +27,9 @@ describe("footprint facade", () => {
     expect(cloneCollectionFootprint).toBe(directCloneCollectionFootprint);
   });
 
-  it("the worktree provisioner imports the facade, not an internal module", () => {
+  it("the worktree provisioner does not import this domain at all — the contracts port replaced the edge", () => {
     const source = readFileSync(PROVISIONER_PATH, "utf8");
     const specs = [...source.matchAll(/from "([^"]*footprint\/[^"]*)"/g)].map((m) => m[1]);
-    expect(specs.length, "worktree-provisioner imports footprint at least once").toBeGreaterThan(0);
-    for (const spec of specs) {
-      expect(spec.endsWith("footprint/index.js"), `deep-import "${spec}" past the facade`).toBe(true);
-    }
+    expect(specs, "worktree-provisioner must depend on CollectionFootprintPort, not on footprint").toEqual([]);
   });
 });

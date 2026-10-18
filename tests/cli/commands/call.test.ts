@@ -21,12 +21,12 @@ import {
   type App,
   type SchemaBuilderPort,
 } from "../../../src/core/api/public/index.js";
-import { createRegisterTool } from "../../../src/mcp/middleware/error-handler.js";
-import { registerCodegraphTools } from "../../../src/mcp/tools/codegraph.js";
-import { registerCollectionTools } from "../../../src/mcp/tools/collection.js";
-import { registerSearchTools } from "../../../src/mcp/tools/explore.js";
-import { registerProjectTools } from "../../../src/mcp/tools/list-projects.js";
-import { TYPED_FILTER_PARAM_NAMES } from "../../../src/mcp/tools/schemas.js";
+import { registerCodegraphTools } from "../../../src/core/api/tools/codegraph.js";
+import { registerCollectionTools } from "../../../src/core/api/tools/collection.js";
+import { registerSearchTools } from "../../../src/core/api/tools/explore.js";
+import { registerProjectTools } from "../../../src/core/api/tools/list-projects.js";
+import { createRegisterTool } from "../../../src/core/api/tools/middleware/error-handler.js";
+import { TYPED_FILTER_PARAM_NAMES } from "../../../src/core/api/tools/schemas.js";
 
 function makeApp(overrides: Partial<Record<string, unknown>> = {}, hasCodegraph = false): App {
   return {

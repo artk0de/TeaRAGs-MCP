@@ -18,7 +18,7 @@
  * checker could not improve on — a bare unresolved call is usually dynamic, so
  * only explicit type arguments or short-name ambiguity earn it a check, while
  * every receiver-bearing declined call goes through (bd tea-rags-mcp-05uhs) —
- * and the Program itself is built lazily per file by {@link TSProgramCache}.
+ * and the Program itself is built lazily per file by {@link TSProgramCachePort}.
  *
  * Precision over recall throughout. The checker's declaration is only turned
  * into an edge after the run's `GlobalSymbolTable` confirms it — the symbol
@@ -34,7 +34,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
+import { loadTypeScriptCompiler, type TSProgramCachePort } from "../program/index.js";
 import type { ResolverConfig } from "./shared.js";
 import { callSiteAt, memberSeparator, prefixWithNamespaces } from "./ts-type-checker-shared.js";
 import { pinFunctionByWalkerScope } from "./ts-walker-scope.js";
@@ -81,7 +81,7 @@ export class TSTypeCheckerFallbackSymbolResolutionStrategy implements SymbolReso
 
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache,
+    private readonly programCache: TSProgramCachePort,
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {

@@ -1,11 +1,13 @@
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type {
   CodegraphFootprintStore,
+  CollectionFootprintPort,
   IndexingLockArtifactStoreFactory,
   QuarantineArtifactStoreFactory,
   SnapshotArtifactStoreFactory,
 } from "../../../contracts/index.js";
 import type { CollectionArtifact, FootprintContext, ResolvedCollection } from "./artifact.js";
+import { cloneCollectionFootprint, removeCollectionFootprint } from "./clone-saga.js";
 import { CodegraphArtifact } from "./codegraph-artifact.js";
 import { IndexingLockArtifact } from "./indexing-lock-artifact.js";
 import { QdrantArtifact, type QdrantArtifactSurface } from "./qdrant-artifact.js";
@@ -30,8 +32,21 @@ export interface FootprintDeps {
   residualVerdictFile?: (logicalName: string) => string;
 }
 
-export class CollectionFootprintFactory {
+export class CollectionFootprintFactory implements CollectionFootprintPort {
   constructor(private readonly deps: FootprintDeps) {}
+
+  /**
+   * The port methods run the saga over this factory's own artifact set —
+   * consumers see clone/remove intent (bd tea-rags-mcp-54xwd.2); `build`
+   * stays the mechanism-level query the purge path and the saga share.
+   */
+  async clone(source: ResolvedCollection, target: ResolvedCollection): Promise<void> {
+    return cloneCollectionFootprint(this, source, target);
+  }
+
+  async remove(source: ResolvedCollection, target: ResolvedCollection): Promise<void> {
+    return removeCollectionFootprint(this, source, target);
+  }
 
   build(
     source: ResolvedCollection,

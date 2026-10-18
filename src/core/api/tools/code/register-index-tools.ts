@@ -1,0 +1,139 @@
+/**
+ * Index lifecycle tool: index_codebase (auto-detects incremental changes).
+ */
+
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+import { formatWorktreeSeedReport, type App, type IndexStats } from "../../public/index.js";
+import { formatEnrichmentStatus } from "../formatters/enrichment.js";
+import type { RegisterToolFn } from "../middleware/error-handler.js";
+import * as schemas from "../schemas.js";
+import { resolvePathFromProject } from "./shared.js";
+
+export function registerIndexTools(server: McpServer, deps: { app: App; register: RegisterToolFn }): void {
+  const { app, register: registerToolSafe } = deps;
+
+  // index_codebase
+  registerToolSafe(
+    server,
+    "index_codebase",
+    {
+      title: "Index Codebase",
+      description:
+        "Index codebase for semantic code search. AST-aware chunking, respects .gitignore. " +
+        "CODE_ENABLE_GIT_METADATA=true enables git blame analysis.\n\n" +
+        "Indexing options + git metadata guide: tea-rags://schema/indexing-guide",
+      inputSchema: schemas.IndexCodebaseSchema,
+      annotations: { idempotentHint: true },
+    },
+    async ({
+      path: pathArg,
+      project,
+      forceReindex,
+      extensions,
+      ignorePatterns,
+      seedFromWorktree,
+      languages,
+      testFile,
+      pathPattern,
+      fileExtension,
+      files,
+    }) => {
+      const path = await resolvePathFromProject({ path: pathArg, project }, app);
+      // Scope filters of a scoped force (bd tea-rags-mcp-j4oww); only the ones
+      // given are passed, so an unscoped call reaches the core unchanged.
+      const scope = {
+        ...(languages !== undefined ? { languages } : {}),
+        ...(testFile !== undefined ? { testFile } : {}),
+        ...(pathPattern !== undefined ? { pathPattern } : {}),
+        ...(fileExtension !== undefined
+          ? { fileExtensions: Array.isArray(fileExtension) ? fileExtension : [fileExtension] }
+          : {}),
+        ...(files !== undefined ? { files } : {}),
+      };
+      const stats = await app.indexCodebase(
+        path,
+        {
+          forceReindex,
+          extensions,
+          ignorePatterns,
+          ...(seedFromWorktree === false ? { seedFromWorktree } : {}),
+          ...scope,
+        },
+        (progress) => {
+          console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
+        },
+      );
+
+      // A seeded first index runs the incremental path, so the change summary
+      // below reads like a re-index — the seed line says where it started from.
+      const seedLines = stats.worktreeSeed ? formatWorktreeSeedReport(stats.worktreeSeed) : [];
+      const seedMessage =
+        seedLines.length > 0 ? `Worktree seed:\n${seedLines.map((l) => `  ${l}`).join("\n")}\n\n` : "";
+
+      let statusMessage: string;
+      if (stats.changeDetails) {
+        const d = stats.changeDetails;
+        if (d.filesAdded === 0 && d.filesModified === 0 && d.filesDeleted === 0 && d.filesRetried === 0) {
+          statusMessage = `No changes detected. Codebase is up to date.`;
+        } else {
+          statusMessage = `Incremental re-index complete:\n`;
+          statusMessage += `- Files: +${d.filesAdded} ~${d.filesModified} -${d.filesDeleted}\n`;
+          if (d.filesNewlyIgnored > 0) statusMessage += `  Newly ignored: ${d.filesNewlyIgnored}\n`;
+          if (d.filesNewlyUnignored > 0) statusMessage += `  Newly unignored: ${d.filesNewlyUnignored}\n`;
+          if (d.filesRetried > 0) statusMessage += `  Retried (quarantined): ${d.filesRetried}\n`;
+          if (d.filesRechunked !== undefined) {
+            statusMessage += `  Re-chunked in place (scoped force): ${d.filesRechunked}\n`;
+          }
+          const chunkDiff = d.chunksAdded - d.chunksDeleted;
+          const sign = chunkDiff >= 0 ? "+" : "";
+          statusMessage += `- Chunks: +${d.chunksAdded} -${d.chunksDeleted} (net: ${sign}${chunkDiff})\n`;
+          statusMessage += `- Duration: ${(stats.durationMs / 1000).toFixed(1)}s`;
+        }
+      } else {
+        statusMessage = `Indexed ${stats.filesIndexed}/${stats.filesScanned} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
+      }
+
+      const enrichmentMessage = await formatEnrichmentStatus(
+        stats.enrichmentStatus,
+        stats.enrichmentDurationMs,
+        async (p) => app.getIndexStatus(p),
+        path,
+        stats.enrichmentMetrics,
+      );
+      statusMessage = seedMessage + statusMessage + enrichmentMessage;
+
+      if (stats.status === "partial") {
+        const deleteWarning = formatDeleteFailureWarning(stats.changeDetails);
+        if (deleteWarning) statusMessage += `\n\n${deleteWarning}`;
+        if (stats.errors && stats.errors.length > 0) statusMessage += `\n\nWarnings:\n${stats.errors.join("\n")}`;
+      } else if (stats.status === "failed") {
+        statusMessage = `Indexing failed:\n${stats.errors?.join("\n")}`;
+      }
+
+      return {
+        content: [{ type: "text" as const, text: statusMessage }],
+        isError: stats.status === "failed",
+      };
+    },
+  );
+}
+
+/**
+ * The partial-run line for files whose old chunks survived a failed delete
+ * (bd tea-rags-mcp-6l1w6). The snapshot keeps them as changed, so the next
+ * reindex retries them — the line says so, since re-running is the remedy.
+ */
+function formatDeleteFailureWarning(details: IndexStats["changeDetails"]): string | undefined {
+  const removed = details?.filesFailedToDelete ?? 0;
+  const modified = details?.filesSkippedDueToDeleteFailure ?? 0;
+  if (removed + modified === 0) return undefined;
+  const parts = [
+    ...(removed > 0 ? [`${removed} removed`] : []),
+    ...(modified > 0 ? [`${modified} modified not re-indexed`] : []),
+  ];
+  return (
+    `Warning: partial run — old chunks could not be deleted for ${removed + modified} file(s) ` +
+    `(${parts.join(", ")}); the next reindex retries them.`
+  );
+}

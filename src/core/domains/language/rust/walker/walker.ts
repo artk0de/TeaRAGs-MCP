@@ -36,7 +36,10 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../associated-constructor.js";
+import { collectRustCallResultBindings } from "./call-result-bindings.js";
+import { rustDeclaredStructFields } from "./field-types.js";
 import { rustNameOf } from "./name-of.js";
+import { collectRustReturnTypes, rustDeclaredTypeRef } from "./return-types.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
 import { isRustLocalScopeBoundary, rustTypeDeclarationFactOf } from "./type-declarations.js";
 
@@ -64,7 +67,12 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   // every in-method call once per ENCLOSING chunk as well — an `impl` inside a
   // `mod` gave three copies, each resolving against a different caller scope.
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
-  const { readings: symbolKindReadings, typeDeclarations } = collectRustDeclarationReadings(input.tree.rootNode);
+  const {
+    readings: symbolKindReadings,
+    typeDeclarations,
+    classFieldTypesByClassKey,
+  } = collectRustDeclarationReadings(input.tree.rootNode, input.relPath);
+  const callResultBindingsByRange = collectRustCallResultBindings(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -82,6 +90,10 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
     // parameter type annotations (`fn bar(p: Foo)`).
     const bindings = collectRustLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
     if (Object.keys(bindings).length > 0) base.localBindings = bindings;
+    const callResultBindings = callResultBindingsByRange.get(`${c.startLine}:${c.endLine}`);
+    if (callResultBindings !== undefined && Object.keys(callResultBindings).length > 0) {
+      base.callResultBindings = callResultBindings;
+    }
     return base;
   });
   const out: FileExtraction = {
@@ -91,7 +103,10 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
     chunks: byChunk,
     fileScope: [],
   };
+  const structuredReturnTypes = collectRustReturnTypes(input.tree.rootNode, input.relPath);
+  if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
+  if (Object.keys(classFieldTypesByClassKey).length > 0) out.classFieldTypesByClassKey = classFieldTypesByClassKey;
   if (moduleReexports.length > 0) out.moduleReexports = moduleReexports;
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
   if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
@@ -111,6 +126,7 @@ interface RustDeclarationReadings {
   readonly readings: RustSymbolKindReading[];
   /** The `typeDeclarations` channel (spec §1b) — see `./type-declarations.ts`. */
   readonly typeDeclarations: TypeDeclarationFact[];
+  readonly classFieldTypesByClassKey: Record<string, Record<string, string>>;
 }
 
 /**
@@ -127,13 +143,18 @@ interface RustDeclarationReadings {
  * (spec §1b) off the scope it already composes: `local` turns on below a `fn`,
  * a closure or a const/static initializer, whose declarations are not facts.
  */
-function collectRustDeclarationReadings(root: AstNode): RustDeclarationReadings {
+function collectRustDeclarationReadings(root: AstNode, relPath: string): RustDeclarationReadings {
   const out: RustSymbolKindReading[] = [];
   const typeDeclarations: TypeDeclarationFact[] = [];
+  const classFieldTypesByClassKey = createIdentifierRecord<Record<string, string>>();
   const visit = (node: AstNode, scope: readonly string[], local: boolean): void => {
     if (!local) {
       const fact = rustTypeDeclarationFactOf(node, scope);
-      if (fact !== null) typeDeclarations.push(fact);
+      if (fact !== null) {
+        typeDeclarations.push(fact);
+        const { fields } = rustDeclaredStructFields(node, fact.genericParameters ?? []);
+        if (Object.keys(fields).length > 0) classFieldTypesByClassKey[`${relPath}::${fact.typeId}`] = fields;
+      }
     }
     const named = rustNameOf(node);
     if (named !== null) {
@@ -150,7 +171,7 @@ function collectRustDeclarationReadings(root: AstNode): RustDeclarationReadings 
     for (const child of node.children) visit(child, childScope, childLocal);
   };
   visit(root, [], false);
-  return { readings: out, typeDeclarations };
+  return { readings: out, typeDeclarations, classFieldTypesByClassKey };
 }
 
 /** The kind of the first reading `chunk` was built from — first, as `collectSymbols` keeps the first node per id. */
@@ -225,7 +246,10 @@ function rustTypeRefFor(
   const type = readRustBareType(typeNode);
   if (type === null) return null;
   const bound = genericBounds[type];
-  return bound === undefined ? { type } : { type, typeRef: { form: "instance", name: bound, upperBound: true } };
+  const ref = rustDeclaredTypeRef(typeNode);
+  return bound === undefined
+    ? { type, ...(ref?.form === "instance" && ref.args !== undefined ? { typeRef: ref } : {}) }
+    : { type, typeRef: { form: "instance", name: bound, upperBound: true } };
 }
 
 /**
@@ -361,8 +385,15 @@ function collectRustLocalBindingsForChunk(
     // Typed `let x: Foo = ...` — explicit annotation wins.
     const typeNode = node.childForFieldName("type");
     if (typeNode) {
-      const typeName = readRustBareType(typeNode);
-      if (typeName) (bindings[varName] ??= []).push({ line: node.startPosition.row + 1, type: typeName });
+      const typed = rustTypeRefFor(typeNode, genericBounds);
+      if (typed) {
+        const { typeRef } = typed;
+        (bindings[varName] ??= []).push({
+          line: node.startPosition.row + 1,
+          type: typed.type,
+          ...(typeRef?.form === "instance" && typeRef.args !== undefined ? { typeRef } : {}),
+        });
+      }
       return;
     }
 
@@ -486,7 +517,16 @@ function collectRustCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
     const shape = rustCallSiteShape(node);
-    if (shape) out.push({ callText: node.text, ...shape, startLine: node.startPosition.row + 1 });
+    if (shape) {
+      out.push({
+        callText: node.text,
+        ...shape,
+        startLine: node.startPosition.row + 1,
+        // The Node parser exposes UTF-16 code-unit columns. This is the
+        // expression's start, not the callee token's range or a UTF-8 offset.
+        startColumn: node.startPosition.column,
+      });
+    }
   });
   return out;
 }
@@ -510,7 +550,10 @@ export interface RustCallShape {
  * user-defined `macro_rules!` symbols emit a definition (see `rustNameOf`) so
  * the resolver can link them. A call: `value.field()` → the value and field;
  * `foo::bar::baz()` → receiver `foo::bar`, member `baz`; a bare `f()` → `f`;
- * any other callee (a generic function, a closure call) emits nothing.
+ * a `generic_function` adds type arguments without changing those shapes.
+ * Expression callees (parenthesized values, dereferences, closures, call
+ * results) stay omitted: their target needs callable-value identity, and
+ * stripping them to a short name would let the resolver guess a namesake.
  */
 export function rustCallSiteShape(node: AstNode): RustCallShape | null {
   if (node.type === "macro_invocation") {
@@ -521,7 +564,8 @@ export function rustCallSiteShape(node: AstNode): RustCallShape | null {
     return name ? { receiver: macroField.childForFieldName("path")?.text ?? null, member: name.text } : null;
   }
   if (node.type !== "call_expression") return null;
-  const fn = node.childForFieldName("function");
+  let fn = node.childForFieldName("function");
+  while (fn?.type === "generic_function") fn = fn.childForFieldName("function");
   if (fn?.type === "field_expression") {
     const value = fn.childForFieldName("value");
     const field = fn.childForFieldName("field");

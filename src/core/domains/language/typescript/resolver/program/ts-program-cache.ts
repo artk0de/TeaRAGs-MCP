@@ -586,7 +586,21 @@ function buildCompilerOptions(repoRoot: string, tsOptions: TsCompilerOptions): t
   };
 }
 
-export class TSProgramCache {
+/**
+ * What the resolver's strategies may ask of the Program cache (bd
+ * tea-rags-mcp-54xwd.6): the handle for a project file plus the project-file
+ * tests their predicates run. `TSProgramCache` implements it; strategies hold
+ * the port, so the concrete cache is one supplier of the role.
+ */
+export interface TSProgramCachePort {
+  /** Absolute, realpath-normalized project root — the anchor of every path answer. */
+  readonly repoRoot: string;
+  acquire: (relPath: RelPath) => TSProgramHandle | null;
+  isProjectSourceFile: (absolutePath: string) => boolean;
+  toProjectSourceRelPath: (absolutePath: string) => RelPath | null;
+}
+
+export class TSProgramCache implements TSProgramCachePort {
   /** Absolute, realpath-normalized project root. */
   readonly repoRoot: string;
   private readonly tsOptions: TsCompilerOptions;

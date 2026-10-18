@@ -219,7 +219,8 @@ conclude absence from a graph the index says is incomplete.
   up in its own package alone (a project alias of an external type has none),
   every other type's package-blind
 - **Java** — 6-strategy + java.lang stdlib whitelist + overload disambiguation
-- **Rust** — 7-strategy; trait-based dispatch
+- **Rust** — 7-strategy; trait dispatch; declared return/struct-field chains
+  (Self, owner generics); same-file declared bare-call result locals
 - **Ruby** — 15-strategy chain + 4 dispatch components
   (table/union/cone/dynamic) + 20-grammar DSL catalogue + arity/kwarg-narrowed
   fan-out (corpus-adaptive p99 cap) + YARD type-source + db/schema.rb column

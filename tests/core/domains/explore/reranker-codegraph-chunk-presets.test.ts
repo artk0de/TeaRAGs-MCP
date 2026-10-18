@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { CriticalPathPreset } from "../../../../src/core/api/internal/composite-presets/critical-path.js";
 import { Reranker } from "../../../../src/core/domains/explore/reranker.js";
 import {
   CODEGRAPH_SYMBOLS_CHUNK_SIGNALS,
@@ -7,7 +8,6 @@ import {
 } from "../../../../src/core/domains/trajectory/codegraph/symbols/payload-signals.js";
 import { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "../../../../src/core/domains/trajectory/codegraph/symbols/rerank/derived-signals/index.js";
 import { CODEGRAPH_SYMBOLS_PRESETS } from "../../../../src/core/domains/trajectory/codegraph/symbols/rerank/presets/index.js";
-import { CriticalPathPreset } from "../../../../src/core/domains/trajectory/composite/presets/critical-path.js";
 import { gitPayloadSignalDescriptors } from "../../../../src/core/domains/trajectory/git/payload-signals.js";
 import { gitDerivedSignals } from "../../../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
 import { staticDerivedSignals } from "../../../../src/core/domains/trajectory/static/rerank/derived-signals/index.js";

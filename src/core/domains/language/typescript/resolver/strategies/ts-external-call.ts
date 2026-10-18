@@ -38,7 +38,7 @@ import {
   mapImportToFile,
   type ProjectFileProbe,
   type TsCompilerOptions,
-  type TSProgramCache,
+  type TSProgramCachePort,
 } from "../program/index.js";
 import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
 import { calleeIsExternalLocalBinding } from "./ts-local-callee.js";
@@ -112,7 +112,7 @@ export function targetsExternalImport(
   call: CallRef,
   ctx: CallContext,
   tsOptions: TsCompilerOptions,
-  programCache: TSProgramCache | null = null,
+  programCache: TSProgramCachePort | null = null,
   fileExists?: ProjectFileProbe,
 ): boolean {
   // `?? null` rather than a bare destructure: this now runs on EVERY call
@@ -170,7 +170,7 @@ export function targetsExternalImport(
 function jsxTagMemberDeclaredOutsideProject(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): boolean {
   if (programCache === null || call.jsx !== true || call.receiver === null) return false;
   const handle = programCache.acquire(ctx.callerFile);
@@ -204,7 +204,7 @@ function jsxTagMemberDeclaredOutsideProject(
 function receiverNamesProjectDeclaration(
   call: CallRef,
   handle: { sourceFile: ts.SourceFile; checker: ts.TypeChecker },
-  programCache: TSProgramCache,
+  programCache: TSProgramCachePort,
 ): boolean {
   const receiver = findReceiverExpression(handle.sourceFile, call.startLine, call.member);
   if (receiver === null) return false;
@@ -258,7 +258,7 @@ function receiverNamesProjectDeclaration(
 function checkerResolvesCalleeOutsideProject(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): boolean {
   if (programCache === null || call.member.length === 0) return false;
   if (lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).length === 0) return false;
@@ -360,7 +360,7 @@ function receiverIsExternalInstance(
   call: CallRef,
   ctx: CallContext,
   tsOptions: TsCompilerOptions,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
   fileExists?: ProjectFileProbe,
 ): boolean {
   const receiver = call.receiver ?? null;
@@ -457,7 +457,11 @@ function annotationOrigin(
  * install. Where the type is declared answers all three shapes at once, and it is
  * the question `targetsExternalImport` is named after.
  */
-function checkerTypesReceiverOutsideProject(call: CallRef, ctx: CallContext, programCache: TSProgramCache): boolean {
+function checkerTypesReceiverOutsideProject(
+  call: CallRef,
+  ctx: CallContext,
+  programCache: TSProgramCachePort,
+): boolean {
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return false;
   const receiver = findReceiverExpression(handle.sourceFile, call.startLine, call.member);
@@ -487,7 +491,7 @@ function checkerTypesReceiverOutsideProject(call: CallRef, ctx: CallContext, pro
 function superBaseDeclaredOutsideProject(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): boolean {
   if (programCache === null) return false;
   const handle = programCache.acquire(ctx.callerFile);
@@ -524,7 +528,7 @@ function superBaseDeclaredOutsideProject(
 function thisMemberDeclaredOutsideProject(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): boolean {
   if (programCache === null || call.member.length === 0) return false;
   if (lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).length === 0) return false;
@@ -564,14 +568,14 @@ function thisMemberDeclaredOutsideProject(
  * reports the bare `Map`. A union that survives to here is a genuine multi-type
  * union.
  *
- * {@link TSProgramCache.isProjectSourceFile} is the load-bearing half, and it is
+ * {@link TSProgramCachePort.isProjectSourceFile} is the load-bearing half, and it is
  * NOT the same test as a non-null `toRelPath`: `node_modules` sits inside the
  * repo root, so a repo-root-relative path counts every dependency — and, where
  * the compiler resolves under that root, every BUILTIN — as project code. A
  * project that declares its own `class Map` still keeps its edges: the checker
  * resolves that receiver to the project declaration and this returns `false`.
  */
-function typeDeclaredOutsideProject(checker: ts.TypeChecker, type: ts.Type, programCache: TSProgramCache): boolean {
+function typeDeclaredOutsideProject(checker: ts.TypeChecker, type: ts.Type, programCache: TSProgramCachePort): boolean {
   for (const constituent of typeConstituents(checker, type)) {
     const symbol = constituent.getSymbol();
     if (symbol === undefined) return false;

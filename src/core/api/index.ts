@@ -57,9 +57,14 @@ export type { CompositionResult } from "./internal/composition.js";
 // composition module; bootstrap constructs them here for DI.
 export {
   composeAppOps,
+  emptyCochangeResult,
   emptyArchitectureReport,
   emptyOntologyReport,
   emptyReviewChangesResult,
+  resolveLanguageCapabilities,
+  unjudgedPlannedArchitectureEdges,
+  unplannedArchitectureRestructure,
+  unsimulatedArchitectureRestructure,
 } from "./internal/composition.js";
 export type { AppOpsComposition, AppOpsDeps } from "./internal/composition.js";
 
@@ -250,3 +255,8 @@ export type { IndexFreshnessVerdict } from "../domains/maintenance/freshness/ind
 // from a failed run (bd tea-rags-mcp-62pgi; moved off the contract barrel by
 // k7kmu C3 — a runtime domain edge).
 export { IndexingAlreadyInProgressError } from "../domains/ingest/errors/index.js";
+
+// MCP tool registration surface — the facade bootstrap imports; deep imports
+// of tools/ from outside api would be a facade bypass.
+export { registerAllTools } from "./tools/index.js";
+export type { HealthProbes } from "./tools/middleware/error-handler.js";

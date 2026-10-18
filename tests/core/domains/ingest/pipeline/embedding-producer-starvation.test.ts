@@ -24,9 +24,13 @@ import {
   type EmbeddingEndpointIdentity,
   type EmbeddingThroughputAdaptation,
 } from "../../../../../src/core/domains/ingest/pipeline/embedding-throughput-tuner.js";
-import { BatchAccumulator } from "../../../../../src/core/domains/ingest/pipeline/infra/batch-accumulator.js";
 import { pipelineLog } from "../../../../../src/core/domains/ingest/pipeline/infra/debug-log/debug-logger.js";
-import type { Batch, ChunkItem, WorkItem } from "../../../../../src/core/domains/ingest/pipeline/infra/index.js";
+import {
+  BatchAccumulator,
+  type Batch,
+  type ChunkItem,
+  type WorkItem,
+} from "../../../../../src/core/domains/ingest/pipeline/infra/index.js";
 import { buildPipelineConfig } from "../../../../../src/core/domains/ingest/pipeline/types.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import { StaticPayloadBuilder } from "../../../../../src/core/domains/trajectory/static/provider.js";
@@ -96,8 +100,9 @@ describe("EmbeddingThroughputTuner — producer starvation", () => {
       seedConcurrency: () => 2,
     });
     tuner.begin(CLUSTER);
-    // Settle the size at 64: it and its only neighbour (32) measure the same.
-    for (const size of [64, 64, 64, 32, 32, 32]) {
+    // Settle the size at 64 over its only neighbour (32). Each size is one
+    // aggregate window: samplesPerSize × concurrency = 6 full batches.
+    for (const size of [...Array<number>(6).fill(64), ...Array<number>(6).fill(32)]) {
       clock += 100;
       tuner.observe({ size, inputChars: size * CHARS, durationMs: size, ok: true, endpoint: CLUSTER });
     }

@@ -24,8 +24,8 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { GraphDbClientPool } from "../src/core/adapters/duckdb/pool.js";
 import { createComposition, SchemaBuilder, type App } from "../src/core/api/index.js";
 import { reviewSectionIds } from "../src/core/api/internal/ops/review-sections/index.js";
+import { registerAllTools } from "../src/core/api/tools/index.js";
 import type { CodegraphDeps } from "../src/core/domains/trajectory/codegraph/index.js";
-import { registerAllTools } from "../src/mcp/tools/index.js";
 
 export interface ToolsListMeasurement {
   bytes: number;

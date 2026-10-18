@@ -4,8 +4,12 @@
 
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { PresetDescriptors } from "../../core/api/public/dto/explore.js";
-import { InvalidParameterError, type App, type PayloadSignalDescriptor } from "../../core/api/public/index.js";
+import {
+  InvalidParameterError,
+  type App,
+  type PayloadSignalDescriptor,
+  type PresetDescriptors,
+} from "../../core/api/public/index.js";
 
 /**
  * The metaOnly response contract — stated once, here. Every search tool's

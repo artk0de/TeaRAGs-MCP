@@ -38,14 +38,14 @@ import {
   type DispatchFanoutOutcome,
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
-import type { TSProgramCache } from "../program/index.js";
+import type { TSProgramCachePort } from "../program/index.js";
 import { CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
 import { receiverProjectInterfaceNames } from "./ts-interface-receiver.js";
 
 export class TSTypeCheckerInterfaceReceiverDispatchResolver implements DispatchResolverComponent {
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache,
+    private readonly programCache: TSProgramCachePort,
     private readonly cone: DispatchResolverComponent,
   ) {}
 

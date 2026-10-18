@@ -120,7 +120,9 @@ export const sharedVersions: LanguageSupportVersions = {
   // are only a constructor, fields and accessors counts in neither bucket. The
   // languages that read it (typescript, javascript, python, java, ruby, swift)
   // bump their own walker too; go and rust keep their reading.
-  walker: 6,
+  // walker 7, bd tea-rags-mcp-2g2og.28: extraction merges preserve own
+  // prototype-named keys in local bindings and nested maps across languages.
+  walker: 7,
   codegraphSchema: 2,
 };
 

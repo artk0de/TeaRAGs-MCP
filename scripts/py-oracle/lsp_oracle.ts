@@ -259,53 +259,161 @@ export function settingsSection(settings: Record<string, unknown>, section: stri
   return cursor ?? null;
 }
 
+/** Protocol payloads above this bound are invalid for an oracle definition session. */
+const MAX_LSP_FRAME_BYTES = 16 * 1024 * 1024;
+const MAX_LSP_HEADER_BYTES = 8 * 1024;
+
+export class LspRequestTimeoutError extends Error {
+  override name = "LspRequestTimeoutError";
+}
+
+export class LspRpcError extends Error {
+  override name = "LspRpcError";
+
+  constructor(
+    readonly code: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export class LspTransportError extends Error {
+  override name = "LspTransportError";
+}
+
+interface PendingLspRequest {
+  resolve: (value: unknown) => void;
+  reject: (failure: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 /** Minimal LSP stdio client: framed JSON-RPC, one pending map, no batching. */
 export class LspClient {
   private readonly child: ChildProcessWithoutNullStreams;
   private buffer = Buffer.alloc(0);
   private nextId = 1;
-  private readonly pending = new Map<number, (value: unknown) => void>();
+  private readonly pending = new Map<number, PendingLspRequest>();
+  private failed: LspTransportError | null = null;
+  private killed = false;
 
-  constructor(launcher: LspLauncher, cwd: string) {
+  constructor(launcher: LspLauncher, cwd: string, spawnChild: typeof spawn = spawn) {
     const [bin, ...args] = launcher.command;
-    this.child = spawn(bin, args, { cwd, env: launcher.env, stdio: ["pipe", "pipe", "pipe"] });
+    this.child = spawnChild(bin, args, { cwd, env: launcher.env, stdio: ["pipe", "pipe", "pipe"] });
     this.child.stderr.setEncoding("utf8");
     this.child.stderr.on("data", () => undefined);
-    this.child.stdout.on("data", (chunk: Buffer) => {
-      this.onData(chunk, launcher.settings);
+    this.child.on("error", (failure: Error) => {
+      this.fail(failure);
     });
+    this.child.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
+      this.fail(new Error(`LSP server exited: code=${String(code)}, signal=${String(signal)}`));
+    });
+    this.child.stdin.on("error", (failure: Error) => {
+      this.fail(failure);
+    });
+    this.child.stdout.on("error", (failure: Error) => {
+      this.fail(failure);
+    });
+    this.child.stdout.on("end", () => {
+      this.fail(new Error("LSP server closed stdout"));
+    });
+    this.child.stdout.on("data", (chunk: Buffer) => {
+      if (this.failed !== null) return;
+      try {
+        this.onData(chunk, launcher.settings);
+      } catch (failure) {
+        this.fail(failure);
+      }
+    });
+  }
+
+  private fail(reason: unknown): void {
+    if (this.failed !== null) return;
+    this.failed = new LspTransportError(
+      reason instanceof Error ? `LSP transport failed: ${reason.message}` : `LSP transport failed: ${String(reason)}`,
+    );
+    this.buffer = Buffer.alloc(0);
+    for (const [id, request] of this.pending) {
+      clearTimeout(request.timer);
+      this.pending.delete(id);
+      request.reject(this.failed);
+    }
   }
 
   private onData(chunk: Buffer, settings: Record<string, unknown>): void {
     this.buffer = Buffer.concat([this.buffer, chunk]);
     for (;;) {
       const header = this.buffer.indexOf("\r\n\r\n");
-      if (header < 0) return;
-      const match = /Content-Length: (\d+)/i.exec(this.buffer.subarray(0, header).toString("utf8"));
-      if (match === null) throw new Error("no Content-Length in LSP header");
+      if (header < 0) {
+        if (this.buffer.length > MAX_LSP_HEADER_BYTES) throw new Error("LSP header exceeds limit");
+        return;
+      }
+      if (header > MAX_LSP_HEADER_BYTES) throw new Error("LSP header exceeds limit");
+      const headerLines = this.buffer.subarray(0, header).toString("ascii").split("\r\n");
+      const lengths = headerLines.flatMap((line) => {
+        const match = /^Content-Length:\s*(\d+)\s*$/i.exec(line);
+        return match === null ? [] : [Number(match[1])];
+      });
+      if (lengths.length !== 1 || !Number.isSafeInteger(lengths[0]) || lengths[0] > MAX_LSP_FRAME_BYTES) {
+        throw new Error("invalid LSP Content-Length");
+      }
       const start = header + 4;
-      const length = Number(match[1]);
+      const length = lengths[0];
       if (this.buffer.length < start + length) return;
       const body = this.buffer.subarray(start, start + length).toString("utf8");
       this.buffer = this.buffer.subarray(start + length);
-      const message = JSON.parse(body) as { id?: number; method?: string; params?: unknown; result?: unknown };
+      const message: unknown = JSON.parse(body);
+      if (typeof message !== "object" || message === null || Array.isArray(message)) {
+        throw new Error("invalid LSP JSON-RPC message");
+      }
+      const rpc = message as {
+        id?: number | string;
+        method?: unknown;
+        params?: unknown;
+        result?: unknown;
+        error?: { code?: unknown; message?: unknown };
+      };
       // A server-to-client REQUEST carries a method as well as an id. The
       // configuration pull MUST be answered per item, resolving each item's
       // `section` against the settings tree — a one-element reply leaves the
       // server on its defaults, which the spike measured as `unknown` rising
       // from 8.6 % to 50.4 %.
-      if (message.method !== undefined && message.id !== undefined) {
-        this.replyToServer(message.id, message.method, message.params, settings);
+      if (rpc.method !== undefined) {
+        if (typeof rpc.method !== "string") throw new Error("invalid LSP JSON-RPC method");
+        if (rpc.id === undefined) continue; // Server notification: no response is expected.
+        if (typeof rpc.id !== "number" && typeof rpc.id !== "string") {
+          throw new Error("invalid LSP JSON-RPC request");
+        }
+        this.replyToServer(rpc.id, rpc.method, rpc.params, settings);
         continue;
       }
-      if (message.id !== undefined && this.pending.has(message.id)) {
-        this.pending.get(message.id)?.(message.result ?? null);
-        this.pending.delete(message.id);
+      if (typeof rpc.id === "number") {
+        const request = this.pending.get(rpc.id);
+        if (request === undefined) continue;
+        if (rpc.error !== undefined) {
+          if (
+            Object.hasOwn(rpc, "result") ||
+            rpc.error === null ||
+            !Number.isInteger(rpc.error.code) ||
+            typeof rpc.error.message !== "string"
+          ) {
+            throw new Error("invalid LSP JSON-RPC error");
+          }
+        } else if (!Object.hasOwn(rpc, "result")) {
+          throw new Error("invalid LSP JSON-RPC response");
+        }
+        this.pending.delete(rpc.id);
+        clearTimeout(request.timer);
+        if (rpc.error !== undefined) {
+          request.reject(new LspRpcError(rpc.error.code as number, rpc.error.message as string));
+        } else {
+          request.resolve(rpc.result);
+        }
       }
     }
   }
 
-  private replyToServer(id: number, method: string, params: unknown, settings: Record<string, unknown>): void {
+  private replyToServer(id: number | string, method: string, params: unknown, settings: Record<string, unknown>): void {
     if (method !== "workspace/configuration") {
       this.send({ jsonrpc: "2.0", id, result: null });
       return;
@@ -317,8 +425,14 @@ export class LspClient {
   }
 
   private send(payload: object): void {
+    if (this.failed !== null) throw this.failed;
     const body = JSON.stringify(payload);
-    this.child.stdin.write(`Content-Length: ${String(Buffer.byteLength(body, "utf8"))}\r\n\r\n${body}`);
+    try {
+      this.child.stdin.write(`Content-Length: ${String(Buffer.byteLength(body, "utf8"))}\r\n\r\n${body}`);
+    } catch (failure) {
+      this.fail(failure);
+      throw this.failed ?? new LspTransportError("LSP transport failed");
+    }
   }
 
   notify(method: string, params: object): void {
@@ -326,18 +440,31 @@ export class LspClient {
   }
 
   async request(method: string, params: object, timeoutMs = 20_000): Promise<unknown> {
+    if (this.failed !== null) return Promise.reject(this.failed);
     const id = this.nextId++;
-    const settled = new Promise<unknown>((done) => {
-      this.pending.set(id, done);
-      setTimeout(() => {
-        if (this.pending.delete(id)) done(null);
-      }, timeoutMs).unref();
+    return new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (!this.pending.delete(id)) return;
+        reject(new LspRequestTimeoutError(`LSP request timed out: ${method}`));
+      }, timeoutMs);
+      timer.unref();
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        this.send({ jsonrpc: "2.0", id, method, params });
+      } catch (failure) {
+        // send() already failed and settled every pending request.
+        if (this.pending.delete(id)) {
+          clearTimeout(timer);
+          reject(this.failed ?? new LspTransportError(String(failure)));
+        }
+      }
     });
-    this.send({ jsonrpc: "2.0", id, method, params });
-    return settled;
   }
 
   kill(): void {
+    if (this.killed) return;
+    this.killed = true;
+    this.fail(new Error("LSP client killed"));
     this.child.kill();
   }
 }

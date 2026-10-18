@@ -34,6 +34,8 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { TypeDeclarationFact } from "../../../../contracts/types/codegraph-extraction.js";
+import { rustDeclaredStructFields } from "./field-types.js";
+import { rustGenericParameters } from "./return-types.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
 
 const DECLARATION_NODE_TYPES: ReadonlySet<string> = new Set([
@@ -68,12 +70,17 @@ export function rustTypeDeclarationFactOf(node: AstNode, scope: readonly string[
   const symbolKind = symbolKindOf(node.type, { ownerItem: rustOwnerItemOf(node) });
   if (name === undefined || symbolKind === undefined) return null;
   const conforms = node.type === "trait_item" ? rustSupertraitNames(node) : [];
+  const genericParameters = rustGenericParameters(node);
+  const { genericFieldParameters, fieldTypeArguments } = rustDeclaredStructFields(node, genericParameters);
   return {
     typeId: [...scope, name].join("::"),
     symbolKind,
     line: node.startPosition.row + 1,
     reopens: false,
     ...(conforms.length > 0 ? { conforms } : {}),
+    ...(genericParameters.length > 0 ? { genericParameters } : {}),
+    ...(Object.keys(genericFieldParameters).length > 0 ? { genericFieldParameters } : {}),
+    ...(Object.keys(fieldTypeArguments).length > 0 ? { fieldTypeArguments } : {}),
   };
 }
 

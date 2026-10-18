@@ -62,7 +62,7 @@ import type {
   SymbolLookupRole,
 } from "../../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { loadTypeScriptCompiler, mapImportToFile, type TSProgramCache } from "../program/index.js";
+import { loadTypeScriptCompiler, mapImportToFile, type TSProgramCachePort } from "../program/index.js";
 import { reexportOriginFile, type ResolverConfig } from "./shared.js";
 import { receiverTypeName } from "./ts-external-call.js";
 import { calledMemberDeclarations, declarationOwnerName } from "./ts-type-checker-shared.js";
@@ -99,7 +99,7 @@ export function memberCandidateLacksReceiverEvidence(
   call: CallRef,
   ctx: CallContext,
   cfg: EvidenceConfig,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
   candidate: EvidenceCandidate,
 ): boolean {
   const { receiver } = call;
@@ -415,7 +415,7 @@ export function declarationAccountsFor(
   declaration: ts.Declaration,
   candidate: EvidenceCandidate,
   ctx: CallContext,
-  programCache: TSProgramCache,
+  programCache: TSProgramCachePort,
 ): boolean {
   const declaringFile = programCache.toProjectSourceRelPath(declaration.getSourceFile().fileName);
   const sameSite = declaringFile !== null && declarationFileTypes(declaringFile, candidate.relPath);

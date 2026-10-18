@@ -5,7 +5,10 @@ import { dirname, join } from "node:path";
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
+import {
+  TSProgramCache,
+  type TSProgramCachePort,
+} from "../../../../../../src/core/domains/language/typescript/resolver/program/ts-program-cache.js";
 
 // `typescript`'s CJS default export is non-configurable, so `vi.spyOn(ts,
 // "createProgram")` fails with "Cannot redefine property". Replacing the
@@ -1175,5 +1178,44 @@ describe("TSProgramCache type-checks with the option semantics codegraph was mea
       esModuleInterop: false,
       libReplacement: true,
     });
+  });
+});
+
+/**
+ * bd tea-rags-mcp-54xwd.6 — the strategies' seam. Twenty-four strategy files
+ * and the resolution chain hold the cache as the `TSProgramCache` type while
+ * calling only three questions on it; the port declares that role, so the
+ * concrete cache is one supplier among possible ones and the component's
+ * abstractness counts a real contract.
+ */
+describe("TSProgramCachePort — the strategy-facing role", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-program-cache-port-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  it("is satisfied by the concrete cache and answers the three strategy questions through it", () => {
+    writeSource(repoRoot, "src/entry.ts", `export const value = 1;\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions: { baseUrl: ".", paths: {} } });
+
+    // Compile-time pin: the class fills the role. A strategy holding the port
+    // never names the concrete cache.
+    const port: TSProgramCachePort = cache;
+
+    // Path classification, not existence: inside the root and outside
+    // node_modules is project source whether or not the file is on disk.
+    expect(port.isProjectSourceFile(join(repoRoot, "src/entry.ts"))).toBe(true);
+    expect(port.isProjectSourceFile(join(repoRoot, "src/absent.ts"))).toBe(true);
+    expect(port.isProjectSourceFile(join(repoRoot, "node_modules/dep/index.d.ts"))).toBe(false);
+    expect(port.toProjectSourceRelPath(join(repoRoot, "src/entry.ts"))).toBe("src/entry.ts");
+    expect(port.toProjectSourceRelPath(join(tmpdir(), "outside-project.ts"))).toBeNull();
+
+    const handle = port.acquire("src/entry.ts");
+    expect(handle?.sourceFile.fileName).toBe(join(repoRoot, "src/entry.ts"));
   });
 });

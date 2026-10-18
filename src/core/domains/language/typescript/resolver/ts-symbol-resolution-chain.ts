@@ -5,12 +5,12 @@
  * Owns the construction and the ORDER of the chain (precedence = array order;
  * the per-pass rationale lives beside each entry). The pass-by-pass table is
  * documented in `ts-resolver.ts`. Passes 12-16 (the checker tier) exist only
- * when a `TSProgramCache` is supplied — `CODEGRAPH_TS_TYPECHECKER=0` hands in
+ * when a `TSProgramCachePort` is supplied — `CODEGRAPH_TS_TYPECHECKER=0` hands in
  * `null` and the chain is built without them (bd tea-rags-mcp-uclbn).
  */
 
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import type { TSProgramCache } from "./program/index.js";
+import type { TSProgramCachePort } from "./program/index.js";
 import {
   TSCallResultCalleeSymbolResolutionStrategy,
   TSFieldTypeSymbolResolutionStrategy,
@@ -54,7 +54,7 @@ export interface TSSymbolResolutionChain {
  */
 export function createTSSymbolResolutionChain(
   cfg: ResolverConfig,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): TSSymbolResolutionChain {
   const fieldType = new TSFieldTypeSymbolResolutionStrategy(cfg);
   const localBinding = new TSLocalBindingSymbolResolutionStrategy(cfg);

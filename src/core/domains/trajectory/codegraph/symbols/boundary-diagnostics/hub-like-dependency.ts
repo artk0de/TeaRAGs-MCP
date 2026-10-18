@@ -102,8 +102,26 @@ export function detectHubLikeDependencies(
   const reach = hubs.length > 0 ? new ReverseComponentReach(componentGraph.dependencies) : undefined;
   const violations = hubs.map((hub): HubLikeDependencyViolation => {
     const fan = fanCountsOf(hub);
-    const dependents = componentGraph.dependencies.filter((d) => d.targetComponent === hub.componentDir);
-    const dependencies = componentGraph.dependencies.filter((d) => d.sourceComponent === hub.componentDir);
+    // The evidence shows the neighbours the verdict counts (bd
+    // tea-rags-mcp-54xwd.20): containment out of both lists, the measured
+    // foundation and all-inheritance rows out of the dependencies - the same
+    // exclusions the fan counts apply, so the display can never contradict
+    // afferentCount/efferentCount.
+    const dependents = componentGraph.dependencies.filter(
+      (d) => d.targetComponent === hub.componentDir && !isContainmentRelation(d.directoryRelation),
+    );
+    const dependencies = componentGraph.dependencies
+      .filter(
+        (d) =>
+          d.sourceComponent === hub.componentDir &&
+          !isContainmentRelation(d.directoryRelation) &&
+          !options.foundationComponents?.has(d.targetComponent),
+      )
+      .map((d) => ({
+        ...d,
+        fileEdges: d.fileEdges.filter((edge) => !cuts.isInheritance(edge.sourceRelPath, edge.targetRelPath)),
+      }))
+      .filter((d) => d.fileEdges.length > 0);
     const churn = options.fileVolatility
       ? meanReading(pathsOf.get(hub.componentDir) ?? [], options.fileVolatility)
       : undefined;

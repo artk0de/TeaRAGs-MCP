@@ -49,7 +49,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../../kernel/index.js";
-import { loadTypeScriptCompiler, type TSProgramCache } from "../program/index.js";
+import { loadTypeScriptCompiler, type TSProgramCachePort } from "../program/index.js";
 import type { ResolverConfig } from "./shared.js";
 
 export class TSTypeCheckerJsxComponentSymbolResolutionStrategy implements SymbolResolutionStrategy {
@@ -57,7 +57,7 @@ export class TSTypeCheckerJsxComponentSymbolResolutionStrategy implements Symbol
 
   constructor(
     private readonly cfg: ResolverConfig,
-    private readonly programCache: TSProgramCache,
+    private readonly programCache: TSProgramCachePort,
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
@@ -220,7 +220,7 @@ export function jsxTagMemberDeclarations(
 /**
  * Every JSX component tag of one SourceFile, keyed `${startLine}:${member}`.
  * Same lifetime argument as {@link callSiteAt}'s index in
- * `./ts-type-checker-shared.ts`: `TSProgramCache` owns SourceFile lifetime, so
+ * `./ts-type-checker-shared.ts`: `TSProgramCachePort` owns SourceFile lifetime, so
  * a re-parse yields a NEW object and the stale index becomes unreachable on its
  * own, while keying by file NAME would hand a changed file stale coordinates.
  */

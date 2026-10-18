@@ -42,7 +42,7 @@ import {
   mapImportToFile,
   type ProjectFileProbe,
   type TsCompilerOptions,
-  type TSProgramCache,
+  type TSProgramCachePort,
 } from "../program/index.js";
 import { findCallExpression } from "./ts-type-checker-fallback.js";
 
@@ -95,7 +95,7 @@ export function importBoundProjectFile(
 export function checkerDeclaresCalleeIn(
   call: CallRef,
   ctx: CallContext,
-  programCache: TSProgramCache | null,
+  programCache: TSProgramCachePort | null,
 ): string | null {
   if (programCache === null) return null;
   const handle = programCache.acquire(ctx.callerFile);

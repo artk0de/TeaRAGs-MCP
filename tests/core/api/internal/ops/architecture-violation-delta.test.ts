@@ -85,10 +85,10 @@ function leakFinding(source: string, target: string, preExisting = true): DiffDe
 
 function mergeFinding(): DiffDetectorFinding {
   return {
-    subject: "src/core/api ~ src/mcp/tools",
+    subject: "src/core/api ~ src/core/api/tools",
     detail: "d",
     detector: "splitCandidates",
-    endpoints: { kind: "componentPair", componentA: "src/core/api", componentB: "src/mcp/tools" },
+    endpoints: { kind: "componentPair", componentA: "src/core/api", componentB: "src/core/api/tools" },
     evidence: {
       strength: 0.7,
       sideA: { changedFileCount: 1, changedFiles: ["src/core/api/a.ts"] },
@@ -269,7 +269,7 @@ describe("collapsePersistingFindings", () => {
 
     expect(collapsed.kept).toEqual([]);
     expect(collapsed.persisting).toEqual([
-      { family: "splitCandidates.merge", subject: "src/core/api ~ src/mcp/tools" },
+      { family: "splitCandidates.merge", subject: "src/core/api ~ src/core/api/tools" },
     ]);
     expect(collapsed.persistingByDetector.get("splitCandidates")).toBe(1);
     expect(collapsed.introducedCount).toBe(0);

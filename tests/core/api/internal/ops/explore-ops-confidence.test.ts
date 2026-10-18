@@ -52,7 +52,7 @@ const STRONG = [
 const WEAK = [
   { id: "1", score: 0.473, payload: { relativePath: "src/core/adapters/qdrant/client.ts" } },
   { id: "2", score: 0.466, payload: { relativePath: "src/cli/commands/doctor.ts" } },
-  { id: "3", score: 0.462, payload: { relativePath: "src/mcp/tools/explore.ts" } },
+  { id: "3", score: 0.462, payload: { relativePath: "src/core/api/tools/explore.ts" } },
   { id: "4", score: 0.458, payload: { relativePath: "website/docs/api/tools.md" } },
   { id: "5", score: 0.451, payload: { relativePath: "src/core/infra/errors.ts" } },
 ];

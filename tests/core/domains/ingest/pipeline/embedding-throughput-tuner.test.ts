@@ -32,9 +32,19 @@ function peakedCurve(peak: number): (size: number) => number {
   return (size) => 10_000 * Math.pow(0.8, Math.abs(Math.log2(size / peak)));
 }
 
+const MAKE_TUNER_CLOCK = Date.parse("2026-10-02T00:00:00.000Z");
+
+/**
+ * Where `drive` is on each tuner's timeline: batches run back to back from the
+ * frozen clock on, each starting where the previous one ended, so a size
+ * window's wall span is the sum of its durations and its aggregate chars/s is
+ * exactly the curve's rate.
+ */
+const driveTimeline = new WeakMap<EmbeddingThroughputTuner, number>();
+
 function makeTuner(overrides: Partial<EmbeddingThroughputTunerConfig> = {}) {
   const drained: EmbeddingThroughputAdaptation[] = [];
-  const clock = Date.parse("2026-10-02T00:00:00.000Z");
+  const clock = MAKE_TUNER_CLOCK;
   const tuner = new EmbeddingThroughputTuner({
     ceiling: 256,
     floor: 16,
@@ -64,17 +74,21 @@ function drive(
   endpoint: EmbeddingEndpointIdentity = LOCAL,
 ): number[] {
   const sent: number[] = [];
+  let startedAt = driveTimeline.get(tuner) ?? MAKE_TUNER_CLOCK;
   for (let i = 0; i < batches; i++) {
     const size = tuner.decision().batchSize;
     sent.push(size);
     const inputChars = size * CHARS_PER_TEXT;
     if (embedder.failAbove !== undefined && size > embedder.failAbove) {
-      tuner.observe({ size, inputChars, durationMs: 1000, ok: false, endpoint });
+      tuner.observe({ size, inputChars, durationMs: 1000, startedAt, ok: false, endpoint });
+      startedAt += 1000;
       continue;
     }
     const durationMs = (inputChars / embedder.rate(size)) * 1000;
-    tuner.observe({ size, inputChars, durationMs, ok: true, endpoint });
+    tuner.observe({ size, inputChars, durationMs, startedAt, ok: true, endpoint });
+    startedAt += durationMs;
   }
+  driveTimeline.set(tuner, startedAt);
   return sent;
 }
 
@@ -437,13 +451,16 @@ describe("EmbeddingThroughputTuner", () => {
       const { tuner } = makeClockedTuner({ now: () => 5_000 });
       tuner.begin(REMOTE);
       // Each batch "started" before the clock the probe began at — it was in
-      // flight under the previous concurrency, so nothing may settle concurrency.
+      // flight under the previous decision, so nothing may settle: the size
+      // probe is an aggregate window too, and it waits like the concurrency one.
       for (let i = 0; i < 200; i++) {
         const size = tuner.decision().batchSize;
         tuner.observe({ size, inputChars: size * CHARS_PER_TEXT, durationMs: 100, ok: true, endpoint: REMOTE });
       }
-      expect(tuner.settledOptima()).toHaveLength(1); // the size did settle — concurrency is what waits
-      expect(tuner.drainAdaptations().some((a) => a.reason === "concurrency-settle")).toBe(false);
+      expect(tuner.settledOptima()).toEqual([]);
+      const log = tuner.drainAdaptations();
+      expect(log.some((a) => a.reason === "settle")).toBe(false);
+      expect(log.some((a) => a.reason === "concurrency-settle")).toBe(false);
       expect(tuner.decision().concurrency).toBe(8);
     });
 
@@ -470,6 +487,230 @@ describe("EmbeddingThroughputTuner", () => {
       expect(adaptations()).toContainEqual(
         expect.objectContaining({ kind: "concurrency", from: 4, to: 8, reason: "failure" }),
       );
+    });
+  });
+
+  /**
+   * A tuner on a hand-driven clock. `serial` runs one full batch at the current
+   * size from the clock on and moves the clock to its end; `waves` runs
+   * `concurrency` overlapping batches per wave against `server(c, size)` — the
+   * server's AGGREGATE chars/s at that point.
+   */
+  function makeHandClockedTuner(overrides: Partial<EmbeddingThroughputTunerConfig> = {}) {
+    let clock = 2_000_000;
+    const drained: EmbeddingThroughputAdaptation[] = [];
+    const tuner = new EmbeddingThroughputTuner({
+      ceiling: 256,
+      floor: 16,
+      configuredConcurrency: 1,
+      samplesPerSize: 2,
+      recoveryStreak: 1000,
+      reprobeAfterBatches: 100_000,
+      minImprovement: 0.05,
+      now: () => clock,
+      ...overrides,
+    });
+    tuner.begin(REMOTE);
+    return {
+      tuner,
+      clock: (): number => clock,
+      advance(ms: number): void {
+        clock += ms;
+      },
+      adaptations: (): EmbeddingThroughputAdaptation[] => {
+        drained.push(...tuner.drainAdaptations());
+        return drained;
+      },
+      serial(durationMs: number): void {
+        const size = tuner.decision().batchSize;
+        const startedAt = clock;
+        clock += durationMs;
+        tuner.observe({ size, inputChars: size * CHARS_PER_TEXT, durationMs, startedAt, ok: true, endpoint: REMOTE });
+      },
+      waves(server: (concurrency: number, size: number) => number, count: number): void {
+        for (let w = 0; w < count; w++) {
+          const { batchSize, concurrency } = tuner.decision();
+          const inputChars = batchSize * CHARS_PER_TEXT;
+          const startedAt = clock;
+          const durationMs = ((concurrency * inputChars) / server(concurrency, batchSize)) * 1000;
+          clock = startedAt + durationMs;
+          for (let i = 0; i < concurrency; i++) {
+            tuner.observe({ size: batchSize, inputChars, durationMs, startedAt, ok: true, endpoint: REMOTE });
+          }
+        }
+      },
+    };
+  }
+
+  describe("aggregate size climb", () => {
+    it("never counts a batch of the probed size that started before the size probe opened", () => {
+      const run = makeHandClockedTuner();
+      run.serial(1000);
+      run.serial(1000);
+      expect(run.tuner.decision().batchSize).toBe(128);
+      // A 128 batch formed before the probe opened completes now: it is no sample of it.
+      run.tuner.observe({
+        size: 128,
+        inputChars: 128 * CHARS_PER_TEXT,
+        durationMs: 1000,
+        startedAt: run.clock() - 1500,
+        ok: true,
+        endpoint: REMOTE,
+      });
+      run.serial(1000);
+      expect(run.adaptations().some((a) => a.reason === "settle")).toBe(false);
+      run.serial(1000);
+      expect(run.adaptations()).toContainEqual(expect.objectContaining({ reason: "settle", to: 256 }));
+    });
+
+    it("judges a size only after samplesPerSize × concurrency full batches", () => {
+      const run = makeHandClockedTuner({ configuredConcurrency: 4 });
+      for (let i = 0; i < 7; i++) run.serial(1000);
+      expect(run.tuner.decision().batchSize).toBe(256);
+      run.serial(1000);
+      expect(run.tuner.decision().batchSize).toBe(128);
+    });
+
+    it("measures a size on the wall span of its overlapping batches, not per call", () => {
+      const run = makeHandClockedTuner({ configuredConcurrency: 4, samplesPerSize: 1 });
+      // Four 256 batches in flight together: 1,024,000 chars in one second
+      // aggregate, 256,000 chars/s per call.
+      const startedAt = run.clock();
+      run.advance(1000);
+      for (let i = 0; i < 4; i++) {
+        run.tuner.observe({
+          size: 256,
+          inputChars: 256 * CHARS_PER_TEXT,
+          durationMs: 1000,
+          startedAt,
+          ok: true,
+          endpoint: REMOTE,
+        });
+      }
+      // Four 128 batches one after another: ~427k chars/s per call AND aggregate.
+      // Per call 128 would win; on aggregate 256 does.
+      for (let i = 0; i < 4; i++) run.serial(300);
+      const settle = run.adaptations().find((a) => a.reason === "settle");
+      expect(settle?.to).toBe(256);
+      expect(settle?.charsPerSecond).toBeCloseTo(1_024_000, 0);
+    });
+
+    it("re-measures a size whose window was filled under another concurrency", () => {
+      const run = makeHandClockedTuner({ configuredConcurrency: 8 });
+      const SIZE: Record<number, number> = { 64: 0.6, 128: 0.8, 256: 1 };
+      const CONCURRENCY: Record<number, number> = { 2: 0.5, 4: 1, 8: 0.8 };
+      const server = (c: number, size: number) => 100_000 * (CONCURRENCY[c] ?? 0.1) * (SIZE[size] ?? 0.1);
+      // Size climb at concurrency 8 measures 256 and 128 (16 batches each), then
+      // the concurrency climb settles at 4.
+      for (let i = 0; i < 40 && !run.adaptations().some((a) => a.reason === "concurrency-settle"); i++) {
+        run.waves(server, 1);
+      }
+      expect(run.tuner.decision()).toEqual({ batchSize: 256, concurrency: 4 });
+      run.tuner.observe({ size: 256, inputChars: 256_000, durationMs: 1000, ok: false, endpoint: REMOTE });
+      expect(run.tuner.decision()).toEqual({ batchSize: 128, concurrency: 4 });
+      // The 128 window holds 16 batches measured at concurrency 8 — enough for
+      // samplesPerSize × 4, but not a measurement at 4: 128 is measured afresh.
+      run.waves(server, 1);
+      expect(run.tuner.decision()).toEqual({ batchSize: 128, concurrency: 4 });
+      run.waves(server, 1);
+      expect(run.tuner.decision()).toEqual({ batchSize: 64, concurrency: 4 });
+    });
+  });
+
+  describe("endpoint failure", () => {
+    it("taints the open window without touching the size cap", () => {
+      const run = makeHandClockedTuner();
+      run.serial(1000);
+      run.tuner.noteEndpointFailure(REMOTE);
+      expect(run.tuner.decision()).toEqual({ batchSize: 256, concurrency: 1 });
+      run.serial(1000); // the 256 window completes — tainted, so no measured point
+      run.serial(1000);
+      run.serial(1000); // the 128 window completes untainted
+      expect(run.adaptations().some((a) => a.reason === "failure")).toBe(false);
+      expect(run.tuner.settledOptima()[0]?.optimum).toMatchObject({ batchSize: 128, measurement: "aggregate" });
+    });
+  });
+
+  describe("best-point re-probe", () => {
+    const BY_CONCURRENCY: Record<number, number> = { 1: 0.3, 2: 0.5, 4: 0.75, 8: 1 };
+    const HEALTHY_BY_SIZE: Record<number, number> = { 16: 0.3, 32: 0.4, 64: 0.6, 128: 0.8, 256: 1 };
+    const DEGRADED_BY_SIZE: Record<number, number> = { 16: 0.2, 32: 0.4, 64: 0.6, 128: 0.45, 256: 0.3 };
+    /** 256×8 at 100k chars/s. */
+    const healthy = (c: number, size: number) => 100_000 * (BY_CONCURRENCY[c] ?? 0.1) * (HEALTHY_BY_SIZE[size] ?? 0.1);
+    /** 64×8 at 60k chars/s is the best a degraded server offers; 256×8 drops to 30k. */
+    const degraded = (c: number, size: number) =>
+      100_000 * (BY_CONCURRENCY[c] ?? 0.1) * (DEGRADED_BY_SIZE[size] ?? 0.1);
+    const bestReprobes = (log: EmbeddingThroughputAdaptation[]) =>
+      log.filter((a) => a.reason === "best-reprobe" && a.kind === "batchSize");
+
+    /** Settle healthy at 256×8, fail a batch, and re-settle on the degraded server at 64×8. */
+    function settledDegradedAfterHealthy(recoveryStreak = 16) {
+      const run = makeHandClockedTuner({ configuredConcurrency: 8, recoveryStreak });
+      for (let i = 0; i < 40 && !run.adaptations().some((a) => a.reason === "concurrency-settle"); i++) {
+        run.waves(healthy, 1);
+      }
+      expect(run.tuner.decision()).toEqual({ batchSize: 256, concurrency: 8 });
+      run.tuner.observe({ size: 256, inputChars: 256_000, durationMs: 1000, ok: false, endpoint: REMOTE });
+      const settles = () => run.adaptations().filter((a) => a.reason === "concurrency-settle").length;
+      for (let i = 0; i < 60 && settles() < 2; i++) run.waves(degraded, 1);
+      expect(run.tuner.decision()).toEqual({ batchSize: 64, concurrency: 8 });
+      return run;
+    }
+
+    it("jumps back to the run's best point after 64 settled batches and adopts it when faster", () => {
+      const run = settledDegradedAfterHealthy();
+      run.waves(degraded, 7);
+      expect(bestReprobes(run.adaptations())).toHaveLength(0);
+      run.waves(degraded, 1);
+      expect(bestReprobes(run.adaptations())).toEqual([expect.objectContaining({ from: 64, to: 256 })]);
+      expect(run.tuner.decision()).toEqual({ batchSize: 256, concurrency: 8 });
+      run.waves(healthy, 30);
+      expect(run.tuner.decision()).toEqual({ batchSize: 256, concurrency: 8 });
+      expect(bestReprobes(run.adaptations()).some((a) => a.to === 64)).toBe(false);
+    });
+
+    it("reverts a slower best-point window and doubles the wait before the next jump", () => {
+      const run = settledDegradedAfterHealthy();
+      run.waves(degraded, 8);
+      run.waves(degraded, 2);
+      expect(run.tuner.decision()).toEqual({ batchSize: 64, concurrency: 8 });
+      expect(bestReprobes(run.adaptations()).at(-1)).toMatchObject({ from: 256, to: 64 });
+      const before = bestReprobes(run.adaptations()).length;
+      run.waves(degraded, 15);
+      expect(bestReprobes(run.adaptations())).toHaveLength(before);
+      run.waves(degraded, 1);
+      expect(bestReprobes(run.adaptations())).toHaveLength(before + 1);
+      expect(run.tuner.decision()).toEqual({ batchSize: 256, concurrency: 8 });
+    });
+
+    it("abandons the re-probe on an endpoint failure without doubling the wait", () => {
+      const run = settledDegradedAfterHealthy();
+      run.waves(degraded, 8);
+      expect(run.tuner.decision().batchSize).toBe(256);
+      run.tuner.noteEndpointFailure(REMOTE);
+      expect(run.tuner.decision()).toEqual({ batchSize: 64, concurrency: 8 });
+      const before = bestReprobes(run.adaptations()).length;
+      run.waves(degraded, 8);
+      expect(bestReprobes(run.adaptations())).toHaveLength(before + 1);
+      expect(run.tuner.decision().batchSize).toBe(256);
+    });
+
+    it("defers the jump while the cap is below the run-best size, then jumps once it recovers", () => {
+      // The failure capped the size at 128 and the success streak doubles it back
+      // only after 200 batches — long after the 64-batch wait elapses.
+      const run = settledDegradedAfterHealthy(200);
+      const settles = () => run.adaptations().filter((a) => a.reason === "settle").length;
+      const settledBefore = settles();
+      run.waves(degraded, 8);
+      expect(bestReprobes(run.adaptations())).toHaveLength(0);
+      expect(run.tuner.decision()).toEqual({ batchSize: 64, concurrency: 8 });
+      // The cap recovers to 256: the size climb re-settles at 64.
+      for (let i = 0; i < 16 && settles() === settledBefore; i++) run.waves(degraded, 1);
+      expect(settles()).toBe(settledBefore + 1);
+      expect(bestReprobes(run.adaptations())).toHaveLength(0);
+      for (let i = 0; i < 16 && bestReprobes(run.adaptations()).length === 0; i++) run.waves(degraded, 1);
+      expect(bestReprobes(run.adaptations())).toEqual([expect.objectContaining({ from: 64, to: 256 })]);
+      expect(run.tuner.decision()).toEqual({ batchSize: 256, concurrency: 8 });
     });
   });
 });

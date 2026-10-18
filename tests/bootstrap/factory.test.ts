@@ -197,7 +197,7 @@ vi.mock("../../src/core/domains/trajectory/git/rerank/derived-signals/index.js",
 vi.mock("../../src/core/domains/trajectory/git/rerank/presets/index.js", () => ({
   GIT_PRESETS: [],
 }));
-vi.mock("../../src/mcp/tools/index.js", () => ({
+vi.mock("../../src/core/api/tools/index.js", () => ({
   registerAllTools: vi.fn(),
 }));
 vi.mock("../../src/mcp/resources/index.js", () => ({

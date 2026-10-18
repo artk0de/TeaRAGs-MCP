@@ -229,6 +229,45 @@ describe("detectHubLikeDependencies", () => {
     expect(reading.isContainment("hub", "sink1")).toBe(false);
   });
 
+  // bd tea-rags-mcp-54xwd.20: the evidence lists must show the neighbours the
+  // verdict counts. topDependencies/topDependents were built from the RAW
+  // component graph while afferentCount/efferentCount read post-filter, so a
+  // hub nested under a parent (or over a child) listed containment rows its
+  // own counts denied - on tea-rags the ingest/pipeline hub displayed 6
+  // descendant components its Ce of 14 did not count, and the display is what
+  // an auditor trusts.
+  it("lists no containment row the verdict counts exclude, in either direction", () => {
+    const g = graph();
+    // The hub gains a parent (wrap) and a nested child; both are containment.
+    const rePoint = (relPath: string) => (relPath.startsWith("hub/") ? `wrap/${relPath}` : relPath);
+    g.files = g.files.map((f) => ({ ...f, relPath: rePoint(f.relPath) }));
+    g.edges = g.edges.map((e) => ({
+      ...e,
+      sourceRelPath: rePoint(e.sourceRelPath),
+      targetRelPath: rePoint(e.targetRelPath),
+    }));
+    for (let i = 1; i <= 10; i++) {
+      // The parent imports hub files: an ancestor row for topDependents.
+      g.files.push(file(`wrap/w${i}.ts`));
+      g.edges.push(edge(`wrap/w${i}.ts`, `wrap/hub/h${i}.ts`));
+      // Hub files import their own child: descendant rows for topDependencies.
+      g.files.push(file(`wrap/hub/nested/n${i}.ts`));
+      g.edges.push(edge(`wrap/hub/h${i}.ts`, `wrap/hub/nested/n${i}.ts`));
+    }
+
+    const report = judge(g);
+    expect(report.violations.map((v) => v.component)).toEqual(["wrap/hub"]);
+    const [hub] = report.violations;
+    // The verdict's counts keep excluding containment in both directions.
+    expect(hub).toMatchObject({ afferentCount: 40, efferentCount: 40 });
+    expect(hub.dependentComponentCount).toBe(8);
+    expect(hub.dependencyComponentCount).toBe(8);
+    // So must the evidence: the display shows exactly the neighbours the
+    // counts see.
+    expect(hub.topDependents.map((d) => d.component)).not.toContain("wrap");
+    expect(hub.topDependencies.map((d) => d.component)).not.toContain("wrap/hub/nested");
+  });
+
   it("does not flag a balanced component (I near 0.5) that is no busier than the typical component", () => {
     const report = judge(graph());
     expect(report.violations.some((v) => v.component === "mid")).toBe(false);

@@ -1,0 +1,149 @@
+/**
+ * Provider-gating tests for composite presets — RFC
+ * docs/superpowers/specs/2026-05-21-codegraph-provider-gating-design.md.
+ *
+ * Composite presets declare a mandatory `requires: readonly string[]` field
+ * (trajectory keys they depend on). `buildCompositePresets(registeredKeys)`
+ * returns only those whose requires are fully satisfied. When a required
+ * trajectory is not registered, the corresponding composite preset is
+ * silently dropped — it never reaches the Reranker, the SchemaBuilder, the
+ * MCP preset enum, or the custom-weights schema.
+ *
+ * The previous monolithic `{ codegraph: boolean }` gate is generalised to a
+ * per-preset declarative check against `registeredKeys: Set<string>`.
+ */
+
+import { describe, expect, it } from "vitest";
+
+import {
+  ArchitecturalHubPreset,
+  BlastRadiusPreset,
+  BugHuntCompositePreset,
+  buildCompositePresets,
+  CodeReviewCompositePreset,
+  CriticalPathPreset,
+  DangerousCompositePreset,
+  DecompositionCompositePreset,
+  EntryPointPreset,
+  GodModuleCompositePreset,
+  HotspotsCompositePreset,
+  OwnershipCompositePreset,
+  SecurityAuditCompositePreset,
+  TechDebtCompositePreset,
+} from "../../../../../src/core/api/internal/composite-presets/index.js";
+import type { CompositeRerankPreset } from "../../../../../src/core/contracts/types/reranker.js";
+
+describe("CompositeRerankPreset contract", () => {
+  it("every composite preset declares mandatory requires[] referencing trajectory keys", () => {
+    const composites: CompositeRerankPreset[] = [
+      new HotspotsCompositePreset(),
+      new TechDebtCompositePreset(),
+      new DangerousCompositePreset(),
+      new OwnershipCompositePreset(),
+      new SecurityAuditCompositePreset(),
+      new CodeReviewCompositePreset(),
+      new BlastRadiusPreset(),
+      new ArchitecturalHubPreset(),
+      new EntryPointPreset(),
+      new DecompositionCompositePreset(),
+      new GodModuleCompositePreset(),
+      new CriticalPathPreset(),
+      new BugHuntCompositePreset(),
+    ];
+
+    for (const p of composites) {
+      expect(p.requires).toBeDefined();
+      expect(Array.isArray(p.requires)).toBe(true);
+      expect(p.requires.length).toBeGreaterThan(0);
+      // No "static" — static is always-on; only declare non-default trajectories
+      expect(p.requires).not.toContain("static");
+    }
+  });
+
+  it("override composites (hotspots, techDebt, dangerous, ownership, securityAudit, codeReview, bugHunt) require codegraph.symbols AND git", () => {
+    const overrides: CompositeRerankPreset[] = [
+      new HotspotsCompositePreset(),
+      new TechDebtCompositePreset(),
+      new DangerousCompositePreset(),
+      new OwnershipCompositePreset(),
+      new SecurityAuditCompositePreset(),
+      new CodeReviewCompositePreset(),
+      new BugHuntCompositePreset(),
+    ];
+    for (const p of overrides) {
+      expect(p.requires).toContain("codegraph.symbols");
+      expect(p.requires).toContain("git");
+    }
+  });
+
+  it("BlastRadius + ArchitecturalHub require codegraph.symbols AND git (mix structural + churn)", () => {
+    expect(new BlastRadiusPreset().requires).toEqual(expect.arrayContaining(["codegraph.symbols", "git"]));
+    expect(new ArchitecturalHubPreset().requires).toEqual(expect.arrayContaining(["codegraph.symbols", "git"]));
+  });
+
+  it("CriticalPath requires codegraph.symbols AND git (pageRank + bugFix/churn)", () => {
+    expect(new CriticalPathPreset().requires).toEqual(expect.arrayContaining(["codegraph.symbols", "git"]));
+  });
+
+  it("EntryPointPreset requires codegraph.symbols only (no git weights)", () => {
+    const preset = new EntryPointPreset();
+    expect(preset.requires).toEqual(expect.arrayContaining(["codegraph.symbols"]));
+    expect(preset.requires).not.toContain("git");
+  });
+});
+
+describe("buildCompositePresets — declarative requires gating", () => {
+  it("returns empty array when no relevant trajectories are registered", () => {
+    const result = buildCompositePresets(new Set<string>());
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array when only static is registered (no codegraph, no git)", () => {
+    const result = buildCompositePresets(new Set(["static"]));
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array when only git is registered (codegraph missing — all composites require codegraph)", () => {
+    const result = buildCompositePresets(new Set(["git"]));
+    expect(result).toEqual([]);
+  });
+
+  it("returns the git-free composites when only codegraph.symbols is registered", () => {
+    const result = buildCompositePresets(new Set(["codegraph.symbols"]));
+    expect(result.map((p) => p.name).sort()).toEqual(["decomposition", "entryPoint", "godModule"]);
+    expect(result.some((p) => p instanceof EntryPointPreset)).toBe(true);
+  });
+
+  it("returns all 13 composites when both codegraph.symbols AND git are registered", () => {
+    const result = buildCompositePresets(new Set(["codegraph.symbols", "git"]));
+    expect(result).toHaveLength(13);
+    const names = result.map((p) => p.name).sort();
+    expect(names).toEqual(
+      [
+        "architecturalHub",
+        "blastRadius",
+        "bugHunt",
+        "codeReview",
+        "criticalPath",
+        "dangerous",
+        "decomposition",
+        "entryPoint",
+        "godModule",
+        "hotspots",
+        "ownership",
+        "securityAudit",
+        "techDebt",
+      ].sort(),
+    );
+  });
+
+  it("ignores unknown registered keys (extra keys do not enable extra presets)", () => {
+    const result = buildCompositePresets(new Set(["codegraph.symbols", "git", "future-trajectory"]));
+    expect(result).toHaveLength(13);
+  });
+
+  it("dropped composites are silently absent, not error", () => {
+    expect(() => buildCompositePresets(new Set(["git"]))).not.toThrow();
+    expect(() => buildCompositePresets(new Set())).not.toThrow();
+  });
+});

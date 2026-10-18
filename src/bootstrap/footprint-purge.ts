@@ -13,13 +13,13 @@
 import { join } from "node:path";
 
 import { CodegraphDbFiles } from "../core/adapters/duckdb/codegraph-db-files.js";
-import { DaemonDatabaseFileReplacer } from "../core/adapters/duckdb/daemon/database-file-replacer.js";
 import {
+  DaemonDatabaseFileReplacer,
   getStorageDir,
   readDaemonPid,
   readRefs,
   resolveDaemonClientTarget,
-} from "../core/adapters/duckdb/daemon/lifecycle.js";
+} from "../core/adapters/duckdb/daemon/index.js";
 import { ResidualVerdictStore } from "../core/adapters/duckdb/index.js";
 import { StatsCache } from "../core/adapters/filesystem/stats-cache.js";
 import type {

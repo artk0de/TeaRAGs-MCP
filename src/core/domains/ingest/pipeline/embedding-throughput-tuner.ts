@@ -2,16 +2,25 @@
  * EmbeddingThroughputTuner — the ONE owner of the embedding batch size and the
  * embed concurrency a run uses (bd tea-rags-mcp-7ju66).
  *
- * Five behaviours, one state machine per embedding identity (provider +
+ * Seven behaviours, one state machine per embedding identity (provider +
  * endpoint set + model):
  *
  * 1. Sticky downshift. A batch the server failed on SIZE halves the failure cap
  *    for every later batch, not just the failing one. A streak of successes
  *    doubles the cap back one step at a time; the climb then decides whether
  *    the freed size is actually worth using.
- * 2. Throughput hill-climb. Each size is measured over a few FULL batches as
- *    chars/s — input size, not text count, because chunk sizes vary — and the
- *    neighbours ×½ and ×2 inside [floor, cap] are probed; the tuner moves to a
+ * 2. Throughput hill-climb. Each size is measured as chars/s — input size, not
+ *    text count, because chunk sizes vary — over an AGGREGATE window, like the
+ *    concurrency climb (3): `samplesPerSize × concurrency` FULL batches at that
+ *    size that started once its probe opened, input chars over the window's
+ *    wall-clock span. Per-call chars/s is confounded while several calls of
+ *    mixed sizes share the server: a live run read 10k, 27k and 44k chars/s
+ *    for 32, 16 and 64 within two seconds. Every complete window not tainted
+ *    by a starved batch or a failure is a measured point (4). A window belongs
+ *    to the concurrency it was measured at: once concurrency changed (a
+ *    concurrency settle, then a downshift) it is neither complete nor
+ *    comparable, and the size is re-measured. The neighbours
+ *    ×½ and ×2 inside [floor, cap] are probed; the tuner moves to a
  *    neighbour only when it beats the current size by `minImprovement`, and
  *    settles when neither does. Every `reprobeAfterBatches` settled batches the
  *    settled point is re-probed UPWARD only (bd tea-rags-mcp-cyw2r): size ×2
@@ -39,7 +48,11 @@
  *    a run that ends mid-climb still hands its best level to the next one. A
  *    window that saw a producer-starved batch or a server failure is not a
  *    measurement. `settledOptima` reconciles that best with the stored optimum
- *    (`EmbeddingThroughputTuner#optimumToPersist`).
+ *    (`EmbeddingThroughputTuner#optimumToPersist`). Those points are kept per
+ *    climb EPISODE (a failure, recovery or slowdown starts a new one); apart
+ *    from them the tuner keeps the RUN-BEST point — the fastest measured point
+ *    of the whole run, never cleared — which the best-point re-probe (6)
+ *    returns to.
  * 5. Trusted seed and slowdown guard (bd tea-rags-mcp-cyw2r). An endpoint with
  *    a stored AGGREGATE optimum starts settled at it — no size probes, no
  *    concurrency climb; the record has no age limit. Every settled point (a
@@ -48,9 +61,27 @@
  *    of its reference rate drops the run into the full climb (`seed-slower` /
  *    `settled-slower`) — and so does the first window an upward re-probe
  *    re-measures the working point with.
+ * 6. Best-point re-probe. A climb under degraded conditions (after a failure
+ *    or a slowdown) can settle well below the run-best point, and the upward
+ *    re-probe (2) waits `reprobeAfterBatches` and only steps ×2. So when the
+ *    concurrency settles at a point other than the run-best, slower than it by
+ *    more than `minImprovement`, the tuner jumps straight to the run-best
+ *    (batchSize, concurrency) after `bestPointReprobeAfterBatches` settled
+ *    batches — deferred while the cap is below the run-best size — and
+ *    measures one aggregate window of batches started after the jump. Faster
+ *    than the settled rate by `minImprovement`: the run-best becomes the
+ *    settled point and the slowdown guard re-arms at the new rate. Otherwise
+ *    the settled point is restored and the wait doubles, up to
+ *    `reprobeAfterBatches`. A failure, recovery or starvation abandons the
+ *    re-probe without counting it as a loss. Logged as `best-reprobe`.
+ * 7. Endpoint-failure taint (`EmbeddingThroughputTuner#noteEndpointFailure`).
+ *    A transport-level failure that says nothing about the batch size taints
+ *    every open window and reopens the slowdown guard, like a size failure,
+ *    but never moves the cap and never touches the success streak.
  *
  * Pure: no clock reads beyond the injected `now` (stamps a settle, opens a
- * concurrency probe, and dates an observation that carries no `startedAt`),
+ * size, concurrency or best-point probe, and dates an observation that carries
+ * no `startedAt`),
  * no timers, no I/O. The caller measures each batch and feeds it in.
  */
 
@@ -146,7 +177,13 @@ export type EmbeddingThroughputAdaptationReason =
   /** A trusted seed measured below SETTLED_THROUGHPUT_SLOWDOWN_SHARE of its stored rate; the climb restarts. */
   | "seed-slower"
   /** The run's own settled point measured below SETTLED_THROUGHPUT_SLOWDOWN_SHARE of its settle rate. */
-  | "settled-slower";
+  | "settled-slower"
+  /**
+   * The best-point re-probe: a jump from the settled point to the run-best
+   * point, its adoption, or its revert (a slower window, a failure, recovery or
+   * starvation) back to the settled point.
+   */
+  | "best-reprobe";
 
 /** One change of the decision, for the pipeline debug log. */
 export interface EmbeddingThroughputAdaptation {
@@ -180,6 +217,11 @@ export interface EmbeddingThroughputTunerConfig {
   recoveryStreak?: number;
   /** Settled batches between upward re-probes. Default 1000. */
   reprobeAfterBatches?: number;
+  /**
+   * Settled batches before the first jump back to the run-best point; doubles
+   * after every losing jump, up to `reprobeAfterBatches`. Default 64.
+   */
+  bestPointReprobeAfterBatches?: number;
   /** Relative gain a neighbour must show to win. Default 0.05. */
   minImprovement?: number;
   /** Clock for the settle timestamp. Default Date.now. */
@@ -211,13 +253,10 @@ export interface EmbeddingEndpointThroughputOptimum {
   storedOptimum?: EmbeddingThroughputOptimum;
 }
 
-interface SizeSample {
-  chars: number;
-  ms: number;
-  count: number;
-}
-
-/** Full batches seen at one concurrency, measured as one wall-clock window. */
+/**
+ * Full batches measured as one wall-clock window — a size probe, a concurrency
+ * probe, the slowdown guard, or a best-point re-probe.
+ */
 interface ConcurrencySample {
   chars: number;
   count: number;
@@ -228,6 +267,15 @@ interface ConcurrencySample {
    * open: the climb may still judge it, but it is no measurement to persist.
    */
   tainted: boolean;
+}
+
+/**
+ * A size probe's window. It is measured at the concurrency in force while it
+ * filled and belongs to it, the way a concurrency window belongs to its map
+ * key: under any other concurrency it is neither complete nor comparable.
+ */
+interface SizeSample extends ConcurrencySample {
+  concurrency: number;
 }
 
 /** A complete, trusted aggregate window — one measured (batchSize, concurrency) point. */
@@ -262,7 +310,10 @@ interface EndpointTuneState {
   /** Size the next batches are formed at — `working`, or a neighbour under probe. */
   target: number;
   settled: boolean;
+  /** Aggregate window per probed size, each bound to the concurrency it was measured at. */
   samples: Map<number, SizeSample>;
+  /** Clock at which the current size probe opened; earlier-started batches don't count. */
+  sizeProbeStartedAt: number;
   successStreak: number;
   batchesSinceSettle: number;
   /** Concurrency in force — `concurrencyWorking`, or a neighbour under probe. */
@@ -313,6 +364,19 @@ interface EndpointTuneState {
    * re-measures the working point first, and that measurement is held to it.
    */
   upwardReprobeReferenceCharsPerSecond?: number;
+  /** Fastest measured point of the whole run — kept across episodes, unlike `measuredPoints`. */
+  runBestPoint?: MeasuredThroughputPoint;
+  /** A best-point re-probe is measuring the run-best point; the settled point is `working` × `concurrencyWorking`. */
+  bestReprobeActive: boolean;
+  /** The best-point re-probe's window; only batches started after the jump count. */
+  bestReprobeSample: ConcurrencySample;
+  bestReprobeStartedAt: number;
+  /** Settled rate the best-point window must beat by `minImprovement`. */
+  bestReprobeReferenceCharsPerSecond: number;
+  /** Settled batches since the settle or the last best-point re-probe ended. */
+  bestReprobeBatches: number;
+  /** Settled batches the next best-point re-probe waits for; doubles after a loss. */
+  bestReprobeWait: number;
 }
 
 function endpointKey(endpoint: EmbeddingEndpointIdentity): string {
@@ -325,6 +389,7 @@ export class EmbeddingThroughputTuner {
   private readonly samplesPerSize: number;
   private readonly recoveryStreak: number;
   private readonly reprobeAfterBatches: number;
+  private readonly bestPointReprobeAfterBatches: number;
   private readonly minImprovement: number;
   private readonly now: () => number;
   private readonly states = new Map<string, EndpointTuneState>();
@@ -337,6 +402,10 @@ export class EmbeddingThroughputTuner {
     this.samplesPerSize = config.samplesPerSize ?? 3;
     this.recoveryStreak = config.recoveryStreak ?? 16;
     this.reprobeAfterBatches = config.reprobeAfterBatches ?? 1000;
+    this.bestPointReprobeAfterBatches = Math.min(
+      this.reprobeAfterBatches,
+      Math.max(1, config.bestPointReprobeAfterBatches ?? 64),
+    );
     this.minImprovement = config.minImprovement ?? 0.05;
     this.now = config.now ?? Date.now;
   }
@@ -374,7 +443,9 @@ export class EmbeddingThroughputTuner {
 
     if (state.settled) {
       state.batchesSinceSettle++;
-      if (state.batchesSinceSettle >= this.reprobeAfterBatches) {
+      if (state.bestReprobeActive) {
+        this.sampleBestReprobe(state, observation);
+      } else if (state.batchesSinceSettle >= this.reprobeAfterBatches) {
         this.startUpwardReprobe(state);
       } else if (state.concurrencyPhase === "climbing") {
         if (this.isProducerStarved(state)) {
@@ -385,19 +456,45 @@ export class EmbeddingThroughputTuner {
         }
       } else if (state.slowdownGuardCharsPerSecond !== undefined) {
         this.guardSettledPoint(state, observation, state.slowdownGuardCharsPerSecond);
+        this.countTowardBestReprobe(state);
       }
       return this.decision();
     }
 
-    if (observation.size === state.target && observation.durationMs > 0) {
-      const sample = state.samples.get(state.target) ?? { chars: 0, ms: 0, count: 0 };
-      sample.chars += observation.inputChars;
-      sample.ms += observation.durationMs;
-      sample.count++;
-      state.samples.set(state.target, sample);
-      if (sample.count >= this.samplesPerSize) this.continueClimb(state, "probe");
-    }
+    this.sampleSize(state, observation);
     return this.decision();
+  }
+
+  /**
+   * A transport-level failure of `endpoint` that is not a SIZE failure (a
+   * refused connection, a timeout, a 5xx): every open measurement window stops
+   * counting as a measurement and the slowdown guard reopens — a window that
+   * rode through it measured the outage, not the server. The size cap and the
+   * success streak are untouched: nothing here says the batch was too big.
+   * The failure belongs to that identity's state, so it activates it the way
+   * `observe` does; the caller reports the identity the failing batch went to,
+   * which is the one in force.
+   */
+  noteEndpointFailure(endpoint: EmbeddingEndpointIdentity): void {
+    this.taintMeasurementWindows(this.switchTo(endpoint));
+  }
+
+  /**
+   * Count one observation toward the size under probe: a full batch at the
+   * target size that started once the probe opened. A complete window is
+   * recorded as a measured point unless something untrustworthy rode in it,
+   * and the climb judges it either way.
+   */
+  private sampleSize(state: EndpointTuneState, observation: EmbeddingBatchObservation): void {
+    const window = this.sizeWindow(state, state.target) ?? this.emptySizeWindow(state);
+    if (!this.addToWindow(window, observation, state.target, state.sizeProbeStartedAt)) return;
+    state.samples.set(state.target, window);
+    if (window.count < this.samplesPerSize * state.concurrency) return;
+    const charsPerSecond = this.windowRate(window);
+    if (charsPerSecond !== undefined && !window.tainted) {
+      this.recordMeasuredPoint(state, state.concurrency, charsPerSecond);
+    }
+    this.continueClimb(state, "probe");
   }
 
   /**
@@ -481,20 +578,130 @@ export class EmbeddingThroughputTuner {
       state.measuredPointsStale = false;
     }
     const key = throughputPointKey(state.target, concurrency);
-    state.measuredPoints.set(key, { batchSize: state.target, concurrency, charsPerSecond, measuredAt: this.now() });
+    const point = { batchSize: state.target, concurrency, charsPerSecond, measuredAt: this.now() };
+    state.measuredPoints.set(key, point);
     state.measuredPointKeys.add(key);
+    if (!state.runBestPoint || charsPerSecond > state.runBestPoint.charsPerSecond) state.runBestPoint = point;
   }
 
   /**
-   * A producer-starved batch or a server failure: every open aggregate window —
-   * including the one the probe in force has yet to fill — stops counting as a
-   * measurement (the climb still judges it), and the slowdown guard reopens.
+   * A producer-starved batch or a failure (of a size or of the endpoint):
+   * every open aggregate window — including the one the probe in force has yet
+   * to fill — stops counting as a measurement (the climb still judges it), a
+   * best-point re-probe is abandoned, and the slowdown guard reopens.
    */
   private taintMeasurementWindows(state: EndpointTuneState): void {
+    this.abandonBestReprobe(state);
     for (const sample of state.concurrencySamples.values()) sample.tainted = true;
     if (state.concurrencyPhase === "climbing" && !state.concurrencySamples.has(state.concurrency)) {
       state.concurrencySamples.set(state.concurrency, { ...emptyConcurrencySample(), tainted: true });
     }
+    if (!state.settled) {
+      const window = this.sizeWindow(state, state.target) ?? this.emptySizeWindow(state);
+      window.tainted = true;
+      state.samples.set(state.target, window);
+    }
+    this.reopenSlowdownGuard(state);
+  }
+
+  /**
+   * One settled batch toward the best-point re-probe; at the wait, jump. The
+   * jump needs a run-best point other than the settled one that beats the
+   * settled rate by `minImprovement`, and a cap that admits its size — below
+   * it the jump waits for the cap to recover.
+   */
+  private countTowardBestReprobe(state: EndpointTuneState): void {
+    if (!state.settled || state.concurrencyPhase !== "settled") return;
+    const reference = state.slowdownGuardCharsPerSecond;
+    const best = state.runBestPoint;
+    if (reference === undefined || !best) return;
+    if (best.batchSize === state.working && best.concurrency === state.concurrencyWorking) return;
+    if (!(best.charsPerSecond > reference * (1 + this.minImprovement))) return;
+    state.bestReprobeBatches++;
+    if (state.bestReprobeBatches < state.bestReprobeWait || best.batchSize > state.cap) return;
+    state.bestReprobeActive = true;
+    state.bestReprobeReferenceCharsPerSecond = reference;
+    state.bestReprobeSample = emptyConcurrencySample();
+    state.bestReprobeStartedAt = this.now();
+    this.moveToPoint(state, best.batchSize, best.concurrency, undefined);
+  }
+
+  /** Emit and apply a jump of the decision to (batchSize, concurrency) as `best-reprobe`. */
+  private moveToPoint(
+    state: EndpointTuneState,
+    batchSize: number,
+    concurrency: number,
+    charsPerSecond: number | undefined,
+  ): void {
+    const rate = charsPerSecond !== undefined ? { charsPerSecond } : {};
+    if (state.target !== batchSize) {
+      this.emit(state, { kind: "batchSize", from: state.target, to: batchSize, reason: "best-reprobe", ...rate });
+      state.target = batchSize;
+    }
+    if (state.concurrency !== concurrency) {
+      this.emit(state, {
+        kind: "concurrency",
+        from: state.concurrency,
+        to: concurrency,
+        reason: "best-reprobe",
+        ...rate,
+      });
+      state.concurrency = concurrency;
+    }
+  }
+
+  /**
+   * Measure the run-best point with one aggregate window. Starvation abandons
+   * it. Faster than the settled rate by `minImprovement` → it becomes the
+   * settled point; otherwise the settled point returns and the wait doubles.
+   */
+  private sampleBestReprobe(state: EndpointTuneState, observation: EmbeddingBatchObservation): void {
+    if (this.isProducerStarved(state)) {
+      this.abandonBestReprobe(state);
+      return;
+    }
+    const window = state.bestReprobeSample;
+    if (!this.addToWindow(window, observation, state.target, state.bestReprobeStartedAt)) return;
+    if (window.count < this.samplesPerSize * state.concurrency) return;
+    const charsPerSecond = this.windowRate(window);
+    if (charsPerSecond === undefined) return;
+    this.recordMeasuredPoint(state, state.concurrency, charsPerSecond);
+    state.bestReprobeActive = false;
+    state.bestReprobeBatches = 0;
+    if (charsPerSecond > state.bestReprobeReferenceCharsPerSecond * (1 + this.minImprovement)) {
+      this.emit(state, {
+        kind: "batchSize",
+        from: state.working,
+        to: state.target,
+        reason: "best-reprobe",
+        charsPerSecond,
+      });
+      if (state.concurrencyWorking !== state.concurrency) {
+        this.emit(state, {
+          kind: "concurrency",
+          from: state.concurrencyWorking,
+          to: state.concurrency,
+          reason: "best-reprobe",
+          charsPerSecond,
+        });
+      }
+      state.working = state.target;
+      state.concurrencyWorking = state.concurrency;
+      state.bestReprobeWait = this.bestPointReprobeAfterBatches;
+      this.armSlowdownGuard(state, charsPerSecond, "settled-slower");
+      return;
+    }
+    state.bestReprobeWait = Math.min(state.bestReprobeWait * 2, this.reprobeAfterBatches);
+    this.moveToPoint(state, state.working, state.concurrencyWorking, charsPerSecond);
+    this.reopenSlowdownGuard(state);
+  }
+
+  /** Leave a best-point re-probe for the settled point; not a loss, so the wait stays. */
+  private abandonBestReprobe(state: EndpointTuneState): void {
+    if (!state.bestReprobeActive) return;
+    state.bestReprobeActive = false;
+    state.bestReprobeBatches = 0;
+    this.moveToPoint(state, state.working, state.concurrencyWorking, undefined);
     this.reopenSlowdownGuard(state);
   }
 
@@ -649,6 +856,7 @@ export class EmbeddingThroughputTuner {
         target: start,
         settled: trusted !== undefined,
         samples: new Map(),
+        sizeProbeStartedAt: this.now(),
         successStreak: 0,
         batchesSinceSettle: 0,
         concurrency,
@@ -670,6 +878,12 @@ export class EmbeddingThroughputTuner {
         slowdownGuardStartedAt: this.now(),
         upwardReprobe: false,
         upwardReprobeStartSize: start,
+        bestReprobeActive: false,
+        bestReprobeSample: emptyConcurrencySample(),
+        bestReprobeStartedAt: 0,
+        bestReprobeReferenceCharsPerSecond: 0,
+        bestReprobeBatches: 0,
+        bestReprobeWait: this.bestPointReprobeAfterBatches,
       };
       this.states.set(key, state);
     }
@@ -686,10 +900,38 @@ export class EmbeddingThroughputTuner {
     return state;
   }
 
-  private rate(state: EndpointTuneState, size: number): number | undefined {
+  /** The window at `size` if it was measured at the concurrency in force; one measured at another is void. */
+  private sizeWindow(state: EndpointTuneState, size: number): SizeSample | undefined {
     const sample = state.samples.get(size);
-    if (!sample || sample.count < this.samplesPerSize || sample.ms <= 0) return undefined;
-    return (sample.chars / sample.ms) * 1000;
+    return sample?.concurrency === state.concurrency ? sample : undefined;
+  }
+
+  private emptySizeWindow(state: EndpointTuneState): SizeSample {
+    return { ...emptyConcurrencySample(), concurrency: state.concurrency };
+  }
+
+  /** Aggregate chars/s of the complete window at `size`; undefined while it fills or under another concurrency. */
+  private rate(state: EndpointTuneState, size: number): number | undefined {
+    const sample = this.sizeWindow(state, size);
+    if (!sample || sample.count < this.samplesPerSize * state.concurrency) return undefined;
+    return this.windowRate(sample);
+  }
+
+  /**
+   * Measure `size` next. A new target opens a fresh probe window — batches
+   * started before now ran at another size or under another decision — and so
+   * does the current target when its window was dropped; a window already
+   * filling at the current target keeps filling.
+   */
+  private probeSize(state: EndpointTuneState, size: number, reason: EmbeddingThroughputAdaptationReason): void {
+    if (state.target === size && this.sizeWindow(state, size)) return;
+    this.openSizeProbe(state, size);
+    this.retarget(state, size, reason);
+  }
+
+  private openSizeProbe(state: EndpointTuneState, size: number): void {
+    state.sizeProbeStartedAt = this.now();
+    if (this.rate(state, size) === undefined) state.samples.delete(size);
   }
 
   private neighbours(state: EndpointTuneState, size: number): number[] {
@@ -714,18 +956,21 @@ export class EmbeddingThroughputTuner {
     reason: "probe" | "reprobe" | "recovery" | "seed-slower" | "settled-slower",
   ): void {
     if (reason !== "probe" && reason !== "reprobe") state.upwardReprobe = false;
+    this.abandonBestReprobe(state);
     state.settled = false;
-    this.abandonConcurrencyClimb(state, reason);
+    // A "probe" step continues the episode in force (the concurrency climb is
+    // already idle); every other reason restarts it.
+    if (reason !== "probe") this.abandonConcurrencyClimb(state, reason);
     for (;;) {
       const workingRate = this.rate(state, state.working);
       if (workingRate === undefined) {
-        this.retarget(state, state.working, reason);
+        this.probeSize(state, state.working, reason);
         return;
       }
       const neighbours = this.neighbours(state, state.working);
       const unmeasured = neighbours.find((size) => this.rate(state, size) === undefined);
       if (unmeasured !== undefined) {
-        this.retarget(state, unmeasured, reason);
+        this.probeSize(state, unmeasured, reason);
         return;
       }
       let best = state.working;
@@ -937,6 +1182,7 @@ export class EmbeddingThroughputTuner {
     state.concurrency = state.concurrencyWorking;
     state.concurrencyPhase = "settled";
     state.upwardReprobe = false;
+    state.bestReprobeBatches = 0;
     this.armSlowdownGuard(state, charsPerSecond, "settled-slower");
     if (state.optimum) {
       state.optimum = {
@@ -979,5 +1225,7 @@ export class EmbeddingThroughputTuner {
       this.emit(state, { kind: "batchSize", from, to: state.target, reason: "failure" });
     }
     if (state.target !== state.working) this.retarget(state, state.working, "failure");
+    // The failure ended whatever window was filling: measure the size in force afresh.
+    this.openSizeProbe(state, state.target);
   }
 }

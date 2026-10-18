@@ -1,4 +1,4 @@
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import { resolveLocalBinding, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   ChainTypeSymbolResolutionStrategy,
@@ -7,6 +7,9 @@ import {
   type ReceiverTypingPorts,
 } from "../../../kernel/index.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-constructor.js";
+import { rustDeclaredCallResultType } from "../declared-call-result-type.js";
+import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
+import { resolveRustNominalType, rustDeclaredMemberReturnType } from "../declared-return-type.js";
 import { createRustTypeMemberLookup } from "../rust-type-member-lookup.js";
 import { lookupRustSymbolsByShortName, rustImportMatchesReceiver, type ResolverConfig } from "./shared.js";
 
@@ -37,23 +40,42 @@ const RUST_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*/;
  * call text must spell `Receiver::member`, which only a scoped path does.
  */
 const RUST_RECEIVER_TYPE_PORTS: ReceiverTypePorts = {
-  singleHopType: (receiver, _atLine, ctx) => rustNamedType(receiver, ctx),
-  seedHead: (head, firstLink, ctx) => {
-    if (firstLink === undefined) return undefined;
-    const type = rustNamedType(head, ctx);
-    return type === undefined ? undefined : { type, consumedMembers: 0 };
+  singleHopType: (receiver, atLine, ctx) => {
+    const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine);
+    const local = binding?.typeRef ?? (binding?.type ? { form: "instance" as const, name: binding.type } : undefined);
+    if (local !== undefined) return resolveRustNominalType(local, ctx);
+    const produced = rustDeclaredCallResultType(receiver, atLine, ctx);
+    if (produced !== undefined) return produced;
+    if (receiver === "self") return rustLexicalSelfType(ctx);
+    const named = rustNamedType(receiver, ctx);
+    if (named === undefined) return undefined;
+    const exact = resolveRustNominalType(named, ctx);
+    if (exact === undefined) return undefined;
+    const constructor = constructorCallHead(receiver);
+    return constructor === undefined
+      ? { ...exact, form: "class" }
+      : rustDeclaredMemberReturnType({ ...exact, form: "class" }, constructor.assocFn, ctx);
   },
-  memberTypeOf: () => undefined,
+  seedHead: () => undefined,
+  memberTypeOf: rustDeclaredMemberReturnType,
+  memberAttributeTypeOf: rustDeclaredFieldType,
   maxHops: () => 8,
 };
+
+export function rustReceiverChainType(call: CallRef, ctx: CallContext): TypeRef | undefined {
+  return call.receiver === null
+    ? undefined
+    : propagateReceiverType(call.receiver, call.startLine, ctx, RUST_RECEIVER_TYPE_PORTS, call.startColumn);
+}
 
 const RUST_TYPE_RECEIVER_TYPING: ReceiverTypingPorts = {
   typeOfReceiver: (call, ctx) => {
     // A CapWords receiver with dot syntax may be a Rust value (`static P`),
     // not a type path. Only scoped `::` calls and constructor-result receivers
     // enter this typed strategy; the legacy chain then keeps its fallback.
+    if (call.receiver?.includes(".")) return rustReceiverChainType(call, ctx) ?? null;
     if (!isTypeReceiverCall(call)) return null;
-    return propagateReceiverType(call.receiver, call.startLine, ctx, RUST_RECEIVER_TYPE_PORTS) ?? null;
+    return rustNamedType(call.receiver, ctx) ?? null;
   },
 };
 

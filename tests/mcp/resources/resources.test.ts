@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { SchemaBuilder } from "../../../src/core/api/index.js";
 import type { PresetDescriptors } from "../../../src/core/api/public/dto/explore.js";
+import { createSearchSchemas, TYPED_FILTER_PARAM_NAMES } from "../../../src/core/api/tools/schemas.js";
 import type { PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
 import { gitPayloadSignalDescriptors } from "../../../src/core/domains/trajectory/git/payload-signals.js";
 import {
@@ -13,9 +14,9 @@ import {
   buildSearchGuide,
   buildSignalLabelsGuide,
   buildSignalsDoc,
+  FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS,
+  META_ONLY_CONTRACT,
 } from "../../../src/mcp/resources/index.js";
-import { FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS, META_ONLY_CONTRACT } from "../../../src/mcp/resources/registry.js";
-import { createSearchSchemas, TYPED_FILTER_PARAM_NAMES } from "../../../src/mcp/tools/schemas.js";
 
 const mockPayloadSignals: PayloadSignalDescriptor[] = [
   {
