@@ -11,10 +11,12 @@ import { skippedResidualReport } from "../../../src/core/api/internal/ops/residu
 
 const COMPLETED = {
   thresholds: {
-    block1: { threshold: 0.5, source: "calibrated" as const, lowerBound: 0.95, n: 140 },
-    fullMenu: { threshold: 0.8, source: "calibrated" as const, lowerBound: 0.93, n: 210 },
-    none: { threshold: 0.5, source: "calibrated" as const, lowerBound: 0.91, n: 160 },
-    pi: 0.18,
+    ruby: {
+      block1: { threshold: 0.5, source: "calibrated" as const, lowerBound: 0.95, n: 140 },
+      fullMenu: { threshold: 0.8, source: "calibrated" as const, lowerBound: 0.93, n: 210 },
+      none: { threshold: 0.5, source: "calibrated" as const, lowerBound: 0.91, n: 160 },
+      pi: 0.18,
+    },
   },
   ...skippedResidualReport("", "ask"),
   outcome: "completed" as const,
@@ -80,16 +82,39 @@ describe("formatResidualReport", () => {
     const text = formatResidualReport({
       ...COMPLETED,
       thresholds: {
-        block1: { threshold: 0.7, source: "default" as const },
-        fullMenu: { threshold: 0.8, source: "calibrated" as const, lowerBound: 0.93, n: 210 },
-        none: { threshold: 0.8, source: "default" as const },
-        pi: 0.18,
-        reason: "applies from the next run: block 1 fit 0.50 decides early accept while asking",
+        ruby: {
+          block1: { threshold: 0.7, source: "default" as const },
+          fullMenu: { threshold: 0.8, source: "calibrated" as const, lowerBound: 0.93, n: 210 },
+          none: { threshold: 0.8, source: "default" as const },
+          pi: 0.18,
+          reason: "applies from the next run: block 1 fit 0.50 decides early accept while asking",
+        },
       },
     });
 
     expect(text).toContain(
-      "  thresholds: block1 0.70 (default) · full 0.80 (calibrated) · none 0.80 (default) — applies from the next run: block 1 fit 0.50 decides early accept while asking\n",
+      "  thresholds ruby: block1 0.70 (default) · full 0.80 (calibrated) · none 0.80 (default) — applies from the next run: block 1 fit 0.50 decides early accept while asking\n",
+    );
+  });
+
+  it("prints one thresholds line per language, a defaults-only language compactly", () => {
+    const text = formatResidualReport({
+      ...COMPLETED,
+      thresholds: {
+        ruby: COMPLETED.thresholds.ruby,
+        typescript: {
+          block1: { threshold: 0.7, source: "default" as const },
+          fullMenu: { threshold: 0.7, source: "default" as const },
+          none: { threshold: 0.8, source: "default" as const },
+          pi: null,
+          reason: "calibration failed: too few static sample rows for typescript: 11 < 60",
+        },
+      },
+    });
+
+    expect(text).toContain(
+      "  thresholds ruby: block1 0.50 (calibrated) · full 0.80 (calibrated) · none 0.50 (calibrated)\n" +
+        "  thresholds typescript: defaults (calibration failed: too few static sample rows for typescript: 11 < 60)\n",
     );
   });
 
@@ -116,7 +141,7 @@ describe("formatResidualReport", () => {
     expect(text).toContain("  confirm stage:    3 questions, 2 accepted\n");
     expect(text).toContain("  windowed groups:  6\n");
     expect(text).toContain(
-      "  thresholds: block1 0.50 (calibrated) · full 0.80 (calibrated) · none 0.50 (calibrated)\n",
+      "  thresholds ruby: block1 0.50 (calibrated) · full 0.80 (calibrated) · none 0.50 (calibrated)\n",
     );
     expect(text).toContain(
       "  requests:         140 (at most 8 questions), latency p50 2100 ms / p95 5400 ms, peak in flight 48\n",

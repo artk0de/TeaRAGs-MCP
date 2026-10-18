@@ -17,12 +17,19 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { ResidualVerdictStore } from "../../../../../../src/core/adapters/duckdb/residual-verdict-store.js";
-import type { ResidualCallSiteRow } from "../../../../../../src/core/contracts/types/codegraph-residual.js";
+import { KEV_PROMPT_TEMPLATE } from "../../../../../../src/core/adapters/kev/kev-residual-provider.js";
+import type {
+  ResidualCalibrationRow,
+  ResidualCallSiteRow,
+} from "../../../../../../src/core/contracts/types/codegraph-residual.js";
 import {
   collectReceiverGroups,
   GroupTournament,
 } from "../../../../../../src/core/domains/trajectory/codegraph/residual/receiver-group-tournament.js";
-import { residualQuestionHash } from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-resolution-pass.js";
+import {
+  residualQuestionFold,
+  residualQuestionHash,
+} from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-resolution-pass.js";
 import {
   buildWorkingTreeGraph,
   type WorkingTreeGraphBuildInput,
@@ -173,6 +180,37 @@ function inputFor(
   };
 }
 
+/** A stored calibration of `language` whose full-menu cut is `fullMenu`, under the fold the re-apply asks by. */
+function calibrationRows(language: string, fullMenu: number): ResidualCalibrationRow[] {
+  const templateHash = residualQuestionFold({ promptTemplate: KEV_PROMPT_TEMPLATE, originContext: false });
+  return (["block1", "fullMenu", "none"] as const).map((stratum) => ({
+    language,
+    stratum,
+    threshold: stratum === "fullMenu" ? fullMenu : null,
+    lowerBound: stratum === "fullMenu" ? 0.93 : null,
+    n: 120,
+    pi: 0.2,
+    noneRates: null,
+    model: `${MODEL}@v1`,
+    templateHash,
+    graphFingerprint: "g1",
+    createdAt: 1,
+  }));
+}
+
+async function storeCalibration(snapshotPath: string, language: string, fullMenu: number): Promise<void> {
+  const client = new DuckDbGraphClient({ path: snapshotPath });
+  await client.init();
+  try {
+    await client.writeResidualCalibration(language, calibrationRows(language, fullMenu));
+    await client.checkpoint();
+  } finally {
+    await client.close();
+  }
+  const wal = `${snapshotPath}.wal`;
+  if (existsSync(wal) && statSync(wal).size === 0) unlinkSync(wal);
+}
+
 /** Every model method edge as `source#symbol -> target#symbol origin model p`, sorted. */
 async function modelEdges(dbPath: string): Promise<string[]> {
   return withReadOnlyGraph(dbPath, async (client) => {
@@ -302,5 +340,15 @@ describe("buildWorkingTreeGraph — model edges of changed files (bd tea-rags-mc
 
     expect(await modelEdges(built.dbPath)).toEqual([WATCHER_EDGE]);
     expect(built.modelEdges).toEqual({ unavailable: expect.stringMatching(/verdict store unreadable/) as string });
+  }, 120_000);
+  it("judges re-applied verdicts by the stored calibration of their own language only", async () => {
+    const model = await buildModelFixture();
+    await storeCalibration(model.fixture.snapshotPath, "ruby", 0.95);
+    await storeCalibration(model.fixture.snapshotPath, "typescript", 0.85);
+    model.fixture.writeTree("caller.ts", CALLER_OTHER_BODY);
+
+    const built = await buildWorkingTreeGraph(inputFor(model, ["caller.ts"]));
+
+    expect(await modelEdges(built.dbPath)).toEqual([CALLER_EDGE]);
   }, 120_000);
 });

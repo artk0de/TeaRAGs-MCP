@@ -59,7 +59,11 @@ export type { ResolveRateCell, ResolveRateCounts } from "../../contracts/resolve
 // direction guard), and the literal must exist in exactly one place.
 export { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../contracts/codegraph-payload.js";
 // The residual pass's report rides `IndexStatus.residualResolution`.
-export type { ResidualPassReport, ResidualThresholdReport } from "../../contracts/types/codegraph-residual.js";
+export type {
+  ResidualPassReport,
+  ResidualThresholdReport,
+  ResidualThresholdsByLanguage,
+} from "../../contracts/types/codegraph-residual.js";
 export type {
   // Explore DTOs
   CollectionRef,

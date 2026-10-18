@@ -182,6 +182,36 @@ describe("ResidualCalibration", () => {
     expect(await store.findLatest([{ siteKey: rows[0].siteKey, menuHash: "x" }], "kev")).toEqual([]);
   });
 
+  it("draws only the sample rows of the language it calibrates", async () => {
+    const rows = [sample(), sample({ language: "typescript", sourceRelPath: "src/a.ts" }), sample()];
+    const provider = new FakeProvider(() => ({ pick: "Invoice", p: 0.9 }));
+
+    const report = await new ResidualCalibration().run({
+      ...input(rows, provider),
+      language: "ruby",
+      minSampleRows: 2,
+    });
+
+    expect(report.outcome).toBe("completed");
+    expect(report.sampleRows).toBe(2);
+    expect(report.strata.fullMenu).toBe(2);
+  });
+
+  it("skips a language with too few sample rows, with the reason, before asking", async () => {
+    const rows = [sample(), sample({ language: "typescript", sourceRelPath: "src/a.ts" })];
+    const provider = new FakeProvider(() => ({ pick: "Invoice", p: 0.9 }));
+
+    const report = await new ResidualCalibration().run({
+      ...input(rows, provider),
+      language: "typescript",
+      minSampleRows: 2,
+    });
+
+    expect(report.outcome).toBe("skipped");
+    expect(report.reason).toBe("too few static sample rows for typescript: 1 < 2");
+    expect(provider.calls).toEqual([]);
+  });
+
   it("an unavailable provider skips the asking and scores only cached verdicts", async () => {
     const provider = new FakeProvider(() => ({ pick: "Invoice", p: 0.9 }));
     provider.healthy = false;

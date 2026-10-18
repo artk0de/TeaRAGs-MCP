@@ -17,8 +17,9 @@
  * Sites carrying a receiver group are asked once per group over its class set
  * (see `receiver-group-tournament.ts`); a tournament's next round is built from
  * the previous one's verdicts as soon as that round is answered.
- * Accept thresholds come from `thresholdSource` (see `residual-thresholds.ts`):
- * a stored calibration valid for the run judges the asking and the edges alike;
+ * Accept thresholds come from `thresholdSource` (see `residual-thresholds.ts`),
+ * per language: each site and receiver group is judged by its own language's set.
+ * A stored calibration valid for the run judges the asking and the edges alike;
  * a calibration fitted after the asking, from the run's own full-menu answers,
  * moves only what the asking did not branch on — none always, full menu unless
  * the confirm stage asked mid picks by the default — and block 1, which decides
@@ -191,14 +192,20 @@ export class ResidualResolutionPass {
       fullMenu: provider.threshold,
       none: input.noneThreshold,
     };
-    const { language, reason: noLanguage } = runLanguage(rows);
     const key: ResidualCalibrationKey = {
       providerId: provider.id,
       ...(servedVersion.version === undefined ? {} : { servedVersion: servedVersion.version }),
       templateHash: fold,
     };
-    const stored = await storedThresholds(input.thresholdSource, language, key);
-    const asking = stored.thresholds === undefined ? defaults : judged(stored.thresholds, defaults).values;
+    const languages = runLanguages(rows);
+    const stored = new Map<string, StoredThresholds>();
+    for (const language of languages) {
+      stored.set(language, await storedThresholds(input.thresholdSource, language, key));
+    }
+    const askingOf = (language: string): Thresholds => {
+      const own = stored.get(language)?.thresholds;
+      return own === undefined ? defaults : judged(own, defaults).values;
+    };
     const verdicts = await cachedVerdicts(
       input,
       eligible.map((r) => ({ siteKey: r.siteKey, menuHash: r.questionHash })),
@@ -212,7 +219,7 @@ export class ResidualResolutionPass {
 
     const tally = emptyTally();
     const rounds = await new ResidualAskQueue(
-      { ...input, namePriorAcceptThreshold: asking.block1, acceptThreshold: asking.fullMenu },
+      { ...input, tournamentThresholds: (t) => askingOf(tournamentLanguage(t)) },
       servedVersion.version,
       verdicts,
       tally,
@@ -226,26 +233,46 @@ export class ResidualResolutionPass {
     const reason = unavailable ?? failureReason;
     const skipped = unavailable !== undefined || tally.leaseLost || tally.breakerTripped;
 
-    const thresholds = await resolveThresholds({
-      source: input.thresholdSource,
-      stored,
-      defaults,
-      calibrable: input.mode === "ask" && !skipped,
-      confirmStage: input.confirmStage === true,
-      language,
-      noLanguage,
-      key,
-      mix: () => runAnswerMix(tournaments, verdicts, questionHash),
-      graphFingerprint: () => sha1([...rows.map((r) => r.siteKey)].sort().join("\n")),
-    });
-    const accept = thresholds.values;
-    const siteOutcome = buildEdges(eligible, verdicts, provider, accept.fullMenu, accept.none);
-    const acceptOf = (t: GroupTournament): number => (t.pickedByNamePrior ? accept.block1 : accept.fullMenu);
-    const fanouts = await groupFanouts(tournaments, input, accept);
-    const groupOutcome = buildGroupEdges(tournaments, provider, acceptOf, accept.none, fanouts);
+    const resolved = new Map<string, JudgedThresholds>();
+    for (const language of languages) {
+      resolved.set(
+        language,
+        await resolveThresholds({
+          source: input.thresholdSource,
+          stored: stored.get(language) ?? {},
+          defaults,
+          calibrable: input.mode === "ask" && !skipped,
+          confirmStage: input.confirmStage === true,
+          language,
+          key,
+          mix: () =>
+            runAnswerMix(
+              tournaments.filter((t) => tournamentLanguage(t) === language),
+              verdicts,
+              questionHash,
+            ),
+          graphFingerprint: () =>
+            sha1(
+              rows
+                .filter((r) => languageOf(r) === language)
+                .map((r) => r.siteKey)
+                .sort()
+                .join("\n"),
+            ),
+        }),
+      );
+    }
+    const thresholdsOf = (language: string): Thresholds => resolved.get(language)?.values ?? defaults;
+    const groupThresholds = (t: GroupTournament): Thresholds => thresholdsOf(tournamentLanguage(t));
+    const siteOutcome = buildEdges(eligible, verdicts, provider, (r) => thresholdsOf(languageOf(r)));
+    const acceptOf = (t: GroupTournament): number =>
+      t.pickedByNamePrior ? groupThresholds(t).block1 : groupThresholds(t).fullMenu;
+    const noneOf = (t: GroupTournament): number => groupThresholds(t).none;
+    const fanouts = await groupFanouts(tournaments, input, groupThresholds);
+    const groupOutcome = buildGroupEdges(tournaments, provider, acceptOf, noneOf, fanouts);
     const propagation = propagateTypeFacts(
       receiverGroups,
-      acceptedGroupVerdicts(tournaments, acceptOf, accept.none, fanouts),
+      acceptedGroupVerdicts(tournaments, acceptOf, noneOf, fanouts),
       provider.id,
     );
     const edges = [...siteOutcome.edges, ...groupOutcome.edges, ...propagation.edges];
@@ -306,7 +333,7 @@ export class ResidualResolutionPass {
       externalByPropagation: propagation.externals.length,
       edgesApplied: applied.stored,
       derived,
-      thresholds: thresholds.report,
+      thresholds: Object.fromEntries([...resolved].map(([language, judged]) => [language, judged.report])),
       durations: {
         readMs: readAt - startedAt,
         askMs: askedAt - readAt,
@@ -370,13 +397,13 @@ const distinctSites = (edges: readonly ModelEdgeRow[]): number => new Set(edges.
 
 /**
  * The groups whose answer fans out over one interface (see `interface-fanout.ts`),
- * judged by the threshold of the answer's own question. A none accepted as
+ * judged by the threshold of the answer's own question in the group's language. A none accepted as
  * external never fans out.
  */
 async function groupFanouts(
   tournaments: readonly GroupTournament[],
   input: Pick<ResidualPassInput, "classTies" | "fanoutFloor">,
-  thresholds: Thresholds,
+  thresholdsOf: (tournament: GroupTournament) => Thresholds,
 ): Promise<Map<GroupTournament, InterfaceFanout>> {
   const fanouts = new Map<GroupTournament, InterfaceFanout>();
   const { classTies } = input;
@@ -385,6 +412,7 @@ async function groupFanouts(
   for (const tournament of tournaments) {
     const { spread, outcome } = tournament;
     if (spread === undefined) continue;
+    const thresholds = thresholdsOf(tournament);
     if (outcome !== undefined && outcome !== "residual" && outcome.pick === null && outcome.p >= thresholds.none) {
       continue;
     }
@@ -417,12 +445,12 @@ function fanoutVerdict(tournament: GroupTournament, fanout: InterfaceFanout): Ac
 
 /**
  * Every group's verdict at or above its threshold — `acceptOf` for a class,
- * `noneThreshold` for none; a fanned-out group's per {@link fanoutVerdict}.
+ * `noneOf` for none; a fanned-out group's per {@link fanoutVerdict}.
  */
 function acceptedGroupVerdicts(
   tournaments: readonly GroupTournament[],
   acceptOf: (tournament: GroupTournament) => number,
-  noneThreshold: number,
+  noneOf: (tournament: GroupTournament) => number,
   fanouts: ReadonlyMap<GroupTournament, InterfaceFanout>,
 ): Map<string, AcceptedGroupVerdict> {
   const accepted = new Map<string, AcceptedGroupVerdict>();
@@ -435,7 +463,7 @@ function acceptedGroupVerdicts(
       continue;
     }
     if (outcome === undefined || outcome === "residual") continue;
-    if (outcome.p < (outcome.pick === null ? noneThreshold : acceptOf(tournament))) continue;
+    if (outcome.p < (outcome.pick === null ? noneOf(tournament) : acceptOf(tournament))) continue;
     accepted.set(receiverGroupAddress(group), outcome);
   }
   return accepted;
@@ -445,14 +473,14 @@ function acceptedGroupVerdicts(
  * Edges and external sites of the groups that reached a verdict: a class at or
  * above its accept threshold (`acceptOf`) edges every site of the group to the target its
  * member reaches on that class, or makes it an attribute where the class reads
- * the member as a schema column; a none at or above `noneThreshold` makes every
+ * the member as a schema column; a none at or above its `noneOf` makes every
  * site external. A fanned-out group replaces its class verdict: see {@link fanoutSiteEdges}.
  */
 function buildGroupEdges(
   tournaments: readonly GroupTournament[],
   provider: ResidualModelProvider,
   acceptOf: (tournament: GroupTournament) => number,
-  noneThreshold: number,
+  noneOf: (tournament: GroupTournament) => number,
   fanouts: ReadonlyMap<GroupTournament, InterfaceFanout>,
 ): {
   edges: ModelEdgeRow[];
@@ -479,7 +507,7 @@ function buildGroupEdges(
     }
     if (outcome === undefined || outcome === "residual") continue;
     const { pick, p } = outcome;
-    if (pick === null ? p < noneThreshold : p < acceptOf(tournament)) {
+    if (pick === null ? p < noneOf(tournament) : p < acceptOf(tournament)) {
       belowThreshold += group.rows.length;
       continue;
     }
@@ -553,13 +581,12 @@ function fanoutSiteEdges(r: ResidualCallSiteRow, fanout: InterfaceFanout, model:
   }));
 }
 
-/** A pick at or above `accept` is an edge; a none at or above `noneThreshold` an external site. */
+/** A pick at or above the full-menu cut of the site's language is an edge; a none at or above its none cut an external site. */
 function buildEdges(
   rows: EligibleSite[],
   verdicts: Map<string, ResidualVerdict>,
   provider: ResidualModelProvider,
-  accept: number,
-  noneThreshold: number,
+  thresholdsOf: (row: ResidualCallSiteRow) => Thresholds,
 ): { edges: ModelEdgeRow[]; external: ModelExternalSiteRow[]; belowThreshold: number } {
   const edges: ModelEdgeRow[] = [];
   const external: ModelExternalSiteRow[] = [];
@@ -570,6 +597,7 @@ function buildEdges(
     const verdict = verdicts.get(key);
     if (!verdict || emitted.has(key)) continue;
     emitted.add(key);
+    const { fullMenu: accept, none: noneThreshold } = thresholdsOf(r);
     if (verdict.pick === null) {
       if (verdict.p < noneThreshold) {
         belowThreshold++;
@@ -611,21 +639,40 @@ type Stratum = keyof Thresholds;
 
 const STRATA: readonly Stratum[] = ["block1", "fullMenu", "none"];
 
-/** The one language of the run's residual sites — a calibration is per language — or why there is none. */
-function runLanguage(rows: readonly ResidualCallSiteRow[]): { language?: string; reason?: string } {
-  const languages = [...new Set(rows.flatMap((r) => (r.language === undefined ? [] : [r.language])))];
-  if (languages.length === 1) return { language: languages[0] };
-  if (languages.length === 0) return { reason: "no language on the residual sites" };
-  return { reason: `${languages.length} languages in one run (${languages.sort().join(", ")})` };
+/** The language a site carries no `language` under: judged by the defaults, never calibrated. */
+const NO_LANGUAGE = "unknown";
+
+/** The language a site is judged in — a calibration is per language. */
+const languageOf = (row: Pick<ResidualCallSiteRow, "language">): string => row.language ?? NO_LANGUAGE;
+
+/** A receiver group's sites share one method, so its first site's language is the group's. */
+const tournamentLanguage = (tournament: GroupTournament): string =>
+  tournament.group.rows.length === 0 ? NO_LANGUAGE : languageOf(tournament.group.rows[0]);
+
+/** The languages of the run's residual sites, sorted. */
+function runLanguages(rows: readonly ResidualCallSiteRow[]): string[] {
+  return [...new Set(rows.map(languageOf))].sort();
 }
 
-/** The stored calibration valid for the run, or why none is read. A read failure never fails the pass. */
+/** A language's stored calibration valid for the run, or why none was read. */
+interface StoredThresholds {
+  thresholds?: ResidualCalibratedThresholds;
+  reason?: string;
+}
+
+/** A language's thresholds as applied, and as reported. */
+interface JudgedThresholds {
+  values: Thresholds;
+  report: ResidualThresholdReport;
+}
+
+/** The stored calibration of `language` valid for the run, or why none is read. A read failure never fails the pass. */
 async function storedThresholds(
   source: ResidualThresholdSource | undefined,
-  language: string | undefined,
+  language: string,
   key: ResidualCalibrationKey,
-): Promise<{ thresholds?: ResidualCalibratedThresholds; reason?: string }> {
-  if (source === undefined || language === undefined) return {};
+): Promise<StoredThresholds> {
+  if (source === undefined || language === NO_LANGUAGE) return {};
   try {
     const thresholds = await source.stored(language, key);
     return thresholds === undefined ? {} : { thresholds };
@@ -639,7 +686,7 @@ function judged(
   fits: ResidualCalibratedThresholds,
   defaults: Thresholds,
   only: readonly Stratum[] = STRATA,
-): { values: Thresholds; report: ResidualThresholdReport } {
+): JudgedThresholds {
   const one = (stratum: Stratum): ResidualAppliedThreshold => {
     const fit: StratumFit | null = only.includes(stratum) ? fits[stratum] : null;
     return fit === null
@@ -659,10 +706,7 @@ function valuesOf(report: ResidualThresholdReport): Thresholds {
   return { block1: report.block1.threshold, fullMenu: report.fullMenu.threshold, none: report.none.threshold };
 }
 
-function defaultThresholds(
-  defaults: Thresholds,
-  reason?: string,
-): { values: Thresholds; report: ResidualThresholdReport } {
+function defaultThresholds(defaults: Thresholds, reason?: string): JudgedThresholds {
   const one = (stratum: Stratum): ResidualAppliedThreshold => ({ threshold: defaults[stratum], source: "default" });
   return {
     values: defaults,
@@ -677,7 +721,7 @@ function defaultThresholds(
 }
 
 /**
- * The thresholds the edges are built with. A stored calibration applies whole —
+ * The thresholds one language's edges are built with. A stored calibration applies whole —
  * the asking already ran under it. Otherwise a calibration fitted now applies
  * only where the asking did not branch on the threshold: none always; full menu
  * unless the confirm stage sent mid picks to a confirm by the default; block 1
@@ -685,21 +729,20 @@ function defaultThresholds(
  */
 async function resolveThresholds(run: {
   source: ResidualThresholdSource | undefined;
-  stored: { thresholds?: ResidualCalibratedThresholds; reason?: string };
+  stored: StoredThresholds;
   defaults: Thresholds;
   calibrable: boolean;
   confirmStage: boolean;
-  language: string | undefined;
-  noLanguage: string | undefined;
+  language: string;
   key: ResidualCalibrationKey;
   mix: () => ResidualAnswerMix;
   graphFingerprint: () => string;
-}): Promise<{ values: Thresholds; report: ResidualThresholdReport }> {
+}): Promise<JudgedThresholds> {
   const { source, stored, defaults } = run;
   if (stored.thresholds !== undefined) return judged(stored.thresholds, defaults);
   if (source === undefined) return defaultThresholds(defaults);
   if (stored.reason !== undefined) return defaultThresholds(defaults, stored.reason);
-  if (run.language === undefined) return defaultThresholds(defaults, `not calibrated: ${run.noLanguage}`);
+  if (run.language === NO_LANGUAGE) return defaultThresholds(defaults, "not calibrated: no language on the sites");
   if (source.calibrate === undefined || !run.calibrable) return defaultThresholds(defaults);
   let fits: ResidualCalibratedThresholds;
   try {
@@ -725,7 +768,7 @@ async function resolveThresholds(run: {
 }
 
 /**
- * The run's own full-menu answers — the receiver groups asked one question over
+ * One language's own full-menu answers — its receiver groups asked one question over
  * their whole class set — as the calibration fit reads them: how many, how many
  * none, and their menu sizes.
  */

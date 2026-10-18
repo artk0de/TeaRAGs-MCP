@@ -403,8 +403,8 @@ export interface ResidualPassReport {
   edgesApplied: number;
   derived: ResidualDerivedState;
   durations: ResidualPassDurations;
-  /** The accept thresholds the pass judged answers by; absent on a report of a pass that never started. */
-  thresholds?: ResidualThresholdReport;
+  /** The accept thresholds the pass judged answers by, per language; absent on a report of a pass that never started. */
+  thresholds?: ResidualThresholdsByLanguage;
   /**
    * The Qdrant `codegraph.*` payload heal run after a pass that changed the
    * model edges. Absent when the edges did not change, when no heal is wired,
@@ -432,6 +432,9 @@ export interface ResidualThresholdReport {
   /** Why a stratum kept its default although calibration was on. */
   reason?: string;
 }
+
+/** The thresholds a pass applied to each language of its residual sites, by language. */
+export type ResidualThresholdsByLanguage = Readonly<Record<string, ResidualThresholdReport>>;
 
 /** A calibrated accept threshold's question shape (`cg_residual_calibration.stratum`). */
 export type ResidualCalibrationStratum = "fullMenu" | "block1" | "none";

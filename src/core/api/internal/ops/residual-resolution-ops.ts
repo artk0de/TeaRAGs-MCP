@@ -168,7 +168,9 @@ export class ResidualResolutionOps implements ResidualResolvePort {
           : {
               thresholdSource: new StoredResidualThresholds(
                 graphDb,
-                mode === "ask" ? async () => this.askCalibration(graphDb, openStore, provider, request) : undefined,
+                mode === "ask"
+                  ? async (language) => this.askCalibration(graphDb, openStore, provider, request, language)
+                  : undefined,
                 this.now,
               ),
             }),
@@ -187,14 +189,18 @@ export class ResidualResolutionOps implements ResidualResolvePort {
     }
   }
 
-  /** The calibration answers for an automatic calibration; a skipped calibration throws its reason. */
+  /** The calibration answers of `language` for an automatic calibration; a skipped calibration throws its reason. */
   private async askCalibration(
     graphDb: ResidualCalibrationInput["graphDb"],
     store: VerdictStoreHandle,
     provider: ResidualModelProvider,
     request: ResidualResolvePortRequest,
+    language: string,
   ): Promise<ResidualCalibrationReport["records"]> {
-    const report = await new ResidualCalibration().run(this.calibrationInput(graphDb, store, provider, request));
+    const report = await new ResidualCalibration().run({
+      ...this.calibrationInput(graphDb, store, provider, request),
+      language,
+    });
     if (report.outcome === "skipped") throw new Error(report.reason ?? "calibration skipped");
     return report.records;
   }

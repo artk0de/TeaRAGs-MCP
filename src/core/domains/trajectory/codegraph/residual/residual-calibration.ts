@@ -18,6 +18,7 @@ import {
   type AskQueueInput,
   type PendingQuestion,
 } from "./residual-ask-queue.js";
+import { CALIBRATION_MIN_RECORDS } from "./residual-calibration-fit.js";
 import {
   buildCalibrationStrata,
   type CalibrationItem,
@@ -32,6 +33,10 @@ export interface ResidualCalibrationInput extends AskQueueInput {
   menuLimit: number;
   /** Questions per stratum; unset strata take the defaults. */
   sizes?: Partial<CalibrationStrataSizes>;
+  /** Draw only this language's sample rows; absent — every row. */
+  language?: string;
+  /** Fewest sample rows of `language` worth asking; default {@link CALIBRATION_MIN_RECORDS}. */
+  minSampleRows?: number;
 }
 
 export interface ResidualCalibrationReport {
@@ -57,7 +62,23 @@ export class ResidualCalibration {
       originContext: input.originContext ?? false,
     });
     const questionHash = (menuHash: string): string => residualQuestionHash(menuHash, fold);
-    const rows = await input.graphDb.readStaticSiteSample();
+    const sample = await input.graphDb.readStaticSiteSample();
+    const { language } = input;
+    const rows = language === undefined ? sample : sample.filter((r) => r.language === language);
+    const minSampleRows = input.minSampleRows ?? CALIBRATION_MIN_RECORDS;
+    if (language !== undefined && rows.length < minSampleRows) {
+      return {
+        outcome: "skipped",
+        reason: `too few static sample rows for ${language}: ${rows.length} < ${minSampleRows}`,
+        sampleRows: rows.length,
+        strata: { fullMenu: 0, block1: 0, external: 0 },
+        cacheHits: 0,
+        asked: 0,
+        answered: 0,
+        failedRequests: 0,
+        records: [],
+      };
+    }
     const items = buildCalibrationStrata(rows, {
       menuLimit: input.menuLimit,
       ...(input.sizes ? { sizes: input.sizes } : {}),

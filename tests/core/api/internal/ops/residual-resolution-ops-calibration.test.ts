@@ -10,6 +10,7 @@ import type {
   ModelEdgeRow,
   ResidualCalibrationRow,
   ResidualCallSiteRow,
+  StaticSiteSampleRow,
 } from "../../../../../src/core/contracts/types/codegraph-residual.js";
 import {
   residualQuestionFold,
@@ -35,6 +36,29 @@ const ROW: ResidualCallSiteRow = {
   menuOverflow: false,
   language: "ruby",
 };
+
+/** `count` resolved sample sites of `language`, enough for a calibration at 60. */
+const sampleRows = (count: number, language = "ruby"): StaticSiteSampleRow[] =>
+  Array.from({ length: count }, (_, i) => ({
+    siteKey: `sample-${language}-${i}`,
+    sourceRelPath: "app/sync.rb",
+    language,
+    methodSymbolId: "Sync#run",
+    methodStartLine: 2,
+    methodEndLine: 4,
+    line: 3,
+    column: 2,
+    receiverText: "firm",
+    receiverKind: "localVar",
+    member: "users",
+    outcome: "resolved",
+    targetSymbolId: "Firm#users",
+    reason: null,
+    owners: 2,
+    candidates: ["Client#users", "Firm#users"],
+    menuOverflow: false,
+    priority: i / 1_000,
+  }));
 
 const CONFIG = {
   kevUrls: ["http://gpu:8090"],
@@ -135,11 +159,17 @@ describe("ResidualResolutionOps — auto-calibration", () => {
     expect(graphDb.readStaticSiteSample).not.toHaveBeenCalled();
     expect(graphDb.writeResidualCalibration).not.toHaveBeenCalled();
     expect(applied.at(-1)).toEqual([expect.objectContaining({ siteKey: "s1", p: 0.6 })]);
-    expect(report.thresholds?.fullMenu).toEqual({ threshold: 0.5, source: "calibrated", lowerBound: 0.94, n: 120 });
+    expect(report.thresholds?.ruby?.fullMenu).toEqual({
+      threshold: 0.5,
+      source: "calibrated",
+      lowerBound: 0.94,
+      n: 120,
+    });
   });
 
   it("recalibrates when the served model changed, leasing the GPU once, and stores the result", async () => {
     stored = [calibrationRow("block1", "kev@fake@0"), calibrationRow("fullMenu", "kev@fake@0")];
+    graphDb.readStaticSiteSample.mockResolvedValue(sampleRows(60));
     const events: string[] = [];
 
     const report = await ops(events).resolve(request());
@@ -152,7 +182,7 @@ describe("ResidualResolutionOps — auto-calibration", () => {
       ]),
     );
     expect(events).toEqual(["acquire", "release"]);
-    expect(report.thresholds?.fullMenu).toEqual({ threshold: 0.7, source: "default" });
+    expect(report.thresholds?.ruby?.fullMenu).toEqual({ threshold: 0.7, source: "default" });
   });
 
   it("keeps the defaults with the reason when calibrating fails, the pass completing all the same", async () => {
@@ -161,9 +191,21 @@ describe("ResidualResolutionOps — auto-calibration", () => {
     const report = await ops([]).resolve(request());
 
     expect(report.outcome).toBe("completed");
-    expect(report.thresholds).toMatchObject({
+    expect(report.thresholds?.ruby).toMatchObject({
       fullMenu: { threshold: 0.7, source: "default" },
       reason: expect.stringContaining("sample unreadable"),
+    });
+  });
+
+  it("skips calibrating a language whose static sample is too small, with the reason", async () => {
+    graphDb.readStaticSiteSample.mockResolvedValue(sampleRows(60, "typescript"));
+
+    const report = await ops([]).resolve(request());
+
+    expect(graphDb.writeResidualCalibration).not.toHaveBeenCalled();
+    expect(report.thresholds?.ruby).toMatchObject({
+      fullMenu: { threshold: 0.7, source: "default" },
+      reason: expect.stringContaining("too few static sample rows for ruby: 0 < 60"),
     });
   });
 

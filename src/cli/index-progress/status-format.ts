@@ -10,6 +10,7 @@ import {
   type EnrichmentMetrics,
   type IndexStatus,
   type ResidualThresholdReport,
+  type ResidualThresholdsByLanguage,
 } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
 import type { EnrichmentOutcome } from "./ipc-protocol.js";
@@ -123,7 +124,7 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
     lines.push(
       `  ${r.receiverGroups} receiver groups (${r.receiverGroupSites} sites): ${r.sitesEdgedByVerdict} sites edged by verdict (${r.fanoutGroups} groups fanned out, ${r.fanoutEdges} fan-out edges), ${r.sitesEdgedByPropagation} by propagation (${r.propagationConflicts} conflicts); ${r.tournamentGroups} tournaments (${r.tournamentQuestions} questions, ${r.tournamentRounds} rounds, ${r.groupsSkippedByBudget} skipped by budget, ${r.namePriorGroups} opened by name, ${r.earlyAcceptedGroups} accepted on block 1), ${r.confirmQuestions} confirm questions (${r.confirmAccepted} accepted), ${r.windowedGroups} windowed`,
     );
-    if (r.thresholds !== undefined) lines.push(`  ${formatResidualThresholds(r.thresholds)}`);
+    if (r.thresholds !== undefined) lines.push(...formatResidualThresholds(r.thresholds).map((line) => `  ${line}`));
     lines.push(
       `  ${r.failedGroups} groups failed, ${r.requeuedGroups} requeued after a timeout, ${r.abortedGroups} aborted`,
     );
@@ -274,11 +275,18 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
   return base;
 }
 
-/** `thresholds: block1 0.50 (calibrated) · full 0.80 (calibrated) · none 0.50 (default)`, then why a stratum kept its default. */
-export function formatResidualThresholds(thresholds: ResidualThresholdReport): string {
-  const one = (name: string, t: ResidualThresholdReport["block1"]) => `${name} ${t.threshold.toFixed(2)} (${t.source})`;
-  const line = [one("block1", thresholds.block1), one("full", thresholds.fullMenu), one("none", thresholds.none)].join(
-    " · ",
-  );
-  return `thresholds: ${line}${thresholds.reason === undefined ? "" : ` — ${thresholds.reason}`}`;
+/**
+ * One line per language: `thresholds ruby: block1 0.50 (calibrated) · full 0.80 (calibrated) · none 0.50 (default)`,
+ * then why a stratum kept its default; a language on defaults only: `thresholds typescript: defaults (<reason>)`.
+ */
+export function formatResidualThresholds(thresholds: ResidualThresholdsByLanguage): string[] {
+  return Object.entries(thresholds).map(([language, t]) => `thresholds ${language}: ${languageThresholds(t)}`);
+}
+
+function languageThresholds(t: ResidualThresholdReport): string {
+  const strata = [t.block1, t.fullMenu, t.none];
+  if (t.reason !== undefined && strata.every((s) => s.source === "default")) return `defaults (${t.reason})`;
+  const one = (name: string, s: ResidualThresholdReport["block1"]) => `${name} ${s.threshold.toFixed(2)} (${s.source})`;
+  const line = [one("block1", t.block1), one("full", t.fullMenu), one("none", t.none)].join(" · ");
+  return `${line}${t.reason === undefined ? "" : ` — ${t.reason}`}`;
 }

@@ -52,16 +52,16 @@ export function calibrationModel(key: Required<ResidualCalibrationKey>): string 
 
 const STRATA: readonly ResidualCalibrationStratum[] = ["block1", "fullMenu", "none"];
 
-/** Thresholds stored in the graph's `cg_residual_calibration`; `ask` set — the source may calibrate. */
+/** Thresholds stored in the graph's `cg_residual_calibration`; `ask` set — the source may calibrate, asking per language. */
 export class StoredResidualThresholds implements ResidualThresholdSource {
   readonly calibrate?: (run: ResidualCalibrationRun) => Promise<ResidualCalibratedThresholds>;
 
   constructor(
     private readonly graphDb: Pick<GraphDbClient, "readResidualCalibration" | "writeResidualCalibration">,
-    ask?: () => Promise<readonly CalibrationAnswer[]>,
+    ask?: (language: string) => Promise<readonly CalibrationAnswer[]>,
     private readonly now: () => number = Date.now,
   ) {
-    if (ask !== undefined) this.calibrate = async (run) => this.fitAndStore(run, await ask());
+    if (ask !== undefined) this.calibrate = async (run) => this.fitAndStore(run, await ask(run.language));
   }
 
   async stored(language: string, key: ResidualCalibrationKey): Promise<ResidualCalibratedThresholds | undefined> {

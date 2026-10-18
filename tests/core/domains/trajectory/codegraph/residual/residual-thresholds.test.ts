@@ -89,7 +89,7 @@ describe("StoredResidualThresholds", () => {
       graphFingerprint: "g2",
     });
 
-    expect(ask).toHaveBeenCalledOnce();
+    expect(ask).toHaveBeenCalledExactlyOnceWith("ruby");
     expect(fit?.block1?.threshold).toBeGreaterThanOrEqual(0.5);
     expect(fit?.fullMenu).toBeNull();
     expect(graphDb.written[0]).toHaveLength(3);

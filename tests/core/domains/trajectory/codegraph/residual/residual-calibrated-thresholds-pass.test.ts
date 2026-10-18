@@ -93,6 +93,26 @@ function siteOn(receiver: string, classes: string[]): ResidualCallSiteRow {
 
 const THREE = ["Invoice", "Bill", "Estimate"];
 
+/** An ungrouped TypeScript site on `receiver` whose menu is two `run` methods. */
+function tsSite(receiver: string): ResidualCallSiteRow {
+  return {
+    siteKey: `ts-${receiver}`,
+    sourceRelPath: "src/a.ts",
+    methodSymbolId: "A#run",
+    methodStartLine: 1,
+    methodEndLine: 20,
+    line: 7,
+    column: 2,
+    receiverText: receiver,
+    member: "run",
+    kind: "dynamic",
+    candidates: ["Job#run", "Task#run"],
+    menuHash: `menu-${receiver}`,
+    menuOverflow: false,
+    language: "typescript",
+  };
+}
+
 const fit = (threshold: number, n = 120) => ({ threshold, lowerBound: 0.94, n });
 
 const calibrated = (over: Partial<ResidualCalibratedThresholds> = {}): ResidualCalibratedThresholds => ({
@@ -176,7 +196,7 @@ describe("ResidualResolutionPass — calibrated thresholds", () => {
         .sort(),
     ).toEqual(["site-r1", "site-r3"]);
     expect(graphDb.external.at(-1)?.map((e) => e.siteKey)).toEqual(["site-r2"]);
-    expect(report.thresholds).toEqual({
+    expect(report.thresholds?.ruby).toEqual({
       block1: { threshold: 0.7, source: "default" },
       fullMenu: { threshold: 0.5, source: "calibrated", lowerBound: 0.94, n: 120 },
       none: { threshold: 0.5, source: "calibrated", lowerBound: 0.94, n: 120 },
@@ -202,7 +222,7 @@ describe("ResidualResolutionPass — calibrated thresholds", () => {
     expect(provider.questions()).toHaveLength(1);
     expect(report.earlyAcceptedGroups).toBe(1);
     expect(graphDb.applied.at(-1)).toEqual([expect.objectContaining({ siteKey: "site-invoice", p: 0.6 })]);
-    expect(report.thresholds?.block1).toEqual({ threshold: 0.5, source: "calibrated", lowerBound: 0.94, n: 120 });
+    expect(report.thresholds?.ruby?.block1).toEqual({ threshold: 0.5, source: "calibrated", lowerBound: 0.94, n: 120 });
   });
 
   it("keeps the default for a stratum the calibration left null", async () => {
@@ -214,7 +234,7 @@ describe("ResidualResolutionPass — calibrated thresholds", () => {
     const report = await run(graphDb, provider, { thresholdSource: source, namePriorAcceptThreshold: 0.55 });
 
     expect(graphDb.applied.at(-1)?.map((e) => e.siteKey)).toEqual(["site-r3"]);
-    expect(report.thresholds).toMatchObject({
+    expect(report.thresholds?.ruby).toMatchObject({
       block1: { threshold: 0.55, source: "default" },
       fullMenu: { threshold: 0.7, source: "default" },
       none: { threshold: 0.5, source: "calibrated" },
@@ -232,7 +252,7 @@ describe("ResidualResolutionPass — calibrated thresholds", () => {
 
     expect(report.outcome).toBe("completed");
     expect(graphDb.applied.at(-1)?.map((e) => e.siteKey)).toEqual(["site-r3"]);
-    expect(report.thresholds).toMatchObject({
+    expect(report.thresholds?.ruby).toMatchObject({
       block1: { threshold: 0.7, source: "default" },
       fullMenu: { threshold: 0.7, source: "default" },
       none: { threshold: 0.8, source: "default" },
@@ -247,7 +267,7 @@ describe("ResidualResolutionPass — calibrated thresholds", () => {
 
     const report = await run(graphDb, provider, { thresholdSource: source, confirmStage: true });
 
-    expect(report.thresholds).toMatchObject({
+    expect(report.thresholds?.ruby).toMatchObject({
       fullMenu: { threshold: 0.7, source: "default" },
       none: { threshold: 0.5, source: "calibrated" },
       reason: expect.stringContaining("confirm"),
@@ -265,7 +285,7 @@ describe("ResidualResolutionPass — calibrated thresholds", () => {
       expect.not.objectContaining({ servedVersion: expect.anything() }),
     );
     expect(source.calibrate).not.toHaveBeenCalled();
-    expect(report.thresholds?.fullMenu).toEqual({ threshold: 0.7, source: "default" });
+    expect(report.thresholds?.ruby?.fullMenu).toEqual({ threshold: 0.7, source: "default" });
   });
 
   it("reports the configured defaults without a threshold source", async () => {
@@ -273,11 +293,73 @@ describe("ResidualResolutionPass — calibrated thresholds", () => {
 
     const report = await run(graphDb, provider);
 
-    expect(report.thresholds).toEqual({
+    expect(report.thresholds?.ruby).toEqual({
       block1: { threshold: 0.7, source: "default" },
       fullMenu: { threshold: 0.7, source: "default" },
       none: { threshold: 0.8, source: "default" },
       pi: null,
+    });
+  });
+  it("judges a mixed run per language: calibrated ruby, default typescript", async () => {
+    const classes = ["Invoice", "Bill", "Estimate", "Payment", "Receipt"];
+    const graphDb = fakeGraphDb([siteOn("invoice", classes), tsSite("job")]);
+    const provider = new FakeProvider((q) => {
+      if (q.receiverText === "job") return { pick: "Job#run", p: 0.6 };
+      return q.candidates.length === 1 ? { pick: "Invoice", p: 0.6 } : { pick: q.candidates[0] ?? null, p: 0.9 };
+    });
+    const source: ResidualThresholdSource = {
+      stored: vi.fn(async (language: string) => (language === "ruby" ? calibrated() : undefined)),
+    };
+
+    const report = await run(graphDb, provider, { menuLimit: 3, thresholdSource: source });
+
+    expect(source.stored).toHaveBeenCalledWith("ruby", expect.anything());
+    expect(source.stored).toHaveBeenCalledWith("typescript", expect.anything());
+    expect(report.earlyAcceptedGroups).toBe(1);
+    expect(provider.questions()).toHaveLength(2);
+    expect(graphDb.applied.at(-1)?.map((e) => e.siteKey)).toEqual(["site-invoice"]);
+    expect(report.belowThreshold).toBe(1);
+    expect(report.thresholds?.ruby?.block1).toMatchObject({ threshold: 0.5, source: "calibrated" });
+    expect(report.thresholds?.typescript).toEqual({
+      block1: { threshold: 0.7, source: "default" },
+      fullMenu: { threshold: 0.7, source: "default" },
+      none: { threshold: 0.8, source: "default" },
+      pi: null,
+    });
+  });
+
+  it("calibrates each language of a mixed run against its own answer mix", async () => {
+    const graphDb = fakeGraphDb([siteOn("r1", THREE), siteOn("r2", THREE), siteOn("r3", THREE), tsSite("job")]);
+    const provider = new FakeProvider((q) => {
+      if (q.receiverText === "job") return { pick: "Job#run", p: 0.6 };
+      if (q.receiverText === "r2") return { pick: null, p: 0.6 };
+      return { pick: "Bill", p: q.receiverText === "r1" ? 0.6 : 0.9 };
+    });
+    const source: ResidualThresholdSource = {
+      stored: async () => undefined,
+      calibrate: vi.fn(async (r) =>
+        r.language === "ruby" ? calibrated() : Promise.reject(new Error("too few static sample rows")),
+      ),
+    };
+
+    const report = await run(graphDb, provider, { thresholdSource: source });
+
+    expect(source.calibrate).toHaveBeenCalledWith(
+      expect.objectContaining({ language: "ruby", mix: { answered: 3, noneAnswers: 1, menuSizeMix: { "2-4": 3 } } }),
+    );
+    expect(source.calibrate).toHaveBeenCalledWith(
+      expect.objectContaining({ language: "typescript", mix: { answered: 0, noneAnswers: 0, menuSizeMix: {} } }),
+    );
+    expect(
+      graphDb.applied
+        .at(-1)
+        ?.map((e) => e.siteKey)
+        .sort(),
+    ).toEqual(["site-r1", "site-r3"]);
+    expect(report.thresholds?.ruby?.fullMenu).toMatchObject({ threshold: 0.5, source: "calibrated" });
+    expect(report.thresholds?.typescript).toMatchObject({
+      fullMenu: { threshold: 0.7, source: "default" },
+      reason: expect.stringContaining("too few static sample rows"),
     });
   });
 });
