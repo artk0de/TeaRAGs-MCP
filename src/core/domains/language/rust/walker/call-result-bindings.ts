@@ -1,6 +1,7 @@
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import { isSameAstNode, type AstNode } from "../../../../contracts/types/ast.js";
 import type { CallResultBinding } from "../../../../contracts/types/codegraph.js";
+import { rustGenericParameters } from "./return-types.js";
 
 /** Inventory the file once, then collect only proven function-body bare-call result locals. */
 export function collectRustCallResultBindings(root: AstNode): ReadonlyMap<string, Record<string, CallResultBinding[]>> {
@@ -9,7 +10,12 @@ export function collectRustCallResultBindings(root: AstNode): ReadonlyMap<string
   const scan = (node: AstNode): void => {
     if (node.type === "function_item") {
       functionNodes.push(node);
-      if (node.childForFieldName("type_parameters") !== null) {
+      // Lifetime-only generics stay safe callees: the declared return names no
+      // call-site type argument, and lifetimes are dropped by the TypeRef
+      // parse anyway (`enter_auto_realm<'cx> -> Root<'cx, Realm>`). A TYPE
+      // parameter can monomorphize the return (`fn id<T>(t: T) -> T`), so
+      // those callees remain unsafe.
+      if (rustGenericParameters(node).length > 0) {
         const name = node.childForFieldName("name");
         if (name !== null) unsafeCallees.add(name.text);
       }
