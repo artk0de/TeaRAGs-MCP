@@ -241,7 +241,8 @@ describe("DuckDbGraphClient — upsertFilesBulk equivalence to per-file upsertFi
     // tea-rags-mcp-7t2ee): one scope read per group, 8 groups.
     // 88 → 96 when `cg_residual_call_sites` became the eighth (2m83f.3).
     // 96 → 104 when `cg_caller_param_observations` became the ninth (2m83f.49).
-    expect(destroySpy.mock.calls.length).toBeLessThanOrEqual(104);
+    // 104 → 112 when `cg_static_site_sample` became the tenth (2m83f.62).
+    expect(destroySpy.mock.calls.length).toBeLessThanOrEqual(112);
     destroySpy.mockRestore();
 
     const filesCount = await db.queryAll<{ n: number | bigint }>("SELECT COUNT(*) AS n FROM cg_symbols_files");

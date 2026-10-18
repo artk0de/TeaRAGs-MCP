@@ -5,6 +5,7 @@ import type {
   ModelExternalSiteRow,
   ModelResolvedSiteCount,
   ResidualCallSiteRow,
+  StaticSiteSampleRow,
 } from "../../../../contracts/types/codegraph.js";
 import type { DaemonOpCaller } from "../op-channel.js";
 
@@ -17,6 +18,10 @@ export class DaemonResidualEdgeStoreProxy implements CodegraphResidualEdgeStore 
 
   async readResidualCallSites(): Promise<ResidualCallSiteRow[]> {
     return (await this.ops.call("readResidualCallSites", {})) as ResidualCallSiteRow[];
+  }
+
+  async readStaticSiteSample(): Promise<StaticSiteSampleRow[]> {
+    return (await this.ops.call("readStaticSiteSample", {})) as StaticSiteSampleRow[];
   }
 
   async applyModelEdges(model: string, edges: ModelEdgeRow[]): Promise<ModelEdgeApplyResult> {

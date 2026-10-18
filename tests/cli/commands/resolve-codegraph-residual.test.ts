@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import yargs from "yargs";
 
 import {
+  formatCalibrationReport,
   formatResidualReport,
   resolveCodegraphResidualCommand,
   runResolveCodegraphResidual,
@@ -168,6 +169,80 @@ describe("resolve-codegraph-residual command", () => {
         createContext: async () => ({
           resolveCodegraphResidual: vi.fn().mockResolvedValue(skippedResidualReport("down", "ask")),
         }),
+        write: () => undefined,
+      },
+    );
+
+    expect(code).toBe(1);
+  });
+});
+
+const CALIBRATION = {
+  outcome: "completed" as const,
+  sampleRows: 900,
+  strata: { fullMenu: 2, block1: 1, external: 1 },
+  cacheHits: 1,
+  asked: 3,
+  answered: 3,
+  failedRequests: 0,
+  records: [
+    { stratum: "fullMenu" as const, p: 0.9, top: "class" as const, correct: true, menuSize: 3 },
+    { stratum: "fullMenu" as const, p: 0.6, top: "class" as const, correct: false, menuSize: 3 },
+    { stratum: "block1" as const, p: 0.8, top: "class" as const, correct: true, menuSize: 1 },
+    { stratum: "external" as const, p: 0.4, top: "none" as const, correct: true, menuSize: 2 },
+  ],
+};
+
+describe("resolve-codegraph-residual --calibrate", () => {
+  it("parses the flag", () => {
+    expect(parse(["resolve-codegraph-residual", "--model", "kev", "--calibrate"])).toMatchObject({ calibrate: true });
+  });
+
+  it("prints stratum sizes and accuracy at p>=0.5 and p>=0.7", () => {
+    const text = formatCalibrationReport(CALIBRATION);
+
+    expect(text).toContain("Residual calibration: completed\n");
+    expect(text).toContain("  sample rows:      900\n");
+    expect(text).toContain("  fullMenu:  2 questions, 2 answered; p>=0.5: 1/2 = 0.500; p>=0.7: 1/1 = 1.000\n");
+    expect(text).toContain("  external:  1 questions, 1 answered; p>=0.5: 0/0 = n/a; p>=0.7: 0/0 = n/a\n");
+  });
+
+  it("runs the calibration instead of the pass and prints it as JSON with the accuracy", async () => {
+    const out: string[] = [];
+    const resolveCodegraphResidual = vi.fn();
+    const calibrateCodegraphResidual = vi.fn().mockResolvedValue(CALIBRATION);
+
+    const code = await runResolveCodegraphResidual(
+      { path: "/repo", model: "kev", calibrate: true, json: true },
+      {
+        createContext: async () => ({ resolveCodegraphResidual, calibrateCodegraphResidual }),
+        write: (s) => out.push(s),
+      },
+    );
+
+    expect(code).toBe(0);
+    expect(resolveCodegraphResidual).not.toHaveBeenCalled();
+    expect(calibrateCodegraphResidual).toHaveBeenCalledWith("/repo", "kev", {});
+    const printed = JSON.parse(out.join("")) as { strata: unknown; accuracy: { block1: unknown } };
+    expect(printed.strata).toEqual(CALIBRATION.strata);
+    expect(printed.accuracy.block1).toEqual({
+      answered: 1,
+      cuts: [
+        { p: 0.5, n: 1, correct: 1, accuracy: 1 },
+        { p: 0.7, n: 1, correct: 1, accuracy: 1 },
+      ],
+    });
+  });
+
+  it("a skipped calibration exits 1", async () => {
+    const calibrateCodegraphResidual = vi
+      .fn()
+      .mockResolvedValue({ ...CALIBRATION, outcome: "skipped", reason: "down" });
+
+    const code = await runResolveCodegraphResidual(
+      { path: "/repo", model: "kev", calibrate: true },
+      {
+        createContext: async () => ({ resolveCodegraphResidual: vi.fn(), calibrateCodegraphResidual }),
         write: () => undefined,
       },
     );

@@ -6,11 +6,13 @@ import type { CommandModule } from "yargs";
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import type { AppContext } from "../../bootstrap/factory.js";
 import {
+  calibrationAccuracy,
   collectionHoldsCodegraphData,
   CollectionRegistry,
   pickRegistryEnvSeed,
   resolveDomainEnvCodeDefaults,
   resolveRegistryEnv,
+  type ResidualCalibrationReport,
 } from "../../core/api/index.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
 
@@ -20,6 +22,8 @@ export interface ResolveResidualArgs {
   model: string;
   /** Re-apply stored verdicts without asking the model. */
   "cache-only"?: boolean;
+  /** Ask the model over the static site sample and score it instead of running the pass. */
+  calibrate?: boolean;
   json?: boolean;
 }
 
@@ -27,7 +31,9 @@ type ResolveFn = AppContext["resolveCodegraphResidual"];
 type ResidualReport = Awaited<ReturnType<ResolveFn>>;
 
 export interface ResolveResidualDeps {
-  createContext: () => Promise<Pick<AppContext, "resolveCodegraphResidual" | "cleanup">>;
+  createContext: () => Promise<
+    Pick<AppContext, "resolveCodegraphResidual" | "cleanup"> & Partial<Pick<AppContext, "calibrateCodegraphResidual">>
+  >;
   write: (text: string) => void;
   /** Progress line sink (stderr); omitted in JSON mode. */
   progress?: (text: string) => void;
@@ -67,7 +73,39 @@ export function formatResidualReport(report: ResidualReport): string {
   );
 }
 
-/** Exit code: 0 when the pass completed, 1 when it was skipped. */
+const CALIBRATION_CUTS = [0.5, 0.7];
+
+export function formatCalibrationReport(report: ResidualCalibrationReport): string {
+  const head = `Residual calibration: ${report.outcome}${report.reason ? ` — ${report.reason}` : ""}\n`;
+  const accuracy = calibrationAccuracy(report.records, CALIBRATION_CUTS);
+  const strata = (["fullMenu", "block1", "external"] as const).map((stratum) => {
+    const { answered, cuts } = accuracy[stratum];
+    const at = cuts
+      .map((c) => `p>=${c.p}: ${c.correct}/${c.n} = ${c.accuracy === null ? "n/a" : c.accuracy.toFixed(3)}`)
+      .join("; ");
+    return `  ${`${stratum}:`.padEnd(10)} ${report.strata[stratum]} questions, ${answered} answered; ${at}\n`;
+  });
+  const counts = `asked ${report.asked}, answered ${report.answered}, failed requests ${report.failedRequests}`;
+  return `${head}  sample rows:      ${report.sampleRows}\n  cache hits:       ${report.cacheHits}, ${counts}\n${strata.join("")}`;
+}
+
+async function runCalibration(
+  path: string,
+  args: ResolveResidualArgs,
+  ctx: Awaited<ReturnType<ResolveResidualDeps["createContext"]>>,
+  deps: ResolveResidualDeps,
+): Promise<number> {
+  if (!ctx.calibrateCodegraphResidual) throw new Error("residual calibration is not available in this context");
+  const report = await ctx.calibrateCodegraphResidual(path, args.model, {
+    ...(args.json || !deps.progress ? {} : { onProgress: (p) => deps.progress?.(`\r${p.message}`) }),
+  });
+  if (!args.json) deps.progress?.("\n");
+  const accuracy = calibrationAccuracy(report.records, CALIBRATION_CUTS);
+  deps.write(args.json ? `${JSON.stringify({ ...report, accuracy }, null, 2)}\n` : formatCalibrationReport(report));
+  return report.outcome === "completed" ? 0 : 1;
+}
+
+/** Exit code: 0 when the pass (or calibration) completed, 1 when it was skipped. */
 export async function runResolveCodegraphResidual(
   args: ResolveResidualArgs,
   deps: ResolveResidualDeps,
@@ -75,6 +113,7 @@ export async function runResolveCodegraphResidual(
   const path = resolve(args.path ?? process.cwd());
   const ctx = await deps.createContext();
   try {
+    if (args.calibrate) return await runCalibration(path, args, ctx, deps);
     const report = await ctx.resolveCodegraphResidual(path, args.model, {
       mode: args["cache-only"] ? "cacheOnly" : "ask",
       ...(args.json || !deps.progress ? {} : { onProgress: (p) => deps.progress?.(`\r${p.message}`) }),
@@ -118,6 +157,13 @@ export const resolveCodegraphResidualCommand: CommandModule<object, ResolveResid
         default: false,
         describe: "Re-apply stored verdicts without contacting the model.",
       })
+      .option("calibrate", {
+        type: "boolean",
+        default: false,
+        describe:
+          "Ask the model over a sample of statically resolved sites and print its accuracy per stratum " +
+          "(no edges are written).",
+      })
       .option("project", { alias: "p", type: "string", describe: "Registered project alias." })
       .option("path", { type: "string", describe: "Project directory (default: current directory)." })
       .option("json", { type: "boolean", default: false, describe: "Print the report as JSON." }),
@@ -126,7 +172,13 @@ export const resolveCodegraphResidualCommand: CommandModule<object, ResolveResid
     const path = resolve(resolved.path ?? process.cwd());
     applyRegistryEnv(argv.project, path);
     const code = await runResolveCodegraphResidual(
-      { path, model: argv.model, "cache-only": Boolean(argv["cache-only"]), json: Boolean(argv.json) },
+      {
+        path,
+        model: argv.model,
+        "cache-only": Boolean(argv["cache-only"]),
+        calibrate: Boolean(argv.calibrate),
+        json: Boolean(argv.json),
+      },
       {
         createContext: async () => {
           const { parseAppConfig } = await import("../../bootstrap/config/index.js");

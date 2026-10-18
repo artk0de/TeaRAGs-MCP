@@ -13,6 +13,10 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import { ResidualVerdictStore } from "../../../adapters/duckdb/residual-verdict-store.js";
 import { GraphClassTieReader } from "../../../domains/trajectory/codegraph/residual/interface-fanout.js";
 import {
+  ResidualCalibration,
+  type ResidualCalibrationReport,
+} from "../../../domains/trajectory/codegraph/residual/residual-calibration.js";
+import {
   RESIDUAL_MODELS,
   ResidualModelProviderFactory,
 } from "../../../domains/trajectory/codegraph/residual/residual-model-provider-factory.js";
@@ -23,8 +27,10 @@ import type {
 } from "../../../domains/trajectory/codegraph/residual/types.js";
 import { recomputeGraphMetrics } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
+  skippedCalibrationReport,
   skippedResidualReport,
   type ResidualAfterIndexRequest,
+  type ResidualCalibrateRequest,
   type ResidualResolvePort,
   type ResidualResolvePortRequest,
 } from "./residual-resolve-port.js";
@@ -145,9 +151,7 @@ export class ResidualResolutionOps implements ResidualResolvePort {
           : { namePriorAcceptThreshold: this.deps.config.namePriorAcceptThreshold }),
         retentionDays: this.deps.config.retentionDays,
         recomputeDerived: async () => recomputeGraphMetrics(graphDb),
-        readMethodSource: async (relPath: string, startLine: number, endLine: number) =>
-          sliceLines(await readFile(join(request.projectRoot, relPath), "utf8"), startLine, endLine),
-        readSourceFile: readSource,
+        ...sourceReaders(request.projectRoot),
         now: this.now,
         ...(request.onProgress ? { onProgress: request.onProgress } : {}),
       };
@@ -159,6 +163,49 @@ export class ResidualResolutionOps implements ResidualResolvePort {
       await store?.close().catch(() => undefined);
     }
   }
+
+  /**
+   * Asks `request.model` the calibration questions drawn from the static site
+   * sample, with the pass's caps and question variant, and scores the answers.
+   * Never throws — a failure to start ends it `skipped`.
+   */
+  async calibrate(request: ResidualCalibrateRequest): Promise<ResidualCalibrationReport> {
+    const { config } = this.deps;
+    let store: VerdictStoreHandle | undefined;
+    try {
+      const provider = this.createProvider(request.model);
+      store = await ResidualVerdictStore.open(this.deps.rootDir, request.logicalName);
+      const { graphDb } = await this.deps.codegraphPool.acquireWrite(request.physicalCollectionName);
+      return await new ResidualCalibration().run({
+        graphDb,
+        store,
+        provider,
+        concurrency: config.concurrency,
+        ...(config.maxQuestionsPerRequest === undefined
+          ? {}
+          : { maxQuestionsPerRequest: config.maxQuestionsPerRequest }),
+        ...(config.maxCriteriaPerRequest === undefined ? {} : { maxCriteriaPerRequest: config.maxCriteriaPerRequest }),
+        ...(config.originContext === undefined ? {} : { originContext: config.originContext }),
+        menuLimit: config.menuLimit,
+        ...sourceReaders(request.projectRoot),
+        now: this.now,
+        ...(request.onProgress ? { onProgress: request.onProgress } : {}),
+      });
+    } catch (error) {
+      return skippedCalibrationReport(error instanceof Error ? error.message : String(error));
+    } finally {
+      await store?.close().catch(() => undefined);
+    }
+  }
+}
+
+/** Method and file text from the working tree, the way a question's state is built. */
+function sourceReaders(projectRoot: string) {
+  return {
+    readMethodSource: async (relPath: string, startLine: number, endLine: number) =>
+      sliceLines(await readFile(join(projectRoot, relPath), "utf8"), startLine, endLine),
+    readSourceFile: async (relPath: string) => readFile(join(projectRoot, relPath), "utf8"),
+  };
 }
 
 /** Lines `startLine..endLine`, 1-based and inclusive. */

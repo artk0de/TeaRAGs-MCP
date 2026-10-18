@@ -94,6 +94,40 @@ export interface ResidualCallSiteRow {
  * `null` for a row written before 055; `language` only when its file has no
  * `cg_symbols_files` row either.
  */
+/** How the static resolver settled a sampled site. */
+export type StaticSiteOutcome = "resolved" | "externalSkipped";
+
+/**
+ * A call site the static resolver settled, kept as calibration ground truth
+ * (`cg_static_site_sample`): a resolved site's truth is the owner of
+ * `targetSymbolId`, an external one's is "none of the menu".
+ */
+export interface StaticSiteSampleRow {
+  siteKey: string;
+  sourceRelPath: string;
+  language: string;
+  methodSymbolId: string;
+  methodStartLine: number;
+  methodEndLine: number;
+  line: number;
+  column: number;
+  receiverText: string;
+  receiverKind: string;
+  member: string;
+  outcome: StaticSiteOutcome;
+  /** The resolved edge's target; `null` for an external site. */
+  targetSymbolId: string | null;
+  /** The miss bucket of an unresolved site; `null` when resolved. */
+  reason: string | null;
+  /** Project classes defining the member — the full menu size. */
+  owners: number;
+  /** The menu a residual question gets: every owner's method, or the name-matched block on overflow. */
+  candidates: string[];
+  menuOverflow: boolean;
+  /** Hash priority in [0, 1): the sample's draw order. */
+  priority: number;
+}
+
 export interface ModelResolvedSiteCount {
   /**
    * `edge` — a model edge resolves the site; `external` — the model put its target
@@ -375,4 +409,35 @@ export interface ResidualPassReport {
    * or when the heal failed (logged).
    */
   payloadHeal?: { pointsRewritten: number; filesTouched: number };
+}
+
+/** A calibrated accept threshold's question shape (`cg_residual_calibration.stratum`). */
+export type ResidualCalibrationStratum = "fullMenu" | "block1" | "none";
+
+/** None-answer shares the outside share `pi` was solved from. */
+export interface ResidualCalibrationNoneRates {
+  residual: number;
+  onMenu: number;
+  external: number;
+}
+
+/**
+ * One fitted threshold per language and stratum (`cg_residual_calibration`).
+ * `threshold` is `null` when the fit found no cut — the caller keeps its default.
+ */
+export interface ResidualCalibrationRow {
+  language: string;
+  stratum: ResidualCalibrationStratum;
+  threshold: number | null;
+  lowerBound: number | null;
+  n: number;
+  pi: number | null;
+  noneRates: ResidualCalibrationNoneRates | null;
+  /** The model id the sample was asked with. */
+  model: string;
+  /** The question fold (prompt template, state builder, origin context) it was asked under. */
+  templateHash: string;
+  graphFingerprint: string;
+  /** Epoch milliseconds. */
+  createdAt: number;
 }

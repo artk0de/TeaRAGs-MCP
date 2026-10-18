@@ -25,6 +25,7 @@ import type {
   ModelExternalSiteRow,
   OntologyReportQuery,
   RelPath,
+  ResidualCalibrationRow,
   ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
@@ -88,6 +89,8 @@ export const DAEMON_OPS = [
   "applyModelEdges",
   "applyModelExternalSites",
   "markDerivedStale",
+  // Per-repo Kev accept thresholds (bd tea-rags-mcp-2m83f.62).
+  "writeResidualCalibration",
   // Cone dependents of deleted files (bd tea-rags-mcp-7t2ee).
   "invalidateHierarchyDependentsOfDeletedFiles",
   // Callees observed by deleted callers (bd tea-rags-mcp-2m83f.49).
@@ -197,7 +200,9 @@ export const DAEMON_OPS = [
   "getFileImports",
   "hasStaleDerivedTables",
   "readResidualCallSites",
+  "readStaticSiteSample",
   "getModelResolvedSiteCounts",
+  "readResidualCalibration",
   "getPageRank",
   "findSymbolChunk",
   // Declared visibility of a batch of symbols for the graph tools and the
@@ -325,6 +330,7 @@ export interface DaemonOpParamsMap {
   pruneDerivedForDeletedFiles: { relPaths: RelPath[] };
   applyModelEdges: { model: string; edges: ModelEdgeRow[] };
   applyModelExternalSites: { model: string; sites: ModelExternalSiteRow[] };
+  writeResidualCalibration: { language: string; rows: ResidualCalibrationRow[] };
   markDerivedStale: NoDaemonOpParams;
   invalidateHierarchyDependentsOfDeletedFiles: { relPaths: RelPath[] };
   invalidateCallerParamDependentsOfDeletedFiles: { relPaths: RelPath[] };
@@ -386,7 +392,9 @@ export interface DaemonOpParamsMap {
   getFileImports: { relPath: RelPath };
   hasStaleDerivedTables: NoDaemonOpParams;
   readResidualCallSites: NoDaemonOpParams;
+  readStaticSiteSample: NoDaemonOpParams;
   getModelResolvedSiteCounts: { thresholds: Readonly<Record<string, number>> };
+  readResidualCalibration: { language: string };
   getPageRank: { symbolId: SymbolId; relPath?: RelPath };
   findSymbolChunk: { symbolId: SymbolId };
   getSymbolVisibilities: { symbolIds: SymbolId[] };

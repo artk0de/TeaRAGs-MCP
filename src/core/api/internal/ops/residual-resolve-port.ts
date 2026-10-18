@@ -1,4 +1,5 @@
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { ResidualCalibrationReport } from "../../../domains/trajectory/codegraph/residual/residual-calibration.js";
 import type { ResidualPassMode, ResidualPassReport } from "../../../domains/trajectory/codegraph/residual/types.js";
 import type { ProgressCallback } from "../../../types.js";
 
@@ -30,6 +31,26 @@ export interface ResidualResolvePort {
    * status counts a model edge as resolving its site only at or above it.
    */
   readonly thresholds?: Readonly<Record<string, number>>;
+  /** `IndexingOps#calibrateResidual` — ask the model over the static site sample and score it. */
+  calibrate?: (request: ResidualCalibrateRequest) => Promise<ResidualCalibrationReport>;
+}
+
+/** A calibration run over the current generation's static site sample. */
+export type ResidualCalibrateRequest = Omit<ResidualResolvePortRequest, "mode">;
+
+/** Report of a calibration that could not start. */
+export function skippedCalibrationReport(reason: string): ResidualCalibrationReport {
+  return {
+    outcome: "skipped",
+    reason,
+    sampleRows: 0,
+    strata: { fullMenu: 0, block1: 0, external: 0 },
+    cacheHits: 0,
+    asked: 0,
+    answered: 0,
+    failedRequests: 0,
+    records: [],
+  };
 }
 
 /** Report of a pass that could not start; the same shape the pass itself returns when skipped. */

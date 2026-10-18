@@ -32,6 +32,8 @@ import type {
   ResidualCallSiteRow,
   ResidualKind,
   ResidualReason,
+  StaticSiteOutcome,
+  StaticSiteSampleRow,
 } from "../../contracts/types/codegraph.js";
 import { METHOD_EDGE_KEYS, METHOD_EDGE_VALUES } from "./file-graph-store.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
@@ -61,6 +63,27 @@ interface ResidualSiteDbRow {
   receiver_group: string | null;
   class_targets: string | null;
   downstream_group: string | null;
+}
+
+interface StaticSiteSampleDbRow {
+  source_rel_path: string;
+  site_key: string;
+  language: string;
+  method_symbol_id: string;
+  method_start_line: number | bigint;
+  method_end_line: number | bigint;
+  line: number | bigint;
+  call_column: number | bigint;
+  receiver_text: string;
+  receiver_kind: string;
+  member: string;
+  outcome: string;
+  target_symbol_id: string | null;
+  reason: string | null;
+  owners: number | bigint;
+  candidates: string;
+  menu_overflow: boolean;
+  priority: number;
 }
 
 interface ModelResolvedSiteCountDbRow {
@@ -105,6 +128,36 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
         ? {}
         : { receiverGroup: r.receiver_group, classTargets: decodeResidualClassTargets(r.member, r.class_targets) }),
       ...(r.downstream_group === null ? {} : { downstreamGroup: r.downstream_group }),
+    }));
+  }
+
+  async readStaticSiteSample(): Promise<StaticSiteSampleRow[]> {
+    const rows = await this.session.queryAll<StaticSiteSampleDbRow>(
+      `SELECT source_rel_path, site_key, language, method_symbol_id, method_start_line, method_end_line, line,
+              call_column, receiver_text, receiver_kind, member, outcome, target_symbol_id, reason, owners,
+              candidates, menu_overflow, priority
+         FROM cg_static_site_sample
+        ORDER BY priority, source_rel_path, site_key`,
+    );
+    return rows.map((r) => ({
+      siteKey: r.site_key,
+      sourceRelPath: r.source_rel_path,
+      language: r.language,
+      methodSymbolId: r.method_symbol_id,
+      methodStartLine: Number(r.method_start_line),
+      methodEndLine: Number(r.method_end_line),
+      line: Number(r.line),
+      column: Number(r.call_column),
+      receiverText: r.receiver_text,
+      receiverKind: r.receiver_kind,
+      member: r.member,
+      outcome: r.outcome as StaticSiteOutcome,
+      targetSymbolId: r.target_symbol_id,
+      reason: r.reason,
+      owners: Number(r.owners),
+      candidates: JSON.parse(r.candidates) as string[],
+      menuOverflow: r.menu_overflow,
+      priority: r.priority,
     }));
   }
 

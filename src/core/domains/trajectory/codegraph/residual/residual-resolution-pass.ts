@@ -153,7 +153,7 @@ export class ResidualResolutionPass {
   async run(input: ResidualPassInput): Promise<ResidualPassReport> {
     const { provider } = input;
     const startedAt = input.now();
-    const servedVersion = input.mode === "ask" ? await this.servedVersion(provider) : { version: undefined };
+    const servedVersion = input.mode === "ask" ? await servedModelVersion(provider) : { version: undefined };
 
     const fold = residualQuestionFold({
       ...(provider.promptTemplate === undefined ? {} : { promptTemplate: provider.promptTemplate }),
@@ -284,17 +284,19 @@ export class ResidualResolutionPass {
       return "stale";
     }
   }
+}
 
-  /** The model version to ask under, or why the provider cannot be asked. */
-  private async servedVersion(provider: ResidualModelProvider): Promise<{ version?: string; unavailable?: string }> {
-    const unavailable = (detail: string) => ({ unavailable: `provider ${provider.id} unavailable: ${detail}` });
-    try {
-      const health = await provider.health();
-      if (!health.ok) return unavailable(health.reason);
-      return { version: await provider.version() };
-    } catch (error) {
-      return unavailable(describeError(error));
-    }
+/** The model version to ask under, or why the provider cannot be asked. */
+export async function servedModelVersion(
+  provider: ResidualModelProvider,
+): Promise<{ version?: string; unavailable?: string }> {
+  const unavailable = (detail: string) => ({ unavailable: `provider ${provider.id} unavailable: ${detail}` });
+  try {
+    const health = await provider.health();
+    if (!health.ok) return unavailable(health.reason);
+    return { version: await provider.version() };
+  } catch (error) {
+    return unavailable(describeError(error));
   }
 }
 

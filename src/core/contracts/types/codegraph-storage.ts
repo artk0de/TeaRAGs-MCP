@@ -48,7 +48,9 @@ import type {
   ModelEdgeRow,
   ModelExternalSiteRow,
   ModelResolvedSiteCount,
+  ResidualCalibrationRow,
   ResidualCallSiteRow,
+  StaticSiteSampleRow,
 } from "./codegraph-residual.js";
 import type {
   CallableSymbolKind,
@@ -1760,6 +1762,9 @@ export interface CodegraphResidualEdgeStore {
   /** Every residual call site of the generation, ordered by file then site key. */
   readResidualCallSites: () => Promise<ResidualCallSiteRow[]>;
 
+  /** Every row of the static site sample (`cg_static_site_sample`), lowest priority first. */
+  readStaticSiteSample: () => Promise<StaticSiteSampleRow[]>;
+
   /**
    * Replace every `origin = 'model'` method edge of `model` with `edges`;
    * static edges and other models' edges are untouched. An edge whose site is
@@ -1780,6 +1785,18 @@ export interface CodegraphResidualEdgeStore {
 }
 
 /**
+ * Per-repo Kev accept thresholds (`cg_residual_calibration`, bd
+ * tea-rags-mcp-2m83f.62). Part of {@link GraphDbClient}.
+ */
+export interface CodegraphResidualCalibrationStore {
+  /** The stored calibration of `language`, ordered by stratum. */
+  readResidualCalibration: (language: string) => Promise<ResidualCalibrationRow[]>;
+
+  /** Make the rows of `language` equal `rows`; other languages are untouched. */
+  writeResidualCalibration: (language: string, rows: ResidualCalibrationRow[]) => Promise<void>;
+}
+
+/**
  * Driver-agnostic graph DB client.
  *
  * Slice 1 ships `DuckDbGraphClient`; slice 4 ships `PostgresGraphClient`.
@@ -1793,6 +1810,7 @@ export interface GraphDbClient
     CodegraphGraphReadStore,
     CodegraphGraphAnalyticsStore,
     CodegraphResidualEdgeStore,
+    CodegraphResidualCalibrationStore,
     CodegraphIdentifierStore,
     CodegraphFieldAccessStore,
     CodegraphOntologyReportStore,
