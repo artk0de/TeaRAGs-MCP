@@ -182,6 +182,7 @@ function buildEnvInputs(env: EnvReader) {
       fanoutFloor: env("CODEGRAPH_RESIDUAL_FANOUT_FLOOR"),
       confirmStage: env("CODEGRAPH_RESIDUAL_CONFIRM_STAGE"),
       originContext: env("CODEGRAPH_RESIDUAL_ORIGIN_CONTEXT"),
+      autoCalibrate: env("CODEGRAPH_RESIDUAL_AUTO_CALIBRATE"),
       namePriorAcceptThreshold: env("CODEGRAPH_RESIDUAL_NAME_PRIOR_ACCEPT_THRESHOLD"),
       retentionDays: env("CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS"),
       kevSessionUrl: env("CODEGRAPH_RESIDUAL_KEV_SESSION_URL"),

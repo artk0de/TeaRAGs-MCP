@@ -112,6 +112,7 @@ const REGISTRY_ENV_GROUP_TABLE = [
   { canonical: "CODEGRAPH_RESIDUAL_FANOUT_FLOOR", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_CONFIRM_STAGE", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_ORIGIN_CONTEXT", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_RESIDUAL_AUTO_CALIBRATE", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_NAME_PRIOR_ACCEPT_THRESHOLD", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS", aliases: [], consequence: "runtime" },
   // CODEGRAPH_RESIDUAL_KEV_SESSION_TOKEN is a secret and stays outside the registry.

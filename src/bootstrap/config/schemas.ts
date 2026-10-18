@@ -250,6 +250,8 @@ export const codegraphResidualSchema = z.object({
   confirmStage: booleanFromEnvWithDefault(false),
   /** Append receiver-origin lines (assignments, the returning method's head) to each question's state. */
   originContext: booleanFromEnvWithDefault(false),
+  /** Apply the stored per-language Kev threshold calibration, asking and storing a new one when it is missing or stale. */
+  autoCalibrate: booleanFromEnvWithDefault(true),
   /** Accept threshold for a name-prior block-1 pick and the confirm of one; unset = `kevThreshold`. */
   namePriorAcceptThreshold: optionalFloat,
   /** Verdicts not seen by any run for this many days are dropped. */

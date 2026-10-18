@@ -136,6 +136,7 @@ export function buildRegistryEnvSnapshot(
   put("CODEGRAPH_RESIDUAL_FANOUT_FLOOR", codegraph.residual.fanoutFloor);
   put("CODEGRAPH_RESIDUAL_CONFIRM_STAGE", codegraph.residual.confirmStage);
   put("CODEGRAPH_RESIDUAL_ORIGIN_CONTEXT", codegraph.residual.originContext);
+  put("CODEGRAPH_RESIDUAL_AUTO_CALIBRATE", codegraph.residual.autoCalibrate);
   put("CODEGRAPH_RESIDUAL_NAME_PRIOR_ACCEPT_THRESHOLD", codegraph.residual.namePriorAcceptThreshold);
   put("CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS", codegraph.residual.retentionDays);
   put("CODEGRAPH_RESIDUAL_KEV_SESSION_URL", codegraph.residual.kevSessionUrl);

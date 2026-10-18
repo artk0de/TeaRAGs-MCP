@@ -3,6 +3,9 @@
  * the project's verdict store, takes the graph's write handle, builds the
  * provider and reads method sources from the working tree. Never throws — a
  * failure of any of those ends the pass `skipped`, and indexing carries on.
+ * With `autoCalibrate` on, the pass judges answers by the stored per-language
+ * threshold calibration; an `ask` pass whose calibration is missing or stale
+ * asks a new one under the same GPU lease (see `residual-shared-lease.ts`).
  */
 
 import { existsSync } from "node:fs";
@@ -14,6 +17,7 @@ import { ResidualVerdictStore } from "../../../adapters/duckdb/residual-verdict-
 import { GraphClassTieReader } from "../../../domains/trajectory/codegraph/residual/interface-fanout.js";
 import {
   ResidualCalibration,
+  type ResidualCalibrationInput,
   type ResidualCalibrationReport,
 } from "../../../domains/trajectory/codegraph/residual/residual-calibration.js";
 import {
@@ -21,6 +25,8 @@ import {
   ResidualModelProviderFactory,
 } from "../../../domains/trajectory/codegraph/residual/residual-model-provider-factory.js";
 import { ResidualResolutionPass } from "../../../domains/trajectory/codegraph/residual/residual-resolution-pass.js";
+import { shareProviderLease } from "../../../domains/trajectory/codegraph/residual/residual-shared-lease.js";
+import { StoredResidualThresholds } from "../../../domains/trajectory/codegraph/residual/residual-thresholds.js";
 import type {
   ResidualModelProvider,
   ResidualPassReport,
@@ -63,6 +69,8 @@ export interface ResidualResolutionConfig {
   originContext?: boolean;
   /** Accept threshold for a name-prior block-1 pick and the confirm of one; unset = `kevThreshold`. */
   namePriorAcceptThreshold?: number;
+  /** Judge answers by the stored threshold calibration, asking a new one when it is missing or stale; unset = on. */
+  autoCalibrate?: boolean;
   retentionDays: number;
   /** GPU session broker; set, an `ask` pass with uncached sites leases Kev from it. */
   kevSessionUrl?: string;
@@ -112,12 +120,16 @@ export class ResidualResolutionOps implements ResidualResolvePort {
   async resolve(request: ResidualResolvePortRequest): Promise<ResidualPassReport> {
     const mode = request.mode ?? "ask";
     let store: VerdictStoreHandle | undefined;
+    let releaseLease: (() => Promise<void>) | undefined;
     try {
-      const provider =
+      const lease =
         mode === "ask"
-          ? this.createProvider(request.model)
-          : ResidualModelProviderFactory.cacheOnly(request.model, this.deps.config);
+          ? shareProviderLease(this.createProvider(request.model))
+          : { provider: ResidualModelProviderFactory.cacheOnly(request.model, this.deps.config), release: undefined };
+      const { provider } = lease;
+      releaseLease = lease.release;
       store = await ResidualVerdictStore.open(this.deps.rootDir, request.logicalName);
+      const openStore = store;
       const { graphDb } = await this.deps.codegraphPool.acquireWrite(request.physicalCollectionName);
       const readSource = async (relPath: string) => readFile(join(request.projectRoot, relPath), "utf8");
       const pass = new ResidualResolutionPass();
@@ -151,17 +163,62 @@ export class ResidualResolutionOps implements ResidualResolvePort {
           : { namePriorAcceptThreshold: this.deps.config.namePriorAcceptThreshold }),
         retentionDays: this.deps.config.retentionDays,
         recomputeDerived: async () => recomputeGraphMetrics(graphDb),
+        ...(this.deps.config.autoCalibrate === false
+          ? {}
+          : {
+              thresholdSource: new StoredResidualThresholds(
+                graphDb,
+                mode === "ask" ? async () => this.askCalibration(graphDb, openStore, provider, request) : undefined,
+                this.now,
+              ),
+            }),
         ...sourceReaders(request.projectRoot),
         now: this.now,
         ...(request.onProgress ? { onProgress: request.onProgress } : {}),
       };
-      // A brokered provider leases the GPU inside the pass, which alone knows whether any site misses the cache.
+      // A brokered provider leases the GPU inside the pass, which alone knows whether any site misses the cache;
+      // the shared lease keeps it for a calibration the pass asks afterwards.
       return await pass.run(input);
     } catch (error) {
       return skippedResidualReport(error instanceof Error ? error.message : String(error), mode);
     } finally {
+      await releaseLease?.().catch(() => undefined);
       await store?.close().catch(() => undefined);
     }
+  }
+
+  /** The calibration answers for an automatic calibration; a skipped calibration throws its reason. */
+  private async askCalibration(
+    graphDb: ResidualCalibrationInput["graphDb"],
+    store: VerdictStoreHandle,
+    provider: ResidualModelProvider,
+    request: ResidualResolvePortRequest,
+  ): Promise<ResidualCalibrationReport["records"]> {
+    const report = await new ResidualCalibration().run(this.calibrationInput(graphDb, store, provider, request));
+    if (report.outcome === "skipped") throw new Error(report.reason ?? "calibration skipped");
+    return report.records;
+  }
+
+  private calibrationInput(
+    graphDb: ResidualCalibrationInput["graphDb"],
+    store: VerdictStoreHandle,
+    provider: ResidualModelProvider,
+    request: Pick<ResidualCalibrateRequest, "projectRoot" | "onProgress">,
+  ): ResidualCalibrationInput {
+    const { config } = this.deps;
+    return {
+      graphDb,
+      store,
+      provider,
+      concurrency: config.concurrency,
+      ...(config.maxQuestionsPerRequest === undefined ? {} : { maxQuestionsPerRequest: config.maxQuestionsPerRequest }),
+      ...(config.maxCriteriaPerRequest === undefined ? {} : { maxCriteriaPerRequest: config.maxCriteriaPerRequest }),
+      ...(config.originContext === undefined ? {} : { originContext: config.originContext }),
+      menuLimit: config.menuLimit,
+      ...sourceReaders(request.projectRoot),
+      now: this.now,
+      ...(request.onProgress ? { onProgress: request.onProgress } : {}),
+    };
   }
 
   /**
@@ -170,27 +227,12 @@ export class ResidualResolutionOps implements ResidualResolvePort {
    * Never throws — a failure to start ends it `skipped`.
    */
   async calibrate(request: ResidualCalibrateRequest): Promise<ResidualCalibrationReport> {
-    const { config } = this.deps;
     let store: VerdictStoreHandle | undefined;
     try {
       const provider = this.createProvider(request.model);
       store = await ResidualVerdictStore.open(this.deps.rootDir, request.logicalName);
       const { graphDb } = await this.deps.codegraphPool.acquireWrite(request.physicalCollectionName);
-      return await new ResidualCalibration().run({
-        graphDb,
-        store,
-        provider,
-        concurrency: config.concurrency,
-        ...(config.maxQuestionsPerRequest === undefined
-          ? {}
-          : { maxQuestionsPerRequest: config.maxQuestionsPerRequest }),
-        ...(config.maxCriteriaPerRequest === undefined ? {} : { maxCriteriaPerRequest: config.maxCriteriaPerRequest }),
-        ...(config.originContext === undefined ? {} : { originContext: config.originContext }),
-        menuLimit: config.menuLimit,
-        ...sourceReaders(request.projectRoot),
-        now: this.now,
-        ...(request.onProgress ? { onProgress: request.onProgress } : {}),
-      });
+      return await new ResidualCalibration().run(this.calibrationInput(graphDb, store, provider, request));
     } catch (error) {
       return skippedCalibrationReport(error instanceof Error ? error.message : String(error));
     } finally {
