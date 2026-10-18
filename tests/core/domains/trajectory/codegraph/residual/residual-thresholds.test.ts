@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ResidualCalibrationRow } from "../../../../../../src/core/contracts/types/codegraph-residual.js";
 import type { CalibrationAnswer } from "../../../../../../src/core/domains/trajectory/codegraph/residual/calibration-answer.js";
-import { StoredResidualThresholds } from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-thresholds.js";
+import {
+  calibrationModel,
+  StoredResidualThresholds,
+} from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-thresholds.js";
+
+const KEY = { providerId: "kev", servedVersion: "q8-2026-10", templateHash: "fold-1" };
 
 const row = (stratum: ResidualCalibrationRow["stratum"], over: Partial<ResidualCalibrationRow> = {}) => ({
   language: "ruby",
@@ -12,7 +17,7 @@ const row = (stratum: ResidualCalibrationRow["stratum"], over: Partial<ResidualC
   n: 120,
   pi: 0.2,
   noneRates: { residual: 0.3, onMenu: 0.05, external: 0.8 },
-  model: "kev@q8-2026-10",
+  model: calibrationModel(KEY),
   templateHash: "fold-1",
   graphFingerprint: "g1",
   createdAt: 1,
@@ -29,8 +34,6 @@ function fakeGraphDb(rows: ResidualCalibrationRow[]) {
     }),
   };
 }
-
-const KEY = { providerId: "kev", servedVersion: "q8-2026-10", templateHash: "fold-1" };
 
 describe("StoredResidualThresholds", () => {
   it("reads a calibration asked under the served model and fold, a null stratum as null", async () => {
@@ -53,6 +56,15 @@ describe("StoredResidualThresholds", () => {
 
     expect(await source.stored("ruby", { ...KEY, servedVersion: "q8-2026-11" })).toBeUndefined();
     expect(await source.stored("ruby", { ...KEY, templateHash: "fold-2" })).toBeUndefined();
+  });
+
+  it("finds no calibration fitted by an earlier fit, asking or replaying", async () => {
+    const earlier = { model: "kev@q8-2026-10" };
+    const graphDb = fakeGraphDb([row("block1", earlier), row("fullMenu", earlier), row("none", earlier)]);
+    const source = new StoredResidualThresholds(graphDb);
+
+    expect(await source.stored("ruby", KEY)).toBeUndefined();
+    expect(await source.stored("ruby", { providerId: "kev", templateHash: "fold-1" })).toBeUndefined();
   });
 
   it("matches any version of the provider when the run serves none", async () => {
@@ -97,7 +109,7 @@ describe("StoredResidualThresholds", () => {
       language: "ruby",
       threshold: fit?.block1?.threshold,
       n: 80,
-      model: "kev@q8-2026-10",
+      model: calibrationModel(KEY),
       templateHash: "fold-1",
       graphFingerprint: "g2",
       createdAt: 42,

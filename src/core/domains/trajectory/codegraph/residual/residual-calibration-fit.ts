@@ -9,9 +9,11 @@
  *   curve is optimistic. Precision is modelled as a mixture of on-menu sites
  *   and outside sites, `prec(t) = (1−π)·TP_S1(t) / ((1−π)·C_S1(t) + π·C_S3(t))`,
  *   with the outside answers reweighted to the residual run's menu-size mix and
- *   `π` solved label-free from the residual run's none rate. The cut is where a
- *   seeded bootstrap lower bound clears the target.
- * - None: the same mixture over none answers.
+ *   `π` bounded label-free from above by `residual none rate / S3 none rate` —
+ *   the S1 none rate is not trusted, wrong static truth inflates it. The cut is
+ *   where a seeded bootstrap lower bound clears the target.
+ * - None: the same mixture over none answers, with `π` solved from where the
+ *   residual none rate falls between S1 and S3; no cut when they cannot separate.
  *
  * Every threshold is floored at {@link CALIBRATION_FLOOR}: there is no evidence
  * below it.
@@ -53,7 +55,10 @@ export interface CumulativeThreshold {
 }
 
 export interface MixtureModel {
+  /** Outside share from where the residual none rate falls between the strata; judges none answers. */
   pi: number;
+  /** Its upper bound, every residual none outside; judges class picks. */
+  piBound: number;
   noneRates: ResidualCalibrationNoneRates;
   /** Class-answer precision at `p ≥ cut`; `null` when no class pick reaches it. */
   classPrecision: (cut: number) => number | null;
@@ -156,6 +161,19 @@ export function externalShare(
   return Math.min(1, Math.max(0, (residualNoneRate - onMenuNoneRate) / (externalNoneRate - onMenuNoneRate)));
 }
 
+/** Bumped whenever the fit's rule changes, so a calibration stored by an earlier fit is not reused. */
+export const CALIBRATION_FIT_VERSION = 2;
+
+/**
+ * Upper bound of the outside share: every residual none read as an outside
+ * site. Needs no on-menu none rate, which wrong static truth inflates. `null`
+ * when outside sites never answer none.
+ */
+export function externalShareBound(residualNoneRate: number, externalNoneRate: number): number | null {
+  if (externalNoneRate <= 0) return null;
+  return Math.min(1, residualNoneRate / externalNoneRate);
+}
+
 /** Per-bucket weight taking the outside answers to the residual run's menu-size mix. */
 function menuSizeWeights(
   mix: ResidualAnswerMix["menuSizeMix"],
@@ -194,21 +212,24 @@ function mixtureFrom(
   const onMenuNoneRate = onMenu.filter((r) => r.top === "none").length / onMenu.length;
   const externalNoneRate = externalTotal > 0 ? sumOf(external, w, (r) => r.top === "none") / externalTotal : 0;
   const pi = externalShare(residualNoneRate, onMenuNoneRate, externalNoneRate) ?? 0;
+  const piBound = externalShareBound(residualNoneRate, externalNoneRate) ?? 0;
   const onMenuShare = (pick: (r: CalibrationAnswer) => boolean): number => onMenu.filter(pick).length / onMenu.length;
   const externalShareOf = (pick: (r: CalibrationAnswer) => boolean): number =>
     externalTotal > 0 ? sumOf(external, w, pick) / externalTotal : 0;
-  const precision = (top: CalibrationAnswer["top"], cut: number): number | null => {
+  // Each stratum is judged at its pessimistic end: class picks under the bound, none answers under the rate.
+  const precision = (top: CalibrationAnswer["top"], cut: number, share: number): number | null => {
     const at = (r: CalibrationAnswer): boolean => r.top === top && r.p >= cut;
     const right = (r: CalibrationAnswer): boolean => at(r) && r.correct;
-    const den = (1 - pi) * onMenuShare(at) + pi * externalShareOf(at);
+    const den = (1 - share) * onMenuShare(at) + share * externalShareOf(at);
     if (den === 0) return null;
-    return ((1 - pi) * onMenuShare(right) + pi * externalShareOf(right)) / den;
+    return ((1 - share) * onMenuShare(right) + share * externalShareOf(right)) / den;
   };
   return {
     pi,
+    piBound,
     noneRates: { residual: residualNoneRate, onMenu: onMenuNoneRate, external: externalNoneRate },
-    classPrecision: (cut) => precision("class", cut),
-    nonePrecision: (cut) => precision("none", cut),
+    classPrecision: (cut) => precision("class", cut, piBound),
+    nonePrecision: (cut) => precision("none", cut, pi),
   };
 }
 
@@ -294,7 +315,8 @@ export function fitResidualThresholds(
   const input = { onMenu, external, residual };
   const point = mixtureModel(input);
   const onMenuNoneRate = point.noneRates.onMenu;
-  if (externalShare(point.noneRates.residual, onMenuNoneRate, point.noneRates.external) === null) return fit;
+  if (externalShareBound(point.noneRates.residual, point.noneRates.external) === null) return fit;
+  const noneSeparable = externalShare(point.noneRates.residual, onMenuNoneRate, point.noneRates.external) !== null;
   const bounds = bootstrapLowerBounds(input, { ...options.bootstrap, cuts });
   const lowest = (byCut: Map<number, number>, target: number, n: number): StratumFit | null => {
     for (const cut of cuts) {
@@ -306,7 +328,9 @@ export function fitResidualThresholds(
   return {
     ...fit,
     fullMenu: lowest(bounds.classPrecision, options.classTarget ?? CALIBRATION_CLASS_TARGET, onMenu.length),
-    none: lowest(bounds.nonePrecision, options.noneTarget ?? CALIBRATION_NONE_TARGET, external.length),
+    none: noneSeparable
+      ? lowest(bounds.nonePrecision, options.noneTarget ?? CALIBRATION_NONE_TARGET, external.length)
+      : null,
     pi: point.pi,
     noneRates: point.noneRates,
   };

@@ -16,6 +16,7 @@ import {
   residualQuestionFold,
   ResidualResolutionPass,
 } from "../../../../../src/core/domains/trajectory/codegraph/residual/residual-resolution-pass.js";
+import { calibrationModel } from "../../../../../src/core/domains/trajectory/codegraph/residual/residual-thresholds.js";
 import type { ResidualModelProvider } from "../../../../../src/core/domains/trajectory/codegraph/residual/types.js";
 
 const PHYSICAL = fixturePhysicalCollectionName("code_test_v1");
@@ -72,7 +73,13 @@ const CONFIG = {
 
 const FOLD = residualQuestionFold({ originContext: false });
 
-const calibrationRow = (stratum: ResidualCalibrationRow["stratum"], model = "kev@fake@1"): ResidualCalibrationRow => ({
+const modelAt = (servedVersion: string): string =>
+  calibrationModel({ providerId: "kev", servedVersion, templateHash: FOLD });
+
+const calibrationRow = (
+  stratum: ResidualCalibrationRow["stratum"],
+  model = modelAt("fake@1"),
+): ResidualCalibrationRow => ({
   language: "ruby",
   stratum,
   threshold: 0.5,
@@ -168,7 +175,7 @@ describe("ResidualResolutionOps — auto-calibration", () => {
   });
 
   it("recalibrates when the served model changed, leasing the GPU once, and stores the result", async () => {
-    stored = [calibrationRow("block1", "kev@fake@0"), calibrationRow("fullMenu", "kev@fake@0")];
+    stored = [calibrationRow("block1", modelAt("fake@0")), calibrationRow("fullMenu", modelAt("fake@0"))];
     graphDb.readStaticSiteSample.mockResolvedValue(sampleRows(60));
     const events: string[] = [];
 
@@ -178,7 +185,7 @@ describe("ResidualResolutionOps — auto-calibration", () => {
     expect(graphDb.writeResidualCalibration).toHaveBeenCalledWith(
       "ruby",
       expect.arrayContaining([
-        expect.objectContaining({ stratum: "fullMenu", model: "kev@fake@1", templateHash: FOLD }),
+        expect.objectContaining({ stratum: "fullMenu", model: modelAt("fake@1"), templateHash: FOLD }),
       ]),
     );
     expect(events).toEqual(["acquire", "release"]);

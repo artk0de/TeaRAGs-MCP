@@ -10,6 +10,7 @@ import {
   CALIBRATION_CUTS,
   cumulativeThreshold,
   externalShare,
+  externalShareBound,
   fitResidualThresholds,
   mixtureModel,
   validResidualCalibration,
@@ -110,6 +111,17 @@ describe("externalShare", () => {
   });
 });
 
+describe("externalShareBound", () => {
+  it("reads every residual none as an outside site", () => {
+    expect(externalShareBound(0.4, 0.9)).toBeCloseTo(0.444, 3);
+    expect(externalShareBound(0.95, 0.9)).toBe(1);
+  });
+
+  it("is null when outside sites never answer none", () => {
+    expect(externalShareBound(0.4, 0)).toBeNull();
+  });
+});
+
 describe("mixtureModel", () => {
   const model = mixtureModel({ onMenu: stratum("fullMenu"), external: stratum("external"), residual: PHASE1.residual });
 
@@ -120,8 +132,11 @@ describe("mixtureModel", () => {
     expect(model.noneRates.external).toBeCloseTo(0.869, 3);
   });
 
-  it.each(MIXTURE_CUMULATIVE)("reproduces the phase-1 mixture precision at cut %s", (cut, expected) => {
-    expect(Math.abs(model.classPrecision(cut)! - expected)).toBeLessThanOrEqual(0.005);
+  // MIXTURE_CUMULATIVE was computed at the rate share (0.733); class picks are now judged at its bound (0.748),
+  // which on clean static truth stays within 0.015 of it.
+  it.each(MIXTURE_CUMULATIVE)("stays near the phase-1 mixture precision at cut %s", (cut, expected) => {
+    expect(model.piBound).toBeCloseTo(0.748, 3);
+    expect(Math.abs(model.classPrecision(cut)! - expected)).toBeLessThanOrEqual(0.015);
   });
 
   it("is null at a cut no class pick reaches", () => {
@@ -142,6 +157,47 @@ describe("mixtureModel", () => {
     });
     expect(m.pi).toBe(0);
     expect(m.classPrecision(0.5)).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe("mixtureModel with noisy static truth", () => {
+  // Wrong static edges make on-menu sites answer none as often as the residual run does.
+  const onMenu = [
+    ...Array.from({ length: 6 }, () => answer({ p: 0.6, correct: true })),
+    ...Array.from({ length: 4 }, () => answer({ top: "none", correct: false })),
+  ];
+  const external = [
+    ...Array.from({ length: 9 }, () => answer({ stratum: "external", top: "none", correct: true })),
+    answer({ stratum: "external", p: 0.6, correct: false }),
+  ];
+  const residual = { answered: 100, noneAnswers: 40, menuSizeMix: { "2-4": 100 } };
+
+  it("judges class picks under the upper bound of the outside share", () => {
+    const m = mixtureModel({ onMenu, external, residual });
+    expect(m.pi).toBeCloseTo(0, 6);
+    expect(m.piBound).toBeCloseTo(0.444, 3);
+    // (1-π)·0.6 / ((1-π)·0.6 + π·0.1) at π = 4/9
+    expect(m.classPrecision(0.5)).toBeCloseTo(0.882, 3);
+  });
+
+  it("fits the full-menu cut even when the none rates cannot separate the strata", () => {
+    const noisy = [
+      ...Array.from({ length: 5 }, () => answer({ p: 0.9, correct: true })),
+      ...Array.from({ length: 45 }, () => answer({ top: "none", correct: false })),
+    ];
+    const outside = [
+      ...Array.from({ length: 45 }, () => answer({ stratum: "external", top: "none", correct: true })),
+      ...Array.from({ length: 5 }, () => answer({ stratum: "external", p: 0.6, correct: false })),
+    ];
+    const records = [...noisy, ...outside, answer({ stratum: "block1" })];
+    const fit = fitResidualThresholds(records, residual, {
+      minRecords: 5,
+      classTarget: 0.5,
+      bootstrap: { resamples: 50 },
+    });
+    expect(externalShare(0.4, 0.9, 0.9)).toBeNull();
+    expect(fit.fullMenu).not.toBeNull();
+    expect(fit.none).toBeNull();
   });
 });
 

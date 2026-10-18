@@ -12,6 +12,7 @@ import type {
 import type { GraphDbClient } from "../../../../contracts/types/codegraph-storage.js";
 import type { CalibrationAnswer } from "./calibration-answer.js";
 import {
+  CALIBRATION_FIT_VERSION,
   fitResidualThresholds,
   validResidualCalibration,
   type ResidualAnswerMix,
@@ -45,10 +46,12 @@ export interface ResidualThresholdSource {
   calibrate?: (run: ResidualCalibrationRun) => Promise<ResidualCalibratedThresholds>;
 }
 
-/** `cg_residual_calibration.model`: the provider id at its served version. */
+/** `cg_residual_calibration.model`: the provider id at its served version, and the fit that produced it. */
 export function calibrationModel(key: Required<ResidualCalibrationKey>): string {
-  return `${key.providerId}@${key.servedVersion}`;
+  return `${key.providerId}@${key.servedVersion}${FIT_SUFFIX}`;
 }
+
+const FIT_SUFFIX = `#fit${CALIBRATION_FIT_VERSION}`;
 
 const STRATA: readonly ResidualCalibrationStratum[] = ["block1", "fullMenu", "none"];
 
@@ -68,7 +71,7 @@ export class StoredResidualThresholds implements ResidualThresholdSource {
     const rows = await this.graphDb.readResidualCalibration(language);
     const model =
       key.servedVersion === undefined
-        ? rows.find((r) => r.model.startsWith(`${key.providerId}@`))?.model
+        ? rows.find((r) => r.model.startsWith(`${key.providerId}@`) && r.model.endsWith(FIT_SUFFIX))?.model
         : calibrationModel({ ...key, servedVersion: key.servedVersion });
     if (model === undefined) return undefined;
     const valid = validResidualCalibration(rows, { model, templateHash: key.templateHash });

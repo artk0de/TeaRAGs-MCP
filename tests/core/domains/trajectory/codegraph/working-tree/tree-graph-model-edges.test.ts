@@ -30,6 +30,7 @@ import {
   residualQuestionFold,
   residualQuestionHash,
 } from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-resolution-pass.js";
+import { calibrationModel } from "../../../../../../src/core/domains/trajectory/codegraph/residual/residual-thresholds.js";
 import {
   buildWorkingTreeGraph,
   type WorkingTreeGraphBuildInput,
@@ -191,7 +192,7 @@ function calibrationRows(language: string, fullMenu: number): ResidualCalibratio
     n: 120,
     pi: 0.2,
     noneRates: null,
-    model: `${MODEL}@v1`,
+    model: calibrationModel({ providerId: MODEL, servedVersion: "v1", templateHash }),
     templateHash,
     graphFingerprint: "g1",
     createdAt: 1,
