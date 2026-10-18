@@ -486,7 +486,16 @@ function collectRustCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
     const shape = rustCallSiteShape(node);
-    if (shape) out.push({ callText: node.text, ...shape, startLine: node.startPosition.row + 1 });
+    if (shape) {
+      out.push({
+        callText: node.text,
+        ...shape,
+        startLine: node.startPosition.row + 1,
+        // The Node parser exposes UTF-16 code-unit columns. This is the
+        // expression's start, not the callee token's range or a UTF-8 offset.
+        startColumn: node.startPosition.column,
+      });
+    }
   });
   return out;
 }
@@ -510,7 +519,10 @@ export interface RustCallShape {
  * user-defined `macro_rules!` symbols emit a definition (see `rustNameOf`) so
  * the resolver can link them. A call: `value.field()` → the value and field;
  * `foo::bar::baz()` → receiver `foo::bar`, member `baz`; a bare `f()` → `f`;
- * any other callee (a generic function, a closure call) emits nothing.
+ * a `generic_function` adds type arguments without changing those shapes.
+ * Expression callees (parenthesized values, dereferences, closures, call
+ * results) stay omitted: their target needs callable-value identity, and
+ * stripping them to a short name would let the resolver guess a namesake.
  */
 export function rustCallSiteShape(node: AstNode): RustCallShape | null {
   if (node.type === "macro_invocation") {
@@ -521,7 +533,8 @@ export function rustCallSiteShape(node: AstNode): RustCallShape | null {
     return name ? { receiver: macroField.childForFieldName("path")?.text ?? null, member: name.text } : null;
   }
   if (node.type !== "call_expression") return null;
-  const fn = node.childForFieldName("function");
+  let fn = node.childForFieldName("function");
+  while (fn?.type === "generic_function") fn = fn.childForFieldName("function");
   if (fn?.type === "field_expression") {
     const value = fn.childForFieldName("value");
     const field = fn.childForFieldName("field");
