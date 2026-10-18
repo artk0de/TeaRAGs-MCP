@@ -200,4 +200,98 @@ impl Counter {
     });
     expect(f.resolve("self.name().as_ref()").target).toBeNull();
   });
+
+  it("auto-derefs a project smart pointer to its Deref target for the terminal member", () => {
+    const f = fixture({
+      "src/smart.rs": `
+pub struct Dom<T> { value: T }
+impl<T> Dom<T> {
+    pub fn deref(&self) -> &T { todo!() }
+}
+`,
+      "src/window.rs": `
+pub struct Window;
+impl Window { pub fn paint(&self) {} }
+`,
+      "src/main.rs": `
+mod smart;
+mod window;
+use crate::smart::Dom;
+use crate::window::Window;
+fn render(d: Dom<Window>) {
+    d.paint();
+}
+`,
+    });
+    expect(f.resolve("d.paint()").target).toEqual({
+      targetRelPath: "src/window.rs",
+      targetSymbolId: "Window#paint",
+    });
+  });
+
+  it("types a chain hop through the Deref target of the receiver", () => {
+    const f = fixture({
+      "src/smart.rs": `
+pub struct Dom<T> { value: T }
+impl<T> Dom<T> {
+    pub fn deref(&self) -> &T { todo!() }
+}
+`,
+      "src/window.rs": `
+pub struct Window;
+pub struct TitleBar;
+impl Window {
+    pub fn title_bar(&self) -> &TitleBar { todo!() }
+}
+impl TitleBar { pub fn draw(&self) {} }
+`,
+      "src/decoy.rs": `
+pub struct Decoy;
+impl Decoy { pub fn draw(&self) {} }
+`,
+      "src/main.rs": `
+mod smart;
+mod window;
+mod decoy;
+use crate::smart::Dom;
+use crate::window::Window;
+fn render(d: Dom<Window>) {
+    d.title_bar().draw();
+}
+`,
+    });
+    expect(f.resolve("d.title_bar().draw()").target).toEqual({
+      targetRelPath: "src/window.rs",
+      targetSymbolId: "TitleBar#draw",
+    });
+  });
+
+  it("keeps the owner's own member ahead of the Deref target's", () => {
+    const f = fixture({
+      "src/smart.rs": `
+pub struct Dom<T> { value: T }
+impl<T> Dom<T> {
+    pub fn deref(&self) -> &T { todo!() }
+    pub fn paint(&self) {}
+}
+`,
+      "src/window.rs": `
+pub struct Window;
+impl Window { pub fn paint(&self) {} }
+`,
+      "src/main.rs": `
+mod smart;
+mod window;
+use crate::smart::Dom;
+use crate::window::Window;
+fn render(d: Dom<Window>) {
+    d.paint();
+}
+`,
+    });
+    expect(f.resolve("d.paint()").target).toEqual({
+      targetRelPath: "src/smart.rs",
+      targetSymbolId: "Dom#paint",
+    });
+  });
 });

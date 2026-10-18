@@ -17,6 +17,24 @@ function def(t: InMemoryGlobalSymbolTable, relPath: string, name: string, symbol
 }
 
 describe("Rust resolver — import-bound bare calls and external classification", () => {
+  it("classifies a call on a literal receiver external when the member has no project definition", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    // A primitive can only carry a std inherent or std trait method unless the
+    // project implements a trait for it — and that trait method would BE an
+    // in-project definition, which vetoes the std reading.
+    const call = { callText: "10.into()", receiver: "10", member: "into", startLine: 1 };
+    expect(r.targetsExternalImport?.(call, ctx("src/main.rs", [], t))).toBe(true);
+  });
+
+  it("keeps a literal receiver's call in-project when the member is declared in the project", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    def(t, "src/numeric.rs", "step", "MySteps::step");
+    const call = { callText: "10.step()", receiver: "10", member: "step", startLine: 1 };
+    expect(r.targetsExternalImport?.(call, ctx("src/main.rs", [], t))).toBe(false);
+  });
+
   it("resolves a bare call bound by a direct crate import against the imported file", () => {
     const r = new RustCallResolver();
     const t = new InMemoryGlobalSymbolTable();

@@ -80,6 +80,12 @@ export const capability: LanguageCapability = {
   // the nominal-type veto fires only for EXTERNALLY-bound imports, so a
   // declared return type bound from a workspace crate resolves across the
   // chain fold.
+  // Also under walker 9 (same release cycle, re-pinned, no second bump): bd
+  // tea-rags-mcp-2g2og — Rust auto-deref: a member the placed owner misses is
+  // retried on its `Deref::deref` declared return (project smart pointers;
+  // three hops, name cycle guard), cross-file declared returns re-resolve in
+  // the declaring file's own lexical scope, and a literal receiver with no
+  // in-project member definition classifies external.
   versions: { chunking: 4, walker: 9, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

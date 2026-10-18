@@ -28,6 +28,18 @@ function projectDeclares(ctx: CallContext, name: string): boolean {
   return lookupRustSymbolsByShortName(ctx, name).length > 0;
 }
 
+/**
+ * A literal-headed receiver (`10`, `"fmt"`, `'x'`, `true`): its static type is
+ * a primitive, and coherence forbids a project inherent impl on one. The call
+ * is std unless the project implements a trait for the primitive — and that
+ * trait method IS an in-project definition, which vetoes the reading.
+ */
+const RUST_LITERAL_HEAD = /^["']|^\d|^(?:true|false)$/;
+
+function isRustLiteralReceiver(receiver: string): boolean {
+  return RUST_LITERAL_HEAD.test(receiver);
+}
+
 /** The declared type spelling a binding carries, stripped to its nominal head (`&mut Vec<T>` → `Vec`). */
 function bindingTypeName(type: string): string {
   return type
@@ -68,6 +80,7 @@ export class RustExternalVocabulary {
   private receiverIsExternal(call: CallRef, ctx: CallContext): boolean {
     const { receiver } = call;
     if (receiver === null) return false;
+    if (isRustLiteralReceiver(receiver) && !projectDeclares(ctx, call.member)) return true;
     const head = receiver.split("::")[0] ?? receiver;
     for (const imp of ctx.imports) {
       const parsed = parseRustImportPath(imp.importText, head);
