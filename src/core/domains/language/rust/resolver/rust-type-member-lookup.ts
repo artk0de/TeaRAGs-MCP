@@ -20,6 +20,16 @@ export function createRustTypeMemberLookup(mode: AmbiguousResolveMode): TypeMemb
   return createTypeMemberLookup((typeRef, member, ctx) => resolveRustNominalMember(typeRef, member, ctx, mode));
 }
 
+/** The raw nominal-member walk (auto-deref included) for callers outside the kernel strategies. */
+export function resolveRustMemberWithDeref(
+  typeRef: NominalTypeRef,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): { targetRelPath: string; targetSymbolId: string } | null {
+  return resolveRustNominalMember(typeRef, member, ctx, mode);
+}
+
 function resolveRustNominalMember(owner: NominalTypeRef, member: string, ctx: CallContext, mode: AmbiguousResolveMode) {
   let current = owner;
   for (let hop = 0; hop < 3; hop++) {

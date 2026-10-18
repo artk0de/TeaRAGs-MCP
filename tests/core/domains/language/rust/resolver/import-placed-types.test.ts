@@ -47,6 +47,8 @@ function fixture(files: Record<string, string>) {
         localBindings: chunk.localBindings,
         structuredReturnTypes,
         typeDeclarations,
+        classFieldTypes: extraction.classFieldTypes,
+        classFieldTypesByClassKey: extraction.classFieldTypesByClassKey,
       };
       return { target: language.resolver.resolve(call, ctx), call, ctx };
     },
@@ -351,6 +353,40 @@ fn render(w: Root<Window>) {
     expect(f.resolve("w.focus()").target).toEqual({
       targetRelPath: "src/window.rs",
       targetSymbolId: "Window#focus",
+    });
+  });
+
+  it("derefs a field whose type is the project smart pointer (self.base member)", () => {
+    const f = fixture({
+      "src/smart.rs": `
+pub struct Dom<T> { value: T }
+impl<T> Deref for Dom<T> {
+    type Target = T;
+    fn deref(&self) -> &T { todo!() }
+}
+`,
+      "src/base.rs": `
+pub struct Base;
+impl Base { pub fn webgl_error(&self) {} }
+`,
+      "src/main.rs": `
+mod smart;
+mod base;
+use crate::smart::Dom;
+use crate::base::Base;
+struct Ctx {
+    base: Dom<Base>,
+}
+impl Ctx {
+    fn paint(&self) {
+        self.base.webgl_error();
+    }
+}
+`,
+    });
+    expect(f.resolve("self.base.webgl_error()").target).toEqual({
+      targetRelPath: "src/base.rs",
+      targetSymbolId: "Base#webgl_error",
     });
   });
 });

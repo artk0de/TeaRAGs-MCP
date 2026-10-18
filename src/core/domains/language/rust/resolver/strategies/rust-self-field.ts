@@ -2,6 +2,8 @@ import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
+import { resolveRustMemberWithDeref } from "../rust-type-member-lookup.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -41,9 +43,18 @@ export class RustSelfFieldSymbolResolutionStrategy implements SymbolResolutionSt
       if (instanceHit) return resolved({ targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId });
       const staticHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}.${call.member}`), this.cfg.mode);
       if (staticHit) return resolved({ targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId });
-      // Receiver type known but member not on it — DROP, same as the
-      // localBinding branch below. Falling through to the global
-      // short-name lookup would route to an unrelated type's member.
+      // Known type, member absent on the bare name: answer through the placed
+      // fold path — the field's declared generic arguments included — so a
+      // smart-pointer field (`base: Dom<WebGLRenderingContext>`) derefs to its
+      // target before the typed-miss verdict lands (bd tea-rags-mcp-2g2og).
+      // The verdict stays DROP: the field type is known, so the call never
+      // reaches the global short-name paths (bd tea-rags-mcp-q1pl).
+      const selfType = rustLexicalSelfType(ctx);
+      const placedField = selfType === undefined ? undefined : rustDeclaredFieldType(selfType, fieldSegment, ctx);
+      if (placedField?.form === "instance" || placedField?.form === "class") {
+        const derefHit = resolveRustMemberWithDeref(placedField, call.member, ctx, this.cfg.mode);
+        if (derefHit !== null) return resolved(derefHit);
+      }
       return DROP;
     }
     // Field type NOT recorded. A `self.<field>` receiver is an
