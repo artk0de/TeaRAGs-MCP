@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import { ResidualVerdictStore } from "../../../adapters/duckdb/residual-verdict-store.js";
+import { GraphClassTieReader } from "../../../domains/trajectory/codegraph/residual/interface-fanout.js";
 import {
   RESIDUAL_MODELS,
   ResidualModelProviderFactory,
@@ -48,6 +49,8 @@ export interface ResidualResolutionConfig {
   tournamentFloor?: number;
   /** Tournament block questions one pass may send. */
   tournamentBudget?: number;
+  /** Smallest `p` of a class for it to join a polymorphic-interface fan-out. */
+  fanoutFloor?: number;
   /** Ask mid picks once more as `[pick, none]`; plain tournament rounds off. */
   confirmStage?: boolean;
   /** Append receiver origins to each question's state; verdicts are keyed under the variant. */
@@ -110,6 +113,7 @@ export class ResidualResolutionOps implements ResidualResolvePort {
           : ResidualModelProviderFactory.cacheOnly(request.model, this.deps.config);
       store = await ResidualVerdictStore.open(this.deps.rootDir, request.logicalName);
       const { graphDb } = await this.deps.codegraphPool.acquireWrite(request.physicalCollectionName);
+      const readSource = async (relPath: string) => readFile(join(request.projectRoot, relPath), "utf8");
       const pass = new ResidualResolutionPass();
       const input = {
         graphDb,
@@ -133,6 +137,8 @@ export class ResidualResolutionOps implements ResidualResolvePort {
           ? {}
           : { tournamentBudget: this.deps.config.tournamentBudget }),
         ...(this.deps.config.confirmStage === undefined ? {} : { confirmStage: this.deps.config.confirmStage }),
+        ...(this.deps.config.fanoutFloor === undefined ? {} : { fanoutFloor: this.deps.config.fanoutFloor }),
+        classTies: new GraphClassTieReader(graphDb, readSource),
         ...(this.deps.config.originContext === undefined ? {} : { originContext: this.deps.config.originContext }),
         ...(this.deps.config.namePriorAcceptThreshold === undefined
           ? {}
@@ -141,7 +147,7 @@ export class ResidualResolutionOps implements ResidualResolvePort {
         recomputeDerived: async () => recomputeGraphMetrics(graphDb),
         readMethodSource: async (relPath: string, startLine: number, endLine: number) =>
           sliceLines(await readFile(join(request.projectRoot, relPath), "utf8"), startLine, endLine),
-        readSourceFile: async (relPath: string) => readFile(join(request.projectRoot, relPath), "utf8"),
+        readSourceFile: readSource,
         now: this.now,
         ...(request.onProgress ? { onProgress: request.onProgress } : {}),
       };

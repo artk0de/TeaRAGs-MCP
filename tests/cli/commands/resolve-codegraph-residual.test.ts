@@ -31,6 +31,8 @@ const COMPLETED = {
   receiverGroups: 12,
   receiverGroupSites: 30,
   sitesEdgedByVerdict: 25,
+  fanoutGroups: 3,
+  fanoutEdges: 7,
   sitesEdgedByPropagation: 4,
   propagationConflicts: 1,
   tournamentGroups: 2,
@@ -75,6 +77,7 @@ describe("formatResidualReport", () => {
     expect(text).toContain("  menu overflow:    3\n");
     expect(text).toContain("  menu too small:   7\n");
     expect(text).toContain("  sites edged:      97\n");
+    expect(text).toContain("  fan-out:          3 groups, 7 edges\n");
     expect(text).toContain("  external (model): 31\n");
     expect(text).toContain("  attribute (model): 17, external by propagation: 5\n");
     expect(text).toContain("  derived metrics:  recomputed\n");

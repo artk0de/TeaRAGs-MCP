@@ -315,6 +315,10 @@ export interface ResidualPassReport {
   receiverGroupSites: number;
   /** Rows edged by their own receiver group's class verdict. */
   sitesEdgedByVerdict: number;
+  /** Receiver groups whose verdict fanned out over the classes of one interface instead of one class. */
+  fanoutGroups: number;
+  /** Model edges of fanned-out sites that span two or more targets. */
+  fanoutEdges: number;
   /** Rows edged by a type fact propagated from another group's verdict (a chain hop downstream). */
   sitesEdgedByPropagation: number;
   /** Groups whose own accepted verdict disagreed with a propagated type fact; the direct verdict stood. */

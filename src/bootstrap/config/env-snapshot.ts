@@ -133,6 +133,7 @@ export function buildRegistryEnvSnapshot(
   put("CODEGRAPH_RESIDUAL_NONE_THRESHOLD", codegraph.residual.noneThreshold);
   put("CODEGRAPH_RESIDUAL_TOURNAMENT_FLOOR", codegraph.residual.tournamentFloor);
   put("CODEGRAPH_RESIDUAL_TOURNAMENT_BUDGET", codegraph.residual.tournamentBudget);
+  put("CODEGRAPH_RESIDUAL_FANOUT_FLOOR", codegraph.residual.fanoutFloor);
   put("CODEGRAPH_RESIDUAL_CONFIRM_STAGE", codegraph.residual.confirmStage);
   put("CODEGRAPH_RESIDUAL_ORIGIN_CONTEXT", codegraph.residual.originContext);
   put("CODEGRAPH_RESIDUAL_NAME_PRIOR_ACCEPT_THRESHOLD", codegraph.residual.namePriorAcceptThreshold);
