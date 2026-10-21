@@ -453,6 +453,7 @@ export class WorkingTreeOverlay {
       changedFiles: 0,
       deletedFiles: 0,
       floors: [],
+      ...(entry?.name ? { project: entry.name } : {}),
     };
     const fill = (template: string): string =>
       template.replaceAll("{alias}", alias ?? entry?.name ?? collectionName).replaceAll("{tree}", tree.root);

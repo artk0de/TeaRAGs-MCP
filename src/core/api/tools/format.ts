@@ -143,8 +143,9 @@ export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
     ...(marker.pendingFiles ? [`${marker.pendingFiles} pending`] : []),
   ];
   const changedFromIndex = fromIndex.length > 0 ? ` (${fromIndex.join(", ")})` : "";
+  const project = marker.project ? ` · project ${marker.project}` : "";
   const line =
-    `workingTree: ${marker.tree} · index @${sha(marker.indexedCommit)} · tree @${sha(marker.treeCommit)}` +
+    `workingTree: ${marker.tree}${project} · index @${sha(marker.indexedCommit)} · tree @${sha(marker.treeCommit)}` +
     ` · changed ${marker.changedFiles}${changedFromIndex} · deleted ${marker.deletedFiles} · floors ${floors}${treeGraph}${dense}${git}`;
   return marker.degraded ? `${line} · degraded: ${marker.degraded.reason} → ${marker.degraded.remedy}` : line;
 }
