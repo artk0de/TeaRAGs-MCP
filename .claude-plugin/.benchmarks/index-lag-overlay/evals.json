@@ -1,0 +1,256 @@
+{
+  "skill": "tea-rags index-freshness + search-cascade (SessionStart injection), dinopowers FRESHNESS.md + 9 wrappers, 12 tea-rags code-reading skills, subagent injection block",
+  "fix_name": "index-lag-overlay",
+  "date": "2026-10-21",
+  "incident": "taxdome TD-105125 session: first tea-rags answers carried workingTree {changedFiles:1833, floors:[], pendingFiles:1577, denseUnavailable} + driftWarning (HEAD moved + language versions, Run: --force). Inside dinopowers:brainstorming the agent wrote 'index lags 1833 files, reading key files directly from disk' and did all decisive navigation via Bash cat/sed/grep/git; repeated the same in dinopowers:test-driven-development. Alias's own checkout, so incremental index_codebase was due without consent; overlay was warming (pendingFiles 1609 -> 1033 across four calls).",
+  "harness": {
+    "method": "optimize-skill Phase 2 tool-selection eval: one opus subagent per arm, all 15 cases in one prompt (cases.md), agent states next actions per case, executes nothing. Auto-mode harness note ('read files with cat… search with grep') injected in every arm to reproduce the conflicting instruction.",
+    "arms": {
+      "no-rule": "tool list only",
+      "full-rules": "search-cascade + index-freshness + FRESHNESS + brainstorming + TDD wrapper texts, read fresh",
+      "wrapper-only": "brainstorming + TDD wrapper + FRESHNESS only — in-situ condition: global rules injected hours earlier, out of focus, the executing skill is what the agent reads at the decision point"
+    },
+    "contamination_note": "Installed SubagentStart hook appends the subagent Search Tools block (already carries a Bash-channel rule) to every eval agent; prompts tell the agent to ignore it. No-rule arm therefore overstates baseline slightly."
+  },
+  "audit_findings": [
+    {
+      "id": "A1",
+      "description": "index-freshness has no row for alias's own checkout with content lag (HEAD moved / branch switch) while Drift Run: needs --force; the only visible action is consent-gated, and 'an incremental run neither refuses nor fixes it' reads as 'incremental useless'. Wrapper freshness paragraphs cover only uncommitted edits."
+    },
+    {
+      "id": "A2",
+      "description": "No statement that marker counts (changedFiles/pendingFiles/floors:[]) are distance, not validity; no statement that a row without treeState is current."
+    },
+    {
+      "id": "A3",
+      "description": "Main injection prohibits ripgrep/Grep/Read downgrade but never names the Bash shell channel (cat/sed/grep/rg/git show); auto-mode harness explicitly recommends it. Subagent block already had it (working-tree-injection F2)."
+    },
+    {
+      "id": "A4",
+      "description": "Rules carried only in SessionStart injection; wrappers and tea-rags skills point at FRESHNESS.md / index-freshness by link, so at the decision point the agent has no lag rule in focus (salience)."
+    },
+    {
+      "id": "A5",
+      "description": "Delivery: corpus needed 9 parts, plugin.json wired 8 slots — tail silently dropped (human-only section at the time; any growth would drop agent rules)."
+    }
+  ],
+  "eval_cases": [
+    {
+      "id": "E1",
+      "context": "main, own checkout, dinopowers:brainstorming",
+      "prompt": "MARKER-COLD + DRIFT-FORCE on first answers; read 4 ticket files + find who else calls new_session_url(location_after_sign_in:)",
+      "expected": "index_codebase incremental (no consent) + AskUserQuestion for --force + find_symbol / hybrid_search metaOnly; NOT Bash cat/grep, rg, Read",
+      "audit_finding": "A1,A2,A3,A4",
+      "results": {
+        "no_rule": "FAIL",
+        "full_rules_before": "FAIL (no incremental)",
+        "wrapper_only_before": "FAIL (Read + rg)",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E2",
+      "context": "main, own checkout, 10 min later, already 'decided index behind'",
+      "prompt": "body of IRSConnectionsController#create + OAUTH_REGEXP constant",
+      "expected": "find_symbol ×2 (incremental if not yet run); NOT grep/Read",
+      "audit_finding": "A2,A4",
+      "results": {
+        "no_rule": "FAIL",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "FAIL (grep + Read)",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E3",
+      "context": "linked worktree",
+      "prompt": "floors:[] pendingFiles 420, one row WITHOUT treeState for Invoice#total",
+      "expected": "trust row; drill with find_symbol; no reindex, no Read",
+      "audit_finding": "A2",
+      "results": {
+        "no_rule": "PASS",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "FAIL (git diff + Read)",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E4",
+      "context": "linked worktree",
+      "prompt": "treeState modified row, floors [sparse], pendingFiles 37; need current Pricing#apply",
+      "expected": "find_symbol, re-call if pending; no Read, no reindex",
+      "audit_finding": "A2",
+      "results": {
+        "no_rule": "FAIL",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "PARTIAL (Read fallback)",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E5",
+      "context": "main, auto-mode Bash note, healthy index",
+      "prompt": "every caller of build_after_sign_in_url",
+      "expected": "get_callers + hybrid_search metaOnly; NOT Bash grep",
+      "audit_finding": "A3",
+      "results": {
+        "no_rule": "PASS",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "PASS",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E6",
+      "context": "main, auto-mode Bash note, MARKER-COLD",
+      "prompt": "understand TokenAuthenticable#authenticate!",
+      "expected": "find_symbol (+ incremental on own checkout); NOT cat/sed/rg",
+      "audit_finding": "A2,A3",
+      "results": {
+        "no_rule": "FAIL",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "FAIL (rg + Read)",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E7",
+      "context": "main, dinopowers:test-driven-development Step 2",
+      "prompt": "test conventions with MARKER-COLD + DRIFT-FORCE",
+      "expected": "incremental + ask --force + tests-as-context / semantic_search test chunks; NOT ls/cat specs",
+      "audit_finding": "A1,A4",
+      "results": {
+        "no_rule": "FAIL",
+        "full_rules_before": "FAIL (no incremental)",
+        "wrapper_only_before": "FAIL (Read target spec)",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E8",
+      "context": "subagent: task-agent",
+      "prompt": "MARKER-COLD + DRIFT-FORCE; body of oauth_redirect? + callers",
+      "expected": "find_symbol + get_callers/hybrid_search; never reindex; drift remedy to parent",
+      "audit_finding": "A2,A4",
+      "results": {
+        "no_rule": "FAIL",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "FAIL (rg + Read)",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E9",
+      "context": "subagent: explore",
+      "prompt": "prime drift --force; how does OAuth callback reach sign-in",
+      "expected": "semantic_search/explore + trace_path; no reindex; drift to parent",
+      "audit_finding": "A4",
+      "results": {
+        "no_rule": "PARTIAL (rg fallback if cold)",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "PASS",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E10",
+      "context": "control",
+      "prompt": "TODO/FIXME under lib/middleware",
+      "expected": "ripgrep",
+      "audit_finding": "control",
+      "results": {
+        "no_rule": "PASS",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "PASS",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E11",
+      "context": "control",
+      "prompt": "DRIFT-FORCE, changedFiles 0 — run --force?",
+      "expected": "no; ask consent, keep working",
+      "audit_finding": "control",
+      "results": {
+        "no_rule": "PASS",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "PASS",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E12",
+      "context": "control",
+      "prompt": "embedding unavailable (live); definition lookup",
+      "expected": "find_symbol (no embedding needed)",
+      "audit_finding": "control",
+      "results": {
+        "no_rule": "PASS",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "PASS",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E13",
+      "context": "edge, Russian, explicit user override",
+      "prompt": "user: просто прочитай lib/navigation_urls.rb руками",
+      "expected": "Read (user override wins)",
+      "audit_finding": "edge (over-correction guard)",
+      "results": {
+        "no_rule": "PASS",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "PASS",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E14",
+      "context": "main, graph",
+      "prompt": "get_callers after 120 s, treeGraphUnavailable timeout, floors [], caller in changed file",
+      "expected": "find_symbol + hybrid_search re-check (+ incremental on own checkout); NOT Read/rg",
+      "audit_finding": "A2,A3",
+      "results": {
+        "no_rule": "FAIL",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "FAIL (Read + rg)",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    },
+    {
+      "id": "E15",
+      "context": "control-ish, own checkout",
+      "prompt": "prime stale 3d, drift none, changedFiles 12; explain retry logic",
+      "expected": "index_codebase incremental then semantic_search / explore",
+      "audit_finding": "A1",
+      "results": {
+        "no_rule": "FAIL",
+        "full_rules_before": "PASS",
+        "wrapper_only_before": "FAIL (no incremental)",
+        "full_rules_after": "PASS",
+        "wrapper_only_after": "PASS"
+      }
+    }
+  ],
+  "summary": {
+    "no_rule": "6/15 (40%)",
+    "full_rules_before": "13/15 (87%)",
+    "wrapper_only_before": "7/15 (47%) — reproduces the incident",
+    "full_rules_after": "15/15 (100%)",
+    "wrapper_only_after": "15/15 (100%)"
+  }
+}

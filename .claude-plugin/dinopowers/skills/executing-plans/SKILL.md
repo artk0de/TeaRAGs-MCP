@@ -55,7 +55,11 @@ redirects superpowers:X. NEVER bypass the wrapper.
 `tea-rags/rules/index-freshness.md`. **NO background reindex hook.** Linked
 worktree: overlay serves the tree's uncommitted edits — never reindex for them.
 Main checkout: incremental `mcp__tea-rags__index_codebase` before searching
-uncommitted WIP.
+uncommitted WIP, or once answers show `changedFiles` > 0 (HEAD moved, branch
+switch) — no consent, also under drift `--force` (ask that separately). **Lag ≠
+unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never license
+Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without `treeState`
+= current; `treeState` row → `find_symbol` re-call.
 
 Plus cross-plugin chain for code generation:
 

@@ -42,6 +42,14 @@ search-cascade "Addressing the Codebase"; never project alone. Row with
 `treeState` = pre-edit copy → never a template; take its current body via
 `find_symbol`.
 
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
+answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
+`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
+`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
+`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
+linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
+leaving tea-rags".
+
 ```
 L1 pathPattern = pathPatternL1                         (deepest subdomain)
 L2 pathPattern = infra prefix + first semantic segment (broader domain)

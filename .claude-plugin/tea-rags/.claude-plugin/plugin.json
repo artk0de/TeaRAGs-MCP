@@ -1,7 +1,7 @@
 {
   "name": "tea-rags",
   "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
-  "version": "0.44.7",
+  "version": "0.44.8",
   "author": {
     "name": "artk0de"
   },
@@ -13,35 +13,39 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 1 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 1 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 2 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 2 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 3 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 3 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 4 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 4 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 5 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 5 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 6 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 6 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 7 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 7 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 8 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 8 --parts 9"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 9 --parts 9"
           },
           {
             "type": "command",
@@ -69,35 +73,39 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 1 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 1 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 2 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 2 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 3 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 3 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 4 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 4 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 5 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 5 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 6 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 6 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 7 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 7 --parts 9"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 8 --parts 8"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 8 --parts 9"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 9 --parts 9"
           },
           {
             "type": "command",

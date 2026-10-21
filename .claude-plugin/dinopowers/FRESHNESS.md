@@ -14,6 +14,14 @@ follow them, never restate them.
   checkout → incremental `index_codebase` first; linked worktree → none (the
   overlay serves the tree; a `treeState` row = index's pre-edit copy → current
   code via `find_symbol`).
+- **Lag ≠ unusable** — `changedFiles` / `pendingFiles` / `floors: []` / drift =
+  distance index↔tree, never licence for Bash `cat` / `sed` / `grep` / `rg` or
+  `Read` over code (thousands of changed files included). Row without
+  `treeState` = current → use it; `treeState` row → `find_symbol` (re-call). Own
+  checkout with `changedFiles` > 0 → incremental `index_codebase` NOW, no
+  consent; drift `--force` → ask once, keep working in tea-rags. Linked worktree
+  / subagent → never reindex, re-call (subagent reports drift to parent). Owner:
+  index-freshness "Lag never licenses leaving tea-rags".
 - **No worktree clone** — the overlay reads a delta of any size; `pendingFiles`
   / `indexOnlyFiles` on an answer are not reindex triggers (search-cascade "Read
   the `workingTree` marker").

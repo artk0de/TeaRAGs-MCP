@@ -63,6 +63,14 @@ uncommitted edits with no git signal yet.
    Go to step 2.
 ```
 
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
+answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
+`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
+`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
+`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
+linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
+leaving tea-rags".
+
 ## Fresh probe
 
 **Why:** `bugHunt` confidence-dampens `volatility` / `relativeChurnNorm` /

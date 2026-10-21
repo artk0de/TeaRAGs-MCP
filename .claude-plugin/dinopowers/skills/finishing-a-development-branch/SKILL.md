@@ -35,7 +35,10 @@ redirects superpowers:X. NEVER bypass the wrapper.
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
 `tea-rags/rules/index-freshness.md`. No background reindex hook — after merge to
 `main` reindex `main` EXPLICITLY (Step 5). Linked worktree: overlay serves
-uncommitted edits — never reindex for them.
+uncommitted edits — never reindex for them. **Lag ≠ unusable:** `changedFiles` /
+`pendingFiles` / `floors: []` / drift never license Bash `cat` / `sed` / `grep`
+/ `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
+`find_symbol` re-call.
 
 **Second Iron Rule — branch-finish index lifecycle (MANDATORY).** On EVERY
 branch finish that has a clone — local merge to `main` OR abandon/delete — you

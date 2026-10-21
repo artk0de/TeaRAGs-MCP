@@ -119,15 +119,22 @@ tools' edges). A row or edge no floor covers reflects the index;
 — they rank without that history this call, re-call later. `pendingFiles` =
 re-read files not yet warm: their rows are the index's
 (`treeState: "modified"`), a later call reads more of the tree — re-call for
-current code, never reindex. `indexOnlyFiles` = changed files with no AST
-chunking (json / yaml / sql / toml …): never re-read, rows are the index's
-(`treeState: "modified"`); current text → `Read` the file. Graph answer with
-`changedFiles` > 0 and no `codegraph` floor → edges touching changed files are
-the index's (`degraded` says why): trust edges between untouched files, re-check
-changed ones via `find_symbol` / `hybrid_search`. `degraded` → its `remedy`
-under index-freshness consent (subagent: report it to the parent, never
-reindex). `tree` ≠ the tree you addressed (your working directory, or the
+current code; never a reindex trigger by itself. `indexOnlyFiles` = changed
+files with no AST chunking (json / yaml / sql / toml …): never re-read, rows are
+the index's (`treeState: "modified"`); current text → `Read` the file. Graph
+answer with `changedFiles` > 0 and no `codegraph` floor → edges touching changed
+files are the index's (`degraded` says why): trust edges between untouched
+files, re-check changed ones via `find_symbol` / `hybrid_search`. `degraded` →
+its `remedy` under index-freshness consent (subagent: report it to the parent,
+never reindex). `tree` ≠ the tree you addressed (your working directory, or the
 checkout a skill names) → wrong tree, re-call with that `path`.
+
+**Lag ≠ unusable (MANDATORY).** Counts above, `floors: []` and drift = distance
+index↔tree, never licence to leave tea-rags — thousands of changed files
+included. Row without `treeState` = file unchanged in your tree = current. Own
+checkout with `changedFiles` > 0 → incremental `index_codebase` now, no consent
+(drift `--force` → ask separately, keep working). Full protocol:
+`index-freshness.md` "Lag never licenses leaving tea-rags".
 
 **`treeState: "modified" | "deleted"`** on a row = index copy of a file your
 tree changed or deleted, served only when no tree floor covered it (e.g.
@@ -428,6 +435,12 @@ addresses tea-rags with its own working directory.
 ## Prohibited Patterns
 
 - **Built-in Grep for code discovery** — use tea-rags or ripgrep MCP
+- **Bash shell over code** (`cat` / `sed -n` / `head` / `grep` / `rg` /
+  `git show <rev>:<file>`) to locate or understand code — same downgrade as Read
+  / Grep; harness "use Bash" note does not override. Identifier → find_symbol /
+  hybrid_search; file → find_symbol(relativePath:)
+- **Leaving tea-rags because index lags / drifted / overlay cold** — see "Lag ≠
+  unusable" above
 - **Read file to verify search results** — chunk is the source of truth
 - **Read file after find_symbol** — find_symbol returns full definition (method)
   or addressable outline (class / doc)

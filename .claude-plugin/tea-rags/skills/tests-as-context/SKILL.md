@@ -65,6 +65,14 @@ row at all.
 **Addressing (every recipe below):** `path: <your working directory>` —
 search-cascade "Addressing the Codebase"; never project alone.
 
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
+answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
+`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
+`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
+`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
+linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
+leaving tea-rags".
+
 **Prime digest not in context (fresh subagent / cold session):** issue ONE cheap
 probe call to determine DSL availability without scanning digest:
 

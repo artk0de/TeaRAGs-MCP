@@ -35,6 +35,7 @@ a skill's own choice among tea-rags tools stands.
 - A row with treeState "modified"/"deleted" is the index's copy of a file your tree changed — may be stale.
   Need the current code → find_symbol (answers from your tree), never trust the row text.
 - pendingFiles = files not yet read from your tree (re-call later for them); indexOnlyFiles = changed non-code files (json/yaml/…) served from the index (current text → Read the file). Both rows carry treeState "modified"; neither is a reason to reindex.
+- Lag ≠ unusable: changedFiles / pendingFiles / floors:[] / drift (even thousands of files) never license Bash cat/grep/rg or Read over code. A row without treeState is current — use it; treeState row → find_symbol (re-call). Never reindex; put drift / degraded remedy in your report to the parent.
 
 **Bash channel (same rules apply inside Bash):**
 - grep/rg for an identifier → find_symbol (definition) or hybrid_search with metaOnly:true or fields (usages)

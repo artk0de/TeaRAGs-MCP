@@ -78,6 +78,14 @@ style nits.
 "Addressing the Codebase"). Answer reports no index for that repository → STOP,
 print register + index instruction. Never scan unindexed repo.
 
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
+answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
+`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
+`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
+`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
+linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
+leaving tea-rags".
+
 **Freshness:** external → `git fetch` target branch; index behind target →
 incremental `index_codebase project=<alias>`. Local → `index-freshness` rows
 (linked worktree: no reindex — overlay reads the tree).
