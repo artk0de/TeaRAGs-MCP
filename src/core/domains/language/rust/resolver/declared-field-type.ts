@@ -2,6 +2,7 @@ import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { resolveRustNominalType } from "./declared-return-type.js";
+import { rustStdTypeRef } from "./std-type-hops.js";
 
 /** Read only the placed owner's explicitly declared named field, never a short-name field map. */
 export function rustDeclaredFieldType(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined {
@@ -36,12 +37,18 @@ export function rustDeclaredFieldType(recv: TypeRef, member: string, ctx: CallCo
     return genericFieldParameter === field ? substitute(genericFieldParameter) : undefined;
   }
   const typeArguments = identifierEntry(declaration.fieldTypeArguments, member)?.map((name) =>
-    name === null ? undefined : substitute(name),
+    name === null ? undefined : (substitute(name) ?? rustStdTypeRef(name, undefined, ctx)),
   );
-  if (typeArguments?.some((arg) => arg === undefined)) return undefined;
   const nominalType = substitute(field);
-  if (nominalType?.form !== "instance") return undefined;
-  return typeArguments === undefined ? nominalType : { ...nominalType, args: typeArguments as TypeRef[] };
+  // A std field type (`Vec<Part>`, `Option<Product>`, `Arc<Core>`) carries no
+  // file; it travels as its std spelling so the chain can deref / unwrap it or
+  // end on it (bd tea-rags-mcp-2g2og.24).
+  if (nominalType === undefined) return rustStdTypeRef(field, typeArguments, ctx);
+  if (nominalType.form !== "instance") return undefined;
+  // An argument the owner cannot place leaves the head typed and drops every
+  // argument: a member that needs one (`item: U`) then declines on its own.
+  if (typeArguments === undefined || typeArguments.some((arg) => arg === undefined)) return nominalType;
+  return { ...nominalType, args: typeArguments as TypeRef[] };
 }
 
 /** Compound chains may seed `self` only inside a proven instance method on an exact lexical owner. */

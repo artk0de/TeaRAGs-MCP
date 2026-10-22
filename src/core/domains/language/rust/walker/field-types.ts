@@ -2,17 +2,20 @@ import { createIdentifierRecord } from "../../../../contracts/identifier-record.
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { rustDeclaredTypeRef } from "./return-types.js";
 
-/** Named, explicitly declared struct fields only; the flat channels cannot encode nested type arguments. */
+/**
+ * Explicitly declared struct fields: named (`f: T`) and tuple-struct positional
+ * (`struct W(T)` → field `0`, the name `self.0` spells). The flat channels
+ * cannot encode nested type arguments, so a nested argument (`Arc<Mutex<T>>`)
+ * is recorded as `null` — the field's head stays typed, its unknown argument
+ * is never guessed (bd tea-rags-mcp-2g2og.24).
+ */
 export function rustDeclaredStructFields(node: AstNode, genericParameters: readonly string[]) {
   const fields = createIdentifierRecord<string>();
   const genericFieldParameters = createIdentifierRecord<string>();
   const fieldTypeArguments = createIdentifierRecord<readonly (string | null)[]>();
   if (node.type !== "struct_item") return { fields, genericFieldParameters, fieldTypeArguments };
   const seen = new Set<string>();
-  for (const field of node.childForFieldName("body")?.namedChildren ?? []) {
-    if (field.type !== "field_declaration") continue;
-    const name = field.childForFieldName("name")?.text;
-    if (name === undefined) continue;
+  for (const { name, typeNode } of rustStructFieldNodes(node)) {
     if (seen.has(name)) {
       delete fields[name];
       delete genericFieldParameters[name];
@@ -20,16 +23,56 @@ export function rustDeclaredStructFields(node: AstNode, genericParameters: reado
       continue;
     }
     seen.add(name);
-    const declared = rustDeclaredTypeRef(field.childForFieldName("type"));
-    if (declared?.form !== "instance") continue;
-    if (declared.args?.some((arg) => arg.form !== "instance" || arg.args !== undefined)) continue;
-    fields[name] = declared.name;
-    if (genericParameters.includes(declared.name) && declared.args === undefined) {
-      genericFieldParameters[name] = declared.name;
+    const declaredType = rustDeclaredTypeRef(typeNode);
+    if (declaredType === undefined) {
+      const generic = rustGenericHead(typeNode);
+      if (generic === undefined) continue;
+      fields[name] = generic.name;
+      fieldTypeArguments[name] = Array.from({ length: generic.argumentCount }, () => null);
+      continue;
     }
-    if (declared.args !== undefined) {
-      fieldTypeArguments[name] = declared.args.map((arg) => (arg.form === "instance" ? arg.name : null));
+    if (declaredType.form !== "instance") continue;
+    fields[name] = declaredType.name;
+    if (genericParameters.includes(declaredType.name) && declaredType.args === undefined) {
+      genericFieldParameters[name] = declaredType.name;
+    }
+    if (declaredType.args !== undefined) {
+      fieldTypeArguments[name] = declaredType.args.map((arg) =>
+        arg.form === "instance" && arg.args === undefined ? arg.name : null,
+      );
     }
   }
   return { fields, genericFieldParameters, fieldTypeArguments };
+}
+
+/**
+ * A generic type whose arguments {@link rustDeclaredTypeRef} cannot spell
+ * (`Vec<u8>`, `Box<dyn Fn()>`): its head and argument count, every argument unknown.
+ */
+function rustGenericHead(typeNode: AstNode | null): { name: string; argumentCount: number } | undefined {
+  const node = typeNode?.type === "reference_type" ? typeNode.childForFieldName("type") : typeNode;
+  if (node?.type !== "generic_type") return undefined;
+  const head = rustDeclaredTypeRef(node.childForFieldName("type"));
+  const argumentCount = (node.childForFieldName("type_arguments")?.namedChildren ?? []).filter(
+    (argument) => argument.type !== "lifetime",
+  ).length;
+  if (head?.form !== "instance" || argumentCount === 0) return undefined;
+  return { name: head.name, argumentCount };
+}
+
+/** Each field's access name and declared type node — named fields by name, tuple fields by position. */
+function rustStructFieldNodes(node: AstNode): { name: string; typeNode: AstNode | null }[] {
+  const body = node.childForFieldName("body");
+  if (body?.type === "ordered_field_declaration_list") {
+    return body.namedChildren
+      .filter((child) => child.type !== "visibility_modifier" && child.type !== "attribute_item")
+      .map((typeNode, index) => ({ name: String(index), typeNode }));
+  }
+  const out: { name: string; typeNode: AstNode | null }[] = [];
+  for (const field of body?.namedChildren ?? []) {
+    if (field.type !== "field_declaration") continue;
+    const name = field.childForFieldName("name")?.text;
+    if (name !== undefined) out.push({ name, typeNode: field.childForFieldName("type") });
+  }
+  return out;
 }

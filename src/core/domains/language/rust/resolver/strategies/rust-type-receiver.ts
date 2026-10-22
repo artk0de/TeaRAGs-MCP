@@ -3,6 +3,7 @@ import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   ChainTypeSymbolResolutionStrategy,
   propagateReceiverType,
+  splitAtBracketDepthZero,
   type ReceiverTypePorts,
   type ReceiverTypingPorts,
 } from "../../../kernel/index.js";
@@ -11,6 +12,7 @@ import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared
 import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
 import { resolveRustNominalType, rustDeclaredMemberReturnType } from "../declared-return-type.js";
 import { createRustTypeMemberLookup } from "../rust-type-member-lookup.js";
+import { rustStdSmartPointerTarget, rustStdUnwrapType } from "../std-type-hops.js";
 import { lookupRustSymbolsByShortName, rustImportMatchesReceiver, type ResolverConfig } from "./shared.js";
 
 /** Import roots that are never this project's code. */
@@ -59,9 +61,30 @@ const RUST_RECEIVER_TYPE_PORTS: ReceiverTypePorts = {
   },
   seedHead: () => undefined,
   memberTypeOf: rustDeclaredMemberReturnType,
-  memberAttributeTypeOf: rustDeclaredFieldType,
+  memberAttributeTypeOf: rustFieldHopType,
   maxHops: () => 8,
+  splitReceiverHops: rustReceiverHops,
 };
+
+/**
+ * A receiver's hops: whitespace dropped (rustfmt breaks long chains across
+ * lines — `self\n    .ctx\n    .feature_gate`), split on `.` at bracket depth
+ * zero so a call's arguments stay one hop, and a trailing `?` split into its
+ * own `?` hop, which unwraps an `Option`/`Result` (bd tea-rags-mcp-2g2og.24).
+ */
+function rustReceiverHops(receiver: string): string[] {
+  return splitAtBracketDepthZero(receiver.replace(/\s+/g, ""), ".").flatMap((hop) => {
+    if (!hop.endsWith("?") || hop.length === 1) return [hop];
+    return [hop.slice(0, -1), "?"];
+  });
+}
+
+/** A non-call hop: `?` unwraps, a std smart pointer derefs to its target, else a declared struct field. */
+function rustFieldHopType(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined {
+  if (member === "?") return rustStdUnwrapType(recv, member);
+  const pointee = rustStdSmartPointerTarget(recv, member);
+  return rustDeclaredFieldType(pointee ?? recv, member, ctx);
+}
 
 export function rustReceiverChainType(call: CallRef, ctx: CallContext): TypeRef | undefined {
   return call.receiver === null
