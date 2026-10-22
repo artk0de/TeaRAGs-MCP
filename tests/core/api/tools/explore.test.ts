@@ -138,8 +138,20 @@ describe("registerSearchTools", () => {
       content: unknown[];
     };
     expect(result.structuredContent).toBeDefined();
-    expect(result.structuredContent.results).toEqual({ columns: [], rows: [] });
+    expect(result.structuredContent.results).toEqual([]);
     expect(result.content).toEqual([]);
+  });
+
+  it("emits a single result as a one-record list, not a one-row table", async () => {
+    const record = { id: "a", score: 0.9, payload: { relativePath: "src/a.ts", git: { file: { ageDays: 3 } } } };
+    const { captured } = makeHarness({ findSymbol: vi.fn().mockResolvedValue({ results: [record] }) });
+    const tool = captured.find((t) => t.name === "find_symbol");
+
+    const result = (await tool!.handler({ path: "/x", symbol: "A" }, {})) as {
+      structuredContent: { results: unknown };
+    };
+
+    expect(result.structuredContent.results).toEqual([record]);
   });
 
   it("emits results as a column table, one row per result, envelope fields beside it", async () => {

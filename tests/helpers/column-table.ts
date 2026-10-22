@@ -18,3 +18,8 @@ export function rowsOf(table: ColumnTable): Record<string, unknown>[] {
     return record;
   });
 }
+
+/** Search `results` as records whichever form they came in: a table (2+ rows) or the records themselves. */
+export function recordsOf(results: ColumnTable | Record<string, unknown>[]): Record<string, unknown>[] {
+  return Array.isArray(results) ? results : rowsOf(results);
+}

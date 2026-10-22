@@ -76,15 +76,24 @@ Dotted names equal today's payload paths, so `payload.symbolId` and
 
 `formatStructuredResult` (`src/core/api/tools/explore.ts`) serves all five
 search tools: `semantic_search`, `hybrid_search`, `rank_chunks`, `find_similar`,
-`find_symbol`. It emits `results: toColumns(response.results)`. Every other
-top-level field (`workingTree`, `driftWarning`, `confidence`,
-`presetFilterNotice`, `fieldsWarning`, `denseUnavailable`, …) is unchanged.
+`find_symbol`. It emits `results: tabulateRecords(response.results)`: a table
+from two results on, the records themselves below that — the same threshold as
+the text tools. One row repeats every nested prefix in its column names
+(`payload.git.file.*`), so a one-row table costs more than the record it
+replaces (measured on `find_symbol`: method +27%, doc TOC +17%, file outline
++10% before the threshold). Every other top-level field (`workingTree`,
+`driftWarning`, `confidence`, `presetFilterNotice`, `fieldsWarning`,
+`denseUnavailable`, …) is unchanged.
 
 `SearchResultOutputSchema` (`output-schemas.ts`) declares
-`results: { columns: string[], rows: unknown[][] }`. Its describe text carries
-the reading rule once (invariant 6): one row per result, cell `i` belongs to
-`columns[i]`, dotted column = payload path, `null` = absent. Tested by parsing
-the output of a real reranked result (invariant 4).
+`results: { columns: string[], rows: unknown[][] } | SearchResultItem[]`. The
+SDK validates every answer against it at runtime; for the table branch that
+check covers the frame only — cells are `unknown`, so row fields are held by the
+`rowsOf → SearchResultItemSchema` test, not by the runtime. Accepted cost of the
+shape. Its describe text carries the reading rule once (invariant 6): one row
+per result, cell `i` belongs to `columns[i]`, dotted column = payload path,
+`null` = absent. Tested by parsing the output of a real reranked result
+(invariant 4).
 
 ### 3. Text tools — compact JSON, record arrays tabulated
 

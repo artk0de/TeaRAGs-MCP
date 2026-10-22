@@ -126,6 +126,10 @@ describe("Resource builders", () => {
       expect(md).toContain("null = absent");
     });
 
+    it("says a single search result comes as a plain record, not a table", () => {
+      expect(buildOverview()).toMatch(/one\s+result or none: a plain list of records/);
+    });
+
     // Reference prose moved off the inline param hints (bd tea-rags-mcp-ewg2s)
     // — the overview is now its single owner, so its facts are pinned here.
     describe("param reference", () => {

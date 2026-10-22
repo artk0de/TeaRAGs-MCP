@@ -51,7 +51,7 @@ describe("registerSearchTools — auto-update hint (hpg2)", () => {
     const hintFor = vi.fn().mockReturnValue("index updating in background");
     const { captured } = makeHarness({ hintFor });
     const result = await captured.get("semantic_search")!({ project: "tea-rags", query: "x" }, {});
-    expect(result.structuredContent).toEqual({ results: { columns: [], rows: [] } });
+    expect(result.structuredContent).toEqual({ results: [] });
     expect(result.content).toEqual([{ type: "text", text: "index updating in background" }]);
   });
 

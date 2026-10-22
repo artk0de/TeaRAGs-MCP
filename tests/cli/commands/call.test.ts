@@ -28,7 +28,7 @@ import { registerSearchTools } from "../../../src/core/api/tools/explore.js";
 import { registerProjectTools } from "../../../src/core/api/tools/list-projects.js";
 import { createRegisterTool } from "../../../src/core/api/tools/middleware/error-handler.js";
 import { TYPED_FILTER_PARAM_NAMES } from "../../../src/core/api/tools/schemas.js";
-import { rowsOf } from "../../helpers/column-table.js";
+import { recordsOf } from "../../helpers/column-table.js";
 
 function makeApp(overrides: Partial<Record<string, unknown>> = {}, hasCodegraph = false): App {
   return {
@@ -273,8 +273,8 @@ describe("runCall — results and exit codes", () => {
     const code = await call(h, { tool: "find_symbol", params: '{"project":"tea-rags","symbol":"Reranker#rerank"}' });
 
     expect(code).toBe(0);
-    const printed = JSON.parse(h.stdout.join("\n")) as { results: ColumnTable };
-    const [first] = rowsOf(printed.results) as { payload: { symbolId: string } }[];
+    const printed = JSON.parse(h.stdout.join("\n")) as { results: ColumnTable | Record<string, unknown>[] };
+    const [first] = recordsOf(printed.results) as { payload: { symbolId: string } }[];
     expect(first.payload.symbolId).toBe("Reranker#rerank");
   });
 

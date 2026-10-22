@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { toColumns } from "../../../../src/core/api/tools/columns.js";
+import { toColumns, type ColumnTable } from "../../../../src/core/api/tools/columns.js";
 import { SearchResultItemSchema, SearchResultOutputSchema } from "../../../../src/core/api/tools/output-schemas.js";
 import { CodeChunkGrouper } from "../../../../src/core/domains/explore/chunk-grouping/code.js";
 import { resolvePresets } from "../../../../src/core/domains/explore/rerank/presets/index.js";
@@ -16,6 +16,11 @@ import { rowsOf } from "../../../helpers/column-table.js";
 const overTheWire = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 const EMPTY_TABLE = { columns: [], rows: [] };
+
+/** `results` is the table branch of the union in these cases. */
+function asTable(results: unknown): ColumnTable {
+  return results as ColumnTable;
+}
 
 describe("SearchResultOutputSchema", () => {
   const schema = z.object(SearchResultOutputSchema);
@@ -127,8 +132,15 @@ describe("SearchResultOutputSchema", () => {
     const parsed = schema.parse({ results: table });
 
     expect(parsed.results).toEqual(table);
-    expect(parsed.results.columns).toEqual(expect.arrayContaining(["id", "score", "payload.relativePath"]));
-    expect(items.parse(rowsOf(parsed.results))).toHaveLength(2);
+    expect(asTable(parsed.results).columns).toEqual(expect.arrayContaining(["id", "score", "payload.relativePath"]));
+    expect(items.parse(rowsOf(asTable(parsed.results)))).toHaveLength(2);
+  });
+
+  it("accepts a one-result answer as a records list beside the table form", () => {
+    const record = overTheWire({ id: "chunk-1", score: 0.8, payload: { relativePath: "src/db.ts" } });
+
+    expect(schema.parse({ results: [record] }).results).toEqual([record]);
+    expect(schema.parse({ results: [] }).results).toEqual([]);
   });
 
   it("accepts find_symbol's synthetic results (mergedChunkIds, chunkCount) unchanged", () => {
@@ -199,7 +211,7 @@ describe("SearchResultOutputSchema", () => {
 
   it("validates empty results", () => {
     const result = schema.parse({ results: EMPTY_TABLE });
-    expect(result.results.rows).toHaveLength(0);
+    expect(asTable(result.results).rows).toHaveLength(0);
   });
 
   it("rejects missing results field", () => {

@@ -36,10 +36,18 @@ export function toColumns(records: readonly object[]): ColumnTable {
   return { columns, rows: flat.map((row) => columns.map((column) => row.get(column) ?? null)) };
 }
 
+/** A table pays off from the second row: one row repeats every nested prefix in its column names. */
+const MIN_TABLE_ROWS = 2;
+
+/** Records as a ColumnTable from MIN_TABLE_ROWS on; fewer stay the records they are. */
+export function tabulateRecords<T extends object>(records: readonly T[]): ColumnTable | readonly T[] {
+  return records.length >= MIN_TABLE_ROWS ? toColumns(records) : records;
+}
+
 /** Every array of two or more plain objects, at any depth, becomes a ColumnTable. */
 export function tabulateRecordArrays(value: unknown): unknown {
   if (Array.isArray(value)) {
-    if (value.length >= 2 && value.every(isPlainObject)) return toColumns(value);
+    if (value.length >= MIN_TABLE_ROWS && value.every(isPlainObject)) return toColumns(value);
     return value.map(tabulateRecordArrays);
   }
   if (!isPlainObject(value)) return value;

@@ -67,7 +67,9 @@ const SearchConfidenceSchema = z.object({
 
 /** Shared output schema for semantic_search, hybrid_search, rank_chunks, find_similar */
 export const SearchResultOutputSchema = {
-  results: ColumnTableSchema,
+  results: z
+    .union([ColumnTableSchema, z.array(SearchResultItemSchema)])
+    .describe("Two or more results: the table. Zero or one: a plain list of result records."),
   level: z.enum(["chunk", "file"]).optional().describe("Effective signal level used for scoring"),
   confidence: SearchConfidenceSchema.optional().describe(
     "Match quality, collection-relative. low = query likely has no match in project. " +
