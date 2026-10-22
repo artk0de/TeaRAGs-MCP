@@ -1,9 +1,19 @@
-import { nearestCallResultBinding, resolveLocalBinding } from "../../../../../contracts/types/codegraph.js";
-import { LocalBindingSymbolResolutionStrategy, type ReceiverTypingPorts } from "../../../kernel/index.js";
-import { rustDeclaredCallResultType } from "../declared-call-result-type.js";
+import {
+  nearestCallResultBinding,
+  resolveLocalBinding,
+  type CallContext,
+} from "../../../../../contracts/types/codegraph.js";
+import {
+  LocalBindingSymbolResolutionStrategy,
+  type NominalTypeRef,
+  type ReceiverCallRef,
+  type ReceiverTypingPorts,
+  type TypeMemberLookup,
+} from "../../../kernel/index.js";
+import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { createRustTypeMemberLookup } from "../rust-type-member-lookup.js";
 import { rustMethodCallResultType } from "./rust-type-receiver.js";
-import type { ResolverConfig } from "./shared.js";
+import { lookupRustSymbolsByShortName, type ResolverConfig } from "./shared.js";
 
 const RUST_LOCAL_BINDING_TYPING: ReceiverTypingPorts = {
   typeOfReceiver: (call, ctx) => {
@@ -38,10 +48,43 @@ const RUST_LOCAL_BINDING_TYPING: ReceiverTypingPorts = {
  * Guard pass: a known receiver type whose member is absent DROPS the edge —
  * falling through to short-name lookup would resolve to a method on an
  * unrelated type (the c5by garbage). A receiver with no bound type continues
- * to the import-match / short-name passes.
+ * to the import-match / short-name passes, and so does a call-result local
+ * whose miss the member lookup cannot rule out (`rustCallResultMissDrops`).
  */
 export class RustLocalBindingSymbolResolutionStrategy extends LocalBindingSymbolResolutionStrategy {
   constructor(cfg: ResolverConfig) {
-    super("localBinding", RUST_LOCAL_BINDING_TYPING, createRustTypeMemberLookup(cfg.mode), { dropOnTypedMiss: true });
+    const lookup = createRustTypeMemberLookup(cfg.mode);
+    super("localBinding", RUST_LOCAL_BINDING_TYPING, lookup, { dropOnTypedMiss: rustCallResultMissDrops(lookup) });
   }
+}
+
+/**
+ * Whether a typed miss DROPS (bd tea-rags-mcp-2g2og.24). A receiver typed from
+ * the call-result channel CONTINUES instead when its member may live where the
+ * lookup does not reach: a project trait declares it (a default method the
+ * type does not override), or the type has a `deref`. Every other typed miss
+ * still drops.
+ */
+function rustCallResultMissDrops(
+  lookup: TypeMemberLookup,
+): (type: NominalTypeRef, call: ReceiverCallRef, ctx: CallContext) => boolean {
+  return (type, call, ctx) => {
+    if (resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine, call.startColumn) !== undefined) {
+      return true;
+    }
+    if (rustCallResultBindingOf(call.receiver, call.startLine, ctx) === undefined) return true;
+    return !rustProjectTraitDeclares(call.member, ctx) && lookup.findMember(type, "deref", ctx) === null;
+  };
+}
+
+function rustProjectTraitDeclares(member: string, ctx: CallContext): boolean {
+  return lookupRustSymbolsByShortName(ctx, member).some((definition) => {
+    const ownerId = definition.symbolId.slice(0, -(member.length + 1));
+    return (
+      ownerId.length > 0 &&
+      ctx.symbolTable
+        .lookup(ownerId)
+        .some((owner) => owner.relPath === definition.relPath && owner.symbolKind === "interface")
+    );
+  });
 }

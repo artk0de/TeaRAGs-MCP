@@ -10,28 +10,31 @@ import {
 } from "./strategies/shared.js";
 
 /**
- * The validated single call-result binding behind `receiverName` — the channel
+ * The call-result binding of `receiverName` visible at `atLine` — the channel
  * read plus the proven-window guards, shared with the strategy-layer method
  * arm (`rustMethodCallResultType` in `strategies/rust-type-receiver.ts`).
+ * Rust shadowing: among the bindings whose window `(endLine, scopeEndLine]`
+ * holds the line, the latest `let` wins (bd tea-rags-mcp-2g2og.24).
  */
 export function rustCallResultBindingOf(
   receiverName: string,
   atLine: number,
   ctx: CallContext,
 ): CallResultBinding | undefined {
-  const bindings = identifierEntry(ctx.callResultBindings, receiverName);
-  if (bindings?.length !== 1) return undefined;
-  const binding = bindings[0];
-  // endLine + scopeEndLine distinguish this proven channel from dormant legacy evidence.
-  if (
-    binding.endLine === undefined ||
-    binding.scopeEndLine === undefined ||
-    atLine <= binding.endLine ||
-    atLine > binding.scopeEndLine
-  ) {
-    return undefined;
+  let visible: CallResultBinding | undefined;
+  for (const binding of identifierEntry(ctx.callResultBindings, receiverName) ?? []) {
+    // endLine + scopeEndLine distinguish this proven channel from dormant legacy evidence.
+    if (
+      binding.endLine === undefined ||
+      binding.scopeEndLine === undefined ||
+      atLine <= binding.endLine ||
+      atLine > binding.scopeEndLine
+    ) {
+      continue;
+    }
+    if (visible === undefined || binding.line > visible.line) visible = binding;
   }
-  return binding;
+  return visible;
 }
 
 /** Consume only the walker's proven single-assignment channel and an exact free-function return. */

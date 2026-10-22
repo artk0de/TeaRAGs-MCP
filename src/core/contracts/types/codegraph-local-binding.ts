@@ -336,7 +336,15 @@ export interface CallResultBinding {
    * an optional as what it wraps may ignore it. ABSENT means no such marker
    * was seen, not that the value is proven non-optional.
    */
-  readonly optional?: true; /**
+  readonly optional?: true;
+  /**
+   * The whole right-hand side, whitespace-collapsed, with a leading `&` /
+   * `&mut` / parens stripped — `make()?`, `B::new().build(x).unwrap()` (bd
+   * tea-rags-mcp-2g2og.24). Set by the Rust walker so a resolver can fold an
+   * init `callee` cannot spell; ABSENT for every other language.
+   */
+  readonly initExpression?: string;
+  /**
    * {@link LocalBinding.conditionSpan}'s meaning: the condition of a modifier
    * guarding the assignment, which runs before it (bd tea-rags-mcp-0qaht.55).
    * Set by the Ruby walker. ABSENT means no such modifier.

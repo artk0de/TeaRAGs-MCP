@@ -157,6 +157,12 @@ describe("rust residual taxonomy", () => {
       }
     });
 
+    it("an outer binding mentioned only in a match-arm body is not a match-arm pattern", () => {
+      const src =
+        "fn f(m: M) {\n    let w = make();\n    match m {\n        M::One(c) => w.go(),\n        _ => {}\n    }\n}\n";
+      expect(categoryOf(src, "w.go()", "go", "w")).toBe("binding.letCallResult");
+    });
+
     it("an identifier with no local binding is a static / const / global", () => {
       const src = "fn f() {\n    REGISTRY.go();\n}\n";
       expect(categoryOf(src, "REGISTRY.go()", "go", "REGISTRY")).toBe("binding.notLocal");
