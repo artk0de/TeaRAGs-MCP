@@ -231,3 +231,86 @@ impl Twin { fn scan(&self) {} fn from_vec(v: Vec<u8>) -> Self { todo!() } fn new
     expect(target(f.resolve("store.scan()"))).toBe("Store#scan");
   });
 });
+
+// Measured lost-edge guards (servo transformstreamdefaultcontroller): an
+// earlier `let p = Promise::new(..)` is shadowed by `let p =
+// Promise::new_in_realm(..)`, which must type `p` itself. Two walker facts
+// carry it: `new_in_realm` is declared twice (inherent and trait impl) with
+// one return, and `RootedPromise`'s `deref` returns `&Self::Target` where the
+// impl fixes `type Target = Promise`.
+const promiseFile = (options: { traitImpl: boolean; derefReturn: string; traitReturn?: string }) => `
+use std::ops::Deref;
+use std::rc::Rc;
+pub struct Realm;
+pub struct Error;
+pub struct RootedPromise(Rc<Promise>);
+impl Deref for RootedPromise {
+    type Target = Promise;
+    fn deref(&self) -> ${options.derefReturn} { &self.0 }
+}
+pub struct Promise;
+impl Promise {
+    pub fn new(realm: &mut Realm) -> RootedPromise { todo!() }
+    pub fn new_in_realm(realm: &mut Realm) -> RootedPromise { todo!() }
+    pub fn reject_error(&self, realm: &mut Realm, error: Error) {}
+}
+${
+  options.traitImpl
+    ? `pub trait PromiseHelpers {
+    fn new_in_realm(realm: &mut Realm) -> RootedPromise;
+    fn reject_error(&self, realm: &mut Realm, error: Error);
+}
+impl PromiseHelpers for Promise {
+    fn new_in_realm(realm: &mut Realm) -> ${options.traitReturn ?? "RootedPromise"} { todo!() }
+    fn reject_error(&self, realm: &mut Realm, error: Error) {}
+}`
+    : ""
+}
+pub struct Stream;
+impl Stream { pub fn reject_error(&self, realm: &mut Realm, error: Error) {} }
+`;
+
+const promiseCaller = `
+use crate::promise::{Error, Promise, Realm};
+fn run(realm: &mut Realm, e: Error, ok: bool) {
+    if ok {
+        let p = Promise::new(realm);
+        return;
+    }
+    let p = Promise::new_in_realm(realm);
+    p.reject_error(realm, e);
+}
+`;
+
+describe.each([false, true])(
+  "Rust shadowing constructor returning a Deref wrapper (materialized=%s)",
+  (materialized) => {
+    const resolvePromise = (file: string) =>
+      target(
+        fixture({ "src/promise.rs": file, "src/main.rs": promiseCaller }, materialized).resolve(
+          "p.reject_error(realm, e)",
+        ),
+      );
+
+    it("types the servo shape: agreeing twin constructors returning a `Self::Target` deref", () => {
+      expect(resolvePromise(promiseFile({ traitImpl: true, derefReturn: "&Self::Target" }))).toBe(
+        "Promise#reject_error",
+      );
+    });
+
+    it("types a constructor an inherent and a trait impl both declare with one return", () => {
+      expect(resolvePromise(promiseFile({ traitImpl: true, derefReturn: "&Promise" }))).toBe("Promise#reject_error");
+    });
+
+    it("derefs a non-generic wrapper through its impl's concrete `type Target`", () => {
+      expect(resolvePromise(promiseFile({ traitImpl: false, derefReturn: "&Self::Target" }))).toBe(
+        "Promise#reject_error",
+      );
+    });
+
+    it("still declines a constructor whose declarations disagree on the return", () => {
+      const disagreeing = promiseFile({ traitImpl: true, derefReturn: "&Promise", traitReturn: "Stream" });
+      expect(resolvePromise(disagreeing)).toBeNull();
+    });
+  },
+);

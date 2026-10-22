@@ -53,14 +53,21 @@ export function collectRustReturnTypes(root: AstNode, relPath: string): Record<s
     for (const child of node.children) collectOwners(child, childScope);
   };
   collectOwners(root, []);
-  const visit = (node: AstNode, scope: readonly string[], inheritedUnsafeOwner: boolean): void => {
+  const visit = (
+    node: AstNode,
+    scope: readonly string[],
+    inheritedUnsafeOwner: boolean,
+    inheritedAssociatedTypes: ReadonlyMap<string, TypeRef>,
+  ): void => {
     let unsafeOwner = inheritedUnsafeOwner;
+    let associatedTypes = inheritedAssociatedTypes;
     const named = rustNameOf(node);
     if (node.type === "impl_item" && named !== null) {
       const parameters = declarations.get([...scope, named.name].join("::"));
       const owner = rustDeclaredTypeRef(node.childForFieldName("type"));
       const ownerTypeArguments = owner?.form === "instance" ? (owner.args ?? []) : [];
       const implParameters = rustGenericParameters(node);
+      associatedTypes = rustConcreteAssociatedTypes(node, implParameters);
       if (ownerTypeArguments.length > 0 || implParameters.length > 0) {
         unsafeOwner ||=
           parameters?.length !== ownerTypeArguments.length ||
@@ -85,7 +92,13 @@ export function collectRustReturnTypes(root: AstNode, relPath: string): Record<s
       ) {
         return;
       }
-      const declaredType = rustDeclaredTypeRef(node.childForFieldName("return_type"));
+      const spelledType = rustDeclaredTypeRef(node.childForFieldName("return_type"));
+      const associatedName =
+        spelledType?.form === "instance" && spelledType.args === undefined && spelledType.name.startsWith("Self::")
+          ? spelledType.name.slice("Self::".length)
+          : undefined;
+      const declaredType =
+        (associatedName === undefined ? undefined : associatedTypes.get(associatedName)) ?? spelledType;
       const generics = new Set(rustGenericParameters(node));
       const unknown = (recv: TypeRef): boolean =>
         recv.form === "tuple"
@@ -98,6 +111,12 @@ export function collectRustReturnTypes(root: AstNode, relPath: string): Record<s
           methodKind: named.methodKind,
         });
         const key = `${relPath}::${id}`;
+        // A namesake declared again (an inherent `fn` and a trait impl's, servo's
+        // `Promise::new_in_realm`) is ambiguous only when the two returns differ:
+        // agreeing declarations type the call whichever one Rust picks (bd tea-rags-mcp-s3i8m).
+        if (Object.hasOwn(returnTypes, key) && JSON.stringify(returnTypes[key]) === JSON.stringify(declaredType)) {
+          return;
+        }
         if (Object.hasOwn(returnTypes, key)) {
           delete returnTypes[key];
           ambiguous.add(key);
@@ -106,8 +125,33 @@ export function collectRustReturnTypes(root: AstNode, relPath: string): Record<s
       return;
     }
     const childScope = named === null ? scope : [...scope, named.name];
-    for (const child of node.children) visit(child, childScope, unsafeOwner);
+    for (const child of node.children) visit(child, childScope, unsafeOwner, associatedTypes);
   };
-  visit(root, [], false);
+  visit(root, [], false, new Map());
   return returnTypes;
+}
+
+/**
+ * An impl's `type Name = Concrete;` items (bd tea-rags-mcp-s3i8m): a method
+ * declared `-> &Self::Target` in `impl Deref for RootedPromise { type Target =
+ * Promise; … }` returns `Promise`. An associated type naming one of the impl's
+ * generic parameters (`type Target = T`) stays `Self::Target`, which the
+ * resolver reads as the owner's single argument.
+ */
+function rustConcreteAssociatedTypes(node: AstNode, implParameters: readonly string[]): Map<string, TypeRef> {
+  const associated = new Map<string, TypeRef>();
+  const mentionsParameter = (recv: TypeRef): boolean =>
+    recv.form === "tuple"
+      ? recv.elements.some(mentionsParameter)
+      : (recv.form === "instance" || recv.form === "class") &&
+        (implParameters.includes(recv.name) ||
+          recv.name.startsWith("Self::") ||
+          (recv.args?.some(mentionsParameter) ?? false));
+  for (const item of node.childForFieldName("body")?.namedChildren ?? []) {
+    if (item.type !== "type_item") continue;
+    const name = item.childForFieldName("name")?.text;
+    const declared = rustDeclaredTypeRef(item.childForFieldName("type"));
+    if (name !== undefined && declared !== undefined && !mentionsParameter(declared)) associated.set(name, declared);
+  }
+  return associated;
 }
