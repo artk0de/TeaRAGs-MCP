@@ -7,6 +7,7 @@
  * live once.
  */
 
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
@@ -592,6 +593,43 @@ export function rustImportCandidatePaths(
     if (parsed.prefix !== "crate") candidates.push(callerFile);
   }
   return [...new Set(candidates)];
+}
+
+/** Whether the run knows `relPath` as a module file: the symbol table holds it, or it wrote `pub use` facts. */
+export function rustModuleFileKnown(relPath: string, ctx: CallContext): boolean {
+  return ctx.symbolTable.hasFile(relPath) || identifierEntry(ctx.moduleReexports, relPath) !== undefined;
+}
+
+/**
+ * The files a `pub use` SOURCE module names, read from the module that wrote
+ * it (bd tea-rags-mcp-s3i8m.8): `self::peer` / `super::x` / `crate::x` climb
+ * from `moduleFile`, never from the caller. A bare head is a workspace crate,
+ * else a child module of `moduleFile` the run holds (2018 relative paths:
+ * `pub use peer::find_peer;`), else an external crate. `"external"` when the
+ * source is outside the project; `null` when the path cannot be followed.
+ */
+export function rustReexportSourcePaths(
+  sourceModule: string,
+  moduleFile: string,
+  ctx: CallContext,
+): string[] | "external" | null {
+  const raw = sourceModule.replace(/^::/, "").split("::");
+  if (raw.length === 0 || raw.some((segment) => segment.length === 0)) return null;
+  const { prefix, superDepth, segments } = splitRustPrefix(raw);
+  if (segments.length > 0 && !validRustSegments(segments)) return null;
+  if (prefix !== null) {
+    if (segments.length > 0) return rustPathCandidatePaths({ prefix, superDepth }, segments, moduleFile, ctx);
+    if (prefix === "self") return [moduleFile];
+    const root = rustImportRoot({ prefix, superDepth }, moduleFile);
+    const base = root ? `${root}/` : "";
+    return [...(root ? [`${root}.rs`] : []), `${base}mod.rs`, `${base}lib.rs`, `${base}main.rs`];
+  }
+  const crate = rustWorkspaceCrateRoot({ prefix, superDepth }, segments, ctx);
+  if (crate !== undefined) return rustCrateRootedPaths(crate, segments.slice(1));
+  const child = rustPathCandidatePaths({ prefix: "self", superDepth: 0 }, segments, moduleFile, ctx);
+  if (child.some((relPath) => rustModuleFileKnown(relPath, ctx))) return child;
+  const head = segments[0];
+  return head !== undefined && rustPathHeadIsExternal(head, ctx) ? "external" : null;
 }
 
 export function rustImportGlobCandidatePaths(importText: string, callerFile: string): string[] | null {

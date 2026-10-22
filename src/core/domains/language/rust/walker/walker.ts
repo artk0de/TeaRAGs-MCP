@@ -470,65 +470,57 @@ function collectRustImports(root: AstNode): ImportRef[] {
 }
 
 function collectRustModuleReexports(root: AstNode): ModuleReexport[] {
-  const out: ModuleReexport[] = [];
+  const moduleReexports: ModuleReexport[] = [];
   walk(root, (node) => {
     if (node.type !== "use_declaration" || !node.children.some((child) => child.type === "visibility_modifier")) return;
     const clause = rustUseClause(node);
-    if (!clause) return;
+    if (clause) collectRustUseTreeReexports(clause, [], moduleReexports);
+  });
+  return moduleReexports;
+}
 
-    if (clause.type === "use_as_clause") {
-      const path = rustUsePathNode(clause);
-      const alias = rustUseAlias(clause);
-      if (!path || !alias) return;
-      const sourceParts = rustUsePathParts(path);
-      out.push({
+/**
+ * One `pub use` tree, flattened leaf by leaf with each leaf's FULL source
+ * module (bd tea-rags-mcp-s3i8m.8): tikv's `pub use self::{peer::{find_peer}}`
+ * re-exports `find_peer` from `self::peer`, not from `self` — the one-level
+ * reading recorded the group's head as the module and skipped nested groups.
+ */
+function collectRustUseTreeReexports(node: AstNode, base: readonly string[], moduleReexports: ModuleReexport[]): void {
+  if (node.type === "use_list") {
+    for (const member of node.namedChildren) collectRustUseTreeReexports(member, base, moduleReexports);
+    return;
+  }
+  if (node.type === "scoped_use_list") {
+    const head = node.childForFieldName("path");
+    const list = node.childForFieldName("list") ?? node.children.find((child) => child.type === "use_list");
+    if (list) collectRustUseTreeReexports(list, [...base, ...rustUsePathParts(head)], moduleReexports);
+    return;
+  }
+  if (node.type === "use_as_clause") {
+    const alias = rustUseAlias(node);
+    const sourceParts = [...base, ...rustUsePathParts(rustUsePathNode(node))];
+    if (alias && sourceParts.length > 0) {
+      moduleReexports.push({
         exportedName: alias.exportedName,
         sourceModule: sourceParts.slice(0, -1).join("::"),
         sourceName: alias.sourceName,
       });
-      return;
     }
-
-    if (clause.type === "use_wildcard") {
-      const sourceModule = rustUsePathNode(clause)?.text;
-      if (sourceModule) out.push({ exportedName: "*", sourceModule });
-      return;
-    }
-
-    if (clause.type === "scoped_use_list") {
-      const sourceModule = rustUsePathNode(clause)?.text;
-      const useList = clause.childForFieldName("list") ?? clause.children.find((child) => child.type === "use_list");
-      if (!sourceModule || !useList) return;
-      for (const member of useList.children) {
-        if (member.type === "use_as_clause") {
-          const alias = rustUseAlias(member);
-          if (alias) out.push({ exportedName: alias.exportedName, sourceModule, sourceName: alias.sourceName });
-          continue;
-        }
-        if (member.type === "use_wildcard") {
-          out.push({ exportedName: "*", sourceModule });
-          continue;
-        }
-        if (member.type === "identifier" || member.type === "scoped_identifier") {
-          const sourceParts = rustUsePathParts(member);
-          const sourceName = sourceParts.at(-1);
-          if (sourceName) out.push({ exportedName: sourceName, sourceModule, sourceName });
-        }
-      }
-      return;
-    }
-
-    const sourceParts = rustUsePathParts(clause);
-    const sourceName = sourceParts.at(-1);
-    if (sourceName) {
-      out.push({
-        exportedName: sourceName,
-        sourceModule: sourceParts.slice(0, -1).join("::"),
-        sourceName,
-      });
-    }
-  });
-  return out;
+    return;
+  }
+  if (node.type === "use_wildcard") {
+    const path = node.namedChildren[0] ?? null;
+    const sourceModule = [...base, ...rustUsePathParts(path)].join("::");
+    if (sourceModule) moduleReexports.push({ exportedName: "*", sourceModule });
+    return;
+  }
+  const sourceParts = [...base, ...rustUsePathParts(node)];
+  // `self` in a group re-exports the group's own module under its last name.
+  const leafParts = sourceParts.at(-1) === "self" ? sourceParts.slice(0, -1) : sourceParts;
+  const sourceName = leafParts.at(-1);
+  if (sourceName) {
+    moduleReexports.push({ exportedName: sourceName, sourceModule: leafParts.slice(0, -1).join("::"), sourceName });
+  }
 }
 
 function collectRustCalls(root: AstNode): CallRef[] {
