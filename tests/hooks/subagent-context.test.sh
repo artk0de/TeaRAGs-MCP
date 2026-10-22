@@ -50,5 +50,45 @@ for P in "$TR_PLUGIN" "$DP_PLUGIN"; do
   note $? "$name has no PreToolUse Agent prompt rewrite"
 done
 
+# 6. the tea-rags block opens with the repository's alias (bd tea-rags-mcp-4nqf5),
+#    resolved by `tea-rags project exist --repository`; a missing or failing
+#    resolver leaves the block unchanged. `tea-rags` is stubbed on PATH.
+STUB_DIR="$(mktemp -d)"
+trap 'rm -rf "$STUB_DIR"' EXIT
+mkdir -p "$STUB_DIR/ok" "$STUB_DIR/fail" "$STUB_DIR/none"
+cat > "$STUB_DIR/ok/tea-rags" <<'STUB'
+#!/bin/bash
+# Answers only the exact resolver call the hook must make.
+[ "$*" = "project exist --path /repo/wt --repository --print-name" ] || exit 1
+echo "demo"
+STUB
+cat > "$STUB_DIR/fail/tea-rags" <<'STUB'
+#!/bin/bash
+exit 1
+STUB
+chmod +x "$STUB_DIR/ok/tea-rags" "$STUB_DIR/fail/tea-rags"
+# A PATH with the hook's tools and no tea-rags at all.
+for tool in bash jq awk cat dirname; do ln -s "$(command -v "$tool")" "$STUB_DIR/none/$tool"; done
+
+context_with() { # $1 = PATH
+  echo "$INPUT" | CLAUDE_PROJECT_DIR=/repo/wt PATH="$1" bash "$TR_HOOK" 2>/dev/null \
+    | jq -r '.hookSpecificOutput.additionalContext // empty'
+}
+BASE_BLOCK="$(context_with "$STUB_DIR/fail:$PATH")"
+ALIAS_LINE='tea-rags project alias for this repository: `demo` — pass project="demo" together with path=<your working directory> on every tea-rags call.'
+
+[ "$(context_with "$STUB_DIR/ok:$PATH" | head -n 1)" = "$ALIAS_LINE" ]
+note $? "resolved alias is the first line of the injected context"
+context_with "$STUB_DIR/ok:$PATH" | grep -Fq "## Search Tools (MANDATORY"
+note $? "the search block still follows the alias line"
+! printf '%s\n' "$BASE_BLOCK" | grep -Fq "project alias for this repository"
+note $? "a failing resolver injects the block without an alias line"
+printf '%s\n' "$BASE_BLOCK" | grep -Fq "## Search Tools (MANDATORY"
+note $? "a failing resolver still injects the search block"
+[ "$(context_with "$STUB_DIR/none")" = "$BASE_BLOCK" ]
+note $? "no tea-rags on PATH injects the block unchanged"
+echo "$INPUT" | CLAUDE_PROJECT_DIR=/repo/wt PATH="$STUB_DIR/fail:$PATH" bash "$TR_HOOK" >/dev/null 2>&1
+note $? "a failing resolver never fails the hook"
+
 echo "# pass=$PASS fail=$FAIL"
 [ "$FAIL" = 0 ]
