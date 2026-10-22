@@ -27,7 +27,7 @@ export const capability: LanguageCapability = {
   testFiles,
   codegraph: {
     tier: "moderate",
-    tech: "7-strategy; trait dispatch; declared return/struct-field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
+    tech: "10-strategy (last: rust-analyzer SCIP); trait dispatch; return/field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
     // Generic return substitution reads the declaring owner's genericParameters.
     resolverReadsTypeDeclarations: true,
     // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
@@ -93,6 +93,9 @@ export const capability: LanguageCapability = {
   //   method, and drops only when the miss is proven.
   // - bd tea-rags-mcp-s3i8m.6 (R3-1) — a call records its member token position
   //   (`memberStartLine` / `memberStartColumn`); nothing reads it yet.
+  // - bd tea-rags-mcp-s3i8m.6 (R3a) — a last `rustAnalyzerScip` pass answers the
+  //   residual from rust-analyzer's SCIP definition at the member token; a
+  //   SCIP-proven external target with a project namesake is externalSkipped.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
