@@ -1224,6 +1224,14 @@ export interface RustScipDefinition {
   readonly relPath?: string;
   /** 1-based line of the definition; present iff `inProject`. */
   readonly line?: number;
+  /** The descriptor's last name, backticks stripped; `""` for a local. */
+  readonly name: string;
+  /** `callable` = `().` suffix, `type` = `#` (enum variants too), `macro` = `!`, `local` = `local ` symbol, else `other`. */
+  readonly kind: "callable" | "type" | "macro" | "local" | "other";
+  /** The trait of `impl#[X][Trait]m().` — the second bracket; absent for an inherent or free symbol. */
+  readonly implTrait?: string;
+  /** True when ANY definition in the index belongs to the same package — a workspace crate, not a dependency. */
+  readonly packageInProject: boolean;
 }
 
 /**

@@ -545,6 +545,7 @@ function collectRustCalls(root: AstNode): CallRef[] {
   walk(root, (node) => {
     const shape = rustCallSiteShape(node);
     if (shape) {
+      const member = rustCallMemberToken(node);
       out.push({
         callText: node.text,
         ...shape,
@@ -552,6 +553,10 @@ function collectRustCalls(root: AstNode): CallRef[] {
         // The Node parser exposes UTF-16 code-unit columns. This is the
         // expression's start, not the callee token's range or a UTF-8 offset.
         startColumn: node.startPosition.column,
+        ...(member && {
+          memberStartLine: member.startPosition.row + 1,
+          memberStartColumn: member.startPosition.column,
+        }),
       });
     }
   });
@@ -603,6 +608,27 @@ export function rustCallSiteShape(node: AstNode): RustCallShape | null {
     return name ? { receiver: fn.childForFieldName("path")?.text ?? null, member: name.text } : null;
   }
   return fn?.type === "identifier" ? { receiver: null, member: fn.text } : null;
+}
+
+/**
+ * The member-name token of the call {@link rustCallSiteShape} describes (the
+ * `macro` name, the field of `a.b()`, the last segment of `a::b()`, a bare
+ * callee), or null when the shape is null. Its position is what a
+ * rust-analyzer SCIP reference occurrence is keyed by, and the only thing that
+ * tells `A::new().build()` from the nested `A::new()` — they share a start.
+ */
+export function rustCallMemberToken(node: AstNode): AstNode | null {
+  if (node.type === "macro_invocation") {
+    const macroField = node.childForFieldName("macro");
+    if (macroField?.type !== "scoped_identifier") return macroField;
+    return macroField.childForFieldName("name");
+  }
+  if (node.type !== "call_expression") return null;
+  let fn = node.childForFieldName("function");
+  while (fn?.type === "generic_function") fn = fn.childForFieldName("function");
+  if (fn?.type === "field_expression") return fn.childForFieldName("field");
+  if (fn?.type === "scoped_identifier") return fn.childForFieldName("name");
+  return fn?.type === "identifier" ? fn : null;
 }
 
 function walk(node: AstNode, visit: (n: AstNode) => void): void {

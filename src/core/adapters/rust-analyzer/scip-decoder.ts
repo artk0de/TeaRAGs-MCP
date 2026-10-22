@@ -203,6 +203,11 @@ export function createRustAnalyzerScipIndex(
     }
     byFile.set(relPath, byPosition);
   }
+  const projectPackages = new Set<string>();
+  for (const key of Object.keys(data.definitions)) {
+    const symbol = data.symbols[Number(key)];
+    if (symbol !== undefined) projectPackages.add(scipSymbolPackage(symbol));
+  }
   return {
     identity,
     definitionAt: (relPath, line, utf16Col) => {
@@ -210,7 +215,7 @@ export function createRustAnalyzerScipIndex(
       if (servable && !servable(relPath)) return null;
       const index = byFile.get(relPath)?.get(positionKey(line - 1, utf16Col));
       if (index === undefined) return null;
-      const described = describeSymbol(data, index);
+      const described = describeSymbol(data, index, projectPackages);
       if (described?.inProject && servable && described.relPath !== undefined && !servable(described.relPath)) {
         return null;
       }
@@ -219,13 +224,49 @@ export function createRustAnalyzerScipIndex(
   };
 }
 
-function describeSymbol(data: RustAnalyzerScipIndexData, index: number): RustScipDefinition | null {
+function describeSymbol(
+  data: RustAnalyzerScipIndexData,
+  index: number,
+  projectPackages: ReadonlySet<string>,
+): RustScipDefinition | null {
   const symbol = data.symbols[index];
   if (symbol === undefined) return null;
   const definition = data.definitions[String(index)];
   const pkg = scipSymbolPackage(symbol);
-  if (!definition) return { symbol, package: pkg, inProject: false };
-  return { symbol, package: pkg, inProject: true, relPath: definition[0], line: definition[1] + 1 };
+  const described = {
+    symbol,
+    package: pkg,
+    ...describeDescriptors(symbol),
+    packageInProject: projectPackages.has(pkg),
+  };
+  if (!definition) return { ...described, inProject: false };
+  return { ...described, inProject: true, relPath: definition[0], line: definition[1] + 1 };
+}
+
+/** The descriptor chain of a global symbol: everything after `<scheme> <manager> <package> <version> `. */
+function scipDescriptors(symbol: string): string {
+  return symbol.split(" ").slice(4).join(" ");
+}
+
+const IMPL_TRAIT = /impl#\[[^\]]*\]\[([^\]]+)\]/;
+const TRAILING_NAME = /(?:`([^`]+)`|([^\s/#.!():[\]`]+))$/;
+
+function describeDescriptors(symbol: string): Pick<RustScipDefinition, "name" | "kind" | "implTrait"> {
+  if (symbol.startsWith(LOCAL_PREFIX)) return { name: "", kind: "local" };
+  const descriptors = scipDescriptors(symbol);
+  const implTrait = IMPL_TRAIT.exec(descriptors)?.[1];
+  const withTrait = implTrait === undefined ? {} : { implTrait };
+  const suffixes = [
+    ["().", "callable"],
+    ["#", "type"],
+    ["!", "macro"],
+  ] as const;
+  for (const [suffix, kind] of suffixes) {
+    if (!descriptors.endsWith(suffix)) continue;
+    const match = TRAILING_NAME.exec(descriptors.slice(0, -suffix.length));
+    return { name: match?.[1] ?? match?.[2] ?? "", kind, ...withTrait };
+  }
+  return { name: "", kind: "other", ...withTrait };
 }
 
 /** Columns at or past this are never keyed (a minified line); one safe integer then keys line + column. */

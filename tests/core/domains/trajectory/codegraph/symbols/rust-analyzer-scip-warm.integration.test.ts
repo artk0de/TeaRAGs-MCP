@@ -62,6 +62,9 @@ const ONE_POSITION_INDEX = {
           inProject: true,
           relPath: "src/util.rs",
           line: 1,
+          name: "helper",
+          kind: "callable" as const,
+          packageInProject: true,
         }
       : null,
 };

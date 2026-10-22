@@ -111,3 +111,65 @@ describe("createRustAnalyzerScipIndex — servable filter (bd s3i8m.6 R2b-2)", (
     expect(all.definitionAt("src/main.rs", 7, 12)).toEqual(miniIndex().definitionAt("src/main.rs", 7, 12));
   });
 });
+
+// bd s3i8m.6 R3-1: mini/index.scip was regenerated with the same no-exec command after appending
+// `Tally` (derive Clone), `Wrap::Boxed`, `bump_free`, `Greeter`, `twice!` and `extras` — appended, so every
+// line the tests above pin is unchanged. Config: {"cargo":{"buildScripts":{"enable":false,
+// "overrideCommand":["/usr/bin/true"]}},"procMacro":{"enable":false}}.
+describe("createRustAnalyzerScipIndex — described definitions (bd s3i8m.6 R3-1)", () => {
+  it("describes an in-project method: name, callable kind, no impl trait, package in project", () => {
+    const def = miniIndex().definitionAt("src/main.rs", 7, 12);
+    expect(def).toMatchObject({ name: "bump", kind: "callable", packageInProject: true });
+    expect(def?.implTrait).toBeUndefined();
+  });
+
+  it("describes a std method as an external callable whose package is not in the project", () => {
+    expect(miniIndex().definitionAt("src/main.rs", 9, 6)).toMatchObject({
+      name: "push",
+      kind: "callable",
+      packageInProject: false,
+    });
+  });
+
+  it("describes a local binding with an empty name", () => {
+    expect(miniIndex().definitionAt("src/main.rs", 7, 4)).toMatchObject({ name: "", kind: "local" });
+    expect(miniIndex().definitionAt("src/main.rs", 24, 4)).toMatchObject({ name: "", kind: "local" });
+  });
+
+  it("describes struct and tuple-variant references as types", () => {
+    expect(miniIndex().definitionAt("src/main.rs", 6, 22)).toMatchObject({ name: "Counter", kind: "type" });
+    expect(miniIndex().definitionAt("src/main.rs", 22, 26)).toMatchObject({ name: "Boxed", kind: "type" });
+  });
+
+  it("reads the trait of a derive-generated impl, which has no definition occurrence", () => {
+    expect(miniIndex().definitionAt("src/main.rs", 21, 20)).toMatchObject({
+      name: "clone",
+      kind: "callable",
+      implTrait: "Clone",
+      inProject: false,
+      packageInProject: true,
+    });
+  });
+
+  it("describes a macro_rules macro as a macro", () => {
+    expect(miniIndex().definitionAt("src/main.rs", 26, 4)).toMatchObject({
+      name: "twice",
+      kind: "macro",
+      inProject: true,
+    });
+  });
+
+  it("uses the declared name under a use-as alias", () => {
+    expect(miniIndex().definitionAt("src/main.rs", 25, 4)).toMatchObject({ name: "bump_free", kind: "callable" });
+  });
+
+  it("describes a trait default method called through a generic bound", () => {
+    const def = miniIndex().definitionAt("src/main.rs", 27, 6);
+    expect(def).toMatchObject({ name: "greet", kind: "callable", inProject: true });
+    expect(def?.implTrait).toBeUndefined();
+  });
+
+  it("describes a namespace reference as other", () => {
+    expect(miniIndex().definitionAt("src/main.rs", 19, 13)).toMatchObject({ kind: "other" });
+  });
+});

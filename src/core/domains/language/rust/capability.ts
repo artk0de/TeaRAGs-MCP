@@ -91,6 +91,8 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m Task 1d — a typed pattern receiver's member miss
   //   reaches a smart pointer's pointee and a project trait's provided
   //   method, and drops only when the miss is proven.
+  // - bd tea-rags-mcp-s3i8m.6 (R3-1) — a call records its member token position
+  //   (`memberStartLine` / `memberStartColumn`); nothing reads it yet.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
