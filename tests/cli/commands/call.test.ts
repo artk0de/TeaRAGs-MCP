@@ -111,7 +111,7 @@ describe("runCall — params parsing", () => {
 
     expect(code).toBe(0);
     expect(app.getCollectionInfo).toHaveBeenCalledWith("code_a");
-    expect(h.stdout.join("\n")).toContain('"vectorSize": 768');
+    expect((JSON.parse(h.stdout.join("\n")) as { vectorSize: number }).vectorSize).toBe(768);
     expect(h.closed()).toBe(true);
   });
 
