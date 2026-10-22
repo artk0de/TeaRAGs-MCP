@@ -15,6 +15,7 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
+import type { RustAnalyzerInstallHintLookup } from "../../../adapters/rust-analyzer/index.js";
 import { selectLanguages } from "../../../contracts/language-selector.js";
 import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
@@ -72,6 +73,8 @@ export interface IngestFacadeDeps {
   config: IngestCodeConfig;
   trajectoryConfig: TrajectoryIngestConfig;
   statsCache?: StatsCache;
+  /** rust-analyzer install-hint lookup built by bootstrap (s3i8m.6); forwarded to IndexingOps. */
+  rustAnalyzerInstallHint?: RustAnalyzerInstallHintLookup;
   allPayloadSignals?: PayloadSignalDescriptor[];
   statsAccumulators?: readonly StatsAccumulatorDescriptor[];
   reranker?: RerankerPort;
@@ -212,6 +215,7 @@ export class IngestFacade {
       enrichment,
       snapshotDir,
       statsCache: deps.statsCache,
+      ...(deps.rustAnalyzerInstallHint ? { rustAnalyzerInstallHint: deps.rustAnalyzerInstallHint } : {}),
       allPayloadSignals: deps.allPayloadSignals,
       statsAccumulators: deps.statsAccumulators,
       reranker: deps.reranker,

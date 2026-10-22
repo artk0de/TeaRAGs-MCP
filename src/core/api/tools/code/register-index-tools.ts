@@ -111,6 +111,10 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
         statusMessage = `Indexing failed:\n${stats.errors?.join("\n")}`;
       }
 
+      // The run's one non-fatal notice about an optional binary (bd s3i8m.6),
+      // filled once by IndexingOps — the CLI renders the same field.
+      if (stats.status !== "failed" && stats.rustAnalyzerHint) statusMessage += `\n\n⚠ ${stats.rustAnalyzerHint}`;
+
       return {
         content: [{ type: "text" as const, text: statusMessage }],
         isError: stats.status === "failed",

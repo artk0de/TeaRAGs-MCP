@@ -100,6 +100,9 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
     for (const line of seedLines) lines.push(`  ${line}`);
   }
 
+  // The run's rust-analyzer install hint (bd s3i8m.6): one line, no block of its own.
+  if (status.rustAnalyzerHint) lines.push(`⚠ ${status.rustAnalyzerHint}`);
+
   // Scoped force outcome (bd tea-rags-mcp-j4oww), injected from IndexStats likewise.
   if (status.scopedRechunk) {
     const r = status.scopedRechunk;
@@ -262,6 +265,10 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
 
   if (status.worktreeSeed) {
     base.worktreeSeed = status.worktreeSeed;
+  }
+
+  if (status.rustAnalyzerHint) {
+    base.rustAnalyzerHint = status.rustAnalyzerHint;
   }
 
   if (status.scopedRechunk) {

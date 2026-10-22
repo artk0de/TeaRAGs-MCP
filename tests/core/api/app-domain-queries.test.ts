@@ -36,7 +36,7 @@ afterAll(() => {
 });
 
 /** Wired the way the composition does — a real ProjectRegistryOps over a temp registry. */
-function makeApp() {
+function makeApp(overrides: Partial<AppDeps> = {}) {
   const deps: AppDeps = {
     qdrant: {} as QdrantManager,
     embeddings: {} as EmbeddingProvider,
@@ -52,6 +52,7 @@ function makeApp() {
     projectRegistryOps: new ProjectRegistryOps({ registry: new CollectionRegistry(registryDir) }),
     quantizationScalar: true,
     turboQuant: true,
+    ...overrides,
   };
   return createApp(deps);
 }
@@ -92,6 +93,29 @@ describe("App.resolveLanguageCapabilities", () => {
     const app = makeApp();
     const resolved = app.resolveLanguageCapabilities(["typescript", "sql"]);
     expect([...resolved.keys()]).toEqual(["typescript", "sql"]);
+  });
+});
+
+describe("App.resolveRustAnalyzerInstallHint", () => {
+  it("forwards the project path and languages to the injected lookup and returns its line", () => {
+    const lookup = vi.fn().mockReturnValue("install rust-analyzer");
+    const app = makeApp({ rustAnalyzerInstallHint: lookup });
+    expect(app.resolveRustAnalyzerInstallHint({ path: "/p", languages: ["rust"] })).toBe("install rust-analyzer");
+    expect(lookup).toHaveBeenCalledWith({ path: "/p", languages: ["rust"] });
+  });
+
+  it("answers null when no lookup is wired (codegraph or the rust-analyzer slot is off)", () => {
+    const app = makeApp();
+    expect(app.resolveRustAnalyzerInstallHint({ path: "/p", languages: ["rust"] })).toBeNull();
+  });
+
+  it("answers null, never throws, when the lookup throws", () => {
+    const app = makeApp({
+      rustAnalyzerInstallHint: () => {
+        throw new Error("probe exploded");
+      },
+    });
+    expect(app.resolveRustAnalyzerInstallHint({ path: "/p", languages: ["rust"] })).toBeNull();
   });
 });
 

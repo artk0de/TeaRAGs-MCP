@@ -173,6 +173,9 @@ export async function runIndexWorker(
   // The seed outcome is a fact of THIS run, like its enrichment metrics: status
   // reads never carry it, so it rides every status message from here.
   const worktreeSeed = indexStats.worktreeSeed ? { worktreeSeed: indexStats.worktreeSeed } : {};
+  // So is the rust-analyzer install hint (bd s3i8m.6): one field on IndexStats,
+  // rendered by both the human block and the --json object.
+  const rustAnalyzerHint = indexStats.rustAnalyzerHint ? { rustAnalyzerHint: indexStats.rustAnalyzerHint } : {};
   // A scoped force's outcome is a fact of this run too (bd tea-rags-mcp-j4oww).
   const rechunked = indexStats.changeDetails;
   const scopedRechunk =
@@ -192,6 +195,7 @@ export async function runIndexWorker(
       ...earlyStatus,
       enrichmentMetrics: indexStats.enrichmentMetrics,
       ...worktreeSeed,
+      ...rustAnalyzerHint,
       ...scopedRechunk,
       ...(earlyCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: earlyCodegraphSizeBytes } : {}),
     },
@@ -218,6 +222,7 @@ export async function runIndexWorker(
     ...finalStatus,
     enrichmentMetrics: indexStats.enrichmentMetrics,
     ...worktreeSeed,
+    ...rustAnalyzerHint,
     ...scopedRechunk,
     ...(finalCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: finalCodegraphSizeBytes } : {}),
   };

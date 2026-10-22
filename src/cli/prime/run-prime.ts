@@ -314,6 +314,10 @@ export async function runPrime(input: {
       // App method, not the retired barrel re-export (bd tea-rags-mcp-89k7k.9)
       // — Uniform Access through the wired App prime already holds.
       languageCapabilities: ctx.app.resolveLanguageCapabilities(Object.keys(metrics?.distributions?.language ?? {})),
+      rustAnalyzerHint: ctx.app.resolveRustAnalyzerInstallHint({
+        path,
+        languages: Object.keys(metrics?.distributions?.language ?? {}),
+      }),
       drift: drift.status === "fulfilled" ? drift.value : null,
       update: update.status === "fulfilled" ? update.value : null,
       memory: memory.status === "fulfilled" ? memory.value : null,

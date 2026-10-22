@@ -76,6 +76,7 @@ describe("runPrime — happy path", () => {
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
+        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: getStatusMock,
         getIndexMetrics: getMetricsMock,
         checkIndexDrift: checkDriftMock,
@@ -106,6 +107,7 @@ describe("runPrime — happy path", () => {
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
+        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",
@@ -139,6 +141,7 @@ describe("runPrime — happy path", () => {
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
+        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",
@@ -167,6 +170,57 @@ describe("runPrime — happy path", () => {
     expect(writeMock.mock.calls[0][0]).toContain(
       `typescript: ast ${ts?.ast.tier} · tests ${ts?.tests.tier} · codegraph ${codegraph}`,
     );
+  });
+
+  // bd s3i8m.6 — the install hint rides the App method, fed the languages the
+  // metrics carry; the digest shows the one line only when the App returns it.
+  describe("rust-analyzer install hint", () => {
+    async function primeWithHint(hint: string | null, languages: Record<string, number>) {
+      vi.mocked(existsSync).mockReturnValue(true);
+      pingMock.mockResolvedValue(true);
+      const resolveRustAnalyzerInstallHint = vi.fn().mockReturnValue(hint);
+      createAppContextMock.mockResolvedValue({
+        app: {
+          resolveLanguageCapabilities,
+          resolveRustAnalyzerInstallHint,
+          getIndexStatus: vi.fn().mockResolvedValue({
+            isIndexed: true,
+            status: "indexed",
+            collectionName: "c",
+            chunksCount: 100,
+          }),
+          getIndexMetrics: vi.fn().mockResolvedValue({
+            collection: "c",
+            totalChunks: 100,
+            totalFiles: 10,
+            distributions: { language: languages },
+            signals: {},
+          }),
+          checkIndexDrift: vi.fn().mockResolvedValue(null),
+        },
+        cleanup: vi.fn(),
+        updateService: stubUpdateService(),
+      });
+      await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
+      return { resolveRustAnalyzerInstallHint, out: String(writeMock.mock.calls[0][0]) };
+    }
+
+    it("shows the hint line when the App answers one for an index holding rust", async () => {
+      const { resolveRustAnalyzerInstallHint, out } = await primeWithHint("rust-analyzer not found — install it", {
+        rust: 90,
+        typescript: 10,
+      });
+      expect(resolveRustAnalyzerInstallHint).toHaveBeenCalledWith({
+        path: "/some/project",
+        languages: ["rust", "typescript"],
+      });
+      expect(out).toContain("rust-analyzer not found — install it");
+    });
+
+    it("shows no hint line when the App answers null", async () => {
+      const { out } = await primeWithHint(null, { rust: 100 });
+      expect(out).not.toContain("rust-analyzer not found");
+    });
   });
 });
 
@@ -209,6 +263,7 @@ describe("runPrime — failure paths", () => {
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
+        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: getStatusMock,
         getIndexMetrics: getMetricsMock,
         checkIndexDrift: checkDriftMock,
@@ -232,6 +287,7 @@ describe("runPrime — status failure that is not a cold Qdrant", () => {
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
+        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: vi.fn().mockRejectedValue(error),
         getIndexMetrics: vi.fn().mockResolvedValue({}),
         checkIndexDrift: vi.fn().mockResolvedValue(null),
@@ -313,6 +369,7 @@ describe("runPrime — cwd fallback", () => {
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
+        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: getStatusMock,
         getIndexMetrics: vi.fn().mockResolvedValue({
           collection: "c",
@@ -338,6 +395,7 @@ describe("runPrime — update-check integration", () => {
     return {
       app: {
         resolveLanguageCapabilities,
+        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",
@@ -430,6 +488,7 @@ describe("runPrime — buildUpdateService fallback (yl9tv)", () => {
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
+        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",

@@ -60,6 +60,7 @@ describe("runPrime — debug flag reaches the codegraph resolve section", () => 
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
+        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",

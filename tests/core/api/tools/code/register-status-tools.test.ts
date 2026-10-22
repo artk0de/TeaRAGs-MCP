@@ -286,3 +286,70 @@ describe("get_index_status — a working tree read against its base index", () =
     expect(checkIndexDrift).toHaveBeenCalledWith({ path: "/repo", consume: false });
   });
 });
+
+describe("get_index_status — rust-analyzer install hint (s3i8m.6)", () => {
+  const HINT = "rust-analyzer not found — install with 'rustup component add rust-analyzer'";
+
+  function harness(over: {
+    languages?: Record<string, number>;
+    hint?: string | null;
+    metrics?: () => Promise<unknown>;
+    lookup?: () => string | null;
+  }) {
+    const captured = new Map<string, ToolHandler>();
+    const register = vi.fn((_server: unknown, name: string, _config: unknown, handler: ToolHandler) => {
+      captured.set(name, handler);
+    });
+    const resolveRustAnalyzerInstallHint = vi.fn(over.lookup ?? (() => over.hint ?? null));
+    const app = {
+      getIndexStatus: vi.fn().mockResolvedValue({
+        isIndexed: true,
+        status: "indexed",
+        collectionName: "code_abc",
+        chunksCount: 100,
+      }),
+      getIndexMetrics: vi.fn(over.metrics ?? (async () => ({ distributions: { language: over.languages ?? {} } }))),
+      resolveRustAnalyzerInstallHint,
+      checkIndexDrift: vi.fn().mockResolvedValue(null),
+    } as unknown as App;
+    registerStatusTools({} as Parameters<typeof registerStatusTools>[0], { app, register: register as never });
+    return { handler: captured.get("get_index_status")!, resolveRustAnalyzerInstallHint };
+  }
+
+  it("appends the hint line, fed the languages of the stats-cache distributions", async () => {
+    const { handler, resolveRustAnalyzerInstallHint } = harness({ languages: { rust: 90, toml: 10 }, hint: HINT });
+    const result = await handler({ path: "/repo" }, {});
+    expect(resolveRustAnalyzerInstallHint).toHaveBeenCalledWith({ path: "/repo", languages: ["rust", "toml"] });
+    expect(result.content[0].text).toContain(HINT);
+  });
+
+  it("appends nothing when the App answers no hint (found, no rust, slot off)", async () => {
+    const { handler } = harness({ languages: { rust: 100 }, hint: null });
+    const result = await handler({ path: "/repo" }, {});
+    expect(result.content[0].text).not.toContain("rust-analyzer");
+  });
+
+  it("still answers the status, without a hint, when the metrics read fails", async () => {
+    const { handler } = harness({
+      metrics: async () => {
+        throw new Error("stats cache unreadable");
+      },
+      hint: HINT,
+    });
+    const result = await handler({ path: "/repo" }, {});
+    expect(result.content[0].text).toContain("code_abc");
+    expect(result.content[0].text).not.toContain("rust-analyzer");
+  });
+
+  it("still answers the status, without a hint, when the lookup throws", async () => {
+    const { handler } = harness({
+      languages: { rust: 100 },
+      lookup: () => {
+        throw new Error("probe exploded");
+      },
+    });
+    const result = await handler({ path: "/repo" }, {});
+    expect(result.content[0].text).toContain("code_abc");
+    expect(result.content[0].text).not.toContain("rust-analyzer");
+  });
+});

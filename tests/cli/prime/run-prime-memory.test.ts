@@ -51,6 +51,7 @@ function appWith(getCollectionMemory: ReturnType<typeof vi.fn>, status: Record<s
   return {
     app: {
       resolveLanguageCapabilities,
+      resolveRustAnalyzerInstallHint: () => null,
       getIndexStatus: vi.fn().mockResolvedValue({
         isIndexed: true,
         status: "indexed",

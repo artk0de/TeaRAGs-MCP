@@ -87,6 +87,7 @@ describe("runPrime — auto-update trigger wiring", () => {
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
+        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",

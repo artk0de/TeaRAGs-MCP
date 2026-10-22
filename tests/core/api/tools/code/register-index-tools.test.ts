@@ -127,3 +127,35 @@ describe("index_codebase — partial incremental run (bd tea-rags-mcp-6l1w6)", (
     expect(text).not.toContain("Warning");
   });
 });
+
+describe("index_codebase — rust-analyzer install hint (bd s3i8m.6)", () => {
+  const HINT = "rust-analyzer not found — install with 'rustup component add rust-analyzer'";
+  const cleanRun: IndexStats = { ...seededRun, worktreeSeed: undefined };
+
+  it("appends the hint from the run's stats as one line", async () => {
+    const { handler } = harness({ ...cleanRun, rustAnalyzerHint: HINT });
+    const [{ text }] = (await handler({ path: "/repo" }, {})).content;
+
+    expect(text.split("\n").filter((l) => l.includes("rust-analyzer not found"))).toEqual([`⚠ ${HINT}`]);
+  });
+
+  it("appends it to a partial run too, after the run's own warnings", async () => {
+    const { handler } = harness({
+      ...cleanRun,
+      status: "partial",
+      errors: ["a.rs: parse failure"],
+      rustAnalyzerHint: HINT,
+    });
+    const [{ text }] = (await handler({ path: "/repo" }, {})).content;
+
+    expect(text).toContain("Warnings:\na.rs: parse failure");
+    expect(text.indexOf(HINT)).toBeGreaterThan(text.indexOf("Warnings:"));
+  });
+
+  it("says nothing about rust-analyzer for a run without a hint", async () => {
+    const { handler } = harness(cleanRun);
+    const [{ text }] = (await handler({ path: "/repo" }, {})).content;
+
+    expect(text).not.toContain("rust-analyzer");
+  });
+});

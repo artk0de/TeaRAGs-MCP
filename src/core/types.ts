@@ -156,6 +156,12 @@ export interface IndexStats {
   };
   /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
   worktreeSeed?: WorktreeSeedReport;
+  /**
+   * One-line rust-analyzer install hint (bd s3i8m.6): present only when the
+   * index holds Rust and no binary was found. Filled once per run by
+   * IndexingOps; the MCP tool and the CLI both render from this field.
+   */
+  rustAnalyzerHint?: string;
 }
 
 export interface ChangeStats {
@@ -592,6 +598,8 @@ export interface IndexStatus {
    * `IndexStats.worktreeSeed` so `--json` reports it.
    */
   worktreeSeed?: WorktreeSeedReport;
+  /** The run's rust-analyzer install hint, attached by the CLI worker from `IndexStats.rustAnalyzerHint`. */
+  rustAnalyzerHint?: string;
   /**
    * The collection's last residual pass in this process (`--resolve-residual`,
    * or the cache-only re-apply of an index run). Never persisted.
