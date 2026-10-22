@@ -285,6 +285,65 @@ describe("SCIP trait-declaration members prove external only without a project i
   });
 });
 
+describe("SCIP trait-declaration members on a proven external receiver (bd s3i8m.6 R3d)", () => {
+  const PATH_SITE = "src/main.rs:41:18";
+  const STRING_SITE = "src/main.rs:42:13";
+  const TURBOFISH_SITE = "src/main.rs:43:20";
+  const CLONE_SITE = "src/main.rs:44:12";
+  const index = () =>
+    stubIndex({
+      [PATH_SITE]: stdTraitMember("From", "from"),
+      [STRING_SITE]: stdTraitMember("From", "from"),
+      [TURBOFISH_SITE]: stdTraitMember("From", "from"),
+      [CLONE_SITE]: stdTraitMember("Clone", "clone"),
+    });
+  const usizeFrom = call("usize::from(byte)", "usize", "from", 41, 18);
+  const stringFrom = call("String::from(x)", "String", "from", 42, 13);
+  const vecFrom = call("Vec::<u8>::from(x)", "Vec::<u8>", "from", 43, 20);
+  const txClone = call("tx.clone()", "tx", "clone", 44, 12);
+  const domString = () => table(def("src/domstring.rs", "from", "DOMString.from", 11, 13));
+  const domStringImpl = { "src/domstring.rs": [traitImpl("DOMString", "From", 10, 14)] };
+  const withBindings = (ctx: CallContext, bindings: CallContext["localBindings"]): CallContext => ({
+    ...ctx,
+    localBindings: bindings,
+  });
+
+  it("DROPs a std path receiver whose type no project impl of the trait targets", () => {
+    expect(strategy.attempt(usizeFrom, ctxWith(domString(), index(), domStringImpl))).toEqual({ kind: "drop" });
+    expect(strategy.attempt(stringFrom, ctxWith(domString(), index(), domStringImpl))).toEqual({ kind: "drop" });
+    expect(strategy.attempt(vecFrom, ctxWith(domString(), index(), domStringImpl))).toEqual({ kind: "drop" });
+  });
+
+  it("CONTINUEs a std path receiver a project impl of the trait targets", () => {
+    const stringImpl = table(def("src/conv.rs", "from", "String.from", 21, 23));
+    const impls = { "src/conv.rs": [traitImpl("String", "From", 20, 24)] };
+    expect(strategy.attempt(stringFrom, ctxWith(stringImpl, index(), impls))).toEqual({ kind: "continue" });
+  });
+
+  it("DROPs a receiver typed to a std type no project impl of the trait targets", () => {
+    const shape = table(def("src/shape.rs", "clone", "Shape.clone", 3, 5));
+    const cloneImpl = { "src/shape.rs": [traitImpl("Shape", "Clone", 2, 6)] };
+    const ctx = withBindings(ctxWith(shape, index(), cloneImpl), {
+      tx: [{ line: 40, type: "std::sync::mpsc::Sender" }],
+    });
+    expect(strategy.attempt(txClone, ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("keeps R3c's rule when the path spells the trait, not the receiver type", () => {
+    const ufcs = call("std::io::Write::write(&mut w, buf)", "std::io::Write", "write", 45, 25);
+    const writer = table(def("src/sink.rs", "write", "Sink.write", 3, 5));
+    const writeImpl = { "src/sink.rs": [traitImpl("Sink", "Write", 2, 6)] };
+    const ufcsIndex = stubIndex({ "src/main.rs:45:25": stdTraitMember("Write", "write") });
+    expect(strategy.attempt(ufcs, ctxWith(writer, ufcsIndex, writeImpl))).toEqual({ kind: "continue" });
+  });
+
+  it("keeps R3c's rule on an untyped receiver", () => {
+    const shape = table(def("src/shape.rs", "clone", "Shape.clone", 3, 5));
+    const cloneImpl = { "src/shape.rs": [traitImpl("Shape", "Clone", 2, 6)] };
+    expect(strategy.attempt(txClone, ctxWith(shape, index(), cloneImpl))).toEqual({ kind: "continue" });
+  });
+});
+
 describe("RustCallResolver chain position of the SCIP slot (bd s3i8m.6 R3a)", () => {
   async function warmedResolver(index: RustAnalyzerScipIndex): Promise<RustCallResolver> {
     const source: RustAnalyzerScipSource = {
