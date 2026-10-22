@@ -2,6 +2,7 @@ import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, CallResultBinding, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { resolveRustNominalType } from "./declared-return-type.js";
+import { rustPlaceTypeThroughDeclaringFile } from "./declaring-file-type.js";
 import {
   lookupRustSymbolsByShortName,
   rustImportBindings,
@@ -106,7 +107,22 @@ export function rustDeclaredCallResultType(
     (recv.form === "instance" || recv.form === "class") &&
     recv.name.startsWith(`${calleeDefinition.relPath}::`) &&
     (recv.args?.every(sameFile) ?? true);
-  return owner !== undefined && sameFile(owner) ? owner : undefined;
+  if (owner !== undefined && sameFile(owner)) return owner;
+  // A name the callee bound through `use` is placed through the callee
+  // file's own imports (bd tea-rags-mcp-s3i8m letCall S4b). The argument list
+  // travels only when every argument places the same way; otherwise the head
+  // stays typed alone and a member needing an argument declines on its own.
+  const imported = rustPlaceTypeThroughDeclaringFile(declaredReturnType.name, calleeDefinition.relPath, ctx);
+  if (imported === undefined) return undefined;
+  const typeArguments = declaredReturnType.args?.map((arg) =>
+    arg.form === "instance" || arg.form === "class"
+      ? rustPlaceTypeThroughDeclaringFile(arg.name, calleeDefinition.relPath, ctx)
+      : undefined,
+  );
+  const head = { ...imported, form: declaredReturnType.form };
+  return typeArguments === undefined || typeArguments.length === 0 || typeArguments.some((arg) => arg === undefined)
+    ? head
+    : { ...head, args: typeArguments as TypeRef[] };
 }
 
 /**

@@ -641,3 +641,91 @@ export function rustImportGlobCandidatePaths(importText: string, callerFile: str
   const candidate = root ? `${root}/${suffix}` : suffix;
   return [`${candidate}.rs`, `${candidate}/mod.rs`];
 }
+
+/** How many `pub use` hops a re-export walk follows from the pinned module before it stops proving absence. */
+const RUST_REEXPORT_HOP_CAP = 4;
+
+export interface RustReexportFollow {
+  target: SymbolResolutionTarget | null;
+  open: boolean;
+}
+
+/**
+ * Follow the `pub use` re-exports of the module an import pins, hop-bounded
+ * by {@link RUST_REEXPORT_HOP_CAP}. The import is read from `fromFile`, the
+ * file that wrote it: the caller's for a call, a callee's or a struct's for a
+ * declared type (bd tea-rags-mcp-s3i8m letCall S4b). `defsOf(sourceName)`
+ * answers the definitions a re-export source may hold under the name it
+ * exports. `target` is the one definition the walk ends at; `open` is set
+ * when the walk met something it cannot follow — an unknown or absent module
+ * file, a relative path it cannot place, a glob from an external crate, the
+ * hop cap, the reexport channel absent, or more than one definition — so its
+ * silence is no proof of absence.
+ */
+export function rustFollowReexports(
+  importText: string,
+  receiver: string,
+  fromFile: string,
+  ctx: CallContext,
+  defsOf: (sourceName: string) => readonly SymbolDefinition[],
+): RustReexportFollow {
+  const parsed = parseRustImportPath(importText, receiver);
+  if (!parsed || ctx.moduleReexports === undefined) return { target: null, open: true };
+  const ownerSegments = parsed.sourceName === null ? parsed.moduleSegments.slice(0, -1) : parsed.moduleSegments;
+  const exportedName = parsed.sourceName === null ? (parsed.moduleSegments.at(-1) ?? receiver) : parsed.sourceName;
+  const ownerFiles = rustPathCandidatePaths(parsed, ownerSegments, fromFile, ctx).filter((relPath) =>
+    rustModuleFileKnown(relPath, ctx),
+  );
+  // An inline `mod tests { pub use … }` has no file of its own: nothing proves absence.
+  let open = ownerFiles.length === 0;
+  const targets: SymbolResolutionTarget[] = [];
+  const visited = new Set<string>();
+  const visit = (moduleFile: string, name: string, depth: number): void => {
+    const key = `${moduleFile}::${name}`;
+    if (visited.has(key)) return;
+    visited.add(key);
+    for (const entry of identifierEntry(ctx.moduleReexports, moduleFile) ?? []) {
+      if (entry.exportedName !== name && entry.exportedName !== "*") continue;
+      if (depth >= RUST_REEXPORT_HOP_CAP) {
+        open = true;
+        continue;
+      }
+      const sourcePaths = rustReexportSourcePaths(entry.sourceModule, moduleFile, ctx);
+      // A NAMED re-export of an external item proves the name external; a
+      // glob from an external crate may or may not carry it.
+      if (sourcePaths === "external") {
+        if (entry.exportedName === "*") open = true;
+        continue;
+      }
+      if (sourcePaths === null) {
+        open = true;
+        continue;
+      }
+      const sourceName = entry.exportedName === "*" ? name : (entry.sourceName ?? name);
+      const moduleItemPaths =
+        entry.sourceName === undefined
+          ? []
+          : rustReexportSourcePaths(`${entry.sourceModule}::${entry.sourceName}`, moduleFile, ctx);
+      const sourceFiles = [
+        ...new Set([...sourcePaths, ...(Array.isArray(moduleItemPaths) ? moduleItemPaths : [])]),
+      ].filter((relPath) => rustModuleFileKnown(relPath, ctx));
+      if (sourceFiles.length === 0) {
+        open = true;
+        continue;
+      }
+      const defs = defsOf(sourceName);
+      for (const sourceFile of sourceFiles) {
+        for (const def of defs) {
+          if (def.relPath === sourceFile) {
+            targets.push({ targetRelPath: def.relPath, targetSymbolId: def.symbolId });
+          }
+        }
+        visit(sourceFile, sourceName, depth + 1);
+      }
+    }
+  };
+  for (const ownerFile of ownerFiles) visit(ownerFile, exportedName, 0);
+  const unique = [...new Map(targets.map((target) => [target.targetRelPath, target])).values()];
+  if (unique.length === 1) return { target: unique[0], open };
+  return { target: null, open: open || unique.length > 1 };
+}

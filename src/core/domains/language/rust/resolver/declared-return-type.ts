@@ -1,6 +1,7 @@
 import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { MemberReturnTypeResolver, type NominalTypeRef } from "../../kernel/index.js";
+import { rustPlaceTypeThroughDeclaringFile } from "./declaring-file-type.js";
 import { rustCrateRootOf, rustCrateTypeMembers, rustCrateUniqueType } from "./rust-crate-scope.js";
 import {
   rustNameBoundByExternalImport,
@@ -121,17 +122,24 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
       const substituted = recv.args?.map(substitute);
       const typeArguments = substituted?.every((arg) => arg !== undefined) ? substituted : undefined;
       const declaringCtx = { ...ctx, callerFile: target.relPath, callerScope: target.scope.slice(0, -1) };
+      const withArguments = (placedHead: NominalTypeRef): TypeRef =>
+        typeArguments === undefined || typeArguments.length === 0 ? placedHead : { ...placedHead, args: typeArguments };
+      // Where the lexical read declines, the declaring file's own `use`
+      // imports place the spelling (bd tea-rags-mcp-s3i8m letCall S4b).
+      const throughImports = (): TypeRef | undefined => {
+        const imported = rustPlaceTypeThroughDeclaringFile(recv.name, target.relPath, ctx);
+        return imported === undefined ? undefined : withArguments({ ...imported, form: recv.form });
+      };
       const head = resolveRustNominalType({ form: recv.form, name: recv.name }, declaringCtx);
-      if (head === undefined) return rustStdTypeRef(recv.name, substituted, declaringCtx);
-      const placed =
-        typeArguments === undefined || typeArguments.length === 0 ? head : { ...head, args: typeArguments };
-      // Cross-file, only a type the DECLARING file declares in its own lexical
-      // scope is safe: the callee's import environment was never loaded, so a
-      // name it bound through `use` must decline rather than land on a caller
-      // -file namesake (`use external::Product` in lib.rs naming main.rs's
-      // Product fabricated an edge before this constraint).
-      if (target.relPath !== ctx.callerFile && !placed.name.startsWith(`${target.relPath}::`)) {
-        return undefined;
+      if (head === undefined) return rustStdTypeRef(recv.name, substituted, declaringCtx) ?? throughImports();
+      const placed = withArguments(head);
+      // Cross-file, a lexical read is safe only for a type the DECLARING file
+      // declares in its own scope: a name it bound through `use` must not land
+      // on a caller-file namesake (`use external::Product` in lib.rs naming
+      // main.rs's Product fabricated an edge before this constraint). Such a
+      // name is placed through the declaring file's imports instead.
+      if (target.relPath !== ctx.callerFile && !head.name.startsWith(`${target.relPath}::`)) {
+        return throughImports();
       }
       return placed;
     };

@@ -72,6 +72,9 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m Task 2 rule 5 — a silent `self.m()` reaches a
   //   trait's declaration: Deref target first, then the trait proven by impl
   //   edges / a trait body's supertraits, else a sole non-std project trait.
+  // - bd tea-rags-mcp-s3i8m (letCall S4b) — a callee's return or a struct's
+  //   field type spelled through `use` is placed via the declaring file's own
+  //   imports (re-exports followed), never the caller's.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

@@ -2,6 +2,7 @@ import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { resolveRustNominalType } from "./declared-return-type.js";
+import { rustPlaceTypeThroughDeclaringFile } from "./declaring-file-type.js";
 import { rustCallerCrateUniqueType } from "./rust-crate-scope.js";
 import { rustDeclaredTypeIsForeign, rustStdTypeRef } from "./std-type-hops.js";
 
@@ -48,8 +49,9 @@ export function rustDeclaredFieldType(recv: TypeRef, member: string, ctx: CallCo
       const argument = owner.args?.[parameter];
       return argument?.form === "instance" && argument.name.includes(".rs::") ? argument : undefined;
     }
-    // The caller's imports cannot place another file's nominal spelling.
-    if (ownerFile !== ctx.callerFile) return undefined;
+    // The caller's imports cannot place another file's nominal spelling; the
+    // owner file's own imports can (bd tea-rags-mcp-s3i8m letCall S4b).
+    if (ownerFile !== ctx.callerFile) return rustPlaceTypeThroughDeclaringFile(name, ownerFile, ctx);
     return resolveRustNominalType(
       { form: "instance", name },
       { ...ctx, callerScope: ownerId.split("::").slice(0, -1) },

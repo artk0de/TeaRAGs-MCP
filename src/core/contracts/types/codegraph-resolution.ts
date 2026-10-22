@@ -464,7 +464,9 @@ export interface CallContext {
   /**
    * `FileExtraction.rustUseImports` collected RUN-GLOBAL, keyed by the Rust
    * file's relPath (bd tea-rags-mcp-s3i8m letCall S4a). Replaced on a re-walk,
-   * hydrated for unwalked files. Nothing reads it yet.
+   * hydrated for unwalked files. Read to place a type another file's
+   * declaration spells (a callee's return, a struct's field) through THAT
+   * file's imports (S4b). Absent ⇒ such a type declines, as before.
    */
   rustUseImportsByFile?: Readonly<Record<string, readonly string[]>>;
   /**
