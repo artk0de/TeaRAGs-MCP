@@ -634,6 +634,12 @@ export interface ChainTallyRunOptions {
    * timing the warm separately (bd tea-rags-mcp-s3i8m.6 R3-3). Off by default.
    */
   rustAnalyzer?: boolean;
+  /** `--rust-analyzer-exec`: build scripts and proc macros run (trusted corpora only). */
+  rustAnalyzerExec?: boolean;
+  /** `--rust-analyzer-timeout-sec`: wall-clock budget override (default 900). */
+  rustAnalyzerTimeoutSec?: number;
+  /** `--rust-analyzer-max-rss-mb`: process-tree RSS budget override (default 4096). */
+  rustAnalyzerMaxRssMb?: number;
 }
 
 /** `--rust-analyzer`: the warm's wall time and how the SCIP acquisition ended. */
@@ -641,6 +647,8 @@ export interface RustAnalyzerWarm {
   warmMs: number;
   /** `indexed (cacheHit|fresh)` / `latched: <reason>` / `skipped: <reason>` / `not acquired`. */
   outcome: string;
+  /** Whether the SCIP source ran with build scripts and proc macros (`exec`) or without (`no-exec`). */
+  mode: "exec" | "no-exec";
 }
 
 /**
@@ -724,13 +732,16 @@ function tallyKindStats(
   kindSamples.push(`${site.relPath}:${call.startLine} ${String(call.receiver)}.${call.member}`.replace(/\s+/g, " "));
 }
 
-/** The schema-default, no-exec, spawn-allowed source, recording every acquisition it answers. */
-function recordingScipSource(sink: RustAnalyzerScipAcquisition[]): RustAnalyzerScipSource {
+/** The spawn-allowed source (schema defaults unless overridden), recording every acquisition it answers. */
+function recordingScipSource(
+  sink: RustAnalyzerScipAcquisition[],
+  budget: { exec?: boolean; timeoutSec?: number; maxRssMb?: number } = {},
+): RustAnalyzerScipSource {
   const inner = processRustAnalyzerScipSource({
     enabled: true,
-    exec: false,
-    timeoutSec: 900,
-    maxRssMb: 4096,
+    exec: budget.exec === true,
+    timeoutSec: budget.timeoutSec ?? 900,
+    maxRssMb: budget.maxRssMb ?? 4096,
     spawn: "allowed",
   });
   return {
@@ -808,7 +819,15 @@ export async function run(
     repoRoot: root,
     manifestFilesReader: readManifestFiles,
     rustExternalSignatureSources: signatureSources,
-    ...(opts.rustAnalyzer === true ? { rustAnalyzerScipSource: recordingScipSource(scipAcquisitions) } : {}),
+    ...(opts.rustAnalyzer === true
+      ? {
+          rustAnalyzerScipSource: recordingScipSource(scipAcquisitions, {
+            exec: opts.rustAnalyzerExec,
+            timeoutSec: opts.rustAnalyzerTimeoutSec,
+            maxRssMb: opts.rustAnalyzerMaxRssMb,
+          }),
+        }
+      : {}),
   });
   const production = factory.create(lang).resolver;
   if (!production) throw new Error(`language '${lang}' has no resolver`);
@@ -891,6 +910,7 @@ export async function run(
     rustAnalyzerWarm = {
       warmMs: performance.now() - warmStart,
       outcome: describeScipAcquisition(scipAcquisitions[scipAcquisitions.length - 1]),
+      mode: opts.rustAnalyzerExec === true ? "exec" : "no-exec",
     };
   }
   runner.prepareResolvePass();
@@ -1019,6 +1039,14 @@ export async function run(
 // CLI
 // ---------------------------------------------------------------------------
 
+/** A positive finite number for `flag`, or `undefined` when absent; anything else throws. */
+function readPositiveNumber(flag: string, raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${flag} expects a positive number, got "${raw}"`);
+  return value;
+}
+
 export function parseArgs(argv: readonly string[]) {
   const read = (flag: string): string | undefined => {
     const index = argv.indexOf(flag);
@@ -1036,7 +1064,11 @@ export function parseArgs(argv: readonly string[]) {
     quiet: argv.includes("--quiet"),
     dispatch: !argv.includes("--no-dispatch"),
     timeOnly: argv.includes("--time-only"),
-    rustAnalyzer: argv.includes("--rust-analyzer"),
+    // `--rust-analyzer-exec` implies `--rust-analyzer`: exec is a mode of that source.
+    rustAnalyzer: argv.includes("--rust-analyzer") || argv.includes("--rust-analyzer-exec"),
+    rustAnalyzerExec: argv.includes("--rust-analyzer-exec"),
+    rustAnalyzerTimeoutSec: readPositiveNumber("--rust-analyzer-timeout-sec", read("--rust-analyzer-timeout-sec")),
+    rustAnalyzerMaxRssMb: readPositiveNumber("--rust-analyzer-max-rss-mb", read("--rust-analyzer-max-rss-mb")),
     kindStats: argv.includes("--kind-stats"),
     persisted: argv.includes("--persisted"),
     // `--time-only` implies `--timing`: a mode whose only purpose is the numbers
@@ -1063,6 +1095,9 @@ async function main(): Promise<void> {
     edgeDump: opts.dumpEdges !== null,
     residualRows: opts.residualRows !== null,
     rustAnalyzer: opts.rustAnalyzer,
+    rustAnalyzerExec: opts.rustAnalyzerExec,
+    rustAnalyzerTimeoutSec: opts.rustAnalyzerTimeoutSec,
+    rustAnalyzerMaxRssMb: opts.rustAnalyzerMaxRssMb,
   });
   // The chain A/B scores only the sites production runs the exact chain on; a
   // dispatch-table site has no chain answer to count as "unresolved".
@@ -1154,7 +1189,7 @@ async function main(): Promise<void> {
   if (result.rustSignatures !== undefined) out.push(result.rustSignatures);
   if (result.rustAnalyzerWarm !== undefined) {
     out.push(
-      `RUST-ANALYZER SCIP warm ${(result.rustAnalyzerWarm.warmMs / 1000).toFixed(2)}s · ${result.rustAnalyzerWarm.outcome}`,
+      `RUST-ANALYZER SCIP warm ${(result.rustAnalyzerWarm.warmMs / 1000).toFixed(2)}s · ${result.rustAnalyzerWarm.mode} · ${result.rustAnalyzerWarm.outcome}`,
     );
   }
   process.stdout.write(`${out.join("\n")}\n`);

@@ -73,6 +73,32 @@ describe("parseArgs --rust-analyzer", () => {
   });
 });
 
+describe("parseArgs --rust-analyzer-exec and budget overrides", () => {
+  it("defaults to no-exec with no overrides", () => {
+    const opts = parseArgs(["--rust-analyzer"]);
+    expect(opts.rustAnalyzerExec).toBe(false);
+    expect(opts.rustAnalyzerTimeoutSec).toBeUndefined();
+    expect(opts.rustAnalyzerMaxRssMb).toBeUndefined();
+  });
+
+  it("exec implies rust-analyzer", () => {
+    const opts = parseArgs(["--rust-analyzer-exec"]);
+    expect(opts.rustAnalyzerExec).toBe(true);
+    expect(opts.rustAnalyzer).toBe(true);
+  });
+
+  it("parses numeric overrides", () => {
+    const opts = parseArgs(["--rust-analyzer-timeout-sec", "3600", "--rust-analyzer-max-rss-mb", "12288"]);
+    expect(opts.rustAnalyzerTimeoutSec).toBe(3600);
+    expect(opts.rustAnalyzerMaxRssMb).toBe(12288);
+  });
+
+  it("rejects a non-numeric or non-positive override", () => {
+    expect(() => parseArgs(["--rust-analyzer-timeout-sec", "abc"])).toThrow(/rust-analyzer-timeout-sec/);
+    expect(() => parseArgs(["--rust-analyzer-max-rss-mb", "0"])).toThrow(/rust-analyzer-max-rss-mb/);
+  });
+});
+
 describe("parseArgs timing flags", () => {
   it("makes --time-only imply --timing, since the numbers are its whole point", () => {
     const opts = parseArgs(["--time-only"]);
