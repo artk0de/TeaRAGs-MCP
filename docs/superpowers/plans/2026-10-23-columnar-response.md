@@ -330,15 +330,16 @@ export function formatMcpResponse(data: unknown): McpToolResult {
 
 **Files:**
 
-- Create: `.claude-plugin/.benchmarks/columnar-response/run.ts`, `cases.json`,
-  `benchmark.md`
+- Create: `scripts/columnar-response-eval.ts` (harness — scripts are linted and
+  type-checked there),
+  `.claude-plugin/.benchmarks/columnar-response/cases.json`, `benchmark.md`
 
 - [ ] **Step 1:** `cases.json` — the 12 cases of the spec §6, each
       `{ id, prompt, tool, args, truth: <jq-like path or function name> }`.
-- [ ] **Step 2:** `run.ts` (tsx): per arm (`row` = main checkout `build/` + its
-      `.claude-plugin/tea-rags`; `columnar` = worktree `build/` + worktree
-      plugin) — compute truth by calling the tool through an MCP client on that
-      build, then
+- [ ] **Step 2:** `scripts/columnar-response-eval.ts` (tsx): per arm (`row` =
+      main checkout `build/` + its `.claude-plugin/tea-rags`; `columnar` =
+      worktree `build/` + worktree plugin) — compute truth by calling the tool
+      through an MCP client on that build, then
       `claude -p --model sonnet --plugin-dir <arm plugin> --mcp-config <arm server> --strict-mcp-config --output-format json`;
       grade the final answer against truth (exact / set match). 3 runs per case.
 - [ ] **Step 3:** run both arms (user-visible cost: ~72 sonnet runs) → accuracy

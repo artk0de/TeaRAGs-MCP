@@ -23,12 +23,12 @@ No `npm link`, no reindex.
 
 ## Accuracy
 
-`run.ts`, cases in `cases.json`. Per case the agent (`claude -p --model sonnet`,
-the arm's plugin via `--plugin-dir`, the arm's server via
-`--mcp-config --strict-mcp-config`, user settings off) makes one prescribed
-tea-rags call, receives the answer the way Claude Code delivers it, and replies
-`ANSWER: <value>`. Truth = the same call made directly against that arm's build,
-read through the record view. 3 runs per case and arm.
+`scripts/columnar-response-eval.ts`, cases in `cases.json`. Per case the agent
+(`claude -p --model sonnet`, the arm's plugin via `--plugin-dir`, the arm's
+server via `--mcp-config --strict-mcp-config`, user settings off) makes one
+prescribed tea-rags call, receives the answer the way Claude Code delivers it,
+and replies `ANSWER: <value>`. Truth = the same call made directly against that
+arm's build, read through the record view. 3 runs per case and arm.
 
 | Case             | What the agent reads                                      | row | columnar |
 | ---------------- | --------------------------------------------------------- | --- | -------- |
@@ -78,6 +78,51 @@ delta combines compact output and the table. `outline` and `hybrid_usages` gain
 least: their rows carry long `content` / `imports` cells the table does not
 shorten.
 
+## All read tools
+
+Every non-mutating tool of `tools/list` (25 calls; `find_symbol` in its four
+modes), TaxDome index, both builds, same Claude-token count. `columnar` is the
+branch with the two-row threshold (`3eff6ac85`).
+
+| Call                         |         row |    columnar |          Δ |
+| ---------------------------- | ----------: | ----------: | ---------: |
+| `get_architecture_report`    |     144 819 |     107 444 |     −25.8% |
+| `find_cycles`                |      65 099 |      57 984 |     −10.9% |
+| `list_projects`              |      41 709 |      31 320 |     −24.9% |
+| `rank_chunks`                |      32 830 |      16 092 |     −51.0% |
+| `hybrid_search`              |      32 139 |      27 010 |     −16.0% |
+| `get_index_metrics`          |      15 609 |      10 601 |     −32.1% |
+| `semantic_search` (content)  |      14 765 |      11 013 |     −25.4% |
+| `semantic_search` (metaOnly) |      11 623 |       8 279 |     −28.8% |
+| `get_callers` (symbol)       |      11 472 |       8 333 |     −27.4% |
+| `get_ontology_report`        |      10 564 |       6 970 |     −34.0% |
+| `find_symbol` (class)        |       9 242 |       8 191 |     −11.4% |
+| `find_similar`               |       7 828 |       4 460 |     −43.0% |
+| `review_changes`             |       5 978 |       4 249 |     −28.9% |
+| `find_co_changed`            |       5 277 |       3 143 |     −40.4% |
+| `search_code`                |       4 123 |       4 123 |         0% |
+| `find_symbol` (file)         |       4 060 |       4 060 |         0% |
+| `get_callers` (file)         |       3 951 |       2 641 |     −33.2% |
+| `get_callees` (file)         |       2 148 |       1 408 |     −34.5% |
+| `get_index_status`           |       1 856 |       1 856 |         0% |
+| `find_symbol` (method)       |       1 234 |       1 234 |         0% |
+| `get_naming_lexicon`         |       1 098 |         737 |     −32.9% |
+| `find_symbol` (doc TOC)      |         993 |         993 |         0% |
+| `list_collections`           |         683 |         541 |     −20.8% |
+| `get_callees` (symbol)       |         584 |         413 |     −29.3% |
+| `trace_path`                 |         417 |         316 |     −24.2% |
+| **Total**                    | **430 101** | **323 411** | **−24.8%** |
+
+Before the threshold, the one-row `find_symbol` answers grew (method +27%, doc
+TOC +17%, file outline +10%); they now ship the record unchanged. `search_code`
+and `get_index_status` are prose, not JSON, and do not change. Graph and report
+tools gain least where their records are already short or carry nested arrays,
+which stay cells.
+
+The same `semantic_search` calls gave −41…−50% in the six-probe run above and
+−25…−29% here: on TaxDome the working-tree overlay mixes rows from the
+uncommitted tree, so the answer set differs between runs. Both series are kept.
+
 ## Reproduce
 
 ```bash
@@ -85,7 +130,7 @@ git archive 59f815339 | tar -x -C /tmp/base && ln -s "$PWD/node_modules" /tmp/ba
 (cd /tmp/base && npx tsc && npx tsx scripts/copy-build-assets.ts)
 npm run build
 ARMS="row=/tmp/base,columnar=$PWD" TREE=$PWD RUNS=3 CONC=4 \
-  npx tsx .claude-plugin/.benchmarks/columnar-response/run.ts
+  npx tsx scripts/columnar-response-eval.ts
 ```
 
 `CASES=<id,id>` limits the run to some cases; `OUT=<dir>` moves the results

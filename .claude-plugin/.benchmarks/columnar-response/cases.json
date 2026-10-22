@@ -11,12 +11,24 @@
     ],
     "upd": [
       "hybrid_search",
-      { "query": "runUpdater auto update", "metaOnly": true, "limit": 6 }
+      {
+        "query": "runUpdater auto update",
+        "metaOnly": true,
+        "limit": 6
+      }
     ],
-    "callers": ["get_callers", { "symbolId": "formatMcpResponse" }],
+    "callers": [
+      "get_callers",
+      {
+        "symbolId": "formatMcpResponse"
+      }
+    ],
     "trace": [
       "trace_path",
-      { "from": "runUpdateCommand", "to": "formatForCli" }
+      {
+        "from": "runUpdateCommand",
+        "to": "formatForCli"
+      }
     ]
   },
   "cases": [
@@ -24,86 +36,74 @@
       "id": "row-field",
       "call": "hot",
       "question": "What is the relativePath of result #3?",
-      "grade": "exact",
-      "truth": "d.results[2].payload.relativePath"
+      "grade": "exact"
     },
     {
       "id": "score",
       "call": "hot",
       "question": "What is the score of result #2, rounded to 3 decimals?",
-      "grade": "number",
-      "truth": "Math.round(d.results[1].score * 1000) / 1000"
+      "grade": "number"
     },
     {
       "id": "overlay-label",
       "call": "hot",
       "question": "What is the chunk-level bugFixRate label (rankingOverlay) of result #4?",
-      "grade": "exact",
-      "truth": "d.results[3].rankingOverlay.chunk.bugFixRate.label"
+      "grade": "exact"
     },
     {
       "id": "part-parent",
       "call": "hot",
       "question": "Result #5 is a #partN fragment. Call mcp__tea-rags__find_symbol with its parentSymbolId (same project and path) and report the endLine of the merged symbol.",
-      "grade": "number",
-      "truth": "(await call('find_symbol', { symbol: d.results[4].payload.parentSymbolId })).results[0].payload.endLine"
+      "grade": "number"
     },
     {
       "id": "drill-symbol",
       "call": "upd",
       "question": "Call mcp__tea-rags__find_symbol with the symbolId of result #4 (same project and path) and report the startLine of that symbol.",
-      "grade": "number",
-      "truth": "(await call('find_symbol', { symbol: d.results[3].payload.symbolId })).results.find((r) => r.payload.relativePath === d.results[3].payload.relativePath).payload.startLine"
+      "grade": "number"
     },
     {
       "id": "path-pattern",
       "call": "upd",
       "question": "Build a picomatch pathPattern with brace expansion, {a,b,...}, over the distinct relativePath values of results #1 to #5.",
-      "grade": "braceSet",
-      "truth": "[...new Set(d.results.slice(0, 5).map((r) => r.payload.relativePath))]"
+      "grade": "braceSet"
     },
     {
       "id": "filter-column",
       "call": "upd",
       "question": "List the symbolId of every result whose chunkType is \"function\", comma-separated.",
-      "grade": "set",
-      "truth": "d.results.filter((r) => r.payload.chunkType === 'function').map((r) => r.payload.symbolId)"
+      "grade": "set"
     },
     {
       "id": "distinct-files",
       "call": "hot",
       "question": "How many distinct files (relativePath) appear among the results?",
-      "grade": "number",
-      "truth": "new Set(d.results.map((r) => r.payload.relativePath)).size"
+      "grade": "number"
     },
     {
       "id": "envelope",
       "call": "upd",
       "question": "Report workingTree.changedFiles of this answer and the relativePath of result #1, as `<changedFiles>|<relativePath>`.",
-      "grade": "exact",
-      "truth": "`${d.workingTree.changedFiles}|${d.results[0].payload.relativePath}`"
+      "grade": "exact"
     },
     {
       "id": "callers-field",
       "call": "callers",
       "question": "What is the sourceRelPath of caller #4 in the callers list?",
-      "grade": "exact",
-      "truth": "d.callers[3].sourceRelPath"
+      "grade": "exact"
     },
     {
       "id": "callers-filter",
       "call": "callers",
       "question": "List the callExpression of every caller whose sourceRelPath ends with `collection.ts`, separated by ` ;; `.",
       "grade": "set",
-      "separator": " ;; ",
-      "truth": "d.callers.filter((c) => c.sourceRelPath.endsWith('collection.ts')).map((c) => c.callExpression)"
+      "separator": " ;; "
     },
     {
       "id": "trace-step",
       "call": "trace",
       "question": "In the first path, what is the relativePath of the last step?",
-      "grade": "exact",
-      "truth": "d.paths[0].steps.at(-1).relativePath"
+      "grade": "exact"
     }
   ]
 }
