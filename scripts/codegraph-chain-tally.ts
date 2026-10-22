@@ -96,8 +96,7 @@ import {
   JavaLocalBindingSymbolResolutionStrategy,
   JavaThisMemberSymbolResolutionStrategy,
 } from "../src/core/domains/language/java/resolver/strategies/index.js";
-import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
-import { resolveViaChain } from "../src/core/domains/language/kernel/index.js";
+import { dispatchFanoutPolicyFor, resolveViaChain } from "../src/core/domains/language/kernel/index.js";
 import {
   createPythonSymbolResolutionChain,
   PythonAncestorLinearizerCache,
@@ -554,6 +553,25 @@ export interface RunResult {
   persisted?: PersistedEdgeTally;
   /** Under `--dump-edges`: every site's scored answer plus every edge production pushes there. */
   edgeDump?: TallyEdgeDumpRow[];
+  /** Under `--residual-rows`: every `missWithInProjectDef` site, the residual taxonomy's population. */
+  residualRows?: ResidualCallSiteRow[];
+}
+
+/**
+ * One call site production left unresolved while an in-project definition of
+ * its member exists (bd tea-rags-mcp-s3i8m.1). The `kindSamples` per kind are a
+ * preview; these rows are the whole population a residual classifier reads.
+ */
+export interface ResidualCallSiteRow {
+  relPath: string;
+  startLine: number;
+  /** 0-based, as the walker recorded it. */
+  startColumn?: number;
+  callText: string;
+  receiver: string | null;
+  member: string;
+  receiverKind: ReceiverKind;
+  missBucket: "missWithInProjectDef";
 }
 
 /**
@@ -594,6 +612,8 @@ export interface ChainTallyRunOptions {
   persisted?: boolean;
   /** Collect the per-site rows `--dump-edges` writes (the substrate identity gates). */
   edgeDump?: boolean;
+  /** Collect every `missWithInProjectDef` site for `--residual-rows` (bd tea-rags-mcp-s3i8m.1). */
+  residualRows?: boolean;
 }
 
 /**
@@ -775,6 +795,7 @@ export async function run(
   const kindStats = opts.kindStats === true ? emptyReceiverKindTally() : null;
   const kindSamples = opts.kindStats === true ? emptyKindSamples() : null;
   const edgeDump: TallyEdgeDumpRow[] | null = opts.edgeDump === true ? [] : null;
+  const residualRows: ResidualCallSiteRow[] | null = opts.residualRows === true ? [] : null;
   let dispatchTableSites = 0;
   let chainDrift = 0;
   let singleSites = 0;
@@ -838,6 +859,18 @@ export async function run(
       edgeDump?.push(
         ...edgeDumpRowsOf({ relPath: extraction.relPath, call, verdict, answer: baseline, dispatchTable }),
       );
+      if (residualRows !== null && verdict.missBucket === "missWithInProjectDef") {
+        residualRows.push({
+          relPath: extraction.relPath,
+          startLine: call.startLine,
+          startColumn: call.startColumn,
+          callText: call.callText,
+          receiver: call.receiver ?? null,
+          member: call.member,
+          receiverKind: verdict.receiverKind,
+          missBucket: "missWithInProjectDef",
+        });
+      }
     }
   }
   const pass2Ms = performance.now() - pass2Start;
@@ -886,6 +919,7 @@ export async function run(
     kindSamples: kindSamples ?? undefined,
     persisted,
     edgeDump: edgeDump ?? undefined,
+    residualRows: residualRows ?? undefined,
     timeOnly,
     timing:
       sampler === null ? undefined : { pass1Ms, pass2Ms, totalMs: pass1Ms + pass2Ms, peakRssMb: sampler.stop(), loc },
@@ -909,6 +943,7 @@ export function parseArgs(argv: readonly string[]) {
     samples: Number(read("--samples") ?? 10),
     json: read("--json") ?? null,
     dumpEdges: read("--dump-edges") ?? null,
+    residualRows: read("--residual-rows") ?? null,
     quiet: argv.includes("--quiet"),
     dispatch: !argv.includes("--no-dispatch"),
     timeOnly: argv.includes("--time-only"),
@@ -936,6 +971,7 @@ async function main(): Promise<void> {
     kindStats: opts.kindStats,
     persisted: opts.persisted,
     edgeDump: opts.dumpEdges !== null,
+    residualRows: opts.residualRows !== null,
   });
   // The chain A/B scores only the sites production runs the exact chain on; a
   // dispatch-table site has no chain answer to count as "unresolved".
@@ -1011,6 +1047,10 @@ async function main(): Promise<void> {
     // The block's leading blank line is report spacing, not data.
     writeFileSync(opts.dumpEdges, formatTallyEdgeDump(result.edgeDump, kindStatsBlock.slice(1).join("\n")));
   }
+  if (opts.residualRows !== null && result.residualRows !== undefined) {
+    // NDJSON: one row per line, so a 100k-row corpus streams through `jq`/readline.
+    writeFileSync(opts.residualRows, result.residualRows.map((row) => `${JSON.stringify(row)}\n`).join(""));
+  }
   if (result.timing !== undefined) {
     out.push(
       ...formatTimingBlock(result.timing, {
@@ -1025,7 +1065,7 @@ async function main(): Promise<void> {
   if (opts.json) {
     writeFileSync(
       opts.json,
-      `${JSON.stringify({ opts, result: { ...result, rows: undefined, edgeDump: undefined }, baseline, variant, tally, changed }, null, 2)}\n`,
+      `${JSON.stringify({ opts, result: { ...result, rows: undefined, edgeDump: undefined, residualRows: undefined }, baseline, variant, tally, changed }, null, 2)}\n`,
     );
   }
 }
