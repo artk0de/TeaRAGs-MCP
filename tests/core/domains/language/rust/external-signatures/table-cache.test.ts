@@ -93,6 +93,36 @@ describe("buildRustExternalSignatureTable", () => {
     expect(table?.inherentMember("std::Marker", "id")).toBeDefined();
   });
 
+  it("keys version 2 and merges free functions across parts, std first", () => {
+    expect(RUST_EXTERNAL_SIGNATURE_EXTRACTOR_VERSION).toBe(2);
+    const stdFn = [
+      { crate: "std", relPath: "lib.rs", source: "pub struct Marker;\npub fn make() -> Marker { Marker }\n" },
+    ];
+    const shadow = [{ crate: "std", relPath: "lib.rs", source: "pub fn make() -> u32 { 0 }\n" }];
+    const demoFn = [
+      { crate: "demo", relPath: "lib.rs", source: "pub struct Client;\npub fn connect() -> Client { Client }\n" },
+    ];
+    const { port, cache } = memorySources(
+      location({
+        std: { cacheKey: "std/abc", readSources: () => stdFn },
+        dependencies: [
+          { cacheKey: "crates/demo-0.1.0", readSources: () => demoFn },
+          { cacheKey: "crates/shadow-0.1.0", readSources: () => shadow },
+        ],
+      }),
+    );
+    const table = buildRustExternalSignatureTable(port, "/project", loadRustSourceParser);
+    expect([...cache.keys()].every((key) => key.endsWith("-x2"))).toBe(true);
+    expect(table?.canonicalFunction("make", ["use std::make;"])).toBe("std::make");
+    expect(table?.freeFunction("std::make")).toMatchObject({
+      returns: { type: { form: "instance", name: "std::Marker" } },
+    });
+    expect(table?.canonicalFunction("connect", ["use demo::connect;"])).toBe("demo::connect");
+    expect(table?.freeFunction("demo::connect")).toMatchObject({
+      returns: { type: { form: "instance", name: "demo::Client" } },
+    });
+  });
+
   it("answers no table when nothing is found", () => {
     const { port } = memorySources(location({ std: undefined, dependencies: [] }));
     expect(buildRustExternalSignatureTable(port, "/project", loadRustSourceParser)).toBeUndefined();

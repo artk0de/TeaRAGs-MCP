@@ -12,15 +12,16 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 
-import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
-import type {
-  AstNode,
-  RustExternalSignatureSources,
-  RustExternalSignatureTable,
-  RustExternalSignatureTableData,
-  RustExternalSourceSet,
-  RustExternalTypeExpr,
-  RustExternalTypeSignatures,
+import {
+  createIdentifierRecord,
+  type AstNode,
+  type RustExternalFunction,
+  type RustExternalSignatureSources,
+  type RustExternalSignatureTable,
+  type RustExternalSignatureTableData,
+  type RustExternalSourceSet,
+  type RustExternalTypeExpr,
+  type RustExternalTypeSignatures,
 } from "../../../../contracts/index.js";
 import { extractRustExternalSignatures, type RustSourceParser } from "./extract.js";
 import { RustExternalSignatureLookup } from "./lookup.js";
@@ -29,7 +30,7 @@ import { RustExternalSignatureLookup } from "./lookup.js";
  * Bump when the extractor's output for the same sources changes: it is part of
  * every cache key, so a bump invalidates every cached table at once.
  */
-export const RUST_EXTERNAL_SIGNATURE_EXTRACTOR_VERSION = 1;
+export const RUST_EXTERNAL_SIGNATURE_EXTRACTOR_VERSION = 2;
 
 /** Loads a Rust parser on first use — sync, so the resolve pass stays sync. */
 export type RustSourceParserLoader = () => RustSourceParser;
@@ -108,14 +109,18 @@ function mergeRustExternalSignatureData(
   const paths = createIdentifierRecord<string>();
   const types = createIdentifierRecord<RustExternalTypeSignatures>();
   const aliases = createIdentifierRecord<RustExternalTypeExpr>();
+  const functionPaths = createIdentifierRecord<string>();
+  const functions = createIdentifierRecord<RustExternalFunction | "ambiguous">();
   const crates = new Set<string>();
   for (const part of parts) {
     for (const crate of part.crates) crates.add(crate);
     mergeAbsent(paths, part.paths);
     mergeAbsent(types, part.types);
     mergeAbsent(aliases, part.aliases);
+    mergeAbsent(functionPaths, part.functionPaths ?? {});
+    mergeAbsent(functions, part.functions ?? {});
   }
-  return { crates: [...crates], paths, types, aliases };
+  return { crates: [...crates], paths, types, aliases, functionPaths, functions };
 }
 
 function mergeAbsent<T>(target: Record<string, T>, source: Readonly<Record<string, T>>): void {

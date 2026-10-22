@@ -9,7 +9,7 @@
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { RustImportBinding } from "../resolver/strategies/shared.js";
 
-export type RustDeclaredItemKind = "module" | "type" | "trait" | "alias";
+export type RustDeclaredItemKind = "module" | "type" | "trait" | "alias" | "fn";
 
 export interface RustDeclaredItem {
   readonly kind: RustDeclaredItemKind;
@@ -77,7 +77,14 @@ export function rustUseTargetSegments(binding: {
 }
 
 export class RustModuleScope {
+  /** The type namespace: modules, types, traits, aliases. */
   readonly items = new Map<string, RustDeclaredItem>();
+  /**
+   * The value namespace: free functions. Apart from `items` because Rust keeps
+   * the namespaces apart — `mod spawn; pub use spawn::spawn;` binds `spawn` in
+   * both, the module in one and the function in the other.
+   */
+  readonly values = new Map<string, RustDeclaredItem>();
   readonly uses: { readonly localName: string; readonly pub: boolean; readonly target: RustUseTarget }[] = [];
   readonly globs: { readonly pub: boolean; readonly target: RustUseTarget }[] = [];
 
@@ -91,11 +98,20 @@ export class RustModuleScope {
     return [this.crate, ...this.segments].join("::");
   }
 
-  declare(name: string, kind: Exclude<RustDeclaredItemKind, "module">, pub: boolean): RustDeclaredItem {
+  declare(name: string, kind: Exclude<RustDeclaredItemKind, "module" | "fn">, pub: boolean): RustDeclaredItem {
     const existing = this.items.get(name);
     if (existing !== undefined) return existing;
     const item: RustDeclaredItem = { kind, pub, declPath: `${this.declPath}::${name}` };
     this.items.set(name, item);
+    return item;
+  }
+
+  /** A module-level `fn` — first declaration wins, so two cfg arms share one item. */
+  declareValue(name: string, pub: boolean): RustDeclaredItem {
+    const existing = this.values.get(name);
+    if (existing !== undefined) return existing;
+    const item: RustDeclaredItem = { kind: "fn", pub, declPath: `${this.declPath}::${name}` };
+    this.values.set(name, item);
     return item;
   }
 }
@@ -107,6 +123,7 @@ export class RustCrateGraph {
   private readonly lookupMemo = new Map<string, RustPathResolution | undefined>();
   private readonly lookupInFlight = new Set<string>();
   private readonly publicNamesMemo = new Map<string, Map<string, RustDeclaredItem>>();
+  private readonly publicValuesMemo = new Map<string, Map<string, RustDeclaredItem>>();
 
   /** The module scope at `segments` inside `crate`, created on first ask. */
   module(crate: string, segments: readonly string[]): RustModuleScope {
@@ -183,35 +200,33 @@ export class RustCrateGraph {
 
   /** What a type spelled in `scope` resolves to, before it is read as a path. */
   resolveType(spelling: string, scope: RustModuleScope): RustPathResolution | undefined {
-    const absolute = spelling.startsWith("::");
-    const segments = (absolute ? spelling.slice(2) : spelling).split("::");
-    if (segments.some((segment) => segment.length === 0)) return undefined;
-    let prefix: RustUseTarget["prefix"] = null;
-    let superDepth = 0;
-    let rest = segments;
-    if (segments[0] === "crate" || segments[0] === "self") {
-      prefix = segments[0];
-      rest = segments.slice(1);
-    } else if (segments[0] === "super") {
-      prefix = "super";
-      while (rest[0] === "super") {
-        superDepth++;
-        rest = rest.slice(1);
-      }
-    }
-    const resolution = this.resolve({ prefix, superDepth, segments: rest }, scope);
-    if (resolution !== undefined || prefix !== null || segments.length !== 1) return resolution;
-    return this.resolvePrelude(segments[0], scope.crate);
+    const target = rustSpelledTarget(spelling);
+    if (target === undefined) return undefined;
+    const resolution = this.resolve(target, scope);
+    if (resolution !== undefined || target.prefix !== null || target.segments.length !== 1) return resolution;
+    return this.resolvePrelude(target.segments[0], scope.crate);
+  }
+
+  /**
+   * What a function spelled in `scope` resolves to in the VALUE namespace: the
+   * segments before the last walk the module graph as `resolve` does, the last
+   * one is looked up among the module's functions. No prelude fallback.
+   */
+  resolveValue(spelling: string, scope: RustModuleScope): RustPathResolution | undefined {
+    const target = rustSpelledTarget(spelling);
+    return target === undefined ? undefined : this.resolveValueTarget(target, scope);
   }
 
   /**
    * Assign every public type-like item its shortest public path (breadth-first
    * from the crate roots, std first) and return every public spelling → that
    * canonical path. Each module is expanded once per crate root, so the spelling
-   * `core::option::Option` exists next to `std::option::Option`.
+   * `core::option::Option` exists next to `std::option::Option`. The same walk
+   * assigns every public free function its path in the value namespace.
    */
-  assignCanonicalPaths(): Record<string, string> {
+  assignCanonicalPaths(): { paths: Record<string, string>; functionPaths: Record<string, string> } {
     const paths = createIdentifierRecord<string>();
+    const functionPaths = createIdentifierRecord<string>();
     const queue: { scope: RustModuleScope; path: readonly string[]; root: string }[] = this.crates().map((crate) => ({
       scope: this.module(crate, []),
       path: [crate],
@@ -233,8 +248,13 @@ export class RustCrateGraph {
         item.publicPath ??= spelled.join("::");
         paths[spelled.join("::")] = item.publicPath;
       }
+      for (const [name, item] of [...this.publicValues(scope)].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+        const spelled = [...path, name].join("::");
+        item.publicPath ??= spelled;
+        functionPaths[spelled] = item.publicPath;
+      }
     }
-    return paths;
+    return { paths, functionPaths };
   }
 
   private resolvePrelude(name: string, crate: string): RustPathResolution | undefined {
@@ -294,6 +314,89 @@ export class RustCrateGraph {
     return found;
   }
 
+  /** A `use` target (or spelled path) read in the value namespace. */
+  private resolveValueTarget(target: RustUseTarget, from: RustModuleScope): RustPathResolution | undefined {
+    const { segments } = target;
+    if (segments.length === 0) return undefined;
+    const name = segments[segments.length - 1];
+    if (target.prefix === null && segments.length === 1) return this.lookupValue(from, name);
+    const owner = this.resolveModule({ ...target, segments: segments.slice(0, -1) }, from);
+    if (owner === undefined) return undefined;
+    if (owner.kind === "external") return { kind: "external", path: [...owner.path, name] };
+    return this.lookupValue(owner.scope, name);
+  }
+
+  /** The module a path of module segments names: `crate` / `self` / `super` alone, a crate name, or a walked path. */
+  private resolveModule(
+    target: RustUseTarget,
+    from: RustModuleScope,
+  ): { kind: "module"; scope: RustModuleScope } | { kind: "external"; path: readonly string[] } | undefined {
+    if (target.segments.length === 0) {
+      if (target.prefix === "crate") return { kind: "module", scope: this.module(from.crate, []) };
+      if (target.prefix === "self") return { kind: "module", scope: from };
+      if (target.prefix !== "super") return undefined;
+      let scope: RustModuleScope | undefined = from;
+      for (let depth = 0; depth < target.superDepth; depth++) scope = scope?.parent;
+      return scope === undefined ? undefined : { kind: "module", scope };
+    }
+    const resolution = this.resolve(target, from);
+    if (resolution?.kind === "item") {
+      return resolution.item.module === undefined ? undefined : { kind: "module", scope: resolution.item.module };
+    }
+    if (resolution?.kind === "external") return { kind: "external", path: resolution.path };
+    if (target.prefix !== null || target.segments.length !== 1) return undefined;
+    // A bare crate name: `resolve` names no item by it, but in a value path it owns the next segment.
+    const crate = this.externAliases.get(from.crate)?.get(target.segments[0]) ?? target.segments[0];
+    return this.modules.has(crate)
+      ? { kind: "module", scope: this.module(crate, []) }
+      : { kind: "external", path: [crate] };
+  }
+
+  /** A function name bound in `scope` — declared, `use`d, or glob-imported. */
+  private lookupValue(scope: RustModuleScope, name: string): RustPathResolution | undefined {
+    const key = `value\0${scope.declPath}\0${name}`;
+    if (this.lookupMemo.has(key)) return this.lookupMemo.get(key);
+    if (this.lookupInFlight.has(key)) return undefined;
+    this.lookupInFlight.add(key);
+    const declared = scope.values.get(name);
+    let found: RustPathResolution | undefined = declared === undefined ? undefined : { kind: "item", item: declared };
+    for (const use of scope.uses) {
+      if (found !== undefined) break;
+      if (use.localName === name) found = this.resolveValueTarget(use.target, scope);
+    }
+    for (const glob of scope.globs) {
+      if (found !== undefined) break;
+      const target = this.resolve(glob.target, scope);
+      if (target?.kind === "item" && target.item.module !== undefined && target.item.module !== scope) {
+        found = this.lookupValue(target.item.module, name);
+      }
+    }
+    this.lookupInFlight.delete(key);
+    this.lookupMemo.set(key, found);
+    return found;
+  }
+
+  /** The functions `scope` exposes publicly — `pub fn`, `pub use`, `pub use …::*`. */
+  private publicValues(scope: RustModuleScope): Map<string, RustDeclaredItem> {
+    const memo = this.publicValuesMemo.get(scope.declPath);
+    if (memo !== undefined) return memo;
+    const names = new Map<string, RustDeclaredItem>();
+    this.publicValuesMemo.set(scope.declPath, names);
+    for (const [name, item] of scope.values) if (item.pub) names.set(name, item);
+    for (const use of scope.uses) {
+      if (!use.pub || names.has(use.localName)) continue;
+      const target = this.resolveValueTarget(use.target, scope);
+      if (target?.kind === "item") names.set(use.localName, target.item);
+    }
+    for (const glob of scope.globs) {
+      if (!glob.pub) continue;
+      const target = this.resolve(glob.target, scope);
+      if (target?.kind !== "item" || target.item.module === undefined || target.item.module === scope) continue;
+      for (const [name, item] of this.publicValues(target.item.module)) if (!names.has(name)) names.set(name, item);
+    }
+    return names;
+  }
+
   /** The names `scope` exposes publicly — `pub` items, `pub use`, `pub use …::*`. */
   private publicNames(scope: RustModuleScope): Map<string, RustDeclaredItem> {
     const memo = this.publicNamesMemo.get(scope.declPath);
@@ -314,6 +417,24 @@ export class RustCrateGraph {
     }
     return names;
   }
+}
+
+/** A spelled path (`::a::b`, `crate::a`, `super::super::a`) as a `use` target; `undefined` on an empty segment. */
+function rustSpelledTarget(spelling: string): RustUseTarget | undefined {
+  const absolute = spelling.startsWith("::");
+  const segments = (absolute ? spelling.slice(2) : spelling).split("::");
+  if (segments.some((segment) => segment.length === 0)) return undefined;
+  if (segments[0] === "crate" || segments[0] === "self") {
+    return { prefix: segments[0], superDepth: 0, segments: segments.slice(1) };
+  }
+  if (segments[0] !== "super") return { prefix: null, superDepth: 0, segments };
+  let rest = segments;
+  let superDepth = 0;
+  while (rest[0] === "super") {
+    superDepth++;
+    rest = rest.slice(1);
+  }
+  return { prefix: "super", superDepth, segments: rest };
 }
 
 /** The path a table names an item by: its shortest public path, else its declaration path. */
