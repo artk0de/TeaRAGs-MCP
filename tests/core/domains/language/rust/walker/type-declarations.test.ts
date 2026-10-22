@@ -275,6 +275,11 @@ const BASELINE_EXTRACTION = {
       visibility: "public",
     },
     {
+      // The call-result channel gates per name since bd tea-rags-mcp-2g2og.24:
+      // the `println!` beside `w` no longer withdraws it.
+      callResultBindings: {
+        w: [{ line: 16, endLine: 16, scopeEndLine: 21, callee: "Worker::new", initExpression: "Worker::new()" }],
+      },
       symbolId: "Engine#go",
       scope: ["Engine"],
       startLine: 15,

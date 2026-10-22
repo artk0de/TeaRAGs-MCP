@@ -447,9 +447,8 @@ fn run() { let value = make(); value.finish(); }
     ["result update", "fn run()", "let mut value = make();\nvalue += unknown;"],
     ["result pattern", "fn run()", "let value = make();\nlet (value, _) = pair;"],
     ["closure", "fn run()", "let value = make();\nlet closure = |make| make();"],
-    ["nested function", "fn run()", "let value = make();\nfn nested() {}"],
+    ["nested function", "fn run()", "let value = make();\nfn make() {}"],
     ["local const", "fn run()", "const make: fn() -> Product = other;\nlet value = make();"],
-    ["block-local result", "fn run()", "{ let value = make(); }"],
   ])("withholds extraction for unproved shadow safety: %s", (_name, header, body) => {
     const f = fixture(
       {
@@ -466,24 +465,100 @@ ${header} {
     expect(f.chunk().callResultBindings?.value).toBeUndefined();
   });
 
-  it.each(["module::make()", "make::<Product>()", "make().await", "make()?", "(|| make())()", "make!()"])(
-    "withholds unsupported initializer %s",
-    (initializer) => {
-      const f = fixture(
-        {
-          "src/main.rs": `${finishers}
+  // Since bd tea-rags-mcp-2g2og.24 the gate is per name: an unrelated nested
+  // fn keeps the binding, and a block-local `let` is windowed to its block.
+  it("keeps a binding beside a nested fn that names neither it nor its callee", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+fn make() -> Product { todo!() }
+fn run() {
+  let value = make();
+  fn nested() {}
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.resolve("value.finish()")).toEqual(productFinish);
+  });
+
+  // Cross-cutting guard: a call-result local whose typed lookup misses must
+  // not DROP a member a project trait may supply by default.
+  it("lets a typed miss on a call-result local continue when a project trait declares the member", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `
+trait Finish { fn finish(&self) {} }
+struct Product;
+impl Finish for Product {}
+fn make() -> Product { todo!() }
+fn run() {
+  let value = make();
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.edges()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ sourceSymbolId: "run", targetSymbolId: "Finish#finish" })]),
+    );
+  });
+
+  it("does not type a use past the block a block-local result lives in", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+fn make() -> Product { todo!() }
+fn run() {
+  { let value = make(); }
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.resolve("value.finish()")).toBeNull();
+  });
+
+  it.each([
+    ["module::make()", "module::make()"],
+    ["make::<Product>()", "make::<Product>()"],
+    ["make()?", "make()?"],
+    ["(|| make())()", "(|| make())()"],
+  ])("records initializer %s for the init-folding arms", (initializer, initExpression) => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
 fn make() -> Product { todo!() }
 fn run() {
   let value = ${initializer};
   value.finish();
 }
 `,
-        },
-        materialized,
-      );
-      expect(f.chunk().callResultBindings?.value).toBeUndefined();
-    },
-  );
+      },
+      materialized,
+    );
+    expect(f.chunk().callResultBindings?.value).toEqual([expect.objectContaining({ initExpression })]);
+  });
+
+  it.each(["make().await", "make!()"])("withholds unsupported initializer %s", (initializer) => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+fn make() -> Product { todo!() }
+fn run() {
+  let value = ${initializer};
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.chunk().callResultBindings?.value).toBeUndefined();
+  });
 
   // A dotted method init is a proven initializer since bd tea-rags-mcp-2g2og:
   // the receiver is fold-typed and the method's declared return answers, so it
@@ -525,7 +600,7 @@ fn run() {
       annotated: [{ line: 9, type: "Product" }],
       constructed: [{ line: 10, type: "Product" }],
     });
-    expect(f.chunk().callResultBindings).toBeUndefined();
+    expect(f.chunk().callResultBindings?.annotated).toBeUndefined();
   });
 
   it.each(["value.inner.finish()", "value.get().finish()"])("threads produced locals into %s", (call) => {
