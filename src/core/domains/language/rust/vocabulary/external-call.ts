@@ -13,8 +13,11 @@ import { resolveLocalBinding, type CallContext, type CallRef } from "../../../..
 import {
   lookupRustSymbolsByShortName,
   parseRustImportPath,
+  rustCallIsMacroInvocation,
   rustImportBindings,
   rustImportIsExternal,
+  rustMacroPathIsExternal,
+  rustMacroShortNameCandidates,
 } from "../resolver/strategies/shared.js";
 import {
   rustTextIsStdMacro,
@@ -23,7 +26,7 @@ import {
   rustTextIsStdTrait,
 } from "./std-prelude.js";
 
-/** The receiver text names a project file, type or macro — any in-project definition vetoes a std reading. */
+/** The receiver text names a project file or type — any in-project definition vetoes a std reading. */
 function projectDeclares(ctx: CallContext, name: string): boolean {
   return lookupRustSymbolsByShortName(ctx, name).length > 0;
 }
@@ -67,8 +70,34 @@ function typeNameIsExternal(name: string, ctx: CallContext): boolean {
 
 export class RustExternalVocabulary {
   targetsExternal(call: CallRef, ctx: CallContext): boolean {
+    if (rustCallIsMacroInvocation(call)) return this.macroIsExternal(call, ctx);
     if (call.receiver === null) return this.bareCalleeIsExternal(call, ctx);
     return this.receiverIsExternal(call, ctx);
+  }
+
+  /**
+   * A macro invocation is judged in the macro namespace (bd
+   * tea-rags-mcp-s3i8m.2) — `format!` can never name `fn format`, so only a
+   * project MACRO of the name vetoes the std reading. A path invocation is
+   * external when its head is std or a crate the project does not hold
+   * (`std::println!`, `log::debug!`); a bare one when an external `use` binds
+   * it, or when std spells it and no `use` binds it to the project.
+   */
+  private macroIsExternal(call: CallRef, ctx: CallContext): boolean {
+    if (call.receiver !== null) {
+      const head = call.receiver.split("::")[0] ?? call.receiver;
+      return rustMacroPathIsExternal(head, rustMacroShortNameCandidates(ctx, call.member), ctx);
+    }
+    const binding = this.importBinding(call.member, ctx);
+    if (binding !== undefined) return rustImportIsExternal(binding, ctx);
+    return rustTextIsStdMacro(call.member) && rustMacroShortNameCandidates(ctx, call.member).length === 0;
+  }
+
+  /** The import text of the first non-glob `use` binding `name`, if any. */
+  private importBinding(name: string, ctx: CallContext): string | undefined {
+    return ctx.imports.find((imp) =>
+      rustImportBindings(imp.importText)?.some((binding) => binding.localName === name && !binding.globImport),
+    )?.importText;
   }
 
   /**
@@ -101,21 +130,12 @@ export class RustExternalVocabulary {
 
   /**
    * A bare call is external when the name is bound by an external import,
-   * when it is a std macro invocation the project does not define
-   * (`vec![]` — the walker emits the macro name as the member), or when it
-   * is a prelude variant constructor (`Ok(())`, `Some(x)`).
+   * or when it is a prelude variant constructor (`Ok(())`, `Some(x)`). Macro
+   * invocations never reach here — {@link macroIsExternal} owns them.
    */
   private bareCalleeIsExternal(call: CallRef, ctx: CallContext): boolean {
-    for (const imp of ctx.imports) {
-      const bindings = rustImportBindings(imp.importText);
-      if (bindings?.some((binding) => binding.localName === call.member && !binding.globImport)) {
-        if (rustImportIsExternal(imp.importText, ctx)) return true;
-        return false;
-      }
-    }
-    const macroCall = call.callText.startsWith(`${call.member}!`);
-    if (macroCall && rustTextIsStdMacro(call.member) && !projectDeclares(ctx, call.member)) return true;
-    if (rustTextIsStdPreludeVariant(call.member) && !projectDeclares(ctx, call.member)) return true;
-    return false;
+    const binding = this.importBinding(call.member, ctx);
+    if (binding !== undefined) return rustImportIsExternal(binding, ctx);
+    return rustTextIsStdPreludeVariant(call.member) && !projectDeclares(ctx, call.member);
   }
 }

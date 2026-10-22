@@ -11,7 +11,9 @@ import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
+  type CallRef,
   type SymbolDefinition,
+  type SymbolDefinitionKind,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import { capability } from "../../capability.js";
@@ -85,14 +87,72 @@ export function rustCalleeShortNameCandidates(ctx: CallContext, name: string): S
     .filter((def) => def.relPath.endsWith(".rs"));
 }
 
+const RUST_MACRO_KINDS: ReadonlySet<SymbolDefinitionKind> = new Set(["macro"]);
+
+/**
+ * The macro-namespace slice of the same lookup (bd tea-rags-mcp-s3i8m.2): what
+ * a macro INVOCATION can land on. `format!` never names `fn format`, so a
+ * function, method or type sharing the name is no candidate — and the callee
+ * role excludes `macro`, so the converse holds by construction.
+ */
+export function rustMacroShortNameCandidates(ctx: CallContext, name: string): SymbolDefinition[] {
+  return ctx.symbolTable
+    .lookupByShortName(name, { kinds: RUST_MACRO_KINDS })
+    .filter((def) => def.relPath.endsWith(".rs"));
+}
+
+/**
+ * Whether the call site is a macro invocation (`name!(…)`, `path::name!(…)`).
+ * The walker emits one as a bare or path call whose member is the macro name;
+ * only the `!` after the path in the site text tells it from a fn call.
+ */
+export function rustCallIsMacroInvocation(call: CallRef): boolean {
+  const path = call.receiver === null ? call.member : `${call.receiver}::${call.member}`;
+  return call.callText.startsWith(`${path}!`);
+}
+
+/** Path heads that address the caller's own crate (`$crate` is the macro-body spelling of `crate`). */
+export const RUST_OWN_CRATE_PATH_HEADS: ReadonlySet<string> = new Set(["crate", "$crate", "self", "super"]);
+
+/**
+ * Whether a bare path head names something OUTSIDE the project: a reserved std
+ * head is external by definition; any other head is a crate name, and the only
+ * crate name that can be ours is one the project holds a module file or crate
+ * directory for — asked through the symbol table, never the disk.
+ */
+export function rustPathHeadIsExternal(head: string, ctx: CallContext): boolean {
+  if (rustTextIsStdPathHead(head)) return true;
+  // A workspace crate is a DIRECTORY (`script_bindings/lib.rs`); `hasFile` can
+  // never see `<crate>.rs`, so without the directory arm every bare-head
+  // `use script_bindings::Str` classified external and the type left the
+  // placement channel.
+  if (ctx.symbolTable.hasDirNamed?.(head) === true) return false;
+  return !(ctx.symbolTable.hasFile(`${head}.rs`) || ctx.symbolTable.hasFile(`${head}/mod.rs`));
+}
+
+/**
+ * Whether a macro PATH (`std::println!`, `log::debug!`, `macros::emit!`) names
+ * a macro outside the project. Its own-crate heads never do, a std head always
+ * does; any other head is external only when {@link rustPathHeadIsExternal}
+ * proves it AND no project definition of the macro sits under a module of
+ * that name — `macros::emit!` from `src/lib.rs` reaches `src/macros.rs`,
+ * which the root-relative crate proof alone cannot see.
+ */
+export function rustMacroPathIsExternal(head: string, candidates: SymbolDefinition[], ctx: CallContext): boolean {
+  if (RUST_OWN_CRATE_PATH_HEADS.has(head)) return false;
+  if (rustTextIsStdPathHead(head)) return true;
+  if (!rustPathHeadIsExternal(head, ctx)) return false;
+  return !candidates.some((def) =>
+    def.relPath.split("/").some((segment) => segment === head || segment === `${head}.rs`),
+  );
+}
+
 /**
  * Whether a `use` import names something OUTSIDE the project — the proof the
  * external vocabulary and the import gates both read. A prefixed path
- * (`crate::` / `self::` / `super::`) is project by definition; a reserved std
- * head is external by definition; any other bare head is a crate name, and the
- * only crate name that can be ours is one the project holds a module file for
- * (`<head>.rs` / `<head>/mod.rs`) — asked through the symbol table, never the
- * disk. A malformed import proves nothing and reads internal.
+ * (`crate::` / `self::` / `super::`) is project by definition; a bare head is
+ * judged by {@link rustPathHeadIsExternal}. A malformed import proves nothing
+ * and reads internal.
  */
 export function rustImportIsExternal(importText: string, ctx: CallContext): boolean {
   const bindings = rustImportBindings(importText);
@@ -101,13 +161,7 @@ export function rustImportIsExternal(importText: string, ctx: CallContext): bool
   if (binding.prefix !== null) return false;
   const head = binding.moduleSegments[0];
   if (!head) return false;
-  if (rustTextIsStdPathHead(head)) return true;
-  // A workspace crate is a DIRECTORY (`script_bindings/lib.rs`); `hasFile` can
-  // never see `<crate>.rs`, so without the directory arm every bare-head
-  // `use script_bindings::Str` classified external and the type left the
-  // placement channel.
-  if (ctx.symbolTable.hasDirNamed?.(head) === true) return false;
-  return !(ctx.symbolTable.hasFile(`${head}.rs`) || ctx.symbolTable.hasFile(`${head}/mod.rs`));
+  return rustPathHeadIsExternal(head, ctx);
 }
 
 type RustImportPrefix = "crate" | "self" | "super" | null;

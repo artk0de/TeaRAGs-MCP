@@ -118,7 +118,7 @@ interface RustSymbolKindReading {
   readonly scopeKey: string;
   readonly startLine: number;
   readonly endLine: number;
-  /** Undefined for a node `rustNameOf` names but that declares nothing (`impl`, `macro_rules!`). */
+  /** Undefined for a node `rustNameOf` names but that declares nothing (`impl`). */
   readonly kind: SymbolDefinitionKind | undefined;
 }
 
