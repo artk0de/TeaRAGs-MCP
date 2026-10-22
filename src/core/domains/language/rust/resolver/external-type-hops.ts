@@ -72,6 +72,13 @@ const RUST_HAND_STD_MODULES: ReadonlyMap<string, string> = new Map([
   ["Result", "std::result"],
 ]);
 
+/**
+ * A tuple element the table spells but a project namesake silences (an empty
+ * union, which no hop reads). Only a destructuring pattern sees it, and its
+ * tuple step answers `undefined` for it — never a typed receiver.
+ */
+export const RUST_UNPROVEN_TUPLE_ELEMENT: TypeRef = Object.freeze({ form: "union", members: [] });
+
 /** What a table `Deref` hop does with a member: the type answers it, hands it to a target, or hides the target. */
 export type RustExternalDerefHop = { readonly target: NominalTypeRef } | "own" | "unprovable";
 
@@ -154,8 +161,16 @@ export function rustExternalAssociatedCallType(spelling: string, assoc: string, 
  *   - a bare name reached only through a glob needs an external glob and no
  *     project function of the name anywhere;
  *   - any same-file function of the name declines.
+ * A destructuring reader passes `partialTuples`: a tuple element a project
+ * namesake silences is {@link RUST_UNPROVEN_TUPLE_ELEMENT}, and only the
+ * names bound to it stay untyped (tikv's own `Receiver` beside a std
+ * `SyncSender`).
  */
-export function rustExternalFreeCallType(spelling: string, ctx: CallContext): TypeRef | undefined {
+export function rustExternalFreeCallType(
+  spelling: string,
+  ctx: CallContext,
+  partialTuples = false,
+): TypeRef | undefined {
   const signatures = rustExternalSignaturesOf(ctx);
   if (signatures === undefined) return undefined;
   const segments = spelling.replace(/^::/, "").split("::");
@@ -165,7 +180,7 @@ export function rustExternalFreeCallType(spelling: string, ctx: CallContext): Ty
   const path = rustExternalFunctionPath(segments, projectFunctions.length > 0, ctx, signatures);
   const found = path === undefined ? undefined : signatures.freeFunction(path);
   if (found === undefined || found === "ambiguous" || !found.stable || found.returns === undefined) return undefined;
-  return rustExternalTypeOf(found.returns, undefined, found.functionGenericParameters, ctx, signatures);
+  return rustExternalTypeOf(found.returns, undefined, found.functionGenericParameters, ctx, signatures, partialTuples);
 }
 
 /** The canonical table path `segments` names from the caller's file, through the gates of {@link rustExternalFreeCallType}. */
@@ -346,6 +361,7 @@ function rustExternalTypeOf(
   methodGenerics: readonly string[],
   ctx: CallContext,
   signatures: RustExternalSignatureTable,
+  partialTuples = false,
 ): TypeRef | undefined {
   const receiverArgs = recv?.form === "instance" ? recv.args : undefined;
   const bound = rustSubstitute(typeExpr.type, (name) => {
@@ -355,7 +371,7 @@ function rustExternalTypeOf(
     return methodGenerics.includes(name) ? undefined : null;
   });
   const expanded = bound === undefined ? undefined : rustExpandAliases(bound, signatures, 0);
-  return expanded === undefined ? undefined : rustNormalizeExternal(expanded, ctx);
+  return expanded === undefined ? undefined : rustNormalizeExternal(expanded, ctx, partialTuples);
 }
 
 /** `bind` answers a type for a parameter, `undefined` for an unknown one, `null` for a name that is no parameter. */
@@ -405,10 +421,17 @@ function rustExpandAliases(
   );
 }
 
-/** Shorten hand std heads; any external head a project type shadows by short name silences the answer. */
-function rustNormalizeExternal(type: TypeRef, ctx: CallContext): TypeRef | undefined {
+/**
+ * Shorten hand std heads; any external head a project type shadows by short
+ * name silences the answer. With `partialTuples` a silenced tuple element is
+ * {@link RUST_UNPROVEN_TUPLE_ELEMENT} instead, so its siblings stay typed.
+ */
+function rustNormalizeExternal(type: TypeRef, ctx: CallContext, partialTuples = false): TypeRef | undefined {
   if (type.form === "tuple") {
-    const elements = type.elements.map((element) => rustNormalizeExternal(element, ctx));
+    const elements = type.elements.map(
+      (element) =>
+        rustNormalizeExternal(element, ctx, partialTuples) ?? (partialTuples ? RUST_UNPROVEN_TUPLE_ELEMENT : undefined),
+    );
     return elements.every((element) => element !== undefined) ? { form: "tuple", elements } : undefined;
   }
   if (type.form !== "instance" || type.name.includes(".rs::")) return type;
@@ -417,7 +440,7 @@ function rustNormalizeExternal(type: TypeRef, ctx: CallContext): TypeRef | undef
   if (external && projectDeclaresType(ctx, shortName)) return undefined;
   const stdRooted = RUST_STD_ROOTS.has(type.name.split("::")[0]);
   const name = stdRooted && rustTextIsStdPreludeType(shortName) ? shortName : type.name;
-  const args = type.args?.map((arg) => rustNormalizeExternal(arg, ctx));
+  const args = type.args?.map((arg) => rustNormalizeExternal(arg, ctx, partialTuples));
   if (args?.some((arg) => arg === undefined)) return undefined;
   return rustWithKnownArgs(name, args);
 }

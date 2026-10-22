@@ -18,7 +18,7 @@ import type { TypeRef } from "../../../../contracts/types/language.js";
 import { splitAtBracketDepthZero } from "../../kernel/index.js";
 import { rustFreeCallResultType } from "./declared-call-result-type.js";
 import { rustDeclaredFieldType, rustDeclaredVariantFieldType } from "./declared-field-type.js";
-import { rustExternalFreeCallType } from "./external-type-hops.js";
+import { RUST_UNPROVEN_TUPLE_ELEMENT, rustExternalFreeCallType } from "./external-type-hops.js";
 import {
   RUST_ITERATOR_CHAIN_MEMBERS,
   rustStdClosureParamType,
@@ -91,7 +91,7 @@ function rustScrutineeType(
   const expression = rustWithoutBorrow(sourceExpression);
   const bareCall = RUST_BARE_CALL.exec(expression);
   if (bareCall !== null && closesAtEnd(expression, bareCall[1].length)) {
-    return rustFreeCallResultType(bareCall[1], ctx) ?? rustExternalFreeCallType(bareCall[1], ctx);
+    return rustFreeCallResultType(bareCall[1], ctx) ?? rustExternalFreeCallType(bareCall[1], ctx, true);
   }
   const span = binding.conditionSpan;
   return (
@@ -127,7 +127,7 @@ function rustUnwrappedFreeCallType(expression: string, ctx: CallContext): TypeRe
   const spelling = callee[1];
   let produced =
     (spelling.includes("::") ? undefined : rustFreeCallResultType(spelling, ctx)) ??
-    rustExternalFreeCallType(spelling, ctx);
+    rustExternalFreeCallType(spelling, ctx, true);
   for (let i = 0; i < unwraps && produced !== undefined; i++) produced = rustStdUnwrapType(produced, "?");
   return produced;
 }
@@ -188,8 +188,10 @@ function rustPatternStepType(recv: TypeRef, step: PatternStep, ctx: CallContext)
         : "index" in step
           ? rustStdVariantPayload(recv, step.path, step.index)
           : undefined;
-    case "tuple":
-      return recv.form === "tuple" ? recv.elements[step.index] : undefined;
+    case "tuple": {
+      const element = recv.form === "tuple" ? recv.elements[step.index] : undefined;
+      return element === RUST_UNPROVEN_TUPLE_ELEMENT ? undefined : element;
+    }
     case "field":
       return rustDeclaredFieldType(recv, step.name, ctx);
     case "element":

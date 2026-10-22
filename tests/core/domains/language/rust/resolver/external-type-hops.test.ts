@@ -517,6 +517,14 @@ describe("Rust external signature table — free-function roots (s3i8m.7 T-A2)",
     expect(patternTypeOf(main(expected), "b", "b.recv()")).toEqual(instance("ipc::IpcReceiver"));
   });
 
+  it("vetoes only the tuple element a project namesake shadows (tikv's own `Receiver`)", () => {
+    const code = `use std::sync::mpsc;
+struct Receiver;
+fn run() {\n  let (tx, rx) = mpsc::sync_channel(1);\n  tx.send(1);\n  rx.recv();\n}`;
+    expect(patternTypeOf(main(code), "tx", "tx.send(1)")).toEqual(instance("std::sync::mpsc::SyncSender"));
+    expect(patternTypeOf(main(code), "rx", "rx.recv()")).toBeUndefined();
+  });
+
   it("types a glob-only binding when the project declares no function of the name", () => {
     const code = `use std::sync::mpsc::*;\nfn run() {\n  let (tx, rx) = channel();\n  tx.send(1);\n}`;
     expect(patternTypeOf(main(code), "tx", "tx.send(1)")).toEqual(instance("std::sync::mpsc::Sender"));

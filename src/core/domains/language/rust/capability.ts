@@ -130,6 +130,7 @@ export const capability: LanguageCapability = {
   //   external free function (`let (tx, rx) = mpsc::channel()`, `channel()?`,
   //   `tempfile::tempdir()?`) takes the table's return, `?` / `.unwrap()` /
   //   `.expect(..)` tails unwrapped; the project's own function answers first.
+  //   A destructured element a project namesake vetoes stays untyped alone.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
