@@ -59,6 +59,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
   ManifestFilesReader,
+  RustExternalSignatureSources,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
 import { rustCommentCaptureHook } from "./chunking/comment-capture.js";
@@ -142,14 +143,19 @@ export class RustLanguage implements LanguageProvider {
 
   /**
    * `manifestFilesReader` reads the project's Cargo.toml files for the
-   * workspace crate map (bd tea-rags-mcp-sjego). Injected by `LanguageFactory`
-   * — this leaf never walks the disk itself.
+   * workspace crate map (bd tea-rags-mcp-sjego); `signatureSources` locates
+   * and caches the external signature table (bd s3i8m.7). Injected by
+   * `LanguageFactory` — this leaf never walks the disk itself.
    */
-  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE, manifestFilesReader?: ManifestFilesReader) {
-    const callResolver: CallResolver = new RustCallResolver(mode, manifestFilesReader);
+  constructor(
+    mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    manifestFilesReader?: ManifestFilesReader,
+    signatureSources?: RustExternalSignatureSources,
+  ) {
+    const callResolver: CallResolver = new RustCallResolver(mode, manifestFilesReader, signatureSources);
     this.resolver = {
-      // The pass-start seam re-reads the workspace's crate map before the
-      // first crate-name path resolves.
+      // The pass-start seam re-reads the workspace's crate map and loads the
+      // external signature table before the first crate-name path resolves.
       prepareResolvePass: (plan: SymbolResolutionPassPlan): void => callResolver.prepareResolvePass?.(plan),
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>

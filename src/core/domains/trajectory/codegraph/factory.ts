@@ -29,6 +29,7 @@
  */
 
 import { readManifestFiles } from "../../../adapters/filesystem/dependency-manifests.js";
+import { processRustExternalSignatureSources } from "../../../adapters/rust-signatures/index.js";
 import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
 import type {
@@ -36,6 +37,7 @@ import type {
   LanguageCrossRunParseCache,
   LanguageFactoryDescriptor,
   ManifestFilesReader,
+  RustExternalSignatureSources,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
@@ -154,6 +156,7 @@ interface LanguageModule {
     ambiguousResolveMode?: AmbiguousResolveMode;
     crossRunParseCache?: LanguageCrossRunParseCache;
     manifestFilesReader?: ManifestFilesReader;
+    rustExternalSignatureSources?: RustExternalSignatureSources;
   }) => LanguageFactoryDescriptor;
   CrossRunParseCache: new () => LanguageCrossRunParseCache;
   DefaultSymbolIdComposer: new () => SymbolIdComposer;
@@ -286,9 +289,13 @@ export async function createCodegraphProviderRuntime(
   // The manifest walk is a function, so it cannot ride the structured-clone
   // config: this module — loaded in-thread by the enrichment worker — wires it
   // here, exactly as the main-thread composition does (bd tea-rags-mcp-2wu2h).
+  // The Rust external signature sources (bd s3i8m.7) are an object with
+  // methods, so they are wired here in-thread the same way: `prepareResolvePass`
+  // runs on the thread that built this runtime.
   const languageFactory = new lang.LanguageFactory({
     ambiguousResolveMode: config.ambiguousResolveMode,
     manifestFilesReader: readManifestFiles,
+    rustExternalSignatureSources: processRustExternalSignatureSources(),
     ...(runtimeDeps.crossRunParseCache ? { crossRunParseCache: runtimeDeps.crossRunParseCache } : {}),
   });
   const composer = new lang.DefaultSymbolIdComposer();

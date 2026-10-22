@@ -1154,6 +1154,56 @@ export interface RustExternalSignatureTable {
   readonly identity: string;
 }
 
+/** One `.rs` file of a crate outside the project, as the extractor reads it. */
+export interface RustExternalSourceFile {
+  readonly crate: string;
+  /** Path relative to the crate's `src/` directory (`sync/poison/mutex.rs`). */
+  readonly relPath: string;
+  readonly source: string;
+}
+
+/**
+ * The sources of ONE cacheable extraction unit — the std/core/alloc trio of a
+ * toolchain, or one dependency crate at one exact version.
+ */
+export interface RustExternalSourceSet {
+  /**
+   * Toolchain- or version-exact cache key, without the extractor version:
+   * `std/<rustc commit hash>`, `crates/<name>-<version>`, `crates/<name>-git-<rev7>`.
+   */
+  readonly cacheKey: string;
+  /** Read the sources now; `undefined` when the set is over the size cap or unreadable. */
+  readSources: () => readonly RustExternalSourceFile[] | undefined;
+}
+
+/** What the disk holds for one project: the toolchain's library and the dependencies its code names. */
+export interface RustExternalSourcesOfProject {
+  /** Absent when no `rust-src` is found (no `rustc`, no component, no `RUST_SRC_PATH`). */
+  readonly std: RustExternalSourceSet | undefined;
+  /** Dependencies a project `use` head names, resolved through `Cargo.lock`, sorted by cache key. */
+  readonly dependencies: readonly RustExternalSourceSet[];
+  /** sha256 of the project's `Cargo.lock`; absent without one. */
+  readonly lockDigest: string | undefined;
+  /** Named dependencies whose source is not under `CARGO_HOME` (never fetched). */
+  readonly missingCrates: readonly string[];
+}
+
+/**
+ * The disk side of the Rust external signature table (bd s3i8m.7): locating
+ * sources and the extracted-table cache. A port, so `domains/language` stays a
+ * leaf — the composition layer injects the concrete adapter through
+ * `LanguageFactory`. Total: every failure is an absence, never a throw.
+ */
+export interface RustExternalSignatureSources {
+  locate: (projectRoot: string) => RustExternalSourcesOfProject;
+  /** A cached extraction under `key` (cache key + extractor version); a corrupt file is dropped and reads as a miss. */
+  readCached: (key: string) => RustExternalSignatureTableData | undefined;
+  /** Atomic write (tmp + rename); a failed write is silent — the next run extracts again. */
+  writeCached: (key: string, data: RustExternalSignatureTableData) => void;
+  /** Dependency crates with more `.rs` bytes than this are skipped; part of the table identity. */
+  readonly sizeCapBytes: number;
+}
+
 /**
  * One schema table and the instance-accessor names its columns synthesize on the
  * owning model. The COLUMN→accessor expansion (reader / writer / query

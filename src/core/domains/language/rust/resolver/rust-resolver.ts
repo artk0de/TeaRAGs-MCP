@@ -52,10 +52,13 @@ import {
 import type {
   DispatchResolverComponent,
   ManifestFilesReader,
+  RustExternalSignatureSources,
   SymbolResolutionStrategy,
 } from "../../../../contracts/types/language.js";
 import { ConeDispatchResolver, resolveDispatchViaComponents, resolveViaChain } from "../../kernel/index.js";
 import { RustExternalVocabulary } from "../vocabulary/external-call.js";
+import { RustResolveEnvironmentCache } from "./resolve-environment-cache.js";
+import { withRustResolveEnvironment } from "./resolve-environment.js";
 import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
 import {
   RustBareSelfMethodSymbolResolutionStrategy,
@@ -72,23 +75,28 @@ import {
   RustTypeReceiverSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
-import { RustWorkspaceCrateMapCache, withRustWorkspaceCrates } from "./workspace-crates.js";
 
 export class RustCallResolver implements CallResolver {
   readonly language = "rust";
   private readonly strategies: SymbolResolutionStrategy[];
   private readonly dispatchComponents: readonly DispatchResolverComponent[];
   private readonly external = new RustExternalVocabulary();
-  private readonly crateMaps: RustWorkspaceCrateMapCache;
+  private readonly environments: RustResolveEnvironmentCache;
 
   /**
    * `manifestFilesReader` reads the project's Cargo.toml files for the
-   * workspace crate map (bd tea-rags-mcp-sjego). Injected by `LanguageFactory`
-   * — the resolver never walks the disk; absent, no crate name is known and a
-   * bare path head is judged by the symbol table alone.
+   * workspace crate map (bd tea-rags-mcp-sjego); `signatureSources` locates
+   * and caches the external signature table (bd s3i8m.7). Both injected by
+   * `LanguageFactory` — the resolver never walks the disk; absent, no crate
+   * name is known and a bare path head is judged by the symbol table alone,
+   * and no external signature is known.
    */
-  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE, manifestFilesReader?: ManifestFilesReader) {
-    this.crateMaps = new RustWorkspaceCrateMapCache(manifestFilesReader);
+  constructor(
+    mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    manifestFilesReader?: ManifestFilesReader,
+    signatureSources?: RustExternalSignatureSources,
+  ) {
+    this.environments = new RustResolveEnvironmentCache(manifestFilesReader, signatureSources);
     const cfg: ResolverConfig = { mode };
     this.dispatchComponents = [new ConeDispatchResolver(new RustConeTypeLocator(cfg), 8)];
     this.strategies = [
@@ -105,22 +113,25 @@ export class RustCallResolver implements CallResolver {
     ];
   }
 
-  /** The pass-start seam: re-read the workspace's Cargo.toml crate map before the first call resolves. */
+  /**
+   * The pass-start seam: re-read the workspace's Cargo.toml crate map and
+   * load the external signature table before the first call resolves.
+   */
   prepareResolvePass(plan: SymbolResolutionPassPlan): void {
-    this.crateMaps.reload(plan.projectRoot);
+    this.environments.reload(plan.projectRoot);
   }
 
-  /** The caller's ctx carrying this run's workspace crate map — the one entry every Rust helper reads it from. */
-  private withCrates(ctx: CallContext): CallContext {
-    return withRustWorkspaceCrates(ctx, this.crateMaps.forRoot(ctx.projectRoot));
+  /** The caller's ctx carrying this run's resolve environment — the one entry every Rust helper reads it from. */
+  private withEnvironment(ctx: CallContext): CallContext {
+    return withRustResolveEnvironment(ctx, this.environments.forRoot(ctx.projectRoot));
   }
 
   resolveDispatch(call: CallRef, ctx: CallContext) {
-    return resolveDispatchViaComponents(this.dispatchComponents, call, this.withCrates(ctx));
+    return resolveDispatchViaComponents(this.dispatchComponents, call, this.withEnvironment(ctx));
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
-    return resolveViaChain(this.strategies, call, this.withCrates(ctx));
+    return resolveViaChain(this.strategies, call, this.withEnvironment(ctx));
   }
 
   /**
@@ -130,7 +141,7 @@ export class RustCallResolver implements CallResolver {
    * reading, and absence of evidence is never a `true`.
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
-    return this.external.targetsExternal(call, this.withCrates(ctx));
+    return this.external.targetsExternal(call, this.withEnvironment(ctx));
   }
 
   /**
