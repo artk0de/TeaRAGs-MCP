@@ -23,7 +23,13 @@ import type {
   TypeRef,
 } from "../../../../contracts/types/language.js";
 import type { NominalTypeRef } from "../../kernel/index.js";
-import { rustTextIsStdPreludeType, rustTextIsStdSmartPointer } from "../vocabulary/std-prelude.js";
+import {
+  rustStdOwnedForms,
+  rustStdPrimitiveTypes,
+  rustStdTraitMemberReturns,
+  rustTextIsStdPreludeType,
+  rustTextIsStdSmartPointer,
+} from "../vocabulary/std-prelude.js";
 import { rustExternalSignaturesOf } from "./resolve-environment.js";
 import { projectDeclaresType, rustStdSmartPointerTarget } from "./std-type-hops.js";
 import { lookupRustSymbolsByShortName } from "./strategies/shared.js";
@@ -105,6 +111,88 @@ export function rustExternalMemberReturnType(recv: TypeRef, member: string, ctx:
     return undefined;
   }
   return rustExternalTypeOf(found.returns, recv, found.methodGenericParameters, ctx, signatures);
+}
+
+/**
+ * `ExtType::assoc(..)` (bd s3i8m.7 T3c): the declared return of the stable,
+ * unambiguous associated function `assoc` (no `self`) of the external type
+ * `spelling` names from the caller's file, `Self` the bare type. A project
+ * symbol implementing `assoc` on the type's short name silences the table.
+ */
+export function rustExternalAssociatedCallType(spelling: string, assoc: string, ctx: CallContext): TypeRef | undefined {
+  const signatures = rustExternalSignaturesOf(ctx);
+  if (signatures === undefined) return undefined;
+  const typePath = rustExternalTypePath({ form: "instance", name: spelling }, ctx, signatures);
+  if (typePath === undefined) return undefined;
+  if (rustProjectImplementsMemberOn(ctx, rustShortName(spelling), assoc)) return undefined;
+  const recv: TypeRef = { form: "instance", name: typePath };
+  const found = signatures.inherentMember(typePath, assoc);
+  // No inherent `default`: the path call is `Default::default`, whose return is `Self`.
+  if (found === undefined && assoc === "default") return rustNormalizeExternal(recv, ctx);
+  if (found === undefined || found === "ambiguous" || !found.stable || found.selfKind !== "none") return undefined;
+  if (found.returns === undefined) return undefined;
+  return rustExternalTypeOf(found.returns, recv, found.methodGenericParameters, ctx, signatures);
+}
+
+/**
+ * The closed std-trait return model (bd s3i8m.7 T3c, spec §3.2) on a typed
+ * receiver no declared or table member answered: `to_string` → `String`,
+ * `eq` → `bool`, `cmp` → `Ordering`, … whichever implementor answers. A
+ * `Self` member (`clone`, `to_owned`) answers the receiver only when no deref
+ * target could take it instead: `selfIsOwn` for a placed project type (the
+ * caller's proof), the table's facts for an external one. A project symbol
+ * implementing the member on the type, or a project namesake of the answer's
+ * type, silences the model; without a table it never answers.
+ */
+export function rustStdTraitMemberReturnType(
+  recv: TypeRef,
+  member: string,
+  ctx: CallContext,
+  selfIsOwn = false,
+): TypeRef | undefined {
+  const model = rustStdTraitMemberReturns.get(member);
+  const signatures = rustExternalSignaturesOf(ctx);
+  if (model === undefined || signatures === undefined || recv.form !== "instance") return undefined;
+  const placed = recv.name.includes(".rs::");
+  const shortName = rustShortName(recv.name);
+  if (rustProjectImplementsMemberOn(ctx, shortName, member)) return undefined;
+  if (model !== "Self") return rustNormalizeExternal(model, ctx);
+  const owned = member === "to_owned" && !placed ? rustStdOwnedForms.get(shortName) : undefined;
+  if (owned !== undefined) {
+    return projectDeclaresType(ctx, owned) ? undefined : rustNormalizeExternal({ form: "instance", name: owned }, ctx);
+  }
+  const ownsSelf = placed ? selfIsOwn : rustExternalTypeKeepsSelfMembers(recv, ctx, signatures);
+  return ownsSelf ? recv : undefined;
+}
+
+/** A primitive, or a table type with no `Deref::Target` or with its own `Clone` impl, answers `clone` itself. */
+function rustExternalTypeKeepsSelfMembers(
+  recv: TypeRef,
+  ctx: CallContext,
+  signatures: RustExternalSignatureTable,
+): boolean {
+  if (recv.form !== "instance") return false;
+  if (rustStdPrimitiveTypes.has(recv.name)) return true;
+  const typePath = rustExternalTypePath(recv, ctx, signatures);
+  if (typePath === undefined) return false;
+  return (
+    signatures.associatedType(typePath, "Deref::Target") === undefined ||
+    signatures.traitImplDeclares(typePath, "clone")
+  );
+}
+
+/**
+ * A public field of the external receiver `recv` (bd s3i8m.7 T3c): the
+ * table's declared field type, owner generics read from `recv`'s arguments
+ * (`Range<Store>.start` → `Store`).
+ */
+export function rustExternalFieldType(recv: TypeRef, field: string, ctx: CallContext): TypeRef | undefined {
+  const signatures = rustExternalSignaturesOf(ctx);
+  if (signatures === undefined) return undefined;
+  const typePath = rustExternalTypePath(recv, ctx, signatures);
+  if (typePath === undefined) return undefined;
+  const fieldType = signatures.field(typePath, field);
+  return fieldType === undefined ? undefined : rustExternalTypeOf(fieldType, recv, [], ctx, signatures);
 }
 
 /**

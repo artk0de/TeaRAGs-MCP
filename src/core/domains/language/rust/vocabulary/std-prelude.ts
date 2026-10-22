@@ -10,6 +10,8 @@
  * is reserved by std itself or spelled by the prelude, never merely common.
  */
 
+import type { TypeRef } from "../../../../contracts/types/language.js";
+
 /** Path heads `use` can spell that always name std, never a project crate. */
 export const rustStdPathHeads: ReadonlySet<string> = new Set(["std", "core", "alloc", "proc_macro", "test"]);
 
@@ -93,6 +95,48 @@ export const rustDerivableTraitMembers: ReadonlySet<string> = new Set([
   "min",
   "clamp",
   "hash",
+]);
+
+/**
+ * Std types whose `new(value)` takes the one value they wrap as their single
+ * type argument: `Arc::new(x)` is `Arc<typeof x>`.
+ */
+export const rustStdValueWrappers: ReadonlySet<string> = new Set([
+  "Box",
+  "Rc",
+  "Arc",
+  "Cell",
+  "RefCell",
+  "Mutex",
+  "RwLock",
+]);
+
+const RUST_STD_ORDERING: TypeRef = { form: "instance", name: "Ordering" };
+const RUST_STD_BOOL: TypeRef = { form: "instance", name: "bool" };
+
+/**
+ * The return companion of {@link rustDerivableTraitMembers} (bd s3i8m.7 T3c):
+ * what a std trait member returns on any implementor. `"Self"` is the
+ * receiver itself (Clone, the blanket `ToOwned for T: Clone`); every other
+ * entry is the same type whichever implementor — or deref target — answers it.
+ * Iterator's `max` / `min` share Ord's names but not its return: left out.
+ */
+export const rustStdTraitMemberReturns: ReadonlyMap<string, TypeRef | "Self"> = new Map<string, TypeRef | "Self">([
+  ["clone", "Self"],
+  ["to_owned", "Self"],
+  ["to_string", { form: "instance", name: "String" }],
+  ...["eq", "ne", "lt", "le", "gt", "ge"].map((member): [string, TypeRef] => [member, RUST_STD_BOOL]),
+  ["cmp", RUST_STD_ORDERING],
+  ["partial_cmp", { form: "instance", name: "Option", args: [RUST_STD_ORDERING] }],
+  ["hash", { form: "tuple", elements: [] }],
+]);
+
+/** The owned form `to_owned` answers for a borrowed std type with its own `ToOwned` impl (`str` → `String`). */
+export const rustStdOwnedForms: ReadonlyMap<string, string> = new Map([
+  ["str", "String"],
+  ["Path", "PathBuf"],
+  ["OsStr", "OsString"],
+  ["CStr", "CString"],
 ]);
 
 /** Prelude types `?` / `unwrap` / `expect` unwrap to their first type argument. */
@@ -209,4 +253,8 @@ export function rustTextIsStdPreludeVariant(text: string): boolean {
 
 export function rustTextIsStdMacro(text: string): boolean {
   return rustStdMacros.has(text);
+}
+
+export function rustTextIsStdValueWrapper(text: string): boolean {
+  return rustStdValueWrappers.has(text);
 }
