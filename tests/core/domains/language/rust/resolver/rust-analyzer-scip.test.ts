@@ -299,3 +299,44 @@ describe("RustCallResolver#targetsExternalImport with SCIP (bd s3i8m.6 R3a)", ()
     ]);
   });
 });
+
+describe("RustCallResolver#hasInProjectDefinition with SCIP (bd s3i8m.6 R3b)", () => {
+  async function warmedResolver(index: RustAnalyzerScipIndex): Promise<RustCallResolver> {
+    const source: RustAnalyzerScipSource = {
+      acquire: async () => ({ kind: "indexed", index, cacheHit: true, toolchainSkew: false }),
+    };
+    const resolver = new RustCallResolver(undefined, undefined, undefined, source);
+    await resolver.warmResolvePass({ expectedFileCount: 1, projectRoot: ROOT });
+    return resolver;
+  }
+
+  it("is false when SCIP proves the target an in-project type or local", async () => {
+    const t = table(
+      def("src/shape.rs", "Boxed", "Other#Boxed", 30, 32),
+      def("src/util.rs", "f", "f", 1, 3, "function"),
+    );
+    const resolver = await warmedResolver(
+      stubIndex({
+        "src/main.rs:22:26": inProject("Boxed", "src/shape.rs", 17, "type"),
+        "src/main.rs:24:4": { ...inProject("", "src/main.rs", 23, "local"), symbol: "local 3" },
+      }),
+    );
+
+    expect(
+      resolver.hasInProjectDefinition(call("shape::Wrap::Boxed(3)", "shape::Wrap", "Boxed", 22, 26), ctxWith(t)),
+    ).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("f(1)", null, "f", 24, 4), ctxWith(t))).toBe(false);
+  });
+
+  it("keeps the table's answer for a callable, an external, no answer and no index", async () => {
+    const t = table(def("src/stack.rs", "push", "Stack#push", 1, 3), def("src/util.rs", "f", "f", 1, 3, "function"));
+    const resolver = await warmedResolver(
+      stubIndex({ "src/main.rs:9:6": STD_PUSH, "src/main.rs:24:4": inProject("f", "src/util.rs", 1) }),
+    );
+
+    expect(resolver.hasInProjectDefinition(call("f(1)", null, "f", 24, 4), ctxWith(t))).toBe(true);
+    expect(resolver.hasInProjectDefinition(call("v.push(1)", "v", "push", 9, 6), ctxWith(t))).toBe(true);
+    expect(resolver.hasInProjectDefinition(call("v.push(1)", "v", "push", 40, 6), ctxWith(t))).toBe(true);
+    expect(new RustCallResolver().hasInProjectDefinition(call("f(1)", null, "f", 24, 4), ctxWith(t))).toBe(true);
+  });
+});

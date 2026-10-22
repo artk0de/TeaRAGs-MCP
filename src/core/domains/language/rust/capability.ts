@@ -96,6 +96,8 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m.6 (R3a) — a last `rustAnalyzerScip` pass answers the
   //   residual from rust-analyzer's SCIP definition at the member token; a
   //   SCIP-proven external target with a project namesake is externalSkipped.
+  // - bd tea-rags-mcp-s3i8m.6 (R3b) — a call SCIP proves targets an in-project
+  //   type or local (tuple constructor, closure variable) has no in-project def.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

@@ -61,6 +61,16 @@ export function rustScipProvesExternal(call: CallRef, ctx: CallContext): boolean
 }
 
 /**
+ * Whether SCIP proves the call's target an in-project type or local — a
+ * tuple-struct / tuple-variant constructor or a closure variable, never a
+ * callable a same-named table symbol could be (bd s3i8m.6 R3b).
+ */
+export function rustScipProvesInProjectNonCallable(call: CallRef, ctx: CallContext): boolean {
+  const definition = rustScipDefinitionOf(call, ctx);
+  return definition !== null && definition.inProject && (definition.kind === "type" || definition.kind === "local");
+}
+
+/**
  * The table symbol an in-project SCIP definition names: the callee-role (or,
  * for a macro invocation, macro) candidates of the descriptor's name — never
  * the call's member, which a `use a as b` alias renames — declared in the

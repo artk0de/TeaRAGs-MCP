@@ -64,7 +64,7 @@ import { RustExternalVocabulary } from "../vocabulary/external-call.js";
 import { RustResolveEnvironmentCache } from "./resolve-environment-cache.js";
 import { withRustResolveEnvironment } from "./resolve-environment.js";
 import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
-import { rustScipProvesExternal } from "./scip-resolution.js";
+import { rustScipProvesExternal, rustScipProvesInProjectNonCallable } from "./scip-resolution.js";
 import {
   RustAnalyzerScipSymbolResolutionStrategy,
   RustBareSelfMethodSymbolResolutionStrategy,
@@ -185,6 +185,8 @@ export class RustCallResolver implements CallResolver {
     const candidates = rustCallIsMacroInvocation(call)
       ? rustMacroShortNameCandidates(ctx, call.member)
       : rustCalleeShortNameCandidates(ctx, call.member);
-    return candidates.length > 0;
+    if (candidates.length === 0) return false;
+    // A SCIP-proven in-project type or local is no namesake's edge (bd s3i8m.6 R3b).
+    return !rustScipProvesInProjectNonCallable(call, this.withEnvironment(ctx));
   }
 }
