@@ -23,10 +23,12 @@ import {
 } from "../../../src/core/api/public/index.js";
 import { registerCodegraphTools } from "../../../src/core/api/tools/codegraph.js";
 import { registerCollectionTools } from "../../../src/core/api/tools/collection.js";
+import type { ColumnTable } from "../../../src/core/api/tools/columns.js";
 import { registerSearchTools } from "../../../src/core/api/tools/explore.js";
 import { registerProjectTools } from "../../../src/core/api/tools/list-projects.js";
 import { createRegisterTool } from "../../../src/core/api/tools/middleware/error-handler.js";
 import { TYPED_FILTER_PARAM_NAMES } from "../../../src/core/api/tools/schemas.js";
+import { rowsOf } from "../../helpers/column-table.js";
 
 function makeApp(overrides: Partial<Record<string, unknown>> = {}, hasCodegraph = false): App {
   return {
@@ -271,8 +273,9 @@ describe("runCall — results and exit codes", () => {
     const code = await call(h, { tool: "find_symbol", params: '{"project":"tea-rags","symbol":"Reranker#rerank"}' });
 
     expect(code).toBe(0);
-    const printed = JSON.parse(h.stdout.join("\n")) as { results: { payload: { symbolId: string } }[] };
-    expect(printed.results[0].payload.symbolId).toBe("Reranker#rerank");
+    const printed = JSON.parse(h.stdout.join("\n")) as { results: ColumnTable };
+    const [first] = rowsOf(printed.results) as { payload: { symbolId: string } }[];
+    expect(first.payload.symbolId).toBe("Reranker#rerank");
   });
 
   it("--json prints the full CallToolResult as one JSON document and nothing else", async () => {

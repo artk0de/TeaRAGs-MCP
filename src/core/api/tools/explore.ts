@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { ExploreResponse, HybridSearchRequest, SemanticSearchRequest } from "../public/dto/explore.js";
 import type { App, McpAutoUpdateTrigger, SchemaBuilderPort } from "../public/index.js";
+import { toColumns } from "./columns.js";
 import { appendAutoUpdateHint, formatDenseUnavailable, sanitizeRerank, type McpToolResult } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
 import { SearchResultOutputSchema } from "./output-schemas.js";
@@ -27,7 +28,7 @@ interface SearchToolDef {
 function formatStructuredResult(response: ExploreResponse): McpToolResult {
   return {
     structuredContent: {
-      results: response.results,
+      results: toColumns(response.results),
       ...(response.level && { level: response.level }),
       ...(response.confidence && { confidence: response.confidence }),
       ...(response.driftWarning && { driftWarning: response.driftWarning }),

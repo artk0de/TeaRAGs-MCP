@@ -17,10 +17,10 @@ function flattenInto(record: Record<string, unknown>, prefix: string, cells: Map
 }
 
 /** Nested objects → dotted columns (`payload.git.file.commitCount`); arrays stay cell values; absent → null. */
-export function toColumns(records: readonly Record<string, unknown>[]): ColumnTable {
+export function toColumns(records: readonly object[]): ColumnTable {
   const flat = records.map((record) => {
     const cells = new Map<string, unknown>();
-    flattenInto(record, "", cells);
+    flattenInto(record as Record<string, unknown>, "", cells);
     return cells;
   });
   const columns: string[] = [];

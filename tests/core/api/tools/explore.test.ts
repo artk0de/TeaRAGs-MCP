@@ -134,12 +134,41 @@ describe("registerSearchTools", () => {
     const tool = captured[0];
     if (!tool) throw new Error("expected at least one registered tool");
     const result = (await tool.handler({ path: "/x", query: "q" }, {})) as {
-      structuredContent: { results: unknown[] };
+      structuredContent: { results: unknown };
       content: unknown[];
     };
     expect(result.structuredContent).toBeDefined();
-    expect(Array.isArray(result.structuredContent.results)).toBe(true);
+    expect(result.structuredContent.results).toEqual({ columns: [], rows: [] });
     expect(result.content).toEqual([]);
+  });
+
+  it("emits results as a column table, one row per result, envelope fields beside it", async () => {
+    const workingTree = { tree: "/x", changedFiles: 0, deletedFiles: 0, floors: [] };
+    const { captured } = makeHarness({
+      hybridSearch: vi.fn().mockResolvedValue({
+        results: [
+          { id: "a", score: 0.9, payload: { relativePath: "src/a.ts", symbolId: "A#run" } },
+          { id: "b", score: 0.4, payload: { relativePath: "src/b.ts" } },
+        ],
+        driftWarning: "stale",
+        workingTree,
+      }),
+    });
+    const tool = captured.find((t) => t.name === "hybrid_search");
+
+    const result = (await tool!.handler({ path: "/x", query: "q" }, {})) as {
+      structuredContent: { results: unknown; driftWarning?: string; workingTree?: unknown };
+    };
+
+    expect(result.structuredContent.results).toEqual({
+      columns: ["id", "score", "payload.relativePath", "payload.symbolId"],
+      rows: [
+        ["a", 0.9, "src/a.ts", "A#run"],
+        ["b", 0.4, "src/b.ts", null],
+      ],
+    });
+    expect(result.structuredContent.driftWarning).toBe("stale");
+    expect(result.structuredContent.workingTree).toEqual(workingTree);
   });
 });
 
