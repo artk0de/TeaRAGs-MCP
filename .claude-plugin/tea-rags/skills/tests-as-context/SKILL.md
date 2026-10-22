@@ -50,17 +50,16 @@ skills.
 Read prime digest from session context. Locate `## Signal thresholds — <lang>`
 section.
 
-Test corpus **present** if ≥1 `git.chunk.*` signal line shows a `test:` row with
-numeric thresholds, e.g.
+Test corpus **present** if ≥1 `git.chunk.*` row of that table has numbers (or
+`=src`) in its `test ≥` cell, e.g.
 
 ```
-- **git.chunk.commitCount**
-  - source: low ≤1 / typical ≤2 / high ≤3 / extreme >7
-  - test:   low ≤1 / typical ≤1 / high ≤2 / extreme >4
+| signal | bands | source ≥ | test ≥ |
+| git.chunk.commitCount | low/typical/high/extreme | 2 / 3 / 7 | 1 / 2 / 4 |
 ```
 
-Test corpus **absent** if every `git.chunk.*` line shows `test: —` or no `test:`
-row at all.
+Test corpus **absent** if every `git.chunk.*` row shows `—` in `test ≥`, or the
+table has no `git.chunk.*` row at all.
 
 **Addressing (every recipe below):** `project: <alias>` +
 `path: <your working directory>` — search-cascade "Addressing the Codebase".
