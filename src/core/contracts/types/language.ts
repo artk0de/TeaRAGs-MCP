@@ -1122,6 +1122,16 @@ export interface RustExternalMember {
   readonly stable: boolean;
 }
 
+/** A module-level `pub fn` of an external crate (bd s3i8m.7 T-A1). */
+export interface RustExternalFunction {
+  /** Absent when the declared return is not a nominal or tuple shape. `genericParameters` is always empty: no receiver binds them. */
+  readonly returns?: RustExternalTypeExpr;
+  /** The function's own type parameters — the call site never spells them in a way the table reads. */
+  readonly functionGenericParameters: readonly string[];
+  /** `#[stable]` in a std crate; always true for a dependency crate. */
+  readonly stable: boolean;
+}
+
 /** Every fact the table holds about one canonical external type. */
 export interface RustExternalTypeSignatures {
   /** `"ambiguous"`: cfg arms / impls declare the member with different returns. */
@@ -1144,6 +1154,13 @@ export interface RustExternalSignatureTableData {
   readonly paths: Readonly<Record<string, string>>;
   readonly types: Readonly<Record<string, RustExternalTypeSignatures>>;
   readonly aliases: Readonly<Record<string, RustExternalTypeExpr>>;
+  /**
+   * The value namespace's `paths`: every public spelling of a free function →
+   * its canonical path. Absent on a table built without the function namespace.
+   */
+  readonly functionPaths?: Readonly<Record<string, string>>;
+  /** Canonical path → the function; `"ambiguous"` when cfg arms declare different returns. */
+  readonly functions?: Readonly<Record<string, RustExternalFunction | "ambiguous">>;
 }
 
 /**
@@ -1161,6 +1178,13 @@ export interface RustExternalSignatureTable {
   traitImplDeclares: (typePath: string, member: string) => boolean;
   /** Public type alias expansion (`std::sync::LockResult` → `Result<T, PoisonError<T>>`). */
   alias: (typePath: string) => RustExternalTypeExpr | undefined;
+  /**
+   * Canonical path of a free function a spelling names from the caller's file
+   * (`channel` + `use std::sync::mpsc::channel;`, `mpsc::channel` + `use std::sync::mpsc;`).
+   * No prelude arm: the prelude exports no free function a receiver is typed from.
+   */
+  canonicalFunction: (spelling: string, importText: readonly string[]) => string | undefined;
+  freeFunction: (path: string) => RustExternalFunction | "ambiguous" | undefined;
   readonly identity: string;
 }
 

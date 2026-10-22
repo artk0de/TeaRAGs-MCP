@@ -6,6 +6,7 @@
 import {
   identifierEntry,
   type RustClosedAssoc,
+  type RustExternalFunction,
   type RustExternalMember,
   type RustExternalSignatureTable,
   type RustExternalSignatureTableData,
@@ -29,26 +30,22 @@ export class RustExternalSignatureLookup implements RustExternalSignatureTable {
    * and answers nothing; so does a spelling the table has no public path for.
    */
   canonicalType(spelling: string, importText: readonly string[]): string | undefined {
-    const direct = this.path(spelling);
-    if (direct !== undefined) return direct;
-    const [head, ...rest] = spelling.split("::");
-    const bindings = importText.flatMap((text) => rustImportBindings(text) ?? []).filter((b) => b.prefix === null);
-    for (const binding of bindings) {
-      if (binding.globImport || binding.localName !== head) continue;
-      const found = this.path([...rustUseTargetSegments(binding), ...rest].join("::"));
-      if (found !== undefined) return found;
-    }
-    for (const binding of bindings) {
-      if (!binding.globImport) continue;
-      const found = this.path([...binding.moduleSegments, spelling].join("::"));
-      if (found !== undefined) return found;
-    }
-    if (rest.length > 0) return undefined;
+    const imported = rustImportedPath(spelling, importText, (path) => this.path(path));
+    if (imported !== undefined || spelling.includes("::")) return imported;
     for (const prelude of STD_PRELUDE_MODULES) {
       const found = this.path(`${prelude}::${spelling}`);
       if (found !== undefined) return found;
     }
     return undefined;
+  }
+
+  /** `canonicalType` over the value namespace, without its prelude arm. */
+  canonicalFunction(spelling: string, importText: readonly string[]): string | undefined {
+    return rustImportedPath(spelling, importText, (path) => identifierEntry(this.data.functionPaths, path));
+  }
+
+  freeFunction(path: string): RustExternalFunction | "ambiguous" | undefined {
+    return identifierEntry(this.data.functions, path);
   }
 
   inherentMember(typePath: string, member: string): RustExternalMember | "ambiguous" | undefined {
@@ -76,4 +73,30 @@ export class RustExternalSignatureLookup implements RustExternalSignatureTable {
   private path(spelling: string): string | undefined {
     return identifierEntry(this.data.paths, spelling);
   }
+}
+
+/**
+ * The canonical path a spelling names through one namespace's `paths`: the
+ * spelling itself, a head bound by a non-glob external `use`, then a glob.
+ */
+function rustImportedPath(
+  spelling: string,
+  importText: readonly string[],
+  path: (spelling: string) => string | undefined,
+): string | undefined {
+  const direct = path(spelling);
+  if (direct !== undefined) return direct;
+  const [head, ...rest] = spelling.split("::");
+  const bindings = importText.flatMap((text) => rustImportBindings(text) ?? []).filter((b) => b.prefix === null);
+  for (const binding of bindings) {
+    if (binding.globImport || binding.localName !== head) continue;
+    const found = path([...rustUseTargetSegments(binding), ...rest].join("::"));
+    if (found !== undefined) return found;
+  }
+  for (const binding of bindings) {
+    if (!binding.globImport) continue;
+    const found = path([...binding.moduleSegments, spelling].join("::"));
+    if (found !== undefined) return found;
+  }
+  return undefined;
 }

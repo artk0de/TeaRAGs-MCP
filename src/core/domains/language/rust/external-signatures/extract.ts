@@ -9,16 +9,17 @@
  * whole module graph is known: a return type spelled `LockResult<MutexGuard<'_, T>>`
  * in `std::sync::poison::mutex` becomes `std::sync::LockResult<std::sync::MutexGuard<T>>`.
  */
-import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
-import type {
-  AstNode,
-  RustClosedAssoc,
-  RustExternalMember,
-  RustExternalSignatureTableData,
-  RustExternalSourceFile,
-  RustExternalTypeExpr,
-  RustExternalTypeSignatures,
-  TypeRef,
+import {
+  createIdentifierRecord,
+  type AstNode,
+  type RustClosedAssoc,
+  type RustExternalFunction,
+  type RustExternalMember,
+  type RustExternalSignatureTableData,
+  type RustExternalSourceFile,
+  type RustExternalTypeExpr,
+  type RustExternalTypeSignatures,
+  type TypeRef,
 } from "../../../../contracts/index.js";
 import { rustImportBindings } from "../resolver/strategies/shared.js";
 import { rustStdPrimitiveTypes } from "../vocabulary/std-prelude.js";
@@ -77,7 +78,16 @@ interface RawAlias {
   readonly type: TypeRef | undefined;
 }
 
+interface RawFreeFn {
+  readonly scope: RustModuleScope;
+  readonly name: string;
+  readonly stable: boolean;
+  readonly returns: TypeRef | undefined;
+  readonly functionGenericParameters: readonly string[];
+}
+
 interface RawItems {
+  readonly functions: RawFreeFn[];
   readonly impls: RawImpl[];
   readonly structs: RawStruct[];
   readonly aliases: RawAlias[];
@@ -88,14 +98,20 @@ export function extractRustExternalSignatures(
   parse: RustSourceParser,
 ): RustExternalSignatureTableData {
   const graph = new RustCrateGraph();
-  const raw: RawItems = { impls: [], structs: [], aliases: [] };
+  const raw: RawItems = { functions: [], impls: [], structs: [], aliases: [] };
   for (const file of files) {
     const segments = rustModuleSegmentsOf(file.relPath);
     if (segments === undefined) continue;
     collectItems(parse(file.source), graph.module(file.crate, segments), graph, raw);
   }
-  const paths = graph.assignCanonicalPaths();
-  return { crates: graph.crates(), paths, ...resolveSignatures(graph, raw) };
+  const { paths, functionPaths } = graph.assignCanonicalPaths();
+  return {
+    crates: graph.crates(),
+    paths,
+    ...resolveSignatures(graph, raw),
+    functionPaths,
+    functions: resolveFunctions(graph, raw),
+  };
 }
 
 /** `lib.rs` → crate root, `a/mod.rs` and `a.rs` → `a`; tests/benches/examples and binaries → not a library module. */
@@ -172,6 +188,20 @@ function collectItem(
       if (name !== undefined) graph.declareExternCrate(scope.crate, name, alias ?? name);
       return;
     }
+    case "function_item":
+      if (name === undefined) return;
+      // Only `pub` fns can be reached from outside, but a private one still shadows a glob import in its module.
+      scope.declareValue(name, isPub(node));
+      if (isPub(node)) {
+        raw.functions.push({
+          scope,
+          name,
+          stable: isStable(scope, attributes),
+          returns: rustSignatureTypeRef(node.childForFieldName("return_type"), UNIT),
+          functionGenericParameters: rustGenericParameters(node),
+        });
+      }
+      return;
     case "impl_item": {
       const implementation = collectImpl(node, scope);
       if (implementation !== undefined) raw.impls.push(implementation);
@@ -241,7 +271,7 @@ function collectImpl(node: AstNode, scope: RustModuleScope): RawImpl | undefined
       fns.push({
         name,
         pub: isPub(member),
-        stable: !RUST_STABILITY_CRATES.has(scope.crate) || memberAttributes.some((attribute) => STABLE.test(attribute)),
+        stable: isStable(scope, memberAttributes),
         selfKind: rustSelfKindOf(member),
         returns: rustSignatureTypeRef(member.childForFieldName("return_type"), UNIT),
         methodGenericParameters: rustGenericParameters(member),
@@ -271,6 +301,11 @@ function rustSignatureTypeRef(node: AstNode | null, absent?: TypeRef): TypeRef |
   if (node.type === "primitive_type") return { form: "instance", name: node.text };
   if (node.type === "unit_type") return UNIT;
   return rustDeclaredTypeRef(node);
+}
+
+/** `#[stable]` in a std crate; a dependency crate has no stability attributes, so every item counts as stable. */
+function isStable(scope: RustModuleScope, attributes: readonly string[]): boolean {
+  return !RUST_STABILITY_CRATES.has(scope.crate) || attributes.some((attribute) => STABLE.test(attribute));
 }
 
 function rustSelfKindOf(fn: AstNode): RustExternalMember["selfKind"] {
@@ -368,12 +403,7 @@ function resolveSignatures(
 
   for (const [owner, byName] of members) {
     const inherent = signaturesOf(owner).inherent as Record<string, RustExternalMember | "ambiguous">;
-    for (const [name, candidates] of byName) {
-      const preferred = candidates.some((member) => member.stable)
-        ? candidates.filter((member) => member.stable)
-        : candidates;
-      inherent[name] = singleOrAmbiguous(preferred, (member) => JSON.stringify(member.returns ?? null));
-    }
+    for (const [name, candidates] of byName) inherent[name] = stableSingleOrAmbiguous(candidates);
   }
   for (const [owner, byKey] of associated) {
     const target = signaturesOf(owner).associated as Partial<
@@ -382,6 +412,37 @@ function resolveSignatures(
     for (const [key, candidates] of byKey) target[key] = singleOrAmbiguous(candidates, (expr) => JSON.stringify(expr));
   }
   return { types, aliases };
+}
+
+/** Every public free function under its canonical path; cfg arms of one path with different returns are ambiguous. */
+function resolveFunctions(graph: RustCrateGraph, raw: RawItems): Record<string, RustExternalFunction | "ambiguous"> {
+  const byPath = new Map<string, RustExternalFunction[]>();
+  for (const fn of raw.functions) {
+    const publicPath = fn.scope.values.get(fn.name)?.publicPath;
+    if (publicPath === undefined) continue;
+    const returns = fn.returns && canonicalTypeRef(fn.returns, fn.scope, graph, new Set(fn.functionGenericParameters));
+    const rustExternalFunction: RustExternalFunction = {
+      ...(returns === undefined ? {} : { returns: { type: returns, genericParameters: [] } }),
+      functionGenericParameters: fn.functionGenericParameters,
+      stable: fn.stable,
+    };
+    const pathCandidates = byPath.get(publicPath);
+    if (pathCandidates === undefined) byPath.set(publicPath, [rustExternalFunction]);
+    else pathCandidates.push(rustExternalFunction);
+  }
+  const functions = createIdentifierRecord<RustExternalFunction | "ambiguous">();
+  for (const [path, candidates] of byPath) functions[path] = stableSingleOrAmbiguous(candidates);
+  return functions;
+}
+
+/** The stable candidates when any is stable, then one answer or `"ambiguous"` by declared return. */
+function stableSingleOrAmbiguous<V extends { readonly stable: boolean; readonly returns?: RustExternalTypeExpr }>(
+  candidates: readonly V[],
+): V | "ambiguous" {
+  const preferred = candidates.some((candidate) => candidate.stable)
+    ? candidates.filter((candidate) => candidate.stable)
+    : candidates;
+  return singleOrAmbiguous(preferred, (candidate) => JSON.stringify(candidate.returns ?? null));
 }
 
 /** The table key of an impl's self type: a publicly reachable type, or a primitive (`impl str`). */
@@ -399,7 +460,15 @@ function canonicalTypeRef(
   graph: RustCrateGraph,
   generics: ReadonlySet<string>,
 ): TypeRef | undefined {
-  if (recv.form === "tuple") return recv.elements.length === 0 ? recv : undefined;
+  if (recv.form === "tuple") {
+    const elements: TypeRef[] = [];
+    for (const element of recv.elements) {
+      const resolved = canonicalTypeRef(element, scope, graph, generics);
+      if (resolved === undefined) return undefined;
+      elements.push(resolved);
+    }
+    return { form: "tuple", elements };
+  }
   if (recv.form !== "instance") return undefined;
   const keepsSpelling = generics.has(recv.name) || recv.name === "Self" || rustStdPrimitiveTypes.has(recv.name);
   const name = keepsSpelling ? recv.name : graph.resolveTypeSpelling(recv.name, scope);

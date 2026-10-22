@@ -123,6 +123,9 @@ export const capability: LanguageCapability = {
   //   reads the closed std-trait return model: `to_string` → `String`, `cmp` →
   //   `Ordering`, `eq` → `bool`, `clone` → `Self` when no deref target could
   //   take it, `Type::default()` → the type.
+  // - bd tea-rags-mcp-s3i8m.7 T-A1 — the external signature table (extractor 2)
+  //   holds free functions in a value namespace apart from types (`mpsc::channel`
+  //   → `(Sender<T>, Receiver<T>)`) and tuple returns; nothing reads them yet.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

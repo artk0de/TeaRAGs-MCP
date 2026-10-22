@@ -203,6 +203,166 @@ describe("extractRustExternalSignatures — mini sysroot", () => {
   });
 });
 
+const tuple = (...elements: object[]) => ({ form: "tuple", elements });
+
+describe("extractRustExternalSignatures — free functions (bd s3i8m.7 T-A1)", () => {
+  let data: RustExternalSignatureTableData;
+  let table: RustExternalSignatureLookup;
+
+  beforeAll(() => {
+    data = extractRustExternalSignatures(sysrootSources(LIBRARY), parse);
+    table = new RustExternalSignatureLookup(data, "fixture");
+  });
+
+  it("extracts a pub fn under its canonical path with a tuple return in canonical element paths", () => {
+    expect(data.functionPaths?.["std::sync::mpsc::channel"]).toBe("std::sync::mpsc::channel");
+    expect(table.freeFunction("std::sync::mpsc::channel")).toEqual({
+      returns: {
+        type: tuple(
+          instance("std::sync::mpsc::Sender", instance("T")),
+          instance("std::sync::mpsc::Receiver", instance("T")),
+        ),
+        genericParameters: [],
+      },
+      functionGenericParameters: ["T"],
+      stable: true,
+    });
+    expect(table.freeFunction("std::sync::mpsc::sync_channel")).toMatchObject({
+      returns: {
+        type: tuple(
+          instance("std::sync::mpsc::SyncSender", instance("T")),
+          instance("std::sync::mpsc::Receiver", instance("T")),
+        ),
+      },
+    });
+  });
+
+  it("leaves non-pub and cfg(test) fns out; a std fn without #[stable] is unstable", () => {
+    expect(table.freeFunction("std::sync::mpsc::private_channel")).toBeUndefined();
+    expect(table.freeFunction("std::sync::mpsc::test_channel")).toBeUndefined();
+    expect(Object.keys(data.functionPaths ?? {}).filter((path) => /private|test_channel/.test(path))).toEqual([]);
+    expect(table.freeFunction("std::sync::mpsc::preview_channel")).toMatchObject({ stable: false });
+  });
+
+  it("stores an inherent member whose return is a tuple (was dropped before)", () => {
+    expect(table.inherentMember("std::sync::mpsc::Receiver", "split")).toEqual({
+      returns: {
+        type: tuple(
+          instance("std::sync::mpsc::Sender", instance("T")),
+          instance("std::sync::mpsc::Receiver", instance("T")),
+        ),
+        genericParameters: ["T"],
+      },
+      methodGenericParameters: [],
+      selfKind: "ref",
+      stable: true,
+    });
+  });
+
+  it("canonicalizes a caller's function spelling through its use declarations, without a prelude arm", () => {
+    expect(table.canonicalFunction("channel", ["use std::sync::mpsc::channel;"])).toBe("std::sync::mpsc::channel");
+    expect(table.canonicalFunction("mpsc::sync_channel", ["use std::sync::mpsc;"])).toBe(
+      "std::sync::mpsc::sync_channel",
+    );
+    expect(table.canonicalFunction("make", ["use std::sync::mpsc::{channel as make};"])).toBe(
+      "std::sync::mpsc::channel",
+    );
+    expect(table.canonicalFunction("channel", ["use std::sync::mpsc::*;"])).toBe("std::sync::mpsc::channel");
+    expect(table.canonicalFunction("std::sync::mpsc::channel", [])).toBe("std::sync::mpsc::channel");
+    expect(table.canonicalFunction("channel", [])).toBeUndefined();
+    expect(table.canonicalFunction("channel", ["use crate::sync::mpsc::channel;"])).toBeUndefined();
+    expect(table.canonicalFunction("Mutex", ["use std::sync::Mutex;"])).toBeUndefined();
+  });
+
+  it("answers no function from a table without the function namespace, nor from Object.prototype", () => {
+    const bare = new RustExternalSignatureLookup({ crates: [], paths: {}, types: {}, aliases: {} }, "bare");
+    expect(bare.freeFunction("std::sync::mpsc::channel")).toBeUndefined();
+    expect(bare.canonicalFunction("std::sync::mpsc::channel", [])).toBeUndefined();
+    const roundTripped = new RustExternalSignatureLookup(JSON.parse(JSON.stringify(data)), "fixture");
+    expect(roundTripped.freeFunction("constructor")).toBeUndefined();
+    expect(roundTripped.canonicalFunction("constructor", [])).toBeUndefined();
+    expect(roundTripped.freeFunction("std::sync::mpsc::channel")).toEqual(
+      table.freeFunction("std::sync::mpsc::channel"),
+    );
+  });
+});
+
+describe("extractRustExternalSignatures — the value namespace beside the type namespace", () => {
+  const KRATE: RustExternalSourceFile[] = [
+    {
+      crate: "krate",
+      relPath: "lib.rs",
+      source: [
+        "pub mod spawn;",
+        "pub use spawn::spawn;",
+        "pub mod channel;",
+        "pub use crate::channel::{bounded, unbounded};",
+        "pub struct Handle;",
+        "#[cfg(unix)]",
+        "pub fn pick() -> Handle { loop {} }",
+        "#[cfg(windows)]",
+        "pub fn pick() -> u32 { 0 }",
+        "#[cfg(unix)]",
+        "pub fn same() -> Handle { loop {} }",
+        "#[cfg(windows)]",
+        "pub fn same() -> Handle { loop {} }",
+      ].join("\n"),
+    },
+    {
+      crate: "krate",
+      relPath: "spawn.rs",
+      source: "pub struct JoinHandle;\npub fn spawn() -> JoinHandle { loop {} }\n",
+    },
+    {
+      crate: "krate",
+      relPath: "channel.rs",
+      source: [
+        "pub struct Sender;",
+        "pub fn bounded(cap: usize) -> (Sender, Sender) { loop {} }",
+        "pub fn unbounded() -> (Sender, Sender) { loop {} }",
+      ].join("\n"),
+    },
+  ];
+  let data: RustExternalSignatureTableData;
+  let table: RustExternalSignatureLookup;
+
+  beforeAll(() => {
+    data = extractRustExternalSignatures(KRATE, parse);
+    table = new RustExternalSignatureLookup(data, "krate");
+  });
+
+  it("binds `mod spawn; pub use spawn::spawn;` in both namespaces without a collision", () => {
+    expect(data.functionPaths?.["krate::spawn"]).toBe("krate::spawn");
+    expect(data.functionPaths?.["krate::spawn::spawn"]).toBe("krate::spawn");
+    expect(table.freeFunction("krate::spawn")).toMatchObject({
+      returns: { type: instance("krate::spawn::JoinHandle") },
+      stable: true,
+    });
+    expect(data.paths["krate::spawn::JoinHandle"]).toBe("krate::spawn::JoinHandle");
+    expect(data.paths["krate::spawn"]).toBeUndefined();
+    expect(table.canonicalType("spawn", ["use krate::spawn;"])).toBeUndefined();
+  });
+
+  it("makes a re-exported fn canonical at its shortest public path", () => {
+    expect(data.functionPaths?.["krate::channel::unbounded"]).toBe("krate::unbounded");
+    expect(table.canonicalFunction("unbounded", ["use krate::unbounded;"])).toBe("krate::unbounded");
+    expect(table.canonicalFunction("channel::bounded", ["use krate::channel;"])).toBe("krate::bounded");
+    expect(table.freeFunction("krate::unbounded")).toEqual({
+      returns: {
+        type: tuple(instance("krate::channel::Sender"), instance("krate::channel::Sender")),
+        genericParameters: [],
+      },
+      functionGenericParameters: [],
+      stable: true,
+    });
+  });
+
+  it("answers ambiguous for cfg arms with different returns and the agreed return otherwise", () => {
+    expect(table.freeFunction("krate::pick")).toBe("ambiguous");
+    expect(table.freeFunction("krate::same")).toMatchObject({ returns: { type: instance("krate::Handle") } });
+  });
+});
+
 describe("extractRustExternalSignatures — a registry crate alone", () => {
   let table: RustExternalSignatureLookup;
   let data: RustExternalSignatureTableData;
