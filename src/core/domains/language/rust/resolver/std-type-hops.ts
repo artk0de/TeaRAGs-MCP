@@ -155,3 +155,253 @@ export function rustStdTerminalTargetsExternal(recv: TypeRef, member: string, ct
   );
   return !projectImpl;
 }
+
+/*
+ * Std collections and iterators (bd tea-rags-mcp-s3i8m Task 1b). The closed
+ * tables below type what a loop, an iterator adapter's closure, or an element
+ * accessor hands out — every other member stays untyped.
+ */
+
+/** Collections whose element is their first type argument. `Option` iterates its payload. */
+const RUST_STD_SEQUENCES: ReadonlySet<string> = new Set([
+  "Vec",
+  "VecDeque",
+  "HashSet",
+  "BTreeSet",
+  "BinaryHeap",
+  "LinkedList",
+  "Option",
+]);
+/** Maps: `K` keys, `V` values, `(K, V)` entries. */
+const RUST_STD_MAPS: ReadonlySet<string> = new Set(["HashMap", "BTreeMap"]);
+/** Members turning a collection into an iterator over its elements (a map's entries). */
+const RUST_ITERATOR_SOURCES: ReadonlySet<string> = new Set(["iter", "iter_mut", "into_iter", "drain"]);
+const RUST_MAP_VALUE_SOURCES: ReadonlySet<string> = new Set(["values", "values_mut", "into_values"]);
+const RUST_MAP_KEY_SOURCES: ReadonlySet<string> = new Set(["keys", "into_keys"]);
+/** Iterator adapters whose item is their input's item. */
+const RUST_PASS_THROUGH_ADAPTERS: ReadonlySet<string> = new Set([
+  "iter",
+  "iter_mut",
+  "into_iter",
+  "rev",
+  "skip",
+  "take",
+  "filter",
+  "cloned",
+  "copied",
+  "peekable",
+  "chain",
+  "skip_while",
+  "take_while",
+  "step_by",
+  "fuse",
+  "inspect",
+]);
+/** Every member {@link rustStdElementType} reads in an iterator chain. */
+export const RUST_ITERATOR_CHAIN_MEMBERS: ReadonlySet<string> = new Set([
+  ...RUST_ITERATOR_SOURCES,
+  ...RUST_MAP_VALUE_SOURCES,
+  ...RUST_MAP_KEY_SOURCES,
+  ...RUST_PASS_THROUGH_ADAPTERS,
+  "enumerate",
+]);
+/** Element accessors answering `Option<element>`, per sequence. */
+const RUST_SEQUENCE_ACCESSORS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["Vec", new Set(["pop", "first", "last", "get", "get_mut", "first_mut", "last_mut"])],
+  ["slice", new Set(["first", "last", "get", "get_mut", "first_mut", "last_mut"])],
+  ["VecDeque", new Set(["pop_front", "pop_back", "front", "back", "front_mut", "back_mut", "get", "get_mut"])],
+  ["BinaryHeap", new Set(["pop", "peek"])],
+  ["HashSet", new Set(["get", "take"])],
+  ["BTreeSet", new Set(["get", "take", "first", "last", "pop_first", "pop_last"])],
+  ["Option", new Set(["take", "as_ref", "as_mut", "cloned", "copied", "replace"])],
+]);
+/** Map members answering `Option<V>`; `remove_entry` answers `Option<(K, V)>`. */
+const RUST_MAP_VALUE_ACCESSORS: ReadonlySet<string> = new Set(["get", "get_mut", "remove", "insert"]);
+
+/** The bare std name of a std type ref (`std::collections::HashMap` → `HashMap`), else `undefined`. */
+function rustStdShortName(recv: TypeRef): string | undefined {
+  if (recv.form !== "instance" || !isStdTypeRef(recv)) return undefined;
+  if (recv.name.includes("::") && !RUST_STD_ROOTS.has(recv.name.split("::")[0])) return undefined;
+  return recv.name.split("::").at(-1);
+}
+
+function rustOptionOf(element: TypeRef): TypeRef {
+  return { form: "instance", name: "Option", args: [element] };
+}
+
+/** A std smart pointer's target, a std container through any number of them. */
+function rustThroughSmartPointers(recv: TypeRef): TypeRef {
+  let current = recv;
+  for (let hop = 0; hop < 3; hop++) {
+    const name = rustStdShortName(current);
+    if (name === undefined || !RUST_STD_SMART_POINTERS.has(name)) return current;
+    if (current.form !== "instance" || current.args?.length !== 1) return current;
+    current = current.args[0];
+  }
+  return current;
+}
+
+/**
+ * `Option<element>` of a std element accessor (`stack.pop()`, `map.get(k)`,
+ * `map.insert(k, v)`, `opt.take()`), or `undefined` for any other member.
+ */
+export function rustStdAccessorReturnType(recv: TypeRef, member: string): TypeRef | undefined {
+  // `Clone::clone` answers `Self`, for every std type and a slice alike.
+  if (member === "clone" && (recv.form === "container" || rustStdShortName(recv) !== undefined)) return recv;
+  if (recv.form === "container") {
+    return RUST_SEQUENCE_ACCESSORS.get("slice")?.has(member) === true ? rustOptionOf(recv.element) : undefined;
+  }
+  const name = rustStdShortName(recv);
+  if (name === undefined || recv.form !== "instance") return undefined;
+  const { args: typeArguments } = recv;
+  if (RUST_STD_MAPS.has(name)) {
+    if (typeArguments?.length !== 2) return undefined;
+    if (member === "remove_entry") {
+      return rustOptionOf({ form: "tuple", elements: [typeArguments[0], typeArguments[1]] });
+    }
+    return RUST_MAP_VALUE_ACCESSORS.has(member) ? rustOptionOf(typeArguments[1]) : undefined;
+  }
+  if (RUST_SEQUENCE_ACCESSORS.get(name)?.has(member) !== true || typeArguments?.length !== 1) return undefined;
+  return rustOptionOf(typeArguments[0]);
+}
+
+/** What iterating `recv` directly yields: a sequence's element, a map's `(K, V)` entry. */
+function rustStdCollectionItem(recv: TypeRef): TypeRef | undefined {
+  const collection = rustThroughSmartPointers(recv);
+  if (collection.form === "container") return collection.element;
+  const name = rustStdShortName(collection);
+  if (name === undefined || collection.form !== "instance") return undefined;
+  const { args: typeArguments } = collection;
+  if (RUST_STD_SEQUENCES.has(name)) return typeArguments?.length === 1 ? typeArguments[0] : undefined;
+  if (RUST_STD_MAPS.has(name) && typeArguments?.length === 2) {
+    return { form: "tuple", elements: [typeArguments[0], typeArguments[1]] };
+  }
+  return undefined;
+}
+
+/**
+ * The item a std collection `recv` yields through the iterator chain
+ * `adapters` (`["iter", "enumerate"]`): sources (`iter`, `values`, `keys`,
+ * `drain`) open the iterator, pass-through adapters keep its item,
+ * `enumerate` pairs it with a `usize`. An empty chain iterates `recv` itself
+ * (`for x in vec`). Any other member, or a non-std receiver, is `undefined`.
+ */
+export function rustStdElementType(recv: TypeRef, adapters: readonly string[]): TypeRef | undefined {
+  let item: TypeRef | undefined;
+  for (const adapter of adapters) {
+    if (item === undefined) item = rustStdIteratorSourceItem(recv, adapter);
+    else if (adapter === "enumerate") item = { form: "tuple", elements: [{ form: "instance", name: "usize" }, item] };
+    else if (!RUST_PASS_THROUGH_ADAPTERS.has(adapter)) return undefined;
+    if (item === undefined) return undefined;
+  }
+  return item ?? rustStdCollectionItem(recv);
+}
+
+/** The item of the iterator `adapter` opens on the collection `recv`. */
+function rustStdIteratorSourceItem(recv: TypeRef, adapter: string): TypeRef | undefined {
+  if (RUST_ITERATOR_SOURCES.has(adapter)) return rustStdCollectionItem(recv);
+  const collection = rustThroughSmartPointers(recv);
+  const name = rustStdShortName(collection);
+  if (name === undefined || !RUST_STD_MAPS.has(name) || collection.form !== "instance") return undefined;
+  if (collection.args?.length !== 2) return undefined;
+  if (RUST_MAP_VALUE_SOURCES.has(adapter)) return collection.args[1];
+  return RUST_MAP_KEY_SOURCES.has(adapter) ? collection.args[0] : undefined;
+}
+
+/** A std collection's closure-taking members, and which closure parameter gets which item. */
+const RUST_SEQUENCE_CLOSURE_MEMBERS: ReadonlySet<string> = new Set([
+  "retain",
+  "retain_mut",
+  "sort_by",
+  "sort_by_key",
+  "sort_by_cached_key",
+  "sort_unstable_by",
+  "sort_unstable_by_key",
+  "dedup_by",
+  "dedup_by_key",
+]);
+/** Iterator adapters whose closure takes the item, keyed to the closure's argument position. */
+const RUST_ITERATOR_CLOSURE_ARGUMENT: ReadonlyMap<string, number> = new Map([
+  ...[
+    "map",
+    "filter",
+    "for_each",
+    "any",
+    "all",
+    "find",
+    "position",
+    "rposition",
+    "filter_map",
+    "flat_map",
+    "find_map",
+    "map_while",
+    "inspect",
+    "take_while",
+    "skip_while",
+    "max_by_key",
+    "min_by_key",
+    "max_by",
+    "min_by",
+    "partition",
+    "try_for_each",
+  ].map((adapter): [string, number] => [adapter, 0]),
+  ["fold", 1],
+  ["try_fold", 1],
+]);
+/** `Option` / `Result` combinators whose closure takes the `Ok`/`Some` payload, keyed to the closure's argument. */
+const RUST_PAYLOAD_COMBINATORS: ReadonlyMap<string, number> = new Map([
+  ["map", 0],
+  ["and_then", 0],
+  ["filter", 0],
+  ["inspect", 0],
+  ["is_some_and", 0],
+  ["is_none_or", 0],
+  ["is_ok_and", 0],
+  ["take_if", 0],
+  ["map_or", 1],
+  ["map_or_else", 1],
+]);
+/** `Result` combinators whose closure takes the `Err` payload, keyed to the closure's argument. */
+const RUST_ERROR_COMBINATORS: ReadonlyMap<string, number> = new Map([
+  ["map_err", 0],
+  ["or_else", 0],
+  ["inspect_err", 0],
+  ["is_err_and", 0],
+  ["unwrap_or_else", 0],
+  ["map_or_else", 0],
+]);
+
+/**
+ * The type of parameter `index` of the closure passed as argument `argument`
+ * to `adapter`, called on `recv` — a std iterator over `iteratorItem` when
+ * the receiver chain opened one (`vec.iter().map(|p| …)`), else the std
+ * value `recv` itself (`opt.map(|p| …)`, `vec.retain(|p| …)`). The `.map`
+ * spelling is settled by that receiver type, never by the member's name.
+ */
+export function rustStdClosureParamType(
+  recv: TypeRef,
+  iteratorItem: TypeRef | undefined,
+  adapter: string,
+  argument: number,
+  index: number,
+): TypeRef | undefined {
+  if (iteratorItem !== undefined) {
+    if (RUST_ITERATOR_CLOSURE_ARGUMENT.get(adapter) !== argument) return undefined;
+    if (adapter === "fold" || adapter === "try_fold") return index === 1 ? iteratorItem : undefined;
+    return adapter === "max_by" || adapter === "min_by" || index === 0 ? iteratorItem : undefined;
+  }
+  const name = rustStdShortName(recv);
+  if (name === undefined || recv.form !== "instance") return undefined;
+  const { args: typeArguments } = recv;
+  if (name === "Option" || name === "Result") {
+    if (typeArguments?.length !== (name === "Option" ? 1 : 2) || index !== 0) return undefined;
+    if (RUST_PAYLOAD_COMBINATORS.get(adapter) === argument) return typeArguments[0];
+    return name === "Result" && RUST_ERROR_COMBINATORS.get(adapter) === argument ? typeArguments[1] : undefined;
+  }
+  if (argument !== 0) return undefined;
+  if (RUST_STD_MAPS.has(name) && adapter === "retain" && typeArguments?.length === 2) return typeArguments[index];
+  if (!RUST_STD_SEQUENCES.has(name) || name === "Option" || !RUST_SEQUENCE_CLOSURE_MEMBERS.has(adapter)) {
+    return undefined;
+  }
+  return typeArguments?.length === 1 && (index === 0 || adapter.endsWith("_by")) ? typeArguments[0] : undefined;
+}

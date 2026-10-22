@@ -4,6 +4,7 @@ import { MemberReturnTypeResolver, type NominalTypeRef } from "../../kernel/inde
 import { rustCrateRootOf, rustCrateTypeMembers, rustCrateUniqueType } from "./rust-crate-scope.js";
 import {
   rustNameBoundByExternalImport,
+  rustStdAccessorReturnType,
   rustStdSmartPointerTarget,
   rustStdTypeRef,
   rustStdUnwrapType,
@@ -157,6 +158,10 @@ export function rustDeclaredMemberReturnType(
   // its target. A placed project type never matches either.
   const unwrapped = rustStdUnwrapType(nominalType, member);
   if (unwrapped !== undefined) return unwrapped;
+  // A std element accessor (`stack.pop()`, `map.insert(k, v)`, `opt.take()`)
+  // answers `Option<element>` (bd tea-rags-mcp-s3i8m Task 1b).
+  const accessed = rustStdAccessorReturnType(nominalType, member);
+  if (accessed !== undefined) return accessed;
   const pointee = rustStdSmartPointerTarget(nominalType, member);
   if (pointee !== undefined) return rustDeclaredMemberReturnType(pointee, member, ctx);
   const owner = resolveRustNominalType(nominalType, ctx);

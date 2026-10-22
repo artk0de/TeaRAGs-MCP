@@ -5,21 +5,28 @@ import { resolveRustNominalType } from "./declared-return-type.js";
 import { rustCallerCrateUniqueType } from "./rust-crate-scope.js";
 import { rustDeclaredTypeIsForeign, rustStdTypeRef } from "./std-type-hops.js";
 
-/** The placed owner, its single struct declaration and the declared head of its field `member`. */
-function rustPlacedField(recv: TypeRef, member: string, ctx: CallContext) {
+/**
+ * The placed owner, its single declaration and the declared head of its field
+ * `member`: a struct's field, or — with `variant` — an enum variant's payload
+ * field, whose channels the enum's own fact keys `<Variant>::<field>`.
+ */
+function rustPlacedField(recv: TypeRef, member: string, ctx: CallContext, variant?: string) {
   if (recv.form !== "instance" || !recv.name.includes(".rs::")) return undefined;
   const owner = resolveRustNominalType(recv, ctx);
   if (owner === undefined) return undefined;
   const boundary = owner.name.indexOf(".rs::") + 3;
   const ownerFile = owner.name.slice(0, boundary);
   const ownerId = owner.name.slice(boundary + 2);
+  const kind = variant === undefined ? "class" : "enum";
   const declarations = ctx.typeDeclarations?.[ownerFile]?.filter(
-    (fact) => fact.typeId === ownerId && fact.symbolKind === "class" && !fact.reopens,
+    (fact) => fact.typeId === ownerId && fact.symbolKind === kind && !fact.reopens,
   );
   if (declarations?.length !== 1) return undefined;
-  const field = identifierEntry(identifierEntry(ctx.classFieldTypesByClassKey, owner.name), member);
+  const fieldsKey = variant === undefined ? owner.name : `${owner.name}::${variant}`;
+  const field = identifierEntry(identifierEntry(ctx.classFieldTypesByClassKey, fieldsKey), member);
   if (field === undefined) return undefined;
-  return { owner, ownerFile, ownerId, declaration: declarations[0], field };
+  const channelKey = variant === undefined ? member : `${variant}::${member}`;
+  return { owner, ownerFile, ownerId, declaration: declarations[0], field, channelKey };
 }
 
 /**
@@ -39,9 +46,26 @@ export function rustDeclaredFieldIsForeign(recv: TypeRef, member: string, ctx: C
 
 /** Read only the placed owner's explicitly declared named field, never a short-name field map. */
 export function rustDeclaredFieldType(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined {
-  const placed = rustPlacedField(recv, member, ctx);
+  return rustPlacedFieldType(rustPlacedField(recv, member, ctx), ctx);
+}
+
+/**
+ * The payload field `member` (`"0"`, `"1"`, … or a named field) of the placed
+ * enum `recv`'s variant `variant`, generic parameters substituted from
+ * `recv`'s own type arguments (bd tea-rags-mcp-s3i8m Task 1b).
+ */
+export function rustDeclaredVariantFieldType(
+  recv: TypeRef,
+  variant: string,
+  member: string,
+  ctx: CallContext,
+): TypeRef | undefined {
+  return rustPlacedFieldType(rustPlacedField(recv, member, ctx, variant), ctx);
+}
+
+function rustPlacedFieldType(placed: ReturnType<typeof rustPlacedField>, ctx: CallContext): TypeRef | undefined {
   if (placed === undefined) return undefined;
-  const { owner, ownerFile, ownerId, declaration, field } = placed;
+  const { owner, ownerFile, ownerId, declaration, field, channelKey: member } = placed;
   const substitute = (name: string): TypeRef | undefined => {
     const parameter = declaration.genericParameters?.indexOf(name) ?? -1;
     if (parameter >= 0) {
@@ -85,8 +109,10 @@ export function rustLexicalSelfType(ctx: CallContext): TypeRef | undefined {
   if (member.includes(".") || member.includes(":")) return undefined;
   const ownerId = symbolId.slice(0, hash);
   const fileDeclarations = ctx.typeDeclarations?.[ctx.callerFile];
+  // An enum's impl has a `self` too: `match self { Self::A(w) => … }` folds
+  // the variant payload off it (bd tea-rags-mcp-s3i8m Task 1b).
   const declarations = fileDeclarations?.filter(
-    (fact) => fact.typeId === ownerId && fact.symbolKind === "class" && !fact.reopens,
+    (fact) => fact.typeId === ownerId && (fact.symbolKind === "class" || fact.symbolKind === "enum") && !fact.reopens,
   );
   if (!ctx.symbolTable.lookup(symbolId).some((def) => def.relPath === ctx.callerFile && def.symbolId === symbolId)) {
     return undefined;

@@ -37,7 +37,7 @@ import type {
 import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../associated-constructor.js";
 import { collectRustCallResultBindings } from "./call-result-bindings.js";
-import { rustDeclaredStructFields } from "./field-types.js";
+import { rustDeclaredEnumVariantFields, rustDeclaredStructFields } from "./field-types.js";
 import { rustNameOf } from "./name-of.js";
 import { collectRustPatternBindings } from "./pattern-bindings.js";
 import { collectRustReturnTypes, rustDeclaredTypeRef } from "./return-types.js";
@@ -155,6 +155,9 @@ function collectRustDeclarationReadings(root: AstNode, relPath: string): RustDec
         typeDeclarations.push(fact);
         const { fields } = rustDeclaredStructFields(node, fact.genericParameters ?? []);
         if (Object.keys(fields).length > 0) classFieldTypesByClassKey[`${relPath}::${fact.typeId}`] = fields;
+        for (const [variant, declared] of rustDeclaredEnumVariantFields(node, fact.genericParameters ?? [])) {
+          classFieldTypesByClassKey[`${relPath}::${fact.typeId}::${variant}`] = declared.fields;
+        }
       }
     }
     const named = rustNameOf(node);

@@ -10,12 +10,45 @@ import { rustDeclaredTypeRef } from "./return-types.js";
  * is never guessed (bd tea-rags-mcp-2g2og.24).
  */
 export function rustDeclaredStructFields(node: AstNode, genericParameters: readonly string[]) {
+  return rustDeclaredFields(node.type === "struct_item" ? rustStructFieldNodes(node) : [], genericParameters);
+}
+
+/**
+ * An enum's variant payloads, per variant name (bd tea-rags-mcp-s3i8m Task
+ * 1b): `A(T)` → field `0`, `B { peer: P }` → field `peer`, recorded exactly
+ * like struct fields so a pattern `Enum::A(w)` folds to the payload type. A
+ * unit variant records nothing; a variant name repeated is dropped.
+ */
+export function rustDeclaredEnumVariantFields(
+  node: AstNode,
+  genericParameters: readonly string[],
+): Map<string, ReturnType<typeof rustDeclaredFields>> {
+  const variants = new Map<string, ReturnType<typeof rustDeclaredFields>>();
+  if (node.type !== "enum_item") return variants;
+  const repeated = new Set<string>();
+  for (const variant of node.childForFieldName("body")?.namedChildren ?? []) {
+    const name = variant.type === "enum_variant" ? variant.childForFieldName("name")?.text : undefined;
+    if (name === undefined) continue;
+    if (variants.has(name) || repeated.has(name)) {
+      variants.delete(name);
+      repeated.add(name);
+      continue;
+    }
+    const payloadFields = rustDeclaredFields(rustStructFieldNodes(variant), genericParameters);
+    if (Object.keys(payloadFields.fields).length > 0) variants.set(name, payloadFields);
+  }
+  return variants;
+}
+
+function rustDeclaredFields(
+  fieldNodes: readonly { name: string; typeNode: AstNode | null }[],
+  genericParameters: readonly string[],
+) {
   const fields = createIdentifierRecord<string>();
   const genericFieldParameters = createIdentifierRecord<string>();
   const fieldTypeArguments = createIdentifierRecord<readonly (string | null)[]>();
-  if (node.type !== "struct_item") return { fields, genericFieldParameters, fieldTypeArguments };
   const seen = new Set<string>();
-  for (const { name, typeNode } of rustStructFieldNodes(node)) {
+  for (const { name, typeNode } of fieldNodes) {
     if (seen.has(name)) {
       delete fields[name];
       delete genericFieldParameters[name];
@@ -60,7 +93,7 @@ function rustGenericHead(typeNode: AstNode | null): { name: string; argumentCoun
   return { name: head.name, argumentCount };
 }
 
-/** Each field's access name and declared type node — named fields by name, tuple fields by position. */
+/** Each field's access name and declared type node — named fields by name, tuple fields by position (a struct or an enum variant). */
 function rustStructFieldNodes(node: AstNode): { name: string; typeNode: AstNode | null }[] {
   const body = node.childForFieldName("body");
   if (body?.type === "ordered_field_declaration_list") {

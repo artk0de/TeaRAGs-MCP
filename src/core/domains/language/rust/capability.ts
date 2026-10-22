@@ -61,6 +61,9 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m Task 1a — pattern-bound names (`if let`, match
   //   arms, `for`, closure params, destructuring `let`) record shadowing
   //   `patternProjection` bindings; tuple return types are recorded.
+  // - bd tea-rags-mcp-s3i8m Task 1b — enum variant payloads are recorded as
+  //   fields of `<Enum>::<Variant>` (positional `0`, `1`, … and named), their
+  //   type arguments on the enum's fact keyed `<Variant>::<field>`.
   // - bd tea-rags-mcp-s3i8m.8 — nested `pub use` trees record every leaf with
   //   its full source module (`pub use self::{peer::{find_peer}}`).
   // - bd tea-rags-mcp-s3i8m.4 (B1) — a `macro_rules!` records visibility:

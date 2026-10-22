@@ -34,7 +34,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { TypeDeclarationFact } from "../../../../contracts/types/codegraph-extraction.js";
-import { rustDeclaredStructFields } from "./field-types.js";
+import { rustDeclaredEnumVariantFields, rustDeclaredStructFields } from "./field-types.js";
 import { rustGenericParameters } from "./return-types.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
 
@@ -72,6 +72,16 @@ export function rustTypeDeclarationFactOf(node: AstNode, scope: readonly string[
   const conforms = node.type === "trait_item" ? rustSupertraitNames(node) : [];
   const genericParameters = rustGenericParameters(node);
   const { genericFieldParameters, fieldTypeArguments } = rustDeclaredStructFields(node, genericParameters);
+  // A variant payload's channels live on the enum's own fact, keyed
+  // `<Variant>::<field>` — the fact carries the generic parameters they name.
+  for (const [variant, declared] of rustDeclaredEnumVariantFields(node, genericParameters)) {
+    for (const [field, parameter] of Object.entries(declared.genericFieldParameters)) {
+      genericFieldParameters[`${variant}::${field}`] = parameter;
+    }
+    for (const [field, typeArguments] of Object.entries(declared.fieldTypeArguments)) {
+      fieldTypeArguments[`${variant}::${field}`] = typeArguments;
+    }
+  }
   return {
     typeId: [...scope, name].join("::"),
     symbolKind,
