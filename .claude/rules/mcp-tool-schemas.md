@@ -1,5 +1,7 @@
 ---
 paths:
+  - "src/core/api/tools/**"
+  - "tests/core/api/tools/**"
   - "src/mcp/tools/**"
   - "src/mcp/resources/**"
   - "src/core/api/internal/infra/schema-builder.ts"
@@ -64,6 +66,31 @@ invariant below broken in production. Workflow for editing a schema:
    OFF). Put before → after bytes in the commit body. An increase needs a reason
    in the commit.
 
+8. **Record arrays go out as column tables — through `columns.ts` only.** The
+   model pays for every repeated key (zn0fg: −25…−51% Claude tokens, accuracy
+   unchanged). Search tools: `results: tabulateRecords(response.results)`; text
+   tools: `formatMcpResponse(dto)` — compact JSON, `tabulateRecordArrays` over
+   the whole DTO. Never `JSON.stringify(x, null, 2)` into a tool answer, never a
+   hand-rolled table.
+   - **Threshold = 2 rows** (`MIN_TABLE_ROWS`). One row repeats every nested
+     prefix in its column names and costs MORE than the record (`find_symbol`
+     method +27% before the threshold). 0–1 → the records as they are.
+   - **Shape**: `{ columns, rows }`; dotted column = the record's path
+     (`payload.git.file.ageDays`), so guidance written for records still names
+     the field; `null` = absent; arrays stay cell values (not re-tabulated).
+   - **Schema**: an output schema declares `ColumnTable | Item[]` (the SDK
+     validates every answer); the table branch checks the frame only, so row
+     fields are pinned by a test that folds a REAL table back (`rowsOf` → item
+     schema).
+   - **Readers**: guidance says where to read (`column payload.X of row N`) in
+     the overview `## Response shape` — skills point there, not restate it.
+     Programmatic consumers fold tables back to records; they never index
+     `rows[i][k]` by a hard-coded column position.
+   - **Before shipping a new DTO**: measure its answer both ways with the Claude
+     tokenizer (`scripts/columnar-response-eval.ts` arms, or a
+     `claude -p --model haiku` usage delta) — prose / markdown answers do not
+     tabulate (`search_code`, `get_index_status`, prime: −5…−11% only).
+
 ## Checklist before commit
 
 - [ ] every new/changed param is applied by the handler in every composition
@@ -73,6 +100,8 @@ invariant below broken in production. Workflow for editing a schema:
 - [ ] output schema parsed against a real result in a test
 - [ ] no mode-dependent shape at one payload path
 - [ ] `tools/list` bytes before → after in the commit body
+- [ ] record arrays in a tool answer go through `tabulateRecords` /
+      `formatMcpResponse`; schema = `ColumnTable | Item[]`
 - [ ] `.claude-plugin/**` touched → plugin version bumped
       (`plugin-versioning.md`); rule corpus grew → `inject-rules.sh --count` vs
       declared `--parts`

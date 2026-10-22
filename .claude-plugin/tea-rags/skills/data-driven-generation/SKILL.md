@@ -49,9 +49,10 @@ nothing.
 
 Labels live in `rankingOverlay.file.<signal>` and
 `rankingOverlay.chunk.<signal>`. Each labeled value:
-`{ value: N, label: "high" }`. Only fields in the preset's `overlayMask` are
-labelled — choose the preset by the labels you need; raw values under
-`payload.git.*` are never labelled.
+`{ value: N, label: "high" }` — in a result table (2+ rows) the columns
+`rankingOverlay.chunk.<signal>.value` / `.label`. Only fields in the preset's
+`overlayMask` are labelled — choose the preset by the labels you need; raw
+values under `payload.git.*` are never labelled.
 
 For label definitions: `tea-rags://schema/signal-labels`. For thresholds:
 `get_index_metrics`.

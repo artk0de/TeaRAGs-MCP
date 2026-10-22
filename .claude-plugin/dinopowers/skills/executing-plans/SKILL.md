@@ -159,8 +159,9 @@ Results empty (files brand-new, not yet in git): verdict defaults to
 ## Step 3 — Compute verdict per file, aggregate to Task verdict
 
 For each unique `relativePath` in results, read labels from
-`rankingOverlay.file.*` (`{value,label}`; kept under metaOnly), raw values from
-`payload.git.file.*` (essential fields only under metaOnly):
+`rankingOverlay.file.*` (`{value,label}`, in a result table the columns
+`rankingOverlay.file.<signal>.value` / `.label`; kept under metaOnly), raw
+values from `payload.git.file.*` (essential fields only under metaOnly):
 
 - `commitCount` — churn magnitude
 - `bugFixRate` — historical quality (percent of commits tagged as fix/bug);
