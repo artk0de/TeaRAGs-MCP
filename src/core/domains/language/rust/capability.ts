@@ -58,6 +58,9 @@ export const capability: LanguageCapability = {
   //   primitive, str, slice or array bind (`str`, `usize`, `[u8]`).
   // - bd tea-rags-mcp-sjego — workspace crate names map to member directories
   //   and an imported type alias no longer pins its members to its own file.
+  // - bd tea-rags-mcp-s3i8m Task 1a — pattern-bound names (`if let`, match
+  //   arms, `for`, closure params, destructuring `let`) record shadowing
+  //   `patternProjection` bindings; tuple return types are recorded.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

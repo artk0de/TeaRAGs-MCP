@@ -76,6 +76,12 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
       (fact) => fact.typeId === ownerName && !fact.reopens,
     );
     const substitute = (recv: TypeRef): TypeRef | undefined => {
+      // A tuple return (`-> (Tx, Rx)`) is typed only when every element is
+      // (bd tea-rags-mcp-s3i8m, Task 1a): a destructuring pattern indexes it.
+      if (recv.form === "tuple") {
+        const elements = recv.elements.map(substitute);
+        return elements.every((element) => element !== undefined) ? { form: "tuple", elements } : undefined;
+      }
       if (recv.form !== "instance" && recv.form !== "class") return undefined;
       // `Self` and `Self::Target`-style associated paths answer the OWNER;
       // rustDerefTarget turns the degenerate owner answer into its single

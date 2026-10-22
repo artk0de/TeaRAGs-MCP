@@ -290,8 +290,10 @@ export class RustExternalVocabulary {
     // call's own head binding answers; a chain head is the fold's evidence.
     const dotHead = receiver.split(".")[0] ?? receiver;
     if (dotHead !== receiver) return chainTerminalIsExternal(call, ctx);
-    const binding = resolveLocalBinding(ctx.localBindings, dotHead, call.startLine);
+    const binding = resolveLocalBinding(ctx.localBindings, dotHead, call.startLine, call.startColumn);
     if (binding === undefined) return false;
+    // A pattern binding is typed only by its fold (bd tea-rags-mcp-s3i8m, Task 1a).
+    if (binding.valueKind === "patternProjection") return chainTerminalIsExternal(call, ctx);
     const typeName = bindingReceiverType(binding);
     if (typeName === null) return false;
     if (rustTextIsStdType(typeName)) return stdTypeMemberIsExternal(ctx, typeName, member, "method");

@@ -11,6 +11,7 @@ import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-const
 import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
 import { resolveRustNominalType, rustDeclaredMemberReturnType } from "../declared-return-type.js";
+import { rustPatternBindingType } from "../pattern-binding-type.js";
 import { createRustTypeMemberLookup, rustTypedMissIsProven } from "../rust-type-member-lookup.js";
 import { rustStdSmartPointerTarget, rustStdUnwrapType } from "../std-type-hops.js";
 import { lookupRustSymbolsByShortName, rustImportMatchesReceiver, type ResolverConfig } from "./shared.js";
@@ -42,8 +43,10 @@ const RUST_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*/;
  * call text must spell `Receiver::member`, which only a scoped path does.
  */
 const RUST_RECEIVER_TYPE_PORTS: ReceiverTypePorts = {
-  singleHopType: (receiver, atLine, ctx) => {
-    const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine);
+  singleHopType: (receiver, atLine, ctx, atColumn) => {
+    const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine, atColumn);
+    // A pattern binding shadows the name: its fold answers, or nothing does.
+    if (binding?.valueKind === "patternProjection") return rustPatternBindingType(binding, ctx, rustExpressionType);
     const local = binding?.typeRef ?? (binding?.type ? { form: "instance" as const, name: binding.type } : undefined);
     if (local !== undefined) return resolveRustNominalType(local, ctx);
     const produced =
@@ -87,9 +90,17 @@ function rustFieldHopType(recv: TypeRef, member: string, ctx: CallContext): Type
 }
 
 export function rustReceiverChainType(call: CallRef, ctx: CallContext): TypeRef | undefined {
-  return call.receiver === null
-    ? undefined
-    : propagateReceiverType(call.receiver, call.startLine, ctx, RUST_RECEIVER_TYPE_PORTS, call.startColumn);
+  return call.receiver === null ? undefined : rustExpressionType(call.receiver, call.startLine, ctx, call.startColumn);
+}
+
+/** The chain fold over an expression read at `atLine` (and `atColumn`, when the site has one). */
+export function rustExpressionType(
+  expression: string,
+  atLine: number,
+  ctx: CallContext,
+  atColumn?: number,
+): TypeRef | undefined {
+  return propagateReceiverType(expression, atLine, ctx, RUST_RECEIVER_TYPE_PORTS, atColumn);
 }
 
 /**

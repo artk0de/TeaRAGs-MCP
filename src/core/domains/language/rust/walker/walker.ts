@@ -39,6 +39,7 @@ import { isCapWordsType, isRustConstructorAssocFn } from "../associated-construc
 import { collectRustCallResultBindings } from "./call-result-bindings.js";
 import { rustDeclaredStructFields } from "./field-types.js";
 import { rustNameOf } from "./name-of.js";
+import { collectRustPatternBindings } from "./pattern-bindings.js";
 import { collectRustReturnTypes, rustDeclaredTypeRef } from "./return-types.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
 import { isRustLocalScopeBoundary, rustTypeDeclarationFactOf } from "./type-declarations.js";
@@ -431,6 +432,17 @@ function collectRustLocalBindingsForChunk(
       (bindings[varName] ??= []).push({ line: node.startPosition.row + 1, type: typeName });
     }
   });
+
+  // Pattern-bound names shadow the outer binding for their scope (bd
+  // tea-rags-mcp-s3i8m, Task 1a); a typed closure parameter takes the
+  // fn-parameter typing path.
+  collectRustPatternBindings(
+    fn,
+    startLine,
+    endLine,
+    (typeNode) => rustTypeRefFor(typeNode, genericBounds),
+    (name, binding) => (bindings[name] ??= []).push(binding),
+  );
   return bindings;
 }
 

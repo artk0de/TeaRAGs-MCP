@@ -4,10 +4,18 @@ import type { TypeRef } from "../../../../contracts/types/language.js";
 import { DefaultSymbolIdComposer } from "../../kernel/index.js";
 import { rustNameOf } from "./name-of.js";
 
-/** The nominal Rust type as declared; references preserve the referent and generic arguments keep their positions. */
+/**
+ * The nominal Rust type as declared; references preserve the referent and generic arguments keep their positions.
+ * A tuple type keeps its elements in order (bd tea-rags-mcp-s3i8m, Task 1a), each one required.
+ */
 export function rustDeclaredTypeRef(node: AstNode | null): TypeRef | undefined {
   if (node === null) return undefined;
   if (node.type === "reference_type") return rustDeclaredTypeRef(node.childForFieldName("type"));
+  if (node.type === "tuple_type") {
+    const elements = node.namedChildren.map(rustDeclaredTypeRef);
+    if (elements.length === 0 || elements.some((element) => element === undefined)) return undefined;
+    return { form: "tuple", elements: elements as TypeRef[] };
+  }
   if (["identifier", "type_identifier", "scoped_type_identifier", "scoped_identifier"].includes(node.type)) {
     return { form: "instance", name: node.text };
   }
@@ -80,8 +88,10 @@ export function collectRustReturnTypes(root: AstNode, relPath: string): Record<s
       const declaredType = rustDeclaredTypeRef(node.childForFieldName("return_type"));
       const generics = new Set(rustGenericParameters(node));
       const unknown = (recv: TypeRef): boolean =>
-        (recv.form === "instance" || recv.form === "class") &&
-        (generics.has(recv.name) || (recv.args?.some(unknown) ?? false));
+        recv.form === "tuple"
+          ? recv.elements.some(unknown)
+          : (recv.form === "instance" || recv.form === "class") &&
+            (generics.has(recv.name) || (recv.args?.some(unknown) ?? false));
       if (!unsafeOwner && named !== null && declaredType !== undefined && !unknown(declaredType)) {
         const id = composer.compose(scope.join("::"), named.name, {
           scopeSeparator: "::",
