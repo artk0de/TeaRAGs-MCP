@@ -358,3 +358,46 @@ describe("runRustAnalyzerScip — cache and env latch", () => {
     expect(h.spawns).toHaveLength(2);
   });
 });
+
+describe("runRustAnalyzerScip — admission (bd s3i8m.6 R2b)", () => {
+  it("asks admission with the project's .rs files on a content miss and spawns on `spawn`", async () => {
+    const h = host();
+    const asked: (readonly string[])[] = [];
+    const outcome = await runRustAnalyzerScip(
+      options({
+        admission: (relPaths) => {
+          asked.push(relPaths);
+          return "spawn";
+        },
+      }),
+      h.deps,
+    );
+    expect(asked).toEqual([["src/main.rs"]]);
+    expect(outcome).toMatchObject({ kind: "indexed", cacheHit: false });
+    expect(h.spawns).toHaveLength(1);
+  });
+
+  it("answers skipped without spawning when admission says reuseOnly on a miss", async () => {
+    const h = host();
+    const outcome = await runRustAnalyzerScip(options({ admission: () => "reuseOnly" }), h.deps);
+    expect(outcome).toEqual({ kind: "skipped", reason: "noBulkNoCache" });
+    expect(h.spawns).toHaveLength(0);
+  });
+
+  it("serves a content hit without asking admission", async () => {
+    const h = host();
+    await runRustAnalyzerScip(options(), h.deps);
+    let asked = 0;
+    const outcome = await runRustAnalyzerScip(
+      options({
+        admission: () => {
+          asked += 1;
+          return "reuseOnly";
+        },
+      }),
+      h.deps,
+    );
+    expect(outcome).toMatchObject({ kind: "indexed", cacheHit: true });
+    expect(asked).toBe(0);
+  });
+});

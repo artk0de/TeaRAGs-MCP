@@ -126,7 +126,7 @@ import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/cont
 import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
 import type { EmbeddingConfig } from "../core/contracts/types/config.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
-import type { LanguageFactoryDescriptor } from "../core/contracts/types/language.js";
+import type { LanguageFactoryDescriptor, RustAnalyzerScipSourceConfig } from "../core/contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
 import type { WorkingTree } from "../core/contracts/types/working-tree.js";
@@ -924,6 +924,7 @@ export function wireCodegraph(
     // their resolver with the configured mode.
     ambiguousResolveMode: ambiguousMode,
     residualMenuLimit: codegraph.residual.menuLimit,
+    rustAnalyzer: codegraphWorkerConfig.rustAnalyzer,
     // Codegraph-layer exclusion (user-supplied patterns; generated + test
     // files are excluded unconditionally). The shape mirrors
     // `CodegraphExclusionOptions`; the provider builds the actual `Ignore`
@@ -974,6 +975,7 @@ export function wireCodegraph(
       ambiguousResolveMode: codegraphWorkerConfig.ambiguousResolveMode,
       dbMemoryLimit: codegraphWorkerConfig.dbMemoryLimit,
       dbThreads: codegraphWorkerConfig.dbThreads,
+      rustAnalyzer: codegraphWorkerConfig.rustAnalyzer,
     },
     // The verdicts an index run re-applies after its walk; the tree build
     // re-applies them the same way (`cacheOnly`) to the files it re-walks.
@@ -1198,6 +1200,7 @@ function buildCodegraphWorkerDescriptor(deps: {
     dbThreads: codegraph.dbThreads,
     ambiguousResolveMode: ambiguousMode,
     residualMenuLimit: codegraph.residual.menuLimit,
+    rustAnalyzer: rustAnalyzerScipSourceConfigOf(codegraph),
     ...(temporal ? { temporal } : {}),
   };
   const workerDescriptor: WorkerEnrichmentDescriptor = {
@@ -1217,6 +1220,16 @@ function buildCodegraphWorkerDescriptor(deps: {
     serializableConfig: codegraphWorkerConfig,
   };
   return { codegraphWorkerConfig, workerDescriptor };
+}
+
+/**
+ * `codegraph.rustAnalyzer` as the SCIP source config every resolving thread
+ * builds from (bd s3i8m.6 R2b). Spawning is allowed here; the working-tree
+ * graph build narrows it to cache-only itself.
+ */
+function rustAnalyzerScipSourceConfigOf(codegraph: CodegraphZodConfig): RustAnalyzerScipSourceConfig {
+  const { enabled, exec, path, timeoutSec, maxRssMb } = codegraph.rustAnalyzer;
+  return { enabled, exec, ...(path ? { path } : {}), timeoutSec, maxRssMb, spawn: "allowed" };
 }
 
 /**

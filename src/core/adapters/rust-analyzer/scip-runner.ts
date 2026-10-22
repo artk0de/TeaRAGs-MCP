@@ -95,7 +95,9 @@ export type RustAnalyzerScipRunOutcome =
       detail: string;
       /** The command that lifts an `offline` latch. */
       hint?: string;
-    };
+    }
+  /** The content cache missed and `admission` refused a spawn. */
+  | { kind: "skipped"; reason: "noBulkNoCache" };
 
 export interface RustAnalyzerScipRunOptions {
   projectRoot: string;
@@ -104,6 +106,12 @@ export interface RustAnalyzerScipRunOptions {
   timeoutSec: number;
   maxRssMb: number;
   numThreads?: number;
+  /**
+   * Asked only on a content-cache miss, with the project's `.rs` files the
+   * content key was built from: `reuseOnly` answers `skipped` instead of
+   * spawning. Absent = always spawn.
+   */
+  admission?: (projectRustRelPaths: readonly string[]) => "spawn" | "reuseOnly";
 }
 
 /** A running `rust-analyzer scip` child. */
@@ -188,7 +196,8 @@ async function runScip(
   const latch = readLatch(deps, envDir);
   if (latch) return { kind: "latched", ...latch };
 
-  const contentKey = sha256(JSON.stringify(sortedStamps(deps.fs.listRustSources(projectRoot))));
+  const stamps = deps.fs.listRustSources(projectRoot);
+  const contentKey = sha256(JSON.stringify(sortedStamps(stamps)));
   const identity = `${envKey}:${contentKey}`;
   const cachePath = join(envDir, `${contentKey}.json`);
   const cached = readCache(deps, cachePath);
@@ -199,6 +208,9 @@ async function runScip(
       cacheHit: true,
       toolchainSkew: cached.toolchainSkew,
     };
+  }
+  if (options.admission?.(stamps.map((stamp) => stamp.relPath)) === "reuseOnly") {
+    return { kind: "skipped", reason: "noBulkNoCache" };
   }
 
   const tempDir = deps.fs.makeTempDir();
@@ -479,17 +491,33 @@ function writeTextAtomic(path: string, text: string): void {
   }
 }
 
+/**
+ * The detached tree outlives the thread that spawned it: a terminated
+ * enrichment worker fires no `exit` hook, and its wall-budget poller dies with
+ * it. So the run is wrapped: `sh` starts the command in the background and a
+ * watchdog blocks on the stdin pipe the host holds. EOF — the host thread or
+ * process is gone, or the run settled and the host closed it — kills the whole
+ * process group. fd 3 carries stdin past the background-job `/dev/null`
+ * redirection; the watchdog's own output goes to `/dev/null` so it never holds
+ * the host's pipes open.
+ */
+const HOST_WATCHDOG_SCRIPT =
+  'exec 3<&0; (cat <&3 >/dev/null; kill -KILL 0) >/dev/null 2>&1 & "$@" </dev/null 3<&- & wait $!';
+
 function spawnScipChild(
   command: string,
   args: readonly string[],
   options: { env: Readonly<Record<string, string | undefined>>; onOutput: (chunk: string) => void },
 ): RustAnalyzerScipChild {
-  // Own process group, so the whole tree (cargo metadata, rustc probes) dies on a breach.
-  const child = spawnChild(command, [...args], {
+  // Own process group, so the whole tree (cargo metadata, rustc probes) dies on a
+  // breach — and, run under HOST_WATCHDOG_SCRIPT, dies with the thread that
+  // spawned it.
+  const child = spawnChild("/bin/sh", ["-c", HOST_WATCHDOG_SCRIPT, "tea-rags-ra-scip", command, ...args], {
     env: options.env,
     detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
+  child.stdin.on("error", () => undefined);
   child.stdout.setEncoding("utf8").on("data", options.onOutput);
   child.stderr.setEncoding("utf8").on("data", options.onOutput);
   const exited = new Promise<{ code: number | null; signal: string | null }>((resolve) => {
@@ -498,6 +526,8 @@ function spawnScipChild(
       resolve({ code: null, signal: null });
     });
     child.once("close", (code, signal) => {
+      // Releases the watchdog, which then reaps whatever the run left in its group.
+      child.stdin.end();
       resolve({ code, signal });
     });
   });

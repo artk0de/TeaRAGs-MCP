@@ -1,18 +1,20 @@
 /**
  * What the Rust resolver knows about the project beyond its symbol table, for
  * one pass: the workspace crate map (bd tea-rags-mcp-sjego) and the external
- * signature table (bd s3i8m.7). Carried on `CallContext.languageConfig` as one
- * record; `rustWorkspaceCratesOf` / `rustExternalSignaturesOf` are its only
- * readers.
+ * signature table (bd s3i8m.7), and the rust-analyzer SCIP index (bd s3i8m.6).
+ * Carried on `CallContext.languageConfig` as one record;
+ * `rustWorkspaceCratesOf` / `rustExternalSignaturesOf` / `rustAnalyzerScipOf`
+ * are its only readers.
  */
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
-import type { RustExternalSignatureTable } from "../../../../contracts/types/language.js";
+import type { RustAnalyzerScipIndex, RustExternalSignatureTable } from "../../../../contracts/types/language.js";
 import type { RustWorkspaceCrateMap } from "./workspace-crates.js";
 
 export class RustResolveEnvironment {
   constructor(
     readonly crates: RustWorkspaceCrateMap | undefined,
     readonly signatures: RustExternalSignatureTable | undefined,
+    readonly scip: RustAnalyzerScipIndex | undefined = undefined,
   ) {}
 }
 
@@ -32,4 +34,9 @@ export function withRustResolveEnvironment(
 /** The external signature table the Rust resolver injected — `undefined` off its entry paths or without sources. */
 export function rustExternalSignaturesOf(ctx: CallContext): RustExternalSignatureTable | undefined {
   return ctx.languageConfig instanceof RustResolveEnvironment ? ctx.languageConfig.signatures : undefined;
+}
+
+/** The rust-analyzer SCIP index the Rust resolver injected (bd s3i8m.6 R2b) — `undefined` off its entry paths or when none was acquired. */
+export function rustAnalyzerScipOf(ctx: CallContext): RustAnalyzerScipIndex | undefined {
+  return ctx.languageConfig instanceof RustResolveEnvironment ? ctx.languageConfig.scip : undefined;
 }

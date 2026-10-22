@@ -29,6 +29,7 @@
  */
 
 import { readManifestFiles } from "../../../adapters/filesystem/dependency-manifests.js";
+import { processRustAnalyzerScipSource } from "../../../adapters/rust-analyzer/index.js";
 import { processRustExternalSignatureSources } from "../../../adapters/rust-signatures/index.js";
 import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
@@ -37,6 +38,8 @@ import type {
   LanguageCrossRunParseCache,
   LanguageFactoryDescriptor,
   ManifestFilesReader,
+  RustAnalyzerScipSource,
+  RustAnalyzerScipSourceConfig,
   RustExternalSignatureSources,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
@@ -136,6 +139,12 @@ export interface CodegraphWorkerConfig {
   /** `CODEGRAPH_RESIDUAL_MENU_LIMIT` for the in-thread provider's resolution runner. */
   residualMenuLimit?: number;
   /**
+   * `codegraph.rustAnalyzer` plus who may spawn (bd s3i8m.6 R2b) — plain data,
+   * so the thread that resolves builds the SCIP source itself. Absent or
+   * disabled ⇒ no source, nothing spawned.
+   */
+  rustAnalyzer?: RustAnalyzerScipSourceConfig;
+  /**
    * Co-change build config for the temporal sub-graph (bd tea-rags-mcp-x4rpp) —
    * plain data, so the pinned worker rebuilds the SAME completion hook the
    * main-thread provider carries. Absent ⇒ no co-change build.
@@ -157,6 +166,7 @@ interface LanguageModule {
     crossRunParseCache?: LanguageCrossRunParseCache;
     manifestFilesReader?: ManifestFilesReader;
     rustExternalSignatureSources?: RustExternalSignatureSources;
+    rustAnalyzerScipSource?: RustAnalyzerScipSource;
   }) => LanguageFactoryDescriptor;
   CrossRunParseCache: new () => LanguageCrossRunParseCache;
   DefaultSymbolIdComposer: new () => SymbolIdComposer;
@@ -296,6 +306,11 @@ export async function createCodegraphProviderRuntime(
     ambiguousResolveMode: config.ambiguousResolveMode,
     manifestFilesReader: readManifestFiles,
     rustExternalSignatureSources: processRustExternalSignatureSources(),
+    // The rust-analyzer SCIP source likewise (bd s3i8m.6 R2b): built here, in
+    // the thread whose pass-2 awaits it, and only when the slot is on.
+    ...(config.rustAnalyzer?.enabled
+      ? { rustAnalyzerScipSource: processRustAnalyzerScipSource(config.rustAnalyzer) }
+      : {}),
     ...(runtimeDeps.crossRunParseCache ? { crossRunParseCache: runtimeDeps.crossRunParseCache } : {}),
   });
   const composer = new lang.DefaultSymbolIdComposer();

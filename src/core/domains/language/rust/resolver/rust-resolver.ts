@@ -52,6 +52,7 @@ import {
 import type {
   DispatchResolverComponent,
   ManifestFilesReader,
+  RustAnalyzerScipSource,
   RustExternalSignatureSources,
   SymbolResolutionStrategy,
 } from "../../../../contracts/types/language.js";
@@ -89,14 +90,16 @@ export class RustCallResolver implements CallResolver {
    * and caches the external signature table (bd s3i8m.7). Both injected by
    * `LanguageFactory` — the resolver never walks the disk; absent, no crate
    * name is known and a bare path head is judged by the symbol table alone,
-   * and no external signature is known.
+   * and no external signature is known. `scipSource` acquires the
+   * rust-analyzer SCIP index before the pass (bd s3i8m.6 R2b); absent, none is.
    */
   constructor(
     mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
     manifestFilesReader?: ManifestFilesReader,
     signatureSources?: RustExternalSignatureSources,
+    scipSource?: RustAnalyzerScipSource,
   ) {
-    this.environments = new RustResolveEnvironmentCache(manifestFilesReader, signatureSources);
+    this.environments = new RustResolveEnvironmentCache(manifestFilesReader, signatureSources, scipSource);
     const cfg: ResolverConfig = { mode };
     this.dispatchComponents = [new ConeDispatchResolver(new RustConeTypeLocator(cfg), 8)];
     this.strategies = [
@@ -119,6 +122,17 @@ export class RustCallResolver implements CallResolver {
    */
   prepareResolvePass(plan: SymbolResolutionPassPlan): void {
     this.environments.reload(plan.projectRoot);
+  }
+
+  /** Awaited before `prepareResolvePass`: acquire the project's rust-analyzer SCIP index (bd s3i8m.6 R2b). */
+  async warmResolvePass(plan: SymbolResolutionPassPlan): Promise<void> {
+    await this.environments.warm(plan);
+  }
+
+  /** How the pass's rust-analyzer SCIP acquisition settled; undefined before one ran. */
+  diagnostics(): Record<string, unknown> | undefined {
+    const rustAnalyzerScip = this.environments.scipDiagnostics();
+    return rustAnalyzerScip === undefined ? undefined : { rustAnalyzerScip };
   }
 
   /** The caller's ctx carrying this run's resolve environment — the one entry every Rust helper reads it from. */

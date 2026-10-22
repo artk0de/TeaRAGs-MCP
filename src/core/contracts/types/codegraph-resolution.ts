@@ -105,6 +105,14 @@ export interface CallResolver {
    */
   prepareResolvePass?: (plan: SymbolResolutionPassPlan) => void;
   /**
+   * Optional: acquire an external analysis the pass reads before it starts
+   * (bd s3i8m.6 R2b) — minutes, unlike the sizing `prepareResolvePass` does.
+   * Awaited at most once per language per pass-2, before `prepareResolvePass`.
+   * Never rejects: a resolver whose acquisition fails resolves without it.
+   * Mirrors `LanguageSymbolResolver.warmResolvePass`.
+   */
+  warmResolvePass?: (plan: SymbolResolutionPassPlan) => Promise<void>;
+  /**
    * Optional: the order pass-2 should visit this language's files in, as
    * groups (bd tea-rags-mcp-vtuu4). Read once, after `prepareResolvePass`.
    * Pass-2 visits every group in order and calls

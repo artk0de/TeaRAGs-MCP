@@ -20,6 +20,7 @@ import {
   SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS,
   type PayloadFieldIndexSchema,
 } from "../../adapters/qdrant/schema-manager.js";
+import { processRustAnalyzerScipSource } from "../../adapters/rust-analyzer/index.js";
 import { processRustExternalSignatureSources } from "../../adapters/rust-signatures/index.js";
 import {
   CODEGRAPH_SYMBOLS_PROVIDER_KEY,
@@ -354,6 +355,9 @@ export function createComposition(options: CompositionOptions = {}): Composition
     ambiguousResolveMode: options.codegraph?.ambiguousResolveMode,
     manifestFilesReader: readManifestFiles,
     rustExternalSignatureSources: processRustExternalSignatureSources(),
+    ...(options.codegraph?.rustAnalyzer?.enabled
+      ? { rustAnalyzerScipSource: processRustAnalyzerScipSource(options.codegraph.rustAnalyzer) }
+      : {}),
   });
 
   const registry = new TrajectoryRegistry();

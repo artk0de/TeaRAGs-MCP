@@ -575,6 +575,59 @@ describe("CallEdgeResolutionRunner.prepareResolvePass (bd tea-rags-mcp-6aytq)", 
   });
 });
 
+describe("CallEdgeResolutionRunner.warmResolvePass (bd s3i8m.6 R2b)", () => {
+  function absorbFiles(runState: CodegraphRunState, language: string, count: number): void {
+    for (let i = 0; i < count; i++) {
+      runState.absorb({ relPath: `w${i}.${language}`, language, imports: [], fileScope: [], chunks: [] }, []);
+    }
+  }
+
+  it("awaits every supported language's hook with the plan prepareResolvePass gets, skipping the rest", async () => {
+    const runState = new CodegraphRunState();
+    runState.projectRoot = "/repo";
+    absorbFiles(runState, "rust", 2);
+    absorbFiles(runState, "ruby", 1);
+    absorbFiles(runState, "cobol", 1);
+    const warmed: Record<string, SymbolResolutionPassPlan> = {};
+    const prepared: Record<string, SymbolResolutionPassPlan> = {};
+    const settled: string[] = [];
+    const languageFactory = {
+      supported: () => ["rust", "ruby"],
+      create: (language: string) => ({
+        resolver: {
+          resolve: () => null,
+          prepareResolvePass: (plan: SymbolResolutionPassPlan) => {
+            prepared[language] = plan;
+          },
+          // Ruby declares no warm hook: it is simply skipped.
+          ...(language === "rust"
+            ? {
+                warmResolvePass: async (plan: SymbolResolutionPassPlan) => {
+                  warmed[language] = plan;
+                  await new Promise((resolve) => setTimeout(resolve, 5));
+                  settled.push(language);
+                },
+              }
+            : {}),
+        },
+      }),
+    } as unknown as LanguageFactoryDescriptor;
+    const runner = new CallEdgeResolutionRunner(languageFactory, runState);
+
+    await runner.warmResolvePass();
+    runner.prepareResolvePass();
+
+    expect(settled).toEqual(["rust"]);
+    expect(Object.keys(warmed)).toEqual(["rust"]);
+    expect(warmed["rust"]).toEqual(prepared["rust"]);
+    expect(warmed["rust"]).toEqual({
+      expectedFileCount: 2,
+      expectedRelPaths: ["w0.rust", "w1.rust"],
+      projectRoot: "/repo",
+    });
+  });
+});
+
 describe("CallEdgeResolutionRunner closure-batch visit order (bd tea-rags-mcp-vtuu4)", () => {
   function extraction(relPath: string, language: string, callCount: number): FileExtraction {
     return {

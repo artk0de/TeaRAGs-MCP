@@ -16,7 +16,10 @@ import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/const
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
-import { CompletionRunner } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/completion-runner.js";
+import {
+  CompletionRunner,
+  FINALIZE_KEEPALIVE_INTERVAL_MS,
+} from "../../../../../../src/core/domains/ingest/pipeline/enrichment/completion-runner.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { FilePhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/file-phase.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
@@ -97,6 +100,52 @@ describe("fileFinalize sub-steps", () => {
     for (const s of calls("FILE_FINALIZE_STEP").filter((c) => c.step !== "drain")) {
       expect(s.provider).toBe("codegraph.symbols");
       expect(s.durationMs).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  // bd s3i8m.6 R2b — pass 2 applies nothing while a provider's finalize is
+  // pending (a rust-analyzer SCIP acquisition can hold it for minutes), so the
+  // runner keeps the run's heartbeat going until it settles, and stops after.
+  it("ticks finalizeKeepalive while runFinalize is pending and stops once it settles", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const qdrant = new MockQdrantManager();
+      await seed(qdrant);
+      const { runner, filePhase } = harness(qdrant);
+      let finishFinalize!: (overlays: Map<string, unknown>) => void;
+      const finalizeStarted = vi.fn();
+      const ctx = {
+        ...codegraphLikeCtx,
+        provider: {
+          ...codegraphLikeCtx.provider,
+          finalizeSignals: vi.fn(
+            async () =>
+              new Promise<Map<string, unknown>>((resolve) => {
+                finalizeStarted();
+                finishFinalize = resolve;
+              }),
+          ),
+        },
+      };
+      const contexts = new Map([["codegraph.symbols", ctx as never]]);
+      filePhase.init(contexts, COLL, "run-1", new Date().toISOString(), true);
+      const keepalive = vi.fn();
+      runner.finalizeKeepalive = keepalive;
+
+      const run = runner.run(COLL, contexts, Date.now());
+      await vi.waitFor(() => {
+        expect(finalizeStarted).toHaveBeenCalled();
+      });
+      vi.advanceTimersByTime(FINALIZE_KEEPALIVE_INTERVAL_MS * 3);
+      expect(keepalive).toHaveBeenCalledTimes(3);
+      expect(keepalive).toHaveBeenCalledWith(COLL);
+
+      finishFinalize(new Map());
+      await run;
+      vi.advanceTimersByTime(FINALIZE_KEEPALIVE_INTERVAL_MS * 3);
+      expect(keepalive).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
     }
   });
 
