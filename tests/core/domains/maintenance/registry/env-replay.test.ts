@@ -13,6 +13,27 @@ describe("replayRegistryEnv", () => {
     expect(target.TRAJECTORY_GIT_CHUNK_CONCURRENCY).toBe("5");
   });
 
+  it("replays the rust-analyzer flags a run recorded (bd s3i8m.6)", () => {
+    const target: Record<string, string> = { CODEGRAPH_RUST_ANALYZER_EXEC: "0" };
+    replayRegistryEnv(
+      {
+        CODEGRAPH_RUST_ANALYZER: "false",
+        CODEGRAPH_RUST_ANALYZER_EXEC: "true",
+        CODEGRAPH_RUST_ANALYZER_PATH: "/opt/ra/rust-analyzer",
+        CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC: "60",
+        CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB: "2048",
+      },
+      target,
+    );
+    expect(target).toEqual({
+      CODEGRAPH_RUST_ANALYZER: "false",
+      CODEGRAPH_RUST_ANALYZER_EXEC: "0",
+      CODEGRAPH_RUST_ANALYZER_PATH: "/opt/ra/rust-analyzer",
+      CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC: "60",
+      CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB: "2048",
+    });
+  });
+
   it("keeps an already-set non-empty target value (env > registry)", () => {
     const target: Record<string, string> = { GIT_ADAPTER: "git" };
     replayRegistryEnv({ GIT_ADAPTER: "es-git" }, target);

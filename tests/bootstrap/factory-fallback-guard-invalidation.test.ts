@@ -145,7 +145,10 @@ vi.mock("../../src/bootstrap/config/index.js", async () => {
       ingest: { tune: { chunkerPoolSize: 4, fileConcurrency: 50, ioConcurrency: 50 } },
       trajectoryGit: {},
       vcs: { adapter: "git" },
-      codegraph: { residual: { kevThreshold: 0.7, concurrency: 96, menuLimit: 40, minMenu: 4, retentionDays: 180 } },
+      codegraph: {
+        residual: { kevThreshold: 0.7, concurrency: 96, menuLimit: 40, minMenu: 4, retentionDays: 180 },
+        rustAnalyzer: { enabled: true, exec: false, timeoutSec: 900, maxRssMb: 4096 },
+      },
       qdrantTune: { deleteBatchSize: 500, deleteConcurrency: 8, deleteFlushTimeoutMs: 1000 },
       deprecations: [],
       flags: { userSetBatchSize: false },

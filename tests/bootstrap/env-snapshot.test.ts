@@ -85,6 +85,10 @@ describe("buildRegistryEnvSnapshot", () => {
       CODEGRAPH_DB_MEMORY_LIMIT_MAX: "4GB",
       CODEGRAPH_DB_THREADS: "2",
       CODEGRAPH_AMBIGUOUS_RESOLVE_MODE: "strict",
+      CODEGRAPH_RUST_ANALYZER: "true",
+      CODEGRAPH_RUST_ANALYZER_EXEC: "false",
+      CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC: "900",
+      CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB: "4096",
       EMBEDDING_TUNE_BATCH_TIMEOUT_MS: "2000",
       EMBEDDING_TUNE_RETRY_ATTEMPTS: "3",
       EMBEDDING_TUNE_RETRY_DELAY_MS: "1000",
@@ -145,6 +149,7 @@ describe("buildRegistryEnvSnapshot", () => {
       "CODE_TEST_PATHS",
       "CODEGRAPH_DB_PATH",
       "CODEGRAPH_CUSTOM_EXCLUDE",
+      "CODEGRAPH_RUST_ANALYZER_PATH",
       "QDRANT_MAX_RESIDENT_MEMORY_PERCENT",
       "QDRANT_SEARCH_MAX_BATCHSIZE",
     ]) {
@@ -157,7 +162,11 @@ describe("buildRegistryEnvSnapshot", () => {
       tune: { minBatchSize: "8", maxRequestsPerMinute: "600" },
     });
     cfg.ingest = ingestSchema.parse({ testPaths: "spec/,test/", tune: {} });
-    cfg.codegraph = codegraphSchema.parse({ dbPath: "/tmp/cg", customExcludePatterns: "vendor/**,generated/**" });
+    cfg.codegraph = codegraphSchema.parse({
+      dbPath: "/tmp/cg",
+      customExcludePatterns: "vendor/**,generated/**",
+      rustAnalyzer: { path: "/opt/ra/rust-analyzer" },
+    });
     cfg.qdrantTune = qdrantTuneSchema.parse({ maxResidentMemoryPercent: "80", searchMaxBatchsize: "64" });
     const set = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());
     expect(set.EMBEDDING_DIMENSIONS).toBe("768");
@@ -166,6 +175,7 @@ describe("buildRegistryEnvSnapshot", () => {
     expect(set.CODE_TEST_PATHS).toBe("spec/,test/");
     expect(set.CODEGRAPH_DB_PATH).toBe("/tmp/cg");
     expect(set.CODEGRAPH_CUSTOM_EXCLUDE).toBe("vendor/**,generated/**");
+    expect(set.CODEGRAPH_RUST_ANALYZER_PATH).toBe("/opt/ra/rust-analyzer");
     expect(set.QDRANT_MAX_RESIDENT_MEMORY_PERCENT).toBe("80");
     expect(set.QDRANT_SEARCH_MAX_BATCHSIZE).toBe("64");
   });
@@ -206,6 +216,7 @@ describe("buildRegistryEnvSnapshot", () => {
     cfg.codegraph = codegraphSchema.parse({
       dbPath: "/tmp/cg",
       customExcludePatterns: "vendor/**",
+      rustAnalyzer: { path: "/opt/ra/rust-analyzer" },
       residual: {
         kevUrls: "http://gpu:8090",
         kevSessionUrl: "http://gpu:8008",
