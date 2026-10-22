@@ -34,7 +34,7 @@ export class RustSelfFieldSymbolResolutionStrategy implements SymbolResolutionSt
     // never a field: fields are bare identifiers. The chain fold types the
     // call's result and the typed strategy answers the member — dropping here
     // hid every `self.<method>()…` chain behind this guard (bd tea-rags-mcp-2g2og).
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(fieldSegment)) return CONTINUE;
+    if (!/^(?:[A-Za-z_][A-Za-z0-9_]*|\d+)$/.test(fieldSegment)) return CONTINUE;
 
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
     const typeName = identifierEntry(identifierEntry(ctx.classFieldTypes, enclosing), fieldSegment);
@@ -49,17 +49,20 @@ export class RustSelfFieldSymbolResolutionStrategy implements SymbolResolutionSt
       // target before the typed-miss verdict lands (bd tea-rags-mcp-2g2og).
       // The verdict stays DROP: the field type is known, so the call never
       // reaches the global short-name paths (bd tea-rags-mcp-q1pl).
-      const selfType = rustLexicalSelfType(ctx);
-      const placedField = selfType === undefined ? undefined : rustDeclaredFieldType(selfType, fieldSegment, ctx);
-      if (placedField?.form === "instance" || placedField?.form === "class") {
-        const derefHit = resolveRustMemberWithDeref(placedField, call.member, ctx, this.cfg.mode);
-        if (derefHit !== null) return resolved(derefHit);
-      }
-      return DROP;
+      return this.placedFieldHit(call, fieldSegment, ctx) ?? DROP;
     }
-    // Field type NOT recorded. A `self.<field>` receiver is an
-    // instance-field access, never a module/import name — DROP rather
-    // than fall through to the import-match / global short-name paths.
-    return DROP;
+    // Field type NOT in the legacy short-name map — a tuple field (`self.0`)
+    // lives only in the placed map (bd tea-rags-mcp-2g2og.24). A `self.<field>`
+    // receiver is an instance-field access, never a module/import name — DROP
+    // rather than fall through to the import-match / global short-name paths.
+    return this.placedFieldHit(call, fieldSegment, ctx) ?? DROP;
+  }
+
+  private placedFieldHit(call: CallRef, fieldSegment: string, ctx: CallContext): SymbolResolutionOutcome | undefined {
+    const selfType = rustLexicalSelfType(ctx);
+    const placedField = selfType === undefined ? undefined : rustDeclaredFieldType(selfType, fieldSegment, ctx);
+    if (placedField?.form !== "instance" && placedField?.form !== "class") return undefined;
+    const hit = resolveRustMemberWithDeref(placedField, call.member, ctx, this.cfg.mode);
+    return hit === null ? undefined : resolved(hit);
   }
 }

@@ -9,7 +9,10 @@
  * `String` keeps its `String::new()` misses.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import { resolveLocalBinding, type CallContext, type CallRef } from "../../../../contracts/types/codegraph.js";
+import { rustStdTerminalTargetsExternal } from "../resolver/std-type-hops.js";
+import { rustReceiverChainType } from "../resolver/strategies/rust-type-receiver.js";
 import {
   lookupRustSymbolsByShortName,
   parseRustImportPath,
@@ -65,6 +68,28 @@ function typeNameIsExternal(name: string, ctx: CallContext): boolean {
   });
 }
 
+/**
+ * A dotted receiver the chain fold types (bd tea-rags-mcp-2g2og.24): the fold
+ * ends on a std type (`self.items: Vec<_>` → `Vec`) and the project
+ * implements no such member on it, or its last hop is a field of a same-file
+ * owner whose declared type an external import binds (`re: Regex` with
+ * `use regex::Regex`). Every hop is the fold's declared evidence — an untyped
+ * hop proves nothing and stays in the denominator.
+ */
+function chainTerminalIsExternal(call: CallRef, ctx: CallContext): boolean {
+  const typed = rustReceiverChainType(call, ctx);
+  if (typed !== undefined) return rustStdTerminalTargetsExternal(typed, call.member, ctx);
+  const receiver = call.receiver?.replace(/\s+/g, "") ?? "";
+  const lastDot = receiver.lastIndexOf(".");
+  const field = receiver.slice(lastDot + 1);
+  if (lastDot <= 0 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(field)) return false;
+  const owner = rustReceiverChainType({ ...call, receiver: receiver.slice(0, lastDot) }, ctx);
+  if (owner?.form !== "instance" || !owner.name.startsWith(`${ctx.callerFile}::`)) return false;
+  const fieldTypeName = identifierEntry(identifierEntry(ctx.classFieldTypesByClassKey, owner.name), field);
+  if (fieldTypeName === undefined || !typeNameIsExternal(bindingTypeName(fieldTypeName), ctx)) return false;
+  return rustStdTerminalTargetsExternal({ form: "instance", name: fieldTypeName }, call.member, ctx);
+}
+
 export class RustExternalVocabulary {
   targetsExternal(call: CallRef, ctx: CallContext): boolean {
     if (call.receiver === null) return this.bareCalleeIsExternal(call, ctx);
@@ -93,7 +118,7 @@ export class RustExternalVocabulary {
     // makes every `cx.…` call external however the chain declines it. Only
     // the call's own head binding answers; a chain head is the fold's evidence.
     const dotHead = receiver.split(".")[0] ?? receiver;
-    if (dotHead !== receiver) return false;
+    if (dotHead !== receiver) return chainTerminalIsExternal(call, ctx);
     const binding = resolveLocalBinding(ctx.localBindings, dotHead, call.startLine);
     const typeName = binding?.typeRef === undefined ? binding?.type : undefined;
     return typeName !== undefined && typeNameIsExternal(bindingTypeName(typeName), ctx);

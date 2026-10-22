@@ -280,7 +280,6 @@ fn run(holder: Holder<Product>) { holder.wrapped.item.finish(); }`,
       "holder.value.finish()",
       "Option is not transparent",
     ],
-    ["struct Holder { value: Box<Product> }", "holder: Holder", "holder.value.finish()", "Box is not transparent"],
     [
       "struct Holder { value: Wrapper<Vec<Product>> } struct Wrapper<T> { item: T }",
       "holder: Holder",

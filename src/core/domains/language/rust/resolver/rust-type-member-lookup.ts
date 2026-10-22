@@ -3,6 +3,7 @@
 import type { AmbiguousResolveMode, CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import { createTypeMemberLookup, type NominalTypeRef, type TypeMemberLookup } from "../../kernel/index.js";
 import { rustDerefTarget, rustExactMember } from "./declared-return-type.js";
+import { rustStdSmartPointerTarget } from "./std-type-hops.js";
 import { lookupRustSymbolsByShortName, pickSameFileThenSingle } from "./strategies/shared.js";
 
 /**
@@ -36,7 +37,10 @@ function resolveRustNominalMember(owner: NominalTypeRef, member: string, ctx: Ca
     const hit = resolveRustNominalMemberOn(current, member, ctx, mode);
     if (hit !== null) return hit;
     if (member === "deref") return null;
-    const next = rustDerefTarget(current, ctx);
+    // A std smart pointer (`Arc<Core>`) derefs to its target for every member
+    // it does not answer itself (bd tea-rags-mcp-2g2og.24).
+    const pointee = rustStdSmartPointerTarget(current, member);
+    const next = pointee?.form === "instance" ? pointee : rustDerefTarget(current, ctx);
     if (next === undefined || next.name === current.name) return null;
     current = next;
   }
