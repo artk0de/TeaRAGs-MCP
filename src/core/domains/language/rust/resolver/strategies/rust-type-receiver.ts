@@ -11,7 +11,7 @@ import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-const
 import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
 import { resolveRustNominalType, rustDeclaredMemberReturnType } from "../declared-return-type.js";
-import { createRustTypeMemberLookup } from "../rust-type-member-lookup.js";
+import { createRustTypeMemberLookup, rustTypedMissIsProven } from "../rust-type-member-lookup.js";
 import { rustStdSmartPointerTarget, rustStdUnwrapType } from "../std-type-hops.js";
 import { lookupRustSymbolsByShortName, rustImportMatchesReceiver, type ResolverConfig } from "./shared.js";
 
@@ -168,7 +168,11 @@ function qualifiedReceiverType(receiver: string): string | null {
 
 export class RustTypeReceiverSymbolResolutionStrategy extends ChainTypeSymbolResolutionStrategy {
   constructor(cfg: ResolverConfig) {
-    super("typeReceiver", RUST_TYPE_RECEIVER_TYPING, createRustTypeMemberLookup(cfg.mode), { dropOnTypedMiss: true });
+    super("typeReceiver", RUST_TYPE_RECEIVER_TYPING, createRustTypeMemberLookup(cfg.mode), {
+      // A typed miss drops only when PROVEN; a hop the walk could not see
+      // through defers to the prior read (bd tea-rags-mcp-s3i8m.5).
+      dropOnTypedMiss: (receiverType, call, ctx) => rustTypedMissIsProven(receiverType, call.member, ctx),
+    });
   }
 }
 

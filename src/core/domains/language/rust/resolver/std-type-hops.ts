@@ -20,7 +20,7 @@
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { rustTextIsStdPreludeType } from "../vocabulary/std-prelude.js";
-import { lookupRustSymbolsByShortName } from "./strategies/shared.js";
+import { lookupRustSymbolsByShortName, rustImportBindings, rustImportIsExternal } from "./strategies/shared.js";
 
 const RUST_STD_ROOTS: ReadonlySet<string> = new Set(["std", "core", "alloc"]);
 const RUST_STD_UNWRAPPING: ReadonlySet<string> = new Set(["Option", "Result"]);
@@ -78,6 +78,45 @@ export function rustStdTypeRef(
   }
   if (!rustTextIsStdPreludeType(name) && !RUST_STD_UNWRAPPING.has(name)) return undefined;
   return projectDeclaresType(ctx, name) ? undefined : withArgs(name);
+}
+
+/** A `use` of the caller's file binds `name` to a crate outside the project. */
+export function rustNameBoundByExternalImport(name: string, ctx: CallContext): boolean {
+  return ctx.imports.some(
+    (imp) =>
+      rustImportBindings(imp.importText)?.some((binding) => binding.localName === name) === true &&
+      rustImportIsExternal(imp.importText, ctx),
+  );
+}
+
+/** A declared type spelling that provably names no project type: std, or bound by an external `use`. */
+function rustTypeNameIsForeign(name: string, ctx: CallContext): boolean {
+  if (name.includes("::")) {
+    const head = name.replace(/^::/, "").split("::")[0];
+    return RUST_STD_ROOTS.has(head) || rustNameBoundByExternalImport(head, ctx);
+  }
+  return rustStdTypeRef(name, undefined, ctx) !== undefined || rustNameBoundByExternalImport(name, ctx);
+}
+
+/**
+ * Whether a declared field type PROVES no project member answers a call on
+ * the field (bd tea-rags-mcp-s3i8m.5): its head is foreign, and when the head
+ * is a smart pointer (`Arc<Url>`) — whose `Deref` hands members to its target
+ * — every argument is known and foreign too. `Arc<Core>` with a project
+ * `Core`, or an argument the walker could not spell, proves nothing.
+ */
+export function rustDeclaredTypeIsForeign(
+  head: string,
+  typeArguments: readonly (string | null)[] | undefined,
+  ctx: CallContext,
+): boolean {
+  if (!rustTypeNameIsForeign(head, ctx)) return false;
+  if (!RUST_STD_SMART_POINTERS.has(head.split("::").at(-1) ?? head)) return true;
+  return (
+    typeArguments !== undefined &&
+    typeArguments.length > 0 &&
+    typeArguments.every((arg) => arg !== null && rustTypeNameIsForeign(arg, ctx))
+  );
 }
 
 /** A std type in the fold's channel — never a placed project type. */

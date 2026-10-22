@@ -2,10 +2,10 @@ import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { resolveRustNominalType } from "./declared-return-type.js";
-import { rustStdTypeRef } from "./std-type-hops.js";
+import { rustDeclaredTypeIsForeign, rustStdTypeRef } from "./std-type-hops.js";
 
-/** Read only the placed owner's explicitly declared named field, never a short-name field map. */
-export function rustDeclaredFieldType(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined {
+/** The placed owner, its single struct declaration and the declared head of its field `member`. */
+function rustPlacedField(recv: TypeRef, member: string, ctx: CallContext) {
   if (recv.form !== "instance" || !recv.name.includes(".rs::")) return undefined;
   const owner = resolveRustNominalType(recv, ctx);
   if (owner === undefined) return undefined;
@@ -16,9 +16,31 @@ export function rustDeclaredFieldType(recv: TypeRef, member: string, ctx: CallCo
     (fact) => fact.typeId === ownerId && fact.symbolKind === "class" && !fact.reopens,
   );
   if (declarations?.length !== 1) return undefined;
-  const declaration = declarations[0];
   const field = identifierEntry(identifierEntry(ctx.classFieldTypesByClassKey, owner.name), member);
   if (field === undefined) return undefined;
+  return { owner, ownerFile, ownerId, declaration: declarations[0], field };
+}
+
+/**
+ * Whether the placed owner's field `member` is declared with a provably
+ * foreign type (`Arc<Url>`, `HashMap<K, V>`, `std::fs::OpenOptions`), so no
+ * project member can answer a call on it (bd tea-rags-mcp-s3i8m.5). A generic
+ * parameter of the owner, or a project type the fold could not place, proves
+ * nothing.
+ */
+export function rustDeclaredFieldIsForeign(recv: TypeRef, member: string, ctx: CallContext): boolean {
+  const placed = rustPlacedField(recv, member, ctx);
+  if (placed === undefined) return false;
+  const { declaration, field } = placed;
+  if (declaration.genericParameters?.includes(field) === true) return false;
+  return rustDeclaredTypeIsForeign(field, identifierEntry(declaration.fieldTypeArguments, member), ctx);
+}
+
+/** Read only the placed owner's explicitly declared named field, never a short-name field map. */
+export function rustDeclaredFieldType(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined {
+  const placed = rustPlacedField(recv, member, ctx);
+  if (placed === undefined) return undefined;
+  const { owner, ownerFile, ownerId, declaration, field } = placed;
   const substitute = (name: string): TypeRef | undefined => {
     const parameter = declaration.genericParameters?.indexOf(name) ?? -1;
     if (parameter >= 0) {

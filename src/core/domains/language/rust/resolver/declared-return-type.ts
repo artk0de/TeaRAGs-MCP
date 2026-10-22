@@ -1,22 +1,20 @@
 import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { MemberReturnTypeResolver, type NominalTypeRef } from "../../kernel/index.js";
-import { rustStdSmartPointerTarget, rustStdTypeRef, rustStdUnwrapType } from "./std-type-hops.js";
-import { lookupRustSymbolsByShortName, rustImportBindings, rustImportIsExternal } from "./strategies/shared.js";
+import {
+  rustNameBoundByExternalImport,
+  rustStdSmartPointerTarget,
+  rustStdTypeRef,
+  rustStdUnwrapType,
+} from "./std-type-hops.js";
+import { lookupRustSymbolsByShortName } from "./strategies/shared.js";
 
 /** File-qualified nominal identity is kept inside the existing TypeRef channel, never a bare global namesake. */
 export function resolveRustNominalType(nominalType: TypeRef, ctx: CallContext): NominalTypeRef | undefined {
   if (nominalType.form !== "instance" && nominalType.form !== "class") return undefined;
   const { name } = nominalType;
   if (/^(?:::)?(?:std|core|alloc)::/.test(name)) return undefined;
-  if (
-    !name.includes(".rs::") &&
-    ctx.imports.some(
-      (imp) =>
-        rustImportBindings(imp.importText)?.some((binding) => binding.localName === name) === true &&
-        rustImportIsExternal(imp.importText, ctx),
-    )
-  ) {
+  if (!name.includes(".rs::") && rustNameBoundByExternalImport(name, ctx)) {
     // Only an EXTERNAL binding vetoes placement now. An import-bound project
     // type (`use script_bindings::Str2`) reaches the candidate lookup below,
     // where the sole-match and lexical-scope gates keep it honest — the old

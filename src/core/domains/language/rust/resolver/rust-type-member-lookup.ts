@@ -1,7 +1,12 @@
 /** Rust nominal type member lookup for the reusable kernel receiver strategies. */
 
 import type { AmbiguousResolveMode, CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
-import { createTypeMemberLookup, type NominalTypeRef, type TypeMemberLookup } from "../../kernel/index.js";
+import {
+  createTypeMemberLookup,
+  RunScopedMemo,
+  type NominalTypeRef,
+  type TypeMemberLookup,
+} from "../../kernel/index.js";
 import { rustDerefTarget, rustExactMember } from "./declared-return-type.js";
 import { rustStdSmartPointerTarget } from "./std-type-hops.js";
 import { lookupRustSymbolsByShortName, pickSameFileThenSingle } from "./strategies/shared.js";
@@ -45,6 +50,101 @@ function resolveRustNominalMember(owner: NominalTypeRef, member: string, ctx: Ca
     current = next;
   }
   return null;
+}
+
+/**
+ * Whether a typed member miss on `owner` is PROVEN, so the call may drop
+ * instead of reaching the prior read (bd tea-rags-mcp-s3i8m.5). The chain
+ * typing is additive: a miss proves something only when the walk saw every
+ * place the member could live. It did not when
+ *   - the owner is placed on a file that only reopens it with an `impl` block
+ *     (`impl Ext for Engine`, `impl Trait for Ref<'_, T>`), not its declaration;
+ *   - another file's `impl` of the same type declares the member — Rust
+ *     inherent impls may live in any module of the crate;
+ *   - the owner implements `Deref` and the fold cannot follow it to a placed
+ *     target (`type Target = EntryStorage<EK, ER>` on generics it dropped, a
+ *     type-alias target).
+ * A std type the fold carries unplaced keeps its miss verdict: its members
+ * are std unless the project implements them on it, which the walk searched.
+ */
+export function rustTypedMissIsProven(owner: NominalTypeRef, member: string, ctx: CallContext): boolean {
+  let current = owner;
+  for (let hop = 0; hop < 3; hop++) {
+    const boundary = current.name.indexOf(".rs::");
+    if (boundary < 0) {
+      const pointee = rustStdSmartPointerTarget(current, member);
+      if (pointee?.form !== "instance") return true;
+      current = pointee;
+      continue;
+    }
+    const relPath = current.name.slice(0, boundary + 3);
+    const typeId = current.name.slice(boundary + 5);
+    const ownerDeclared = ctx.typeDeclarations?.[relPath]?.some((fact) => fact.typeId === typeId && !fact.reopens);
+    if (ownerDeclared !== true) return false;
+    if (ctx.symbolTable.lookup(`${typeId}#${member}`).length > 0) return false;
+    if (ctx.symbolTable.lookup(`${typeId}.${member}`).length > 0) return false;
+    if (ctx.symbolTable.lookup(`${typeId}#deref`).length === 0) return true;
+    const derefTarget = rustDerefTarget(current, ctx);
+    if (derefTarget === undefined) return rustDerefsToForeignMissing(current, relPath, typeId, member, ctx);
+    if (derefTarget.name === current.name) return false;
+    current = derefTarget;
+  }
+  return false;
+}
+
+/**
+ * A `Deref` the fold could not place still proves the miss when its declared
+ * target names no project type at all (`fn deref(&self) -> &str`, `-> &AttrValue`
+ * from an external crate) and the project implements no such member on that
+ * name. A generic parameter, a `Self::Target` spelling or a project type the
+ * fold failed to place proves nothing.
+ */
+function rustDerefsToForeignMissing(
+  owner: NominalTypeRef,
+  relPath: string,
+  typeId: string,
+  member: string,
+  ctx: CallContext,
+): boolean {
+  const deref = rustExactMember(owner, "deref", ctx);
+  if (deref === undefined) return false;
+  const derefReturn = ctx.structuredReturnTypes?.[`${deref.relPath}::${deref.symbolId}`];
+  if (derefReturn?.form !== "instance" || derefReturn.name === "Self" || derefReturn.name.startsWith("Self::")) {
+    return false;
+  }
+  const head = derefReturn.name.split("::").at(-1) ?? derefReturn.name;
+  const generic = ctx.typeDeclarations?.[relPath]?.some(
+    (fact) => fact.typeId === typeId && fact.genericParameters?.includes(head) === true,
+  );
+  if (generic === true) return false;
+  const named = lookupRustSymbolsByShortName(ctx, head).filter(
+    (def) => def.symbolId === head || def.symbolId.endsWith(`::${head}`),
+  );
+  if (named.length > 0 || rustProjectTypeShortNames(ctx).has(head)) return false;
+  return !lookupRustSymbolsByShortName(ctx, member).some(
+    (def) => isRustTypeMember(def.symbolId, head, "#", member) || isRustTypeMember(def.symbolId, head, ".", member),
+  );
+}
+
+const PROJECT_TYPE_SHORT_NAMES = new RunScopedMemo<object, { files: number; names: ReadonlySet<string> }>();
+
+/**
+ * Every type short name the project declares — type aliases included, which
+ * the symbol table may not chunk (`pub type BatchRouter<N, C> = Router<…>`).
+ * Memoised per resolve run and rebuilt when the map's file count moves, since
+ * the run state fills that map in place while it absorbs files.
+ */
+function rustProjectTypeShortNames(ctx: CallContext): ReadonlySet<string> {
+  const declarations = ctx.typeDeclarations;
+  if (declarations === undefined) return new Set();
+  const files = Object.keys(declarations).length;
+  const cached = PROJECT_TYPE_SHORT_NAMES.get(ctx.runScope, declarations);
+  if (cached?.files === files) return cached.names;
+  const names = new Set(
+    Object.values(declarations).flatMap((facts) => facts.map((fact) => fact.typeId.split("::").at(-1) ?? "")),
+  );
+  PROJECT_TYPE_SHORT_NAMES.set(ctx.runScope, declarations, { files, names });
+  return names;
 }
 
 function resolveRustNominalMemberOn(
