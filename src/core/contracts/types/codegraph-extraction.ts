@@ -844,6 +844,8 @@ export interface TypeDeclarationFact {
    * 1-indexed line span — the constraint holds inside THIS body only, and a
    * file routinely re-opens one protocol several times under different
    * constraints. Absent when the clause constrains nothing about `Self`.
+   * Rust: every trait impl re-opening carries one for its span, `types` being
+   * a generic `Self`'s bounds (`impl<T: B> Tr for T` → `["B"]`), else empty.
    */
   readonly selfConstraints?: SelfConstraintFact;
   /**

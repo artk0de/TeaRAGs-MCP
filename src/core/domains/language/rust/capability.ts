@@ -79,6 +79,9 @@ export const capability: LanguageCapability = {
   //   dependency's key (`webxr-api = { package = "servo-webxr-api" }`, direct
   //   or via `[workspace.dependencies]`) and a `[lib] name` member's package
   //   name, each only when it names one member and no member already owns it.
+  // - bd tea-rags-mcp-s3i8m (rule 5 A/B) — a trait impl is a re-opening type
+  //   fact (trait, line span, a generic Self's bounds); trait self-calls prove
+  //   traits from `impl<T: B> Tr for T` bounds and from same-crate impls only.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
