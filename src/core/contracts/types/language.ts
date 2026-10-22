@@ -1232,6 +1232,12 @@ export interface RustScipDefinition {
   readonly kind: "callable" | "type" | "macro" | "local" | "other";
   /** The trait of `impl#[X][Trait]m().` — the second bracket; absent for an inherent or free symbol. */
   readonly implTrait?: string;
+  /**
+   * The trait of a trait-BODY member `<Trait>#m().` — the declaration, which
+   * proves the trait and not the impl a call dispatches to (bd s3i8m.6 R3c);
+   * absent for an `impl#` member, a free symbol and a non-callable.
+   */
+  readonly declaringTrait?: string;
   /** True when ANY definition in the index belongs to the same package — a workspace crate, not a dependency. */
   readonly packageInProject: boolean;
 }

@@ -12,6 +12,7 @@ import type {
   CallRef,
   SymbolDefinition,
   SymbolDefinitionKind,
+  TypeDeclarationFact,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type {
   LanguageSymbolResolver,
@@ -94,7 +95,11 @@ function table(...defs: SymbolDefinition[]): InMemoryGlobalSymbolTable {
   return t;
 }
 
-function ctxWith(t: InMemoryGlobalSymbolTable, index?: RustAnalyzerScipIndex): CallContext {
+function ctxWith(
+  t: InMemoryGlobalSymbolTable,
+  index?: RustAnalyzerScipIndex,
+  typeDeclarations?: Record<string, TypeDeclarationFact[]>,
+): CallContext {
   return {
     callerFile: CALLER,
     callerScope: [],
@@ -102,6 +107,32 @@ function ctxWith(t: InMemoryGlobalSymbolTable, index?: RustAnalyzerScipIndex): C
     symbolTable: t,
     projectRoot: ROOT,
     ...(index === undefined ? {} : { languageConfig: new RustResolveEnvironment(undefined, undefined, index) }),
+    ...(typeDeclarations === undefined ? {} : { typeDeclarations }),
+  };
+}
+
+/** `impl <trait> for <typeId>` spanning `startLine..endLine` — the walker's re-opening fact. */
+function traitImpl(typeId: string, trait: string, startLine: number, endLine: number): TypeDeclarationFact {
+  return {
+    typeId,
+    symbolKind: "class",
+    line: startLine,
+    reopens: true,
+    conforms: [trait],
+    selfConstraints: { types: [], startLine, endLine },
+  };
+}
+
+/** SCIP's answer for a std trait DECLARATION member (`convert/From#from().`) — the trait, not an impl. */
+function stdTraitMember(trait: string, member: string): RustScipDefinition {
+  return {
+    symbol: `rust-analyzer cargo core 1.88.0 convert/${trait}#${member}().`,
+    package: "core",
+    inProject: false,
+    name: member,
+    kind: "callable",
+    declaringTrait: trait,
+    packageInProject: false,
   };
 }
 
@@ -198,6 +229,59 @@ describe("RustAnalyzerScipSymbolResolutionStrategy (bd s3i8m.6 R3a)", () => {
 
     expect(strategy.attempt(call("g.greet()", "g", "greet", 27, 6), ctx)).toEqual({ kind: "continue" });
     expect(strategy.attempt(call("g.greet()", "g", "greet", 28, 6), ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+describe("SCIP trait-declaration members prove external only without a project impl (bd s3i8m.6 R3c)", () => {
+  const FROM_SITE = "src/main.rs:31:14";
+  const MAP_SITE = "src/main.rs:32:9";
+  const index = () =>
+    stubIndex({ [FROM_SITE]: stdTraitMember("From", "from"), [MAP_SITE]: stdTraitMember("Iterator", "map") });
+  const fromSite = call("DOMString::from(x)", "DOMString", "from", 31, 14);
+  const mapSite = call("iter.map(f)", "iter", "map", 32, 9);
+  const domString = () => table(def("src/domstring.rs", "from", "DOMString.from", 11, 13));
+  const domStringImpl = { "src/domstring.rs": [traitImpl("DOMString", "From", 10, 14)] };
+
+  it("CONTINUEs when a project impl of the trait declares the member", () => {
+    expect(strategy.attempt(fromSite, ctxWith(domString(), index(), domStringImpl))).toEqual({ kind: "continue" });
+  });
+
+  it("DROPs when no project impl of the trait declares the member", () => {
+    expect(strategy.attempt(fromSite, ctxWith(table(), index(), {}))).toEqual({ kind: "drop" });
+    // The namesake sits outside every `impl From for _` span — an inherent `from` proves nothing.
+    expect(
+      strategy.attempt(
+        fromSite,
+        ctxWith(domString(), index(), { "src/domstring.rs": [traitImpl("DOMString", "From", 20, 24)] }),
+      ),
+    ).toEqual({
+      kind: "drop",
+    });
+    // An impl of ANOTHER trait declaring `from` is no impl of `From`.
+    expect(
+      strategy.attempt(
+        fromSite,
+        ctxWith(domString(), index(), { "src/domstring.rs": [traitImpl("DOMString", "Into", 10, 14)] }),
+      ),
+    ).toEqual({
+      kind: "drop",
+    });
+  });
+
+  it("DROPs a provided trait method no project impl declares", () => {
+    const counter = table(def("src/counter.rs", "next", "Counter.next", 3, 5));
+    const iteratorImpl = { "src/counter.rs": [traitImpl("Counter", "Iterator", 2, 6)] };
+    expect(strategy.attempt(mapSite, ctxWith(counter, index(), iteratorImpl))).toEqual({ kind: "drop" });
+  });
+
+  it("keeps the site in the denominator: targetsExternalImport is false on a project impl", async () => {
+    const source: RustAnalyzerScipSource = {
+      acquire: async () => ({ kind: "indexed", index: index(), cacheHit: true, toolchainSkew: false }),
+    };
+    const resolver = new LanguageFactory({ rustAnalyzerScipSource: source }).create("rust").resolver!;
+    await resolver.warmResolvePass?.({ expectedFileCount: 1, projectRoot: ROOT });
+    expect(resolver.targetsExternalImport?.(fromSite, ctxWith(domString(), undefined, domStringImpl))).toBe(false);
+    expect(resolver.targetsExternalImport?.(fromSite, ctxWith(domString(), undefined, {}))).toBe(true);
   });
 });
 
