@@ -154,12 +154,30 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
     expect(f.target("p.m()")).not.toBe("Foo#m");
   });
 
-  it("leaves an untyped pattern binding unresolved instead of falling to a short-name namesake", () => {
-    const f = fixture(
-      `${types}\nstruct Error;\nimpl Error { fn clone(&self) -> Error { Error } }\nfn run(path: &Cow<'_, [u8]>) {\n    match *path {\n        Cow::Owned(ref path) => {\n            let copy = path.clone();\n        }\n        _ => {}\n    }\n}\n`,
-      materialized,
-    );
-    expect(f.target("path.clone()")).toBeNull();
+  // bd tea-rags-mcp-s3i8m Task 1c — an untyped pattern binding still shadows
+  // the outer name, but the call falls through the chain exactly as an unbound
+  // receiver does (additive invariant), instead of dropping.
+  it("lets an untyped pattern binding read exactly like an unbound receiver", () => {
+    const body = (recv: string) =>
+      `${types}\nstruct Error;\nimpl Error { fn clone(&self) -> Error { Error } }\nfn run(path: &Cow<'_, [u8]>) {\n    match *path {\n        Cow::Owned(ref path) => {\n            let copy = ${recv}.clone();\n        }\n        _ => {}\n    }\n}\n`;
+    const unbound = fixture(body("other"), materialized).target("other.clone()");
+    expect(fixture(body("path"), materialized).target("path.clone()")).toBe(unbound);
+  });
+
+  it("resolves an untyped if-let payload through the short-name pass like an unbound receiver", () => {
+    const body = (recv: string) =>
+      `${types}\nstruct Key;\nimpl Key { fn as_encoded(&self) {} }\nfn run() {\n    let maybe_key = compute();\n    if let Some(k) = &maybe_key {\n        ${recv}.as_encoded();\n    }\n}\n`;
+    expect(fixture(body("other"), materialized).target("other.as_encoded()")).toBe("Key#as_encoded");
+    expect(fixture(body("k"), materialized).target("k.as_encoded()")).toBe("Key#as_encoded");
+  });
+
+  it("keeps shadowing: an untyped pattern binding never reads the outer binding's type", () => {
+    const body = (recv: string) =>
+      `${types}\nstruct Baz;\nimpl Foo { fn new() -> Foo { Foo } fn bar(&self) {} }\nimpl Baz { fn bar(&self) {} }\nfn run() {\n    let k = Foo::new();\n    let opt = compute();\n    if let Some(k) = opt {\n        ${recv}.bar();\n    }\n}\n`;
+    const unbound = fixture(body("other"), materialized).target("other.bar()");
+    const shadowed = fixture(body("k"), materialized).target("k.bar()");
+    expect(shadowed).not.toBe("Foo#bar");
+    expect(shadowed).toBe(unbound);
   });
 
   it("reads the outer binding after a closure on the same line", () => {

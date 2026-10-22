@@ -1,11 +1,8 @@
-import { CONTINUE, DROP } from "../../../../../contracts/resolution.js";
 import {
   nearestCallResultBinding,
   resolveLocalBinding,
   type CallContext,
-  type CallRef,
 } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome } from "../../../../../contracts/types/language.js";
 import {
   LocalBindingSymbolResolutionStrategy,
   type NominalTypeRef,
@@ -31,6 +28,8 @@ const RUST_LOCAL_BINDING_TYPING: ReceiverTypingPorts = {
     }
     // A pattern binding shadows the name: its fold answers, never the
     // call-result channel or an outer binding (bd tea-rags-mcp-s3i8m, Task 1a).
+    // An unproven fold answers null, so the call CONTINUES down the chain
+    // exactly as an unbound receiver does (Task 1c, additive invariant).
     if (binding.valueKind === "patternProjection") {
       return rustPatternBindingType(binding, ctx, rustExpressionType) ?? null;
     }
@@ -64,21 +63,6 @@ export class RustLocalBindingSymbolResolutionStrategy extends LocalBindingSymbol
   constructor(cfg: ResolverConfig) {
     const lookup = createRustTypeMemberLookup(cfg.mode);
     super("localBinding", RUST_LOCAL_BINDING_TYPING, lookup, { dropOnTypedMiss: rustCallResultMissDrops(lookup) });
-  }
-
-  /**
-   * A receiver a pattern binding shadows, whose type the fold cannot prove,
-   * DROPs (bd tea-rags-mcp-s3i8m, Task 1a): the name denotes a value we know
-   * nothing about, so no later name-only pass (import match, global short
-   * name) may guess a namesake for it — `Cow::Owned(ref path) => path.clone()`
-   * must not land on a project `Error#clone`.
-   */
-  override attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const outcome = super.attempt(call, ctx);
-    if (outcome !== CONTINUE || call.receiver === null) return outcome;
-    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine, call.startColumn);
-    if (binding?.valueKind !== "patternProjection") return outcome;
-    return rustPatternBindingType(binding, ctx, rustExpressionType) === undefined ? DROP : outcome;
   }
 }
 
