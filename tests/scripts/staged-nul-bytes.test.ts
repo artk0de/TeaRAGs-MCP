@@ -81,12 +81,16 @@ describe("isNulGuardedPath", () => {
     expect(isNulGuardedPath(path)).toBe(true);
   });
 
-  it.each(["public/logo.png", "website/static/img/favicon.ico", "fonts/Inter.WOFF2", "a/b.jpeg", "docs/paper.pdf"])(
-    "leaves the binary %s alone",
-    (path) => {
-      expect(isNulGuardedPath(path)).toBe(false);
-    },
-  );
+  it.each([
+    "public/logo.png",
+    "website/static/img/favicon.ico",
+    "fonts/Inter.WOFF2",
+    "a/b.jpeg",
+    "docs/paper.pdf",
+    "tests/fixtures/rust-analyzer-scip/mini/index.scip",
+  ])("leaves the binary %s alone", (path) => {
+    expect(isNulGuardedPath(path)).toBe(false);
+  });
 });
 
 describe("findStagedNulBytes", () => {

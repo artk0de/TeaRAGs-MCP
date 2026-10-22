@@ -1204,6 +1204,46 @@ export interface RustExternalSignatureSources {
   readonly sizeCapBytes: number;
 }
 
+/** Where a rust-analyzer SCIP occurrence's symbol is defined (bd s3i8m.6). */
+export interface RustScipDefinition {
+  /** The SCIP symbol string (`rust-analyzer cargo std 1.88.0 vec/Vec#push().`); a local is `local <n>@<relPath>`. */
+  readonly symbol: string;
+  /** The SCIP package name of the symbol: `std`, `core`, `alloc`, a dependency or a workspace crate. */
+  readonly package: string;
+  /** True when the index holds the symbol's definition — the project's own code. */
+  readonly inProject: boolean;
+  /** Project-relative file of the definition; present iff `inProject`. */
+  readonly relPath?: string;
+  /** 1-based line of the definition; present iff `inProject`. */
+  readonly line?: number;
+}
+
+/**
+ * The JSON-safe form of a decoded rust-analyzer SCIP index — what the disk
+ * cache stores and `RustAnalyzerScipIndex` answers from. Lines and columns are
+ * SCIP's: 0-based lines, UTF-16 code-unit columns.
+ */
+export interface RustAnalyzerScipIndexData {
+  /** Interned symbol strings; references and definitions point into it. */
+  readonly symbols: readonly string[];
+  /** relPath → flat `[line0, startCol, symbolIndex, ...]` triples, one per single-line REFERENCE occurrence. */
+  readonly references: Readonly<Record<string, readonly number[]>>;
+  /** symbolIndex (as a string key) → `[relPath, line0]` of its DEFINITION occurrence. */
+  readonly definitions: Readonly<Record<string, readonly [string, number]>>;
+}
+
+/**
+ * Call-site → definition lookup over one rust-analyzer `scip` run of a project
+ * (bd s3i8m.6). Built once per codegraph run; `null` when no reference
+ * occurrence starts at the position.
+ */
+export interface RustAnalyzerScipIndex {
+  /** `line` is 1-based; `utf16Col` is 0-based and names the START of the member token. */
+  definitionAt: (relPath: string, line: number, utf16Col: number) => RustScipDefinition | null;
+  /** Digest of the environment and content the index was produced from. */
+  readonly identity: string;
+}
+
 /**
  * One schema table and the instance-accessor names its columns synthesize on the
  * owning model. The COLUMN→accessor expansion (reader / writer / query

@@ -168,11 +168,17 @@ function* asdfCandidates(deps: RustAnalyzerDiscoveryDeps): Iterable<string> {
   for (const version of deps.fs.listDir(installs)) yield join(installs, version, "bin", BINARY);
 }
 
-/** The channel `rust-toolchain.toml` (or the legacy `rust-toolchain`) pins, if any. */
 function pinnedToolchainChannel(deps: RustAnalyzerDiscoveryDeps): string | undefined {
-  if (!deps.projectRoot) return undefined;
+  return deps.projectRoot ? readPinnedToolchainChannel(deps.projectRoot, deps.fs.readFile) : undefined;
+}
+
+/** The channel `rust-toolchain.toml` (or the legacy `rust-toolchain`) at `projectRoot` pins, if any. */
+export function readPinnedToolchainChannel(
+  projectRoot: string,
+  readFile: (path: string) => string | undefined,
+): string | undefined {
   for (const name of ["rust-toolchain.toml", "rust-toolchain"]) {
-    const text = deps.fs.readFile(join(deps.projectRoot, name));
+    const text = readFile(join(projectRoot, name));
     if (text === undefined) continue;
     const toml = /^\s*channel\s*=\s*["']([^"']+)["']/m.exec(text);
     if (toml) return toml[1];
@@ -191,7 +197,7 @@ export function defaultRustAnalyzerDiscoveryDeps(
     env,
     homeDir: homedir(),
     projectRoot,
-    run: runHostCommand,
+    run: runRustAnalyzerHostCommand,
     fs: {
       exists: (path) => existsSync(path),
       readFile: (path) => {
@@ -219,7 +225,11 @@ export function defaultRustAnalyzerDiscoveryDeps(
   };
 }
 
-function runHostCommand(command: string, args: readonly string[], timeoutMs: number): RustAnalyzerCommandOutcome {
+export function runRustAnalyzerHostCommand(
+  command: string,
+  args: readonly string[],
+  timeoutMs: number,
+): RustAnalyzerCommandOutcome {
   try {
     const result = spawnSync(command, args, {
       timeout: timeoutMs,
