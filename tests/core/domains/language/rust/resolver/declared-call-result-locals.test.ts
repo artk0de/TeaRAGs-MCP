@@ -445,7 +445,6 @@ fn run() { let value = make(); value.finish(); }
     ["result shadow", "fn run()", "let value = make();\nlet value = unknown;"],
     ["result assignment", "fn run()", "let mut value = make();\nvalue = unknown;"],
     ["result update", "fn run()", "let mut value = make();\nvalue += unknown;"],
-    ["result pattern", "fn run()", "let value = make();\nlet (value, _) = pair;"],
     ["closure", "fn run()", "let value = make();\nlet closure = |make| make();"],
     ["nested function", "fn run()", "let value = make();\nfn make() {}"],
     ["local const", "fn run()", "const make: fn() -> Product = other;\nlet value = make();"],
@@ -463,6 +462,26 @@ ${header} {
       materialized,
     );
     expect(f.chunk().callResultBindings?.value).toBeUndefined();
+  });
+
+  // bd tea-rags-mcp-s3i8m — a destructuring `let` that rebinds the result
+  // once withheld it outright; it now cuts the result's window at its own end,
+  // so a use after it never reads the call's type.
+  it("does not type a use after a destructuring let that rebinds the result", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+fn make() -> Product { todo!() }
+fn run() {
+  let value = make();
+  let (value, _) = pair;
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.resolve("value.finish()")).toBeNull();
   });
 
   // Since bd tea-rags-mcp-2g2og.24 the gate is per name: an unrelated nested
