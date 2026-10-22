@@ -1,12 +1,15 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
   type CallContext,
   type CallRef,
+  type RustMacroUseCrate,
   type SymbolDefinition,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { rustTextIsStdMacro } from "../../vocabulary/std-prelude.js";
+import { rustMacroCrateExports, rustMacroCrateIsKnown } from "../../vocabulary/macro-crates.js";
+import { rustStdPathHeads, rustTextIsStdMacro } from "../../vocabulary/std-prelude.js";
 import { rustWorkspaceCratesOf } from "../workspace-crates.js";
 import {
   RUST_OWN_CRATE_PATH_HEADS,
@@ -77,12 +80,44 @@ function latest(defs: readonly SymbolDefinition[]): SymbolDefinition {
  * `undefined` when `crateName` is no workspace member.
  */
 function rustCrateExportedMacros(crateName: string, name: string, ctx: CallContext): SymbolDefinition[] | undefined {
+  const memberExports = rustCrateDeclaredExportedMacros(crateName, name, ctx);
+  if (memberExports === undefined || memberExports.length > 0) return memberExports;
+  return rustMacroShortNameCandidates(ctx, name).filter((def) => def.visibility === "public");
+}
+
+/**
+ * The `#[macro_export]` macros named `name` declared under workspace member
+ * `crateName`'s crate-root directories — no re-export widening. Empty when the
+ * member declares none, `undefined` when `crateName` is no workspace member.
+ */
+function rustCrateDeclaredExportedMacros(
+  crateName: string,
+  name: string,
+  ctx: CallContext,
+): SymbolDefinition[] | undefined {
   const crates = rustWorkspaceCratesOf(ctx);
   if (crates?.declares(crateName) !== true) return undefined;
   const rootDirs = crates.rootDirsOf(crateName);
-  const exported = rustMacroShortNameCandidates(ctx, name).filter((def) => def.visibility === "public");
-  const declared = exported.filter((def) => rootDirs.some((dir) => dir === "" || def.relPath.startsWith(`${dir}/`)));
-  return declared.length > 0 ? declared : exported;
+  return rustMacroShortNameCandidates(ctx, name).filter(
+    (def) => def.visibility === "public" && rootDirs.some((dir) => dir === "" || def.relPath.startsWith(`${dir}/`)),
+  );
+}
+
+/**
+ * The `#[macro_use] extern crate` list scoping the caller's crate (bd
+ * tea-rags-mcp-s3i8m.4 B2): the caller's own when it is a crate root that
+ * declares one, else the crate-root file (`lib.rs`, then `main.rs`) of the
+ * directory `rustMacroCrateKey` placed it in. A crate root reads only its own.
+ */
+function rustCrateRootMacroUseCrates(ctx: CallContext, crateKey: string): readonly RustMacroUseCrate[] {
+  const lists = ctx.rustMacroUseCratesByFile;
+  if (lists === undefined) return [];
+  const callerMacroUseCrates = identifierEntry(lists, ctx.callerFile);
+  if (callerMacroUseCrates !== undefined) return callerMacroUseCrates;
+  const prefix = crateKey ? `${crateKey}/` : "";
+  const rootFiles = [`${prefix}lib.rs`, `${prefix}main.rs`];
+  if (rootFiles.includes(ctx.callerFile)) return [];
+  return identifierEntry(lists, rootFiles[0]) ?? identifierEntry(lists, rootFiles[1]) ?? [];
 }
 
 /**
@@ -139,7 +174,33 @@ export class RustMacroInvocationSymbolResolutionStrategy implements SymbolResolu
     if (rustTextIsStdMacro(call.member)) return null;
     const crate = rustMacroCrateKey(ctx.callerFile, ctx);
     const inCrate = elsewhere.filter((def) => rustMacroCrateKey(def.relPath, ctx) === crate);
-    return pickSingleCandidate(inCrate, this.cfg.mode);
+    if (inCrate.length > 0) return pickSingleCandidate(inCrate, this.cfg.mode);
+    return this.macroUseTarget(call, ctx, crate);
+  }
+
+  /**
+   * The macro a bare `m!` reaches through the caller crate root's
+   * `#[macro_use] extern crate` list (bd tea-rags-mcp-s3i8m.4 B2). The LAST
+   * listed crate known to export `m` wins: a workspace member declaring an
+   * exported `m` gives its sole definition (several decline), a known external
+   * crate classifies the call external. An unknown external crate met first
+   * declines — what it exports, and so whether it shadows, cannot be proven.
+   * A `use` of an external crate binding the name shadows the whole list.
+   */
+  private macroUseTarget(call: CallRef, ctx: CallContext, crateKey: string): SymbolDefinition | null {
+    if (this.boundByExternalImport(call, ctx)) return null;
+    const macroUseCrates = rustCrateRootMacroUseCrates(ctx, crateKey);
+    for (let index = macroUseCrates.length - 1; index >= 0; index--) {
+      const { crateName, macros } = macroUseCrates[index];
+      if (macros !== undefined && !macros.includes(call.member)) continue;
+      const memberExports = rustCrateDeclaredExportedMacros(crateName, call.member, ctx);
+      if (memberExports !== undefined) {
+        if (memberExports.length === 0) continue;
+        return memberExports.length === 1 ? memberExports[0] : null;
+      }
+      if (!rustMacroCrateIsKnown(crateName) || rustMacroCrateExports(crateName, call.member)) return null;
+    }
+    return null;
   }
 
   private pathTarget(call: CallRef, ctx: CallContext, candidates: SymbolDefinition[]): SymbolDefinition | null {
@@ -175,6 +236,25 @@ export class RustMacroInvocationSymbolResolutionStrategy implements SymbolResolu
       }
     }
     return undefined;
+  }
+
+  /**
+   * A non-glob `use` of an external crate binds the macro's name
+   * (`use slog_global::info;`): an imported name shadows the `#[macro_use]`
+   * prelude. A std path is skipped — `use std::{error}` binds the module, and
+   * std declares no macro under a module's name.
+   */
+  private boundByExternalImport(call: CallRef, ctx: CallContext): boolean {
+    return ctx.imports.some(
+      (imp) =>
+        rustImportIsExternal(imp.importText, ctx) &&
+        rustImportBindings(imp.importText)?.some(
+          (binding) =>
+            binding.localName === call.member &&
+            !binding.globImport &&
+            !rustStdPathHeads.has(binding.moduleSegments[0] ?? ""),
+        ) === true,
+    );
   }
 
   /** A non-glob project `use` binds the macro's name (`use crate::macros::emit;`). */

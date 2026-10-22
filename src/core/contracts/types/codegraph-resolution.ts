@@ -20,6 +20,7 @@ import type {
   ImportRef,
   ModuleReexport,
   RubyExtendedHookMixin,
+  RustMacroUseCrate,
   TypeDeclarationFact,
 } from "./codegraph-extraction.js";
 import type { GraphEdges } from "./codegraph-graph.js";
@@ -452,6 +453,14 @@ export interface CallContext {
    * existed: every declaration of a type counts as the type.
    */
   typeDeclarations?: Readonly<Record<string, readonly TypeDeclarationFact[]>>;
+  /**
+   * `FileExtraction.rustMacroUseCrates` collected RUN-GLOBAL, keyed by the
+   * crate-root relPath that declares each list (bd tea-rags-mcp-s3i8m.4 B2): a
+   * bare `m!` in any file of the crate reads its root's list. Replaced on a
+   * re-walk, hydrated for unwalked files. Absent ⇒ a bare macro the crate does
+   * not declare stays unresolved, as before the channel existed.
+   */
+  rustMacroUseCratesByFile?: Readonly<Record<string, readonly RustMacroUseCrate[]>>;
   /**
    * Optional per-class Rails association map (`className → accessor →
    * modelType`) propagated from `FileExtraction.associationTypes`. The walker

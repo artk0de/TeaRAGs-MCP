@@ -38,6 +38,7 @@ import {
   type ResolveRunStatsRow,
   type RubyExtendedHookMixin,
   type RubyInstantiationSite,
+  type RustMacroUseCrate,
   type SelfDispatchArgTemplate,
   type StructuralContractDecl,
   type SymbolDefinition,
@@ -843,6 +844,14 @@ export class CodegraphRunState {
   typeDeclarations: Record<string, readonly TypeDeclarationFact[]> = createIdentifierRecord();
 
   /**
+   * Per-run `FileExtraction.rustMacroUseCrates`, keyed by the Rust crate-root
+   * relPath that declares each list (bd tea-rags-mcp-s3i8m.4 B2). Same grain
+   * and lifecycle as `typeDeclarations`: a re-walk REPLACES the list and a walk
+   * that finds none deletes it.
+   */
+  rustMacroUseCratesByFile: Record<string, readonly RustMacroUseCrate[]> = createIdentifierRecord();
+
+  /**
    * Per-run `FileExtraction.structuralContracts`, keyed by the relPath that
    * declares them, with that file's language (bd tea-rags-mcp-39xca.14). Same
    * grain and lifecycle as `typeDeclarations`: a re-walk REPLACES the file's
@@ -1276,6 +1285,14 @@ export class CodegraphRunState {
     typeDeclarations: (slice) => {
       if (slice.typeDeclarations !== undefined && !(slice.relPath in this.typeDeclarations)) {
         this.typeDeclarations[slice.relPath] = slice.typeDeclarations;
+      }
+    },
+    // Rust macro_use crates (bd tea-rags-mcp-s3i8m.4 B2): batch-wins on the
+    // crate-root relPath, as `typeDeclarations`. No `markContributed`: the
+    // runner hands the map to pass-2 unconditionally.
+    rustMacroUseCratesByFile: (slice) => {
+      if (slice.rustMacroUseCrates !== undefined && !(slice.relPath in this.rustMacroUseCratesByFile)) {
+        this.rustMacroUseCratesByFile[slice.relPath] = slice.rustMacroUseCrates;
       }
     },
     // The Ruby parameter family (bd tea-rags-mcp-39xca.15): the raw channels the
@@ -2005,6 +2022,7 @@ export class CodegraphRunState {
       this.callableArgSources = createIdentifierRecord();
       this.buildConstraintsByFile = createIdentifierRecord();
       this.typeDeclarations = createIdentifierRecord();
+      this.rustMacroUseCratesByFile = createIdentifierRecord();
       this.structuralContracts = createIdentifierRecord();
       this.structuralRowsByFamily = new Map();
       this.structuredReturnTypesByFamily = new LanguageFamilyRecord();
@@ -2209,6 +2227,7 @@ export class CodegraphRunState {
     this.callableArgSources = createIdentifierRecord();
     this.buildConstraintsByFile = createIdentifierRecord();
     this.typeDeclarations = createIdentifierRecord();
+    this.rustMacroUseCratesByFile = createIdentifierRecord();
     this.structuralContracts = createIdentifierRecord();
     this.structuralRowsByFamily = new Map();
     this.structuredReturnTypesByFamily = new LanguageFamilyRecord();
@@ -2260,6 +2279,7 @@ export class CodegraphRunState {
     this.callableArgSources = createIdentifierRecord();
     this.buildConstraintsByFile = createIdentifierRecord();
     this.typeDeclarations = createIdentifierRecord();
+    this.rustMacroUseCratesByFile = createIdentifierRecord();
     this.structuralContracts = createIdentifierRecord();
     this.structuralRowsByFamily = new Map();
     this.structuredReturnTypesByFamily = new LanguageFamilyRecord();
@@ -2433,6 +2453,13 @@ export class CodegraphRunState {
       this.typeDeclarations[extraction.relPath] = extraction.typeDeclarations;
     } else if (extraction.relPath in this.typeDeclarations) {
       delete this.typeDeclarations[extraction.relPath];
+    }
+    // A Rust crate root's macro_use crates under its own path (bd
+    // tea-rags-mcp-s3i8m.4 B2), same replace-or-drop lifecycle.
+    if (extraction.rustMacroUseCrates !== undefined && extraction.rustMacroUseCrates.length > 0) {
+      this.rustMacroUseCratesByFile[extraction.relPath] = extraction.rustMacroUseCrates;
+    } else if (extraction.relPath in this.rustMacroUseCratesByFile) {
+      delete this.rustMacroUseCratesByFile[extraction.relPath];
     }
     // The file's structural contracts under its own path (bd
     // tea-rags-mcp-39xca.14), same replace-or-drop lifecycle.

@@ -65,6 +65,8 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m Task 2 — a type name unique in its crate owns the
   //   crate's impl members in every file: `self.m()`, `self` chain seeding and
   //   placed-owner member lookup answer from cross-file impls.
+  // - bd tea-rags-mcp-s3i8m.4 (B2) — a crate root records its
+  //   `#[macro_use] extern crate` list (`rustMacroUseCrates`), in source order.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
