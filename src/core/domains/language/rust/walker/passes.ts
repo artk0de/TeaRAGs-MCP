@@ -7,6 +7,8 @@
  *   2. identifier declarations (bd tea-rags-mcp-4p3sb.5) — params, `let`
  *      locals and struct fields with their syntactic type, for the naming
  *      lexicon.
+ *   3. macro_use crates (bd tea-rags-mcp-s3i8m.4 B2) — the crate root's
+ *      `#[macro_use] extern crate` list, in source order, for bare-macro scoping.
  *
  * A new Rust extraction facet is added HERE, one `ExtractionFacetPass` at a time,
  * rather than by growing the monolith. What a pass can and cannot express —
@@ -18,10 +20,12 @@
 import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { rustDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
 import { RUST_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
+import { rustMacroUseCratesFacetPass } from "./passes/macro-use-crates.js";
 import { rustTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
 export const RUST_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   rustDeclaredVisibilityFacetPass,
   rustTypeAbstractnessFacetPass,
   createIdentifierDeclarationFacetPass(RUST_IDENTIFIER_DECLARATION_SYNTAX),
+  rustMacroUseCratesFacetPass,
 ];

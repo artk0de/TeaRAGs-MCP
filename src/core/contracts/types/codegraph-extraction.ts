@@ -376,6 +376,16 @@ export interface FileExtraction {
    */
   classFieldParamLinks?: Record<string, Record<string, ClassFieldParamLink>>;
   /**
+   * The file's `#[macro_use] extern crate <name> [as alias];` declarations, in
+   * SOURCE ORDER (bd tea-rags-mcp-s3i8m.4 B2). Rust admits a macro-loading
+   * `extern crate` at the crate root only, so only a crate-root file carries
+   * the list, and it scopes every file of that crate: a bare `m!` the crate
+   * does not declare reaches the `#[macro_export]` macro of the LAST listed
+   * crate that exports `m`. Read run-global as
+   * `CallContext.rustMacroUseCratesByFile`. Absent when the file has none.
+   */
+  rustMacroUseCrates?: readonly RustMacroUseCrate[];
+  /**
    * Every name this file's `from <module> import <name>` statements bind, and
    * where each came from (bd tea-rags-mcp-xpl83.3).
    *
@@ -910,6 +920,21 @@ export interface GenericInitializerFact {
  * One name a `from <module> import <name>` statement binds into its own module's
  * namespace (bd tea-rags-mcp-xpl83.3).
  */
+/**
+ * One `#[macro_use] extern crate` of a Rust crate root (bd
+ * tea-rags-mcp-s3i8m.4 B2) — `FileExtraction.rustMacroUseCrates`.
+ */
+export interface RustMacroUseCrate {
+  /** The crate as written after `extern crate` — the name its macros come from. */
+  readonly crateName: string;
+  /** The `as` name of a renamed crate; macros keep their own names, so it never scopes them. */
+  readonly alias?: string;
+  /** `#[macro_use(a, b)]` imports these macros only; absent for a bare `#[macro_use]` (all of them). */
+  readonly macros?: readonly string[];
+  /** 1-based line of the `extern crate` item. */
+  readonly line: number;
+}
+
 export interface ModuleReexport {
   /**
    * The LOCAL name the statement binds — what an importer of THIS module sees.

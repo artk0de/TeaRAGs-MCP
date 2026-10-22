@@ -157,6 +157,7 @@ const FILE_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<FileExtraction> = 
   knownTargetCallArgs: (base, pass) => [...(base ?? []), ...pass],
   moduleReexports: (base, pass) => [...(base ?? []), ...pass],
   typeDeclarations: (base, pass) => [...(base ?? []), ...pass],
+  rustMacroUseCrates: (base, pass) => [...(base ?? []), ...pass],
   typeMemberCensus: (base, pass) => [...(base ?? []), ...pass],
   identifierDeclarations: (base, pass) => [...(base ?? []), ...pass],
   fieldAccesses: (base, pass) => [...(base ?? []), ...pass],

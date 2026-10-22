@@ -79,6 +79,7 @@ const EXPECTED_POLICY = {
   extendedHookMixins: "hydrate",
   rubyInstantiationSites: "hydrate",
   unresolvedMixinClasses: "hydrate",
+  rustMacroUseCratesByFile: "hydrate",
   paramTypes: "batchOnly",
   derivedClassFieldTypes: "batchOnly",
   callerParamTypes: "batchOnly",
@@ -129,6 +130,8 @@ const PERSISTED_KEY_ORDER = [
   // bd 0qaht.65 — Ruby instantiation sites, resolved at the barrier, appended last.
   "rubyInstantiationSites",
   "unresolvedMixinClasses",
+  // bd s3i8m.4 B2 — Rust crate-root macro_use crates, appended last.
+  "rustMacroUseCrates",
 ];
 
 const RELPATH = "app/models/account.rb";
@@ -163,6 +166,7 @@ function everyChannelExtraction(): FileExtraction {
     extendedHookMixins: { Auditable: [{ kind: "include", module: "Auditable::Loader" }] },
     rubyInstantiationSites: [{ name: "Firm", nesting: ["Account"], rootAnchored: false }],
     unresolvedMixinClasses: ["Billing::Account"],
+    rustMacroUseCrates: [{ crateName: "tikv_util", line: 2 }],
     // Batch-only facts: present on the extraction, absent from the slice.
     ivarTypes: { Account: { "@firm": "Firm" } },
     callbackParams: { "Account#each": [0] },

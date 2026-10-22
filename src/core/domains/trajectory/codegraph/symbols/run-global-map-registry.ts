@@ -118,6 +118,9 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   // Ruby unresolved mixins (bd 2m83f.48): the model that includes an opaque
   // concern is usually walked in another file than the concern. Appended last.
   unresolvedMixinClasses: { policy: "hydrate", sliceField: "unresolvedMixinClasses" },
+  // Rust macro_use crates (bd s3i8m.4 B2): the crate root that lists them is
+  // rarely the file invoking the bare macro. Appended last.
+  rustMacroUseCratesByFile: { policy: "hydrate", sliceField: "rustMacroUseCrates" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",

@@ -34,17 +34,26 @@ const RUST_ATTRIBUTE_RUN_TYPES: ReadonlySet<string> = new Set(["attribute_item",
 const RUST_MACRO_EXPORT_ATTRIBUTE = /^#\[\s*macro_export\b/;
 
 /**
+ * The texts of an item's outer attributes, nearest first: the run of
+ * `attribute_item` siblings (comments may interleave) directly above it.
+ */
+export function rustOuterAttributeTexts(node: AstNode): string[] {
+  const texts: string[] = [];
+  for (let sibling = node.previousNamedSibling; sibling !== null; sibling = sibling.previousNamedSibling) {
+    if (!RUST_ATTRIBUTE_RUN_TYPES.has(sibling.type)) break;
+    if (sibling.type === "attribute_item") texts.push(sibling.text);
+  }
+  return texts;
+}
+
+/**
  * A `macro_rules!` is exported by attribute, not by `pub` (bd
  * tea-rags-mcp-s3i8m.4): `#[macro_export]` (any argument form) among its outer
  * attributes puts it at the crate root for every dependent crate; without it
  * the macro is textually scoped to its own crate.
  */
 function rustMacroIsExported(node: AstNode): boolean {
-  for (let sibling = node.previousNamedSibling; sibling !== null; sibling = sibling.previousNamedSibling) {
-    if (!RUST_ATTRIBUTE_RUN_TYPES.has(sibling.type)) return false;
-    if (sibling.type === "attribute_item" && RUST_MACRO_EXPORT_ATTRIBUTE.test(sibling.text)) return true;
-  }
-  return false;
+  return rustOuterAttributeTexts(node).some((text) => RUST_MACRO_EXPORT_ATTRIBUTE.test(text));
 }
 
 /** A fn whose visibility is its trait's: declared in a trait, or implementing one. */
