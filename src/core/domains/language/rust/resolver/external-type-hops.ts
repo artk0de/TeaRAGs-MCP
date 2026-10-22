@@ -32,7 +32,13 @@ import {
 } from "../vocabulary/std-prelude.js";
 import { rustExternalSignaturesOf } from "./resolve-environment.js";
 import { projectDeclaresType, rustStdSmartPointerTarget } from "./std-type-hops.js";
-import { lookupRustSymbolsByShortName } from "./strategies/shared.js";
+import {
+  lookupRustSymbolsByShortName,
+  RUST_OWN_CRATE_PATH_HEADS,
+  rustImportBindings,
+  rustImportIsExternal,
+  rustPathHeadIsExternal,
+} from "./strategies/shared.js";
 
 const RUST_STD_ROOTS: ReadonlySet<string> = new Set(["std", "core", "alloc"]);
 const MAX_ALIAS_EXPANSIONS = 4;
@@ -132,6 +138,76 @@ export function rustExternalAssociatedCallType(spelling: string, assoc: string, 
   if (found === undefined || found === "ambiguous" || !found.stable || found.selfKind !== "none") return undefined;
   if (found.returns === undefined) return undefined;
   return rustExternalTypeOf(found.returns, recv, found.methodGenericParameters, ctx, signatures);
+}
+
+/**
+ * `f(..)` / `module::f(..)` naming an external free function (bd s3i8m.7
+ * T-A2): the declared return of the stable, unambiguous table function the
+ * spelling reaches from the caller's file. The function's own generics are
+ * unknown, so `Sender<T>` keeps its head and drops its argument. The caller
+ * asks the project first; here every route that could still reach project
+ * code declines:
+ *   - a head bound by a non-glob `use` must be bound exactly once, by an
+ *     external import, and resolves through that binding alone;
+ *   - an unbound module head must be a std root or a crate name the project
+ *     holds no module, directory or workspace crate for;
+ *   - a bare name reached only through a glob needs an external glob and no
+ *     project function of the name anywhere;
+ *   - any same-file function of the name declines.
+ */
+export function rustExternalFreeCallType(spelling: string, ctx: CallContext): TypeRef | undefined {
+  const signatures = rustExternalSignaturesOf(ctx);
+  if (signatures === undefined) return undefined;
+  const segments = spelling.replace(/^::/, "").split("::");
+  const name = segments[segments.length - 1];
+  const projectFunctions = lookupRustSymbolsByShortName(ctx, name).filter((def) => def.symbolKind === "function");
+  if (projectFunctions.some((def) => def.relPath === ctx.callerFile)) return undefined;
+  const path = rustExternalFunctionPath(segments, projectFunctions.length > 0, ctx, signatures);
+  const found = path === undefined ? undefined : signatures.freeFunction(path);
+  if (found === undefined || found === "ambiguous" || !found.stable || found.returns === undefined) return undefined;
+  return rustExternalTypeOf(found.returns, undefined, found.functionGenericParameters, ctx, signatures);
+}
+
+/** The canonical table path `segments` names from the caller's file, through the gates of {@link rustExternalFreeCallType}. */
+function rustExternalFunctionPath(
+  segments: readonly string[],
+  projectDeclaresFunction: boolean,
+  ctx: CallContext,
+  signatures: RustExternalSignatureTable,
+): string | undefined {
+  const [head, ...rest] = segments;
+  if (RUST_OWN_CRATE_PATH_HEADS.has(head)) return undefined;
+  const parsedImports = ctx.imports.map((imp) => ({
+    importText: imp.importText,
+    bindings: rustImportBindings(imp.importText),
+  }));
+  // An unparseable import may bind anything: no route is provable.
+  if (parsedImports.some((parsedImport) => parsedImport.bindings === null)) return undefined;
+  const bound = parsedImports.flatMap((parsedImport) =>
+    (parsedImport.bindings ?? [])
+      .filter((binding) => !binding.globImport && binding.localName === head)
+      .map((binding) => ({ importText: parsedImport.importText, binding })),
+  );
+  if (bound.length > 0) {
+    if (bound.length !== 1 || !rustImportIsExternal(bound[0].importText, ctx, head)) return undefined;
+    const { binding } = bound[0];
+    const boundPath =
+      binding.sourceName === null ? binding.moduleSegments : [...binding.moduleSegments, binding.sourceName];
+    return signatures.canonicalFunction([...boundPath, ...rest].join("::"), []);
+  }
+  if (rest.length > 0) {
+    const projectModule = lookupRustSymbolsByShortName(ctx, head).some(
+      (def) => def.relPath === ctx.callerFile && def.symbolKind === "module",
+    );
+    return projectModule || !rustPathHeadIsExternal(head, ctx)
+      ? undefined
+      : signatures.canonicalFunction(segments.join("::"), []);
+  }
+  if (projectDeclaresFunction) return undefined;
+  const globs = parsedImports
+    .filter((parsedImport) => parsedImport.bindings?.some((binding) => binding.globImport) === true)
+    .map((parsedImport) => parsedImport.importText);
+  return globs.every((text) => rustImportIsExternal(text, ctx)) ? signatures.canonicalFunction(head, globs) : undefined;
 }
 
 /**
@@ -261,16 +337,17 @@ export function rustProjectImplementsMemberOn(ctx: CallContext, typeName: string
  * the hand hops read by its bare name (`Option`, `Vec`, `Arc`) is shortened.
  * A bare generic nothing binds, or a head whose short name the project
  * declares, answers `undefined`; an argument nothing binds drops the
- * argument list and keeps the head.
+ * argument list and keeps the head. A free function has no receiver: its
+ * `Self` is unknown like any unbound generic.
  */
 function rustExternalTypeOf(
   typeExpr: RustExternalTypeExpr,
-  recv: TypeRef,
+  recv: TypeRef | undefined,
   methodGenerics: readonly string[],
   ctx: CallContext,
   signatures: RustExternalSignatureTable,
 ): TypeRef | undefined {
-  const receiverArgs = recv.form === "instance" ? recv.args : undefined;
+  const receiverArgs = recv?.form === "instance" ? recv.args : undefined;
   const bound = rustSubstitute(typeExpr.type, (name) => {
     if (name === "Self") return recv;
     const position = typeExpr.genericParameters.indexOf(name);

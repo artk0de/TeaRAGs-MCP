@@ -2,8 +2,13 @@ import Parser from "tree-sitter";
 import RustLang from "tree-sitter-rust";
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
+import {
+  resolveLocalBinding,
+  type CallContext,
+  type FileExtraction,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
 import type {
+  RustExternalFunction,
   RustExternalMember,
   RustExternalSignatureTableData,
   RustExternalTypeExpr,
@@ -24,11 +29,13 @@ import {
   rustExternalFieldType,
   rustStdTerminalTargetsExternal,
 } from "../../../../../../src/core/domains/language/rust/resolver/external-type-hops.js";
+import { rustPatternBindingType } from "../../../../../../src/core/domains/language/rust/resolver/pattern-binding-type.js";
 import {
   RustResolveEnvironment,
   withRustResolveEnvironment,
 } from "../../../../../../src/core/domains/language/rust/resolver/resolve-environment.js";
 import { rustTypedMissIsProven } from "../../../../../../src/core/domains/language/rust/resolver/rust-type-member-lookup.js";
+import { rustExpressionType } from "../../../../../../src/core/domains/language/rust/resolver/strategies/rust-type-receiver.js";
 import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { collectTypeDeclarationReaders } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/type-declaration-readers.js";
@@ -58,6 +65,13 @@ const signaturesOf = (partial: Partial<RustExternalTypeSignatures>): RustExterna
   ...partial,
 });
 const T = instance("T");
+const tuple = (...elements: TypeRef[]): TypeRef => ({ form: "tuple", elements });
+// A free function's generics are its own: nothing at the call site binds them (bd s3i8m.7 T-A1).
+const freeFunction = (returns: TypeRef, functionGenericParameters: string[] = ["T"]): RustExternalFunction => ({
+  returns: expr(returns, []),
+  functionGenericParameters,
+  stable: true,
+});
 const deref = { "std::ops::Deref": ["deref"], "std::fmt::Debug": ["fmt"] };
 
 const DATA: RustExternalSignatureTableData = {
@@ -138,6 +152,32 @@ const DATA: RustExternalSignatureTableData = {
   },
   aliases: {
     "std::sync::LockResult": expr(instance("std::result::Result", [T, instance("std::sync::PoisonError", [T])])),
+    "std::io::Result": expr(instance("std::result::Result", [T, instance("std::io::Error")])),
+  },
+  functionPaths: {
+    "std::sync::mpsc::channel": "std::sync::mpsc::channel",
+    "std::sync::mpsc::sync_channel": "std::sync::mpsc::sync_channel",
+    "crossbeam_channel::unbounded": "crossbeam_channel::unbounded",
+    "ipc::channel": "ipc::channel",
+    "tempfile::tempdir": "tempfile::tempdir",
+  },
+  functions: {
+    "std::sync::mpsc::channel": freeFunction(
+      tuple(instance("std::sync::mpsc::Sender", [T]), instance("std::sync::mpsc::Receiver", [T])),
+    ),
+    "std::sync::mpsc::sync_channel": freeFunction(
+      tuple(instance("std::sync::mpsc::SyncSender", [T]), instance("std::sync::mpsc::Receiver", [T])),
+    ),
+    "crossbeam_channel::unbounded": freeFunction(
+      tuple(instance("crossbeam_channel::Sender", [T]), instance("crossbeam_channel::Receiver", [T])),
+    ),
+    "ipc::channel": freeFunction(
+      instance("std::result::Result", [
+        tuple(instance("ipc::IpcSender", [T]), instance("ipc::IpcReceiver", [T])),
+        instance("std::io::Error"),
+      ]),
+    ),
+    "tempfile::tempdir": freeFunction(instance("std::io::Result", [instance("tempfile::TempDir")]), []),
   },
 };
 const SIGNATURES = new RustExternalSignatureLookup(DATA, "t3b-identity");
@@ -153,16 +193,17 @@ function fixture(files: Record<string, string>) {
     parser.setLanguage(RustLang);
     const tree = { rootNode: parser.parse(code).rootNode };
     const chunks = collectSymbols(tree, language.walker.nameOf, "::", false, new DefaultSymbolIdComposer());
+    const extraction = language.walker.walk({ tree, code, relPath, language: "rust", chunks });
+    // The walker's chunks carry `symbolKind`, which the free-function arms filter on.
     symbolTable.upsertFile(
       relPath,
-      chunks.map((chunk) => ({
+      extraction.chunks.map((chunk) => ({
         ...chunk,
         fqName: chunk.symbolId,
         shortName: chunk.symbolId.split(/#|\.|::/).at(-1)!,
         relPath,
       })),
     );
-    const extraction = language.walker.walk({ tree, code, relPath, language: "rust", chunks });
     extractions.push(extraction);
     runState.absorb(extraction, []);
   }
@@ -435,5 +476,90 @@ describe("Rust std-trait return model — Clone / ToString / Ord / PartialEq / H
     });
     const { call, ctx } = f.ctxOf("c.get()", true);
     expect(rustDeclaredCallResultType("c", call.startLine, ctx)).toEqual(instance("demo::Client"));
+  });
+});
+
+describe("Rust external signature table — free-function roots (s3i8m.7 T-A2)", () => {
+  /** The type of the pattern-bound `local` read at `callText`. */
+  const patternTypeOf = (files: Record<string, string>, local: string, callText: string, withTable = true) => {
+    const f = fixture(files);
+    const { call, ctx } = f.ctxOf(callText, withTable);
+    const binding = resolveLocalBinding(ctx.localBindings, local, call.startLine, call.startColumn);
+    expect(binding?.valueKind).toBe("patternProjection");
+    return rustPatternBindingType(binding!, ctx, rustExpressionType);
+  };
+  const main = (code: string) => ({ "src/main.rs": code });
+
+  it("types `let (tx, rx) = channel()` through `use std::sync::mpsc::channel`", () => {
+    const code = `use std::sync::mpsc::channel;\nfn run() {\n  let (tx, rx) = channel();\n  tx.send(1);\n}`;
+    expect(patternTypeOf(main(code), "tx", "tx.send(1)")).toEqual(instance("std::sync::mpsc::Sender"));
+  });
+
+  it("types a module-qualified call through `use std::sync::mpsc`", () => {
+    const code = `use std::sync::mpsc;\nfn run() {\n  let (tx, _) = mpsc::sync_channel(1);\n  tx.send(1);\n}`;
+    expect(patternTypeOf(main(code), "tx", "tx.send(1)")).toEqual(instance("std::sync::mpsc::SyncSender"));
+  });
+
+  it("types a call whose head is a dependency crate name", () => {
+    const code = `fn run() {\n  let (s, r) = crossbeam_channel::unbounded();\n  r.recv();\n}`;
+    expect(patternTypeOf(main(code), "r", "r.recv()")).toEqual(instance("crossbeam_channel::Receiver"));
+  });
+
+  it("peels an `.unwrap()` tail off a `Result<(A, B), E>` scrutinee", () => {
+    const code = `fn run() {\n  let (a, b) = ipc::channel().unwrap();\n  a.send(1);\n}`;
+    expect(patternTypeOf(main(code), "a", "a.send(1)")).toEqual(instance("ipc::IpcSender"));
+  });
+
+  it("peels `?` and `.expect(..)` tails alike", () => {
+    const tried = `fn run() -> std::io::Result<()> {\n  let (a, b) = ipc::channel()?;\n  a.send(1);\n  Ok(())\n}`;
+    expect(patternTypeOf(main(tried), "a", "a.send(1)")).toEqual(instance("ipc::IpcSender"));
+    const expected = `fn run() {\n  let (a, b) = ipc::channel().expect("ipc (pair)");\n  b.recv();\n}`;
+    expect(patternTypeOf(main(expected), "b", "b.recv()")).toEqual(instance("ipc::IpcReceiver"));
+  });
+
+  it("types a glob-only binding when the project declares no function of the name", () => {
+    const code = `use std::sync::mpsc::*;\nfn run() {\n  let (tx, rx) = channel();\n  tx.send(1);\n}`;
+    expect(patternTypeOf(main(code), "tx", "tx.send(1)")).toEqual(instance("std::sync::mpsc::Sender"));
+  });
+
+  it("lets a same-file project `fn channel()` answer: the table is never asked", () => {
+    const code = `${STORES}
+fn channel() -> (Store, Other) { todo!() }
+fn run() {\n  let (tx, rx) = channel();\n  tx.m();\n}`;
+    expect(patternTypeOf(main(code), "tx", "tx.m()")).toEqual(instance("src/main.rs::Store"));
+  });
+
+  it("gives no table answer for a name an import binds to `crate::`", () => {
+    const code = `use crate::chan::channel;\nfn run() {\n  let (tx, rx) = channel();\n  tx.send(1);\n}`;
+    expect(patternTypeOf(main(code), "tx", "tx.send(1)")).toBeUndefined();
+  });
+
+  it("declines a glob-only binding when the project declares a `fn channel`", () => {
+    const files = {
+      "src/main.rs": `use std::sync::mpsc::*;\nfn run() {\n  let (tx, rx) = channel();\n  tx.send(1);\n}`,
+      "src/chan.rs": `pub fn channel() -> u8 { 0 }`,
+    };
+    expect(patternTypeOf(files, "tx", "tx.send(1)")).toBeUndefined();
+  });
+
+  it("declines a module head the project declares", () => {
+    const code = `mod ipc { pub fn channel() {} }\nfn run() {\n  let (a, b) = ipc::channel().unwrap();\n  a.send(1);\n}`;
+    expect(patternTypeOf(main(code), "a", "a.send(1)")).toBeUndefined();
+  });
+
+  it("leaves an unknown function, or a missing table, untyped", () => {
+    const unknown = `use std::sync::mpsc::bounded;\nfn run() {\n  let (tx, rx) = bounded();\n  tx.send(1);\n}`;
+    expect(patternTypeOf(main(unknown), "tx", "tx.send(1)")).toBeUndefined();
+    const known = `use std::sync::mpsc::channel;\nfn run() {\n  let (tx, rx) = channel();\n  tx.send(1);\n}`;
+    expect(patternTypeOf(main(known), "tx", "tx.send(1)", false)).toBeUndefined();
+  });
+
+  it("types a plain `let d = tempfile::tempdir()?` through the table's alias-expanded return", () => {
+    const code = `fn run() -> std::io::Result<()> {\n  let d = tempfile::tempdir()?;\n  d.path();\n  Ok(())\n}`;
+    const f = fixture(main(code));
+    const { call, ctx } = f.ctxOf("d.path()", true);
+    expect(rustDeclaredCallResultType("d", call.startLine, ctx)).toEqual(instance("tempfile::TempDir"));
+    const without = f.ctxOf("d.path()", false);
+    expect(rustDeclaredCallResultType("d", without.call.startLine, without.ctx)).toBeUndefined();
   });
 });

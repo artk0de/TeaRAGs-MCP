@@ -18,7 +18,13 @@ import type { TypeRef } from "../../../../contracts/types/language.js";
 import { splitAtBracketDepthZero } from "../../kernel/index.js";
 import { rustFreeCallResultType } from "./declared-call-result-type.js";
 import { rustDeclaredFieldType, rustDeclaredVariantFieldType } from "./declared-field-type.js";
-import { RUST_ITERATOR_CHAIN_MEMBERS, rustStdClosureParamType, rustStdElementType } from "./std-type-hops.js";
+import { rustExternalFreeCallType } from "./external-type-hops.js";
+import {
+  RUST_ITERATOR_CHAIN_MEMBERS,
+  rustStdClosureParamType,
+  rustStdElementType,
+  rustStdUnwrapType,
+} from "./std-type-hops.js";
 
 /** Types an expression read at a source position — the chain fold the strategy layer owns. */
 export type RustExpressionTyper = (
@@ -35,6 +41,10 @@ const RUST_STD_VARIANT_PAYLOADS: ReadonlyMap<string, { readonly owner: string; r
   ["Err", { owner: "Result", argument: 1 }],
 ]);
 const RUST_BARE_CALL = /^([A-Za-z_][A-Za-z0-9_]*)\((.*)\)$/s;
+/** A free-function callee, module-qualified or bare, with an optional turbofish: the spelling. */
+const RUST_FREE_CALLEE = /^((?:::)?(?:[a-z_]\w*::)*[a-z_]\w*)(?:::<[^()]*>)?\(/;
+/** An unwrapping tail hop: `unwrap()` or `expect(..)`. */
+const RUST_UNWRAP_HOP = /^(?:unwrap\(\)|expect\(.*\))$/s;
 /** One method-call hop, `name(…)` — the member name. */
 const RUST_ARGUMENT_CALL = /^([A-Za-z_][A-Za-z0-9_]*)\(.*\)$/s;
 
@@ -67,7 +77,11 @@ export function rustPatternBindingType(
   }
 }
 
-/** The scrutinee, read where it is written: a bare free-function call by its declared return, else the chain fold. */
+/**
+ * The scrutinee, read where it is written: a bare free-function call by its
+ * declared return (the project's, else the external table's), else the chain
+ * fold, else a free-function call under unwrapping tails.
+ */
 function rustScrutineeType(
   binding: LocalBinding,
   sourceExpression: string,
@@ -77,10 +91,45 @@ function rustScrutineeType(
   const expression = rustWithoutBorrow(sourceExpression);
   const bareCall = RUST_BARE_CALL.exec(expression);
   if (bareCall !== null && closesAtEnd(expression, bareCall[1].length)) {
-    return rustFreeCallResultType(bareCall[1], ctx);
+    return rustFreeCallResultType(bareCall[1], ctx) ?? rustExternalFreeCallType(bareCall[1], ctx);
   }
   const span = binding.conditionSpan;
-  return typeExpression(expression, span?.startLine ?? binding.line, ctx, span?.startColumn);
+  return (
+    typeExpression(expression, span?.startLine ?? binding.line, ctx, span?.startColumn) ??
+    rustUnwrappedFreeCallType(expression, ctx)
+  );
+}
+
+/**
+ * `channel()?`, `ipc::channel().unwrap()`, `mpsc::sync_channel(1)` (bd
+ * s3i8m.7 T-A2): the trailing `?` / `.unwrap()` / `.expect(..)` hops are
+ * peeled, the free-function call left is typed (a bare name by the project
+ * first), and each peeled hop unwraps the std `Option` / `Result` once.
+ */
+function rustUnwrappedFreeCallType(expression: string, ctx: CallContext): TypeRef | undefined {
+  const hops = splitAtBracketDepthZero(expression, ".");
+  let unwraps = 0;
+  for (;;) {
+    const last = hops[hops.length - 1];
+    if (last.endsWith("?")) {
+      hops[hops.length - 1] = last.slice(0, -1);
+    } else if (hops.length > 1 && RUST_UNWRAP_HOP.test(last) && closesAtEnd(last, last.indexOf("("))) {
+      hops.pop();
+    } else {
+      break;
+    }
+    unwraps++;
+  }
+  if (hops.length !== 1) return undefined;
+  const call = hops[0];
+  const callee = RUST_FREE_CALLEE.exec(call);
+  if (callee === null || !closesAtEnd(call, callee[0].length - 1)) return undefined;
+  const spelling = callee[1];
+  let produced =
+    (spelling.includes("::") ? undefined : rustFreeCallResultType(spelling, ctx)) ??
+    rustExternalFreeCallType(spelling, ctx);
+  for (let i = 0; i < unwraps && produced !== undefined; i++) produced = rustStdUnwrapType(produced, "?");
+  return produced;
 }
 
 /** The expression without whitespace and without a leading borrow or deref (`&mut v`, `*self`) — both are transparent to a pattern. */

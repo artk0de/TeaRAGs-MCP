@@ -126,6 +126,10 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m.7 T-A1 — the external signature table (extractor 2)
   //   holds free functions in a value namespace apart from types (`mpsc::channel`
   //   → `(Sender<T>, Receiver<T>)`) and tuple returns; nothing reads them yet.
+  // - bd tea-rags-mcp-s3i8m.7 T-A2 — a destructuring or plain `let` bound from an
+  //   external free function (`let (tx, rx) = mpsc::channel()`, `channel()?`,
+  //   `tempfile::tempdir()?`) takes the table's return, `?` / `.unwrap()` /
+  //   `.expect(..)` tails unwrapped; the project's own function answers first.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
