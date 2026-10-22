@@ -266,6 +266,23 @@ export const codegraphResidualSchema = z.object({
   kevSessionToken: z.string().optional(),
 });
 
+/**
+ * rust-analyzer as the last Rust resolution slot (bd s3i8m.6). A missing
+ * binary never fails a run — the slot is absent and one install hint is shown.
+ */
+export const codegraphRustAnalyzerSchema = z.object({
+  /** `CODEGRAPH_RUST_ANALYZER` — on when a binary is found; `0` turns the slot off. */
+  enabled: booleanFromEnvWithDefault(true),
+  /** `CODEGRAPH_RUST_ANALYZER_EXEC` — let build scripts and proc-macros run (trusted corpora only). */
+  exec: booleanFromEnvWithDefault(false),
+  /** `CODEGRAPH_RUST_ANALYZER_PATH` — explicit binary, tried before every other discovery tier. */
+  path: z.string().optional(),
+  /** `CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC` — wall budget of one rust-analyzer run. */
+  timeoutSec: intWithDefault(900),
+  /** `CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB` — resident-memory budget of one rust-analyzer run. */
+  maxRssMb: intWithDefault(4096),
+});
+
 export const codegraphSchema = z.object({
   /**
    * Master switch for the codegraph trajectory family. On by default; opt
@@ -336,6 +353,8 @@ export const codegraphSchema = z.object({
   ambiguousResolveMode: z.enum(["strict", "first"]).default("strict"),
   /** Model-assisted resolution of residual call sites. */
   residual: codegraphResidualSchema.prefault({}),
+  /** rust-analyzer as the last Rust resolution slot. */
+  rustAnalyzer: codegraphRustAnalyzerSchema.prefault({}),
 });
 
 export const qdrantTuneSchema = z.object({

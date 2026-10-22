@@ -96,6 +96,14 @@ const REGISTRY_ENV_GROUP_TABLE = [
   { canonical: "CODEGRAPH_DB_THREADS", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_CUSTOM_EXCLUDE", aliases: [], consequence: "enrichment:codegraph" },
   { canonical: "CODEGRAPH_AMBIGUOUS_RESOLVE_MODE", aliases: [], consequence: "enrichment:codegraph" },
+  // codegraph.rustAnalyzer (bd s3i8m.6) — whether the last Rust chain slot runs
+  // and may execute build scripts / proc-macros decides which Rust edges land;
+  // where the binary lives and its budgets do not.
+  { canonical: "CODEGRAPH_RUST_ANALYZER", aliases: [], consequence: "enrichment:codegraph" },
+  { canonical: "CODEGRAPH_RUST_ANALYZER_EXEC", aliases: [], consequence: "enrichment:codegraph" },
+  { canonical: "CODEGRAPH_RUST_ANALYZER_PATH", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB", aliases: [], consequence: "runtime" },
   // codegraph.residual — which model answers and how many requests are in flight;
   // verdicts are cached outside the index, so none of these invalidates it.
   { canonical: "CODEGRAPH_RESIDUAL_KEV_URL", aliases: [], consequence: "runtime" },
