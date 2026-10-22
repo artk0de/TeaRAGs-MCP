@@ -121,6 +121,8 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   // Rust macro_use crates (bd s3i8m.4 B2): the crate root that lists them is
   // rarely the file invoking the bare macro. Appended last.
   rustMacroUseCratesByFile: { policy: "hydrate", sliceField: "rustMacroUseCrates" },
+  // Rust per-file use imports (bd s3i8m letCall S4a). Appended last.
+  rustUseImportsByFile: { policy: "hydrate", sliceField: "rustUseImports" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",

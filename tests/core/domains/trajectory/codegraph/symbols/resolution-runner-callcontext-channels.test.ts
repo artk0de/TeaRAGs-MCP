@@ -50,6 +50,7 @@ const CHANNEL_DESTINATION = {
   moduleReexports: "moduleReexports",
   buildConstraintsByFile: "buildConstraintsByFile",
   rustMacroUseCratesByFile: "rustMacroUseCratesByFile",
+  rustUseImportsByFile: "rustUseImportsByFile",
   runScope: "runScope",
 } as const satisfies Record<keyof ResolverInputs, keyof CallContext>;
 
@@ -83,6 +84,7 @@ function seededRunState(): CodegraphRunState {
       moduleReexports: [{ exportedName: "svc", sourceModule: ".", sourceName: "_svc" }],
       buildConstraint: "linux",
       rustMacroUseCrates: [{ crateName: "tikv_util", line: 2 }],
+      rustUseImports: ["use std::fmt;"],
     },
     [],
   );
@@ -139,7 +141,7 @@ describe("CallEdgeResolutionRunner run-global channel threading", () => {
   const channels = Object.entries(CHANNEL_DESTINATION) as [keyof ResolverInputs, keyof CallContext][];
 
   it("enumerates every ResolverInputs channel, so a new one cannot be skipped", () => {
-    expect(channels).toHaveLength(15);
+    expect(channels).toHaveLength(16);
   });
 
   it.each(channels)("threads %s into the call-site CallContext as %s", (_input, destination) => {
@@ -164,6 +166,7 @@ describe("CallEdgeResolutionRunner run-global channel threading", () => {
     expect(callSite.moduleReexports?.["src/pkg/svc.py"]).toHaveLength(1);
     expect(callSite.buildConstraintsByFile?.["src/pkg/svc.py"]).toBe("linux");
     expect(callSite.rustMacroUseCratesByFile?.["src/pkg/svc.py"]).toEqual([{ crateName: "tikv_util", line: 2 }]);
+    expect(callSite.rustUseImportsByFile?.["src/pkg/svc.py"]).toEqual(["use std::fmt;"]);
     expect(callSite.functionReturnTypes).toEqual({ get_client: "Client" });
     expect(fileEdge.classFieldTypesByClassKey?.[CLASS_KEY]).toEqual({ client: "Client" });
     expect(fileEdge.instantiatedTypes?.has("Svc")).toBe(true);

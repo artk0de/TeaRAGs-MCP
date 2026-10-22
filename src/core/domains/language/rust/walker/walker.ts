@@ -107,6 +107,8 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
   if (Object.keys(classFieldTypesByClassKey).length > 0) out.classFieldTypesByClassKey = classFieldTypesByClassKey;
+  // bd tea-rags-mcp-s3i8m letCall S4a — the same importText set `imports` carries.
+  if (imports.length > 0) out.rustUseImports = imports.map((i) => i.importText);
   if (moduleReexports.length > 0) out.moduleReexports = moduleReexports;
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
   if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;

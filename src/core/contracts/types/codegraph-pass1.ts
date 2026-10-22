@@ -393,4 +393,12 @@ export interface CodegraphPass1FileAggregates {
    * LAST, so every other row keeps its bytes.
    */
   rustMacroUseCrates?: readonly RustMacroUseCrate[];
+  /**
+   * A Rust file's `use` import texts (bd tea-rags-mcp-s3i8m letCall S4a), as
+   * `FileExtraction.rustUseImports`. Persisted because a file walked in an
+   * earlier run still supplies its use set to a later one. The file's WHOLE
+   * truth, so a re-walk replaces it. Persisted LAST, so every other row keeps
+   * its bytes.
+   */
+  rustUseImports?: readonly string[];
 }
