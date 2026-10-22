@@ -71,6 +71,9 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m Task 2 — a type name unique in its crate owns the
   //   crate's impl members in every file: `self.m()`, `self` chain seeding and
   //   placed-owner member lookup answer from cross-file impls.
+  // - bd tea-rags-mcp-s3i8m Task 1d — a typed pattern receiver's member miss
+  //   reaches a smart pointer's pointee and a project trait's provided
+  //   method, and drops only when the miss is proven.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

@@ -230,7 +230,7 @@ function rustOptionOf(element: TypeRef): TypeRef {
 }
 
 /** A std smart pointer's target, a std container through any number of them. */
-function rustThroughSmartPointers(recv: TypeRef): TypeRef {
+export function rustThroughSmartPointers(recv: TypeRef): TypeRef {
   let current = recv;
   for (let hop = 0; hop < 3; hop++) {
     const name = rustStdShortName(current);

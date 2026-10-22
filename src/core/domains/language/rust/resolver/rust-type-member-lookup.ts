@@ -8,7 +8,8 @@ import {
   type TypeMemberLookup,
 } from "../../kernel/index.js";
 import { rustDerefTarget, rustExactMember } from "./declared-return-type.js";
-import { rustStdSmartPointerTarget } from "./std-type-hops.js";
+import { rustCrateRootOf, rustCrateUniqueType } from "./rust-crate-scope.js";
+import { rustStdSmartPointerTarget, rustThroughSmartPointers } from "./std-type-hops.js";
 import { lookupRustSymbolsByShortName, pickSameFileThenSingle } from "./strategies/shared.js";
 
 /**
@@ -50,6 +51,82 @@ function resolveRustNominalMember(owner: NominalTypeRef, member: string, ctx: Ca
     current = next;
   }
   return null;
+}
+
+/**
+ * The member a typed PATTERN receiver's miss still reaches (bd
+ * tea-rags-mcp-s3i8m Task 1d), or `null`. Two readings the nominal walk
+ * leaves out:
+ *   - a std smart pointer whose own member (`clone`, `as_ref`, …) the walk
+ *     stops on: the pointee's own declaration of that member answers
+ *     (`err.clone()` on `Box<Error>` with `impl Clone for Error`);
+ *   - a project trait's PROVIDED method on a type that implements the trait
+ *     (`impl FormControl for HTMLInputElement {}` → `FormControl#to_element`).
+ * Anything not proven answers `null`, and the call keeps its typed-miss verdict.
+ */
+export function resolveRustTypedMissMember(
+  type: NominalTypeRef,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): { targetRelPath: string; targetSymbolId: string } | null {
+  const pointee = rustThroughSmartPointers(type);
+  if (pointee.form !== "instance") return null;
+  if (pointee !== type) {
+    const hit = resolveRustNominalMember(pointee, member, ctx, mode);
+    if (hit !== null) return hit;
+  }
+  const provided = rustTraitProvidedMember(pointee, member, ctx);
+  return provided === undefined ? null : { targetRelPath: provided.relPath, targetSymbolId: provided.symbolId };
+}
+
+/**
+ * The sole provided method `member` of a project trait the placed `owner`
+ * implements, read off the `implements` hierarchy (keyed by short name). The
+ * owner must be the unique type of its name in its crate, and the trait a
+ * project `interface`. A trait outside the owner's crate counts only when no
+ * other project type shares the owner's name: the hierarchy cannot tell two
+ * namesakes' impls apart.
+ */
+function rustTraitProvidedMember(
+  owner: NominalTypeRef,
+  member: string,
+  ctx: CallContext,
+): SymbolDefinition | undefined {
+  const boundary = owner.name.indexOf(".rs::");
+  if (boundary < 0 || ctx.hierarchy === undefined) return undefined;
+  const relPath = owner.name.slice(0, boundary + 3);
+  const typeName = owner.name
+    .slice(boundary + 5)
+    .split("::")
+    .at(-1);
+  const root = rustCrateRootOf(relPath, ctx);
+  if (typeName === undefined || root === undefined) return undefined;
+  if (rustCrateUniqueType(typeName, root, ctx)?.relPath !== relPath) return undefined;
+  const traits = new Set(
+    ctx.hierarchy
+      .getAncestors(typeName, { kinds: ["implements"] })
+      .map((edge) => edge.ancestorFqName.split("::").at(-1) ?? edge.ancestorFqName),
+  );
+  if (traits.size === 0) return undefined;
+  const nameIsGloballyUnique =
+    lookupRustSymbolsByShortName(ctx, typeName).filter(
+      (def) =>
+        (def.symbolKind === "class" || def.symbolKind === "enum") &&
+        (def.symbolId === typeName || def.symbolId.endsWith(`::${typeName}`)),
+    ).length === 1;
+  const suffix = `#${member}`;
+  const candidates = lookupRustSymbolsByShortName(ctx, member).filter((def) => {
+    if (!def.symbolId.endsWith(suffix)) return false;
+    const traitId = def.symbolId.slice(0, -suffix.length);
+    const traitName = traitId.split("::").at(-1);
+    if (traitName === undefined || !traits.has(traitName)) return false;
+    const isTrait = ctx.symbolTable
+      .lookup(traitId)
+      .some((trait) => trait.relPath === def.relPath && trait.symbolKind === "interface");
+    return isTrait && (nameIsGloballyUnique || rustCrateRootOf(def.relPath, ctx) === root);
+  });
+  return candidates.length === 1 ? candidates[0] : undefined;
 }
 
 /**

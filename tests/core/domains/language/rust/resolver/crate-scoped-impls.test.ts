@@ -183,4 +183,54 @@ impl WriteBatchExt for Engine {
       targetSymbolId: "Store#get",
     });
   });
+
+  // bd tea-rags-mcp-s3i8m Task 1d — a typed pattern receiver whose type
+  // implements a project trait reaches the trait's provided method.
+  it("a typed pattern receiver resolves a trait-provided method through the implements hierarchy", () => {
+    const hierarchy: HierarchyView = {
+      getAncestors: (fqName) =>
+        fqName === "Input"
+          ? [
+              {
+                sourceFqName: "Input",
+                ancestorFqName: "FormControl",
+                ancestorSymbolId: null,
+                kind: "implements",
+                depth: 1,
+              },
+            ]
+          : [],
+      getDescendants: () => [],
+    };
+    const f = fixture(
+      {
+        ...crateB,
+        "b/src/other.rs": "pub struct Other;\nimpl Other {\n    pub fn to_element(&self) -> u32 { 1 }\n}\n",
+        "a/src/lib.rs": "pub mod form;\npub fn a_root() {}\n",
+        "a/src/form.rs": `pub trait FormControl {
+    fn to_element(&self) -> u32 { 0 }
+}
+pub struct Input;
+impl Input {
+    pub fn own(&self) {}
+}
+impl FormControl for Input {}
+pub struct Owner;
+impl Owner {
+    pub fn input(&self) -> Option<Input> { None }
+    pub fn run(&self) {
+        if let Some(i) = self.input() {
+            i.to_element();
+        }
+    }
+}
+`,
+      },
+      hierarchy,
+    );
+    expect(f.resolve("i.to_element()", "a/src/form.rs")).toEqual({
+      targetRelPath: "a/src/form.rs",
+      targetSymbolId: "FormControl#to_element",
+    });
+  });
 });

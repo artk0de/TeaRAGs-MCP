@@ -197,3 +197,122 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
     expect(f.target("x.m()", "run", 1)).toBe("Foo#m");
   });
 });
+
+// bd tea-rags-mcp-s3i8m Task 1d — a TYPED pattern receiver whose member lookup
+// misses derefs (std smart pointer, project `Deref`), reaches a project trait's
+// provided method, and otherwise falls through like an unbound receiver unless
+// the miss is proven.
+describe.each([false, true])("Rust typed pattern receiver misses (materialized=%s)", (materialized) => {
+  const boxed = `
+enum Error { Io(u32), WithPath { path: String, err: Box<Error> } }
+impl Clone for Error {
+    fn clone(&self) -> Error {
+        match *self {
+            Error::WithPath { ref path, ref err } => Error::WithPath { path: path.clone(), err: err.clone() },
+            Error::Io(n) => Error::Io(n),
+        }
+    }
+}
+impl Error {
+    fn is_io(&self) -> bool {
+        match *self {
+            Error::Io(_) => true,
+            Error::WithPath { ref err, .. } => err.is_io(),
+        }
+    }
+}
+`;
+
+  it("derefs a Box<T> variant payload to T's member", () => {
+    expect(fixture(boxed, materialized).target("err.is_io()", "Error#is_io")).toBe("Error#is_io");
+  });
+
+  it("resolves a pointer-answered member on Box<T> to T's own declaration", () => {
+    expect(fixture(boxed, materialized).target("err.clone()", "Error#clone")).toBe("Error#clone");
+  });
+
+  it("derefs a project smart pointer payload through its Deref impl", () => {
+    const code = `
+struct DomRoot<T> { ptr: T }
+impl<T> std::ops::Deref for DomRoot<T> {
+    type Target = T;
+    fn deref(&self) -> &T { &self.ptr }
+}
+struct Ws;
+impl Ws { fn close(&self) {} }
+enum Ev { Open(DomRoot<Ws>) }
+fn run(e: Ev) {
+    match e {
+        Ev::Open(ws) => ws.close(),
+    }
+}
+`;
+    expect(fixture(code, materialized).target("ws.close()")).toBe("Ws#close");
+  });
+
+  it("falls through an unproven typed miss exactly like an unbound receiver", () => {
+    const body = (recv: string) => `
+struct Wrap<T> { inner: T }
+impl<T> std::ops::Deref for Wrap<T> {
+    type Target = T;
+    fn deref(&self) -> &T { &self.inner }
+}
+struct Peer;
+impl Peer { fn ping(&self) {} }
+enum Slot { Held(Wrap<Gone>) }
+fn run(s: Slot) {
+    match s {
+        Slot::Held(w) => { ${recv}.ping(); }
+    }
+}
+`;
+    const unbound = fixture(body("other"), materialized).target("other.ping()");
+    expect(unbound).not.toBeNull();
+    expect(fixture(body("w"), materialized).target("w.ping()")).toBe(unbound);
+  });
+
+  it("falls through a typed closure parameter whose alias type the fold cannot follow", () => {
+    const body = (recv: string) => `
+struct Font;
+impl Font { fn has_glyph(&self) -> bool { true } }
+type FontRef = std::sync::Arc<Font>;
+fn run(fonts: Vec<FontRef>) {
+    let found = fonts.iter().any(|font: &FontRef| ${recv}.has_glyph());
+}
+`;
+    const unbound = fixture(body("other"), materialized).target("other.has_glyph()");
+    expect(unbound).toBe("Font#has_glyph");
+    expect(fixture(body("font"), materialized).target("font.has_glyph()")).toBe(unbound);
+  });
+
+  it("keeps dropping a typed closure parameter's proven miss on a primitive", () => {
+    const code = `
+struct Datum;
+impl Datum { fn to_string(&self) -> String { String::new() } }
+fn run(ids: Vec<usize>) {
+    let names = ids.iter().map(|id: usize| id.to_string());
+}
+`;
+    expect(fixture(code, materialized).target("id.to_string()")).toBeNull();
+  });
+
+  it("derefs a typed closure parameter through a project Deref impl", () => {
+    const code = `
+struct DomRoot<T> { ptr: T }
+impl<T> std::ops::Deref for DomRoot<T> {
+    type Target = T;
+    fn deref(&self) -> &T { &self.ptr }
+}
+struct WebSocket;
+impl WebSocket { fn make_disappear(&self) -> bool { true } }
+struct Other;
+impl Other { fn make_disappear(&self) -> bool { false } }
+fn run(sockets: Sockets) {
+    sockets.for_each(|websocket: DomRoot<WebSocket>| {
+        websocket.make_disappear();
+    });
+}
+`;
+    expect(fixture(code, materialized).target("websocket.make_disappear()")).toBe("WebSocket#make_disappear");
+  });
+});
