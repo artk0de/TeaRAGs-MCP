@@ -73,8 +73,8 @@
       "digest": "sha256:e0b33c5196c520c0a681fbdd648255f2ece989426b18a88c04c583b36251ecd9"
     },
     "walker": {
-      "version": 10,
-      "digest": "sha256:aa99c528967617c7bf194637f60c58faadeb3433ead53b1b5a9694c0f66a3776"
+      "version": 11,
+      "digest": "sha256:91aea3a71a4211b51bdfff8b6d8201214610acedd11a3a2c11a655bca7747c04"
     }
   },
   "swift": {

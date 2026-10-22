@@ -92,11 +92,14 @@ export function rustCalleeShortNameCandidates(ctx: CallContext, name: string): S
  * head is external by definition; any other bare head is a crate name, and the
  * only crate name that can be ours is one the project holds a module file for
  * (`<head>.rs` / `<head>/mod.rs`) — asked through the symbol table, never the
- * disk. A malformed import proves nothing and reads internal.
+ * disk. A malformed import proves nothing and reads internal. One use tree can
+ * mix roots (`{walkdir::WalkDir, crate::Error}`), so a caller that knows the
+ * name it matched passes `localName` and is answered for THAT binding.
  */
-export function rustImportIsExternal(importText: string, ctx: CallContext): boolean {
+export function rustImportIsExternal(importText: string, ctx: CallContext, localName?: string): boolean {
   const bindings = rustImportBindings(importText);
-  const binding = bindings?.[0];
+  const binding =
+    (localName === undefined ? undefined : bindings?.find((entry) => entry.localName === localName)) ?? bindings?.[0];
   if (!binding) return false;
   if (binding.prefix !== null) return false;
   const head = binding.moduleSegments[0];
@@ -159,45 +162,116 @@ function validRustSegments(segments: readonly string[]): boolean {
   return segments.length > 0 && segments.every((segment) => RUST_PATH_SEGMENT.test(segment));
 }
 
-export function rustImportBindings(importText: string): RustImportBinding[] | null {
-  const segments = stripRustUsePrefix(importText)
-    .replace(/;$/, "")
-    .split("::")
-    .map((segment) => segment.trim());
+/** One leaf of a use tree: its full path text, and whether it sat inside a `{…}` group. */
+interface RustUseLeaf {
+  path: string;
+  grouped: boolean;
+}
+
+/** Split `text` on `separator` at brace depth 0; `null` when the braces do not balance. */
+function splitRustUseTopLevel(text: string, separator: ","): string[] | null {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "{") depth++;
+    else if (ch === "}" && --depth < 0) return null;
+    else if (ch === separator && depth === 0) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  if (depth !== 0) return null;
+  parts.push(text.slice(start));
+  return parts;
+}
+
+/**
+ * Flatten a use tree to its leaves (bd tea-rags-mcp-s3i8m.3): rustfmt writes
+ * `std::{ffi::{OsStr, OsString}, io}` and `{walkdir::WalkDir, same_file::Handle}`,
+ * and the one-level reading made every such import unparseable — no receiver
+ * it bound could be placed or classified. `self` in a group binds the group's
+ * own module path. `null` for anything malformed.
+ */
+function flattenRustUseTree(text: string, base: string, grouped: boolean): RustUseLeaf[] | null {
+  const tree = text.trim();
+  const open = tree.indexOf("{");
+  if (open < 0) return tree.length === 0 ? null : [{ path: `${base}${tree}`, grouped }];
+  if (!tree.endsWith("}")) return null;
+  const head = tree.slice(0, open).trim();
+  if (head.length > 0 && !head.endsWith("::")) return null;
+  const members = splitRustUseTopLevel(tree.slice(open + 1, -1), ",");
+  if (members === null) return null;
+  const leaves: RustUseLeaf[] = [];
+  for (const raw of members) {
+    const member = raw.trim();
+    // A trailing comma leaves one empty member; an empty group binds nothing.
+    if (member.length === 0) continue;
+    if (member === "self") {
+      const modulePath = `${base}${head}`.replace(/::$/, "");
+      if (modulePath.length === 0) return null;
+      leaves.push({ path: modulePath, grouped: false });
+      continue;
+    }
+    const nested = flattenRustUseTree(member, `${base}${head}`, true);
+    if (nested === null) return null;
+    leaves.push(...nested);
+  }
+  return leaves;
+}
+
+/** One flattened leaf as a binding — a grouped leaf names its module path and the item inside it. */
+function rustUseLeafBinding(leaf: RustUseLeaf): RustImportBinding | null {
+  const alias = leaf.path.match(RUST_ALIAS);
+  const segments = (alias?.[1] ?? leaf.path).split("::").map((segment) => segment.trim());
   if (segments.some((segment) => segment.length === 0)) return null;
   const { prefix, superDepth, segments: pathSegments } = splitRustPrefix(segments);
   if (pathSegments.length === 0) return null;
   const last = pathSegments.at(-1) ?? "";
+  const moduleSegments = pathSegments.slice(0, -1);
+  if (last === "*") {
+    if (alias || !validRustSegments(moduleSegments)) return null;
+    return {
+      prefix,
+      superDepth,
+      moduleSegments,
+      sourceName: null,
+      localName: "*",
+      groupImport: leaf.grouped,
+      globImport: true,
+    };
+  }
+  if (!validRustSegments(pathSegments)) return null;
+  const localName = alias?.[2] ?? last;
+  // `crate::{a}` names module `a` exactly as `use crate::a;` does.
+  if (leaf.grouped && moduleSegments.length > 0) {
+    return { prefix, superDepth, moduleSegments, sourceName: last, localName, groupImport: true, globImport: false };
+  }
+  return {
+    prefix,
+    superDepth,
+    moduleSegments: pathSegments,
+    sourceName: null,
+    localName,
+    groupImport: false,
+    globImport: false,
+  };
+}
 
-  if (last.startsWith("{") || last.endsWith("}")) {
-    if (!last.startsWith("{") || !last.endsWith("}")) return null;
-    const moduleSegments = pathSegments.slice(0, -1);
-    if (!validRustSegments(moduleSegments)) return null;
-    const members = last
-      .slice(1, -1)
-      .split(",")
-      .map((member) => member.trim());
-    if (members.length === 0) return null;
-    const bindings = members.map((member): RustImportBinding | null => {
-      if (member === "*") {
-        return {
-          prefix,
-          superDepth,
-          moduleSegments,
-          sourceName: null,
-          localName: "*",
-          groupImport: true,
-          globImport: true,
-        };
-      }
-      const alias = member.match(RUST_ALIAS);
-      const sourceName = (alias?.[1] ?? member).trim();
-      const localName = alias?.[2] ?? sourceName;
-      if (!RUST_PATH_SEGMENT.test(sourceName) || !RUST_PATH_SEGMENT.test(localName)) return null;
-      return { prefix, superDepth, moduleSegments, sourceName, localName, groupImport: true, globImport: false };
-    });
+export function rustImportBindings(importText: string): RustImportBinding[] | null {
+  const text = stripRustUsePrefix(importText).replace(/;$/, "");
+  if (text.includes("{")) {
+    const leaves = flattenRustUseTree(text, "", false);
+    if (leaves === null || leaves.length === 0) return null;
+    const bindings = leaves.map(rustUseLeafBinding);
     return bindings.every((binding): binding is RustImportBinding => binding !== null) ? bindings : null;
   }
+  const segments = text.split("::").map((segment) => segment.trim());
+  if (segments.some((segment) => segment.length === 0)) return null;
+  const { prefix, superDepth, segments: pathSegments } = splitRustPrefix(segments);
+  if (pathSegments.length === 0) return null;
+  const last = pathSegments.at(-1) ?? "";
 
   if (last === "*") {
     const moduleSegments = pathSegments.slice(0, -1);
@@ -385,6 +459,19 @@ export function rustImportCandidatePaths(
   // module. Without the parent candidates the bare-call arm found no file
   // for every direct function import (bd tea-rags-mcp-2g2og).
   if (!parsed.groupImport && parsed.moduleSegments.length > 1) push(parsed.moduleSegments.slice(0, -1).join("/"));
+  // `use super::{escape}` / `use crate::new_regex` bind an ITEM of the prefix's
+  // own module, whose file is the module root itself — and `super::` written in
+  // an inline `mod tests { }` names the file that holds it, the caller's own
+  // (bd tea-rags-mcp-s3i8m.3).
+  if (parsed.prefix !== null && parsed.sourceName === null && parsed.moduleSegments.length === 1) {
+    const roots = tableRoots ?? [root];
+    for (const moduleRoot of roots) {
+      const base = moduleRoot ? `${moduleRoot}/` : "";
+      if (moduleRoot) candidates.push(`${moduleRoot}.rs`);
+      candidates.push(`${base}mod.rs`, `${base}lib.rs`, `${base}main.rs`);
+    }
+    if (parsed.prefix !== "crate") candidates.push(callerFile);
+  }
   return [...new Set(candidates)];
 }
 

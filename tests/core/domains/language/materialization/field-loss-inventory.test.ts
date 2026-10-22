@@ -68,9 +68,12 @@ const PINNED_FIELD_LOSSES: Readonly<Record<string, readonly string[]>> = {
    *
    * The same 15 shapes, in the same order, are what the real-corpus probe found
    * (6,634 losing sites) — this fixture reproduces the grammar's full inventory,
-   * not a sample of it.
+   * not a sample of it. `array_type.element` joined when the Rust walker began
+   * reading Rust's `array_type` `element` field (bd tea-rags-mcp-s3i8m.3); the
+   * Swift walker reads no `element`, so it is inert like the rest.
    */
   swift: [
+    "array_type.element",
     "as_expression.type",
     "check_expression.type",
     "dictionary_type.key",

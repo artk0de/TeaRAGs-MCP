@@ -239,11 +239,29 @@ function rustGenericBounds(fn: AstNode): Record<string, string> {
   return bounds;
 }
 
+/**
+ * A binding annotation std owns by shape (bd tea-rags-mcp-s3i8m.3): a
+ * primitive (`&str`, `usize`) reads as its name, a slice or array
+ * (`&[u8]`, `[u8; 4]`) as `[<element>]` — the spelling an `impl … for [u8]`
+ * block's methods carry as their owner. Bindings only: struct field types keep
+ * `readRustBareType`'s nominal reading.
+ */
+function readRustStdShapeType(typeNode: AstNode | null): string | null {
+  if (!typeNode) return null;
+  if (typeNode.type === "primitive_type") return typeNode.text;
+  if (typeNode.type === "reference_type") return readRustStdShapeType(typeNode.childForFieldName("type"));
+  if (typeNode.type === "array_type") {
+    const element = typeNode.childForFieldName("element");
+    return element ? `[${element.text}]` : null;
+  }
+  return null;
+}
+
 function rustTypeRefFor(
   typeNode: AstNode | null,
   genericBounds: Readonly<Record<string, string>>,
 ): { type: string; typeRef?: LocalBinding["typeRef"] } | null {
-  const type = readRustBareType(typeNode);
+  const type = readRustBareType(typeNode) ?? readRustStdShapeType(typeNode);
   if (type === null) return null;
   const bound = genericBounds[type];
   const ref = rustDeclaredTypeRef(typeNode);

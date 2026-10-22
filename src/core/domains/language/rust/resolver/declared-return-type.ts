@@ -13,7 +13,7 @@ export function resolveRustNominalType(nominalType: TypeRef, ctx: CallContext): 
     ctx.imports.some(
       (imp) =>
         rustImportBindings(imp.importText)?.some((binding) => binding.localName === name) === true &&
-        rustImportIsExternal(imp.importText, ctx),
+        rustImportIsExternal(imp.importText, ctx, name),
     )
   ) {
     // Only an EXTERNAL binding vetoes placement now. An import-bound project

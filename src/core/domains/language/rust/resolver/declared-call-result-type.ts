@@ -119,7 +119,7 @@ function crossFileCandidates(callee: string, ctx: CallContext): SymbolDefinition
     return bindings?.some((importBinding) => importBinding.localName === callee && !importBinding.globImport) === true;
   });
   if (bound.length !== 1) return [];
-  if (rustImportIsExternal(bound[0].importText, ctx)) return [];
+  if (rustImportIsExternal(bound[0].importText, ctx, callee)) return [];
   const paths = rustImportCandidatePaths(bound[0].importText, callee, ctx.callerFile, ctx);
   if (paths === null) return [];
   return lookupRustSymbolsByShortName(ctx, callee).filter(

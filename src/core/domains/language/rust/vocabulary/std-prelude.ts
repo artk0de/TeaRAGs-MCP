@@ -39,6 +39,60 @@ export const rustStdPreludeTypes: ReadonlySet<string> = new Set([
   "Duration",
   "SystemTime",
   "Ordering",
+  "Option",
+  "Result",
+]);
+
+/** The primitive types — `str`, the integers, floats, `bool`, `char`; slices and arrays are read by shape. */
+export const rustStdPrimitiveTypes: ReadonlySet<string> = new Set([
+  "str",
+  "bool",
+  "char",
+  "u8",
+  "u16",
+  "u32",
+  "u64",
+  "u128",
+  "usize",
+  "i8",
+  "i16",
+  "i32",
+  "i64",
+  "i128",
+  "isize",
+  "f32",
+  "f64",
+]);
+
+/**
+ * The std smart pointers whose method resolution auto-derefs to their single
+ * type argument: a receiver typed `Box<T>` is std's only when `T` is.
+ */
+export const rustStdSmartPointers: ReadonlySet<string> = new Set(["Box", "Rc", "Arc"]);
+
+/**
+ * The members `#[derive(..)]` generates — Default, Clone, Debug, PartialEq,
+ * PartialOrd, Ord, Hash — plus the provided methods those traits carry. A
+ * project type's call to one of them with no hand-written body anywhere in the
+ * project lands in generated code (or std's provided body), never in-project.
+ */
+export const rustDerivableTraitMembers: ReadonlySet<string> = new Set([
+  "default",
+  "clone",
+  "clone_from",
+  "fmt",
+  "eq",
+  "ne",
+  "partial_cmp",
+  "lt",
+  "le",
+  "gt",
+  "ge",
+  "cmp",
+  "max",
+  "min",
+  "clamp",
+  "hash",
 ]);
 
 /** Enum variant constructors the prelude binds: `Ok(())`, `Some(x)`, `Err(e)`. */
@@ -127,6 +181,19 @@ export function rustTextIsStdTrait(text: string): boolean {
 
 export function rustTextIsStdPreludeType(text: string): boolean {
   return rustStdPreludeTypes.has(text);
+}
+
+/** A std-owned type spelling: a prelude type, a primitive, or a slice / array (`[u8]`, `[u8; 4]`). */
+export function rustTextIsStdType(text: string): boolean {
+  return rustStdPreludeTypes.has(text) || rustStdPrimitiveTypes.has(text) || text.startsWith("[");
+}
+
+export function rustTextIsStdSmartPointer(text: string): boolean {
+  return rustStdSmartPointers.has(text);
+}
+
+export function rustTextIsDerivableTraitMember(text: string): boolean {
+  return rustDerivableTraitMembers.has(text);
 }
 
 export function rustTextIsStdPreludeVariant(text: string): boolean {

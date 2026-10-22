@@ -8,6 +8,7 @@ import {
   rustImportBindings,
   rustImportCandidatePaths,
   rustImportContainsReceiver,
+  rustImportIsExternal,
   rustPathCandidatePaths,
   type ResolverConfig,
 } from "./shared.js";
@@ -59,6 +60,11 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
       if (reexport) return resolved(reexport);
       const target = pickSingleCandidate(candidates, this.cfg.mode);
       if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
+      // A workspace crate the project holds (`use grep::cli;`, crate dir present)
+      // is proven internal, but its crate name maps to no module file here: the
+      // path miss is ours, not the call's, so the later passes still answer it.
+      const binding = parseRustImportPath(matchingImport.importText, receiver);
+      if (binding?.prefix === null && !rustImportIsExternal(matchingImport.importText, ctx, receiver)) return CONTINUE;
       return DROP;
     }
     if (
