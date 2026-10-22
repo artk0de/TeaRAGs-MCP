@@ -13,6 +13,7 @@ import {
   type RustAnalyzerScipRunnerDeps,
   type RustAnalyzerScipRunOptions,
 } from "../../../../src/core/adapters/rust-analyzer/index.js";
+import { scipChildInvocation } from "../../../../src/core/adapters/rust-analyzer/scip-runner.js";
 
 const MINI_SCIP = new Uint8Array(
   readFileSync(join(import.meta.dirname, "../../../fixtures/rust-analyzer-scip/mini/index.scip")),
@@ -317,7 +318,7 @@ describe("runRustAnalyzerScip — cache and env latch", () => {
     if (first.kind !== "indexed" || second.kind !== "indexed") throw new Error("unreachable");
     expect(second.index.definitionAt("src/main.rs", 7, 12)).toEqual(first.index.definitionAt("src/main.rs", 7, 12));
     expect(second.index.identity).toBe(first.index.identity);
-    const cached = [...h.texts.keys()].filter((key) => key.startsWith(`${DATA}/rust-analyzer/scip/`));
+    const cached = [...h.texts.keys()].filter((key) => /\/[0-9a-f]{64}\.json$/.test(key));
     expect(cached).toHaveLength(1);
     expect(cached[0]).toMatch(/\/scip\/[0-9a-f]{64}\/[0-9a-f]{64}\.json$/);
   });
@@ -399,5 +400,124 @@ describe("runRustAnalyzerScip — admission (bd s3i8m.6 R2b)", () => {
     );
     expect(outcome).toMatchObject({ kind: "indexed", cacheHit: true });
     expect(asked).toBe(0);
+  });
+});
+
+describe("runRustAnalyzerScip — incremental reuse (bd s3i8m.6 R2b-2)", () => {
+  const SHAPE = { relPath: "src/shape.rs", size: 20, mtimeMs: 1 };
+  const MAIN_CHANGED = { relPath: "src/main.rs", size: 10, mtimeMs: 2 };
+  const envDirOf = (h: ReturnType<typeof host>): string => {
+    const key = [...h.texts.keys()].find(
+      (k) => k.startsWith(`${DATA}/rust-analyzer/scip/`) && k.endsWith("latest.json"),
+    );
+    if (!key) throw new Error("no latest.json");
+    return key.slice(0, -"/latest.json".length);
+  };
+  const indexFiles = (h: ReturnType<typeof host>): string[] =>
+    [...h.texts.keys()].filter((k) => /\/[0-9a-f]{64}\.json$/.test(k));
+
+  it("round-trips per-file sources in the v2 cache", async () => {
+    const h = host();
+    h.sources.push(SHAPE);
+    await runRustAnalyzerScip(options(), h.deps);
+    const [file] = indexFiles(h);
+    const parsed = JSON.parse(h.texts.get(file ?? "") ?? "null") as { sources: Record<string, [number, number]> };
+    expect(parsed.sources).toEqual({ "src/main.rs": [10, 1], "src/shape.rs": [20, 1] });
+  });
+
+  it("writes latest.json on spawn and removes the previous index (one per envKey)", async () => {
+    const h = host();
+    await runRustAnalyzerScip(options(), h.deps);
+    const [first] = indexFiles(h);
+    h.sources[0] = MAIN_CHANGED;
+    await runRustAnalyzerScip(options(), h.deps);
+    const files = indexFiles(h);
+    expect(files).toHaveLength(1);
+    expect(files[0]).not.toBe(first);
+    const latest = JSON.parse(h.texts.get(`${envDirOf(h)}/latest.json`) ?? "null") as { contentKey: string };
+    expect(`${envDirOf(h)}/${latest.contentKey}.json`).toBe(files[0]);
+  });
+
+  it("serves a partial index on reuseOnly: unchanged file answers, moved definitions do not", async () => {
+    const h = host();
+    h.sources.push(SHAPE);
+    const full = await runRustAnalyzerScip(options(), h.deps);
+    if (full.kind !== "indexed") throw new Error("unreachable");
+
+    // shape.rs changed: main.rs references into it are unservable, std refs still serve.
+    h.sources[1] = { ...SHAPE, mtimeMs: 2 };
+    const partial = await runRustAnalyzerScip(options({ admission: () => "reuseOnly" }), h.deps);
+    expect(h.spawns).toHaveLength(1);
+    if (partial.kind !== "indexed") throw new Error(`expected indexed, got ${partial.kind}`);
+    expect(partial.cacheHit).toBe(false);
+    expect(partial.reuse).toEqual({ servedFiles: 1, staleFiles: 1 });
+    expect(partial.index.identity).toMatch(/^[0-9a-f]{64}:[0-9a-f]{64}~[0-9a-f]{64}$/);
+    expect(partial.index.definitionAt("src/main.rs", 7, 12)).toBeNull();
+    expect(partial.index.definitionAt("src/main.rs", 9, 6)).toEqual(full.index.definitionAt("src/main.rs", 9, 6));
+    expect(partial.index.definitionAt("src/main.rs", 7, 4)).toEqual(full.index.definitionAt("src/main.rs", 7, 4));
+  });
+
+  it("answers null for a reference located in a changed file", async () => {
+    const h = host();
+    h.sources.push(SHAPE);
+    await runRustAnalyzerScip(options(), h.deps);
+    h.sources[0] = MAIN_CHANGED;
+    const partial = await runRustAnalyzerScip(options({ admission: () => "reuseOnly" }), h.deps);
+    if (partial.kind !== "indexed") throw new Error("unreachable");
+    expect(partial.index.definitionAt("src/main.rs", 9, 6)).toBeNull();
+    expect(partial.index.definitionAt("src/main.rs", 7, 12)).toBeNull();
+  });
+
+  it("treats a file removed since the cached run as stale", async () => {
+    const h = host();
+    h.sources.push(SHAPE);
+    await runRustAnalyzerScip(options(), h.deps);
+    h.sources.pop();
+    const partial = await runRustAnalyzerScip(options({ admission: () => "reuseOnly" }), h.deps);
+    if (partial.kind !== "indexed") throw new Error("unreachable");
+    expect(partial.index.definitionAt("src/main.rs", 7, 12)).toBeNull();
+    expect(partial.index.definitionAt("src/main.rs", 9, 6)).not.toBeNull();
+  });
+
+  it("answers skipped/noBulkNoCache and never spawns on reuseOnly with no latest pointer", async () => {
+    const h = host();
+    h.sources.push(SHAPE);
+    expect(await runRustAnalyzerScip(options({ admission: () => "reuseOnly" }), h.deps)).toEqual({
+      kind: "skipped",
+      reason: "noBulkNoCache",
+    });
+    expect(h.spawns).toHaveLength(0);
+  });
+
+  it("answers skipped when latest.json points at a v1-shaped index", async () => {
+    const h = host();
+    await runRustAnalyzerScip(options(), h.deps);
+    const [file] = indexFiles(h);
+    h.texts.set(
+      file ?? "",
+      JSON.stringify({ toolchainSkew: false, data: { symbols: [], references: {}, definitions: {} } }),
+    );
+    h.sources[0] = MAIN_CHANGED;
+    expect(await runRustAnalyzerScip(options({ admission: () => "reuseOnly" }), h.deps)).toEqual({
+      kind: "skipped",
+      reason: "noBulkNoCache",
+    });
+  });
+});
+
+describe("scipChildInvocation (watchdog wrapper, platform-injected)", () => {
+  it("wraps the command in /bin/sh with the watchdog on POSIX", () => {
+    const invocation = scipChildInvocation("darwin", "/ra", ["scip", "/p"]);
+    expect(invocation.command).toBe("/bin/sh");
+    expect(invocation.args.slice(-3)).toEqual(["/ra", "scip", "/p"]);
+    expect(invocation.watchdog).toBe(true);
+  });
+
+  it("spawns rust-analyzer directly, with no shell wrapper, on win32", () => {
+    expect(scipChildInvocation("win32", "C:\\ra.exe", ["scip", "C:\\p"])).toEqual({
+      command: "C:\\ra.exe",
+      args: ["scip", "C:\\p"],
+      watchdog: false,
+    });
   });
 });

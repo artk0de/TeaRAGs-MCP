@@ -181,8 +181,19 @@ export function scipSymbolPackage(symbol: string): string {
   return parts.length >= 5 ? (parts[2] ?? "") : "";
 }
 
-/** The in-memory lookup over decoded data; `data` may come straight from the JSON cache. */
-export function createRustAnalyzerScipIndex(data: RustAnalyzerScipIndexData, identity: string): RustAnalyzerScipIndex {
+/**
+ * The in-memory lookup over decoded data; `data` may come straight from the JSON cache.
+ *
+ * `servable` narrows a PARTIAL index (cached for an older tree): a reference in a
+ * non-servable file answers null, and so does an in-project definition whose target
+ * file is non-servable (its line may have moved). Definitions stay in `data` — deleting
+ * them would make `describeSymbol` report a project symbol as external.
+ */
+export function createRustAnalyzerScipIndex(
+  data: RustAnalyzerScipIndexData,
+  identity: string,
+  servable?: (relPath: string) => boolean,
+): RustAnalyzerScipIndex {
   const byFile = new Map<string, Map<number, number>>();
   for (const [relPath, triples] of Object.entries(data.references)) {
     const byPosition = new Map<number, number>();
@@ -196,9 +207,14 @@ export function createRustAnalyzerScipIndex(data: RustAnalyzerScipIndexData, ide
     identity,
     definitionAt: (relPath, line, utf16Col) => {
       if (utf16Col < 0 || utf16Col >= MAX_COLUMN || line < 1) return null;
+      if (servable && !servable(relPath)) return null;
       const index = byFile.get(relPath)?.get(positionKey(line - 1, utf16Col));
       if (index === undefined) return null;
-      return describeSymbol(data, index);
+      const described = describeSymbol(data, index);
+      if (described?.inProject && servable && described.relPath !== undefined && !servable(described.relPath)) {
+        return null;
+      }
+      return described;
     },
   };
 }
