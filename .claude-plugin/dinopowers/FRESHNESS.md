@@ -7,9 +7,10 @@ follow them, never restate them.
 
 ## What wrappers must do
 
-- **Address the tree** — every tea-rags read call passes
-  `path=<your working directory>`. In a linked worktree that reads the
-  worktree's own tree against the repository's index; no clone, no reindex.
+- **Address index + tree** — every tea-rags read call passes `project=<alias>`
+  (which index) + `path=<your working directory>` (which tree). In a linked
+  worktree that reads the worktree's own tree against the repository's index; no
+  clone, no reindex. `index_codebase`: `project` only.
 - **Uncommitted / session edits** — index-freshness reindex rows: alias's own
   checkout → incremental `index_codebase` first; linked worktree → none (the
   overlay serves the tree; a `treeState` row = index's pre-edit copy → current

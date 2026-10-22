@@ -20,8 +20,8 @@ hardcoded thresholds — strategies adapt per codebase.
 
 ## Prerequisites
 
-**Addressing:** every tea-rags call passes `path=<your working directory>` —
-search-cascade "Addressing the Codebase"; never project alone.
+**Addressing:** every tea-rags call passes `project=<alias>` +
+`path=<your working directory>` — search-cascade "Addressing the Codebase".
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
@@ -348,8 +348,8 @@ the user, do not change it silently. Only a `PIN-UPDATED` pin from 6a changes,
 and only there.
 
 MODIFY, before the first edit:
-`find_co_changed(path=<your working directory>, files: [target])` on the target
-file (registered when codegraph is on). Silent partners —
+`find_co_changed(project=<alias>, path=<your working directory>, files: [target])`
+on the target file (registered when codegraph is on). Silent partners —
 `structurallyLinked: false` — with `strength >= 0.5`, top 5: check whether the
 change belongs in them too. Context, not a requirement — never expand the diff
 on co-change alone.

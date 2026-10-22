@@ -112,9 +112,8 @@ Search results complete — no ripgrep verification passes.
 Translate $ARGUMENTS to English (if not already). If user's language differs,
 optionally run secondary query in original language for non-English docs.
 
-Every tea-rags call (search, find_symbol, graph tools):
-`path=<your working directory>` — search-cascade "Addressing the Codebase";
-never project alone.
+Every tea-rags call (search, find_symbol, graph tools): `project=<alias>` +
+`path=<your working directory>` — search-cascade "Addressing the Codebase".
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /

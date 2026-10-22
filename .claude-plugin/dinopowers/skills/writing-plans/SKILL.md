@@ -64,7 +64,8 @@ proceeding without tea-rags impact enrichment".
 Issue ONE `mcp__tea-rags__semantic_search` call:
 
 ```
-path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
+project:     <alias>                    ← search-cascade "Addressing the Codebase"
+path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent from Step 1>
 pathPattern: "{file1,file2,file3,...}"   ← brace expansion over fileList
 rerank:      "blastRadius"               ← codegraph on; see OFF fallback below

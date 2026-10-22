@@ -39,7 +39,7 @@ uncommitted edits with no git signal yet.
 ```
 0. `git status --porcelain -uall` → uncommitted paths (see Uncommitted probe).
    Paths listed → index-freshness uncommitted-edits rows (linked worktree: no
-   reindex). Every call: path=<your working directory>.
+   reindex). Every call: project=<alias> path=<your working directory>.
 
 1. Search — ONE message, parallel calls. Same tool (search-cascade;
    linked worktree → hybrid_search for all three), same query,
@@ -115,8 +115,8 @@ pre-edit history. "Broke after my change" = edit not yet committed.
   version; symptom fit decides.
 - Hit with `treeState` = index's pre-edit copy: text and line range stale, still
   the uncommitted suspect. Judge the edit from
-  `find_symbol path=<your working directory>` (current tree), never from the row
-  or a `Read` of its line range.
+  `find_symbol project=<alias> path=<your working directory>` (current tree),
+  never from the row or a `Read` of its line range.
 - Main checkout: probe reads INDEXED content → step 0 listed paths → reindex
   BEFORE the search message (`index-freshness` uncommitted-edits row). Never
   wait for prime stale — blind to working-tree edits. Reindex failed → say so;

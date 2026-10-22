@@ -37,9 +37,9 @@ present. Else return
 
 ## Recipe — three-level locality cascade
 
-**Addressing:** every call passes `path=<your working directory>` —
-search-cascade "Addressing the Codebase"; never project alone. Row with
-`treeState` = pre-edit copy → never a template; take its current body via
+**Addressing:** every call passes `project=<alias>` +
+`path=<your working directory>` — search-cascade "Addressing the Codebase". Row
+with `treeState` = pre-edit copy → never a template; take its current body via
 `find_symbol`.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
