@@ -227,6 +227,12 @@ export const ColumnTableSchema = z
 **Files:**
 
 - Modify: `src/core/api/tools/format.ts` (`formatMcpResponse`)
+- Modify (refactor first, own commit): `src/core/api/tools/codegraph.ts`,
+  `review-changes.ts`, `code/register-status-tools.ts` (`get_index_metrics`) —
+  eleven handlers serialised `formatMcpText(JSON.stringify(x, null, 2))` past
+  `formatMcpResponse`; they route through it so the change lands in one place.
+  Resources (`src/mcp/resources/registry.ts`) and `get_index_status` (appends
+  text sections) stay as they are.
 - Test: `tests/core/api/tools/format.test.ts` + the 7 text-parsing tests
   (`review-changes`, `graph-resolved-symbol-id`, `naming-lexicon-tool`,
   `list-projects`, `codegraph-gating`, `ontology-report-tool`,
