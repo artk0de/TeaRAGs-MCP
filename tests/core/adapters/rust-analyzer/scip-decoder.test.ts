@@ -169,6 +169,13 @@ describe("createRustAnalyzerScipIndex — described definitions (bd s3i8m.6 R3-1
     expect(def?.implTrait).toBeUndefined();
   });
 
+  it("reads the declaring trait of a trait-body member, never of an impl member (bd s3i8m.6 R3c)", () => {
+    expect(miniIndex().definitionAt("src/main.rs", 27, 6)?.declaringTrait).toBe("Greeter");
+    expect(miniIndex().definitionAt("src/main.rs", 9, 6)?.declaringTrait).toBeUndefined();
+    expect(miniIndex().definitionAt("src/main.rs", 21, 20)?.declaringTrait).toBeUndefined();
+    expect(miniIndex().definitionAt("src/main.rs", 7, 12)?.declaringTrait).toBeUndefined();
+  });
+
   it("describes a namespace reference as other", () => {
     expect(miniIndex().definitionAt("src/main.rs", 19, 13)).toMatchObject({ kind: "other" });
   });

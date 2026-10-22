@@ -250,8 +250,12 @@ function scipDescriptors(symbol: string): string {
 
 const IMPL_TRAIT = /impl#\[[^\]]*\]\[([^\]]+)\]/;
 const TRAILING_NAME = /(?:`([^`]+)`|([^\s/#.!():[\]`]+))$/;
+/** `<Trait>#m().` — a callable whose enclosing descriptor is a type, not an `impl#[…]` block. */
+const DECLARING_TRAIT = /(?:^|[/#])(?:`([^`]+)`|([^\s/#.!():[\]`]+))#(?:`[^`]+`|[^\s/#.!():[\]`]+)\(\)\.$/;
 
-function describeDescriptors(symbol: string): Pick<RustScipDefinition, "name" | "kind" | "implTrait"> {
+function describeDescriptors(
+  symbol: string,
+): Pick<RustScipDefinition, "name" | "kind" | "implTrait" | "declaringTrait"> {
   if (symbol.startsWith(LOCAL_PREFIX)) return { name: "", kind: "local" };
   const descriptors = scipDescriptors(symbol);
   const implTrait = IMPL_TRAIT.exec(descriptors)?.[1];
@@ -264,7 +268,14 @@ function describeDescriptors(symbol: string): Pick<RustScipDefinition, "name" | 
   for (const [suffix, kind] of suffixes) {
     if (!descriptors.endsWith(suffix)) continue;
     const match = TRAILING_NAME.exec(descriptors.slice(0, -suffix.length));
-    return { name: match?.[1] ?? match?.[2] ?? "", kind, ...withTrait };
+    const declaring = kind === "callable" ? DECLARING_TRAIT.exec(descriptors) : null;
+    const declaringTrait = declaring?.[1] ?? declaring?.[2];
+    return {
+      name: match?.[1] ?? match?.[2] ?? "",
+      kind,
+      ...withTrait,
+      ...(declaringTrait === undefined ? {} : { declaringTrait }),
+    };
   }
   return { name: "", kind: "other", ...withTrait };
 }
