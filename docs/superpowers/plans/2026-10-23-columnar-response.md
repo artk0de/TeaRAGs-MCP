@@ -302,12 +302,16 @@ export function formatMcpResponse(data: unknown): McpToolResult {
 - Produces:
   `RunUpdateDeps.runClaude(args: string[]): Promise<{ code: number | null; stdout: string; missing: boolean }>`;
   `syncClaudePlugins(deps): Promise<PluginSyncReport>` with
-  `interface PluginSyncReport { updated: string[]; failed: { id: string; reason: string }[]; needsConfirmation: { id: string; command: string }[]; skipped?: "claude-missing" | "none-installed" }`.
+  `interface PluginSyncReport { updated: { id: string; oldVersion: string; newVersion: string }[]; failed: { id: string; reason: string }[]; needsConfirmation: { id: string; command: string; sha256: string }[]; skipped?: "claude-missing" | "none-installed" }`.
+  Result lines come from `--json` (`outcome`, `oldVersion`, `newVersion`,
+  `message`, `shownCommand.{command,sha256}`); a confirmation is printed as
+  `claude plugin update <id> --accept-command <sha256>` for the user to run.
 
 - [ ] **Step 1: failing tests** (fake `runClaude`):
   - npm install exits 0 → `plugin list --json`, then
-    `plugin marketplace update tea-rags`, then `plugin update <id> --json` for
-    each `*@tea-rags` id; never `-y`; stdout ends with the restart hint; exit 0.
+    `plugin marketplace update tea-rags --json`, then
+    `plugin update <id> --json` for each `*@tea-rags` id; never `-y`; stdout
+    ends with the restart hint; exit 0.
   - `claude` missing → one line, no further calls, exit 0.
   - no `@tea-rags` plugins → no marketplace update, no message.
   - a plugin update failing → printed, other plugins still updated, exit 0.
