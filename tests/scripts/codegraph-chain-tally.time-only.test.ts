@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  describeRustSignatures,
   formatKindStatsBlock,
   formatTimingBlock,
   parseArgs,
@@ -474,4 +475,19 @@ describe("codegraph-chain-tally dispatch-table parity with the production runner
     const ruby = await productionRun(corpus, "ruby");
     expect(ruby.kinds.constant.unnarrowedTemplate).toBeGreaterThan(0);
   }, 60_000);
+});
+
+describe("describeRustSignatures", () => {
+  it("names an absent std source and an undefined table — the run measured without signatures", () => {
+    const line = describeRustSignatures(
+      {
+        locate: () => ({ std: undefined, dependencies: [], lockDigest: undefined, missingCrates: ["demo"] }),
+        readCached: () => undefined,
+        writeCached: () => {},
+        sizeCapBytes: 1,
+      },
+      "/nonexistent/corpus",
+    );
+    expect(line).toBe("RUST-SIGNATURES table undefined · std absent · deps 0 · missing 1");
+  });
 });

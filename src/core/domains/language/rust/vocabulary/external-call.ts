@@ -22,6 +22,7 @@ import {
   type LocalBinding,
   type SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
+import { rustExternalSignaturesOf } from "../resolver/resolve-environment.js";
 import { rustStdTerminalTargetsExternal } from "../resolver/std-type-hops.js";
 import { rustReceiverChainType } from "../resolver/strategies/rust-type-receiver.js";
 import {
@@ -112,6 +113,40 @@ function projectMemberReaches(ctx: CallContext, typeName: string, member: string
     if (style === "method" || !rustTextIsStdType(owner)) return true;
   }
   return false;
+}
+
+/**
+ * Inherent proof (bd tea-rags-mcp-s3i8m.7 T3): the external signature table
+ * holds `member` as a stable, unambiguous INHERENT item of the type `spelling`
+ * names. Rust path resolution and method probing take the inherent item before
+ * any trait item at the same autoderef step, and the orphan rule forbids a
+ * project inherent impl on a foreign type — so the call is external even when a
+ * project trait or blanket owner of the name exists. A path call is UFCS and
+ * always takes it; a method call needs a `self` receiver, and one taken by
+ * reference loses to a project trait impl FOR the type whose by-value method is
+ * probed first. A project type of the same short name vetoes; no table proves
+ * nothing.
+ */
+function externalInherentMemberIsProven(
+  ctx: CallContext,
+  spelling: string,
+  member: string,
+  style: "path" | "method",
+): boolean {
+  const signatures = rustExternalSignaturesOf(ctx);
+  if (signatures === undefined) return false;
+  const typeName = spelling.split("::").at(-1) ?? spelling;
+  if (projectDeclaresType(ctx, typeName)) return false;
+  const typePath = signatures.canonicalType(
+    spelling,
+    ctx.imports.map((imp) => imp.importText),
+  );
+  if (typePath === undefined) return false;
+  const found = signatures.inherentMember(typePath, member);
+  if (found === undefined || found === "ambiguous" || !found.stable) return false;
+  if (style === "path") return true;
+  if (found.selfKind === "none") return false;
+  return found.selfKind === "value" || !projectImplementsFor(ctx, typeName);
 }
 
 /** A std type's member is external unless the project shadows the type or can reach the member on it. */
@@ -269,7 +304,11 @@ export class RustExternalVocabulary {
     if (path.length > 1 && rustTextIsStdPathHead(head)) {
       // `std::path::PathBuf::from` names a std type; `std::env::current_dir` a std module function.
       const typeName = path.at(-1) ?? "";
-      return !RUST_CAP_WORDS.test(typeName) || !projectMemberReaches(ctx, typeName, member, "path");
+      return (
+        !RUST_CAP_WORDS.test(typeName) ||
+        !projectMemberReaches(ctx, typeName, member, "path") ||
+        externalInherentMemberIsProven(ctx, path.join("::"), member, "path")
+      );
     }
     for (const imp of ctx.imports) {
       const parsed = parseRustImportPath(imp.importText, head);
@@ -280,6 +319,9 @@ export class RustExternalVocabulary {
       const typeName = receiver === "Self" ? ctx.callerScope.at(-1) : receiver;
       if (typeName !== undefined && derivedMemberIsExternal(ctx, typeName, member)) return true;
     }
+    // `Vec::new()`, `Arc::new(x)`, `alloc::vec::Vec::with_capacity(n)`: an inherent associated item.
+    const pathCall = call.callText.startsWith(`${receiver}::`) && RUST_CAP_WORDS.test(path.at(-1) ?? "");
+    if (pathCall && externalInherentMemberIsProven(ctx, path.join("::"), member, "path")) return true;
     const bound = ctx.imports.some((imp) => parseRustImportPath(imp.importText, head)?.receiverMatches);
     if (bound) return false;
     if (path.length === 1 && rustTextIsStdPreludeType(head)) {
@@ -297,6 +339,7 @@ export class RustExternalVocabulary {
     if (binding.valueKind === "patternProjection") return chainTerminalIsExternal(call, ctx);
     const typeName = bindingReceiverType(binding);
     if (typeName === null) return false;
+    if (externalInherentMemberIsProven(ctx, typeName, member, "method")) return true;
     if (rustTextIsStdType(typeName)) return stdTypeMemberIsExternal(ctx, typeName, member, "method");
     if (binding.typeRef === undefined && typeNameIsExternal(typeName, ctx)) return true;
     return derivedMemberIsExternal(ctx, typeName, member);

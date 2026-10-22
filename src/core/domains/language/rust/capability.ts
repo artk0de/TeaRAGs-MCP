@@ -93,6 +93,9 @@ export const capability: LanguageCapability = {
   //   method, and drops only when the miss is proven.
   // - bd tea-rags-mcp-s3i8m.6 (R3-1) — a call records its member token position
   //   (`memberStartLine` / `memberStartColumn`); nothing reads it yet.
+  // - bd tea-rags-mcp-s3i8m.7 T3 arm C — a member the external signature table
+  //   holds as a stable inherent item of a std/dependency type is external even
+  //   when a project trait or blanket owner shares its name.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
