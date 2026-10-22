@@ -11,13 +11,16 @@ import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-const
 import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
 import { resolveRustNominalType, rustDeclaredMemberReturnType } from "../declared-return-type.js";
+import { rustPatternBindingType } from "../pattern-binding-type.js";
 import { createRustTypeMemberLookup, rustTypedMissIsProven } from "../rust-type-member-lookup.js";
-import { rustStdSmartPointerTarget, rustStdUnwrapType } from "../std-type-hops.js";
+import { rustStdSmartPointerTarget, rustStdTypeRef, rustStdUnwrapType } from "../std-type-hops.js";
 import { lookupRustSymbolsByShortName, rustImportMatchesReceiver, type ResolverConfig } from "./shared.js";
 
 /** Import roots that are never this project's code. */
 const STD_IMPORT_ROOT = /^(::)?(std|core|alloc)::/;
 const RUST_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*/;
+/** A slice / array binding spelling over a named element type: `[Key]`, `[crate::Key]`. */
+const RUST_SLICE_OF_NAMED_TYPE = /^\[([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)\]$/;
 
 /**
  * bd tea-rags-mcp-7266 — a receiver that statically NAMES a type:
@@ -42,10 +45,12 @@ const RUST_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*/;
  * call text must spell `Receiver::member`, which only a scoped path does.
  */
 const RUST_RECEIVER_TYPE_PORTS: ReceiverTypePorts = {
-  singleHopType: (receiver, atLine, ctx) => {
-    const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine);
+  singleHopType: (receiver, atLine, ctx, atColumn) => {
+    const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine, atColumn);
+    // A pattern binding shadows the name: its fold answers, or nothing does.
+    if (binding?.valueKind === "patternProjection") return rustPatternBindingType(binding, ctx, rustExpressionType);
     const local = binding?.typeRef ?? (binding?.type ? { form: "instance" as const, name: binding.type } : undefined);
-    if (local !== undefined) return resolveRustNominalType(local, ctx);
+    if (local !== undefined) return resolveRustNominalType(local, ctx) ?? rustStdBindingType(local, ctx);
     const produced =
       rustDeclaredCallResultType(receiver, atLine, ctx) ?? rustMethodCallResultType(receiver, atLine, ctx);
     if (produced !== undefined) return produced;
@@ -79,6 +84,24 @@ function rustReceiverHops(receiver: string): string[] {
   });
 }
 
+/**
+ * A local annotated with a std type (`stack: Vec<Peer>`, `opt: Option<Bar>`)
+ * travels as its std spelling with every argument placed, exactly like a std
+ * field type (bd tea-rags-mcp-s3i8m Task 1b) — so `stack.pop()` and
+ * `for p in &v` fold. An argument neither placed nor std drops the arguments.
+ */
+function rustStdBindingType(local: TypeRef, ctx: CallContext): TypeRef | undefined {
+  if (local.form !== "instance") return undefined;
+  // A slice / array binding reads `[<element>]`: a container of its placed element.
+  const sliceElement = RUST_SLICE_OF_NAMED_TYPE.exec(local.name)?.[1];
+  if (sliceElement !== undefined) {
+    const element = resolveRustNominalType({ form: "instance", name: sliceElement }, ctx);
+    return element === undefined ? undefined : { form: "container", element };
+  }
+  const typeArguments = local.args?.map((arg) => resolveRustNominalType(arg, ctx) ?? rustStdBindingType(arg, ctx));
+  return rustStdTypeRef(local.name, typeArguments, ctx);
+}
+
 /** A non-call hop: `?` unwraps, a std smart pointer derefs to its target, else a declared struct field. */
 function rustFieldHopType(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined {
   if (member === "?") return rustStdUnwrapType(recv, member);
@@ -87,9 +110,17 @@ function rustFieldHopType(recv: TypeRef, member: string, ctx: CallContext): Type
 }
 
 export function rustReceiverChainType(call: CallRef, ctx: CallContext): TypeRef | undefined {
-  return call.receiver === null
-    ? undefined
-    : propagateReceiverType(call.receiver, call.startLine, ctx, RUST_RECEIVER_TYPE_PORTS, call.startColumn);
+  return call.receiver === null ? undefined : rustExpressionType(call.receiver, call.startLine, ctx, call.startColumn);
+}
+
+/** The chain fold over an expression read at `atLine` (and `atColumn`, when the site has one). */
+export function rustExpressionType(
+  expression: string,
+  atLine: number,
+  ctx: CallContext,
+  atColumn?: number,
+): TypeRef | undefined {
+  return propagateReceiverType(expression, atLine, ctx, RUST_RECEIVER_TYPE_PORTS, atColumn);
 }
 
 /**

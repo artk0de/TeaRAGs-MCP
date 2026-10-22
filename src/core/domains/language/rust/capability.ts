@@ -58,6 +58,12 @@ export const capability: LanguageCapability = {
   //   primitive, str, slice or array bind (`str`, `usize`, `[u8]`).
   // - bd tea-rags-mcp-sjego — workspace crate names map to member directories
   //   and an imported type alias no longer pins its members to its own file.
+  // - bd tea-rags-mcp-s3i8m Task 1a — pattern-bound names (`if let`, match
+  //   arms, `for`, closure params, destructuring `let`) record shadowing
+  //   `patternProjection` bindings; tuple return types are recorded.
+  // - bd tea-rags-mcp-s3i8m Task 1b — enum variant payloads are recorded as
+  //   fields of `<Enum>::<Variant>` (positional `0`, `1`, … and named), their
+  //   type arguments on the enum's fact keyed `<Variant>::<field>`.
   // - bd tea-rags-mcp-s3i8m.8 — nested `pub use` trees record every leaf with
   //   its full source module (`pub use self::{peer::{find_peer}}`).
   // - bd tea-rags-mcp-s3i8m.4 (B1) — a `macro_rules!` records visibility:
@@ -82,6 +88,9 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m (rule 5 A/B) — a trait impl is a re-opening type
   //   fact (trait, line span, a generic Self's bounds); trait self-calls prove
   //   traits from `impl<T: B> Tr for T` bounds and from same-crate impls only.
+  // - bd tea-rags-mcp-s3i8m Task 1d — a typed pattern receiver's member miss
+  //   reaches a smart pointer's pointee and a project trait's provided
+  //   method, and drops only when the miss is proven.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

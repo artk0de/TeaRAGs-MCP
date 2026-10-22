@@ -56,8 +56,13 @@ export interface LocalBinding {
    *     read or another name (`opts = self.model._meta`, `app = ctx.app`),
    *     scoped by {@link LocalBinding.scopeEndLine} to the line the def
    *     rebinds the name.
+   *   - `"patternProjection"` (bd tea-rags-mcp-s3i8m, Task 1a) — a name a Rust
+   *     pattern binds (`if let` / `while let` / match arm / `for` / closure
+   *     parameter / destructuring `let`): the value reached by walking
+   *     {@link LocalBinding.projection} into `<expr>`. With no projection the
+   *     binding still SHADOWS the name for its scope, typed as nothing.
    *
-   * {@link isDerivedLocalBinding} names the four.
+   * {@link isDerivedLocalBinding} names the five.
    */
   valueKind?: "instance" | "class" | DerivedLocalBindingKind;
   /**
@@ -126,7 +131,47 @@ export interface LocalBinding {
    * does not record one.
    */
   conditionSpan?: ModifierConditionSpan;
+  /**
+   * The path from the value {@link LocalBinding.sourceExpression} evaluates to
+   * down to the bound name — set only on a `"patternProjection"` binding whose
+   * pattern the walker can unfold (bd tea-rags-mcp-s3i8m, Task 1a). `[]` binds
+   * the whole value (`p @ Some(_)`). ABSENT on a shape no projection
+   * describes (a callback parameter, disagreeing or-pattern arms, a slice):
+   * the name is then untyped, never the outer binding's.
+   */
+  projection?: readonly PatternStep[];
+  /**
+   * The exact source region the binding is visible in, when narrower than its
+   * lines (bd tea-rags-mcp-s3i8m, Task 1a): a Rust closure parameter is
+   * visible inside the closure body only, so `x.map(|w| w.id()) == Some(w.id())`
+   * reads the OUTER `w` after the closure on the same line. A call whose column
+   * is known and falls outside the span skips the binding; a call without a
+   * column falls back to {@link LocalBinding.scopeEndLine}. ABSENT on every
+   * binding scoped by lines alone.
+   */
+  visibleSpan?: ModifierConditionSpan;
 }
+
+/**
+ * One step of a {@link LocalBinding.projection}, outermost first:
+ *
+ *   - `variant` — the payload of the enum variant `path` (`Some`, `Self::A`)
+ *     at position `index` (tuple variant) or named `field` (struct variant);
+ *   - `tuple` — the element at `index` of a tuple value;
+ *   - `field` — the named field of a struct value;
+ *   - `element` — one element the iterable value yields (`for`);
+ *   - `adapterParam` — parameter `index` of the closure passed as argument
+ *     `argument` to the method `adapter` called on the value
+ *     (`iter.map(|p| …)` → argument 0, index 0; `iter.fold(init, |acc, x| …)`
+ *     binds `x` at argument 1, index 1).
+ */
+export type PatternStep =
+  | { readonly kind: "variant"; readonly path: string; readonly index: number }
+  | { readonly kind: "variant"; readonly path: string; readonly field: string }
+  | { readonly kind: "tuple"; readonly index: number }
+  | { readonly kind: "field"; readonly name: string }
+  | { readonly kind: "element" }
+  | { readonly kind: "adapterParam"; readonly adapter: string; readonly argument: number; readonly index: number };
 
 /**
  * The `LocalBinding`s that are EXACT constructions, per local name: the 1-based
@@ -233,13 +278,21 @@ export function resolveLocalBinding(
     if (binding.scopeEndLine !== undefined && binding.scopeEndLine < atLine) continue;
     if (binding.line > atLine) continue;
     if (isInsideModifierCondition(binding.conditionSpan, atLine, atColumn)) continue;
+    if (binding.visibleSpan !== undefined && atColumn !== undefined) {
+      if (!isInsideModifierCondition(binding.visibleSpan, atLine, atColumn)) continue;
+    }
     if (best === undefined || binding.line > best.line || outranksOnSameLine(binding, best)) best = binding;
   }
   return best;
 }
 
 /** The {@link LocalBinding.valueKind}s whose type only a resolver can fold out of `sourceExpression`. */
-export type DerivedLocalBindingKind = "iterationElement" | "contextEnter" | "tupleElement" | "assignedValue";
+export type DerivedLocalBindingKind =
+  | "iterationElement"
+  | "contextEnter"
+  | "tupleElement"
+  | "assignedValue"
+  | "patternProjection";
 
 /**
  * Whether `binding` is DERIVED — it names an expression for the resolver to
@@ -250,7 +303,13 @@ export function isDerivedLocalBinding(
   binding: LocalBinding | undefined,
 ): binding is LocalBinding & { valueKind: DerivedLocalBindingKind } {
   const kind = binding?.valueKind;
-  return kind === "iterationElement" || kind === "contextEnter" || kind === "tupleElement" || kind === "assignedValue";
+  return (
+    kind === "iterationElement" ||
+    kind === "contextEnter" ||
+    kind === "tupleElement" ||
+    kind === "assignedValue" ||
+    kind === "patternProjection"
+  );
 }
 
 /**

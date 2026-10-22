@@ -37,8 +37,9 @@ import type {
 import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../associated-constructor.js";
 import { collectRustCallResultBindings } from "./call-result-bindings.js";
-import { rustDeclaredStructFields } from "./field-types.js";
+import { rustDeclaredEnumVariantFields, rustDeclaredStructFields } from "./field-types.js";
 import { rustNameOf } from "./name-of.js";
+import { collectRustPatternBindings } from "./pattern-bindings.js";
 import { collectRustReturnTypes, rustDeclaredTypeRef } from "./return-types.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
 import { isRustLocalScopeBoundary, rustTypeDeclarationFactOf } from "./type-declarations.js";
@@ -156,6 +157,9 @@ function collectRustDeclarationReadings(root: AstNode, relPath: string): RustDec
         typeDeclarations.push(fact);
         const { fields } = rustDeclaredStructFields(node, fact.genericParameters ?? []);
         if (Object.keys(fields).length > 0) classFieldTypesByClassKey[`${relPath}::${fact.typeId}`] = fields;
+        for (const [variant, declared] of rustDeclaredEnumVariantFields(node, fact.genericParameters ?? [])) {
+          classFieldTypesByClassKey[`${relPath}::${fact.typeId}::${variant}`] = declared.fields;
+        }
       }
     }
     const named = rustNameOf(node);
@@ -433,6 +437,17 @@ function collectRustLocalBindingsForChunk(
       (bindings[varName] ??= []).push({ line: node.startPosition.row + 1, type: typeName });
     }
   });
+
+  // Pattern-bound names shadow the outer binding for their scope (bd
+  // tea-rags-mcp-s3i8m, Task 1a); a typed closure parameter takes the
+  // fn-parameter typing path.
+  collectRustPatternBindings(
+    fn,
+    startLine,
+    endLine,
+    (typeNode) => rustTypeRefFor(typeNode, genericBounds),
+    (name, binding) => (bindings[name] ??= []).push(binding),
+  );
   return bindings;
 }
 
