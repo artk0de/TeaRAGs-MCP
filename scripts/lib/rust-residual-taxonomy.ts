@@ -563,11 +563,14 @@ function findLocalBinding(from: Node, name: string): { kind: string; detail: str
         }
         break;
       }
-      case "match_arm":
-        if (parent.childForFieldName("pattern")?.id !== cur.id && bindsInside(parent, name)) {
+      case "match_arm": {
+        // Only the arm's PATTERN binds; its body merely mentions outer names.
+        const pattern = parent.childForFieldName("pattern");
+        if (pattern !== null && pattern.id !== cur.id && bindsInside(pattern, name)) {
           return { kind: "pattern", detail: "matchArm" };
         }
         break;
+      }
       case "for_expression":
         if (
           parent.childForFieldName("body")?.id === cur.id &&
