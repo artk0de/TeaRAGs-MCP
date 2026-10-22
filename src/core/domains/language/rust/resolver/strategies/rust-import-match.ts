@@ -5,6 +5,7 @@ import { capability } from "../../capability.js";
 import {
   parseRustImportPath,
   rustCalleeShortNameCandidates,
+  rustDeclaresTypeAlias,
   rustImportBindings,
   rustImportCandidatePaths,
   rustImportContainsReceiver,
@@ -65,7 +66,11 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
       // path miss is ours, not the call's, so the later passes still answer it.
       const binding = parseRustImportPath(matchingImport.importText, receiver);
       if (binding?.prefix === null && !rustImportIsExternal(matchingImport.importText, ctx, receiver)) return CONTINUE;
-      return DROP;
+      // An imported type ALIAS (`type Range = Match;`) carries its target's
+      // members, not its own file's: the binding proves no member location,
+      // so the later passes answer it (bd tea-rags-mcp-sjego — ripgrep's
+      // searcher core.rs `Range::zero`).
+      return rustDeclaresTypeAlias(receiver, candidatePaths, ctx) ? CONTINUE : DROP;
     }
     if (
       ctx.imports.some(

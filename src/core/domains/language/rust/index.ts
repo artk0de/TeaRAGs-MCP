@@ -50,6 +50,7 @@ import {
   type CallResolver,
   type DispatchFanoutOutcome,
   type FileExtraction,
+  type SymbolResolutionPassPlan,
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
@@ -57,6 +58,7 @@ import type {
   LanguageProvider,
   LanguageSymbolResolver,
   LanguageWalker,
+  ManifestFilesReader,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
 import { rustCommentCaptureHook } from "./chunking/comment-capture.js";
@@ -138,9 +140,17 @@ export class RustLanguage implements LanguageProvider {
   });
   readonly resolver: LanguageSymbolResolver;
 
-  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const callResolver: CallResolver = new RustCallResolver(mode);
+  /**
+   * `manifestFilesReader` reads the project's Cargo.toml files for the
+   * workspace crate map (bd tea-rags-mcp-sjego). Injected by `LanguageFactory`
+   * — this leaf never walks the disk itself.
+   */
+  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE, manifestFilesReader?: ManifestFilesReader) {
+    const callResolver: CallResolver = new RustCallResolver(mode, manifestFilesReader);
     this.resolver = {
+      // The pass-start seam re-reads the workspace's crate map before the
+      // first crate-name path resolves.
+      prepareResolvePass: (plan: SymbolResolutionPassPlan): void => callResolver.prepareResolvePass?.(plan),
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
         callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),

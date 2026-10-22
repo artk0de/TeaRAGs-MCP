@@ -18,6 +18,7 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import { capability } from "../../capability.js";
 import { rustTextIsStdPathHead } from "../../vocabulary/std-prelude.js";
+import { rustWorkspaceCratesOf } from "../workspace-crates.js";
 
 export interface ResolverConfig {
   mode: AmbiguousResolveMode;
@@ -87,6 +88,23 @@ export function rustCalleeShortNameCandidates(ctx: CallContext, name: string): S
     .filter((def) => def.relPath.endsWith(".rs"));
 }
 
+/**
+ * Whether one of `relPaths` declares `name` as a type ALIAS (`type Range =
+ * Match;`) — read from the symbol table's kind or, for an alias the table
+ * holds no row for (a private module-level `type`), from the run's
+ * declaration facts. An alias owns no members of its own (bd
+ * tea-rags-mcp-sjego).
+ */
+export function rustDeclaresTypeAlias(name: string, relPaths: readonly string[], ctx: CallContext): boolean {
+  const tableAlias = lookupRustSymbolsByShortName(ctx, name).some(
+    (def) => def.symbolKind === "type_alias" && relPaths.includes(def.relPath),
+  );
+  if (tableAlias) return true;
+  return relPaths.some((relPath) =>
+    (ctx.typeDeclarations?.[relPath] ?? []).some((fact) => fact.symbolKind === "type_alias" && fact.typeId === name),
+  );
+}
+
 const RUST_MACRO_KINDS: ReadonlySet<SymbolDefinitionKind> = new Set(["macro"]);
 
 /**
@@ -122,6 +140,9 @@ export const RUST_OWN_CRATE_PATH_HEADS: ReadonlySet<string> = new Set(["crate", 
  */
 export function rustPathHeadIsExternal(head: string, ctx: CallContext): boolean {
   if (rustTextIsStdPathHead(head)) return true;
+  // A workspace member's crate name (bd tea-rags-mcp-sjego) is ours whatever
+  // its directory is called: `grep_matcher` lives in `crates/matcher`.
+  if (rustWorkspaceCratesOf(ctx)?.declares(head) === true) return false;
   // A workspace crate is a DIRECTORY (`script_bindings/lib.rs`); `hasFile` can
   // never see `<crate>.rs`, so without the directory arm every bare-head
   // `use script_bindings::Str` classified external and the type left the
@@ -460,12 +481,45 @@ export function rustModuleCandidatePaths(importText: string, callerFile: string)
   return [`${candidate}.rs`, `${candidate}/mod.rs`];
 }
 
+/** The crate root a bare path head names when it is a workspace member's crate name (bd tea-rags-mcp-sjego). */
+interface RustWorkspaceCrateRoot {
+  rootDirs: readonly string[];
+  rootFiles: readonly string[];
+}
+
+function rustWorkspaceCrateRoot(
+  origin: RustImportOrigin,
+  moduleSegments: readonly string[],
+  ctx: CallContext | undefined,
+): RustWorkspaceCrateRoot | undefined {
+  const head = moduleSegments[0];
+  if (origin.prefix !== null || ctx === undefined || head === undefined) return undefined;
+  const crates = rustWorkspaceCratesOf(ctx);
+  if (crates?.declares(head) !== true) return undefined;
+  return { rootDirs: crates.rootDirsOf(head), rootFiles: crates.rootFilesOf(head) };
+}
+
+/**
+ * The files a module path below a workspace crate's root can live in — the
+ * same `<path>.rs` / `<path>/mod.rs` pair `crate::` yields inside the member;
+ * the empty path is the crate root file itself.
+ */
+function rustCrateRootedPaths(crate: RustWorkspaceCrateRoot, segments: readonly string[]): string[] {
+  if (segments.length === 0) return [...crate.rootFiles];
+  return crate.rootDirs.flatMap((dir) => {
+    const base = dir ? `${dir}/${segments.join("/")}` : segments.join("/");
+    return [`${base}.rs`, `${base}/mod.rs`];
+  });
+}
+
 export function rustPathCandidatePaths(
   origin: RustImportOrigin,
   moduleSegments: readonly string[],
   callerFile: string,
   ctx?: CallContext,
 ): string[] {
+  const crate = rustWorkspaceCrateRoot(origin, moduleSegments, ctx);
+  if (crate !== undefined) return rustCrateRootedPaths(crate, moduleSegments.slice(1));
   const suffix = moduleSegments.join("/");
   const tableRoots = origin.prefix === "crate" && ctx ? rustTableCrateRoots(callerFile, ctx) : null;
   if (tableRoots) {
@@ -491,6 +545,17 @@ export function rustImportCandidatePaths(
 ): string[] | null {
   const parsed = parseRustImport(importText, receiver);
   if (!parsed?.receiverMatches) return parsed ? [] : null;
+  const crate = rustWorkspaceCrateRoot(parsed, parsed.moduleSegments, ctx);
+  if (crate !== undefined) {
+    // `use grep_matcher::{Match as Range}` reads like `use crate::{Match as Range}`
+    // inside crates/matcher: the module, the grouped item's own module file,
+    // and — for a plain item binding — the module that holds the item.
+    const rest = parsed.moduleSegments.slice(1);
+    const paths = rustCrateRootedPaths(crate, rest);
+    if (parsed.sourceName !== null) paths.push(...rustCrateRootedPaths(crate, [...rest, parsed.sourceName]));
+    if (!parsed.groupImport && rest.length > 0) paths.push(...rustCrateRootedPaths(crate, rest.slice(0, -1)));
+    return [...new Set(paths)];
+  }
   const tableRoots = parsed.prefix === "crate" && ctx ? rustTableCrateRoots(callerFile, ctx) : null;
   const root = rustImportRoot(parsed, callerFile);
   const candidates: string[] = [];

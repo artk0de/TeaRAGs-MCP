@@ -45,7 +45,7 @@ const PINNED_CAPABILITY_LANGUAGES: Readonly<Record<string, readonly string[]>> =
   endResolveVisitGroup: ["typescript"],
   hasInProjectDefinition: ["javascript", "python", "ruby", "rust", "swift", "typescript"],
   planResolveVisits: ["typescript"],
-  prepareResolvePass: ["go", "typescript"],
+  prepareResolvePass: ["go", "rust", "typescript"],
   residualExclusion: ["ruby"],
   residualOverrideMenu: ["ruby"],
   residualReturnType: ["ruby"],

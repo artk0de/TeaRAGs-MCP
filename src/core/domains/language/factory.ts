@@ -183,7 +183,7 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
     if (lang === "python") return new PythonLanguage(this.ambiguousResolveMode);
     if (lang === "go") return new GoLanguage(this.ambiguousResolveMode, this.manifestFilesReader);
     if (lang === "java") return new JavaLanguage(this.ambiguousResolveMode);
-    if (lang === "rust") return new RustLanguage(this.ambiguousResolveMode);
+    if (lang === "rust") return new RustLanguage(this.ambiguousResolveMode, this.manifestFilesReader);
     if (lang === "bash") return new BashLanguage(this.ambiguousResolveMode);
     if (lang === "swift") return new SwiftLanguage(this.ambiguousResolveMode);
     // Markdown is DOC-ONLY — no resolver, so no `mode` is threaded.

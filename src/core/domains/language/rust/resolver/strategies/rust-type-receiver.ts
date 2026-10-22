@@ -233,9 +233,13 @@ function constructorCallHead(receiver: string): { type: string; assocFn: string 
   return undefined;
 }
 
-/** A type symbol of that name, at the top level or inside a module (`flags::Parser`). */
+/**
+ * A type symbol of that name, at the top level or inside a module
+ * (`flags::Parser`). A type ALIAS owns no members — `type Range = Match;`
+ * carries `Match`'s — so it never makes the call owned (bd tea-rags-mcp-sjego).
+ */
 function declaresInProjectType(typeName: string, ctx: CallContext): boolean {
   return lookupRustSymbolsByShortName(ctx, typeName).some(
-    (def) => def.symbolId === typeName || def.symbolId.endsWith(`::${typeName}`),
+    (def) => def.symbolKind !== "type_alias" && (def.symbolId === typeName || def.symbolId.endsWith(`::${typeName}`)),
   );
 }
