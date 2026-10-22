@@ -2,6 +2,7 @@ import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { resolveRustNominalType } from "./declared-return-type.js";
+import { rustCallerCrateUniqueType } from "./rust-crate-scope.js";
 import { rustDeclaredTypeIsForeign, rustStdTypeRef } from "./std-type-hops.js";
 
 /** The placed owner, its single struct declaration and the declared head of its field `member`. */
@@ -83,14 +84,33 @@ export function rustLexicalSelfType(ctx: CallContext): TypeRef | undefined {
   const member = symbolId.slice(hash + 1);
   if (member.includes(".") || member.includes(":")) return undefined;
   const ownerId = symbolId.slice(0, hash);
-  const declarations = ctx.typeDeclarations?.[ctx.callerFile]?.filter(
+  const fileDeclarations = ctx.typeDeclarations?.[ctx.callerFile];
+  const declarations = fileDeclarations?.filter(
     (fact) => fact.typeId === ownerId && fact.symbolKind === "class" && !fact.reopens,
   );
-  if (declarations?.length !== 1) return undefined;
   if (!ctx.symbolTable.lookup(symbolId).some((def) => def.relPath === ctx.callerFile && def.symbolId === symbolId)) {
     return undefined;
+  }
+  if (declarations?.length !== 1) {
+    const declaredHere = fileDeclarations?.some((fact) => fact.typeId === ownerId && !fact.reopens) !== false;
+    return declaredHere ? undefined : rustCrateSelfType(ownerId, ctx);
   }
   const ownerScope = ownerId.split("::");
   if (!ownerScope.every((name, index) => ctx.callerScope[index] === name)) return undefined;
   return resolveRustNominalType({ form: "instance", name: `${ctx.callerFile}::${ownerId}` }, ctx);
+}
+
+/**
+ * `self` in an impl whose type the caller's file does not declare (bd
+ * tea-rags-mcp-s3i8m Task 2): Rust keeps inherent impls inside the defining
+ * crate, so a type name unique in the caller's crate IS the impl's type. The
+ * impl must sit directly on that name (`callerScope.at(-1) === T`); any other
+ * namesake in the crate, or a bare-path `use` rebinding it, declines.
+ */
+function rustCrateSelfType(ownerId: string, ctx: CallContext): TypeRef | undefined {
+  const typeName = ownerId.split("::").at(-1);
+  if (typeName === undefined || ctx.callerScope.at(-1) !== typeName) return undefined;
+  const owner = rustCallerCrateUniqueType(typeName, ctx);
+  if (owner === undefined) return undefined;
+  return resolveRustNominalType({ form: "instance", name: `${owner.relPath}::${owner.symbolId}` }, ctx);
 }

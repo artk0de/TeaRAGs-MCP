@@ -27,7 +27,7 @@ export const capability: LanguageCapability = {
   testFiles,
   codegraph: {
     tier: "moderate",
-    tech: "7-strategy; trait dispatch; declared return/struct-field chains (Self, owner generics); same-file declared bare-call result locals",
+    tech: "7-strategy; trait dispatch; declared return/struct-field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
     // Generic return substitution reads the declaring owner's genericParameters.
     resolverReadsTypeDeclarations: true,
     // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
@@ -60,6 +60,9 @@ export const capability: LanguageCapability = {
   //   and an imported type alias no longer pins its members to its own file.
   // - bd tea-rags-mcp-s3i8m.8 — nested `pub use` trees record every leaf with
   //   its full source module (`pub use self::{peer::{find_peer}}`).
+  // - bd tea-rags-mcp-s3i8m Task 2 — a type name unique in its crate owns the
+  //   crate's impl members in every file: `self.m()`, `self` chain seeding and
+  //   placed-owner member lookup answer from cross-file impls.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
