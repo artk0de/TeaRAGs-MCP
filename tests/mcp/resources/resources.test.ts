@@ -118,6 +118,14 @@ describe("Resource builders", () => {
       expect(md).toContain("tea-rags://schema/indexing-guide");
     });
 
+    it("explains the column-table response shape once", () => {
+      const md = buildOverview();
+      expect(md).toContain("## Response shape");
+      expect(md).toMatch(/\{\s*columns,\s*rows\s*\}/);
+      expect(md).toContain("payload.symbolId");
+      expect(md).toContain("null = absent");
+    });
+
     // Reference prose moved off the inline param hints (bd tea-rags-mcp-ewg2s)
     // — the overview is now its single owner, so its facts are pinned here.
     describe("param reference", () => {

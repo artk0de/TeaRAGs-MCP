@@ -95,7 +95,8 @@ a skill's own choice among tea-rags tools stands.
 **After ANY search returns a chunk — your work is rarely done.** The chunk
 shows where the symbol lives, not the full picture. Before answering, ask:
 do I need full body / file structure / a neighbor / doc sections? If yes,
-your next call is find_symbol — NOT another search, NOT Read:
+your next call is find_symbol — NOT another search, NOT Read. Results come
+as a table { columns, rows }: <result.X> = column payload.X of that row.
 - Truncated method body in the chunk →
   mcp__tea-rags__find_symbol with symbol=<result.symbolId> for full body
 - Need other symbols in the same file →
