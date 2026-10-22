@@ -88,3 +88,26 @@ describe("scipSymbolPackage", () => {
     expect(scipSymbolPackage("garbage")).toBe("");
   });
 });
+
+describe("createRustAnalyzerScipIndex — servable filter (bd s3i8m.6 R2b-2)", () => {
+  const data = () => decodeRustAnalyzerScip(readFileSync(FIXTURE));
+
+  it("answers null for a reference located in a non-servable file", () => {
+    const index = createRustAnalyzerScipIndex(data(), "p", (relPath) => relPath !== "src/main.rs");
+    expect(index.definitionAt("src/main.rs", 9, 6)).toBeNull();
+    expect(index.definitionAt("src/main.rs", 7, 12)).toBeNull();
+  });
+
+  it("answers null for an in-project definition whose target file is non-servable, keeps external answers", () => {
+    const index = createRustAnalyzerScipIndex(data(), "p", (relPath) => relPath !== "src/shape.rs");
+    expect(index.definitionAt("src/main.rs", 7, 12)).toBeNull();
+    expect(index.definitionAt("src/main.rs", 6, 22)).toBeNull();
+    expect(index.definitionAt("src/main.rs", 9, 6)).toMatchObject({ inProject: false, package: "alloc" });
+    expect(index.definitionAt("src/main.rs", 7, 4)).toMatchObject({ inProject: true, relPath: "src/main.rs" });
+  });
+
+  it("is unchanged when every file is servable", () => {
+    const all = createRustAnalyzerScipIndex(data(), "p", () => true);
+    expect(all.definitionAt("src/main.rs", 7, 12)).toEqual(miniIndex().definitionAt("src/main.rs", 7, 12));
+  });
+});

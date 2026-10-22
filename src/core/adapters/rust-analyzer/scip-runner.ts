@@ -23,6 +23,13 @@
  * environment change lands in another directory and so clears it. A budget
  * breach is NOT persisted — it may pass on the next run.
  *
+ * Retention is one index per `envKey`: `<envKey>/latest.json` points at the
+ * newest `<contentKey>.json`, and a new write deletes the one it replaces. The
+ * cached index records the `[size, mtimeMs]` of every source it was built from,
+ * so an `admission` of `reuseOnly` on a content miss serves that newest index
+ * PARTIALLY — only the files whose stamp still matches (a changed file's
+ * references and the definitions located in it answer null).
+ *
  * Every host effect is injected (`RustAnalyzerScipRunnerDeps`);
  * `defaultRustAnalyzerScipRunnerDeps` binds them to node.
  */
@@ -68,10 +75,11 @@ export const RUST_ANALYZER_EXEC_SETTINGS = {
 export const RUST_ANALYZER_SCIP_POLL_MS = 2000;
 
 /** Bump when the cached decoded form changes shape: part of `envKey`. */
-const SCIP_CACHE_FORMAT = 1;
+const SCIP_CACHE_FORMAT = 2;
 const HOST_COMMAND_TIMEOUT_MS = 10_000;
 const OUTPUT_TAIL_CHARS = 4096;
 const LATCH_FILE = "latch.json";
+const LATEST_FILE = "latest.json";
 
 const OFFLINE_PATTERN =
   /--offline was specified|attempting to make an HTTP request|failed to download|unable to update registry|no matching package named|failed to get `[^`]+` as a dependency/i;
@@ -86,6 +94,8 @@ export type RustAnalyzerScipRunOutcome =
       cacheHit: boolean;
       /** rust-analyzer reported the toolchain older than it supports; answers may miss std typing. */
       toolchainSkew: boolean;
+      /** Present when a stale `latest` index was served partially instead of spawning. */
+      reuse?: { servedFiles: number; staleFiles: number };
       /** Measured only when the run spawned. */
       stats?: { wallMs: number; peakRssMb: number; references: number; definitions: number };
     }
@@ -157,6 +167,8 @@ export interface RustAnalyzerScipRunnerDeps {
 
 interface CachedScipIndex {
   toolchainSkew: boolean;
+  /** `[size, mtimeMs]` of every `.rs` file the index was built from. */
+  sources: Record<string, [number, number]>;
   data: RustAnalyzerScipIndexData;
 }
 
@@ -210,7 +222,7 @@ async function runScip(
     };
   }
   if (options.admission?.(stamps.map((stamp) => stamp.relPath)) === "reuseOnly") {
-    return { kind: "skipped", reason: "noBulkNoCache" };
+    return reusePartial(deps, envDir, envKey, contentKey, stamps);
   }
 
   const tempDir = deps.fs.makeTempDir();
@@ -253,8 +265,15 @@ async function runScip(
         detail: `undecodable SCIP output: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
-    const cachedScipIndex: CachedScipIndex = { toolchainSkew: supervisedRun.toolchainSkew, data };
+    const cachedScipIndex: CachedScipIndex = {
+      toolchainSkew: supervisedRun.toolchainSkew,
+      sources: Object.fromEntries(stamps.map((stamp) => [stamp.relPath, [stamp.size, stamp.mtimeMs]])),
+      data,
+    };
+    const previousKey = readLatestKey(deps, envDir);
     deps.fs.writeTextAtomic(cachePath, JSON.stringify(cachedScipIndex));
+    deps.fs.writeTextAtomic(join(envDir, LATEST_FILE), JSON.stringify({ contentKey }));
+    if (previousKey && previousKey !== contentKey) deps.fs.remove(join(envDir, `${previousKey}.json`));
     return {
       kind: "indexed",
       index: createRustAnalyzerScipIndex(data, identity),
@@ -270,6 +289,40 @@ async function runScip(
   } finally {
     deps.fs.remove(tempDir);
   }
+}
+
+/** The newest cached index of this environment, served for the files whose stamp still matches. */
+function reusePartial(
+  deps: RustAnalyzerScipRunnerDeps,
+  envDir: string,
+  envKey: string,
+  currentContentKey: string,
+  stamps: readonly RustSourceStamp[],
+): RustAnalyzerScipRunOutcome {
+  const latestKey = readLatestKey(deps, envDir);
+  const cached = latestKey ? readCache(deps, join(envDir, `${latestKey}.json`)) : undefined;
+  if (!latestKey || !cached) return { kind: "skipped", reason: "noBulkNoCache" };
+  const current = new Map(stamps.map((stamp) => [stamp.relPath, stamp]));
+  const unchanged = (relPath: string): boolean => {
+    const was = cached.sources[relPath];
+    const now = current.get(relPath);
+    return was?.[0] === now?.size && was?.[1] === now?.mtimeMs && was !== undefined;
+  };
+  const servedFiles = [...current.keys()].filter(unchanged).length;
+  return {
+    kind: "indexed",
+    index: createRustAnalyzerScipIndex(cached.data, `${envKey}:${latestKey}~${currentContentKey}`, unchanged),
+    cacheHit: false,
+    toolchainSkew: cached.toolchainSkew,
+    reuse: { servedFiles, staleFiles: current.size - servedFiles },
+  };
+}
+
+function readLatestKey(deps: RustAnalyzerScipRunnerDeps, envDir: string): string | undefined {
+  const parsed = parseJson(deps.fs.readText(join(envDir, LATEST_FILE)));
+  return isRecord(parsed) && typeof parsed.contentKey === "string" && /^[0-9a-f]{64}$/.test(parsed.contentKey)
+    ? parsed.contentKey
+    : undefined;
 }
 
 interface MatchedToolchain {
@@ -410,6 +463,7 @@ function readLatch(deps: RustAnalyzerScipRunnerDeps, envDir: string): PersistedL
 function readCache(deps: RustAnalyzerScipRunnerDeps, path: string): CachedScipIndex | undefined {
   const parsed = parseJson(deps.fs.readText(path));
   if (!isRecord(parsed) || typeof parsed.toolchainSkew !== "boolean" || !isRecord(parsed.data)) return undefined;
+  if (!isRecord(parsed.sources)) return undefined;
   const { data } = parsed;
   if (!Array.isArray(data.symbols) || !isRecord(data.references) || !isRecord(data.definitions)) return undefined;
   return parsed as unknown as CachedScipIndex;
@@ -504,17 +558,36 @@ function writeTextAtomic(path: string, text: string): void {
 const HOST_WATCHDOG_SCRIPT =
   'exec 3<&0; (cat <&3 >/dev/null; kill -KILL 0) >/dev/null 2>&1 & "$@" </dev/null 3<&- & wait $!';
 
+/**
+ * How the child is launched. POSIX: under the `/bin/sh` watchdog. Windows has no
+ * `/bin/sh`: rust-analyzer runs directly, without the watchdog, so a terminated
+ * host thread leaves the child to its wall budget.
+ */
+export function scipChildInvocation(
+  platform: NodeJS.Platform,
+  command: string,
+  args: readonly string[],
+): { command: string; args: readonly string[]; watchdog: boolean } {
+  if (platform === "win32") return { command, args, watchdog: false };
+  return {
+    command: "/bin/sh",
+    args: ["-c", HOST_WATCHDOG_SCRIPT, "tea-rags-ra-scip", command, ...args],
+    watchdog: true,
+  };
+}
+
 function spawnScipChild(
   command: string,
   args: readonly string[],
   options: { env: Readonly<Record<string, string | undefined>>; onOutput: (chunk: string) => void },
 ): RustAnalyzerScipChild {
+  const invocation = scipChildInvocation(process.platform, command, args);
   // Own process group, so the whole tree (cargo metadata, rustc probes) dies on a
   // breach — and, run under HOST_WATCHDOG_SCRIPT, dies with the thread that
   // spawned it.
-  const child = spawnChild("/bin/sh", ["-c", HOST_WATCHDOG_SCRIPT, "tea-rags-ra-scip", command, ...args], {
+  const child = spawnChild(invocation.command, [...invocation.args], {
     env: options.env,
-    detached: true,
+    detached: invocation.watchdog,
     stdio: ["pipe", "pipe", "pipe"],
   });
   child.stdin.on("error", () => undefined);
