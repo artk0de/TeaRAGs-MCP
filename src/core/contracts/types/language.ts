@@ -1086,6 +1086,74 @@ export type ManifestFilesReader = (
  */
 export type DeclaredDependenciesByLanguage = ReadonlyMap<string, ReadonlySet<string>>;
 
+/** The closed std-trait associated types a Rust external signature table answers (bd s3i8m.7). */
+export type RustClosedAssoc = "Deref::Target" | "Iterator::Item" | "IntoIterator::IntoIter" | "Future::Output";
+
+/**
+ * A type expression read from external (std / dependency) Rust source. `type`
+ * names are canonical paths (`std::sync::MutexGuard`), generic parameters stay
+ * bare (`T`), `Self` stays `Self`, a primitive stays its keyword and `()` is the
+ * empty tuple. `genericParameters` are POSITIONAL over the owner's type
+ * arguments — the impl's self type for a member or associated type, the
+ * declaration for a field or alias — so a substitution reads the receiver's
+ * args by index; a position the impl fixes to a concrete type is `"_"`.
+ */
+export interface RustExternalTypeExpr {
+  readonly type: TypeRef;
+  readonly genericParameters: readonly string[];
+}
+
+/** An inherent `pub fn` of an external type. */
+export interface RustExternalMember {
+  /** Absent when the declared return is not a nominal shape (`impl Trait`, slice, pointer, fn). */
+  readonly returns?: RustExternalTypeExpr;
+  /** The method's own type parameters — a receiver never binds them. */
+  readonly methodGenericParameters: readonly string[];
+  readonly selfKind: "none" | "value" | "ref" | "mut";
+  /** `#[stable]` in a std crate; always true for a dependency crate (no stability attributes). */
+  readonly stable: boolean;
+}
+
+/** Every fact the table holds about one canonical external type. */
+export interface RustExternalTypeSignatures {
+  /** `"ambiguous"`: cfg arms / impls declare the member with different returns. */
+  readonly inherent: Readonly<Record<string, RustExternalMember | "ambiguous">>;
+  readonly fields: Readonly<Record<string, RustExternalTypeExpr>>;
+  readonly associated: Readonly<Partial<Record<RustClosedAssoc, RustExternalTypeExpr | "ambiguous">>>;
+  /** Trait (canonical path, or the spelled path when the trait lies outside the extraction) → member names. */
+  readonly traitMembers: Readonly<Record<string, readonly string[]>>;
+}
+
+/**
+ * The serializable (JSON-safe) external signature table one extraction yields —
+ * what a disk cache stores and `RustExternalSignatureTable` answers from.
+ * `paths` maps every PUBLIC spelling of a type-like item to its canonical path
+ * (the shortest public path, `std` before `alloc` before `core` on a tie); an
+ * item no public path reaches (`std::sys::*`) has no key anywhere.
+ */
+export interface RustExternalSignatureTableData {
+  readonly crates: readonly string[];
+  readonly paths: Readonly<Record<string, string>>;
+  readonly types: Readonly<Record<string, RustExternalTypeSignatures>>;
+  readonly aliases: Readonly<Record<string, RustExternalTypeExpr>>;
+}
+
+/**
+ * Signatures of Rust code outside the project (std/core/alloc, registry and git
+ * dependencies), read from their source (bd s3i8m.7). Every answer is
+ * `undefined` when the table does not know — never a guess.
+ */
+export interface RustExternalSignatureTable {
+  /** Canonical path a spelling names from the caller's file (`Mutex` + `use std::sync::Mutex;` → `std::sync::Mutex`). */
+  canonicalType: (spelling: string, importText: readonly string[]) => string | undefined;
+  inherentMember: (typePath: string, member: string) => RustExternalMember | "ambiguous" | undefined;
+  associatedType: (typePath: string, assoc: RustClosedAssoc) => RustExternalTypeExpr | undefined;
+  field: (typePath: string, field: string) => RustExternalTypeExpr | undefined;
+  /** Public type alias expansion (`std::sync::LockResult` → `Result<T, PoisonError<T>>`). */
+  alias: (typePath: string) => RustExternalTypeExpr | undefined;
+  readonly identity: string;
+}
+
 /**
  * One schema table and the instance-accessor names its columns synthesize on the
  * owning model. The COLUMN→accessor expansion (reader / writer / query
