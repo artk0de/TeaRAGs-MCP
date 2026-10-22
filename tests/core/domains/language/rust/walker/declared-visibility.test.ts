@@ -54,4 +54,27 @@ describe("Rust walker — declared visibility", () => {
     expect(vis["S#required"]).toBe("public");
     expect(Object.values(vis)).not.toContain("private");
   });
+
+  it("records a #[macro_export] macro_rules! as public and any other as private (s3i8m.4 B1)", () => {
+    const src = [
+      "/// A shortcut to box an error.",
+      "#[macro_export]",
+      "macro_rules! exported { () => {} }",
+      "",
+      "#[allow(unused_macros)]",
+      "#[macro_export(local_inner_macros)]",
+      "macro_rules! exported_inner { () => {} }",
+      "",
+      "#[allow(unused_macros)]",
+      "macro_rules! local { () => {} }",
+      "",
+      "macro_rules! bare { () => {} }",
+      "",
+    ].join("\n");
+    const vis = visibilityOf(src);
+    expect(vis.exported).toBe("public");
+    expect(vis.exported_inner).toBe("public");
+    expect(vis.local).toBe("private");
+    expect(vis.bare).toBe("private");
+  });
 });

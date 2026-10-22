@@ -1,6 +1,7 @@
 import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { MemberReturnTypeResolver, type NominalTypeRef } from "../../kernel/index.js";
+import { rustCrateRootOf, rustCrateTypeMembers, rustCrateUniqueType } from "./rust-crate-scope.js";
 import {
   rustNameBoundByExternalImport,
   rustStdSmartPointerTarget,
@@ -62,7 +63,30 @@ export function rustExactMember(owner: NominalTypeRef, member: string, ctx: Call
   const fq = owner.name.slice(boundary + 5);
   const separator = owner.form === "class" ? "." : "#";
   const matches = ctx.symbolTable.lookup(`${fq}${separator}${member}`).filter((def) => def.relPath === relPath);
-  return matches.length === 1 ? matches[0] : undefined;
+  if (matches.length > 0) return matches.length === 1 ? matches[0] : undefined;
+  return rustCrateMember(relPath, fq, separator, member, ctx);
+}
+
+/**
+ * The owner file's miss, asked of the owner's crate (bd tea-rags-mcp-s3i8m
+ * Task 2): a type name unique in its crate owns every `T#m` / `T.m` the crate
+ * declares, so an impl block in another module answers. Keyed on the short
+ * type name, so an inline-module id (`ops::Peer#region`) still matches by
+ * suffix. A sole candidate only.
+ */
+function rustCrateMember(
+  relPath: string,
+  fq: string,
+  separator: "#" | ".",
+  member: string,
+  ctx: CallContext,
+): SymbolDefinition | undefined {
+  const typeName = fq.split("::").at(-1);
+  const root = rustCrateRootOf(relPath, ctx);
+  if (typeName === undefined || root === undefined) return undefined;
+  if (rustCrateUniqueType(typeName, root, ctx) === undefined) return undefined;
+  const candidates = rustCrateTypeMembers(typeName, separator, member, root, ctx);
+  return candidates.length === 1 ? candidates[0] : undefined;
 }
 
 const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
@@ -87,7 +111,13 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
       // rustDerefTarget turns the degenerate owner answer into its single
       // generic argument, which is what `type Target = T` means for a
       // one-parameter smart pointer (`Root<T>`'s `-> &Self::Target`).
-      if (recv.name === "Self" || recv.name.startsWith("Self::")) return { ...owner, form: "instance" };
+      if (recv.name === "Self" || recv.name === "Self::Target") return { ...owner, form: "instance" };
+      // Any other associated type (`-> Self::WriteBatch` on `impl WriteBatchExt
+      // for Engine`) names an impl-chosen type, never the owner: answering the
+      // owner typed tikv's `engine.write_batch()` as the engine and dropped its
+      // `wb.set_sequence_number()` edge once cross-file impls answered
+      // (bd tea-rags-mcp-s3i8m Task 2).
+      if (recv.name.startsWith("Self::")) return undefined;
       const parameter = declaration?.genericParameters?.indexOf(recv.name) ?? -1;
       if (parameter >= 0) return owner.args?.[parameter];
       // An argument nothing substitutes (an owner generic the receiver never
