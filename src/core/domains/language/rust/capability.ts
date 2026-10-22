@@ -108,6 +108,12 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m.7 T3b — an external receiver's member returns its
   //   table-declared inherent type, and a type with a table `Deref::Target`
   //   (`MutexGuard`, `Ref`, `String`) hands members it does not answer to it.
+  // - bd tea-rags-mcp-s3i8m (binding precedence) — a receiver's later binding
+  //   wins across the local and call-result channels (`let sink = Some(sink)`
+  //   shadows the parameter), and a `let x = T::new(..)` local reads
+  //   `T::new`'s declared return (`Option<Self>`) before the constructor guess.
+  //   A shadowing `let` is typed by its folded initializer (builder chains,
+  //   any `T::assoc(..)`, `x.clone()`, `test::black_box(&x)`), else untyped.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
