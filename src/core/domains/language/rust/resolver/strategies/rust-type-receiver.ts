@@ -11,9 +11,10 @@ import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-const
 import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
 import { resolveRustNominalType, rustDeclaredMemberReturnType } from "../declared-return-type.js";
+import { rustStdDerefTarget } from "../external-type-hops.js";
 import { rustPatternBindingType } from "../pattern-binding-type.js";
 import { createRustTypeMemberLookup, rustTypedMissIsProven } from "../rust-type-member-lookup.js";
-import { rustStdSmartPointerTarget, rustStdTypeRef, rustStdUnwrapType } from "../std-type-hops.js";
+import { rustStdTypeRef, rustStdUnwrapType } from "../std-type-hops.js";
 import { lookupRustSymbolsByShortName, rustImportMatchesReceiver, type ResolverConfig } from "./shared.js";
 
 /** Import roots that are never this project's code. */
@@ -105,7 +106,8 @@ function rustStdBindingType(local: TypeRef, ctx: CallContext): TypeRef | undefin
 /** A non-call hop: `?` unwraps, a std smart pointer derefs to its target, else a declared struct field. */
 function rustFieldHopType(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined {
   if (member === "?") return rustStdUnwrapType(recv, member);
-  const pointee = rustStdSmartPointerTarget(recv, member);
+  // A guard's field access auto-derefs to its table `Deref::Target` (bd s3i8m.7 T3b).
+  const pointee = rustStdDerefTarget(recv, member, ctx, "field");
   return rustDeclaredFieldType(pointee ?? recv, member, ctx);
 }
 

@@ -22,8 +22,8 @@ import {
   type LocalBinding,
   type SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
+import { rustStdTerminalTargetsExternal } from "../resolver/external-type-hops.js";
 import { rustExternalSignaturesOf } from "../resolver/resolve-environment.js";
-import { rustStdTerminalTargetsExternal } from "../resolver/std-type-hops.js";
 import { rustReceiverChainType } from "../resolver/strategies/rust-type-receiver.js";
 import {
   lookupRustSymbolsByShortName,

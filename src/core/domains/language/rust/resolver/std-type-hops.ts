@@ -47,7 +47,7 @@ const RUST_SMART_POINTER_OWN_MEMBERS: ReadonlySet<string> = new Set([
 ]);
 
 /** The project declares a type of this short name — it shadows any std reading. */
-function projectDeclaresType(ctx: CallContext, shortName: string): boolean {
+export function projectDeclaresType(ctx: CallContext, shortName: string): boolean {
   return lookupRustSymbolsByShortName(ctx, shortName).some(
     (def) =>
       (def.symbolKind === undefined || def.symbolKind === "class" || def.symbolKind === "enum") &&
@@ -135,25 +135,6 @@ export function rustStdSmartPointerTarget(recv: TypeRef, member: string): TypeRe
   if (recv.form !== "instance" || !isStdTypeRef(recv) || !RUST_STD_SMART_POINTERS.has(recv.name)) return undefined;
   if (RUST_SMART_POINTER_OWN_MEMBERS.has(member) || recv.args?.length !== 1) return undefined;
   return recv.args[0];
-}
-
-/**
- * Whether `member` on the typed std receiver `recv` is proven std: the
- * receiver is a std type, the member is not one the pointer hands to a
- * project target, and no project symbol implements `member` on that std type.
- */
-export function rustStdTerminalTargetsExternal(recv: TypeRef, member: string, ctx: CallContext): boolean {
-  if (recv.form !== "instance" || !isStdTypeRef(recv)) return false;
-  if (rustStdSmartPointerTarget(recv, member) !== undefined) return false;
-  const typeName = recv.name.split("::").at(-1) ?? recv.name;
-  const projectImpl = lookupRustSymbolsByShortName(ctx, member).some(
-    (def) =>
-      def.symbolId === `${typeName}#${member}` ||
-      def.symbolId === `${typeName}.${member}` ||
-      def.symbolId.endsWith(`::${typeName}#${member}`) ||
-      def.symbolId.endsWith(`::${typeName}.${member}`),
-  );
-  return !projectImpl;
 }
 
 /*

@@ -105,6 +105,9 @@ export const capability: LanguageCapability = {
   //   SCIP-proven external target with a project namesake is externalSkipped.
   // - bd tea-rags-mcp-s3i8m.6 (R3b) — a call SCIP proves targets an in-project
   //   type or local (tuple constructor, closure variable) has no in-project def.
+  // - bd tea-rags-mcp-s3i8m.7 T3b — an external receiver's member returns its
+  //   table-declared inherent type, and a type with a table `Deref::Target`
+  //   (`MutexGuard`, `Ref`, `String`) hands members it does not answer to it.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

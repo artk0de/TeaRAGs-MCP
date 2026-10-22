@@ -2,11 +2,11 @@ import type { CallContext, SymbolDefinition } from "../../../../contracts/types/
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { MemberReturnTypeResolver, type NominalTypeRef } from "../../kernel/index.js";
 import { rustPlaceTypeThroughDeclaringFile } from "./declaring-file-type.js";
+import { rustExternalMemberReturnType, rustStdDerefTarget } from "./external-type-hops.js";
 import { rustCrateRootOf, rustCrateTypeMembers, rustCrateUniqueType } from "./rust-crate-scope.js";
 import {
   rustNameBoundByExternalImport,
   rustStdAccessorReturnType,
-  rustStdSmartPointerTarget,
   rustStdTypeRef,
   rustStdUnwrapType,
 } from "./std-type-hops.js";
@@ -170,10 +170,13 @@ export function rustDeclaredMemberReturnType(
   // answers `Option<element>` (bd tea-rags-mcp-s3i8m Task 1b).
   const accessed = rustStdAccessorReturnType(nominalType, member);
   if (accessed !== undefined) return accessed;
-  const pointee = rustStdSmartPointerTarget(nominalType, member);
+  // A guard / `String` / `PathBuf` hands a member it does not answer itself
+  // to its table `Deref::Target` (bd tea-rags-mcp-s3i8m.7 T3b).
+  const pointee = rustStdDerefTarget(nominalType, member, ctx);
   if (pointee !== undefined) return rustDeclaredMemberReturnType(pointee, member, ctx);
   const owner = resolveRustNominalType(nominalType, ctx);
-  if (owner === undefined) return undefined;
+  // An unplaced external receiver answers its table-declared inherent return.
+  if (owner === undefined) return rustExternalMemberReturnType(nominalType, member, ctx);
   // Rust method resolution auto-derefs: a member the owner misses is retried
   // on its `Deref::deref` declared return (a project smart pointer whose
   // `fn deref(&self) -> &T` was walked). Only true misses deref — a member the
