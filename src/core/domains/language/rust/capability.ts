@@ -113,6 +113,10 @@ export const capability: LanguageCapability = {
   //   declared return; `Arc::new(x)` carries a typed local `x` as its argument.
   // - bd tea-rags-mcp-s3i8m.7 T3c (fields) — a public field of a std/dependency
   //   struct (`range.start`) types the next hop from the table.
+  // - bd tea-rags-mcp-s3i8m.7 T3c (std traits) — a member no declaration answers
+  //   reads the closed std-trait return model: `to_string` → `String`, `cmp` →
+  //   `Ordering`, `eq` → `bool`, `clone` → `Self` when no deref target could
+  //   take it, `Type::default()` → the type.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

@@ -79,6 +79,7 @@ const DATA: RustExternalSignatureTableData = {
     "demo::Url": "demo::Url",
     "std::ops::Range": "std::ops::Range",
     "demo::Config": "demo::Config",
+    "demo::Handle": "demo::Handle",
   },
   types: {
     "std::sync::Mutex": signaturesOf({
@@ -133,6 +134,7 @@ const DATA: RustExternalSignatureTableData = {
       fields: { start: expr(instance("Idx"), ["Idx"]), end: expr(instance("Idx"), ["Idx"]) },
     }),
     "demo::Config": signaturesOf({ fields: { client: expr(instance("demo::Client"), []) } }),
+    "demo::Handle": signaturesOf({ associated: { "Deref::Target": expr(T) }, traitMembers: deref }),
   },
   aliases: {
     "std::sync::LockResult": expr(instance("std::result::Result", [T, instance("std::sync::PoisonError", [T])])),
@@ -376,5 +378,62 @@ impl Holder { fn run(&self) { self.r.start.m(); } }`,
     const code = `use demo::Config;\nstruct Client;\nfn run(c: Config) { c.client.get(); }`;
     const { ctx } = fixture({ "src/main.rs": code }).ctxOf("c.client.get()", true);
     expect(rustExternalFieldType(instance("Config"), "client", ctx)).toBeUndefined();
+  });
+});
+
+describe("Rust std-trait return model — Clone / ToString / Ord / PartialEq / Hash (s3i8m.7 T3c)", () => {
+  const ctxFor = (code: string, withTable = true) =>
+    fixture({ "src/main.rs": `${code}\nfn run(c: Client) { c.get(); }` }).ctxOf("c.get()", withTable).ctx;
+  const store = instance("src/main.rs::Store");
+  const ordering = instance("Ordering");
+
+  it("answers the implementor-independent returns on a typed receiver", () => {
+    const ctx = ctxFor(STORES);
+    const client = instance("demo::Client");
+    expect(rustDeclaredMemberReturnType(client, "to_string", ctx)).toEqual(instance("String"));
+    expect(rustDeclaredMemberReturnType(client, "eq", ctx)).toEqual(instance("bool"));
+    expect(rustDeclaredMemberReturnType(client, "cmp", ctx)).toEqual(ordering);
+    expect(rustDeclaredMemberReturnType(client, "partial_cmp", ctx)).toEqual(instance("Option", [ordering]));
+    expect(rustDeclaredMemberReturnType(client, "hash", ctx)).toEqual({ form: "tuple", elements: [] });
+    expect(rustDeclaredMemberReturnType(store, "to_string", ctx)).toEqual(instance("String"));
+  });
+
+  it("answers `Self` for clone / to_owned when the receiver has no Deref target to hand them to", () => {
+    const ctx = ctxFor(STORES);
+    const vecOfStore = instance("Vec", [store]);
+    expect(rustDeclaredMemberReturnType(vecOfStore, "clone", ctx)).toEqual(vecOfStore);
+    expect(rustDeclaredMemberReturnType(store, "clone", ctx)).toEqual(store);
+    expect(rustDeclaredMemberReturnType(store, "to_owned", ctx)).toEqual(store);
+    expect(rustDeclaredMemberReturnType(instance("usize"), "clone", ctx)).toEqual(instance("usize"));
+    expect(rustDeclaredMemberReturnType(instance("str"), "to_owned", ctx)).toEqual(instance("String"));
+  });
+
+  it("hands clone through a dependency type's Deref and stays silent when the target is unspellable", () => {
+    const ctx = ctxFor(STORES);
+    expect(rustDeclaredMemberReturnType(instance("demo::Handle", [store]), "clone", ctx)).toEqual(store);
+    expect(rustDeclaredMemberReturnType(instance("demo::Handle"), "clone", ctx)).toBeUndefined();
+    // An implementor-independent member answers even through an unspellable target.
+    expect(rustDeclaredMemberReturnType(instance("demo::Handle"), "to_string", ctx)).toEqual(instance("String"));
+  });
+
+  it("keeps a project impl's declared clone and lets a project namesake veto the model", () => {
+    const declared = ctxFor(`${STORES}\nimpl Clone for Store { fn clone(&self) -> Self { Store } }`);
+    expect(rustDeclaredMemberReturnType(store, "clone", declared)).toEqual(store);
+    const shadowed = ctxFor(`${STORES}\nstruct Ordering;`);
+    expect(rustDeclaredMemberReturnType(instance("demo::Client"), "cmp", shadowed)).toBeUndefined();
+  });
+
+  it("is byte-identical to the old read without a table", () => {
+    const ctx = ctxFor(STORES, false);
+    expect(rustDeclaredMemberReturnType(instance("demo::Client"), "to_string", ctx)).toBeUndefined();
+    expect(rustDeclaredMemberReturnType(store, "clone", ctx)).toBeUndefined();
+  });
+
+  it("types `Type::default()` on an external type as the type itself", () => {
+    const f = fixture({
+      "src/main.rs": `use demo::Client;\nfn run() {\n  let c = Client::default();\n  c.get();\n}`,
+    });
+    const { call, ctx } = f.ctxOf("c.get()", true);
+    expect(rustDeclaredCallResultType("c", call.startLine, ctx)).toEqual(instance("demo::Client"));
   });
 });

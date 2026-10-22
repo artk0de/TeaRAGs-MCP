@@ -2,7 +2,11 @@ import type { CallContext, SymbolDefinition } from "../../../../contracts/types/
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { MemberReturnTypeResolver, type NominalTypeRef } from "../../kernel/index.js";
 import { rustPlaceTypeThroughDeclaringFile } from "./declaring-file-type.js";
-import { rustExternalMemberReturnType, rustStdDerefTarget } from "./external-type-hops.js";
+import {
+  rustExternalMemberReturnType,
+  rustStdDerefTarget,
+  rustStdTraitMemberReturnType,
+} from "./external-type-hops.js";
 import { rustCrateRootOf, rustCrateTypeMembers, rustCrateUniqueType } from "./rust-crate-scope.js";
 import {
   rustNameBoundByExternalImport,
@@ -176,7 +180,12 @@ export function rustDeclaredMemberReturnType(
   if (pointee !== undefined) return rustDeclaredMemberReturnType(pointee, member, ctx);
   const owner = resolveRustNominalType(nominalType, ctx);
   // An unplaced external receiver answers its table-declared inherent return.
-  if (owner === undefined) return rustExternalMemberReturnType(nominalType, member, ctx);
+  // A std trait member neither answers falls to the closed return model (bd s3i8m.7 T3c).
+  if (owner === undefined) {
+    return (
+      rustExternalMemberReturnType(nominalType, member, ctx) ?? rustStdTraitMemberReturnType(nominalType, member, ctx)
+    );
+  }
   // Rust method resolution auto-derefs: a member the owner misses is retried
   // on its `Deref::deref` declared return (a project smart pointer whose
   // `fn deref(&self) -> &T` was walked). Only true misses deref — a member the
@@ -187,7 +196,11 @@ export function rustDeclaredMemberReturnType(
     if (found !== null) return found ?? undefined;
     if (member === "deref") return undefined;
     const next = rustDerefTarget(current, ctx);
-    if (next === undefined || next.name === current.name) return undefined;
+    // A miss on a type with no project `Deref` reads the std-trait return
+    // model; `clone` is the type's own only on the owner itself — a Deref
+    // owner may derive Clone, so a target never answers `Self`.
+    if (next === undefined) return rustStdTraitMemberReturnType(current, member, ctx, hop === 0);
+    if (next.name === current.name) return undefined;
     current = next;
   }
   return undefined;
