@@ -96,7 +96,8 @@ Issue ONE `mcp__tea-rags__semantic_search` call — SAME idiom as
 `dinopowers:writing-plans` and `dinopowers:executing-plans`:
 
 ```
-path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
+project:     <alias>                    ← search-cascade "Addressing the Codebase"
+path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent from Step 1>
 pathPattern: "{editedFile1,editedFile2,...}"   ← brace expansion
 rerank:      "blastRadius"               ← codegraph on; OFF fallback below
@@ -146,7 +147,7 @@ Rows with `treeState` = pre-edit index copies of your edited files: payload
 fanIn (who imports the file) and churn stand unless those dependents were edited
 too (graph-tool edges follow the cascade floor rule); text and lines do not —
 not evidence the edit is correct; current code via
-`find_symbol path=<your working directory>`.
+`find_symbol project=<alias> path=<your working directory>`.
 
 Verdict ladder per edited file: See Verdict Ladder near top.
 

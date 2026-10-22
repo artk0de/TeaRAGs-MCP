@@ -34,14 +34,12 @@ const coerceBoolean = () => z.preprocess((v) => (typeof v === "string" ? v === "
  * MCP tool as the RECOMMENDED way to address a codebase — see register_project
  * to create an alias.
  */
-const projectField = () =>
+export const projectField = () =>
   z
     .string()
     .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
     .optional()
-    .describe(
-      "[RECOMMENDED] Registered project alias; survives path moves. Resolution priority: collection > project > path.",
-    );
+    .describe("Index alias — pass every call. Alone → registered checkout. Priority: collection>project>path.");
 
 /**
  * `path` hint for every read tool addressed by the { collection, project, path }
@@ -50,7 +48,7 @@ const projectField = () =>
  * One string for the search and codegraph surfaces alike.
  */
 export const WORKING_TREE_PATH_HINT =
-  "Working dir (any checkout dir): addresses the TREE; index via same repo. Prefer over project in worktrees.";
+  "Working tree: your cwd (checkout / worktree). Pass WITH project; needed for worktrees.";
 
 /** `path` hint for the project-or-path tools (index status / metrics / clear). */
 const PROJECT_OR_PATH_HINT = "Codebase path. Prefer 'project' when an alias is registered.";
@@ -112,8 +110,10 @@ export const IndexCodebaseSchema = {
   path: z
     .string()
     .optional()
-    .describe("Codebase root. Needed for first index; re-index a registered alias via 'project'."),
-  project: projectField(),
+    .describe(
+      "First-time registration of a NEW codebase root only. Never to reindex an alias (a worktree seeds a separate project).",
+    ),
+  project: projectField().describe("Registered alias to (re)index — the normal case."),
   forceReindex: coerceBoolean()
     .optional()
     .describe("Full rebuild into a new collection. With any scope filter below: re-chunk only those files in place."),
@@ -177,7 +177,7 @@ export const GetIndexMetricsSchema = {
  */
 function collectionPathFields() {
   return {
-    collection: z.string().optional().describe("Raw Qdrant collection name — lowest-level handle; prefer 'project'."),
+    collection: z.string().optional().describe("Raw collection; prefer project + path."),
     project: projectField(),
     path: z.string().optional().describe(WORKING_TREE_PATH_HINT),
   };

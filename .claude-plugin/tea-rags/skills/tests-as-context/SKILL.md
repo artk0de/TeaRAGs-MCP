@@ -62,8 +62,8 @@ numeric thresholds, e.g.
 Test corpus **absent** if every `git.chunk.*` line shows `test: —` or no `test:`
 row at all.
 
-**Addressing (every recipe below):** `path: <your working directory>` —
-search-cascade "Addressing the Codebase"; never project alone.
+**Addressing (every recipe below):** `project: <alias>` +
+`path: <your working directory>` — search-cascade "Addressing the Codebase".
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
@@ -78,6 +78,7 @@ probe call to determine DSL availability without scanning digest:
 
 ```
 mcp__tea-rags__semantic_search:
+  project:  <alias>
   path:     <your working directory>
   query:    "test"
   filter:   { must: [{ key: "chunkType", match: { value: "test" } }] }
@@ -128,6 +129,7 @@ symbol's file), surface leaf-scope test chunks exercising affected scenarios.
 
 ```
 mcp__tea-rags__semantic_search:
+  project:     <alias>
   path:        <your working directory>
   query:       <intent>
   chunkType:   "test"
@@ -174,6 +176,7 @@ chunks with similar shape.
 
 ```
 mcp__tea-rags__semantic_search:
+  project:     <alias>
   path:        <your working directory>
   query:       <intent>
   chunkType:   "test_setup"
@@ -213,6 +216,7 @@ introduced.
 
 ```
 mcp__tea-rags__semantic_search:
+  project:     <alias>
   path:        <your working directory>
   query:       <intent>
   chunkType:   "test"
@@ -250,6 +254,7 @@ or unstable fixture infra (flaky setup).
 
 ```
 mcp__tea-rags__semantic_search:
+  project:     <alias>
   path:        <your working directory>
   query:       <intent>
   chunkType:   "test" if target=="scenarios" else "test_setup"
@@ -289,6 +294,7 @@ getting rewritten".
 
 ```
 mcp__tea-rags__semantic_search:
+  project:     <alias>
   path:        <your working directory>
   query:       <intent if provided, else generic theme like "scenarios">
   pathPattern: <modulePath>

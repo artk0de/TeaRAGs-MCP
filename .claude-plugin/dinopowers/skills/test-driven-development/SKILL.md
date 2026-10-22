@@ -112,7 +112,8 @@ If recipe returns SKIP (DSL test chunks absent), fall back to ONE
 `mcp__tea-rags__semantic_search` call:
 
 ```
-path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
+project:     <alias>                    ← search-cascade "Addressing the Codebase"
+path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent from Step 1>
 pathPattern: <pathHint optional>
 testFile:    "only"                ← FILE-LEVEL fallback when no DSL chunks
@@ -129,6 +130,7 @@ State explicitly: "DSL test chunks unavailable — file-level fallback in use".
 Issue ONE direct `mcp__tea-rags__semantic_search`:
 
 ```
+project:     <alias>
 path:        <your working directory>
 query:       <intent from Step 1>
 pathPattern: <pathHint optional>

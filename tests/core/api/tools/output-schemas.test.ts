@@ -294,3 +294,22 @@ describe("SearchResultOutputSchema — dense leg unavailable", () => {
     expect(schema.parse({ results: [], denseUnavailable }).denseUnavailable).toEqual(denseUnavailable);
   });
 });
+
+describe("SearchResultOutputSchema — workingTree answering alias (iqx9x)", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("keeps project on the marker", () => {
+    const marker = {
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: "b".repeat(40),
+      indexedDirty: false,
+      changedFiles: 0,
+      deletedFiles: 0,
+      floors: [],
+      project: "proj",
+    };
+
+    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+  });
+});

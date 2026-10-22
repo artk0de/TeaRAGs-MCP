@@ -55,8 +55,8 @@ Semantic/hybrid search resolves intent-based scopes.
 
 ## Rules
 
-**Addressing:** every call passes `path=<your working directory>` —
-search-cascade "Addressing the Codebase"; never project alone.
+**Addressing:** every call passes `project=<alias>` +
+`path=<your working directory>` — search-cascade "Addressing the Codebase".
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
@@ -162,6 +162,7 @@ Parameters per call:
 
 ```
 rank_chunks:
+  project: <alias>
   path: <your working directory>
   rerank: <preset>
   filter: { presets: "<filter-preset>" }   ← dimension-specific (see table above)
@@ -311,6 +312,7 @@ No healthy-demoted candidates → skip negativeIds.
 find_similar:
   positiveIds: [<all Critical UUIDs>]   ← batch, not per-candidate
   negativeIds: [<demoted UUIDs>]        ← healthy-demoted from MERGE
+  project: <alias>
   path: <your working directory>
   limit: 10
   rerank: bugHunt                       ← surface risky similar, not just similar

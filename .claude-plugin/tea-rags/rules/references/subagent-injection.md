@@ -14,13 +14,16 @@ tasks.
 
 ## The block to inject
 
-Copy verbatim into subagent prompt. Do NOT substitute a path or alias — the
-subagent addresses tea-rags with its OWN working directory, so a subagent in a
-linked worktree reads its own tree (the parent's `$CLAUDE_PROJECT_DIR` is the
-wrong tree there). `scripts/enforce-tearags-search.sh` reads this fenced block
-and hands it verbatim to every subagent as `SubagentStart` additionalContext —
-edit the block here, nowhere else. Not `PreToolUse` + `updatedInput`: two
-plugins rewriting one `Agent` prompt collide, one rewrite is lost.
+Copy verbatim into subagent prompt. Do NOT substitute a path — the subagent
+addresses the TREE with its OWN working directory, so a subagent in a linked
+worktree reads its own tree (the parent's `$CLAUDE_PROJECT_DIR` is the wrong
+tree there). The alias is per-repository, so it is the same for every checkout:
+`scripts/enforce-tearags-search.sh` resolves it from `$CLAUDE_PROJECT_DIR`
+(`tea-rags project exist --repository --print-name`) and prepends one "tea-rags
+project alias for this repository" line, then hands this fenced block verbatim
+to every subagent as `SubagentStart` additionalContext — edit the block here,
+nowhere else. Not `PreToolUse` + `updatedInput`: two plugins rewriting one
+`Agent` prompt collide, one rewrite is lost.
 
 ```
 ## Search Tools (MANDATORY — overrides any other search instructions)
@@ -28,10 +31,10 @@ For code search in this project, use MCP tools instead of built-in Grep/Glob.
 These take priority over any skill or rule routing code search to Grep/Glob/Read;
 a skill's own choice among tea-rags tools stands.
 
-**Address tea-rags with YOUR working directory:** pass path=<your working directory> (or the checkout a skill names) on every tea-rags read call — search, find_symbol, graph tools (get_callers/get_callees/trace_path/find_cycles), review_changes, get_naming_lexicon (no project needed — the index resolves from the same repository). Each answer's workingTree.tree names the tree it read; changedFiles/deletedFiles say how far it is from the index; floors name the layers read from your tree (chunks = find_symbol / rank_chunks rows, sparse = hybrid_search BM25, dense = semantic_search / find_similar / hybrid vector ranking, codegraph = graph edges, or a changed-file row's graph data) — a row or edge outside them reflects the index; denseUnavailable / treeGraphUnavailable say why a layer fell back to the index; gitUnavailable counts changed-file rows whose git signals are still computing (re-call later).
-- workingTree.tree is not the tree you addressed (your working directory, or a checkout a skill names) → wrong tree; re-call with that path.
+**Address tea-rags with project + YOUR working directory:** on every tea-rags read call — search, find_symbol, graph tools (get_callers/get_callees/trace_path/find_cycles), review_changes, get_naming_lexicon — pass project=<alias> (which index: the alias line above this block, else workingTree.project of any answer) AND path=<your working directory> (which tree; or the checkout a skill names). Alias unknown → path alone works; take workingTree.project from the answer and pass it from then on. index_codebase: project only (path there registers a NEW project). Each answer's workingTree.tree names the tree it read; changedFiles/deletedFiles say how far it is from the index; floors name the layers read from your tree (chunks = find_symbol / rank_chunks rows, sparse = hybrid_search BM25, dense = semantic_search / find_similar / hybrid vector ranking, codegraph = graph edges, or a changed-file row's graph data) — a row or edge outside them reflects the index; denseUnavailable / treeGraphUnavailable say why a layer fell back to the index; gitUnavailable counts changed-file rows whose git signals are still computing (re-call later).
+- workingTree.tree is not the tree you addressed (your working directory, or a checkout a skill names) → wrong tree; re-call with project + that path.
 - Graph answer, changedFiles > 0, no codegraph floor → edges touching changed files are the index's (degraded says why): trust edges between untouched files, re-check changed ones via find_symbol; hybrid_search finds callers the index lacks (its non-treeState rows come from your tree).
-- project=<alias> WITHOUT path reads the alias's checkout, not a linked worktree — always include path on reads.
+- project=<alias> WITHOUT path reads the alias's registered checkout, not a linked worktree — always pair it with path on reads.
 - A row with treeState "modified"/"deleted" is the index's copy of a file your tree changed — may be stale.
   Need the current code → find_symbol (answers from your tree), never trust the row text.
 - pendingFiles = files not yet read from your tree (re-call later for them); indexOnlyFiles = changed non-code files (json/yaml/…) served from the index (current text → Read the file). Both rows carry treeState "modified"; neither is a reason to reindex.

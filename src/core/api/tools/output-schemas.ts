@@ -98,6 +98,7 @@ export const SearchResultOutputSchema = {
       changedFiles: z.number(),
       deletedFiles: z.number(),
       floors: z.array(z.enum(["chunks", "sparse", "dense", "codegraph"])),
+      project: z.string().optional(),
       degraded: z.object({ reason: z.string(), remedy: z.string() }).optional(),
       indexOnlyFiles: z.number().optional(),
       pendingFiles: z.number().optional(),
@@ -108,7 +109,7 @@ export const SearchResultOutputSchema = {
     })
     .optional()
     .describe(
-      "Tree read vs index commit. changedFiles 0 = measured clean; floors = rows reflect tree " +
+      "Tree read vs index commit. project = registry alias of the answering index (pass it as project next call); changedFiles 0 = measured clean; floors = rows reflect tree " +
         "(dense = tree rows ranked by own vectors; codegraph = graph-tool answer, or a returned changed-file row, from the tree's graph); " +
         "degraded = run remedy; indexOnlyFiles = changed non-code files whose rows are the index's (treeState); " +
         "pendingFiles = changed code files still warming, answered from the index this call (treeState); " +
