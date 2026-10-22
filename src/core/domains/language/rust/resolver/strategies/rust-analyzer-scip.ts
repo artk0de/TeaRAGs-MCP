@@ -24,6 +24,6 @@ export class RustAnalyzerScipSymbolResolutionStrategy implements SymbolResolutio
     if (definition === null) return CONTINUE;
     const edgeTarget = mapScipDefinitionToSymbol(definition, call, ctx);
     if (edgeTarget !== null) return resolved(edgeTarget);
-    return rustScipDefinitionIsExternal(definition, ctx) ? DROP : CONTINUE;
+    return rustScipDefinitionIsExternal(definition, call, ctx) ? DROP : CONTINUE;
   }
 }
