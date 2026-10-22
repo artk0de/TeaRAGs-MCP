@@ -1157,6 +1157,8 @@ export interface RustExternalSignatureTable {
   inherentMember: (typePath: string, member: string) => RustExternalMember | "ambiguous" | undefined;
   associatedType: (typePath: string, assoc: RustClosedAssoc) => RustExternalTypeExpr | undefined;
   field: (typePath: string, field: string) => RustExternalTypeExpr | undefined;
+  /** Whether a trait impl written for the type declares `member` (`MutexGuard` → `fmt`, `deref`, `drop`). */
+  traitImplDeclares: (typePath: string, member: string) => boolean;
   /** Public type alias expansion (`std::sync::LockResult` → `Result<T, PoisonError<T>>`). */
   alias: (typePath: string) => RustExternalTypeExpr | undefined;
   readonly identity: string;

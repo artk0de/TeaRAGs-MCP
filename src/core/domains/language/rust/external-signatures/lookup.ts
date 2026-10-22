@@ -3,13 +3,13 @@
  * a disk cache round-trips through JSON, so every read is `Object.hasOwn`-guarded
  * (a member named `constructor` must not answer `Object.prototype`'s).
  */
-import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type {
-  RustClosedAssoc,
-  RustExternalMember,
-  RustExternalSignatureTable,
-  RustExternalSignatureTableData,
-  RustExternalTypeExpr,
+import {
+  identifierEntry,
+  type RustClosedAssoc,
+  type RustExternalMember,
+  type RustExternalSignatureTable,
+  type RustExternalSignatureTableData,
+  type RustExternalTypeExpr,
 } from "../../../../contracts/index.js";
 import { rustImportBindings } from "../resolver/strategies/shared.js";
 import { rustUseTargetSegments } from "./canonical-paths.js";
@@ -62,6 +62,11 @@ export class RustExternalSignatureLookup implements RustExternalSignatureTable {
 
   field(typePath: string, field: string): RustExternalTypeExpr | undefined {
     return identifierEntry(identifierEntry(this.data.types, typePath)?.fields, field);
+  }
+
+  traitImplDeclares(typePath: string, member: string): boolean {
+    const traitMembers = identifierEntry(this.data.types, typePath)?.traitMembers ?? {};
+    return Object.values(traitMembers).some((members) => members.includes(member));
   }
 
   alias(typePath: string): RustExternalTypeExpr | undefined {

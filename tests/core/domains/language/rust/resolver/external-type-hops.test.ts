@@ -1,0 +1,246 @@
+import Parser from "tree-sitter";
+import RustLang from "tree-sitter-rust";
+import { describe, expect, it } from "vitest";
+
+import type { CallContext, FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  RustExternalMember,
+  RustExternalSignatureTableData,
+  RustExternalTypeExpr,
+  RustExternalTypeSignatures,
+  TypeRef,
+} from "../../../../../../src/core/contracts/types/language.js";
+import { LanguageFactory } from "../../../../../../src/core/domains/language/factory.js";
+import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
+import type { NominalTypeRef } from "../../../../../../src/core/domains/language/kernel/index.js";
+import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { RustExternalSignatureLookup } from "../../../../../../src/core/domains/language/rust/external-signatures/lookup.js";
+import { RustLanguage } from "../../../../../../src/core/domains/language/rust/index.js";
+import { rustDeclaredMemberReturnType } from "../../../../../../src/core/domains/language/rust/resolver/declared-return-type.js";
+import { rustStdTerminalTargetsExternal } from "../../../../../../src/core/domains/language/rust/resolver/external-type-hops.js";
+import {
+  RustResolveEnvironment,
+  withRustResolveEnvironment,
+} from "../../../../../../src/core/domains/language/rust/resolver/resolve-environment.js";
+import { rustTypedMissIsProven } from "../../../../../../src/core/domains/language/rust/resolver/rust-type-member-lookup.js";
+import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
+import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { collectTypeDeclarationReaders } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/type-declaration-readers.js";
+
+// bd tea-rags-mcp-s3i8m.7 T3b — the receiver fold reads a std/dependency
+// receiver's member return from the external signature table (spec step 4)
+// and follows a table `Deref::Target` for a member the type does not answer
+// itself (spec step 5): `m.lock().unwrap().m()` reaches `Store#m`.
+
+const instance = (name: string, args?: TypeRef[]): NominalTypeRef =>
+  args === undefined ? { form: "instance", name } : { form: "instance", name, args };
+const expr = (type: TypeRef, genericParameters: string[] = ["T"]): RustExternalTypeExpr => ({
+  type,
+  genericParameters,
+});
+const method = (returns: TypeRef, genericParameters: string[] = ["T"]): RustExternalMember => ({
+  returns: expr(returns, genericParameters),
+  methodGenericParameters: [],
+  selfKind: "ref",
+  stable: true,
+});
+const signaturesOf = (partial: Partial<RustExternalTypeSignatures>): RustExternalTypeSignatures => ({
+  inherent: {},
+  fields: {},
+  associated: {},
+  traitMembers: {},
+  ...partial,
+});
+const T = instance("T");
+const deref = { "std::ops::Deref": ["deref"], "std::fmt::Debug": ["fmt"] };
+
+const DATA: RustExternalSignatureTableData = {
+  crates: ["std", "demo"],
+  paths: {
+    "std::sync::Mutex": "std::sync::Mutex",
+    "std::sync::MutexGuard": "std::sync::MutexGuard",
+    "std::cell::RefCell": "std::cell::RefCell",
+    "std::cell::Ref": "std::cell::Ref",
+    "std::option::Option": "std::option::Option",
+    "std::prelude::rust_2021::Option": "std::option::Option",
+    "std::result::Result": "std::result::Result",
+    "std::prelude::rust_2021::Result": "std::result::Result",
+    "demo::Client": "demo::Client",
+    "demo::Store": "demo::Store",
+  },
+  types: {
+    "std::sync::Mutex": signaturesOf({
+      inherent: {
+        lock: method(instance("std::sync::LockResult", [instance("std::sync::MutexGuard", [T])])),
+      },
+    }),
+    "std::sync::MutexGuard": signaturesOf({
+      inherent: { map: { ...method(T), selfKind: "none" } },
+      associated: { "Deref::Target": expr(T) },
+      traitMembers: deref,
+    }),
+    "std::cell::RefCell": signaturesOf({ inherent: { borrow: method(instance("std::cell::Ref", [T])) } }),
+    "std::cell::Ref": signaturesOf({
+      inherent: { clone: { ...method(instance("std::cell::Ref", [T])), selfKind: "none" } },
+      associated: { "Deref::Target": expr(T) },
+      traitMembers: deref,
+    }),
+    "std::result::Result": signaturesOf({
+      inherent: { ok: { ...method(instance("std::option::Option", [T]), ["T", "E"]), selfKind: "value" } },
+    }),
+    "demo::Client": signaturesOf({ inherent: { get: method(instance("demo::Store"), []) } }),
+  },
+  aliases: {
+    "std::sync::LockResult": expr(instance("std::result::Result", [T, instance("std::sync::PoisonError", [T])])),
+  },
+};
+const SIGNATURES = new RustExternalSignatureLookup(DATA, "t3b-identity");
+
+function fixture(files: Record<string, string>) {
+  const language = new RustLanguage();
+  const factory = new LanguageFactory();
+  const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
+  const symbolTable = new InMemoryGlobalSymbolTable();
+  const extractions: FileExtraction[] = [];
+  for (const [relPath, code] of Object.entries(files)) {
+    const parser = new Parser();
+    parser.setLanguage(RustLang);
+    const tree = { rootNode: parser.parse(code).rootNode };
+    const chunks = collectSymbols(tree, language.walker.nameOf, "::", false, new DefaultSymbolIdComposer());
+    symbolTable.upsertFile(
+      relPath,
+      chunks.map((chunk) => ({
+        ...chunk,
+        fqName: chunk.symbolId,
+        shortName: chunk.symbolId.split(/#|\.|::/).at(-1)!,
+        relPath,
+      })),
+    );
+    const extraction = language.walker.walk({ tree, code, relPath, language: "rust", chunks });
+    extractions.push(extraction);
+    runState.absorb(extraction, []);
+  }
+  const ctxOf = (text: string, withTable: boolean, file = "src/main.rs") => {
+    const extraction = extractions.find((entry) => entry.relPath === file)!;
+    const chunk = extraction.chunks.find((entry) => entry.calls.some((call) => call.callText === text))!;
+    const call = chunk.calls.find((entry) => entry.callText === text)!;
+    const base: CallContext = {
+      callerFile: file,
+      callerScope: chunk.scope,
+      callerSymbolId: chunk.symbolId,
+      imports: extraction.imports,
+      symbolTable,
+      localBindings: chunk.localBindings,
+      classFieldTypes: extraction.classFieldTypes,
+      classFieldTypesByClassKey: runState.classFieldTypesByClassKey,
+      structuredReturnTypes: Object.assign({}, ...extractions.map((entry) => entry.structuredReturnTypes)),
+      typeDeclarations: runState.typeDeclarations,
+    };
+    const ctx = withTable ? withRustResolveEnvironment(base, new RustResolveEnvironment(undefined, SIGNATURES)) : base;
+    return { call, ctx };
+  };
+  return {
+    ctxOf,
+    resolve(text: string, withTable = true, file = "src/main.rs") {
+      const { call, ctx } = ctxOf(text, withTable, file);
+      return language.resolver.resolve(call, ctx);
+    },
+  };
+}
+
+// `Other#m` keeps the short-name read of `m` from settling on `Store#m` alone.
+const STORES = `struct Store; struct Other;
+impl Store { fn m(&self) {} } impl Other { fn m(&self) {} }`;
+const storeM = { targetRelPath: "src/main.rs", targetSymbolId: "Store#m" };
+
+describe("Rust external signature table — member returns and Deref targets (s3i8m.7 T3b)", () => {
+  it("follows a Mutex guard's table Deref::Target: `self.m.lock().unwrap().m()` reaches Store#m", () => {
+    const f = fixture({
+      "src/main.rs": `use std::sync::Mutex;
+${STORES}
+struct Holder { m: Mutex<Store> }
+impl Holder { fn run(&self) { self.m.lock().unwrap().m(); } }`,
+    });
+    expect(f.resolve("self.m.lock().unwrap().m()")).toEqual(storeM);
+  });
+
+  it("follows a RefCell Ref's Deref::Target: `self.c.borrow().m()` reaches Store#m", () => {
+    const f = fixture({
+      "src/main.rs": `use std::cell::RefCell;
+${STORES}
+struct Holder { c: RefCell<Store> }
+impl Holder { fn run(&self) { self.c.borrow().m(); } }`,
+    });
+    expect(f.resolve("self.c.borrow().m()")).toEqual(storeM);
+  });
+
+  it("types a std member the hand tables do not know from the table's declared return", () => {
+    const f = fixture({
+      "src/main.rs": `${STORES}
+struct Holder { r: Result<Store, String> }
+impl Holder { fn run(&self) { self.r.ok().unwrap().m(); } }`,
+    });
+    expect(f.resolve("self.r.ok().unwrap().m()")).toEqual(storeM);
+  });
+
+  it("is byte-identical to the old read without a table", () => {
+    const f = fixture({
+      "src/main.rs": `use std::sync::Mutex;
+${STORES}
+struct Holder { m: Mutex<Store> }
+impl Holder { fn run(&self) { self.m.lock().unwrap().m(); } }`,
+    });
+    expect(f.resolve("self.m.lock().unwrap().m()", false)).not.toEqual(storeM);
+  });
+
+  it("lets a project namesake of a std type in the answer veto the table read", () => {
+    const f = fixture({
+      "src/main.rs": `use std::sync::Mutex;
+${STORES}
+struct MutexGuard;
+struct Holder { m: Mutex<Store> }
+impl Holder { fn run(&self) { self.m.lock().unwrap().m(); } }`,
+    });
+    const { call, ctx } = f.ctxOf("self.m.lock().unwrap().m()", true);
+    const without = f.ctxOf("self.m.lock().unwrap().m()", false);
+    const language = new RustLanguage();
+    expect(language.resolver.resolve(call, ctx)).toEqual(language.resolver.resolve(without.call, without.ctx));
+  });
+
+  it("never places a dependency type's return on a project namesake", () => {
+    const f = fixture({
+      "src/main.rs": `use demo::Client;
+${STORES}
+fn run(c: Client) { c.get(); }`,
+    });
+    // The project's own `Store` shares the dependency type's short name: silent.
+    expect(rustDeclaredMemberReturnType(instance("Client"), "get", f.ctxOf("c.get()", true).ctx)).toBeUndefined();
+    // Without a namesake the dependency type travels by its canonical path, unplaced.
+    const plain = fixture({ "src/main.rs": `use demo::Client;\nfn run(c: Client) { c.get(); }` });
+    const { ctx } = plain.ctxOf("c.get()", true);
+    expect(rustDeclaredMemberReturnType(instance("Client"), "get", ctx)).toEqual(instance("demo::Store"));
+    expect(rustDeclaredMemberReturnType(instance("Client"), "get", plain.ctxOf("c.get()", false).ctx)).toBeUndefined();
+  });
+
+  it("keeps a guard whose Deref target the fold cannot see unproven (CONTINUE, never a dropped edge)", () => {
+    const f = fixture({ "src/main.rs": `${STORES}\nfn run(c: Client) { c.get(); }` });
+    const { ctx } = f.ctxOf("c.get()", true);
+    expect(rustTypedMissIsProven(instance("std::sync::MutexGuard"), "m", ctx)).toBe(false);
+    const without = f.ctxOf("c.get()", false).ctx;
+    expect(rustTypedMissIsProven(instance("std::sync::MutexGuard"), "m", without)).toBe(true);
+  });
+
+  it("judges a guard's terminal member on its Deref target, never on the guard alone", () => {
+    const f = fixture({ "src/main.rs": `${STORES}\nfn run(c: Client) { c.get(); }` });
+    const { ctx } = f.ctxOf("c.get()", true);
+    const guardOf = (args?: TypeRef[]) => instance("std::sync::MutexGuard", args);
+    // A std target judges the member: `guard.len()` on `MutexGuard<String>` is std.
+    expect(rustStdTerminalTargetsExternal(guardOf([instance("String")]), "len", ctx)).toBe(true);
+    // A project target proves nothing; one the fold cannot spell keeps the pre-table verdict.
+    expect(rustStdTerminalTargetsExternal(guardOf([instance("src/main.rs::Store")]), "m", ctx)).toBe(false);
+    expect(rustStdTerminalTargetsExternal(guardOf(), "m", ctx)).toBe(true);
+    // The guard's own trait member stays std; without a table the guard is a plain std terminal.
+    expect(rustStdTerminalTargetsExternal(guardOf(), "fmt", ctx)).toBe(true);
+    expect(rustStdTerminalTargetsExternal(guardOf(), "m", f.ctxOf("c.get()", false).ctx)).toBe(true);
+  });
+});

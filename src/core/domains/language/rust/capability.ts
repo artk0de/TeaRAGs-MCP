@@ -96,6 +96,9 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m.7 T3 arm C — a member the external signature table
   //   holds as a stable inherent item of a std/dependency type is external even
   //   when a project trait or blanket owner shares its name.
+  // - bd tea-rags-mcp-s3i8m.7 T3b — an external receiver's member returns its
+  //   table-declared inherent type, and a type with a table `Deref::Target`
+  //   (`MutexGuard`, `Ref`, `String`) hands members it does not answer to it.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

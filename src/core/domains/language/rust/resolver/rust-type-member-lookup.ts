@@ -8,6 +8,8 @@ import {
   type TypeMemberLookup,
 } from "../../kernel/index.js";
 import { rustDerefTarget, rustExactMember } from "./declared-return-type.js";
+import { rustExternalDerefHop, rustProjectImplementsMemberOn, rustStdDerefTarget } from "./external-type-hops.js";
+import { rustExternalSignaturesOf } from "./resolve-environment.js";
 import { rustCrateRootOf, rustCrateUniqueType } from "./rust-crate-scope.js";
 import { rustStdSmartPointerTarget, rustThroughSmartPointers } from "./std-type-hops.js";
 import { lookupRustSymbolsByShortName, pickSameFileThenSingle } from "./strategies/shared.js";
@@ -44,8 +46,9 @@ function resolveRustNominalMember(owner: NominalTypeRef, member: string, ctx: Ca
     if (hit !== null) return hit;
     if (member === "deref") return null;
     // A std smart pointer (`Arc<Core>`) derefs to its target for every member
-    // it does not answer itself (bd tea-rags-mcp-2g2og.24).
-    const pointee = rustStdSmartPointerTarget(current, member);
+    // it does not answer itself (bd tea-rags-mcp-2g2og.24); a table type
+    // (`MutexGuard<Store>`) to its `Deref::Target` (bd s3i8m.7 T3b).
+    const pointee = rustStdDerefTarget(current, member, ctx);
     const next = pointee?.form === "instance" ? pointee : rustDerefTarget(current, ctx);
     if (next === undefined || next.name === current.name) return null;
     current = next;
@@ -150,8 +153,18 @@ export function rustTypedMissIsProven(owner: NominalTypeRef, member: string, ctx
     const boundary = current.name.indexOf(".rs::");
     if (boundary < 0) {
       const pointee = rustStdSmartPointerTarget(current, member);
-      if (pointee?.form !== "instance") return true;
-      current = pointee;
+      if (pointee?.form === "instance") {
+        current = pointee;
+        continue;
+      }
+      if (pointee !== undefined) return true;
+      // A table `Deref::Target` (bd s3i8m.7 T3b): a target the fold cannot
+      // spell, or a project impl on the type's short name the full-path walk
+      // could not see, proves nothing.
+      const hop = rustExternalDerefHop(current, member, ctx);
+      if (hop === undefined || hop === "own") return !rustTableTypeImplementedByProject(current, member, ctx);
+      if (hop === "unprovable") return false;
+      current = hop.target;
       continue;
     }
     const relPath = current.name.slice(0, boundary + 3);
@@ -167,6 +180,16 @@ export function rustTypedMissIsProven(owner: NominalTypeRef, member: string, ctx
     current = derefTarget;
   }
   return false;
+}
+
+/**
+ * A table-typed receiver travels by its canonical path (`std::sync::MutexGuard`),
+ * which a project `impl Ext for MutexGuard<'_, T>` never spells: its short
+ * name is asked instead. Without a table the fold carries no such receiver.
+ */
+function rustTableTypeImplementedByProject(owner: NominalTypeRef, member: string, ctx: CallContext): boolean {
+  if (rustExternalSignaturesOf(ctx) === undefined || !owner.name.includes("::")) return false;
+  return rustProjectImplementsMemberOn(ctx, owner.name.split("::").at(-1) ?? owner.name, member);
 }
 
 /**
