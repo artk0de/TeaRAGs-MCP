@@ -11,7 +11,7 @@ import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-const
 import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
 import { resolveRustNominalType, rustDeclaredMemberReturnType } from "../declared-return-type.js";
-import { rustStdDerefTarget } from "../external-type-hops.js";
+import { rustExternalFieldType, rustStdDerefTarget } from "../external-type-hops.js";
 import { rustPatternBindingType } from "../pattern-binding-type.js";
 import { createRustTypeMemberLookup, rustTypedMissIsProven } from "../rust-type-member-lookup.js";
 import { rustStdTypeRef, rustStdUnwrapType } from "../std-type-hops.js";
@@ -108,7 +108,9 @@ function rustFieldHopType(recv: TypeRef, member: string, ctx: CallContext): Type
   if (member === "?") return rustStdUnwrapType(recv, member);
   // A guard's field access auto-derefs to its table `Deref::Target` (bd s3i8m.7 T3b).
   const pointee = rustStdDerefTarget(recv, member, ctx, "field");
-  return rustDeclaredFieldType(pointee ?? recv, member, ctx);
+  const owner = pointee ?? recv;
+  // A public field of a std/dependency struct reads the table (bd s3i8m.7 T3c).
+  return rustDeclaredFieldType(owner, member, ctx) ?? rustExternalFieldType(owner, member, ctx);
 }
 
 export function rustReceiverChainType(call: CallRef, ctx: CallContext): TypeRef | undefined {

@@ -128,6 +128,20 @@ export function rustExternalAssociatedCallType(spelling: string, assoc: string, 
 }
 
 /**
+ * A public field of the external receiver `recv` (bd s3i8m.7 T3c): the
+ * table's declared field type, owner generics read from `recv`'s arguments
+ * (`Range<Store>.start` → `Store`).
+ */
+export function rustExternalFieldType(recv: TypeRef, field: string, ctx: CallContext): TypeRef | undefined {
+  const signatures = rustExternalSignaturesOf(ctx);
+  if (signatures === undefined) return undefined;
+  const typePath = rustExternalTypePath(recv, ctx, signatures);
+  if (typePath === undefined) return undefined;
+  const fieldType = signatures.field(typePath, field);
+  return fieldType === undefined ? undefined : rustExternalTypeOf(fieldType, recv, [], ctx, signatures);
+}
+
+/**
  * Step 5: what the table's `Deref::Target` of the external receiver `recv`
  * does with `member` (a method, or a field when `access` says so), or
  * `undefined` when the table holds no target. `Box` / `Arc` / `Rc` are the

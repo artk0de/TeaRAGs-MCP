@@ -111,6 +111,8 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m.7 T3c (path calls) — a `let` bound from
   //   `ExtType::assoc(..)` (`Vec::new()`, `Url::parse(s)?`) takes the table's
   //   declared return; `Arc::new(x)` carries a typed local `x` as its argument.
+  // - bd tea-rags-mcp-s3i8m.7 T3c (fields) — a public field of a std/dependency
+  //   struct (`range.start`) types the next hop from the table.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

@@ -20,7 +20,10 @@ import { RustExternalSignatureLookup } from "../../../../../../src/core/domains/
 import { RustLanguage } from "../../../../../../src/core/domains/language/rust/index.js";
 import { rustDeclaredCallResultType } from "../../../../../../src/core/domains/language/rust/resolver/declared-call-result-type.js";
 import { rustDeclaredMemberReturnType } from "../../../../../../src/core/domains/language/rust/resolver/declared-return-type.js";
-import { rustStdTerminalTargetsExternal } from "../../../../../../src/core/domains/language/rust/resolver/external-type-hops.js";
+import {
+  rustExternalFieldType,
+  rustStdTerminalTargetsExternal,
+} from "../../../../../../src/core/domains/language/rust/resolver/external-type-hops.js";
 import {
   RustResolveEnvironment,
   withRustResolveEnvironment,
@@ -74,6 +77,8 @@ const DATA: RustExternalSignatureTableData = {
     "std::sync::Arc": "std::sync::Arc",
     "std::collections::HashMap": "std::collections::HashMap",
     "demo::Url": "demo::Url",
+    "std::ops::Range": "std::ops::Range",
+    "demo::Config": "demo::Config",
   },
   types: {
     "std::sync::Mutex": signaturesOf({
@@ -124,6 +129,10 @@ const DATA: RustExternalSignatureTableData = {
         },
       },
     }),
+    "std::ops::Range": signaturesOf({
+      fields: { start: expr(instance("Idx"), ["Idx"]), end: expr(instance("Idx"), ["Idx"]) },
+    }),
+    "demo::Config": signaturesOf({ fields: { client: expr(instance("demo::Client"), []) } }),
   },
   aliases: {
     "std::sync::LockResult": expr(instance("std::result::Result", [T, instance("std::sync::PoisonError", [T])])),
@@ -340,5 +349,32 @@ fn run(s: &str) -> Option<()> {
   it("never types a module function call", () => {
     const code = `fn run() {\n  let d = fs::read(p);\n  d.len();\n}`;
     expect(callResultOf(code, "d", "d.len()")).toBeUndefined();
+  });
+});
+
+describe("Rust external signature table — public fields of external types (s3i8m.7 T3c)", () => {
+  it("types `self.r.start` from `Range<Store>`'s table field and reaches Store#m", () => {
+    const f = fixture({
+      "src/main.rs": `${STORES}
+struct Holder { r: std::ops::Range<Store> }
+impl Holder { fn run(&self) { self.r.start.m(); } }`,
+    });
+    expect(f.resolve("self.r.start.m()")).toEqual(storeM);
+    expect(f.resolve("self.r.start.m()", false)).not.toEqual(storeM);
+  });
+
+  it("types a dependency struct's public field through its canonical path", () => {
+    const f = fixture({ "src/main.rs": `use demo::Config;\nfn run(c: Config) { c.client.get(); }` });
+    const { ctx } = f.ctxOf("c.client.get()", true);
+    expect(rustExternalFieldType(instance("Config"), "client", ctx)).toEqual(instance("demo::Client"));
+    expect(rustExternalFieldType(instance("Config"), "missing", ctx)).toBeUndefined();
+    const without = f.ctxOf("c.client.get()", false).ctx;
+    expect(rustExternalFieldType(instance("Config"), "client", without)).toBeUndefined();
+  });
+
+  it("lets a project namesake of the field's type veto the table", () => {
+    const code = `use demo::Config;\nstruct Client;\nfn run(c: Config) { c.client.get(); }`;
+    const { ctx } = fixture({ "src/main.rs": code }).ctxOf("c.client.get()", true);
+    expect(rustExternalFieldType(instance("Config"), "client", ctx)).toBeUndefined();
   });
 });
