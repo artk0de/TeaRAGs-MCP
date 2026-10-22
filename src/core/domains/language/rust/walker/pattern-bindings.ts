@@ -143,7 +143,7 @@ function rustPatternSitesOf(
 }
 
 /** The block an `if let` / `while let` condition scopes its names to: the consequence or loop body. */
-function letConditionScope(node: AstNode): AstNode | null {
+export function letConditionScope(node: AstNode): AstNode | null {
   const owner = node.parent?.type === "let_chain" ? node.parent.parent : node.parent;
   if (owner?.type === "if_expression") return owner.childForFieldName("consequence");
   if (owner?.type === "while_expression") return owner.childForFieldName("body");
@@ -151,7 +151,7 @@ function letConditionScope(node: AstNode): AstNode | null {
 }
 
 /** The arm's pattern without its `if` guard. */
-function matchArmPattern(arm: AstNode): AstNode | null {
+export function matchArmPattern(arm: AstNode): AstNode | null {
   const matchPattern = arm.childForFieldName("pattern");
   if (matchPattern === null) return null;
   const guard = matchPattern.childForFieldName("condition");

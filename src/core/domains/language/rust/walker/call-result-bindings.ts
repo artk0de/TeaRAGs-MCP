@@ -1,6 +1,7 @@
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { CallResultBinding } from "../../../../contracts/types/codegraph.js";
+import { letConditionScope, matchArmPattern } from "./pattern-bindings.js";
 import { rustGenericParameters } from "./return-types.js";
 
 /** Inventory the file once, then collect only proven function-body bare-call result locals. */
@@ -61,7 +62,7 @@ function rustFunctionCallResultBindings(
   if (body?.type !== "block") return bindings;
   const evidence = new RustCallResultEvidence();
   for (const param of fn.childForFieldName("parameters")?.children ?? []) {
-    if (param.type === "parameter") evidence.bindPattern(param.childForFieldName("pattern"));
+    if (param.type === "parameter") evidence.bindParameter(param.childForFieldName("pattern"));
   }
   if (!evidence.visit(body, false)) return bindings;
   for (const [name, candidates] of evidence.candidates) {
@@ -76,9 +77,60 @@ function rustFunctionCallResultBindings(
     );
     // One unprovable `let` still shadows the others: dropping only it would
     // hand its window to an outer binding, so the whole name declines.
-    if (provable) bindings[name] = candidates.map((candidate) => candidate.binding);
+    if (!provable) continue;
+    const shadows = evidence.patternShadows.get(name) ?? [];
+    bindings[name] = candidates.flatMap((candidate) => windowOutsideShadows(candidate.binding, shadows));
   }
   return bindings;
+}
+
+type AstPosition = AstNode["startPosition"];
+
+/** Rows (1-based, inclusive) where a pattern's own binding of a name shadows every outer one. */
+interface RustPatternShadowRows {
+  readonly startLine: number;
+  readonly endLine: number;
+}
+
+/**
+ * Cut `binding`'s window `(endLine, scopeEndLine]` around every pattern shadow
+ * that opens inside it (bd tea-rags-mcp-s3i8m): each remaining piece is one
+ * row with the same `line`, so the reader's latest-`let` rule is unchanged. A
+ * shadow that holds the `let` itself is the binding's own enclosing scope, not
+ * a hole in it. No shadow → the binding exactly as recorded.
+ */
+function windowOutsideShadows(
+  binding: CallResultBinding,
+  shadows: readonly RustPatternShadowRows[],
+): CallResultBinding[] {
+  const { endLine, scopeEndLine } = binding;
+  if (endLine === undefined || scopeEndLine === undefined) return [binding];
+  const holes = shadows
+    .filter((shadow) => shadow.startLine > endLine && shadow.startLine <= scopeEndLine)
+    .sort((a, b) => a.startLine - b.startLine);
+  if (holes.length === 0) return [binding];
+  const entries: CallResultBinding[] = [];
+  let from = endLine;
+  for (const hole of holes) {
+    if (hole.startLine - 1 > from) entries.push({ ...binding, endLine: from, scopeEndLine: hole.startLine - 1 });
+    from = Math.max(from, hole.endLine);
+  }
+  if (scopeEndLine > from) entries.push({ ...binding, endLine: from, scopeEndLine });
+  return entries;
+}
+
+/**
+ * The rows a pattern's names shadow: those strictly inside the span from
+ * `scopeStart` to `scopeEnd`. A boundary row is shared with code outside the
+ * pattern — the scrutinee of `if let Some(x) = x.take() {`, a closure's
+ * enclosing `let`, a destructuring `let`'s own last row — and there the
+ * column-scoped pattern binding (`visibleSpan`) already outranks this channel
+ * for a call inside the span. `null` when no row is wholly inside.
+ */
+function shadowRowsOf(scopeStart: AstPosition, scopeEnd: AstPosition): RustPatternShadowRows | null {
+  const startLine = scopeStart.row + 2;
+  const endLine = scopeEnd.row;
+  return endLine >= startLine ? { startLine, endLine } : null;
 }
 
 /** Std/core/log macros whose arguments only READ names; any other statement-position macro may bind one. */
@@ -128,18 +180,58 @@ interface RustCallResultCandidate {
  */
 class RustCallResultEvidence {
   readonly candidates = new Map<string, RustCallResultCandidate[]>();
-  /** Bound by a non-`let` pattern, reassigned, shadowed by a non-call `let`, or handed to a statement macro. */
+  /** Bound by a parameter or an unscoped pattern, reassigned, shadowed by a non-call `let`, or handed to a statement macro. */
   readonly declined = new Set<string>();
   /** Every name a `let` or a pattern binds — a callee spelled by one is a local value, not a function. */
   readonly localNames = new Set<string>();
   /** Names a nested fn/const/static/macro/use inside the body introduces. */
   readonly itemNames = new Set<string>();
+  /** Per name, the rows an `if let` / `while let` / match arm / `for` / closure pattern rebinds it in. */
+  readonly patternShadows = new Map<string, RustPatternShadowRows[]>();
 
   bindPattern(pattern: AstNode | null): void {
     if (pattern === null) return;
-    for (const name of identifiersIn(pattern)) {
+    for (const name of patternNamesIn(pattern)) {
       this.declined.add(name);
       this.localNames.add(name);
+    }
+  }
+
+  /**
+   * The function's own parameter: bound before every `let` of the body, so a
+   * `let sink = Some(sink)` that rebinds it opens its window after the
+   * parameter's — positionally the later binding, never an overlap.
+   */
+  bindParameter(pattern: AstNode | null): void {
+    if (pattern === null) return;
+    for (const name of patternNamesIn(pattern)) this.localNames.add(name);
+  }
+
+  /**
+   * A scoped pattern rebinds its names only from `scopeStart` to `scopeEnd` —
+   * the walker records those bindings positionally (bd tea-rags-mcp-s3i8m 1a),
+   * so an outer call-result `let` of the same name stays valid around them.
+   * A pattern with no scope (a `let` condition outside `if` / `while`) or
+   * inside a nested fn declines, as every other name a nested fn binds does.
+   */
+  private shadowPattern(
+    pattern: AstNode | null,
+    scopeStart: AstPosition | undefined,
+    scopeEnd: AstPosition | undefined,
+    nested: boolean,
+  ): void {
+    if (pattern === null) return;
+    if (scopeStart === undefined || scopeEnd === undefined || nested) {
+      this.bindPattern(pattern);
+      return;
+    }
+    const shadowRows = shadowRowsOf(scopeStart, scopeEnd);
+    for (const name of patternNamesIn(pattern)) {
+      this.localNames.add(name);
+      if (shadowRows === null) continue;
+      const list = this.patternShadows.get(name) ?? [];
+      list.push(shadowRows);
+      this.patternShadows.set(name, list);
     }
   }
 
@@ -159,14 +251,27 @@ class RustCallResultEvidence {
       case "macro_invocation":
         this.visitMacro(node);
         return true;
-      case "closure_expression":
-        this.bindPattern(node.childForFieldName("parameters"));
+      case "closure_expression": {
+        const body = node.childForFieldName("body") ?? node;
+        this.shadowPattern(node.childForFieldName("parameters"), body.startPosition, body.endPosition, nested);
         break;
-      case "let_condition":
-      case "for_expression":
-      case "match_arm":
-        this.bindPattern(node.childForFieldName("pattern"));
+      }
+      case "let_condition": {
+        const scope = letConditionScope(node);
+        this.shadowPattern(node.childForFieldName("pattern"), scope?.startPosition, scope?.endPosition, nested);
         break;
+      }
+      case "for_expression": {
+        const body = node.childForFieldName("body");
+        this.shadowPattern(node.childForFieldName("pattern"), body?.startPosition, body?.endPosition, nested);
+        break;
+      }
+      case "match_arm": {
+        // The guard reads the arm's names, so the shadow spans pattern through arm end.
+        const pattern = matchArmPattern(node);
+        this.shadowPattern(pattern, pattern?.startPosition, node.endPosition, nested);
+        break;
+      }
       case "let_declaration":
         this.visitLet(node, nested);
         break;
@@ -203,13 +308,15 @@ class RustCallResultEvidence {
 
   private visitLet(node: AstNode, nested: boolean): void {
     const pattern = node.childForFieldName("pattern");
+    const block = node.parent;
     if (pattern?.type !== "identifier" || nested) {
-      this.bindPattern(pattern);
+      // A destructuring `let` (`let Some(x) = x.get() else { … };`) rebinds its
+      // names from its end through its block — its scrutinee and `else` read the outer.
+      this.shadowPattern(pattern, node.endPosition, block?.endPosition, nested);
       return;
     }
     const name = pattern.text;
     this.localNames.add(name);
-    const block = node.parent;
     const init = rustCallResultInit(node.childForFieldName("value"));
     if (block?.type !== "block" || node.childForFieldName("type") !== null || init === null) {
       this.declined.add(name);
@@ -244,6 +351,15 @@ class RustCallResultEvidence {
     if (readOnly) return;
     for (const name of identifiersIn(node)) this.declined.add(name);
   }
+}
+
+/**
+ * The names a pattern binds: its lowercase identifiers. A CapWords one is the
+ * variant or unit struct the pattern matches (`Some` of `Some(x)`), never a
+ * binding — the rule `unfoldPattern` reads the same pattern by.
+ */
+function patternNamesIn(pattern: AstNode): string[] {
+  return identifiersIn(pattern).filter((name) => !/^[A-Z]/.test(name));
 }
 
 /** Every `identifier` token under `node`, macro token trees included. */

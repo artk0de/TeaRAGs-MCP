@@ -37,12 +37,93 @@ fn run(&mut self, y: u8) {
     expect(bindings["w"]).toEqual([{ line: 4, endLine: 4, scopeEndLine: 9, callee: "make", initExpression: "make()" }]);
   });
 
+  // bd tea-rags-mcp-s3i8m — these four once declined the name outright: with no
+  // positional pattern scope, an outer `let` would have leaked into the
+  // pattern's body. Pattern bindings now carry their own span, so the outer
+  // binding answers everywhere but the rows the pattern rebinds the name in.
   it.each([
-    ["closure parameter", "let f = |w| w;"],
-    ["match arm", "match y { w => drop(w) }"],
-    ["if-let", "if let Some(w) = y { drop(w) }"],
-    ["for pattern", "for w in y {}"],
-    ["destructuring let", "let (w, _) = pair();"],
+    ["closure parameter", "let f = |w| {\n        w.inner();\n    };"],
+    ["match arm", "match w.get() {\n        w => {\n            w.inner();\n        }\n    }"],
+    ["if-let", "if let Some(w) = w.take() {\n        w.inner();\n    }"],
+    ["for pattern", "for w in w.iter() {\n        w.inner();\n    }"],
+  ])("keeps the outer binding around a %s that rebinds the name, never inside it", (_name, statement) => {
+    const bindings = collect(`
+fn run(y: Option<u8>) {
+    let mut w = make();
+    ${statement}
+    w.tick();
+}
+`);
+    const innerLine = statement.split("\n").findIndex((line) => line.includes("w.inner()")) + 4;
+    expect(bindingAt(bindings, "w", 4)?.callee).toBe("make");
+    expect(bindingAt(bindings, "w", innerLine)).toBeUndefined();
+    expect(bindingAt(bindings, "w", 4 + statement.split("\n").length)?.callee).toBe("make");
+  });
+
+  // bd tea-rags-mcp-s3i8m — a destructuring `let` once declined too; it now
+  // shadows the name from its end to the end of its block, as the walker's
+  // pattern binding does. Its own scrutinee and `else` block read the outer `let`.
+  it("keeps the outer binding up to a destructuring let that rebinds the name, never after it", () => {
+    const bindings = collect(`
+fn run(y: Option<u8>) {
+    let mut w = make();
+    let Some(w) = w.get() else {
+        return;
+    };
+    w.inner();
+    w.inner();
+}
+`);
+    expect(bindingAt(bindings, "w", 4)?.callee).toBe("make");
+    expect(bindingAt(bindings, "w", 5)?.callee).toBe("make");
+    expect(bindingAt(bindings, "w", 7)).toBeUndefined();
+    expect(bindingAt(bindings, "w", 8)).toBeUndefined();
+  });
+
+  // tikv analyze_context.rs: the `if let` scrutinee reads the outer `cms`.
+  it("records a multi-line constructor let an if-let in a loop rebinds", () => {
+    const bindings = collect(`
+fn handle(data: u8) {
+    let mut cms = CmSketch::new(
+        1,
+    );
+    for _ in 0..1 {
+        if let Some(cms) = cms.as_mut() {
+            cms.insert(data);
+        }
+    }
+    finish(cms);
+}
+`);
+    expect(bindingAt(bindings, "cms", 7)?.callee).toBe("CmSketch::new");
+    expect(bindingAt(bindings, "cms", 8)).toBeUndefined();
+    expect(bindingAt(bindings, "cms", 11)?.callee).toBe("CmSketch::new");
+  });
+
+  // servo http_loader.rs: a let rebinding a parameter, read by `take()` and
+  // `as_ref()` scrutinees, with a let-else that rebinds it for its block's rest.
+  it("records a let that rebinds a parameter, around if-let and let-else rebindings", () => {
+    const bindings = collect(`
+fn run(sink: BodySink, done: bool) {
+    let mut sink = Some(sink);
+    if done {
+        let Some(sink) = sink.as_ref() else {
+            return;
+        };
+        sink.transmit();
+    }
+    if let Some(sink) = sink.take() {
+        sink.close();
+    }
+}
+`);
+    expect(bindingAt(bindings, "sink", 5)?.callee).toBe("Some");
+    expect(bindingAt(bindings, "sink", 8)).toBeUndefined();
+    expect(bindingAt(bindings, "sink", 10)?.callee).toBe("Some");
+    expect(bindingAt(bindings, "sink", 11)).toBeUndefined();
+  });
+
+  it.each([
     ["statement-position project macro", "tokio::pin!(w);"],
     ["reassignment", "w = other();"],
     ["compound assignment", "w += 1;"],
