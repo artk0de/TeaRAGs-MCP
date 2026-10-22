@@ -106,6 +106,9 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
       // Drift is a property of the INDEX — a working tree is checked at its base.
       const drift = await app.checkIndexDrift({ path: status.indexPath ?? path, consume: false });
       if (drift) text += `\n\n## Drift\n${drift}`;
+
+      const rustAnalyzerHint = await rustAnalyzerHintOf(app, status.indexPath ?? path);
+      if (rustAnalyzerHint) text += `\n\n${rustAnalyzerHint}`;
       return formatMcpText(text);
     },
   );
@@ -132,6 +135,25 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
       };
     },
   );
+}
+
+/**
+ * The rust-analyzer install hint for an indexed project, or null (bd s3i8m.6).
+ * The languages come from the stats-cache distributions `get_index_metrics`
+ * reads. A hint is advice about a missing optional binary, so a failed metrics
+ * read or lookup answers "no hint" and never turns a good status into an error;
+ * kept out of the handler body, which holds no try/catch (typed-errors.md).
+ */
+async function rustAnalyzerHintOf(app: App, path: string): Promise<string | null> {
+  try {
+    const metrics = await app.getIndexMetrics(path);
+    return app.resolveRustAnalyzerInstallHint({
+      path,
+      languages: Object.keys(metrics.distributions?.language ?? {}),
+    });
+  } catch {
+    return null;
+  }
 }
 
 /**

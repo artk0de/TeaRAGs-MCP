@@ -53,6 +53,11 @@ export interface PrimeData {
    * no tier line.
    */
   languageCapabilities?: ReadonlyMap<string, LanguageCapability>;
+  /**
+   * The rust-analyzer install hint (bd s3i8m.6): set only when the index holds
+   * Rust and no binary was found. Absent / null = no line.
+   */
+  rustAnalyzerHint?: string | null;
 }
 
 /**

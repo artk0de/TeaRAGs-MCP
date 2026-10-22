@@ -27,6 +27,7 @@ import type {
   QdrantCollectionLifecycle,
   QdrantPointWriter,
 } from "../../adapters/qdrant/ports.js";
+import type { RustAnalyzerInstallHintLookup } from "../../adapters/rust-analyzer/index.js";
 import type { RerankerPort } from "../../domains/explore/reranker-port.js";
 import { formatIndexDriftReport, type IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
 import type { App } from "../public/app.js";
@@ -64,6 +65,7 @@ import type { OntologyReportOps } from "./ops/ontology-report-ops.js";
 import type { ProjectRegistryOps } from "./ops/project-registry-ops.js";
 import { reviewSectionIds as reviewSectionIdsValue } from "./ops/review-sections/index.js";
 import type { TracePathOps } from "./ops/trace-path-ops.js";
+import { safeRustAnalyzerInstallHint } from "./rust-analyzer-install-hint.js";
 
 // ---------------------------------------------------------------------------
 // Dependency interface — what bootstrap provides to create an App. Assembly
@@ -103,6 +105,11 @@ export interface AppDeps {
   quantizationScalar: boolean;
   turboQuant: boolean;
   modelGuard?: EmbeddingModelGuardPort;
+  /**
+   * rust-analyzer install-hint lookup built by bootstrap (s3i8m.6). Omitted when
+   * codegraph or the rust-analyzer slot is off — the App then answers no hint.
+   */
+  rustAnalyzerInstallHint?: RustAnalyzerInstallHintLookup;
   /** Optional — present when CODEGRAPH_DISABLED is unset and DuckDB is wired. */
   graphFacade?: GraphFacade;
   /** Optional — present when codegraph is wired (built in bootstrap alongside graphFacade). */
@@ -307,6 +314,7 @@ export function createApp(deps: AppDeps): App {
     // the implementations — the registry is caller-supplied (bd
     // tea-rags-mcp-nkstp).
     resolveLanguageCapabilities: (languages) => resolveDomainLanguageCapabilities(languages),
+    resolveRustAnalyzerInstallHint: (input) => safeRustAnalyzerInstallHint(deps.rustAnalyzerInstallHint, input),
     isCollectionBuildInFlight: async (qdrant, collection, options) =>
       ops.projectRegistry.isCollectionBuildInFlight(qdrant, collection, options),
     resolveBaseIndexEntry: (registry, path) => resolveBaseIndexEntryImpl(registry, path),

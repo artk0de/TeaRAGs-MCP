@@ -28,6 +28,7 @@ import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import type { EmbeddingModelGuardPort } from "../core/adapters/qdrant/ports.js";
+import type { RustAnalyzerInstallHintLookup } from "../core/adapters/rust-analyzer/index.js";
 import { reapGitChildProcesses, VcsAdapterFactory } from "../core/adapters/vcs/index.js";
 import {
   buildFileChunkPoints,
@@ -158,6 +159,7 @@ import {
   RegistryCollectionEmbeddingsResolver,
   type PreparedCollectionEmbeddingBinding,
 } from "./registry-collection-embeddings-resolver.js";
+import { createRustAnalyzerInstallHintLookup } from "./rust-analyzer-install-hint.js";
 
 /**
  * TurboQuant migration progress poll cap. Bounded so a long background optimizer
@@ -1285,6 +1287,14 @@ function activeEnrichmentProviders(
  * sizing, the tuning, and the env snapshot recorded back into the registry —
  * while `shared` supplies the handles that must stay process-wide.
  */
+/** The install-hint lookup as an optional dep entry — spread, so an off slot leaves the key absent. */
+function rustAnalyzerInstallHintDep(zodConfig: ReturnType<typeof getZodConfig>): {
+  rustAnalyzerInstallHint?: RustAnalyzerInstallHintLookup;
+} {
+  const lookup = createRustAnalyzerInstallHintLookup(zodConfig);
+  return lookup ? { rustAnalyzerInstallHint: lookup } : {};
+}
+
 function createIngestFacade(
   zodConfig: ReturnType<typeof getZodConfig>,
   config: AppConfig,
@@ -1330,6 +1340,9 @@ function createIngestFacade(
     modelGuard: shared.modelGuard,
     collectionRegistry: shared.collectionRegistry,
     driftReporter: shared.driftReporter,
+    // Per configuration, like the residual pass: a project whose env turns the
+    // rust-analyzer slot (or codegraph) off is never told to install it.
+    ...rustAnalyzerInstallHintDep(zodConfig),
     teaRagsVersion: pkg.version,
     // Per-language code versions of THIS build, stamped onto the registry entry
     // by the runs that actually rebuild a language layer (bd tea-rags-mcp-frwka).
@@ -1574,6 +1587,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     turboQuant: zodConfig.qdrantTune.turboQuant,
     modelGuard: infra.modelGuard,
+    ...rustAnalyzerInstallHintDep(zodConfig),
     graphFacade: codegraphContext?.graphFacade,
     tracePathOps,
     namingLexiconOps,
