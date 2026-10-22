@@ -22,7 +22,6 @@ import {
   ARCHITECTURE_RESTRUCTURE_OP_LIMIT,
   ARCHITECTURE_RESTRUCTURE_PLAN_CANDIDATE_LIMIT,
   CODEGRAPH_SYMBOLS_PROVIDER_KEY,
-  PROJECT_NAME_RE,
   type App,
   type FindCoChangedRequest,
   type FindCyclesRequest,
@@ -36,7 +35,7 @@ import {
 } from "../public/index.js";
 import { formatMcpText, type McpToolResult } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
-import { WORKING_TREE_PATH_HINT } from "./schemas.js";
+import { projectField, WORKING_TREE_PATH_HINT } from "./schemas.js";
 
 /**
  * Shared `{ collection, project, path }` triad for codegraph tools.
@@ -49,12 +48,8 @@ import { WORKING_TREE_PATH_HINT } from "./schemas.js";
  */
 export function collectionPathFields() {
   return {
-    project: z
-      .string()
-      .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
-      .optional()
-      .describe("[RECOMMENDED] Project alias; survives path moves. Priority: collection>project>path."),
-    collection: z.string().optional().describe("Qdrant collection; prefer project."),
+    project: projectField(),
+    collection: z.string().optional().describe("Raw collection; prefer project + path."),
     path: z.string().optional().describe(WORKING_TREE_PATH_HINT),
   };
 }
