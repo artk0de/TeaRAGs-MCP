@@ -108,6 +108,9 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m.7 T3b — an external receiver's member returns its
   //   table-declared inherent type, and a type with a table `Deref::Target`
   //   (`MutexGuard`, `Ref`, `String`) hands members it does not answer to it.
+  // - bd tea-rags-mcp-s3i8m.7 T3c (path calls) — a `let` bound from
+  //   `ExtType::assoc(..)` (`Vec::new()`, `Url::parse(s)?`) takes the table's
+  //   declared return; `Arc::new(x)` carries a typed local `x` as its argument.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

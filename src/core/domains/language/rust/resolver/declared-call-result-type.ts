@@ -1,9 +1,16 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext, CallResultBinding, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
+import {
+  resolveLocalBinding,
+  type CallContext,
+  type CallResultBinding,
+  type SymbolDefinition,
+} from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
+import { rustTextIsStdValueWrapper } from "../vocabulary/std-prelude.js";
 import { resolveRustNominalType } from "./declared-return-type.js";
 import { rustPlaceTypeThroughDeclaringFile } from "./declaring-file-type.js";
-import { rustStdTypeRef } from "./std-type-hops.js";
+import { rustExternalAssociatedCallType } from "./external-type-hops.js";
+import { rustStdTypeRef, rustStdUnwrapType } from "./std-type-hops.js";
 import {
   lookupRustSymbolsByShortName,
   rustImportBindings,
@@ -49,7 +56,7 @@ export function rustDeclaredCallResultType(
   const binding = rustCallResultBindingOf(receiverName, atLine, ctx);
   if (binding === undefined) return undefined;
   const callee = rustFreeFunctionReturn(binding.callee, ctx);
-  if (callee === undefined) return undefined;
+  if (callee === undefined) return rustExternalPathCallResultType(binding, ctx);
   const { calleeDefinition, declaredReturnType } = callee;
   if (
     (declaredReturnType.form !== "instance" && declaredReturnType.form !== "class") ||
@@ -79,6 +86,71 @@ export function rustDeclaredCallResultType(
   return typeArguments === undefined || typeArguments.length === 0 || typeArguments.some((arg) => arg === undefined)
     ? head
     : { ...head, args: typeArguments as TypeRef[] };
+}
+
+/**
+ * `Type::<..>::assoc(args)` followed only by `?` tails: the type spelling, the
+ * associated function, the argument text and the `?`s.
+ */
+const RUST_PATH_CALL_INIT = /^(?:::)?((?:[A-Za-z_]\w*::)*[A-Z]\w*)(?:::<[^()]*>)?::([A-Za-z_]\w*)\((.*)\)(\?*)$/;
+const RUST_LOCAL_NAME = /^[a-z_]\w*$/;
+
+/**
+ * A `let` bound from a path call on an external type (bd s3i8m.7 T3c):
+ * `Vec::new()`, `Url::parse(s)?` answer the table's declared return, each `?`
+ * unwrapping it. A std value wrapper's `new(x)` carries `x`'s type as its
+ * argument when `x` is a typed local (`Arc::new(store)` → `Arc<Store>`).
+ */
+function rustExternalPathCallResultType(binding: CallResultBinding, ctx: CallContext): TypeRef | undefined {
+  const match = RUST_PATH_CALL_INIT.exec(binding.initExpression ?? "");
+  if (match === null) return undefined;
+  const [, spelling, assoc, argumentText, tries] = match;
+  if (!balancedParentheses(argumentText)) return undefined;
+  let produced = rustExternalAssociatedCallType(spelling, assoc, ctx);
+  if (
+    produced?.form === "instance" &&
+    produced.args === undefined &&
+    assoc === "new" &&
+    rustTextIsStdValueWrapper(produced.name)
+  ) {
+    const wrapped = rustTypedLocalType(argumentText.trim(), binding.line, ctx);
+    if (wrapped !== undefined) produced = { ...produced, args: [wrapped] };
+  }
+  for (let i = 0; i < tries.length && produced !== undefined; i++) produced = rustStdUnwrapType(produced, "?");
+  return produced;
+}
+
+/** The argument list closes only at its end: `f(a).g(b)` is no single call. */
+function balancedParentheses(text: string): boolean {
+  let depth = 0;
+  for (const ch of text) {
+    if (ch === "(") depth++;
+    else if (ch === ")" && --depth < 0) return false;
+  }
+  return depth === 0;
+}
+
+/**
+ * A bare local's type: its own call-result binding (the walker records none
+ * for an annotated `let`), else its binding read as a placed project type or a
+ * std spelling.
+ */
+function rustTypedLocalType(name: string, atLine: number, ctx: CallContext): TypeRef | undefined {
+  if (!RUST_LOCAL_NAME.test(name) || name === "self") return undefined;
+  const produced = rustDeclaredCallResultType(name, atLine, ctx);
+  if (produced !== undefined) return produced;
+  const binding = resolveLocalBinding(ctx.localBindings, name, atLine);
+  if (binding === undefined || binding.valueKind === "patternProjection") return undefined;
+  const typeRef = binding.typeRef ?? (binding.type ? { form: "instance" as const, name: binding.type } : undefined);
+  if (typeRef?.form !== "instance") return undefined;
+  return (
+    resolveRustNominalType(typeRef, ctx) ??
+    rustStdTypeRef(
+      typeRef.name,
+      typeRef.args?.map((arg) => resolveRustNominalType(arg, ctx)),
+      ctx,
+    )
+  );
 }
 
 /**

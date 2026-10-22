@@ -95,6 +95,20 @@ export const rustDerivableTraitMembers: ReadonlySet<string> = new Set([
   "hash",
 ]);
 
+/**
+ * Std types whose `new(value)` takes the one value they wrap as their single
+ * type argument: `Arc::new(x)` is `Arc<typeof x>`.
+ */
+export const rustStdValueWrappers: ReadonlySet<string> = new Set([
+  "Box",
+  "Rc",
+  "Arc",
+  "Cell",
+  "RefCell",
+  "Mutex",
+  "RwLock",
+]);
+
 /** Prelude types `?` / `unwrap` / `expect` unwrap to their first type argument. */
 export const rustStdUnwrappingTypes: ReadonlySet<string> = new Set(["Option", "Result"]);
 
@@ -209,4 +223,8 @@ export function rustTextIsStdPreludeVariant(text: string): boolean {
 
 export function rustTextIsStdMacro(text: string): boolean {
   return rustStdMacros.has(text);
+}
+
+export function rustTextIsStdValueWrapper(text: string): boolean {
+  return rustStdValueWrappers.has(text);
 }

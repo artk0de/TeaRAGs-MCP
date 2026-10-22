@@ -108,6 +108,26 @@ export function rustExternalMemberReturnType(recv: TypeRef, member: string, ctx:
 }
 
 /**
+ * `ExtType::assoc(..)` (bd s3i8m.7 T3c): the declared return of the stable,
+ * unambiguous associated function `assoc` (no `self`) of the external type
+ * `spelling` names from the caller's file, `Self` the bare type. A project
+ * symbol implementing `assoc` on the type's short name silences the table.
+ */
+export function rustExternalAssociatedCallType(spelling: string, assoc: string, ctx: CallContext): TypeRef | undefined {
+  const signatures = rustExternalSignaturesOf(ctx);
+  if (signatures === undefined) return undefined;
+  const typePath = rustExternalTypePath({ form: "instance", name: spelling }, ctx, signatures);
+  if (typePath === undefined) return undefined;
+  const found = signatures.inherentMember(typePath, assoc);
+  if (found === undefined || found === "ambiguous" || !found.stable || found.selfKind !== "none") return undefined;
+  if (found.returns === undefined || rustProjectImplementsMemberOn(ctx, rustShortName(spelling), assoc)) {
+    return undefined;
+  }
+  const recv: TypeRef = { form: "instance", name: typePath };
+  return rustExternalTypeOf(found.returns, recv, found.methodGenericParameters, ctx, signatures);
+}
+
+/**
  * Step 5: what the table's `Deref::Target` of the external receiver `recv`
  * does with `member` (a method, or a field when `access` says so), or
  * `undefined` when the table holds no target. `Box` / `Arc` / `Rc` are the

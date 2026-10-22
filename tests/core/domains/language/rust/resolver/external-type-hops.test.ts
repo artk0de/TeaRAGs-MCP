@@ -11,11 +11,14 @@ import type {
   TypeRef,
 } from "../../../../../../src/core/contracts/types/language.js";
 import { LanguageFactory } from "../../../../../../src/core/domains/language/factory.js";
-import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
-import type { NominalTypeRef } from "../../../../../../src/core/domains/language/kernel/index.js";
-import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import {
+  collectSymbols,
+  DefaultSymbolIdComposer,
+  type NominalTypeRef,
+} from "../../../../../../src/core/domains/language/kernel/index.js";
 import { RustExternalSignatureLookup } from "../../../../../../src/core/domains/language/rust/external-signatures/lookup.js";
 import { RustLanguage } from "../../../../../../src/core/domains/language/rust/index.js";
+import { rustDeclaredCallResultType } from "../../../../../../src/core/domains/language/rust/resolver/declared-call-result-type.js";
 import { rustDeclaredMemberReturnType } from "../../../../../../src/core/domains/language/rust/resolver/declared-return-type.js";
 import { rustStdTerminalTargetsExternal } from "../../../../../../src/core/domains/language/rust/resolver/external-type-hops.js";
 import {
@@ -67,6 +70,10 @@ const DATA: RustExternalSignatureTableData = {
     "std::prelude::rust_2021::Result": "std::result::Result",
     "demo::Client": "demo::Client",
     "demo::Store": "demo::Store",
+    "std::vec::Vec": "std::vec::Vec",
+    "std::sync::Arc": "std::sync::Arc",
+    "std::collections::HashMap": "std::collections::HashMap",
+    "demo::Url": "demo::Url",
   },
   types: {
     "std::sync::Mutex": signaturesOf({
@@ -89,6 +96,34 @@ const DATA: RustExternalSignatureTableData = {
       inherent: { ok: { ...method(instance("std::option::Option", [T]), ["T", "E"]), selfKind: "value" } },
     }),
     "demo::Client": signaturesOf({ inherent: { get: method(instance("demo::Store"), []) } }),
+    "std::vec::Vec": signaturesOf({
+      inherent: {
+        new: { ...method(instance("Self")), selfKind: "none" },
+        with_capacity: { ...method(instance("Self")), selfKind: "none" },
+      },
+    }),
+    "std::sync::Arc": signaturesOf({
+      inherent: { new: { ...method(instance("std::sync::Arc", [T])), selfKind: "none" } },
+    }),
+    "std::collections::HashMap": signaturesOf({
+      inherent: {
+        with_capacity: {
+          ...method(instance("std::collections::HashMap", [instance("K"), instance("V"), instance("RandomState")]), [
+            "K",
+            "V",
+          ]),
+          selfKind: "none",
+        },
+      },
+    }),
+    "demo::Url": signaturesOf({
+      inherent: {
+        parse: {
+          ...method(instance("std::result::Result", [instance("Self"), instance("demo::ParseError")]), []),
+          selfKind: "none",
+        },
+      },
+    }),
   },
   aliases: {
     "std::sync::LockResult": expr(instance("std::result::Result", [T, instance("std::sync::PoisonError", [T])])),
@@ -131,6 +166,7 @@ function fixture(files: Record<string, string>) {
       imports: extraction.imports,
       symbolTable,
       localBindings: chunk.localBindings,
+      callResultBindings: chunk.callResultBindings,
       classFieldTypes: extraction.classFieldTypes,
       classFieldTypesByClassKey: runState.classFieldTypesByClassKey,
       structuredReturnTypes: Object.assign({}, ...extractions.map((entry) => entry.structuredReturnTypes)),
@@ -242,5 +278,67 @@ fn run(c: Client) { c.get(); }`,
     // The guard's own trait member stays std; without a table the guard is a plain std terminal.
     expect(rustStdTerminalTargetsExternal(guardOf(), "fmt", ctx)).toBe(true);
     expect(rustStdTerminalTargetsExternal(guardOf(), "m", f.ctxOf("c.get()", false).ctx)).toBe(true);
+  });
+});
+
+describe("Rust external signature table — `ExtType::assoc(..)` path-call results (s3i8m.7 T3c)", () => {
+  const callResultOf = (code: string, local: string, callText: string, withTable = true) => {
+    const f = fixture({ "src/main.rs": code });
+    const { call, ctx } = f.ctxOf(callText, withTable);
+    return rustDeclaredCallResultType(local, call.startLine, ctx);
+  };
+
+  it("types `let v = Vec::new()` as the table's `Self`", () => {
+    const code = `fn run() {\n  let v = Vec::new();\n  v.len();\n}`;
+    expect(callResultOf(code, "v", "v.len()")).toEqual(instance("Vec"));
+  });
+
+  it("is byte-identical to the old read without a table", () => {
+    const code = `fn run() {\n  let v = Vec::new();\n  v.len();\n}`;
+    expect(callResultOf(code, "v", "v.len()", false)).toBeUndefined();
+  });
+
+  it("drops arguments nothing binds: `HashMap::with_capacity(n)` is a bare `HashMap`", () => {
+    const code = `fn run() {\n  let h = HashMap::with_capacity(4);\n  h.len();\n}`;
+    expect(callResultOf(code, "h", "h.len()")).toEqual(instance("HashMap"));
+  });
+
+  it("wraps a typed argument: `Arc::new(s)` with `s: Store` is `Arc<Store>`", () => {
+    const code = `${STORES}
+fn run(s: Store) {
+  let a = Arc::new(s);
+  a.m();
+}`;
+    expect(callResultOf(code, "a", "a.m()")).toEqual(instance("Arc", [instance("src/main.rs::Store")]));
+  });
+
+  it("types the wrapped local through its own call-result binding: `Arc::new(Vec::new())` via `v`", () => {
+    const code = `fn run() {\n  let v = Vec::new();\n  let a = Arc::new(v);\n  a.len();\n}`;
+    expect(callResultOf(code, "a", "a.len()")).toEqual(instance("Arc", [instance("Vec")]));
+  });
+
+  it("keeps `Arc::new(x)` argument-less when `x` is untyped", () => {
+    const code = `fn run() {\n  let a = Arc::new(make());\n  a.len();\n}`;
+    expect(callResultOf(code, "a", "a.len()")).toEqual(instance("Arc"));
+  });
+
+  it("canonicalises a dependency type through the caller's imports and unwraps `?`", () => {
+    const code = `use demo::Url;
+fn run(s: &str) -> Option<()> {
+  let u = Url::parse(s)?;
+  u.host();
+  None
+}`;
+    expect(callResultOf(code, "u", "u.host()")).toEqual(instance("demo::Url"));
+  });
+
+  it("lets a project namesake veto the table", () => {
+    const code = `struct Vec;\nfn run() {\n  let v = Vec::new();\n  v.len();\n}`;
+    expect(callResultOf(code, "v", "v.len()")).toBeUndefined();
+  });
+
+  it("never types a module function call", () => {
+    const code = `fn run() {\n  let d = fs::read(p);\n  d.len();\n}`;
+    expect(callResultOf(code, "d", "d.len()")).toBeUndefined();
   });
 });
