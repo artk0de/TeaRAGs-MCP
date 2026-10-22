@@ -31,3 +31,8 @@ export {
   rustAnalyzerInstallHintFor,
   type RustAnalyzerInstallHintLookup,
 } from "./install-hint.js";
+export {
+  createRustAnalyzerScipSource,
+  processRustAnalyzerScipSource,
+  type RustAnalyzerScipSourceDeps,
+} from "./scip-source.js";

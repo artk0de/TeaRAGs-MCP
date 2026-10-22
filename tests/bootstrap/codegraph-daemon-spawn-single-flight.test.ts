@@ -26,8 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig, getZodConfig } from "../../src/bootstrap/config/index.js";
 import { wireCodegraph } from "../../src/bootstrap/factory.js";
 import { getDaemonPaths } from "../../src/core/adapters/duckdb/daemon/lifecycle.js";
-import { GraphDbClientPool } from "../../src/core/adapters/duckdb/index.js";
-import type { CollectionGraphHandle } from "../../src/core/adapters/duckdb/pool.js";
+import { GraphDbClientPool, type CollectionGraphHandle } from "../../src/core/adapters/duckdb/index.js";
 import type { CollectionRegistry } from "../../src/core/domains/maintenance/registry/index.js";
 import { fixturePhysicalCollectionName } from "../core/__helpers__/collection-identity.js";
 
@@ -84,6 +83,7 @@ function wire() {
         minMenu: 4,
         retentionDays: 180,
       },
+      rustAnalyzer: { enabled: true, exec: false, timeoutSec: 900, maxRssMb: 4096 },
     },
   } as unknown as ReturnType<typeof getZodConfig>;
   const config = { paths: { appData: rootDir } } as unknown as AppConfig;

@@ -25,6 +25,7 @@ import {
   type RelPath,
   type SymbolDefinition,
   type SymbolDefinitionKind,
+  type SymbolResolutionPassPlan,
 } from "../../../../contracts/types/codegraph.js";
 import type {
   LanguageCapability,
@@ -386,21 +387,44 @@ export class CallEdgeResolutionRunner {
     for (const [language, expectedFileCount] of this.runState.extractedFilesByLanguage) {
       if (!supported.has(language)) continue;
       const { resolver } = this.languageFactory.create(language);
-      const expectedRelPaths = this.runState.extractedRelPathsByLanguage.get(language);
-      const expectedCallSites = this.callSitesOf(expectedRelPaths);
-      resolver?.prepareResolvePass?.({
-        expectedFileCount,
-        // The corpus itself, not only its size: a resolver priming a
-        // whole-project cache has to build it over the files this pass will
-        // ask for, and the project's own declared file set is a different one
-        // (bd tea-rags-mcp-6aytq).
-        expectedRelPaths,
-        // Present only when some file has calls, so a plan with nothing to
-        // count carries no empty map (bd tea-rags-mcp-vtuu4).
-        ...(expectedCallSites.size > 0 ? { expectedCallSites } : {}),
-        projectRoot: this.runState.projectRoot,
-      });
+      resolver?.prepareResolvePass?.(this.passPlanFor(language, expectedFileCount));
     }
+  }
+
+  /**
+   * Await each language's external acquisition before the pass (bd s3i8m.6
+   * R2b) — the async counterpart of {@link prepareResolvePass}, over the same
+   * plan. The languages warm concurrently; a hook never rejects by contract,
+   * and languages the factory does not support are skipped.
+   */
+  async warmResolvePass(): Promise<void> {
+    const supported = new Set(this.languageFactory.supported());
+    const warming: Promise<void>[] = [];
+    for (const [language, expectedFileCount] of this.runState.extractedFilesByLanguage) {
+      if (!supported.has(language)) continue;
+      const { resolver } = this.languageFactory.create(language);
+      const warmed = resolver?.warmResolvePass?.(this.passPlanFor(language, expectedFileCount));
+      if (warmed !== undefined) warming.push(warmed);
+    }
+    await Promise.all(warming);
+  }
+
+  /** The pass plan both pass-start hooks receive for `language`. */
+  private passPlanFor(language: string, expectedFileCount: number): SymbolResolutionPassPlan {
+    const expectedRelPaths = this.runState.extractedRelPathsByLanguage.get(language);
+    const expectedCallSites = this.callSitesOf(expectedRelPaths);
+    return {
+      expectedFileCount,
+      // The corpus itself, not only its size: a resolver priming a
+      // whole-project cache has to build it over the files this pass will
+      // ask for, and the project's own declared file set is a different one
+      // (bd tea-rags-mcp-6aytq).
+      expectedRelPaths,
+      // Present only when some file has calls, so a plan with nothing to
+      // count carries no empty map (bd tea-rags-mcp-vtuu4).
+      ...(expectedCallSites.size > 0 ? { expectedCallSites } : {}),
+      projectRoot: this.runState.projectRoot,
+    };
   }
 
   /** Pass-1's call-site counts for `relPaths`, files without calls omitted. */

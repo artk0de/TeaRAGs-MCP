@@ -525,9 +525,33 @@ describe("wireCodegraph", () => {
           minMenu: 4,
           retentionDays: 180,
         },
+        rustAnalyzer: { enabled: true, exec: false, timeoutSec: 900, maxRssMb: 4096 },
       },
     } as unknown as ReturnType<typeof getZodConfig>;
   }
+
+  // bd s3i8m.6 R2b — the resolving thread builds its rust-analyzer SCIP source
+  // from plain config; the enrichment worker may spawn, and the working-tree
+  // graph build carries the same slot (it narrows it to cache-only itself).
+  it("carries codegraph.rustAnalyzer to the worker, the main-thread deps and the tree build", () => {
+    const zod = zodConfigWithCodegraph();
+    const withPath = {
+      ...zod,
+      codegraph: {
+        ...zod.codegraph,
+        rustAnalyzer: { enabled: true, exec: true, path: "/opt/ra", timeoutSec: 60, maxRssMb: 2048 },
+      },
+    } as unknown as ReturnType<typeof getZodConfig>;
+    const expected = { enabled: true, exec: true, path: "/opt/ra", timeoutSec: 60, maxRssMb: 2048, spawn: "allowed" };
+
+    const ctx = wireCodegraph(makeConfig(), withPath, new CollectionRegistry("/tmp/factory-test-registry"));
+
+    expect((ctx?.deps.workerDescriptor?.serializableConfig as { rustAnalyzer?: unknown }).rustAnalyzer).toEqual(
+      expected,
+    );
+    expect(ctx?.deps.rustAnalyzer).toEqual(expected);
+    expect(ctx?.workingTreeGraphRuntime.providerConfig.rustAnalyzer).toEqual(expected);
+  });
 
   it("always passes a daemonSocketPath into the pool (daemon is the default write path)", () => {
     // The daemon is base functionality — no opt-in env flag. Wiring always

@@ -712,6 +712,14 @@ export interface LanguageSymbolResolver {
    */
   prepareResolvePass?: (plan: SymbolResolutionPassPlan) => void;
   /**
+   * Optional: acquire what the pass needs from OUTSIDE the process before it
+   * starts — an external analysis that can take minutes (bd s3i8m.6 R2b).
+   * Awaited once per language per pass-2, before `prepareResolvePass`; never
+   * rejects, a failed acquisition is the resolver's own absence. Mirrors
+   * `CallResolver.warmResolvePass`.
+   */
+  warmResolvePass?: (plan: SymbolResolutionPassPlan) => Promise<void>;
+  /**
    * Optional: pass-2's visit order for this language, as groups (bd
    * tea-rags-mcp-vtuu4); `undefined` keeps the spill order. Mirrors
    * `CallResolver.planResolveVisits`.
@@ -1242,6 +1250,59 @@ export interface RustAnalyzerScipIndex {
   definitionAt: (relPath: string, line: number, utf16Col: number) => RustScipDefinition | null;
   /** Digest of the environment and content the index was produced from. */
   readonly identity: string;
+}
+
+/**
+ * How one acquisition of a project's rust-analyzer SCIP index settled
+ * (bd s3i8m.6 R2b). `latched` is a persisted refusal (timeout, RSS, offline,
+ * exit, toolchain skew) that stands until the environment changes; `skipped`
+ * means nothing was attempted.
+ */
+export type RustAnalyzerScipAcquisition =
+  | {
+      kind: "indexed";
+      index: RustAnalyzerScipIndex;
+      cacheHit: boolean;
+      toolchainSkew: boolean;
+      /** Measured only when the acquisition spawned rust-analyzer. */
+      wallMs?: number;
+      peakRssMb?: number;
+    }
+  | { kind: "latched"; reason: string; detail: string; hint?: string }
+  | { kind: "skipped"; reason: "disabled" | "noBinary" | "noBulkNoCache" };
+
+/**
+ * Whether an acquisition that misses the content cache may spawn
+ * rust-analyzer. Decided by the domain over the project's `.rs` files the
+ * adapter walked (repo-relative), so the bulk policy stays out of the adapter.
+ */
+export type RustAnalyzerScipAdmission = (projectRustRelPaths: readonly string[]) => "spawn" | "reuseOnly";
+
+/**
+ * `codegraph.rustAnalyzer` as plain data, plus who may spawn: the working-tree
+ * graph build runs under a short wall budget and must never start a
+ * multi-minute child, so it reads the cache only (`spawn: "never"`).
+ */
+export interface RustAnalyzerScipSourceConfig {
+  enabled: boolean;
+  exec: boolean;
+  path?: string;
+  timeoutSec: number;
+  maxRssMb: number;
+  spawn: "allowed" | "never";
+}
+
+/**
+ * The port the Rust resolver acquires its rust-analyzer SCIP index through
+ * (bd s3i8m.6 R2b). The composition layer injects the adapter through
+ * `LanguageFactory`, as it does `RustExternalSignatureSources`.
+ */
+export interface RustAnalyzerScipSource {
+  /** Never rejects. */
+  acquire: (request: {
+    projectRoot: string;
+    admission: RustAnalyzerScipAdmission;
+  }) => Promise<RustAnalyzerScipAcquisition>;
 }
 
 /**

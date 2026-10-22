@@ -162,10 +162,14 @@ async function collectAdjacency(
 /**
  * The runner as pass-2 uses it. `resolveVisitPlans` is optional: a runner
  * without it streams the spill in write order, exactly as before closure-batch
- * ordering existed (bd tea-rags-mcp-vtuu4).
+ * ordering existed (bd tea-rags-mcp-vtuu4). `warmResolvePass` likewise: a
+ * runner without it acquires nothing before the pass (bd s3i8m.6 R2b).
  */
-export type Pass2ResolutionRunner = Omit<CallEdgeResolutionRunner, "resolveVisitPlans" | "observeCallerArgs"> &
-  Partial<Pick<CallEdgeResolutionRunner, "resolveVisitPlans" | "observeCallerArgs">>;
+export type Pass2ResolutionRunner = Omit<
+  CallEdgeResolutionRunner,
+  "resolveVisitPlans" | "observeCallerArgs" | "warmResolvePass"
+> &
+  Partial<Pick<CallEdgeResolutionRunner, "resolveVisitPlans" | "observeCallerArgs" | "warmResolvePass">>;
 
 /**
  * Feed `processLine` every spill line in the order `plans` ask for (bd
@@ -265,6 +269,7 @@ export class GraphBuildFinalizer {
    */
   async resolveAndUpsert(spillPath: string, physicalCollectionName?: PhysicalCollectionName): Promise<void> {
     const { graphDb, symbolTable } = await this.resolveStore(physicalCollectionName);
+    await this.warmResolvePass();
     this.prepareResolvePass();
     const run: Pass2LoopRun = {
       graphDb,
@@ -299,6 +304,18 @@ export class GraphBuildFinalizer {
    * piece can do it here — before the first file, where it is a fixed cost —
    * rather than inferring the same fact from the first few hundred call sites.
    */
+  /**
+   * Before the pass sizes itself, the resolvers acquire what they read from
+   * outside the process (bd s3i8m.6 R2b — Rust's rust-analyzer SCIP index).
+   * Charged like {@link GraphBuildFinalizer.prepareResolvePass}: pass-2 wall
+   * clock with a count of zero files.
+   */
+  private async warmResolvePass(): Promise<void> {
+    const warmedAtMs = Date.now();
+    await this.resolutionRunner.warmResolvePass?.();
+    this.timings.record("pass2", Date.now() - warmedAtMs, { count: 0 });
+  }
+
   private prepareResolvePass(): void {
     const preparedAtMs = Date.now();
     this.resolutionRunner.prepareResolvePass();

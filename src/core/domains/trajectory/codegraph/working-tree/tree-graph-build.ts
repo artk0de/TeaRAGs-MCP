@@ -52,6 +52,7 @@ export type WorkingTreeGraphProviderConfig = Pick<
   | "ambiguousResolveMode"
   | "dbMemoryLimit"
   | "dbThreads"
+  | "rustAnalyzer"
 >;
 
 /** Everything one tree build reads. Plain data — it crosses the child-process IPC boundary as is. */
@@ -233,6 +234,24 @@ export async function buildWorkingTreeGraph(
 }
 
 /**
+ * The provider config one tree build runs with: the index run's, bound to the
+ * build's output and collection. The build runs under the working-tree wall
+ * budget, and a timed-out child would orphan a multi-minute rust-analyzer, so
+ * it reads the SCIP cache only (bd s3i8m.6 R2b).
+ */
+export function treeBuildProviderConfig(
+  input: Pick<WorkingTreeGraphBuildInput, "providerConfig" | "outputRoot" | "physicalCollectionName">,
+): CodegraphWorkerConfig {
+  const { rustAnalyzer } = input.providerConfig;
+  return {
+    ...input.providerConfig,
+    rootDir: input.outputRoot,
+    collectionName: input.physicalCollectionName,
+    ...(rustAnalyzer ? { rustAnalyzer: { ...rustAnalyzer, spawn: "never" } } : {}),
+  };
+}
+
+/**
  * Clone `snapshotPath` into the build's output and run `apply` over it with a
  * fresh direct-mode provider (step 1, then the caller's steps 2–5); every
  * client is closed afterwards, and a WAL left behind is refused. A result
@@ -249,7 +268,7 @@ async function buildOnClone<T>(
   // A fresh runtime per attempt: the provider, its resolvers and the pool are
   // the run's. Only the parse cache in `deps` outlives it.
   const { provider, pool } = await createCodegraphProviderRuntime(
-    { ...input.providerConfig, rootDir: input.outputRoot, collectionName: physical },
+    treeBuildProviderConfig(input),
     undefined,
     deps.crossRunParseCache ? { crossRunParseCache: deps.crossRunParseCache } : {},
   );
