@@ -56,7 +56,15 @@ describe("Rust macro boundaries", () => {
     expect(extraction.chunks.map(({ symbolId }) => symbolId)).toEqual(["emit_value", "run"]);
     expect(extraction.chunks.find(({ symbolId }) => symbolId === "emit_value")?.calls).toEqual([]);
     expect(extraction.chunks.find(({ symbolId }) => symbolId === "run")?.calls).toEqual([
-      { callText: "emit_value!(42)", receiver: null, member: "emit_value", startLine: 5, startColumn: 4 },
+      {
+        callText: "emit_value!(42)",
+        receiver: null,
+        member: "emit_value",
+        startLine: 5,
+        startColumn: 4,
+        memberStartLine: 5,
+        memberStartColumn: 4,
+      },
     ]);
   });
 });

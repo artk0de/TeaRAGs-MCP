@@ -1324,6 +1324,15 @@ export interface CallRef {
    */
   startColumn?: number;
   /**
+   * Position of the call's member-name token — the `b` of `a.b()`, the last
+   * segment of `a::b()`, the name of `m!()` (bd s3i8m.6 R3-1): 1-based line,
+   * 0-based UTF-16 column. What a compiler-grade index (rust-analyzer SCIP)
+   * keys a reference by, and what tells a nested call from the call it sits
+   * in when both start at one column. Optional: ABSENT means unknown.
+   */
+  memberStartLine?: number;
+  memberStartColumn?: number;
+  /**
    * The receiver exactly as the source spells it, where a language's
    * `receiver` normalizes sugar away: Swift strips optional chaining and
    * force unwraps (`a?.b!` → `a.b`) so the receiver matches the names
