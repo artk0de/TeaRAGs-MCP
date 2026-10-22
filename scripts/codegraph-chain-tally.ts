@@ -77,6 +77,7 @@ import {
   readManifestFiles,
 } from "../src/core/adapters/filesystem/dependency-manifests.js";
 import { processRustAnalyzerScipSource } from "../src/core/adapters/rust-analyzer/scip-source.js";
+import { processRustExternalSignatureSources } from "../src/core/adapters/rust-signatures/index.js";
 import { deferred } from "../src/core/contracts/resolution.js";
 import { formatResolveRateCell, resolveRateMiss } from "../src/core/contracts/resolve-rate.js";
 import {
@@ -90,6 +91,8 @@ import {
 import type {
   RustAnalyzerScipAcquisition,
   RustAnalyzerScipSource,
+  RustExternalSignatureSources,
+  RustExternalSourcesOfProject,
   SymbolResolutionOutcome,
   SymbolResolutionStrategy,
 } from "../src/core/contracts/types/language.js";
@@ -109,6 +112,7 @@ import {
   PythonImportFileMapper,
 } from "../src/core/domains/language/python/resolver/index.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
+import { RustExternalSignatureTableCache } from "../src/core/domains/language/rust/external-signatures/index.js";
 import {
   collectInstantiationSiteResolvers,
   collectKnownTargetCalleeLocators,
@@ -508,6 +512,8 @@ function newProductionRunState(root: string, factory: LanguageFactory): Codegrap
 export interface RunResult {
   /** Present only under `--rust-analyzer`. */
   rustAnalyzerWarm?: RustAnalyzerWarm;
+  /** Rust only: what the external signature sources located (bd s3i8m.7) — one report line. */
+  rustSignatures?: string;
   rows: CallSiteRow[];
   /** Files whose call sites were scored — the `--lang` extensions. */
   files: number;
@@ -736,6 +742,17 @@ function recordingScipSource(sink: RustAnalyzerScipAcquisition[]): RustAnalyzerS
   };
 }
 
+/** One line for what the Rust external signature sources located — `absent` std means the table answers nothing from std. */
+export function describeRustSignatures(sources: RustExternalSignatureSources, root: string): string {
+  const found: RustExternalSourcesOfProject = sources.locate(root);
+  // The run already extracted and cached the table; this reload is a cache hit.
+  const tables = new RustExternalSignatureTableCache(sources);
+  tables.reload(root);
+  const identity = tables.forRoot(root)?.identity.slice(0, 16) ?? "undefined";
+  const deps = `deps ${found.dependencies.length} · missing ${found.missingCrates.length}`;
+  return `RUST-SIGNATURES table ${identity} · std ${found.std?.cacheKey ?? "absent"} · ${deps}`;
+}
+
 /** One line for the SCIP acquisition outcome (indexed / cacheHit / latched / skipped). */
 export function describeScipAcquisition(acquisition: RustAnalyzerScipAcquisition | undefined): string {
   if (acquisition === undefined) return "not acquired";
@@ -785,9 +802,12 @@ export async function run(
   // The manifest walk is injected the way production's composition injects it,
   // or Go's module map reads no go.mod and every module-path import misses.
   const scipAcquisitions: RustAnalyzerScipAcquisition[] = [];
+  // Production's composition always injects the external signature sources (bd s3i8m.7).
+  const signatureSources = processRustExternalSignatureSources();
   const factory = new LanguageFactory({
     repoRoot: root,
     manifestFilesReader: readManifestFiles,
+    rustExternalSignatureSources: signatureSources,
     ...(opts.rustAnalyzer === true ? { rustAnalyzerScipSource: recordingScipSource(scipAcquisitions) } : {}),
   });
   const production = factory.create(lang).resolver;
@@ -989,6 +1009,7 @@ export async function run(
     residualRows: residualRows ?? undefined,
     timeOnly,
     ...(rustAnalyzerWarm === undefined ? {} : { rustAnalyzerWarm }),
+    ...(lang === "rust" ? { rustSignatures: describeRustSignatures(signatureSources, root) } : {}),
     timing:
       sampler === null ? undefined : { pass1Ms, pass2Ms, totalMs: pass1Ms + pass2Ms, peakRssMb: sampler.stop(), loc },
   };
@@ -1130,6 +1151,7 @@ async function main(): Promise<void> {
       }),
     );
   }
+  if (result.rustSignatures !== undefined) out.push(result.rustSignatures);
   if (result.rustAnalyzerWarm !== undefined) {
     out.push(
       `RUST-ANALYZER SCIP warm ${(result.rustAnalyzerWarm.warmMs / 1000).toFixed(2)}s · ${result.rustAnalyzerWarm.outcome}`,
