@@ -13,7 +13,7 @@ const baseStatus = {
 };
 
 describe("formatPrime — Project section", () => {
-  it("includes a 'Project' section + hint when projectName is set", () => {
+  it("names the project without prescribing how to address it when projectName is set", () => {
     const data: PrimeData = {
       path: "/repo",
       projectName: "myrepo",
@@ -25,8 +25,8 @@ describe("formatPrime — Project section", () => {
     const out = formatPrime(data, new Date("2026-05-13T00:00:00Z"));
     expect(out).toContain("## Project");
     expect(out).toContain("name: `myrepo`");
-    expect(out).toContain('Use `project: "myrepo"`');
-    expect(out).toContain("preferred parameter");
+    expect(out).not.toContain("[hint]");
+    expect(out).not.toContain("preferred parameter");
   });
 
   it("omits the 'Project' section when projectName is null", () => {

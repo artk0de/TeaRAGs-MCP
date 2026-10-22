@@ -77,11 +77,6 @@ function formatDigest(data: PrimeData, now: Date, debug: boolean): string {
     if (registryParams) {
       lines.push(registryParams);
     }
-    if (data.projectName) {
-      lines.push(
-        `[hint] Use \`project: "${data.projectName}"\` as the preferred parameter in MCP tool calls (over path / collection).`,
-      );
-    }
   }
 
   if (data.status.status !== "indexed") {
