@@ -26,3 +26,13 @@ pub trait Greeter {
         1
     }
 }
+
+pub struct Gauge {
+    pub level: u32,
+}
+
+impl Gauge {
+    pub fn bump(&mut self, by: u32) {
+        self.level += by;
+    }
+}

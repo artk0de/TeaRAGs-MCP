@@ -38,6 +38,9 @@
  *   5. importMatch (receiver ∈ use import → suffix basename match)
  *   6. bareSelfMethod (bare X() inside impl → enclosing-type probe)
  *   7. globalShortName (global short-name fallback)
+ *   8. traitSelfMethod (trait-provided `self.m()`)
+ *   9. rustAnalyzerScip (the rust-analyzer SCIP index's definition for the
+ *      member token, mapped onto a table symbol — the residual only)
  */
 
 import {
@@ -61,7 +64,9 @@ import { RustExternalVocabulary } from "../vocabulary/external-call.js";
 import { RustResolveEnvironmentCache } from "./resolve-environment-cache.js";
 import { withRustResolveEnvironment } from "./resolve-environment.js";
 import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
+import { rustScipProvesExternal, rustScipProvesInProjectNonCallable } from "./scip-resolution.js";
 import {
+  RustAnalyzerScipSymbolResolutionStrategy,
   RustBareSelfMethodSymbolResolutionStrategy,
   rustCalleeShortNameCandidates,
   rustCallIsMacroInvocation,
@@ -79,7 +84,7 @@ import {
 
 export class RustCallResolver implements CallResolver {
   readonly language = "rust";
-  private readonly strategies: SymbolResolutionStrategy[];
+  readonly strategies: readonly SymbolResolutionStrategy[];
   private readonly dispatchComponents: readonly DispatchResolverComponent[];
   private readonly external = new RustExternalVocabulary();
   private readonly environments: RustResolveEnvironmentCache;
@@ -113,6 +118,8 @@ export class RustCallResolver implements CallResolver {
       new RustGlobalShortNameSymbolResolutionStrategy(cfg),
       // Last: a trait-provided `self.m()` answers only where every pass above stayed silent.
       new RustTraitSelfMethodSymbolResolutionStrategy(cfg),
+      // After every name pass: rust-analyzer's own answer for the residual (bd s3i8m.6 R3a).
+      new RustAnalyzerScipSymbolResolutionStrategy(cfg),
     ];
   }
 
@@ -153,9 +160,16 @@ export class RustCallResolver implements CallResolver {
    * targets std or an external crate leaves the resolve-rate denominator.
    * Every verdict is proof-based — a project namesake vetoes the std
    * reading, and absence of evidence is never a `true`.
+   *
+   * rust-analyzer's SCIP answer joins it only where the member has a project
+   * namesake (bd s3i8m.6 R3a): Rust has no later classifier gate, so the
+   * conjunct moves exactly the rows that would be `missWithInProjectDef` and
+   * leaves `noInProjectDef` and the vocabulary's own verdicts byte-identical.
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
-    return this.external.targetsExternal(call, this.withEnvironment(ctx));
+    const environment = this.withEnvironment(ctx);
+    if (this.external.targetsExternal(call, environment)) return true;
+    return rustScipProvesExternal(call, environment) && this.hasInProjectDefinition(call, environment);
   }
 
   /**
@@ -171,6 +185,8 @@ export class RustCallResolver implements CallResolver {
     const candidates = rustCallIsMacroInvocation(call)
       ? rustMacroShortNameCandidates(ctx, call.member)
       : rustCalleeShortNameCandidates(ctx, call.member);
-    return candidates.length > 0;
+    if (candidates.length === 0) return false;
+    // A SCIP-proven in-project type or local is no namesake's edge (bd s3i8m.6 R3b).
+    return !rustScipProvesInProjectNonCallable(call, this.withEnvironment(ctx));
   }
 }

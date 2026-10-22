@@ -26,3 +26,9 @@ fn extras<G: shape::Greeter>(g: G, tally: shape::Tally) {
     twice!();
     g.greet();
 }
+
+fn via_closure() {
+    let make = || shape::Counter { total: 0 };
+    let mut made = make();
+    made.bump(1);
+}

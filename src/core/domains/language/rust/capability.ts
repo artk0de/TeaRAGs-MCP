@@ -27,7 +27,7 @@ export const capability: LanguageCapability = {
   testFiles,
   codegraph: {
     tier: "moderate",
-    tech: "7-strategy; trait dispatch; declared return/struct-field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
+    tech: "10-strategy (last: rust-analyzer SCIP); trait dispatch; return/field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
     // Generic return substitution reads the declaring owner's genericParameters.
     resolverReadsTypeDeclarations: true,
     // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
@@ -100,6 +100,11 @@ export const capability: LanguageCapability = {
   //   a destructuring `let` or a parameter also binds stays recorded: its
   //   window is cut around the rows the pattern rebinds the name in, instead
   //   of the name declining.
+  // - bd tea-rags-mcp-s3i8m.6 (R3a) — a last `rustAnalyzerScip` pass answers the
+  //   residual from rust-analyzer's SCIP definition at the member token; a
+  //   SCIP-proven external target with a project namesake is externalSkipped.
+  // - bd tea-rags-mcp-s3i8m.6 (R3b) — a call SCIP proves targets an in-project
+  //   type or local (tuple constructor, closure variable) has no in-project def.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
