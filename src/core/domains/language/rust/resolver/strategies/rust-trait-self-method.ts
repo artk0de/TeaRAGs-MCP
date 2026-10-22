@@ -1,9 +1,15 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef, SymbolDefinition } from "../../../../../contracts/types/codegraph.js";
+import type {
+  CallContext,
+  CallRef,
+  SymbolDefinition,
+  TypeDeclarationFact,
+} from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { RunScopedMemo } from "../../../kernel/index.js";
 import { rustTextIsStdMethodName } from "../../vocabulary/std-method-names.js";
 import { rustLexicalSelfType } from "../declared-field-type.js";
+import { rustCallerCrateUniqueType, rustCrateRootOf } from "../rust-crate-scope.js";
 import { resolveRustMemberWithDeref } from "../rust-type-member-lookup.js";
 import { lookupRustSymbolsByShortName, type ResolverConfig } from "./shared.js";
 
@@ -18,9 +24,14 @@ import { lookupRustSymbolsByShortName, type ResolverConfig } from "./shared.js";
  *      read; a type that defines the member ITSELF anywhere (inherent, or an
  *      impl overriding the default) is the earlier passes' to answer, and
  *      their silence there is an ambiguity, never a trait default;
- *   2. PROOF — the traits the caller's `Self` provably has: a trait body's own
- *      trait plus supertraits, or the enclosing type's `implements` edges plus
- *      their supertraits. Exactly one declarer resolves, several continue;
+ *   2. PROOF — the traits the caller's `Self` provably has, closed over their
+ *      supertraits: a trait body's own trait; the enclosing `impl Tr for X`'s
+ *      own `Tr`; for a generic `Self` (`impl<T: B> Tr for T`) the bounds of
+ *      `T`, inline and `where`; and for a concrete `X` whose short name is
+ *      unique in the caller's crate, the traits every trait impl of `X` in
+ *      that crate names (else, when the caller's file declares `X`, that
+ *      file's own impls) — a namesake elsewhere lends none. Exactly one
+ *      declarer resolves, several continue; a generic `Self` stops here;
  *   3. GUESS — no proof names a declarer, `Self` is a trait body or a project
  *      struct / enum with no `Deref` of its own (an impl on a foreign type,
  *      `impl R for mpsc::SyncSender<_>`, hands `self` that type's unseen
@@ -41,6 +52,13 @@ export class RustTraitSelfMethodSymbolResolutionStrategy implements SymbolResolu
     if (declarers.length === 0) return CONTINUE;
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
     const enclosingIsTrait = rustCallerDeclaresTrait(ctx);
+    const traitImpl = enclosingIsTrait ? undefined : rustEnclosingTraitImpl(call, ctx);
+    if (traitImpl !== undefined && rustTraitImplSelfIsGeneric(traitImpl)) {
+      if (rustImplBlockOwnsMember(traitImpl, call.member, ctx)) return CONTINUE;
+      const bounded = rustWithSupertraits([...rustImplHeaderTraits(traitImpl), ...rustImplSelfBounds(traitImpl)], ctx);
+      const proven = declarers.filter((declarer) => bounded.has(declarer.trait));
+      return proven.length === 1 ? resolvedTo(proven[0].def) : CONTINUE;
+    }
     if (!enclosingIsTrait) {
       const selfType = rustLexicalSelfType(ctx);
       if (selfType?.form === "instance" || selfType?.form === "class") {
@@ -51,7 +69,13 @@ export class RustTraitSelfMethodSymbolResolutionStrategy implements SymbolResolu
     }
     const provenTraits = enclosingIsTrait
       ? rustWithSupertraits([enclosing], ctx)
-      : rustWithSupertraits(rustImplementedTraits(enclosing, ctx), ctx);
+      : rustWithSupertraits(
+          [
+            ...(traitImpl === undefined ? [] : rustImplHeaderTraits(traitImpl)),
+            ...rustImplementedTraits(enclosing, ctx),
+          ],
+          ctx,
+        );
     const proven = declarers.filter((declarer) => provenTraits.has(declarer.trait));
     if (proven.length > 0) return proven.length === 1 ? resolvedTo(proven[0].def) : CONTINUE;
     if (rustTextIsStdMethodName(call.member)) return CONTINUE;
@@ -101,54 +125,121 @@ function rustCallerDeclaresTrait(ctx: CallContext): boolean {
   );
 }
 
-/** The traits `impl Tr for <typeName>` blocks name, by short name. */
-function rustImplementedTraits(typeName: string, ctx: CallContext): string[] {
-  return (ctx.hierarchy?.getAncestors(typeName, { kinds: ["implements"] }) ?? []).map(
-    (edge) => edge.ancestorFqName.split("::").at(-1) ?? edge.ancestorFqName,
+const shortNameOf = (path: string): string => path.split("::").at(-1) ?? path;
+
+/** The trait impl whose body holds the call — a re-opening fact of the caller's scope spanning its line. */
+function rustEnclosingTraitImpl(call: CallRef, ctx: CallContext): TypeDeclarationFact | undefined {
+  const selfId = ctx.callerScope.join("::");
+  let innermost: TypeDeclarationFact | undefined;
+  for (const fact of ctx.typeDeclarations?.[ctx.callerFile] ?? []) {
+    const span = fact.selfConstraints;
+    if (!fact.reopens || fact.typeId !== selfId || span === undefined) continue;
+    if (call.startLine < span.startLine || call.startLine > span.endLine) continue;
+    if (innermost === undefined || span.startLine > (innermost.selfConstraints?.startLine ?? 0)) innermost = fact;
+  }
+  return innermost;
+}
+
+/** `impl<T: B> Tr for T` — `Self` is one of the impl's own type parameters. */
+function rustTraitImplSelfIsGeneric(fact: TypeDeclarationFact): boolean {
+  return fact.genericParameters?.includes(fact.typeId) === true;
+}
+
+/** The trait an `impl Tr for X` header names, by short name. */
+function rustImplHeaderTraits(fact: TypeDeclarationFact): string[] {
+  return (fact.conforms ?? []).map(shortNameOf);
+}
+
+/** A generic `Self`'s bounds, by short name. */
+function rustImplSelfBounds(fact: TypeDeclarationFact): string[] {
+  return (fact.selfConstraints?.types ?? []).map(shortNameOf);
+}
+
+/** Some impl block of the caller's file on the same generic self parameter defines `member` itself. */
+function rustImplBlockOwnsMember(fact: TypeDeclarationFact, member: string, ctx: CallContext): boolean {
+  return lookupRustSymbolsByShortName(ctx, member).some(
+    (def) => def.relPath === ctx.callerFile && def.scope.join("::") === fact.typeId,
   );
+}
+
+/**
+ * The traits trait impls of `typeName` name, by short name. Impl facts are
+ * keyed by short name, so only impls that provably name the caller's type
+ * count: every impl in the caller's crate when the name is unique there, else
+ * only the impls of the caller's own file when that file declares the type —
+ * a namesake elsewhere lends none.
+ */
+function rustImplementedTraits(typeName: string, ctx: CallContext): string[] {
+  const impls = rustTraitFactIndex(ctx).implsBySelfName.get(typeName) ?? [];
+  if (rustCallerCrateUniqueType(typeName, ctx) !== undefined) {
+    const root = rustCrateRootOf(ctx.callerFile, ctx);
+    return impls.filter((impl) => rustCrateRootOf(impl.relPath, ctx) === root).flatMap((impl) => impl.traits);
+  }
+  const selfId = ctx.callerScope.join("::");
+  const declaredHere = (ctx.typeDeclarations?.[ctx.callerFile] ?? []).some(
+    (fact) => fact.typeId === selfId && !fact.reopens,
+  );
+  return declaredHere ? impls.filter((impl) => impl.relPath === ctx.callerFile).flatMap((impl) => impl.traits) : [];
 }
 
 /** `traits` closed over their supertraits, read from the run's trait declaration facts. */
 function rustWithSupertraits(traits: readonly string[], ctx: CallContext): ReadonlySet<string> {
   const closed = new Set<string>();
   const pending = [...traits];
-  const supertraits = rustSupertraitsByName(ctx);
+  const { supertraitsByName } = rustTraitFactIndex(ctx);
   for (let trait = pending.pop(); trait !== undefined; trait = pending.pop()) {
     if (closed.has(trait)) continue;
     closed.add(trait);
-    pending.push(...(supertraits.get(trait) ?? []));
+    pending.push(...(supertraitsByName.get(trait) ?? []));
   }
   return closed;
 }
 
-const SUPERTRAITS_BY_NAME = new RunScopedMemo<
-  object,
-  { files: number; byName: ReadonlyMap<string, readonly string[]> }
->();
+interface RustTraitImplRecord {
+  readonly relPath: string;
+  readonly traits: readonly string[];
+}
+
+interface RustTraitFactIndex {
+  /** Trait short name → its supertraits' short names, every declaring file merged. */
+  readonly supertraitsByName: ReadonlyMap<string, readonly string[]>;
+  /** Self type short name → its trait impls, with the declaring file. */
+  readonly implsBySelfName: ReadonlyMap<string, readonly RustTraitImplRecord[]>;
+}
+
+const TRAIT_FACT_INDEX = new RunScopedMemo<object, { files: number; index: RustTraitFactIndex }>();
+const EMPTY_TRAIT_FACT_INDEX: RustTraitFactIndex = { supertraitsByName: new Map(), implsBySelfName: new Map() };
 
 /**
- * Trait short name → its supertraits' short names, every declaring file merged.
+ * The run's trait declaration and trait impl facts, indexed by short name.
  * Memoised per resolve run and rebuilt when the facts map's file count moves:
  * the run state fills that map in place while it absorbs files.
  */
-function rustSupertraitsByName(ctx: CallContext): ReadonlyMap<string, readonly string[]> {
+function rustTraitFactIndex(ctx: CallContext): RustTraitFactIndex {
   const declarations = ctx.typeDeclarations;
-  if (declarations === undefined) return new Map();
+  if (declarations === undefined) return EMPTY_TRAIT_FACT_INDEX;
   const files = Object.keys(declarations).length;
-  const cached = SUPERTRAITS_BY_NAME.get(ctx.runScope, declarations);
-  if (cached?.files === files) return cached.byName;
-  const byName = new Map<string, string[]>();
-  for (const facts of Object.values(declarations)) {
+  const cached = TRAIT_FACT_INDEX.get(ctx.runScope, declarations);
+  if (cached?.files === files) return cached.index;
+  const supertraitsByName = new Map<string, string[]>();
+  const implsBySelfName = new Map<string, RustTraitImplRecord[]>();
+  for (const [relPath, facts] of Object.entries(declarations)) {
     for (const fact of facts) {
-      if (fact.symbolKind !== "interface" || fact.conforms === undefined) continue;
-      const name = fact.typeId.split("::").at(-1) ?? fact.typeId;
-      const list = byName.get(name) ?? [];
-      list.push(...fact.conforms.map((bound) => bound.split("::").at(-1) ?? bound));
-      byName.set(name, list);
+      if (fact.conforms === undefined) continue;
+      const name = shortNameOf(fact.typeId);
+      const traits = fact.conforms.map(shortNameOf);
+      if (fact.reopens) {
+        const impls = implsBySelfName.get(name) ?? [];
+        impls.push({ relPath, traits });
+        implsBySelfName.set(name, impls);
+      } else if (fact.symbolKind === "interface") {
+        supertraitsByName.set(name, [...(supertraitsByName.get(name) ?? []), ...traits]);
+      }
     }
   }
-  SUPERTRAITS_BY_NAME.set(ctx.runScope, declarations, { files, byName });
-  return byName;
+  const index = { supertraitsByName, implsBySelfName };
+  TRAIT_FACT_INDEX.set(ctx.runScope, declarations, { files, index });
+  return index;
 }
 
 const RUST_NOMINAL_KINDS: ReadonlySet<string> = new Set(["class", "enum"]);

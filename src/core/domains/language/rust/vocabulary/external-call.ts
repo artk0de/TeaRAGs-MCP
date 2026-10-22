@@ -54,12 +54,13 @@ function projectDeclares(ctx: CallContext, name: string): boolean {
  * The walker names an `impl` block's chunk after its implementing type
  * (`impl Sink for Box<S>` → `Box`) with no symbol kind. It is no declaration:
  * a file whose declaration facts the run holds and that declares no such type
+ * (a trait impl's re-opening fact declares nothing)
  * proves the row an impl container. Without the facts the row stays unproven.
  */
 function isRustImplContainer(def: SymbolDefinition, ctx: CallContext): boolean {
   if (def.symbolKind !== undefined || ctx.typeDeclarations === undefined) return false;
   const facts = ctx.typeDeclarations[def.relPath] ?? [];
-  return !facts.some((fact) => fact.typeId === def.symbolId);
+  return !facts.some((fact) => fact.typeId === def.symbolId && !fact.reopens);
 }
 
 const RUST_NOMINAL_KINDS: ReadonlySet<string> = new Set(["class", "enum", "type_alias"]);

@@ -290,4 +290,157 @@ impl Node {
       targetSymbolId: "Inner#paint",
     });
   });
+  describe("generic Self in a blanket impl (s3i8m rule A)", () => {
+    const decoders = {
+      ...crateRoot,
+      ...namesakes,
+      "s/src/number.rs": "pub trait NumberDecoder {\n    fn read_u8(&mut self) -> u8 { 0 }\n}\n",
+      "s/src/other_reader.rs": "pub trait OtherReader {\n    fn read_u8(&mut self) -> u8 { 0 }\n}\n",
+      "s/src/bytes.rs": "pub struct Bytes;\nimpl Bytes {\n    pub fn read_u8(&self) {}\n}\n",
+    };
+
+    it("a bound on the impl's type parameter proves the declaring trait (tikv CompactByteDecoder)", () => {
+      const f = fixture({
+        ...decoders,
+        "s/src/compact.rs": `use crate::number::NumberDecoder;
+pub trait CompactByteDecoder {
+    fn f(&mut self);
+}
+impl<T: NumberDecoder> CompactByteDecoder for T {
+    fn f(&mut self) {
+        self.read_u8();
+    }
+}
+`,
+      });
+      expect(f.resolve("self.read_u8()", "s/src/compact.rs")).toEqual({
+        targetRelPath: "s/src/number.rs",
+        targetSymbolId: "NumberDecoder#read_u8",
+      });
+    });
+
+    it("a where-clause bound proves the declaring trait", () => {
+      const f = fixture({
+        ...decoders,
+        "s/src/compact.rs": `use crate::number::NumberDecoder;
+pub trait CompactByteDecoder {
+    fn f(&mut self);
+}
+impl<T> CompactByteDecoder for T
+where
+    T: NumberDecoder + ?Sized,
+{
+    fn f(&mut self) {
+        self.read_u8();
+    }
+}
+`,
+      });
+      expect(f.resolve("self.read_u8()", "s/src/compact.rs")).toEqual({
+        targetRelPath: "s/src/number.rs",
+        targetSymbolId: "NumberDecoder#read_u8",
+      });
+    });
+
+    it("two bounds both declaring the member leave no edge", () => {
+      const f = fixture({
+        ...decoders,
+        "s/src/compact.rs": `use crate::number::NumberDecoder;
+use crate::other_reader::OtherReader;
+pub trait CompactByteDecoder {
+    fn f(&mut self);
+}
+impl<T: NumberDecoder + OtherReader> CompactByteDecoder for T {
+    fn f(&mut self) {
+        self.read_u8();
+    }
+}
+`,
+      });
+      expect(f.resolve("self.read_u8()", "s/src/compact.rs")).toBeNull();
+    });
+
+    it("no bound declaring the member leaves no edge and never guesses", () => {
+      const f = fixture({
+        ...crateRoot,
+        ...namesakes,
+        "s/src/number.rs": "pub trait NumberDecoder {\n    fn read_u8(&mut self) -> u8 { 0 }\n}\n",
+        "s/src/bytes.rs": "pub struct Bytes;\nimpl Bytes {\n    pub fn read_u8(&self) {}\n}\n",
+        "s/src/marker.rs": "pub trait Marker {}\n",
+        "s/src/compact.rs": `use crate::marker::Marker;
+pub trait CompactByteDecoder {
+    fn f(&mut self);
+}
+impl<T: Marker> CompactByteDecoder for T {
+    fn f(&mut self) {
+        self.read_u8();
+    }
+}
+`,
+      });
+      expect(f.resolve("self.read_u8()", "s/src/compact.rs")).toBeNull();
+    });
+  });
+
+  it("a namesake type in another crate lends its implements edges to no caller (s3i8m rule B)", () => {
+    const f = fixture({
+      "a/src/lib.rs": "pub mod peer;\npub mod store;\n",
+      "a/src/store.rs": "pub trait Store {\n    fn region(&self) -> u32 { 0 }\n}\n",
+      "a/src/other_store.rs": "pub trait OtherStore {\n    fn region(&self) -> u32 { 0 }\n}\n",
+      "a/src/peer.rs": "use crate::store::Store;\npub struct Peer;\nimpl Store for Peer {}\n",
+      "b/src/lib.rs": "pub mod peer;\n",
+      "b/src/peer.rs": `pub struct Peer;
+impl Peer {
+    pub fn run(&self) {
+        self.region();
+    }
+}
+`,
+      "b/src/region.rs": "pub struct Region;\nimpl Region {\n    pub fn region(&self) {}\n}\n",
+    });
+    expect(f.resolve("self.region()", "b/src/peer.rs")).toBeNull();
+  });
+
+  it("a crate namesake still lets the declaring file's own impls prove a trait (servo GPUCanvasContext#size)", () => {
+    const f = fixture({
+      "a/src/lib.rs": "pub mod canvas;\npub mod store;\n",
+      "a/src/store.rs": "pub trait Store {\n    fn region(&self) -> u32 { 0 }\n}\n",
+      "a/src/other_store.rs": "pub trait OtherStore {\n    fn region(&self) -> u32 { 0 }\n}\n",
+      "a/src/stub.rs": "pub struct Canvas;\n",
+      "a/src/canvas.rs": `use crate::store::Store;
+pub struct Canvas;
+impl Canvas {
+    pub fn run(&self) {
+        self.region();
+    }
+}
+impl Store for Canvas {}
+`,
+    });
+    expect(f.resolve("self.region()", "a/src/canvas.rs")).toEqual({
+      targetRelPath: "a/src/store.rs",
+      targetSymbolId: "Store#region",
+    });
+  });
+
+  it("the enclosing impl's own header trait proves it even for a namesake Self", () => {
+    const f = fixture({
+      "a/src/lib.rs": "pub mod peer;\npub mod store;\n",
+      "a/src/store.rs": "pub trait Store {\n    fn region(&self) -> u32 { 0 }\n    fn hook(&self);\n}\n",
+      "a/src/other_store.rs": "pub trait OtherStore {\n    fn region(&self) -> u32 { 0 }\n}\n",
+      "a/src/peer.rs": `use crate::store::Store;
+pub struct Peer;
+impl Store for Peer {
+    fn hook(&self) {
+        self.region();
+    }
+}
+`,
+      "a/src/peer2.rs": "pub struct Peer;\n",
+    });
+    expect(f.resolve("self.region()", "a/src/peer.rs")).toEqual({
+      targetRelPath: "a/src/store.rs",
+      targetSymbolId: "Store#region",
+    });
+  });
 });

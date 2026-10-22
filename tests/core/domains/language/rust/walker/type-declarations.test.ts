@@ -106,6 +106,14 @@ describe("Rust walker — type declaration facts", () => {
       { typeId: "Limits::FLOOR", symbolKind: "constant", line: 3, reopens: false },
       { typeId: "Pool", symbolKind: "class", line: 5, reopens: false },
       { typeId: "Pool::SIZE", symbolKind: "constant", line: 7, reopens: false },
+      {
+        typeId: "Wrapper",
+        symbolKind: "class",
+        line: 9,
+        reopens: true,
+        conforms: ["Limits"],
+        selfConstraints: { types: [], startLine: 9, endLine: 11 },
+      },
       { typeId: "Wrapper::CAP", symbolKind: "constant", line: 10, reopens: false },
     ]);
   });
@@ -132,7 +140,41 @@ describe("Rust walker — type declaration facts", () => {
   it("gives a struct no conforms: `impl Trait for S` is not a supertype of the declaration", () => {
     const src = ["struct S;", "impl Clone for S { fn clone(&self) -> Self { S } }", ""].join("\n");
 
-    expect(extract(src).typeDeclarations).toEqual([{ typeId: "S", symbolKind: "class", line: 1, reopens: false }]);
+    expect(extract(src).typeDeclarations).toEqual([
+      { typeId: "S", symbolKind: "class", line: 1, reopens: false },
+      {
+        typeId: "S",
+        symbolKind: "class",
+        line: 2,
+        reopens: true,
+        conforms: ["Clone"],
+        selfConstraints: { types: [], startLine: 2, endLine: 2 },
+      },
+    ]);
+  });
+
+  it("gives a blanket impl on its own type parameter that parameter's bounds, inline and where (s3i8m)", () => {
+    const src = [
+      "impl<'a, T: NumberDecoder + ?Sized, U> CompactByteDecoder<U> for T",
+      "where",
+      "    T: io::Read + Handler<U>,",
+      "    U: Clone,",
+      "{",
+      "}",
+      "",
+    ].join("\n");
+
+    expect(extract(src).typeDeclarations).toEqual([
+      {
+        typeId: "T",
+        symbolKind: "class",
+        line: 1,
+        reopens: true,
+        conforms: ["CompactByteDecoder"],
+        genericParameters: ["T", "U"],
+        selfConstraints: { types: ["NumberDecoder", "io::Read", "Handler"], startLine: 1, endLine: 6 },
+      },
+    ]);
   });
 
   it("does not publish a trait-mandated associated type in an impl, nor a trait's associated type declaration", () => {
@@ -149,6 +191,14 @@ describe("Rust walker — type declaration facts", () => {
     expect(extract(src).typeDeclarations).toEqual([
       { typeId: "Source", symbolKind: "interface", line: 1, reopens: false },
       { typeId: "Counter", symbolKind: "class", line: 2, reopens: false },
+      {
+        typeId: "Counter",
+        symbolKind: "class",
+        line: 3,
+        reopens: true,
+        conforms: ["Iterator"],
+        selfConstraints: { types: [], startLine: 3, endLine: 6 },
+      },
     ]);
   });
 
