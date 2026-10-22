@@ -75,6 +75,10 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m (letCall S4b) — a callee's return or a struct's
   //   field type spelled through `use` is placed via the declaring file's own
   //   imports (re-exports followed), never the caller's.
+  // - bd tea-rags-mcp-sjego (renames) — the crate map also answers a renamed
+  //   dependency's key (`webxr-api = { package = "servo-webxr-api" }`, direct
+  //   or via `[workspace.dependencies]`) and a `[lib] name` member's package
+  //   name, each only when it names one member and no member already owns it.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
