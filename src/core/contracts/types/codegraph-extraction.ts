@@ -386,6 +386,13 @@ export interface FileExtraction {
    */
   rustMacroUseCrates?: readonly RustMacroUseCrate[];
   /**
+   * The `importText` of every `use` statement of a Rust file, in source order
+   * (bd tea-rags-mcp-s3i8m letCall S4a): the per-file use set the resolver
+   * reads run-global as `CallContext.rustUseImportsByFile`. Absent when the
+   * file has no `use`.
+   */
+  rustUseImports?: readonly string[];
+  /**
    * Every name this file's `from <module> import <name>` statements bind, and
    * where each came from (bd tea-rags-mcp-xpl83.3).
    *

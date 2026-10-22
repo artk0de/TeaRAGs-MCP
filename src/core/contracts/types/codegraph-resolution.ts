@@ -462,6 +462,12 @@ export interface CallContext {
    */
   rustMacroUseCratesByFile?: Readonly<Record<string, readonly RustMacroUseCrate[]>>;
   /**
+   * `FileExtraction.rustUseImports` collected RUN-GLOBAL, keyed by the Rust
+   * file's relPath (bd tea-rags-mcp-s3i8m letCall S4a). Replaced on a re-walk,
+   * hydrated for unwalked files. Nothing reads it yet.
+   */
+  rustUseImportsByFile?: Readonly<Record<string, readonly string[]>>;
+  /**
    * Optional per-class Rails association map (`className → accessor →
    * modelType`) propagated from `FileExtraction.associationTypes`. The walker
    * consumes it directly to type compound-receiver chains into `localBindings`;

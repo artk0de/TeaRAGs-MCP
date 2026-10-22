@@ -245,6 +245,7 @@ const BASELINE_EXTRACTION = {
   relPath: "src/a.rs",
   language: "rust",
   imports: [{ importText: "std::fmt", startLine: 1 }],
+  rustUseImports: ["std::fmt"],
   chunks: [
     { symbolId: "Engine", scope: [], startLine: 5, endLine: 5, calls: [], symbolKind: "class", visibility: "public" },
     {

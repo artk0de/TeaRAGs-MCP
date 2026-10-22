@@ -91,6 +91,7 @@ export interface ResolverInputs {
   buildConstraintsByFile: CallContext["buildConstraintsByFile"];
   typeDeclarations: CallContext["typeDeclarations"];
   rustMacroUseCratesByFile: CallContext["rustMacroUseCratesByFile"];
+  rustUseImportsByFile: CallContext["rustUseImportsByFile"];
   extendedHookMixins: CallContext["extendedHookMixins"];
   /** The run's identity (bd tea-rags-mcp-39xca.6) — always the run state's, never per file. */
   runScope: NonNullable<CallContext["runScope"]>;
@@ -152,6 +153,8 @@ export function resolverInputChannels(inputs: ResolverInputs): Partial<CallConte
     // crate` list. Empty ⇒ a bare macro the crate does not declare stays
     // unresolved, the pre-channel answer.
     rustMacroUseCratesByFile: inputs.rustMacroUseCratesByFile,
+    // bd tea-rags-mcp-s3i8m letCall S4a — a Rust file's `use` import texts.
+    rustUseImportsByFile: inputs.rustUseImportsByFile,
     // bd tea-rags-mcp-89k7k.35.31 — what a module's `self.extended` hook mixes
     // into the extender. Absent ⇒ an instance lookup drops a singleton-only
     // `extend M` and substitutes nothing, as before.
@@ -664,6 +667,8 @@ export class CallEdgeResolutionRunner {
       // Run-global: the crate root that lists the macro_use crates is rarely
       // the file invoking the bare macro (bd tea-rags-mcp-s3i8m.4 B2).
       rustMacroUseCratesByFile: state.rustMacroUseCratesByFile,
+      // Run-global: a file's use set is read from files other than its own.
+      rustUseImportsByFile: state.rustUseImportsByFile,
       // A module's `self.extended` hook and the `extend` it answers live in
       // different files (bd tea-rags-mcp-89k7k.35.31): run-global if any file
       // contributed, else this file's own.

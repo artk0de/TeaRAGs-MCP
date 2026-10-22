@@ -67,6 +67,8 @@ export const capability: LanguageCapability = {
   //   placed-owner member lookup answer from cross-file impls.
   // - bd tea-rags-mcp-s3i8m.4 (B2) — a crate root records its
   //   `#[macro_use] extern crate` list (`rustMacroUseCrates`), in source order.
+  // - bd tea-rags-mcp-s3i8m (letCall S4a) — a file records its `use` import
+  //   texts (`rustUseImports`); nothing reads them yet, resolution unchanged.
   // - bd tea-rags-mcp-s3i8m Task 2 rule 5 — a silent `self.m()` reaches a
   //   trait's declaration: Deref target first, then the trait proven by impl
   //   edges / a trait body's supertraits, else a sole non-std project trait.

@@ -118,6 +118,12 @@ describe("mergeExtraction — arrays concat, base first", () => {
     expect(merged.rustMacroUseCrates?.map((c) => c.crateName)).toEqual(["tikv_util", "log"]);
   });
 
+  it("concatenates rustUseImports base-first, source order kept (bd s3i8m letCall S4a)", () => {
+    const base = baseExtraction({ rustUseImports: ["use std::fmt;"] });
+    const merged = mergeExtraction(base, { rustUseImports: ["use crate::a::b;"] });
+    expect(merged.rustUseImports).toEqual(["use std::fmt;", "use crate::a::b;"]);
+  });
+
   it("concatenates fieldAccesses base-first, and a pass's empty list leaves the channel absent (bd tea-rags-mcp-zy6hx)", () => {
     const fact = (fieldName: string, line: number) => ({
       symbolId: "A#m",
