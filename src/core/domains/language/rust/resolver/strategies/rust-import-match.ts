@@ -1,5 +1,11 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
+import {
+  pickSingleCandidate,
+  type CallContext,
+  type CallRef,
+  type SymbolResolutionTarget,
+} from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { capability } from "../../capability.js";
 import {
@@ -10,7 +16,9 @@ import {
   rustImportCandidatePaths,
   rustImportContainsReceiver,
   rustImportIsExternal,
+  rustModuleFileKnown,
   rustPathCandidatePaths,
+  rustReexportSourcePaths,
   type ResolverConfig,
 } from "./shared.js";
 
@@ -46,8 +54,15 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
         const direct = pickSingleCandidate(candidates, this.cfg.mode);
         if (direct) return resolved({ targetRelPath: direct.relPath, targetSymbolId: direct.symbolId });
       }
-      const reexport = this.resolveReexport(call, matchingImport.importText, call.member, ctx);
-      return reexport ? resolved(reexport) : DROP;
+      // A std / external-crate binding names no project definition.
+      if (rustImportIsExternal(matchingImport.importText, ctx, call.member)) return DROP;
+      // The pinned module re-exports the name (tikv `store/mod.rs`:
+      // `pub use self::{peer::{find_peer}}`). DROP only on proof that the
+      // module neither declares nor re-exports it; anything the walk cannot
+      // follow leaves the call to the later passes (bd tea-rags-mcp-s3i8m.8).
+      const follow = this.followReexports(call, matchingImport.importText, call.member, ctx);
+      if (follow.target) return resolved(follow.target);
+      return follow.open ? CONTINUE : DROP;
     }
     const { receiver } = call;
     const matchingImport = ctx.imports.find((imp) => parseRustImportPath(imp.importText, receiver)?.receiverMatches);
@@ -57,7 +72,7 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
       const candidates = ctx.symbolTable
         .lookupByShortName(call.member, { kinds: capability.codegraph.symbolKindRoles.callee })
         .filter((def) => candidatePaths.includes(def.relPath) && def.relPath.endsWith(".rs"));
-      const reexport = this.resolveReexport(call, matchingImport.importText, receiver, ctx);
+      const reexport = this.followReexports(call, matchingImport.importText, receiver, ctx).target;
       if (reexport) return resolved(reexport);
       const target = pickSingleCandidate(candidates, this.cfg.mode);
       if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
@@ -84,51 +99,82 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
     return CONTINUE;
   }
 
-  private resolveReexport(
-    call: CallRef,
-    importText: string,
-    receiver: string,
-    ctx: CallContext,
-  ): { targetRelPath: string; targetSymbolId: string } | null {
+  /**
+   * Follow the `pub use` re-exports of the module an import pins, hop-bounded
+   * by {@link RUST_REEXPORT_HOP_CAP}. `target` is the one definition the walk
+   * ends at; `open` is set when the walk met something it cannot follow — an
+   * unknown or absent module file, a relative path it cannot place, a glob
+   * from an external crate, the hop cap, the reexport channel absent, or more
+   * than one definition — so its silence is no proof of absence.
+   */
+  private followReexports(call: CallRef, importText: string, receiver: string, ctx: CallContext): RustReexportFollow {
     const parsed = parseRustImportPath(importText, receiver);
-    if (!parsed || ctx.moduleReexports === undefined) return null;
+    if (!parsed || ctx.moduleReexports === undefined) return { target: null, open: true };
     const ownerSegments = parsed.sourceName === null ? parsed.moduleSegments.slice(0, -1) : parsed.moduleSegments;
     const exportedName = parsed.sourceName === null ? (parsed.moduleSegments.at(-1) ?? receiver) : parsed.sourceName;
-    const ownerPaths = rustPathCandidatePaths(parsed, ownerSegments, ctx.callerFile, ctx);
-    const candidates: { targetRelPath: string; targetSymbolId: string }[] = [];
+    const ownerFiles = rustPathCandidatePaths(parsed, ownerSegments, ctx.callerFile, ctx).filter((relPath) =>
+      rustModuleFileKnown(relPath, ctx),
+    );
+    // An inline `mod tests { pub use … }` has no file of its own: nothing proves absence.
+    let open = ownerFiles.length === 0;
+    const targets: SymbolResolutionTarget[] = [];
     const visited = new Set<string>();
     const visit = (moduleFile: string, name: string, depth: number): void => {
       const key = `${moduleFile}::${name}`;
-      if (depth > 3 || visited.has(key)) return;
+      if (visited.has(key)) return;
       visited.add(key);
-      for (const entry of ctx.moduleReexports?.[moduleFile] ?? []) {
+      for (const entry of identifierEntry(ctx.moduleReexports, moduleFile) ?? []) {
         if (entry.exportedName !== name && entry.exportedName !== "*") continue;
-        const sourceBinding = rustImportBindings(entry.sourceModule)?.[0];
-        if (!sourceBinding) continue;
-        const sourcePaths = rustPathCandidatePaths(sourceBinding, sourceBinding.moduleSegments, ctx.callerFile, ctx);
-        if (entry.sourceName !== undefined) {
-          sourcePaths.push(
-            ...rustPathCandidatePaths(
-              sourceBinding,
-              [...sourceBinding.moduleSegments, entry.sourceName],
-              ctx.callerFile,
-            ),
-          );
+        if (depth >= RUST_REEXPORT_HOP_CAP) {
+          open = true;
+          continue;
         }
-        const targetName = call.receiver ? call.member : (entry.sourceName ?? name);
-        for (const sourceFile of [...new Set(sourcePaths)]) {
-          const defs = ctx.symbolTable
-            .lookupByShortName(targetName, {
-              kinds: capability.codegraph.symbolKindRoles.callee,
-            })
-            .filter((def) => def.relPath === sourceFile && def.relPath.endsWith(".rs"));
-          for (const def of defs) candidates.push({ targetRelPath: def.relPath, targetSymbolId: def.symbolId });
-          visit(sourceFile, entry.sourceName ?? name, depth + 1);
+        const sourcePaths = rustReexportSourcePaths(entry.sourceModule, moduleFile, ctx);
+        // A NAMED re-export of an external item proves the name external; a
+        // glob from an external crate may or may not carry it.
+        if (sourcePaths === "external") {
+          if (entry.exportedName === "*") open = true;
+          continue;
+        }
+        if (sourcePaths === null) {
+          open = true;
+          continue;
+        }
+        const sourceName = entry.exportedName === "*" ? name : (entry.sourceName ?? name);
+        const moduleItemPaths =
+          entry.sourceName === undefined
+            ? []
+            : rustReexportSourcePaths(`${entry.sourceModule}::${entry.sourceName}`, moduleFile, ctx);
+        const sourceFiles = [
+          ...new Set([...sourcePaths, ...(Array.isArray(moduleItemPaths) ? moduleItemPaths : [])]),
+        ].filter((relPath) => rustModuleFileKnown(relPath, ctx));
+        if (sourceFiles.length === 0) {
+          open = true;
+          continue;
+        }
+        const targetName = call.receiver ? call.member : sourceName;
+        const defs = rustCalleeShortNameCandidates(ctx, targetName);
+        for (const sourceFile of sourceFiles) {
+          for (const def of defs) {
+            if (def.relPath === sourceFile) {
+              targets.push({ targetRelPath: def.relPath, targetSymbolId: def.symbolId });
+            }
+          }
+          visit(sourceFile, sourceName, depth + 1);
         }
       }
     };
-    for (const ownerFile of ownerPaths) visit(ownerFile, exportedName, 0);
-    const unique = [...new Map(candidates.map((candidate) => [candidate.targetRelPath, candidate])).values()];
-    return unique.length === 1 ? unique[0] : null;
+    for (const ownerFile of ownerFiles) visit(ownerFile, exportedName, 0);
+    const unique = [...new Map(targets.map((target) => [target.targetRelPath, target])).values()];
+    if (unique.length === 1) return { target: unique[0], open };
+    return { target: null, open: open || unique.length > 1 };
   }
+}
+
+/** How many `pub use` hops importMatch follows from the pinned module before it stops proving absence. */
+const RUST_REEXPORT_HOP_CAP = 4;
+
+interface RustReexportFollow {
+  target: SymbolResolutionTarget | null;
+  open: boolean;
 }
