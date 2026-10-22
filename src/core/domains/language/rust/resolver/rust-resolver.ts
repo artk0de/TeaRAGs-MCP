@@ -68,6 +68,7 @@ import {
   rustMacroShortNameCandidates,
   RustSelfFieldSymbolResolutionStrategy,
   RustSelfMethodSymbolResolutionStrategy,
+  RustTraitSelfMethodSymbolResolutionStrategy,
   RustTypeReceiverSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
@@ -99,6 +100,8 @@ export class RustCallResolver implements CallResolver {
       new RustImportMatchSymbolResolutionStrategy(cfg),
       new RustBareSelfMethodSymbolResolutionStrategy(cfg),
       new RustGlobalShortNameSymbolResolutionStrategy(cfg),
+      // Last: a trait-provided `self.m()` answers only where every pass above stayed silent.
+      new RustTraitSelfMethodSymbolResolutionStrategy(cfg),
     ];
   }
 
