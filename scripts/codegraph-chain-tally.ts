@@ -76,6 +76,7 @@ import {
   collectDependencyManifestSources,
   readManifestFiles,
 } from "../src/core/adapters/filesystem/dependency-manifests.js";
+import { processRustAnalyzerScipSource } from "../src/core/adapters/rust-analyzer/scip-source.js";
 import { deferred } from "../src/core/contracts/resolution.js";
 import { formatResolveRateCell, resolveRateMiss } from "../src/core/contracts/resolve-rate.js";
 import {
@@ -86,7 +87,12 @@ import {
   type GraphEdges,
   type SymbolResolutionTarget,
 } from "../src/core/contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../src/core/contracts/types/language.js";
+import type {
+  RustAnalyzerScipAcquisition,
+  RustAnalyzerScipSource,
+  SymbolResolutionOutcome,
+  SymbolResolutionStrategy,
+} from "../src/core/contracts/types/language.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import {
   JavaEnclosingBareCallSymbolResolutionStrategy,
@@ -500,6 +506,8 @@ function newProductionRunState(root: string, factory: LanguageFactory): Codegrap
 }
 
 export interface RunResult {
+  /** Present only under `--rust-analyzer`. */
+  rustAnalyzerWarm?: RustAnalyzerWarm;
   rows: CallSiteRow[];
   /** Files whose call sites were scored — the `--lang` extensions. */
   files: number;
@@ -614,6 +622,19 @@ export interface ChainTallyRunOptions {
   edgeDump?: boolean;
   /** Collect every `missWithInProjectDef` site for `--residual-rows` (bd tea-rags-mcp-s3i8m.1). */
   residualRows?: boolean;
+  /**
+   * Hand the Rust resolver the rust-analyzer SCIP source (no-exec, schema
+   * defaults) and await `warmResolvePass()` before `prepareResolvePass()`,
+   * timing the warm separately (bd tea-rags-mcp-s3i8m.6 R3-3). Off by default.
+   */
+  rustAnalyzer?: boolean;
+}
+
+/** `--rust-analyzer`: the warm's wall time and how the SCIP acquisition ended. */
+export interface RustAnalyzerWarm {
+  warmMs: number;
+  /** `indexed (cacheHit|fresh)` / `latched: <reason>` / `skipped: <reason>` / `not acquired`. */
+  outcome: string;
 }
 
 /**
@@ -697,6 +718,37 @@ function tallyKindStats(
   kindSamples.push(`${site.relPath}:${call.startLine} ${String(call.receiver)}.${call.member}`.replace(/\s+/g, " "));
 }
 
+/** The schema-default, no-exec, spawn-allowed source, recording every acquisition it answers. */
+function recordingScipSource(sink: RustAnalyzerScipAcquisition[]): RustAnalyzerScipSource {
+  const inner = processRustAnalyzerScipSource({
+    enabled: true,
+    exec: false,
+    timeoutSec: 900,
+    maxRssMb: 4096,
+    spawn: "allowed",
+  });
+  return {
+    acquire: async (request) => {
+      const acquisition = await inner.acquire(request);
+      sink.push(acquisition);
+      return acquisition;
+    },
+  };
+}
+
+/** One line for the SCIP acquisition outcome (indexed / cacheHit / latched / skipped). */
+export function describeScipAcquisition(acquisition: RustAnalyzerScipAcquisition | undefined): string {
+  if (acquisition === undefined) return "not acquired";
+  switch (acquisition.kind) {
+    case "indexed":
+      return `indexed (${acquisition.cacheHit ? "cacheHit" : "fresh"})`;
+    case "latched":
+      return `latched: ${acquisition.reason}`;
+    case "skipped":
+      return `skipped: ${acquisition.reason}`;
+  }
+}
+
 export async function run(
   root: string,
   lang: string,
@@ -732,7 +784,12 @@ export async function run(
   // the python nor the java provider reads it, so the existing legs are unmoved.
   // The manifest walk is injected the way production's composition injects it,
   // or Go's module map reads no go.mod and every module-path import misses.
-  const factory = new LanguageFactory({ repoRoot: root, manifestFilesReader: readManifestFiles });
+  const scipAcquisitions: RustAnalyzerScipAcquisition[] = [];
+  const factory = new LanguageFactory({
+    repoRoot: root,
+    manifestFilesReader: readManifestFiles,
+    ...(opts.rustAnalyzer === true ? { rustAnalyzerScipSource: recordingScipSource(scipAcquisitions) } : {}),
+  });
   const production = factory.create(lang).resolver;
   if (!production) throw new Error(`language '${lang}' has no resolver`);
 
@@ -807,6 +864,15 @@ export async function run(
   // over every file the walk absorbed, then each resolver is told its volume.
   await runState.seal(async () => symbolTable);
   const runner = new CallEdgeResolutionRunner(factory, runState);
+  let rustAnalyzerWarm: RustAnalyzerWarm | undefined;
+  if (opts.rustAnalyzer === true) {
+    const warmStart = performance.now();
+    await runner.warmResolvePass();
+    rustAnalyzerWarm = {
+      warmMs: performance.now() - warmStart,
+      outcome: describeScipAcquisition(scipAcquisitions[scipAcquisitions.length - 1]),
+    };
+  }
   runner.prepareResolvePass();
 
   for (const extraction of scored) {
@@ -873,7 +939,8 @@ export async function run(
       }
     }
   }
-  const pass2Ms = performance.now() - pass2Start;
+  // The SCIP warm is reported on its own line, not folded into pass 2.
+  const pass2Ms = performance.now() - pass2Start - (rustAnalyzerWarm?.warmMs ?? 0);
 
   let persisted: PersistedEdgeTally | undefined;
   if (opts.persisted === true) {
@@ -921,6 +988,7 @@ export async function run(
     edgeDump: edgeDump ?? undefined,
     residualRows: residualRows ?? undefined,
     timeOnly,
+    ...(rustAnalyzerWarm === undefined ? {} : { rustAnalyzerWarm }),
     timing:
       sampler === null ? undefined : { pass1Ms, pass2Ms, totalMs: pass1Ms + pass2Ms, peakRssMb: sampler.stop(), loc },
   };
@@ -947,6 +1015,7 @@ export function parseArgs(argv: readonly string[]) {
     quiet: argv.includes("--quiet"),
     dispatch: !argv.includes("--no-dispatch"),
     timeOnly: argv.includes("--time-only"),
+    rustAnalyzer: argv.includes("--rust-analyzer"),
     kindStats: argv.includes("--kind-stats"),
     persisted: argv.includes("--persisted"),
     // `--time-only` implies `--timing`: a mode whose only purpose is the numbers
@@ -972,6 +1041,7 @@ async function main(): Promise<void> {
     persisted: opts.persisted,
     edgeDump: opts.dumpEdges !== null,
     residualRows: opts.residualRows !== null,
+    rustAnalyzer: opts.rustAnalyzer,
   });
   // The chain A/B scores only the sites production runs the exact chain on; a
   // dispatch-table site has no chain answer to count as "unresolved".
@@ -1058,6 +1128,11 @@ async function main(): Promise<void> {
         sites: result.rows.length,
         timeOnly: result.timeOnly,
       }),
+    );
+  }
+  if (result.rustAnalyzerWarm !== undefined) {
+    out.push(
+      `RUST-ANALYZER SCIP warm ${(result.rustAnalyzerWarm.warmMs / 1000).toFixed(2)}s · ${result.rustAnalyzerWarm.outcome}`,
     );
   }
   process.stdout.write(`${out.join("\n")}\n`);

@@ -65,6 +65,13 @@ describe("scoredExtensionsFor", () => {
   });
 });
 
+describe("parseArgs --rust-analyzer", () => {
+  it("is off by default and on only when named", () => {
+    expect(parseArgs([]).rustAnalyzer).toBe(false);
+    expect(parseArgs(["--lang", "rust", "--rust-analyzer"]).rustAnalyzer).toBe(true);
+  });
+});
+
 describe("parseArgs timing flags", () => {
   it("makes --time-only imply --timing, since the numbers are its whole point", () => {
     const opts = parseArgs(["--time-only"]);
