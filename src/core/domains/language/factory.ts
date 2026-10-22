@@ -6,6 +6,7 @@ import type {
   LanguageFactoryDescriptor,
   LanguageProvider,
   ManifestFilesReader,
+  RustExternalSignatureSources,
 } from "../../contracts/types/language.js";
 import type { SignalFloors } from "../../contracts/types/trajectory.js";
 import { BashLanguage } from "./bash/index.js";
@@ -119,6 +120,8 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * through it; absent, Go package matching stays GOPATH-shaped.
    */
   private readonly manifestFilesReader: ManifestFilesReader | undefined;
+  /** The Rust external signature sources, injected for the same reason (bd s3i8m.7). */
+  private readonly rustExternalSignatureSources: RustExternalSignatureSources | undefined;
 
   /**
    * @param options.ambiguousResolveMode Threaded into native resolvers
@@ -136,6 +139,9 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * @param options.manifestFilesReader The manifest walk the composition layer
    *   injects. Threaded to the providers that read location-bound manifests
    *   (Go's go.mod module map).
+   * @param options.rustExternalSignatureSources The toolchain / Cargo.lock
+   *   source locator and table cache the composition layer injects. Threaded
+   *   to Rust's resolver, which loads the external signature table at pass start.
    */
   constructor(
     options: {
@@ -144,9 +150,11 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
       isGrammarPackageInstalled?: (packageName: string) => boolean;
       crossRunParseCache?: CrossRunParseCache;
       manifestFilesReader?: ManifestFilesReader;
+      rustExternalSignatureSources?: RustExternalSignatureSources;
     } = {},
   ) {
     this.manifestFilesReader = options.manifestFilesReader;
+    this.rustExternalSignatureSources = options.rustExternalSignatureSources;
     this.ambiguousResolveMode = options.ambiguousResolveMode ?? DEFAULT_AMBIGUOUS_RESOLVE_MODE;
     this.repoRoot = options.repoRoot ?? process.cwd();
     this.isGrammarPackageInstalled = options.isGrammarPackageInstalled ?? isPackageResolvable;
@@ -183,7 +191,9 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
     if (lang === "python") return new PythonLanguage(this.ambiguousResolveMode);
     if (lang === "go") return new GoLanguage(this.ambiguousResolveMode, this.manifestFilesReader);
     if (lang === "java") return new JavaLanguage(this.ambiguousResolveMode);
-    if (lang === "rust") return new RustLanguage(this.ambiguousResolveMode, this.manifestFilesReader);
+    if (lang === "rust") {
+      return new RustLanguage(this.ambiguousResolveMode, this.manifestFilesReader, this.rustExternalSignatureSources);
+    }
     if (lang === "bash") return new BashLanguage(this.ambiguousResolveMode);
     if (lang === "swift") return new SwiftLanguage(this.ambiguousResolveMode);
     // Markdown is DOC-ONLY — no resolver, so no `mode` is threaded.

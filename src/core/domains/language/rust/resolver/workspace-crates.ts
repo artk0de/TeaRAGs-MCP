@@ -8,7 +8,8 @@
  * Read once per pass through the injected manifest reader (Go's module-map
  * pattern, `GoModuleMapCache`), and handed to every Rust helper on the
  * caller's `CallContext.languageConfig` — the contract's language-specific
- * slot — so neither the resolver nor the kernel touches the disk.
+ * slot, as half of the `RustResolveEnvironment` — so neither the resolver nor
+ * the kernel touches the disk.
  */
 
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
@@ -92,16 +93,13 @@ export class RustWorkspaceCrateMapCache {
 }
 
 /**
- * The ctx the Rust resolver hands down, carrying the run's crate map in
- * `languageConfig`. Idempotent on the same map, and a no-op without one, so
- * a project with no Cargo.toml allocates nothing.
+ * The crate map the Rust resolver injected as the `crates` half of its
+ * `RustResolveEnvironment` — `undefined` off its entry paths. Read by shape
+ * plus an `instanceof` on the map itself, so this module does not import the
+ * environment that imports it.
  */
-export function withRustWorkspaceCrates(ctx: CallContext, crates: RustWorkspaceCrateMap | undefined): CallContext {
-  if (crates === undefined || ctx.languageConfig === crates) return ctx;
-  return { ...ctx, languageConfig: crates };
-}
-
-/** The crate map the Rust resolver injected — `undefined` off its entry paths. */
 export function rustWorkspaceCratesOf(ctx: CallContext): RustWorkspaceCrateMap | undefined {
-  return ctx.languageConfig instanceof RustWorkspaceCrateMap ? ctx.languageConfig : undefined;
+  const config = ctx.languageConfig;
+  const crates = typeof config === "object" && config !== null && "crates" in config ? config.crates : undefined;
+  return crates instanceof RustWorkspaceCrateMap ? crates : undefined;
 }

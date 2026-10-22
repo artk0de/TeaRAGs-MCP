@@ -15,6 +15,7 @@ import type {
   RustClosedAssoc,
   RustExternalMember,
   RustExternalSignatureTableData,
+  RustExternalSourceFile,
   RustExternalTypeExpr,
   RustExternalTypeSignatures,
   TypeRef,
@@ -24,12 +25,7 @@ import { rustStdPrimitiveTypes } from "../vocabulary/std-prelude.js";
 import { rustDeclaredTypeRef, rustGenericParameters } from "../walker/return-types.js";
 import { RustCrateGraph, rustUseTargetSegments, type RustModuleScope } from "./canonical-paths.js";
 
-export interface RustExternalSourceFile {
-  readonly crate: string;
-  /** Path relative to the crate's `src/` directory (`sync/poison/mutex.rs`). */
-  readonly relPath: string;
-  readonly source: string;
-}
+export type { RustExternalSourceFile } from "../../../../contracts/index.js";
 
 export type RustSourceParser = (source: string) => AstNode;
 

@@ -2,9 +2,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CallContext, CallRef } from "../../../../src/core/contracts/types/codegraph.js";
+import type { RustExternalSignatureSources } from "../../../../src/core/contracts/types/language.js";
 import { BashLanguage } from "../../../../src/core/domains/language/bash/index.js";
 import { UnsupportedLanguageError } from "../../../../src/core/domains/language/errors.js";
 import { LanguageFactory } from "../../../../src/core/domains/language/factory.js";
@@ -224,5 +225,20 @@ describe("LanguageFactory repoRoot threading (bd tea-rags-mcp-f4wcm)", () => {
     const provider = new TypeScriptLanguage();
     const { call, ctx } = callAndContext("node:fs", "fs");
     expect(provider.resolver.targetsExternalImport?.(call, ctx)).toBe(true);
+  });
+});
+
+describe("LanguageFactory Rust external signature sources threading (bd s3i8m.7)", () => {
+  it("threads the injected sources port to the Rust resolver's pass-start seam", () => {
+    const root = "/nonexistent/s3i8m7-factory-root";
+    const sources: RustExternalSignatureSources = {
+      locate: vi.fn(() => ({ std: undefined, dependencies: [], lockDigest: undefined, missingCrates: [] })),
+      readCached: vi.fn(() => undefined),
+      writeCached: vi.fn(),
+      sizeCapBytes: 1,
+    };
+    const factory = new LanguageFactory({ rustExternalSignatureSources: sources });
+    factory.create("rust").resolver?.prepareResolvePass?.({ expectedFileCount: 1, projectRoot: root });
+    expect(sources.locate).toHaveBeenCalledWith(root);
   });
 });
