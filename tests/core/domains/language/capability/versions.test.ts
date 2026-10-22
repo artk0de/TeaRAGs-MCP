@@ -543,7 +543,9 @@ describe("seeded support versions", () => {
         ["python", 12],
         ["ruby", 10],
         ["java", 4],
-        // rust 11: bd tea-rags-mcp-s3i8m.3 — primitive / str / slice annotations bind.
+        // rust 11: bd tea-rags-mcp-s3i8m.2 (macro symbolKind) + 2g2og.24 slice 1
+        // (tuple and nested-arg struct fields recorded) + s3i8m.3 (primitive /
+        // str / slice annotations bind) — one bump for the release.
         ["rust", 11],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a
         // nested-checkout or gitignored go.mod.

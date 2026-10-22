@@ -49,8 +49,13 @@ export const capability: LanguageCapability = {
   // walker 10: bd tea-rags-mcp-2g2og.33 — `self`/`super` paths start from the
   // file's own module (`x.rs` is module x, not its directory) and repeated
   // `super::` prefixes climb one module each.
-  // walker 11: bd tea-rags-mcp-s3i8m.3 — params / typed lets annotated with a
-  // primitive, str, slice or array bind (`str`, `usize`, `[u8]`).
+  // walker 11 (one bump for the release after 1.49.0, epic s3i8m):
+  // - bd tea-rags-mcp-s3i8m.2 — `macro_rules!` chunks carry symbolKind "macro"
+  //   so macro invocations resolve in the macro namespace only.
+  // - bd tea-rags-mcp-2g2og.24 slice 1 — tuple-struct fields (`0`) and fields
+  //   with nested/primitive type arguments are recorded by head.
+  // - bd tea-rags-mcp-s3i8m.3 — params / typed lets annotated with a
+  //   primitive, str, slice or array bind (`str`, `usize`, `[u8]`).
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

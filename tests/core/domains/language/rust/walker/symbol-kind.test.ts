@@ -117,7 +117,7 @@ describe("symbolKindOf (Rust)", () => {
     ["function_item", { ownerItem: "impl_item" }, "method"],
     ["function_item", { ownerItem: "trait_item" }, "method"],
     ["impl_item", {}, undefined],
-    ["macro_definition", {}, undefined],
+    ["macro_definition", {}, "macro"],
   ] as const)("%s %o → %s", (nodeType, context, expected) => {
     expect(symbolKindOf(nodeType, context)).toBe(expected);
   });

@@ -24,6 +24,9 @@
  * `foo/bar/mod.rs`). External crates are out of scope.
  *
  * The pass order (each `name` in parens):
+ *   0. macroInvocation (`name!` / `path::name!` — owns every macro invocation
+ *      and answers it from macro definitions only; terminal, so no fn pass
+ *      ever sees one — bd tea-rags-mcp-s3i8m.2)
  *   1. selfMethod (self.X same-file — intra-impl call)
  *   2. selfField (self.field.X via declared field type — terminal guard)
  *   3. localBinding (obj.X via walker-bound type — terminal guard on miss)
@@ -51,15 +54,18 @@ import { RustExternalVocabulary } from "../vocabulary/external-call.js";
 import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
 import {
   RustBareSelfMethodSymbolResolutionStrategy,
+  rustCalleeShortNameCandidates,
+  rustCallIsMacroInvocation,
   RustGlobalShortNameSymbolResolutionStrategy,
   RustImportMatchSymbolResolutionStrategy,
   RustLocalBindingSymbolResolutionStrategy,
+  RustMacroInvocationSymbolResolutionStrategy,
+  rustMacroShortNameCandidates,
   RustSelfFieldSymbolResolutionStrategy,
   RustSelfMethodSymbolResolutionStrategy,
   RustTypeReceiverSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
-import { rustCalleeShortNameCandidates } from "./strategies/shared.js";
 
 export class RustCallResolver implements CallResolver {
   readonly language = "rust";
@@ -71,6 +77,7 @@ export class RustCallResolver implements CallResolver {
     const cfg: ResolverConfig = { mode };
     this.dispatchComponents = [new ConeDispatchResolver(new RustConeTypeLocator(cfg), 8)];
     this.strategies = [
+      new RustMacroInvocationSymbolResolutionStrategy(cfg),
       new RustSelfMethodSymbolResolutionStrategy(cfg),
       new RustSelfFieldSymbolResolutionStrategy(cfg),
       new RustLocalBindingSymbolResolutionStrategy(cfg),
@@ -104,9 +111,14 @@ export class RustCallResolver implements CallResolver {
    * callable of this member's name (bd tea-rags-mcp-t5cji)? The chain only
    * lands on Rust files, so a namesake a `.py` / `.ts` file declares is no
    * edge this call can have — the runner's unfiltered fallback charged it
-   * as an in-project miss anyway.
+   * as an in-project miss anyway. A macro invocation asks the macro
+   * namespace instead: `matches!` is no miss because of `fn matches`
+   * (bd tea-rags-mcp-s3i8m.2).
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
-    return rustCalleeShortNameCandidates(ctx, call.member).length > 0;
+    const candidates = rustCallIsMacroInvocation(call)
+      ? rustMacroShortNameCandidates(ctx, call.member)
+      : rustCalleeShortNameCandidates(ctx, call.member);
+    return candidates.length > 0;
   }
 }

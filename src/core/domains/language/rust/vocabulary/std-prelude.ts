@@ -95,6 +95,9 @@ export const rustDerivableTraitMembers: ReadonlySet<string> = new Set([
   "hash",
 ]);
 
+/** Prelude types `?` / `unwrap` / `expect` unwrap to their first type argument. */
+export const rustStdUnwrappingTypes: ReadonlySet<string> = new Set(["Option", "Result"]);
+
 /** Enum variant constructors the prelude binds: `Ok(())`, `Some(x)`, `Err(e)`. */
 export const rustStdPreludeVariants: ReadonlySet<string> = new Set(["Ok", "Err", "Some", "None"]);
 
@@ -194,6 +197,10 @@ export function rustTextIsStdSmartPointer(text: string): boolean {
 
 export function rustTextIsDerivableTraitMember(text: string): boolean {
   return rustDerivableTraitMembers.has(text);
+}
+
+export function rustTextIsStdUnwrappingType(text: string): boolean {
+  return rustStdUnwrappingTypes.has(text);
 }
 
 export function rustTextIsStdPreludeVariant(text: string): boolean {

@@ -31,7 +31,13 @@ describe("Rust macro boundaries", () => {
     );
 
     expect(extraction.chunks.map(({ symbolId }) => symbolId)).toEqual(["emit_value"]);
-    expect(extraction.chunks[0]).toMatchObject({ symbolId: "emit_value", startLine: 1, endLine: 3 });
+    expect(extraction.chunks[0]).toMatchObject({
+      symbolId: "emit_value",
+      startLine: 1,
+      endLine: 3,
+      // bd tea-rags-mcp-s3i8m.2 — a macro definition lives in the macro namespace.
+      symbolKind: "macro",
+    });
     expect(extraction.chunks[0].calls).toEqual([]);
   });
 

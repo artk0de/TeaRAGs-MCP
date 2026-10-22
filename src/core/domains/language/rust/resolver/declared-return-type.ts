@@ -1,6 +1,7 @@
 import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { MemberReturnTypeResolver, type NominalTypeRef } from "../../kernel/index.js";
+import { rustStdSmartPointerTarget, rustStdTypeRef, rustStdUnwrapType } from "./std-type-hops.js";
 import { lookupRustSymbolsByShortName, rustImportBindings, rustImportIsExternal } from "./strategies/shared.js";
 
 /** File-qualified nominal identity is kept inside the existing TypeRef channel, never a bare global namesake. */
@@ -85,17 +86,17 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
       if (recv.name === "Self" || recv.name.startsWith("Self::")) return { ...owner, form: "instance" };
       const parameter = declaration?.genericParameters?.indexOf(recv.name) ?? -1;
       if (parameter >= 0) return owner.args?.[parameter];
-      const typeArguments = recv.args?.map(substitute);
-      if (typeArguments?.some((arg) => arg === undefined)) return undefined;
-      const placed = resolveRustNominalType(
-        { ...recv, ...(typeArguments === undefined ? {} : { args: typeArguments as TypeRef[] }) },
-        {
-          ...ctx,
-          callerFile: target.relPath,
-          callerScope: target.scope.slice(0, -1),
-        },
-      );
-      if (placed === undefined) return undefined;
+      // An argument nothing substitutes (an owner generic the receiver never
+      // fixed: `-> &PeerStorage<EK, ER>` on a bare `Peer`) drops the argument
+      // list and keeps the head typed — a member needing the argument then
+      // declines on its own (bd tea-rags-mcp-2g2og.24).
+      const substituted = recv.args?.map(substitute);
+      const typeArguments = substituted?.every((arg) => arg !== undefined) ? substituted : undefined;
+      const declaringCtx = { ...ctx, callerFile: target.relPath, callerScope: target.scope.slice(0, -1) };
+      const head = resolveRustNominalType({ form: recv.form, name: recv.name }, declaringCtx);
+      if (head === undefined) return rustStdTypeRef(recv.name, substituted, declaringCtx);
+      const placed =
+        typeArguments === undefined || typeArguments.length === 0 ? head : { ...head, args: typeArguments };
       // Cross-file, only a type the DECLARING file declares in its own lexical
       // scope is safe: the callee's import environment was never loaded, so a
       // name it bound through `use` must decline rather than land on a caller
@@ -117,6 +118,13 @@ export function rustDeclaredMemberReturnType(
   member: string,
   ctx: CallContext,
 ): TypeRef | undefined {
+  // std hops first (bd tea-rags-mcp-2g2og.24): `Option`/`Result` unwrap through
+  // `unwrap`/`expect`, a std smart pointer hands a member it does not answer to
+  // its target. A placed project type never matches either.
+  const unwrapped = rustStdUnwrapType(nominalType, member);
+  if (unwrapped !== undefined) return unwrapped;
+  const pointee = rustStdSmartPointerTarget(nominalType, member);
+  if (pointee !== undefined) return rustDeclaredMemberReturnType(pointee, member, ctx);
   const owner = resolveRustNominalType(nominalType, ctx);
   if (owner === undefined) return undefined;
   // Rust method resolution auto-derefs: a member the owner misses is retried
