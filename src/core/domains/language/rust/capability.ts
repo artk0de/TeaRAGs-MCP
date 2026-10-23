@@ -131,6 +131,19 @@ export const capability: LanguageCapability = {
   //   `tempfile::tempdir()?`) takes the table's return, `?` / `.unwrap()` /
   //   `.expect(..)` tails unwrapped; the project's own function answers first.
   //   A destructured element a project namesake vetoes stays untyped alone.
+  // - bd tea-rags-mcp-s3i8m (binding precedence) — a receiver's later binding
+  //   wins across the local and call-result channels (`let sink = Some(sink)`
+  //   shadows the parameter), and a `let x = T::new(..)` local reads
+  //   `T::new`'s declared return (`Option<Self>`) before the constructor guess.
+  //   A shadowing `let` is typed by its folded initializer (builder chains,
+  //   any `T::assoc(..)`, `x.clone()`, `test::black_box(&x)`), else untyped.
+  // - bd tea-rags-mcp-s3i8m (agreeing returns) — a member declared twice in a
+  //   file with one return (inherent + trait impl) keeps its return type, and
+  //   `-> Self::Target` reads the impl's concrete `type Target = X`.
+  // - bd tea-rags-mcp-s3i8m (generic constructors, alias bodies) — a generic
+  //   type's fact lists the inherent associated fns that return it and bind a
+  //   generic from an argument (`fn new(ptr: &T) -> Trusted<T>`), and a
+  //   `type X<T> = …` fact carries its aliased type.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

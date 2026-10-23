@@ -1,7 +1,6 @@
 import { resolved } from "../../../../../contracts/resolution.js";
 import {
   nearestCallResultBinding,
-  resolveLocalBinding,
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
@@ -16,7 +15,7 @@ import {
   type TypeMemberLookup,
 } from "../../../kernel/index.js";
 import { rustStdPrimitiveTypes } from "../../vocabulary/std-prelude.js";
-import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared-call-result-type.js";
+import { rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { rustPatternBindingType } from "../pattern-binding-type.js";
 import {
   createRustTypeMemberLookup,
@@ -24,12 +23,40 @@ import {
   rustTypedMissIsProven,
 } from "../rust-type-member-lookup.js";
 import { rustDeclaredTypeIsForeign } from "../std-type-hops.js";
-import { rustExpressionType, rustMethodCallResultType } from "./rust-type-receiver.js";
+import { rustVisibleReceiverBinding } from "../visible-receiver-binding.js";
+import {
+  rustCallResultInitType,
+  rustExpressionType,
+  rustMethodCallResultType,
+  rustShadowingCallResultType,
+  rustValuePreservingSource,
+} from "./rust-type-receiver.js";
 import { lookupRustSymbolsByShortName, type ResolverConfig } from "./shared.js";
+
+const RUST_IDENTIFIER_ONLY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const RUST_LOCAL_BINDING_TYPING: ReceiverTypingPorts = {
   typeOfReceiver: (call, ctx) => {
-    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine, call.startColumn);
+    const visible = rustVisibleReceiverBinding(call.receiver, call.startLine, ctx, call.startColumn);
+    if (visible?.channel === "constructor") {
+      const declared = rustCallResultInitType(visible.callResult, ctx);
+      if (declared !== undefined) return declared;
+    }
+    // A later call-result `let` shadows an earlier local (bd tea-rags-mcp-s3i8m):
+    // untyped, the call CONTINUES — never the shadowed local's type.
+    if (visible?.channel === "callResult" && visible.shadowsLocal) {
+      const shadowing = rustShadowingCallResultType(call.receiver, call.startLine, ctx, visible.binding);
+      if (shadowing !== undefined) return shadowing;
+      // `let x = x.clone();` — the source name read at the `let` line, where the
+      // new binding is not yet visible, types exactly as this port types it.
+      const source = rustValuePreservingSource(visible.binding.initExpression ?? "");
+      if (source === undefined || !RUST_IDENTIFIER_ONLY.test(source)) return null;
+      return RUST_LOCAL_BINDING_TYPING.typeOfReceiver(
+        { ...call, receiver: source, startLine: visible.binding.line, startColumn: undefined },
+        ctx,
+      );
+    }
+    const binding = visible?.channel === "callResult" ? undefined : visible?.binding;
     if (binding === undefined) {
       return (
         rustDeclaredCallResultType(call.receiver, call.startLine, ctx) ??
@@ -88,8 +115,8 @@ export class RustLocalBindingSymbolResolutionStrategy extends LocalBindingSymbol
     const outcome = super.attempt(call, ctx);
     const { receiver } = call;
     if (outcome.kind === "resolved" || outcome.kind === "deferred" || !receiver) return outcome;
-    const binding = resolveLocalBinding(ctx.localBindings, receiver, call.startLine, call.startColumn);
-    if (!isRustPatternIntroduced(binding)) return outcome;
+    const visible = rustVisibleReceiverBinding(receiver, call.startLine, ctx, call.startColumn);
+    if (visible?.channel !== "local" || !isRustPatternIntroduced(visible.binding)) return outcome;
     const type = RUST_LOCAL_BINDING_TYPING.typeOfReceiver({ ...call, receiver }, ctx);
     if (type?.form !== "instance") return outcome;
     const target = resolveRustTypedMissMember(type, call.member, ctx, this.mode);
@@ -137,13 +164,17 @@ function rustTypedMissDrops(
   const mayLiveElsewhere = (type: NominalTypeRef, call: ReceiverCallRef, ctx: CallContext): boolean =>
     rustProjectTraitDeclares(call.member, ctx) || lookup.findMember(type, "deref", ctx) !== null;
   return (type, call, ctx) => {
-    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine, call.startColumn);
-    if (isRustPatternIntroduced(binding)) {
+    const visible = rustVisibleReceiverBinding(call.receiver, call.startLine, ctx, call.startColumn);
+    if (visible === undefined) return true;
+    if (visible.channel === "local" && isRustPatternIntroduced(visible.binding)) {
       return rustPatternMissIsProven(type, call.member, ctx) && !mayLiveElsewhere(type, call, ctx);
     }
-    if (binding !== undefined) return true;
-    if (rustCallResultBindingOf(call.receiver, call.startLine, ctx) === undefined) return true;
-    return !mayLiveElsewhere(type, call, ctx);
+    // A local typed by its own binding drops; one typed through the call-result
+    // channel — a later `let`, or a constructor's declared return — may continue.
+    const typedByLocal =
+      visible.channel === "local" ||
+      (visible.channel === "constructor" && rustCallResultInitType(visible.callResult, ctx) === undefined);
+    return typedByLocal || !mayLiveElsewhere(type, call, ctx);
   };
 }
 

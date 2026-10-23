@@ -54,7 +54,14 @@ describe("Rust walker — type declaration facts", () => {
       { typeId: "Bits", symbolKind: "class", line: 2, reopens: false },
       { typeId: "Kind", symbolKind: "enum", line: 3, reopens: false },
       { typeId: "Store", symbolKind: "interface", line: 4, reopens: false },
-      { typeId: "Map", symbolKind: "type_alias", line: 5, reopens: false, genericParameters: ["T"] },
+      {
+        typeId: "Map",
+        symbolKind: "type_alias",
+        line: 5,
+        reopens: false,
+        genericParameters: ["T"],
+        aliasedType: { form: "instance", name: "Vec", args: [{ form: "instance", name: "T" }] },
+      },
       { typeId: "MAX", symbolKind: "constant", line: 6, reopens: false },
       { typeId: "COUNTER", symbolKind: "constant", line: 7, reopens: false },
       { typeId: "inner", symbolKind: "module", line: 8, reopens: false },
@@ -115,6 +122,35 @@ describe("Rust walker — type declaration facts", () => {
         selfConstraints: { types: [], startLine: 9, endLine: 11 },
       },
       { typeId: "Wrapper::CAP", symbolKind: "constant", line: 10, reopens: false },
+    ]);
+  });
+
+  // bd tea-rags-mcp-s3i8m — servo `Trusted::new(ptr: &T) -> Trusted<T>`.
+  it("lists an inherent impl's associated fns that return the type and bind a generic from an argument", () => {
+    const src = [
+      "pub struct Trusted<T> { ptr: *const T }",
+      "impl<U> Trusted<U> {",
+      "    pub fn new(ptr: &U) -> Trusted<U> { todo!() }",
+      "    pub fn pair(tag: u8, value: &mut U) -> Self { todo!() }",
+      "    pub fn wrapped(values: Vec<U>) -> Self { todo!() }",
+      "    pub fn shadowed<U>(value: U) -> Self { todo!() }",
+      "    pub fn root(&self, other: &U) -> Self { todo!() }",
+      "}",
+      "",
+    ].join("\n");
+
+    expect(extract(src).typeDeclarations).toEqual([
+      {
+        typeId: "Trusted",
+        symbolKind: "class",
+        line: 1,
+        reopens: false,
+        genericParameters: ["T"],
+        genericInitializers: [
+          { name: "new", labels: [null], binds: ["T"] },
+          { name: "pair", labels: [null, null], binds: [null, "T"] },
+        ],
+      },
     ]);
   });
 
