@@ -284,7 +284,10 @@ fn run() {
     expect(f.edges().filter((edge) => edge.targetSymbolId === "Product#finish")).toEqual([]);
   });
 
-  it("refuses wildcard imports rather than guessing a same-file callee", () => {
+  // Moved pin: an item the module declares outranks every glob-imported name
+  // (Rust reference, "Use declarations": glob imports are shadowed by items),
+  // so `use external::*;` never hides the same-file `fn make`.
+  it("reads a same-file callee through a wildcard import, which never shadows a declared item", () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -298,7 +301,7 @@ fn run() {
       },
       materialized,
     );
-    expect(f.resolve("value.finish()")).toBeNull();
+    expect(f.resolve("value.finish()")).toMatchObject(productFinish);
   });
 
   it.each([
@@ -443,8 +446,6 @@ fn run() { let value = make(); value.finish(); }
     ["callee local", "fn run()", "let make = factory;\nlet value = make();"],
     ["callee pattern", "fn run()", "let (make, _) = pair;\nlet value = make();"],
     ["result shadow", "fn run()", "let value = make();\nlet value = unknown;"],
-    ["result assignment", "fn run()", "let mut value = make();\nvalue = unknown;"],
-    ["result update", "fn run()", "let mut value = make();\nvalue += unknown;"],
     ["closure", "fn run()", "let value = make();\nlet closure = |make| make();"],
     ["nested function", "fn run()", "let value = make();\nfn make() {}"],
     ["local const", "fn run()", "const make: fn() -> Product = other;\nlet value = make();"],
@@ -462,6 +463,27 @@ ${header} {
       materialized,
     );
     expect(f.chunk().callResultBindings?.value).toBeUndefined();
+  });
+
+  // A reassignment or update once withheld the result too; Rust fixes a
+  // local's type at its `let`, so the assigned value keeps the call's type.
+  it.each([
+    ["result assignment", "let mut value = make();\nvalue = unknown;"],
+    ["result update", "let mut value = make();\nvalue += unknown;"],
+  ])("keeps typing the result through a %s", (_name, body) => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+fn make() -> Product { todo!() }
+fn run() {
+  ${body}
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.chunk().callResultBindings?.value).toEqual([expect.objectContaining({ callee: "make" })]);
   });
 
   // bd tea-rags-mcp-s3i8m — a destructuring `let` that rebinds the result

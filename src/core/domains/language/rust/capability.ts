@@ -27,7 +27,7 @@ export const capability: LanguageCapability = {
   testFiles,
   codegraph: {
     tier: "moderate",
-    tech: "10-strategy (rustc call-site driver first); trait dispatch; return/field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
+    tech: "10-strategy (rustc call-site driver first); trait dispatch; return/field chains (Self, generics, assoc-fn heads, aliases); call-result locals; crate impls",
     // Generic return substitution reads the declaring owner's genericParameters.
     resolverReadsTypeDeclarations: true,
     // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
@@ -186,7 +186,20 @@ export const capability: LanguageCapability = {
   //   `Ok(v)` / `drop(x)` no `use` binds) is not bound to a project namesake
   //   by name alone: the short-name and enclosing-type passes DROP it and
   //   the miss is external. A typed local, `self`, a type path or an
-  //   import-bound receiver keeps the static edge.
+  //   import-bound receiver keeps the static edge. A receiver the fold types
+  //   as a std type proves std and drops, even under an import-bound head. The fold types an
+  //   associated-fn chain head (`Decimal::from_bytes(s).unwrap()`) and a
+  //   call-result local by its whole initializer, and a glob import no
+  //   longer hides a same-file free function's declared return. A return
+  //   spelling the declaring file imports beside a same-name impl block (a
+  //   re-exported `type Result<T>` alias) is placed through the import or refused.
+  //   A std method a placed project receiver provably lacks drops as std.
+  //   The walker (same cycle, no second bump) keeps a call-result `let`
+  //   through reassignment (Rust fixes the type at the `let`), types an enum
+  //   variant constructor, an `if` / `match` / block initializer whose
+  //   constructor arms agree, and `*self` in an impl, and keeps the head of a
+  //   declared return whose arguments it cannot spell or are the fn's own
+  //   generics (`-> Res<(u8, u8)>`, `fn map<U>(..) -> Res<U>`).
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

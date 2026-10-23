@@ -25,6 +25,8 @@ import { lookupRustSymbolsByShortName, rustImportBindings, rustImportIsExternal 
 const RUST_STD_ROOTS: ReadonlySet<string> = new Set(["std", "core", "alloc"]);
 const RUST_UNWRAP_MEMBERS: ReadonlySet<string> = new Set(["?", "unwrap", "expect", "unwrap_unchecked"]);
 const RUST_STD_SMART_POINTERS: ReadonlySet<string> = new Set(["Box", "Arc", "Rc"]);
+/** A full std path to a prelude `Result` / `Option`: the same type as its prelude spelling. */
+const RUST_STD_UNWRAPPING_PATH = /^(?:std|core)::(?:result::(Result)|option::(Option))$/;
 /** Members a smart pointer answers before its target: its own std trait impls and inherent methods. */
 const RUST_SMART_POINTER_OWN_MEMBERS: ReadonlySet<string> = new Set([
   "clone",
@@ -72,8 +74,11 @@ export function rustStdTypeRef(
       ? { form: "instance", name: spelling }
       : { form: "instance", name: spelling, args: known };
   if (name.includes("::")) {
-    const head = name.replace(/^::/, "").split("::")[0];
-    return RUST_STD_ROOTS.has(head) ? withArgs(name.replace(/^::/, "")) : undefined;
+    const path = name.replace(/^::/, "");
+    // `std::result::Result` (a project alias's body) travels as `Result`, so its unwrap hop reads.
+    const prelude = RUST_STD_UNWRAPPING_PATH.exec(path);
+    if (prelude !== null) return withArgs(prelude[1] ?? prelude[2]);
+    return RUST_STD_ROOTS.has(path.split("::")[0]) ? withArgs(path) : undefined;
   }
   if (!rustTextIsStdPreludeType(name)) return undefined;
   return projectDeclaresType(ctx, name) ? undefined : withArgs(name);
