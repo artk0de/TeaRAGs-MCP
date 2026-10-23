@@ -120,3 +120,25 @@ describe("writeClaudePackages", () => {
     expect(snapshot()).toEqual(first);
   });
 });
+
+describe("root marketplace manifests", () => {
+  it.each([
+    [".claude-plugin/marketplace.json", ".claude-plugin/plugin.json", (source: unknown) => source as string],
+    [
+      ".agents/plugins/marketplace.json",
+      ".codex-plugin/plugin.json",
+      (source: unknown) => (source as { path: string }).path,
+    ],
+    [".cursor-plugin/marketplace.json", ".cursor-plugin/plugin.json", (source: unknown) => source as string],
+  ])("%s points every plugin at a package carrying %s", (manifestPath, pluginManifest, pathOf) => {
+    const manifest = JSON.parse(readFileSync(join(ROOT, manifestPath), "utf8")) as {
+      plugins: { name: string; source: unknown }[];
+    };
+    expect(manifest.plugins.length).toBeGreaterThan(0);
+    for (const plugin of manifest.plugins) {
+      const path = pathOf(plugin.source);
+      expect(path, plugin.name).toMatch(/^\.\//);
+      expect(existsSync(join(ROOT, path, pluginManifest)), `${plugin.name} → ${path}`).toBe(true);
+    }
+  });
+});

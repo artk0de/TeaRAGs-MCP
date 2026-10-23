@@ -1,0 +1,12 @@
+{
+  "name": "tea-rags",
+  "owner": {
+    "name": "artk0de"
+  },
+  "plugins": [
+    {
+      "name": "tea-rags",
+      "source": "./harness/cursor/tea-rags"
+    }
+  ]
+}

@@ -7,9 +7,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CORE_RULE_MAX_CHARS,
   CURSOR_HARNESS_DIR,
+  CURSOR_MARKETPLACE_PATH,
   renderCursorHarness,
+  renderCursorMarketplace,
   toCursorSkill,
 } from "../../scripts/gen-harness-cursor.js";
+import { PLUGIN_SRC } from "../../scripts/harness/package.js";
 import { parseFrontmatter } from "../../scripts/harness/transform.js";
 
 const ROOT = resolve(__dirname, "../..");
@@ -134,6 +137,17 @@ describe("renderCursorHarness", () => {
     expect(await renderCursorHarness(ROOT)).toEqual(rendered);
   });
 
+  it("commits the root marketplace manifest as rendered, pointing at the package", async () => {
+    const marketplace = await renderCursorMarketplace(ROOT);
+
+    expect(readFileSync(join(ROOT, CURSOR_MARKETPLACE_PATH), "utf8")).toBe(marketplace);
+    expect(JSON.parse(marketplace)).toMatchObject({
+      name: "tea-rags",
+      owner: { name: expect.any(String) },
+      plugins: [{ name: "tea-rags", source: "./harness/cursor/tea-rags" }],
+    });
+  });
+
   it("emits parseable JSON everywhere", () => {
     const jsonFiles = [...rendered].filter(([path]) => path.endsWith(".json"));
 
@@ -190,7 +204,9 @@ describe("renderCursorHarness", () => {
 
   it("gives the terminal fallback wherever a shipped Markdown file names a tea-rags:// URI", () => {
     const missing = [...rendered]
-      .filter(([path, content]) => /\.mdc?$/.test(path) && path.startsWith("tea-rags/") && content.includes("tea-rags://"))
+      .filter(
+        ([path, content]) => /\.mdc?$/.test(path) && path.startsWith("tea-rags/") && content.includes("tea-rags://"),
+      )
       .filter(([, content]) => !content.includes('tea-rags resource "<uri>" --path "$PWD"'))
       .map(([path]) => path);
 
@@ -227,7 +243,7 @@ describe("renderCursorHarness — core rule", () => {
 
   beforeAll(() => {
     fixtureRoot = mkdtempSync(join(tmpdir(), "harness-cursor-"));
-    cpSync(join(ROOT, ".claude-plugin/tea-rags"), join(fixtureRoot, ".claude-plugin/tea-rags"), { recursive: true });
+    cpSync(join(ROOT, PLUGIN_SRC), join(fixtureRoot, PLUGIN_SRC), { recursive: true });
   });
 
   afterAll(() => {
@@ -235,7 +251,7 @@ describe("renderCursorHarness — core rule", () => {
   });
 
   it("emits no core rule and says so in the README while rules/core.md is absent", async () => {
-    rmSync(join(fixtureRoot, ".claude-plugin/tea-rags/rules/core.md"), { force: true });
+    rmSync(join(fixtureRoot, PLUGIN_SRC, "rules/core.md"), { force: true });
     const out = await renderCursorHarness(fixtureRoot);
 
     expect([...out.keys()].some((path) => path.endsWith(".mdc"))).toBe(false);
@@ -244,7 +260,7 @@ describe("renderCursorHarness — core rule", () => {
 
   it("emits rules/core.md as an alwaysApply rule with both resource routes", async () => {
     writeFileSync(
-      join(fixtureRoot, ".claude-plugin/tea-rags/rules/core.md"),
+      join(fixtureRoot, PLUGIN_SRC, "rules/core.md"),
       "# tea-rags core\n\nUse mcp__tea-rags__find_symbol. After a search read tea-rags://guide/navigation.\n",
     );
     const out = await renderCursorHarness(fixtureRoot);
