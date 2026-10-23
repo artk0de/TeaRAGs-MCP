@@ -56,6 +56,18 @@ const CODEX_DIALECT: HarnessDialect = {
   listResourcesTool: "list_mcp_resources",
 };
 
+/**
+ * Codex lists skills by description only — the body never enters context until
+ * the model opens the file, unlike Claude Code's Skill tool. Measured: plans
+ * built from this core instead of the skill (Task 14 eval).
+ */
+const CODEX_SKILL_LOADING = `
+**Skills are not loaded for you.** A task a skill covers (\`$name\` /
+\`$dino-<name>\`) → open its \`SKILL.md\` BEFORE planning, then every
+reference file or \`tea-rags://\` resource it marks MANDATORY for your case;
+plan from that text, not from this core.
+`;
+
 /** A Claude Code SKILL.md in Codex's dialect (see `toHarnessText` for the rewrite list). */
 export function toCodexSkill(md: string, options: SkillOptions): string {
   return toHarnessSkill(md, CODEX_DIALECT, options);
@@ -310,7 +322,9 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
   }
 
   if (hasCore) {
-    const core = toHarnessText(parseFrontmatter(readFileSync(corePath, "utf8")).body, CODEX_DIALECT, skillNames);
+    const core =
+      toHarnessText(parseFrontmatter(readFileSync(corePath, "utf8")).body, CODEX_DIALECT, skillNames) +
+      CODEX_SKILL_LOADING;
     files.set(`${PLUGIN_NAME}/skills/${CORE_SKILL}/SKILL.md`, renderFrontmatter(CORE_SKILL, CORE_DESCRIPTION) + core);
     files.set("AGENTS.tea-rags.md", core);
     shipped.unshift({ name: CORE_SKILL, description: CORE_DESCRIPTION });

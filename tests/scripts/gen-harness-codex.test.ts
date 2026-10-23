@@ -240,6 +240,15 @@ describe("renderCodexHarness", () => {
     expect(script).not.toContain("CLAUDE_");
     expect(rendered.get("tea-rags/scripts/subagent-block.txt")).not.toContain("mcp__tea-rags__");
   });
+
+  it("tells the core to open a skill's SKILL.md and its mandatory references before planning", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+
+    for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
+      expect(rendered.get(path)).toMatch(/open its `SKILL\.md`/);
+      expect(rendered.get(path)).toMatch(/MANDATORY/);
+    }
+  });
 });
 
 describe("toCodexSkill — dinopowers wrappers", () => {

@@ -70,3 +70,8 @@ with `|` — never ripgrep.
 **Destructive tools need explicit user consent:** `force_reindex`,
 `clear_index`, `delete_collection`, `delete_documents`, reindex with `--force` /
 `--force-enrichments`. Subagent: never reindex — report to the parent.
+
+**Skills are not loaded for you.** A task a skill covers (`$name` /
+`$dino-<name>`) → open its `SKILL.md` BEFORE planning, then every reference file
+or `tea-rags://` resource it marks MANDATORY for your case; plan from that text,
+not from this core.
