@@ -11,6 +11,7 @@ import {
   type PresetDescriptors,
 } from "../../core/api/public/index.js";
 import { AGENT_CONTEXT_CORE, AGENT_CONTEXT_GUIDES } from "./generated/agent-context.js";
+import { registerProjectResources } from "./project/register.js";
 
 /**
  * The metaOnly response contract — stated once, here. Every search tool's
@@ -804,5 +805,6 @@ export function registerAllResources(server: McpServer, app: App): void {
   );
 
   registerGuides(server, app);
+  registerProjectResources(server, app);
 }
 /* v8 ignore stop */

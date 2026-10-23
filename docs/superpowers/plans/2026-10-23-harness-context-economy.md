@@ -427,12 +427,14 @@ Run `npm run gen:agent-context` (empty core + no guides at this point is valid).
   capability / resolve / registry sections)
 - Create: `src/mcp/resources/project/register.ts`
 - Modify: `src/mcp/resources/registry.ts` (call `registerProjectResources`)
-- Modify: `src/cli/prime/format.ts` (keeps CLI-only lines; delegates nothing yet
-  — Task 6 rewires)
+- Create: `src/mcp/resources/project/languages.ts` (language split, capability
+  and resolve formatters shared by digest and metrics)
+- Unchanged: `src/cli/prime/format.ts` and its `format-*.test.ts` — `cli` may
+  not import `mcp`, so the formatters are copied, not moved; the cli copy and
+  its tests are deleted/rewired in Task 6 once prime reads the resource
 - Test: `tests/mcp/resources/project-digest.test.ts`,
-  `tests/mcp/resources/project-metrics.test.ts`
-- Move (git mv, preserve examples): the `format-*.test.ts` cases that cover
-  moved formatters → `tests/mcp/resources/project/`
+  `tests/mcp/resources/project-metrics.test.ts`,
+  `tests/mcp/resources/project/fixture.ts`
 
 **Interfaces:**
 
@@ -493,6 +495,10 @@ Run `npm run gen:agent-context` (empty core + no guides at this point is valid).
 - Modify: `src/cli/prime/run-prime.ts`, `src/cli/commands/prime.ts` (`--full`)
 - Modify: `src/cli/prime/format.ts` (only CLI lines remain: path-not-found,
   qdrant-cold, failure, update, auto-update)
+- Delete from `format.ts` the formatters Task 5 copied into
+  `src/mcp/resources/project/`; move the `format-*.test.ts` cases that cover
+  them to `tests/mcp/resources/project/` (examples preserved) or drop the ones
+  the digest no longer renders
 - Test: `tests/cli/commands/prime.test.ts`, `tests/cli/prime/format.test.ts`
 
 **Interfaces:**
