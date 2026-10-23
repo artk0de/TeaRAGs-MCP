@@ -69,6 +69,10 @@ npm run test:coverage -- --run \
 
 ## Step 2: Pick targets (JSON, no grep)
 
+Caller named the file(s) ("cover `onnx-provider.ts`, 0%") → those ARE the
+targets; skip the ranking below. Rank only when no file is named, or the gap is
+still open after Step 5.
+
 One `jq` over summary (NEVER a grep pipeline):
 
 ```bash
