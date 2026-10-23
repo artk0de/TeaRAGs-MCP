@@ -274,3 +274,26 @@ boundary against regression rather than measuring a delta.
   - `tdd-bugfix-repro-first` — no green baseline run of existing formatDuration tests before the repro
   - `prewrite-sim-new-file-new-component` — plans a pre-write structure/dependency simulation for a new file (should skip, rely on Step 7 gate)
   - `prewrite-sim-move-files` — moves files blind, no get_architecture_report move hypothesis beforehand
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 62/62 PASS (100%) over 62 scored cases (5 superseded excluded: eval-6, eval-11, eval-12, eval-13, eval-14; subject run as 2 halves)
+- Task 12 rate: 62/67 (93%)
+- Delta: +7pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Result: 56/62 PASS (90%) over 62 graded cases (5 superseded excluded, N/A 0); parts p1 22/25, p2 24/25, p3 10/12
+- Codex T14 for comparison: 42/67 (63%)
+- Claude T22 for comparison: 62/62 (100%)
+- FAIL list:
+  - ` naming-type-misfit ` — FAIL ( still; Claude T22 PASS ) get_naming_lexicon with types/anchors/drafts planned, but never names the local tax_automation_document nor the finder find_tax_automation_document!; says "model vocabulary / name that describes the lookup" 
+  - ` naming-camelcase-language ` — FAIL ( still; Claude T22 PASS ) picks graphDb instead of dominant TAIL param name `client` 
+  - ` verify-central-modified ` — FAIL ( still; Claude T22 PASS ) get_callers yes, but tests-at-risk for the MODIFY not run (only "baseline pins") 
+  - ` step7-fix-round-reverted ` — FAIL ( still; Claude T22 PASS ) keeps round 1 and stacks a cycles repair on top ("prior SDP fix successful") instead of reverting the whole round 
+  - ` tdd-refactor-baseline ` — FAIL ( still; Claude T22 PASS ) no GREEN baseline (tests-at-risk pins + helper tests) before the move; only architecture simulation, tests re-checked after 
+  - ` tdd-bugfix-repro-first ` — FAIL ( still; Claude T22 PASS ) no green baseline run and no reproduction test failing on formatDuration(0)==="0s" before patching; goes bug-hunt -> minimal fix 

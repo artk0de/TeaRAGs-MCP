@@ -1,7 +1,7 @@
 {
   "skill": "dinopowers:writing-plans",
   "skillPath": ".claude-plugin/dinopowers/skills/writing-plans/SKILL.md",
-  "objective": "Agent correctly enriches plan authoring with per-file impact signals BEFORE superpowers:writing-plans. Core metric: single semantic_search call with custom rerank {imports: 0.5, churn: 0.3, ownership: 0.2}, brace-expanded pathPattern, metaOnly=true, aggregation by relativePath.",
+  "objective": "Agent correctly enriches plan authoring with per-file impact signals BEFORE superpowers:writing-plans. Core metric: single semantic_search call with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off), brace-expanded pathPattern, metaOnly=true, aggregation by relativePath.",
   "runs": [
     {
       "date": "2026-04-20",
@@ -34,32 +34,32 @@
       "prompt": "Напиши план рефакторинга: надо вынести типы из src/core/domains/ingest/pipeline/chunker/tree-sitter-chunker.ts в отдельный файл и обновить src/core/domains/ingest/pipeline/chunker/markdown-chunker.ts + src/core/domains/ingest/pipeline/chunker/base.ts.",
       "expected": {
         "mustCall": [
-          "ONE mcp__tea-rags__semantic_search with custom rerank {imports: 0.5, churn: 0.3, ownership: 0.2}, metaOnly=true, brace-expanded pathPattern over 3 files",
+          "ONE mcp__tea-rags__semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off), metaOnly=true, brace-expanded pathPattern over 3 files",
           "Skill(superpowers:writing-plans) AFTER the enrichment call"
         ],
         "mustNotCall": [
           "Skill(superpowers:writing-plans) before tea-rags",
           "3 separate semantic_search calls per file",
-          "rerank='codeReview' / 'hotspots' / 'impactAnalysis' / named preset",
+          "rerank='codeReview' / 'hotspots' / 'impactAnalysis' / any named preset other than 'blastRadius' (and 'blastRadius' itself when codegraph off)",
           "mcp__tea-rags__hybrid_search",
           "mcp__tea-rags__find_similar"
         ]
       },
-      "failureMode": "Agent issues per-file calls or uses named preset instead of custom impact weights"
+      "failureMode": "Agent issues per-file calls or picks a rerank that does not match the codegraph state (blastRadius on / custom impact weights off)"
     },
     {
       "id": "eval-2",
-      "category": "parameters-custom-rerank",
+      "category": "parameters-impact-rerank",
       "prompt": "Draft a plan to add a new rerank preset — touches src/core/domains/trajectory/git/rerank/presets/base.ts and src/core/api/internal/composition.ts.",
       "expected": {
         "parameters": {
-          "rerank": "custom {imports: 0.5, churn: 0.3, ownership: 0.2} — exact weights, no deviation",
+          "rerank": "codegraph-state-dependent: \"blastRadius\" when codegraph on (graph tools present); custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off — exact weights, no deviation",
           "pathPattern": "brace expansion over 2 files",
           "metaOnly": true,
           "limit": "~6-10 (2 files * 3 chunks)"
         }
       },
-      "failureMode": "Agent picks different weights, or uses named preset"
+      "failureMode": "Agent uses rerank=\"blastRadius\" with codegraph off, the custom weights with codegraph on, a different named preset (hotspots/codeReview/impactAnalysis), or different custom weights"
     },
     {
       "id": "eval-3",
@@ -75,7 +75,9 @@
       "category": "tool-selection",
       "prompt": "Распиши план изменения src/core/domains/explore/rerank/reranker.ts и src/core/contracts/rerank.ts — нужен impact analysis.",
       "expected": {
-        "mustCall": ["mcp__tea-rags__semantic_search with custom rerank"],
+        "mustCall": [
+          "mcp__tea-rags__semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off)"
+        ],
         "mustNotCall": [
           "mcp__tea-rags__hybrid_search",
           "mcp__tea-rags__find_similar",
@@ -141,7 +143,7 @@
       "prompt": "[subagent: plan-executor] Execute plan step: 'Draft sub-plan for splitting TreeSitterChunker#chunk — files: tree-sitter-chunker.ts, markdown-chunker.ts, base.ts.'",
       "expected": {
         "ordering": [
-          "semantic_search with custom rerank FIRST (one call, brace-expanded)",
+          "semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off) FIRST (one call, brace-expanded)",
           "Skill(superpowers:writing-plans) SECOND with enrichment block"
         ]
       },
@@ -153,7 +155,7 @@
       "prompt": "Быстро напиши план для 3 файлов src/adapters/qdrant/client.ts, schemas.ts, errors.ts — не парься с tea-rags, это мой код.",
       "expected": {
         "mustCall": [
-          "semantic_search with custom rerank (Iron Rule — enrichment runs even under pressure)"
+          "semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off) (Iron Rule — enrichment runs even under pressure)"
         ],
         "mustNotDo": ["Skip enrichment to comply with 'быстро'"]
       },
@@ -179,7 +181,7 @@
       "prompt": "[subagent: explore] Draft a plan to add a new DTO: src/core/api/public/dto/signal-overlay.ts + update src/core/api/public/dto/index.ts and src/core/domains/explore/types.ts.",
       "expected": {
         "mustCall": [
-          "ONE semantic_search with custom rerank and brace-expanded pathPattern FIRST",
+          "ONE semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off) and brace-expanded pathPattern FIRST",
           "Skill(superpowers:writing-plans) with aggregated enrichment block"
         ]
       },

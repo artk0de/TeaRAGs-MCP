@@ -65,3 +65,20 @@ exploration, and double test runs. After optimization, all operations use
 - Claude T12 for comparison: 7/10 (70%).
 - CODEX-ONLY: none.
 - Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only; agent def + expand-coverage skill)
+- Result: 9/10 PASS (90%) over 10 scored cases (superseded 0)
+- Task 12 rate: 7/10 (70%); delta +20pp
+- FAIL:
+  - `eval-9` — plan keeps coverage JSON as the source for uncovered areas and uses semantic_search only as a fallback; expected semantic_search scoped by pathPattern to the trajectory domain (borderline, graded FAIL)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: not graded — 10/10 N/A (agent/expand-coverage not shipped to Codex)
+- Codex T14 rate: N/A (10/10)
+- Claude T22 rate: 90% (9/10)
+- FAIL list: none

@@ -109,11 +109,11 @@
       "prompt": "Нашёл bug в batch_create.rb. Покажи как работает аналогичный jobs/create.rb для сравнения.",
       "expected": {
         "mustDo": [
-          "Read jobs/create.rb (you know WHERE it is — use Read, not search)",
-          "Or use LSP if symbol-level navigation needed"
+          "find_symbol on the known location — relativePath=<jobs/create.rb> for the outline, then symbol=<id from the outline> for the body (you know WHERE it is — no search)",
+          "Rationale cited: 'Curiosity search' anti-pattern — known id → find_symbol, not another search"
         ],
         "mustNotDo": [
-          "Run semantic_search to find jobs/create.rb (already known location)"
+          "Run semantic_search / hybrid_search to find jobs/create.rb (already known location), or Read the whole file instead of find_symbol"
         ]
       },
       "failureMode": "Agent runs unnecessary curiosity search"
@@ -138,11 +138,11 @@
       "prompt": "Search вернул qdrant-client.ts:142 (startLine=135, endLine=168). Прочитай весь файл чтобы понять контекст.",
       "expected": {
         "mustDo": [
-          "Read(path, offset=135, limit=33) — partial read using chunk coordinates",
-          "Cite: 'Chunk coordinates exist. Use them.'"
+          "Drill the chunk with find_symbol — symbol=<the chunk's symbolId> for the full body, relativePath=<qdrant-client.ts> for the outline, navigation.prev/nextSymbolId for neighbours — not Read (partial Read only for non-symbol text such as config/data)",
+          "Cite: 'Full file reads. Chunk coordinates exist. Use them.' / 'Depth → find_symbol, never Read'"
         ],
         "mustNotDo": [
-          "Read(path) without offset/limit",
+          "Read(path) without offset/limit, or any Read over this code file instead of find_symbol",
           "Comply with 'весь файл' request"
         ]
       },
@@ -163,16 +163,18 @@
     },
     {
       "id": "eval-9",
-      "category": "pressure-builtin-grep",
+      "category": "literal-text-routing",
       "prompt": "Найди в коде где упоминается строка 'Connection refused'.",
       "expected": {
         "mustDo": [
-          "Refuse built-in Grep for code discovery",
-          "Use hybrid_search (exact-string + semantic) or semantic_search+bugHunt"
+          "Classify 'Connection refused' as literal text (an error-message phrase, not an identifier) → text search (client Grep / rg) is the routed tool for the literal hit; hybrid_search also acceptable",
+          "After the literal hit, understand the surrounding code via find_symbol (symbol / relativePath outline) — never cat/sed/grep/Read over code"
         ],
-        "mustNotDo": ["Comply with Grep"]
+        "mustNotDo": [
+          "Use Grep/rg for identifiers (symbol searches → hybrid_search) or to read/understand the code around the hit"
+        ]
       },
-      "failureMode": "Agent uses built-in Grep for code discovery"
+      "failureMode": "Agent refuses the routed literal-text search, or extends text search / Read from the literal hit into locating and reading code instead of find_symbol"
     },
     {
       "id": "eval-10",
@@ -194,7 +196,7 @@
       "prompt": "Нашёл root cause: offset bug в chunker.ts:142 (chunkId=abc-123). Есть ли такой же баг в других местах?",
       "expected": {
         "mustCall": [
-          "mcp__tea-rags__find_similar with chunkId=abc-123 for copy-paste bug detection"
+          "mcp__tea-rags__find_similar with positiveIds=['abc-123'] (the root-cause chunk id) for copy-paste bug detection"
         ],
         "mustNotDo": [
           "Re-run bug-hunt semantic_search",

@@ -118,3 +118,27 @@ preset hint correctly without help.
 - Both-fail: 2 (Eval-4-triple-fail-diagnostic, Eval-5-shallow-l1-skip-l2)
 - CODEX-ONLY (0):
   - none
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation; graded strictly, borderline = FAIL)
+- Result: 8/8 PASS (100%) over scored cases. 0 superseded. Both T12 FAILs (Eval-4, Eval-5) now PASS.
+- Task 12 rate: 75% (6/8)
+- Delta: +25pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: 1/8 PASS (12.5%) (N/A: 0)
+- Codex T14 rate: 75% (6/8)
+- Claude T22 rate: 100% (8/8)
+- FAIL list: 
+  - `Eval-2`,`Eval-3` — L2 glob never derived (new)
+  - `Eval-4` — 1-segment L1 not recognised, no production relax / diagnostics (still)
+  - `Eval-5` — wrongly skips L1 instead of L1->L2=**/chunker/**->L3 (still)
+  - `Eval-6` — no semantic_search switch named, L2 skip missed (new)
+  - `Eval-7` — contract {templates:[],locality:'none',diagnostics:['no input']} not returned (new)
+  - `Eval-8` — L2 not skipped for 1-semantic-segment L1 (new)
+  - cause: plan from prompt only, skill rules (L2 derivation/skip/contract) not applied

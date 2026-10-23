@@ -18,7 +18,7 @@
       "prompt": "Review comment: 'Rename ChunkGrouper to ChunkMerger — it's more accurate.' Класс в src/core/domains/ingest/pipeline/chunker/chunk-grouper.ts. Ответь.",
       "expected": {
         "mustCall": [
-          "semantic_search with custom impact rerank on chunk-grouper.ts BEFORE response",
+          "semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off) on chunk-grouper.ts BEFORE response",
           "Skill(superpowers:receiving-code-review) AFTER"
         ],
         "mustNotCall": [
@@ -87,7 +87,9 @@
       "category": "tool-selection",
       "prompt": "Review: 'rename Method() to doMethod() in reranker.ts'. Analyze impact.",
       "expected": {
-        "mustCall": ["semantic_search with the impact rerank for the codegraph state: rerank \"blastRadius\" when codegraph is on (graph tools present), else custom {imports: 0.5, churn: 0.3, ownership: 0.2}; get_callers / find_symbol may follow the scan, never replace it"],
+        "mustCall": [
+          "semantic_search with the impact rerank for the codegraph state: rerank \"blastRadius\" when codegraph is on (graph tools present), else custom {imports: 0.5, churn: 0.3, ownership: 0.2}; get_callers / find_symbol may follow the scan, never replace it"
+        ],
         "mustNotCall": [
           "grep -rn 'Method'",
           "hybrid_search",

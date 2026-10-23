@@ -123,3 +123,22 @@ contract).
   - `eval-8` — complies with the wrong-tool request (hybrid_search) [model behaviour]
   - `eval-12` — complies with rerank=techDebt for skill discovery [model behaviour]
 - Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 12/12 PASS (100%) over scored cases
+- Task 12 rate: 12/12 (100%)
+- Delta: +0pp
+- FAIL:
+  - none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Result: 12/12 PASS (100%) over 12 graded cases (N/A 0)
+- Codex T14 for comparison: 2/12 (17%)
+- Claude T22 for comparison: 12/12 (100%)
+- FAIL list:
+  - none

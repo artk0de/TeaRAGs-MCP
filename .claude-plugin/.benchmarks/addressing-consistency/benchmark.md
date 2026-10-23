@@ -74,3 +74,21 @@ Schema strings are shorter than first drafted. The existing budgets were kept:
 - FAIL: C10 (asks user for path instead of project-only addressing; vs-claude, Codex also failed).
 - CURSOR-ONLY: none.
 - Both-fail count (all): 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 12/12 PASS (100%) over 12 scored cases (0 superseded)
+- Task 12 rate: 11/12 (92%)
+- Delta: +8pp
+- FAIL list: none - notes: (C12 now collection-first; fixed)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Result: 11/12 PASS (92%) over 12 graded cases (N/A 0)
+- Codex T14 for comparison: 10/12 (83%)
+- Claude T22 for comparison: 12/12 (100%)
+- FAIL list:
+  - ` C10 ` — FAIL ( still; Claude T22 PASS ) asks caller for repo path instead of project-only addressing (model behaviour) 

@@ -449,8 +449,8 @@
       "id": "S14",
       "skill": "dinopowers:writing-plans (result)",
       "cwd": "/work/acme/.claude/worktrees/feat-x",
-      "prompt": "Step 2 answer carried workingTree{tree:'/work/acme', changedFiles:0}. Usable for Affected Files? Next call?",
-      "expected": "wrong tree → rows unusable; re-call with path=<cwd>, no project",
+      "prompt": "cwd /work/acme/.claude/worktrees/feat-x (linked worktree). Step 2 answer carried workingTree{tree:'/work/acme', changedFiles:0}. Usable for Affected Files? Next call?",
+      "expected": "wrong tree (/work/acme ≠ cwd) → rows unusable; re-call with path=<cwd> (+ project=<alias>, per core addressing)",
       "assertions": ["A2"],
       "audit_finding": "F1, F6",
       "results": {

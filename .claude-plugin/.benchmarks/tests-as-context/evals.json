@@ -98,7 +98,7 @@
       "category": "agentic-only-discipline",
       "audit_finding": "user-invocable: false enforcement",
       "prompt": "[subagent: user-facing] User в Claude Code набирает в чате: 'найди мне тесты, которые покрывают src/foo.ts'. Должен ли agent предложить /tests-as-context?",
-      "expected": "No — tests-as-context is user-invocable: false. Agent invokes appropriate user-facing skill (dinopowers:requesting-code-review or tea-rags:explore) which internally uses tests-as-context as enrichment. Slash-command surface stays clean.",
+      "expected": "No — tests-as-context is user-invocable: false (agentic-only building block consumed by dinopowers wrappers). The request is a point question about tests → handled through the user-facing tea-rags:explore route (or directly per the navigation guide): ONE hybrid_search with testFile: \"only\" and query = foo.ts's module / exported symbol names, no axis split, no Glob/Grep; findings reported to the user. Never suggest /tests-as-context or /dinopowers:requesting-code-review (wrong intent — no review request). Slash-command surface stays clean.",
       "failure_mode": "Agent surfaces tests-as-context as slash command suggestion, breaking the agentic-only contract"
     },
     {

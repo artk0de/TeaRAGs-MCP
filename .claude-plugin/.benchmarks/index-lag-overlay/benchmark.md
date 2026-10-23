@@ -111,3 +111,25 @@ These came from the incident case study and need code changes, not rule text.
 - Codex T14 for comparison: 15/15 (100%).
 - CURSOR-ONLY: none.
 - Both-fail count (all): 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet
+- Result: 14/15 PASS (93%) over scored cases (superseded: 0)
+- Task 12 rate: 73%
+- Delta: +20pp
+- FAIL list: E1 (plans a direct Read of the ticket-named files instead of find_symbol/hybrid_search (failure mode: leaving tea-rags for disk reads under index lag))
+- Notes: T12 fails E1/E7/E13/E15 fixed except E1 (new failure mode).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 11/15 PASS (73%) over graded cases (N/A excluded: 0).
+- Codex T14: 15/15 (100%). Claude T22: 14/15 (93%).
+- Notes: Cause: plans honour the eval "no index tools" constraint rather than naming the incremental refresh; possible harness artifact.
+- FAIL list:
+  - `E1` — FAIL; new: No incremental index_codebase on own checkout (asks consent only for --force); find_symbol/hybrid ok. Claude T22 FAIL (different mode)
+  - `E6` — FAIL; new: Own checkout MARKER-COLD: find_symbol only, no incremental index_codebase.
+  - `E7` — FAIL; new: No incremental index_codebase before test-convention search (declares no indexing); no explicit tests-as-context chunk search named.
+  - `E14` — FAIL; new: Own checkout: no incremental index_codebase ("do not reindex in hypothetical read-only flow"); find_symbol + hybrid re-check correct.

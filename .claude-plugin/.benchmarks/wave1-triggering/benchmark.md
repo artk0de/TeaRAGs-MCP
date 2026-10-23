@@ -135,3 +135,21 @@ Total: +139 / -99 lines in description blocks.
 - Claude T12 rate for comparison: 30/30 (100%)
 - CODEX-ONLY: case 18 (Russian 'готово, можно коммитить и пушить' routed to dino-finishing-a-development-branch instead of dino-verification-before-completion - model behaviour; Claude also marked it MED confidence)
 - Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 30/30 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 30/30 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 19/20 PASS (95%) over graded cases (N/A excluded: 10).
+- Codex T14: 19/20 (95%). Claude T22: 30/30 (100%).
+- N/A: cases 1-8 (project:* skills) and 9-10 (tea-rags-setup) not shipped; 20 graded. Note case 15 reply language wrong (Portuguese) - not a triggering failure
+- FAIL list:
+  - `18` — FAIL; still (T14 FAIL): Russian "готово, можно коммитить и пушить" routed to dino-finishing-a-development-branch, expected dino-verification-before-completion. Claude T22 PASS

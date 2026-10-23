@@ -92,3 +92,21 @@ needed.
 - CURSOR-ONLY: none
 - Both-fail (all) count: 0
 - FAIL list: eval-14 (vs-codex) - Notes chunk IDs and asks on 2+ unrelated clusters (disambiguation) but no no-match detection step; Claude also FAIL, Codex PASS.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 14/14 PASS (100%) over 14 scored cases (0 superseded)
+- Task 12 rate: 13/14 (93%)
+- Delta: +7pp
+- FAIL list: none - notes: (eval-14 now reads pagination guide and names disambiguation + no-match detection; thresholds not quoted - weak pass)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Result: 13/14 PASS (93%) over 14 graded cases (N/A 0)
+- Codex T14 for comparison: 4/14 (29%)
+- Claude T22 for comparison: 14/14 (100%)
+- FAIL list:
+  - ` eval-6 ` — FAIL ( still; Claude T22 PASS ) states same-dir >80% keep-richer but omits the different-dirs ALWAYS-keep-both rule 

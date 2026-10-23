@@ -99,3 +99,22 @@ Plugin bumps (patch, text-only): tea-rags 0.26.0 → 0.26.1, dinopowers 0.17.5 �
 - Claude T12 rate for comparison: 13/13 (100%)
 - CODEX-ONLY: none
 - Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation; graded strictly, borderline = FAIL)
+- Result: 5/13 PASS (38%) over scored cases. Subject sonnet; 0 superseded.
+- Task 12 rate: 100% (13/13)
+- Delta: -62pp
+- FAIL list: 
+  - 1,2,3,4,5,6,11,12 (all codegraph-OFF cases) — subject decided codegraph ON from its own registered tool list and ignored the scenario prime-digest signal (the eval keys on the missing `codegraph.symbols` line; context-main.md l.46 and navigation.md "When codegraph is off" key on graph tools absent from the tool list). Plans therefore call find_cycles/get_callers/trace_path/entryPoint and may report "no cycles". Diagnostic variant B (scenario framed as tools-unregistered): 12/13 PASS; only 12 FAIL (entry-point fallback omits the explicit relevance + chunkSize heuristic, uses rerank onboarding).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: 12/13 PASS (92%) over graded cases (N/A: 0)
+- Codex T14 rate: 100% (13/13)
+- Claude T22 rate: 38% (5/13)
+- FAIL list: 
+  - `12` — subagent OFF entry-point used rerank=onboarding, not relevance+chunkSize (entry-point-pattern.md l.34) — new

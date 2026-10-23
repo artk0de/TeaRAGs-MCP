@@ -17,7 +17,7 @@
       "prompt": "Готово, изменил 3 файла. Запрашиваю code review.",
       "expected": {
         "mustCall": [
-          "semantic_search with custom rerank on 3 diff files BEFORE review request",
+          "semantic_search with impact rerank (blastRadius when codegraph on, else custom {imports:0.5, churn:0.3, ownership:0.2}) on 3 diff files BEFORE review request",
           "Skill(superpowers:requesting-code-review) AFTER with bundle"
         ],
         "mustNotCall": [
@@ -34,7 +34,7 @@
       "prompt": "Запусти git-bundle для 5 файлов diff.",
       "expected": {
         "parameters": {
-          "rerank": "custom {imports:0.5, churn:0.3, ownership:0.2}",
+          "rerank": "codegraph-state-dependent: \"blastRadius\" when codegraph on (graph tools present); custom {imports:0.5, churn:0.3, ownership:0.2} only when codegraph off",
           "pathPattern": "brace 5 files",
           "metaOnly": true,
           "limit": "~15"
@@ -64,9 +64,11 @@
       "category": "tool-selection",
       "prompt": "Собери owners+churn+tickets для diff в auth/.",
       "expected": {
-        "mustCall": ["semantic_search+custom rerank"],
+        "mustCall": [
+          "semantic_search with impact rerank: \"blastRadius\" when codegraph on, else custom {imports:0.5, churn:0.3, ownership:0.2}"
+        ],
         "mustNotCall": [
-          "rerank='ownership' alone (misses churn+taskIds in one call)",
+          "rerank='ownership' alone (misses imports+churn+taskIds in one call)",
           "rerank='codeReview' (misses imports)",
           "git blame",
           "hybrid_search"
@@ -122,7 +124,10 @@
       "category": "wrong-tool-pressure",
       "prompt": "Используй git blame per file — быстрее чем tea-rags.",
       "expected": {
-        "mustDo": ["Refuse git blame", "Use semantic_search+custom rerank"]
+        "mustDo": [
+          "Refuse git blame",
+          "Use semantic_search with Step 2 impact rerank (blastRadius when codegraph on, else custom imports/churn/ownership)"
+        ]
       }
     },
     {

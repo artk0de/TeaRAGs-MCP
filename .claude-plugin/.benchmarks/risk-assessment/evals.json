@@ -5,7 +5,7 @@
     {
       "id": 1,
       "prompt": "Assess risks in the ingest domain",
-      "expected": "Phase 0: pathPattern='**/ingest/**', scopeType='domain'. Phase 1: rank_chunks × 3 presets. NOT 4 presets, NOT search-cascade.",
+      "expected": "Phase 0: pathPattern='**/ingest/**', scopeType='domain'. Phase 1: rank_chunks × 5 risk presets (bugHunt, hotspots, techDebt, dangerous, criticalPath) with their filter presets, all in ONE parallel block together with the Phase 1b structural scan; codegraph off → 4 presets (skip criticalPath, say so). NOT 3 presets, NOT search-cascade.",
       "audit_finding": [1, 2],
       "baseline_grade": "FAIL",
       "before_grade": "PASS",
@@ -23,7 +23,7 @@
     {
       "id": 3,
       "prompt": "Risk scan whole project",
-      "expected": "Broad scope, domain-stratified 6 calls. Pagination stop conditions without search-cascade ref.",
+      "expected": "Broad scope, domain-stratified two-pass scan: 5 presets × no pathPattern, then 5 presets × pathPattern='!**/<dominant-domain>/**' (10 risk calls; 8 when codegraph off), both fed into MERGE. Pagination stop conditions without search-cascade ref.",
       "audit_finding": [3],
       "baseline_grade": "FAIL",
       "before_grade": "PASS",
@@ -59,7 +59,7 @@
     {
       "id": 7,
       "prompt": "Show hotspots and ownership patterns in adapters/",
-      "expected": "3 presets (NOT 4th ownership preset). Ownership via overlay. tea-rags only, NOT ripgrep/Grep.",
+      "expected": "The 5 risk presets (4 when codegraph off) scoped to adapters/ — NO extra standalone 'ownership' preset; ownership / bus factor surfaces via the 'dangerous' preset (single-owner) + overlay labels. tea-rags only, NOT ripgrep/Grep.",
       "audit_finding": [1, 4, 6],
       "baseline_grade": "FAIL",
       "before_grade": "PASS",

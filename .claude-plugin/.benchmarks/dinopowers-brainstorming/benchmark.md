@@ -133,3 +133,23 @@ No iteration needed.
 - CODEX-ONLY (harness regression candidates):
   - `eval-14` — no Project vocabulary (concept.terms) in enrichment block and no names[] hand-off; get_naming_lexicon called without concept=<intent> and with a language-capability hedge [model behaviour]
 - Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 14/14 PASS (100%) over scored cases
+- Task 12 rate: 14/14 (100%)
+- Delta: +0pp
+- FAIL:
+  - none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Result: 12/14 PASS (86%) over 14 graded cases (N/A 0)
+- Codex T14 for comparison: 13/14 (93%)
+- Claude T22 for comparison: 14/14 (100%)
+- FAIL list:
+  - ` eval-10 ` — FAIL (stale?) ( new; Claude T22 PASS ) enrichment metaOnly=true ok, but content follow-up routed to find_symbol instead of a SEPARATE semantic_search metaOnly=false; expectation conflicts with core "find_symbol after search" rule 
+  - ` eval-14 ` — FAIL ( still; Claude T22 PASS ) get_naming_lexicon(concept) planned but not stated as same parallel block A-D, no concept.terms -> "Project vocabulary" in the block, no names[] hand-off for new symbols 

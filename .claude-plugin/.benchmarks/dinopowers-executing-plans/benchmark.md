@@ -242,3 +242,23 @@ user-gated (live incremental index on a clone).
 - Claude T12 rate for comparison: 16/16 (100%)
 - CODEX-ONLY: eval-12 (treats user's 'skip UNSAFE' as the override, proceeds without surfacing block/recommendations or waiting - model behaviour)
 - Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet
+- Result: 16/16 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 100%
+- Delta: +0pp
+- FAIL list: none
+- Notes: Intent-graded as in T12 (SKILL.md prescribes rerank 'blastRadius', evals say custom weights); eval-16 get_naming_lexicon called with kind 'variable' (eval says 'local') - noted, not failed.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 14/16 PASS (88%) over graded cases (N/A excluded: 0).
+- Codex T14: 15/16 (94%). Claude T22: 16/16 (100%).
+- Notes: Note: rerank graded on intent (blastRadius when codegraph on, else custom imports/churn/ownership) as in Claude T22.
+- FAIL list:
+  - `eval-7` — FAIL; new: Declines to compute CAUTION from imports top12%/bugFixRate 32%; defers to "full guard result"; no "Proceed with Task 2?" gate stated as verdict. Claude T22 PASS
+  - `eval-8` — FAIL; new: Declines to compute SAFE from imports=2/bugFix 0%; hedges on 5 commits/shared ownership instead of proceeding. Claude T22 PASS

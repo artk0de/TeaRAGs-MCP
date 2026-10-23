@@ -5,7 +5,7 @@
     {
       "id": 1,
       "prompt": "I need to add retry logic to the payment service. What should I know before coding?",
-      "expected_output": "PRE-GEN flow. semantic_search metaOnly=true → delegate risk-assessment → output.",
+      "expected_output": "PRE-GEN flow. PG-1 DISCOVER semantic_search metaOnly=true → PG-2 find_symbol rerank=techDebt per key symbol (own overlay signals; pre-gen-pattern.md no longer delegates to risk-assessment) → output.",
       "audit_findings": [2, 3],
       "assertions": [
         {
@@ -17,7 +17,7 @@
           "type": "tool_selection"
         },
         {
-          "text": "Delegates to risk-assessment (not own risk flagging)",
+          "text": "Risk signals from PG-2 find_symbol rerank=techDebt overlay labels (not a risk-assessment delegation, not free-text risk guessing)",
           "type": "delegation"
         }
       ]
@@ -200,7 +200,7 @@
     {
       "id": 15,
       "prompt": "[Context: Post-brainstorming approval] Go ahead, implement the new trajectory provider",
-      "expected_output": "Explore PRE-GEN triggers before implementation → TDD → data-driven-generation.",
+      "expected_output": "data-driven-generation is the entry for writing the code; its 'Area context required' prerequisite runs explore PRE-GEN (PG-2 signal lookup: files, pathPattern, per-symbol overlay labels) FIRST — invoked by DDG itself when not already in the conversation — then DDG classify/strategy/template, then Step 6a RED via tea-rags:test-first (failing tests recorded) BEFORE any production edit, then 6b GREEN. TDD is DDG's Step 6, not a separate phase between explore and DDG.",
       "audit_findings": ["subagent"],
       "assertions": [
         {
@@ -208,7 +208,7 @@
           "type": "chain"
         },
         {
-          "text": "Explore PRE-GEN → TDD → implementation sequence",
+          "text": "Explore PRE-GEN context → DDG strategy/template → Step 6a RED (test-first) → 6b GREEN production edit; no production edit before a recorded RED block",
           "type": "workflow"
         }
       ]

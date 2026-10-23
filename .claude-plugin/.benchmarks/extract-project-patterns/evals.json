@@ -10,7 +10,7 @@
       "id": "Eval-1-l1-healthy",
       "audit_finding": "control",
       "prompt": "[caller: DDG Step 2] Inputs: positiveIds=[\"abc-123\"], pathPatternL1=\"**/domains/trajectory/git/rerank/derived-signals/**\", limit=10. L1 returns 8 chunks of which 3 carry ideal overlay labels.",
-      "expected": "ONE find_similar call: rerank=\"proven\", pathPattern=L1, positiveIds, limit=10. Quality gate passes (3>=2). Return { templates: [top], locality: \"L1\", diagnostics: [] }. NO L2/L3 calls.",
+      "expected": "ONE find_similar call: rerank=\"proven\" + level=\"chunk\" + filter {presets: \"battleTested\"}, pathPattern=L1, positiveIds, limit=10. Quality gate passes (3>=2). Return { templates: [top], locality: \"L1\", diagnostics: [] }. NO L2/L3 calls.",
       "with_rule_result": "PASS",
       "baseline_result": "PASS",
       "notes": "Both agents correctly stopped at L1."
@@ -19,7 +19,7 @@
       "id": "Eval-2-l1-starved-l2-hit",
       "audit_finding": "spec Component B — cascade L1->L2",
       "prompt": "[caller: writing-plans Step 3.5] positiveIds=[\"chunk-x\"], pathPatternL1=\"**/domains/explore/strategies/new-feature/**\". L1: 4 chunks 0 ideal; L2: 12 chunks 4 ideal.",
-      "expected": "find_similar #1 pathPattern=L1, gate fail. Derive L2 = first 2 path segments of L1 = \"**/domains/explore/**\". find_similar #2 pathPattern=L2, gate passes (4>=2). Return locality=\"L2\". No L3 call.",
+      "expected": "find_similar #1 pathPattern=L1, gate fail. Derive L2 = infra prefix [domains] + first semantic segment of [explore, strategies, new-feature] = \"**/domains/explore/**\". find_similar #2 pathPattern=L2, gate passes (4>=2). Return locality=\"L2\". No L3 call.",
       "with_rule_result": "PASS",
       "baseline_result": "FAIL",
       "notes": "Baseline used single-segment-strip (L2=\"**/domains/explore/strategies/**\") instead of the spec's first-2-segments rule. With-rule got L2=\"**/domains/explore/**\" correctly."
@@ -28,7 +28,7 @@
       "id": "Eval-3-l1l2-fail-l3",
       "audit_finding": "spec Component B — full cascade",
       "prompt": "[caller: DDG Step 2] positiveCode=[...], pathPatternL1=\"**/domains/ingest/pipeline/chunker/hooks/typescript/**\". L1: 2/0 ideal; L2: 6/1; L3 (no pathPattern): 50/12.",
-      "expected": "Three find_similar calls (L1=full path, L2=\"**/domains/ingest/**\" first-2-segments, L3 no pathPattern). Gate fails at L1+L2, passes at L3. Return locality=\"L3\".",
+      "expected": "Three find_similar calls (L1=full path, L2=\"**/domains/ingest/**\" = infra prefix [domains] + first semantic segment, L3 no pathPattern). Gate fails at L1+L2, passes at L3. Return locality=\"L3\".",
       "with_rule_result": "PASS",
       "baseline_result": "FAIL",
       "notes": "Baseline used single-segment-strip again (L2=\"**/domains/ingest/pipeline/chunker/hooks/**\"). With-rule got L2 correctly."
@@ -55,7 +55,7 @@
       "id": "Eval-6-behavior-query-only",
       "audit_finding": "spec input types — behaviorQuery path",
       "prompt": "[caller: writing-plans Step 3.5] behaviorQuery=\"retry logic with exponential backoff\", pathPatternL1=\"**/domains/explore/**\", limit=5. No positiveIds, no positiveCode.",
-      "expected": "Switch to semantic_search (or hybrid_search) since find_similar requires positiveIds/positiveCode. Same rerank=\"proven\". Cascade L1 → L2 (skipped, 2 segments) → L3 with same tool.",
+      "expected": "Switch to semantic_search (or hybrid_search) since find_similar requires positiveIds/positiveCode. Same rerank=\"proven\". Cascade L1 → L2 (skipped: semantic tail [explore] is 1 segment after the infra prefix [domains]) → L3 with same tool.",
       "with_rule_result": "PASS",
       "baseline_result": "PASS",
       "notes": "Both correctly selected semantic_search and kept rerank=\"proven\" through the cascade."
@@ -73,7 +73,7 @@
       "id": "Eval-8-reject-critical-bugFixRate",
       "audit_finding": "spec reject filter",
       "prompt": "[caller: DDG Step 2] positiveIds=[\"z\"], pathPatternL1=\"**/domains/trajectory/**\" (2 segments), limit=10. L1: 6 chunks — 2 with bugFixRate=\"critical\", 4 with ageDays=\"recent\"+commitCount=\"low\".",
-      "expected": "Reject filter excludes all 6 chunks (2 critical + 4 recent+low). 0 candidates. Gate fails. L1 has 2 segments → L2 skipped. Cascade to L3. Never return a rejected chunk in templates[0] or candidates.",
+      "expected": "Reject filter excludes all 6 chunks (2 critical + 4 recent+low). 0 candidates. Gate fails. L1 semantic tail [trajectory] is 1 segment after the infra prefix [domains] → L2 skipped. Cascade to L3. Never return a rejected chunk in templates[0] or candidates.",
       "with_rule_result": "PASS",
       "baseline_result": "FAIL",
       "notes": "Baseline (a) failed to skip L2 on 2-segment L1, and (b) kept the 4 recent+low chunks in a `candidates` field marked \"unproven\" — but the spec rejects them outright, no candidates list in contract. Two contract drifts in one case."

@@ -40,10 +40,10 @@
     },
     {
       "id": 5,
-      "name": "step-ordering-8-9-10",
+      "name": "step-ordering-9-10-11",
       "prompt": "[tea-rags-setup install wizard] List the final three steps of the wizard in order and what each does.",
-      "expected": "Step 8 = configure MCP server; Step 9 = register project alias (before first index); Step 10 = verify (claude mcp get tea-rags). Register comes between configure and verify.",
-      "not_expected": "Verify before register. Omitting the registration step. Register after verify/restart.",
+      "expected": "Step 9 = register project alias (before first index; records alias → path, does not index); Step 10 = verify (claude mcp get tea-rags, then restart + /tea-rags:index); Step 11 = index freshness (opt-in auto-update of the default branch + worktree mode, using the step-9 alias). Register comes after Step 8 configure and before verify.",
+      "not_expected": "Verify before register. Omitting the registration step or Step 11 freshness. Register after verify/restart. Listing Step 8 configure as one of the final three steps.",
       "audit_finding": "A4",
       "category": "finding"
     },

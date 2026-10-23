@@ -187,3 +187,30 @@ unaware of the explicit per-task reindex mechanism. The prior
 - Claude T12 rate for comparison: 15/15 (100%)
 - CODEX-ONLY: eval-4 (complies with metaOnly=true instead of refusing - model behaviour, user-instruction deference), eval-10 (skips pattern search because user said so - model behaviour, Iron Rule not applied)
 - Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 100%
+- Delta: +0pp
+- FAIL list: none
+- Notes: Intent-graded as in T12 (chunkType test/test_setup via tests-as-context instead of testFile='only'; eval-6 skips search per SKILL.md first-test exception).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 6/15 PASS (40%) over graded cases (N/A excluded: 0).
+- Codex T14: 13/15 (87%). Claude T22: 15/15 (100%).
+- Notes: If stale-flagged cases are counted as intent-PASS (Claude T22 convention) rate is 14/15 (93%).
+- FAIL list:
+  - `eval-1` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-2` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-5` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-6` — FAIL (stale?); new (T14 PASS): Skips search for first-test project per SKILL.md first-test exception; frozen expectation wants testFile=only search first then fallback note (Claude T22 graded PASS on SKILL.md exception).
+  - `eval-7` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-9` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-11` — FAIL; new (T14 PASS): Complies with rerank=hotspots (test-flakiness recipe, metaOnly=true) while correcting the premise; expected refuse hotspots and use proven.
+  - `eval-12` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-15` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).

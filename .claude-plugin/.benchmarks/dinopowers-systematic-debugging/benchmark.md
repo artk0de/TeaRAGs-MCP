@@ -153,3 +153,21 @@ No iteration needed.
 - CODEX-ONLY (harness regression candidates):
   - `eval-11` — re-runs bug-hunt on app.ts and hedges 'healthy is not conclusive' instead of surfacing the healthy verdict / calibrated-prior override notice [model behaviour]
 - Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 17/17 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 16/17 (94%)
+- Delta: +6pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 15/17 PASS (88%) over graded cases (N/A excluded: 0).
+- Codex T14: 16/17 (94%). Claude T22: 17/17 (100%).
+- FAIL list:
+  - `eval-6` — FAIL; new: Plans to run bug-hunt probes again on a 0-suspect case, hedges instead of stating "no bug-prone zones ... likely recently-added untracked code or external dependency" and invoking systematic-debugging without suspect block. Claude T22 PASS
+  - `eval-16` — FAIL; new: Cause sentence names StatsCache#load, not stats-cache.ts:<line> (file:line only in Fix). Claude T22 PASS

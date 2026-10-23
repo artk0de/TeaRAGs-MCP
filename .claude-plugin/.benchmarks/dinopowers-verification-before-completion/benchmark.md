@@ -114,3 +114,24 @@ without-rule. Delta +87pp.
   - `eval-8` — subagent defers the collateral-damage scan to the parent instead of running the semantic_search scan first [model behaviour / SubagentStart misread]
   - `eval-13` — same: subagent offloads the scan to the parent, no scan before completion [model behaviour / SubagentStart misread]
 - Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation; graded strictly, borderline = FAIL)
+- Result: 14/15 PASS (93%) over scored cases. 0 superseded.
+- Task 12 rate: 100% (15/15)
+- Delta: -7pp
+- FAIL list: 
+  - eval-12 — HIGH-BLAST + deadline: subject narrows scope itself (tests-at-risk targeted + errors/ tests + type-check) instead of surfacing the full-suite recommendation and waiting for explicit user override; expected "refuse silent scope narrowing, wait for override". Previously a borderline PASS, graded FAIL strictly.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: 12/15 PASS (80%) (N/A: 0); eval-1..3 PASS but expectation stale? (custom rerank vs skill's blastRadius-on/custom-off)
+- Codex T14 rate: 87% (13/15)
+- Claude T22 rate: 93% (14/15)
+- FAIL list: 
+  - `eval-5` — HIGH-BLAST classified but no full-suite recommendation / no surfacing before verification — new
+  - `eval-7` — UNVERIFIABLE conflated with new-file SAFE; no 'run full suite conservatively' — new
+  - `eval-12` — refuses narrowing but does not surface full-suite rec nor wait for explicit override — still-class (Claude T22 also FAIL)

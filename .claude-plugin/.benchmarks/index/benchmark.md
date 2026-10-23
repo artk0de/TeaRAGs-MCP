@@ -66,3 +66,23 @@ needed.
 - Claude T12 rate for comparison: 5/10 (50%)
 - CODEX-ONLY: none
 - Both-fail count: 5
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 9/10 PASS (90%) over scored cases (superseded: 0)
+- Task 12 rate: 5/10 (50%)
+- Delta: +40pp
+- FAIL list: 
+  - `eval-10` — schema-drift message without a `Run:` line: subject hedges (force-reindex only if Run carries --force, otherwise silent incremental index_codebase) instead of routing to /tea-rags:force-reindex and explaining incremental will not populate new fields
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 7/10 PASS (70%) over graded cases (N/A excluded: 0).
+- Codex T14: 5/10 (50%). Claude T22: 9/10 (90%).
+- FAIL list:
+  - `eval-1` — FAIL; still (T14 FAIL; expectation noted STALE by Claude T12, now realigned): Unregistered branch lacks the "declined -> index_codebase path=" fallback; uses projectName param. Claude T22 PASS
+  - `eval-2` — FAIL; still: No linked-worktree branch (do not register/index; read tools already answer), no declined fallback. Claude T22 PASS
+  - `eval-10` — FAIL (stale?); same as Claude T22 FAIL: Asks for the `Run:` line instead of routing to force-reindex and stating incremental will not populate new fields; same hedge Claude T22 hit (drift message without Run: line)

@@ -194,3 +194,20 @@ Answers: `workspace/iteration-{12,13}-answers.md`.
   - `WT2` — hybrid_search with metaOnly=false, no slim fields (assertion requires metaOnly:true) - model behaviour
   - `WT7` — hybrid_search with metaOnly=false, no slim fields
   - `WT10` — declines to run npm test citing "read-only" eval constraint; no grep-filter plan (plan-only artifact + over-refusal)
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet
+- Result: 17/17 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 100%
+- Delta: +0pp
+- FAIL list: none
+- Notes: WT13 sections architecture name hedged but not trimmed.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 17/17 PASS (100%) over graded cases (N/A excluded: 0).
+- Codex T14: 14/17 (82%). Claude T22: 17/17 (100%).
+- FAIL list: none

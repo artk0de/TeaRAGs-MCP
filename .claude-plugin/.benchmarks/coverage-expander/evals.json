@@ -73,7 +73,7 @@
       "id": "eval-9",
       "type": "subagent",
       "prompt": "Execute step: write tests to close coverage gap for trajectory domain files. Use tea-rags semantic_search to find uncovered areas.",
-      "expected": "semantic_search scoped with pathPattern to the trajectory domain to locate uncovered areas, hybrid_search (testFile=only) for existing test patterns; coverage runs bounded to one baseline run (gap + offenders from the same output) and one global verify run after writing tests, plus a targeted vitest run of changed test files. NOT: a full coverage run per file or per edit",
+      "expected": "ONE baseline coverage run (json-summary + json reporters); targets = top 2–4 trajectory files by uncovered statements via one jq over coverage-summary.json; uncovered branches located from coverage-final.json hit maps (statementMap/branchMap/fnMap with hit 0) — NOT semantic_search, which cannot see coverage, despite the prompt's suggestion; enclosing fn/class understood via find_symbol (never Read src/); existing test patterns via hybrid_search pathPattern 'tests/**/*.test.ts'; optional find_similar / get_callers for neighbour scenarios and real inputs; tests mirrored src/→tests/; ONE verify coverage run (cap 3 with one retry). NOT: a full coverage run per file or per edit, grep/sed over coverage stdout, semantic_search as uncovered-area discovery",
       "findings": [2, 3, 5],
       "before": "FAIL",
       "after": "PASS"

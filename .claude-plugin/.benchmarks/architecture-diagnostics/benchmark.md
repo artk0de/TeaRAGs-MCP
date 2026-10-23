@@ -26,3 +26,21 @@
 - CURSOR-ONLY: none
 - Both-fail (all) count: 0
 - FAIL list: none
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 2/2 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 2/2 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 0/2 PASS (0%) over graded cases (N/A excluded: 0).
+- Codex T14: 2/2 (100%). Claude T22: 2/2 (100%).
+- FAIL list:
+  - `1` — FAIL; new: Does not class it cheap-preExisting; reads phase-1-report.md in addition to stableDependencies.md (not "only"); remedy restated with placeholders not quoted. Claude T22 PASS
+  - `2` — FAIL; new: Declines to infer hubLike-without-preExisting as introduced/must-fix (hedges, "inspect full finding"); mainSequence not stated as report-only; loads phase-1-report too. Claude T22 PASS

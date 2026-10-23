@@ -62,3 +62,21 @@ fails at: data-backed pushback (3), scope enumeration (5), tool selection (1, 6,
   - `eval-9` — analysis via find_symbol/get_callers, not semantic_search impact scan
   - `eval-10` — refuses grep but substitutes hybrid_search instead of semantic_search with custom/blastRadius rerank
   - `eval-12` — no semantic_search impact scan first and no superpowers:receiving-code-review second
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 14/14 PASS (100%) over 14 scored cases (0 superseded); intent-graded on rerank 'blastRadius'
+- Task 12 rate: 14/14 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Result: 13/14 PASS (93%) over 14 graded cases (N/A 0)
+- Codex T14 for comparison: 4/14 (29%)
+- Claude T22 for comparison: 14/14 (100%)
+- FAIL list:
+  - ` eval-5 ` — FAIL ( still; Claude T22 PASS ) AGREE-WITH-SCOPE reached but no importer list / commitment to update all or justify partial; "no additional search needed" 

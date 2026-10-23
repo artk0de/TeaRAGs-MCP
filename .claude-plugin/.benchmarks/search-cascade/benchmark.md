@@ -798,3 +798,21 @@ merges every part — the epic's target.
 - CODEX-ONLY (harness regression candidates):
   - `12` — hand-lists names[] to get_naming_lexicon after plain review_changes (no sections:[naming]/changes form) [model behaviour]
 - Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only)
+- Result: 11/12 PASS (92%) over 12 scored cases (superseded 0; evals/ sub-suite files not scored)
+- Task 12 rate: 12/12 (100%); delta -8pp
+- FAIL:
+  - `11` — get_naming_lexicon called without names/types, plus hybrid_search cross-check on TaxAutomationDocument (listed in not-routes); T12 passed this on tool choice only
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: 11/12 PASS (92%) (N/A: 0)
+- Codex T14 rate: 92% (11/12)
+- Claude T22 rate: 92% (11/12)
+- FAIL list: 
+  - `12` — review_changes then hand-listed names[] to get_naming_lexicon — still

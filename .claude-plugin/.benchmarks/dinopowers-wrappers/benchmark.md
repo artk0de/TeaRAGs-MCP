@@ -168,3 +168,19 @@ just the description list.
 - Claude T12 for comparison: 15/15 (100%).
 - CODEX-ONLY: none.
 - Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only)
+- Result: 15/15 PASS (100%) over 15 scored cases (superseded 0)
+- Task 12 rate: 15/15 (100%); delta 0pp
+- FAIL: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: 15/15 PASS (100%) (N/A: 0)
+- Codex T14 rate: 100% (15/15)
+- Claude T22 rate: 100% (15/15)
+- FAIL list: none

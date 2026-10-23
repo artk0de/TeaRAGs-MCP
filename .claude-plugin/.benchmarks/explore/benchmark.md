@@ -205,3 +205,22 @@ docs-as-subject route lives only in cascade, not in the SKILL intent table.
 - Codex T14 for comparison: 19/27 (70%) suite-wide; over p1 ids 17/25 (68%) (FAIL 5,7,11,17,19,20,21,25).
 - CURSOR-ONLY: none.
 - Both-fail count (all): 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet
+- Result: 25/27 PASS (93%) over scored cases (superseded: 0)
+- Task 12 rate: 100%
+- Delta: -7pp
+- FAIL list: 17 (entryPoint ORIENT lacked testFile:exclude + documentation:exclude and no architecturalHub step; architecture-pattern.md not read); 20 (entryPoint answer without chunkSize / minFanOut+level:chunk small-utility mitigation; entry-point-pattern.md not read)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 24/27 PASS (89%) over graded cases (N/A excluded: 0).
+- Codex T14: 19/27 (70%). Claude T22: 25/27 (93%).
+- FAIL list:
+  - `17` — FAIL; still (T14 FAIL): Defers to architecture-pattern.md; no explicit entryPoint ORIENT with testFile/documentation exclude before hubs. Claude T22 FAIL
+  - `20` — FAIL; still (T14 FAIL): Routes to entry-point-pattern but no chunkSize/minFanOut+level:chunk small-utility mitigation stated. Claude T22 FAIL
+  - `25` — FAIL; still (T14 FAIL): Reads digest resource to find alias; does not derive codegraph availability from own tool list; ORIENT-before-backbone not stated. Claude T22 PASS

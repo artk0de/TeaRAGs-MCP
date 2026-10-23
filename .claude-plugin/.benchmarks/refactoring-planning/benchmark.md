@@ -78,3 +78,24 @@ regression.
 - CODEX-ONLY (harness regression candidates):
   - `large-repo-report-candidates-off` — sends all 22 caller candidates in one call (skill caps at 15) and omits bd tea-rags-mcp-vytjl rationale; includeReportCandidates:false was right [model behaviour]
 - Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 8/8 PASS (100%) over scored cases
+- Task 12 rate: 8/8 (100%)
+- Delta: +0pp
+- FAIL:
+  - none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Result: 5/8 PASS (62%) over 8 graded cases (N/A 0)
+- Codex T14 for comparison: 7/8 (88%)
+- Claude T22 for comparison: 8/8 (100%)
+- FAIL list:
+  - ` recipe-sdp-inversion ` — FAIL ( new (T14 PASS); Claude T22 PASS ) never spells the ops (removeEdge / addFile abstract:true / 2x addEdge), foundation component src/core/contracts placement, or rationale = finding key; only "form candidate from recipe" (naming lexicon, plannedEdges, restructurePlan ok) 
+  - ` large-repo-report-candidates-off ` — FAIL ( still (different reason: cap 15 + includeReportCandidates:false + not-ordered now OK); Claude T22 PASS ) rationale given as "quadratic judging cost" without citing bd tea-rags-mcp-vytjl / hour-long call 
+  - ` task-carries-expected-delta-and-gate ` — FAIL ( new; Claude T22 PASS ) Task carries expected delta, but no quoted `GATE review_changes: introduced=<n>, partial=<bool>` line and execution contract (diverged -> Step 7 -> restructurePlan) not spelled out 

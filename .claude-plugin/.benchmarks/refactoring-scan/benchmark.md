@@ -71,3 +71,19 @@ needed.
 - Claude T12 rate for comparison: 13/15 (87%)
 - CODEX-ONLY: eval-12 (routes 'find bugs in reranker.ts' to explore + refactoring-scan instead of bug-hunt - model behaviour: missing-symptom reading)
 - Both-fail count: 1
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 13/15 (87%)
+- Delta: +13pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 15/15 PASS (100%) over graded cases (N/A excluded: 0).
+- Codex T14: 13/15 (87%). Claude T22: 15/15 (100%).
+- FAIL list: none

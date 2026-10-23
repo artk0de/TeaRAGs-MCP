@@ -80,3 +80,20 @@ Delta:        0pp (skill no longer harms — matches baseline)
 - Claude T12 rate for comparison: 2/10 (20%)
 - CODEX-ONLY: none
 - Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation; graded strictly, borderline = FAIL)
+- Result: 10/10 PASS (100%) over scored cases. 0 superseded. Subject found the skill at .claude-plugin/tea-rags-setup/skills/install (not tea-rags/).
+- Task 12 rate: 20% (2/10)
+- Delta: +80pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: not graded — 10/10 N/A (tea-rags-setup:install not shipped to Codex)
+- Codex T14 rate: N/A (10/10)
+- Claude T22 rate: 100% (10/10)
+- FAIL list: none

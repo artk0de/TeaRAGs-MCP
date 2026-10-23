@@ -215,3 +215,23 @@ separate work.
   - `12` — no structured context output for the plan executor (Phase 5) planned [model behaviour]
   - `13` — no Phase 4 structural-violation escalation/tagging of the overlapping candidate; 'keep separate' instead; no repair/stableDependencies read [model behaviour]
 - Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation; graded strictly, borderline = FAIL)
+- Result: 14/14 PASS (100%) over scored cases. 0 superseded. Graded on intent (evals.json expectations partially stale, e.g. 3 presets).
+- Task 12 rate: 100% (14/14)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: 11/14 PASS (79%) (N/A: 0); cases 1,3 graded on intent (3-preset expectation stale vs 5+2 scans)
+- Codex T14 rate: 64% (9/14)
+- Claude T22 rate: 100% (14/14)
+- FAIL list: 
+  - `4` — 'risky areas before refactor' routed to $dino-brainstorming + 3 searches, risk-assessment not run with pathPattern — new
+  - `7` — adds 4th explicit rank_chunks rerank=ownership — still
+  - `13` — structural-violation overlap annotated, not escalated/tagged/sorted, no repair/stableDependencies.md read — new

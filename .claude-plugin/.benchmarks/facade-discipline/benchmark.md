@@ -226,3 +226,22 @@ Rule is deployed. Next work in this thread:
 - Claude T12 rate for comparison: 11/12 (92%)
 - CODEX-ONLY: none (N/A)
 - Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only); scored all 19 cases (eval-1..12 + iteration cases 13..19); Task 12 scored 12
+- Result: 16/19 PASS (84%) over 19 scored cases (superseded 0)
+- Task 12 rate: 11/12 (92%); delta -8pp (case set widened; eval-5 now PASS)
+- FAIL:
+  - `eval-6` — validator placed at bottom of explore-facade.ts per current rule; eval expects api/errors.ts (STALE eval, contradicts eval-14; graded PASS in T12)
+  - `eval-12` — review flags inline filter and Map grouping but omits registry.buildMergedFilter and the driftWarning:null / checkDrift item
+  - `eval-16` — eval expects the <=350-line clause for 5-7 methods; rule no longer has it (200-line smoke alarm), subject answers conditionally (STALE eval)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: not graded — 12/12 N/A (repo-local rule not shipped to Codex; no AGENTS.md). Strict reading would be 0/12: rule not delivered, no placement answers
+- Codex T14 rate: N/A (12/12)
+- Claude T22 rate: 84% (16/19)
+- FAIL list: none

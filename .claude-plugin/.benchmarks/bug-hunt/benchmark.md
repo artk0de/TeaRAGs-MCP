@@ -107,3 +107,34 @@ needed.
 - Both-fail (all) count: 0
 - FAIL list: eval-8 (vs-claude) - Plans `git log -S`/`--grep` as asked; mustNotDo git log (use overlay + bugHunt) hit. Codex also FAIL.
 - Notes: eval-9 graded PASS on intent (ripgrep MCP for a literal string per decision-tree, built-in Grep refused); eval-5/7/11 graded on intent (find_symbol / find_similar positiveIds), same convention as Claude T12.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet
+- Result: 21/21 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 100%
+- Delta: +0pp
+- FAIL list: none
+- Notes: eval-5/7/9/11 graded on intent per T12 convention (find_symbol drill instead of Read; ripgrep MCP for literal string).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 7/21 PASS (33%) over graded cases (N/A excluded: 0).
+- Codex T14: 10/21 (48%). Claude T22: 21/21 (100%).
+- FAIL list:
+  - `eval-1` — FAIL; new: No semantic_search bugHunt probes (historical+fresh modifiedAfter in one message), no `git status --porcelain -uall`; just "call bug-hunt with symptom". Claude T22 PASS
+  - `eval-2` — FAIL; still: Routes to dino-receiving-code-review and plans further search instead of PRIME SUSPECT classification + PRESENT. Claude T22 PASS
+  - `eval-3` — FAIL; still: Reads the healthy/old/non-probe file on user request instead of SKIP with "neither suspect class" explanation. Claude T22 PASS
+  - `eval-4` — FAIL; still: Allows separate per-zone queries when a single pattern is "ambiguous"; does not refuse per-zone searches. Claude T22 PASS
+  - `eval-6` — FAIL; new: Does not refuse confirmatory search / PRESENT. STOP.; plans one more bug-hunt query and drilling. Claude T22 PASS
+  - `eval-7` — FAIL; new: Complies with reading the whole file; no Read(offset=135,limit=33), no "Chunk coordinates exist. Use them." Claude T22 PASS
+  - `eval-9` — FAIL (stale?); new: Says use plain "text search" for literal string and explicitly NOT hybrid/semantic; frozen expectation wants hybrid_search/semantic_search, current decision-tree routes literal phrases to ripgrep. Does not mention refusing Grep
+  - `eval-12` — FAIL; new: Plans to delegate to a subagent (with injection block) instead of refusing and running in main session. Claude T22 PASS
+  - `eval-13` — FAIL; still: No PRESENT-with-confidence-note; continues verifying instead of stopping. Claude T22 PASS
+  - `eval-17` — FAIL; still: Does trace_path rerank=bugHunt but no find_symbol to resolve ids first and no two-class triage of every step (fresh step at healthy). Claude T22 PASS
+  - `eval-18` — FAIL; still: get_callers named but no find_symbol(rerank=bugHunt) on a caller to read labels; trace_path as follow-up optional. Claude T22 PASS
+  - `eval-19` — FAIL; new: No fresh probe with brace pathPattern + modifiedAfter + rerank bugHunt (uses pathHint); does state no call graph. Claude T22 PASS
+  - `eval-20` — FAIL; still: No `git status --porcelain -uall`, no incremental index_codebase before search (explicitly refuses to index "in evaluation"), no one-message historical+fresh+uncommitted probes. Claude T22 PASS
+  - `eval-21` — FAIL; still: No `git status -uall` / per-file brace uncommitted probe; incremental index deferred. Claude T22 PASS

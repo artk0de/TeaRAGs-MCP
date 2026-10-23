@@ -120,3 +120,25 @@ skill boundary collisions and reduced total line count by 36%.
 - Claude T12 rate for comparison: 15/15 (100%)
 - CODEX-ONLY: case 9 (routes 'research error-handling patterns before adding an error type' to EXEMPLAR/proven pattern search instead of PRE-GEN flow with find_symbol deep trace - model routing behaviour)
 - Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet
+- Result: 13/15 PASS (87%) over scored cases (superseded: 0)
+- Task 12 rate: 100%
+- Delta: -13pp
+- FAIL list: 2 (ownership question answered via semantic_search rerank=ownership, not rank_chunks; explain-pattern.md ownership recipe not read); 15 (post-brainstorming 'implement' routed to data-driven-generation only; explore PRE-GEN before implementation is conditional ('if DDG finds none'), not planned (borderline -> FAIL))
+- Notes: Cases 1 (no risk-assessment delegation) graded on intent: pre-gen-pattern.md no longer delegates.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 10/15 PASS (67%) over graded cases (N/A excluded: 0).
+- Codex T14: 14/15 (93%). Claude T22: 13/15 (87%).
+- FAIL list:
+  - `1` — FAIL (stale?); new: PRE-GEN route correct but no risk-assessment delegation and no metaOnly=true DISCOVER; Claude T22 noted pre-gen-pattern.md no longer delegates, graded PASS on intent
+  - `2` — FAIL; new: Routes to TRACE and uses semantic_search rerank=ownership, not rank_chunks ownership (EXPLAIN recipe not read). Claude T22 FAIL
+  - `4` — FAIL; new: "before I modify" classed as EXPLAIN, not PRE-GEN. Claude T22 PASS
+  - `8` — FAIL; new: PRE-GEN route correct, Russian handled, but DISCOVER search not metaOnly=true. Claude T22 PASS
+  - `9` — FAIL; still (T14 FAIL): EXEMPLAR route instead of PRE-GEN with find_symbol on 1-2 base error classes. Claude T22 PASS

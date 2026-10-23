@@ -158,3 +158,21 @@ No iteration needed.
 - Both-fail (all) count: 0
 - FAIL list: eval-9 (vs-claude) - Skips Step 2-3 enrichment on user "не парься с tea-rags" ("user override beats Iron Rule"); expected enrichment under pressure. Codex also FAIL.
 - Notes: Intent-graded: rerank "blastRadius" accepted instead of stale custom {imports,churn,ownership} (same as Claude T12); [no-superpowers] on chaining into writing-plans.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 15/15 PASS (100%) over 15 scored cases (0 superseded); intent-graded (evals still cite custom rerank, SKILL.md prescribes blastRadius)
+- Task 12 rate: 15/15 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Result: 14/15 PASS (93%) over 15 graded cases (N/A 0); intent-graded on rerank (expected/ still cites custom weights, stale?)
+- Codex T14 for comparison: 2/15 (13%)
+- Claude T22 for comparison: 15/15 (100%)
+- FAIL list:
+  - ` eval-7 ` — FAIL ( still; Claude T22 PASS ) aggregation: one row per file + shared taskIds, but never names dominantAuthor/commitCount/ageDays/bugFixRate/taskIds fields 

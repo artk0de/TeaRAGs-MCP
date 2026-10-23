@@ -124,3 +124,19 @@ FAIL). The prior `worktree-auto-reindex-evals.json` is SUPERSEDED.
 - Claude T12 rate for comparison: 13/13 (100%)
 - CODEX-ONLY: eval-11 (scopes risk-assessment to last commit as asked instead of refusing and scanning the full branch - model behaviour, wrong-scope pressure)
 - Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only)
+- Result: 13/13 PASS (100%) over 13 scored cases (superseded 0; sub-suite files in evals/ not scored)
+- Task 12 rate: 13/13 (100%); delta 0pp
+- FAIL: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: 13/13 PASS (100%) (N/A: 0)
+- Codex T14 rate: 92% (12/13)
+- Claude T22 rate: 100% (13/13)
+- FAIL list: none
