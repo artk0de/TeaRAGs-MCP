@@ -29,8 +29,9 @@ codegraph on, `{imports 0.5, churn 0.3, ownership 0.2}` fallback off) + params
 (brace-expanded `pathPattern` over Task-local files, `metaOnly: true`) + verdict
 ladder (SAFE / CAUTION / UNSAFE) + gating (CAUTION = confirm, UNSAFE = pause).
 
-Purely additive Task (new files only) → skip guard, say so ("guard SAFE — new
-file"). Never invent pathPattern to justify guard.
+**Purely additive Task (only new files — paths not in the tree yet) → NO signal
+call on them; verdict `SAFE (new files only)`, said in the answer, then
+Step 5.** Never invent pathPattern to justify guard.
 
 **Plan = any written Task source**: plan file, OR tracker issue handed to an
 autonomous task-agent ("Execute beads issue X: write Y in path Z"). Issue = one
@@ -47,7 +48,8 @@ hand.
 1. **Step 2.0** — addressing, EVERY Task: every tea-rags read passes
    `project=<alias>` + `path=<your working directory>`. No clone, no reindex for
    tree's own edits.
-2. Step 2 — SAFE/CAUTION/UNSAFE verdict per Task before any edit
+2. Step 2 — SAFE/CAUTION/UNSAFE verdict per Task before any edit; new files only
+   → `SAFE (new files only)` with no scan
 3. Step 4 — verdict gate: STOP and ask user on UNSAFE
 4. **MUST** Step 5 — Code-Gen Cascade for generation AND behavior-modification
    Tasks (`$data-driven-generation`)
@@ -64,9 +66,10 @@ MANDATORY step for Tasks that GENERATE code or CHANGE behavior (MODIFY).
 **Requires superpowers:** `$executing-plans` unavailable → stop, ask the user to
 install superpowers (https://github.com/obra/superpowers; steps in
 [CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
-it as the full workflow. Available = `$executing-plans` / `$executing-plans` is
-in your skills list; superpowers is a separate plugin, never under the
-dinopowers dir — a missing file next to the wrapper is not "unavailable".
+it as the full workflow. Available = `$executing-plans` /
+`superpowers:executing-plans` is in your skills list; superpowers is a separate
+plugin, never under the dinopowers dir — a missing file next to the wrapper is
+not "unavailable".
 
 **Freshness:** [FRESHNESS.md](../../FRESHNESS.md) (owner
 `tea-rags://guide/freshness`). Lag ≠ unusable — never Bash `cat`/`grep`/`Read`

@@ -16,7 +16,8 @@ into superpowers itself; nothing skipped.
 | User asks to... | Invoke |
 |---|---|
 | Write / change production code outside a written plan (it owns RED + GREEN) | Skill(tea-rags:data-driven-generation) |
-| Brainstorm / design / refactor a feature in a code area | Skill(dinopowers:brainstorming) |
+| Brainstorm / design a feature or refactor in a code area | Skill(dinopowers:brainstorming) |
+| Risky areas / what to know before refactoring X (research, no design) | Skill(tea-rags:risk-assessment) / Skill(tea-rags:explore) |
 | Write an implementation plan | Skill(dinopowers:writing-plans) |
 | Execute a written plan that edits files | Skill(dinopowers:executing-plans) |
 | Debug a bug, error, stack trace, test failure | Skill(dinopowers:systematic-debugging) |

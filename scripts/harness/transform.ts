@@ -16,6 +16,8 @@ export interface HarnessDialect {
   readResourceTool: string;
   /** Model-side tool listing MCP resources: Codex `list_mcp_resources`, Cursor `ListMcpResources`. */
   listResourcesTool: string;
+  /** Skills list names plugin skills `superpowers:Y` (Codex) — the availability clause keeps that form. */
+  listsQualifiedSkills?: boolean;
 }
 
 export interface Frontmatter {
@@ -152,6 +154,7 @@ export const WRAPPER_PREFIX = "dino-";
 
 /** Mention of the shipped wrapper (`dinopowers:<s>` → `dino-<s>`) or of the superpowers skill itself. */
 function wrapperMentions(md: string, dialect: HarnessDialect): string {
+  const listed = dialect.listsQualifiedSkills ? /(?![A-Za-z0-9-]*`?\s+is\s+in\s+your\s+skills\s+list)/.source : "";
   const target = (plugin: string, name: string): string =>
     dialect.skillMention(plugin === "dinopowers" ? `${WRAPPER_PREFIX}${name}` : name);
   return md
@@ -159,8 +162,9 @@ function wrapperMentions(md: string, dialect: HarnessDialect): string {
       /\bSkill\(\s*(?:skill:\s*)?"?(dinopowers|superpowers):([A-Za-z0-9-]+)"?[^)]*\)/g,
       (_, plugin: string, name: string) => target(plugin, name),
     )
-    .replace(/(?<![\w/])\/?(dinopowers|superpowers):([A-Za-z0-9-]+)/g, (_, plugin: string, name: string) =>
-      target(plugin, name),
+    .replace(
+      new RegExp(String.raw`(?<![\w/])\/?(dinopowers|superpowers):${listed}([A-Za-z0-9-]+)`, "g"),
+      (_, plugin: string, name: string) => target(plugin, name),
     );
 }
 

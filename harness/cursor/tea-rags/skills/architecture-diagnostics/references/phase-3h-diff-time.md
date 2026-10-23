@@ -18,8 +18,9 @@ do not restate it):
 
 - no `preExisting` → introduced: recommend the repair in this change.
 - `preExisting` + `remedy` → cheap: quote the `remedy` in the recommendation.
-- `preExisting`, no `remedy` → collapsed into `change.persisting` (not in
-  findings): one count line, no fix.
+- `preExisting`, no `remedy` → report-only line, no fix (`mainSequence`:
+  `distanceBefore` already past threshold); `review_changes` counts these in
+  `change.persisting`, not in findings.
 - `change.nonLocal` → introduced away from the diff: recommend repair like
   introduced.
 
@@ -27,7 +28,10 @@ Recommendation loads `../../../repair/<family>.md` ONLY for families present
 among the findings (`## Apply remedy` when `remedy` exists, else `## No remedy`;
 `## Known false positives` before accepting). Never preload the directory.
 
-Evidence rule: a finding stays unfixed ONLY with a detector flag, a cited
-project rule (file + quoted line), or a known-noise class from the family's
-repair file with its named evidence. Bare "by design" is not evidence. A family
-with `built: false` = "not judged", never a clean pass.
+Evidence rule: for each must-fix finding, check its detector flags (table above;
+`compositionRoot` exempts hub-like) and the family's `## Known false positives`
+entries. It stays unfixed ONLY with such a flag quoted from the finding, a
+matching named entry with its evidence, or a cited project rule (file + quoted
+line). Bare "by design" is never evidence. End every must-fix line with the
+exact exemption sentence from `SKILL.md`. A family with `built: false` = "not
+judged", never a clean pass.

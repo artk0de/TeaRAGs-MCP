@@ -7,7 +7,8 @@ into superpowers itself; nothing skipped.
 | User asks to... | Invoke |
 |---|---|
 | Write / change production code outside a written plan (it owns RED + GREEN) | $data-driven-generation |
-| Brainstorm / design / refactor a feature in a code area | $dino-brainstorming |
+| Brainstorm / design a feature or refactor in a code area | $dino-brainstorming |
+| Risky areas / what to know before refactoring X (research, no design) | $risk-assessment / $explore |
 | Write an implementation plan | $dino-writing-plans |
 | Execute a written plan that edits files | $dino-executing-plans |
 | Debug a bug, error, stack trace, test failure | $dino-systematic-debugging |

@@ -36,9 +36,11 @@ on the target file (registered when codegraph is on). Silent partners —
 change belongs in them too. Context, not a requirement — never expand the diff
 on co-change alone.
 
-Names come from the Step 5 vocabulary, built by the dominant shape. A word
-outside it is `NEW_TERM` and gets one line in the output:
-`NEW_TERM <term> — <why no project term denotes this>`.
+Names come from the Step 5 vocabulary, built by the dominant shape. A new
+concept with no same-meaning project term keeps its name and MUST get this
+literal line in the answer (prose elsewhere never replaces it):
+`NEW_TERM <term> — <why no project term denotes this>`, e.g.
+`NEW_TERM Debouncer — no project term denotes coalescing bursts into one call`.
 
 **Pre-write simulation** (codegraph on) — ONLY task moves / merges / splits
 existing files: bad move undone = every importer re-touched, judge first. Else —

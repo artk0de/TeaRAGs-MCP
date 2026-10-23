@@ -29,9 +29,10 @@ No code area identifiable (pure conceptual) → skip enrichment, invoke
 **Requires superpowers:** `$brainstorming` unavailable → stop, ask the user to
 install superpowers (https://github.com/obra/superpowers; steps in
 [CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
-it as the full workflow. Available = `$brainstorming` / `$brainstorming` is in
-your skills list; superpowers is a separate plugin, never under the dinopowers
-dir — a missing file next to the wrapper is not "unavailable".
+it as the full workflow. Available = `$brainstorming` /
+`superpowers:brainstorming` is in your skills list; superpowers is a separate
+plugin, never under the dinopowers dir — a missing file next to the wrapper is
+not "unavailable".
 
 **Freshness:** [FRESHNESS.md](../../FRESHNESS.md) (owner
 `tea-rags://guide/freshness`). Lag ≠ unusable — never Bash `cat`/`grep`/`Read`

@@ -36,7 +36,9 @@ fails) → STOP and ask the user to install superpowers:
 - Codex / Cursor: the install steps in the superpowers repository README
 
 NEVER run the wrapper's tea-rags enrichment alone and present it as the full
-workflow.
+workflow. A wrapper whose SKILL.md requires its enrichment regardless
+(verification-before-completion's scan) runs it first; the missing skill then
+blocks only the inner step and any completion claim.
 
 Available = `$Y` / `/Y` is in your skills list. superpowers is a separate
 plugin, never under the dinopowers dir — a missing file next to the wrapper is

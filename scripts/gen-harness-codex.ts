@@ -50,6 +50,7 @@ const PLUGIN_ROOT_VAR = `\${PLUGIN_ROOT}`;
 
 const CODEX_DIALECT: HarnessDialect = {
   skillMention: (name) => `$${name}`,
+  listsQualifiedSkills: true,
   pluginRootVar: PLUGIN_ROOT_VAR,
   projectDirVar: "$PWD",
   readResourceTool: "read_mcp_resource",

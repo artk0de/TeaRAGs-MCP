@@ -7,10 +7,10 @@ description:
   of reinventing what the project already solved. Triggers on "implement
   function X", "add method to class Y", "write a helper for Z", "modify function
   X", "change behavior of Y", "напиши функцию", "добавь метод", "поправь метод",
-  "измени поведение". NOT for discovery or exploration — use tea-rags:explore
-  for that. NOT for pure rename/extract; a file MOVE still runs Step 6
-  restructure SIM + Step 7 gate. Activates ONCE the agent is about to write or
-  change code.
+  "измени поведение", "overlay labels → strategy?". NOT for discovery or
+  exploration — use tea-rags:explore for that. NOT for pure rename/extract; a
+  file MOVE still runs Step 6 restructure SIM + Step 7 gate. Activates ONCE the
+  agent is about to write or change code.
 ---
 
 # Data-Driven Generation
@@ -97,8 +97,8 @@ Ambiguous → ask which mode (one question).
 - **Bug fix** = MODIFY; cause unknown → `bug-hunt` locates it first; fix still
   runs 6a in order: baseline GREEN → reproduction test (asserts correct output,
   e.g. `formatDuration(0) === "0s"`) RED on that assertion → only then patch.
-- **Pure refactor / move** (no behaviour change) — Steps 1–5 skipped; still IN
-  scope: 6a baseline (`tests-at-risk` pins + target's own tests) GREEN BEFORE
+- **Pure refactor / move** (no behaviour change) — THIS skill, Steps 1–5
+  skipped: 6a baseline (`tests-at-risk` pins + target's own tests) GREEN BEFORE
   first move, no new test; file move → Step 6 restructure SIM; same tests re-run
   green, none edited; Step 7 gate.
 - **Greenfield** = CREATE over empty area — TEMPLATE/STYLE degrade to empty
@@ -129,18 +129,14 @@ before generation).
 | file.ageDays "legacy" + chunk.commitCount "low"            | CONSERVATIVE          |
 | No match                                                   | Autonomous Judgment ↓ |
 
-**Autonomous Judgment Protocol** — no hard rule matches:
-
-1. **Decide** — NAME one strategy (DEFENSIVE / STABILIZATION / CONSERVATIVE /
-   STANDARD) in the reply, each given label mapped to its axis (Risk / Stability
-   / Confidence; ageDays → Stability too). "Closest strategy" without the name =
-   Step 1 not done.
-2. **Justify** — labels, axes, specific actions.
-3. **Ask if uncertain** — dilemma with options.
-
-Axes: **Risk** grows bugFixRate healthy→concerning→critical, churnVolatility
-stable→erratic; **Stability** grows ageDays recent→legacy; **Confidence** falls
-with commitCount "low" (few data points).
+**Autonomous Judgment Protocol** — no hard rule matches. Answer = each label →
+its axis → NAMED strategy (DEFENSIVE / STABILIZATION / CONSERVATIVE / STANDARD)
+→ why + actions; ask if uncertain. No name = Step 1 not done. Axes: **Risk**
+grows bugFixRate healthy→concerning→critical, churnVolatility stable→erratic;
+**Stability** grows ageDays recent→legacy; **Confidence** falls with commitCount
+"low". E.g. `bugFixRate concerning, ageDays recent, commitCount typical` → Risk
+rising, Stability low, Confidence medium, no hard rule → STANDARD leaning
+STABILIZATION; DEFENSIVE needs `critical` + old.
 
 **Load strategy (MANDATORY, name the file):** custom `strategy-<mode>` skill →
 use it; else READ `strategies/<mode>.md` (DEFENSIVE → `strategies/defensive.md`)
@@ -223,10 +219,11 @@ type/service: `concept` = DESCRIPTION of what it does (never draft name) +
 `suggestion`, type MISFIT included (missing `role` suffix →
 `RubyConstReceiverPass` → `RubyConstReceiverStrategy`); keep draft only when
 `role.evidence: "directory"` and type outside `role.examples`' family.
-`NEW_TERM` with project word in `topTerms` / `alternatives` (same meaning) →
-adopt it, say why. Codegraph off → concept-only `semantic_search` per the
-reference; split holders' symbolIds and paths into words, recurring word =
-project term; values named as template's code names the same types.
+`NEW_TERM` + same-meaning word in `topTerms` / `alternatives` → name the adopted
+term now, say why (`organizer` in topTerms → `IntakeOrganizer`). Codegraph off →
+concept-only `semantic_search` per the reference; split holders' symbolIds and
+paths into words, recurring word = project term; values named as template's code
+names the same types.
 
 Step 5 output = CONCRETE final names, one line per draft:
 `<draft> → <name> (<shape>, <kind>)`, from dominant row of

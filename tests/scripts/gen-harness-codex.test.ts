@@ -314,6 +314,15 @@ describe("toCodexSkill — dinopowers wrappers", () => {
       "Run `$brainstorming`, chain to $dino-writing-plans, see $explore. Keep `superpowers:*`; `$Y` → `$dino-Y`.",
     );
   });
+
+  it("keeps the plugin-qualified name in the availability clause, as Codex lists plugin skills", () => {
+    const clause = toCodexSkill(
+      "---\nname: brainstorming\n---\n\nAvailable = `$brainstorming` /\n`superpowers:brainstorming` is in your skills list.\n",
+      { skillNames: new Set(), wrappers: true },
+    );
+
+    expect(clause).toContain("Available = `$brainstorming` /\n`superpowers:brainstorming` is in your skills list.");
+  });
 });
 
 describe("renderCodexHarness — dinopowers package", () => {
@@ -341,7 +350,8 @@ describe("renderCodexHarness — dinopowers package", () => {
       expect(path).toBe(`dinopowers/skills/${fields.name}/SKILL.md`);
       expect(body, path).toContain(`$${fields.name.slice("dino-".length)}`);
       expect(body, path).toContain("https://github.com/obra/superpowers");
-      expect(content, path).not.toMatch(/\b(?:dinopowers|superpowers):[A-Za-z]/);
+      const listed = /`superpowers:[a-z-]+`\s+is\s+in\s+your\s+skills\s+list/g;
+      expect(content.replace(listed, ""), path).not.toMatch(/\b(?:dinopowers|superpowers):[A-Za-z]/);
       expect(content, path).not.toMatch(/Skill\(/);
     }
   });

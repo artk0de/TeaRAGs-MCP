@@ -107,9 +107,9 @@ and tree, never "index unusable". Thousands of changed files included.
 - `floors: []` on first calls = overlay warming, not failure. Own checkout →
   incremental `index_codebase` now (table above); linked worktree → keep
   calling, later calls read more.
-- Graph slow / `treeGraphUnavailable` → edges between untouched files hold;
-  edges at changed files → `find_symbol` on the caller in the changed file AND
-  `hybrid_search` (`metaOnly`); no graph retry. No grep.
+- Graph slow / `treeGraphUnavailable` → edges between untouched files hold. For
+  changed-file edges, in order: `find_symbol` on the caller in the changed file,
+  then `hybrid_search` (`metaOnly`). No graph retry. No grep.
 - Graph answer missed edges at a changed file and you ran the incremental
   `index_codebase` → do NOT retry the graph call. Next: `find_symbol` on the
   caller in the changed file + `hybrid_search` (`metaOnly`) for callers the

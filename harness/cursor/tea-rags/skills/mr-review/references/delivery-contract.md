@@ -138,10 +138,11 @@ None available → print full contract in chat for manual posting, mark review
 
 ## Local mode
 
-No posting. Chat report: findings grouped by severity (major first), then
-observations, then dimensions-skipped notes ("blast radius: callers found by
-name, not by call graph — codegraph off", "tests: no DSL chunks, file-level
-fallback").
+No posting. Chat report (D8 naming findings: grouped by verdict, MISFIT /
+COLLISION `[minor]`, per SKILL.md Phase 5): findings grouped by severity (major
+first), then observations, then dimensions-skipped notes ("blast radius: callers
+found by name, not by call graph — codegraph off", "tests: no DSL chunks,
+file-level fallback").
 
 Same comment shape, same plain language — the chat report is read by a human
 too. Raw signal values stay out of it; quote one only if the user asks why a

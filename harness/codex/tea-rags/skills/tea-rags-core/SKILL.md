@@ -33,7 +33,7 @@ Alias: prime `## Project`, SubagentStart line or `workingTree.project`; unknown
 | behaviour/intent, no name  | `semantic_search` only (no `hybrid_search`)    |
 | code like a chunk in hand  | `find_similar(positiveIds:)`                   |
 | who calls X / impact       | `find_symbol` id → `get_callers`/`get_callees` |
-| chain A→B                  | `find_symbol` ids → `trace_path`               |
+| how does X reach Y / A→B   | `find_symbol` ids → `trace_path`               |
 | diff review; a name's fit  | `review_changes` / `get_naming_lexicon`        |
 | literal: TODO/phrase/regex | text search (your client's Grep / `rg`)        |
 
@@ -57,9 +57,9 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
   plans too; drift `--force*` `Run:` → ask, never instead. Linked worktree →
   overlay, never reindex.
 - Empty `get_callers` at low resolve rate ≠ no callers → `hybrid_search`; edges
-  at changed files → `find_symbol` the caller there AND
-  `hybrid_search(metaOnly)`, no graph retry. Graph tools absent = codegraph off
-  → never claim "no cycles"; on + empty `find_cycles` = DAG.
+  at changed files → `find_symbol` its caller, then `hybrid_search(metaOnly)`,
+  no graph retry. Graph tools absent = codegraph off → never claim "no cycles";
+  on + empty `find_cycles` = DAG.
 - Docs = hypothesis; verify in code.
 - User-named action ("read `x.ts`") → do it; user's weaker method → keep the
   rule's, say why.

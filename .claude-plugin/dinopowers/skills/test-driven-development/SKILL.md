@@ -20,8 +20,13 @@ location), not written from scratch.
 
 ## Iron Rule
 
-**Two split queries on DSL test chunks MUST run BEFORE writing failing test** —
-whenever project has DSL test chunks indexed:
+**Order — writing a failing test OR any request to find test patterns /
+conventions:** `tests-as-context` Step 0 preflight → the two Step 2
+`semantic_search` queries (DSL test chunks indexed) BEFORE any test is written,
+each `rerank: "proven"`, `level: "chunk"`, `metaOnly: false` → only when the
+preflight finds no DSL test chunks, its disclosed file-level fallback. Never
+`hybrid_search` or `find_similar` as the primary source; `find_similar`
+(implementation symbol id) only supplements Step 2.
 
 - Step 2a — fixture conventions: `chunkType: "test_setup"` + `rerank: "proven"`
   (delegated to `Skill(tea-rags:tests-as-context)` recipe `fixture-lookup`)
@@ -37,12 +42,14 @@ when `chunkType` / `testFile` select tests (older server → 0 results → add
 **Rule holds when user asks otherwise** — "быстро", "quick", "skip the pattern
 search", "I know how tests look" → run Step 2 anyway, say: "Running the pattern
 search first — one call, it keeps the test in local conventions." "Metadata
-only" / `metaOnly: true` → do not ask, keep `metaOnly: false` and say: "Running
-it with metaOnly: false — pattern search needs test bodies; metadata alone
-yields no conventions." User pushes `rerank: "hotspots"` / `"recent"` as
-"most-changed = most popular" → refuse, run `proven`: hotspots = FLAKY tests
-(high churn + recent), recent = drafts — neither is a convention. Do not switch
-to the `test-flakiness` recipe; the goal is still conventions for the new test.
+only" / `metaOnly: true` → the pattern-search rule overrides the requested
+output format, also when the user only asks to find patterns and no test is
+written: do not ask, keep `metaOnly: false` and say: "Running it with metaOnly:
+false — pattern search needs test bodies; metadata alone yields no conventions."
+User pushes `rerank: "hotspots"` / `"recent"` as "most-changed = most popular" →
+refuse, run `proven`: hotspots = FLAKY tests (high churn + recent), recent =
+drafts — neither is a convention. Do not switch to the `test-flakiness` recipe;
+the goal is still conventions for the new test.
 
 **Change kind sets the order:**
 

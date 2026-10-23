@@ -36,12 +36,14 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
    it once more.
    - **naming** — GENERATE writes names Step 5 never judged (helpers, locals,
      constants, types); the section judges every name the added lines declare vs
-     HEAD: `MISFIT` → rename to `suggestion` before commit; `COLLISION` →
-     rename; `NEW_TERM` → soft: `alternatives` word only if same meaning, else
-     keep + one-line why (never default-rename) — state the decision now (keep X
-     / use Y), never "needs a decision"; `genericName` → rename; `novel` = no
-     action. Skip naming when every added declaration was a Step 5 draft. Tests
-     not judged (`notJudged`). Never hand-list written names into `names[]`.
+     HEAD. Resolve each verdict in the answer now, concrete: `MISFIT` → name the
+     rename to `suggestion` before commit (`cfg MISFIT → retryPolicy`);
+     `COLLISION` → rename; `NEW_TERM` → soft: `alternatives` word only if same
+     meaning (`LIMIT NEW_TERM → use BATCH_SIZE, both cap one batch`), else
+     keep + one-line why (never default-rename); never "decide later" / "needs a
+     decision"; `genericName` → rename; `novel` = no action. Skip naming when
+     every added declaration was a Step 5 draft. Tests not judged (`notJudged`).
+     Never hand-list written names into `names[]`.
    - **incompleteChange** = co-change partners the change ignores
      (`support`/`confidence` attached) — a forgotten sibling edit is caught
      here, not in review. Partner verdict rule below.
@@ -58,10 +60,16 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
      every finding is listed; (iii) triage table must-fix rows repaired.
    - `preExisting: true` = not yours: cheap repair optional (triage table),
      never blocks gate.
-   - **Gate line** — final report quotes the last run verbatim:
+   - **Gate line** — real counts, never placeholders; final report quotes the
+     last run verbatim:
      `GATE review_changes: introduced=<n>, partial=<true|false>` (`n` =
-     introduced left unrepaired and not accepted) + one `FALSE-POSITIVE …` line
-     per accepted entry. Pass = `introduced=0, partial=false`. Codegraph off →
+     introduced left unrepaired and not accepted; `preExisting: true` excluded,
+     reported apart) + one `FALSE-POSITIVE …` line per accepted entry. Repair
+     round → literal line before AND after: one new leak repaired =
+     `GATE review_changes: introduced=1, partial=false` then
+     `GATE review_changes: introduced=0, partial=false`. Count not supplied →
+     run the review, never infer it. Pass = `introduced=0, partial=false`.
+     Codegraph off →
      `GATE review_changes: architecture not judged (codegraph off)`. **No gate
      line = task not done.**
 

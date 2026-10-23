@@ -41,8 +41,10 @@ in your tool list; unsure → read
 `tea-rags://project/<alias>/metrics?section=registry` (`codegraph on|off`).
 
 **Diff review, same gate** (codegraph on) = `$data-driven-generation` Step 7
-GATE — read its `references/step-7-verify.md` and run it; nothing here narrows
-it. BEFORE "done" / commit when session edited files: ONE
+GATE — read the tea-rags plugin file
+`skills/data-driven-generation/references/step-7-verify.md` (not under
+dinopowers) and run it; nothing here narrows it. BEFORE "done" / commit when
+session edited files: ONE
 `review_changes(changes:{}, sections:["naming","incompleteChange","cohesion","architecture","norms"])`
 (`{}` = uncommitted edit; committed branch → `changes:{base}`, base =
 `git merge-base HEAD main`, never a sibling / integration branch; findings from
@@ -55,7 +57,9 @@ ask the user (finding, rounds tried, why reverted; fix / accept with reason /
 bead), no commit. `truncated` / `built: false` / skipped files = PARTIAL ≠ pass
 → re-run with `files` batches. `entryPoint` / `compositionRoot` /
 `foundationTerminal` QUOTED from the finding = placement, not defect. Report
-`GATE review_changes: introduced=<n>, partial=<true|false>`.
+`GATE review_changes: introduced=<n>, partial=<true|false>` with the real
+counts. Naming verdicts: MISFIT → rename to the suggestion before commit;
+NEW_TERM → decide now + one-line why.
 
 ## Verdict Ladder (PRESCRIPTIVE — apply before claiming done)
 
@@ -89,13 +93,16 @@ override acknowledging the risk (untested dependents may break) — reply
 redirects $X. NEVER bypass the wrapper. Open each chained SKILL.md with its own
 read.
 
-**Requires superpowers:** `$verification-before-completion` unavailable → stop,
-ask the user to install superpowers (https://github.com/obra/superpowers; steps
-in [CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and
-present it as the full workflow. Available = `$verification-before-completion` /
-`$verification-before-completion` is in your skills list; superpowers is a
-separate plugin, never under the dinopowers dir — a missing file next to the
-wrapper is not "unavailable".
+**Requires superpowers for the inner step:** `$verification-before-completion`
+unavailable → still run the collateral-damage scan first (Iron Rule); then stop
+before claiming "done", say the inner verification step could not run, ask the
+user to install superpowers (https://github.com/obra/superpowers; steps in
+[CHAINING.md](../../CHAINING.md)). The missing skill blocks only the inner step
+and the completion claim, never the scan. NEVER present the scan alone as the
+full workflow. Available = `$verification-before-completion` /
+`superpowers:verification-before-completion` is in your skills list; superpowers
+is a separate plugin, never under the dinopowers dir — a missing file next to
+the wrapper is not "unavailable".
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) +
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never
