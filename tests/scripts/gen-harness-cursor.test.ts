@@ -161,8 +161,10 @@ describe("renderCursorHarness", () => {
     expect(hooks.version).toBe(1);
     expect(Object.keys(hooks.hooks).filter((event) => !HOOK_EVENTS.has(event))).toEqual([]);
     expect(Object.keys(hooks.hooks)).toEqual(["sessionStart"]);
-    const [{ command }] = hooks.hooks.sessionStart;
+    const [{ command, timeout }] = hooks.hooks.sessionStart;
     expect(command).toBe(`bash "\${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh"`);
+    // A cold `tea-rags prime` boots the server (measured 12–26 s).
+    expect(timeout).toBeGreaterThanOrEqual(60);
     expect(rendered.has("tea-rags/scripts/session-start.sh")).toBe(true);
   });
 

@@ -4,7 +4,7 @@
     "sessionStart": [
       {
         "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh\"",
-        "timeout": 15
+        "timeout": 60
       }
     ]
   }

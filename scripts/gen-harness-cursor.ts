@@ -434,7 +434,7 @@ export async function renderCursorHarness(root: string): Promise<Map<string, str
     `${PLUGIN_NAME}/hooks/hooks.json`,
     json({
       version: 1,
-      hooks: { sessionStart: [{ command: hookCommand("session-start.sh"), timeout: 15 }] },
+      hooks: { sessionStart: [{ command: hookCommand("session-start.sh"), timeout: 60 }] },
     }),
   );
   files.set(
