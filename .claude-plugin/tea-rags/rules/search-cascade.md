@@ -293,6 +293,13 @@ a non-graph substitute — never read an absent/empty graph tool as positive fac
 | architectural hubs  | git imports/churn rerank or relevance; say fan-in centrality is unavailable              |
 | entry points        | relevance + `chunkSize` heuristic; flag results as content-inferred, not graph-confirmed |
 
+**Rust driver `unavailable`:** when prime, `get_index_status` or
+`index_codebase` reports `rustc driver: unavailable`, tell the user ONCE per
+session that Rust call-graph edges are static-only (a lower bound; resolve rate
+≈0.55–0.71 without the driver vs ≈0.99 with it) and quote the install command
+from that line. Never run the install yourself. Never claim "no callers" or
+"dead code" from a Rust graph in that state.
+
 ### Optimal routes (navigate, don't re-search)
 
 - After ANY search → next call is `find_symbol`, never another search, never
