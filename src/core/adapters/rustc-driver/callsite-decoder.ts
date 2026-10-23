@@ -10,7 +10,10 @@
  * - Rows are deduped on `(relPath, line, col, callee)` — units of one package
  *   (lib, bin, test harness) re-emit the same sites.
  * - `origin: "macro"` rows are never served: their position is the macro name
- *   token, which the macro-invocation strategy owns.
+ *   token, which a call the macro BODY makes cannot be bound to.
+ * - `origin: "macroInvocation"` rows (RESIDUAL.md R3) are served at that name
+ *   token as a `kind: "macro"` definition — the invoked macro's own definition
+ *   (`macroDefPath`), in the project for a workspace `macro_rules!`, else external.
  * - Two NON-identical source rows on one position (a different callee, or the
  *   same callee resolved differently by two units) are ambiguous: the position
  *   answers null rather than picking one.
@@ -35,7 +38,17 @@ const STRIDE = 8;
 const FLAG_IN_PROJECT = 1;
 const FLAG_DERIVED_IMPL = 2;
 
-const KINDS = ["callable", "type", "other"] as const;
+const KINDS = ["callable", "type", "other", "macro"] as const;
+/** Row `defKind` → index into KINDS; anything unlisted is `other`. A macro invocation decodes as defKind `macro`. */
+const DEF_KIND_INDEX: ReadonlyMap<string, number> = new Map([
+  ["fn", 0],
+  ["assocFn", 0],
+  ["ctor", 1],
+  ["macro", 3],
+]);
+/** Origins whose position is the token they name; `macro` rows sit on the invocation's name token instead. */
+const SERVED_ORIGINS: ReadonlySet<string> = new Set(["source", "macroInvocation"]);
+const MACRO_INVOCATION = "macroInvocation";
 
 export interface RustcCallSiteDecodeOptions {
   /** Crate names the driver ran on (workspace members). Callee crates of in-project, trait-free rows are added. */
@@ -73,7 +86,7 @@ export function decodeRustcCallSites(
       // A trait method resolved to a project impl names the TRAIT's crate (`std` for
       // `io::Read::read`), so only a call with no trait proves its callee crate is ours.
       if (row.inProject && row.traitPath === null) workspaceCrates.add(row.calleeCrate);
-      if (row.origin !== "source" || row.col >= MAX_COLUMN) continue;
+      if (!SERVED_ORIGINS.has(row.origin) || row.col >= MAX_COLUMN) continue;
       const packed = pack(row, intern);
       let positions = byFile.get(row.relPath);
       if (positions === undefined) {
@@ -137,7 +150,11 @@ function parseRow(line: string): ParsedRow | null {
   }
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
-  const { relPath, line: lineNo, col, origin, callee, calleeCrate, defKind } = r;
+  // A macro invocation names its macro's definition: the callee is the macro's def path.
+  const invocation = r.origin === MACRO_INVOCATION;
+  const { relPath, line: lineNo, col, origin, calleeCrate } = r;
+  const callee = invocation ? r.macroDefPath : r.callee;
+  const defKind = invocation ? "macro" : r.defKind;
   if (typeof relPath !== "string" || typeof origin !== "string") return null;
   if (typeof callee !== "string" || typeof calleeCrate !== "string" || typeof defKind !== "string") return null;
   if (!Number.isInteger(lineNo) || (lineNo as number) < 1) return null;
@@ -162,7 +179,7 @@ function parseRow(line: string): ParsedRow | null {
 
 function pack(row: ParsedRow, intern: (value: string) => number): number[] {
   const served = row.inProject && !row.implIsDerived && row.defRelPath !== null && row.defLine !== null;
-  const kind = row.defKind === "fn" || row.defKind === "assocFn" ? 0 : row.defKind === "ctor" ? 1 : 2;
+  const kind = DEF_KIND_INDEX.get(row.defKind) ?? KINDS.indexOf("other");
   return [
     intern(row.callee),
     intern(row.calleeCrate),

@@ -107,6 +107,17 @@ misses it: fixture `#[derive(Debug, Clone)]` produced phantom `source` rows on
 the field lines until filtered by the impl marker), calls of locals/closures
 (`Res::Local`), non-path callees.
 
+Macro-invocation rows (format 2, RESIDUAL.md R3): one row per user-written
+bang-macro invocation, at the macro NAME token (the last path segment before
+`!`, UTF-16 column as above), with only the fields `relPath`, `line`, `col`,
+`origin: "macroInvocation"`, `macro` (the name), `macroDefPath` (`def_path_str`
+of `ExpnData::macro_def_id`: `std::write` for core's macro re-exported by std,
+unprefixed for the local crate), `calleeCrate` (the defining crate),
+`inProject`, `defRelPath`, `defLine`. Each expression's context is walked to its
+outermost expansion whose call site is user text, so invocations nested inside
+an expansion (`write!` → `format_args!`) emit nothing. The decoder serves these
+rows as `kind: "macro"` definitions; `origin: "macro"` rows stay unserved.
+
 ### Mapping to `RustScipDefinition` (adapter, no strategy change needed)
 
 | `RustScipDefinition`           | from the driver row                                                                                                               |

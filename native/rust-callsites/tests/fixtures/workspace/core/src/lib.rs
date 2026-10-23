@@ -55,5 +55,22 @@ fn helper(v: i64) -> i64 {
 pub fn use_macro(v: i64) -> i64 {
     twice!(v.abs())
 }
+
+#[macro_export]
+macro_rules! my_log {
+    ($($t:tt)*) => {
+        $crate::log_line(format!($($t)*))
+    };
+}
+
+pub fn log_line(s: String) -> usize {
+    s.len()
+}
+
+pub fn render(f: &mut fmt::Formatter<'_>, v: Option<i64>) -> fmt::Result {
+    let hit = matches!(v, Some(_));
+    my_log!("{}", hit);
+    std::write!(f, "{}", std::matches!(v, None))
+}
 // c2
 // c2

@@ -2,7 +2,7 @@
 //! (SPEC §3), with the drop rules of §3/§4.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -15,8 +15,9 @@ use rustc_hir::{
 };
 use rustc_middle::ty::{self, Instance, TyCtxt, TypeVisitableExt, TypeckResults};
 use rustc_span::{
-    ExpnKind, FileName, Span,
+    BytePos, ExpnKind, FileName, Span, SyntaxContext,
     def_id::{DefId, LOCAL_CRATE, LocalDefId},
+    hygiene::{ExpnData, ExpnId, MacroKind},
 };
 
 use crate::Args;
@@ -70,6 +71,7 @@ impl Callbacks {
         let mut rows: Vec<serde_json::Value> = Vec::new();
         let mut stats: HashMap<&'static str, u64> = HashMap::new();
         let mut lines = LineCache::default();
+        let mut invocations = InvocationsSeen::default();
         let root = PathBuf::from(&self.args.project_root);
         for owner in tcx.hir_body_owners() {
             // `#[derive]` output carries the user's field/attribute spans, not an
@@ -93,6 +95,7 @@ impl Callbacks {
                 rows: &mut rows,
                 stats: &mut stats,
                 lines: &mut lines,
+                invocations: &mut invocations,
             };
             let tv = std::time::Instant::now();
             v.visit_body(body);
@@ -157,6 +160,40 @@ struct CallVisitor<'a, 'tcx> {
     rows: &'a mut Vec<serde_json::Value>,
     stats: &'a mut HashMap<&'static str, u64>,
     lines: &'a mut LineCache,
+    invocations: &'a mut InvocationsSeen,
+}
+
+/// Per crate: the syntax contexts already walked to their outermost expansion, and the
+/// user-written invocations already emitted — one row per invocation, however many
+/// expressions its expansion produced.
+#[derive(Default)]
+struct InvocationsSeen {
+    contexts: HashSet<SyntaxContext>,
+    expansions: HashSet<ExpnId>,
+}
+
+/// The outermost expansion of `span`'s context: the one whose call site is user text.
+fn outermost_expansion(span: Span) -> Option<(ExpnId, ExpnData)> {
+    let mut ctxt = span.ctxt();
+    while !ctxt.is_root() {
+        let expn = ctxt.outer_expn();
+        let expn_data = expn.expn_data();
+        if !expn_data.call_site.from_expansion() {
+            return Some((expn, expn_data));
+        }
+        ctxt = expn_data.call_site.ctxt();
+    }
+    None
+}
+
+/// Byte offset of the macro NAME in the invocation text: past the path's last `::`
+/// (`std::write!(..)` → `write`), before the `!`.
+fn macro_name_offset(invocation: &str) -> Option<usize> {
+    let bang = invocation.find('!')?;
+    let path = &invocation[..bang];
+    let name_start = path.rfind("::").map_or(0, |i| i + 2);
+    let leading_ws = path[name_start..].len() - path[name_start..].trim_start().len();
+    Some(name_start + leading_ws)
 }
 
 struct Pos {
@@ -329,10 +366,69 @@ impl<'a, 'tcx> CallVisitor<'a, 'tcx> {
         self.tick("us.rowStrings", t3);
         self.rows.push(row);
     }
+
+    /// The `macroInvocation` row of the user-written bang-macro invocation `span`'s
+    /// expansion comes from, once per invocation, at the macro NAME token. Invocations
+    /// nested inside an expansion (`write!` → `format_args!`) are not user sites.
+    fn note_invocation(&mut self, span: Span) {
+        if !span.from_expansion() || !self.invocations.contexts.insert(span.ctxt()) {
+            return;
+        }
+        let Some((expn, expn_data)) = outermost_expansion(span) else {
+            return;
+        };
+        if !self.invocations.expansions.insert(expn) {
+            return;
+        }
+        let ExpnKind::Macro(MacroKind::Bang, name) = expn_data.kind else {
+            return;
+        };
+        let tcx = self.tcx;
+        let Some(def_id) = expn_data.macro_def_id else {
+            self.bump("drop.macroNoDef");
+            return;
+        };
+        let call_site = expn_data.call_site;
+        let name_span = tcx
+            .sess
+            .source_map()
+            .span_to_snippet(call_site)
+            .ok()
+            .and_then(|text| macro_name_offset(&text))
+            .map(|offset| call_site.with_lo(call_site.lo() + BytePos(offset as u32)));
+        let Some(pos) = name_span.and_then(|s| self.pos(s)) else {
+            self.bump("drop.macroNoPosition");
+            return;
+        };
+        if !pos.in_root {
+            self.bump("drop.callerOutsideRoot");
+            return;
+        }
+        let def_pos = tcx
+            .def_ident_span(def_id)
+            .or_else(|| Some(tcx.def_span(def_id)))
+            .and_then(|s| self.pos(s))
+            .filter(|p| p.in_root);
+        self.bump("origin.macroInvocation");
+        self.rows.push(serde_json::json!({
+            "relPath": pos.rel_path,
+            "line": pos.line,
+            "col": pos.col_utf16,
+            "origin": "macroInvocation",
+            // The expansion names the invoked PATH (`fx_core::my_log`); the row names the macro.
+            "macro": name.as_str().rsplit("::").next().unwrap_or_default(),
+            "macroDefPath": tcx.def_path_str(def_id),
+            "calleeCrate": tcx.crate_name(def_id.krate).to_string(),
+            "inProject": def_pos.is_some(),
+            "defRelPath": def_pos.as_ref().map(|p| p.rel_path.clone()),
+            "defLine": def_pos.as_ref().map(|p| p.line),
+        }));
+    }
 }
 
 impl<'a, 'tcx> Visitor<'tcx> for CallVisitor<'a, 'tcx> {
     fn visit_expr(&mut self, expr: &'tcx Expr<'tcx>) {
+        self.note_invocation(expr.span);
         match expr.kind {
             ExprKind::MethodCall(segment, ..) => {
                 match self.typeck.type_dependent_def_id(expr.hir_id) {
