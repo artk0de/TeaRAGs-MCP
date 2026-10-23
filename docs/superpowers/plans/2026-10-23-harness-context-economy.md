@@ -223,9 +223,10 @@ echo "# pass=$PASS fail=$FAIL"; [ $FAIL = 0 ]
 
 - Produces:
   - `InProcessToolSession.readResource(uri: string): Promise<ReadResourceResult>`
-  - Delivered (7d25bc095): `listResourceTemplates(): Promise<ResourceTemplate[]>`
-    too; `runResource(input: RunResourceArgs): Promise<number>` with optional
-    `list`, `out`, `errOut`; alias via `resolveProjectAlias` in
+  - Delivered (7d25bc095):
+    `listResourceTemplates(): Promise<ResourceTemplate[]>` too;
+    `runResource(input: RunResourceArgs): Promise<number>` with optional `list`,
+    `out`, `errOut`; alias via `resolveProjectAlias` in
     `src/cli/commands/project.ts`; registry env replayed like `call`; CLI entry
     is `build/cli/index.js` (`build/index.js` is the stdio server).
   - `InProcessToolSession.listResources(): Promise<Resource[]>` (follows
@@ -499,7 +500,16 @@ Run `npm run gen:agent-context` (empty core + no guides at this point is valid).
   `src/mcp/resources/project/`; move the `format-*.test.ts` cases that cover
   them to `tests/mcp/resources/project/` (examples preserved) or drop the ones
   the digest no longer renders
-- Test: `tests/cli/commands/prime.test.ts`, `tests/cli/prime/format.test.ts`
+- Modify: `src/mcp/resources/project/register.ts` — the SDK matches a query
+  template only when every listed parameter is present, so
+  `metrics{?language,section}` alone rejects `/metrics` and `?language=<lang>`
+  (the digest's own pointer); register one template per accepted shape. Alias
+  falls back to the collection name for a registry entry without a name; a typed
+  status failure keeps its code and hint.
+- Test: `tests/cli/commands/prime.test.ts`,
+  `tests/cli/prime/run-prime-digest.test.ts`,
+  `tests/cli/prime/format-auto-update.test.ts`; relocated formatter cases under
+  `tests/mcp/resources/project/*.test.ts`
 
 **Interfaces:**
 
@@ -509,8 +519,8 @@ Run `npm run gen:agent-context` (empty core + no guides at this point is valid).
 - Produces: `tea-rags prime [path] [--project] [--full]` — default output =
   digest resource text + CLI lines (update notice, auto-update verdict) +
   closing `→ run \`tea-rags prime "$CLAUDE_PROJECT_DIR"\` to
-  refresh`; `--full`appends`tea-rags://project/<alias>/metrics`. Keeps today's `path-not-found`and`qdrant-cold`
-  outputs and the registry env replay BEFORE the session opens.
+  refresh`; `--full`appends`tea-rags://project/<alias>/metrics`. Keeps today's `path-not-found`and`qdrant-cold`outputs and the registry env replay BEFORE the session opens. A path no registry entry claims has no alias to read: prime prints the`not
+  indexed` placeholder without opening a session.
 
 - [ ] **Step 1: Failing test** — `prime.test.ts`: with a fake session returning
       a 2,000-byte digest, assert stdout = digest + update line; with `--full`,
@@ -623,7 +633,10 @@ Run `npm run gen:agent-context` (empty core + no guides at this point is valid).
 
 ### Task 9: Subagent block ≤ 3KB; dinopowers routing once per session
 
-> Carry-over from Task 13: the block still names Claude-only tools (Grep / Glob, `mcp__ripgrep__search`); the Codex/Cursor transforms only rewrite the `mcp__tea-rags__` prefix. Rewrite those lines harness-neutrally here, then regenerate both harness packages.
+> Carry-over from Task 13: the block still names Claude-only tools (Grep / Glob,
+> `mcp__ripgrep__search`); the Codex/Cursor transforms only rewrite the
+> `mcp__tea-rags__` prefix. Rewrite those lines harness-neutrally here, then
+> regenerate both harness packages.
 
 **Files:**
 
@@ -748,12 +761,12 @@ always-on bytes before/after, per-suite pass rates).
 
 **Files:**
 
-Facts (sourced, with open items): `docs/superpowers/specs/2026-10-23-harness-facts.md`
-§A. Codex plugins bundle skills, MCP servers and hooks — NOT AGENTS.md; hook
-commands get `PLUGIN_ROOT`; plugin hooks need trust (`/hooks`) or
-`--dangerously-bypass-hook-trust`; the skills list gets ~2% of context (8,000
-chars default), so the package ships a curated skill set with short
-descriptions.
+Facts (sourced, with open items):
+`docs/superpowers/specs/2026-10-23-harness-facts.md` §A. Codex plugins bundle
+skills, MCP servers and hooks — NOT AGENTS.md; hook commands get `PLUGIN_ROOT`;
+plugin hooks need trust (`/hooks`) or `--dangerously-bypass-hook-trust`; the
+skills list gets ~2% of context (8,000 chars default), so the package ships a
+curated skill set with short descriptions.
 
 **Files:**
 
@@ -785,8 +798,8 @@ descriptions.
   - Curated skill set: tea-rags user-facing skills only (dinopowers wrappers
     chain into superpowers, which Codex does not ship — excluded); total of
     `name + description` across shipped skills ≤ 7,000 chars (test-enforced).
-  - `.mcp.json`: `{ "mcpServers": { "tea-rags": { "type": "stdio", "command":
-    "tea-rags", "args": ["server"], "default_tools_approval_mode": "approve" } } }`
+  - `.mcp.json`:
+    `{ "mcpServers": { "tea-rags": { "type": "stdio", "command": "tea-rags", "args": ["server"], "default_tools_approval_mode": "approve" } } }`
     (field names per facts §A.3; dev override documented in README:
     `command: "node", args: ["<repo>/build/index.js"]`).
   - `hooks/hooks.json`: SessionStart → `tea-rags prime "$PWD"` (plain stdout is
@@ -794,10 +807,10 @@ descriptions.
     `${PLUGIN_ROOT}/scripts/subagent-block.sh` (copied from the Claude plugin
     hook, emitting `hookSpecificOutput.additionalContext`).
 
-- [ ] **Step 1: Pin the facts in `harness/codex/README.md`** — copy the
-      relevant §A facts with sources; re-verify locally the two open items the
-      generator depends on: `codex plugin --help` (marketplace add / plugin add
-      commands) and whether `.mcp.json` server entries need `type`.
+- [ ] **Step 1: Pin the facts in `harness/codex/README.md`** — copy the relevant
+      §A facts with sources; re-verify locally the two open items the generator
+      depends on: `codex plugin --help` (marketplace add / plugin add commands)
+      and whether `.mcp.json` server entries need `type`.
 - [ ] **Step 2: Failing test** — transforms on a fixture skill (each rule
       above) + drift guard (`renderCodexHarness(root)` equals committed files).
 - [ ] **Step 3: Implement** generator; `npm run gen:harness-codex`.
@@ -807,7 +820,10 @@ descriptions.
 
 ### Task 14: Live test in Codex
 
-> Carry-over from Task 13: verify that `$PWD` in the Codex SessionStart hook is the session directory (the SubagentStart script reads stdin `cwd` instead); if not, switch SessionStart to stdin `cwd` too. Also check `force-reindex` (mentions `run_in_background`) reads sensibly in Codex.
+> Carry-over from Task 13: verify that `$PWD` in the Codex SessionStart hook is
+> the session directory (the SubagentStart script reads stdin `cwd` instead); if
+> not, switch SessionStart to stdin `cwd` too. Also check `force-reindex`
+> (mentions `run_in_background`) reads sensibly in Codex.
 
 **Files:** `harness/codex/LIVE-TEST.md` (results), fixes in generator/skills as
 found.
@@ -823,7 +839,8 @@ found.
 - [ ] **Step 3:** Run scripted checks with
       `CODEX_HOME=/tmp/codex-home-tr codex exec --json --ephemeral --dangerously-bypass-hook-trust -C /Users/artk0re/Dev/Tools/tea-rags-mcp "<prompt>"`
       (indexed alias `tea-rags`); assert on `item.completed` events of type
-      `mcp_tool_call` (`server`, `tool`, `arguments`) and on shell items. Checks:
+      `mcp_tool_call` (`server`, `tool`, `arguments`) and on shell items.
+      Checks:
   1. "Quote the first heading of tea-rags://guide/navigation" → expect a
      `read_mcp_resource` call and `# ` heading text.
   2. "Where is registerAllResources defined? Show its body." → expect
@@ -879,8 +896,8 @@ test script.
     (sessionStart is fire-and-forget; the core's "no digest → …" line covers a
     missed delivery). No `subagentStart` / `preCompact` injection (Cursor cannot
     inject there).
-  - `mcp.json`: `{ "mcpServers": { "tea-rags": { "type": "stdio", "command":
-    "tea-rags", "args": ["server"] } } }`.
+  - `mcp.json`:
+    `{ "mcpServers": { "tea-rags": { "type": "stdio", "command": "tea-rags", "args": ["server"] } } }`.
   - **Resources are unreliable in Cursor** (not documented; staff reported them
     partly disabled — facts §B.6). The core `.mdc` therefore names BOTH routes
     for every guide/metrics read: the resource URI, and the terminal fallback
@@ -912,7 +929,9 @@ test script.
 
 ### Task 16: Gates, docs, merge
 
-> Carry-over from Task 13: `harness/**` duplicates skill markdown — exclude it from the tea-rags index (project ignore file) so search does not return generated copies.
+> Carry-over from Task 13: `harness/**` duplicates skill markdown — exclude it
+> from the tea-rags index (project ignore file) so search does not return
+> generated copies.
 
 - [ ] **Step 1:** Measure after-state with the round-1 scripts
       (`/Users/artk0re/.claude/jobs/ef10f65e/tmp/measure-mcp.mjs` adapted to the

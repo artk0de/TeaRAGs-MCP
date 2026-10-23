@@ -20,7 +20,7 @@ const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
  * metrics resource the closing line names.
  */
 export function formatSlimDigest(data: ProjectDigestData, now: Date): string {
-  const alias = data.projectName ?? data.path;
+  const alias = data.projectName ?? data.registry?.collectionName ?? data.path;
   const lines: string[] = [`# tea-rags digest — ${alias}`, formatStatusLine(data.status, now, data.memory ?? null)];
   if (data.projectName) {
     lines.push(`name: \`${data.projectName}\` — pass \`project: "${data.projectName}"\` + \`path\` on tea-rags calls`);
@@ -186,7 +186,7 @@ function formatInfraSection(infra: InfraHealth, recoveryTarget: OptimizerRecover
     const bothEndpointsDown = (e.primaryAvailable ?? e.available) === false && e.fallbackAvailable === false;
     if (bothEndpointsDown) {
       lines.push(
-        "[hint] both embedding endpoints report unavailable — prime is a point-in-time snapshot; " +
+        "[hint] both embedding endpoints report unavailable — this digest is a snapshot at read time; " +
           "call `get_index_status` for live infra health before assuming search is down.",
       );
     }

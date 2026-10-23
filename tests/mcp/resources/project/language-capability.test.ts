@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPrime } from "../../../src/cli/prime/format.js";
-import type { PrimeData } from "../../../src/cli/prime/types.js";
-import type { IndexMetrics } from "../../../src/core/api/public/dto/metrics.js";
-import type { IndexStatus, LanguageCapability } from "../../../src/core/api/public/index.js";
+import type { IndexMetrics } from "../../../../src/core/api/public/dto/metrics.js";
+import type { IndexStatus, LanguageCapability } from "../../../../src/core/api/public/index.js";
+import { formatSlimDigest } from "../../../../src/mcp/resources/project/digest.js";
+import type { ProjectDigestData } from "../../../../src/mcp/resources/project/types.js";
 
 // Fixture tiers, deliberately NOT the shipped ones: the digest must render
 // whatever the descriptors say, so a tier moving in a `<lang>/capability.ts`
@@ -56,17 +56,22 @@ function metrics(language: Record<string, number>, primaries: string[] = []): In
   };
 }
 
-function data(overrides: Partial<PrimeData> = {}, status: Partial<IndexStatus> = {}): PrimeData {
+function data(overrides: Partial<ProjectDigestData> = {}, status: Partial<IndexStatus> = {}): ProjectDigestData {
   return {
     path: "/repo",
     projectName: null,
     status: { isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 100, ...status },
     metrics: metrics({ typescript: 80, markdown: 20 }, ["typescript"]),
     drift: null,
-    update: null,
     languageCapabilities: CAPS,
     ...overrides,
   };
+}
+
+const NOW = new Date("2026-05-13T00:00:00Z");
+
+function render(d: ProjectDigestData): string {
+  return formatSlimDigest(d, NOW);
 }
 
 function section(out: string): string[] {
@@ -77,9 +82,9 @@ function section(out: string): string[] {
   return lines.slice(start, end < 0 ? undefined : end);
 }
 
-describe("formatPrime — language capability tiers (xip6g)", () => {
+describe("formatSlimDigest — language capability tiers (xip6g)", () => {
   it("renders one tier line per language present in the index, in index order", () => {
-    const lines = section(formatPrime(data()));
+    const lines = section(render(data()));
     expect(lines[0]).toBe("## Language capability — ceiling tier · realized resolve");
     expect(lines.slice(1)).toEqual([
       "typescript: ast full · tests high · codegraph moderate",
@@ -88,19 +93,19 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
   });
 
   it("omits languages that are not in this index", () => {
-    const out = section(formatPrime(data())).join("\n");
+    const out = section(render(data())).join("\n");
     expect(out).not.toContain("ruby");
     expect(out).not.toContain("sql");
   });
 
   it("renders a typing-tiered codegraph ceiling from the descriptor's own keys", () => {
-    const lines = section(formatPrime(data({ metrics: metrics({ ruby: 100 }, ["ruby"]) })));
+    const lines = section(render(data({ metrics: metrics({ ruby: 100 }, ["ruby"]) })));
     expect(lines).toContain("ruby: ast full · tests medium · codegraph untyped high / yard maximum / rbs/sorbet tbd");
   });
 
   it("pairs each language with its realized per-language resolve rate", () => {
     const lines = section(
-      formatPrime(
+      render(
         data(
           { metrics: metrics({ typescript: 60, ruby: 40 }, ["typescript", "ruby"]) },
           {
@@ -152,7 +157,7 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
 
   it("assigns an unsplit resolve rate to the single primary language", () => {
     const lines = section(
-      formatPrime(
+      render(
         data(
           {},
           {
@@ -180,7 +185,7 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
   // the static floor and the model's share ride beside it.
   it("shows the static share and the model's sites beside a rate a model raised", () => {
     const lines = section(
-      formatPrime(
+      render(
         data(
           { metrics: metrics({ typescript: 60, ruby: 40 }, ["typescript", "ruby"]) },
           {
@@ -238,7 +243,7 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
 
   it("shows the model's share on an unsplit rate of the single primary language", () => {
     const lines = section(
-      formatPrime(
+      render(
         data(
           {},
           {
@@ -269,7 +274,7 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
   // bd tea-rags-mcp-stpvj — a null recall is "nothing scored": the marker, not a number.
   it("renders the empty-denominator marker for a language whose recall is null", () => {
     const lines = section(
-      formatPrime(
+      render(
         data(
           {},
           {
@@ -294,7 +299,7 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
 
   it("does not guess which language an unsplit rate belongs to when several are primary", () => {
     const lines = section(
-      formatPrime(
+      render(
         data(
           { metrics: metrics({ typescript: 60, ruby: 40 }, ["typescript", "ruby"]) },
           {
@@ -319,7 +324,7 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
 
   it("never pairs a resolve rate with a language that has no call graph", () => {
     const lines = section(
-      formatPrime(
+      render(
         data(
           { metrics: metrics({ markdown: 90, typescript: 10 }, ["markdown"]) },
           {
@@ -344,18 +349,18 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
   });
 
   it("collapses languages with identical tiers and no measured rate into one line", () => {
-    const lines = section(formatPrime(data({ metrics: metrics({ typescript: 80, sql: 10, kotlin: 5, jsonc: 5 }) })));
+    const lines = section(render(data({ metrics: metrics({ typescript: 80, sql: 10, kotlin: 5, jsonc: 5 }) })));
     expect(lines).toContain("sql, jsonc: ast none · tests na · codegraph none");
     // No descriptor supplied for kotlin → nothing to state about it.
     expect(lines.join("\n")).not.toContain("kotlin");
   });
 
   it("renders no section when the capability map is absent", () => {
-    expect(section(formatPrime(data({ languageCapabilities: undefined })))).toEqual([]);
+    expect(section(render(data({ languageCapabilities: undefined })))).toEqual([]);
   });
 
   it("renders no section when the index is not indexed", () => {
-    const out = formatPrime(data({}, { isIndexed: false, status: "not_indexed" }));
+    const out = render(data({}, { isIndexed: false, status: "not_indexed" }));
     expect(section(out)).toEqual([]);
   });
 });

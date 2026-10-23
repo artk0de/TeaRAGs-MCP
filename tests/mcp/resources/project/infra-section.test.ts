@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPrime } from "../../../src/cli/prime/format.js";
-import type { PrimeData } from "../../../src/cli/prime/types.js";
+import { formatSlimDigest } from "../../../../src/mcp/resources/project/digest.js";
+import type { ProjectDigestData } from "../../../../src/mcp/resources/project/types.js";
 
 const baseStatus = {
   status: "indexed" as const,
@@ -19,7 +19,7 @@ const baseQdrant = {
   optimizerStatus: "ok",
 };
 
-function primeWith(embedding: NonNullable<PrimeData["status"]["infraHealth"]>["embedding"]): PrimeData {
+function primeWith(embedding: NonNullable<ProjectDigestData["status"]["infraHealth"]>["embedding"]): ProjectDigestData {
   return {
     path: "/repo",
     projectName: null,
@@ -29,15 +29,14 @@ function primeWith(embedding: NonNullable<PrimeData["status"]["infraHealth"]>["e
     },
     metrics: null,
     drift: null,
-    update: null,
   };
 }
 
 const at = new Date("2026-05-13T00:00:00Z");
 
-describe("formatPrime — Infra section (embedding endpoints)", () => {
+describe("formatSlimDigest — Infra section (embedding endpoints)", () => {
   it("states why an endpoint is unavailable next to its badge (bd fembu)", () => {
-    const out = formatPrime(
+    const out = formatSlimDigest(
       primeWith({
         available: true,
         provider: "llama-server",
@@ -56,39 +55,8 @@ describe("formatPrime — Infra section (embedding endpoints)", () => {
     );
   });
 
-  it("renders a single primary badge when no fallback is configured", () => {
-    const out = formatPrime(
-      primeWith({
-        available: true,
-        provider: "ollama",
-        url: "http://127.0.0.1:11434",
-        primaryAvailable: true,
-      }),
-      at,
-    );
-    expect(out).toContain("embedding: ollama · primary http://127.0.0.1:11434 (available)");
-    expect(out).not.toContain("fallback");
-  });
-
-  it("renders both primary and fallback badges, each with its own status", () => {
-    const out = formatPrime(
-      primeWith({
-        available: true,
-        provider: "ollama",
-        url: "http://gpu-server:11434",
-        primaryAvailable: true,
-        fallbackUrl: "http://127.0.0.1:11434",
-        fallbackAvailable: true,
-      }),
-      at,
-    );
-    expect(out).toContain(
-      "embedding: ollama · primary http://gpu-server:11434 (available) · fallback http://127.0.0.1:11434 (available)",
-    );
-  });
-
   it("shows primary (unavailable) while fallback stays (available) under failover", () => {
-    const out = formatPrime(
+    const out = formatSlimDigest(
       primeWith({
         available: true,
         provider: "ollama",
@@ -103,69 +71,11 @@ describe("formatPrime — Infra section (embedding endpoints)", () => {
       "embedding: ollama · primary http://gpu-server:11434 (unavailable) · fallback http://127.0.0.1:11434 (available)",
     );
   });
-
-  it("falls back to the overall availability for the primary badge when primaryAvailable is absent", () => {
-    // Legacy producer / non-ollama provider that does not expose checkPrimaryHealth:
-    // primaryAvailable is undefined → primary badge mirrors `available`.
-    const out = formatPrime(
-      primeWith({
-        available: true,
-        provider: "ollama",
-        url: "http://127.0.0.1:11434",
-      }),
-      at,
-    );
-    expect(out).toContain("embedding: ollama · primary http://127.0.0.1:11434 (available)");
-  });
-
-  it("marks the fallback badge (unknown) when fallbackUrl is set but its health was not probed", () => {
-    const out = formatPrime(
-      primeWith({
-        available: true,
-        provider: "ollama",
-        url: "http://gpu-server:11434",
-        primaryAvailable: true,
-        fallbackUrl: "http://127.0.0.1:11434",
-      }),
-      at,
-    );
-    expect(out).toContain("fallback http://127.0.0.1:11434 (unknown)");
-  });
-
-  it("keeps the legacy headline form for providers without a url (e.g. onnx)", () => {
-    const out = formatPrime(
-      primeWith({
-        available: true,
-        provider: "onnx",
-      }),
-      at,
-    );
-    expect(out).toContain("embedding: available · onnx");
-    expect(out).not.toContain("primary");
-    expect(out).not.toContain(" at undefined");
-  });
 });
 
-describe("formatPrime — Infra section (Qdrant version)", () => {
-  const onnx = { available: true, provider: "onnx" };
-
-  it("appends the running server version to the qdrant line when set", () => {
-    const data = primeWith(onnx);
-    data.status.infraHealth!.qdrant = { ...baseQdrant, version: "1.18.2" };
-    const out = formatPrime(data, at);
-    expect(out).toContain("qdrant: green (optimizer ok) at http://127.0.0.1:6333 · v1.18.2");
-  });
-
-  it("omits the version segment when unset", () => {
-    const out = formatPrime(primeWith(onnx), at);
-    expect(out).toContain("qdrant: green (optimizer ok) at http://127.0.0.1:6333");
-    expect(out).not.toContain("· v");
-  });
-});
-
-describe("formatPrime — Infra section (both-endpoints-down hint)", () => {
+describe("formatSlimDigest — Infra section (both-endpoints-down hint)", () => {
   it("appends a get_index_status hint when both primary and fallback ollama are unavailable", () => {
-    const out = formatPrime(
+    const out = formatSlimDigest(
       primeWith({
         available: false,
         provider: "ollama",
@@ -178,11 +88,11 @@ describe("formatPrime — Infra section (both-endpoints-down hint)", () => {
     );
     expect(out).toContain("[hint]");
     expect(out).toContain("get_index_status");
-    expect(out).toContain("point-in-time snapshot");
+    expect(out).toContain("snapshot at read time");
   });
 
   it("omits the hint when the fallback is still available under failover", () => {
-    const out = formatPrime(
+    const out = formatSlimDigest(
       primeWith({
         available: true,
         provider: "ollama",
@@ -197,7 +107,7 @@ describe("formatPrime — Infra section (both-endpoints-down hint)", () => {
   });
 
   it("omits the hint when the fallback health is unknown (not probed)", () => {
-    const out = formatPrime(
+    const out = formatSlimDigest(
       primeWith({
         available: false,
         provider: "ollama",
@@ -211,7 +121,7 @@ describe("formatPrime — Infra section (both-endpoints-down hint)", () => {
   });
 
   it("omits the hint for url-less providers (e.g. onnx) even when unavailable", () => {
-    const out = formatPrime(
+    const out = formatSlimDigest(
       primeWith({
         available: false,
         provider: "onnx",
@@ -222,20 +132,20 @@ describe("formatPrime — Infra section (both-endpoints-down hint)", () => {
   });
 });
 
-// bd tea-rags-mcp-ye5o — prime only REPORTS a failed optimizer; the recovery
+// bd tea-rags-mcp-ye5o — the digest only REPORTS a failed optimizer; the recovery
 // is the explicit `tea-rags qdrant recover` command, printed ready to run.
-describe("formatPrime — Infra section (optimizer failure remedy)", () => {
+describe("formatSlimDigest — Infra section (optimizer failure remedy)", () => {
   const embedding = { available: true, provider: "onnx" };
 
   function primeWithQdrant(
-    qdrant: NonNullable<PrimeData["status"]["infraHealth"]>["qdrant"],
+    qdrant: NonNullable<ProjectDigestData["status"]["infraHealth"]>["qdrant"],
     projectName: string | null,
-  ): PrimeData {
+  ): ProjectDigestData {
     return { ...primeWith(embedding), projectName, status: { ...baseStatus, infraHealth: { qdrant, embedding } } };
   }
 
   it("prints the recover command under the qdrant line when the optimizer reports an error", () => {
-    const out = formatPrime(
+    const out = formatSlimDigest(
       primeWithQdrant({ ...baseQdrant, status: "red", optimizerStatus: "error: segment optimization failed" }, "demo"),
       at,
     );
@@ -244,13 +154,13 @@ describe("formatPrime — Infra section (optimizer failure remedy)", () => {
   });
 
   it("addresses the project by path when it has no alias", () => {
-    const out = formatPrime(primeWithQdrant({ ...baseQdrant, optimizerStatus: "error: boom" }, null), at);
+    const out = formatSlimDigest(primeWithQdrant({ ...baseQdrant, optimizerStatus: "error: boom" }, null), at);
     expect(out).toContain("Run: tea-rags qdrant recover --path /repo");
   });
 
   it("prints no recover command for a healthy or unknown optimizer", () => {
-    expect(formatPrime(primeWithQdrant(baseQdrant, "demo"), at)).not.toContain("qdrant recover");
-    expect(formatPrime(primeWithQdrant({ ...baseQdrant, optimizerStatus: "unknown" }, "demo"), at)).not.toContain(
+    expect(formatSlimDigest(primeWithQdrant(baseQdrant, "demo"), at)).not.toContain("qdrant recover");
+    expect(formatSlimDigest(primeWithQdrant({ ...baseQdrant, optimizerStatus: "unknown" }, "demo"), at)).not.toContain(
       "qdrant recover",
     );
   });

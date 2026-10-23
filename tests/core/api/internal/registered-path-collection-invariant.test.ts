@@ -35,7 +35,6 @@ import {
   resolveCollection,
   resolveDomainEnvCodeDefaults,
 } from "../../../../src/core/api/index.js";
-import { resolveLanguageCapabilities } from "../../../../src/core/domains/language/capability/resolve.js";
 import { CollectionRegistry } from "../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import { resolveCollectionName } from "../../../../src/core/primitives/ids/collection-identity.js";
 import type { IngestCodeConfig } from "../../../../src/core/types.js";
@@ -209,7 +208,6 @@ describe("prime at a relocated project's path", () => {
   beforeEach(() => {
     writeMock.mockClear();
     pingMock.mockReset();
-    createAppContextMock.mockReset();
     process.stdout.write = writeMock;
     prevDataDir = process.env.TEA_RAGS_DATA_DIR;
   });
@@ -231,21 +229,11 @@ describe("prime at a relocated project's path", () => {
     await seedRelocatedProject({ dataDir, projectDir });
 
     pingMock.mockResolvedValue(true);
-    createAppContextMock.mockResolvedValue({
-      app: {
-        resolveLanguageCapabilities,
-        getIndexStatus: vi.fn().mockResolvedValue({
-          isIndexed: true,
-          status: "indexed",
-          collectionName: RELOCATED_COLLECTION,
-          chunksCount: 42,
-          lastUpdated: new Date(),
-        }),
-        getIndexMetrics: vi.fn().mockResolvedValue(null),
-        checkIndexDrift: vi.fn().mockResolvedValue(null),
-      },
-      cleanup: vi.fn(),
-      updateService: stubUpdateService(),
+    // The digest resource echoes the URI it was asked for — the alias in it is
+    // the one the registry lookup resolved.
+    const openSession = vi.fn().mockResolvedValue({
+      readResource: vi.fn(async (uri: string) => Promise.resolve({ contents: [{ uri, text: `digest of ${uri}\n` }] })),
+      close: vi.fn().mockResolvedValue(undefined),
     });
 
     const maybeSpawn = vi.fn().mockReturnValue("disabled");
@@ -253,6 +241,8 @@ describe("prime at a relocated project's path", () => {
       registryRuntime: primeRegistryRuntime(),
       path: projectDir,
       createPathCollectionResolver,
+      openSession,
+      updateService: stubUpdateService(),
       autoUpdateTrigger: { maybeSpawn },
     });
 

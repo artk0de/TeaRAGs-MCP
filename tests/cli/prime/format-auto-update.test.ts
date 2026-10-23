@@ -23,18 +23,7 @@ function registryEntry(autoUpdate?: RegistryAutoUpdateConfig): CollectionEntry {
 
 function primeData(over: Partial<PrimeData>): PrimeData {
   return {
-    path: "/repo/x",
-    projectName: "proj",
-    status: {
-      isIndexed: true,
-      status: "indexed",
-      collectionName: "code_x",
-      filesCount: 10,
-      chunksCount: 100,
-      lastUpdated: new Date("2026-08-06T11:55:00.000Z"), // fresh (5m)
-    },
-    metrics: null,
-    drift: null,
+    digest: "# tea-rags digest — proj\nindexed · collection `code_x` · 10 files / 100 chunks · last indexed: 5m ago\n",
     update: null,
     ...over,
   };
@@ -92,24 +81,6 @@ describe("formatPrime — auto-update digest line", () => {
       NOW,
     );
     expect(out).toContain("auto-update: failed 2h ago — see /data/logs/auto-update-proj.log");
-  });
-
-  it("stale index without auto-update config → enable hint next to the staleness warning", () => {
-    const out = formatPrime(
-      primeData({
-        registry: registryEntry(),
-        status: {
-          isIndexed: true,
-          status: "indexed",
-          collectionName: "code_x",
-          lastUpdated: new Date("2026-08-04T12:00:00.000Z"), // 2d stale
-        },
-        autoUpdateOutcome: "disabled",
-      }),
-      NOW,
-    );
-    expect(out).toContain("Index is stale");
-    expect(out).toContain("enable auto-update: `tea-rags auto-update enable --project proj`");
   });
 
   it("no autoUpdateOutcome → digest byte-identical to the pre-hpg2 shape (no line)", () => {

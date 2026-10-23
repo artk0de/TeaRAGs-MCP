@@ -1,6 +1,6 @@
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App } from "../../../core/api/public/index.js";
+import { TeaRagsError, type App } from "../../../core/api/public/index.js";
 import { formatSlimDigest } from "./digest.js";
 import { formatProjectMetrics } from "./metrics.js";
 import type { ProjectDigestData, ProjectMetricsQuery } from "./types.js";
@@ -8,13 +8,13 @@ import type { ProjectDigestData, ProjectMetricsQuery } from "./types.js";
 type TemplateVariable = string | string[] | undefined;
 
 /**
- * Read one project's index state with the same fan-out `tea-rags prime` uses.
- * `null` = the alias is not in the registry. A failed status read surfaces as
+ * Read one project's index state. `alias` is the registered name, or the
+ * collection name of an entry registered without one. `null` = no such entry. A failed status read surfaces as
  * the `Error` it rejected with; every other read degrades to `null`.
  */
 export async function loadProjectDigestData(app: App, alias: string): Promise<ProjectDigestData | null> {
   const { projects } = await app.listProjects();
-  const entry = projects.find((project) => project.name === alias);
+  const entry = projects.find((project) => project.name === alias || project.collectionName === alias);
   if (!entry) return null;
   const { path } = entry;
 
@@ -67,8 +67,16 @@ async function renderProject(
     const data = await loadProjectDigestData(app, name);
     return data === null ? `project '${name}' not registered\n` : render(data);
   } catch (error) {
-    return `project '${name}': index status unavailable — ${error instanceof Error ? error.message : String(error)}\n`;
+    return `project '${name}': index status unavailable — ${describeFailure(error)}\n`;
   }
+}
+
+/** A typed error keeps its code and hint — the reader needs the cure, not just the symptom. */
+function describeFailure(error: unknown): string {
+  if (error instanceof TeaRagsError) {
+    return `${error.message} (${error.code})${error.hint ? `\n${error.hint}` : ""}`;
+  }
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -95,27 +103,39 @@ export function registerProjectResources(server: McpServer, app: App): void {
     }),
   );
 
-  server.registerResource(
-    "project-metrics",
-    new ResourceTemplate("tea-rags://project/{alias}/metrics{?language,section}", { list: undefined }),
-    {
-      title: "Project Metrics",
-      description:
-        "Signal thresholds, label maps, capability tiers, codegraph resolve and registry params of a project. " +
-        "?language=<lang> narrows to one language; ?section=thresholds,labelMap,capability,resolve,registry",
-      mimeType: "text/markdown",
-    },
-    async (uri, { alias, language, section }) => {
-      const query: ProjectMetricsQuery = { language: listOf(language)[0], section: listOf(section) };
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: "text/markdown",
-            text: await renderProject(app, alias, (data) => formatProjectMetrics(data, query)),
-          },
-        ],
-      };
-    },
-  );
+  // The SDK matches a query template only when EVERY listed parameter is
+  // present, so each accepted combination is its own template.
+  for (const [name, template] of METRICS_TEMPLATES) {
+    server.registerResource(
+      name,
+      new ResourceTemplate(template, { list: undefined }),
+      {
+        title: "Project Metrics",
+        description:
+          "Signal thresholds, label maps, capability tiers, codegraph resolve and registry params of a project. " +
+          "?language=<lang> narrows to one language; ?section=thresholds,labelMap,capability,resolve,registry",
+        mimeType: "text/markdown",
+      },
+      async (uri, { alias, language, section }) => {
+        const query: ProjectMetricsQuery = { language: listOf(language)[0], section: listOf(section) };
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "text/markdown",
+              text: await renderProject(app, alias, (data) => formatProjectMetrics(data, query)),
+            },
+          ],
+        };
+      },
+    );
+  }
 }
+
+/** Metrics URIs: no query, `?language`, `?section`, or `?language=…&section=…` in that order. */
+const METRICS_TEMPLATES: readonly (readonly [name: string, template: string])[] = [
+  ["project-metrics", "tea-rags://project/{alias}/metrics{?language,section}"],
+  ["project-metrics-language", "tea-rags://project/{alias}/metrics{?language}"],
+  ["project-metrics-section", "tea-rags://project/{alias}/metrics{?section}"],
+  ["project-metrics-all", "tea-rags://project/{alias}/metrics"],
+];

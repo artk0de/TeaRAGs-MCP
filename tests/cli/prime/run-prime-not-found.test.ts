@@ -4,12 +4,9 @@ import { primeRegistryRuntime } from "../../../src/cli/prime/registry-runtime.js
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import { createPathCollectionResolver } from "../../../src/core/api/index.js";
 
-vi.mock("../../../src/bootstrap/factory.js", () => ({
-  createAppContext: vi.fn(),
-}));
-
 describe("runPrime — project not registered", () => {
   it("writes a path-not-found placeholder mentioning the unknown project", async () => {
+    const openSession = vi.fn();
     const writes: string[] = [];
     const orig = process.stdout.write;
     process.stdout.write = (m: string) => {
@@ -20,6 +17,7 @@ describe("runPrime — project not registered", () => {
       await runPrime({
         registryRuntime: primeRegistryRuntime(),
         project: "this-project-does-not-exist-anywhere",
+        openSession,
         createPathCollectionResolver,
       });
     } finally {
@@ -28,5 +26,6 @@ describe("runPrime — project not registered", () => {
     const out = writes.join("");
     expect(out).toContain("not registered");
     expect(out).toContain("this-project-does-not-exist-anywhere");
+    expect(openSession).not.toHaveBeenCalled();
   });
 });

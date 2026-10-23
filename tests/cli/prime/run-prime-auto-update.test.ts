@@ -6,17 +6,16 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
+import type { InProcessToolSession } from "../../../src/bootstrap/transport/in-memory.js";
 import { primeRegistryRuntime } from "../../../src/cli/prime/registry-runtime.js";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
 import { CollectionRegistry, createPathCollectionResolver } from "../../../src/core/api/index.js";
-import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
 import { resolveCollectionName } from "../../../src/core/primitives/ids/collection-identity.js";
 
-const { pingMock, createAppContextMock } = vi.hoisted(() => ({
+const { pingMock } = vi.hoisted(() => ({
   pingMock: vi.fn(),
-  createAppContextMock: vi.fn(),
 }));
 
 vi.mock("node:fs", async () => {
@@ -26,10 +25,6 @@ vi.mock("node:fs", async () => {
 
 vi.mock("../../../src/cli/prime/qdrant-ping.js", () => ({
   pingQdrant: pingMock,
-}));
-
-vi.mock("../../../src/bootstrap/factory.js", () => ({
-  createAppContext: createAppContextMock,
 }));
 
 vi.mock("../../../src/bootstrap/config/index.js", () => ({
@@ -46,7 +41,6 @@ let prevDataDir: string | undefined;
 beforeEach(() => {
   writeMock.mockClear();
   pingMock.mockReset();
-  createAppContextMock.mockReset();
   process.stdout.write = writeMock;
   dataDir = mkdtempSync(join(tmpdir(), "prime-auto-update-"));
   prevDataDir = process.env.TEA_RAGS_DATA_DIR;
@@ -62,6 +56,19 @@ afterEach(() => {
 
 function stubUpdateService(): UpdateCheckService {
   return { checkForUpdate: vi.fn().mockResolvedValue(unavailable("timeout")) } as unknown as UpdateCheckService;
+}
+
+function digestSession(): InProcessToolSession {
+  return {
+    listTools: vi.fn(),
+    callTool: vi.fn(),
+    listResources: vi.fn(),
+    listResourceTemplates: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+    readResource: vi.fn(async (uri: string) => ({
+      contents: [{ uri, mimeType: "text/markdown", text: "# tea-rags digest — auto-upd-proj\n" }],
+    })),
+  };
 }
 
 describe("runPrime — auto-update trigger wiring", () => {
@@ -84,27 +91,13 @@ describe("runPrime — auto-update trigger wiring", () => {
 
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    createAppContextMock.mockResolvedValue({
-      app: {
-        resolveLanguageCapabilities,
-        getIndexStatus: vi.fn().mockResolvedValue({
-          isIndexed: true,
-          status: "indexed",
-          collectionName,
-          chunksCount: 100,
-          lastUpdated: new Date(),
-        }),
-        getIndexMetrics: vi.fn().mockResolvedValue(null),
-        checkIndexDrift: vi.fn().mockResolvedValue("none"),
-      },
-      cleanup: vi.fn(),
-      updateService: stubUpdateService(),
-    });
 
     const maybeSpawn = vi.fn().mockReturnValue("eligible");
     await runPrime({
       registryRuntime: primeRegistryRuntime(),
       project: "auto-upd-proj",
+      openSession: async () => digestSession(),
+      updateService: stubUpdateService(),
       autoUpdateTrigger: { maybeSpawn },
       createPathCollectionResolver,
     });
