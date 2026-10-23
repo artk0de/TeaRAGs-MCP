@@ -174,6 +174,12 @@ export const capability: LanguageCapability = {
   //   `rustAnalyzerScip` pass, its source and `CODEGRAPH_RUST_ANALYZER*` are
   //   removed, and the rustc driver is the one compiler source — the R3a–R3d
   //   rules and the miss classifier's gates read its rows alone.
+  // - RESIDUAL R5 — where the driver has no row, a std-prelude name with no
+  //   receiver-type evidence (`x.unwrap()` on an untyped receiver, a bare
+  //   `Ok(v)` / `drop(x)` no `use` binds) is not bound to a project namesake
+  //   by name alone: the short-name and enclosing-type passes DROP it and
+  //   the miss is external. A typed local, `self`, a type path or an
+  //   import-bound receiver keeps the static edge.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

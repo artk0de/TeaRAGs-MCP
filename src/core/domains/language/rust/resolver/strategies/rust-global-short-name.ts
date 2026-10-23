@@ -1,6 +1,7 @@
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
+import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { rustStdNameBindsByNameOnly } from "../std-name-only-binding.js";
 import { rustCalleeShortNameCandidates, type ResolverConfig } from "./shared.js";
 
 /**
@@ -15,12 +16,17 @@ import { rustCalleeShortNameCandidates, type ResolverConfig } from "./shared.js"
  * foreign namesake used to trip the single-candidate gate, and the callee
  * role (bd tea-rags-mcp-jqvbn) keeps a trait, enum, type alias or constant
  * sharing the member's name from counting as a callable candidate.
+ *
+ * A std-prelude name with no receiver-type evidence where the rustc driver is
+ * silent DROPS instead (RESIDUAL R5): `x.unwrap()` is `Result::unwrap`, not
+ * the corpus's lone `Res#unwrap`.
  */
 export class RustGlobalShortNameSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "globalShortName";
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    if (rustStdNameBindsByNameOnly(call, ctx)) return DROP;
     const fallback = rustCalleeShortNameCandidates(ctx, call.member);
     const target = pickSingleCandidate(fallback, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
