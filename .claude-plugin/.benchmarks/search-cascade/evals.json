@@ -123,9 +123,9 @@
       "audit_finding": "naming review of a diff",
       "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Uncommitted changes add several locals, a class and a constant across 4 files.",
       "prompt": "Check whether the names in my uncommitted changes fit the project's vocabulary.",
-      "expected": "get_naming_lexicon(changes)",
+      "expected": "review_changes(changes: {}) — naming section (default sections, or sections: [\"naming\"]); its verdicts are the answer",
       "not": [
-        "get_naming_lexicon(names[] hand-listed from the diff)",
+        "get_naming_lexicon(names[] hand-listed from the diff), before or after review_changes",
         "semantic_search",
         "hybrid_search",
         "ripgrep"

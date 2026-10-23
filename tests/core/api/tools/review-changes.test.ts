@@ -111,6 +111,12 @@ describe("review_changes handler", () => {
     expect(config.description).toContain("remedy");
   });
 
+  it("states up front that the naming section already judges every declaration the change adds", () => {
+    const head = registered()!.config.description.slice(0, 400);
+    expect(head).toMatch(/naming[^.]*every declaration the change adds/i);
+    expect(head).toMatch(/never hand-list/i);
+  });
+
   it("the architecture change block survives the formatter and the description names its contract (bd tea-rags-mcp-89k7k.1.7)", async () => {
     const { handler, app, config } = registered()!;
     const change = {
