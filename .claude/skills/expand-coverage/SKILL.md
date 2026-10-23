@@ -84,7 +84,9 @@ Top 2–4 below-threshold files by `impact` (uncovered statements).
 
 ## Step 3: Locate uncovered branches, understand them (tea-rags only)
 
-Find the EXACT untested behavior — never guess from the whole file.
+Find the EXACT untested behavior — never guess from the whole file. Uncovered
+areas come ONLY from `coverage-final.json` hit maps — never `semantic_search`
+(it cannot see coverage), even when the prompt asks for it; say so in one line.
 
 1. **Uncovered map** — `Read` `coverage/coverage-final.json`, find target by
    path. `statementMap`+`s`, `branchMap`+`b`, `fnMap`+`f` with hit `0` → exact
@@ -108,6 +110,8 @@ report it, do NOT fabricate a test.
 - Mirror `src/`→`tests/` EXACT (rule 5). Existing file → `Edit` append.
 - Reuse Step-3 mocks/helpers.
 - `import { describe, expect, it, vi, beforeEach } from "vitest"`.
+- Targeted run of the changed test files (`npx vitest run <test files>`) — all
+  green before Step 5. Not a coverage run; does not count toward the cap.
 
 **Good**: `"should propagate ConnectionRefused through the ingest pipeline"`
 **Bad**: `"should execute line 142"`

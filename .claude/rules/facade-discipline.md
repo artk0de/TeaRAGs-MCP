@@ -90,7 +90,7 @@ questions in order — first "yes" wins:
 1. **Does it search, rank, or scroll chunks?** → new strategy in
    `domains/explore/strategies/` extending `BaseExploreStrategy`. Register in
    `createExploreStrategy()` (for shared strategies) or instantiate per-request
-   (like `SimilarSearchStrategy` / `SymbolSearchStrategy`).
+   in the Ops method (like `SimilarSearchStrategy` / `SymbolSearchStrategy`).
 2. **Does it aggregate / summarize data from Qdrant without vector search?** →
    new query class in `domains/explore/queries/`. Injected into Ops as a
    constructor dep (Ops in turn is injected into the facade).
@@ -150,17 +150,13 @@ async findSymbol(request: FindSymbolRequest) {
 ```typescript
 async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
   validateFindSymbolRequest(request);
-  const { collectionName, path } = await this.resolveAndGuard(
-    request.collection,
-    request.path,
-  );
-  return this.executeExplore(
-    this.symbolStrategy,
-    buildSymbolContext(request, collectionName, this.registry),
-    path,
-  );
+  return this.exploreOps.findSymbol(request);
 }
 ```
+
+Fix for inline filter building: typed + raw filter merge (`pathPattern`
+included) → Ops calls `registry.buildMergedFilter()`; operation-specific Qdrant
+shapes → the strategy; scroll / search → the strategy. Never in the facade.
 
 ### ❌ Aggregation logic in the facade
 
@@ -348,8 +344,8 @@ Adding new concrete strategy class:
    new type from factory's exhaustiveness check.
 3. **Register the strategy**: either extend `createExploreStrategy()` if the
    strategy is shared across calls (like `vector`/`hybrid`/`scroll-rank`), or
-   keep it per-request and instantiate it in the facade dispatcher (like
-   `similar`/`symbol`).
+   keep it per-request and instantiate it in the Ops method (`ExploreOps`, like
+   `similar`/`symbol`). State which one.
 4. **Export from `strategies/index.ts`** — add both the class and its `Input`
    type to the barrel.
 
