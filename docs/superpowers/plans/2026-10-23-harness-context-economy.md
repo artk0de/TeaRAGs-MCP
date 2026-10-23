@@ -993,6 +993,40 @@ Task 14, so the Codex live test installs from the final layout.
 
 - [ ] Steps: failing merge test → driver + hook → CI job → rule → commit.
 
+### Task 19: dinopowers as its own Codex / Cursor plugin
+
+Separate plugin next to tea-rags in both harness marketplaces (user decision
+2026-10-23). Runs after Task 17 (generators read `plugins/**`), verified live in
+Task 14.
+
+**Files:**
+
+- Modify: `scripts/gen-harness-{codex,cursor}.ts`, `scripts/harness/package.ts`
+  — emit `harness/{codex,cursor}/dinopowers/` from `plugins/dinopowers/`; add it
+  to both root marketplace manifests.
+- Modify: `scripts/harness/transform.ts` — `Skill(superpowers:<s>)` becomes the
+  harness mention of the superpowers skill, not a bare name; every wrapper gains
+  a missing-dependency line: superpowers skill not available → stop and ask the
+  user to install superpowers (link: https://github.com/obra/superpowers; Claude
+  Code: `/plugin install superpowers@claude-plugins-official`; Codex / Cursor:
+  the repository's own install steps), never run the wrapper's enrichment alone
+  and present it as the full workflow.
+- Modify: dinopowers SessionStart / SubagentStart routing scripts — Codex
+  packages them like tea-rags' subagent block; Cursor gets sessionStart only.
+- Test: `tests/scripts/gen-harness-{codex,cursor}.test.ts` — dinopowers package
+  renders, idempotent, links resolve, superpowers mention + install line present
+  in every wrapper.
+
+**Open questions, answered by Task 14 (live Codex):**
+
+1. Name collision — dinopowers wrappers share names with superpowers skills
+   (`brainstorming`, `writing-plans`, …). Check whether Codex namespaces plugin
+   skills; if not, ship wrappers as `dino-<name>`.
+2. Skills-list budget — tea-rags 6,540 + dinopowers 5,366 (+ superpowers' own) ≈
+   2× the ~8,000-char list budget. Measure what Codex drops; fixes in order:
+   `allow_implicit_invocation: false` on internal tea-rags skills, shorter
+   dinopowers descriptions for the Codex dialect, then a per-harness cap test.
+
 ## Phase E — Landing
 
 ### Task 16: Gates, docs, merge
