@@ -17,6 +17,23 @@ Automated install + config of TeaRAGs MCP server.
 Per step: read `steps/<file>` → lookups in `reference.md` (recommendation
 tables, version managers, env vars, tune defaults) → execute → next step.
 
+## Invariants — state them in every install answer
+
+Hold for every path (resume, Docker, embedded, ONNX, subagent, plan-only
+answer). Name them to the user even when the step file is not read yet:
+
+- **MCP server command = `tea-rags server`** (global binary). NEVER
+  `npx tea-rags server`. Step 8 registers it; Docker Qdrant → plus `QDRANT_URL`,
+  embedded → omit `QDRANT_URL`.
+- **Node.js 24+** (not 22+). Lower version → upgrade; block progress until
+  `node -v` ≥ 24, then re-run `detect-environment` to refresh PATH.
+- **tea-rags installed globally** — `npm install -g tea-rags`. Never `npx`.
+- **Embedded Qdrant** → setup triggers postinstall download via global
+  `tea-rags --version` (never `npx`). Binary missing → error tells user to run
+  `npm install -g tea-rags`, then retry. Docker Qdrant → no postinstall trigger.
+- Read-only / subagent / "just plan it" context → still answer with the step
+  sequence and these invariants; never decline to describe the wizard.
+
 ## Script Location
 
 All scripts in `${CLAUDE_PLUGIN_ROOT}/scripts/setup/`.
