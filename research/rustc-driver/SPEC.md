@@ -244,9 +244,9 @@ body. The compiler-side cost is the incremental re-check: `typeck` of unchanged
 bodies comes from the incremental cache, and the visitor is ~40 µs per row. The
 per-unit file replaces its predecessor, and stale units are garbage-collected
 against the run's unit list (§8). This is the same granularity as the SCIP
-runner's per-file partial serve, only cheaper: a warm run on ripgrep is 1 s, so
-the adapter can afford to run the driver on every index run and needs no "reuse
-only" admission mode.
+runner's per-file partial serve, only cheaper: a warm run on ripgrep is 1 s. The
+adapter still honours the pass index's reuse-only admission for incremental
+passes below the bulk share; §8.4 states when such a pass re-runs cargo anyway.
 
 ## 7. Coverage against the chain-tally residual (ripgrep)
 
