@@ -673,12 +673,15 @@ export interface RustcDriverWarm {
   failed: number;
   /** In-project callable rows the pass found no table symbol for (RESIDUAL R1's gate); absent = none counted. */
   inProjectUnmapped?: number;
+  /** Closure / fn pointer / Fn-bound param callee rows the pass dropped (RESIDUAL R4); absent = none counted. */
+  localCallee?: number;
 }
 
 /** The one `RUSTC-DRIVER` report line. */
 export function describeRustcDriverWarm(warm: RustcDriverWarm): string {
   const unmapped = warm.inProjectUnmapped === undefined ? "" : ` · inProjectUnmapped ${warm.inProjectUnmapped}`;
-  return `RUSTC-DRIVER warm ${(warm.warmMs / 1000).toFixed(2)}s · ${warm.status} · units ${warm.units} · failed ${warm.failed}${unmapped}`;
+  const localCallee = warm.localCallee === undefined ? "" : ` · localCallee ${warm.localCallee}`;
+  return `RUSTC-DRIVER warm ${(warm.warmMs / 1000).toFixed(2)}s · ${warm.status} · units ${warm.units} · failed ${warm.failed}${unmapped}${localCallee}`;
 }
 
 /** `--rust-analyzer`: the warm's wall time and how the SCIP acquisition ended. */
@@ -1098,12 +1101,16 @@ export async function run(
     }
   }
   if (rustcDriverWarm !== undefined) {
-    const unmapped = runner.resolverDiagnostics().rust?.rustcCallSites;
-    const inProjectUnmapped =
-      typeof unmapped === "object" && unmapped !== null && "inProjectUnmapped" in unmapped
-        ? Number(unmapped.inProjectUnmapped)
+    const driver = runner.resolverDiagnostics().rust?.rustcCallSites;
+    const counted = (key: string): number =>
+      typeof driver === "object" && driver !== null && key in driver
+        ? Number((driver as Record<string, unknown>)[key])
         : 0;
-    rustcDriverWarm = { ...rustcDriverWarm, inProjectUnmapped };
+    rustcDriverWarm = {
+      ...rustcDriverWarm,
+      inProjectUnmapped: counted("inProjectUnmapped"),
+      localCallee: counted("localCallee"),
+    };
   }
 
   return {

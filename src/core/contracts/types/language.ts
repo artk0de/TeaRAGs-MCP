@@ -1354,7 +1354,16 @@ export interface RustAnalyzerScipSource {
  */
 export interface RustCallSiteDefinition extends RustScipDefinition {
   readonly implIsDerived?: boolean;
+  /**
+   * The callee is a local binding, param or field whose type is a closure, a
+   * fn pointer or an Fn-bound param / trait object (RESIDUAL.md R4): `kind`
+   * is `local`, nothing is defined, and no table symbol is the target.
+   */
+  readonly indirectCallee?: RustIndirectCalleeKind;
 }
+
+/** How an indirect callee's type hides its target (RESIDUAL.md R4). */
+export type RustIndirectCalleeKind = "closure" | "fnPointer" | "fnParam";
 
 /**
  * Call-site → definition lookup over one rustc driver run of a project

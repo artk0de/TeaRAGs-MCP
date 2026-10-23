@@ -631,3 +631,70 @@ describe("driver authority over the static chain (RESIDUAL R2)", () => {
     ]);
   });
 });
+
+describe("local and indirect callee rows through the driver slot (research/rustc-driver/RESIDUAL.md R4)", () => {
+  /** `insert(k, v)` where `insert` is a closure binding, as the decoder serves the driver's row. */
+  const CLOSURE_INSERT: RustCallSiteDefinition = {
+    symbol: "rustc local closure insert",
+    package: "",
+    inProject: false,
+    name: "insert",
+    kind: "local",
+    packageInProject: false,
+    indirectCallee: "closure",
+  };
+  /** A std callable at the same token: proof of a target, never of an undecidable one. */
+  const STD_CALLABLE: RustCallSiteDefinition = {
+    symbol: "rustc alloc std::collections::HashMap::insert",
+    package: "alloc",
+    inProject: false,
+    name: "insert",
+    kind: "callable",
+    packageInProject: false,
+  };
+  const insertSite = call("insert(k, v)", null, "insert", 33, 4);
+  const insertNamesake = (): InMemoryGlobalSymbolTable => table(def("src/map.rs", "insert", "insert", 5, 9));
+
+  it("DROPs the static namesake edge of a closure call", async () => {
+    const t = insertNamesake();
+    expect((await warmedResolver({ callSites: stubIndex({}) })).resolve(insertSite, ctxWith(t))).not.toBeNull();
+    const callSites = stubIndex({ "src/main.rs:33:4": CLOSURE_INSERT });
+    expect(strategy.attempt(insertSite, ctxWith(t, { callSites }))).toEqual({ kind: "drop" });
+    expect((await warmedResolver({ callSites })).resolve(insertSite, ctxWith(t))).toBeNull();
+  });
+
+  it("resolves a local binding of a fn item to the item's table symbol", () => {
+    const t = table(def("src/ts.rs", "new", "TimeStamp.new", 3, 5));
+    const callSites = stubIndex({ "src/main.rs:12:4": inProject("new", "src/ts.rs", 3) });
+    expect(strategy.attempt(call("ts(42)", null, "ts", 12, 4), ctxWith(t, { callSites }))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/ts.rs", targetSymbolId: "TimeStamp.new" },
+    });
+  });
+
+  it("classifies a driver-proven indirect callee with a project namesake as unresolvable", async () => {
+    const t = insertNamesake();
+    expect(classifyResolveMiss(insertSite, ctxWith(t), await facade(), t)).toBe("missWithInProjectDef");
+    const resolver = await facade({ callSites: stubIndex({ "src/main.rs:33:4": CLOSURE_INSERT }) });
+    expect(resolver.targetsUndecidable?.(insertSite, ctxWith(t))).toBe(true);
+    expect(classifyResolveMiss(insertSite, ctxWith(t), resolver, t)).toBe("unresolvable");
+  });
+
+  it("answers targetsUndecidable false without proof: no row, or a callable row", async () => {
+    const t = insertNamesake();
+    expect((await facade({ callSites: stubIndex({}) })).targetsUndecidable?.(insertSite, ctxWith(t))).toBe(false);
+    const callable = await facade({ callSites: stubIndex({ "src/main.rs:33:4": STD_CALLABLE }) });
+    expect(callable.targetsUndecidable?.(insertSite, ctxWith(t))).toBe(false);
+  });
+
+  it("counts the indirect callee sites once per pass", async () => {
+    const resolver = await warmedResolver({ callSites: stubIndex({ "src/main.rs:33:4": CLOSURE_INSERT }) });
+    resolver.resolve(insertSite, ctxWith(insertNamesake()));
+    resolver.resolve(insertSite, ctxWith(insertNamesake()));
+    expect(resolver.diagnostics()).toEqual({
+      rustcCallSites: { outcome: "indexed", cacheHit: true, localCallee: 1 },
+    });
+    resolver.prepareResolvePass({ expectedFileCount: 1, projectRoot: ROOT });
+    expect(resolver.diagnostics()).toEqual({ rustcCallSites: { outcome: "indexed", cacheHit: true } });
+  });
+});

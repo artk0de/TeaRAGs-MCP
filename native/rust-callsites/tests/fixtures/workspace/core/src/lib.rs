@@ -72,5 +72,47 @@ pub fn render(f: &mut fmt::Formatter<'_>, v: Option<i64>) -> fmt::Result {
     my_log!("{}", hit);
     std::write!(f, "{}", std::matches!(v, None))
 }
+
+pub struct Stamp(pub u64);
+
+impl Stamp {
+    pub fn new(v: u64) -> Self {
+        Stamp(v)
+    }
+}
+
+pub struct Holder {
+    pub f: fn(i64) -> i64,
+    pub g: Box<dyn Fn(i64) -> i64>,
+}
+
+impl Holder {
+    pub fn call_both(&self, x: i64) -> i64 {
+        (self.f)(x) + (self.g)(x)
+    }
+}
+
+pub fn with_callback(cb: impl Fn() -> i64, by_ref: &dyn Fn() -> i64) -> i64 {
+    cb() + by_ref()
+}
+
+pub fn generic_callback<F: Fn(i64) -> i64>(cb: F) -> i64 {
+    cb(1)
+}
+
+pub fn locals() -> u64 {
+    let ts = Stamp::new;
+    let mut acc = 0;
+    let mut insert = |k: u64, v: u64| acc += k * v;
+    insert(1, 2);
+    ts(42).0 + acc
+}
+
+pub fn shared_callback(cb: &Option<std::sync::Arc<dyn Fn(i64) -> i64>>) -> i64 {
+    if let Some(f) = cb {
+        return f(2);
+    }
+    0
+}
 // c2
 // c2

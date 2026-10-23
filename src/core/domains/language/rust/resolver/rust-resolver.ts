@@ -72,7 +72,11 @@ import { RustExternalVocabulary } from "../vocabulary/external-call.js";
 import { RustResolveEnvironmentCache } from "./resolve-environment-cache.js";
 import { withRustResolveEnvironment } from "./resolve-environment.js";
 import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
-import { rustCallSiteProvesExternal, rustCallSiteProvesNoProjectCallable } from "./scip-resolution.js";
+import {
+  rustCallSiteProvesExternal,
+  rustCallSiteProvesIndirectCallee,
+  rustCallSiteProvesNoProjectCallable,
+} from "./scip-resolution.js";
 import {
   RustAnalyzerScipSymbolResolutionStrategy,
   RustBareSelfMethodSymbolResolutionStrategy,
@@ -168,8 +172,15 @@ export class RustCallResolver implements CallResolver {
     const rustAnalyzerScip = this.environments.scipDiagnostics();
     const acquired = this.environments.callSiteDiagnostics();
     const inProjectUnmapped = this.callSites.unmappedInProjectCount();
+    const localCallee = this.callSites.localCalleeCount();
     const rustcCallSites =
-      acquired === undefined || inProjectUnmapped === 0 ? acquired : { ...acquired, inProjectUnmapped };
+      acquired === undefined
+        ? acquired
+        : {
+            ...acquired,
+            ...(inProjectUnmapped === 0 ? {} : { inProjectUnmapped }),
+            ...(localCallee === 0 ? {} : { localCallee }),
+          };
     if (rustAnalyzerScip === undefined && rustcCallSites === undefined) return undefined;
     return {
       ...(rustAnalyzerScip === undefined ? {} : { rustAnalyzerScip }),
@@ -228,5 +239,14 @@ export class RustCallResolver implements CallResolver {
     // A compiler-proven in-project type or local (bd s3i8m.6 R3b) or derived
     // impl (bd s3i8m T7) is no namesake's edge.
     return !rustCallSiteProvesNoProjectCallable(call, this.withEnvironment(ctx));
+  }
+
+  /**
+   * The miss classifier's LAST gate (K11): the rustc driver proves the callee
+   * is a closure, fn pointer or Fn-bound param (RESIDUAL R4), so the target is
+   * decided at run time. Proof only — no driver row answers false.
+   */
+  targetsUndecidable(call: CallRef, ctx: CallContext): boolean {
+    return rustCallSiteProvesIndirectCallee(call, this.withEnvironment(ctx));
   }
 }

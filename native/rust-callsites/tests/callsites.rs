@@ -605,6 +605,77 @@ fn question_mark_desugaring_is_dropped() {
     assert!(run().stats.get("drop.desugaring").copied().unwrap_or(0) > 0);
 }
 
+/// An indirect-callee row (RESIDUAL R4): the callee token is a local binding, a param or a
+/// field whose TYPE is a closure, fn pointer or Fn-bound param — no definition to name.
+fn indirect(line: u64, col: u64, name: &str, def_kind: &str) -> Value {
+    with(
+        site("core/src/lib.rs", line, col, "local", name, "", def_kind),
+        json!({"calleeCrate": null}),
+    )
+}
+
+#[test]
+fn local_binding_of_a_fn_item_resolves_to_the_item() {
+    let expected = with(
+        site(
+            "core/src/lib.rs",
+            108,
+            4,
+            "local",
+            "Stamp::new",
+            "fx_core",
+            "assocFn",
+        ),
+        json!({"implSelfType": "Stamp", "inProject": true, "defRelPath": "core/src/lib.rs", "defLine": 79}),
+    );
+    assert_eq!(row_at("core/src/lib.rs", 108, 4), &expected);
+}
+
+#[test]
+fn local_closure_call_is_an_indirect_closure_row() {
+    assert_eq!(
+        row_at("core/src/lib.rs", 107, 4),
+        &indirect(107, 4, "insert", "closure")
+    );
+}
+
+#[test]
+fn fn_bound_params_are_indirect_fn_param_rows() {
+    assert_eq!(
+        row_at("core/src/lib.rs", 96, 4),
+        &indirect(96, 4, "cb", "fnParam")
+    );
+    assert_eq!(
+        row_at("core/src/lib.rs", 96, 11),
+        &indirect(96, 11, "by_ref", "fnParam")
+    );
+    assert_eq!(
+        row_at("core/src/lib.rs", 100, 4),
+        &indirect(100, 4, "cb", "fnParam")
+    );
+}
+
+#[test]
+fn pattern_bound_shared_trait_object_is_an_indirect_fn_param_row() {
+    // `Some(f)` over `&Option<Arc<dyn Fn>>`: the call autoderefs through `Arc`.
+    assert_eq!(
+        row_at("core/src/lib.rs", 113, 15),
+        &indirect(113, 15, "f", "fnParam")
+    );
+}
+
+#[test]
+fn field_callee_sits_at_the_field_name_token() {
+    assert_eq!(
+        row_at("core/src/lib.rs", 91, 14),
+        &indirect(91, 14, "f", "fnPointer")
+    );
+    assert_eq!(
+        row_at("core/src/lib.rs", 91, 28),
+        &indirect(91, 28, "g", "fnParam")
+    );
+}
+
 #[test]
 fn every_row_has_exactly_the_contract_fields() {
     let expected: BTreeSet<&str> = [
@@ -657,7 +728,7 @@ fn every_row_has_exactly_the_contract_fields() {
 fn run_json_lists_every_unit_and_stale_units_are_deleted() {
     let units_dir = run().out_dir.join("units");
     let run_json = &run().cold_run_json;
-    assert_eq!(run_json["format"], 2);
+    assert_eq!(run_json["format"], 3);
     assert_eq!(run_json["success"], true);
     assert_eq!(run_json["failed"], json!([]));
     assert_eq!(run_json["missing"], json!([]));

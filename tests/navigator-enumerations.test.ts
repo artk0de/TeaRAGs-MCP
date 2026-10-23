@@ -52,7 +52,7 @@ const PINNED_CAPABILITY_LANGUAGES: Readonly<Record<string, readonly string[]>> =
   resolveFileEdges: ["java", "javascript", "python", "ruby", "swift", "typescript"],
   targetsCoreAmbiguousMember: ["python", "ruby"],
   targetsExternalImport: ["java", "javascript", "python", "ruby", "rust", "typescript"],
-  targetsUndecidable: ["python"],
+  targetsUndecidable: ["python", "rust"],
   typeOfCallArgument: ["ruby"],
   visibleLocalBindings: ["python"],
   warmResolvePass: ["rust"],

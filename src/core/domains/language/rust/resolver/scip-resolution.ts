@@ -197,6 +197,15 @@ export function rustCallSiteProvesExternal(call: CallRef, ctx: CallContext): boo
 }
 
 /**
+ * Whether the rustc driver proves the callee is a closure, a fn pointer or an
+ * Fn-bound param / trait object (RESIDUAL R4): a target decided at run time,
+ * which no static pass can name.
+ */
+export function rustCallSiteProvesIndirectCallee(call: CallRef, ctx: CallContext): boolean {
+  return rustcCallSiteDefinitionOf(call, ctx)?.indirectCallee !== undefined;
+}
+
+/**
  * Whether the compiler — the driver, else SCIP — proves no project callable is
  * the call's target although one may share its name: an in-project type or
  * local — a tuple-struct / tuple-variant constructor or a closure variable

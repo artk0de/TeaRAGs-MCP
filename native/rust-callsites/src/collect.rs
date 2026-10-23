@@ -257,14 +257,9 @@ impl<'a, 'tcx> CallVisitor<'a, 'tcx> {
         }
     }
 
-    fn emit(
-        &mut self,
-        call_kind: &'static str,
-        expr: &'tcx Expr<'tcx>,
-        name_span: Span,
-        def_id: DefId,
-    ) {
-        let tcx = self.tcx;
+    /// The row position of a callee name token: `(origin, macro, pos)`, or `None` (with the
+    /// drop counted) for desugarings, foreign expansions and callers outside the root.
+    fn call_site(&mut self, name_span: Span) -> Option<(&'static str, Option<String>, Pos)> {
         // Macro handling: a name token the user wrote (macro ARGUMENT) keeps a root
         // context; a name token the macro body produced is from_expansion.
         let (origin, macro_name, site) = if name_span.from_expansion() {
@@ -272,14 +267,14 @@ impl<'a, 'tcx> CallVisitor<'a, 'tcx> {
             match data.kind {
                 ExpnKind::Desugaring(_) => {
                     self.bump("drop.desugaring");
-                    return;
+                    return None;
                 }
                 ExpnKind::Macro(_, name) => {
                     ("macro", Some(name.to_string()), name_span.source_callsite())
                 }
                 _ => {
                     self.bump("drop.otherExpansion");
-                    return;
+                    return None;
                 }
             }
         } else {
@@ -288,15 +283,28 @@ impl<'a, 'tcx> CallVisitor<'a, 'tcx> {
         let t0 = std::time::Instant::now();
         let Some(pos) = self.pos(site) else {
             self.bump("drop.noPosition");
-            return;
+            return None;
         };
         if !pos.in_root {
             self.bump("drop.callerOutsideRoot");
-            return;
+            return None;
         }
         self.tick("us.sitePos", t0);
+        Some((origin, macro_name, pos))
+    }
+
+    fn emit(
+        &mut self,
+        call_kind: &'static str,
+        name_span: Span,
+        def_id: DefId,
+        generic_args: ty::GenericArgsRef<'tcx>,
+    ) {
+        let tcx = self.tcx;
+        let Some((origin, macro_name, pos)) = self.call_site(name_span) else {
+            return;
+        };
         let t1 = std::time::Instant::now();
-        let args = self.typeck.node_args(expr.hir_id);
         let (trait_path, impl_self) = (
             tcx.trait_of_assoc(def_id).map(|t| tcx.def_path_str(t)),
             tcx.impl_of_assoc(def_id).map(|i| {
@@ -309,10 +317,13 @@ impl<'a, 'tcx> CallVisitor<'a, 'tcx> {
         // Monomorphic dispatch: a trait method whose receiver type is concrete
         // resolves to the impl item the call actually runs.
         let mut resolved: Option<DefId> = None;
-        if tcx.trait_of_assoc(def_id).is_some() && !args.has_infer() && !args.references_error() {
+        if tcx.trait_of_assoc(def_id).is_some()
+            && !generic_args.has_infer()
+            && !generic_args.references_error()
+        {
             let typing_env = ty::TypingEnv::post_analysis(tcx, self.owner.to_def_id());
-            let args = tcx.erase_and_anonymize_regions(args);
-            if let Ok(Some(inst)) = Instance::try_resolve(tcx, typing_env, def_id, args) {
+            let erased_args = tcx.erase_and_anonymize_regions(generic_args);
+            if let Ok(Some(inst)) = Instance::try_resolve(tcx, typing_env, def_id, erased_args) {
                 if inst.def_id() != def_id {
                     resolved = Some(inst.def_id());
                     self.bump("trait.resolvedToImpl");
@@ -365,6 +376,62 @@ impl<'a, 'tcx> CallVisitor<'a, 'tcx> {
         });
         self.tick("us.rowStrings", t3);
         self.rows.push(row);
+    }
+
+    /// A call whose callee is a local binding, a param or a field (RESIDUAL R4): the callee's
+    /// TYPE decides the row. A fn item is a real target (`callKind: "local"`); a closure,
+    /// fn pointer or Fn-bound param / trait object has no definition to name, so the row
+    /// carries the binding name and the indirection kind only.
+    fn emit_indirect(&mut self, callee: &'tcx Expr<'tcx>, name_span: Span) {
+        // The ADJUSTED type: an overloaded call autoderefs the callee (`Arc<dyn Fn>` → `&dyn Fn`).
+        let mut callee_ty = self.typeck.expr_ty_adjusted(callee);
+        loop {
+            callee_ty = match callee_ty.kind() {
+                ty::Ref(_, inner, _) => *inner,
+                _ if callee_ty.is_box() => callee_ty.expect_boxed_ty(),
+                _ => break,
+            };
+        }
+        let def_kind = match *callee_ty.kind() {
+            ty::FnDef(def_id, generic_args) => {
+                return self.emit("local", name_span, def_id, generic_args);
+            }
+            ty::Closure(..) => "closure",
+            ty::FnPtr(..) => "fnPointer",
+            ty::Dynamic(..) | ty::Param(_) | ty::Alias(..) => "fnParam",
+            _ => {
+                self.bump("drop.indirectCalleeType");
+                return;
+            }
+        };
+        let Some((origin, macro_name, pos)) = self.call_site(name_span) else {
+            return;
+        };
+        let name = self
+            .tcx
+            .sess
+            .source_map()
+            .span_to_snippet(name_span)
+            .unwrap_or_default();
+        self.bump("callee.indirect");
+        self.rows.push(serde_json::json!({
+            "relPath": pos.rel_path,
+            "line": pos.line,
+            "col": pos.col_utf16,
+            "origin": origin,
+            "macro": macro_name,
+            "callKind": "local",
+            "callee": name,
+            "calleeCrate": null,
+            "defKind": def_kind,
+            "traitPath": null,
+            "implSelfType": null,
+            "resolvedImpl": null,
+            "implIsDerived": false,
+            "inProject": false,
+            "defRelPath": null,
+            "defLine": null,
+        }));
     }
 
     /// The `macroInvocation` row of the user-written bang-macro invocation `span`'s
@@ -432,7 +499,12 @@ impl<'a, 'tcx> Visitor<'tcx> for CallVisitor<'a, 'tcx> {
         match expr.kind {
             ExprKind::MethodCall(segment, ..) => {
                 match self.typeck.type_dependent_def_id(expr.hir_id) {
-                    Some(def_id) => self.emit("method", expr, segment.ident.span, def_id),
+                    Some(def_id) => self.emit(
+                        "method",
+                        segment.ident.span,
+                        def_id,
+                        self.typeck.node_args(expr.hir_id),
+                    ),
                     None => self.bump("drop.methodUnresolved"),
                 }
             }
@@ -444,12 +516,14 @@ impl<'a, 'tcx> Visitor<'tcx> for CallVisitor<'a, 'tcx> {
                     };
                     match (self.typeck.qpath_res(qpath, callee.hir_id), name_span) {
                         (Res::Def(_, def_id), Some(span)) => {
-                            self.emit("path", callee, span, def_id)
+                            self.emit("path", span, def_id, self.typeck.node_args(callee.hir_id))
                         }
-                        (Res::Local(_), _) => self.bump("drop.localCallee"),
+                        (Res::Local(_), Some(span)) => self.emit_indirect(callee, span),
                         (_, None) => self.bump("drop.langItemPath"),
                         _ => self.bump("drop.pathOther"),
                     }
+                } else if let ExprKind::Field(_, field) = callee.kind {
+                    self.emit_indirect(callee, field.span);
                 } else {
                     self.bump("drop.nonPathCallee");
                 }
