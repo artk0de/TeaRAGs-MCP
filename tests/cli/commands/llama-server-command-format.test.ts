@@ -228,6 +228,30 @@ describe("renderLlamaServerCommands — macos", () => {
     expect(lines.some((l) => l.includes("<string>com.tea-rags.llama-server.8081</string>"))).toBe(true);
   });
 
+  // A re-run must replace the agent: bootstrap fails on a label that is already loaded.
+  it("boots out the agent's label right before bootstrapping it, ignoring an unloaded label", () => {
+    const lines = section(sheet, "5.");
+    const plist = "~/Library/LaunchAgents/com.tea-rags.llama-server.8081.plist";
+    const bootstrap = lines.indexOf(`launchctl bootstrap gui/$(id -u) ${plist}`);
+    expect(lines[bootstrap - 1]).toBe(
+      "launchctl bootout gui/$(id -u)/com.tea-rags.llama-server.8081 2>/dev/null || true",
+    );
+    expect(lines[bootstrap - 2]).toBe("EOF");
+  });
+
+  it("boots out and bootstraps each port of a multi-instance sheet in turn", () => {
+    const two = renderLlamaServerCommands(
+      options({ os: "macos", bin: "/opt/homebrew/bin/llama-server", devices: ["MTL0", "MTL0"], autostart: true }),
+    );
+    const launchctl = section(two, "4.").filter((l) => l.startsWith("launchctl"));
+    expect(launchctl).toEqual([
+      "launchctl bootout gui/$(id -u)/com.tea-rags.llama-server.8081 2>/dev/null || true",
+      "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tea-rags.llama-server.8081.plist",
+      "launchctl bootout gui/$(id -u)/com.tea-rags.llama-server.8082 2>/dev/null || true",
+      "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tea-rags.llama-server.8082.plist",
+    ]);
+  });
+
   // bd n18nj: BTM names a background item after its first ProgramArguments entry; a /bin/sh wrapper shows up as 'sh'.
   it("execs llama-server directly: the binary first, each argument its own <string>, no shell", () => {
     const lines = section(sheet, "5.");
@@ -308,6 +332,22 @@ describe("renderLlamaServerCommands — options", () => {
   it("scales the context with the slot count", () => {
     const sheet = renderLlamaServerCommands(options({ slots: 2 }));
     expect(section(sheet, "1.")[0]).toContain("-np 2 -c 16384 -b 8192 -ub 8192");
+  });
+
+  it("sizes each slot to a model window below 8192 and warns that chunks must fit it", () => {
+    const sheet = renderLlamaServerCommands(options({ slots: 4, modelContextLength: 2048 }));
+    const launch = section(sheet, "1.");
+    expect(launch[0]).toContain("-np 4 -c 8192 -b 2048 -ub 2048");
+    expect(launch).toContain(
+      "# Warning: the model's context window is 2048 tokens, below 8192 — each slot gets 2048, so chunks must fit 2048 tokens.",
+    );
+  });
+
+  it("caps each slot at 8192 for a model with a wider window, without a warning", () => {
+    const sheet = renderLlamaServerCommands(options({ slots: 2, modelContextLength: 32768 }));
+    const launch = section(sheet, "1.");
+    expect(launch[0]).toContain("-np 2 -c 16384 -b 8192 -ub 8192");
+    expect(launch.some((l) => l.includes("Warning"))).toBe(false);
   });
 
   it("quotes a Windows path with spaces for PowerShell and for the scheduled-task command line", () => {
