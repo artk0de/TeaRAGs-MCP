@@ -51,7 +51,7 @@ registration).
 Second+ build → `--port` past previous build's range. Sheet prints, per OS:
 sha256-verified GGUF download (host needs no Node, no tea-rags), launch line per
 device, firewall rule, keep-awake, autostart, final `EMBEDDING_BASE_URL`. Host
-sleeping = failure seen 2026-10-02 → stress keep-awake line.
+sleeping = known failure → stress keep-awake line.
 
 Hand sheet to user verbatim. AskUserQuestion:
 
