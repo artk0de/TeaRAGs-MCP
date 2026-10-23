@@ -78,18 +78,19 @@ prevented, not detected:
 
 Reading the answer — the dominant shape per kind IS the convention:
 
-| Shape            | Name to build (casing as the returned names show)                         |
-| ---------------- | ------------------------------------------------------------------------- |
-| `EXACT`          | the type itself: `tax_automation_document`, plural for a collection       |
-| `QUALIFIED`      | EXACT + qualifier, for a second binding of the type in one scope          |
-| `TAIL`           | trailing word(s) of the type: `document`                                  |
-| `VERB_TYPE`      | `return`: verb + type — `find_tax_automation_document!`                   |
-| `CALLEE_DERIVED` | the callee without verb prefix and `!`/`?`: `x = find_x!(id)`             |
-| `FREE`           | project names by ROLE — pick from `kinds.<kind>` names; never force EXACT |
+| Shape            | Name to build (casing as the returned names show)                          |
+| ---------------- | -------------------------------------------------------------------------- |
+| `EXACT`          | the type itself: `tax_automation_document`, plural for a collection        |
+| `QUALIFIED`      | EXACT + qualifier, for a second binding of the type in one scope           |
+| `TAIL`           | trailing word(s) of the type: `document`; `GraphDbClient` param → `client` |
+| `VERB_TYPE`      | `return`: verb + type — `find_tax_automation_document!`                    |
+| `CALLEE_DERIVED` | the callee without verb prefix and `!`/`?`: `x = find_x!(id)`              |
+| `FREE`           | project names by ROLE — pick from `kinds.<kind>` names; never force EXACT  |
 
-- `byType[].kinds.<kind>[].name` = the vocabulary; a dominant name is reused
-  verbatim. `confidence` low or `evidence` mostly `name-inferred` = weak
-  evidence, prefer the template's code.
+- `byType[].kinds.<kind>[].name` = the vocabulary; the dominant name (highest
+  `n`) is reused verbatim — `[client n=40, graphDb n=12]` → `client`, never the
+  runner-up because it spells more of the type. `confidence` low or `evidence`
+  mostly `name-inferred` = weak evidence, prefer the template's code.
 - `byCallee` = how the project names values bound from that call (untyped path).
 - `concept.terms` = the project's words for the concept. A holder that already
   IS what you are about to write → back to Step 4 and gate that holder (a missed
@@ -117,4 +118,8 @@ graph weights), `limit: 30`, `metaOnly: true`. Split holders' symbolIds and
 paths into words; recurring terms = the vocabulary. Value names: follow how the
 template's code names the same types.
 
-Output: the vocabulary for Step 6.
+Output for Step 6: the concrete final name per draft —
+`<draft> → <name> (<shape>, <kind>)`, e.g.
+`row → tax_automation_document (EXACT, local)`,
+`find_vendor_envelope → find_tax_automation_document! (VERB_TYPE, return)`. A
+plan that says "project vocabulary" without spelling the name = not done.

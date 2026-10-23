@@ -20,8 +20,8 @@ Diagnosis → simulated candidates → server-ordered steps → plan Tasks w/ ex
 delta. Server orders; agent builds candidates + plan. Execute YOURSELF, tea-rags
 tools only.
 
-Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` >
-0 → incremental `index_codebase`; subagent / linked worktree → never reindex. →
+Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` > 0
+→ incremental `index_codebase`; subagent / linked worktree → never reindex. →
 `tea-rags://guide/freshness`.
 
 ## Phase Order (MANDATORY)
@@ -48,10 +48,10 @@ Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` >
 
 ## Phase 0 — GATE
 
-Codegraph on = graph tools (`get_callers`, `trace_path`, …) in tool list;
-unsure → `tea-rags://project/<alias>/metrics?section=registry` shows `codegraph
-on|off`. Off → "refactoring planning needs codegraph", stop. Any plan-mode
-answer `unavailable: "noCodegraph"` → stop, same line.
+Codegraph on = graph tools (`get_callers`, `trace_path`, …) in tool list; unsure
+→ `tea-rags://project/<alias>/metrics?section=registry` shows
+`codegraph on|off`. Off → "refactoring planning needs codegraph", stop. Any
+plan-mode answer `unavailable: "noCodegraph"` → stop, same line.
 
 ## Phase 1 — REPORT
 
@@ -96,8 +96,11 @@ only, never preload dir.
   `DROPPED <id> — MISFIT <src> -> <dst> (established <roleSrc> -> <roleDst>, support <n>)`.
   `UNJUDGED newFile` / `NEW_PATTERN` / `CONFORMS` → keep.
 - Candidate = `{id, rationale: <finding key>, ops}` — one per remedy, ≤ 20 ops.
-  `id` kebab `<family>-<short subject>`, never `report:` prefix (server owns
-  it).
+  `rationale` = the finding `key` string verbatim (e.g.
+  `stableDependencies:<A dir>-><B dir>`), not prose. Write each candidate out in
+  the answer: every op with its concrete paths, the new file under the
+  foundation component — never "form candidate from recipe". `id` kebab
+  `<family>-<short subject>`, never `report:` prefix (server owns it).
 - Cap ≤ 15 candidates per plan call: critical first, then active, then
   `maintenanceCost`. Rest → Deferred (re-plan after first Tasks land).
 
@@ -116,10 +119,11 @@ plan / restructure call this session.
    `includeReportCandidates: false` (always safe). It yields S + per-judge.
 3. Estimate (S + 2)·(K + R)·perJudge + factsMs. ≤ ~2 min (one MCP call) →
    re-call same candidates, `includeReportCandidates` omitted (true); that plan
-   supersedes. Over → large repo: keep the `false` plan, say "report split/merge
-   candidates not ordered — quadratic judging (bd tea-rags-mcp-vytjl)", list
-   them under Not ordered (each simulable alone via architecture-diagnostics
-   Phase 3i). Never drop them silently.
+   supersedes. Over → large repo: keep the `false` plan, say verbatim (bd id
+   included) "report split/merge candidates not ordered — quadratic judging,
+   call can run ~1 h (bd tea-rags-mcp-vytjl)", list them under Not ordered (each
+   simulable alone via architecture-diagnostics Phase 3i). Never drop them
+   silently.
 
 Large repo = estimate over budget; N ≥ ~10k judged files with dozens of R → skip
 the estimate, go `false` directly.
@@ -145,7 +149,8 @@ unchanged; no Task added; no step removed.
 - **Expected delta** = step `delta`: resolved subjects, introduced subjects
   (none or listed), `byTier`, `net`; `blastRadius`; scan note if any.
 - Implementation via `tea-rags:data-driven-generation`; Task ends w/ DDG Step 7
-  gate line `GATE review_changes: introduced=<n>, partial=<true|false>`.
+  gate line, quoted literally in the Task:
+  `GATE review_changes: introduced=<n>, partial=<true|false>`.
 
 Separate sections, NEVER Tasks: **Trade-offs** (candidate, introduced vs
 resolved by tier), **Unselected** (candidate, reason, detail), **Not ordered**
@@ -171,6 +176,10 @@ Execution contract (refactoring-planning):
 ```
 
 ## Output
+
+Show, never summarize: candidate ops with paths, Task expected delta, the gate
+line and the Phase 6 contract block appear in the answer as text — "Task
+includes expected delta and execution contract" is not the plan.
 
 ```text
 ## Plan — <scope>: <S> steps, total net <n> (critical <r>/<i>, active <r>/<i>, structural <r>/<i>)

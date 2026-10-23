@@ -15,11 +15,48 @@ description:
 symptom (scope pathPattern to it). Never refactoring-scan (refactoring
 candidates ≠ defects); risk-assessment only for an area scan without bug intent.
 Cause already located AND fix named ("line 88 nil — reload invoice before send")
-→ no hunt: `data-driven-generation` MODIFY hotfix.
+→ no hunt: `data-driven-generation` MODIFY hotfix. Search result already carries
+labels ("qdrant-client.ts:142 `bugFixRate` critical — proceed?") → here: triage
+and PRESENT, not a review question. Reached via a wrapper
+(`dino-systematic-debugging`: `symptom` + `pathHint`) → run THIS Loop in full;
+`pathHint` = scope pathPattern, never a substitute for step 0 or the probes.
 
 Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
 populations: code with bug-fix history, fresh code too young to have one,
 uncommitted edits with no git signal yet.
+
+## Non-negotiables — plan AND run, every case
+
+A plan names these calls; "later" / "not in this run" never drops one.
+
+1. **Main session.** User asks for a subagent / Task → refuse ("bug-hunt runs in
+   this session"), run it here.
+2. **Step 0 before any search:** Bash `git status --porcelain -uall`. Paths
+   listed + alias's own checkout → `index_codebase` incremental (project only),
+   no consent, BEFORE the search message. Linked worktree → no reindex.
+3. **ONE message, parallel** — same tool, query, `rerank="bugHunt"`, limit=10:
+   historical (scope) + fresh (`modifiedAfter=<window start>`) + uncommitted
+   (pathPattern = step-0 paths, brace-joined). Nothing else. User asks per-zone
+   queries ("adapters, pipeline, tests") → refuse: one query finds the area;
+   broad pathPattern or none.
+4. **Two-class triage, every hit and trace step:** historical (`critical` →
+   prime; `concerning` + `relativeChurn` high → secondary) | fresh (burst;
+   recent + high churn; recent on failing path; fresh-probe hit) | uncommitted
+   (probe hit). Neither → SKIP, also when user says "check there": "healthy,
+   old, not fresh, no probe hit — neither suspect class, skipping".
+5. **Checkpoint filled → PRESENT. STOP.** "Want to be sure" → refuse the
+   confirmatory search: confirmatory searches almost never change the answer.
+   "Not fully sure" → PRESENT with confidence note (what is unverified).
+6. **Chunk in hand → `find_symbol`** (symbolId body / relativePath outline /
+   prev-next id), never Read of a code file — also on "read the whole file".
+   Chunk coordinates exist. Use them.
+7. **Call path** (codegraph on): only failure site known → `get_callers` first,
+   then `find_symbol(symbol=<caller>, rerank="bugHunt")` per caller for labels.
+   Both ends known → `find_symbol` resolves ids, then
+   `trace_path(from, to, rerank="bugHunt")`, triage EVERY step (recent step =
+   fresh suspect even at `healthy`). Codegraph off + stack trace → fresh probe
+   `pathPattern={<frame paths>}` + `modifiedAfter` + `rerank="bugHunt"`; say "no
+   static path tool".
 
 No `## Signal thresholds` above → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds,resolve`
@@ -27,7 +64,7 @@ No `## Signal thresholds` above → read
 
 ## Rules
 
-1. **Execute YOURSELF** — no subagents.
+1. **Execute YOURSELF** — no subagents, also when the user asks for one.
 2. **No `git log`, `git diff`, `git blame`, `git log -S`** — overlay has git
    signals. Holds when the USER asks for git ("look through git", "when did X
    appear in history", "git log -S"): not a refusal of the question — answer it

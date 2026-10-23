@@ -1,10 +1,10 @@
 ---
 name: risk-assessment
 description:
-  "Assess project/domain health — scan risk zones across dimensions (bugs,
-  hotspots, tech debt). Use when asked evaluate risks, find problematic areas,
-  assess code health, identify zones needing attention — NOT for specific bug
-  symptoms (use bug-hunt instead)"
+  "Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
+  debt) into tiers. Use to evaluate risks, assess code health, find zones
+  needing attention — NOT one-preset asks like bug-prone areas
+  (analytics-rerank), NOT bug symptoms (bug-hunt)"
 ---
 
 # Risk Assessment
@@ -50,6 +50,14 @@ No `## Label maps` above → read
   before picking a label. See `../../references/signal-interpretation.md`.
 - **Folding structural debt into overlap tiers.** Size is not risk. Structural
   hits get their own section, annotated with risk, never a tier slot.
+- **Extra scan for a named dimension.** "hotspots and ownership in X" = the same
+  5 presets (4 codegraph off), scoped. Ownership / bus factor surfaces via
+  `dangerous` (single-owner) + overlay `blameContributorCount` — never a
+  standalone `ownership` call.
+- **Annotating a structural violation instead of escalating.** Candidate inside
+  a component with an SDP / mainSequence / hubLike violation → escalate: tag
+  Risk Type `structural-violation`, sort to top of its tier; fix cost reads
+  `repair/<family>.md` of that family only (enrich.md step 3).
 
 Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 

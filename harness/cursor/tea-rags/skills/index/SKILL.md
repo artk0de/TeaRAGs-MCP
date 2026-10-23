@@ -12,18 +12,29 @@ description:
 > resource tool, or the read fails), run
 > `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
 
-Check registration, then index:
+Branches (plan names every one that can apply — path unknown = all of them):
 
-- **Not registered (first index)** → register alias + index in one command:
-  `tea-rags index-codebase <path> --name <alias>`
-- **Already indexed** → incremental reindex via MCP tool (changed files only)
+- **Linked git worktree** of a registered repo → do NOT register or index; read
+  tools (`project` + `path=<worktree>`) already answer for that tree.
+- **Not registered (first index)** → ask once, then register alias + index in
+  one command: `tea-rags index-codebase <path> --name <alias>`. **Declined** →
+  `index_codebase(path=<path>)`, no alias.
+- **Already indexed** → incremental `index_codebase(project=<alias>)` (changed
+  files only).
+- **Corrupt index / payload-schema drift** → `/force-reindex`, never
+  incremental.
 
 ## Instructions
 
 0. **Broken / corrupt index** (user reports wrong, garbage, crooked data, "index
    broke") → stop here, route `/force-reindex` (full rebuild, asks
    confirmation). Incremental re-reads changed files only — corrupt unchanged
-   content stays. Never `forceReindex: true` from this skill.
+   content stays. Never `forceReindex: true` from this skill. Same route for
+   schema / payload drift ("payload schema changed", "new fields require reindex
+   to populate") with no `Run:` line naming the plain incremental: incremental
+   never populates new fields in unchanged files — say so, route
+   `/force-reindex` (it asks consent). Do NOT stall asking the user for the
+   `Run:` line first: the message already decides it.
 
 1. `path` from message / argument; absent → cwd. Linked git worktree
    (`git rev-parse --git-common-dir` ≠ `<path>/.git`) of registered repo → do

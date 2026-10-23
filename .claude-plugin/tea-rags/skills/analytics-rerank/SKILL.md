@@ -68,19 +68,23 @@ signal.
 
 ## Preset cheat sheet (when each is the right pick)
 
-Catalog has full list; this is routing tier. Most specific row wins:
-security-sensitive path (auth, crypto, payments, permissions, sessions) in the
-question → `securityAudit`, even when it also says legacy / old / bug-fix
-(`techDebt` row = legacy WITHOUT a security path).
+Catalog has full list; this is routing tier — it beats the catalog and the guide
+resources. Most specific row wins: security-sensitive path (auth, crypto,
+payments, permissions, sessions) in the question → `securityAudit`, even when it
+also says legacy / old / untouched / bug-fix (`techDebt` row = legacy WITHOUT a
+security path). Recipe rows (custom) are exact weight sets below — copy keys +
+numbers, never re-derive them from `guide/signals`.
 
 | Question                                                                        | Preset                                                                                    |
 | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| "Where are the bug-prone areas in domain X?"                                    | `hotspots`                                                                                |
-| "Old + churny + bug-fixed legacy in domain X?"                                  | `techDebt`                                                                                |
+| "Where are the bug-prone areas in domain X?"                                    | `hotspots` + `pathPattern` — one call, not a risk-assessment scan                         |
+| "Looks stable / rarely touched but breaks a lot"                                | recipe **Fragile Silo** (custom, below) — not `stable`, not bug-hunt                      |
+| "Who is (actively) driving / working on X lately?"                              | recipe **Active driver** (custom, below) — not `recent`, not `ownership`                  |
+| "Old + churny + bug-fixed legacy in domain X?" (non-security path)              | `techDebt`                                                                                |
 | "Single-author silos / bus factor in domain X?"                                 | `ownership`                                                                               |
 | "Review the recent changes in this area"                                        | `codeReview` (with `maxAgeDays: 7`)                                                       |
 | "Old / untouched / legacy code (± bug-fix history) in security-sensitive paths" | `securityAudit` — named path → `pathPattern`; else `filter: { presets: "securityPaths" }` |
-| "Recently modified, sprint-review style"                                        | `recent`                                                                                  |
+| "Recently modified, sprint-review style" (what changed, not who)                | `recent`                                                                                  |
 | "Stable, low-bug template code"                                                 | `proven` / `stable`                                                                       |
 | "Refactor candidates by size+volatility+bug-fix history"                        | `refactoring`                                                                             |
 | "Bug-prone + volatile + high blast radius"                                      | `dangerous`                                                                               |

@@ -8,8 +8,8 @@ description:
   function X", "add method to class Y", "write a helper for Z", "modify function
   X", "change behavior of Y", "напиши функцию", "добавь метод", "поправь метод",
   "измени поведение". NOT for discovery or exploration — use /explore for that.
-  NOT for pure refactor (rename, move, extract) with no behavior change. This
-  skill activates ONCE the agent is about to write or change code.'
+  NOT for pure refactor (rename, move, extract) — tests green before AND after
+  it. Activates ONCE the agent is about to write or change code.'
 ---
 
 # Data-Driven Generation
@@ -97,6 +97,15 @@ Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
   `names` = only the new names, no `concept`). VERIFY runs in full. Location +
   fix named ("line 88 nil — reload X before send") = this skill, no clarifying
   question; bug-hunt only when the cause is still unknown.
+- **Bug fix** = MODIFY; cause unknown → `bug-hunt` locates it first, the fix
+  still runs 6a in order: baseline GREEN → reproduction test (asserts the
+  correct output, e.g. `formatDuration(0) === "0s"`) run RED on that assertion →
+  only then patch.
+- **Pure refactor / move** (no behaviour change) — outside this skill's scope
+  (no Steps 1–5), but this rule still binds: 6a baseline (`tests-at-risk` pins +
+  target's own tests) run GREEN BEFORE the first move, no new test; move (file
+  moves → pre-write simulation, Step 6); same tests re-run green, none edited;
+  Step 7 gate.
 - **Greenfield** = CREATE over empty area — TEMPLATE/STYLE searches degrade to
   empty naturally, don't pre-skip.
 - **REUSE never skipped in any mode** — shared infra exists even when feature is
@@ -229,16 +238,28 @@ New class / module / interface →
 — never name a type from neighbours without the call. `MISFIT` → take
 `suggestion`.
 
+Step 5 output = the CONCRETE final names, one line per draft:
+`<draft> → <name> (<shape>, <kind>)`, built from the dominant row of
+`byType[].kinds.<kind>` (highest `n`), in the casing those rows show:
+`row → tax_automation_document (EXACT, local)`,
+`find_vendor_envelope → find_tax_automation_document! (VERB_TYPE, return)`,
+`graph_db_client → client (TAIL, param — client n=40 beats graphDb n=12)`.
+"Project vocabulary" / "a name that describes the lookup" without the name =
+Step 5 not done.
+
 ### Step 6: GENERATE — RED → GREEN → REFACTOR
 
 **Read [references/step-6-generate.md](./references/step-6-generate.md) before
 Step 6.** 6a RED via `/test-first` — **no production edit without a recorded RED
-block** (or its one-line named exception). 6b GREEN — minimal implementation;
-call reuse-manifest helpers, NEVER reimplement. 6c REFACTOR under green only.
-Move / merge / split of existing files → ONE `get_architecture_report`
-`restructure` hypothesis first (`move{files, toComponent}` +
-`addEdge`/`removeEdge` per retargeted import); `introduced` → other placement,
-re-simulate, then move.
+block** (or its one-line named exception). MODIFY / bug fix / refactor-move:
+`tests-at-risk` pins + target's own tests run GREEN BEFORE the first edit or
+move — then bug fix: reproduction red; refactor: no new test, same tests green
+after. Moving first and testing after = baseline skipped. 6b GREEN — minimal
+implementation; call reuse-manifest helpers, NEVER reimplement. 6c REFACTOR
+under green only. Move / merge / split of existing files → ONE
+`get_architecture_report` `restructure` hypothesis first
+(`move{files, toComponent}` + `addEdge`/`removeEdge` per retargeted import);
+`introduced` → other placement, re-simulate, then move.
 
 ### Step 7: VERIFY
 
@@ -250,15 +271,22 @@ re-simulate, then move.
    `rankingOverlay.chunk.<field>.label`. Callee `bugFixRate` critical → call it
    defensively + name the test pinning the relied-on scenario (else report
    unpinned). Not `get_callers`, not an existence sweep, not `dangerous`.
+   Changed symbol `pageRank` critical / `fanIn` central → Step 8 `get_callers`
+   trigger.
 2. N-th-way `find_similar` (`positiveCode` = generated code).
-3. MODIFY baseline pins re-run.
+3. MODIFY (signature change included): `tests-at-risk` (`/tests-as-context`,
+   `affectedFiles` = changed file) scenarios + 6a pins re-run green. No 6a
+   baseline recorded (edit made outside this flow) → run `tests-at-risk` now.
 4. **GATE `review_changes` before EVERY commit** + fix-at-write loop. Each
    family with a finding → load its `repair/<family>.md` (cohesion →
-   `splitCandidates.md`) only. Own new code → repair; `preExisting` / cluster of
-   pre-existing symbols → one report line + bead suggestion, never refactored in
-   this diff, commit allowed. Accepted false positive = counter-evidence + FILED
-   detector issue + `FALSE-POSITIVE … — issue <id>` line; no issue → not
-   accepted.
+   `splitCandidates.md`) only. Repair round ≤ 2: re-run shows ANY new finding or
+   red test → round regressed → revert the WHOLE round (even if its target
+   finding is gone), try a different repair as the next round. Never keep the
+   round and fix the new finding on top. Own new code → repair; `preExisting` /
+   cluster of pre-existing symbols → one report line + bead suggestion, never
+   refactored in this diff, commit allowed. Accepted false positive =
+   counter-evidence + FILED detector issue + `FALSE-POSITIVE … — issue <id>`
+   line; no issue → not accepted.
 
 Gate fails → no commit, no "done". Report quotes gate line verbatim:
 `GATE review_changes: introduced=<n>, partial=<true|false>` (codegraph off →

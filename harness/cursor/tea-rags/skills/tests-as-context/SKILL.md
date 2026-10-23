@@ -1,10 +1,11 @@
 ---
 name: tests-as-context
 description:
-  'Internal step invoked by /filter-building, /mr-review, /test-first.
-  Agentic-only enrichment skill — surfaces DSL test chunks (chunkType "test" for
-  leaf-scope scenarios, chunkType "test_setup" for fixtures) as context for
-  review, verification, refactoring, debugging, TDD pattern extraction.'
+  'Internal step invoked by /data-driven-generation, /filter-building,
+  /mr-review, /test-first. Agentic-only enrichment skill — surfaces DSL test
+  chunks (chunkType "test" for leaf-scope scenarios, chunkType "test_setup" for
+  fixtures) as context for review, verification, refactoring, debugging, TDD
+  pattern extraction.'
 ---
 
 # tests-as-context

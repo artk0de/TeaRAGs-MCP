@@ -2,21 +2,20 @@
 name: extract-project-patterns
 user-invocable: false
 description:
-  Agentic-only enrichment skill — surface battle-tested reference code from
-  project as templates for generation / modification. Three-level locality
-  cascade (target subdomain → domain → project), quality gate by overlay labels
-  + project-wide proven rerank preset. Returns ranked list of reference chunks +
-  locality annotation (L1 / L2 / L3 / none). Invoked by
-  `tea-rags:data-driven-generation` Step 2 (TEMPLATE),
-  `dinopowers:writing-plans` (per code-gen Task), `dinopowers:executing-plans`
-  (per Task during execute). Skipped when no `positiveIds` / `positiveCode` and
-  no `behaviorQuery` available.
+  Agentic-only — battle-tested project code as templates for code-gen. Read
+  body before planning: locality cascade L1 = target subdomain → L2 = infra
+  prefix + first semantic segment (skipped when semantic tail ≤ 1 segment) → L3
+  = project; find_similar (behaviorQuery → semantic_search) + rerank proven +
+  battleTested filter, relax to production on empty; label quality gate.
+  Returns templates + locality. Called by data-driven-generation Step 2,
+  dinopowers writing-plans / executing-plans. No input → returns { templates:
+  [], locality: "none", diagnostics: ["no input"] }, zero calls.
 ---
 
 # extract-project-patterns
 
-Internal recipe for code-gen skills: battle-tested template for code about to
-be written, via three-level locality cascade.
+Internal recipe for code-gen skills: battle-tested template for code about to be
+written, via three-level locality cascade.
 
 ## Inputs
 
@@ -36,9 +35,9 @@ present. Else return
 
 ## Recipe — three-level locality cascade
 
-Every call: `project=<alias>` + `path=<working dir>`. `treeState` row =
-pre-edit copy → never template; current body via `find_symbol`. Lag / drift ≠
-licence to leave tea-rags (core); own checkout `changedFiles` > 0 → incremental
+Every call: `project=<alias>` + `path=<working dir>`. `treeState` row = pre-edit
+copy → never template; current body via `find_symbol`. Lag / drift ≠ licence to
+leave tea-rags (core); own checkout `changedFiles` > 0 → incremental
 `index_codebase`, subagent / linked worktree → never reindex. →
 `tea-rags://guide/freshness`.
 
@@ -65,6 +64,10 @@ Skip-vocabulary (infra/layer prefixes): `app`, `src`, `lib`, `core`, `packages`,
   `[crm, accounts]` → L2 = `**/app/services/crm/**` (NOT `**/app/services/**` —
   layer-wide L2 = degenerate L3).
 - L1 = `**/app/services/billing/**` → semantic `[billing]`, 1 segment → skip L2.
+- L1 = `**/domains/explore/**` / `**/some-new-area/**` → semantic tail 1 segment
+  → skip L2: cascade L1 → L3, never a parent glob.
+- L1 = `**/chunker/hooks/**` → no prefix, semantic `[chunker, hooks]` → L2 =
+  `**/chunker/**` (2 segments is NOT too shallow — L1 always runs).
 - L1 = `**/language/ruby/chunking/**` → no prefix, semantic
   `[language, ruby, chunking]` → L2 = `**/language/**`.
 

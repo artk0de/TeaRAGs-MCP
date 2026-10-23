@@ -59,7 +59,10 @@ Intent matches a skill? (check FIRST — skills handle tool selection internally
 ├─ Explore/understand/investigate/research code → /tea-rags:explore
 ├─ Bug hunting ("why does X fail") → /tea-rags:bug-hunt
 ├─ Code generation/modification → /tea-rags:data-driven-generation
-├─ Risk/health assessment → /tea-rags:risk-assessment
+├─ One analytics question one preset / recipe answers ("bug-prone areas in X",
+│   "looks stable but breaks", "who drives X lately", "old auth code")
+│   → /tea-rags:analytics-rerank (single call, not a scan)
+├─ Risk/health assessment (multi-preset scan, tiers) → /tea-rags:risk-assessment
 ├─ Layout / dependency direction / SDP → /tea-rags:architecture-diagnostics
 ├─ Plan a refactoring (ordered, simulated fix steps) → /tea-rags:refactoring-planning
 ├─ Review a diff / MR ("what does my change break") → `review_changes(changes:{base})`
@@ -92,7 +95,9 @@ Has query?
    ├─ Naming? ("what does the project call X", "how are values of type T
    │   named", "is this name right") → get_naming_lexicon (codegraph on);
    │     reading the answer: /tea-rags:data-driven-generation Step 5 Naming
-   │     One name / rename → `names[]`; review names a diff introduces →
+   │     One name / rename → `names[]` (`{name, kind, type?}` — never a bare
+   │     call with only project/path); its verdict IS the answer — no
+   │     hybrid_search / semantic_search cross-check. Names a diff introduces →
    │     review_changes ({} = uncommitted, { base } = branch) → `review.findings`
    │
    ├─ Audit naming consistency / find ontology collisions project-wide

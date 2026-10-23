@@ -60,6 +60,13 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
   `maintenanceCost` = fix priority only.
 - **`preExisting: true`** = base already held it — real finding, not
   diff-introduced. **`remedy`** quoted verbatim, never paraphrased.
+- **`review_changes` findings in hand → Phase 3h ONLY** (skip Phases 0–3, no
+  `phase-1-report.md`). Class each finding, say its class by name: no
+  `preExisting` → **introduced, must-fix** (absence IS the signal — never
+  "unknown, inspect further"); `preExisting` + `remedy` → **cheap-preExisting**,
+  quote `remedy` fields verbatim (source, from → to, names); `preExisting`, no
+  `remedy` → **report-only** line, no fix (`mainSequence`: distanceBefore
+  already past threshold). Load ONLY `repair/<family>.md` of families present.
 - **`island` / `compositionCycle` / `knot` with `composition: true`** =
   informational, not defects.
 

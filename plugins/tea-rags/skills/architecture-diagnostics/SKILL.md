@@ -22,8 +22,8 @@ argument-hint: "[scope — pathPattern, subsystem, or 'whole project']"
 
 Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license
-`cat` / `grep` / `Read` over code — `tea-rags://guide/freshness`.
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license `cat`
+/ `grep` / `Read` over code — `tea-rags://guide/freshness`.
 
 ## Phase Order (MANDATORY)
 
@@ -57,6 +57,13 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
   `maintenanceCost` = fix priority only.
 - **`preExisting: true`** = base already held it — real finding, not
   diff-introduced. **`remedy`** quoted verbatim, never paraphrased.
+- **`review_changes` findings in hand → Phase 3h ONLY** (skip Phases 0–3, no
+  `phase-1-report.md`). Class each finding, say its class by name: no
+  `preExisting` → **introduced, must-fix** (absence IS the signal — never
+  "unknown, inspect further"); `preExisting` + `remedy` → **cheap-preExisting**,
+  quote `remedy` fields verbatim (source, from → to, names); `preExisting`, no
+  `remedy` → **report-only** line, no fix (`mainSequence`: distanceBefore
+  already past threshold). Load ONLY `repair/<family>.md` of families present.
 - **`island` / `compositionCycle` / `knot` with `composition: true`** =
   informational, not defects.
 
@@ -74,8 +81,8 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 `get_architecture_report` registered? No → codegraph off: say "architecture
 report needs codegraph", stop. NEVER claim "no violations". Codegraph quality:
 `## Codegraph resolve` above (none → read
-`tea-rags://project/<alias>/metrics?section=resolve`, ReadMcpResourceTool) —
-low resolve rate → say edges are partial.
+`tea-rags://project/<alias>/metrics?section=resolve`, ReadMcpResourceTool) — low
+resolve rate → say edges are partial.
 
 ## Phase 1 — REPORT
 
@@ -86,9 +93,9 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
 
 **Read [references/phase-1-report.md](./references/phase-1-report.md) before
 reading the response** — `pathPattern` vs `domain` scope, `norms`, tooling /
-test-support removal, `limit` per detector (totals in `summary.<detector>`;
-more than returned → say truncated), costliest-first `score`, impact `tier`
-(lead critical, then active; `built: false` ≠ structural). Every finding carries
+test-support removal, `limit` per detector (totals in `summary.<detector>`; more
+than returned → say truncated), costliest-first `score`, impact `tier` (lead
+critical, then active; `built: false` ≠ structural). Every finding carries
 `detector` — never mix groups across detectors.
 
 ## Phase 2 — ROOT CAUSES
@@ -149,26 +156,25 @@ Groups with `violationCount: 1`: judge each by `evidence`.
 findings** — each carries field semantics plus its not-built / not-judged traps.
 Detector absent from response or zero findings → no read.
 
-| Phase | Judges | Field | Reference |
-|---|---|---|---|
-| 3b | leaking abstraction | `leakingAbstraction` | [phase-3b-leaking-abstraction.md](./references/phase-3b-leaking-abstraction.md) |
-| 3c | silent coupling | `silentCoupling` | [phase-3c-silent-coupling.md](./references/phase-3c-silent-coupling.md) |
-| 3c2 | shotgun surgery | `shotgunSurgery` | [phase-3c2-shotgun-surgery.md](./references/phase-3c2-shotgun-surgery.md) |
-| 3d | main sequence | `mainSequence` | [phase-3d-main-sequence.md](./references/phase-3d-main-sequence.md) |
-| 3d2 | hub-like dependency | `hubLikeDependency` | [phase-3d2-hub-like.md](./references/phase-3d2-hub-like.md) |
-| 3d3 | propagation cost | `summary.propagationCost` | [phase-3d3-propagation-cost.md](./references/phase-3d3-propagation-cost.md) |
-| 3e | layering | `layering` | [phase-3e-layering.md](./references/phase-3e-layering.md) |
-| 3f | layer map | `response.layerMap` | [phase-3f-layer-map.md](./references/phase-3f-layer-map.md) |
-| 3g | dependency norms | `norms` | [phase-3g-dependency-norms.md](./references/phase-3g-dependency-norms.md) |
-| 3h | diff-time findings | `review_changes architecture` | [phase-3h-diff-time.md](./references/phase-3h-diff-time.md) |
-| 3i | remedy simulation | `restructure` | [phase-3i-remedy-simulation.md](./references/phase-3i-remedy-simulation.md) |
+| Phase | Judges              | Field                         | Reference                                                                       |
+| ----- | ------------------- | ----------------------------- | ------------------------------------------------------------------------------- |
+| 3b    | leaking abstraction | `leakingAbstraction`          | [phase-3b-leaking-abstraction.md](./references/phase-3b-leaking-abstraction.md) |
+| 3c    | silent coupling     | `silentCoupling`              | [phase-3c-silent-coupling.md](./references/phase-3c-silent-coupling.md)         |
+| 3c2   | shotgun surgery     | `shotgunSurgery`              | [phase-3c2-shotgun-surgery.md](./references/phase-3c2-shotgun-surgery.md)       |
+| 3d    | main sequence       | `mainSequence`                | [phase-3d-main-sequence.md](./references/phase-3d-main-sequence.md)             |
+| 3d2   | hub-like dependency | `hubLikeDependency`           | [phase-3d2-hub-like.md](./references/phase-3d2-hub-like.md)                     |
+| 3d3   | propagation cost    | `summary.propagationCost`     | [phase-3d3-propagation-cost.md](./references/phase-3d3-propagation-cost.md)     |
+| 3e    | layering            | `layering`                    | [phase-3e-layering.md](./references/phase-3e-layering.md)                       |
+| 3f    | layer map           | `response.layerMap`           | [phase-3f-layer-map.md](./references/phase-3f-layer-map.md)                     |
+| 3g    | dependency norms    | `norms`                       | [phase-3g-dependency-norms.md](./references/phase-3g-dependency-norms.md)       |
+| 3h    | diff-time findings  | `review_changes architecture` | [phase-3h-diff-time.md](./references/phase-3h-diff-time.md)                     |
+| 3i    | remedy simulation   | `restructure`                 | [phase-3i-remedy-simulation.md](./references/phase-3i-remedy-simulation.md)     |
 
 ## Phase 4 — EXCLUSIONS
 
 Read [references/phase-4-exclusions.md](./references/phase-4-exclusions.md):
 counters per detector (`summary.<detector>.excluded*`) = read, NOT judged.
-Report as "not judged", never "clean"; reasons verbatim from
-`exclusionReasons`.
+Report as "not judged", never "clean"; reasons verbatim from `exclusionReasons`.
 
 ## Phase 5 — OUTPUT
 

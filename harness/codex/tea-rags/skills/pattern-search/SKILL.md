@@ -26,8 +26,10 @@ codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
 3. **Follow `tea-rags://guide/decision-tree` decision tree** for SEED tool
    selection.
 4. **Always SEED then EXPAND** — never skip `find_similar` expansion.
-5. **Deduplicate by content overlap** — skip chunks >80% content overlap from
-   same domain/directory.
+5. **Deduplicate by content overlap** — same directory + >80% overlap → keep
+   only the one with richer signals (overlay labels), drop the other. Different
+   directories → ALWAYS keep both, whatever the overlap — cross-directory
+   repeats ARE the pattern being collected.
 6. **Group output by module/directory** — not flat list.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
@@ -79,7 +81,8 @@ chunks + churn, techDebt favors age.
 ```
 1. SEED — `tea-rags://guide/decision-tree` tool + strategy rerank + pathPattern
 2. EXPAND — find_similar from seed results (skip already-seen chunks)
-3. DEDUPLICATE — skip chunks with >80% content overlap from same domain
+3. DEDUPLICATE — same dir + >80% overlap → keep richer-signals one; different
+   dirs → keep both
 4. GROUP — by module/directory
 5. OUTPUT — grouped list with file:line citations + overlay labels
 ```

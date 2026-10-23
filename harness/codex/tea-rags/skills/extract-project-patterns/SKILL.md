@@ -1,9 +1,8 @@
 ---
 name: extract-project-patterns
 description:
-  "Internal step invoked by $data-driven-generation. Agentic-only enrichment
-  skill — surface battle-tested reference code from project as templates for
-  generation / modification."
+  "Internal step invoked by $data-driven-generation. Agentic-only —
+  battle-tested project code as templates for code-gen."
 ---
 
 # extract-project-patterns
@@ -58,6 +57,10 @@ Skip-vocabulary (infra/layer prefixes): `app`, `src`, `lib`, `core`, `packages`,
   `[crm, accounts]` → L2 = `**/app/services/crm/**` (NOT `**/app/services/**` —
   layer-wide L2 = degenerate L3).
 - L1 = `**/app/services/billing/**` → semantic `[billing]`, 1 segment → skip L2.
+- L1 = `**/domains/explore/**` / `**/some-new-area/**` → semantic tail 1 segment
+  → skip L2: cascade L1 → L3, never a parent glob.
+- L1 = `**/chunker/hooks/**` → no prefix, semantic `[chunker, hooks]` → L2 =
+  `**/chunker/**` (2 segments is NOT too shallow — L1 always runs).
 - L1 = `**/language/ruby/chunking/**` → no prefix, semantic
   `[language, ruby, chunking]` → L2 = `**/language/**`.
 

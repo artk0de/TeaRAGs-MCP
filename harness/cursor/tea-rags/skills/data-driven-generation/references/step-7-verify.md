@@ -23,9 +23,11 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
    ignore hits on template + target file. Near-duplicate hit in another module =
    you wrote the N-th way → back to Step 4 gate (import instead) or surface to
    user.
-3. **MODIFY:** re-run the 6a baseline pins (`tests-at-risk` scenarios) + RED
-   tests — all green, none edited except `PIN-UPDATED`. Baseline was "unpinned"
-   → note behavior unpinned, proceed.
+3. **MODIFY** (signature change included): re-run the 6a baseline pins
+   (`tests-at-risk` scenarios) + RED tests — all green, none edited except
+   `PIN-UPDATED`. No 6a baseline recorded (edit made outside this flow) → run
+   `/tests-as-context` `tests-at-risk` on the changed file now, then those
+   scenarios. Baseline was "unpinned" → note behavior unpinned, proceed.
 4. **GATE — `review_changes` before EVERY commit** (codegraph on): ONE
    `review_changes(changes: {}, sections: ["naming", "incompleteChange", "cohesion", "architecture", "norms"])`
    (`{}` = the uncommitted edit about to be committed; every commit passes the
@@ -164,7 +166,10 @@ directory.
    `facadeRelPath`. `restoreExport`: re-export `names` from `facadeRelPath`.
    Else the repair file's `## No remedy` procedure. Else accept by evidence.
 2. Re-run the same `review_changes` + targeted tests.
-3. Round added a finding or reddened a test → revert the WHOLE round.
+3. Re-run shows ANY new finding (even with the target finding gone) or a red
+   test → the round regressed → revert the WHOLE round, then a different repair
+   is the next round. Never keep the round and repair its new finding on top;
+   never revert only part of it.
 4. Must-fix left after round 2 → STOP, escalate: ask the user (subagent → hand
    back to orchestrator) with the finding, what was tried, why reverted;
    options: fix this way / accept with a reason / bead. No commit without the

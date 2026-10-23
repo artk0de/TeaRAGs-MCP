@@ -61,10 +61,11 @@ licenses leaving tea-rags" below.
 
 **`treeState: "modified" | "deleted"`** on a row = index copy of a file your
 tree changed or deleted, served only when no tree floor covered it (e.g.
-`denseUnavailable`, `pendingFiles`, `indexOnlyFiles`); text and lines may be
-stale. Current code → `find_symbol` (chunks floor), not the row; `pendingFiles`
-row → re-call later; `indexOnlyFiles` file → `Read` it (no tree floor ever
-covers it).
+`denseUnavailable`, `pendingFiles`, `indexOnlyFiles`) = **pre-edit copy**:
+file-level signals (fanIn of dependents, churn, bugFixRate) still valid, text
+and lines stale — never evidence the edit is correct. Current code →
+`find_symbol` (chunks floor), not the row; `pendingFiles` row → re-call later;
+`indexOnlyFiles` file → `Read` it (no tree floor ever covers it).
 
 ## Reindex triggers
 

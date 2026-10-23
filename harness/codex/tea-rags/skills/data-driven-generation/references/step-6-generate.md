@@ -10,8 +10,11 @@ criteria or test code verbatim when present, else one test per behaviour of the
 task. Output = `RED` block: per-test failure reason (assertion / missing
 behaviour — never import, compile, syntax, missing fixture) + baseline. **No
 production edit without a recorded RED block** (or its one-line named
-exception). Refactor / move → no new test; the green baseline is the invariant
-through 6b–6c.
+exception). MODIFY / bug fix / refactor-move: `tests-at-risk` pins + target's
+own tests run GREEN BEFORE the first edit or move. Bug fix → then a reproduction
+test asserting the reported correct output, run RED on that assertion, only then
+patch. Refactor / move → no new test; the green baseline is the invariant
+through 6b–6c and re-runs after the move, none edited.
 
 ### 6b GREEN
 

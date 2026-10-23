@@ -1,10 +1,10 @@
 ---
 name: risk-assessment
 description:
-  Assess project/domain health — scan risk zones across dimensions (bugs,
-  hotspots, tech debt). Use when asked evaluate risks, find problematic areas,
-  assess code health, identify zones needing attention — NOT for specific bug
-  symptoms (use bug-hunt instead)
+  Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
+  debt) into tiers. Use to evaluate risks, assess code health, find zones
+  needing attention — NOT one-preset asks like bug-prone areas
+  (analytics-rerank), NOT bug symptoms (bug-hunt)
 argument-hint: "[scope — domain, subsystem, or 'whole project']"
 ---
 
@@ -49,6 +49,14 @@ No `## Label maps` above → read
   before picking a label. See `../../rules/references/signal-interpretation.md`.
 - **Folding structural debt into overlap tiers.** Size is not risk. Structural
   hits get their own section, annotated with risk, never a tier slot.
+- **Extra scan for a named dimension.** "hotspots and ownership in X" = the same
+  5 presets (4 codegraph off), scoped. Ownership / bus factor surfaces via
+  `dangerous` (single-owner) + overlay `blameContributorCount` — never a
+  standalone `ownership` call.
+- **Annotating a structural violation instead of escalating.** Candidate inside
+  a component with an SDP / mainSequence / hubLike violation → escalate: tag
+  Risk Type `structural-violation`, sort to top of its tier; fix cost reads
+  `repair/<family>.md` of that family only (enrich.md step 3).
 
 Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 
@@ -160,10 +168,10 @@ hit now also means "in the central population". Empty = no hubs in scope = valid
 clean answer.
 
 **Codegraph transparency:** when codegraph active (`## Codegraph resolve`
-above), `bugHunt`, `techDebt` and `dangerous` already absorb
-structural signals via reranker override (`bugHunt` gains method-level pageRank)
-— no parameter change, risk map sharpens automatically. Explicit structural axis
-(blast-radius hubs + cycles) added in Phase 4, not here.
+above), `bugHunt`, `techDebt` and `dangerous` already absorb structural signals
+via reranker override (`bugHunt` gains method-level pageRank) — no parameter
+change, risk map sharpens automatically. Explicit structural axis (blast-radius
+hubs + cycles) added in Phase 4, not here.
 
 Parameters per call:
 
@@ -347,8 +355,8 @@ Add qualifying results as "Related risk" under parent Critical candidate.
 
 ## Phase 4: ENRICH
 
-**MANDATORY: read [references/enrich.md](./references/enrich.md) before
-Phase 4** — Critical + High candidates (5–10 chunks), six steps in order:
+**MANDATORY: read [references/enrich.md](./references/enrich.md) before Phase
+4** — Critical + High candidates (5–10 chunks), six steps in order:
 
 1. Code review — content from results; context → `find_symbol`, never Read.
 2. Test coverage — **stratified, one `hybrid_search` per domain cluster, NEVER
@@ -423,5 +431,5 @@ back to the risk map; the intersection (structural debt AND risk tier) is the
 `unverified` when coverage was not established for it. Never print `none` for a
 candidate whose only query was one another domain dominated.
 
-**Label mapping:** bands from `## Label maps` above. Show
-raw value + label: `bugFix:58% concerning`.
+**Label mapping:** bands from `## Label maps` above. Show raw value + label:
+`bugFix:58% concerning`.

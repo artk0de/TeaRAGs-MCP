@@ -10,8 +10,11 @@ acceptance criteria or test code verbatim when present, else one test per
 behaviour of the task. Output = `RED` block: per-test failure reason (assertion
 / missing behaviour — never import, compile, syntax, missing fixture) +
 baseline. **No production edit without a recorded RED block** (or its one-line
-named exception). Refactor / move → no new test; the green baseline is the
-invariant through 6b–6c.
+named exception). MODIFY / bug fix / refactor-move: `tests-at-risk` pins +
+target's own tests run GREEN BEFORE the first edit or move. Bug fix → then a
+reproduction test asserting the reported correct output, run RED on that
+assertion, only then patch. Refactor / move → no new test; the green baseline is
+the invariant through 6b–6c and re-runs after the move, none edited.
 
 ### 6b GREEN
 
@@ -46,9 +49,9 @@ Step 7 gate catches same detectors after write, repair = one edge.
   hypothesis: `move{files,toComponent}`, `merge{components}`,
   `split{component,groups}` (+ `addEdge` / `removeEdge` per import move
   retargets). Delta `introduced` non-empty → other placement per
-  `../../../repair/<family>.md` `## Ops recipe` (absent → `## Apply remedy`; that
-  family only), re-simulate. Move when `introduced` empty, or each left entry
-  meets Step 7 evidence rules. Edge ops move structural detectors only —
+  `../../../repair/<family>.md` `## Ops recipe` (absent → `## Apply remedy`;
+  that family only), re-simulate. Move when `introduced` empty, or each left
+  entry meets Step 7 evidence rules. Edge ops move structural detectors only —
   co-change families answer at Step 7 gate.
 - **Multi-step restructuring** (several remedies, order matters) →
   `tea-rags:refactoring-planning`, not this step.
