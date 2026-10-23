@@ -102,7 +102,7 @@ export function formatRustcDriverLine(status: RustcDriverStatus): string {
     case "skipped":
       return `${SUBJECT} skipped — ${status.reason ?? "no reason reported"}`;
     case "unavailable":
-      return `${SUBJECT} unavailable — ${installAdvice(status.hint)}`;
+      return `${SUBJECT} unavailable — Rust call edges are static-only (lower bound); ${installAdvice(status.hint)}`;
     case "off":
       return `${SUBJECT} off (CODEGRAPH_RUST_DRIVER=off)`;
   }

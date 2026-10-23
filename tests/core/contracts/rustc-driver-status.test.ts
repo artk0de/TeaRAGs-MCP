@@ -43,13 +43,13 @@ describe("formatRustcDriverLine", () => {
 
   it("shows the install hint when no toolchain was found, without repeating the subject", () => {
     expect(formatRustcDriverLine({ outcome: "unavailable", hint: INSTALL_HINT })).toBe(
-      "rustc driver: unavailable — install with 'rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src' (≈1.5 GB), or set CODEGRAPH_RUST_DRIVER_PATH",
+      "rustc driver: unavailable — Rust call edges are static-only (lower bound); install with 'rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src' (≈1.5 GB), or set CODEGRAPH_RUST_DRIVER_PATH",
     );
   });
 
   it("keeps a hint of another shape whole", () => {
     expect(formatRustcDriverLine({ outcome: "unavailable", hint: "get a toolchain" })).toBe(
-      "rustc driver: unavailable — get a toolchain",
+      "rustc driver: unavailable — Rust call edges are static-only (lower bound); get a toolchain",
     );
   });
 
