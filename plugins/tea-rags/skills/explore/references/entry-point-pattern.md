@@ -1,5 +1,9 @@
 # ENTRY-POINT Pattern
 
+**Codegraph off** (explicit statement or tools absent) → relevance +
+`chunkSize`, flagged content-inferred; never `rerank="entryPoint"` / `minFanOut`
+/ graph tools.
+
 "Where does X start?" intents. Flow entry points (low fan-in, high fan-out —
 drives others, not driven) via `entryPoint` rerank over codegraph fan-graph
 signals, not content matching.
@@ -30,7 +34,3 @@ starts" becomes "what it does next".
 
 Honest fallback: small/flat scope (no clear high-fan-out driver) → say ranking
 degraded to relevance; never present utility as "the entry point".
-
-**Codegraph off** (graph tools absent from tool list): `entryPoint` has no
-fan-graph signals → relevance + `chunkSize`, flag results content-inferred, not
-graph-confirmed.

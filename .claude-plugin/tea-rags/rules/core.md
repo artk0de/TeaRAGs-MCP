@@ -16,14 +16,15 @@ project.
 | one file: outline / doc TOC        | `find_symbol(relativePath:)`                  |
 | known symbol: body / class outline | `find_symbol(symbol:)` (`Class#inst`, `C.st`) |
 | usages of an identifier            | `hybrid_search` (`metaOnly`, `offset`)        |
-| behaviour / intent, no name        | `semantic_search`                             |
+| behaviour / intent, no name        | `semantic_search` only (no `hybrid_search`)   |
 | code like a chunk in hand          | `find_similar(positiveIds:)`                  |
 | impact / who calls / A reaches B   | `get_callers` / `get_callees` / `trace_path`  |
-| diff review                        | `review_changes`                              |
+| diff review; a name's fit          | `review_changes` / `get_naming_lexicon`       |
 | literal text (TODO, phrase, regex) | text search (your client's Grep / `rg`)       |
 
 Text search = literal text only; never it, Glob or `cat`/`sed`/`grep` to locate
-or read code — identifiers (even `a|b`) are SYMBOL searches.
+or read code — identifiers (even `a|b`) are SYMBOL searches. Diff's names:
+`review_changes` verdicts = answer, nothing after.
 
 **Invariants.**
 
@@ -60,8 +61,7 @@ or read code — identifiers (even `a|b`) are SYMBOL searches.
   `signal-labels`
 - graph / AST on a non-primary language → `language-capability`
 - no prime digest → `tea-rags://project/<alias>/digest`
-- thresholds / labelMap → `tea-rags://project/<alias>/metrics?language=<lang>`
+- labelMap → `tea-rags://project/<alias>/metrics`
 
 **Destructive — explicit user consent:** `force_reindex`, `clear_index`,
-`delete_collection`, `delete_documents`, reindex with `--force` /
-`--force-enrichments`. Subagent: never reindex — report to parent.
+`delete_*`, `--force*` reindex. Subagent: never reindex — report to parent.

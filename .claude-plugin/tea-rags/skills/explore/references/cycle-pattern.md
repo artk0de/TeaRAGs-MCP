@@ -1,5 +1,8 @@
 # CYCLE Pattern
 
+**Codegraph off** (explicit statement or tools absent) → "cycle detection
+unavailable", never "no cycles"; never call/plan `find_cycles`.
+
 Circular-dependency intents. `find_cycles` edge truth (SCCs of import/call
 graph, pre-computed table, sub-ms) — NOT content matching.
 
@@ -37,5 +40,3 @@ whose cut breaks blast radius. Method member → resolve exact id via
 
 Empty result **with codegraph on** (graph tools in tool list) = valid answer:
 "no cycles in `<scope>`" → DAG there; state plainly, no content-search fallback.
-`find_cycles` **not registered** (codegraph off) → no empty result to read;
-cycle detection unavailable — say so, never claim "no cycles / it is a DAG".

@@ -363,5 +363,7 @@ the query drive discovery; the overlay surfaces risk signals after the fact.
 ## After root cause found
 
 Pattern found → `find_similar(positiveIds=[<chunk id>])` for copy-paste bugs in
-other files; report every match as `file:line` + same-bug yes/no, or "no similar
-copies found" — never skip the report. Fix needed → `$data-driven-generation`.
+other files. Seed = root-cause chunk id already in this output — no re-fetch;
+only `file:line` known → one `find_symbol` for its id, then seed. Report every
+match as `file:line` + same-bug yes/no, or "no similar copies found" — never
+skip the report. Fix needed → `$data-driven-generation`.

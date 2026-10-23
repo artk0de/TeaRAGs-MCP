@@ -12,10 +12,11 @@ Code search = tea-rags MCP tools, never the harness's built-in grep/glob/file se
 | known symbol: body / class outline | `find_symbol(symbol:)` — `Class#inst`, `Class.static`; unsure → partial name |
 | usages of an identifier | `hybrid_search` (`metaOnly:true`, page by `offset`) |
 | symbol + intent | `hybrid_search` |
-| behaviour, no name | `semantic_search` |
+| behaviour, no name | `semantic_search` only |
+| a name's fit | `get_naming_lexicon` |
 | code like a chunk in hand | `find_similar(positiveIds:)` |
 | impact / callers / chain A→B | `get_callers` / `get_callees` / `trace_path` |
-| branch diff review | `review_changes` |
+| diff review | `review_changes` (naming verdicts = answer) |
 | literal text: TODO, phrase, regex, import string | text search (your client's Grep / `rg`) |
 
 Identifiers = SYMBOL searches even joined by `|` — never text search. Exists? → `find_symbol(metaOnly:true)`; empty → retry partial, then `hybrid_search`.

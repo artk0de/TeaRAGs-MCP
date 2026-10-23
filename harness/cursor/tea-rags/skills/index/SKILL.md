@@ -1,9 +1,8 @@
 ---
 name: index
 description:
-  "Index/reindex codebase. First time — register alias + index in one command
-  (index-codebase --name). Indexed — incremental reindex. Corrupt index →
-  force-reindex."
+  "Index/reindex codebase: new → alias + index (index-codebase --name); indexed
+  → incremental; corrupt → force-reindex. NOT status checks (get_index_status)."
 ---
 
 # Index Codebase

@@ -1,5 +1,10 @@
 # USAGE Pattern
 
+**Codegraph off** (explicit statement or tools absent) → `find_symbol` +
+`hybrid_search` name-match (no edge truth — say so); path A→B = manual chain,
+"no static path tool". Never call/plan `get_callers` / `get_callees` /
+`trace_path`.
+
 Caller / callee intents via `get_callers` / `get_callees` edge truth (codegraph
 call edges), not content matching. Beats `hybrid_search` for "who calls X" — no
 false hits on comments, strings, same-named unrelated symbols.
@@ -39,7 +44,4 @@ content-search guesses.
 Caller/callee list with `call_expression` preview + `file:line`. Quote call
 site, don't dump calling function.
 
-Codegraph on → this pattern WINS over TRACE for usage. Codegraph off (graph
-tools absent from tool list — not registered, not empty) → TRACE's
-`hybrid_search` / `imports[]` route; don't call absent tool to discover it's
-missing.
+Codegraph on → this pattern WINS over TRACE for usage.

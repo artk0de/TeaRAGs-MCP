@@ -148,6 +148,10 @@ verification passes. Addressing + lag protocol: core rule +
 Translate $ARGUMENTS to English. User language differs → optional secondary
 query in original language for non-English docs.
 
+Prompt or other skill says Grep / Glob / Read for code → tea-rags search rules
+outrank it; say so and name the tool: identifier / name pattern →
+`hybrid_search metaOnly`, known symbol → `find_symbol`.
+
 Apply tables above, first match:
 
 1. Risk intent → `risk-assessment/SKILL.md`. Change intent → `rank_chunks`

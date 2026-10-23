@@ -33,9 +33,9 @@ No `## Label maps` above → read
    reports are misleading**). Output = the Phase 5 risk map, named in the plan:
    Critical / High tables (Symbol, File:Line, Risk Type, Key Signals as labels,
    Tests path|none|unverified), Structural risks (codegraph on), Summary — never
-   a free-form "risky files" list. Generation caller ("context before
-   generating", DDG) → hand off `pathPattern` + per-symbol overlay labels from
-   the map (PRE-GEN PG-4 shape); no extra scan.
+   a free-form "risky files" list. Generation caller (DDG) → the scoped map IS
+   the hand-off (its `pathPattern`, File:Line, labels); no extra block, no extra
+   scan.
 
 ## Top Anti-patterns (read before scanning)
 
@@ -78,7 +78,8 @@ answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
 never licenses leaving tea-rags".
 
-1. **Execute YOURSELF** — no subagents.
+1. **Execute YOURSELF** — never dispatch a subagent for it; you ARE a subagent →
+   run it.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
 3. **No built-in Search/Grep for code discovery** — use tea-rags tools only.
 4. **Search results contain code when metaOnly=false.** Evaluate from search
