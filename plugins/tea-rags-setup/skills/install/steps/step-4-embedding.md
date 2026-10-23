@@ -31,6 +31,10 @@ GPU host (this machine or a LAN box) to serve embeddings?". Yes → recommend
 llama-server (~2× Ollama texts/s, one server per GPU). Else per table — Ollama
 default.
 
+Apple Silicon (`platform` darwin + `arch` arm64, Metal): also offer
+"llama-server (this Mac)" — NO ≥3M gate, NO GPU-host question. Two local
+instances ≈ 1.7× Ollama texts/s (M3 Pro). GPU-host gate above unchanged.
+
 ## 4d: Ask user
 
 Option descriptions from `reference.md` ONNX/Ollama description tables per
@@ -41,11 +45,13 @@ question: "Choose embedding provider. {recommendation_reason}"
 options: [
   { label: "Ollama", description: "{ollama_description}" },
   { label: "ONNX", description: "{onnx_description}" },
-  { label: "llama-server", description: "{llama_server_description}" }
+  { label: "llama-server", description: "{llama_server_description}" },
+  { label: "llama-server (this Mac)", description: "{llama_server_local_description}" }
 ]
 ```
 
 llama-server option only when ≥3M + GPU host gate passed, or user asks.
+"llama-server (this Mac)" option only on Apple Silicon (darwin + arm64).
 
 Project > 100k LOC + ONNX on CPU-only → warn: "Project is ~{N}k LOC. ONNX on CPU
 recommended up to ~100k LOC, indexing may be slow. Continue anyway?" ONNX w/ GPU
@@ -78,6 +84,8 @@ recommended up to ~100k LOC, indexing may be slow. Continue anyway?" ONNX w/ GPU
   - Confirmed → `ollama --version`; fails → remind restart terminal, retry.
   - Verified → re-run install-ollama.sh to pull model.
 - llama-server → `steps/step-4-llama-server.md`, return here to mark completed.
+- llama-server (this Mac) → `steps/step-4-llama-server.md` §4L-local, return
+  here to mark completed.
 - ONNX → nothing to install; progress `embeddingProvider: "onnx"`.
 
 Save `embeddingProvider`, mark step completed.

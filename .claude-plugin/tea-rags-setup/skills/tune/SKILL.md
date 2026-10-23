@@ -167,6 +167,10 @@ Progress: `llamaServer` (`os`, `advertise`, `builds[]` of `{bin, devices}`),
 `embeddingBaseUrl`, `embeddingApiKey`. Missing → install step 4L first. Every
 peer must answer `curl -sf <url>/health`.
 
+Local Mac branch: `llamaServer.local` (`bin`, `model`, `gguf`, `ports[]`) →
+re-print per port `command --os macos --host 127.0.0.1 --port <p> --bin <bin>
+--model <gguf>`; peers = `127.0.0.1:<p>`.
+
 ### L2. Sweep `-np` 1 → 2 → 4 → 8
 
 Per N:

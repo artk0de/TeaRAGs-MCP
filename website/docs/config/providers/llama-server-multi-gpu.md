@@ -150,8 +150,19 @@ for port in 8080 8081; do
 done
 ```
 
-Start the second instance after the first answers `/health`. Then either use
-the pair as the only endpoints:
+Start the second instance after the first answers `/health`. On Apple Silicon,
+`/tea-rags-setup:install` does this for you: pick **llama-server (this Mac)**
+in the embedding step. It checks the Homebrew binary, lets you choose the model
+and confirm free ports, then — after one confirmation — runs the printed
+autostart lines port by port, waiting for each instance's `/health` before
+starting the next.
+
+The autostart block boots out each agent's label before bootstrapping it
+(`launchctl bootout gui/$(id -u)/com.tea-rags.llama-server.<port> 2>/dev/null || true`),
+so running the sheet again replaces an agent that is already loaded instead of
+failing on it.
+
+Then either use the pair as the only endpoints:
 
 ```bash
 export EMBEDDING_PROVIDER=llama-server
@@ -193,7 +204,10 @@ done
 - **Launch flags per model.** The printed launch line has
   `-c 32768 -b 8192 -ub 8192`, sized for an 8192-token context. For
   CodeRankEmbed change it to `-c 8192 -b 2048 -ub 2048`; Muninn-small takes it
-  as printed. See [Embedding model choice](/config/embedding-model-choice).
+  as printed. When the GGUF sits on the machine that runs `command`, it reads
+  the context window from the file and sizes the line itself, with a warning
+  for a window below 8192. See
+  [Embedding model choice](/config/embedding-model-choice).
 - **Firewall per range.** Each `command` run prints a firewall rule for the
   ports of that run; apply the rules of both groups.
 - **Fallback per model.** A fallback must serve the same GGUF as the peers it
