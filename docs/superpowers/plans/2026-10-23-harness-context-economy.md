@@ -617,6 +617,8 @@ Run `npm run gen:agent-context` (empty core + no guides at this point is valid).
 
 ### Task 9: Subagent block ≤ 3KB; dinopowers routing once per session
 
+> Carry-over from Task 13: the block still names Claude-only tools (Grep / Glob, `mcp__ripgrep__search`); the Codex/Cursor transforms only rewrite the `mcp__tea-rags__` prefix. Rewrite those lines harness-neutrally here, then regenerate both harness packages.
+
 **Files:**
 
 - Modify: `.claude-plugin/tea-rags/rules/references/subagent-injection.md`
@@ -799,6 +801,8 @@ descriptions.
 
 ### Task 14: Live test in Codex
 
+> Carry-over from Task 13: verify that `$PWD` in the Codex SessionStart hook is the session directory (the SubagentStart script reads stdin `cwd` instead); if not, switch SessionStart to stdin `cwd` too. Also check `force-reindex` (mentions `run_in_background`) reads sensibly in Codex.
+
 **Files:** `harness/codex/LIVE-TEST.md` (results), fixes in generator/skills as
 found.
 
@@ -895,6 +899,8 @@ test script.
 ## Phase E — Landing
 
 ### Task 16: Gates, docs, merge
+
+> Carry-over from Task 13: `harness/**` duplicates skill markdown — exclude it from the tea-rags index (project ignore file) so search does not return generated copies.
 
 - [ ] **Step 1:** Measure after-state with the round-1 scripts
       (`/Users/artk0re/.claude/jobs/ef10f65e/tmp/measure-mcp.mjs` adapted to the
