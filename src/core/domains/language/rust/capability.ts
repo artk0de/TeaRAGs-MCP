@@ -27,7 +27,7 @@ export const capability: LanguageCapability = {
   testFiles,
   codegraph: {
     tier: "moderate",
-    tech: "11-strategy (last: rustc driver + SCIP); trait dispatch; return/field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
+    tech: "11-strategy (rustc first, SCIP last); trait dispatch; return/field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
     // Generic return substitution reads the declaring owner's genericParameters.
     resolverReadsTypeDeclarations: true,
     // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
@@ -151,6 +151,12 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m T8 — the composition wires the rustc driver
   //   source (on by default); its acquisition diagnostics carry units,
   //   failed crate targets, latch detail and the unavailable/disabled split.
+  // - RESIDUAL R2 — the `rustcCallSites` pass heads the chain: where the
+  //   driver has a row at the member token it overrides every static pass
+  //   (in-project re-targets, external / derived DROPs) and the trait cone
+  //   yields unless the row is the trait's declaration; no row, a non-macro
+  //   row on a macro invocation or an unmapped in-project row (counted as
+  //   `inProjectUnmapped`) leaves the static chain as it was.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

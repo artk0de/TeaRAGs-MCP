@@ -24,6 +24,11 @@
  * `foo/bar/mod.rs`). External crates are out of scope.
  *
  * The pass order (each `name` in parens):
+ *  -1. rustcCallSites (the rustc driver's type-checked callee for the member
+ *      token — the AUTHORITY over every static pass where it has a row:
+ *      an in-project answer re-targets, an external or derived one DROPs, an
+ *      unmapped or absent one CONTINUEs into the static chain unchanged —
+ *      RESIDUAL R2)
  *   0. macroInvocation (`name!` / `path::name!` — owns every macro invocation
  *      and answers it from macro definitions only; terminal, so no fn pass
  *      ever sees one — bd tea-rags-mcp-s3i8m.2)
@@ -39,18 +44,18 @@
  *   6. bareSelfMethod (bare X() inside impl → enclosing-type probe)
  *   7. globalShortName (global short-name fallback)
  *   8. traitSelfMethod (trait-provided `self.m()`)
- *   9. rustcCallSites (the rustc driver's type-checked callee for the member
- *      token, mapped onto a table symbol — the residual only)
- *  10. rustAnalyzerScip (the rust-analyzer SCIP index's definition for the
+ *   9. rustAnalyzerScip (the rust-analyzer SCIP index's definition for the
  *      member token, mapped onto a table symbol — where the driver had no row)
  */
 
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  emptyDispatchFanout,
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
   type CallResolver,
+  type DispatchFanoutOutcome,
   type SymbolResolutionPassPlan,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
@@ -90,6 +95,7 @@ export class RustCallResolver implements CallResolver {
   readonly language = "rust";
   readonly strategies: readonly SymbolResolutionStrategy[];
   private readonly dispatchComponents: readonly DispatchResolverComponent[];
+  private readonly callSites: RustcCallSiteSymbolResolutionStrategy;
   private readonly external = new RustExternalVocabulary();
   private readonly environments: RustResolveEnvironmentCache;
 
@@ -119,7 +125,11 @@ export class RustCallResolver implements CallResolver {
     );
     const cfg: ResolverConfig = { mode };
     this.dispatchComponents = [new ConeDispatchResolver(new RustConeTypeLocator(cfg), 8)];
+    this.callSites = new RustcCallSiteSymbolResolutionStrategy(cfg);
     this.strategies = [
+      // First: where the rustc driver has a row at the member token, its
+      // type-checked answer wins over every static pass (RESIDUAL R2).
+      this.callSites,
       new RustMacroInvocationSymbolResolutionStrategy(cfg),
       new RustSelfMethodSymbolResolutionStrategy(cfg),
       new RustSelfFieldSymbolResolutionStrategy(cfg),
@@ -130,10 +140,8 @@ export class RustCallResolver implements CallResolver {
       new RustGlobalShortNameSymbolResolutionStrategy(cfg),
       // Last: a trait-provided `self.m()` answers only where every pass above stayed silent.
       new RustTraitSelfMethodSymbolResolutionStrategy(cfg),
-      // After every name pass: the compiler's answer for the residual — the
-      // rustc driver's type-checked callee first (bd s3i8m T7), then
-      // rust-analyzer's SCIP answer where the driver has no row (bd s3i8m.6 R3a).
-      new RustcCallSiteSymbolResolutionStrategy(cfg),
+      // After every name pass: rust-analyzer's SCIP answer for the residual
+      // the driver left (bd s3i8m.6 R3a).
       new RustAnalyzerScipSymbolResolutionStrategy(cfg),
     ];
   }
@@ -144,6 +152,7 @@ export class RustCallResolver implements CallResolver {
    */
   prepareResolvePass(plan: SymbolResolutionPassPlan): void {
     this.environments.reload(plan.projectRoot);
+    this.callSites.beginPass();
   }
 
   /**
@@ -157,7 +166,10 @@ export class RustCallResolver implements CallResolver {
   /** How the pass's compiler-index acquisitions settled; undefined before any ran. */
   diagnostics(): Record<string, unknown> | undefined {
     const rustAnalyzerScip = this.environments.scipDiagnostics();
-    const rustcCallSites = this.environments.callSiteDiagnostics();
+    const acquired = this.environments.callSiteDiagnostics();
+    const inProjectUnmapped = this.callSites.unmappedInProjectCount();
+    const rustcCallSites =
+      acquired === undefined || inProjectUnmapped === 0 ? acquired : { ...acquired, inProjectUnmapped };
     if (rustAnalyzerScip === undefined && rustcCallSites === undefined) return undefined;
     return {
       ...(rustAnalyzerScip === undefined ? {} : { rustAnalyzerScip }),
@@ -170,8 +182,11 @@ export class RustCallResolver implements CallResolver {
     return withRustResolveEnvironment(ctx, this.environments.forRoot(ctx.projectRoot));
   }
 
-  resolveDispatch(call: CallRef, ctx: CallContext) {
-    return resolveDispatchViaComponents(this.dispatchComponents, call, this.withEnvironment(ctx));
+  /** The trait cone — unless the driver's row decides the call (RESIDUAL R2): then the chain answers it alone. */
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
+    const environment = this.withEnvironment(ctx);
+    if (this.callSites.overridesDispatch(call, environment)) return emptyDispatchFanout();
+    return resolveDispatchViaComponents(this.dispatchComponents, call, environment);
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {

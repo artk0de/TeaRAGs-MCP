@@ -671,11 +671,14 @@ export interface RustcDriverWarm {
   status: string;
   units: number;
   failed: number;
+  /** In-project callable rows the pass found no table symbol for (RESIDUAL R1's gate); absent = none counted. */
+  inProjectUnmapped?: number;
 }
 
 /** The one `RUSTC-DRIVER` report line. */
 export function describeRustcDriverWarm(warm: RustcDriverWarm): string {
-  return `RUSTC-DRIVER warm ${(warm.warmMs / 1000).toFixed(2)}s · ${warm.status} · units ${warm.units} · failed ${warm.failed}`;
+  const unmapped = warm.inProjectUnmapped === undefined ? "" : ` · inProjectUnmapped ${warm.inProjectUnmapped}`;
+  return `RUSTC-DRIVER warm ${(warm.warmMs / 1000).toFixed(2)}s · ${warm.status} · units ${warm.units} · failed ${warm.failed}${unmapped}`;
 }
 
 /** `--rust-analyzer`: the warm's wall time and how the SCIP acquisition ended. */
@@ -1093,6 +1096,14 @@ export async function run(
       const text = readFileSync(resolvePath(root, extraction.relPath), "utf8");
       loc += text.length === 0 ? 0 : text.split("\n").length;
     }
+  }
+  if (rustcDriverWarm !== undefined) {
+    const unmapped = runner.resolverDiagnostics().rust?.rustcCallSites;
+    const inProjectUnmapped =
+      typeof unmapped === "object" && unmapped !== null && "inProjectUnmapped" in unmapped
+        ? Number(unmapped.inProjectUnmapped)
+        : 0;
+    rustcDriverWarm = { ...rustcDriverWarm, inProjectUnmapped };
   }
 
   return {

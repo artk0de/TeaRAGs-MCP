@@ -104,6 +104,12 @@ describe("describeRustcDriverWarm (bd s3i8m T8)", () => {
       "RUSTC-DRIVER warm 0.00s · not acquired · units 0 · failed 0",
     );
   });
+
+  it("appends the in-project rows no table symbol maps when the pass counted them (RESIDUAL R2)", () => {
+    expect(describeRustcDriverWarm({ warmMs: 1000, status: "ok", units: 3, failed: 0, inProjectUnmapped: 7 })).toBe(
+      "RUSTC-DRIVER warm 1.00s · ok · units 3 · failed 0 · inProjectUnmapped 7",
+    );
+  });
 });
 
 describe("parseArgs --rust-analyzer", () => {
