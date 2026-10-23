@@ -58,7 +58,8 @@ Y", "unclear name") NEVER stylistic-only → Step 3b.
 user to install superpowers (https://github.com/obra/superpowers; steps in
 [CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
 it as the full workflow. Available = `$receiving-code-review` /
-`/receiving-code-review` is in your skills list; superpowers is a separate
+`/receiving-code-review` is in your skills list or its installed SKILL.md was
+found and read (then invoke it after this enrichment); superpowers is a separate
 plugin, never under the dinopowers dir — a missing file next to the wrapper is
 not "unavailable".
 

@@ -102,9 +102,10 @@ the inner verification step could not run, ask the user to install superpowers
 [CHAINING.md](../../CHAINING.md)). The missing skill blocks only the inner step
 and the completion claim, never the scan. NEVER present the scan alone as the
 full workflow. Available = `$verification-before-completion` /
-`superpowers:verification-before-completion` is in your skills list; superpowers
-is a separate plugin, never under the dinopowers dir — a missing file next to
-the wrapper is not "unavailable".
+`superpowers:verification-before-completion` is in your skills list or its
+installed SKILL.md was found and read (then invoke it after this enrichment);
+superpowers is a separate plugin, never under the dinopowers dir — a missing
+file next to the wrapper is not "unavailable".
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) +
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never

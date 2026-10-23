@@ -171,9 +171,10 @@ Contract shape + conventions + degradation:
 **Local:** chat report — findings by severity (major first), observations,
 dimensions-skipped notes. No posting. **D8 naming overrides the severity
 grouping, local too:** naming findings grouped by verdict (MISFIT, COLLISION,
-NEW_TERM), each `relPath:line`, MISFIT and COLLISION marked `[minor]`;
-conforming + novel counts on one summary line; bodies plain language, no verdict
-codes / tool names.
+NEW_TERM); every finding must include `review.findings[].relPath:line`; MISFIT
+and COLLISION marked `[minor]`; one summary line must give both
+`review.conforming` and `review.novel` counts (a count unavailable → say so on
+that line); bodies plain language, no verdict codes / tool names.
 
 **External:** draft table (`file:line | severity | one-line body`) → ONE
 whole-batch confirmation → agent posts inline comments + summary via session's

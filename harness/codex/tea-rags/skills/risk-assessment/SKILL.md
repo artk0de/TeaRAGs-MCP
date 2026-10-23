@@ -9,16 +9,18 @@ description:
 
 # Risk Assessment
 
-**Your answer's last line — EVERY assessment, plan-run too, verbatim ("the risk
-map" does not count):**
+**Answer contract — reports AND plan-only answers.** Show the Phase 5 tiered map
+in its format (Critical/High tables: Symbol, File:Line, Risk Type, Key Signals,
+Tests; Structural when codegraph active; Summary), never a prose description of
+it. Plan-only → enumerate phases 0–5, none collapsed or omitted. Prompt mentions
+generation ("before implementing" / "generate") → line immediately BEFORE
+`Output:`, naming resolved scope + per-symbol overlay labels (no extra block, no
+extra scan): `Hand-off: pathPattern + per-symbol File:Line + labels`. `Output:`
+is ALWAYS the answer's last line, verbatim ("the risk map" does not count):
 
 ```
 Output: Critical/High | Symbol | File:Line | Risk Type | Key Signals | Tests(path/none/unverified) + Structural + Summary
 ```
-
-Prompt mentions generation ("before implementing" / "generate") → also, as the
-answer's final line: `Hand-off: pathPattern + per-symbol File:Line + labels`. No
-extra scan.
 
 No `## Label maps` above → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap,resolve`
@@ -61,11 +63,6 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 
 ---
 
-Risk scan via rank_chunks × 5 rerank presets (4 codegraph off — criticalPath is
-codegraph-gated), cross-referenced by overlap count, plus a git-independent
-structural axis (2 presets) reported separately. Semantic/hybrid search resolves
-intent-based scopes.
-
 ## Rules
 
 **Addressing:** every call passes `project=<alias>` +
@@ -88,9 +85,7 @@ never licenses leaving tea-rags".
 5. **Depth → `find_symbol`, never Read** (`tea-rags://guide/navigation`
    After-Search Navigation): full body `symbol=<symbolId>`, file outline
    `relativePath`, neighbour `navigation.prev/nextSymbolId`. Partial `Read` only
-   for non-symbol text (config, data). Never read full files. Row with
-   `treeState` = pre-edit index copy, lines stale → `find_symbol` for current
-   code (`tea-rags://guide/decision-tree` "Addressing the Codebase").
+   for non-symbol text (config, data). Never read full files.
 6. **Minimize tool calls — but never batch across a ranking boundary.** Batch
    what shares a ranking space: all rank_chunks in one message (separate calls),
    all Critical UUIDs into one find_similar (vector math, order-free). Do NOT

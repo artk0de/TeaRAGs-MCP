@@ -22,6 +22,10 @@ user-invocable: false
 Rerank reorders search results by git + structural signals. Deep-dive: pick
 preset, build custom weight set, apply recipe for a specific analytics question.
 
+**Overlay labels → implementation-strategy questions belong to
+`tea-rags:data-driven-generation` Step 1, not here.** Do not route them here or
+read rerank catalogs unless the user asks how to rank search results.
+
 ## Rerank decision tree
 
 ```

@@ -7,7 +7,7 @@ alwaysApply: true
 
 > **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no resource tool, or the read fails), run `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
 
-**Addressing.** Every read call (search, `find_symbol`, graph, review, lexicon):
+**Addressing.** Every read call (search, symbol, graph, review, lexicon):
 `project=<alias>` (which index) + `path=<your working directory>` (which tree).
 Alias: prime `## Project`, SubagentStart line or `workingTree.project`; unknown
 → `path` alone. No working dir → `project` alone. Raw collection name →
@@ -38,19 +38,19 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
 - Never `Read` after `find_symbol` — method = full body; class / file / doc =
   outline of ids → drill `find_symbol(symbol: <id>)`. After a search:
   `find_symbol` next, not re-search/`Read`.
-- `symbolId` ends `#partN` → fragment: `find_symbol(symbol: parentSymbolId)`
-  first; parts = one hit.
+- `symbolId` ends `#partN` = fragment → `find_symbol(symbol: parentSymbolId)`;
+  parts = one hit.
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
-  license leaving tea-rags — ticket-named files too. Row without `treeState` =
-  current; `treeState` row = pre-edit copy (signals hold, text stale) →
-  `find_symbol`.
+  license leaving tea-rags — ticket-named files too. No `treeState` = current;
+  `treeState` row = pre-edit copy (signals hold, text stale) → `find_symbol`.
 - Own checkout (tree = alias's path), `changedFiles` > 0, stale banner or
   unindexed edits → incremental `index_codebase(project=)` first, no consent,
-  plans too; drift `--force*` `Run:` → ask, never instead. Linked worktree →
-  overlay, never reindex.
-- Empty `get_callers` at low resolve rate ≠ no callers → `hybrid_search`; edges
-  at changed files → `find_symbol` its caller, then `hybrid_search(metaOnly)`,
-  no graph retry. Graph tools absent = codegraph off → never claim "no cycles";
+  plans too; drift `--force*` `Run:` → ask, never instead. Subagent: never ask
+  user or reindex — report needed reindex / `--force*` to parent. Linked
+  worktree → overlay only.
+- Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`; edges at
+  changed files → `find_symbol` its caller, then `hybrid_search(metaOnly)`, no
+  graph retry. Graph tools absent = codegraph off → never claim "no cycles";
   on + empty `find_cycles` = DAG.
 - Docs = hypothesis; verify in code.
 - User-named action ("read `x.ts`") → do it; user's weaker method → keep the
@@ -72,4 +72,4 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
 - no prime digest / labelMap → `tea-rags://project/<alias>/digest` / `…/metrics`
 
 **Destructive — explicit user consent:** `force_reindex`, `clear_index`,
-`delete_*`, `--force*` reindex. Subagent: never reindex — report to parent.
+`delete_*`, `--force*` reindex.

@@ -29,8 +29,8 @@ risk tiers) BEFORE inner skill; direct `superpowers:Y` skips it.
 ## Missing superpowers (MANDATORY)
 
 Every wrapper chains into a superpowers skill; dinopowers does not bundle
-superpowers. Wrapped `superpowers:` skill not available (not listed, invocation
-fails) → STOP and ask the user to install superpowers:
+superpowers. Wrapped `superpowers:` skill not available (see "Available" below)
+→ STOP and ask the user to install superpowers:
 
 - Source: https://github.com/obra/superpowers
 - Claude Code: `/plugin install superpowers@claude-plugins-official`
@@ -41,6 +41,9 @@ workflow. A wrapper whose SKILL.md requires its enrichment regardless
 (verification-before-completion's scan) runs it first; the missing skill then
 blocks only the inner step and any completion claim.
 
-Available = `$Y` / `superpowers:Y` is in your skills list. superpowers is a
-separate plugin, never under the dinopowers dir — a missing file next to the
-wrapper is not "unavailable".
+Available = `$Y` / `superpowers:Y` is in your skills list, or its installed
+`SKILL.md` has been found and read. If either check succeeds, invoke the inner
+skill with `Skill(superpowers:Y)` after completing the wrapper's required
+enrichment. Treat it as unavailable only when neither check succeeds or the
+invocation fails. superpowers is a separate plugin, never under the dinopowers
+dir — a missing file next to the wrapper is not "unavailable".

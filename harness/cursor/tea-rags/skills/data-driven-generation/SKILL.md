@@ -43,23 +43,21 @@ conversation. Labels from `find_symbol(rerank=<preset>, metaOnly=false)` on
 target symbols — explore PRE-GEN PG-2 (SIGNAL LOOKUP); no full risk-assessment
 scan. Missing → STOP, say "area context missing"; plan step 1, by name: invoke
 `/explore` (PRE-GEN) for target area, then resume — never own `semantic_search`
-in its place; approved brainstorm/design ≠ area context. Explore output already
-here → use it.
+instead; approved design ≠ area context. Explore output here → use it.
 
-**Session-context reuse:** outlines, bodies, search hits already fetched here =
-source of truth for their file until that file is edited. Before any search or
-`find_symbol`, check conversation for the file; reuse. Re-fetch ONLY a file
-edited after fetch (by you or a tool). State both halves: "re-fetch <edited
-symbol>; reuse in-context <other files>". Re-searching unedited file = waste.
+**Session-context reuse:** outlines, bodies, search hits fetched here = source
+of truth for their file until it is edited. Before any search or `find_symbol`,
+reuse what the conversation holds; re-fetch ONLY a file edited after fetch.
+State both halves: "re-fetch <edited symbol>; reuse in-context <other files>".
 
 ## Reading Overlay Labels
 
 `rankingOverlay.file.<signal>` / `rankingOverlay.chunk.<signal>`, each
 `{ value: N, label: "high" }` — result table (2+ rows): columns
 `rankingOverlay.chunk.<signal>.value` / `.label`. Only preset's `overlayMask`
-fields labelled — choose preset by labels needed; raw `payload.git.*` never
-labelled. Meanings: `tea-rags://guide/signal-labels`. Raw value needs label →
-read `tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap`
+fields labelled — pick preset by labels needed; raw `payload.git.*` unlabelled.
+Meanings: `tea-rags://guide/signal-labels`. Raw value needs label → read
+`tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap`
 (FetchMcpResource).
 
 ---
@@ -105,10 +103,9 @@ Ambiguous → ask which mode (one question).
   skipped: 6a baseline (`tests-at-risk` pins + target's own tests) GREEN BEFORE
   first move, no new test; file move → Step 6 restructure SIM; same tests re-run
   green, none edited; Step 7 gate.
-- **Greenfield** = CREATE over empty area — TEMPLATE/STYLE degrade to empty
-  naturally, don't pre-skip.
-- **REUSE never skipped in any mode** — shared infra exists even for new
-  features.
+- **Greenfield** = CREATE over empty area — TEMPLATE/STYLE degrade, don't
+  pre-skip.
+- **REUSE never skipped in any mode.**
 - **RED never skipped** except a named `test-first` exception (no-tests language
   / config-docs only), stated in one line. Hotfix included.
 - **VERIFY never skipped. Ever.**
@@ -238,8 +235,10 @@ Step 5 output = CONCRETE final names, one line per draft:
 Concept new (no same-meaning term), also when context names its namespace/class
 → line, prefix literal: `NEW_TERM <term> — <why no project term denotes this>`.
 "Project vocabulary" / "a name that describes the lookup" without the name =
-Step 5 not done. Context already gives lexicon terms → emit the lines now, never
-"if the lexicon confirms".
+Step 5 not done. Context already gives the lexicon and shows no same-meaning
+term → decide now and print the literal
+`NEW_TERM <term> — <why no project term denotes this>` line in the answer. Do
+not make it conditional or describe the line without emitting it.
 
 ### Step 6: GENERATE — RED → GREEN → REFACTOR
 

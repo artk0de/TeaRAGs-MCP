@@ -54,7 +54,8 @@ redirects superpowers:X. NEVER bypass wrapper.
 the user to install superpowers (https://github.com/obra/superpowers; steps in
 [CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
 it as the full workflow. Available = `$writing-plans` /
-`superpowers:writing-plans` is in your skills list; superpowers is a separate
+`superpowers:writing-plans` is in your skills list or its installed SKILL.md was
+found and read (then invoke it after this enrichment); superpowers is a separate
 plugin, never under the dinopowers dir — a missing file next to the wrapper is
 not "unavailable".
 

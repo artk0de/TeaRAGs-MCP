@@ -67,8 +67,10 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
   quote `remedy` fields verbatim (source, from → to, names); `preExisting`, no
   `remedy` → **report-only** line, no fix (`mainSequence`: distanceBefore
   already past threshold). Load `../../repair/<family>.md` of EVERY family
-  present (report-only too: `mainSequence.md` + `hubLike.md`), no others. Every
-  must-fix line ends verbatim:
+  present (report-only too: `mainSequence.md` + `hubLike.md`), no others. For
+  each introduced must-fix, state whether the finding contains `compositionRoot`
+  or a matching `## Known false positives` entry with its evidence. If neither
+  is present, say it remains must-fix. End that line verbatim:
   `Exempt only with compositionRoot flag or ## Known false positives entry; bare "by design" is not evidence.`
   Classify + fix now, never defer.
 - **`island` / `compositionCycle` / `knot` with `composition: true`** =
@@ -83,11 +85,10 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 
 ## Phase 0 — GATE
 
-`get_architecture_report` registered? No → codegraph off: say "architecture
-report needs codegraph", stop. NEVER claim "no violations". Codegraph quality:
-`## Codegraph resolve` above (none → read
-`tea-rags://project/<alias>/metrics?section=resolve`, FetchMcpResource) — low
-resolve rate → say edges are partial.
+`get_architecture_report` registered? No → say "architecture report needs
+codegraph", stop; NEVER claim "no violations". `## Codegraph resolve` above
+(none → FetchMcpResource `tea-rags://project/<alias>/metrics?section=resolve`) —
+low rate → edges partial.
 
 ## Phase 1 — REPORT
 
@@ -111,8 +112,7 @@ mainSequence, hubLike, layering, silentCoupling), else plain directory — Ruby
 included (`app/models/billing` and `app/services/billing` are two components).
 Shotgun alone groups by constant namespace path spells (`::Billing` — Zeitwerk
 autoload: `app/models/billing/*` + `app/services/billing/*` = one), so its
-spreads name `::X` components. Ca/Ce count distinct files across component
-border.
+spreads name `::X` components. Ca/Ce = distinct files across the border.
 
 `rootCauses[]` ordered by `violationCount` desc, then `maxInstabilityDelta`.
 
@@ -127,17 +127,14 @@ border.
 Root cause `tier` = max over member violations. Rank groups critical > active >
 structural before `violationCount` when tiers built.
 
-`cycleWithDependents: true` = strongest finding. Base names its subclasses,
-concern names its includers, registry names its entries. Fix: invert
-back-reference (registry/lookup, DI, move knowledge to dependents) → every
-violation of group disappears at once.
+`cycleWithDependents: true` = strongest finding (base names subclasses, concern
+its includers, registry its entries). Fix: invert back-reference (registry, DI,
+knowledge to dependents) → whole group disappears. Confirm (optional):
+`find_cycles(scope: "file", pathPattern: "<target>/**")`; carrying files:
+`evidence.fileEdges`.
 
-Confirm cycle (optional):
-`find_cycles(scope: "file", pathPattern: "<target>/**")`; files carrying it:
-`evidence.fileEdges` of group's violations.
-
-`cycleWithDependents: false`, count ≥ 3 → target too volatile: split stable core
-(what dependents use) from volatile rest.
+`cycleWithDependents: false`, count ≥ 3 → split stable core (what dependents
+use) from volatile rest.
 
 ## Phase 3 — RESIDUAL VIOLATIONS
 
