@@ -11,37 +11,26 @@ description:
 
 # dinopowers: brainstorming
 
-Wrapper over `superpowers:brainstorming`. Ensures creative exploration starts
-from real git signals (hotspots, owners, legacy debt) of target area — not from
-assumptions about how code looks today.
+Wrapper over `superpowers:brainstorming`. Exploration starts from real git
+signals (hotspots, owners, legacy debt) of target area — not assumptions.
 
 ## Iron Rule
 
-**tea-rags enrichment MUST be called BEFORE `Skill(superpowers:brainstorming)`**
-— whenever target area identifiable. Correct preset selection (`hotspots`,
-`ownership`, `techDebt`) + correct parameters + correct ordering = core value of
-this wrapper.
+**tea-rags enrichment MUST run BEFORE `Skill(superpowers:brainstorming)`** when
+target area identifiable. Right presets (`hotspots`, `ownership`, `techDebt`) +
+right params + right order = wrapper's value.
 
-If no code area identifiable from user request (pure conceptual brainstorming):
-skip enrichment, invoke `superpowers:brainstorming` directly. State explicitly —
-do not fabricate an area.
+No code area identifiable (pure conceptual) → skip enrichment, invoke
+`superpowers:brainstorming` directly, say so explicitly. Never fabricate area.
 
-**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
-redirects superpowers:X. NEVER bypass wrapper.
+**Chaining rule:** [CHAINING.md](../../CHAINING.md) — every onward
+`superpowers:Y` → `dinopowers:Y`. NEVER bypass wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags://guide/freshness`. No background reindex hook. Linked worktree:
-overlay serves uncommitted edits — never reindex for them. Main checkout:
-incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call over
-uncommitted edits, or once answers show `changedFiles` > 0 (HEAD moved, branch
-switch) — no consent, also under drift `--force` (ask that separately). **Lag ≠
-unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never license
-Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without `treeState`
-= current; `treeState` row → `find_symbol` re-call.
+**Freshness:** [FRESHNESS.md](../../FRESHNESS.md) (owner
+`tea-rags://guide/freshness`). Lag ≠ unusable — never Bash `cat`/`grep`/`Read`
+over code; `treeState` row → `find_symbol`.
 
 ## Step 1 — Extract target area
-
-From user request identify:
 
 | Element                                        | Example                                                 |
 | ---------------------------------------------- | ------------------------------------------------------- |
@@ -49,19 +38,17 @@ From user request identify:
 | **Change type** — what the brainstorm is about | "new feature", "refactor", "bug-fix approach"           |
 | **Scope hint** — narrower filter if mentioned  | file name, class name, symbol                           |
 
-Compose:
+Compose `pathPattern` (e.g. `**/auth/**`,
+`src/core/domains/ingest/**/chunker/**`) + `query` (one sentence, change
+intent).
 
-- `pathPattern` for Step 2 (e.g. `**/auth/**`,
-  `src/core/domains/ingest/**/chunker/**`)
-- `query` — single sentence describing change intent
-
-If no area mentioned or derivable: skip to Step 4 with empty enrichment. Report
-"no area identifiable — proceeding without tea-rags enrichment".
+No area mentioned/derivable → Step 4, empty enrichment. Report "no area
+identifiable — proceeding without tea-rags enrichment".
 
 ## Step 2 — Three tea-rags enrichment calls (five with codegraph)
 
-Run these three `mcp__tea-rags__semantic_search` calls **in parallel** (same
-tool call block), each with `metaOnly: true` (want signals, not content):
+`mcp__tea-rags__semantic_search` calls **in parallel** (one tool block), each
+`metaOnly: true` (signals, not content):
 
 | Call          | `rerank` preset      | Why                                                                                                                                 |
 | ------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -70,14 +57,15 @@ tool call block), each with `metaOnly: true` (want signals, not content):
 | C — Tech debt | `"techDebt"`         | Legacy zones where "just refactor it" hides cost (age + churn + bugFix)                                                             |
 | D — Backbone  | `"architecturalHub"` | **Codegraph only** — structural hubs (high `fanIn` / `isHub`) the design must respect; a change to a backbone has wide blast radius |
 
-Call D runs ONLY when codegraph active (prime `## Enrichment` lists
-`codegraph.symbols`). When that line absent, omit Call D — run A/B/C only, note
-structural backbone not assessed (do NOT substitute a similarity-ranked list as
-"the hubs"). See `tea-rags://guide/navigation` "Graph navigation".
+Call D ONLY when codegraph on = graph tools (`get_callers`, `trace_path`, …) in
+tool list; unsure → read `tea-rags://project/<alias>/metrics?section=registry`
+(`codegraph on|off`). Off → A/B/C only, note backbone not assessed (NEVER pass
+similarity-ranked list off as "the hubs"). → `tea-rags://guide/navigation`
+"Graph navigation".
 
 **Call E — vocabulary (codegraph only, same parallel block):**
 `get_naming_lexicon(concept=<Step 1 query>, language, pathPattern)` →
-`concept.terms` = the words the project already uses for this area. Reading:
+`concept.terms` = words project already uses for area. Reading:
 `tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 
 Exact parameters per call:
@@ -105,19 +93,18 @@ Do NOT substitute:
 
 Do NOT pass:
 
-- `metaOnly: false` — content not needed; larger payloads slow wrapper
-- Custom `rerank` weights instead of three named presets — loses calibrated
-  risk-assessment semantics
-- `filter` on `git.ageDays` / `git.commitCount` — presets already encode these
-  signals; adding filters shrinks result set, hides debt
+- `metaOnly: false` — content unneeded, payload bloats
+- custom `rerank` weights instead of named presets — loses calibrated semantics
+- `filter` on `git.ageDays` / `git.commitCount` — presets encode them; filters
+  shrink set, hide debt
 
-If all three risk calls return 0 results (area new, untouched by git): report
-"no git-enriched results for pathPattern `<X>` — area is new or excluded from
-indexing" and skip to Step 4 without enrichment block. Do NOT fabricate signals.
+All risk calls 0 results (new / unindexed area) → report "no git-enriched
+results for pathPattern `<X>` — area is new or excluded from indexing", Step 4
+without block. NEVER fabricate signals.
 
 ## Step 3 — Build enrichment block
 
-From three result sets, compose compact block (max ~15 lines):
+Compact block (max ~15 lines):
 
 ```
 ### tea-rags enrichment for <pathPattern>
@@ -137,13 +124,11 @@ From three result sets, compose compact block (max ~15 lines):
 **Project vocabulary (Call E):** <term> (<holder>), ... (top 5)
 ```
 
-Cap each section at 3 entries. If a file appears in multiple sections, note
-explicitly (`→ also in Hotspots`) — overlap is strong brainstorming signal. Do
-NOT paste raw JSON. Extract readable `relativePath` + 2-3 key signals per entry.
-Values: `rankingOverlay.{file,chunk}.<field>` (every preset-surfaced signal,
-labelled); metaOnly payload `git.*` holds essentials only (commitCount, ageDays,
-taskIds, blame\*), raw. File-level presets (ownership, architecturalHub) → no
-startLine on the hit.
+Cap 3 per section. File in several sections → mark (`→ also in Hotspots`) —
+overlap = strong signal. No raw JSON; `relativePath` + 2-3 key signals per
+entry. Values: `rankingOverlay.{file,chunk}.<field>` (preset-surfaced,
+labelled); metaOnly `git.*` = essentials only (commitCount, ageDays, taskIds,
+blame\*), raw. File-level presets (ownership, architecturalHub) → no startLine.
 
 ## Step 4 — Invoke superpowers:brainstorming
 
@@ -162,32 +147,19 @@ from Step 3 as context. Phrase handoff as:
 > `dinopowers:Y` wrapper instead when one exists — see the Chaining rule section
 > above."
 
-Let `superpowers:brainstorming` run full exploration cycle — this wrapper does
-not replace it, only grounds it.
+`superpowers:brainstorming` runs full cycle — wrapper grounds, never replaces.
 
-## Red Flags — STOP and restart from Step 2
+## Red Flags — STOP, restart from Step 2
 
-- "I already know which files are hotspots here" → run Step 2 anyway; memory
-  stale
-- "tea-rags is slow for 3 calls, let me do one" → three presets = different
-  lenses; one call loses two
-- Substituted `hybrid_search` / `find_similar` / `find_symbol` → redo with
+- "I know the hotspots here" → run Step 2; memory stale
+- "3 calls slow, do one" → presets = different lenses; one loses two
+- Custom weights / `rerank: "relevance"` instead of risk presets → redo
+- `hybrid_search` / `find_similar` / `find_symbol` substituted → redo with
   `semantic_search` + preset
-- Ran the calls sequentially → reissue as parallel (same tool block)
-- Invoked `superpowers:brainstorming` first, tea-rags after as "validation" →
-  wrong order, restart
-- Set `metaOnly: false` to "see content" → unnecessary; restart with
-  `metaOnly: true`
-- Let `superpowers:brainstorming` chain into a raw `superpowers:Y` (e.g.
-  `superpowers:writing-plans`) without redirecting to `dinopowers:Y` → intercept
-  and invoke wrapper instead (see Chaining rule)
-
-## Common Mistakes
-
-| Mistake                                                     | Reality                                                                        |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Skip tea-rags because "brainstorming is abstract"           | If the user named a code area, it's not abstract. Enrich it.                   |
-| Use `rerank: "relevance"` instead of the three risk presets | Loses the point — brainstorming should see risk, not just relevance            |
-| Collapse three calls into one with custom weights           | Custom weights ≠ calibrated presets; output is noisy and hard to interpret     |
-| Paste raw `results[]` JSON into Step 4 handoff              | `superpowers:brainstorming` drowns in noise; extract 3 entries per lens        |
-| Fabricate an area when user didn't name one                 | Explicit "no area — skipping enrichment" is honest; faked pathPattern is a lie |
+- Calls sequential → reissue parallel
+- `superpowers:brainstorming` first, tea-rags after as "validation" → wrong
+  order, restart
+- `metaOnly: false` "to see content" → restart with `metaOnly: true`
+- Raw `results[]` JSON in handoff → extract 3 entries per lens
+- User named area but skipped as "abstract" → enrich it
+- Inner cycle chains raw `superpowers:Y` → intercept, invoke `dinopowers:Y`

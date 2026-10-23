@@ -14,46 +14,36 @@ description:
 
 Wrapper over `superpowers:finishing-a-development-branch`. Completion decision
 (merge/PR/cleanup) informed by branch-wide risk scan — ALL files branch touched,
-not just last Task — so "ready to merge" claims backed by multi-signal evidence.
+not last Task — "ready to merge" backed by multi-signal evidence.
 
 ## Iron Rule
 
 **`Skill(tea-rags:risk-assessment)` MUST run on branch diff BEFORE presenting
-completion options** — whenever branch has ≥1 commit beyond base.
+completion options** — whenever branch ≥1 commit beyond base.
 
-Core value: correct delegation (`tea-rags:risk-assessment` skill, not ad-hoc
-`semantic_search`) + correct scope (entire branch diff, not last commit) +
-ordering (risk-assessment BEFORE completion options).
+Value = right delegation (`tea-rags:risk-assessment` skill, not ad-hoc
+`semantic_search`) + right scope (whole branch diff, not last commit) + order
+(risk-assessment BEFORE options).
 
-Branch 0 commits ahead of base (nothing to finish): skip wrapper. Trivial
-changes (docs-only, renames-only): risk-assessment skippable with note "trivial
-scope — no risk scan needed".
+0 commits ahead → skip wrapper. Trivial (docs-only, renames-only) → scan
+skippable, note "trivial scope — no risk scan needed".
 
-**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
-redirects superpowers:X. NEVER bypass the wrapper.
+**Chaining rule:** [CHAINING.md](../../CHAINING.md) — every onward
+`superpowers:Y` → `dinopowers:Y`. NEVER bypass wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags://guide/freshness`. No background reindex hook — after merge to `main`
-reindex `main` EXPLICITLY (Step 5). Linked worktree: overlay serves uncommitted
-edits — never reindex for them. **Lag ≠ unusable:** `changedFiles` /
-`pendingFiles` / `floors: []` / drift never license Bash `cat` / `sed` / `grep`
-/ `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call.
+**Freshness:** [FRESHNESS.md](../../FRESHNESS.md) (owner
+`tea-rags://guide/freshness`). Lag ≠ unusable — never Bash `cat`/`grep`/`Read`
+over code; `treeState` row → `find_symbol`.
 
-**Second Iron Rule — branch-finish index lifecycle (MANDATORY).** On EVERY
-branch finish that has a clone — local merge to `main` OR abandon/delete — you
-MUST tear down the per-worktree index clone with
-**`tea-rags worktree remove <name>`** (NOT `delete_collection`, which drops only
-the Qdrant collection and leaks the DuckDB
-
-- snapshot + registry footprint). Additionally, on the MERGE path you MUST
-  reindex `main` EXPLICITLY with `mcp__tea-rags__index_codebase` — no commit
-  hook does it for you. Full procedure: Step 5. Never use the deprecated
-  `reindex_changes`.
+**Second Iron Rule — branch-finish index lifecycle (MANDATORY).** Every finish
+with a clone — local merge to `main` OR abandon/delete — MUST tear clone down
+with **`tea-rags worktree remove <name>`** (NOT `delete_collection` — drops only
+Qdrant collection, leaks DuckDB graph + file-hash snapshots + stats/quarantine +
+registry entry). MERGE path also MUST reindex `main` EXPLICITLY with
+`mcp__tea-rags__index_codebase` — no commit hook does it. Never deprecated
+`reindex_changes`. Procedure: Step 5.
 
 ## Step 1 — Determine branch scope
-
-From git state, collect:
 
 | Element                  | Example                              |
 | ------------------------ | ------------------------------------ |
@@ -62,33 +52,27 @@ From git state, collect:
 | **Branch diff files**    | `git diff <base>...HEAD --name-only` |
 | **Diff character/kind**  | code / docs / config / mixed         |
 
-Compose:
+Compose `branchDiffFiles` (all files touched across branch, not last commit) +
+`branchIntent` (one sentence).
 
-- `branchDiffFiles`: full set of files touched across branch (not just last
-  commit)
-- `branchIntent`: one-sentence summary of what branch accomplishes
-
-`branchDiffFiles` empty OR docs-only OR renames-only (no content changes): skip
-to Step 4 with verdict `TRIVIAL-SCOPE (no risk scan)`.
+`branchDiffFiles` empty OR docs-only OR renames-only → Step 4 with verdict
+`TRIVIAL-SCOPE (no risk scan)`.
 
 ## Step 2 — Invoke tea-rags:risk-assessment
 
-Invoke `Skill` tool with `tea-rags:risk-assessment`. Pass as input:
+Invoke `Skill` tool with `tea-rags:risk-assessment`. Input:
 
-- `pathPattern`: brace-expanded over `branchDiffFiles` (scope to this branch's
-  footprint)
+- `pathPattern`: brace-expanded over `branchDiffFiles` (branch footprint)
 - `intent`: branch summary
 
-Wait for standard `PRESENT` output — tier-classified risk candidates (Critical /
-High / Medium) with multi-preset convergence (hotspots + ownership + techDebt).
+Wait for `PRESENT` output — tiered candidates (Critical / High / Medium),
+multi-preset convergence (hotspots + ownership + techDebt).
 
-Codegraph active: risk-assessment's structural axis runs automatically over
-branch-diff scope — blast-radius hubs (`architecturalHub` amplifier) and
-**circular dependencies the branch introduces or touches** (`find_cycles`).
-Branch adding cross-module cycle is merge-blocker even with clean git signals —
-read risk-assessment "Structural risks" section before deciding
-merge/PR/cleanup. Codegraph off: that section absent (not "no cycles");
-structural risk simply unassessed.
+Codegraph on: risk-assessment's structural axis runs over branch scope —
+blast-radius hubs (`architecturalHub` amplifier) + **cycles branch introduces or
+touches** (`find_cycles`). Branch adding cross-module cycle = merge-blocker even
+with clean git signals → read "Structural risks" section before deciding.
+Codegraph off: section absent (≠ "no cycles"); structural risk unassessed.
 
 Do NOT substitute:
 
@@ -100,26 +84,17 @@ Do NOT substitute:
 | `git log --stat <base>..HEAD` alone              | Shows what changed, not what's risky                                                                               |
 | `git diff <base>..HEAD` review by eye            | Human eye misses hotspot/silo/debt convergence                                                                     |
 
-Do NOT pass:
+`pathPattern` MUST equal branch diff — NOT broader (untouched project parts),
+NOT narrower (last-commit files only, or "non-risky" files excluded a priori —
+risk-assessment decides risk).
 
-- `pathPattern` including UNTOUCHED parts of project — scope must equal branch
-  diff, not broader project
-- `pathPattern` including only last-commit files — Step 1 output is BRANCH-wide,
-  not commit-wide
-
-Branch diff files unindexed (new module created on branch): note "branch scope
-unindexed — risk-assessment unavailable; relying on test suite + human review".
+Branch files unindexed (new module) → note "branch scope unindexed —
+risk-assessment unavailable; relying on test suite + human review".
 
 ## Step 3 — Summarize risk into completion context
 
-From `tea-rags:risk-assessment` PRESENT output extract:
-
-- **Critical risks in branch scope** — count + list (file:line + classification)
-- **High risks** — count + list
-- **Test coverage gaps** among Critical/High
-- **Recommendation tier** — one-sentence synthesis
-
-Compose completion block:
+From PRESENT output extract: Critical (count + file:line + classification), High
+(count + list), untested among Critical/High, one-sentence recommendation.
 
 ```
 ### Branch completion scan: <branchName>
@@ -135,8 +110,8 @@ Compose completion block:
 **Recommendation:** <ready-to-merge | address-critical-first | needs-review-pairing>
 ```
 
-risk-assessment returned "No critical risks found. Codebase appears healthy" —
-note `CLEAN-SCAN — ready to present completion options`.
+"No critical risks found. Codebase appears healthy" → note
+`CLEAN-SCAN — ready to present completion options`.
 
 ## Step 4 — Invoke superpowers:finishing-a-development-branch
 
@@ -152,73 +127,42 @@ scan block as context. Phrase handoff as:
 > `superpowers:verification-before-completion` (or any wrapped `superpowers:Y`),
 > invoke `dinopowers:Y` instead — see the Chaining rule section above."
 
-Let `superpowers:finishing-a-development-branch` run its standard
-merge/PR/cleanup decision presentation. Wrapper informs recommendation, does not
-force specific outcome.
+`superpowers:finishing-a-development-branch` runs standard presentation —
+wrapper informs recommendation, never forces outcome.
 
 ## Step 5 — Post-merge index cleanup
 
-After merge to `main` succeeds (the `superpowers` cycle performs it), close
-index lifecycle:
+After merge to `main` succeeds (`superpowers` cycle performs it):
 
-- **Reindex `main` EXPLICITLY after the merge.** No background commit hook — run
-  `mcp__tea-rags__index_codebase` (incremental) against the `main` alias so
-  `main` reflects the merged change. (`index_codebase` is the only incremental
-  entrypoint; never the deprecated `reindex_changes`.) Abandon/delete paths skip
-  this — nothing merged into `main`.
-- **Drop the per-worktree index clone (MANDATORY when one exists).** Branch
-  developed in a worktree with its own tea-rags index clone (collection
-  `<project>-worktree-<name>`, created by `tea-rags worktree create`): remove
-  now: `tea-rags worktree remove <name>` — on merge AND on abandon/delete. Clone
-  is throwaway; leaving it leaks Qdrant + DuckDB + snapshot footprint. Run even
-  if the git worktree directory is already gone — index clone tracked
-  separately, outlives the directory. A cleanup-only `PostToolUse` hook is the
-  backstop if you bypass this with a raw `git worktree remove` /
-  `git branch -D`, but do it explicitly here anyway.
-- **No clone → no cleanup.** Main checkout, or a worktree read through the
-  overlay (`tea-rags worktree info --json` → `isWorktree: false`): nothing to
-  remove.
+- **Reindex `main` EXPLICITLY.** No commit hook —
+  `mcp__tea-rags__index_codebase` (incremental) on `main` alias. Abandon/delete
+  → skip (nothing merged).
+- **Drop per-worktree index clone (MANDATORY when exists).** Clone = collection
+  `<project>-worktree-<name>` from `tea-rags worktree create` →
+  `tea-rags worktree remove <name>` on merge AND abandon/delete. Run even if git
+  worktree dir already gone — clone tracked separately, outlives dir.
+  Cleanup-only `PostToolUse` hook = backstop for raw `git worktree remove` /
+  `git branch -D`; still do it explicitly.
+- **No clone → no cleanup.** Main checkout, or worktree read via overlay
+  (`tea-rags worktree info --json` → `isWorktree: false`).
 
-Skip this step only on a PR-only completion path (no local merge): clone stays
-until the PR merges — note it for later cleanup.
+PR-only path (no local merge) → skip step; clone stays until PR merges, note for
+later cleanup.
 
-Do NOT substitute:
+## Red Flags — STOP, restart from Step 2
 
-| Wrong approach                                   | Why wrong                                                                                                                                                                                      |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mcp__tea-rags__delete_collection` for the clone | Drops ONLY the Qdrant collection — leaks the clone's DuckDB graph, file-hash snapshots, stats/quarantine, and registry entry. `tea-rags worktree remove <name>` tears down the FULL footprint. |
-| Skipping the explicit `main` reindex after merge | There is no commit hook — `main` stays stale until you run `mcp__tea-rags__index_codebase` against the `main` alias yourself. Reindex `main` explicitly on the merge path.                     |
-| `mcp__tea-rags__reindex_changes` (any context)   | Deprecated. `index_codebase` is the only incremental entrypoint.                                                                                                                               |
-| Removing only the git worktree directory         | The index clone is tracked separately and survives the directory — it must be removed with `tea-rags worktree remove`.                                                                         |
-
-## Red Flags — STOP and restart from Step 2
-
-- "All tests pass, just merge" → tests pass ≠ branch-wide risk clean. Run
-  Step 2.
-- "I did verification-before-completion after last commit" → that scan is
-  per-Task; this is branch-wide and multi-signal
-- Substituted direct `semantic_search` → missed convergence; invoke the skill
-- Scoped scan to last commit only → revert, expand to full branch diff
-- Presented completion options before Step 2 → revert, restart
-- Let `superpowers:finishing-a-development-branch` chain into a raw
-  `superpowers:requesting-code-review` /
-  `superpowers:verification-before-completion` without redirecting to the
-  `dinopowers:Y` wrapper → intercept, invoke the wrapper instead (see Chaining
-  rule)
-- Merged to `main` and did NOT reindex `main` → stale; no commit hook. Run the
-  explicit `mcp__tea-rags__index_codebase` on the `main` alias (Step 5).
-- Cleaned up a per-worktree clone with `delete_collection` (or by deleting the
-  worktree directory) → incomplete; leaks DuckDB + snapshots + registry. Use
-  `tea-rags worktree remove <name>` (Step 5).
-- Reached for `reindex_changes` → deprecated; use `index_codebase`.
-
-## Common Mistakes
-
-| Mistake                                               | Reality                                                                           |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Confuse with `verification-before-completion` wrapper | verification is per-edit blast-radius; this is branch-wide multi-signal risk tier |
-| Scope to last commit                                  | Branch risk surface ≠ last commit's risk; scan the whole branch                   |
-| Skip if "tests are green"                             | Green tests miss hotspot/silo/debt signals by design                              |
-| Use `rerank: "hotspots"` alone                        | hotspots is ONE risk lens; risk-assessment converges 3+                           |
-| Present 'ready to merge' before Step 2                | Completion decision informed by risk, not by "feels done"                         |
-| Narrow pathPattern to exclude "non-risky" files       | Risk-assessment decides what's risky, not the agent a priori                      |
+- "Tests pass, just merge" → green tests miss hotspot/silo/debt by design; run
+  Step 2
+- "Did verification-before-completion after last commit" → that = per-edit
+  blast-radius; this = branch-wide multi-signal tiers
+- Direct `semantic_search` / single preset (`"hotspots"` alone) → missed
+  convergence; invoke skill
+- Scan scoped to last commit → expand to full branch diff
+- Options presented before Step 2 → revert, restart
+- Inner cycle chains raw `superpowers:requesting-code-review` /
+  `superpowers:verification-before-completion` → intercept, invoke
+  `dinopowers:Y`
+- Merged, `main` not reindexed → stale; run `index_codebase` on `main` (Step 5)
+- Clone cleaned via `delete_collection` / dir deletion → leaks DuckDB +
+  snapshots + registry; `tea-rags worktree remove <name>`
+- `reindex_changes` → deprecated; `index_codebase`
