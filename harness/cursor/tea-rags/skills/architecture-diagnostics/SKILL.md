@@ -25,13 +25,8 @@ description:
 
 Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
-answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
-`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license `cat`
+/ `grep` / `Read` over code — `tea-rags://guide/freshness`.
 
 ## Phase Order (MANDATORY)
 
@@ -55,57 +50,18 @@ never licenses leaving tea-rags".
 
 ## Top Anti-patterns
 
-- **Reading flat `violations` first.** N violations into one target = ONE
-  defect. Fix target, not N sources.
-- **`edgeCount: 0` read as clean.** Nothing read ≠ no violations. No codegraph
-  DB or empty graph — say so.
-- **Ignoring `containment` / `lowConnectionCount`.** Excluded, not clean — see
-  Phase 4.
-- **Reading SDP as file-level.** SDP judged on COMPONENTS; file edges in
-  `evidence.fileEdges` only show which files carry the dependency.
-- **Using risk-assessment signals (churn, bugFixRate) here.** Other question.
-  Combine only when user asks both. Exception: per-violation `maintenanceCost` —
-  report's own fix PRIORITY, never verdict.
-- **Proposing tolerance change.** Tolerance fixed, reported in
-  `summary.stableDependencies.tolerance`. Not caller knob.
-- **Prescribing a new module layout from leak lines.** Diagnosis, not
-  prescription: a leak says importer walked past surface its peers use — not how
-  module should be drawn.
-- **Reading `facade-not-adopted` as a leak.** Nobody uses that facade → no
-  boundary to leak past. Not judged, not clean.
-- **`silentCoupling.built: false` read as clean.** No co-change build (git
-  trajectory off, or no index run yet) — say "not built", never "no hidden
-  coupling".
-- **`mainSequence` judged 0 read as balanced.** `excluded.unmeasured` > 0 =
-  index predates type census — say "needs codegraph recompute".
-  `unobservableAbstractness` = language rarely declares abstractions (Ruby duck
-  typing) — A 0 is idiom, not verdict.
-- **`entryPoint: true` distance read as placement defect.** Declared cli/mcp
-  entry surface — unstable end of main sequence is where it BELONGS; nothing
-  imports it. Triage data, never suppression.
-- **`preExisting: true` finding read as diff-introduced.** The base already
-  holds the violation — the diff touches it, did not add it. Real finding;
-  triage data, never suppression. Meaning per family: cycles /
-  leakingAbstraction = the edge already exists; stableDependencies = base held
-  another edge of the same component pair (base, or index for unchanged files);
-  mainSequence = `distanceBefore` already past the threshold; layeringBackEdge =
-  component pair already carried by another file edge; hubLike = already a hub
-  before the diff. facadeContract / silentCoupling / splitCandidates never carry
-  it.
-- **`remedy` ignored or paraphrased.** `remedy` (`retargetImport` /
-  `restoreExport`) is a dry-run-verified cheap repair — quote it verbatim in the
-  recommendation (file, names, target), never reword it into a vague "use the
-  facade". Absent = none qualified, not "none exists".
-- **`layerMap` expected in a bare report.** `response.layerMap` appears ONLY
-  when the request carried `layerMap` — absent = not asked, never "no layers".
-- **`island` / `compositionCycle` read as violations.** Informational findings —
-  count separately, say informational.
-- **`knot` with `composition: true` read as a defect.** Every edge joins a
-  directory to one nested inside it — composition of a module with its own
-  sub-parts, not a layering defect.
-- **Map `scopePathPattern` confused with report `pathPattern`.** The report's
-  scopes JUDGED edges by source; the map's picks map MEMBERS (induced subgraph).
-  Independent — one, both, or neither.
+Full list: [references/anti-patterns.md](./references/anti-patterns.md).
+
+- **Flat `violations` first.** N violations into one target = ONE defect.
+- **Nothing read ≠ clean.** `edgeCount: 0`, `built: false`, excluded counters,
+  `facade-not-adopted`, absent `layerMap` = not judged / not asked — say so.
+- **SDP is component-level**, not file-level. Tolerance fixed — no caller knob.
+- **No risk signals here** (churn, bugFixRate) — other question; per-violation
+  `maintenanceCost` = fix priority only.
+- **`preExisting: true`** = base already held it — real finding, not
+  diff-introduced. **`remedy`** quoted verbatim, never paraphrased.
+- **`island` / `compositionCycle` / `knot` with `composition: true`** =
+  informational, not defects.
 
 ## Rules
 
@@ -116,8 +72,11 @@ never licenses leaving tea-rags".
 
 ## Phase 0 — GATE
 
-prime `## Enrichment` lists `codegraph.symbols`? No → tool not registered. Say
-"architecture report needs codegraph", stop. NEVER claim "no violations".
+`get_architecture_report` registered? No → codegraph off: say "architecture
+report needs codegraph", stop. NEVER claim "no violations". Codegraph quality:
+`## Codegraph resolve` above (none → read
+`tea-rags://project/<alias>/metrics?section=resolve`, FetchMcpResource) — low
+resolve rate → say edges are partial.
 
 ## Phase 1 — REPORT
 
@@ -126,84 +85,12 @@ get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>"
                         layerMap?: { scopePathPattern?, granularity?: "directory"|"file", directoryDepth? })
 ```
 
-- `pathPattern` scopes JUDGED edges by SOURCE file (SDP: component dependency
-  judged when ≥1 carrying file edge's source matches; silent coupling: by EITHER
-  file of pair). Instability, facade adoption, strength cut always whole-graph —
-  scoped run sees same numbers as full run.
-- `norms: true` adds the dependency-norms view (bd rpx0v): the project's own
-  precedents per (roleSrc, roleDst, locality), roles = each file's PRIMARY
-  type's role (naming's type-role layer; suffix-only roles stay weak — never
-  asserted). `response.norms` carries one ledger + direction test per language
-  family + findings; `norms` violations flag every edge AGAINST its role pair's
-  established direction (`misfit`, with `establishedDirection`). Absent flag =
-  no norms block, no `norms` violations.
-- `domain: "<dir>"` judges one directory AS ITS OWN SYSTEM (bd xb669.1): the
-  induced sub-graph — files under the root, edges with both endpoints inside —
-  and EVERY metric recomputed inside it. Not `pathPattern`, which keeps
-  whole-graph metrics and only filters findings. `response.domain` carries
-  `componentCount` / `levelCount` (the same numbers `summary.layering` holds)
-  plus the border: `boundaryOut` / `boundaryIn`, aggregated per (inner,
-  external) component, each naming the external component and its
-  `externalLevel` on the WHOLE-graph stack — the one thing an internal view
-  cannot recompute. Read `domain` first; the violations then describe the
-  domain's own internals. Facade-aggregation edges never count as border.
-- Tooling paths (scripts, spikes, benchmarks, examples, fixtures) removed before
-  any detector — `summary.nonProduction` counts them.
-- Test support removed too — file imported only by tests / other support AND
-  evidence: named after test importing it (`X.spec.presets.tsx` ← `X.spec.tsx`;
-  `worker.ts` ← `worker.test.ts` = reverse, no evidence), or imports test-only
-  dep (package/file tests import, no production file does; or manifest dev-only
-  — `devDependencies`, Gemfile `:development`/`:test` — tests import; never
-  `node:*`), or imports other support, or sits in test dir (dir holds a test,
-  every other indexed file there = test/support; file no test importing it is
-  named after). `summary.testSupport` counts files
-  - `testOnlyDependencyCount`. Worker loaded by module path, importing only
-    production deps → stays production. Fixture importing only production code,
-    not named after its test, alone in its dir or beside production → stays
-    production (no evidence) — low count ≠ bug. Dev-tool file (codegen type,
-    lint script) only a test imports + importing a devDependency → may count as
-    support.
-  - `developmentRootCount`: file nothing imports + imports manifest dev-only dep
-    (value or `import type`) → non-production root (story, bundler/lint config);
-    subtree only it reaches follows. Story-only component = excluded too (dead
-    in production). Root/follower path literal naming a dir whose basename is a
-    segment of its own name (`vite.prototypes.config.ts` → `'app/x/prototypes'`)
-    → that dir's files nothing outside it imports (tests aside) = roots too
-    (separate build's tree). Unrelated literal (`vitest.config.ts` →
-    `'app/javascript'`) or imported package name → ignored.
-- `limit` caps `violations` + `rootCauses` PER DETECTOR; each
-  `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
-  Totals > returned → say truncated.
-- Each detector's `violations` ranked costliest-first (before `limit`) by
-  `maintenanceCost` — except `shotgunSurgery` (Phase 3c2): tagged, not
-  re-sorted. Carriers = files on edges that MAKE violation: named files; all
-  file edges of component edge / knot cut; hub's boundary files; zone-of-pain's
-  depended-on files; island / uselessness = all its files. `score` 0–1 =
-  carriers' `meanPosition` (mean file `costPosition`) shrunk toward 0.5 by
-  `n / (n + n₀)` — n = `measuredFileCount`, n₀ = (1/12) / between-violation
-  variance over the WHOLE report, measured around the null mean 0.5 (empirical
-  Bayes). A 1–2 file pair is pulled toward 0.5, a 7000-file knot keeps its mean,
-  so scores compare ACROSS detectors; 0.5 = typical or unproven, all 0.5 =
-  violations spread no more than noise. Use `meanPosition` + `measuredFileCount`
-  for the raw reading. `hottestFile` = costliest carrier + churn/bugFix/recency
-  positions + raw readings. Lead residual list with highest score. Absent = no
-  git readings → detector order.
-- Impact `tier` (bd r8hme.53) on SDP, leakingAbstraction, norms, layering
-  backEdge/knot/abstractionBypass: `structural` = no carrying edge co-changes
-  beyond chance; `active` = ≥1 carrying file-edge pair admitted by co-change
-  gate; `critical` = active + admitted edge's source reach share ≥
-  `summary.impactTiers.reachCut`. `tierEvidence`: admitted/total carrier pairs
-  (full list, not 5-edge sample), ≤3 pairs, `sourceReach`. Family order = tier
-  first (critical > active > structural > untiered), then `maintenanceCost`,
-  before `limit`. Read `summary.impactTiers` first: per-detector counts, cut
-  (`majority` = small-N fallback, weak), `notApplicable` (component/history
-  findings, never tiered). `built: false` = no co-change history → no tier ≠
-  structural. Lead with critical, then active; structural-only = cheap direction
-  fix, low urgency.
-- Every finding carries `detector`: `stableDependencies` (Phases 2–3),
-  `leakingAbstraction` (Phase 3b), `silentCoupling` (Phase 3c), `mainSequence`
-  (Phase 3d), `hubLikeDependency` (Phase 3d2) or `layering` (Phase 3e). Never
-  mix groups across detectors.
+**Read [references/phase-1-report.md](./references/phase-1-report.md) before
+reading the response** — `pathPattern` vs `domain` scope, `norms`, tooling /
+test-support removal, `limit` per detector (totals in `summary.<detector>`; more
+than returned → say truncated), costliest-first `score`, impact `tier` (lead
+critical, then active; `built: false` ≠ structural). Every finding carries
+`detector` — never mix groups across detectors.
 
 ## Phase 2 — ROOT CAUSES
 
@@ -257,510 +144,31 @@ Groups with `violationCount: 1`: judge each by `evidence`.
 
 `evidence.fileEdges` (top 5 by call weight) = where to act.
 
-## Phase 3b — LEAKING ABSTRACTION
-
-Module = dir with entry file (`index.ts`/`index.tsx`/`index.js`, `__init__.py`,
-`mod.rs`/`lib.rs`). Boundary judged ONLY where importers adopted facade: ≥3
-external importers AND adoption > 0.5 AND adoption ≥ adaptive cut.
-
-| Summary field (`summary.leakingAbstraction`) | Read as                                                                                                     |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `adoptionThreshold`                          | cut this codebase got; adoption must ALSO be > 0.5                                                          |
-| `adoptionThresholdMethod`                    | `otsu` = split over module adoptions; `majority` = too few modules (< 8) or adoptions not bimodal (η < 0.8) |
-| `adoptionSeparability`                       | η of the cut; near 1 = clean two-mode split. Present under `majority` too = the η that failed the gate      |
-| `activeModules`                              | modules whose boundary is judged, with facade/deep importer counts                                          |
-| `notAdoptedModules`                          | facade exists, importers ignore it — name, don't judge                                                      |
-
-`rootCauses` with `detector: "leakingAbstraction"` = one per module:
-`violationCount`, `bypassCount`, `internalReachCount`, `sources`. Read first.
-
-| `kind`           | Meaning                                                               | Fix direction                                   |
-| ---------------- | --------------------------------------------------------------------- | ----------------------------------------------- |
-| `bypass`         | facade exposes all importer takes — importer could use facade, didn't | switch import to facade                         |
-| `internal-reach` | facade does not expose it — importer reaches unoffered code           | export it via facade OR question the dependency |
-
-Kind decided by NAMES when index recorded them (`evidence.importedNames`):
-facade exposes = names it re-exports (`export {a} from`, `export *` = all;
-`__init__.py` also exposes what it imports). Any name not exposed →
-`internal-reach`, listed in `evidence.nonExportedNames`. No names on either edge
-(pre-names index, side-effect import) → file rule: facade imports target =
-`bypass`. `importedNames` absent → kind is file-level, say so.
-
-Evidence per line: `moduleDir` (innermost active module leaked past),
-`facadeRelPath`, `adoption`, facade/deep importer counts, `callWeight` (0 =
-type/const-only import).
-
-`kind: "conventionPrivacy"` — privacy compiler does not enforce, broken anyway.
-Evidence `sourceSymbolId`, `targetSymbolId`, `rule`:
-
-| `rule`              | Meaning                                                                    |
-| ------------------- | -------------------------------------------------------------------------- |
-| `python-underscore` | `_name` member (not dunder) called from other package directory            |
-| `ruby-send-private` | `send`/`public_send`/`__send__(:name)` into private/protected, other class |
-
-Counts: `summary.leakingAbstraction.conventionPrivacy` (`candidateEdgeCount`,
-`violationsByRule`). No module root cause — list per symbol pair. Candidates
-come from resolved method edges only: unresolved call → not judged.
-
-## Phase 3c — SILENT COUPLING
-
-Pair of files changing together strongly, no import / re-export / resolved call
-between them. Coupling lives in heads, not code: wire protocol + its two ends,
-descriptor + implementation it describes, sibling files edited as set. History
-from codegraph co-change sub-graph (git window, mass-change commits dropped).
-
-| Summary field (`summary.silentCoupling`) | Read as                                                                                                              |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `built`                                  | `false` = no co-change build → not judged, stop here                                                                 |
-| `build`                                  | provenance: `head`, window, `commitCount`, mass cut `maxFilesPerBundle`                                              |
-| `strengthThreshold`                      | cut this codebase got; strength must ALSO be > 0.5                                                                   |
-| `strengthThresholdMethod`                | `otsu` = split over candidate strengths; `majority` = too few candidates (< 8) or strengths not bimodal (η < 0.8)    |
-| `strongLinkedCount`                      | strong pairs code DOES link — declared coupling, context for `violationCount`                                        |
-| `sharedNeighbourSignificance`            | per-pair chance of sharing a neighbour given both import counts (hypergeometric), BH q; absent = no dependency edges |
-| `explainedPairs`                         | pairs a specific shared neighbour explains; `evidence.explainedBy` names it                                          |
-
-`rootCauses` with `detector: "silentCoupling"` = file with ≥ 2 silent partners:
-`relPath`, `violationCount`, `maxStrength`, `partners`. Read first — hub of
-hidden coupling.
-
-Pair undirected: `sourceRelPath` = lexicographically smaller. Evidence per line:
-
-| Evidence                           | Read as                                                                          |
-| ---------------------------------- | -------------------------------------------------------------------------------- |
-| `strength`                         | 95% Wilson lower bound on P(other changes \| one changes), stronger direction    |
-| `support`                          | author bursts touching both, once per burst — thin support = hedge               |
-| `confidenceAB` / `confidenceBA`    | P(target \| source) / P(source \| target); asymmetric = one drags other          |
-| `lift`                             | co-change over independence (evidence only — admission is the significance gate) |
-| `sampleCommits`                    | shas to cite; show one to prove                                                  |
-| `structuralVisibility: one-walked` | other file not walked code (config, data, script) — coupling to non-code         |
-| `directoryRelation: disjoint`      | crosses module border — rank highest                                             |
-| `expectedSupport`                  | λ the null predicts from both change counts; `support` ≫ λ = real pull           |
-
-Grouped finding (`kind: "group"`): ≥ 2 pairs share one endpoint → ONE violation,
-`relPath` = shared file, `partners[]` = every pair (`support`,
-`expectedSupport`, `strength`), `evidence.topPartners` = 3 strongest. Greedy,
-most pairs first; pair in exactly one group. Typical: locale / key-addressed
-file vs every component reading its keys — implicit coupling through string
-keys, one finding not N. Drill in: run `evidence.drillDown.hint` verbatim
-(`find_co_changed(files: [...], limit: N)`). `violationCount` stays pairs;
-`groupedFindingCount` = findings; `limit` caps findings. review_changes
-architecture section: same grouping, `partners` / `drillDown` on finding.
-
-Fix direction: make coupling explicit (shared contract / generated table / one
-owner) OR merge. Type-only imports ARE graph edges (callWeight 0) on indexes
-walked at walker ≥ 4 — a pair joined only by `import type` reads
-structurallyLinked and does not surface; an index walked before that change may
-still miss the edge, so check before claiming "no link".
-
-## Phase 3c2 — SHOTGUN SURGERY
-
-`detector: "shotgunSurgery"`, SAME components as SDP. ONE logical change
-reaching into ≥ k components, spread recurring beyond chance, components in ≥ 2
-structural islands. Logical change = commits joined by shared task id (commit
-message) ONLY, across bursts; else one commit. Umbrella/epic ids (breadth =
-distinct ids on their commits above a Tukey fence) join nothing. Shared files
-and dependency edges never join (hub files chain whole bursts). Support =
-distinct changes where ONE change held all k; changes sharing a burst once.
-Burst union never unit (parallel sessions chain unrelated commits). Each change
-weighs 1 up to typical width T, C(T,k)/C(w,k) beyond — sweeps say ~nothing about
-one triple; null = same weighted count. Silent coupling's N-way sibling: pair =
-file level, MERGE = two components, this = one change's fan-out. Never filtered
-by file type or hub size. Knot mode omits it. Mechanical commits (per-file
-(added, deleted) counts repeating beyond chance — rename/import/flag sweep, BH)
-dropped from whole history: degrees, units, umbrella breadth. Echoes (revert /
-flag removal mirroring earlier commit's per-file net lines, permutation test,
-BH) join original as one change — never zeroed. Retiring change (files
-net-negative beyond corpus rate — flag/dead-code removal; binomial, BH) counts
-as support only when spread's OLDEST; spread left < 2 genuine changes = RETIRED:
-neither violation nor explained. Chain join: members a, b join when a → x → b
-(or b → x → a) and x touched by a genuine supporting change — change walked a
-render/call chain, edited the link. Common dependency / common dependent is NO
-chain (shared dependency = the shotgun mechanism).
-
-List order = `familyEvidence` desc, most surprising first; `limit` cuts THAT
-order. `maintenanceCost` rides along as a tag only — carrier cost ranked gold no
-better than chance. `strength` = cohesion (max for members never changed outside
-the spread, e.g. a page and the panels born with it) — NOT severity; never
-re-rank by it.
-
-| Summary field (`summary.shotgunSurgery`)             | Read as                                                                                                                                                                                                                   |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `built`                                              | `false` = no co-change build / no bundle membership (`reason`, same as splitMerge) → NOT judged, never report "none"                                                                                                      |
-| `widthThreshold` / `widthThresholdMethod`            | k = narrowest spread judged; `otsu` = majority-floored Otsu over per-commit widths, `floor` = 3 (never below 3)                                                                                                           |
-| `burstCount`                                         | bursts touching a component through a non-mechanical commit — the null's degree unit                                                                                                                                      |
-| `mechanicalTestedCount` / `mechanicalCommitCount`    | commits tested for line-count uniformity (BH family) / sweeps dropped from history. Absent = line counts not recorded (pre-migration index), not "no sweeps"                                                              |
-| `echoCandidatePairCount` / `echoPairCount`           | wide commit pairs sharing ≥ 3 components (BH family) / echoes joined into one change. Absent = line counts not recorded (pre-migration index), not "no echoes"                                                            |
-| `lifecycleCandidatePairCount` / `lifecyclePairCount` | wide commit pairs sharing ≥ 3 components (BH family, = echo's) / lifecycles (newer exactly retires lines older added) joined into one change. Absent = line counts or commit timestamps not recorded, not "no lifecycles" |
-| `retirementTestedCount` / `retirementUnitCount`      | wide changes testable for retirement (BH family) / retiring changes (net-negative files beyond corpus rate). Absent = line counts or commit timestamps not recorded                                                       |
-| `retiredSpreadCount`                                 | spreads left < 2 genuine changes once retiring support newer than another discounted — neither violation nor explained. Absent = same as above, not "none retired"                                                        |
-| `unitCount` / `wideUnitCount`                        | logical-change component sets (same set sharing a burst once) / those spanning ≥ k — few wide = little evidence                                                                                                           |
-| `umbrellaTaskIdCut` / `umbrellaTaskIdCount`          | breadth fence (distinct ids an id's commits carry) / ids above it, left out of the join                                                                                                                                   |
-| `typicalChangeWidth`                                 | T: Tukey fence over change widths — wider changes weigh C(T,k)/C(w,k)                                                                                                                                                     |
-| `familySize` / `q`                                   | BH family C(n, k): every set of exactly k components among n changed in ≥ 2 bursts; FDR q — multiple-testing price                                                                                                        |
-| `candidateSetCount` / `admittedSetCount`             | k-sets wide commits of ≥ 2 bursts held whole (tested) / k-sets passing BH over the null                                                                                                                                   |
-| `spreadCount`                                        | maximal spreads admitted k-sets merge into: closure = components EVERY holding commit touched; support = k-set's                                                                                                          |
-| `explainedCount`                                     | spreads dropped: one island (dependency, chain through touched x, specific neighbour, or feature subtree ≤ T changed components) explains                                                                                 |
-| `chainExplainedCount`                                | part of `explainedCount`: spreads ONLY a chain a → x → b (x touched by a genuine supporting change) joins — violations without it                                                                                         |
-| `outOfScopeSetCount`                                 | scoped only: unexplained spreads with no exemplar file in `pathPattern`                                                                                                                                                   |
-
-Evidence per line:
-
-| Evidence                                          | Read as                                                                                                                       |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `support` / `weightedSupport` / `expectedSupport` | distinct changes holding whole spread / Σ their specificity weights / E[weighted] under the null; weighted ≫ expected = real  |
-| `strength`                                        | Wilson lower bound of support over component changes — cohesion, not severity                                                 |
-| `familyEvidence`                                  | −log10 p − log10 C(n₂, m): gate's tail bound at the spread's width m, charged for every m-set of the n₂ twice-changed; order  |
-| `islands`                                         | connected groups (≥ 2; dependency, chain through touched x, specific neighbour, one feature subtree) — missing link goes here |
-| `exemplarFiles`                                   | per component the file the holding commits touched most                                                                       |
-| `carrierFiles`                                    | per component (aligned) files the holding changes touched, most-touched first (≤ 5) — recipe input                            |
-| `sampleCommits`                                   | shas to cite — latest commit of each holding change, newest change first                                                      |
-| `sampleChanges`                                   | per sample (aligned) every sha of that logical change — `git show` them to see what one change edited                         |
-| `drillDown.hint`                                  | run verbatim (`find_co_changed`) for file-level partners                                                                      |
-
-Explain EVERY reported spread before recommending (server judges recurrence, not
-meaning — semantics is agent's job). Recipe, per spread:
-
-1. Changed symbols: per component,
-   `find_symbol(relativePath: <carrierFiles[i][0]>)` → outline; pick a member
-   `sampleChanges[0]` edited (`git show <sha> -- <file>` when unclear);
-   `find_symbol(symbol: <member>, metaOnly: true)` → its chunk `id` (row whose
-   `relativePath` matches).
-2. Cross-component similarity:
-   `find_similar(positiveIds: [<id>], pathPattern: "{<B carrierFiles, comma-joined>}", limit: 3, metaOnly: true)`
-   → cross score. Baseline: same call, `pathPattern` = A's OTHER carrier files →
-   within score. Cross ≥ within = candidate duplicate; then `find_symbol` both
-   top hits and READ them — same logic under different names confirms, same
-   vocabulary only does not. Repeat per island pair.
-3. Classify:
-
-| Verdict                 | Evidence                                                                                                                                                   | Report as                                                                                      |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `duplicatedConcept`     | step 2 cross ≥ within AND reading confirms same logic, same role                                                                                           | TRUE shotgun — quote BOTH fragments (path:line); fix Move Method / Extract Module              |
-| `featureSlice`          | no cross-component hit; components carry different architectural roles (`get_architecture_report` dependency-norms roles, or layer map levels)             | expected coupling of a vertical feature — deprioritise, no refactor                            |
-| `crossLanguageContract` | components in different languages share field / key identifiers (`get_naming_lexicon` names[] per component, or `hybrid_search` on the shared identifiers) | real implicit contract — recommend shared schema / codegen; cite the identifiers on both sides |
-
-No verdict fits → report raw with evidence, say "unexplained", never guess. Fix
-direction (`duplicatedConcept`): one owner for the reason to change — collapse
-the spread behind one module / contract; `islands` show where the missing link
-would go.
-
-## Phase 3d — MAIN SEQUENCE
-
-Stable Abstractions Principle over SAME components as SDP. A = abstract /
-(abstract + concrete) types, from walker type census; I = component instability;
-D = |A + I − 1|. Abstract = interface / abstract class / protocol / trait / ABC;
-TS interface or object type alias counts only when exported AND declaring
-behaviour (method/call signature, or majority function-typed members) — data
-shapes and props are concrete-neutral, not counted. Ruby: class/module with a
-`raise NotImplementedError` stub.
-
-| `zone`        | Meaning                                                     | Fix direction                                   |
-| ------------- | ----------------------------------------------------------- | ----------------------------------------------- |
-| `pain`        | stable + concrete (A + I < 1) — every change hits many      | extract interfaces dependents code against      |
-| `uselessness` | unstable + abstract (A + I > 1) — contracts nobody leans on | drop unused abstractions or merge into concrete |
-
-| Summary field (`summary.mainSequence`) | Read as                                                                                                                                                                                |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `distanceThreshold` / `…Method`        | D must exceed it; `majority` = floor 0.5 decided, `otsu` = adaptive cut above (`distanceSeparability` under `majority` = η that failed the gate)                                       |
-| `meanDistance`                         | whole-codebase D over judged components — trend number                                                                                                                                 |
-| `abstractTypeShareByLanguage`          | abstract share per language — why a language's components are unobservable                                                                                                             |
-| `volatility`                           | pain gate: `threshold`/`thresholdMethod` over mean commits per file; `fileMedian` = floor OR log population not bimodal (η < 0.8, reported); absent = gate off (no git data / no pain) |
-
-Evidence per line: `distance`, `abstractness`, `instability`, type counts,
-Ca/Ce, `unmeasuredFileCount` (> 0 = partial census, hedge), `volatility`
-(`value` = mean `git.file.commitCount` per file vs `threshold`). A reported pain
-component is volatile — it is rigid AND keeps changing, so it hurts now. Pain
-with no `volatility` = no git reading for its files, hedge.
-
-## Phase 3d2 — HUB-LIKE DEPENDENCY
-
-`detector: "hubLikeDependency"`, SAME components as SDP. Hub = Ca AND Ce both
-past adaptive cut AND balanced (|Ca − Ce| / (Ca + Ce) < 1/4, Arcan) — many
-depend on it, it depends on many. I near 0.5 → SDP silent, main sequence may
-read healthy. Ce counts edges to non-foundation components; edges into contracts
-are not efferent coupling. Ce cut drawn over Ce > 0 components only (leaves
-never depress it). Fix direction: split by dependent cluster (`topDependents`)
-or by dependency cluster (`topDependencies`).
-
-| Summary field (`summary.hubLikeDependency`) | Read as                                                                                                                                                        |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `afferent` / `efferent`                     | per-axis cut: count > `median` AND ≥ `threshold`; `otsu` = log-scale cut (η ≥ 0.8), `median` = floor alone (few judged OR not bimodal, η reported if computed) |
-| `judgedComponentCount`                      | components with Ca + Ce ≥ `minConnectionCount` — population both cuts drawn over; most below floor → median of few busy ones decides                           |
-| `excluded.imbalanced`                       | busy on both axes but lopsided (I outside 0.375..0.625) — an SDP / main-sequence end, read there, not a hub                                                    |
-| `churnSignal`                               | present = `evidence.churn` attached (`git.file.commitCount` mean per file); absent = no git data or no hub                                                     |
-
-Evidence per line: Ca/Ce, `instability`, `dependentComponentCount` /
-`dependencyComponentCount`, top-5 each side (`fileEdgeCount`, `callWeight`),
-`transitiveImpact` (components reaching hub transitively), `churn`.
-`compositionRoot: true` = declared composition root — wiring many to many is its
-job; `compositionTable: true` = the hub holds a registration / routing table;
-`parentSurface: true` = the hub is its parent's surface onto the parent's
-internals. Triage data, never suppression.
-
-## Phase 3d3 — PROPAGATION COST
-
-`summary.propagationCost` — aggregate, NO violations, never in rootCauses.
-MacCormack DSM over SAME file graph: `propagationCost` = reachable file pairs /
-N² = mean share of system one change reaches. Higher = change ripples further.
-No fixed "good" value — compare across runs / components, not to a constant.
-
-| Field                                          | Read as                                                                                                                                           |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `largestCycleSize`                             | biggest file cycle — cyclic mass behind high cost                                                                                                 |
-| `corePeriphery.shape`                          | `indeterminate` = a visibility cut is `majority` (no split found); else `corePeriphery` = cyclic core exists; else `hierarchical`                 |
-| `corePeriphery.counts`                         | core = high fan-in AND fan-out AND in cycle; shared = in only; control = out only; peripheral = neither                                           |
-| `corePeriphery.acyclicHighVisibilityFileCount` | high both but in no cycle — hierarchy waist, not core                                                                                             |
-| `visibilityFanIn` / `visibilityFanOut`         | per-axis cut: > median AND ≥ `threshold`; `majority` = median fallback (not bimodal / < 8 files)                                                  |
-| `components[]`                                 | top `limit` by `meanReach` (share of system a change to its files reaches); `propagationCost` = its own internal closure density; `coreFileCount` |
-
-Core-periphery shape + large `coreShare` = tangled core; fix through cycle
-breaking (Phase 3e knots), not per-file.
-
-`indeterminate` = visibility not bimodal on at least one axis (Otsu η under
-gate, or < 8 files): data says nothing about core vs hierarchy. Do NOT report it
-as either. State shape undecided, cite the `majority` axis and its
-`separability`, read cost from `propagationCost` + `largestCycleSize` alone;
-`counts.core` there is triage data, not a core verdict.
-
-## Phase 3e — LAYERING
-
-No declared architecture needed: SCC condensation of the DOMAIN graph — every
-facade directory is a unit, adoption notwithstanding (a vertical with an
-unadopted facade counts ONCE, not once per subdirectory; a Go package too).
-Longest-path levels: `level` = longest path from sinks (0 = foundation); `depth`
-= longest path from roots (0 = nothing depends on it). Component with no
-layering edge sits at level 0, depth 0.
-
-| Summary field (`summary.layering`) | Read as                                                                                                              |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `levelCount`                       | distinct levels, 0-based; 0 = no layering edge at all                                                                |
-| `coverage`                         | share of components outside multi-component knots — low = knot(s) dominate                                           |
-| `coherence`                        | rank correlation level vs instability — high = low layers really are the stable ones                                 |
-| `foundation`                       | `{components, terminalComponents?}` — L0 components with measured abstractness 1 (≥5 types); absent = none qualifies |
-| `violationCount`                   | knots + backEdges + abstractionBypasses only — the layering debt                                                     |
-| `informationalCount`               | compositionCycles + islands — findings, never debt                                                                   |
-
-Violations first, informational last, in `violations` order:
-
-| `kind`              | Meaning                                                                                                  | Read as                                                                                                                                                                                                                                                    |
-| ------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `knot`              | multi-component SCC — a cycle ACROSS directories                                                         | ranked by `instabilitySpread` (max−min member instability; > 0 = an SDP break INSIDE the cycle, 0 = a tangle of alike members); `feedbackArcSet` = lightest cut that levels the members (`cutEdgeCount`, `levelsAfterCut` = distinct levels once cut)      |
-| `backEdge`          | minority-weight direction inside a knot pair                                                             | `callWeight` vs `counterFlowWeight` — unequal weights decide; equal never judged; `fileEdges` name where                                                                                                                                                   |
-| `abstractionBypass` | consumer imports concrete component's type whose direct supertype lives in measured-abstract one beneath | `bypassedComponent`, `concreteAbstractness` / `bypassedAbstractness`, `implementedBy` (consumer file → implementer type/file → abstraction type/file); census-gated (≥5 types), same-knot pairs never judged; consumer subclassing implementer = no bypass |
-| `compositionCycle`  | parent ↔ own nested directories cycling                                                                  | informational — `nestedPairs`; composition of a module with its sub-parts                                                                                                                                                                                  |
-| `island`            | nothing depends on it AND it does not reach the top of the stack                                         | informational — `height`/`depth`, `afferentCount: 0`                                                                                                                                                                                                       |
-
-## Phase 3f — LAYER MAP
-
-`response.layerMap` exists ONLY when the request carried `layerMap` — skip this
-phase otherwise. The map is the layering model read as a VIEW: per-node `level`
-/ `depth` / `inKnot` + inner afferent/efferent counts.
-
-| Option             | Read as                                                                                                                                                                     |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scopePathPattern` | nodes whose path matches live INSIDE the map; absent = whole repository, no boundary findings                                                                               |
-| `granularity`      | `"directory"` (default) nodes = components; `"file"` nodes = FILES leveled on raw file edges (partition excludes intra-component edges — component deps cannot level files) |
-| `directoryDepth`   | with `"directory"`: collapse every directory DEEPER than this many segments below the scope root into its ancestor; `0` = one node                                          |
-
-| Field            | Read as                                                                                                                                                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `boundaryOut`    | edge leaving the scope — names the EXTERNAL component and its `externalLevel` in the WHOLE-repo stack                                                                                                                                |
-| `boundaryIn`     | edge entering the scope — same shape                                                                                                                                                                                                 |
-| `moveCandidates` | inner node, 0 inner afferents, every outward edge points into ONE other domain — move-it-there signal                                                                                                                                |
-| `knots`          | cycles among the map's own nodes, with the cut that levels them; `composition: true` = parent ↔ own nested parts — the summary reports those as `compositionCycle`, not `knot`, so `knotCount` + `compositionCycleCount` = map knots |
-| `summary.*`      | `nodeCount`, `innerEdgeCount`, `boundaryOutEdgeCount`, `boundaryInEdgeCount`                                                                                                                                                         |
-
-Empty scope = empty map (`nodeCount: 0`), not an error. Bad `granularity` =
-validation error naming the enum, before any detector runs.
-
-## Phase 3g — DEPENDENCY NORMS
-
-`response.norms` exists ONLY when the request carried `norms: true` — skip
-otherwise. The project judged by ITS OWN precedents: ledgers of (roleSrc,
-roleDst, locality) over every typed file edge, ONE LEDGER PER LANGUAGE FAMILY
-(`norms.ledgers[]`; TypeScript + JavaScript are one family, every other language
-its own) — a Ruby `form` and a TS `form` never pool. Each ledger runs own
-direction test (`ledgers[].significance`, method `directionInversion`): per
-unordered role pair {A, B}, A ≠ B, localities pooled, exact two-sided sign test
-of n(A→B) vs n(B→A) at p = ½; Benjamini–Hochberg at `q` (0.05, co-change gate's
-q) over every pair holding ≥1 edge (`familySize`). Pair BH rejects
-(`significantPairCount`) has ESTABLISHED direction; every edge against it =
-MISFIT. `oneWayPairCount` = significant pairs nothing runs against — direction
-fixed, no finding. Everything else CONFORMS, not listed: mutual pair (62:61),
-one-way pair, pair too small to establish anything (3:0, 2:1 never reach q),
-same-role pair (A→A, out of scope). NEW_PATTERN (pair with no history) is NOT
-whole-repo verdict — diff time only. `finding.family` names judging ledger. Edge
-between two families never judged (`summary.excluded.crossLanguageEdgeCount`).
-Roles = each file's PRIMARY type's role; `summary.roleFileCount` counts strong
-ones, `weakRoleFileCount` / `untypedFileCount` never judge. Of weak ones,
-`summary.ioShapeRoleFileCount` = files whose primary type only shapes I/O of
-function file is named for (`useXParams`, `XProps`) — never a role.
-
-| Finding  | Read as                                                                                                                                                                                  |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `misfit` | edge runs against pair's established direction — `establishedDirection: { roleSrc, roleDst, support }` is the way the project goes (`Record -> Query` when `Query -> Record` holds 52:6) |
-
-Every finding carries `pairSupport` (edges along the finding's own direction,
-localities pooled — minority side), `establishedDirection.support` (majority)
-and `pValue` (sign test, 3 significant digits). `pairSupport: 1` against
-`support: 24` = strong; heavy minority (24 against 47) = established but
-contested convention — read before calling it a mistake. `locality` = where THIS
-edge sits (`sameDirectory` / `sameDomain` / `crossDomain`); test pools
-localities, so it never changes the verdict.
-
-`summary.excluded.inheritanceEdgeCount` — typed edges from a file whose primary
-type subclasses the target's primary type (STI subclass → own base record):
-"is-a", not a role dependency — never judged, in no ledger.
-
-`summary.excluded.constantReferenceEdgeCount` — typed edges whose only evidence
-is a constant NESTED in the target's primary type
-(`BaseAdapter::RateLimitError`, no definite call): a dependency on an error
-class, not on the target's role — never judged, in no ledger.
-
-`summary.excluded.uncalledEdgeCount` — typed edges carrying NO resolved call
-(`callWeight` 0: factory `.new`, subtype registry, initializer config, type-only
-import). Source names target, never runs its logic → never a finding. Still
-ledger precedent: direction of knowledge counts every reference (a query reads
-records through framework finders with no in-project call, yet that IS what
-establishes query → record).
-
-`summary.excluded.frameworkRoutedEdgeCount` — typed edges whose EVERY call went
-through framework interface: call text names neither member it lands on nor its
-owner's construction, along no inheritance edge (`Worker.perform_async(id)`
-routed to `Worker#perform`). Source knows target's framework contract, not its
-logic → never a finding; still precedent. Caveat: a project's own dispatcher
-routing `Service.call(x)` → `#perform` reads the same.
-
-`summary.excluded.displacedRoleEdgeCount` — typed edges touching a DISPLACED
-role: head-noun role read where role does not live — file outside every
-conventional directory of its role (`app/lib/x/fee_helper.rb` while helpers live
-in `app/helpers`), or called on type itself (`class << self`) while role's home
-carriers are called on instances (or reverse). Role stays precedent, edge never
-judged. Edge-level reasons (constant, uncalled, framework-routed) count first.
-
-`pathPattern` scopes the FINDINGS by source — ledgers and the test stay
-whole-graph. Findings it drops count in `summary.outOfScopeFindingCount`, never
-silently lost.
-
-## Phase 3h — DIFF-TIME FINDINGS
-
-Applies to `review_changes` architecture findings (families
-`stableDependencies`, `leakingAbstraction`, `cycles`, `mainSequence`,
-`silentCoupling`, `facadeContract`, `splitCandidates`, `layeringBackEdge`,
-`hubLike`) — not to the whole-repo report. Read per finding:
-
-| Field                                                                                          | Read as                                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `preExisting: true`                                                                            | held before the diff (meaning per family: Top Anti-patterns) — absent = the diff introduced it                                                                                                                                                                                                                                                                                     |
-| `remedy`                                                                                       | cheap repair, dry-run-verified: `retargetImport` (`sourceRelPath`, `fromRelPath` → `toRelPath`, `importedNames`, optional `addExport`) or `restoreExport` (`facadeRelPath`, `names`)                                                                                                                                                                                               |
-| `compositionRoot` / `compositionTable` / `parentSurface` / `entryPoint` / `foundationTerminal` | detector flags — evidence a finding stays unfixed; triage data, never suppression. `compositionTable` = carried by registration / routing tables (callWeight-0 wiring to more components than a geometric null fitted to the corpus admits, BH at q 0.05, `summary.*.compositionTableCut`); `parentSurface` = the source / hub is its parent's surface onto the parent's internals |
-
-Classes (same triage as `/data-driven-generation` Step 7 "Fix-at-write loop" —
-do not restate it):
-
-- no `preExisting` → introduced: recommend the repair in this change.
-- `preExisting` + `remedy` → cheap: quote the `remedy` in the recommendation.
-- `preExisting`, no `remedy` → collapsed into `change.persisting` (not in
-  findings): one count line, no fix.
-- `change.nonLocal` → introduced away from the diff: recommend repair like
-  introduced.
-
-Recommendation loads `../../repair/<family>.md` ONLY for families present among
-the findings (`## Apply remedy` when `remedy` exists, else `## No remedy`;
-`## Known false positives` before accepting). Never preload the directory.
-
-Evidence rule: a finding stays unfixed ONLY with a detector flag, a cited
-project rule (file + quoted line), or a known-noise class from the family's
-repair file with its named evidence. Bare "by design" is not evidence. A family
-with `built: false` = "not judged", never a clean pass.
-
-## Phase 3i — REMEDY SIMULATION
-
-Every recommendation that MOVES code (file move, layer-map move candidate, split
-candidate, merge candidate, extraction into another component) gets simulated
-before it is ranked. One `get_architecture_report` call per remedy,
-`restructure` = that remedy alone (delta is joint — never batch rival remedies):
-
-| Remedy                        | `restructure` op                                           |
-| ----------------------------- | ---------------------------------------------------------- |
-| move files X into component Y | `{move: {files: [X…], toComponent: Y}}`                    |
-| A5 split candidate            | `{split: {component, groups: <candidate files[] as is>}}`  |
-| A5 merge candidate / fold B→A | `{merge: {components: [A, B]}}` (later fold into first)    |
-| combined plan step            | ops of ONE step in one call (≤ 20); each step its own call |
-
-Names: components as findings spell them (`sourceComponent`, `component`,
-`componentDir`), files repo-relative production paths — else typed error
-(`INPUT_UNKNOWN_RESTRUCTURE_*`), fix the name, never drop the remedy.
-
-Read `delta`: `net` (introduced − resolved; negative = removes violations),
-`byFamily`, `introduced` / `resolved` subjects (capped by `limit`, counts
-whole). Rank remedies by `net`, then fewest `introduced` of tier
-critical/active. Remedy with `introducedCount > 0` → name what it introduces
-next to what it resolves; never present it as pure win. `net ≥ 0` → not a remedy
-for these detectors, say so. Moved file's file-keyed findings match their base
-path (persist, not resolved+introduced); split groups appear as
-`<component>~split<k>`. `unavailable: "noCodegraph"` → simulation not run, rank
-unsimulated.
-
-Output row per remedy:
-`| # | Remedy | ops | net | resolved (by family) | introduced (subjects) |`.
-
-Several remedies, order matters, or plan wanted → `/refactoring-planning`
-(edge-op recipes + `restructurePlan` ordering + plan Tasks).
+## Phases 3b–3i — per-detector judgement
+
+**MANDATORY: read the phase's reference before judging that detector's
+findings** — each carries field semantics plus its not-built / not-judged traps.
+Detector absent from response or zero findings → no read.
+
+| Phase | Judges              | Field                         | Reference                                                                       |
+| ----- | ------------------- | ----------------------------- | ------------------------------------------------------------------------------- |
+| 3b    | leaking abstraction | `leakingAbstraction`          | [phase-3b-leaking-abstraction.md](./references/phase-3b-leaking-abstraction.md) |
+| 3c    | silent coupling     | `silentCoupling`              | [phase-3c-silent-coupling.md](./references/phase-3c-silent-coupling.md)         |
+| 3c2   | shotgun surgery     | `shotgunSurgery`              | [phase-3c2-shotgun-surgery.md](./references/phase-3c2-shotgun-surgery.md)       |
+| 3d    | main sequence       | `mainSequence`                | [phase-3d-main-sequence.md](./references/phase-3d-main-sequence.md)             |
+| 3d2   | hub-like dependency | `hubLikeDependency`           | [phase-3d2-hub-like.md](./references/phase-3d2-hub-like.md)                     |
+| 3d3   | propagation cost    | `summary.propagationCost`     | [phase-3d3-propagation-cost.md](./references/phase-3d3-propagation-cost.md)     |
+| 3e    | layering            | `layering`                    | [phase-3e-layering.md](./references/phase-3e-layering.md)                       |
+| 3f    | layer map           | `response.layerMap`           | [phase-3f-layer-map.md](./references/phase-3f-layer-map.md)                     |
+| 3g    | dependency norms    | `norms`                       | [phase-3g-dependency-norms.md](./references/phase-3g-dependency-norms.md)       |
+| 3h    | diff-time findings  | `review_changes architecture` | [phase-3h-diff-time.md](./references/phase-3h-diff-time.md)                     |
+| 3i    | remedy simulation   | `restructure`                 | [phase-3i-remedy-simulation.md](./references/phase-3i-remedy-simulation.md)     |
 
 ## Phase 4 — EXCLUSIONS
 
-`summary.stableDependencies.excluded` — edges read, NOT judged:
-
-| Counter               | Unit      | Meaning                                                                    |
-| --------------------- | --------- | -------------------------------------------------------------------------- |
-| `intraComponent`      | file edge | both ends in one component — not a component dependency                    |
-| `facadeAggregations`  | file edge | module facade re-exporting nested module's facade — aggregation            |
-| `unwalkedEndpoints`   | file edge | endpoint never extracted by codegraph                                      |
-| `containment`         | component | dependency on component nested inside source dir — composition, not peers  |
-| `lowConnectionCount`  | component | an end's Ca+Ce below `minConnectionCount` — instability untrustworthy      |
-| `outOfScopeEdgeCount` | component | no carrying file edge's source in `pathPattern` (present only when scoped) |
-
-Reasons verbatim in `exclusionReasons`. Report them as "not judged", never as
-"clean".
-
-`summary.leakingAbstraction.excludedModules` — first three count modules NOT
-judged; `intraParentConsumers` counts excluded importer pairs;
-`deFactoSurfaceEdges` counts internal-reach edges spared because target child is
-measured de-facto surface; `nestedEntryEdges` counts internal-reach edges into
-exactly entry file of dir declaring own entry inside module — inner module's
-facade edge, not outer leak (bypass still reported). Surfaces listed in
-`summary.leakingAbstraction.deFactoSurfaces`
-(`moduleDir, child, directImporterCount, backgroundRate, pValue`): child (first
-path segment under module) importers reach directly far above module's
-background deep rate — binomial + BH. Report as second surface module grew, not
-leak; bypass into it still reported:
-
-| Counter                | Meaning                                                                                                                                                                          |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `facadeNotAdopted`     | adoption ≤ 0.5 or below adaptive cut — importers don't use the facade                                                                                                            |
-| `tooFewImporters`      | < 3 external importers — adoption untrustworthy                                                                                                                                  |
-| `languageEnforced`     | Go package — compiler enforces boundary, nothing to leak                                                                                                                         |
-| `intraParentConsumers` | importer inside module's PARENT dir component (parent holds entry file = assembly barrel) — sibling/assembly consumer, internal by two-seam model; counts consumers, not modules |
-
-`summary.silentCoupling.excluded` — pairs read, NOT judged: `testEndpoints`,
-`generatedEndpoints`, `documentationEndpoints`, `unwalkedEndpoints` (neither
-file walked), `notSignificant` (support no more than the configuration null
-predicts from the two files' change counts —
-`summary.silentCoupling.cochangeSignificance` gives method, family, q,
-familySize m, tested/admitted counts; a hub file that changes with everything
-dies here), `explainedBySharedNeighbour` (both import a file, A→C→B, or a
-registry consumes both — and sharing it is unlikely by chance given both files'
-import counts; shared contract, not hidden coupling). A barrel / type-only /
-object-literal module IS judged — its `import type` deps are edges, so a missing
-edge is evidence.
-
-`summary.mainSequence.excluded` — components NOT judged: `lowConnectionCount`
-(SDP floor), `unmeasured` (no census — recompute), `fewTypes` (< `minTypeCount`
-— A swings per type), `unobservableAbstractness` (expected abstract types < 1 at
-language's share; reason in `exclusionReasons`). `stableConcreteCalm` is judged,
-not skipped: stable + concrete past the D cut but calm (below the volatility
-cut) — a settled utility, not pain; reason in `exclusionReasons`.
+Read [references/phase-4-exclusions.md](./references/phase-4-exclusions.md):
+counters per detector (`summary.<detector>.excluded*`) = read, NOT judged.
+Report as "not judged", never "clean"; reasons verbatim from `exclusionReasons`.
 
 ## Phase 5 — OUTPUT
 
