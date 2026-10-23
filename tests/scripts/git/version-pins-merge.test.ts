@@ -14,6 +14,7 @@ import { copyGitRepoTemplate } from "../../core/__helpers__/git-repo-template.js
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const REGISTER_SCRIPT = join(REPO_ROOT, "scripts/git/register-merge-drivers.sh");
 const REPIN_SCRIPT = join(REPO_ROOT, "scripts/git/repin-on-merge.sh");
+const MERGE_GENERATED_SCRIPT = join(REPO_ROOT, "scripts/git/merge-generated.sh");
 const PINS_PATH = "tests/core/domains/language/capability/version-pins.json";
 
 // Real `git init` / `git merge`, so refuse loudly if the cwd ever escapes the temp tree.
@@ -196,10 +197,9 @@ describe("merge hooks end to end", () => {
     const hooks = join(dir, ".git", "test-hooks");
     mkdirSync(hooks, { recursive: true });
     for (const name of names) {
-      const body = readFileSync(join(REPO_ROOT, ".husky", name), "utf8").replaceAll(
-        "scripts/git/repin-on-merge.sh",
-        REPIN_SCRIPT,
-      );
+      const body = readFileSync(join(REPO_ROOT, ".husky", name), "utf8")
+        .replaceAll("scripts/git/repin-on-merge.sh", REPIN_SCRIPT)
+        .replaceAll("scripts/git/merge-generated.sh", MERGE_GENERATED_SCRIPT);
       writeFileSync(join(hooks, name), `#!/bin/sh\nset -e\n${body}`, { mode: 0o755 });
     }
     gitIn(dir, ["config", "core.hooksPath", hooks]);
