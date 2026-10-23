@@ -1,8 +1,14 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
+import {
+  pickSingleCandidate,
+  type CallContext,
+  type CallRef,
+  type SymbolDefinition,
+} from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { capability } from "../../capability.js";
 import { rustDeclaresFreeFn, rustPlaceItemPath } from "../declaring-file-type.js";
+import { rustItemPathPlacementEnabled, rustNoteItemPathPlacement } from "../item-path-placement-switch.js";
 import {
   parseRustImportPath,
   rustCalleeShortNameCandidates,
@@ -73,8 +79,8 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
       const candidates = ctx.symbolTable
         .lookupByShortName(call.member, { kinds: capability.codegraph.symbolKindRoles.callee })
         .filter((def) => candidatePaths.includes(def.relPath) && def.relPath.endsWith(".rs"));
-      const reexport = rustFollowReexports(matchingImport.importText, receiver, ctx.callerFile, ctx, () =>
-        rustCalleeShortNameCandidates(ctx, call.member),
+      const reexport = rustFollowReexports(matchingImport.importText, receiver, ctx.callerFile, ctx, (sourceName) =>
+        rustReexportedReceiverMembers(ctx, call.member, sourceName),
       ).target;
       if (reexport) return resolved(reexport);
       const target = pickSingleCandidate(candidates, this.cfg.mode);
@@ -101,4 +107,30 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
     }
     return CONTINUE;
   }
+}
+
+/**
+ * The `member` definitions a re-exported receiver `sourceName` may answer.
+ * Under item-path placement only its own members: the module file holding
+ * the re-export source may declare a namesake member on another type (tikv's
+ * macro-generated `BoxRoleObserver::new` beside `CoprocessorHost::new`), and
+ * placement opens such files through `crate::` / `super::` roots. Narrowing
+ * counts as a placement, so the resolver keeps the pre-placement read.
+ */
+function rustReexportedReceiverMembers(
+  ctx: CallContext,
+  member: string,
+  sourceName: string,
+): readonly SymbolDefinition[] {
+  const candidates = rustCalleeShortNameCandidates(ctx, member);
+  if (!rustItemPathPlacementEnabled()) return candidates;
+  const own = candidates.filter((def) => rustMemberOwnedBy(def.symbolId, sourceName));
+  if (own.length !== candidates.length) rustNoteItemPathPlacement();
+  return own;
+}
+
+/** A member belongs to its own type only; an ownerless fn to whatever module re-exports it. */
+function rustMemberOwnedBy(symbolId: string, typeName: string): boolean {
+  const separator = Math.max(symbolId.lastIndexOf("#"), symbolId.lastIndexOf("."));
+  return separator < 0 || symbolId.slice(0, separator).split("::").at(-1) === typeName;
 }

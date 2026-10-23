@@ -77,6 +77,11 @@ import {
   rustWithoutInferredBindings,
   rustWithTypableInferredLets,
 } from "./inferred-binding-gate.js";
+import {
+  rustItemPathPlacements,
+  rustPlacementAdditiveStrategy,
+  rustWithoutItemPathPlacement,
+} from "./item-path-placement-switch.js";
 import { RustResolveEnvironmentCache } from "./resolve-environment-cache.js";
 import { withRustResolveEnvironment } from "./resolve-environment.js";
 import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
@@ -97,6 +102,9 @@ import {
   RustTypeReceiverSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
+
+/** The std conversion members whose impl the ARGUMENT's type picks: `From::from`, `TryFrom::try_from`, `Into::into`, `TryInto::try_into`. */
+const RUST_ARGUMENT_DISPATCHED_CONVERSIONS: ReadonlySet<string> = new Set(["from", "try_from", "into", "try_into"]);
 
 export class RustCallResolver implements CallResolver {
   readonly language = "rust";
@@ -129,16 +137,21 @@ export class RustCallResolver implements CallResolver {
       // First: where the rustc driver has a row at the member token, its
       // type-checked answer wins over every static pass (RESIDUAL R2).
       this.callSites,
-      new RustMacroInvocationSymbolResolutionStrategy(cfg),
-      new RustSelfMethodSymbolResolutionStrategy(cfg),
-      new RustSelfFieldSymbolResolutionStrategy(cfg),
-      new RustLocalBindingSymbolResolutionStrategy(cfg),
-      new RustTypeReceiverSymbolResolutionStrategy(cfg),
-      new RustImportMatchSymbolResolutionStrategy(cfg),
-      new RustBareSelfMethodSymbolResolutionStrategy(cfg),
-      new RustGlobalShortNameSymbolResolutionStrategy(cfg),
-      // Last: a trait-provided `self.m()` answers only where every pass above stayed silent.
-      new RustTraitSelfMethodSymbolResolutionStrategy(cfg),
+      // Each pass reads with item-path placement additively; the typed and
+      // module-path passes resolve ON a placed definition, so theirs may also
+      // answer where the pre-placement read dropped.
+      ...[
+        [new RustMacroInvocationSymbolResolutionStrategy(cfg), false] as const,
+        [new RustSelfMethodSymbolResolutionStrategy(cfg), false] as const,
+        [new RustSelfFieldSymbolResolutionStrategy(cfg), false] as const,
+        [new RustLocalBindingSymbolResolutionStrategy(cfg), true] as const,
+        [new RustTypeReceiverSymbolResolutionStrategy(cfg), true] as const,
+        [new RustImportMatchSymbolResolutionStrategy(cfg), true] as const,
+        [new RustBareSelfMethodSymbolResolutionStrategy(cfg), false] as const,
+        [new RustGlobalShortNameSymbolResolutionStrategy(cfg), false] as const,
+        // Last: a trait-provided `self.m()` answers only where every pass above stayed silent.
+        [new RustTraitSelfMethodSymbolResolutionStrategy(cfg), false] as const,
+      ].map(([strategy, placesTarget]) => rustPlacementAdditiveStrategy(strategy, { placesTarget })),
     ];
   }
 
@@ -204,6 +217,19 @@ export class RustCallResolver implements CallResolver {
    * a member the type lacks — reads the call exactly as before the shape.
    */
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
+    // `T::from(x)` / `x.into()` dispatch on the ARGUMENT's type over every
+    // `From` impl, derive-generated ones included: a placed owner proves none.
+    if (RUST_ARGUMENT_DISPATCHED_CONVERSIONS.has(call.member)) {
+      return rustWithoutItemPathPlacement(() => this.resolveChain(call, ctx));
+    }
+    // Item-path placement is additive: the read without it stands wherever it answers.
+    const placementsBefore = rustItemPathPlacements();
+    const target = this.resolveChain(call, ctx);
+    if (rustItemPathPlacements() === placementsBefore) return target;
+    return rustWithoutItemPathPlacement(() => this.resolveChain(call, ctx)) ?? target;
+  }
+
+  private resolveChain(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     const environment = this.environmentOf(ctx);
     const shaped = rustWithTypableInferredLets(call, environment);
     const target = resolveViaChain(this.strategies, call, shaped);

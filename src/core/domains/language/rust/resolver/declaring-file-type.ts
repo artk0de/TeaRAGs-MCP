@@ -1,6 +1,7 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, SymbolDefinition, SymbolResolutionTarget } from "../../../../contracts/types/codegraph.js";
 import type { NominalTypeRef } from "../../kernel/index.js";
+import { rustItemPathPlacementEnabled, rustNoteItemPathPlacement } from "./item-path-placement-switch.js";
 import {
   lookupRustSymbolsByShortName,
   RUST_OWN_CRATE_PATH_HEADS,
@@ -40,7 +41,10 @@ export function rustPlaceTypeThroughDeclaringFile(
   declaringFile: string,
   ctx: CallContext,
 ): NominalTypeRef | undefined {
-  const placed = rustPlaceItemPath(name, declaringFile, ctx, rustDeclaresNominalType);
+  // The single-name read this channel always made answers first; placement only where it is silent.
+  const placed =
+    rustPlaceImportedName(name, declaringFile, ctx, rustDeclaresNominalType) ??
+    rustPlaceItemPath(name, declaringFile, ctx, rustDeclaresNominalType);
   return placed === undefined
     ? undefined
     : { form: "instance", name: `${placed.targetRelPath}::${placed.targetSymbolId}` };
@@ -128,7 +132,9 @@ const RUST_PLACEABLE_SEGMENT = /^(?:[A-Za-z_][A-Za-z0-9_]*|\$crate)$/;
  * module file the run does not hold, two definitions at one step, or a
  * re-export walk that ends anywhere but one definition. A single `use`-bound
  * name reads {@link rustDeclaringFileImportOf}'s candidate files first,
- * exactly as before this function existed.
+ * exactly as before this function existed. Off under
+ * `rustWithoutItemPathPlacement`; every answer is counted
+ * (`item-path-placement-switch.ts`), so the resolver can re-read without it.
  */
 export function rustPlaceItemPath(
   path: string,
@@ -136,9 +142,12 @@ export function rustPlaceItemPath(
   ctx: CallContext,
   accept: (def: SymbolDefinition) => boolean,
 ): SymbolResolutionTarget | undefined {
+  if (!rustItemPathPlacementEnabled()) return undefined;
   const segments = path.replace(/^::/, "").split("::");
   if (!segments.every((segment) => RUST_PLACEABLE_SEGMENT.test(segment))) return undefined;
-  return rustPlaceSegments(segments, fromFile, ctx, accept, 0);
+  const placed = rustPlaceSegments(segments, fromFile, ctx, accept, 0);
+  if (placed !== undefined) rustNoteItemPathPlacement();
+  return placed;
 }
 
 function rustPlaceSegments(
