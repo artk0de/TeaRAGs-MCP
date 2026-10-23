@@ -69,6 +69,12 @@ would read the skill" is not reading it), then every reference file or
 to another skill (a \`$dino-*\` wrapper → \`$bug-hunt\`, \`$explore\`,
 \`$data-driven-generation\` …) → open that \`SKILL.md\` too. Plan from that text,
 not from this core.
+
+Read ONE file per command — never \`cat\` several: output past ~10k tokens loses
+its middle (\`…N tokens truncated…\`), and a rule you did not see is not a rule
+you may guess. Saw that marker → re-read the file in ranges (\`sed -n\`).
+\`repair/<family>.md\`, \`rules/…\` in any skill or reference = the plugin root
+(the folder holding \`skills/\`), never the skill's own folder.
 `;
 
 /** A Claude Code SKILL.md in Codex's dialect (see `toHarnessText` for the rewrite list). */

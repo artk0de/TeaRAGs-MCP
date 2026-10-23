@@ -259,6 +259,18 @@ describe("renderCodexHarness", () => {
       expect(rendered.get(path)).toMatch(/hands off to/);
     }
   });
+
+  // Codex T22 r3: one `cat` of three skills (50 KB) lost its middle to the ~10k-token exec-output cap; the model filled the gap.
+  it("tells the core to read one file per command and to re-read a truncated one in ranges", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+
+    for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
+      expect(rendered.get(path)).toMatch(/ONE file per command/);
+      expect(rendered.get(path)).toMatch(/tokens truncated/);
+      // Codex T22 r3: `repair/leakingAbstraction.md` looked up under the skill folder, never found.
+      expect(rendered.get(path)).toMatch(/plugin root/);
+    }
+  });
 });
 
 describe("toCodexSkill — dinopowers wrappers", () => {

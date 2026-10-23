@@ -24,14 +24,15 @@ project.
 | one file: outline / doc TOC        | `find_symbol(relativePath:)`                  |
 | known symbol: body / class outline | `find_symbol(symbol:)` (`Class#inst`, `C.st`) |
 | usages of an identifier            | `hybrid_search` (`metaOnly`, `offset`)        |
-| behaviour / intent, no name        | `semantic_search`                             |
+| behaviour / intent, no name        | `semantic_search` only (no `hybrid_search`)   |
 | code like a chunk in hand          | `find_similar(positiveIds:)`                  |
 | impact / who calls / A reaches B   | `get_callers` / `get_callees` / `trace_path`  |
-| diff review                        | `review_changes`                              |
+| diff review; a name's fit          | `review_changes` / `get_naming_lexicon`       |
 | literal text (TODO, phrase, regex) | text search (your client's Grep / `rg`)       |
 
 Text search = literal text only; never it, Glob or `cat`/`sed`/`grep` to locate
-or read code — identifiers (even `a|b`) are SYMBOL searches.
+or read code — identifiers (even `a|b`) are SYMBOL searches. Diff's names:
+`review_changes` verdicts = answer, nothing after.
 
 **Invariants.**
 
@@ -68,11 +69,10 @@ or read code — identifiers (even `a|b`) are SYMBOL searches.
   `signal-labels`
 - graph / AST on a non-primary language → `language-capability`
 - no prime digest → `tea-rags://project/<alias>/digest`
-- thresholds / labelMap → `tea-rags://project/<alias>/metrics?language=<lang>`
+- labelMap → `tea-rags://project/<alias>/metrics`
 
 **Destructive — explicit user consent:** `force_reindex`, `clear_index`,
-`delete_collection`, `delete_documents`, reindex with `--force` /
-`--force-enrichments`. Subagent: never reindex — report to parent.
+`delete_*`, `--force*` reindex. Subagent: never reindex — report to parent.
 
 **Skills are not loaded for you.** A task a skill covers (`$name` /
 `$dino-<name>`) → open its `SKILL.md` in this turn, BEFORE planning ("I would
@@ -80,3 +80,9 @@ read the skill" is not reading it), then every reference file or `tea-rags://`
 resource it marks MANDATORY for your case. A skill that hands off to another
 skill (a `$dino-*` wrapper → `$bug-hunt`, `$explore`, `$data-driven-generation`
 …) → open that `SKILL.md` too. Plan from that text, not from this core.
+
+Read ONE file per command — never `cat` several: output past ~10k tokens loses
+its middle (`…N tokens truncated…`), and a rule you did not see is not a rule
+you may guess. Saw that marker → re-read the file in ranges (`sed -n`).
+`repair/<family>.md`, `rules/…` in any skill or reference = the plugin root (the
+folder holding `skills/`), never the skill's own folder.
