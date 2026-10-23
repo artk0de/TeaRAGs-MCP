@@ -129,7 +129,7 @@ $ARGUMENTS describes...
 │   → scopeType = "broad"
 │
 ├─ Domain/directory/named module ("ingest domain", "explore/", "the chunker")
-│   → pathPattern = "**/ingest/**" (module noun → "**/<noun>*/**")
+│   → pathPattern = "**/ingest/**" (noun → stem dir: "chunker" → "**/chunk*/**")
 │   → scopeType = "domain"
 │
 └─ Intent/concept, no module named ("error handling")
@@ -144,7 +144,7 @@ $ARGUMENTS describes...
 ```
 
 **pathPattern rules:** Scope = directory-level prefixes. Brace of full file
-paths matches ONLY those files — scan misses rest of domain.
+paths matches ONLY those files.
 
 **One call only.**
 
