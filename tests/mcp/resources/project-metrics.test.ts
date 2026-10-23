@@ -72,4 +72,20 @@ describe("tea-rags://project/{alias}/metrics template", () => {
 
     expect(text).toBe(formatProjectMetrics(fixtureData(), { language: "ruby", section: ["thresholds", "registry"] }));
   });
+
+  it.each([
+    ["tea-rags://project/fixture/metrics", {}],
+    ["tea-rags://project/fixture/metrics?language=ruby", { language: "ruby" }],
+    ["tea-rags://project/fixture/metrics?section=thresholds,registry", { section: ["thresholds", "registry"] }],
+  ])("reads %s with the query parameters it omits left at their defaults", async (uri, query) => {
+    const server = new McpServer({ name: "tea-rags-test", version: "0.0.0" });
+    registerAllResources(server, fixtureApp());
+    session = await connectInProcessClient(server);
+
+    const { contents } = await session.readResource(uri);
+    const [first] = contents;
+    const text = "text" in first ? first.text : "";
+
+    expect(text).toBe(formatProjectMetrics(fixtureData(), { section: [], ...query }));
+  });
 });

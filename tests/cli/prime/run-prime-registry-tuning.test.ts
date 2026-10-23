@@ -6,17 +6,16 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
+import type { InProcessToolSession } from "../../../src/bootstrap/transport/in-memory.js";
 import { primeRegistryRuntime } from "../../../src/cli/prime/registry-runtime.js";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
 import { createPathCollectionResolver } from "../../../src/core/api/index.js";
-import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
-const { pingMock, createAppContextMock, parseAppConfigMock, realExistsSyncRef } = vi.hoisted(() => ({
+const { pingMock, parseAppConfigMock, realExistsSyncRef } = vi.hoisted(() => ({
   pingMock: vi.fn(),
-  createAppContextMock: vi.fn(),
   parseAppConfigMock: vi.fn(),
   realExistsSyncRef: { current: null as ((p: NodeFs.PathLike) => boolean) | null },
 }));
@@ -35,15 +34,31 @@ vi.mock("../../../src/cli/prime/qdrant-ping.js", () => ({
   pingQdrant: pingMock,
 }));
 
-vi.mock("../../../src/bootstrap/factory.js", () => ({
-  createAppContext: createAppContextMock,
-}));
-
 vi.mock("../../../src/bootstrap/config/index.js", () => ({
   parseAppConfig: parseAppConfigMock,
   getZodConfig: () => ({ deprecations: [] }),
   resolveRegistryEnvCodeDefaults,
 }));
+
+function digestSession(): InProcessToolSession {
+  return {
+    listTools: vi.fn(),
+    callTool: vi.fn(),
+    listResources: vi.fn(),
+    listResourceTemplates: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+    readResource: vi.fn(async (uri: string) => ({
+      contents: [{ uri, mimeType: "text/markdown", text: "# tea-rags digest\n" }],
+    })),
+  };
+}
+
+/** Session, update-check and auto-update seams — none of them touch the network or spawn a process. */
+const seams = {
+  openSession: async () => digestSession(),
+  updateService: stubUpdateService(),
+  autoUpdateTrigger: { maybeSpawn: () => "disabled" as const },
+};
 
 const writeMock = vi.fn();
 const stdoutOriginal = process.stdout.write.bind(process.stdout);
@@ -58,7 +73,6 @@ describe("runPrime — registry-first tuning env re-apply", () => {
     delete process.env.INGEST_TUNE_FILE_CONCURRENCY;
     writeMock.mockClear();
     pingMock.mockReset();
-    createAppContextMock.mockReset();
     parseAppConfigMock.mockReset();
     process.stdout.write = writeMock;
   });
@@ -73,22 +87,6 @@ describe("runPrime — registry-first tuning env re-apply", () => {
 
   function wireApp(): void {
     pingMock.mockResolvedValue(true);
-    createAppContextMock.mockResolvedValue({
-      app: {
-        resolveLanguageCapabilities,
-        getIndexStatus: vi.fn().mockResolvedValue({ status: "indexed", collectionName: "code_x", chunksCount: 1 }),
-        getIndexMetrics: vi.fn().mockResolvedValue({
-          collection: "code_x",
-          totalChunks: 1,
-          totalFiles: 1,
-          distributions: {},
-          signals: {},
-        }),
-        checkIndexDrift: vi.fn().mockResolvedValue(null),
-      },
-      cleanup: vi.fn(),
-      updateService: stubUpdateService(),
-    });
   }
 
   function recordEntry(registry: CollectionRegistry, path: string, tuning?: Record<string, string>): void {
@@ -128,7 +126,12 @@ describe("runPrime — registry-first tuning env re-apply", () => {
       });
       wireApp();
 
-      await runPrime({ registryRuntime: primeRegistryRuntime(), project: "tune", createPathCollectionResolver });
+      await runPrime({
+        registryRuntime: primeRegistryRuntime(),
+        project: "tune",
+        createPathCollectionResolver,
+        ...seams,
+      });
 
       expect(envAtParseTime).toEqual({
         TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5",
@@ -152,7 +155,12 @@ describe("runPrime — registry-first tuning env re-apply", () => {
       });
       wireApp();
 
-      await runPrime({ registryRuntime: primeRegistryRuntime(), project: "tune", createPathCollectionResolver });
+      await runPrime({
+        registryRuntime: primeRegistryRuntime(),
+        project: "tune",
+        createPathCollectionResolver,
+        ...seams,
+      });
 
       expect(envAtParseTime).toBe("7");
     } finally {
@@ -172,7 +180,12 @@ describe("runPrime — registry-first tuning env re-apply", () => {
       });
       wireApp();
 
-      await runPrime({ registryRuntime: primeRegistryRuntime(), project: "tune", createPathCollectionResolver });
+      await runPrime({
+        registryRuntime: primeRegistryRuntime(),
+        project: "tune",
+        createPathCollectionResolver,
+        ...seams,
+      });
 
       expect(envAtParseTime).toBeUndefined();
     } finally {

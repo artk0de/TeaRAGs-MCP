@@ -1,66 +1,38 @@
 import type { AutoUpdateTriggerOutcome } from "../../bootstrap/auto-update/trigger.js";
-import type {
-  CollectionEntry,
-  CollectionMemoryMetrics,
-  IndexMetrics,
-  IndexStatus,
-  LanguageCapability,
-} from "../../core/api/public/index.js";
+import type { CollectionEntry } from "../../core/api/public/index.js";
 import type { UpdateStatus } from "../update-check/types.js";
 
-/** Registry entry as consumed by the prime digest (env snapshot + legacy tuning). */
-export type PrimeRegistryEntry = CollectionEntry;
-
 /**
- * Successful prime data — index reachable, status fetched.
- * `metrics` is null when the project is not yet indexed (status !== "indexed").
- * `update` is null when the prime path did not request an update check
- *   (e.g. degraded path) or the field was never populated.
+ * What `tea-rags prime` prints on success: the project digest resource text,
+ * the metrics resource text under `--full`, and the CLI-only lines (package
+ * update notice, auto-update verdict) the resources do not carry.
  */
 export interface PrimeData {
-  path: string;
-  /** Registered alias for this project, null when no registry entry has a name. */
-  projectName: string | null;
-  /**
-   * Registry entry backing this project — source of the effective-params
-   * `registry:` line. Optional/null when no entry matched (heuristic path).
-   */
-  registry?: PrimeRegistryEntry | null;
-  status: IndexStatus;
-  metrics: IndexMetrics | null;
-  /** Rendered `IndexDriftReport` — every axis, one `Run:` line. Null = nothing moved. */
-  drift: string | null;
+  /** `tea-rags://project/<alias>/digest` text, as the server rendered it. */
+  digest: string;
+  /** `tea-rags://project/<alias>/metrics` text; absent unless `--full`. */
+  metrics?: string;
+  /** Registry entry backing the project — source of the auto-update config. */
+  registry?: CollectionEntry | null;
   update: UpdateStatus | null;
   /**
-   * The Qdrant server's memory report for the indexed collection. Absent/null =
-   * not indexed, or the server could not report it (no endpoint on an older
-   * Qdrant, read failed): the digest then renders no `## Memory` section.
-   */
-  memory?: CollectionMemoryMetrics | null;
-  /**
    * Outcome of the auto-update trigger fired for this prime run (hpg2) —
-   * verdict kind or "in-memory-debounced". Absent/null = trigger not fired
-   * (no registry entry, or a pre-hpg2 caller): digest renders no
-   * auto-update line at all.
+   * verdict kind or "in-memory-debounced". Absent/null = trigger not fired:
+   * no auto-update line at all.
    */
   autoUpdateOutcome?: AutoUpdateTriggerOutcome | null;
   /** Per-project auto-update log path, shown on failure lines. */
   autoUpdateLogPath?: string;
-  /**
-   * Static capability ceiling per language, keyed by the language names the
-   * index's metrics carry (bd tea-rags-mcp-xip6g). Absent = no
-   * `## Language capability` section; a language missing from the map renders
-   * no tier line.
-   */
-  languageCapabilities?: ReadonlyMap<string, LanguageCapability>;
 }
 
 /**
- * Degraded outputs that exit the runPrime pipeline early without a full digest.
+ * Degraded outputs that exit the runPrime pipeline early without a digest.
  * Each variant produces a short markdown placeholder via formatPrime.
  */
 export type PrimeFailureReason =
   | { kind: "path-not-found"; path: string }
   | { kind: "qdrant-cold"; path: string }
-  /** The status read failed for a reason other than a cold Qdrant — shown as-is. */
+  /** No registry entry claims the path — there is no project alias to read a digest for. */
+  | { kind: "not-registered"; path: string }
+  /** Opening the in-process server failed for a reason other than a cold Qdrant — shown as-is. */
   | { kind: "status-failed"; path: string; message: string; code?: string; hint?: string };

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPrime } from "../../../src/cli/prime/format.js";
-import type { PrimeData, PrimeRegistryEntry } from "../../../src/cli/prime/types.js";
+import type { CollectionEntry } from "../../../../src/core/api/public/index.js";
+import { formatProjectMetrics } from "../../../../src/mcp/resources/project/metrics.js";
+import type { ProjectDigestData } from "../../../../src/mcp/resources/project/types.js";
 
 const baseStatus = {
   status: "indexed" as const,
@@ -12,9 +13,7 @@ const baseStatus = {
   embeddingModel: "test-model",
 };
 
-const NOW = new Date("2026-05-13T00:00:00Z");
-
-function entry(overrides: Partial<PrimeRegistryEntry> = {}): PrimeRegistryEntry {
+function entry(overrides: Partial<CollectionEntry> = {}): CollectionEntry {
   return {
     collectionName: "code_abc",
     path: "/repo",
@@ -29,26 +28,29 @@ function entry(overrides: Partial<PrimeRegistryEntry> = {}): PrimeRegistryEntry 
   };
 }
 
-function data(overrides: Partial<PrimeData> = {}): PrimeData {
+function data(overrides: Partial<ProjectDigestData> = {}): ProjectDigestData {
   return {
     path: "/repo",
     projectName: "myrepo",
     status: baseStatus,
     metrics: null,
     drift: null,
-    update: null,
     ...overrides,
   };
 }
 
-/** Extract the single `registry:` line from the rendered digest. */
+function render(d: ProjectDigestData): string {
+  return formatProjectMetrics(d, { section: ["registry"] });
+}
+
+/** Extract the single `registry:` line from the rendered metrics. */
 function registryLine(out: string): string | undefined {
   return out.split("\n").find((l) => l.startsWith("registry:"));
 }
 
-describe("formatPrime — registry params line", () => {
+describe("formatProjectMetrics — registry params line", () => {
   it("renders one compact line with all effective params when the entry carries every field", () => {
-    const out = formatPrime(
+    const out = render(
       data({
         registry: entry({
           embeddingBaseUrl: "http://192.168.1.71:11434",
@@ -59,7 +61,6 @@ describe("formatPrime — registry params line", () => {
           teaRagsVersion: "1.33.0",
         }),
       }),
-      NOW,
     );
     expect(registryLine(out)).toBe(
       "registry: embedding http://192.168.1.71:11434 (fallback http://localhost:11434) · " +
@@ -68,21 +69,20 @@ describe("formatPrime — registry params line", () => {
   });
 
   it("omits absent fields for a minimal legacy entry (line stays single)", () => {
-    const out = formatPrime(data({ registry: entry() }), NOW);
+    const out = render(data({ registry: entry() }));
     expect(registryLine(out)).toBe("registry: qdrant http://qdrant:6333 · v1.0.0");
   });
 
   it("renders 'codegraph off' when codegraphEnabled is explicitly false", () => {
-    const out = formatPrime(data({ registry: entry({ codegraphEnabled: false }) }), NOW);
+    const out = render(data({ registry: entry({ codegraphEnabled: false }) }));
     expect(registryLine(out)).toBe("registry: qdrant http://qdrant:6333 · codegraph off · v1.0.0");
   });
 
   it("appends tuning map entries as key=value pairs, sorted for stability", () => {
-    const out = formatPrime(
+    const out = render(
       data({
         registry: entry({ tuning: { EMBEDDING_BATCH_SIZE: "32", CHUNK_SIZE: "1200" } }),
       }),
-      NOW,
     );
     expect(registryLine(out)).toBe(
       "registry: qdrant http://qdrant:6333 · v1.0.0 · CHUNK_SIZE=1200 EMBEDDING_BATCH_SIZE=32",
@@ -90,19 +90,17 @@ describe("formatPrime — registry params line", () => {
   });
 
   it("omits an empty tuning map without a trailing separator", () => {
-    const out = formatPrime(data({ registry: entry({ tuning: {} }) }), NOW);
+    const out = render(data({ registry: entry({ tuning: {} }) }));
     expect(registryLine(out)).toBe("registry: qdrant http://qdrant:6333 · v1.0.0");
   });
 
-  it("emits no registry line when PrimeData has no registry entry", () => {
-    const out = formatPrime(data(), NOW);
+  it("emits no registry line when ProjectDigestData has no registry entry", () => {
+    const out = render(data());
     expect(registryLine(out)).toBeUndefined();
-    expect(out).toContain("## Project");
   });
 
-  it("renders the Project section with only the registry line when projectName is null but an entry exists", () => {
-    const out = formatPrime(data({ projectName: null, registry: entry({ name: null }) }), NOW);
-    expect(out).toContain("## Project");
+  it("renders the registry line when projectName is null but an entry exists", () => {
+    const out = render(data({ projectName: null, registry: entry({ name: null }) }));
     expect(registryLine(out)).toBe("registry: qdrant http://qdrant:6333 · v1.0.0");
     expect(out).not.toContain("name: `");
     expect(out).not.toContain("[hint] Use");

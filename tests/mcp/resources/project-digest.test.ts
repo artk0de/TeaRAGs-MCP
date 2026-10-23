@@ -2,10 +2,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { connectInProcessClient, type InProcessToolSession } from "../../../src/bootstrap/transport/in-memory.js";
-import type { App } from "../../../src/core/api/public/index.js";
+import { TeaRagsError, type App } from "../../../src/core/api/public/index.js";
 import { registerAllResources } from "../../../src/mcp/resources/index.js";
 import { formatSlimDigest } from "../../../src/mcp/resources/project/digest.js";
-import { fixtureApp, fixtureData, NOW } from "./project/fixture.js";
+import { FIXTURE_ENTRY, fixtureApp, fixtureData, NOW } from "./project/fixture.js";
 
 describe("formatSlimDigest", () => {
   it("stays within the digest budget on a 4-language index with full thresholds buckets", () => {
@@ -124,6 +124,39 @@ describe("tea-rags://project/{alias}/digest template", () => {
     expect(await textOf("tea-rags://project/fixture/digest", app)).toBe(
       "project 'fixture': index status unavailable — qdrant down\n",
     );
+  });
+
+  it("renders a typed error's message, code and hint instead of 'warm-up pending'", async () => {
+    class LockedCollectionError extends TeaRagsError {
+      constructor() {
+        super({
+          code: "INFRA_ALIAS_OPERATION",
+          message: "alias swap in flight",
+          hint: "Retry shortly",
+          httpStatus: 409,
+        });
+      }
+    }
+    const app = {
+      ...fixtureApp(),
+      getIndexStatus: async () => Promise.reject(new LockedCollectionError()),
+    } as App;
+
+    const out = await textOf("tea-rags://project/fixture/digest", app);
+
+    expect(out).not.toContain("warm-up pending");
+    expect(out).toContain("alias swap in flight (INFRA_ALIAS_OPERATION)");
+    expect(out).toContain("Retry shortly");
+  });
+
+  it("addresses a registry entry without a name by its collection name", async () => {
+    const { name: _name, ...nameless } = FIXTURE_ENTRY;
+    const app = { ...fixtureApp(), listProjects: async () => Promise.resolve({ projects: [nameless] }) } as App;
+
+    const out = await textOf("tea-rags://project/code_fixture/digest", app);
+
+    expect(out).toContain("# tea-rags digest — code_fixture");
+    expect(out).toContain("tea-rags://project/code_fixture/metrics?language=<lang>");
   });
 
   it("is not enumerated by resources/list", async () => {
