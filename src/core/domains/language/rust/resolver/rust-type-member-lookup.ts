@@ -147,7 +147,12 @@ function rustTraitProvidedMember(
  * A std type the fold carries unplaced keeps its miss verdict: its members
  * are std unless the project implements them on it, which the walk searched.
  */
-export function rustTypedMissIsProven(owner: NominalTypeRef, member: string, ctx: CallContext): boolean {
+export function rustTypedMissIsProven(
+  owner: NominalTypeRef,
+  member: string,
+  ctx: CallContext,
+  { ownerFactRequired = true }: { readonly ownerFactRequired?: boolean } = {},
+): boolean {
   let current = owner;
   for (let hop = 0; hop < 3; hop++) {
     const boundary = current.name.indexOf(".rs::");
@@ -170,9 +175,11 @@ export function rustTypedMissIsProven(owner: NominalTypeRef, member: string, ctx
     const relPath = current.name.slice(0, boundary + 3);
     const typeId = current.name.slice(boundary + 5);
     const ownerDeclared = ctx.typeDeclarations?.[relPath]?.some((fact) => fact.typeId === typeId && !fact.reopens);
-    if (ownerDeclared !== true) return false;
+    if (ownerDeclared !== true && ownerFactRequired) return false;
     if (ctx.symbolTable.lookup(`${typeId}#${member}`).length > 0) return false;
     if (ctx.symbolTable.lookup(`${typeId}.${member}`).length > 0) return false;
+    // A trait the type implements may provide the member as a default body.
+    if (rustImplementedTraitDeclares(typeId, member, ctx)) return false;
     if (ctx.symbolTable.lookup(`${typeId}#deref`).length === 0) return true;
     const derefTarget = rustDerefTarget(current, ctx);
     if (derefTarget === undefined) return rustDerefsToForeignMissing(current, relPath, typeId, member, ctx);
@@ -180,6 +187,34 @@ export function rustTypedMissIsProven(owner: NominalTypeRef, member: string, ctx
     current = derefTarget;
   }
   return false;
+}
+
+const RUST_IMPLEMENTED_TRAITS = new WeakMap<object, Map<string, Set<string>>>();
+
+/**
+ * Whether a trait some `impl Trait for <typeId>` names declares `member`
+ * (`BatchExecutor#collect_summary`, a default body the impl does not repeat).
+ * Keyed on the short type name; the run's impl facts are indexed once.
+ */
+function rustImplementedTraitDeclares(typeId: string, member: string, ctx: CallContext): boolean {
+  const declarations = ctx.typeDeclarations;
+  if (declarations === undefined) return false;
+  let index = RUST_IMPLEMENTED_TRAITS.get(declarations);
+  if (index === undefined) {
+    index = new Map();
+    for (const facts of Object.values(declarations)) {
+      for (const fact of facts) {
+        if (!fact.reopens || fact.conforms === undefined) continue;
+        const shortName = fact.typeId.split("::").at(-1) ?? fact.typeId;
+        const traits = index.get(shortName) ?? new Set<string>();
+        for (const trait of fact.conforms) traits.add(trait.split("::").at(-1) ?? trait);
+        index.set(shortName, traits);
+      }
+    }
+    RUST_IMPLEMENTED_TRAITS.set(declarations, index);
+  }
+  const traits = index.get(typeId.split("::").at(-1) ?? typeId);
+  return traits !== undefined && [...traits].some((trait) => ctx.symbolTable.lookup(`${trait}#${member}`).length > 0);
 }
 
 /**

@@ -22,6 +22,8 @@ import { resolveLocalBinding, type CallContext, type CallRef } from "../../../..
 import { rustTextIsStdMethodName } from "../vocabulary/std-method-names.js";
 import { rustTextIsStdPreludeCallable } from "../vocabulary/std-prelude.js";
 import { rustcCallSiteDefinitionOf } from "./call-site-resolution.js";
+import { rustStdTerminalTargetsExternal } from "./external-type-hops.js";
+import { rustTypedMissIsProven } from "./rust-type-member-lookup.js";
 import { rustReceiverChainType } from "./strategies/rust-type-receiver.js";
 import {
   parseRustImportPath,
@@ -55,8 +57,19 @@ function receiverStdNameBindsByNameOnly(call: CallRef, ctx: CallContext): boolea
   if (call.callText.startsWith(`${receiverText}::`)) return false;
   const head = receiverText.split(/[.:]/)[0] ?? receiverText;
   if (head === "self" || head === "Self") return false;
+  // A receiver the fold types as a std type is evidence FOR std, not for the
+  // namesake — even under an import-bound head (`Decimal::from_bytes(s)` whose
+  // `-> Result<Res<Decimal>>` names the codec's std `Result` alias).
+  const folded = rustReceiverChainType(call, ctx);
+  // A placed project type that provably lacks the member leaves only the
+  // std reading (`Time: Display` hands `p.to_string()` to `ToString`).
+  if (folded?.form === "instance" && folded.name.includes(".rs::")) {
+    // A macro-declared type (`bitfield! { pub struct Time(u64) }`) has no
+    // declaration fact, yet its impls are symbols: their absence still counts.
+    return rustTypedMissIsProven(folded, call.member, ctx, { ownerFactRequired: false });
+  }
+  if (folded !== undefined) return rustStdTerminalTargetsExternal(folded, call.member, ctx);
   if (ctx.imports.some((imp) => parseRustImportPath(imp.importText, head)?.receiverMatches)) return false;
   const binding = resolveLocalBinding(ctx.localBindings, head, call.startLine, call.startColumn);
-  if (binding !== undefined && (binding.typeRef !== undefined || binding.type.length > 0)) return false;
-  return rustReceiverChainType(call, ctx) === undefined;
+  return binding === undefined || (binding.typeRef === undefined && binding.type.length === 0);
 }

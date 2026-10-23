@@ -233,14 +233,16 @@ function rustFreeFunctionReturn(
     if (modules.length !== 1) break;
     moduleScope.push(name);
   }
-  // An import shadowing the name (glob, unparseable, or bound to it) makes the
+  // An import shadowing the name (unparseable, or bound to it) makes the
   // same-file free function unreachable — it scopes the SAME-FILE arm only:
   // the cross-file arm below is itself import-bound, the shadow is its proof.
+  // A glob import never shadows: an item the module declares outranks every
+  // glob-imported name (`use codec::prelude::*;` beside `fn fix(..)`).
   const importShadows = ctx.imports.some((imp) => {
     const bindings = rustImportBindings(imp.importText);
     return (
       bindings === null ||
-      bindings.some((importBinding) => importBinding.globImport || importBinding.localName === callee)
+      bindings.some((importBinding) => !importBinding.globImport && importBinding.localName === callee)
     );
   });
   const sameFileCandidates = importShadows

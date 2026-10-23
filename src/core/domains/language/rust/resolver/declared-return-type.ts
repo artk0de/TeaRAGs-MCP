@@ -16,7 +16,7 @@ import {
   rustStdTypeRef,
   rustStdUnwrapType,
 } from "./std-type-hops.js";
-import { lookupRustSymbolsByShortName, rustImportBindings } from "./strategies/shared.js";
+import { lookupRustSymbolsByShortName, rustFollowReexports, rustImportBindings } from "./strategies/shared.js";
 
 /** File-qualified nominal identity is kept inside the existing TypeRef channel, never a bare global namesake. */
 export function resolveRustNominalType(nominalType: TypeRef, ctx: CallContext): NominalTypeRef | undefined {
@@ -151,6 +151,16 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
         return imported === undefined ? undefined : withArguments({ ...imported, form: recv.form });
       };
       const head = resolveRustNominalType({ form: recv.form, name: recv.name }, declaringCtx);
+      // A same-name `impl From<..> for Result<T>` declares no type: a spelling
+      // the declaring file binds by `use` names the imported item (tikv's
+      // re-exported `codec::Result` alias). Placed through it or refused.
+      if (
+        head !== undefined &&
+        rustPlacedOnImplBlockOnly(head, ctx) &&
+        rustDeclaringFileImportOf(recv.name, target.relPath, ctx) !== undefined
+      ) {
+        return throughImports() ?? rustExpandProjectAlias(recv.name, substituted, target.relPath, ctx);
+      }
       if (head === undefined) {
         return (
           rustStdTypeRef(recv.name, substituted, declaringCtx) ??
@@ -197,15 +207,20 @@ function rustPreludeOverForeignImpl(
   ctx: CallContext,
 ): boolean {
   if (!rustTextIsStdPreludeType(name) || head.name.startsWith(`${declaringFile}::`)) return false;
-  const boundary = head.name.indexOf(".rs::");
-  if (boundary < 0) return false;
-  const relPath = head.name.slice(0, boundary + 3);
-  const placed = ctx.symbolTable.lookup(head.name.slice(boundary + 5)).filter((def) => def.relPath === relPath);
-  if (placed.length === 0 || placed.some((def) => def.symbolKind !== undefined)) return false;
+  if (!rustPlacedOnImplBlockOnly(head, ctx)) return false;
   const bindsName = (identifierEntry(ctx.rustUseImportsByFile, declaringFile) ?? []).some(
     (importText) => rustImportBindings(importText)?.some((binding) => binding.localName === name) ?? true,
   );
   return !bindsName;
+}
+
+/** Whether a placed `head` lands only on untagged `impl` blocks: an impl declares no type. */
+function rustPlacedOnImplBlockOnly(head: NominalTypeRef, ctx: CallContext): boolean {
+  const boundary = head.name.indexOf(".rs::");
+  if (boundary < 0) return false;
+  const relPath = head.name.slice(0, boundary + 3);
+  const placed = ctx.symbolTable.lookup(head.name.slice(boundary + 5)).filter((def) => def.relPath === relPath);
+  return placed.length > 0 && placed.every((def) => def.symbolKind === undefined);
 }
 
 /** `<T as Deref>::Target` with the projected parameter captured. */
@@ -218,8 +233,9 @@ const MAX_PROJECT_ALIAS_EXPANSIONS = 4;
  * generic parameters substituted by `typeArguments` (bd tea-rags-mcp-s3i8m):
  * servo's `-> DomRoot<T>` with `pub type DomRoot<T> = Root<Dom<T>>` is
  * `Root<Dom<T>>`. The alias is the declaring file's own or bound by one of
- * its `use` imports; its body's names are placed in the ALIAS's file. Every
- * argument must be known and every name placed, else `undefined`.
+ * its `use` imports; its body's names are placed in the ALIAS's file. A
+ * project head needs every argument known and every name placed, else
+ * `undefined`; a std head stays std with an unknown argument list dropped.
  */
 function rustExpandProjectAlias(
   name: string,
@@ -235,7 +251,7 @@ function rustExpandProjectAlias(
   const { relPath, fact } = alias;
   const parameters = fact.genericParameters ?? [];
   const given = typeArguments ?? [];
-  if (given.length !== parameters.length || given.some((arg) => arg === undefined)) return undefined;
+  if (given.length !== parameters.length) return undefined;
   const aliasCtx = { ...ctx, callerFile: relPath, callerScope: fact.typeId.split("::").slice(0, -1) };
   const expand = (recv: TypeRef): TypeRef | undefined => {
     if (recv.form === "tuple") {
@@ -246,6 +262,13 @@ function rustExpandProjectAlias(
     const parameter = recv.args === undefined ? parameters.indexOf(recv.name) : -1;
     if (parameter >= 0) return given[parameter];
     const expandedArguments = recv.args?.map(expand);
+    // A std head is std whatever its arguments (an unknown one drops the list):
+    // spelled as a std path, or bound by the alias file's `use` (`StdResult`),
+    // which outranks a same-name `impl .. for StdResult<T, E>` block there.
+    const std =
+      rustStdImportedTypeRef(recv.name, expandedArguments, relPath, ctx) ??
+      (recv.name.includes("::") ? rustStdTypeRef(recv.name, expandedArguments, aliasCtx) : undefined);
+    if (std !== undefined) return std;
     if (expandedArguments?.some((arg) => arg === undefined)) return undefined;
     const withArgs = (placed: NominalTypeRef): TypeRef =>
       expandedArguments === undefined ? placed : { ...placed, form: recv.form, args: expandedArguments as TypeRef[] };
@@ -259,6 +282,25 @@ function rustExpandProjectAlias(
     );
   };
   return expand(aliasedType);
+}
+
+/**
+ * The std type a spelling names through `relPath`'s one non-glob `use` of a
+ * std path (`use std::result::Result as StdResult;`); undefined otherwise.
+ */
+function rustStdImportedTypeRef(
+  name: string,
+  typeArguments: readonly (TypeRef | undefined)[] | undefined,
+  relPath: string,
+  ctx: CallContext,
+): TypeRef | undefined {
+  const bindings = (identifierEntry(ctx.rustUseImportsByFile, relPath) ?? []).flatMap((importText) =>
+    (rustImportBindings(importText) ?? []).filter((binding) => !binding.globImport && binding.localName === name),
+  );
+  if (bindings.length !== 1 || bindings[0].prefix !== null) return undefined;
+  const [binding] = bindings;
+  const path = binding.sourceName === null ? binding.moduleSegments : [...binding.moduleSegments, binding.sourceName];
+  return path.length > 1 ? rustStdTypeRef(path.join("::"), typeArguments, ctx) : undefined;
 }
 
 /** The type alias `name` denotes in `declaringFile`: declared there, or bound by one of its imports. */
@@ -275,10 +317,43 @@ function rustAliasDeclaration(
   if (own.length > 0) return own.length === 1 ? { relPath: declaringFile, fact: own[0] } : undefined;
   // A type alias carries no symbol: its file's declaration facts answer.
   const imported = rustDeclaringFileImportOf(name, declaringFile, ctx);
-  const found = imported?.paths.flatMap((relPath) =>
+  if (imported === undefined) return undefined;
+  const found = imported.paths.flatMap((relPath) =>
     aliasIn(relPath, imported.itemName).map((fact) => ({ relPath, fact })),
   );
-  return found?.length === 1 ? found[0] : undefined;
+  if (found.length > 0) return found.length === 1 ? found[0] : undefined;
+  // None there: the module's `pub use` re-exports (`pub use self::error::{Error, Result};`).
+  const { target: reexported } = rustFollowReexports(imported.importText, name, declaringFile, ctx, (itemName) =>
+    rustAliasDefinitionsNamed(itemName, ctx),
+  );
+  if (!reexported?.targetSymbolId) return undefined;
+  const facts = aliasIn(reexported.targetRelPath, reexported.targetSymbolId);
+  return facts.length === 1 ? { relPath: reexported.targetRelPath, fact: facts[0] } : undefined;
+}
+
+const RUST_ALIAS_DEFINITIONS = new WeakMap<object, Map<string, SymbolDefinition[]>>();
+
+/**
+ * Every top-level type alias named `itemName`, as a definition the re-export
+ * walk matches by file — an alias has no symbol-table row, so the run's
+ * declaration facts stand in (indexed once per run).
+ */
+function rustAliasDefinitionsNamed(itemName: string, ctx: CallContext): readonly SymbolDefinition[] {
+  const declarations = ctx.typeDeclarations;
+  if (declarations === undefined) return [];
+  let index = RUST_ALIAS_DEFINITIONS.get(declarations);
+  if (index === undefined) {
+    index = new Map();
+    for (const [relPath, facts] of Object.entries(declarations)) {
+      for (const fact of facts) {
+        if (fact.symbolKind !== "type_alias" || fact.reopens || fact.typeId.includes("::")) continue;
+        const definition = { symbolId: fact.typeId, fqName: fact.typeId, shortName: fact.typeId, relPath, scope: [] };
+        index.set(fact.typeId, [...(index.get(fact.typeId) ?? []), definition]);
+      }
+    }
+    RUST_ALIAS_DEFINITIONS.set(declarations, index);
+  }
+  return index.get(itemName) ?? [];
 }
 
 export function rustDeclaredMemberReturnType(

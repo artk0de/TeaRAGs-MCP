@@ -10,6 +10,11 @@ import {
   type RustImportBinding,
 } from "./strategies/shared.js";
 
+/** Whether an import's text spells `name` as a path segment — the only way it can bind it explicitly. */
+function rustImportTextNames(importText: string, name: string): boolean {
+  return importText.split(/[^A-Za-z0-9_]+/).includes(name);
+}
+
 /**
  * Place a type `name` spelled in ANOTHER file's declaration — a callee's
  * return, a struct's field — through THAT file's own `use` imports (bd
@@ -60,6 +65,9 @@ export function rustDeclaringFileImportOf(
   const bound: { importText: string; binding: RustImportBinding }[] = [];
   for (const importText of importTexts) {
     const bindings = rustImportBindings(importText);
+    // An unread import that never spells the name (`use super::{X, *};` in a
+    // `mod tests`) cannot bind it explicitly; a glob never outranks a `use`.
+    if (bindings === null && !rustImportTextNames(importText, name)) continue;
     // An import the parser cannot read may bind the name: nothing is proven.
     if (bindings === null) return undefined;
     for (const binding of bindings) {
