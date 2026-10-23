@@ -386,6 +386,11 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
       scripts: [okScript(), okScript({ units: { "app-1.ndjson": `${row()}\n${row({ line: 30 })}` } })],
     });
     const first = await acquire(h);
+    // A source change makes cargo run again: with nothing changed the complete run is served without cargo.
+    h.setSources([
+      { relPath: "app/src/main.rs", size: 100, mtimeMs: 2 },
+      { relPath: "core/src/lib.rs", size: 200, mtimeMs: 1 },
+    ]);
     const second = await acquire(h);
     expect(first.index?.identity).not.toBe(second.index?.identity);
   });
@@ -535,8 +540,9 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
     expect(fixed.diagnostics.latched).toBeUndefined();
     expect(h.texts.has(`${DATA}/rustc-driver/${envKeyOf(h.spawns[1])}/latch.json`)).toBe(false);
     const next = await acquire(h);
-    expect(next.status).toBe("ok");
-    expect(h.spawns).toHaveLength(3);
+    // Unchanged sources after the complete run: served without cargo, not latched.
+    expect(next.status).toBe("reused");
+    expect(h.spawns).toHaveLength(2);
   });
 
   it("treats an allUnitsFailed latch written without source stamps as stale", async () => {
@@ -545,8 +551,9 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
     const envDir = `${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}`;
     h.texts.set(`${envDir}/latch.json`, JSON.stringify({ reason: "allUnitsFailed", detail: "old" }));
     const result = await acquire(h);
-    expect(result.status).toBe("ok");
-    expect(h.spawns).toHaveLength(2);
+    // Not answered failed: the complete earlier run is served (sources unchanged, so without cargo).
+    expect(result.status).toBe("reused");
+    expect(h.spawns).toHaveLength(1);
   });
 
   it("keeps a driverBuild latch regardless of source changes", async () => {
@@ -661,7 +668,8 @@ describe("acquireRustcCallSites — admission (reuseOnly never spawns cargo)", (
       relPath: "core/src/lib.rs",
       line: 24,
     });
-    expect(reused.index?.identity).not.toBe(first.index?.identity);
+    // Nothing changed after a complete run: the whole index is served, so its identity is the run's own.
+    expect(reused.index?.identity).toBe(first.index?.identity);
   });
 
   it("answers null for a site in a changed file and for a definition located in one", async () => {
@@ -687,6 +695,11 @@ describe("acquireRustcCallSites — admission (reuseOnly never spawns cargo)", (
   it("does not serve a run whose spawn failed afterwards", async () => {
     const h = host({ scripts: [okScript(), okScript({ runJson: undefined, exitCode: 101 })] });
     await acquire(h);
+    // A source change makes the second acquisition spawn instead of serving the complete run.
+    h.setSources([
+      { relPath: "app/src/main.rs", size: 100, mtimeMs: 2 },
+      { relPath: "core/src/lib.rs", size: 200, mtimeMs: 1 },
+    ]);
     expect((await acquire(h)).status).toBe("failed");
     expect((await acquire(h, { admission: reuseOnly })).status).toBe("noCache");
   });
@@ -775,6 +788,141 @@ describe("acquireRustcCallSites — admission (reuseOnly never spawns cargo)", (
     const reused = await acquire(h, { admission: reuseOnly });
     expect(reused.status).toBe("reused");
     expect(h.spawns).toHaveLength(1);
+  });
+});
+
+describe("acquireRustcCallSites — warm incremental spawn and no-op short-circuit", () => {
+  const reuseOnly: RustCallSiteAdmission = () => "reuseOnly";
+  const spawn: RustCallSiteAdmission = () => "spawn";
+  /** Marks the target dir of the first spawn's envKey as present on disk. */
+  const warmTargetDir = (h: ReturnType<typeof host>): void => {
+    h.stamps.set(`${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}/target`, { size: 64, mtimeMs: 1 });
+  };
+  const touched = [
+    { relPath: "app/src/main.rs", size: 100, mtimeMs: 1 },
+    { relPath: "core/src/lib.rs", size: 200, mtimeMs: 9 },
+  ];
+
+  it("spawns under reuseOnly when the target dir is warm and a .rs source changed", async () => {
+    const h = host();
+    await acquire(h);
+    warmTargetDir(h);
+    h.setSources(touched);
+    const result = await acquire(h, { admission: reuseOnly });
+    expect(h.spawns).toHaveLength(2);
+    expect(result.status).toBe("ok");
+    expect(result.diagnostics.ranCargoCheck).toBe(true);
+  });
+
+  it("spawns under reuseOnly when the target dir is warm and a .rs source was added", async () => {
+    const h = host();
+    await acquire(h);
+    warmTargetDir(h);
+    h.setSources([
+      ...touched.slice(0, 1),
+      { relPath: "core/src/lib.rs", size: 200, mtimeMs: 1 },
+      {
+        relPath: "core/src/new.rs",
+        size: 10,
+        mtimeMs: 3,
+      },
+    ]);
+    await acquire(h, { admission: reuseOnly });
+    expect(h.spawns).toHaveLength(2);
+  });
+
+  it("serves the previous run without cargo under reuseOnly when the target dir is warm and nothing changed", async () => {
+    const h = host();
+    await acquire(h);
+    warmTargetDir(h);
+    const result = await acquire(h, { admission: reuseOnly });
+    expect(h.spawns).toHaveLength(1);
+    expect(result.status).toBe("reused");
+    expect(result.diagnostics.ranCargoCheck).toBe(false);
+    expect(result.index?.definitionAt("app/src/main.rs", 21, 19)).toMatchObject({ relPath: "core/src/lib.rs" });
+  });
+
+  it("never spawns cold under reuseOnly: no target dir and a changed source serves the previous run", async () => {
+    const h = host();
+    const first = await acquire(h);
+    h.setSources(touched);
+    const result = await acquire(h, { admission: reuseOnly });
+    expect(h.spawns).toHaveLength(1);
+    expect(result.status).toBe("reused");
+    expect(result.index?.definitionAt("app/src/main.rs", 21, 19)).toBeNull();
+    expect(result.index?.identity).not.toBe(first.index?.identity);
+  });
+
+  it("never spawns under spawn: never, even warm with a changed source of a crate that failed", async () => {
+    const failed = [{ packageId: "path+file:///ws/core#fx_core@0.1.0", target: "fx_core", firstError: "E0308" }];
+    const partial = okScript({
+      runJson: okRun({ success: false, exitCode: 101, units: [{ file: "app-1.ndjson", crate: "app" }], failed }),
+      units: { "app-1.ndjson": row() },
+      exitCode: 101,
+    });
+    const h = host({ scripts: [partial] });
+    await acquire(h);
+    warmTargetDir(h);
+    h.setSources(touched);
+    const result = await acquireRustcCallSites(h.deps, { projectRoot: ROOT, admission: reuseOnly, spawn: "never" });
+    expect(h.spawns).toHaveLength(1);
+    expect(result.status).toBe("reused");
+    expect(result.diagnostics.ranCargoCheck).toBe(false);
+  });
+
+  it("answers noCache under reuseOnly without a previous run even when a target dir exists", async () => {
+    const h = host();
+    await acquire(h);
+    const envDir = `${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}`;
+    h.texts.delete(`${envDir}/run.json`);
+    warmTargetDir(h);
+    h.setSources(touched);
+    const result = await acquire(h, { admission: reuseOnly });
+    expect(h.spawns).toHaveLength(1);
+    expect(result.status).toBe("noCache");
+  });
+
+  it("serves a complete previous run without cargo under spawn admission when no source changed", async () => {
+    const h = host();
+    const first = await acquire(h);
+    const second = await acquire(h, { admission: spawn });
+    expect(h.spawns).toHaveLength(1);
+    expect(second.status).toBe("reused");
+    expect(second.diagnostics).toMatchObject({ ranCargoCheck: false, unitCount: 2, failedCrates: [], missingUnits: 0 });
+    expect(second.index?.identity).toBe(first.index?.identity);
+    expect(second.index?.definitionAt("app/src/main.rs", 21, 19)).toMatchObject({ relPath: "core/src/lib.rs" });
+  });
+
+  it("runs cargo under spawn admission once a source changed since a complete run", async () => {
+    const h = host();
+    await acquire(h);
+    h.setSources(touched);
+    const result = await acquire(h, { admission: spawn });
+    expect(h.spawns).toHaveLength(2);
+    expect(result.diagnostics.ranCargoCheck).toBe(true);
+  });
+
+  it("runs cargo under spawn admission when a unit file the complete run listed is gone", async () => {
+    const h = host();
+    await acquire(h);
+    h.texts.delete(`${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}/units/app-1.ndjson`);
+    await acquire(h, { admission: spawn });
+    expect(h.spawns).toHaveLength(2);
+  });
+
+  it("re-runs cargo after a partial run with unchanged sources (no short-circuit)", async () => {
+    const failed = [{ packageId: "path+file:///ws/core#fx_core@0.1.0", target: "fx_core", firstError: "E0308" }];
+    const partial = okScript({
+      runJson: okRun({ success: false, exitCode: 101, units: [{ file: "app-1.ndjson", crate: "app" }], failed }),
+      units: { "app-1.ndjson": row() },
+      exitCode: 101,
+    });
+    const h = host({ scripts: [partial, partial] });
+    expect((await acquire(h)).status).toBe("partial");
+    const again = await acquire(h, { admission: spawn });
+    expect(h.spawns).toHaveLength(2);
+    expect(again.status).toBe("partial");
+    expect(again.diagnostics.ranCargoCheck).toBe(true);
   });
 });
 

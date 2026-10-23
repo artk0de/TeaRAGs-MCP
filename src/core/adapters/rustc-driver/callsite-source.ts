@@ -49,6 +49,7 @@ export function createRustcCallSiteSource(
         timeoutSec: config.timeoutSec,
         maxRssMb: config.maxRssMb,
         admission: config.spawn === "never" ? () => "reuseOnly" : admission,
+        spawn: config.spawn,
       });
     } catch (error) {
       return { kind: "latched", reason: "exit", detail: error instanceof Error ? error.message : String(error) };

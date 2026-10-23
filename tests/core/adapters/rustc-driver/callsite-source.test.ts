@@ -60,6 +60,13 @@ describe("createRustcCallSiteSource — admission", () => {
     expect(runner.calls[0]?.admission?.(["a.rs"])).toBe("reuseOnly");
   });
 
+  it("tells the runner spawn: never so it never upgrades reuseOnly to a cargo run", async () => {
+    const runner = fakeRunner([{ status: "noCache", diagnostics: diagnostics() }]);
+    const source = createRustcCallSiteSource({ ...CONFIG, spawn: "never" }, runner);
+    await source.acquire({ projectRoot: ROOT, admission: spawnAdmission });
+    expect(runner.calls[0]?.spawn).toBe("never");
+  });
+
   it("answers skipped/disabled without running when the slot is off", async () => {
     const runner = fakeRunner([]);
     const source = createRustcCallSiteSource({ ...CONFIG, enabled: false }, runner);

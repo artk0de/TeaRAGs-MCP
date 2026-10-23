@@ -248,6 +248,19 @@ runner's per-file partial serve, only cheaper: a warm run on ripgrep is 1 s. The
 adapter still honours the pass index's reuse-only admission for incremental
 passes below the bulk share; §8.4 states when such a pass re-runs cargo anyway.
 
+Measured on real corpora (warm target dir, `touch`-only edits, host under load
+16-70 on 12 cores, so upper bounds):
+
+| Corpus  | Nothing changed | Leaf crate touched | Root crate touched |
+| ------- | --------------- | ------------------ | ------------------ |
+| ripgrep | 2.4 s           | 3.6 s              | 3.2 s              |
+| tikv    | 5.7 s           | 8.0 s              | 83.5 s             |
+| servo   | 17 s            | 7.1 s              | 46 s               |
+
+A cold run (no target dir) is 6-11 min on tikv. Hence the two rules of §8.4: a
+reuse-only pass spawns only into a WARM target dir, and a run with nothing
+changed does not invoke cargo at all (the idle column is pure cargo overhead).
+
 ## 7. Coverage against the chain-tally residual (ripgrep)
 
 Chain tally run (heavy-measure lock held, 7 s; SCIP slot not acquired):
@@ -344,12 +357,17 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
 - `envKey = sha256([CALLSITES_FORMAT, driver -V (version + pin + sourceHash), rustc -vV of the pin, Cargo.lock, every Cargo.toml (sorted), cargo args, jobs-independent settings])`.
   The directory `~/.tea-rags/rustc-driver/<envKey>/` holds `target/`,
   `units/*.ndjson`, `latch.json`, `run.json`.
-- There is no contentKey blob. cargo's fingerprints are the content cache. Every
-  index run spawns the driver (warm ≈ seconds) and then reads `units/`.
-  `run.json` lists the units of the last run, taken from cargo
-  `--message-format=json` `compiler-artifact` messages, fresh ones included.
-  Unit files not listed are deleted, which is GC for renamed or removed targets
-  and feature flips.
+- There is no contentKey blob. cargo's fingerprints are the content cache. An
+  index run that spawns the driver (warm ≈ seconds) then reads `units/`.
+- No-op short-circuit, under any admission: when the previous run is complete
+  (`run.json` success, no failed crate, no missing unit, every listed unit file
+  readable) and the `.rs` stamps equal `sources.json`, its units are served
+  without invoking cargo. Status `reused` (`ranCargoCheck: false`, prime shows
+  "cache hit"), identity unchanged, so downstream caches keyed on it still hit.
+  A partial previous run skips this and goes through the rules below. `run.json`
+  lists the units of the last run, taken from cargo `--message-format=json`
+  `compiler-artifact` messages, fresh ones included. Unit files not listed are
+  deleted, which is GC for renamed or removed targets and feature flips.
 - `identity = envKey + sha256(sorted unit file names + sizes + mtimes)`. It is
   exposed like `RustAnalyzerScipIndex.identity` so downstream caches key on it.
 - Latch: environment failures (pin missing rustc-dev, build of the driver fails,
@@ -375,8 +393,20 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
   cargo reports canonical paths). A failure that names no directory (a
   stderr-only package name) or missing units accept any changed file; a failed
   registry, git or out-of-root path crate never triggers. Then cargo runs, and
-  its fingerprints keep the healthy crates warm. A previous run with no failures
-  never spawns under reuse-only. No new state is persisted.
+  its fingerprints keep the healthy crates warm. This rule may spawn into a cold
+  target dir: without it the failed crates keep no rows until the next bulk
+  pass. No new state is persisted.
+- Warm incremental spawn: reuse-only admission is also upgraded to a spawn when
+  the target dir is WARM (a `run.json` exists for the envKey and its `target/`
+  exists on disk) AND a `.rs` file was added, removed or re-stamped against
+  `sources.json` (or none was recorded). Edited files then get driver rows
+  instead of falling back to static resolution. Without a warm dir, reuse-only
+  re-serves the previous run (or answers `noCache`) and never starts a cold
+  check. The decision lives in the adapter (`acquireRustcCallSites`): the
+  admission is the pass-index domain's (a share of the project's files), the
+  target dir is the adapter's.
+- `spawn: "never"` (the working-tree graph build, which runs under a short wall
+  budget) disables both upgrades: cargo never runs there.
 
 ### 8.5 Adapter + strategy integration: REPLACE the SCIP slot (owner decision 2026-10-23)
 
