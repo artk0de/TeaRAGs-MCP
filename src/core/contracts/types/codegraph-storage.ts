@@ -11,6 +11,7 @@
  * `codegraph.ts` barrel.
  */
 
+import type { RustcDriverStatusRecord } from "../rustc-driver-status.js";
 import type {
   FieldAccessKind,
   FieldAccessOwnerKind,
@@ -1011,6 +1012,16 @@ export interface CodegraphStorageMaintenance {
    * the daemon proxy so MCP clients can read it without holding the DuckDB lock.
    */
   getRunStats: () => Promise<ResolveRunStatsRow[]>;
+  /**
+   * Replace the collection's rustc call-site driver status (bd s3i8m) with the
+   * one a codegraph run that resolved Rust reported. At most one record.
+   */
+  recordRustcDriverStatus: (record: RustcDriverStatusRecord) => Promise<void>;
+  /**
+   * The last recorded rustc driver status; null when no run that resolved Rust
+   * recorded one. Routed through the daemon proxy like {@link getRunStats}.
+   */
+  getRustcDriverStatus: () => Promise<RustcDriverStatusRecord | null>;
   /**
    * Count emitted method edges grouped by `edge_kind` (exact / cone / poly-base
    * / dynamic / registry). The exact-vs-fan-out split is a precision-confidence

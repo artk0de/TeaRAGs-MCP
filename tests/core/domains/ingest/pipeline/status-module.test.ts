@@ -203,6 +203,52 @@ describe("StatusModule", () => {
         expect(bareCall?.resolveSuccessRate).toBeCloseTo(60 / 70, 8);
       });
 
+      // bd s3i8m — the rustc driver outcome the enrichment worker persisted with
+      // the run is read back from the same codegraph DB, so status and prime
+      // report what the last Rust resolve pass did.
+      it("surfaces the persisted rustc driver status", async () => {
+        await createTestFile(codebaseDir, "calc.ts", "export function run(): number {\n  return 1;\n}\n");
+        await ingest.indexCodebase(codebaseDir);
+        (ingest as any).indexingOps.status.codegraphPool = {
+          listCollectionDbNames: () => ["code_cg_v1"],
+          acquireReader: async () => ({
+            graphDb: {
+              getRunStats: async () => [],
+              getEdgeKindDistribution: async () => [],
+              getRustcDriverStatus: async () => ({
+                status: { outcome: "latched", reason: "allUnitsFailed", detail: "E0463" },
+                recordedAtMs: 5,
+              }),
+              close: async () => undefined,
+            },
+          }),
+        };
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.rustcDriver).toEqual({ outcome: "latched", reason: "allUnitsFailed", detail: "E0463" });
+      });
+
+      it("omits rustcDriver when no Rust resolve pass recorded one", async () => {
+        await createTestFile(codebaseDir, "calc.ts", "export function run(): number {\n  return 1;\n}\n");
+        await ingest.indexCodebase(codebaseDir);
+        (ingest as any).indexingOps.status.codegraphPool = {
+          listCollectionDbNames: () => ["code_cg_v1"],
+          acquireReader: async () => ({
+            graphDb: {
+              getRunStats: async () => [],
+              getEdgeKindDistribution: async () => [],
+              getRustcDriverStatus: async () => null,
+              close: async () => undefined,
+            },
+          }),
+        };
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status).not.toHaveProperty("rustcDriver");
+      });
+
       it("omits codegraphResolve when no codegraph pool is wired", async () => {
         await createTestFile(codebaseDir, "plain.ts", "export const X = 1;\n");
         await ingest.indexCodebase(codebaseDir);

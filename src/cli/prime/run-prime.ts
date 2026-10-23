@@ -318,6 +318,8 @@ export async function runPrime(input: {
         path,
         languages: Object.keys(metrics?.distributions?.language ?? {}),
       }),
+      // What the last Rust resolve pass's driver did, as the codegraph run persisted it (bd s3i8m).
+      rustcDriver: status.value.rustcDriver ?? null,
       drift: drift.status === "fulfilled" ? drift.value : null,
       update: update.status === "fulfilled" ? update.value : null,
       memory: memory.status === "fulfilled" ? memory.value : null,

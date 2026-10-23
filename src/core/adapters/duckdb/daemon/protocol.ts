@@ -1,3 +1,4 @@
+import type { RustcDriverStatusRecord } from "../../../contracts/rustc-driver-status.js";
 import type {
   GraphDbClient,
   IdentifierCalleeScopeQuery,
@@ -114,6 +115,9 @@ export const DAEMON_OPS = [
   // own op rather than a wider `recordRunStats` payload, so a daemon from an
   // older build never receives a params shape it predates.
   "recordFileResolveStats",
+  // The rustc call-site driver's outcome of the run (bd s3i8m). REQUIRED: an
+  // older daemon is restarted at handshake.
+  "recordRustcDriverStatus",
   "computeAndPersistCyclesAndSignals",
   // Baseline refresh for the derived-signal drift diff (bd tea-rags-mcp-a2ddb).
   // A WRITE: it replaces both `cg_*_signals_prev` tables in one transaction.
@@ -154,6 +158,8 @@ export const DAEMON_OPS = [
   "hasData",
   "getRunStats",
   "getEdgeKindDistribution",
+  // Read by status and prime (bd s3i8m). REQUIRED like its write.
+  "getRustcDriverStatus",
   "listAllSymbols",
   "listPass1Aggregates",
   // Hierarchy dependencies read at the barrier (bd tea-rags-mcp-7t2ee). REQUIRED:
@@ -348,6 +354,7 @@ export interface DaemonOpParamsMap {
   rebuildEdgeFileTargetIndex: NoDaemonOpParams;
   recordRunStats: { rows: ResolveRunStatsRow[] };
   recordFileResolveStats: { write: FileResolveStatsWrite };
+  recordRustcDriverStatus: { record: RustcDriverStatusRecord };
   computeAndPersistCyclesAndSignals: NoDaemonOpParams;
   refreshSymbolSignalsPrev: NoDaemonOpParams;
   compactStorage: NoDaemonOpParams;
@@ -371,6 +378,7 @@ export interface DaemonOpParamsMap {
   hasData: NoDaemonOpParams;
   getRunStats: NoDaemonOpParams;
   getEdgeKindDistribution: NoDaemonOpParams;
+  getRustcDriverStatus: NoDaemonOpParams;
   listAllSymbols: NoDaemonOpParams;
   listPass1Aggregates: { scope: Pass1AggregateReadScope };
   listHierarchyDependencies: { scope: Pass1AggregateReadScope };

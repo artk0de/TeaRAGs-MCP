@@ -69,6 +69,7 @@ import { SQL_062_CG_RESIDUAL_DOWNSTREAM_GROUP } from "./062-cg-residual-downstre
 import { SQL_063_CG_RESIDUAL_CLASS_SETS } from "./063-cg-residual-class-sets.js";
 import { SQL_064_CG_RESIDUAL_SCHEMA_ATTRIBUTES } from "./064-cg-residual-schema-attributes.js";
 import { SQL_065_CG_RESIDUAL_CALIBRATION } from "./065-cg-residual-calibration.js";
+import { SQL_066_CG_RUSTC_DRIVER_STATUS } from "./066-cg-rustc-driver-status.js";
 
 export type { DatabaseMigration } from "../runner.js";
 
@@ -142,4 +143,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "063-cg-residual-class-sets.sql", sql: SQL_063_CG_RESIDUAL_CLASS_SETS },
   { filename: "064-cg-residual-schema-attributes.sql", sql: SQL_064_CG_RESIDUAL_SCHEMA_ATTRIBUTES },
   { filename: "065-cg-residual-calibration.sql", sql: SQL_065_CG_RESIDUAL_CALIBRATION },
+  { filename: "066-cg-rustc-driver-status.sql", sql: SQL_066_CG_RUSTC_DRIVER_STATUS },
 ];

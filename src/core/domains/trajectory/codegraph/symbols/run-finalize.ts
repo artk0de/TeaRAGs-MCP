@@ -10,6 +10,7 @@
 import { createReadStream, existsSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline";
 
+import { rustcDriverStatusOf } from "../../../../contracts/rustc-driver-status.js";
 import type {
   ExtractionSink,
   FileExtraction,
@@ -159,4 +160,21 @@ export async function persistRunResolveStats(
     files,
     completeLanguages: wholeCorpus ? [...new Set(files.map((f) => f.language))] : [],
   });
+}
+
+/**
+ * Persist how the rustc call-site driver settled on this run (bd s3i8m), read
+ * off the per-language resolver report. The run executes in the enrichment
+ * worker, so the codegraph DB is how the outcome reaches status and prime;
+ * `recordedAtMs` lets an index run tell its own record from an earlier one's.
+ * A run that resolved no Rust reports none and leaves the last record standing.
+ */
+export async function persistRustcDriverStatus(
+  resolvers: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
+  graphDb: GraphDbClient,
+  recordedAtMs: number,
+): Promise<void> {
+  const status = rustcDriverStatusOf(resolvers);
+  if (status === undefined) return;
+  await graphDb.recordRustcDriverStatus({ status, recordedAtMs });
 }

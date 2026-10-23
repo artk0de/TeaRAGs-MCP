@@ -270,6 +270,7 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
   recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows)),
   recordFileResolveStats: write(async (graphDb, p) => graphDb.recordFileResolveStats(p.write)),
+  recordRustcDriverStatus: write(async (graphDb, p) => graphDb.recordRustcDriverStatus(p.record)),
   computeAndPersistCyclesAndSignals: write(async (graphDb, _p, signal) =>
     computeAndPersistCyclesAndSignals(graphDb, signal),
   ),
@@ -402,6 +403,7 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   hasData: read(async (graphDb) => graphDb.hasData()),
   getRunStats: read(async (graphDb) => graphDb.getRunStats()),
   getEdgeKindDistribution: read(async (graphDb) => graphDb.getEdgeKindDistribution()),
+  getRustcDriverStatus: read(async (graphDb) => graphDb.getRustcDriverStatus()),
   listAllSymbols: read(async (graphDb) => graphDb.listAllSymbols()),
   listPass1Aggregates: read(async (graphDb, p) => graphDb.listPass1Aggregates(p.scope)),
   listHierarchyDependencies: read(async (graphDb, p) => graphDb.listHierarchyDependencies(p.scope)),

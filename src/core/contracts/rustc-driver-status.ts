@@ -28,6 +28,67 @@ export interface RustcDriverStatus {
   failedCrates?: readonly string[];
 }
 
+/**
+ * The status as the codegraph run persisted it (bd s3i8m): written by the
+ * enrichment worker's finalize, read later by status and prime. `recordedAtMs`
+ * tells an index run whether the record is its own or an earlier run's.
+ */
+export interface RustcDriverStatusRecord {
+  status: RustcDriverStatus;
+  recordedAtMs: number;
+}
+
+/**
+ * The driver status of one codegraph pass, read off the per-language resolver
+ * report (`CallEdgeResolutionRunner#resolverDiagnostics`): the Rust resolver's
+ * `rustcCallSites` acquisition. Absent when no Rust pass reported one. The
+ * switched-off and toolchain-less skips are the two "never ran" verdicts the
+ * line renders apart from an ordinary skip.
+ */
+export function rustcDriverStatusOf(
+  resolvers: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
+): RustcDriverStatus | undefined {
+  const acquisition = resolvers.rust?.rustcCallSites;
+  if (typeof acquisition !== "object" || acquisition === null) return undefined;
+  const reported = acquisition as Record<string, unknown>;
+  const reason = stringField(reported, "reason");
+  const hint = stringField(reported, "hint");
+  switch (reported.outcome) {
+    case "indexed":
+      return {
+        outcome: "indexed",
+        ...definedFields({
+          cacheHit: typeof reported.cacheHit === "boolean" ? reported.cacheHit : undefined,
+          wallMs: numberField(reported, "wallMs"),
+          units: numberField(reported, "units"),
+          failedCrates: Array.isArray(reported.failedCrates) ? (reported.failedCrates as string[]) : undefined,
+        }),
+      };
+    case "latched":
+      return { outcome: "latched", ...definedFields({ reason, detail: stringField(reported, "detail"), hint }) };
+    case "skipped":
+      if (reason === "disabled") return { outcome: "off" };
+      if (reason === "unavailable") return { outcome: "unavailable", ...definedFields({ hint }) };
+      return { outcome: "skipped", ...definedFields({ reason, hint }) };
+    default:
+      return undefined;
+  }
+}
+
+function stringField(reported: Record<string, unknown>, key: string): string | undefined {
+  const value = reported[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberField(reported: Record<string, unknown>, key: string): number | undefined {
+  const value = reported[key];
+  return typeof value === "number" ? value : undefined;
+}
+
+function definedFields<T extends Record<string, unknown>>(fields: T): Partial<T> {
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
 const SUBJECT = "rustc driver:";
 const HINT_SUBJECT_PREFIX = "rustc call-site driver unavailable — ";
 const FAILED_NAMES_SHOWN = 3;
