@@ -193,6 +193,9 @@ describe("renderCodexHarness", () => {
     const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
     expect(Object.keys(hooks).sort()).toEqual(["SessionStart", "SubagentStart"]);
     expect(JSON.stringify(hooks)).not.toContain("CLAUDE_");
+    // A cold `tea-rags prime` boots the server (measured 12–26 s); `project exist` ~4 s.
+    expect(hooks.SessionStart[0].hooks[0].timeout).toBeGreaterThanOrEqual(60);
+    expect(hooks.SubagentStart[0].hooks[0].timeout).toBeGreaterThanOrEqual(30);
     const marketplace = JSON.parse(await renderCodexMarketplace(ROOT));
     expect(marketplace.plugins[0].source).toEqual({ source: "local", path: "./harness/codex/tea-rags" });
     expect(rendered.has("tea-rags/.codex-plugin/plugin.json")).toBe(true);

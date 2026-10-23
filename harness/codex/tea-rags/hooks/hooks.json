@@ -6,7 +6,7 @@
           {
             "type": "command",
             "command": "tea-rags prime \"$PWD\"",
-            "timeout": 15
+            "timeout": 60
           }
         ]
       }
@@ -17,7 +17,7 @@
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/subagent-block.sh",
-            "timeout": 10
+            "timeout": 30
           }
         ]
       }

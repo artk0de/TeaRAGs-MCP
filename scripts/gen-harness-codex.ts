@@ -343,9 +343,9 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
     `${PLUGIN_NAME}/hooks/hooks.json`,
     json({
       hooks: {
-        SessionStart: [{ hooks: [{ type: "command", command: 'tea-rags prime "$PWD"', timeout: 15 }] }],
+        SessionStart: [{ hooks: [{ type: "command", command: 'tea-rags prime "$PWD"', timeout: 60 }] }],
         SubagentStart: [
-          { hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/subagent-block.sh`, timeout: 10 }] },
+          { hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/subagent-block.sh`, timeout: 30 }] },
         ],
       },
     }),
