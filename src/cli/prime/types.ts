@@ -5,6 +5,7 @@ import type {
   IndexMetrics,
   IndexStatus,
   LanguageCapability,
+  RustcDriverStatus,
 } from "../../core/api/public/index.js";
 import type { UpdateStatus } from "../update-check/types.js";
 
@@ -21,6 +22,8 @@ export interface PrimeData {
   path: string;
   /** Registered alias for this project, null when no registry entry has a name. */
   projectName: string | null;
+  /** How the rustc call-site driver settled (bd s3i8m T9). Absent / null = no line. */
+  rustcDriver?: RustcDriverStatus | null;
   /**
    * Registry entry backing this project — source of the effective-params
    * `registry:` line. Optional/null when no entry matched (heuristic path).

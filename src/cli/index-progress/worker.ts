@@ -176,6 +176,7 @@ export async function runIndexWorker(
   // So is the rust-analyzer install hint (bd s3i8m.6): one field on IndexStats,
   // rendered by both the human block and the --json object.
   const rustAnalyzerHint = indexStats.rustAnalyzerHint ? { rustAnalyzerHint: indexStats.rustAnalyzerHint } : {};
+  const rustcDriver = indexStats.rustcDriver ? { rustcDriver: indexStats.rustcDriver } : {};
   // A scoped force's outcome is a fact of this run too (bd tea-rags-mcp-j4oww).
   const rechunked = indexStats.changeDetails;
   const scopedRechunk =
@@ -196,6 +197,7 @@ export async function runIndexWorker(
       enrichmentMetrics: indexStats.enrichmentMetrics,
       ...worktreeSeed,
       ...rustAnalyzerHint,
+      ...rustcDriver,
       ...scopedRechunk,
       ...(earlyCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: earlyCodegraphSizeBytes } : {}),
     },
@@ -223,6 +225,7 @@ export async function runIndexWorker(
     enrichmentMetrics: indexStats.enrichmentMetrics,
     ...worktreeSeed,
     ...rustAnalyzerHint,
+    ...rustcDriver,
     ...scopedRechunk,
     ...(finalCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: finalCodegraphSizeBytes } : {}),
   };

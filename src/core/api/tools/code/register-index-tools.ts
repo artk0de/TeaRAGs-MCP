@@ -4,7 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { formatWorktreeSeedReport, type App, type IndexStats } from "../../public/index.js";
+import { formatRustcDriverLine, formatWorktreeSeedReport, type App, type IndexStats } from "../../public/index.js";
 import { formatEnrichmentStatus } from "../formatters/enrichment.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import * as schemas from "../schemas.js";
@@ -114,6 +114,9 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
       // The run's one non-fatal notice about an optional binary (bd s3i8m.6),
       // filled once by IndexingOps — the CLI renders the same field.
       if (stats.status !== "failed" && stats.rustAnalyzerHint) statusMessage += `\n\n⚠ ${stats.rustAnalyzerHint}`;
+      if (stats.status !== "failed" && stats.rustcDriver) {
+        statusMessage += `\n\n${formatRustcDriverLine(stats.rustcDriver)}`;
+      }
 
       return {
         content: [{ type: "text" as const, text: statusMessage }],

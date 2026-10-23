@@ -4,6 +4,7 @@
  * App-facing types only. Internal pipeline types stay in core/types.ts.
  */
 
+import type { RustcDriverStatus } from "../../../contracts/rustc-driver-status.js";
 import type { ResidualPassReport } from "../../../contracts/types/codegraph-residual.js";
 import type { EnrichmentHealthMap } from "../../../contracts/types/enrichment.js";
 import {
@@ -201,6 +202,8 @@ export interface IndexStats {
    * IndexingOps; the MCP tool and the CLI both render from this field.
    */
   rustAnalyzerHint?: string;
+  /** How the rustc call-site driver settled for this run (bd s3i8m T9); rendered as one line. */
+  rustcDriver?: RustcDriverStatus;
 }
 
 export interface ChangeStats {
@@ -298,6 +301,8 @@ export interface IndexStatus {
   worktreeSeed?: WorktreeSeedReport;
   /** The run's rust-analyzer install hint, attached by the CLI worker from `IndexStats.rustAnalyzerHint`. */
   rustAnalyzerHint?: string;
+  /** How the rustc call-site driver settled for this run (bd s3i8m T9); rendered as one line. */
+  rustcDriver?: RustcDriverStatus;
   /**
    * The collection's last residual pass in this process (`--resolve-residual`,
    * or the cache-only re-apply of an index run). Never persisted.

@@ -353,3 +353,39 @@ describe("get_index_status — rust-analyzer install hint (s3i8m.6)", () => {
     expect(result.content[0].text).not.toContain("rust-analyzer");
   });
 });
+
+describe("get_index_status — rustc driver line (s3i8m T9)", () => {
+  function harness(rustcDriver?: unknown) {
+    const captured = new Map<string, ToolHandler>();
+    const register = vi.fn((_server: unknown, name: string, _config: unknown, handler: ToolHandler) => {
+      captured.set(name, handler);
+    });
+    const app = {
+      getIndexStatus: vi.fn().mockResolvedValue({
+        isIndexed: true,
+        status: "indexed",
+        collectionName: "code_abc",
+        chunksCount: 100,
+        ...(rustcDriver ? { rustcDriver } : {}),
+      }),
+      getIndexMetrics: vi.fn(async () => ({ distributions: { language: {} } })),
+      resolveRustAnalyzerInstallHint: vi.fn(() => null),
+      checkIndexDrift: vi.fn().mockResolvedValue(null),
+    } as unknown as App;
+    registerStatusTools({} as Parameters<typeof registerStatusTools>[0], { app, register: register as never });
+    return captured.get("get_index_status")!;
+  }
+
+  it("appends one driver line when the status carries it", async () => {
+    const handler = harness({ outcome: "indexed", cacheHit: false, units: 3, wallMs: 5000 });
+    const { text } = (await handler({ path: "/repo" }, {})).content[0];
+    expect(text.split("\n").filter((l) => l.startsWith("rustc driver:"))).toEqual([
+      "rustc driver: indexed (cargo check ran build scripts and proc macros) · units 3 · 5 s",
+    ]);
+  });
+
+  it("appends nothing without a driver status", async () => {
+    const { text } = (await harness()({ path: "/repo" }, {})).content[0];
+    expect(text).not.toContain("rustc driver");
+  });
+});

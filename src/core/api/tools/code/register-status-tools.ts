@@ -5,6 +5,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
+  formatRustcDriverLine,
   isOptimizerFailure,
   renderOptimizerRecoveryCommand,
   type App,
@@ -109,6 +110,7 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
 
       const rustAnalyzerHint = await rustAnalyzerHintOf(app, status.indexPath ?? path);
       if (rustAnalyzerHint) text += `\n\n${rustAnalyzerHint}`;
+      if (status.rustcDriver) text += `\n\n${formatRustcDriverLine(status.rustcDriver)}`;
       return formatMcpText(text);
     },
   );

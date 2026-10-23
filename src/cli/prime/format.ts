@@ -1,6 +1,7 @@
 import {
   formatResolveRate,
   formatResolveRateCell,
+  formatRustcDriverLine,
   isOptimizerFailure,
   renderOptimizerRecoveryCommand,
   resolveRateMiss,
@@ -165,6 +166,11 @@ function formatDigest(data: PrimeData, now: Date, debug: boolean): string {
   if (data.rustAnalyzerHint) {
     lines.push("");
     lines.push(`⚠ ${data.rustAnalyzerHint}`);
+  }
+
+  if (data.rustcDriver) {
+    lines.push("");
+    lines.push(formatRustcDriverLine(data.rustcDriver));
   }
 
   for (const language of thresholdLanguages) {
