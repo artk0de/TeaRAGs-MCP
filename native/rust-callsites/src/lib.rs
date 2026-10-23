@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 pub use cli::cli_main;
 
 /// Version of the `run.json` / unit-file layout this build writes.
-pub const CALLSITES_FORMAT: u32 = 3;
+pub const CALLSITES_FORMAT: u32 = 4;
 
 /// Name of the wrapper binary, looked up next to the CLI's own executable.
 pub const DRIVER_BINARY: &str = "tearags-rust-callsites-driver";

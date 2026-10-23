@@ -23,16 +23,20 @@
  *   answers null rather than picking one.
  * - A derived impl (`implIsDerived`) answers `inProject: false` with the
  *   package still a workspace crate, and carries `implIsDerived: true`.
+ * - A definition a macro generated (format 4 `defExpansion`) carries that
+ *   expansion — position fields only for an in-project macro; a malformed
+ *   expansion is dropped, the row kept.
  * - Malformed lines are skipped; decoding never throws.
  *
  * Memory: tikv emits ~425k rows. Strings are interned once, each served row is
- * eight integers in one flat array, and each file keeps one `Map` from
+ * nine integers in one flat array, and each file keeps one `Map` from
  * position key to row offset. The `RustCallSiteDefinition` is built on lookup.
  */
 
 import type {
   RustCallSiteDefinition,
   RustCallSiteIndex,
+  RustDefinitionExpansion,
   RustIndirectCalleeKind,
 } from "../../contracts/types/language.js";
 
@@ -41,8 +45,11 @@ const MAX_COLUMN = 0x100000;
 /** Marks a position claimed by two non-identical rows. */
 const AMBIGUOUS = -1;
 const NONE = -1;
-/** Ints per row in the flat store: callee, crate, resolvedImpl, traitPath, defRelPath, defLine, flags, kind. */
-const STRIDE = 8;
+/**
+ * Ints per row in the flat store: callee, crate, resolvedImpl, traitPath,
+ * defRelPath, defLine, flags, kind, defExpansion (the interned canonical JSON).
+ */
+const STRIDE = 9;
 const FLAG_IN_PROJECT = 1;
 const FLAG_DERIVED_IMPL = 2;
 
@@ -73,6 +80,7 @@ const INDIRECT_KIND_INDEX: ReadonlyMap<string, number> = new Map([
 /** Origins whose position is the token they name; `macro` rows sit on the invocation's name token instead. */
 const SERVED_ORIGINS: ReadonlySet<string> = new Set(["source", "macroInvocation"]);
 const MACRO_INVOCATION = "macroInvocation";
+const EXPANSION_KINDS: ReadonlySet<string> = new Set(["bang", "derive", "attr"]);
 
 export interface RustcCallSiteDecodeOptions {
   /** Crate names the driver ran on (workspace members). Callee crates of in-project, trait-free rows are added. */
@@ -99,6 +107,19 @@ export function decodeRustcCallSites(
     }
     return index;
   };
+  // Expansions repeat per macro (every method one `bitflags!` writes): one object per distinct expansion.
+  const expansions: RustDefinitionExpansion[] = [];
+  const expansionIndex = new Map<string, number>();
+  const internExpansion = (expansion: RustDefinitionExpansion): number => {
+    const key = JSON.stringify(expansion);
+    let index = expansionIndex.get(key);
+    if (index === undefined) {
+      index = expansions.length;
+      expansions.push(expansion);
+      expansionIndex.set(key, index);
+    }
+    return index;
+  };
   const rows: number[] = [];
   const byFile = new Map<string, Map<number, number>>();
   const workspaceCrates = new Set<string>(options.workspaceCrates ?? []);
@@ -111,7 +132,7 @@ export function decodeRustcCallSites(
       // `io::Read::read`), so only a call with no trait proves its callee crate is ours.
       if (row.inProject && row.traitPath === null) workspaceCrates.add(row.calleeCrate);
       if (!SERVED_ORIGINS.has(row.origin) || row.col >= MAX_COLUMN) continue;
-      const packed = pack(row, intern);
+      const packed = pack(row, intern, internExpansion);
       let positions = byFile.get(row.relPath);
       if (positions === undefined) {
         positions = new Map();
@@ -134,7 +155,7 @@ export function decodeRustcCallSites(
       if (utf16Col < 0 || utf16Col >= MAX_COLUMN || line < 1) return null;
       const offset = byFile.get(relPath)?.get(positionKey(line, utf16Col));
       if (offset === undefined || offset === AMBIGUOUS) return null;
-      return describe(rows, offset, strings, workspaceCrates);
+      return describe(rows, offset, strings, workspaceCrates, expansions);
     },
   };
 }
@@ -155,6 +176,7 @@ interface ParsedRow {
   inProject: boolean;
   defRelPath: string | null;
   defLine: number | null;
+  defExpansion: RustDefinitionExpansion | null;
 }
 
 function* lines(text: string): Iterable<string> {
@@ -205,10 +227,33 @@ function parseRow(line: string): ParsedRow | null {
     inProject: r.inProject === true,
     defRelPath: typeof r.defRelPath === "string" ? r.defRelPath : null,
     defLine,
+    defExpansion: parseExpansion(r.defExpansion),
   };
 }
 
-function pack(row: ParsedRow, intern: (value: string) => number): number[] {
+/** A well-formed `defExpansion` in canonical key order, position fields only when present; else null. */
+function parseExpansion(raw: unknown): RustDefinitionExpansion | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const e = raw as Record<string, unknown>;
+  const { kind, macro, macroDefPath, macroInProject, macroDefRelPath, macroDefLine, macroDefName } = e;
+  if (typeof kind !== "string" || !EXPANSION_KINDS.has(kind)) return null;
+  if (typeof macro !== "string" || typeof macroDefPath !== "string" || typeof macroInProject !== "boolean") return null;
+  return {
+    kind: kind as RustDefinitionExpansion["kind"],
+    macro,
+    macroDefPath,
+    macroInProject,
+    ...(typeof macroDefRelPath === "string" ? { macroDefRelPath } : {}),
+    ...(Number.isInteger(macroDefLine) ? { macroDefLine: macroDefLine as number } : {}),
+    ...(typeof macroDefName === "string" ? { macroDefName } : {}),
+  };
+}
+
+function pack(
+  row: ParsedRow,
+  intern: (value: string) => number,
+  internExpansion: (expansion: RustDefinitionExpansion) => number,
+): number[] {
   const served = row.inProject && !row.implIsDerived && row.defRelPath !== null && row.defLine !== null;
   const kind = (row.indirect ? INDIRECT_KIND_INDEX : DEF_KIND_INDEX).get(row.defKind) ?? OTHER_SLOT;
   return [
@@ -220,6 +265,7 @@ function pack(row: ParsedRow, intern: (value: string) => number): number[] {
     served ? (row.defLine ?? 0) : 0,
     (served ? FLAG_IN_PROJECT : 0) | (row.implIsDerived ? FLAG_DERIVED_IMPL : 0),
     kind,
+    row.defExpansion === null ? NONE : internExpansion(row.defExpansion),
   ];
 }
 
@@ -233,6 +279,7 @@ function describe(
   offset: number,
   strings: readonly string[],
   workspaceCrates: ReadonlySet<string>,
+  expansions: readonly RustDefinitionExpansion[],
 ): RustCallSiteDefinition {
   const at = (field: number): number => rows[offset + field] ?? NONE;
   const text = (field: number): string | undefined => (at(field) === NONE ? undefined : strings[at(field)]);
@@ -261,6 +308,7 @@ function describe(
     ...(traitName !== undefined && resolvedImpl !== undefined ? { implTrait: traitName } : {}),
     ...(traitName !== undefined && resolvedImpl === undefined ? { declaringTrait: traitName } : {}),
     ...((at(6) & FLAG_DERIVED_IMPL) === 0 ? {} : { implIsDerived: true }),
+    ...(at(8) === NONE ? {} : { defExpansion: expansions[at(8)] }),
   };
   if ((at(6) & FLAG_IN_PROJECT) === 0) return { ...base, inProject: false };
   return { ...base, inProject: true, relPath: text(4) ?? "", line: at(5) };

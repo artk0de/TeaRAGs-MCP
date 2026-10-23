@@ -2,3 +2,8 @@
 name = "fx_core"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+fx_derive = { path = "../derive" }
+fx_dep_derive = { path = "../../deps/fx_dep_derive" }
+fx_dep_macros = { path = "../../deps/fx_dep_macros" }

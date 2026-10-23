@@ -675,13 +675,19 @@ export interface RustcDriverWarm {
   inProjectUnmapped?: number;
   /** Closure / fn pointer / Fn-bound param callee rows the pass dropped (RESIDUAL R4); absent = none counted. */
   localCallee?: number;
+  /** Macro-generated definition rows the pass decided (format 4); absent = none counted. */
+  generated?: number;
+  /** Of those, project-macro rows whose macro mapped to no table symbol (dropped); absent = none counted. */
+  generatedUnmapped?: number;
 }
 
 /** The one `RUSTC-DRIVER` report line. */
 export function describeRustcDriverWarm(warm: RustcDriverWarm): string {
-  const unmapped = warm.inProjectUnmapped === undefined ? "" : ` · inProjectUnmapped ${warm.inProjectUnmapped}`;
-  const localCallee = warm.localCallee === undefined ? "" : ` · localCallee ${warm.localCallee}`;
-  return `RUSTC-DRIVER warm ${(warm.warmMs / 1000).toFixed(2)}s · ${warm.status} · units ${warm.units} · failed ${warm.failed}${unmapped}${localCallee}`;
+  const counters = (["inProjectUnmapped", "localCallee", "generated", "generatedUnmapped"] as const)
+    .filter((key) => warm[key] !== undefined)
+    .map((key) => ` · ${key} ${warm[key]}`)
+    .join("");
+  return `RUSTC-DRIVER warm ${(warm.warmMs / 1000).toFixed(2)}s · ${warm.status} · units ${warm.units} · failed ${warm.failed}${counters}`;
 }
 
 /** `--rust-analyzer`: the warm's wall time and how the SCIP acquisition ended. */
@@ -1110,6 +1116,8 @@ export async function run(
       ...rustcDriverWarm,
       inProjectUnmapped: counted("inProjectUnmapped"),
       localCallee: counted("localCallee"),
+      generated: counted("generated"),
+      generatedUnmapped: counted("generatedUnmapped"),
     };
   }
 

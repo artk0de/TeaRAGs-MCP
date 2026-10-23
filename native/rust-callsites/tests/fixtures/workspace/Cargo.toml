@@ -1,3 +1,3 @@
 [workspace]
-members = ["core", "app"]
+members = ["core", "app", "derive"]
 resolver = "2"

@@ -574,8 +574,9 @@ describe.skipIf(!realDriverAvailable)(`acquireRustcCallSites — real driver (${
   it("runs cargo check over the fixture workspace and resolves a UFCS call to its impl", async () => {
     const work = mkdtempSync(join(tmpdir(), "tea-rags-callsites-ws-"));
     try {
-      cpSync(join(CRATE_DIR, "tests/fixtures/workspace"), work, { recursive: true });
-      const result = await acquireRustcCallSites(realDeps, { projectRoot: work });
+      // The whole fixtures tree: `deps/` holds path dependencies OUTSIDE the workspace root.
+      cpSync(join(CRATE_DIR, "tests/fixtures"), work, { recursive: true });
+      const result = await acquireRustcCallSites(realDeps, { projectRoot: join(work, "workspace") });
       expect(result.diagnostics.latched).toBeUndefined();
       expect(result.status).toBe("ok");
       expect(result.diagnostics.ranCargoCheck).toBe(true);
