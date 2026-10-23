@@ -148,7 +148,10 @@ labels from `rankingOverlay.file.*` when rerank surfaces them, else absent
 Reviewers by `blame*`; fast turnaround by `recent*`.
 
 Bundle goes INTO request, not a verdict. Metadata only — no raw diff, no raw git
-log:
+log. **Four sections, ALWAYS all four, named as below** (no data for one → write
+"none", never drop it): (1) per-file table with Owner AND Contributors columns,
+(2) suggested reviewers, (3) coordinated change context (taskIds), (4) risk
+flags for reviewer attention (bugFixRate / churn / silo per file):
 
 ```
 ### Reviewer context bundle

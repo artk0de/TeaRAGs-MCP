@@ -74,7 +74,10 @@ No symptom text (vague "something's off") → Step 4 without suspect block, stat
 
 ## Step 2 — Invoke $bug-hunt
 
-Invoke `Skill` tool with `$bug-hunt`, pass `symptom` (+ `pathHint`). Skill runs
+Invoke `Skill` tool with `$bug-hunt`, pass `symptom` (+ `pathHint`). **OPEN the
+bug-hunt skill and run ITS steps** (no Skill tool → read its `SKILL.md` first).
+The triage below is a summary for reading its output, NOT a substitute — running
+`rerank="bugHunt"` from this summary = Step 2 skipped. Skill runs
 `semantic_search` `rerank="bugHunt"` + own triage:
 
 - `bugFixRate "critical"` → prime suspect
@@ -114,8 +117,11 @@ Reshape `bug-hunt` PRESENT output:
 **Skipped (healthy):** <N> files with bugFixRate=healthy, no fresh / uncommitted class — likely not the root cause.
 ```
 
-0 suspects (all healthy) → state "no bug-prone zones for this symptom — root
-cause likely in recently-added untracked code or external dependency".
+0 suspects (all healthy) — incl. when the prompt/context states bug-hunt
+returned 0 = Step 2 DONE. State verbatim "no bug-prone zones for this symptom —
+root cause likely in recently-added untracked code or external dependency", then
+Step 4 WITHOUT suspect block. NEVER re-run bug-hunt / its probes / a reworded
+query, never promote healthy files, never fall back to direct `semantic_search`.
 
 ## Step 3.5 — Trace the causal chain to a suspect (optional but preferred)
 
@@ -239,6 +245,8 @@ no other query, no custom re-rank.
 
 Rules:
 
+- **Cause sentence carries literal `<file>:<line>`** (`stats-cache.ts:40`) — a
+  symbol name alone (`StatsCache#load`) fails; file:line only in Fix ≠ Cause.
 - **Every line cites source** — Cause `signals:` + each Prevention bullet names
   `<level>.<signal>=<label>` or `mechanism`. Uncited → rewrite.
 - **Regression test always present** — one bullet: test file + assertion.

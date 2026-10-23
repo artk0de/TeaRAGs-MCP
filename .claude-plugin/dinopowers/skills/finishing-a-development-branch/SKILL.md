@@ -5,8 +5,8 @@ description:
   branch diff. Triggers on "finish the branch", "ready to merge", "wrap up the
   feature", "ветка готова", "доводим до merge", "branch ready", "PR time",
   "shipping the branch", "merge ready". NOT for mid-branch interim commits or a
-  plain "done, commit it" claim. Wraps superpowers:finishing-a-development-
-  branch with tea-rags:risk-assessment over the branch diff.
+  "готово, коммить и пушь" / "done, commit and push" claim (→ verification).
+  Wraps superpowers:finishing-a-development-branch.
 ---
 
 # dinopowers: finishing-a-development-branch

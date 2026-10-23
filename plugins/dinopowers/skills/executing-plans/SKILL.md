@@ -166,6 +166,15 @@ percentiles. Need boundaries → read
 | `CAUTION` | blast radius (fanIn / imports) top 15%; OR `bugFixRate.label === "concerning"`; OR `blameDominantAuthorPct.label === "silo"`                                                               |
 | `SAFE`    | none of the above                                                                                                                                                                          |
 
+**Signals given as numbers** (prompt / user states the guard result:
+`imports=40 (top 12%)`, `bugFixRate=32%`, `shared (42%)`) = Step 2 output.
+Compute the verdict on them NOW — never defer to "the full guard result", never
+re-run. Stated rank (`top 12%`) feeds the blast row directly; stated label words
+(`shared`, `silo`, `concerning`) are labels; ONE trigger suffices — missing
+signals never block it. No trigger stated (low imports, 0% bugFix, `shared`) →
+SAFE, proceed without pausing; commit count alone never triggers. Example: top
+12% → CAUTION + "Proceed with Task 2?"; imports=2, 0%, shared → SAFE.
+
 Task verdict = worst per-file (UNSAFE > CAUTION > SAFE). Guard block:
 
 ```

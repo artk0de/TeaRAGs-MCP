@@ -129,6 +129,13 @@ Verdict ladder — check top-down, FIRST match wins, always name one verdict:
 PUSHBACK = no implementation now. Unidentified symbol in a file never blocks the
 verdict — file signals decide it.
 
+**Verdict name alone = incomplete — do its Action column.** `AGREE-WITH-SCOPE`
+response MUST carry BOTH: (1) importer list — Step 2 rows; signals given as bare
+numbers (`imports=25`) → fetch the N importers (`get_callers` /
+`hybrid_search metaOnly:true` on the symbol) and list them, never "no further
+search needed"; (2) commitment line: "update all N in this change" OR "partial:
+<which> + why acceptable".
+
 Response block:
 
 ```
@@ -142,6 +149,7 @@ Target: <symbol or file>
 - bugFixRate: <X%>
 
 Verdict: <UNVERIFIABLE | PUSHBACK | AGREE-WITH-SCOPE | AGREE-DIRECT>
+Scope (AGREE-WITH-SCOPE): importers <list of N> · commitment <update all N | partial: why>
 ```
 
 ## Step 3.5 — Trace call route (codegraph; preferred when comment names call relationship)

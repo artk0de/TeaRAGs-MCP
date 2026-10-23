@@ -120,9 +120,12 @@ impact enrichment unavailable", Step 4 without block. Never fabricate signals.
 
 ## Step 3 — Aggregate per file
 
-MUST output: (a) ONE row per file, (b) **Coordinated change candidates** — every
-taskId shared by ≥2 files, listed with its files (none shared → write "none").
-Both always, even when user only asks for "impact data".
+MUST output: (a) ONE row per file with exactly these columns, named:
+`dominantAuthor` (blame\*/recent\* per table below), `commitCount`, `ageDays`,
+`bugFixRate`, `taskIds` — "impact row" without the five names = incomplete; (b)
+**Coordinated change candidates** — every taskId shared by ≥2 files, listed with
+its files (none shared → write "none"). Both always, even when user only asks
+for "impact data".
 
 Group chunks by `relativePath` (primary key — `$risk-assessment` Phase 2:
 MERGE); plans care about files, not chunks. Per file in `fileList`: raw from
@@ -157,7 +160,7 @@ Enrichment block:
 ```
 ### tea-rags impact enrichment (rerank: blastRadius | imports+churn+ownership)
 
-| File | Owner | Churn | Age | Bugs | Tasks |
+| File | dominantAuthor | commitCount | ageDays | bugFixRate | taskIds |
 |---|---|---|---|---|---|
 | src/a.ts | Alice (82%) | 23 commits | 142d | 35% | #123, #145 |
 | src/b.ts | shared | 3 commits | 612d | 0% | — |

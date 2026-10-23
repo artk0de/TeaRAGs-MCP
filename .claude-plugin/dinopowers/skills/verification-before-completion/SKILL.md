@@ -58,15 +58,24 @@ Rest = gate input like blast ladder — address or state why not.
 Blast signal = `fanIn` when codegraph on (real dependents), else `imports`
 proxy.
 
-| Verdict        | Triggers                                                              |
-| -------------- | --------------------------------------------------------------------- |
-| `HIGH-BLAST`   | `fanIn`/`imports` top 10% of result set (or absolute: >20 dependents) |
-| `MEDIUM-BLAST` | `fanIn`/`imports` top 30% (or 5-20 dependents)                        |
-| `LOW-BLAST`    | `fanIn`/`imports` < 5 dependents                                      |
+| Verdict        | Triggers                                                              | Action (MUST state)                                                                                |
+| -------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `UNVERIFIABLE` | scan ran, returned empty (file unindexed / not in git)                | "blast radius unknown" → run FULL suite conservatively; never relabel SAFE                         |
+| `HIGH-BLAST`   | `fanIn`/`imports` top 10% of result set (or absolute: >20 dependents) | Surface block to user BEFORE verification runs; recommend FULL suite (all dependents, not own dir) |
+| `MEDIUM-BLAST` | `fanIn`/`imports` top 30% (or 5-20 dependents)                        | Run tests of the dependents' area (integration around the file)                                    |
+| `LOW-BLAST`    | `fanIn`/`imports` < 5 dependents                                      | File's own tests suffice                                                                           |
+
+`SAFE (no existing-file edits)` only when Step 1 finds no existing-file edit and
+the scan never ran. Scan given as numbers / "empty" in the prompt = Step 2
+output → name verdict AND its Action now.
 
 Prescriptive, not informational — DO NOT skip; never downgrade HIGH-BLAST to
 "probably fine" without evidence. Block says WHICH tests to run; LOW-BLAST needs
-no full suite.
+no full suite. HIGH-BLAST under time pressure ("deadline", "just the quick
+ones"): never pick a narrower set yourself — show the block, state the full
+dependent suite it requires, wait for the user's explicit override before
+running less. Say: "HIGH-BLAST on <file> — full dependent suite required.
+Running only <narrower set> needs your explicit OK, accepting the risk."
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.

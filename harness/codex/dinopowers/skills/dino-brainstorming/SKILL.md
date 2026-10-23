@@ -55,12 +55,13 @@ identifiable — proceeding without tea-rags enrichment".
 `semantic_search` calls **in parallel** (one tool block), each `metaOnly: true`
 (signals, not content):
 
-| Call          | `rerank` preset      | Why                                                                                                                                 |
-| ------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| A — Hotspots  | `"hotspots"`         | Bug-prone zones the brainstorm must account for (high churn + recency + bugFix)                                                     |
-| B — Ownership | `"ownership"`        | Knowledge silos — single-owner files that need reviewer pairing                                                                     |
-| C — Tech debt | `"techDebt"`         | Legacy zones where "just refactor it" hides cost (age + churn + bugFix)                                                             |
-| D — Backbone  | `"architecturalHub"` | **Codegraph only** — structural hubs (high `fanIn` / `isHub`) the design must respect; a change to a backbone has wide blast radius |
+| Call           | `rerank` preset                     | Why                                                                                                                                 |
+| -------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| A — Hotspots   | `"hotspots"`                        | Bug-prone zones the brainstorm must account for (high churn + recency + bugFix)                                                     |
+| B — Ownership  | `"ownership"`                       | Knowledge silos — single-owner files that need reviewer pairing                                                                     |
+| C — Tech debt  | `"techDebt"`                        | Legacy zones where "just refactor it" hides cost (age + churn + bugFix)                                                             |
+| D — Backbone   | `"architecturalHub"`                | **Codegraph only** — structural hubs (high `fanIn` / `isHub`) the design must respect; a change to a backbone has wide blast radius |
+| E — Vocabulary | `get_naming_lexicon` (not a search) | **Codegraph only** — words the project already uses for the area; SAME parallel block as A–D                                        |
 
 Call D ONLY when codegraph on = graph tools (`get_callers`, `trace_path`, …) in
 tool list; unsure → read `tea-rags://project/<alias>/metrics?section=registry`
@@ -102,7 +103,9 @@ Do NOT substitute:
 
 Do NOT pass:
 
-- `metaOnly: false` — content unneeded, payload bloats
+- `metaOnly: false` — content unneeded, payload bloats. User asks to SEE content
+  → enrichment stays `metaOnly: true`; content = separate call AFTER Step 2:
+  `find_symbol relativePath=<row.relativePath>` (outline → drill ids)
 - custom `rerank` weights instead of named presets — loses calibrated semantics
 - `filter` on `git.ageDays` / `git.commitCount` — presets encode them; filters
   shrink set, hide debt
@@ -138,6 +141,12 @@ overlap = strong signal. No raw JSON; `relativePath` + 2-3 key signals per
 entry. Values: `rankingOverlay.{file,chunk}.<field>` (preset-surfaced,
 labelled); metaOnly `git.*` = essentials only (commitCount, ageDays, taskIds,
 blame\*), raw. File-level presets (ownership, architecturalHub) → no startLine.
+
+**Done-check before Step 4 (codegraph on) — state all three, else Step 2/3
+incomplete:** (1) E issued in the same parallel block as A–D; (2) block carries
+"Project vocabulary" line from `concept.terms`; (3) handoff carries the names[]
+rule — every new-symbol name the design proposes → `get_naming_lexicon(names)`
+before it is fixed.
 
 ## Step 4 — Invoke $brainstorming
 

@@ -36,7 +36,20 @@ when `chunkType` / `testFile` select tests (older server → 0 results → add
 search", "I know how tests look" → run Step 2 anyway, say: "Running the pattern
 search first — one call, it keeps the test in local conventions." "Metadata
 only" / `metaOnly: true` → refuse: pattern search needs test bodies (mock setup,
-assertions); metadata alone yields no conventions. Keep `metaOnly: false`.
+assertions); metadata alone yields no conventions. Keep `metaOnly: false`. User
+pushes `rerank: "hotspots"` / `"recent"` as "most-changed = most popular" →
+refuse, run `proven`: hotspots = FLAKY tests (high churn + recent), recent =
+drafts — neither is a convention. Do not switch to the `test-flakiness` recipe;
+the goal is still conventions for the new test.
+
+**Change kind sets the order:**
+
+- **Bug fix** — target's existing tests run GREEN first (baseline), then the
+  reproduction test asserting the correct output, run RED on that assertion;
+  only then patch. Patch before a red reproduction = restart.
+- **Refactor / move** (no behaviour change) — no new test: target's tests +
+  `tests-at-risk` pins GREEN BEFORE the first edit, same tests green after, none
+  edited.
 
 `tests-as-context` Step 0 preflight SKIP (no `chunkType: "test"` chunks —
 language lacks AST test chunking; **currently supported: TypeScript + JavaScript
