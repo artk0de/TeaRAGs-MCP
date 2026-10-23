@@ -813,7 +813,7 @@ fn every_row_has_exactly_the_contract_fields() {
 fn run_json_lists_every_unit_and_stale_units_are_deleted() {
     let units_dir = run().out_dir.join("units");
     let run_json = &run().cold_run_json;
-    assert_eq!(run_json["format"], 4);
+    assert_eq!(run_json["format"], 5);
     assert_eq!(run_json["success"], true);
     assert_eq!(run_json["failed"], json!([]));
     assert_eq!(run_json["missing"], json!([]));
@@ -829,9 +829,9 @@ fn run_json_lists_every_unit_and_stale_units_are_deleted() {
         .filter(|n| n.ends_with(".ndjson"))
         .collect();
     assert_eq!(listed, on_disk);
-    // lib + test harness of fx_core, bin + test harness of fx_app; fx_derive's check, test
-    // harness, and the host build fx_core's derive loads.
-    assert_eq!(listed.len(), 7, "{listed:?}");
+    // lib + test harness of fx_core, bin + test harness + build script of fx_app; fx_derive's
+    // check, test harness, and the host build fx_core's derive loads.
+    assert_eq!(listed.len(), 8, "{listed:?}");
     let crates: BTreeSet<&str> = run_json["units"]
         .as_array()
         .unwrap()
@@ -840,7 +840,9 @@ fn run_json_lists_every_unit_and_stale_units_are_deleted() {
         .collect();
     assert_eq!(
         crates,
-        ["fx_app", "fx_core", "fx_derive"].into_iter().collect()
+        ["build_script_build", "fx_app", "fx_core", "fx_derive"]
+            .into_iter()
+            .collect()
     );
     assert!(!units_dir.join(format!("{STALE_UNIT}.ndjson")).exists());
     assert!(!units_dir.join(format!("{STALE_UNIT}.stats.json")).exists());
@@ -875,4 +877,36 @@ fn warm_rerun_keeps_fresh_units() {
     );
     assert_eq!(warm["deleted"], json!([]));
     assert_eq!(warm["missing"], json!([]));
+}
+
+#[test]
+fn build_script_call_sites_are_rows_of_a_kept_custom_build_unit() {
+    let project_fn = rows_at("app/build.rs", 8);
+    assert_eq!(project_fn.len(), 1, "{project_fn:#?}");
+    assert_eq!(project_fn[0]["callee"], "manifest_name");
+    assert_eq!(project_fn[0]["inProject"], true);
+    assert_eq!(project_fn[0]["defRelPath"], "app/build.rs");
+    assert_eq!(project_fn[0]["defLine"], 3);
+    let std_method = rows_at("app/build.rs", 10);
+    assert_eq!(std_method.len(), 1, "{std_method:#?}");
+    assert_eq!(std_method[0]["callKind"], "method");
+    assert_eq!(std_method[0]["inProject"], false);
+    for run_json in [&run().cold_run_json, &run().warm_run_json] {
+        let build_units: Vec<&Value> = run_json["units"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|u| u["kind"] == json!(["custom-build"]))
+            .collect();
+        assert_eq!(build_units.len(), 1, "{run_json}");
+        assert_eq!(build_units[0]["crate"], "build_script_build");
+        assert!(
+            build_units[0]["file"]
+                .as_str()
+                .unwrap()
+                .starts_with("build_script_build-"),
+            "{run_json}"
+        );
+    }
+    assert_eq!(run().warm_run_json["deleted"], json!([]));
 }

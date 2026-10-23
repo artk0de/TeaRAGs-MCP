@@ -85,7 +85,7 @@ export const RUSTC_DRIVER_DEFAULT_MAX_RSS_MB = 12_288;
 export const RUSTC_DRIVER_POLL_MS = 2000;
 
 /** The `run.json` / unit-file layout the runner reads (the crate's `CALLSITES_FORMAT`). */
-const CALLSITES_FORMAT = 4;
+const CALLSITES_FORMAT = 5;
 const HOST_COMMAND_TIMEOUT_MS = 10_000;
 const OUTPUT_TAIL_CHARS = 4096;
 const LATCH_FILE = "latch.json";
@@ -536,7 +536,10 @@ function readRunJson(deps: RustcCallSiteRunnerDeps, envDir: string): DriverRun |
     .filter((unit) => typeof unit.file === "string")
     .map((unit) => ({ file: String(unit.file), crate: typeof unit.crate === "string" ? unit.crate : "" }));
   const failed = (Array.isArray(parsed.failed) ? parsed.failed : []).filter(isRecord).map((entry) => ({
-    packageId: typeof entry.packageId === "string" ? entry.packageId : "",
+    // A failure cargo reported only on stderr (a build script that failed to run) carries the
+    // package name instead: cargo prints no package id there.
+    packageId:
+      typeof entry.packageId === "string" ? entry.packageId : typeof entry.package === "string" ? entry.package : "",
     target: typeof entry.target === "string" ? entry.target : "",
     firstError: typeof entry.firstError === "string" ? entry.firstError : "",
   }));
