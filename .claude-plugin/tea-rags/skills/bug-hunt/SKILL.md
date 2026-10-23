@@ -15,6 +15,12 @@ Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
 populations: code with bug-fix history, fresh code too young to have one,
 uncommitted edits with no git signal yet.
 
+!`tea-rags resource "tea-rags://project/{alias}/metrics?section=thresholds,resolve" --path "$PWD" || true`
+
+No `## Signal thresholds` above → read
+`tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds,resolve`
+(ReadMcpResourceTool).
+
 ## Rules
 
 1. **Execute YOURSELF** — no subagents.
@@ -63,13 +69,8 @@ uncommitted edits with no git signal yet.
    Go to step 2.
 ```
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
-answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
-`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license
+`cat` / `grep` / `Read` over code — `tea-rags://guide/freshness`.
 
 ## Fresh probe
 
@@ -88,7 +89,7 @@ population to recently changed files so it surfaces.
   caveat) → `modifiedAfter` stays default probe.
 - **Window start:** symptom onset if known (last green run, release, date user
   names); else today − N days, N = where `recent` ends: the first number of the
-  `git.file.ageDays` row's `source ≥` cell in prime `## Signal thresholds`.
+  `git.file.ageDays` row's `source ≥` cell in `## Signal thresholds`.
 - Committed history only: walk emits committed files → untracked /
   never-committed file carries NO `lastModifiedAt` → outside every time filter.
   Uncommitted edit to committed file → timestamp = last COMMIT → probe misses
@@ -199,7 +200,8 @@ fixed yet.
 Edges: no `codegraph` floor while `changedFiles` > 0 → edges touching changed
 files are the index's (`tea-rags://guide/freshness` "Addressing the Codebase").
 
-**Requires codegraph** (prime `## Enrichment` lists `codegraph.symbols`).
+**Requires codegraph** (graph tools registered; `## Codegraph resolve` = its
+resolve rate).
 Codegraph off → graph tools not registered — use Codegraph off below; never read
 an absent tool as a fact.
 
