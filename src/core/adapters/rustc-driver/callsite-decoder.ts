@@ -14,6 +14,10 @@
  * - `origin: "macroInvocation"` rows (RESIDUAL.md R3) are served at that name
  *   token as a `kind: "macro"` definition — the invoked macro's own definition
  *   (`macroDefPath`), in the project for a workspace `macro_rules!`, else external.
+ * - An indirect `callKind: "local"` row (RESIDUAL.md R4: no `calleeCrate`, a
+ *   closure / fn pointer / Fn-bound param callee) is served as a `kind: "local"`
+ *   definition carrying `indirectCallee` — nothing defined, nothing external.
+ *   A local binding of a fn item names its crate and decodes like any row.
  * - Two NON-identical source rows on one position (a different callee, or the
  *   same callee resolved differently by two units) are ambiguous: the position
  *   answers null rather than picking one.
@@ -26,7 +30,11 @@
  * position key to row offset. The `RustCallSiteDefinition` is built on lookup.
  */
 
-import type { RustCallSiteDefinition, RustCallSiteIndex } from "../../contracts/types/language.js";
+import type {
+  RustCallSiteDefinition,
+  RustCallSiteIndex,
+  RustIndirectCalleeKind,
+} from "../../contracts/types/language.js";
 
 /** Columns at or past this are never keyed (a minified line); one safe integer then keys line + column. */
 const MAX_COLUMN = 0x100000;
@@ -38,13 +46,29 @@ const STRIDE = 8;
 const FLAG_IN_PROJECT = 1;
 const FLAG_DERIVED_IMPL = 2;
 
-const KINDS = ["callable", "type", "other", "macro"] as const;
-/** Row `defKind` → index into KINDS; anything unlisted is `other`. A macro invocation decodes as defKind `macro`. */
+/** Packed kind slot → the served `kind`, plus `indirectCallee` for the R4 slots. */
+const KIND_SLOTS: readonly { kind: RustCallSiteDefinition["kind"]; indirectCallee?: RustIndirectCalleeKind }[] = [
+  { kind: "callable" },
+  { kind: "type" },
+  { kind: "other" },
+  { kind: "macro" },
+  { kind: "local", indirectCallee: "closure" },
+  { kind: "local", indirectCallee: "fnPointer" },
+  { kind: "local", indirectCallee: "fnParam" },
+];
+const OTHER_SLOT = 2;
+/** Row `defKind` → KIND_SLOTS index; anything unlisted is `other`. A macro invocation decodes as defKind `macro`. */
 const DEF_KIND_INDEX: ReadonlyMap<string, number> = new Map([
   ["fn", 0],
   ["assocFn", 0],
   ["ctor", 1],
   ["macro", 3],
+]);
+/** An indirect row's `defKind` → KIND_SLOTS index; any other defKind on such a row is malformed. */
+const INDIRECT_KIND_INDEX: ReadonlyMap<string, number> = new Map([
+  ["closure", 4],
+  ["fnPointer", 5],
+  ["fnParam", 6],
 ]);
 /** Origins whose position is the token they name; `macro` rows sit on the invocation's name token instead. */
 const SERVED_ORIGINS: ReadonlySet<string> = new Set(["source", "macroInvocation"]);
@@ -120,6 +144,8 @@ interface ParsedRow {
   line: number;
   col: number;
   origin: string;
+  /** An R4 indirect callee: no crate, no definition, the defKind names the indirection. */
+  indirect: boolean;
   callee: string;
   calleeCrate: string;
   defKind: string;
@@ -152,11 +178,15 @@ function parseRow(line: string): ParsedRow | null {
   const r = raw as Record<string, unknown>;
   // A macro invocation names its macro's definition: the callee is the macro's def path.
   const invocation = r.origin === MACRO_INVOCATION;
-  const { relPath, line: lineNo, col, origin, calleeCrate } = r;
+  // An indirect callee (a closure, fn pointer or Fn-bound param binding) has no crate.
+  const indirect = !invocation && r.callKind === "local" && r.calleeCrate === null;
+  const { relPath, line: lineNo, col, origin } = r;
+  const calleeCrate = indirect ? "" : r.calleeCrate;
   const callee = invocation ? r.macroDefPath : r.callee;
   const defKind = invocation ? "macro" : r.defKind;
   if (typeof relPath !== "string" || typeof origin !== "string") return null;
   if (typeof callee !== "string" || typeof calleeCrate !== "string" || typeof defKind !== "string") return null;
+  if (indirect && !INDIRECT_KIND_INDEX.has(defKind)) return null;
   if (!Number.isInteger(lineNo) || (lineNo as number) < 1) return null;
   if (!Number.isInteger(col) || (col as number) < 0) return null;
   const defLine = Number.isInteger(r.defLine) ? (r.defLine as number) : null;
@@ -165,6 +195,7 @@ function parseRow(line: string): ParsedRow | null {
     line: lineNo as number,
     col: col as number,
     origin,
+    indirect,
     callee,
     calleeCrate,
     defKind,
@@ -179,7 +210,7 @@ function parseRow(line: string): ParsedRow | null {
 
 function pack(row: ParsedRow, intern: (value: string) => number): number[] {
   const served = row.inProject && !row.implIsDerived && row.defRelPath !== null && row.defLine !== null;
-  const kind = DEF_KIND_INDEX.get(row.defKind) ?? KINDS.indexOf("other");
+  const kind = (row.indirect ? INDIRECT_KIND_INDEX : DEF_KIND_INDEX).get(row.defKind) ?? OTHER_SLOT;
   return [
     intern(row.callee),
     intern(row.calleeCrate),
@@ -209,11 +240,23 @@ function describe(
   const calleeCrate = text(1) ?? "";
   const resolvedImpl = text(2);
   const traitName = lastSegment(text(3));
+  const slot = KIND_SLOTS[at(7)] ?? KIND_SLOTS[OTHER_SLOT];
+  if (slot.indirectCallee !== undefined) {
+    return {
+      symbol: `rustc local ${slot.indirectCallee} ${callee}`,
+      package: "",
+      inProject: false,
+      name: callee,
+      kind: slot.kind,
+      packageInProject: false,
+      indirectCallee: slot.indirectCallee,
+    };
+  }
   const base = {
     symbol: `rustc ${calleeCrate} ${resolvedImpl ?? callee}`,
     package: calleeCrate,
     name: lastSegment(callee) ?? "",
-    kind: KINDS[at(7)] ?? "other",
+    kind: slot.kind,
     packageInProject: workspaceCrates.has(calleeCrate),
     ...(traitName !== undefined && resolvedImpl !== undefined ? { implTrait: traitName } : {}),
     ...(traitName !== undefined && resolvedImpl === undefined ? { declaringTrait: traitName } : {}),

@@ -176,6 +176,8 @@ export class RustLanguage implements LanguageProvider {
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
       hasInProjectDefinition: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.hasInProjectDefinition?.(call, ctx) ?? false,
+      targetsUndecidable: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.targetsUndecidable?.(call, ctx) ?? false,
       diagnostics: (): Record<string, unknown> | undefined => callResolver.diagnostics?.(),
     };
   }

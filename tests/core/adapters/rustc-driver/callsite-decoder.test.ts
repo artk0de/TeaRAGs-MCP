@@ -8,9 +8,9 @@ interface Row {
   col: number;
   origin: "source" | "macro";
   macro: string | null;
-  callKind: "method" | "path";
+  callKind: "method" | "path" | "local";
   callee: string;
-  calleeCrate: string;
+  calleeCrate: string | null;
   defKind: string;
   traitPath: string | null;
   implSelfType: string | null;
@@ -260,6 +260,60 @@ describe("decodeRustcCallSites", () => {
 
     it("skips an invocation row without a macro def path", () => {
       const index = decode(invocation({ macroDefPath: null }));
+      expect(index.definitionAt("src/main.rs", 10, 8)).toBeNull();
+    });
+  });
+
+  describe("local and indirect callee rows (research/rustc-driver/RESIDUAL.md R4)", () => {
+    const indirect = (defKind: string, callee = "insert"): string =>
+      row({
+        callKind: "local",
+        callee,
+        calleeCrate: null,
+        defKind,
+        inProject: false,
+        defRelPath: null,
+        defLine: null,
+      });
+
+    it("serves a local binding of a fn item like any callable row", () => {
+      const index = decode(row({ callKind: "local", callee: "fx_core::TimeStamp::new", defRelPath: "src/ts.rs" }));
+      expect(index.definitionAt("src/main.rs", 10, 8)).toEqual({
+        symbol: "rustc fx_core fx_core::TimeStamp::new",
+        package: "fx_core",
+        inProject: true,
+        relPath: "src/ts.rs",
+        line: 3,
+        name: "new",
+        kind: "callable",
+        packageInProject: true,
+      });
+    });
+
+    it.each(["closure", "fnPointer", "fnParam"] as const)(
+      "serves a %s callee as a local with no definition and its indirection kind",
+      (defKind) => {
+        const index = decode(indirect(defKind));
+        expect(index.definitionAt("src/main.rs", 10, 8)).toEqual({
+          symbol: `rustc local ${defKind} insert`,
+          package: "",
+          inProject: false,
+          name: "insert",
+          kind: "local",
+          packageInProject: false,
+          indirectCallee: defKind,
+        });
+      },
+    );
+
+    it("keeps an indirect row's position apart from a callable row's on another token", () => {
+      const index = decode(indirect("closure"), row({ col: 20 }));
+      expect(index.definitionAt("src/main.rs", 10, 8)).toMatchObject({ kind: "local", indirectCallee: "closure" });
+      expect(index.definitionAt("src/main.rs", 10, 20)).toMatchObject({ kind: "callable", inProject: true });
+    });
+
+    it("skips an indirect row of an unknown indirection kind", () => {
+      const index = decode(indirect("other"));
       expect(index.definitionAt("src/main.rs", 10, 8)).toBeNull();
     });
   });

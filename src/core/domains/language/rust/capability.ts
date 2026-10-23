@@ -157,6 +157,10 @@ export const capability: LanguageCapability = {
   //   yields unless the row is the trait's declaration; no row, a non-macro
   //   row on a macro invocation or an unmapped in-project row (counted as
   //   `inProjectUnmapped`) leaves the static chain as it was.
+  // - RESIDUAL R4 — a driver row for a closure / fn pointer / Fn-bound param
+  //   callee DROPs the call (counted as `localCallee`) and the facade's
+  //   `targetsUndecidable` moves its namesake miss to `unresolvable`; a local
+  //   binding of a fn item resolves like any in-project callable row.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

@@ -104,8 +104,10 @@ Dropped (counted in `.stats.json`): desugarings (`?`, `for`, `.await`;
 `ExpnKind::Desugaring`), bodies of `#[automatically_derived]` impls (derive
 output carries user spans, not an expansion context, so `from_expansion()`
 misses it: fixture `#[derive(Debug, Clone)]` produced phantom `source` rows on
-the field lines until filtered by the impl marker), calls of locals/closures
-(`Res::Local`), non-path callees.
+the field lines until filtered by the impl marker), non-path callees other than
+a field, and a local / field callee whose type is none of the R4 kinds below
+(`drop.indirectCalleeType`). Calls of locals/closures (`Res::Local`) were
+dropped until format 3.
 
 Macro-invocation rows (format 2, RESIDUAL.md R3): one row per user-written
 bang-macro invocation, at the macro NAME token (the last path segment before
@@ -117,6 +119,21 @@ unprefixed for the local crate), `calleeCrate` (the defining crate),
 outermost expansion whose call site is user text, so invocations nested inside
 an expansion (`write!` → `format_args!`) emit nothing. The decoder serves these
 rows as `kind: "macro"` definitions; `origin: "macro"` rows stay unserved.
+
+Local and indirect callee rows (format 3, RESIDUAL.md R4): a call whose callee
+is a local binding (`Res::Local`) or a field (`(self.f)(x)`) emits a row at that
+name token (the binding or the field name), with `callKind: "local"` and the
+callee's TYPE, references and `Box` peeled, deciding the rest. A fn item
+(`let ts = TimeStamp::new; ts(42)`) is a real definition: the row is a normal
+row for that item (`callee`, `calleeCrate`, `defKind` `fn` / `assocFn`,
+`inProject`, `defRelPath`, `defLine`). A closure, a fn pointer or an Fn-bound
+param / trait object / opaque type has no definition: `callee` is the binding or
+field name, `calleeCrate: null`, `defKind` `closure` / `fnPointer` / `fnParam`,
+`inProject: false`, every def field null. Other non-path callees (`make()(x)`,
+`fs[i](x)`) still emit nothing. The decoder serves the indirect rows as
+`kind: "local"` definitions carrying `indirectCallee`; the driver slot DROPs
+them and the Rust facade's `targetsUndecidable` classifies the miss as
+`unresolvable`.
 
 ### Mapping to `RustScipDefinition` (adapter, no strategy change needed)
 

@@ -110,6 +110,19 @@ describe("describeRustcDriverWarm (bd s3i8m T8)", () => {
       "RUSTC-DRIVER warm 1.00s · ok · units 3 · failed 0 · inProjectUnmapped 7",
     );
   });
+
+  it("appends the driver-proven local and indirect callee sites when the pass counted them (RESIDUAL R4)", () => {
+    expect(
+      describeRustcDriverWarm({
+        warmMs: 1000,
+        status: "ok",
+        units: 3,
+        failed: 0,
+        inProjectUnmapped: 0,
+        localCallee: 12,
+      }),
+    ).toBe("RUSTC-DRIVER warm 1.00s · ok · units 3 · failed 0 · inProjectUnmapped 0 · localCallee 12");
+  });
 });
 
 describe("parseArgs --rust-analyzer", () => {

@@ -20,8 +20,10 @@ import { rustCallIsMacroInvocation, type ResolverConfig } from "./shared.js";
  * mapped onto one table symbol is the edge (a re-target where a name pass
  * would have bound a namesake); a provably external target DROPs; a derived
  * impl DROPs too — derive output has no table symbol, so no pass may
- * name-match one. Anything else — no index, no position, no row, a macro
- * invocation whose row is no macro row, an unmapped definition — CONTINUEs,
+ * name-match one — and so does a closure / fn pointer / Fn-bound param callee
+ * (RESIDUAL R4, counted per pass as `localCallee`). Anything else — no index,
+ * no position, no row, a macro invocation whose row is no macro row, an
+ * unmapped definition — CONTINUEs,
  * and the static chain answers exactly as it did without the driver. An
  * in-project callable no table symbol contains is counted per pass
  * (`inProjectUnmapped`, RESIDUAL R1's gate).
@@ -30,6 +32,8 @@ export class RustcCallSiteSymbolResolutionStrategy implements SymbolResolutionSt
   readonly name = "rustcCallSites";
   /** `relPath:line:col` of every in-project callable row this pass failed to map. */
   private readonly unmappedInProjectSites = new Set<string>();
+  /** `relPath:line:col` of every closure / fn pointer / Fn-bound param callee row this pass dropped (RESIDUAL R4). */
+  private readonly localCalleeSites = new Set<string>();
   // One definition, one table symbol — no ambiguous-mode pick.
   constructor(_cfg: ResolverConfig) {}
 
@@ -37,9 +41,11 @@ export class RustcCallSiteSymbolResolutionStrategy implements SymbolResolutionSt
     const definition = authoritativeDefinitionOf(call, ctx);
     if (definition === null) return CONTINUE;
     const outcome = driverVerdict(definition, call, ctx);
+    const site = `${ctx.callerFile}:${call.memberStartLine}:${call.memberStartColumn}`;
     if (outcome.kind === "continue" && definition.inProject && definition.kind === expectedKindOf(call)) {
-      this.unmappedInProjectSites.add(`${ctx.callerFile}:${call.memberStartLine}:${call.memberStartColumn}`);
+      this.unmappedInProjectSites.add(site);
     }
+    if (definition.indirectCallee !== undefined) this.localCalleeSites.add(site);
     return outcome;
   }
 
@@ -57,11 +63,17 @@ export class RustcCallSiteSymbolResolutionStrategy implements SymbolResolutionSt
   /** Forget the previous pass's counts — the resolver's pass-start seam calls it. */
   beginPass(): void {
     this.unmappedInProjectSites.clear();
+    this.localCalleeSites.clear();
   }
 
   /** In-project callable rows this pass found no table symbol for. */
   unmappedInProjectCount(): number {
     return this.unmappedInProjectSites.size;
+  }
+
+  /** Closure / fn pointer / Fn-bound param callee rows this pass dropped. */
+  localCalleeCount(): number {
+    return this.localCalleeSites.size;
   }
 }
 
@@ -79,7 +91,9 @@ function authoritativeDefinitionOf(call: CallRef, ctx: CallContext): RustCallSit
 }
 
 function driverVerdict(definition: RustCallSiteDefinition, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-  if (rustCallSiteIsDerivedImpl(definition)) return DROP;
+  // A closure / fn pointer / Fn-bound param callee (RESIDUAL R4) has no table
+  // symbol either: a name pass could only bind a namesake.
+  if (rustCallSiteIsDerivedImpl(definition) || definition.indirectCallee !== undefined) return DROP;
   const edgeTarget = mapScipDefinitionToSymbol(definition, call, ctx);
   if (edgeTarget !== null) return resolved(edgeTarget);
   return rustScipDefinitionIsExternal(definition, call, ctx) ? DROP : CONTINUE;
