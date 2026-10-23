@@ -35,7 +35,8 @@ it.
 Step 2 exactly as specified, say: "Running the impact enrichment first — it is
 one call and it orders the Tasks." Unknown preset (`impactAnalysis`) → refuse it
 by name, use the Step 2 rerank. Content wanted → keep enrichment
-`metaOnly: true`, then a SEPARATE `semantic_search` `metaOnly: false` AFTER it.
+`metaOnly: true`, then AFTER it `find_symbol(relativePath:)` outline → member
+bodies (core depth rule).
 
 Conceptual plan, no file list derivable (e.g. "plan for migrating to Postgres")
 → skip enrichment, `superpowers:writing-plans` direct. Say verbatim "no file

@@ -34,11 +34,14 @@ file"). Never invent pathPattern to justify guard.
 **Plan = any written Task source**: plan file, OR tracker issue handed to an
 autonomous task-agent ("Execute beads issue X: write Y in path Z"). Issue = one
 Task → full step order below: guard → Step 5 DDG cascade (MUST for new code,
-esp. "match shape of A/B") → `dinopowers:test-driven-development` for its tests
-→ chain. Never Read neighbours and copy by hand.
+esp. "match shape of A/B"; its tests = DDG 6a `tea-rags:test-first`, no separate
+TDD skill) → chain. Never Read neighbours and copy by hand.
 
 ## Mandatory Step Order (DO NOT SKIP)
 
+0. **Step 0** — name the entry call FIRST, in words:
+   `Skill(dinopowers:executing-plans)` (already loaded → say so). Walking Steps
+   2–6 without stating it = skipped.
 1. **Step 2.0** — addressing, EVERY Task: every tea-rags read passes
    `project=<alias>` + `path=<your working directory>`. No clone, no reindex for
    tree's own edits.
@@ -286,8 +289,7 @@ DDG lacks area context (no overlay labels) → it chains to `tea-rags:explore`
 itself. Let it; NEVER pre-fetch labels.
 
 Step 5 returns (strategy + template + style) → THEN
-`Skill(superpowers:executing-plans)` (or TDD chain via
-`Skill(dinopowers:test-driven-development)`).
+`Skill(superpowers:executing-plans)`; RED stays inside DDG (6a `test-first`).
 
 **Order:** addressing (2.0) → guard (2) → gate (4) → cascade (5) →
 `Skill(superpowers:executing-plans)` — DDG return ≠ done; name the chain into

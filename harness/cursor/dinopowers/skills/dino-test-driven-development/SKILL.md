@@ -171,7 +171,7 @@ Do NOT substitute:
 | Named preset `"relevance"` / `"recent"` / `"hotspots"`                 | `proven` = conventions to follow; `recent` → unstable drafts; `hotspots` → flaky tests     |
 | Custom rerank weights                                                  | `proven` encodes weights; reinventing diverges from `/data-driven-generation` Step 2       |
 | `hybrid_search`                                                        | BM25 leg re-ranks by token overlap — want semantic + signals                               |
-| `find_similar` on implementation file alone                            | Structurally similar code, not tests exercising similar behavior                           |
+| `find_similar` on implementation file alone                            | As primary = prod code, not tests. SUPPLEMENTARY after Step 2 queries = OK                 |
 | Built-in Grep for setup or assertion patterns                          | Every occurrence; `proven` narrows to CONVENTIONAL uses                                    |
 | Skipping the `tests-as-context` preflight                              | Fallback path unknown; `chunkType: "test"` may return 0 on non-DSL language                |
 
@@ -222,6 +222,10 @@ Handoff:
 Inner skill runs RED → GREEN → REFACTOR. Wrapper grounds RED draft, not
 replaces.
 
+Read-only subagent (`[subagent: explore]`, no writes) → Step 4 still holds:
+state chain `/test-driven-development` SECOND, return RED draft and Step 3 block
+to parent to run it. Never silently replace Step 4.
+
 ## Red Flags — STOP and restart from Step 2
 
 - File-grouped results (`level: "file"` in response) → `level: "chunk"` missing;
@@ -233,7 +237,8 @@ replaces.
   redo; bare `testFile: "only"` dilutes signal
 - `rerank: "recent"` "for latest conventions" → `proven`; recent = drafts.
   `hotspots` = FLAKY tests (high churn + recent)
-- `find_similar` on implementation symbol → production code, not tests
+- `find_similar` on implementation symbol as primary search → production code,
+  not tests (supplementary after Step 2 = OK)
 - Test language has no sibling tests (Ruby file, TS-only test corpus) → search
   broader corpus anyway, then state BOTH outcomes: 0 results → fallback note
   (below); only other-language tests → "cross-language — <lang> conventions may

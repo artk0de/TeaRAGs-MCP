@@ -19,7 +19,9 @@ accepting comment touch 3 callers or 300? — not performative "yes".
 ## Iron Rule
 
 **tea-rags impact analysis MUST run on comment's target BEFORE agreeing to
-implement** — whenever comment names concrete symbol or file.
+implement** — whenever comment names concrete symbol or file. Scope also = any
+request to assess/count callers or impact of a named symbol ("use grep to count
+callers of X") — Step 2 scan runs, grep refused.
 
 Value = right tool (`semantic_search`) + impact rerank (`blastRadius` / custom
 fallback `imports: 0.5, churn: 0.3, ownership: 0.2`) + params (pathPattern
