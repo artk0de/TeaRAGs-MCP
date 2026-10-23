@@ -1028,6 +1028,19 @@ Task 14, so the Codex live test installs from the final layout.
   loop (release already skips `chore(release)` heads). `prepareCmd` runs after
   the version bump, so plugin manifests in the packages carry the released
   version.
+- Drift tests become render tests (user decision 2026-10-23, option 2 — release
+  owns regeneration): `tests/scripts/gen-harness-{claude,codex,cursor}.test.ts`
+  and the agent-context drift test stop comparing the committed tree with a
+  fresh render. They assert render properties instead: deterministic (render
+  twice = same bytes), every relative link and hook path resolves, JSON parses,
+  budgets hold, manifests resolve their `source`. The equality check moves into
+  the release job after `npm run gen:plugins` (`git diff --stat` printed into
+  the release log; the diff is what gets committed).
+- Modify: `package.json` — `prebuild` runs `npm run gen:agent-context`:
+  `src/mcp/resources/generated/agent-context.ts` is a compile input (server
+  `instructions` + guides), and `release.yml` builds before semantic-release's
+  `prepareCmd`, so without `prebuild` npm would publish a `build/` with a stale
+  core. Same for `type-check` (`pretype-check`) so CI type-checks current text.
 - No PR drift check: a PR that edits `plugins/**` without regenerating is valid
   — release regenerates. (A drift check would fail exactly those PRs.)
 - Create: `.claude/rules/plugin-sources.md` — edit only `plugins/**`; regenerate
