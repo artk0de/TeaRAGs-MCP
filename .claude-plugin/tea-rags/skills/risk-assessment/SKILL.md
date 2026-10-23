@@ -13,12 +13,13 @@ argument-hint: "[scope — domain, subsystem, or 'whole project']"
 !`tea-rags resource "tea-rags://project/{alias}/metrics?section=labelMap,resolve" --path "$PWD" || true`
 
 **Answer contract — reports AND plan-only answers.** Print the Phase 5 tables
-themselves (skeleton below, full format in Phase 5): headings + header rows,
-`[planned; not run]` in cells not gathered yet. Prose, a column list or the
-`Output:` line alone is NOT the map. Plan-only → phases 0–5 as in Phase Order,
-one step each, none merged. Hand-off line only when the prompt mentions
-generation ("before implementing" / "generate"): resolved scope + per-symbol
-overlay labels, no extra block or scan. `Output:` = last line, verbatim:
+themselves (skeleton below, format: Phase 5): headings + header rows,
+`[planned; not run]` in cells not gathered yet. Prose, a column list or
+`Output:` alone is NOT the map. Plan-only → numbered steps 0, 1, 1b, 2 MERGE, 3
+EXPAND, 4, 5 of Phase Order, one each — Phase 0 never in a preamble. Hand-off
+only when the prompt mentions generation ("before implementing" / "generate"):
+resolved scope + per-symbol overlay labels, no extra block or scan. `Output:` =
+last line, verbatim:
 
 ```
 ## Critical
@@ -130,11 +131,11 @@ $ARGUMENTS describes...
 │   → pathPattern = none
 │   → scopeType = "broad"
 │
-├─ Domain/directory ("ingest domain", "explore/", "adapters")
-│   → pathPattern = "**/ingest/**"
+├─ Domain/directory/named module ("ingest domain", "explore/", "the chunker")
+│   → pathPattern = "**/ingest/**" (module noun → "**/<noun>*/**")
 │   → scopeType = "domain"
 │
-└─ Intent/concept ("enrichment pipeline", "error handling")
+└─ Intent/concept, no module named ("error handling")
     → ONE search call (concept/behavior → semantic_search,
       named symbol + context → hybrid_search):
       query = extracted concept, language = primary, limit = 10
@@ -148,7 +149,7 @@ $ARGUMENTS describes...
 **pathPattern rules:** Scope = directory-level prefixes. Brace of full file
 paths matches ONLY those files — scan misses rest of domain.
 
-**One call only.** Scope resolution not exhaustive.
+**One call only.**
 
 ## Phase 1: SCAN
 
