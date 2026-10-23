@@ -1,4 +1,5 @@
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { UriTemplate, type Variables } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
 
 import { TeaRagsError, type App } from "../../../core/api/public/index.js";
 import { formatSlimDigest } from "./digest.js";
@@ -103,39 +104,64 @@ export function registerProjectResources(server: McpServer, app: App): void {
     }),
   );
 
-  // The SDK matches a query template only when EVERY listed parameter is
-  // present, so each accepted combination is its own template.
-  for (const [name, template] of METRICS_TEMPLATES) {
-    server.registerResource(
-      name,
-      new ResourceTemplate(template, { list: undefined }),
-      {
-        title: "Project Metrics",
-        description:
-          "Signal thresholds, label maps, capability tiers, codegraph resolve and registry params of a project. " +
-          "?language=<lang> narrows to one language; ?section=thresholds,labelMap,capability,resolve,registry",
-        mimeType: "text/markdown",
-      },
-      async (uri, { alias, language, section }) => {
-        const query: ProjectMetricsQuery = { language: listOf(language)[0], section: listOf(section) };
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              mimeType: "text/markdown",
-              text: await renderProject(app, alias, (data) => formatProjectMetrics(data, query)),
-            },
-          ],
-        };
-      },
-    );
-  }
+  server.registerResource(
+    "project-metrics",
+    new ResourceTemplate(new OptionalQueryUriTemplate(METRICS_TEMPLATE), { list: undefined }),
+    {
+      title: "Project Metrics",
+      description:
+        "Signal thresholds, label maps, capability tiers, codegraph resolve and registry params of a project. " +
+        "?language=<lang> narrows to one language; ?section=thresholds,labelMap,capability,resolve,registry",
+      mimeType: "text/markdown",
+    },
+    async (uri, { alias, language, section }) => {
+      const query: ProjectMetricsQuery = { language: listOf(language)[0], section: listOf(section) };
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "text/markdown",
+            text: await renderProject(app, alias, (data) => formatProjectMetrics(data, query)),
+          },
+        ],
+      };
+    },
+  );
 }
 
-/** Metrics URIs: no query, `?language`, `?section`, or `?language=…&section=…` in that order. */
-const METRICS_TEMPLATES: readonly (readonly [name: string, template: string])[] = [
-  ["project-metrics", "tea-rags://project/{alias}/metrics{?language,section}"],
-  ["project-metrics-language", "tea-rags://project/{alias}/metrics{?language}"],
-  ["project-metrics-section", "tea-rags://project/{alias}/metrics{?section}"],
-  ["project-metrics-all", "tea-rags://project/{alias}/metrics"],
-];
+const METRICS_TEMPLATE = "tea-rags://project/{alias}/metrics{?language,section}";
+
+/**
+ * The SDK's `{?a,b}` expansion matches only when every listed variable is
+ * present. This keeps the template advertised as-is but reads the query as
+ * optional, order-free parameters; repeated keys arrive as a list.
+ */
+class OptionalQueryUriTemplate extends UriTemplate {
+  private readonly advertised: string;
+
+  constructor(template: string) {
+    super(template.replace(/\{\?[^}]*\}$/, ""));
+    this.advertised = template;
+  }
+
+  override toString(): string {
+    return this.advertised;
+  }
+
+  override match(uri: string): Variables | null {
+    const queryStart = uri.indexOf("?");
+    const path = queryStart === -1 ? uri : uri.slice(0, queryStart);
+    const base = super.match(path);
+    if (base === null) return null;
+    if (queryStart === -1) return base;
+
+    const variables: Variables = { ...base };
+    const params = new URLSearchParams(uri.slice(queryStart + 1));
+    for (const name of ["language", "section"]) {
+      const values = params.getAll(name);
+      if (values.length === 1) variables[name] = values[0];
+      else if (values.length > 1) variables[name] = values;
+    }
+    return variables;
+  }
+}
