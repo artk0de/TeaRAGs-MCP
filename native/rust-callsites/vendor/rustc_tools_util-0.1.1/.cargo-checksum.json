@@ -1,0 +1,10 @@
+{
+  "files": {
+    ".cargo_vcs_info.json": "58fd0d06b00ac97a2d4d4c5026097087cda2d74ae2fa36f1face331a8084cc4f",
+    "Cargo.toml": "0fb037ab3a2a403b8b981ac05ce54dbe992da817f521416d7696b0fd95f45675",
+    "Cargo.toml.orig": "b701bb7350adbca1f9eea2093b35c8bd1842fcc5d0a46b50f4011b4bf87b3ca1",
+    "README.md": "1c112329d44a02f626e26444973bcc6e12f0e054b944054ae0d658ec4ca96367",
+    "src/lib.rs": "0a07f0e600fe7c3a039c7bea4a83dcb0086037e900d2c19763fd9f4069754e5d"
+  },
+  "package": "b3c5a95edfa0c893236ae4778bb7c4752760e4c0d245e19b5eff33c5aa5eb9dc"
+}
