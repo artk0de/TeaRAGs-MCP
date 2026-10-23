@@ -185,7 +185,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tearags-rust-callsites"
+name = "tea-rags-rustc-driver"
 version = "0.1.0"
 dependencies = [
  "rustc_plugin",

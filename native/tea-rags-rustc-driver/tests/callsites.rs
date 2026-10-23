@@ -3,7 +3,7 @@
 //! adapter depends on.
 //!
 //! Run with the pinned toolchain: `rustup run nightly-2026-05-01 cargo test --offline`
-//! (`npm run test:rust-callsites`). The spawn forces that toolchain (PATH/RUSTC/SYSROOT/
+//! (`npm run test:rustc-driver`). The spawn forces that toolchain (PATH/RUSTC/SYSROOT/
 //! RUSTUP_TOOLCHAIN) the way the runner does, so a Homebrew cargo on PATH is irrelevant.
 
 #[path = "../build_support/source_hash.rs"]
@@ -19,7 +19,7 @@ use std::{
 
 use serde_json::{Value, json};
 
-const CLI: &str = env!("CARGO_BIN_EXE_tearags-rust-callsites");
+const CLI: &str = env!("CARGO_BIN_EXE_tea-rags-rustc-driver");
 const STALE_UNIT: &str = "stale_crate-00000000deadbeef";
 
 fn crate_root() -> PathBuf {
@@ -96,7 +96,7 @@ fn run() -> &'static Run {
     static RUN: OnceLock<Run> = OnceLock::new();
     RUN.get_or_init(|| {
         let work = std::env::temp_dir().join(format!(
-            "tearags-rust-callsites-test-{}",
+            "tea-rags-rustc-driver-test-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&work);
@@ -116,7 +116,7 @@ fn run() -> &'static Run {
         let invoke = || {
             pinned_command(CLI, &ws)
                 .env("CARGO_TARGET_DIR", work.join("target"))
-                .env("TEARAGS_CALLSITES_OUT", &out_dir)
+                .env("TEA_RAGS_RUSTC_DRIVER_OUT", &out_dir)
                 .output()
                 .unwrap()
         };

@@ -1,10 +1,10 @@
-//! The cargo-side CLI (`tearags-rust-callsites`).
+//! The cargo-side CLI (`tea-rags-rustc-driver`).
 //!
 //! Contract (the runner, SPEC §8.3/§8.4, owns the env):
 //! - `-V` prints [`crate::banner`] and exits.
-//! - cwd is the workspace root; `TEARAGS_CALLSITES_OUT` and `CARGO_TARGET_DIR` are required
+//! - cwd is the workspace root; `TEA_RAGS_RUSTC_DRIVER_OUT` and `CARGO_TARGET_DIR` are required
 //!   (the user's `target/` is never used, so there is no default).
-//! - Runs `cargo check --message-format=json --kept_files-going <TEARAGS_CALLSITES_CARGO_ARGS>`
+//! - Runs `cargo check --message-format=json --kept_files-going <TEA_RAGS_RUSTC_DRIVER_CARGO_ARGS>`
 //!   with the driver as `RUSTC_WORKSPACE_WRAPPER`; cargo's own stdout is consumed here,
 //!   its stderr passes through (failures cargo reports only there, e.g. a build script that
 //!   failed to run, are parsed into `failed`).
@@ -53,7 +53,7 @@ pub fn cli_main() -> ExitCode {
     match run_cargo_check() {
         Ok(code) => code,
         Err(message) => {
-            eprintln!("tearags-rust-callsites: {message}");
+            eprintln!("tea-rags-rustc-driver: {message}");
             ExitCode::from(2)
         }
     }

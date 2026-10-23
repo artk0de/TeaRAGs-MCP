@@ -19,7 +19,7 @@ describe("replayRegistryEnv", () => {
       {
         CODEGRAPH_RUST_DRIVER: "false",
         CODEGRAPH_RUST_DRIVER_JOBS: "2",
-        CODEGRAPH_RUST_DRIVER_PATH: "/opt/drv/tearags-rust-callsites",
+        CODEGRAPH_RUST_DRIVER_PATH: "/opt/drv/tea-rags-rustc-driver",
         CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC: "60",
         CODEGRAPH_RUST_DRIVER_MAX_RSS_MB: "2048",
       },
@@ -28,7 +28,7 @@ describe("replayRegistryEnv", () => {
     expect(target).toEqual({
       CODEGRAPH_RUST_DRIVER: "false",
       CODEGRAPH_RUST_DRIVER_JOBS: "4",
-      CODEGRAPH_RUST_DRIVER_PATH: "/opt/drv/tearags-rust-callsites",
+      CODEGRAPH_RUST_DRIVER_PATH: "/opt/drv/tea-rags-rustc-driver",
       CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC: "60",
       CODEGRAPH_RUST_DRIVER_MAX_RSS_MB: "2048",
     });

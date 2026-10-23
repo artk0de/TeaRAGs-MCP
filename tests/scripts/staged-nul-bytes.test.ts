@@ -77,8 +77,8 @@ describe("isNulGuardedPath", () => {
     "package.json",
     "website/static/img/logo.svg",
     "Makefile",
-    "native/rust-callsites/src/lib.rs",
-    "native/rust-callsites/Cargo.toml",
+    "native/tea-rags-rustc-driver/src/lib.rs",
+    "native/tea-rags-rustc-driver/Cargo.toml",
   ])("guards %s", (path) => {
     expect(isNulGuardedPath(path)).toBe(true);
   });
@@ -86,8 +86,8 @@ describe("isNulGuardedPath", () => {
   // `cargo vendor` copies crates byte for byte and `.cargo-checksum.json` pins every file:
   // a NUL in a third-party fixture is content that cannot be escaped.
   it.each([
-    "native/rust-callsites/vendor/toml_edit-0.19.15/tests/fixtures/invalid/control/bare-null.stderr",
-    "native/rust-callsites/vendor/unicode-ident-1.0.27/tests/fst/xid_start.fst",
+    "native/tea-rags-rustc-driver/vendor/toml_edit-0.19.15/tests/fixtures/invalid/control/bare-null.stderr",
+    "native/tea-rags-rustc-driver/vendor/unicode-ident-1.0.27/tests/fst/xid_start.fst",
   ])("leaves the vendored third-party file %s alone", (path) => {
     expect(isNulGuardedPath(path)).toBe(false);
   });

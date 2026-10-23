@@ -1,5 +1,5 @@
 /**
- * Runs the rustc call-site driver (`tearags-rust-callsites`) over a Rust
+ * Runs the rustc call-site driver (`tea-rags-rustc-driver`) over a Rust
  * workspace and hands back the decoded call-site → definition lookup
  * (research/rustc-driver/SPEC.md §2, §8.3, §8.4; bd s3i8m T4).
  *
@@ -54,7 +54,7 @@ import {
 } from "../process-tree/supervised-child.js";
 import { decodeRustcCallSites } from "./callsite-decoder.js";
 import {
-  computeRustCallsitesSourceHash,
+  computeRustcDriverSourceHash,
   defaultRustcDriverBuildFs,
   defaultRustcDriverSourceFs,
   ensureRustcDriverBuilt,
@@ -484,8 +484,8 @@ function childEnv(
     ...rustcDriverBuildEnv(inherited, deps.pin, driver.sysroot),
     SYSROOT: driver.sysroot,
     CARGO_TARGET_DIR: targetDir,
-    TEARAGS_CALLSITES_OUT: envDir,
-    TEARAGS_CALLSITES_CARGO_ARGS: cargoArgs,
+    TEA_RAGS_RUSTC_DRIVER_OUT: envDir,
+    TEA_RAGS_RUSTC_DRIVER_CARGO_ARGS: cargoArgs,
     CARGO_NET_OFFLINE: "true",
     CMAKE_POLICY_VERSION_MINIMUM: "3.5",
     CARGO_BUILD_JOBS: String(jobsOf(deps)),
@@ -592,11 +592,11 @@ function sha256(text: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * `native/rust-callsites` of this checkout or installed package: four levels
+ * `native/tea-rags-rustc-driver` of this checkout or installed package: four levels
  * up from both `src/core/adapters/rustc-driver/` and `build/core/adapters/rustc-driver/`.
  */
-export function rustCallsitesCrateDir(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "native", "rust-callsites");
+export function rustcDriverCrateDir(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "native", "tea-rags-rustc-driver");
 }
 
 /** Runner bound to the real host. */
@@ -605,12 +605,12 @@ export function defaultRustcCallSiteRunnerDeps(
 ): RustcCallSiteRunnerDeps {
   const pin = RUSTC_DRIVER_TOOLCHAIN_PIN;
   const dataDir = env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
-  const crateDir = rustCallsitesCrateDir();
+  const crateDir = rustcDriverCrateDir();
   const crateShipped = existsSync(join(crateDir, "Cargo.toml"));
   let sourceHash = "unshipped";
   if (crateShipped) {
     try {
-      sourceHash = computeRustCallsitesSourceHash(crateDir, defaultRustcDriverSourceFs);
+      sourceHash = computeRustcDriverSourceHash(crateDir, defaultRustcDriverSourceFs);
     } catch {
       // An unreadable crate cannot be built; a prebuilt driver is still found by -V.
     }

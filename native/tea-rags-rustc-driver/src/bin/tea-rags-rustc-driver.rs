@@ -2,5 +2,5 @@
 extern crate rustc_driver;
 
 fn main() -> std::process::ExitCode {
-    tearags_rust_callsites::cli_main()
+    tea_rags_rustc_driver::cli_main()
 }

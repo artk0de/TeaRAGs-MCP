@@ -4,9 +4,9 @@
 //! one `<crateName>-<stableCrateId:016x>.ndjson` (+ `.stats.json`) per compilation unit
 //! (SPEC §3). Two binaries:
 //!
-//! - `tearags-rust-callsites` ([`cli_main`]): runs `cargo check` with the driver as
+//! - `tea-rags-rustc-driver` ([`cli_main`]): runs `cargo check` with the driver as
 //!   `RUSTC_WORKSPACE_WRAPPER`, records the unit list in `run.json`, GCs stale unit files.
-//! - `tearags-rust-callsites-driver` ([`driver_main`]): the wrapper; runs the collector on
+//! - `tea-rags-rustc-driver-wrapper` ([`driver_main`]): the wrapper; runs the collector on
 //!   workspace crates and plain rustc on everything else.
 #![feature(rustc_private)]
 
@@ -30,13 +30,13 @@ pub use cli::cli_main;
 pub const CALLSITES_FORMAT: u32 = 5;
 
 /// Name of the wrapper binary, looked up next to the CLI's own executable.
-pub const DRIVER_BINARY: &str = "tearags-rust-callsites-driver";
+pub const DRIVER_BINARY: &str = "tea-rags-rustc-driver-wrapper";
 
 /// Output root: `<out>/units/*.ndjson|*.stats.json` and `<out>/run.json`.
-pub const OUT_ENV: &str = "TEARAGS_CALLSITES_OUT";
+pub const OUT_ENV: &str = "TEA_RAGS_RUSTC_DRIVER_OUT";
 
 /// Extra cargo args, whitespace-split; replaces [`DEFAULT_CARGO_ARGS`].
-pub const CARGO_ARGS_ENV: &str = "TEARAGS_CALLSITES_CARGO_ARGS";
+pub const CARGO_ARGS_ENV: &str = "TEA_RAGS_RUSTC_DRIVER_CARGO_ARGS";
 
 /// Target selection when [`CARGO_ARGS_ENV`] is unset (`--keep-going` is always added).
 pub const DEFAULT_CARGO_ARGS: &str = "--workspace --all-targets";
@@ -47,7 +47,7 @@ pub fn banner() -> String {
         "{} {} {}",
         env!("CARGO_PKG_VERSION"),
         rustc_plugin::CHANNEL,
-        env!("TEARAGS_CALLSITES_SOURCE_HASH")
+        env!("TEA_RAGS_RUSTC_DRIVER_SOURCE_HASH")
     )
 }
 

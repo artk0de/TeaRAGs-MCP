@@ -1,5 +1,5 @@
 [package]
-name = "tearags-rust-callsites"
+name = "tea-rags-rustc-driver"
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -9,18 +9,18 @@ description = "rustc driver: per call site, the compiler-resolved callee as NDJS
 rustc_private = true
 
 [lib]
-name = "tearags_rust_callsites"
+name = "tea_rags_rustc_driver"
 path = "src/lib.rs"
 
 # cargo-side CLI: runs `cargo check` with the driver as RUSTC_WORKSPACE_WRAPPER.
 [[bin]]
-name = "tearags-rust-callsites"
-path = "src/bin/tearags-rust-callsites.rs"
+name = "tea-rags-rustc-driver"
+path = "src/bin/tea-rags-rustc-driver.rs"
 
 # The RUSTC_WORKSPACE_WRAPPER itself; the CLI looks it up next to its own executable.
 [[bin]]
-name = "tearags-rust-callsites-driver"
-path = "src/bin/tearags-rust-callsites-driver.rs"
+name = "tea-rags-rustc-driver-wrapper"
+path = "src/bin/tea-rags-rustc-driver-wrapper.rs"
 
 [dependencies]
 rustc_plugin = "=0.15.2-nightly-2026-05-01"

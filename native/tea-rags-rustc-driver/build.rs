@@ -20,5 +20,5 @@ fn main() {
         println!("cargo::rerun-if-changed={rel}");
     }
     let hash = source_hash::source_hash(&root).expect("compute sourceHash");
-    println!("cargo::rustc-env=TEARAGS_CALLSITES_SOURCE_HASH={hash}");
+    println!("cargo::rustc-env=TEA_RAGS_RUSTC_DRIVER_SOURCE_HASH={hash}");
 }
