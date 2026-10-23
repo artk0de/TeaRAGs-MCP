@@ -144,7 +144,7 @@ The index run reports the driver in one status line:
 | `indexed`     | The driver ran (or its cached result was reused); lists units, failed crates and wall time    |
 | `unavailable` | Neither a driver binary nor the pinned toolchain was found; the line carries the install command |
 | `off`         | Switched off with `CODEGRAPH_RUST_DRIVER=off`                                                  |
-| `latched`     | The driver build or every crate's check failed; not retried until the inputs change (for a failed check, editing any `.rs` file counts) |
+| `latched`     | The driver build or every crate's check failed; not retried until the inputs change (for a failed check, editing any `.rs` file counts); a check that failed only because a dependency is missing from the offline cargo cache is never latched and shows the `cargo fetch` hint every run |
 | `skipped`     | The project was not checked this run; the line gives the reason                               |
 
 Without the driver, Rust still gets the walker's edges; only the

@@ -360,7 +360,10 @@ async function runDriver(
     }
     if (driverRun.units.length === 0 && !driverRun.success) {
       const latched = allUnitsFailedLatch(driverRun, tail, options.projectRoot, stamps);
-      deps.fs.writeTextAtomic(join(envDir, LATCH_FILE), JSON.stringify(latched));
+      // An offline-fetch failure is the one cause the user fixes without touching a
+      // `.rs` file or Cargo.lock (`cargo fetch`), so no source-keyed latch can lapse
+      // on it: answer failed with the hint every run, and let the retry (2-5 s) decide.
+      if (!isOfflineFetchFailure(tail)) deps.fs.writeTextAtomic(join(envDir, LATCH_FILE), JSON.stringify(latched));
       return {
         status: "failed",
         diagnostics: {
@@ -535,9 +538,14 @@ function allUnitsFailedLatch(
 ): PersistedLatch {
   const detail = driverRun.failed[0]?.firstError ?? `no unit compiled: ${lastLines(tail)}`;
   const sources = sourcesDigest(stamps);
-  return OFFLINE_PATTERN.test(tail)
+  return isOfflineFetchFailure(tail)
     ? { reason: "allUnitsFailed", detail, hint: rustcDriverOfflineHint(projectRoot), sources }
     : { reason: "allUnitsFailed", detail, sources };
+}
+
+/** Cargo failed resolving dependencies under `CARGO_NET_OFFLINE`; `cargo fetch` is the remedy. */
+function isOfflineFetchFailure(tail: string): boolean {
+  return OFFLINE_PATTERN.test(tail);
 }
 
 /** Order-independent digest of the `.rs` stamps (relPath, size, mtimeMs). */
