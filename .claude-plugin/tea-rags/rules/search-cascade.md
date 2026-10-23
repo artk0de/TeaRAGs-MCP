@@ -159,6 +159,11 @@ next call is `find_symbol`, NOT another search, NOT `Read`. `find_symbol` is
 instant (no embedding), returns merged definitions, file outlines, or doc TOCs
 from the same index.
 
+**Results are a table** `{ columns, rows }` from two results on (one result: a
+plain record list; record arrays in text tools too): `result.X` below = column
+`payload.X` of that row; overlay = column `rankingOverlay.chunk.<signal>.label`;
+null = absent. Shape: `tea-rags://schema/overview` `## Response shape`.
+
 | After search returns…                       | If you need…                            | Next call                                                                                                                                 |
 | ------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Chunk with method body truncated            | Full method body                        | `find_symbol(symbol: result.symbolId)`                                                                                                    |

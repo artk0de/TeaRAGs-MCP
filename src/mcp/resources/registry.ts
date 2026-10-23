@@ -127,6 +127,13 @@ export function buildOverview(): string {
 - find_symbol — symbol definition by name OR file outline/doc TOC by relativePath (no embedding);
   pass a rerank preset for a single-call diagnostic (definition + rankingOverlay)
 
+## Response shape
+Search tools return \`results\` as a table \`{ columns, rows }\` from two results on (one
+result or none: a plain list of records): one row per result, cell i belongs to columns[i]. A column name is the result path — \`payload.symbolId\`,
+\`payload.relativePath\`, \`rankingOverlay.chunk.bugFixRate.label\`; null = absent. Text tools
+(graph, review_changes, …) are compact JSON where every array of 2+ records is the same
+table. Read "the symbolId of result 3" as column \`payload.symbolId\` of row 3.
+
 ## Observability hooks
 - get_index_status returns an \`infraHealth\` block: qdrant url/status/optimizer,
   embedding url/reachable, per-trajectory enrichment health. First debug-point

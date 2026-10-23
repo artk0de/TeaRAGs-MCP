@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { SearchResultOutputSchema } from "../../../../src/core/api/tools/output-schemas.js";
+import { toColumns, type ColumnTable } from "../../../../src/core/api/tools/columns.js";
+import { SearchResultItemSchema, SearchResultOutputSchema } from "../../../../src/core/api/tools/output-schemas.js";
 import { CodeChunkGrouper } from "../../../../src/core/domains/explore/chunk-grouping/code.js";
 import { resolvePresets } from "../../../../src/core/domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../../../src/core/domains/explore/reranker.js";
@@ -9,19 +10,28 @@ import { resolveSymbols } from "../../../../src/core/domains/explore/symbol-reso
 import { gitPayloadSignalDescriptors } from "../../../../src/core/domains/trajectory/git/payload-signals.js";
 import { gitDerivedSignals } from "../../../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../../src/core/domains/trajectory/git/rerank/presets/index.js";
+import { rowsOf } from "../../../helpers/column-table.js";
 
 /** What the MCP transport actually carries: undefined-valued keys vanish. */
 const overTheWire = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
+const EMPTY_TABLE = { columns: [], rows: [] };
+
+/** `results` is the table branch of the union in these cases. */
+function asTable(results: unknown): ColumnTable {
+  return results as ColumnTable;
+}
+
 describe("SearchResultOutputSchema", () => {
   const schema = z.object(SearchResultOutputSchema);
+  const items = z.array(SearchResultItemSchema);
 
   // bd tea-rags-mcp-nb32e: the item schema declared relativePath / startLine /
   // content / git at item level and passed only through `.passthrough()`. Real
   // items are SearchResult { id, score, payload?, rankingOverlay? } — chunk
   // fields live INSIDE payload.
   it("declares the item shape tools return: id, score, payload, rankingOverlay", () => {
-    expect(Object.keys(SearchResultOutputSchema.results.element.shape).sort()).toEqual([
+    expect(Object.keys(SearchResultItemSchema.shape).sort()).toEqual([
       "id",
       "payload",
       "rankingOverlay",
@@ -31,23 +41,21 @@ describe("SearchResultOutputSchema", () => {
   });
 
   it("requires id and score on every item", () => {
-    expect(() => schema.parse({ results: [{ score: 0.8 }] })).toThrow();
-    expect(() => schema.parse({ results: [{ id: "a" }] })).toThrow();
+    expect(() => items.parse([{ score: 0.8 }])).toThrow();
+    expect(() => items.parse([{ id: "a" }])).toThrow();
   });
 
   it("validates a minimal search result", () => {
-    const result = schema.parse({
-      results: [
-        {
-          id: "uuid-1",
-          score: 0.85,
-          payload: { relativePath: "src/auth.ts", startLine: 10, endLine: 30, language: "typescript" },
-        },
-      ],
-    });
-    expect(result.results).toHaveLength(1);
-    expect(result.results[0].score).toBe(0.85);
-    expect(result.results[0].payload?.relativePath).toBe("src/auth.ts");
+    const result = items.parse([
+      {
+        id: "uuid-1",
+        score: 0.85,
+        payload: { relativePath: "src/auth.ts", startLine: 10, endLine: 30, language: "typescript" },
+      },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].score).toBe(0.85);
+    expect(result[0].payload?.relativePath).toBe("src/auth.ts");
   });
 
   it("keeps every payload key, declared or not (payload passthrough)", () => {
@@ -58,8 +66,8 @@ describe("SearchResultOutputSchema", () => {
       codegraph: { symbols: { chunk: { fanIn: 3 } } },
       navigation: { prevSymbolId: "a", nextSymbolId: "b" },
     };
-    const result = schema.parse({ results: [{ id: 1, score: 0.7, payload }] });
-    expect(result.results[0].payload).toEqual(payload);
+    const result = items.parse([{ id: 1, score: 0.7, payload }]);
+    expect(result[0].payload).toEqual(payload);
   });
 
   // The overlay the reranker emits is RankingOverlay { preset, file?, chunk? } —
@@ -71,8 +79,8 @@ describe("SearchResultOutputSchema", () => {
       file: { commitCount: { value: 37, label: "extreme" }, imports: ["./a"] },
       chunk: { methodLines: { value: 120, label: "decomposition_candidate" } },
     };
-    const result = schema.parse({ results: [{ id: "x", score: 0.9, rankingOverlay: overlay }] });
-    expect(result.results[0].rankingOverlay).toEqual(overlay);
+    const result = items.parse([{ id: "x", score: 0.9, rankingOverlay: overlay }]);
+    expect(result[0].rankingOverlay).toEqual(overlay);
   });
 
   it("accepts a real reranked strategy result unchanged", async () => {
@@ -98,7 +106,41 @@ describe("SearchResultOutputSchema", () => {
     const results = overTheWire(ranked);
     expect(results[0].rankingOverlay).toBeDefined();
 
-    expect(schema.parse({ results }).results).toEqual(results);
+    expect(items.parse(results)).toEqual(results);
+  });
+
+  it("accepts a real reranked result as the column table tools emit, every row a valid item", async () => {
+    const reranker = new Reranker(gitDerivedSignals, resolvePresets([...GIT_PRESETS], []), gitPayloadSignalDescriptors);
+    const ranked = await reranker.rerank(
+      [
+        {
+          id: "chunk-1",
+          score: 0.8,
+          payload: {
+            relativePath: "src/db.ts",
+            language: "typescript",
+            git: { file: { commitCount: 30, bugFixRate: 40 }, chunk: { commitCount: 8, churnRatio: 0.4 } },
+          },
+        },
+        { id: "chunk-2", score: 0.5, payload: { relativePath: "src/api.ts", language: "typescript" } },
+      ],
+      "hotspots",
+      "semantic_search",
+    );
+    const table = overTheWire(toColumns(ranked));
+
+    const parsed = schema.parse({ results: table });
+
+    expect(parsed.results).toEqual(table);
+    expect(asTable(parsed.results).columns).toEqual(expect.arrayContaining(["id", "score", "payload.relativePath"]));
+    expect(items.parse(rowsOf(asTable(parsed.results)))).toHaveLength(2);
+  });
+
+  it("accepts a one-result answer as a records list beside the table form", () => {
+    const record = overTheWire({ id: "chunk-1", score: 0.8, payload: { relativePath: "src/db.ts" } });
+
+    expect(schema.parse({ results: [record] }).results).toEqual([record]);
+    expect(schema.parse({ results: [] }).results).toEqual([]);
   });
 
   it("accepts find_symbol's synthetic results (mergedChunkIds, chunkCount) unchanged", () => {
@@ -148,12 +190,12 @@ describe("SearchResultOutputSchema", () => {
     expect(results[0].payload?.mergedChunkIds).toEqual(["uuid-1", "uuid-2"]);
     expect(results[1].payload?.chunkCount).toBe(1);
 
-    expect(schema.parse({ results }).results).toEqual(results);
+    expect(items.parse(results)).toEqual(results);
   });
 
   it("validates response with level field", () => {
     const result = schema.parse({
-      results: [],
+      results: EMPTY_TABLE,
       level: "file",
     });
     expect(result.level).toBe("file");
@@ -161,15 +203,15 @@ describe("SearchResultOutputSchema", () => {
 
   it("validates response with driftWarning", () => {
     const result = schema.parse({
-      results: [],
+      results: EMPTY_TABLE,
       driftWarning: "Index is 5 days old",
     });
     expect(result.driftWarning).toBe("Index is 5 days old");
   });
 
   it("validates empty results", () => {
-    const result = schema.parse({ results: [] });
-    expect(result.results).toHaveLength(0);
+    const result = schema.parse({ results: EMPTY_TABLE });
+    expect(asTable(result.results).rows).toHaveLength(0);
   });
 
   it("rejects missing results field", () => {
@@ -178,7 +220,7 @@ describe("SearchResultOutputSchema", () => {
 
   it("validates response with codegraphWarning (a43tr)", () => {
     const result = schema.parse({
-      results: [],
+      results: EMPTY_TABLE,
       codegraphWarning: "codegraph fallback skipped [INFRA_CODEGRAPH_DAEMON_STALE_BUILD]",
     });
     expect(result.codegraphWarning).toBe("codegraph fallback skipped [INFRA_CODEGRAPH_DAEMON_STALE_BUILD]");
@@ -204,8 +246,8 @@ describe("SearchResultOutputSchema — workingTree (xi2r9.1)", () => {
       degraded: { reason: "index has no indexedCommit stamp", remedy: "tea-rags index-codebase --project p" },
     };
 
-    expect(schema.parse({ results: [], workingTree: measured }).workingTree).toEqual(measured);
-    expect(schema.parse({ results: [], workingTree: degraded }).workingTree).toEqual(degraded);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: measured }).workingTree).toEqual(measured);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: degraded }).workingTree).toEqual(degraded);
   });
 });
 
@@ -224,7 +266,7 @@ describe("SearchResultOutputSchema — workingTree dense floor (WTO-5)", () => {
       denseUnavailable: { reason: "3 rows pending" },
     };
 
-    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: marker }).workingTree).toEqual(marker);
   });
 });
 
@@ -243,7 +285,7 @@ describe("SearchResultOutputSchema — workingTree git signals pending", () => {
       gitUnavailable: { reason: "1 row pending" },
     };
 
-    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: marker }).workingTree).toEqual(marker);
   });
 });
 
@@ -262,7 +304,7 @@ describe("SearchResultOutputSchema — workingTree index-only files", () => {
       indexOnlyFiles: 3,
     };
 
-    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: marker }).workingTree).toEqual(marker);
   });
 });
 
@@ -281,7 +323,7 @@ describe("SearchResultOutputSchema — workingTree pending files", () => {
       pendingFiles: 2,
     };
 
-    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: marker }).workingTree).toEqual(marker);
   });
 });
 
@@ -291,7 +333,7 @@ describe("SearchResultOutputSchema — dense leg unavailable", () => {
   it("validates the top-level denseUnavailable a BM25-only hybrid answer carries", () => {
     const denseUnavailable = { reason: "No llama-server endpoint is reachable at http://127.0.0.1:9" };
 
-    expect(schema.parse({ results: [], denseUnavailable }).denseUnavailable).toEqual(denseUnavailable);
+    expect(schema.parse({ results: EMPTY_TABLE, denseUnavailable }).denseUnavailable).toEqual(denseUnavailable);
   });
 });
 
@@ -310,6 +352,6 @@ describe("SearchResultOutputSchema — workingTree answering alias (iqx9x)", () 
       project: "proj",
     };
 
-    expect(schema.parse({ results: [], workingTree: marker }).workingTree).toEqual(marker);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: marker }).workingTree).toEqual(marker);
   });
 });

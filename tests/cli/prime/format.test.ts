@@ -207,12 +207,11 @@ describe("formatPrime — polyglot + thresholds", () => {
       update: null,
     });
     expect(out).toContain("## Signal thresholds — typescript");
-    // Collapsed: one line per signal, source + test on the same line, exact
-    // label names preserved (overlay labels must match the threshold keys).
-    expect(out).toContain(
-      "- **git.file.commitCount** — source: low <5 / normal ≥5 / high ≥9 / extreme ≥9 · test: low <3 / normal ≥3 / high ≥6 / extreme ≥6",
-    );
+    // One table row per signal: exact label names once (overlay labels must
+    // match them), then the lower bounds of the 2nd band on, source and test.
+    expect(out).toContain("| git.file.commitCount | low/normal/high/extreme | 5 / 9 / 9 | 3 / 6 / 6 |");
     expect(out).not.toContain("  - source:");
+    expect(out).toContain("lower bound of each band from the 2nd on (1st band = below the 2nd)");
     expect(out).not.toContain("  - test:");
   });
 
@@ -251,7 +250,7 @@ describe("formatPrime — polyglot + thresholds", () => {
     const typescriptAt = out.indexOf("## Signal thresholds — typescript");
     expect(rubyAt).toBeGreaterThan(-1);
     expect(typescriptAt).toBeGreaterThan(rubyAt);
-    expect(out).toContain("- **git.file.commitCount** — source: low <2 / normal ≥2 / high ≥7 / extreme ≥7 · test: —");
+    expect(out).toContain("| git.file.commitCount | low/normal/high/extreme | 2 / 7 / 7 | — |");
     expect(out).not.toContain("## Signal thresholds — global");
     expect(out).not.toContain("## Signal thresholds — javascript");
   });
@@ -271,7 +270,7 @@ describe("formatPrime — polyglot + thresholds", () => {
       update: null,
     });
     // ageDays has identical source/test labelMaps in the fixture → back-ref, no repeat.
-    expect(out).toContain("- **git.file.ageDays** — source: recent <45 / typical ≥45 / legacy ≥45 · test: =src");
+    expect(out).toContain("| git.file.ageDays | recent/typical/legacy | 45 / 45 | =src |");
   });
 
   it("renders percent-format signal bands as percentages (×100 with % suffix)", () => {
@@ -295,9 +294,7 @@ describe("formatPrime — polyglot + thresholds", () => {
       drift: null,
       update: null,
     });
-    expect(out).toContain(
-      "- **codegraph.chunk.pageRank** — source: peripheral <0.04% / important ≥0.04% / critical ≥0.12% · test: —",
-    );
+    expect(out).toContain("| codegraph.chunk.pageRank | peripheral/important/critical | 0.04% / 0.12% | — |");
     // raw-scale rounding to 0 must NOT appear for this signal.
     expect(out).not.toContain("peripheral <0 /");
   });
@@ -322,9 +319,7 @@ describe("formatPrime — polyglot + thresholds", () => {
       drift: null,
       update: null,
     });
-    expect(out).toContain(
-      "- **git.file.bugFixRate** — source: healthy <30% / concerning ≥30% / critical ≥50% · test: —",
-    );
+    expect(out).toContain("| git.file.bugFixRate | healthy/concerning/critical | 30% / 50% | — |");
     // must NOT double-scale (×100 would yield 2500%).
     expect(out).not.toContain("2500%");
   });
@@ -357,9 +352,7 @@ describe("formatPrime — polyglot + thresholds", () => {
       update: null,
     });
 
-    expect(out).toContain(
-      "- **git.chunk.bugFixRate** — source: healthy <50% / concerning ≥50% / critical ≥100% · test: —",
-    );
+    expect(out).toContain("| git.chunk.bugFixRate | healthy/concerning/critical | 50% / 100% | — |");
     // The inverted form must be gone: it claimed `healthy` admitted only 0%.
     expect(out).not.toContain("healthy ≤0%");
   });
@@ -378,7 +371,7 @@ describe("formatPrime — polyglot + thresholds", () => {
       update: null,
     });
 
-    expect(out).toContain("- **git.file.commitCount** — source: low · test: —");
+    expect(out).toContain("| git.file.commitCount | low | any | — |");
   });
 
   it("omits Polyglot/Language and Signal thresholds when metrics is null (e.g. no enrichment yet)", () => {
@@ -920,9 +913,8 @@ describe("formatPrime — polyglot whitelist + threshold rounding", () => {
       drift: null,
       update: null,
     });
-    expect(out).toContain("critical ≥53.25");
-    expect(out).toContain("stable ≥7.88");
-    expect(out).toContain("erratic ≥14.01");
+    expect(out).toContain("| git.file.bugFixRate | healthy/concerning/critical | 38 / 53.25 | — |");
+    expect(out).toContain("| git.file.churnVolatility | calm/stable/erratic | 7.88 / 14.01 | — |");
     expect(out).not.toMatch(/\.\d{4,}/); // no four-or-more-decimal artifacts
   });
 });

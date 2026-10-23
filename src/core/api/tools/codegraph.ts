@@ -33,7 +33,7 @@ import {
   type SchemaBuilderPort,
   type TracePathRequest,
 } from "../public/index.js";
-import { formatMcpText, type McpToolResult } from "./format.js";
+import { formatMcpResponse, type McpToolResult } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
 import { projectField, WORKING_TREE_PATH_HINT } from "./schemas.js";
 
@@ -430,8 +430,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "files that import it, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
       "unknown file → empty importers + message.",
     schemaKey: "get_callers",
-    invoke: async (app, request) =>
-      formatMcpText(JSON.stringify(await app.getCallers(request as GetCallersRequest), null, 2)),
+    invoke: async (app, request) => formatMcpResponse(await app.getCallers(request as GetCallersRequest)),
   },
   {
     name: "get_callees",
@@ -444,8 +443,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "files it imports, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
       "unknown file → empty imports + message.",
     schemaKey: "get_callees",
-    invoke: async (app, request) =>
-      formatMcpText(JSON.stringify(await app.getCallees(request as GetCalleesRequest), null, 2)),
+    invoke: async (app, request) => formatMcpResponse(await app.getCallees(request as GetCalleesRequest)),
   },
   {
     name: "find_cycles",
@@ -459,8 +457,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "the cycle was not recomputed since the index upgrade. hasModelEdge:true + modelEdgeCount = " +
       "hops inside the cycle only residual-model edges support (absent = all static).",
     schemaKey: "find_cycles",
-    invoke: async (app, request) =>
-      formatMcpText(JSON.stringify(await app.findCycles(request as FindCyclesRequest), null, 2)),
+    invoke: async (app, request) => formatMcpResponse(await app.findCycles(request as FindCyclesRequest)),
   },
   {
     name: "get_architecture_report",
@@ -588,7 +585,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
           : req.plannedEdges
             ? await app.judgePlannedArchitectureEdges(req)
             : await app.getArchitectureReport(req);
-      return formatMcpText(JSON.stringify(answer, null, 2));
+      return formatMcpResponse(answer);
     },
   },
   {
@@ -599,8 +596,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "homonyms: one name, many types; outliers: names off their type's dominant shape; " +
       "collisions: names equal to other symbols. Ranked, with counts and an example each.",
     schemaKey: "get_ontology_report",
-    invoke: async (app, request) =>
-      formatMcpText(JSON.stringify(await app.getOntologyReport(request as GetOntologyReportRequest), null, 2)),
+    invoke: async (app, request) => formatMcpResponse(await app.getOntologyReport(request as GetOntologyReportRequest)),
   },
   {
     name: "find_co_changed",
@@ -613,8 +609,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "built:false = no co-change build yet (run a codegraph enrichment), NEVER read it as 'no partners'. " +
       "Before editing a file, surface silent high-strength partners as change-context.",
     schemaKey: "find_co_changed",
-    invoke: async (app, request) =>
-      formatMcpText(JSON.stringify(await app.findCoChanged(request as FindCoChangedRequest), null, 2)),
+    invoke: async (app, request) => formatMcpResponse(await app.findCoChanged(request as FindCoChangedRequest)),
   },
   {
     name: "trace_path",
@@ -631,16 +626,14 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     schemaKey: "trace_path",
     // `TracePathRequest.rerank` is the string preset name the curated enum
     // (z.ZodTypeAny erases to unknown after .optional()) narrows to.
-    invoke: async (app, request) =>
-      formatMcpText(JSON.stringify(await app.tracePath(request as TracePathRequest), null, 2)),
+    invoke: async (app, request) => formatMcpResponse(await app.tracePath(request as TracePathRequest)),
   },
   {
     name: "get_naming_lexicon",
     title: "Get Naming Lexicon",
     description: NAMING_LEXICON_DESCRIPTION,
     schemaKey: "get_naming_lexicon",
-    invoke: async (app, request) =>
-      formatMcpText(JSON.stringify(await app.getNamingLexicon(request as NamingLexiconRequest), null, 2)),
+    invoke: async (app, request) => formatMcpResponse(await app.getNamingLexicon(request as NamingLexiconRequest)),
   },
 ];
 

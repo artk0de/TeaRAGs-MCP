@@ -87,8 +87,8 @@ population to recently changed files so it surfaces.
   Misses chunks without chunk-level commit data (see `filter-building` chunk age
   caveat) → `modifiedAfter` stays default probe.
 - **Window start:** symptom onset if known (last green run, release, date user
-  names); else today − N days, N = `recent` bound of `git.file.ageDays` in prime
-  `## Signal thresholds`.
+  names); else today − N days, N = where `recent` ends: the first number of the
+  `git.file.ageDays` row's `source ≥` cell in prime `## Signal thresholds`.
 - Committed history only: walk emits committed files → untracked /
   never-committed file carries NO `lastModifiedAt` → outside every time filter.
   Uncommitted edit to committed file → timestamp = last COMMIT → probe misses

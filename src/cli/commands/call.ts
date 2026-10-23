@@ -22,6 +22,7 @@ import { openInProcessMcpSession } from "../../bootstrap/transport/in-process-se
 import {
   collectionHoldsCodegraphData,
   CollectionRegistry,
+  foldColumnTables,
   resolveBaseIndexEntry,
   resolveDomainEnvCodeDefaults,
   resolveRegistryEnv,
@@ -36,6 +37,8 @@ export interface CallArgs {
   params?: string;
   list?: boolean;
   json?: boolean;
+  /** `json`: the tool's answer alone as plain JSON, column tables folded back into records. */
+  format?: "json";
 }
 
 export interface CallDeps {
@@ -107,6 +110,8 @@ export async function runCall(args: CallArgs, deps: CallDeps): Promise<number> {
     const exitCode = result.isError === true ? CALL_EXIT_CODES.failed : CALL_EXIT_CODES.ok;
     if (args.json === true) {
       deps.out(JSON.stringify(result));
+    } else if (args.format === "json") {
+      deps.out(JSON.stringify(foldColumnTables(answerOf(result))));
     } else {
       const sink = result.isError === true ? deps.errOut : deps.out;
       for (const text of renderContent(result)) sink(text);
@@ -221,6 +226,21 @@ function renderContent(result: CallToolResult): string[] {
   return [...structured, ...blocks];
 }
 
+/** The tool's answer: structuredContent, else its text blocks — JSON parsed where they hold JSON. */
+function answerOf(result: CallToolResult): unknown {
+  if (result.structuredContent !== undefined) return result.structuredContent;
+  const texts = result.content.flatMap((block) => (block.type === "text" ? [parseOrKeep(block.text)] : []));
+  return texts.length === 1 ? texts[0] : texts;
+}
+
+function parseOrKeep(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
 /** First line / sentence of a tool description, clipped for a one-line listing. */
 function oneLine(tool: Tool): string {
   const text = (tool.description ?? tool.title ?? "").trim();
@@ -302,6 +322,12 @@ export const callCommand: CommandModule<object, CallArgs> = {
         default: false,
         describe: "Print the full CallToolResult (content, structuredContent, isError) as one JSON document",
       })
+      .option("format", {
+        choices: ["json"] as const,
+        describe: "json: print the tool's answer alone as plain JSON, column tables folded back into records",
+      })
+      // `json` defaults to false, which yargs' conflicts() already counts as given.
+      .check((argv) => argv.format === undefined || argv.json !== true || "--format and --json are mutually exclusive")
       .example('$0 call find_symbol \'{"project":"my-app","symbol":"Reranker#rerank"}\'', "")
       .example('echo \'{"project":"my-app"}\' | $0 call get_index_status - --json', "")
       .epilog(
@@ -319,6 +345,7 @@ export const callCommand: CommandModule<object, CallArgs> = {
           params: resolveParamsArg(argv.params, hideBin(process.argv)),
           list: argv.list,
           json: argv.json,
+          format: argv.format,
         },
         {
           openSession: openInProcessMcpSession,

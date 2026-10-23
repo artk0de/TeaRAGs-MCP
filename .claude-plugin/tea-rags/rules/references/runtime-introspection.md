@@ -157,7 +157,8 @@ Every reranked search result carries `rankingOverlay` — metaOnly included:
   `file`, per-method ones (`methodLines`, `methodDensity`) under `chunk`. A
   `level: "file"` result carries no `chunk` block.
 - `{value,label}` when signal has labels (resolved via `signal-labels`
-  resource), else raw value.
+  resource), else raw value. In a result table (2+ results) the pair is two
+  columns: `rankingOverlay.chunk.<field>.value` / `.label`.
 - Labels live ONLY here. Payload = raw values at filter-key paths, metaOnly or
   not. Contract owner: `tea-rags://schema/overview` → `### metaOnly`.
 
