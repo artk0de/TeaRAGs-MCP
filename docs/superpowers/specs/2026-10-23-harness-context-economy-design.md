@@ -84,9 +84,10 @@ text to hooks and skills.** No new MCP tools.
    stays the authoring surface: `core.md` (always-on) + `guides/*.md` (on
    demand). `scripts/gen-agent-context.ts` emits
    `src/mcp/resources/generated/agent-context.ts` (string constants: core
-   - guides) so the published `build/` carries them. A drift-guard test fails
-     when the generated file and the markdown disagree (precedent:
-     `scripts/gen-language-compatibility.ts` + `drift-guard.test.ts`).
+   - guides) so the published `build/` carries them. `prebuild` regenerates the
+     module, so every build compiles the current markdown; a render test pins
+     that it carries `core.md` and every guide verbatim (Decision 11: the
+     committed copy is refreshed by the release, not guarded by a test).
 5. **Always-on core** (≤3,700 chars): addressing rule → tool routing table →
    three invariants (never Read after find_symbol; lag never licenses leaving
    tea-rags; empty `get_callers` under low resolve ≠ absence) → "read
@@ -121,10 +122,16 @@ text to hooks and skills.** No new MCP tools.
     the Cursor marketplace manifest point at the generated packages. Generated
     paths are listed in `.contextignore` (no duplicate chunks in the index). A
     git merge driver declared in `.gitattributes` and registered by the
-    `prepare` script resolves conflicts in generated paths by regenerating from
-    the merged sources; a CI job runs `gen:plugins` and fails on any diff.
-    `.claude/rules/plugin-sources.md` states the workflow: edit only
-    `plugins/**`, regenerate, never hand-edit generated output.
+    `prepare` script keeps ours in generated paths; the merge hooks
+    (`scripts/git/merge-generated.sh`) regenerate them from the merged sources
+    inside the merge commit. The release owns regeneration: semantic-release's
+    prepare step runs `gen:plugins` and the `chore(release)` commit carries the
+    packages. There is no PR drift check — a PR editing `plugins/**` without
+    regenerating is valid — so the generator tests assert render properties
+    (determinism, links, hook paths, JSON, budgets, manifests) instead of
+    committed == render. `.claude/rules/plugin-sources.md` states the workflow:
+    edit only `plugins/**`, try changes with `npm run gen:plugins`, never
+    hand-edit generated output.
 
 ## Budgets (enforced by tests)
 

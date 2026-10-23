@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -11,6 +11,7 @@ import {
   renderCursorHarness,
   renderCursorMarketplace,
   toCursorSkill,
+  writeCursorHarness,
 } from "../../scripts/gen-harness-cursor.js";
 import { PLUGIN_SRC } from "../../scripts/harness/package.js";
 import { parseFrontmatter } from "../../scripts/harness/transform.js";
@@ -121,26 +122,14 @@ describe("renderCursorHarness", () => {
     rendered = await renderCursorHarness(ROOT);
   });
 
-  it("matches the committed package (run `npm run gen:harness-cursor` if this fails)", () => {
-    const dir = join(ROOT, CURSOR_HARNESS_DIR);
-    const onDisk = listFiles(dir)
-      .map((file) => relative(dir, file))
-      .sort();
-
-    expect(onDisk).toEqual([...rendered.keys()].sort());
-    for (const [path, content] of rendered) {
-      expect(readFileSync(join(dir, path), "utf8"), path).toBe(content);
-    }
-  });
-
   it("renders byte-identically twice", async () => {
     expect(await renderCursorHarness(ROOT)).toEqual(rendered);
   });
 
-  it("commits the root marketplace manifest as rendered, pointing at the package", async () => {
+  it("renders the root marketplace manifest pointing at a package that carries its manifest", async () => {
     const marketplace = await renderCursorMarketplace(ROOT);
 
-    expect(readFileSync(join(ROOT, CURSOR_MARKETPLACE_PATH), "utf8")).toBe(marketplace);
+    expect(rendered.has("tea-rags/.cursor-plugin/plugin.json")).toBe(true);
     expect(JSON.parse(marketplace)).toMatchObject({
       name: "tea-rags",
       owner: { name: expect.any(String) },
@@ -274,5 +263,46 @@ describe("renderCursorHarness — core rule", () => {
     expect(body).toContain('tea-rags resource "<uri>" --path "$PWD"');
     expect(rule.length).toBeLessThanOrEqual(CORE_RULE_MAX_CHARS);
     expect(out.get("README.md")).not.toContain("`rules/core.md` does not exist yet");
+  });
+});
+
+describe("writeCursorHarness", () => {
+  let fixtureRoot: string;
+
+  beforeAll(() => {
+    fixtureRoot = mkdtempSync(join(tmpdir(), "harness-cursor-write-"));
+    cpSync(join(ROOT, PLUGIN_SRC), join(fixtureRoot, PLUGIN_SRC), { recursive: true });
+  });
+
+  afterAll(() => {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  });
+
+  const snapshot = () => {
+    const dir = join(fixtureRoot, CURSOR_HARNESS_DIR);
+    return listFiles(dir)
+      .map((file) => [relative(dir, file), readFileSync(file, "utf8")])
+      .sort(([a], [b]) => a.localeCompare(b));
+  };
+
+  it("writes exactly the rendered package and marketplace manifest, dropping stale files", async () => {
+    const stale = join(fixtureRoot, CURSOR_HARNESS_DIR, "tea-rags", "stale.md");
+    mkdirSync(dirname(stale), { recursive: true });
+    writeFileSync(stale, "stale\n");
+
+    await writeCursorHarness(fixtureRoot);
+
+    const rendered = await renderCursorHarness(fixtureRoot);
+    expect(snapshot()).toEqual([...rendered].sort(([a], [b]) => a.localeCompare(b)));
+    expect(readFileSync(join(fixtureRoot, CURSOR_MARKETPLACE_PATH), "utf8")).toBe(
+      await renderCursorMarketplace(fixtureRoot),
+    );
+  });
+
+  it("is idempotent", async () => {
+    await writeCursorHarness(fixtureRoot);
+    const first = snapshot();
+    await writeCursorHarness(fixtureRoot);
+    expect(snapshot()).toEqual(first);
   });
 });

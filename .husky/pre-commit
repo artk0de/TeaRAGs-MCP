@@ -10,6 +10,9 @@ fi
 # and stage them, before the test run below reads them. No-op otherwise.
 # `git rebase` picks skip this hook — see scripts/git/repin-on-merge.sh.
 sh scripts/git/repin-on-merge.sh || exit 1
+# Same commit: regenerate the plugin packages from the merged plugins/** sources
+# and stage them (scripts/git/merge-generated.sh). No-op outside a merge.
+sh scripts/git/merge-generated.sh || exit 1
 
 # Format and lint staged .ts/.js files
 if ! npx lint-staged 2>&1; then

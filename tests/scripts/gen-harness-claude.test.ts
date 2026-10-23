@@ -23,20 +23,6 @@ describe("claudePluginNames", () => {
 });
 
 describe.each(["tea-rags", "dinopowers", "tea-rags-setup"])("renderClaudePackage(%s)", (name) => {
-  it("matches the committed package (run `npm run gen:plugins` if this fails)", () => {
-    const rendered = renderClaudePackage(ROOT, name);
-    const dir = join(ROOT, CLAUDE_PACKAGES_DIR, name);
-    const onDisk = walk(dir)
-      .map((file) => relative(dir, file))
-      .sort();
-
-    expect(onDisk).toEqual([...rendered.keys()].sort());
-    for (const [path, file] of rendered) {
-      expect(readFileSync(join(dir, path)).equals(file.content), path).toBe(true);
-      expect(statSync(join(dir, path)).mode & 0o111, `${path} executable bit`).toBe(file.mode & 0o111);
-    }
-  });
-
   it("copies the source verbatim, executable bits included", () => {
     const rendered = renderClaudePackage(ROOT, name);
     const src = join(ROOT, PLUGINS_DIR, name);
@@ -100,9 +86,17 @@ describe("writeClaudePackages", () => {
     expect(existsSync(join(fixtureRoot, CLAUDE_PACKAGES_DIR, "marketplace.json"))).toBe(true);
     for (const name of claudePluginNames(fixtureRoot)) {
       const dir = join(fixtureRoot, CLAUDE_PACKAGES_DIR, name);
-      for (const [path, file] of renderClaudePackage(fixtureRoot, name)) {
+      const rendered = renderClaudePackage(fixtureRoot, name);
+      expect(
+        walk(dir)
+          .map((file) => relative(dir, file))
+          .sort(),
+        name,
+      ).toEqual([...rendered.keys()].sort());
+      for (const [path, file] of rendered) {
         expect(lstatSync(join(dir, path)).isFile(), path).toBe(true);
         expect(readFileSync(join(dir, path)).equals(file.content), path).toBe(true);
+        expect(statSync(join(dir, path)).mode & 0o111, `${path} executable bit`).toBe(file.mode & 0o111);
       }
     }
   });
