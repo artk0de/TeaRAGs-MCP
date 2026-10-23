@@ -189,7 +189,7 @@ export function rustTypedMissIsProven(
   return false;
 }
 
-const RUST_IMPLEMENTED_TRAITS = new WeakMap<object, Map<string, Set<string>>>();
+const RUST_IMPLEMENTED_TRAITS = new RunScopedMemo<object, Map<string, Set<string>>>();
 
 /**
  * Whether a trait some `impl Trait for <typeId>` names declares `member`
@@ -199,7 +199,7 @@ const RUST_IMPLEMENTED_TRAITS = new WeakMap<object, Map<string, Set<string>>>();
 function rustImplementedTraitDeclares(typeId: string, member: string, ctx: CallContext): boolean {
   const declarations = ctx.typeDeclarations;
   if (declarations === undefined) return false;
-  let index = RUST_IMPLEMENTED_TRAITS.get(declarations);
+  let index = RUST_IMPLEMENTED_TRAITS.get(ctx.runScope, declarations);
   if (index === undefined) {
     index = new Map();
     for (const facts of Object.values(declarations)) {
@@ -211,7 +211,7 @@ function rustImplementedTraitDeclares(typeId: string, member: string, ctx: CallC
         index.set(shortName, traits);
       }
     }
-    RUST_IMPLEMENTED_TRAITS.set(declarations, index);
+    RUST_IMPLEMENTED_TRAITS.set(ctx.runScope, declarations, index);
   }
   const traits = index.get(typeId.split("::").at(-1) ?? typeId);
   return traits !== undefined && [...traits].some((trait) => ctx.symbolTable.lookup(`${trait}#${member}`).length > 0);

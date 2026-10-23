@@ -1,7 +1,7 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, SymbolDefinition, TypeDeclarationFact } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
-import { MemberReturnTypeResolver, type NominalTypeRef } from "../../kernel/index.js";
+import { MemberReturnTypeResolver, RunScopedMemo, type NominalTypeRef } from "../../kernel/index.js";
 import { rustTextIsStdPreludeType } from "../vocabulary/std-prelude.js";
 import { rustDeclaringFileImportOf, rustPlaceTypeThroughDeclaringFile } from "./declaring-file-type.js";
 import {
@@ -390,7 +390,7 @@ function rustAliasDeclaration(
   return facts.length === 1 ? { relPath: reexported.targetRelPath, fact: facts[0] } : undefined;
 }
 
-const RUST_ALIAS_DEFINITIONS = new WeakMap<object, Map<string, SymbolDefinition[]>>();
+const RUST_ALIAS_DEFINITIONS = new RunScopedMemo<object, Map<string, SymbolDefinition[]>>();
 
 /**
  * Every top-level type alias named `itemName`, as a definition the re-export
@@ -400,7 +400,7 @@ const RUST_ALIAS_DEFINITIONS = new WeakMap<object, Map<string, SymbolDefinition[
 function rustAliasDefinitionsNamed(itemName: string, ctx: CallContext): readonly SymbolDefinition[] {
   const declarations = ctx.typeDeclarations;
   if (declarations === undefined) return [];
-  let index = RUST_ALIAS_DEFINITIONS.get(declarations);
+  let index = RUST_ALIAS_DEFINITIONS.get(ctx.runScope, declarations);
   if (index === undefined) {
     index = new Map();
     for (const [relPath, facts] of Object.entries(declarations)) {
@@ -410,7 +410,7 @@ function rustAliasDefinitionsNamed(itemName: string, ctx: CallContext): readonly
         index.set(fact.typeId, [...(index.get(fact.typeId) ?? []), definition]);
       }
     }
-    RUST_ALIAS_DEFINITIONS.set(declarations, index);
+    RUST_ALIAS_DEFINITIONS.set(ctx.runScope, declarations, index);
   }
   return index.get(itemName) ?? [];
 }

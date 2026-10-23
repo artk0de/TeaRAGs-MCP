@@ -1,5 +1,6 @@
 import { createIdentifierRecord, identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, CallRef, CallResultBinding, LocalBinding } from "../../../../contracts/types/codegraph.js";
+import { RunScopedMemo } from "../../kernel/index.js";
 import { projectDeclaresType, rustStdTypeRef } from "./std-type-hops.js";
 import { rustShadowingCallResultType } from "./strategies/rust-type-receiver.js";
 import { rustVisibleReceiverBinding } from "./visible-receiver-binding.js";
@@ -114,20 +115,23 @@ function rustLocalTypePlaces(binding: LocalBinding, ctx: CallContext): boolean {
   if (rustStdTypeRef(binding.type, undefined, ctx) !== undefined) return true;
   const declarations = ctx.typeDeclarations;
   if (declarations === undefined) return projectDeclaresType(ctx, binding.type);
-  return rustOwnDeclaredTypeNames(declarations).has(binding.type);
+  return rustOwnDeclaredTypeNames(declarations, ctx).has(binding.type);
 }
 
-const OWN_DECLARED_TYPE_NAMES = new WeakMap<object, ReadonlySet<string>>();
+const OWN_DECLARED_TYPE_NAMES = new RunScopedMemo<object, ReadonlySet<string>>();
 
 /** Short names of every type the run saw declared (re-openings excluded), cached per declaration table. */
-function rustOwnDeclaredTypeNames(declarations: NonNullable<CallContext["typeDeclarations"]>): ReadonlySet<string> {
-  const cached = OWN_DECLARED_TYPE_NAMES.get(declarations);
+function rustOwnDeclaredTypeNames(
+  declarations: NonNullable<CallContext["typeDeclarations"]>,
+  ctx: CallContext,
+): ReadonlySet<string> {
+  const cached = OWN_DECLARED_TYPE_NAMES.get(ctx.runScope, declarations);
   if (cached !== undefined) return cached;
   const names = new Set<string>();
   for (const facts of Object.values(declarations)) {
     for (const fact of facts) if (!fact.reopens) names.add(fact.typeId.split(/::|\./).at(-1) ?? fact.typeId);
   }
-  OWN_DECLARED_TYPE_NAMES.set(declarations, names);
+  OWN_DECLARED_TYPE_NAMES.set(ctx.runScope, declarations, names);
   return names;
 }
 
