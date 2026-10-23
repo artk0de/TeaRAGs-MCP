@@ -22,7 +22,9 @@ import { rustReceiverChainType } from "./strategies/rust-type-receiver.js";
 import {
   rustCalleeShortNameCandidates,
   rustCallIsMacroInvocation,
+  rustImportBindings,
   rustMacroShortNameCandidates,
+  type RustImportBinding,
 } from "./strategies/shared.js";
 
 /**
@@ -222,43 +224,149 @@ export function mapRustCallSiteDefinitionToSymbol(
     : rustCalleeShortNameCandidates(ctx, definition.name);
   return (
     narrowestSymbolContaining(candidates, definition.relPath, definition.line) ??
-    sameIdWindowOwnedBy(candidates, definition.relPath, rustImplSelfTypeName(definition.symbol))
+    sameIdWindowOwnedBy(candidates, definition.relPath, rustCompilerPathOwner(definition.symbol), ctx)
   );
+}
+
+/** What a compiler path's item is declared under: an impl's self type, or a module. */
+interface RustCompilerPathOwner {
+  readonly kind: "type" | "module";
+  /** The owner's key — {@link rustOwnerKey} of its spelling. */
+  readonly name: string;
 }
 
 /**
  * The one symbolId the file declares among the candidates whose owner is the
- * impl's self type; null without an owner, for none, or for several.
+ * one the compiler path names: the impl's self type — or the project type it
+ * is an alias of — or the module. A module-owned definition no module scope
+ * matches (a cfg variant re-exported from the crate root) takes the file's one
+ * symbolId of that name; a type owner never does. Null without an owner, for
+ * none, or for several.
  */
 function sameIdWindowOwnedBy(
   candidates: readonly SymbolDefinition[],
   relPath: string,
-  owner: string | null,
+  owner: RustCompilerPathOwner | null,
+  ctx: CallContext,
 ): SymbolResolutionTarget | null {
   if (owner === null) return null;
-  const symbolIds = new Set(
-    candidates
-      .filter((tableSymbol) => tableSymbol.relPath === relPath && tableSymbol.scope.at(-1) === owner)
-      .map((tableSymbol) => tableSymbol.symbolId),
-  );
+  const inFile = candidates.filter((tableSymbol) => tableSymbol.relPath === relPath);
+  const ownedBy = (name: string) =>
+    uniqueSymbolIdIn(
+      relPath,
+      inFile.filter((tableSymbol) => rustOwnerKey(tableSymbol.scope.at(-1) ?? "") === name),
+    );
+  const direct = ownedBy(owner.name);
+  if (direct !== null || inFile.length === 0) return direct;
+  if (owner.kind === "module") return uniqueSymbolIdIn(relPath, inFile);
+  const aliased = rustProjectAliasTargetKey(owner.name, ctx);
+  return aliased === undefined ? null : ownedBy(aliased);
+}
+
+/** The target of `candidates` when they share one symbolId; null for none or several. */
+function uniqueSymbolIdIn(relPath: string, candidates: readonly SymbolDefinition[]): SymbolResolutionTarget | null {
+  const symbolIds = new Set(candidates.map((tableSymbol) => tableSymbol.symbolId));
   if (symbolIds.size !== 1) return null;
   const [targetSymbolId] = symbolIds;
   return { targetRelPath: relPath, targetSymbolId };
 }
 
 /**
- * The self type's short name of the impl a compiler path names, generic
- * arguments dropped: `<a::Either<L, R> as AsRef<T>>::as_ref` and
- * `m::<impl From<D> for b::ConfigValue>::from` give `Either` / `ConfigValue`,
- * `a::Store::<T>::get` gives `Store`. Null when the path names no owner.
+ * The key one owner spelling compares under, compiler path and table scope
+ * alike: references (`&`, `&'a mut`) and generic arguments dropped, the last
+ * `::` segment kept — `&[u8]` → `[u8]`, `std::sync::mpsc::SyncSender<C>` and
+ * `mpsc::SyncSender` → `SyncSender`.
+ */
+function rustOwnerKey(spelling: string): string {
+  const unreferenced = spelling.trim().replace(/^(&\s*('\w+\s+)?(mut\s+)?)+/, "");
+  if (unreferenced.startsWith("[") || unreferenced.startsWith("(")) return unreferenced.replace(/\s+/g, "");
+  return unreferenced.replace(/<.*$/, "").replace(/::$/, "").split("::").at(-1) ?? "";
+}
+
+/** Per run's import map: each `use … X as Y` rename's local name → the renamed items' keys. */
+const renamesByImports = new WeakMap<Readonly<Record<string, readonly string[]>>, Map<string, Set<string>>>();
+
+/** The item a `use` binding renames (`Time` of `Time as DateTime`); undefined for a glob or an unrenamed binding. */
+function rustRenamedItemOf(binding: RustImportBinding): string | undefined {
+  if (binding.globImport) return undefined;
+  const item = binding.sourceName ?? binding.moduleSegments.at(-1);
+  return item === undefined || item === binding.localName || item === "self" ? undefined : item;
+}
+
+/** The keys of the items the project's `use` imports rename to `localName` (`use m::{Time as DateTime}`). */
+function rustUseRenameSourceKeys(localName: string, ctx: CallContext): ReadonlySet<string> {
+  const importsByFile = ctx.rustUseImportsByFile;
+  if (importsByFile === undefined) return new Set();
+  let renames = renamesByImports.get(importsByFile);
+  if (renames === undefined) {
+    renames = new Map();
+    for (const importTexts of Object.values(importsByFile)) {
+      for (const importText of importTexts) {
+        for (const binding of rustImportBindings(importText) ?? []) {
+          const renamedItem = rustRenamedItemOf(binding);
+          if (renamedItem === undefined) continue;
+          const sources = renames.get(binding.localName) ?? new Set<string>();
+          sources.add(rustOwnerKey(renamedItem));
+          renames.set(binding.localName, sources);
+        }
+      }
+    }
+    renamesByImports.set(importsByFile, renames);
+  }
+  return renames.get(localName) ?? new Set();
+}
+
+/**
+ * The owner key of the type a project alias of key `aliasKey` stands for — a
+ * type alias (`pub type DateTime = Time`) or a `use` rename (`use m::{Time as
+ * DateTime}`) — when every alias of that name agrees on one; undefined otherwise.
+ */
+function rustProjectAliasTargetKey(aliasKey: string, ctx: CallContext): string | undefined {
+  const targets = new Set<string>(rustUseRenameSourceKeys(aliasKey, ctx));
+  for (const facts of Object.values(ctx.typeDeclarations ?? {})) {
+    for (const fact of facts) {
+      if (fact.symbolKind !== "type_alias" || fact.reopens || rustOwnerKey(fact.typeId) !== aliasKey) continue;
+      const aliased = fact.aliasedType;
+      if (aliased?.form !== "instance" && aliased?.form !== "class") return undefined;
+      targets.add(rustOwnerKey(aliased.name));
+    }
+  }
+  if (targets.size !== 1) return undefined;
+  const [targetKey] = targets;
+  return targetKey === aliasKey ? undefined : targetKey;
+}
+
+/**
+ * What a compiler path's item is declared under: `<X as Trait>::m` and
+ * `<impl Trait for X>::m` name the self type X — any spelling, a reference or
+ * a primitive included — `a::Store::<T>::get` the type `Store`, `a::imp::m`
+ * the module `imp`. Null for an inherent impl on a builtin (`<impl str>`) or a
+ * path with no owner segment.
+ */
+function rustCompilerPathOwner(compilerPath: string): RustCompilerPathOwner | null {
+  const path = compilerPath.replace(/^rustc \S+ /, "");
+  const selfType = /^<(.+?) as .+>::[^:]+$/.exec(path)?.[1] ?? /<impl .+ for (.+)>::[^:]+$/.exec(path)?.[1];
+  if (selfType !== undefined) {
+    const name = rustOwnerKey(selfType);
+    return name === "" ? null : { kind: "type", name };
+  }
+  const owner = path.split("::").slice(0, -1).join("::");
+  if (owner.includes("<impl ")) return null;
+  const name = rustOwnerKey(owner);
+  if (/^[A-Z][A-Za-z0-9_]*$/.test(name)) return { kind: "type", name };
+  return /^[a-z_][a-z0-9_]*$/.test(name) ? { kind: "module", name } : null;
+}
+
+/**
+ * The self type's key of the impl a compiler path names, generic arguments
+ * and references dropped: `<a::Either<L, R> as AsRef<T>>::as_ref`,
+ * `m::<impl From<D> for b::ConfigValue>::from` and `<&[u8] as D>::decode`
+ * give `Either` / `ConfigValue` / `[u8]`, `a::Store::<T>::get` gives `Store`.
+ * Null when the path names no type owner.
  */
 export function rustImplSelfTypeName(compilerPath: string): string | null {
-  const path = compilerPath.replace(/^rustc \S+ /, "");
-  const qualified = /^<(.+?) as .+>::[^:]+$/.exec(path);
-  const inherentBlock = /<impl .+ for (.+)>::[^:]+$/.exec(path);
-  const owner = qualified?.[1] ?? inherentBlock?.[1] ?? path.split("::").slice(0, -1).join("::");
-  const lastSegment = owner.replace(/<.*$/, "").replace(/::$/, "").split("::").at(-1) ?? "";
-  return /^[A-Z][A-Za-z0-9_]*$/.test(lastSegment) ? lastSegment : null;
+  const owner = rustCompilerPathOwner(compilerPath);
+  return owner?.kind === "type" ? owner.name : null;
 }
 
 /**
