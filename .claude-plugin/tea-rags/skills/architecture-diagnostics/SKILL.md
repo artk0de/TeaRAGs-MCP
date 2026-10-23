@@ -1,20 +1,20 @@
 ---
 name: architecture-diagnostics
 description:
-  Check if code laid out correctly — dependency direction, module borders,
-  Stable Dependencies Principle violations, leaking abstractions (imports past
-  an adopted facade), silent coupling (files changing together with no
-  import/call between them), main-sequence distance (zone of pain / uselessness)
-  hub-like dependencies (high Ca AND Ce) and the inferred layer stack
-  (SCC-condensed levels, knots, back-edges, layer map, move candidates) with
-  evidence per line, grouped into root causes. Use when asked "is architecture
-  right", "layering violations", "layer map", "which layer", "levels", "move
-  candidate", "wrong dependency direction", "SDP", "stable depends on unstable",
-  "module borders", "facade bypass", "deep imports", "leaking abstraction",
-  "hidden coupling", "change together", "shotgun surgery", "zone of pain", "main
-  sequence", "abstractness", "hub-like dependency", "архитектурные нарушения" —
-  NOT for risk/health of code (use risk-assessment), NOT for one failure (use
-  bug-hunt), NOT for plain cycle listing (find_cycles).
+  Check code layout: dependency direction, module borders, Stable Dependencies
+  Principle violations, leaking abstractions (imports past adopted facade),
+  silent coupling (files changing together, no import/call between),
+  main-sequence distance (zone of pain / uselessness), hub-like dependencies
+  (high Ca AND Ce), inferred layer stack (SCC-condensed levels, knots,
+  back-edges, layer map, move candidates) with evidence per line, grouped into
+  root causes. Use when asked "is architecture right", "layering violations",
+  "layer map", "which layer", "levels", "move candidate", "wrong dependency
+  direction", "SDP", "stable depends on unstable", "module borders", "facade
+  bypass", "deep imports", "leaking abstraction", "hidden coupling", "change
+  together", "shotgun surgery", "zone of pain", "main sequence", "abstractness",
+  "hub-like dependency", "архитектурные нарушения" — NOT for risk/health of code
+  (use risk-assessment), NOT for one failure (use bug-hunt), NOT for plain cycle
+  listing (find_cycles).
 argument-hint: "[scope — pathPattern, subsystem, or 'whole project']"
 ---
 

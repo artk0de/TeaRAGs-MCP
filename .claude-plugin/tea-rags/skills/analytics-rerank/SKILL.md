@@ -1,20 +1,18 @@
 ---
 name: analytics-rerank
 description:
-  Pick a tea-rags rerank preset, build a `{custom: {...}}` weight set, or
-  compose an analytics-driven search (ownership, tech-debt, hotspots,
-  code-review, security-audit, fragile-silo). Covers the rerank decision tree
-  (documentation auto-preset vs explicit preset vs custom weights), the
-  preset catalog pointer (`tea-rags://schema/presets`), the weight-key catalog
-  pointer (`tea-rags://schema/signals`), and concrete recipe combinations
-  (e.g. Fragile Silo: `{ bugFix: 0.45, knowledgeSilo: 0.3, similarity: 0.15,
-  churn: -0.1 }`). Invoke when the agent recognizes intent like "rank by
-  ownership", "find tech debt", "hotspot scan", "code review of recent
-  changes", "security audit of auth code", "code that looks stable but breaks
-  a lot", "custom weights for impact analysis". NOT for general project
-  health scanning that needs cross-preset overlap — use
-  `tea-rags:risk-assessment`. NOT for debug-driven root-cause investigation
-  — use `tea-rags:bug-hunt`. NOT for filter shape construction — use
+  Pick tea-rags rerank preset, build `{custom: {...}}` weight set, or compose
+  analytics-driven search (ownership, tech-debt, hotspots, code-review,
+  security-audit, fragile-silo). Covers rerank decision tree (documentation
+  auto-preset vs explicit preset vs custom weights), preset catalog pointer
+  (`tea-rags://schema/presets`), weight-key catalog pointer
+  (`tea-rags://schema/signals`), recipes (e.g. Fragile Silo: `{ bugFix: 0.45,
+  knowledgeSilo: 0.3, similarity: 0.15, churn: -0.1 }`). Invoke on intent like
+  "rank by ownership", "find tech debt", "hotspot scan", "code review of recent
+  changes", "security audit of auth code", "code that looks stable but breaks a
+  lot", "custom weights for impact analysis". NOT for project health scan
+  needing cross-preset overlap — use `tea-rags:risk-assessment`. NOT for debug
+  root-cause — use `tea-rags:bug-hunt`. NOT for filter shape — use
   `tea-rags:filter-building`.
 user-invocable: false
 ---
