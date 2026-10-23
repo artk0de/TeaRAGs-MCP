@@ -1,6 +1,6 @@
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import type { CallResultBinding } from "../../../../contracts/types/codegraph.js";
+import type { CallResultBinding, InferredBindingShape } from "../../../../contracts/types/codegraph.js";
 import { rustAgreedConstructorValue } from "./initializer-arms.js";
 import { letConditionScope, matchArmPattern } from "./pattern-bindings.js";
 import { rustGenericParameters } from "./return-types.js";
@@ -80,7 +80,13 @@ function rustFunctionCallResultBindings(
     // hand its window to an outer binding, so the whole name declines.
     if (!provable) continue;
     const shadows = evidence.patternShadows.get(name) ?? [];
-    bindings[name] = candidates.flatMap((candidate) => windowOutsideShadows(candidate.binding, shadows));
+    const inferenceShape = evidence.inferredShapes.get(name);
+    bindings[name] = candidates.flatMap((candidate) =>
+      windowOutsideShadows(
+        inferenceShape === undefined ? candidate.binding : { ...candidate.binding, inferenceShape },
+        shadows,
+      ),
+    );
   }
   return bindings;
 }
@@ -183,6 +189,13 @@ class RustCallResultEvidence {
   readonly candidates = new Map<string, RustCallResultCandidate[]>();
   /** Bound by a nested fn's parameter or an unscoped pattern, shadowed by a non-call `let`, or handed to a statement macro. */
   readonly declined = new Set<string>();
+  /**
+   * Names bound only through an inferred shape the reader must treat as
+   * additive: a later reassignment (`x = ..`, `x += ..`) or a `let` whose
+   * `if` / `match` arms agree on a constructor. Before those shapes the whole
+   * name declined, so each of its `let`s carries the shape.
+   */
+  readonly inferredShapes = new Map<string, InferredBindingShape>();
   /** Every name a `let` or a pattern binds — a callee spelled by one is a local value, not a function. */
   readonly localNames = new Set<string>();
   /** Names a nested fn/const/static/macro/use inside the body introduces. */
@@ -279,6 +292,12 @@ class RustCallResultEvidence {
       case "let_declaration":
         this.visitLet(node, nested);
         break;
+      case "assignment_expression":
+      case "compound_assignment_expr": {
+        const left = node.childForFieldName("left");
+        if (left?.type === "identifier") this.inferredShapes.set(left.text, "reassignedLet");
+        break;
+      }
       default:
         break;
     }
@@ -319,10 +338,14 @@ class RustCallResultEvidence {
     // constructor arm, so it shadows an earlier call-result `let` as a direct
     // `let x = Res::Ok(..)` would.
     const value = node.childForFieldName("value");
-    const init = rustCallResultInit(value === null ? null : (rustAgreedConstructorValue(value)?.expression ?? value));
+    const armValue = value === null ? undefined : rustAgreedConstructorValue(value)?.expression;
+    const init = rustCallResultInit(armValue ?? value);
     if (block?.type !== "block" || node.childForFieldName("type") !== null || init === null) {
       this.declined.add(name);
       return;
+    }
+    if (armValue !== undefined && armValue !== value && !this.inferredShapes.has(name)) {
+      this.inferredShapes.set(name, "initializerArms");
     }
     const list = this.candidates.get(name) ?? [];
     list.push({

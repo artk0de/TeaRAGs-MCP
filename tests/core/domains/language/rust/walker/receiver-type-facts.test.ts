@@ -69,9 +69,9 @@ describe("Rust walker — initializer bindings", () => {
       ].join("\n"),
       "run",
     );
-    expect(bindings.res).toEqual([{ line: 2, type: "Res" }]);
-    expect(bindings.m).toEqual([{ line: 9, type: "Res" }]);
-    expect(bindings.b).toEqual([{ line: 10, type: "Res" }]);
+    expect(bindings.res).toEqual([{ line: 2, type: "Res", inferenceShape: "initializerArms" }]);
+    expect(bindings.m).toEqual([{ line: 9, type: "Res", inferenceShape: "initializerArms" }]);
+    expect(bindings.b).toEqual([{ line: 10, type: "Res", inferenceShape: "initializerArms" }]);
   });
 
   it("declines an initializer whose constructor arms disagree, or that has no constructor arm", () => {
@@ -106,7 +106,37 @@ describe("Rust walker — initializer bindings", () => {
     const { chunks } = extract(src);
     const fmt = chunks.find((chunk) => chunk.symbolId.endsWith("fmt"))?.localBindings ?? {};
     const show = chunks.find((chunk) => chunk.symbolId.endsWith("show"))?.localBindings ?? {};
-    expect(fmt.dec).toEqual([{ line: 3, type: "Decimal" }]);
+    expect(fmt.dec).toEqual([{ line: 3, type: "Decimal", inferenceShape: "selfCopy" }]);
     expect(show.me).toBeUndefined();
+  });
+});
+
+describe("Rust walker — inferred shapes are marked for the additive read", () => {
+  it("marks an enum variant constructor, and leaves the direct associated-fn constructor unmarked", () => {
+    const bindings = localBindingsOf(
+      ["fn run(x: u64) {", "    let d = TiInstant::Monotonic(x);", "    let w = Worker::new();", "}"].join("\n"),
+      "run",
+    );
+    expect(bindings.d).toEqual([{ line: 2, type: "TiInstant", inferenceShape: "variantConstructor" }]);
+    expect(bindings.w).toEqual([{ line: 3, type: "Worker" }]);
+  });
+
+  it("marks every call-result `let` of a reassigned name or an arms initializer, and no plain one", () => {
+    const { chunks } = extract(
+      [
+        "fn run(rect: &Rect, c: bool) {",
+        "    let mut rect = rect.to_webrender();",
+        "    if c {",
+        "        rect = rect.inflate(0.0, 1.0);",
+        "    }",
+        "    let res = if c { Res::Ok(1) } else { Res::Truncated(2) };",
+        "    let plain = make();",
+        "}",
+      ].join("\n"),
+    );
+    const bindings = chunks.find((chunk) => chunk.symbolId === "run")?.callResultBindings ?? {};
+    expect(bindings.rect?.map((binding) => binding.inferenceShape)).toEqual(["reassignedLet"]);
+    expect(bindings.res?.map((binding) => binding.inferenceShape)).toEqual(["initializerArms"]);
+    expect(bindings.plain?.map((binding) => binding.inferenceShape)).toEqual([undefined]);
   });
 });

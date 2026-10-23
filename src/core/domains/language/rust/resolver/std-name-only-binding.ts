@@ -24,6 +24,7 @@ import { rustTextIsStdPreludeCallable } from "../vocabulary/std-prelude.js";
 import { rustcCallSiteDefinitionOf } from "./call-site-resolution.js";
 import { rustStdTerminalTargetsExternal } from "./external-type-hops.js";
 import { rustTypedMissIsProven } from "./rust-type-member-lookup.js";
+import { rustNameBoundByExternalImport, rustStdTypeRef } from "./std-type-hops.js";
 import { rustReceiverChainType } from "./strategies/rust-type-receiver.js";
 import {
   parseRustImportPath,
@@ -74,5 +75,18 @@ function receiverStdNameBindsByNameOnly(call: CallRef, ctx: CallContext): boolea
   // A later call-result `let` shadows a typed local: the shadowed type is no evidence.
   const visible = rustVisibleReceiverBinding(head, call.startLine, ctx, call.startColumn);
   const binding = visible?.channel === "callResult" ? undefined : visible?.binding;
-  return binding === undefined || (binding.typeRef === undefined && binding.type.length === 0);
+  if (binding === undefined) return true;
+  // A walker-inferred std type (`let regex = match .. { Some(r) => Cow::Borrowed(r), .. }`)
+  // is evidence FOR std, never for the namesake: the shape stays additive.
+  if (binding.inferenceShape !== undefined && rustTypeBoundToStdOrExternal(binding.type, ctx)) return true;
+  return binding.typeRef === undefined && binding.type.length === 0;
+}
+
+/**
+ * A std type the project does not shadow, or a name the file's `use` binds
+ * outside the project (`use std::borrow::Cow` — even where the project's own
+ * `impl ToInt for std::borrow::Cow<..>` makes `Cow` look declared).
+ */
+function rustTypeBoundToStdOrExternal(typeName: string, ctx: CallContext): boolean {
+  return rustStdTypeRef(typeName, undefined, ctx) !== undefined || rustNameBoundByExternalImport(typeName, ctx);
 }

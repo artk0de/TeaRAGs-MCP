@@ -150,6 +150,14 @@ export interface LocalBinding {
    * binding scoped by lines alone.
    */
   visibleSpan?: ModifierConditionSpan;
+  /**
+   * The inferred shape that typed this binding, when the walker read its type
+   * off a shape whose typing must stay ADDITIVE (src/core/domains/language/CLAUDE.md):
+   * where the spelled type does not place, the resolver reads the call as if
+   * the binding did not exist. ABSENT on a declared, annotated or
+   * associated-constructor binding — those read as they always did.
+   */
+  inferenceShape?: InferredBindingShape;
 }
 
 /**
@@ -286,6 +294,14 @@ export function resolveLocalBinding(
   return best;
 }
 
+/**
+ * An inferred binding shape whose typing is additive over the untyped read
+ * (Rust walker): an enum variant constructor (`let d = Res::Ok(x)`), agreeing
+ * `if` / `match` / block arms, a `*self` copy in an impl, and a call-result
+ * `let` kept through reassignment.
+ */
+export type InferredBindingShape = "variantConstructor" | "initializerArms" | "selfCopy" | "reassignedLet";
+
 /** The {@link LocalBinding.valueKind}s whose type only a resolver can fold out of `sourceExpression`. */
 export type DerivedLocalBindingKind =
   | "iterationElement"
@@ -371,6 +387,14 @@ export interface CallResultBinding {
    * call-result binding.
    */
   readonly closureParameter?: number;
+  /**
+   * Set when the binding exists only through an inferred shape (a `let` whose
+   * `if` / `match` arms agree on a constructor, or a `let` kept through a
+   * later reassignment) that a reader must treat as ADDITIVE: where the
+   * binding's value cannot be typed, the name reads as if the walker had
+   * declined it. ABSENT on every plain call-result `let`.
+   */
+  readonly inferenceShape?: InferredBindingShape;
   /**
    * Set when the binding is the `index`-th payload slot of enum case
    * `caseName`, destructured from the value `callee` spells — the switch

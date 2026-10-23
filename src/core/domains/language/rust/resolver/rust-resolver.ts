@@ -71,6 +71,12 @@ import {
   rustCallSiteProvesIndirectCallee,
   rustCallSiteProvesNoProjectCallable,
 } from "./call-site-resolution.js";
+import {
+  rustHeadHasInferredLocal,
+  rustWithAdditiveInferredBindings,
+  rustWithoutInferredBindings,
+  rustWithTypableInferredLets,
+} from "./inferred-binding-gate.js";
 import { RustResolveEnvironmentCache } from "./resolve-environment-cache.js";
 import { withRustResolveEnvironment } from "./resolve-environment.js";
 import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
@@ -172,20 +178,37 @@ export class RustCallResolver implements CallResolver {
     };
   }
 
-  /** The caller's ctx carrying this run's resolve environment — the one entry every Rust helper reads it from. */
-  private withEnvironment(ctx: CallContext): CallContext {
+  /**
+   * The caller's ctx carrying this run's resolve environment — the one entry every
+   * Rust helper reads it from — and the call's additive view of the walker's
+   * inferred bindings (`rustWithAdditiveInferredBindings`).
+   */
+  private withEnvironment(call: CallRef, ctx: CallContext): CallContext {
+    return rustWithAdditiveInferredBindings(call, this.environmentOf(ctx));
+  }
+
+  private environmentOf(ctx: CallContext): CallContext {
     return withRustResolveEnvironment(ctx, this.environments.forRoot(ctx.projectRoot));
   }
 
   /** The trait cone — unless the driver's row decides the call (RESIDUAL R2): then the chain answers it alone. */
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
-    const environment = this.withEnvironment(ctx);
+    const environment = this.withEnvironment(call, ctx);
     if (this.callSites.overridesDispatch(call, environment)) return emptyDispatchFanout();
     return resolveDispatchViaComponents(this.dispatchComponents, call, environment);
   }
 
+  /**
+   * A shaped local of the walker's (`inferenceShape`) answers only where the
+   * chain resolves through it; a miss — an alias type the lookup cannot place,
+   * a member the type lacks — reads the call exactly as before the shape.
+   */
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
-    return resolveViaChain(this.strategies, call, this.withEnvironment(ctx));
+    const environment = this.environmentOf(ctx);
+    const shaped = rustWithTypableInferredLets(call, environment);
+    const target = resolveViaChain(this.strategies, call, shaped);
+    if (target !== null || !rustHeadHasInferredLocal(call, shaped)) return target;
+    return resolveViaChain(this.strategies, call, rustWithoutInferredBindings(call, environment));
   }
 
   /**
@@ -201,7 +224,7 @@ export class RustCallResolver implements CallResolver {
    * leaves `noInProjectDef` and the vocabulary's own verdicts byte-identical.
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
-    const environment = this.withEnvironment(ctx);
+    const environment = this.withEnvironment(call, ctx);
     if (this.external.targetsExternal(call, environment)) return true;
     // The strategies' R5 drop: a std-prelude name bound by name alone where the driver is silent.
     if (rustStdNameBindsByNameOnly(call, environment)) return true;
@@ -224,7 +247,7 @@ export class RustCallResolver implements CallResolver {
     if (candidates.length === 0) return false;
     // A compiler-proven in-project type or local (bd s3i8m.6 R3b) or derived
     // impl (bd s3i8m T7) is no namesake's edge.
-    return !rustCallSiteProvesNoProjectCallable(call, this.withEnvironment(ctx));
+    return !rustCallSiteProvesNoProjectCallable(call, this.withEnvironment(call, ctx));
   }
 
   /**
@@ -233,6 +256,6 @@ export class RustCallResolver implements CallResolver {
    * decided at run time. Proof only — no driver row answers false.
    */
   targetsUndecidable(call: CallRef, ctx: CallContext): boolean {
-    return rustCallSiteProvesIndirectCallee(call, this.withEnvironment(ctx));
+    return rustCallSiteProvesIndirectCallee(call, this.withEnvironment(call, ctx));
   }
 }
