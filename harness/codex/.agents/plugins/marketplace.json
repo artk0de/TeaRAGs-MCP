@@ -1,0 +1,20 @@
+{
+  "name": "tea-rags-local",
+  "interface": {
+    "displayName": "tea-rags (local)"
+  },
+  "plugins": [
+    {
+      "name": "tea-rags",
+      "source": {
+        "source": "local",
+        "path": "./tea-rags"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

@@ -17,6 +17,7 @@
     "type-check": "tsc --noEmit",
     "type-check:scripts": "tsc -p tsconfig.scripts.json",
     "type-check:tests": "tsc -p tsconfig.tests.json",
+    "gen:harness-codex": "tsx scripts/gen-harness-codex.ts",
     "gen:lang-compat": "tsx scripts/gen-language-compatibility.ts",
     "gen:migration-sql": "tsx scripts/gen-migration-sql.ts",
     "pin:lang-versions": "tsx scripts/pin-language-versions.ts",
