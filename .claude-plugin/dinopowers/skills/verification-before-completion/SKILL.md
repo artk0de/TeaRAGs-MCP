@@ -65,6 +65,12 @@ no full suite.
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
+**Requires superpowers:** `superpowers:verification-before-completion`
+unavailable → stop, ask the user to install superpowers
+(https://github.com/obra/superpowers; steps in
+[CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
+it as the full workflow.
+
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) +
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never
 reindex. Main checkout → incremental `mcp__tea-rags__index_codebase` BEFORE

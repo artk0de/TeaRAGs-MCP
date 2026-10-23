@@ -1,9 +1,9 @@
 ---
 name: writing-skills
 description:
-  Author/rewrite SKILL.md inside plugins/dinopowers/, enforce wrapper
-  pattern (tea-rags enrichment step then chain into superpowers:*) + description
-  style to win against parent skills. Triggers on "add dinopowers:X", "create a
+  Author/rewrite SKILL.md inside plugins/dinopowers/, enforce wrapper pattern
+  (tea-rags enrichment step then chain into superpowers:*) + description style
+  to win against parent skills. Triggers on "add dinopowers:X", "create a
   wrapper skill", "write a SKILL.md", "напиши скилл", "новый wrapper", "новый
   dinopowers скилл", "edit dinopowers wrapper", "rewrite dinopowers SKILL.md",
   "fix skill description", "improve a dinopowers skill", "tweak SKILL.md
@@ -27,6 +27,11 @@ ordering — this skill bootstraps that for all future wrappers.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
+
+**Requires superpowers:** `superpowers:writing-skills` unavailable → stop, ask
+the user to install superpowers (https://github.com/obra/superpowers; steps in
+[CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
+it as the full workflow.
 
 ## Step 1 — Extract intent
 

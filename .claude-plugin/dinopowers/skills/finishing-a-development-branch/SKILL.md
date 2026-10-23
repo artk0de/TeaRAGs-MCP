@@ -31,6 +31,12 @@ skippable, note "trivial scope — no risk scan needed".
 **Chaining rule:** [CHAINING.md](../../CHAINING.md) — every onward
 `superpowers:Y` → `dinopowers:Y`. NEVER bypass wrapper.
 
+**Requires superpowers:** `superpowers:finishing-a-development-branch`
+unavailable → stop, ask the user to install superpowers
+(https://github.com/obra/superpowers; steps in
+[CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
+it as the full workflow.
+
 **Freshness:** [FRESHNESS.md](../../FRESHNESS.md) (owner
 `tea-rags://guide/freshness`). Lag ≠ unusable — never Bash `cat`/`grep`/`Read`
 over code; `treeState` row → `find_symbol`.
