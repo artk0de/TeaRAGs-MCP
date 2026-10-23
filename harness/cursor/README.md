@@ -19,8 +19,14 @@ regenerates this package and commits it.
   `{ "additional_context": "<tea-rags prime output>" }`. No `subagentStart` /
   `preCompact` hooks: Cursor cannot inject context there.
 - `tea-rags/skills/` — the tea-rags skills (17): every user-invocable one plus
-  each internal skill a shipped skill names. dinopowers wrappers are excluded
-  (they chain into superpowers, not shipped).
+  each internal skill a shipped skill names.
+- `dinopowers/` — the wrappers as `skills/dino-<s>/` (Claude Code
+  `dinopowers:<s>`; `superpowers:<s>` → `/<s>`), `CHAINING.md` / `FRESHNESS.md`
+  they link to, and a `sessionStart` hook (`scripts/session-start.sh`) answering
+  with the main-session routing table (`scripts/main-session-routing.txt`). No
+  MCP server: the wrappers call tea-rags'. superpowers is not bundled — install
+  it per https://github.com/obra/superpowers; a wrapper without it stops and
+  asks.
 - `tea-rags/repair/`, `tea-rags/references/` — plugin files the skills link to.
   `rules/references/` moves to `references/` (links rewritten) so `rules/` holds
   rule files only.

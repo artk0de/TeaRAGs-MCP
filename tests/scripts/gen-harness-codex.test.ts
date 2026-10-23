@@ -7,13 +7,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CODEX_HARNESS_DIR,
   CODEX_MARKETPLACE_PATH,
+  DINOPOWERS_SKILLS_LIST_BUDGET,
   renderCodexHarness,
   renderCodexMarketplace,
   SKILLS_LIST_BUDGET,
   toCodexSkill,
   writeCodexHarness,
 } from "../../scripts/gen-harness-codex.js";
-import { PLUGIN_SRC } from "../../scripts/harness/package.js";
+import { PLUGINS_DIR } from "../../scripts/harness/package.js";
 import { dropLoadTimeBlocks, extractInjectionBlock, parseFrontmatter } from "../../scripts/harness/transform.js";
 
 const ROOT = resolve(__dirname, "../..");
@@ -238,12 +239,110 @@ describe("renderCodexHarness", () => {
   });
 });
 
+describe("toCodexSkill — dinopowers wrappers", () => {
+  const out = toCodexSkill(
+    `---\nname: brainstorming\ndescription: Wraps superpowers:brainstorming. Then dinopowers:writing-plans.\n---\n\nRun \`Skill(superpowers:brainstorming)\`, chain to Skill(dinopowers:writing-plans), see tea-rags:explore. Keep \`superpowers:*\`; \`superpowers:Y\` → \`dinopowers:Y\`.\n`,
+    { skillNames: new Set(["explore", "dino-writing-plans"]), wrappers: true },
+  );
+
+  it("mentions superpowers skills by their own name and wrappers by their dino- name", () => {
+    expect(parseFrontmatter(out).fields.description).toBe("Wraps $brainstorming. Then $dino-writing-plans.");
+    expect(out).toContain(
+      "Run `$brainstorming`, chain to $dino-writing-plans, see $explore. Keep `superpowers:*`; `$Y` → `$dino-Y`.",
+    );
+  });
+});
+
+describe("renderCodexHarness — dinopowers package", () => {
+  let rendered: Map<string, string>;
+  const wrappers = () => [...rendered].filter(([path]) => /^dinopowers\/skills\/[^/]+\/SKILL\.md$/.test(path));
+
+  beforeAll(async () => {
+    rendered = await renderCodexHarness(ROOT);
+  });
+
+  it("writes a manifest with skills and hooks and no MCP server of its own", () => {
+    const manifest = JSON.parse(rendered.get("dinopowers/.codex-plugin/plugin.json") ?? "");
+
+    expect(manifest).toMatchObject({ name: "dinopowers", skills: "./skills/", hooks: "./hooks/hooks.json" });
+    expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(manifest.mcpServers).toBeUndefined();
+  });
+
+  it("ships every wrapper as dino-<name>, mentioning its superpowers skill and the install line", () => {
+    expect(wrappers().length).toBe(10);
+    for (const [path, content] of wrappers()) {
+      const { fields, body } = parseFrontmatter(content);
+      expect(Object.keys(fields), path).toEqual(["name", "description"]);
+      expect(fields.name).toMatch(/^dino-/);
+      expect(path).toBe(`dinopowers/skills/${fields.name}/SKILL.md`);
+      expect(body, path).toContain(`$${fields.name.slice("dino-".length)}`);
+      expect(body, path).toContain("https://github.com/obra/superpowers");
+      expect(content, path).not.toMatch(/\b(?:dinopowers|superpowers):[A-Za-z]/);
+      expect(content, path).not.toMatch(/Skill\(/);
+    }
+  });
+
+  it("keeps the dinopowers skills list within its own budget", () => {
+    const total = wrappers().reduce((sum, [, content]) => {
+      const { fields } = parseFrontmatter(content);
+      return sum + fields.name.length + fields.description.length;
+    }, 0);
+
+    expect(total).toBeLessThanOrEqual(DINOPOWERS_SKILLS_LIST_BUDGET);
+  });
+
+  it("resolves every relative link inside the package", () => {
+    const missing: string[] = [];
+    for (const [path, content] of rendered) {
+      if (!path.startsWith("dinopowers/") || !path.endsWith(".md")) continue;
+      for (const [, link] of content.matchAll(/\]\(((?:\.\.\/)*[\w./-]+\.md)\)/g)) {
+        if (!rendered.has(join(dirname(path), link))) missing.push(`${path} → ${link}`);
+      }
+    }
+
+    expect(missing).toEqual([]);
+  });
+
+  it("injects the routing table at SessionStart and SubagentStart in Codex mention syntax", () => {
+    const { hooks } = JSON.parse(rendered.get("dinopowers/hooks/hooks.json") ?? "");
+
+    expect(Object.keys(hooks).sort()).toEqual(["SessionStart", "SubagentStart"]);
+    for (const event of ["SessionStart", "SubagentStart"]) {
+      const [
+        {
+          hooks: [{ command }],
+        },
+      ] = hooks[event];
+      expect(command).toMatch(/^\$\{PLUGIN_ROOT\}\/scripts\/[\w-]+\.sh$/);
+      const script = rendered.get(`dinopowers/${command.replace(/^\$\{PLUGIN_ROOT\}\//, "")}`) ?? "";
+      expect(script, event).toContain(`hookEventName: "${event}"`);
+      expect(script, event).toContain("additionalContext");
+      expect(script, event).not.toContain("CLAUDE_");
+      const [, txt] = /scripts\/([\w-]+\.txt)/.exec(script) ?? [];
+      const table = rendered.get(`dinopowers/scripts/${txt}`) ?? "";
+      expect(table, event).toContain("$dino-brainstorming");
+      expect(table, event).toContain("$data-driven-generation");
+      expect(table, event).not.toContain("Skill(");
+    }
+  });
+
+  it("lists both plugins in the root marketplace", async () => {
+    const marketplace = JSON.parse(await renderCodexMarketplace(ROOT));
+
+    expect(marketplace.plugins.map((plugin: { source: { path: string } }) => plugin.source.path)).toEqual([
+      "./harness/codex/tea-rags",
+      "./harness/codex/dinopowers",
+    ]);
+  });
+});
+
 describe("writeCodexHarness", () => {
   let fixtureRoot: string;
 
   beforeAll(() => {
     fixtureRoot = mkdtempSync(join(tmpdir(), "harness-codex-"));
-    cpSync(join(ROOT, PLUGIN_SRC), join(fixtureRoot, PLUGIN_SRC), { recursive: true });
+    cpSync(join(ROOT, PLUGINS_DIR), join(fixtureRoot, PLUGINS_DIR), { recursive: true });
   });
 
   afterAll(() => {

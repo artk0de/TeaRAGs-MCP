@@ -25,3 +25,16 @@ risk tiers) BEFORE inner skill; direct `superpowers:Y` skips it.
 
 `superpowers:Y` direct only when Y not listed (e.g.
 `superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+
+## Missing superpowers (MANDATORY)
+
+Every wrapper chains into a superpowers skill; dinopowers does not bundle
+superpowers. Wrapped `superpowers:` skill not available (not listed, invocation
+fails) → STOP and ask the user to install superpowers:
+
+- Source: https://github.com/obra/superpowers
+- Claude Code: `/plugin install superpowers@claude-plugins-official`
+- Codex / Cursor: the install steps in the superpowers repository README
+
+NEVER run the wrapper's tea-rags enrichment alone and present it as the full
+workflow.

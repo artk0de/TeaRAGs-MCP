@@ -13,7 +13,7 @@ import {
   toCursorSkill,
   writeCursorHarness,
 } from "../../scripts/gen-harness-cursor.js";
-import { PLUGIN_SRC } from "../../scripts/harness/package.js";
+import { PLUGIN_SRC, PLUGINS_DIR } from "../../scripts/harness/package.js";
 import { parseFrontmatter } from "../../scripts/harness/transform.js";
 
 const ROOT = resolve(__dirname, "../..");
@@ -133,7 +133,7 @@ describe("renderCursorHarness", () => {
     expect(JSON.parse(marketplace)).toMatchObject({
       name: "tea-rags",
       owner: { name: expect.any(String) },
-      plugins: [{ name: "tea-rags", source: "./harness/cursor/tea-rags" }],
+      plugins: expect.arrayContaining([{ name: "tea-rags", source: "./harness/cursor/tea-rags" }]),
     });
   });
 
@@ -232,7 +232,7 @@ describe("renderCursorHarness — core rule", () => {
 
   beforeAll(() => {
     fixtureRoot = mkdtempSync(join(tmpdir(), "harness-cursor-"));
-    cpSync(join(ROOT, PLUGIN_SRC), join(fixtureRoot, PLUGIN_SRC), { recursive: true });
+    cpSync(join(ROOT, PLUGINS_DIR), join(fixtureRoot, PLUGINS_DIR), { recursive: true });
   });
 
   afterAll(() => {
@@ -266,12 +266,80 @@ describe("renderCursorHarness — core rule", () => {
   });
 });
 
+describe("renderCursorHarness — dinopowers package", () => {
+  let rendered: Map<string, string>;
+  const wrappers = () => [...rendered].filter(([path]) => /^dinopowers\/skills\/[^/]+\/SKILL\.md$/.test(path));
+
+  beforeAll(async () => {
+    rendered = await renderCursorHarness(ROOT);
+  });
+
+  it("writes a manifest with documented fields only and no MCP server of its own", () => {
+    const manifest = JSON.parse(rendered.get("dinopowers/.cursor-plugin/plugin.json") ?? "");
+
+    expect(Object.keys(manifest).filter((key) => !MANIFEST_FIELDS.has(key))).toEqual([]);
+    expect(manifest.name).toBe("dinopowers");
+    expect(rendered.has("dinopowers/mcp.json")).toBe(false);
+  });
+
+  it("ships every wrapper as dino-<name>, mentioning its superpowers skill and the install line", () => {
+    expect(wrappers().length).toBe(10);
+    for (const [path, content] of wrappers()) {
+      const { fields, body } = parseFrontmatter(content);
+      expect(Object.keys(fields), path).toEqual(["name", "description"]);
+      expect(fields.name).toMatch(/^dino-/);
+      expect(path).toBe(`dinopowers/skills/${fields.name}/SKILL.md`);
+      expect(body, path).toContain(`/${fields.name.slice("dino-".length)}`);
+      expect(body, path).toContain("https://github.com/obra/superpowers");
+      expect(content, path).not.toMatch(/\b(?:dinopowers|superpowers):[A-Za-z]/);
+      expect(content, path).not.toMatch(/Skill\(/);
+    }
+  });
+
+  it("resolves every relative link inside the package", () => {
+    const missing: string[] = [];
+    for (const [path, content] of rendered) {
+      if (!path.startsWith("dinopowers/") || !path.endsWith(".md")) continue;
+      for (const [, link] of content.matchAll(/\]\(((?:\.\.\/)*[\w./-]+\.md)\)/g)) {
+        if (!rendered.has(join(dirname(path), link))) missing.push(`${path} → ${link}`);
+      }
+    }
+
+    expect(missing).toEqual([]);
+  });
+
+  it("injects the main-session routing table at sessionStart only, in slash-mention syntax", () => {
+    const hooks = JSON.parse(rendered.get("dinopowers/hooks/hooks.json") ?? "");
+
+    expect(hooks.version).toBe(1);
+    expect(Object.keys(hooks.hooks)).toEqual(["sessionStart"]);
+    const [{ command }] = hooks.hooks.sessionStart;
+    expect(command).toBe(`\${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh`);
+    const script = rendered.get("dinopowers/scripts/session-start.sh") ?? "";
+    expect(script).toContain("additional_context");
+    expect(script).not.toContain("CLAUDE_");
+    const table = rendered.get("dinopowers/scripts/main-session-routing.txt") ?? "";
+    expect(table).toContain("/dino-brainstorming");
+    expect(table).toContain("/data-driven-generation");
+    expect(table).not.toContain("Skill(");
+  });
+
+  it("lists both plugins in the root marketplace", async () => {
+    const { plugins } = JSON.parse(await renderCursorMarketplace(ROOT));
+
+    expect(plugins).toEqual([
+      { name: "tea-rags", source: "./harness/cursor/tea-rags" },
+      { name: "dinopowers", source: "./harness/cursor/dinopowers" },
+    ]);
+  });
+});
+
 describe("writeCursorHarness", () => {
   let fixtureRoot: string;
 
   beforeAll(() => {
     fixtureRoot = mkdtempSync(join(tmpdir(), "harness-cursor-write-"));
-    cpSync(join(ROOT, PLUGIN_SRC), join(fixtureRoot, PLUGIN_SRC), { recursive: true });
+    cpSync(join(ROOT, PLUGINS_DIR), join(fixtureRoot, PLUGINS_DIR), { recursive: true });
   });
 
   afterAll(() => {
