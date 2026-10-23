@@ -1,6 +1,7 @@
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { CallResultBinding } from "../../../../contracts/types/codegraph.js";
+import { rustAgreedConstructorValue } from "./initializer-arms.js";
 import { letConditionScope, matchArmPattern } from "./pattern-bindings.js";
 import { rustGenericParameters } from "./return-types.js";
 
@@ -180,7 +181,7 @@ interface RustCallResultCandidate {
  */
 class RustCallResultEvidence {
   readonly candidates = new Map<string, RustCallResultCandidate[]>();
-  /** Bound by a parameter or an unscoped pattern, reassigned, shadowed by a non-call `let`, or handed to a statement macro. */
+  /** Bound by a nested fn's parameter or an unscoped pattern, shadowed by a non-call `let`, or handed to a statement macro. */
   readonly declined = new Set<string>();
   /** Every name a `let` or a pattern binds — a callee spelled by one is a local value, not a function. */
   readonly localNames = new Set<string>();
@@ -272,15 +273,12 @@ class RustCallResultEvidence {
         this.shadowPattern(pattern, pattern?.startPosition, node.endPosition, nested);
         break;
       }
+      // An assignment (`d = Res::Truncated(..)`, `n += 1`) never declines: Rust
+      // fixes a local's type at its `let`, so a reassigned value has that same
+      // type. Only a new `let` (a shadow) can retype the name.
       case "let_declaration":
         this.visitLet(node, nested);
         break;
-      case "assignment_expression":
-      case "compound_assignment_expr": {
-        const left = node.childForFieldName("left");
-        if (left?.type === "identifier") this.declined.add(left.text);
-        break;
-      }
       default:
         break;
     }
@@ -317,7 +315,11 @@ class RustCallResultEvidence {
     }
     const name = pattern.text;
     this.localNames.add(name);
-    const init = rustCallResultInit(node.childForFieldName("value"));
+    // An `if` / `match` / block initializer binds through its agreeing
+    // constructor arm, so it shadows an earlier call-result `let` as a direct
+    // `let x = Res::Ok(..)` would.
+    const value = node.childForFieldName("value");
+    const init = rustCallResultInit(value === null ? null : (rustAgreedConstructorValue(value)?.expression ?? value));
     if (block?.type !== "block" || node.childForFieldName("type") !== null || init === null) {
       this.declined.add(name);
       return;

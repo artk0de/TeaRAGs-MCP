@@ -1,6 +1,6 @@
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import { rustDeclaredTypeRef } from "./return-types.js";
+import { rustDeclaredTypeRef, rustGenericHead } from "./return-types.js";
 
 /**
  * Explicitly declared struct fields: named (`f: T`) and tuple-struct positional
@@ -76,21 +76,6 @@ function rustDeclaredFields(
     }
   }
   return { fields, genericFieldParameters, fieldTypeArguments };
-}
-
-/**
- * A generic type whose arguments {@link rustDeclaredTypeRef} cannot spell
- * (`Vec<u8>`, `Box<dyn Fn()>`): its head and argument count, every argument unknown.
- */
-function rustGenericHead(typeNode: AstNode | null): { name: string; argumentCount: number } | undefined {
-  const node = typeNode?.type === "reference_type" ? typeNode.childForFieldName("type") : typeNode;
-  if (node?.type !== "generic_type") return undefined;
-  const head = rustDeclaredTypeRef(node.childForFieldName("type"));
-  const argumentCount = (node.childForFieldName("type_arguments")?.namedChildren ?? []).filter(
-    (argument) => argument.type !== "lifetime",
-  ).length;
-  if (head?.form !== "instance" || argumentCount === 0) return undefined;
-  return { name: head.name, argumentCount };
 }
 
 /** Each field's access name and declared type node — named fields by name, tuple fields by position (a struct or an enum variant). */

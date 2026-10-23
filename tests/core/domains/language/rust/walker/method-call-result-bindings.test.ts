@@ -30,7 +30,9 @@ fn run(e: &Engine) {
     expect(bindings["plain"]).toEqual([expect.objectContaining({ callee: "helper", endLine: expect.any(Number) })]);
   });
 
-  it("keeps skipping reassigned bindings and multi-assignment uncertainty", () => {
+  // Reassigned bindings were once skipped; Rust fixes a local's type at its
+  // `let`, so an assignment or update keeps the method call's binding.
+  it("keeps reassigned and updated bindings", () => {
     const bindings = collect(`
 fn run(e: &Engine) {
     let mut wb = e.write_batch();
@@ -39,7 +41,7 @@ fn run(e: &Engine) {
     x += 1;
 }
 `);
-    expect(bindings["wb"]).toBeUndefined();
-    expect(bindings["x"]).toBeUndefined();
+    expect(bindings["wb"]).toEqual([expect.objectContaining({ callee: "e.write_batch" })]);
+    expect(bindings["x"]).toEqual([expect.objectContaining({ callee: "e.first" })]);
   });
 });

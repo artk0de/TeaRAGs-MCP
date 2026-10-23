@@ -21,7 +21,7 @@ import { collectTypeDeclarationReaders } from "../../../../../../src/core/domain
  * The fold now types both; the no-evidence rule still drops an untyped
  * `x.unwrap()`.
  */
-function edgesOf(code: string, materialized: boolean) {
+function edgesOf(code: string, materialized: boolean, symbolId = "run") {
   const language = new RustLanguage();
   const factory = new LanguageFactory();
   const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
@@ -43,8 +43,8 @@ function edgesOf(code: string, materialized: boolean) {
     })),
   );
   runState.absorb(extraction, []);
-  const chunk = extraction.chunks.find((entry) => entry.symbolId === "run")!;
-  expect(chunk?.symbolId).toBe("run");
+  const chunk = extraction.chunks.find((entry) => entry.symbolId === symbolId)!;
+  expect(chunk?.symbolId).toBe(symbolId);
   const ctx: CallContext = {
     callerFile: relPath,
     callerScope: chunk.scope,
@@ -136,6 +136,116 @@ fn run(dec: Decimal) {
   it("still drops `x.unwrap()` on an untyped receiver bound only to the lone project `Res#unwrap`", () => {
     const target = edgesOf(
       `${declarations}
+fn run() {
+  let x = external::make();
+  let v = x.unwrap();
+}
+`,
+      materialized,
+    );
+    expect(target("x.unwrap()")).toBeUndefined();
+  });
+});
+
+/**
+ * tikv `decimal.rs` as written: the real `fix_word_cnt_err` returns a tuple of
+ * primitives, `Res::map` names its own generic, and locals are reassigned, bound
+ * from `if` arms or copied from `*self` — each once left the receiver untyped.
+ */
+const tikvDecimal = `
+pub enum Res<T> { Ok(T), Truncated(T), Overflow(T) }
+impl<T> Res<T> {
+  pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> Res<U> { todo!() }
+  pub fn unwrap(self) -> T { todo!() }
+}
+#[derive(Clone, Copy)]
+pub struct Decimal;
+impl Decimal {
+  pub fn round(&self, frac: i8) -> Res<Decimal> { todo!() }
+}
+fn fix_word_cnt_err(a: u8, b: u8) -> Res<(u8, u8)> { todo!() }
+`;
+
+describe.each([false, true])("Rust R5 walker-typed std-name receivers (materialized=%s)", (materialized) => {
+  it("types a local bound from a return holding primitives (`-> Res<(u8, u8)>`)", () => {
+    const target = edgesOf(
+      `${tikvDecimal}
+fn run(a: u8) {
+  let res = fix_word_cnt_err(a, a);
+  let v = res.unwrap();
+}
+`,
+      materialized,
+    );
+    expect(target("res.unwrap()")).toBe("Res#unwrap");
+  });
+
+  it("keeps a reassigned `let` typed through a generic-returning method (`let mut d = res.map(..); d = ..;`)", () => {
+    const target = edgesOf(
+      `${tikvDecimal}
+fn run(a: u8) {
+  let res = fix_word_cnt_err(a, a);
+  let mut d = res.map(|_| Decimal);
+  d = Res::Truncated(Decimal);
+  let v = d.unwrap();
+}
+`,
+      materialized,
+    );
+    expect(target("d.unwrap()")).toBe("Res#unwrap");
+  });
+
+  it("types an `if` initializer from its agreeing constructor arm", () => {
+    const target = edgesOf(
+      `${tikvDecimal}
+fn run(c: bool, a: u8) {
+  let mut res = if c {
+    Res::Ok(Decimal)
+  } else {
+    let res = fix_word_cnt_err(a, a);
+    res.map(|_| Decimal)
+  };
+  let v = res.unwrap();
+}
+`,
+      materialized,
+    );
+    expect(target("res.unwrap()")).toBe("Res#unwrap");
+  });
+
+  it("types a `*self` copy inside an impl (`let mut dec = *self; dec.round(2).unwrap()`)", () => {
+    const target = edgesOf(
+      `${tikvDecimal}
+impl fmt::Display for Decimal {
+  fn run(&self) {
+    let mut dec = *self;
+    let v = dec.round(2).unwrap();
+  }
+}
+`,
+      materialized,
+      "Decimal#run",
+    );
+    expect(target("dec.round(2).unwrap()")).toBe("Res#unwrap");
+  });
+
+  it("lets a later shadowing `let` retype the name", () => {
+    const target = edgesOf(
+      `${tikvDecimal}
+fn run(c: bool) {
+  let res = if c { Res::Ok(Decimal) } else { Res::Truncated(Decimal) };
+  let res = external::make();
+  let v = res.unwrap();
+}
+`,
+      materialized,
+    );
+    expect(target("res.unwrap()")).toBeUndefined();
+  });
+
+  it("still drops `x.unwrap()` on an untyped receiver bound only to the lone project `Res#unwrap`", () => {
+    const target = edgesOf(
+      `${tikvDecimal}
 fn run() {
   let x = external::make();
   let v = x.unwrap();

@@ -35,9 +35,10 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
-import { isCapWordsType, isRustConstructorAssocFn } from "../associated-constructor.js";
+import { readRustBareType } from "./bare-type.js";
 import { collectRustCallResultBindings } from "./call-result-bindings.js";
 import { rustDeclaredEnumVariantFields, rustDeclaredStructFields } from "./field-types.js";
+import { rustAgreedConstructorValue } from "./initializer-arms.js";
 import { rustNameOf } from "./name-of.js";
 import { collectRustPatternBindings } from "./pattern-bindings.js";
 import { collectRustReturnTypes, rustDeclaredTypeRef } from "./return-types.js";
@@ -233,41 +234,6 @@ function symbolKindOfChunk(
   )?.kind;
 }
 
-/**
- * Reduce a Rust type node to its bare base type name, mirroring the Go
- * walker's `readBareTypeNode`. Strips references (`&Foo`, `&mut Foo` →
- * `Foo`) and unwraps generics (`Vec<Thing>` → `Vec`). Returns null for
- * shapes with no single named base (tuple/array/slice/fn-pointer types,
- * trait objects) so the binding is skipped rather than guessed.
- *
- * tree-sitter-rust shapes:
- *   - `type_identifier`         → `Foo`           (read text)
- *   - `reference_type`          → `&Foo` / `&mut Foo` (descend to inner type)
- *   - `generic_type`            → `Vec<Thing>`    (read `type` field base)
- *   - `scoped_type_identifier`  → `mod::Foo`      (bare last segment)
- */
-function readRustBareType(typeNode: AstNode | null): string | null {
-  if (!typeNode) return null;
-  if (typeNode.type === "type_identifier" || typeNode.type === "identifier") return typeNode.text;
-  if (typeNode.type === "reference_type") {
-    // `&Foo` / `&mut Foo` — the referent type is the only `type` field.
-    const inner = typeNode.childForFieldName("type");
-    return readRustBareType(inner);
-  }
-  if (typeNode.type === "generic_type") {
-    // `Vec<Thing>`, `Box<dyn T>` — base type is the `type` field; could
-    // itself be a `scoped_type_identifier`, so recurse to its bare name.
-    const base = typeNode.childForFieldName("type");
-    return readRustBareType(base);
-  }
-  if (typeNode.type === "scoped_type_identifier") {
-    // `std::vec::Vec` / `module::Foo` — bare last segment.
-    const name = typeNode.childForFieldName("name");
-    return name?.type === "type_identifier" ? name.text : null;
-  }
-  return null;
-}
-
 function rustGenericBounds(fn: AstNode): Record<string, string> {
   const bounds: Record<string, string> = createIdentifierRecord();
   const parameters = fn.childForFieldName("type_parameters");
@@ -459,21 +425,12 @@ function collectRustLocalBindingsForChunk(
       return;
     }
 
-    // Untyped `let y = Foo::new()` — associated-fn constructor inference.
+    // Untyped `let y = Foo::new()` / `Res::Ok(x)`, directly or as the agreeing
+    // arms of an `if` / `match` / block initializer; `let d = *self` copies the impl's type.
     const value = node.childForFieldName("value");
-    if (value?.type !== "call_expression") return;
-    const callee = value.childForFieldName("function");
-    if (callee?.type !== "scoped_identifier") return;
-    const pathNode = callee.childForFieldName("path");
-    const fnNameNode = callee.childForFieldName("name");
-    // `Worker::new` — path is the receiving type, including a turbofish
-    // generic (`Worker::<Token>`); strip only the generic arguments and keep
-    // the constructor's nominal owner.
-    if (!pathNode || fnNameNode?.type !== "identifier") return;
-    const typeName = readRustBareType(pathNode);
-    if (typeName && isRustConstructorAssocFn(fnNameNode.text) && isCapWordsType(typeName)) {
-      (bindings[varName] ??= []).push({ line: node.startPosition.row + 1, type: typeName });
-    }
+    if (value === null) return;
+    const typeName = rustAgreedConstructorValue(value)?.type ?? rustSelfCopyType(value, fn);
+    if (typeName !== null) (bindings[varName] ??= []).push({ line: node.startPosition.row + 1, type: typeName });
   });
 
   // Pattern-bound names shadow the outer binding for their scope (bd
@@ -487,6 +444,17 @@ function collectRustLocalBindingsForChunk(
     (name, binding) => (bindings[name] ??= []).push(binding),
   );
   return bindings;
+}
+
+/**
+ * `*self` inside an `impl` method is a copy of the receiver: the impl's own
+ * type. A trait's default body has no concrete `Self`, so it spells nothing.
+ */
+function rustSelfCopyType(value: AstNode, fn: AstNode): string | null {
+  if (value.type !== "unary_expression" || value.children[0]?.type !== "*") return null;
+  if (value.namedChildren[0]?.type !== "self") return null;
+  const owner = fn.parent?.type === "declaration_list" ? fn.parent.parent : null;
+  return owner?.type === "impl_item" ? readRustBareType(owner.childForFieldName("type")) : null;
 }
 
 function rustUseClause(node: AstNode): AstNode | null {
