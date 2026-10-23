@@ -43,27 +43,13 @@ by the highest-churn domain — the rest is invisible.
 
 ## Typed filters (fast path)
 
-Top-level params on every search request. Prefer over raw `filter:` whenever a
-typed field expresses the constraint — intent-clear, schema-checked, survives
-directory restructures.
+Typed params on every search request (tool schema; semantics:
+`tea-rags://guide/overview` `### Typed filters`). Prefer over raw `filter:`
+whenever a typed field expresses constraint — intent-clear, schema-checked,
+survives directory moves. Fields, presets, thresholds, raw syntax:
 
-| Field            | Values / type                          | When to use                                                                   |
-| ---------------- | -------------------------------------- | ----------------------------------------------------------------------------- |
-| `language`       | string (e.g. `"ruby"`, `"typescript"`) | scope to one language layer                                                   |
-| `fileExtension`  | string \| string[]                     | constrain by file extension(s)                                                |
-| `chunkType`      | string (e.g. `"method"`, `"class"`)    | only chunks of this type                                                      |
-| `documentation`  | `"only" \| "exclude" \| "include"`     | docs vs code (string enum, not boolean)                                       |
-| `testFile`       | `"only" \| "exclude" \| "include"`     | tests vs production (string enum)                                             |
-| `symbolId`       | string                                 | scope to one symbol                                                           |
-| `author`         | string                                 | files where this author dominates blame                                       |
-| `recentAuthor`   | string (full name OR email)            | files this author committed most, lately                                      |
-| `contributor`    | string (exact git name)                | files this person committed to in the log window — superset of `recentAuthor` |
-| `modifiedAfter`  | ISO date string \| Date                | recent changes (file-level, any level)                                        |
-| `modifiedBefore` | ISO date string \| Date                | exclude recent changes (file-level)                                           |
-| `minAgeDays`     | number                                 | min age — level-aware, see below                                              |
-| `maxAgeDays`     | number                                 | max age — level-aware, see below                                              |
-| `minCommitCount` | number                                 | drop one-off scripts                                                          |
-| `taskId`         | string (e.g. `"RAGS-142"`)             | code linked to a ticket via git.taskIds                                       |
+No `# Qdrant Filter Syntax` above → read `tea-rags://guide/filters`
+(read_mcp_resource) before composing.
 
 ## Test filter levels (file vs chunk granularity)
 
@@ -97,12 +83,12 @@ suite's non-DSL members land in one `test_setup` chunk named after the class.
 
 For Python / Go / others, file-level `testFile: "only"` is the only option. Full
 per-language support: `tea-rags://guide/language-capability` (GENERATED — never
-restate it here). Detect availability via prime digest: test chunks absent if no
-`git.chunk.*` signal shows a `test:` threshold row. Recipes depending on test
-chunks, see `$tests-as-context` (Step 0 preflight handles this automatically).
-New language added → update this table in lock-step with the matching block in
-`$tests-as-context` and `test-driven-development` — see
-`.claude/rules/test-spec-chunking.md`.
+restate it here). Test chunks absent if no `git.chunk.*` row of
+`tea-rags://project/<alias>/metrics?section=thresholds` has a `test ≥` value.
+Recipes depending on test chunks, see `$tests-as-context` (Step 0 preflight
+handles this automatically). New language added → update this table in lock-step
+with the matching block in `$tests-as-context` and `test-driven-development` —
+see `.claude/rules/test-spec-chunking.md`.
 
 ## Filter level vs result granularity
 
@@ -221,56 +207,9 @@ freely.
 
 ## Named filter presets (`{presets}` shorthand)
 
-Pass `filter: { presets: "name" }` (or CSV `"a,b,c"` for multiple) to apply a
-named adaptive filter bundle instead of writing a raw Qdrant filter manually.
-Thresholds are collection percentiles (e.g. p75 of `commitCount`) — they scale
-per repository. Cold-start fallbacks apply when stats are unavailable.
-
-**Mutually exclusive with raw filter.** `{ presets: "..." }` and a raw Qdrant
-filter object are a discriminated union — pass one OR the other, not both in the
-same call. Typed params (`language`, `minAgeDays`, `author`, etc.) AND-compose
-freely with `{presets}`.
-
-### Preset catalog (12 total)
-
-**Static — always available:**
-
-| Name            | What it isolates                                     |
-| --------------- | ---------------------------------------------------- |
-| `production`    | Excludes test/docs — hygiene, safe in any mode       |
-| `coreLogic`     | Excludes test/docs/config — core logic only, hygiene |
-| `securityPaths` | Path-risk signals (auth, crypto, secrets, etc.)      |
-
-**Require git trajectory:**
-
-| Name                | What it isolates                                           |
-| ------------------- | ---------------------------------------------------------- |
-| `freshLegacyEdits`  | Old code (high ageDays) recently modified                  |
-| `fragileSilo`       | Single-author, low-churn, high bug-fix rate                |
-| `panicZone`         | High churn + high bug-fix rate simultaneously              |
-| `godMethods`        | Very high per-chunk import density (structural complexity) |
-| `battleTested`      | High commit count + low bug-fix rate (stable + exercised)  |
-| `abandonedHotspots` | High churn in the past, then quiet for a long time         |
-
-**Require codegraph.symbols trajectory:**
-
-| Name             | What it isolates                                 |
-| ---------------- | ------------------------------------------------ |
-| `hubs`           | High call-graph fan-in (many callers)            |
-| `deadCandidates` | Zero callers, zero callees — potential dead code |
-| `unstableCore`   | High churn + high fan-in (dangerous shared code) |
-
-Names unavailable when their required trajectory isn't registered are gated out
-automatically. Read `tea-rags://schema/filters` for the live catalog with exact
-threshold definitions.
-
-### Inventory-vs-query rule
-
-A HARD specific filter (e.g. `fragileSilo`, `panicZone`) belongs to **inventory
-mode** — where the query is absent and you want a specific slice of the
-codebase. When a natural-language query is present, rank broadly without
-hard-filtering to preserve recall. Hygiene presets (`production`, `coreLogic`)
-are safe in either mode.
+`filter: { presets: "a,b" }` — catalog, gating, inventory-vs-query rule: guide
+above (`## Named filter presets`). Mutually exclusive with raw filter; typed
+params AND-compose with it.
 
 ### Examples
 
@@ -311,31 +250,22 @@ OR-of-conditions across different fields, range on a non-typed numeric field.
 }
 ```
 
-For exact syntax and the full list of payload keys, **read the resource — do not
-invent syntax**:
-
-```
-read_mcp_resource(server: "tea-rags", uri: "tea-rags://schema/filters")
-```
-
-Resource generated from the live registry; always reflects what THIS build
-supports. Do NOT memorize the payload key list — read it on demand.
+Exact syntax + payload keys: guide above — never invent syntax or key names.
 
 ### Codegraph filters (only when codegraph is active)
 
-The `codegraph.file.*` / `codegraph.chunk.*` payload keys exist ONLY when prime
-`## Enrichment` lists `codegraph.symbols`; filtering on them against an index
-built without codegraph matches nothing. Examples:
+Typed params only — raw `codegraph.*` keys do not resolve (nested payload path).
+Exposed only when graph tools registered. Examples:
 
 ```jsonc
 // Architectural hubs — high-fan-in backbone files
-{ "filter": { "must": [{ "key": "codegraph.file.isHub", "match": { "value": true } }] } }
+{ "isHub": true }
 
 // High blast radius — many incoming call/import edges
-{ "filter": { "must": [{ "key": "codegraph.file.fanIn", "range": { "gte": 10 } }] } }
+{ "minFanIn": 10 }
 
-// Efferent-coupling sources (instability near 1 = depends on many, few depend on it)
-{ "filter": { "must": [{ "key": "codegraph.file.instability", "range": { "gte": 0.8 } }] } }
+// Efferent-coupling sources (instability near 1 = depends on many)
+{ "minInstability": 0.8 }
 ```
 
 `fanIn` / `isHub` are the edge-truth replacements for the `git`/`imports` proxy.

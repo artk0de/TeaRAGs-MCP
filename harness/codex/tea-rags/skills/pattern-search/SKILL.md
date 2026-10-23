@@ -154,13 +154,10 @@ Found: [N unique implementations across M modules]
 
 **Label mapping from overlay signals:**
 
-Use labelMap from `get_index_metrics` (loaded at session start by
-`tea-rags://guide/decision-tree`). Signals scoped:
-`signals[language][signal][scope].labelMap` where scope is `"source"` or
-`"test"`. Prefer chunk's language + scope thresholds when available. If absent
-in context, call `get_index_metrics` yourself. Map raw signal values to nearest
-labelMap threshold. See `tea-rags://schema/signal-labels` for all label
-definitions.
+Filtering / labelling by signal → read
+`tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap`
+(read_mcp_resource) once; chunk's language + scope (`source` / `test`) bands.
+Map raw value to nearest band. Label meanings: `tea-rags://guide/signal-labels`.
 
 If **Antipattern** strategy: add `⚠️` prefix to problematic implementations. If
 **Reference** strategy: add `✓` prefix to best example.

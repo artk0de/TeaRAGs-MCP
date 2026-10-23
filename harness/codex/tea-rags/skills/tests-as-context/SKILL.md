@@ -30,54 +30,29 @@ skills.
 5. **`proven` → `level: "chunk"`** — `proven` is file-level
    (`signalLevel: "file"`) → without it DSL chunks regroup per file. Test-scoped
    calls need no `filter`: server skips a preset's production default when
-   `chunkType` / `testFile` select tests (rule: `tea-rags://schema/overview` →
+   `chunkType` / `testFile` select tests (rule: `tea-rags://guide/overview` →
    `### filter`). Server predating that rule returns 0 → add `filter: {}`.
 6. **Agentic-only** — `user-invocable: false` in frontmatter. Recipes = building
    blocks consumed by other skills, not surfaced to user.
 
 ## Step 0 — Preflight
 
-Read prime digest from session context. Locate `## Signal thresholds — <lang>`
-section.
-
-Test corpus **present** if ≥1 `git.chunk.*` row of that table has numbers (or
-`=src`) in its `test ≥` cell, e.g.
+No `## Signal thresholds — <lang>` table above → read
+`tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds`
+(read_mcp_resource). Test corpus **present** if ≥1 `git.chunk.*` row has numbers
+(or `=src`) in `test ≥`, e.g.
 
 ```
 | signal | bands | source ≥ | test ≥ |
 | git.chunk.commitCount | low/typical/high/extreme | 2 / 3 / 7 | 1 / 2 / 4 |
 ```
 
-Test corpus **absent** if every `git.chunk.*` row shows `—` in `test ≥`, or the
-table has no `git.chunk.*` row at all.
+**Absent** if every `git.chunk.*` row shows `—` in `test ≥`, or no `git.chunk.*`
+row.
 
-**Addressing (every recipe below):** `project: <alias>` +
-`path: <your working directory>` — `tea-rags://guide/freshness` "Addressing the
-Codebase".
-
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
-answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
-`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
-
-**Prime digest not in context (fresh subagent / cold session):** issue ONE cheap
-probe call to determine DSL availability without scanning digest:
-
-```
-semantic_search:
-  project:  <alias>
-  path:     <your working directory>
-  query:    "test"
-  filter:   { must: [{ key: "chunkType", match: { value: "test" } }] }
-  limit:    1
-  metaOnly: true
-```
-
-Empty result → DSL test chunks absent. Non-empty → present, proceed to Step 1.
-Probe bounded (limit=1, metaOnly=true), runs only when prime digest missing.
+**Addressing (every recipe):** `project: <alias>` +
+`path: <your working directory>`. Lag (`changedFiles` / `pendingFiles` / drift)
+never licenses `cat` / `grep` / `Read` over code — `tea-rags://guide/freshness`.
 
 If absent — return verdict, stop:
 
