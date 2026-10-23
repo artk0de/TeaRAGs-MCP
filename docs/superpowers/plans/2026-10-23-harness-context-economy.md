@@ -842,15 +842,21 @@ test script.
 
 **Files:**
 
-- Create: `scripts/gen-harness-cursor.ts` (shares the transform core with
-  `gen-harness-codex.ts` — extract `scripts/harness/transform.ts` when the
-  second consumer appears, i.e. here)
+- Create: `scripts/gen-harness-cursor.ts` (shares the transform core
+  `scripts/harness/transform.ts` with `gen-harness-codex.ts`; the dialect gains
+  the resource tool names; skill selection, linked-file discovery and package
+  formatting/writing move from the Codex generator into
+  `scripts/harness/package.ts`)
 - Create (generated): `harness/cursor/tea-rags/.cursor-plugin/plugin.json`,
   `harness/cursor/tea-rags/rules/tea-rags-core.mdc` (`alwaysApply: true`, core
   text), `harness/cursor/tea-rags/skills/<skill>/SKILL.md`,
   `harness/cursor/tea-rags/hooks/hooks.json`,
-  `harness/cursor/tea-rags/mcp.json`, `harness/cursor/README.md`,
-  `harness/cursor/MANUAL-TEST.md`
+  `harness/cursor/tea-rags/mcp.json`,
+  `harness/cursor/tea-rags/scripts/session-start.sh`, linked plugin files
+  (`repair/`, and `rules/references/` relocated to `references/` with links
+  rewritten, so `rules/` holds rule files only), `harness/cursor/README.md`,
+  `harness/cursor/MANUAL-TEST.md`. The core rule is emitted only while
+  `rules/core.md` exists (README says so otherwise).
 - Test: `tests/scripts/gen-harness-cursor.test.ts` (drift guard +
   manifest/schema checks)
 

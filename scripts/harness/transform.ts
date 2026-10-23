@@ -1,8 +1,8 @@
 /**
  * Harness-neutral transform core: rewrites Claude Code plugin prose (skills,
  * the subagent block, the core rules) into the dialect of another agent
- * harness. Codex consumes it today (`scripts/gen-harness-codex.ts`); the Cursor
- * generator plugs in its own `HarnessDialect`.
+ * harness. Each generator (`scripts/gen-harness-codex.ts`,
+ * `scripts/gen-harness-cursor.ts`) plugs in its own `HarnessDialect`.
  */
 
 export interface HarnessDialect {
@@ -12,6 +12,10 @@ export interface HarnessDialect {
   pluginRootVar: string;
   /** Replacement for `$CLAUDE_PROJECT_DIR` / `${CLAUDE_PROJECT_DIR}`. */
   projectDirVar: string;
+  /** Model-side tool reading an MCP resource: Codex `read_mcp_resource`, Cursor `FetchMcpResource`. */
+  readResourceTool: string;
+  /** Model-side tool listing MCP resources: Codex `list_mcp_resources`, Cursor `ListMcpResources`. */
+  listResourcesTool: string;
 }
 
 export interface Frontmatter {
@@ -106,7 +110,7 @@ export function extractInjectionBlock(md: string): string {
 /**
  * Prose rewrites, in order:
  * 1. load-time blocks dropped;
- * 2. `ReadMcpResourceTool` / `ListMcpResourcesTool` → `read_mcp_resource` / `list_mcp_resources`;
+ * 2. `ReadMcpResourceTool` / `ListMcpResourcesTool` → the dialect's resource tools;
  * 3. `mcp__tea-rags__<tool>` → bare `<tool>` (the harness may prefix or not);
  * 4. `Skill(tea-rags:<s>)`, `/tea-rags:<s>`, `tea-rags:<s>` → dialect mention, for known skills only;
  * 5. `dinopowers:<s>` / `superpowers:<s>` → bare `<s>` (Claude-only wrappers, named as the workflow);
@@ -118,8 +122,8 @@ export function toHarnessText(md: string, dialect: HarnessDialect, skillNames: R
   const mention = (name: string, fallback: string): string =>
     skillNames.has(name) ? dialect.skillMention(name) : fallback;
   return dropLoadTimeBlocks(md)
-    .replace(/\bReadMcpResourceTool\b/g, "read_mcp_resource")
-    .replace(/\bListMcpResourcesTool\b/g, "list_mcp_resources")
+    .replace(/\bReadMcpResourceTool\b/g, dialect.readResourceTool)
+    .replace(/\bListMcpResourcesTool\b/g, dialect.listResourcesTool)
     .replace(/\bmcp__tea-rags__(\w+)/g, "$1")
     .replace(/\bSkill\(\s*(?:skill:\s*)?"?tea-rags:([a-z0-9-]+)"?[^)]*\)/g, (whole, name: string) =>
       mention(name, whole),
