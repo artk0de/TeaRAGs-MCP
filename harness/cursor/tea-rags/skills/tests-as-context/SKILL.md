@@ -43,8 +43,10 @@ skills.
 
 No `## Signal thresholds — <lang>` table above → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds`
-(FetchMcpResource). Test corpus **present** if ≥1 `git.chunk.*` row has numbers
-(or `=src`) in `test ≥`, e.g.
+(FetchMcpResource). Resource unreadable → ONE probe instead:
+`semantic_search(chunkType: "test", language: <lang>, limit: 1, metaOnly: true)`
+— ≥1 row = present, 0 = absent. Test corpus **present** if ≥1 `git.chunk.*` row
+has numbers (or `=src`) in `test ≥`, e.g.
 
 ```
 | signal | bands | source ≥ | test ≥ |
