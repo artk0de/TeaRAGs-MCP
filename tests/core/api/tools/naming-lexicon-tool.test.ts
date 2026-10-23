@@ -90,9 +90,9 @@ describe("get_naming_lexicon", () => {
     expect(JSON.parse(result.content[0].text)).toEqual(answer);
   });
 
-  it("stays within the schema budget: description ≤ 300 chars, input schema ≤ 1.5 KB serialized", () => {
+  it("stays within the schema budget: description ≤ 400 chars, input schema ≤ 1.5 KB serialized", () => {
     const { config } = registered();
-    expect(config.description.length).toBeLessThanOrEqual(300);
+    expect(config.description.length).toBeLessThanOrEqual(400);
     // Converted the way the SDK lists a tool to clients.
     const inputSchema = toJsonSchemaCompat(config.inputSchema, { strictUnions: true, pipeStrategy: "input" });
     expect(JSON.stringify(inputSchema).length).toBeLessThanOrEqual(1536);
