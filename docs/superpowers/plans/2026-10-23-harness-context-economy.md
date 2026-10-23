@@ -970,7 +970,7 @@ Task 14, so the Codex live test installs from the final layout.
       (`claude plugin marketplace add <repo>` resolves all three plugins) →
       commit.
 
-### Task 18: Index exclusion, merge driver, CI drift job, workflow rule
+### Task 18: Index exclusion, merge driver, release regeneration, workflow rule
 
 **Files:**
 
@@ -982,23 +982,21 @@ Task 14, so the Codex live test installs from the final layout.
   path for regeneration; `post-merge` / commit hook runs `npm run gen:plugins`
   and stages the result. `package.json` `prepare` registers
   `merge.tea-rags-generated.driver` in the clone's git config.
-- Create: `.github/workflows/plugins-generate.yml` — CI builds the harness
-  packages itself (user decision 2026-10-23: nobody regenerates by hand). On
-  `pull_request` (same-repo head) and `push` to `main`, `paths:` `plugins/**`,
-  `scripts/gen-*.ts`, `scripts/harness/**`, `src/mcp/resources/**`: `npm ci`,
-  `npm run gen:plugins`; any diff → commit
-  `chore(plugins): regenerate harness packages` as the bot and push to the same
-  branch. Push with a GitHub App / PAT token (secret `PLUGINS_BOT_TOKEN`), not
-  `GITHUB_TOKEN`: a `GITHUB_TOKEN` push starts no workflow, so the regenerated
-  PR head would carry no required checks. Loop guard: skip when the head commit
-  is the bot's `chore(plugins)` commit (same pattern as `release-bookkeeping`).
-  Fork PRs cannot be pushed to → job falls back to a drift check
-  (`git diff --exit-code`) with the regenerate command in the failure message.
-- Modify: `.github/workflows/ci.yml` — `plugins-drift` check on `main` push only
-  (a guard that the bot commit landed; never the regeneration path).
-- User action (blocks the push half): create the App / PAT with
-  `contents: write` on this repo and store it as `PLUGINS_BOT_TOKEN`; until it
-  exists the workflow runs the drift check only and says why.
+- Local command (source of truth for generation): `npm run gen:plugins` (Task
+  17). Developers run it after editing `plugins/**` and may commit the output;
+  CI never has its own generation logic, it only calls this script.
+- Modify: `.releaserc.json` — release regenerates the packages (user decision
+  2026-10-23): `@semantic-release/exec` `prepareCmd` becomes
+  `bash scripts/prepare-changelog.sh && npm run gen:plugins`, and
+  `@semantic-release/git` `assets` gain `.claude-plugin/**`, `.agents/**`,
+  `.cursor-plugin/**`, `harness/**`, `src/mcp/resources/generated/**`. The
+  packages land in the `chore(release)` commit next to the versions they carry,
+  pushed with the existing `RELEASE_TOKEN` — no new secret, no bot workflow, no
+  loop (release already skips `chore(release)` heads). `prepareCmd` runs after
+  the version bump, so plugin manifests in the packages carry the released
+  version.
+- No PR drift check: a PR that edits `plugins/**` without regenerating is valid
+  — release regenerates. (A drift check would fail exactly those PRs.)
 - Create: `.claude/rules/plugin-sources.md` — edit only `plugins/**`; regenerate
   with `npm run gen:plugins`; never hand-edit `.claude-plugin/<name>/**` or
   `harness/**`; version bumps go in `plugins/<name>/` manifest metadata.
@@ -1006,7 +1004,9 @@ Task 14, so the Codex live test installs from the final layout.
   → merge has no conflict in generated paths and output equals a fresh
   regenerate.
 
-- [ ] Steps: failing merge test → driver + hook → CI job → rule → commit.
+- [ ] Steps: failing merge test → driver + hook → `.releaserc.json` (dry-run:
+      `npx semantic-release --dry-run --no-ci` shows the prepare step) → rule →
+      commit.
 
 ### Task 19: dinopowers as its own Codex / Cursor plugin
 
