@@ -65,6 +65,8 @@ interface DriverScript {
   /** unit file name → NDJSON text, written under `<out>/units/`. */
   units?: Record<string, string>;
   exitCode?: number;
+  /** Text the child writes to its output (cargo stderr) before it exits. */
+  output?: string;
   /** Never exits on its own: only a kill settles it. */
   hang?: boolean;
 }
@@ -166,6 +168,7 @@ function host(
         stamps.set(`${out}/units/${name}`, { size: text.length, mtimeMs: mtime++ });
       }
       if (script.runJson) texts.set(`${out}/run.json`, JSON.stringify(script.runJson));
+      if (script.output) options.onOutput(script.output);
       let resolveExit: (exit: { code: number | null; signal: string | null }) => void = () => undefined;
       const exited = new Promise<{ code: number | null; signal: string | null }>((done) => {
         resolveExit = done;
@@ -467,6 +470,37 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
     const again = await acquire(h);
     expect(again.status).toBe("failed");
     expect(again.diagnostics.latched?.reason).toBe("allUnitsFailed");
+    expect(again.diagnostics.ranCargoCheck).toBe(false);
+    expect(h.spawns).toHaveLength(1);
+  });
+
+  const OFFLINE_STDERR =
+    "error: failed to get `dep` as a dependency\n\nCaused by:\n  attempting to make an HTTP request, but --offline was specified\n";
+  const allFailedWith = (output: string): DriverScript => ({ ...allFailedScript(), output });
+
+  it("does not latch an all-failed run whose cargo stderr is the offline-fetch failure, and keeps the cargo fetch hint", async () => {
+    const h = host({ scripts: [allFailedWith(OFFLINE_STDERR)] });
+    const result = await acquire(h);
+    expect(result.status).toBe("failed");
+    expect(result.diagnostics.hint).toMatch(/^cargo fetch --manifest-path /);
+    expect(h.texts.has(`${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}/latch.json`)).toBe(false);
+  });
+
+  it("spawns cargo again on the next acquire after an offline-fetch failure with unchanged sources", async () => {
+    const h = host({ scripts: [allFailedWith(OFFLINE_STDERR), allFailedWith(OFFLINE_STDERR)] });
+    await acquire(h);
+    const again = await acquire(h);
+    expect(again.diagnostics.ranCargoCheck).toBe(true);
+    expect(again.diagnostics.hint).toMatch(/^cargo fetch/);
+    expect(h.spawns).toHaveLength(2);
+  });
+
+  it("still latches an all-failed run with a type-error stderr and does not respawn", async () => {
+    const h = host({ scripts: [allFailedWith("error[E0308]: mismatched types\n")] });
+    const result = await acquire(h);
+    expect(result.diagnostics.latched?.reason).toBe("allUnitsFailed");
+    expect(h.texts.has(`${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}/latch.json`)).toBe(true);
+    const again = await acquire(h);
     expect(again.diagnostics.ranCargoCheck).toBe(false);
     expect(h.spawns).toHaveLength(1);
   });

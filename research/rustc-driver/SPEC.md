@@ -360,8 +360,12 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
   it failed on. It holds only while that digest matches, so a fixed source error
   re-runs cargo once; an unchanged broken tree stays latched and never
   re-spawns. A latch without the digest (written before it existed) reads as
-  stale. The driver-build latch lives in `driver-build.ts`, keyed by pin +
-  sourceHash, and is not source-stamped.
+  stale. An every-unit-failed run whose cargo stderr is the offline-fetch
+  failure (`--offline was specified`) is not latched: its remedy, `cargo fetch`,
+  changes neither a `.rs` stamp nor Cargo.lock, so no latch could ever lapse on
+  it; the run answers `failed` with the hint and retries next time. The
+  driver-build latch lives in `driver-build.ts`, keyed by pin + sourceHash, and
+  is not source-stamped.
 - Reuse-only admission (an incremental pass below the bulk share) re-serves the
   previous run without spawning, except when that run left crates without rows
   and an edit since may have fixed them: `run.json` lists failed crates or
