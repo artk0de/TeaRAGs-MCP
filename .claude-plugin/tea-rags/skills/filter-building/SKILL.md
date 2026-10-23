@@ -1,28 +1,20 @@
 ---
 name: filter-building
 description:
-  Construct tea-rags filter beyond `pathPattern`. Invoke whenever agent
-  reasoning before a tea-rags search includes a SCOPE — domain, language,
-  author, time window, ticket, prod-vs-test split, or directory exclusion.
-  User almost never says "filter"; names the scope ("in the X domain", "Ruby
-  code", "Alice's work", "modified this week", "for ticket RAGS-142",
-  "production code"). Translate every scope into correct typed sugar field
+  Build tea-rags filter beyond `pathPattern`. Invoke whenever reasoning before a
+  tea-rags search includes a SCOPE: domain, language, author, time window,
+  ticket, prod-vs-test split, directory exclusion. User names scope ("in the X
+  domain", "Ruby code", "Alice's work", "modified this week", "for ticket
+  RAGS-142", "production code"), rarely says "filter". Map scope to typed sugar
   (`language`, `testFile`, `documentation`, `author`, `recentAuthor`,
   `contributor`, `taskId`, `minAgeDays` / `maxAgeDays`, `minCommitCount`,
-  `modifiedAfter` / `modifiedBefore`, `fileExtension`, `chunkType`,
-  `symbolId`), the
-  `level: "file" | "chunk"` switch (sets BOTH filter scope AND result
-  granularity; `modifiedAfter` / `modifiedBefore` never need it), picomatch
-  negation in `pathPattern` (`!**/test/**`), or raw `filter` escape hatch
-  (Qdrant `must`/`should`/`must_not`) for payload keys without typed sugar.
-  Cases: "tests of AuthService" → implicit `testFile: "only"`; "Alice's recent
-  code" → `recentAuthor + modifiedAfter`; "everything Alice touched" →
-  `contributor`; "old payments code" →
-  `modifiedBefore`; "what's new this week" → `modifiedAfter`; "production
-  code, not tests" → `testFile: "exclude"`; "code linked to JIRA-1234" →
-  `taskId`; "exclude vendor dir" → `pathPattern: "!**/vendor/**"`. NOT for picking a
-  rerank preset — use `tea-rags:analytics-rerank`. NOT for general project
-  exploration — use `tea-rags:explore`.
+  `modifiedAfter` / `modifiedBefore`, `fileExtension`, `chunkType`, `symbolId`),
+  `level: "file" | "chunk"` switch (filter scope AND result granularity),
+  picomatch negation in `pathPattern` (`!**/test/**`), or raw `filter` (Qdrant
+  `must`/`should`/`must_not`) for keys without sugar. E.g. "tests of
+  AuthService" → `testFile: "only"`. NOT for picking rerank preset — use
+  `tea-rags:analytics-rerank`. NOT for general exploration — use
+  `tea-rags:explore`.
 user-invocable: false
 ---
 
