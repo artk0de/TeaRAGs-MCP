@@ -16,10 +16,12 @@ Apply the finding's `remedy`.
 
 ## No remedy
 
-- Facade exists (`evidence.facadeRelPath`) → Ops recipe below: retarget the
-  import to the facade, one export line first if it lacks the names.
-- No facade, or the names are not meant to be public: do not widen the facade.
-  Ask whether the importer belongs inside the component.
+- `evidence.facadeRelPath` absent → inspect the component for its facade first;
+  missing evidence alone is never a reason to ask.
+- Facade exists → Ops recipe below: retarget the import to the facade, one
+  export line first if it lacks the names.
+- Inspected: no facade, or the names are not meant to be public → do not widen
+  the facade. Ask whether the importer belongs inside the component.
 - A `preExisting` leak in a file you did not touch is report-only: one line, a
   bead suggestion, no edit.
 

@@ -13,16 +13,22 @@ description:
 > resource tool, or the read fails), run
 > `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
 
-**Answer contract — reports AND plan-only answers.** Print the Phase 5 tables
-themselves (skeleton below, format: Phase 5): headings + header rows,
-`[planned; not run]` in cells not gathered yet. Prose, a column list or
-`Output:` alone is NOT the map. Plan-only → numbered steps 0, 1, 1b, 2 MERGE, 3
-EXPAND, 4, 5 of Phase Order, one each — Phase 0 never in a preamble; steps 1/1b
-repeat `pathPattern` per call. Hand-off only when the prompt mentions generation
-("before implementing" / "generate"): resolved scope + per-symbol overlay
-labels, no extra block or scan. `Output:` = last line, verbatim:
+**Answer contract — reports AND plan-only answers.** Copy the skeleton below:
+plan-only → its numbered steps first, one line per phase, never merged or moved
+to a preamble; then the Phase 5 tables themselves (format: Phase 5), headings +
+header rows, `[planned; not run]` in cells not gathered yet. Prose, a column
+list or `Output:` alone is NOT the map. Hand-off only when the prompt mentions
+generation ("before implementing" / "generate"): resolved scope + per-symbol
+overlay labels, no extra block or scan. `Output:` = last line, verbatim:
 
 ```
+0. SCOPE → pathPattern=<resolved | none>
+1. SCAN — primary + stratified presets, both MUST run; each call pathPattern=<resolved>
+1b. STRUCTURAL — same parallel block, pathPattern=<resolved>
+2. MERGE — negativeIds dedup, never manual filtering
+3. EXPAND — healthy-demoted candidates
+4. ENRICH — tiers, fix cost, signal pairs
+5. OUTPUT:
 ## Critical
 | # | Symbol | File:Line | Risk Type | Key Signals | Tests |
 ## High
@@ -39,18 +45,9 @@ No `## Label maps` above → read
 
 ## Phase Order (MANDATORY — do not skip any phase)
 
-🛑 STOP — read all phases before scanning.
-
-0. Phase 0 — SCOPE → `pathPattern`
-1. Phase 1 — SCAN primary + stratified second preset (**both MUST run —
-   single-preset maps are biased**); plan states Pagination stops
-2. Phase 1b — STRUCTURAL scan (**same parallel block as Phase 1 — structural
-   debt is git-blind**)
-3. Phase 2 — MERGE with negativeIds dedup (**NEVER manual filtering**)
-4. Phase 3 — EXPAND healthy-demoted candidates
-5. Phase 4 — ENRICH: tiers, fix cost, signal pairs (**single-signal reports
-   mislead**)
-6. Phase 5 — OUTPUT: the skeleton at the top.
+🛑 STOP — read all phases before scanning. Order = the numbered steps of the
+skeleton at the top; Phase 1 plan states its Pagination stops; structural debt
+is git-blind; single-signal reports mislead.
 
 ## Top Anti-patterns (read before scanning)
 
