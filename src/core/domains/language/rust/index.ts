@@ -60,6 +60,7 @@ import type {
   LanguageWalker,
   ManifestFilesReader,
   RustAnalyzerScipSource,
+  RustCallSiteSource,
   RustExternalSignatureSources,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
@@ -144,7 +145,8 @@ export class RustLanguage implements LanguageProvider {
    * `manifestFilesReader` reads the project's Cargo.toml files for the
    * workspace crate map (bd tea-rags-mcp-sjego); `signatureSources` locates
    * and caches the external signature table (bd s3i8m.7); `scipSource`
-   * acquires the rust-analyzer SCIP index (bd s3i8m.6). Injected by
+   * acquires the rust-analyzer SCIP index (bd s3i8m.6); `callSiteSource` the
+   * rustc call-site index (bd s3i8m T6). Injected by
    * `LanguageFactory` — this leaf never walks the disk itself.
    */
   constructor(
@@ -152,10 +154,17 @@ export class RustLanguage implements LanguageProvider {
     manifestFilesReader?: ManifestFilesReader,
     signatureSources?: RustExternalSignatureSources,
     scipSource?: RustAnalyzerScipSource,
+    callSiteSource?: RustCallSiteSource,
   ) {
-    const callResolver: CallResolver = new RustCallResolver(mode, manifestFilesReader, signatureSources, scipSource);
+    const callResolver: CallResolver = new RustCallResolver(
+      mode,
+      manifestFilesReader,
+      signatureSources,
+      scipSource,
+      callSiteSource,
+    );
     this.resolver = {
-      // Awaited before the pass-start seam: the rust-analyzer SCIP index (bd s3i8m.6 R2b).
+      // Awaited before the pass-start seam: the rust-analyzer SCIP and rustc call-site indexes.
       warmResolvePass: async (plan: SymbolResolutionPassPlan): Promise<void> => callResolver.warmResolvePass?.(plan),
       // The pass-start seam re-reads the workspace's crate map and loads the
       // external signature table before the first crate-name path resolves.

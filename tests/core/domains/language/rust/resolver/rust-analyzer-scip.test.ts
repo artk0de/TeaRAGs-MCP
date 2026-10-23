@@ -354,9 +354,10 @@ describe("RustCallResolver chain position of the SCIP slot (bd s3i8m.6 R3a)", ()
     return resolver;
   }
 
-  it("runs last, after traitSelfMethod", () => {
-    expect(new RustCallResolver().strategies.map((pass) => pass.name).slice(-2)).toEqual([
+  it("runs last, after traitSelfMethod and the rustc driver slot (bd s3i8m T7)", () => {
+    expect(new RustCallResolver().strategies.map((pass) => pass.name).slice(-3)).toEqual([
       "traitSelfMethod",
+      "rustcCallSites",
       "rustAnalyzerScip",
     ]);
   });

@@ -7,6 +7,7 @@ import type {
   LanguageProvider,
   ManifestFilesReader,
   RustAnalyzerScipSource,
+  RustCallSiteSource,
   RustExternalSignatureSources,
 } from "../../contracts/types/language.js";
 import type { SignalFloors } from "../../contracts/types/trajectory.js";
@@ -125,6 +126,8 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
   private readonly rustExternalSignatureSources: RustExternalSignatureSources | undefined;
   /** The rust-analyzer SCIP index source, injected for the same reason (bd s3i8m.6 R2b). */
   private readonly rustAnalyzerScipSource: RustAnalyzerScipSource | undefined;
+  /** The rustc call-site index source, injected for the same reason (bd s3i8m T6). */
+  private readonly rustcCallSiteSource: RustCallSiteSource | undefined;
 
   /**
    * @param options.ambiguousResolveMode Threaded into native resolvers
@@ -148,6 +151,9 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * @param options.rustAnalyzerScipSource The rust-analyzer SCIP acquisition the
    *   composition layer injects when the slot is on. Threaded to Rust's resolver,
    *   which awaits it before pass 2; absent, no SCIP index is acquired.
+   * @param options.rustcCallSiteSource The rustc call-site driver acquisition the
+   *   composition layer injects when the driver is on. Threaded to Rust's resolver
+   *   like the SCIP source; absent, no call-site index is acquired.
    */
   constructor(
     options: {
@@ -158,11 +164,13 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
       manifestFilesReader?: ManifestFilesReader;
       rustExternalSignatureSources?: RustExternalSignatureSources;
       rustAnalyzerScipSource?: RustAnalyzerScipSource;
+      rustcCallSiteSource?: RustCallSiteSource;
     } = {},
   ) {
     this.manifestFilesReader = options.manifestFilesReader;
     this.rustExternalSignatureSources = options.rustExternalSignatureSources;
     this.rustAnalyzerScipSource = options.rustAnalyzerScipSource;
+    this.rustcCallSiteSource = options.rustcCallSiteSource;
     this.ambiguousResolveMode = options.ambiguousResolveMode ?? DEFAULT_AMBIGUOUS_RESOLVE_MODE;
     this.repoRoot = options.repoRoot ?? process.cwd();
     this.isGrammarPackageInstalled = options.isGrammarPackageInstalled ?? isPackageResolvable;
@@ -205,6 +213,7 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
         this.manifestFilesReader,
         this.rustExternalSignatureSources,
         this.rustAnalyzerScipSource,
+        this.rustcCallSiteSource,
       );
     }
     if (lang === "bash") return new BashLanguage(this.ambiguousResolveMode);

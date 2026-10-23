@@ -8,5 +8,6 @@ export { RustBareSelfMethodSymbolResolutionStrategy } from "./rust-bare-self-met
 export { RustGlobalShortNameSymbolResolutionStrategy } from "./rust-global-short-name.js";
 export { RustTraitSelfMethodSymbolResolutionStrategy } from "./rust-trait-self-method.js";
 export { RustAnalyzerScipSymbolResolutionStrategy } from "./rust-analyzer-scip.js";
+export { RustcCallSiteSymbolResolutionStrategy } from "./rustc-call-sites.js";
 export type { ResolverConfig } from "./shared.js";
 export { rustCalleeShortNameCandidates, rustCallIsMacroInvocation, rustMacroShortNameCandidates } from "./shared.js";

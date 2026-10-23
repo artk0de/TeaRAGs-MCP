@@ -239,7 +239,7 @@ conclude absence from a graph the index says is incomplete.
   up in its own package alone (a project alias of an external type has none),
   every other type's package-blind
 - **Java** — 6-strategy + java.lang stdlib whitelist + overload disambiguation
-- **Rust** — 10-strategy (last: rust-analyzer SCIP); trait dispatch;
+- **Rust** — 11-strategy (last: rustc driver + SCIP); trait dispatch;
   return/field chains (Self, owner generics); same-file bare-call result locals;
   crate-scoped impls
 - **Ruby** — 15-strategy chain + 4 dispatch components
