@@ -140,10 +140,14 @@ What a run costs:
   under `~/.tea-rags/rustc-driver/`, so dependencies are compiled once more even
   if your own `target/` is warm.
 - **Later runs.** The driver binary is reused. When `Cargo.lock`, the manifests
-  and the cargo arguments have not changed, the stored call sites are reused
-  and `cargo check` does not run at all, unless the last check left a crate
-  uncompiled and a `.rs` file in that crate has changed since (you fixed the
-  error); otherwise cargo rebuilds only the units that changed.
+  and the cargo arguments have not changed and no `.rs` file changed since a
+  check that compiled every crate, the stored call sites are reused and
+  `cargo check` does not run at all. When `.rs` files changed and the previous
+  check's build directory is still there, cargo re-checks only the units that
+  changed (seconds on a leaf crate), so edited files keep their exact call
+  sites. A small incremental run never starts a check from an empty build
+  directory, except to retry a crate the last check left uncompiled after a
+  `.rs` file in it changed (you fixed the error).
 
 Because it is `cargo check`, your project's build scripts and procedural macros
 execute, the same as in your editor. The check runs offline: run

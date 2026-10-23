@@ -14,10 +14,13 @@
  * never read or written. A wall and a process-tree RSS budget kill the tree on
  * a breach.
  *
- * Cache: cargo's own fingerprints are the content cache, so every acquisition
- * spawns (warm ≈ seconds) and reads the units `run.json` lists; the driver
- * deletes unit files it no longer lists. `identity` = envKey + digest of the
- * listed unit files' names, sizes and mtimes.
+ * Cache: cargo's own fingerprints are the content cache, so an acquisition that
+ * spawns (warm ≈ seconds) reads the units `run.json` lists; the driver deletes
+ * unit files it no longer lists. `identity` = envKey + digest of the listed
+ * unit files' names, sizes and mtimes. A complete previous run (no failed
+ * crate, no missing unit, every unit file present) whose `.rs` stamps all still
+ * match `sources.json` is served as is (`reused`, same identity) without
+ * invoking cargo, whatever the admission.
  *
  * Latch lattice: an environment failure (the driver cannot be built, or every
  * unit failed) is persisted per envKey and answered without spawning until the
@@ -50,6 +53,7 @@ import type {
   RustCallSiteAdmission,
   RustCallSiteDefinition,
   RustCallSiteIndex,
+  RustCallSiteSourceConfig,
 } from "../../contracts/types/language.js";
 import { readManifestFiles } from "../filesystem/dependency-manifests.js";
 import { listRustSources, type RustSourceStamp } from "../filesystem/rust-sources.js";
@@ -109,9 +113,10 @@ const OFFLINE_PATTERN =
   /--offline was specified|attempting to make an HTTP request|failed to download|unable to update registry|no matching package named/i;
 
 /**
- * `reused`: admission refused a spawn and the previous run's units were served
- * for the files whose stamp still matches. `noCache`: admission refused a spawn
- * and there was no previous run to serve.
+ * `reused`: cargo did not run and the previous run's units were served: whole
+ * when that run was complete and no `.rs` stamp changed since, else (admission
+ * refused a spawn) for the files whose stamp still matches. `noCache`: admission
+ * refused a spawn and there was no previous run to serve.
  */
 export type RustcCallSiteAcquisitionStatus =
   | "ok"
@@ -169,10 +174,13 @@ export interface RustcCallSiteRunOptions {
   maxRssMb?: number;
   /**
    * Whether this acquisition may run cargo, decided over the project's `.rs`
-   * files. `reuseOnly` never builds the driver nor spawns it: the previous
-   * run is served for unchanged files, else `noCache`. Absent = spawn.
+   * files. `reuseOnly` never builds the driver: the previous run is served for
+   * unchanged files, else `noCache`, except for the two spawns
+   * {@link acquireRustcCallSites} documents. Absent = spawn.
    */
   admission?: RustCallSiteAdmission;
+  /** `never` = cargo never runs, whatever the admission (`RustCallSiteSourceConfig.spawn`). Absent = allowed. */
+  spawn?: RustCallSiteSourceConfig["spawn"];
 }
 
 export interface RustcCallSiteRunnerDeps extends SupervisedChildHost {
@@ -225,7 +233,26 @@ interface PersistedLatch {
   sources?: string;
 }
 
-/** Acquire the call-site index of `options.projectRoot`. Never throws. */
+/**
+ * Acquire the call-site index of `options.projectRoot`. Never throws.
+ *
+ * Whatever the admission, a complete previous run with unchanged `.rs` stamps is
+ * served without cargo (`reused`). A `reuseOnly` admission is upgraded to a
+ * spawn in two cases only:
+ * - warm + changed: a `run.json` exists for this envKey, its `target/` exists on
+ *   disk, and a `.rs` file was added, removed or re-stamped since its
+ *   `sources.json` (or none was recorded). Cargo's fingerprints keep this an
+ *   incremental check (seconds; ~1.5 min when tikv's root crate changed, against
+ *   6-11 min cold). Warmth is judged here because only this adapter owns the
+ *   target dir; the admission (a share of the project's files) stays the
+ *   pass-index domain's call.
+ * - failed crates touched: the previous run left failed crates or missing units
+ *   and a changed file may fix them. This one may spawn into a cold target dir:
+ *   without it those crates would get no rows until the next bulk pass.
+ *
+ * Otherwise `reuseOnly` serves the previous run for unchanged files, or `noCache`.
+ * `options.spawn: "never"` (the working-tree graph build) forbids both upgrades.
+ */
 export async function acquireRustcCallSites(
   deps: RustcCallSiteRunnerDeps,
   options: RustcCallSiteRunOptions,
@@ -257,8 +284,9 @@ async function acquire(
   let stamps: readonly RustSourceStamp[] | undefined;
   const sources = (): readonly RustSourceStamp[] => (stamps ??= deps.fs.listRustSources(options.projectRoot));
   let decision: boolean | undefined;
+  const neverSpawn = options.spawn === "never";
   const reuseOnly = (): boolean =>
-    (decision ??= options.admission?.(sources().map((stamp) => stamp.relPath)) === "reuseOnly");
+    (decision ??= neverSpawn || options.admission?.(sources().map((stamp) => stamp.relPath)) === "reuseOnly");
 
   let driver: ResolvedDriver;
   if (discovery.kind === "buildable") {
@@ -298,15 +326,42 @@ async function acquire(
       },
     };
   }
+  const driverRun = readRunJson(deps, envDir);
+  const recorded = readRecordedSources(deps, envDir);
+  // No sources.json beside a run.json (a run cut off before recording it) cannot be judged unchanged.
+  const sourcesChanged = recorded === undefined || changedSources(recorded, sources()).size > 0;
+  if (driverRun && !sourcesChanged && isCompleteRun(driverRun)) {
+    const served = decodedAcquisition(deps, envKey, envDir, driverRun, { ...emptyDiagnostics(), envKey });
+    if (served.diagnostics.unitCount === driverRun.units.length) return { ...served, status: "reused" };
+  }
   if (reuseOnly()) {
-    const driverRun = readRunJson(deps, envDir);
-    const recorded = readRecordedSources(deps, envDir);
+    const warm = driverRun !== undefined && deps.fs.stat(join(envDir, "target")) !== undefined;
     const projectRoots = (): readonly string[] => [options.projectRoot, deps.fs.realPath(options.projectRoot)];
-    if (!driverRun || !recorded || !failedCratesTouched(driverRun, recorded, sources(), projectRoots)) {
+    const failedFixable =
+      driverRun !== undefined &&
+      recorded !== undefined &&
+      failedCratesTouched(driverRun, recorded, sources(), projectRoots);
+    if (neverSpawn || (!(warm && sourcesChanged) && !failedFixable)) {
       return reusePreviousRun(deps, envKey, envDir, driverRun, recorded, sources());
     }
   }
   return runDriver(deps, options, driver, envKey, envDir, cargoArgs, sources());
+}
+
+/** The run left no failed crate and no missing unit: its units cover the whole workspace. */
+function isCompleteRun(driverRun: DriverRun): boolean {
+  return driverRun.success && driverRun.failed.length === 0 && driverRun.missing === 0;
+}
+
+/** `.rs` relPaths added, removed or re-stamped (size or mtime) since `recorded`. */
+function changedSources(recorded: RecordedSources, stamps: readonly RustSourceStamp[]): Set<string> {
+  const changed = new Set(Object.keys(recorded));
+  for (const stamp of stamps) {
+    const was = recorded[stamp.relPath];
+    if (was?.[0] === stamp.size && was[1] === stamp.mtimeMs) changed.delete(stamp.relPath);
+    else changed.add(stamp.relPath);
+  }
+  return changed;
 }
 
 async function runDriver(
@@ -448,12 +503,7 @@ function failedCratesTouched(
   projectRoots: () => readonly string[],
 ): boolean {
   if (driverRun.failed.length === 0 && driverRun.missing === 0) return false;
-  const changed = new Set(Object.keys(recorded));
-  for (const stamp of stamps) {
-    const was = recorded[stamp.relPath];
-    if (was?.[0] === stamp.size && was[1] === stamp.mtimeMs) changed.delete(stamp.relPath);
-    else changed.add(stamp.relPath);
-  }
+  const changed = changedSources(recorded, stamps);
   if (changed.size === 0) return false;
   if (driverRun.missing > 0) return true;
   return driverRun.failed.some((crate) => {
@@ -517,9 +567,8 @@ function decodedAcquisition(
   stamps.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   const identity = `${envKey}:${sha256(JSON.stringify(stamps))}`;
   const index = decodeRustcCallSites(texts, identity, { workspaceCrates: driverRun.units.map((unit) => unit.crate) });
-  const complete = driverRun.success && driverRun.failed.length === 0 && driverRun.missing === 0;
   return {
-    status: complete ? "ok" : "partial",
+    status: isCompleteRun(driverRun) ? "ok" : "partial",
     index,
     diagnostics: {
       ...diagnostics,
