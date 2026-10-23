@@ -18,7 +18,7 @@
  * prelude, never to an impl member — and no `use` binds the name.
  */
 
-import { resolveLocalBinding, type CallContext, type CallRef } from "../../../../contracts/types/codegraph.js";
+import type { CallContext, CallRef } from "../../../../contracts/types/codegraph.js";
 import { rustTextIsStdMethodName } from "../vocabulary/std-method-names.js";
 import { rustTextIsStdPreludeCallable } from "../vocabulary/std-prelude.js";
 import { rustcCallSiteDefinitionOf } from "./call-site-resolution.js";
@@ -30,6 +30,7 @@ import {
   rustCallIsMacroInvocation,
   rustImportBindings,
 } from "./strategies/shared.js";
+import { rustVisibleReceiverBinding } from "./visible-receiver-binding.js";
 
 const RUST_MEMBER_SYMBOL_ID = /[#.][^#.:]+$/;
 
@@ -57,7 +58,9 @@ function receiverStdNameBindsByNameOnly(call: CallRef, ctx: CallContext): boolea
   const head = receiverText.split(/[.:]/)[0] ?? receiverText;
   if (head === "self" || head === "Self") return false;
   if (ctx.imports.some((imp) => parseRustImportPath(imp.importText, head)?.receiverMatches)) return false;
-  const binding = resolveLocalBinding(ctx.localBindings, head, call.startLine, call.startColumn);
+  // A later call-result `let` shadows a typed local: the shadowed type is no evidence.
+  const visible = rustVisibleReceiverBinding(head, call.startLine, ctx, call.startColumn);
+  const binding = visible?.channel === "callResult" ? undefined : visible?.binding;
   if (binding !== undefined && (binding.typeRef !== undefined || binding.type.length > 0)) return false;
   // A receiver the fold types as a std type is evidence FOR std, not for the namesake.
   const folded = rustReceiverChainType(call, ctx);

@@ -123,11 +123,12 @@ fn run(sink: BodySink, done: bool) {
     expect(bindingAt(bindings, "sink", 11)).toBeUndefined();
   });
 
+  // A reassignment once declined too; Rust fixes a local's type at its `let`,
+  // so an assigned value has that same type and the binding stays.
   it.each([
-    ["statement-position project macro", "tokio::pin!(w);"],
     ["reassignment", "w = other();"],
     ["compound assignment", "w += 1;"],
-  ])("declines a name also bound or touched by a %s", (_name, statement) => {
+  ])("keeps a name a %s writes", (_name, statement) => {
     const bindings = collect(`
 fn run(y: Option<u8>) {
     let mut w = make();
@@ -135,8 +136,22 @@ fn run(y: Option<u8>) {
     w.tick();
 }
 `);
-    expect(bindings["w"]).toBeUndefined();
+    expect(bindings["w"]).toEqual([expect.objectContaining({ callee: "make" })]);
   });
+
+  it.each([["statement-position project macro", "tokio::pin!(w);"]])(
+    "declines a name also bound or touched by a %s",
+    (_name, statement) => {
+      const bindings = collect(`
+fn run(y: Option<u8>) {
+    let mut w = make();
+    ${statement}
+    w.tick();
+}
+`);
+      expect(bindings["w"]).toBeUndefined();
+    },
+  );
 
   it("keeps a name mentioned only by an allowlisted std macro", () => {
     const bindings = collect(`
