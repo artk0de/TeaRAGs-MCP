@@ -5,12 +5,12 @@ NOT invoke this — parent prepends block to subagent's prompt before dispatch.
 
 ## Why parent must inject
 
-Subagents (Agent tool) do NOT inherit rules, CLAUDE.md, or search-cascade.
-Default to built-in Grep/Glob, bypass tea-rags entirely. **Includes subagents
-spawned by third-party skills.** Missing block for a search task silently
-degrades results — subagent uses inferior text search, parent gets low-recall
-hits, no warning. Inject unconditionally; block small + harmless for non-search
-tasks.
+Subagents (Agent tool) do NOT inherit rules, CLAUDE.md, or
+`tea-rags://guide/decision-tree`. Default to built-in Grep/Glob, bypass tea-rags
+entirely. **Includes subagents spawned by third-party skills.** Missing block
+for a search task silently degrades results — subagent uses inferior text
+search, parent gets low-recall hits, no warning. Inject unconditionally; block
+small + harmless for non-search tasks.
 
 ## The block to inject
 

@@ -67,9 +67,9 @@ no daemon restart, no reindex. It writes to Qdrant, so relay it to the user
 rather than running it unasked. Still failing afterwards → the error persists
 with a live cause (disk, memory, segment); check the Qdrant log.
 
-Pair with "Embedding Unavailable" rule in `search-cascade.md`: if
-`embedding.reachable === false`, ask user to start embedding backend via
-`AskUserQuestion` before downgrading search strategy.
+Pair with `tea-rags://guide/degraded`: if `embedding.reachable === false`, ask
+user to start embedding backend via `AskUserQuestion` before downgrading search
+strategy.
 
 ## get_index_metrics — Per-Project Calibration
 

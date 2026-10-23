@@ -60,10 +60,19 @@ describe("tea-rags://guide/* resources", () => {
     return session;
   }
 
-  it("lists at most 20 resources and no per-collection entry", async () => {
-    const resources = await (await connect()).listResources();
-    expect(resources.length).toBeLessThanOrEqual(20);
+  it("lists at most 20 resources and templates together, no per-collection entry", async () => {
+    const s = await connect();
+    const resources = await s.listResources();
+    const templates = await s.listResourceTemplates();
+    expect(resources.length + templates.length).toBeLessThanOrEqual(20);
     expect(resources.filter((r) => r.uri.startsWith("qdrant://collection/"))).toEqual([]);
+  });
+
+  it("serves the agent guides moved out of the injected rules", async () => {
+    const s = await connect();
+    for (const topic of ["navigation", "decision-tree", "freshness", "degraded"]) {
+      expect(await textOf(s, `tea-rags://guide/${topic}`)).toMatch(/^# /);
+    }
   });
 
   it("registers every builder-backed guide", async () => {
@@ -93,12 +102,14 @@ describe("tea-rags://guide/* resources", () => {
       "indexing-guide": "indexing",
       "signal-labels": "signal-labels",
     };
-    const listed = await s.listResources();
     for (const [schema, guide] of Object.entries(aliases)) {
       expect(await textOf(s, `tea-rags://schema/${schema}`)).toBe(await textOf(s, `tea-rags://guide/${guide}`));
-      const entry = listed.find((r) => r.uri === `tea-rags://schema/${schema}`);
-      expect(entry?.description).toMatch(new RegExp(`^Deprecated alias of tea-rags://guide/${guide}\\.`));
     }
+    const listed = await s.listResources();
+    expect(listed.filter((r) => r.uri.startsWith("tea-rags://schema/"))).toEqual([]);
+    const template = (await s.listResourceTemplates()).find((t) => t.uriTemplate === "tea-rags://schema/{name}");
+    expect(template?.description).toMatch(/^Deprecated alias of tea-rags:\/\/guide\/\*/);
+    await expect(s.readResource("tea-rags://schema/unknown")).rejects.toThrow();
   });
 
   it("serves the language-capability matrix without the human-only section", async () => {

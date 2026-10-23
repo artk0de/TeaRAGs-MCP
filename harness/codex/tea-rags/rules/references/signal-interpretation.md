@@ -76,7 +76,7 @@ both exist — `imports` counts import lines, `fanIn` counts actual graph edges.
 | cycle membership   | file/chunk | member of an SCC (`find_cycles`) — circular coupling      |
 
 Codegraph off → fall back to `imports` proxy, say structural centrality is
-approximate (see search-cascade "Graph navigation").
+approximate (see `tea-rags://guide/navigation` "Graph navigation").
 
 ## When to use `recent*` vs `blame*` (ownership-pair selection)
 

@@ -52,9 +52,9 @@ this branch already changed.
 redirects superpowers:X. NEVER bypass the wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. **NO background reindex hook.** Linked
-worktree: overlay serves the tree's uncommitted edits — never reindex for them.
-Main checkout: incremental `mcp__tea-rags__index_codebase` before searching
+`tea-rags://guide/freshness`. **NO background reindex hook.** Linked worktree:
+overlay serves the tree's uncommitted edits — never reindex for them. Main
+checkout: incremental `mcp__tea-rags__index_codebase` before searching
 uncommitted WIP, or once answers show `changedFiles` > 0 (HEAD moved, branch
 switch) — no consent, also under drift `--force` (ask that separately). **Lag ≠
 unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never license
@@ -100,14 +100,14 @@ If `taskFileList` empty (pure new-file creation): skip to Step 4 with verdict
 
 1. **Address the tree.** Step 2 guard + every tea-rags read call of this Task
    (and every skill it invokes) pass `project=<alias>` +
-   `path=<your working directory>` (tea-rags search-cascade "Addressing the
-   Codebase"). Linked worktree → reads its own tree against the repository's
-   index, any delta size; no clone, no reindex for the tree's own edits
-   (index-freshness).
+   `path=<your working directory>` (tea-rags `tea-rags://guide/freshness`
+   "Addressing the Codebase"). Linked worktree → reads its own tree against the
+   repository's index, any delta size; no clone, no reindex for the tree's own
+   edits (`tea-rags://guide/freshness`).
 2. **Read the `workingTree` marker.** `pendingFiles` → those files' rows are the
    index's; re-call for current code. `indexOnlyFiles` → non-code rows are the
    index's. Neither triggers a reindex. `degraded` → its `remedy` under
-   index-freshness consent.
+   `tea-rags://guide/freshness` consent.
 
 - **Subagent-driven:** subagent never reindexes, passes
   `path=<its working directory>`.
@@ -119,7 +119,7 @@ Issue ONE `mcp__tea-rags__semantic_search` call — SAME idiom as
 `dinopowers:writing-plans` Step 2:
 
 ```
-project:     <alias>                    ← search-cascade "Addressing the Codebase"
+project:     <alias>                    ← `tea-rags://guide/freshness` "Addressing the Codebase"
 path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <taskIntent from Step 1>
 pathPattern: "{taskFile1,taskFile2,...}"   ← brace expansion

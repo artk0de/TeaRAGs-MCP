@@ -89,7 +89,7 @@ Catalog has full list; this is routing tier.
 rank on real call/import edges (`fanIn`, `isHub`, `fanOutPerLine`). Meaningful
 only when prime `## Enrichment` lists `codegraph.symbols`; codegraph off → they
 degrade to similarity — fall back to `imports`-proxy custom weights, say
-centrality is approximate. See search-cascade "Graph navigation".
+centrality is approximate. See `tea-rags://guide/navigation` "Graph navigation".
 
 ## Custom weight recipes
 

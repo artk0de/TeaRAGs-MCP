@@ -1,4 +1,72 @@
-# Index Freshness — reindex triggers
+# Freshness — addressing, overlay, reindex
+
+## Addressing the Codebase (every tea-rags call)
+
+**Every read call: `project="<alias>"` + `path="<your working directory>"`.**
+One rule, every checkout, every read tool — search, `find_symbol`, graph tools,
+`review_changes`, `get_naming_lexicon`, analytics. No "which checkout am I in"
+decision.
+
+- **`project` = WHICH INDEX.** Pass always. Alias: prime `## Project` `name:`,
+  the SubagentStart line "tea-rags project alias for this repository", or
+  `workingTree.project` of any answer. Survives path moves, pulls registered
+  qdrantUrl + embeddingModel. Alone → tree = alias's registered checkout in its
+  current state (any branch, uncommitted edits) — WRONG tree from a linked
+  worktree.
+- **`path` = WHICH TREE.** Your working directory: branch checkout, linked
+  worktree, any dir inside. Main checkout → same as registry, harmless; linked
+  worktree → the only way to read its own code. Must be the same repository as
+  `project`.
+- **`collection="<qdrant-name>"`** — only when you hold a raw collection name
+  and no alias (e.g. `list_collections`); add `path` when it is your repository.
+- Alias unknown (unregistered repo, alias not in prime / hook / marker) → `path`
+  alone still works (index resolves from the same repository); take
+  `workingTree.project` from the answer and pass it from then on.
+- **`index_codebase` is the exception:** `project` ONLY. Its `path` = first-time
+  registration of a NEW root; from a linked worktree it seeds a separate project
+  — never use it to reindex an alias.
+
+Index resolution priority: `collection > project > path`; the tree comes from
+`path` when given, else the alias's registered checkout.
+
+**Read the `workingTree` marker on every answer:** `project` = alias of the
+index that answered (pass it on later calls); `tree` = tree it read;
+`changedFiles` / `deletedFiles` = distance from `indexedCommit` (`0` = measured
+clean); `floors` = layers read from the tree — `chunks` (find_symbol / outline,
+rank_chunks rows), `sparse` (hybrid_search BM25), `dense` (semantic_search /
+find_similar / hybrid vector ranking of changed files), `codegraph` (graph
+tools' edges). A row or edge no floor covers reflects the index;
+`denseUnavailable` / `treeGraphUnavailable` name why a layer fell back to it;
+`gitUnavailable` counts changed-file rows whose git signals are still computing
+— they rank without that history this call, re-call later. `pendingFiles` =
+re-read files not yet warm: their rows are the index's
+(`treeState: "modified"`), a later call reads more of the tree — re-call for
+current code; never a reindex trigger by itself. `indexOnlyFiles` = changed
+files with no AST chunking (json / yaml / sql / toml …): never re-read, rows are
+the index's (`treeState: "modified"`); current text → `Read` the file. Graph
+answer with `changedFiles` > 0 and no `codegraph` floor → edges touching changed
+files are the index's (`degraded` says why): trust edges between untouched
+files, re-check changed ones via `find_symbol` / `hybrid_search`. `degraded` →
+its `remedy` under the consent rows of "Reindex triggers" (subagent: report it
+to the parent, never reindex). `tree` ≠ the tree you addressed (your working
+directory, or the checkout a skill names) → wrong tree, re-call with `project` +
+that `path`.
+
+**Lag ≠ unusable (MANDATORY).** Counts above, `floors: []` and drift = distance
+index↔tree, never licence to leave tea-rags — thousands of changed files
+included. Row without `treeState` = file unchanged in your tree = current. Own
+checkout with `changedFiles` > 0 → incremental `index_codebase` now, no consent
+(drift `--force` → ask separately, keep working). Full protocol: "Lag never
+licenses leaving tea-rags" below.
+
+**`treeState: "modified" | "deleted"`** on a row = index copy of a file your
+tree changed or deleted, served only when no tree floor covered it (e.g.
+`denseUnavailable`, `pendingFiles`, `indexOnlyFiles`); text and lines may be
+stale. Current code → `find_symbol` (chunks floor), not the row; `pendingFiles`
+row → re-call later; `indexOnlyFiles` file → `Read` it (no tree floor ever
+covers it).
+
+## Reindex triggers
 
 tea-rags search reads payloads written at index time. Index lags working tree →
 results silently stale. Before first tea-rags search/explore of turn, check
@@ -19,13 +87,12 @@ conditions below (signals from **prime** digest layer); reindex when one fires.
 
 Read tools called with `project` + `path=<your working directory>` answer for
 that tree against the repository's index — floors and `treeState` reading:
-search-cascade "Addressing the Codebase". Main-checkout reindex cannot see
-worktree edits; `index_codebase path=<worktree>` seeds a separate project. Both
-wrong → never reindex for the tree's own edits — `pendingFiles` (not yet warm, a
-later call reads more) and `indexOnlyFiles` (no AST chunking, served from the
-index) included. `degraded` → its `remedy` under the consent rows above. Main
-checkout keeps the reindex rows above: dense vectors of changed files lag
-otherwise.
+"Addressing the Codebase" above. Main-checkout reindex cannot see worktree
+edits; `index_codebase path=<worktree>` seeds a separate project. Both wrong →
+never reindex for the tree's own edits — `pendingFiles` (not yet warm, a later
+call reads more) and `indexOnlyFiles` (no AST chunking, served from the index)
+included. `degraded` → its `remedy` under the consent rows above. Main checkout
+keeps the reindex rows above: dense vectors of changed files lag otherwise.
 
 ## Lag never licenses leaving tea-rags
 

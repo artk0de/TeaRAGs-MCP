@@ -6,20 +6,19 @@ import { describe, expect, it } from "vitest";
 
 import { writeArtifacts } from "../../scripts/gen-language-compatibility.js";
 
-function scratch(): { rulePath: string; readmePath: string } {
+function scratch(): { readmePath: string } {
   const dir = mkdtempSync(join(tmpdir(), "lang-compat-"));
-  return { rulePath: join(dir, "rule.md"), readmePath: join(dir, "README.md") };
+  return { readmePath: join(dir, "README.md") };
 }
 
 describe("writeArtifacts", () => {
-  it("writes the rule file and replaces only the README marker block, idempotently", async () => {
-    const { rulePath, readmePath } = scratch();
+  it("replaces only the README marker block, idempotently", async () => {
+    const { readmePath } = scratch();
     writeFileSync(readmePath, "# Top\n\n<!-- BEGIN lang-compat -->\nOLD\n<!-- END lang-compat -->\n\n# Bottom\n");
 
-    await writeArtifacts({ rulePath, readmePath });
+    await writeArtifacts({ readmePath });
     const first = readFileSync(readmePath, "utf8");
 
-    expect(readFileSync(rulePath, "utf8")).toContain("# Language Compatibility");
     expect(first).toContain("# Top");
     expect(first).toContain("# Bottom");
     expect(first).not.toContain("OLD");
@@ -27,13 +26,13 @@ describe("writeArtifacts", () => {
     expect(first).toContain("<!-- BEGIN lang-compat -->");
     expect(first).toContain("<!-- END lang-compat -->");
 
-    await writeArtifacts({ rulePath, readmePath });
+    await writeArtifacts({ readmePath });
     expect(readFileSync(readmePath, "utf8")).toBe(first); // idempotent
   });
 
   it("throws when the README markers are missing", async () => {
-    const { rulePath, readmePath } = scratch();
+    const { readmePath } = scratch();
     writeFileSync(readmePath, "# No markers here\n");
-    await expect(writeArtifacts({ rulePath, readmePath })).rejects.toThrow(/marker/i);
+    await expect(writeArtifacts({ readmePath })).rejects.toThrow(/marker/i);
   });
 });

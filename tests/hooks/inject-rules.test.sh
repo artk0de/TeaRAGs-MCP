@@ -7,9 +7,10 @@ PASS=0; FAIL=0
 note() { if [ "$1" = 0 ]; then PASS=$((PASS+1)); echo "ok   - $2"; else FAIL=$((FAIL+1)); echo "FAIL - $2"; fi; }
 
 # The hook's stdout is delivered to the model as one attachment. Past ~16KB the
-# harness persists it to a file and the model sees a 2KB preview instead, so the
-# corpus has to arrive as several parts, each below the budget.
-BUDGET=10000
+# harness persists it to a file and the model sees a 2KB preview instead. The
+# always-on corpus is `core.md` alone (guides are served as resources), so it
+# arrives as one part; the splitter still guards a corpus that outgrows it.
+BUDGET=8000
 
 TMPD="$(mktemp -d)"; OUT="$TMPD/out.txt"; ALL="$TMPD/all.txt"
 
@@ -20,10 +21,10 @@ corpus_bytes() { cat "$RULES"/*.md | wc -c | tr -d ' '; }
 # rather than letting it reach `[ -ge ]` and print itself into the test log.
 num()   { case "${1:-}" in (''|*[!0-9]*) echo 0 ;; (*) echo "$1" ;; esac; }
 
-# 1. --count reports the number of parts the corpus is split into
+# 1. --count reports the number of parts: the core fits one
 TOTAL="$(num "$(bash "$HOOK" --count 2>/dev/null)")"
-[ "$TOTAL" -ge 2 ]
-note $? "--count reports how many parts the corpus needs"
+[ "$TOTAL" = 1 ]
+note $? "--count reports one part for the core"
 
 # 2. every part fits the delivery budget
 # (counting up by hand — BSD `seq 1 0` counts DOWN and yields "1 0")
@@ -67,16 +68,16 @@ done
 note $? "--max-bytes splits sections larger than the budget"
 
 # 7. each part says which part of how many it is, so the model reads them as one document
-run --part 2
+bash "$HOOK" --part 2 --max-bytes 3000 > "$OUT" 2>/dev/null
 grep -q 'part 2/' "$OUT"
 note $? "each part carries its part-of-total marker"
 
 # 8. each file segment is labelled, so references between rule files resolve
-grep -q 'rules/search-cascade.md' "$ALL" && grep -q 'rules/index-freshness.md' "$ALL"
+grep -q 'rules/core.md' "$ALL"
 note $? "each file segment is labelled with its source path"
 
 # 9. more parts than the hook declares → the last one names what it could not carry
-bash "$HOOK" --part 2 --parts 2 --max-bytes 3000 > "$OUT" 2>/dev/null
+bash "$HOOK" --part 1 --parts 1 --max-bytes 3000 > "$OUT" 2>/dev/null
 grep -q 'Read these files directly' "$OUT"
 note $? "the last declared part points to the rules it could not carry"
 

@@ -48,7 +48,7 @@ export async function renderAgentContextModule(
     .join("\n");
   const source = `${HEADER}
 
-export const AGENT_CONTEXT_CORE = ${JSON.stringify(readCore(rulesDir))};
+export const AGENT_CONTEXT_CORE = ${JSON.stringify(readCore(rulesDir))} as string;
 
 export const AGENT_CONTEXT_GUIDES: Readonly<Record<string, string>> = {
 ${entries}

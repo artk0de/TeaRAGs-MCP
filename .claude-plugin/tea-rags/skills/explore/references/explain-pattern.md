@@ -31,10 +31,10 @@ EXPLAIN step by what was asked.
   shows in `blame*` but not in `recent*`.
 - **"Is X tested?" / "Show tests for X"** → hybrid_search for X name with
   `testFile: "only"` — typed filter, convention-agnostic, no test-dir discovery
-  needed (built-in Glob prohibited for code discovery — search-cascade).
-  `metaOnly=true` for existence check, `metaOnly=false` for test content. Zero
-  hits → find_symbol X `metaOnly=true` to split "exists but untested" from
-  "wrong name" before concluding.
+  needed (built-in Glob prohibited for code discovery —
+  `tea-rags://guide/decision-tree`). `metaOnly=true` for existence check,
+  `metaOnly=false` for test content. Zero hits → find_symbol X `metaOnly=true`
+  to split "exists but untested" from "wrong name" before concluding.
 
 ## Evidence discipline (broad EXPLAIN)
 
@@ -44,6 +44,6 @@ EXPLAIN step by what was asked.
 - Behavioral claim taken from a doc chunk → verify via find_symbol /
   hybrid_search BEFORE it enters the answer. Conflict → code wins, flag drift
   ("docs say X, code does Y"). Full rule: `rules/references/axis-splitting.md` +
-  search-cascade Principles.
+  `tea-rags://guide/navigation` Principles.
 
 Code citations: `file:line`. Quote 3-5 relevant lines, don't dump functions.

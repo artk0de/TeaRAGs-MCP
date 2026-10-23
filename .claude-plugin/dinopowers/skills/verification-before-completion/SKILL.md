@@ -62,14 +62,14 @@ Block is prescriptive, not informational — DO NOT skip ladder evaluation.
 redirects superpowers:X. NEVER bypass the wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
-worktree: overlay serves uncommitted edits — never reindex for them. Main
-checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
-over uncommitted edits, or once answers show `changedFiles` > 0 (HEAD moved,
-branch switch) — no consent, also under drift `--force` (ask that separately).
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never
-license Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without
-`treeState` = current; `treeState` row → `find_symbol` re-call.
+`tea-rags://guide/freshness`. No background reindex hook. Linked worktree:
+overlay serves uncommitted edits — never reindex for them. Main checkout:
+incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call over
+uncommitted edits, or once answers show `changedFiles` > 0 (HEAD moved, branch
+switch) — no consent, also under drift `--force` (ask that separately). **Lag ≠
+unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never license
+Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without `treeState`
+= current; `treeState` row → `find_symbol` re-call.
 
 ## Step 1 — Collect edited file set
 
@@ -96,7 +96,7 @@ Issue ONE `mcp__tea-rags__semantic_search` call — SAME idiom as
 `dinopowers:writing-plans` and `dinopowers:executing-plans`:
 
 ```
-project:     <alias>                    ← search-cascade "Addressing the Codebase"
+project:     <alias>                    ← `tea-rags://guide/freshness` "Addressing the Codebase"
 path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent from Step 1>
 pathPattern: "{editedFile1,editedFile2,...}"   ← brace expansion

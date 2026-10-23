@@ -49,7 +49,7 @@ new code, corner-case discovery fails silently.
 
 - Target local main alias (`list_projects`/prime). Never a stale worktree clone.
 - `index_codebase` incremental, `project: <main-alias>` — silent, no consent
-  (see `.claude-plugin/tea-rags/rules/index-freshness.md`).
+  (see `tea-rags://guide/freshness`).
 - Skip ONLY if prime shows index fresh AND no `src/` written this session.
 
 ## Step 1: Baseline (ONE coverage run)

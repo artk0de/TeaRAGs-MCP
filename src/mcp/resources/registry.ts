@@ -210,7 +210,7 @@ export function buildSignalsDoc(descriptors: PresetDescriptors): string {
 export function buildSearchGuide(): string {
   return `# Search Guide — Parameter Examples
 
-Tool routing is in the search-cascade rule. This resource has concrete
+Tool routing is in tea-rags://guide/core and tea-rags://guide/decision-tree. This resource has concrete
 parameter examples per tool.
 
 ## search_code Examples
@@ -232,7 +232,7 @@ parameter examples per tool.
 
 - Symbol + context → query="PaymentService validate card expiration"
 - Class definition → query="def automations_disabled_reasons"
-- Note: BM25 component currently degraded — see search-cascade Known Limitations
+- Note: BM25 component currently degraded — see tea-rags://guide/degraded
 
 ## find_symbol Examples
 
@@ -714,20 +714,37 @@ function markdownTitle(markdown: string, fallback: string): string {
  * `tea-rags://schema/*` aliases, and the plugin-rule guides generated into
  * `AGENT_CONTEXT_GUIDES` (`guide/core` only when the core is non-empty).
  */
+/**
+ * `tea-rags://schema/{name}` — deprecated aliases of the builder-backed guides,
+ * readable for one release, not listed: seven extra rows would break the
+ * `resources/list` budget of 20.
+ */
+function registerSchemaAliases(server: McpServer, guides: BuilderBackedGuide[]): void {
+  const byAlias = new Map(guides.flatMap((guide) => (guide.schemaAlias ? [[guide.schemaAlias, guide] as const] : [])));
+  server.registerResource(
+    "schema-alias",
+    new ResourceTemplate("tea-rags://schema/{name}", { list: undefined }),
+    {
+      title: "Schema (deprecated)",
+      description: `Deprecated alias of tea-rags://guide/*: ${[...byAlias]
+        .map(([alias, { topic }]) => (alias === topic ? alias : `${alias} → ${topic}`))
+        .join(", ")}`,
+      mimeType: "text/markdown",
+    },
+    async (uri, { name }) => {
+      const guide = typeof name === "string" ? byAlias.get(name) : undefined;
+      if (!guide) throw new InvalidParameterError("name", `unknown schema alias; read tea-rags://guide/* instead`);
+      return { contents: [{ uri: uri.href, mimeType: "text/markdown", text: guide.render() }] };
+    },
+  );
+}
+
 function registerGuides(server: McpServer, app: App): void {
-  for (const { topic, schemaAlias, title, description, render } of builtGuides(app)) {
-    const uri = `tea-rags://guide/${topic}`;
-    registerMarkdown(server, { name: `guide-${topic}`, uri, title, description, render });
-    if (schemaAlias) {
-      registerMarkdown(server, {
-        name: `schema-${schemaAlias}`,
-        uri: `tea-rags://schema/${schemaAlias}`,
-        title,
-        description: `Deprecated alias of ${uri}. ${description}`,
-        render,
-      });
-    }
+  const guides = builtGuides(app);
+  for (const { topic, title, description, render } of guides) {
+    registerMarkdown(server, { name: `guide-${topic}`, uri: `tea-rags://guide/${topic}`, title, description, render });
   }
+  registerSchemaAliases(server, guides);
   if (AGENT_CONTEXT_CORE.length > 0) {
     registerMarkdown(server, {
       name: "guide-core",

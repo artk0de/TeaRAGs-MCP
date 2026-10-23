@@ -570,8 +570,9 @@ Run `npm run gen:agent-context` (empty core + no guides at this point is valid).
 
 **Files:**
 
-- Create: `.claude-plugin/tea-rags/rules/core.md` (≤ 4,000 chars; the spec's
-  core outline)
+- Create: `.claude-plugin/tea-rags/rules/core.md` (≤ 3,700 chars — server
+  `instructions` cap 4,096 and Cursor's `tea-rags-core.mdc` cap 4,096 incl.
+  ~330 chars of wrapper; the spec's core outline)
 - Create:
   `.claude-plugin/tea-rags/rules/guides/{navigation,decision-tree,freshness,degraded}.md`
   (bodies moved out of `search-cascade.md` / `index-freshness.md`, caveman
@@ -591,8 +592,14 @@ Run `npm run gen:agent-context` (empty core + no guides at this point is valid).
   via ripgrep MCP) → point to `tea-rags://guide/<topic>`
 - Modify: `.claude/rules/plugin-guidance-layers.md`,
   `src/mcp/resources/generated/agent-context.ts` (regenerated)
+- Modify: `src/mcp/resources/registry.ts` — the seven `tea-rags://schema/*`
+  aliases collapse into one unlisted template `tea-rags://schema/{name}`
+  (`list: undefined`): with core + 4 guides the static listing reaches 20, and
+  Task 5's two project templates count against the same ≤ 20 budget
+  (`tests/mcp/resources/guides.test.ts` counts resources + templates)
 - Test: `tests/hooks/agent-context-budgets.test.sh` (add: inject output ≤ 8,000
-  bytes, `--count` = 1), `tests/hooks/inject-rules.test.sh`
+  bytes, `--count` = 1, `core.md` ≤ 3,700 chars),
+  `tests/hooks/inject-rules.test.sh`
 
 - [ ] **Step 1: Tighten the budget test** (inject total ≤ 8,000 bytes;
       `inject-rules.sh --count` prints 1) — run → FAIL.
@@ -613,7 +620,7 @@ Run `npm run gen:agent-context` (empty core + no guides at this point is valid).
       `tea-rags://project/<alias>/digest`; thresholds/labelMap →
       `tea-rags://project/<alias>/metrics?language=<lang>`; (5) destructive
       tools need consent (`force_reindex`, `clear_index`, `delete_*`). Keep it ≤
-      4,000 chars — it doubles as server `instructions`.
+      3,700 chars — it doubles as server `instructions` and Cursor's core rule.
 - [ ] **Step 3: Move the bodies** into the four guide files
       verbatim-then-compressed (sections listed in the spec's classification);
       delete `For humans — resolution tech` from agent context (it already lives
