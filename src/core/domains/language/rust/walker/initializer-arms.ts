@@ -1,4 +1,5 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
+import type { InferredBindingShape } from "../../../../contracts/types/codegraph.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../associated-constructor.js";
 import { readRustBareType } from "./bare-type.js";
 
@@ -100,4 +101,21 @@ export function rustAgreedConstructorValue(
     agreed ??= { type, expression };
   }
   return agreed;
+}
+
+/**
+ * The type a `let` initializer's constructor spells, and the inferred shape it
+ * took when that shape is newer than the direct associated-fn constructor
+ * (`let w = Worker::new()`): an enum variant (`Res::Ok(x)`) or agreeing
+ * `if` / `match` / block arms. The resolver reads a shaped binding whose type
+ * does not place as absent, so the shape only ever adds edges.
+ */
+export function rustInferredConstructorType(
+  value: AstNode,
+): { readonly type: string; readonly shape?: InferredBindingShape } | null {
+  const agreed = rustAgreedConstructorValue(value);
+  if (agreed === null) return null;
+  if (agreed.expression !== value) return { type: agreed.type, shape: "initializerArms" };
+  const member = value.childForFieldName("function")?.childForFieldName("name")?.text ?? "";
+  return isRustConstructorAssocFn(member) ? { type: agreed.type } : { type: agreed.type, shape: "variantConstructor" };
 }

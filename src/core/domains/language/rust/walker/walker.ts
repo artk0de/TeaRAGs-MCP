@@ -32,13 +32,14 @@ import type {
   ChunkExtraction,
   FileExtraction,
   ImportRef,
+  InferredBindingShape,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
 import { readRustBareType } from "./bare-type.js";
 import { collectRustCallResultBindings } from "./call-result-bindings.js";
 import { rustDeclaredEnumVariantFields, rustDeclaredStructFields } from "./field-types.js";
-import { rustAgreedConstructorValue } from "./initializer-arms.js";
+import { rustInferredConstructorType } from "./initializer-arms.js";
 import { rustNameOf } from "./name-of.js";
 import { collectRustPatternBindings } from "./pattern-bindings.js";
 import { collectRustReturnTypes, rustDeclaredTypeRef } from "./return-types.js";
@@ -429,8 +430,19 @@ function collectRustLocalBindingsForChunk(
     // arms of an `if` / `match` / block initializer; `let d = *self` copies the impl's type.
     const value = node.childForFieldName("value");
     if (value === null) return;
-    const typeName = rustAgreedConstructorValue(value)?.type ?? rustSelfCopyType(value, fn);
-    if (typeName !== null) (bindings[varName] ??= []).push({ line: node.startPosition.row + 1, type: typeName });
+    // Every shape newer than the direct `Foo::new()` carries its `inferenceShape`:
+    // the resolver reads it as absent where its type does not place.
+    const constructed = rustInferredConstructorType(value);
+    const selfCopy = constructed === null ? rustSelfCopyType(value, fn) : null;
+    const inferred: { readonly type: string; readonly shape?: InferredBindingShape } | null =
+      constructed ?? (selfCopy === null ? null : { type: selfCopy, shape: "selfCopy" });
+    if (inferred === null) return;
+    const line = node.startPosition.row + 1;
+    (bindings[varName] ??= []).push(
+      inferred.shape === undefined
+        ? { line, type: inferred.type }
+        : { line, type: inferred.type, inferenceShape: inferred.shape },
+    );
   });
 
   // Pattern-bound names shadow the outer binding for their scope (bd
