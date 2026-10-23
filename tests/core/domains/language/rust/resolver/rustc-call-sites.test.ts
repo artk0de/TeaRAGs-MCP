@@ -334,10 +334,11 @@ describe("RustcCallSiteSymbolResolutionStrategy (bd s3i8m T7)", () => {
 });
 
 describe("RustCallResolver chain position of the driver slot (bd s3i8m T7)", () => {
-  it("sits after every name pass, directly before the SCIP slot", () => {
-    expect(new RustCallResolver().strategies.map((pass) => pass.name).slice(-3)).toEqual([
+  // PIN-UPDATED (RESIDUAL R2): the driver slot moved to the head of the chain;
+  // SCIP stays the residual's slot after every name pass.
+  it("keeps the SCIP slot after every name pass", () => {
+    expect(new RustCallResolver().strategies.map((pass) => pass.name).slice(-2)).toEqual([
       "traitSelfMethod",
-      "rustcCallSites",
       "rustAnalyzerScip",
     ]);
   });
@@ -493,5 +494,140 @@ describe("macroInvocation rows through the driver slot (research/rustc-driver/RE
     const resolver = await facade({ callSites: stubIndex({ "src/main.rs:9:4": STD_WRITE }) });
     expect(resolver.resolve(writeSite, ctxWith(t))).toBeNull();
     expect(classifyResolveMiss(writeSite, ctxWith(t), resolver, t)).toBe("externalSkipped");
+  });
+});
+
+describe("driver authority over the static chain (RESIDUAL R2)", () => {
+  const OPTION_UNWRAP: RustCallSiteDefinition = {
+    symbol: "rustc core core::option::Option::<T>::unwrap",
+    package: "core",
+    inProject: false,
+    name: "unwrap",
+    kind: "callable",
+    packageInProject: false,
+  };
+  const PRELUDE_OK: RustCallSiteDefinition = {
+    symbol: "rustc core std::prelude::v1::Ok",
+    package: "core",
+    inProject: false,
+    name: "Ok",
+    kind: "callable",
+    packageInProject: false,
+  };
+  const resNamesake = () => table(def("src/decimal.rs", "unwrap", "Res#unwrap", 10, 14));
+  const unwrapSite = call("x.unwrap()", "x", "unwrap", 9, 6);
+
+  it("keeps today's static edge where the driver has no row", async () => {
+    const resolver = await warmedResolver({ callSites: stubIndex({}) });
+    expect(resolver.resolve(unwrapSite, ctxWith(resNamesake()))?.targetSymbolId).toBe("Res#unwrap");
+  });
+
+  it("drops the static namesake edge of `x.unwrap()` where the driver names core's Option::unwrap", async () => {
+    const callSites = stubIndex({ "src/main.rs:9:6": OPTION_UNWRAP });
+    const resolver = await facade({ callSites });
+    const t = resNamesake();
+    expect(resolver.resolve(unwrapSite, ctxWith(t))).toBeNull();
+    expect(classifyResolveMiss(unwrapSite, ctxWith(t), resolver, t)).toBe("externalSkipped");
+  });
+
+  it("drops the static namesake edge of an `Ok(…)` bareCall where the driver names the prelude's Ok", async () => {
+    const t = table(def("src/response.rs", "Ok", "Response#Ok", 4, 6));
+    const okSite = call("Ok(v)", null, "Ok", 11, 4);
+    expect((await warmedResolver({ callSites: stubIndex({}) })).resolve(okSite, ctxWith(t))?.targetSymbolId).toBe(
+      "Response#Ok",
+    );
+    const resolver = await warmedResolver({ callSites: stubIndex({ "src/main.rs:11:4": PRELUDE_OK }) });
+    expect(resolver.resolve(okSite, ctxWith(t))).toBeNull();
+  });
+
+  it("re-targets `self.m()` from the same-file static answer to the driver's inherent def in another file", async () => {
+    const t = table(def(CALLER, "m", "Local#m", 3, 5), def("src/debug.rs", "m", "DebuggerImpl#m", 313, 320));
+    const selfSite = call("self.m()", "self", "m", 20, 13);
+    const scoped = (): CallContext => ({ ...ctxWith(t), callerScope: ["Local"] });
+    expect((await warmedResolver({ callSites: stubIndex({}) })).resolve(selfSite, scoped())?.targetSymbolId).toBe(
+      "Local#m",
+    );
+    const resolver = await warmedResolver({
+      callSites: stubIndex({ "src/main.rs:20:13": inProject("m", "src/debug.rs", 313) }),
+    });
+    expect(resolver.resolve(selfSite, scoped())).toEqual({
+      targetRelPath: "src/debug.rs",
+      targetSymbolId: "DebuggerImpl#m",
+    });
+  });
+
+  it("falls through to the static chain on an unmappable in-project row and counts the site once per pass", async () => {
+    const callSites = stubIndex({ "src/main.rs:9:6": inProject("unwrap", "src/gone.rs", 40) });
+    const resolver = await warmedResolver({ callSites });
+    expect(resolver.resolve(unwrapSite, ctxWith(resNamesake()))?.targetSymbolId).toBe("Res#unwrap");
+    resolver.resolve(unwrapSite, ctxWith(resNamesake()));
+    expect(resolver.diagnostics()).toEqual({
+      rustcCallSites: { outcome: "indexed", cacheHit: true, inProjectUnmapped: 1 },
+    });
+    resolver.prepareResolvePass({ expectedFileCount: 1, projectRoot: ROOT });
+    expect(resolver.diagnostics()).toEqual({ rustcCallSites: { outcome: "indexed", cacheHit: true } });
+  });
+
+  it("leaves a macro invocation to the macro pass unless the driver row is a macro row", async () => {
+    const t = table(def("src/log.rs", "info", "info", 1, 9, "macro"));
+    const macroSite = call("info!(x)", null, "info", 30, 4);
+    const resolver = await warmedResolver({ callSites: stubIndex({ "src/main.rs:30:4": OPTION_UNWRAP }) });
+    expect(resolver.resolve(macroSite, ctxWith(t))?.targetSymbolId).toBe("info");
+  });
+
+  describe("the trait cone yields to a decisive driver row", () => {
+    const member = (symbolId: string, relPath: string, owner: string, line: number): SymbolDefinition => ({
+      ...def(relPath, "run", symbolId, line, line + 2),
+      scope: [owner],
+    });
+    const coneTable = () =>
+      table(
+        { ...def("src/runner.rs", "Runner", "Runner", 1, 5, "interface") },
+        member("Runner#run", "src/runner.rs", "Runner", 2),
+        { ...def("src/worker.rs", "Worker", "Worker", 1, 9, "class") },
+        member("Worker#run", "src/worker.rs", "Worker", 3),
+        { ...def("src/server.rs", "Server", "Server", 1, 9, "class") },
+        member("Server#run", "src/server.rs", "Server", 3),
+      );
+    const runSite = call("runner.run()", "runner", "run", 9, 13);
+    const coneCtx = (): CallContext => ({
+      ...ctxWith(coneTable()),
+      localBindings: { runner: [{ line: 1, type: "Runner" }] },
+      hierarchy: {
+        getAncestors: () => [],
+        getDescendants: (ancestor: string) =>
+          ancestor === "Runner"
+            ? ["Worker", "Server"].map((sourceFqName) => ({
+                sourceFqName,
+                ancestorFqName: "Runner",
+                ancestorSymbolId: null,
+                kind: "implements" as const,
+                depth: 1,
+              }))
+            : [],
+      },
+    });
+    const fanned = async (answers: Record<string, RustCallSiteDefinition>) => {
+      const outcome = (await warmedResolver({ callSites: stubIndex(answers) })).resolveDispatch(runSite, coneCtx());
+      return outcome.kind === "edges" ? outcome.edges.map((edge) => edge.targetSymbolId) : outcome.kind;
+    };
+
+    it("keeps the cone without a row and where the driver names the trait's declaration", async () => {
+      expect(await fanned({})).toEqual(["Worker#run", "Server#run"]);
+      const traitDecl = { ...inProject("run", "src/runner.rs", 2), declaringTrait: "Runner" };
+      expect(await fanned({ "src/main.rs:9:13": traitDecl })).toEqual(["Worker#run", "Server#run"]);
+    });
+
+    it("declines the cone where the driver names one concrete method or an external target", async () => {
+      expect(await fanned({ "src/main.rs:9:13": inProject("run", "src/worker.rs", 3) })).toEqual([]);
+      expect(await fanned({ "src/main.rs:9:13": { ...STD_PUSH, name: "run" } })).toEqual([]);
+    });
+  });
+
+  it("answers ahead of every static pass", () => {
+    expect(new RustCallResolver().strategies.map((pass) => pass.name).slice(0, 2)).toEqual([
+      "rustcCallSites",
+      "macroInvocation",
+    ]);
   });
 });
