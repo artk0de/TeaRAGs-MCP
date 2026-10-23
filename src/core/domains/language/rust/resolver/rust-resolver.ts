@@ -74,6 +74,7 @@ import {
 import { RustResolveEnvironmentCache } from "./resolve-environment-cache.js";
 import { withRustResolveEnvironment } from "./resolve-environment.js";
 import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
+import { rustStdNameBindsByNameOnly } from "./std-name-only-binding.js";
 import {
   RustBareSelfMethodSymbolResolutionStrategy,
   rustCalleeShortNameCandidates,
@@ -202,6 +203,8 @@ export class RustCallResolver implements CallResolver {
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
     const environment = this.withEnvironment(ctx);
     if (this.external.targetsExternal(call, environment)) return true;
+    // The strategies' R5 drop: a std-prelude name bound by name alone where the driver is silent.
+    if (rustStdNameBindsByNameOnly(call, environment)) return true;
     return rustCallSiteProvesExternal(call, environment) && this.hasInProjectDefinition(call, environment);
   }
 

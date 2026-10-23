@@ -145,6 +145,9 @@ export const rustStdUnwrappingTypes: ReadonlySet<string> = new Set(["Option", "R
 /** Enum variant constructors the prelude binds: `Ok(())`, `Some(x)`, `Err(e)`. */
 export const rustStdPreludeVariants: ReadonlySet<string> = new Set(["Ok", "Err", "Some", "None"]);
 
+/** Free functions the std prelude binds in every module without a `use`: `drop(x)` is `std::mem::drop`. */
+export const rustStdPreludeFunctions: ReadonlySet<string> = new Set(["drop"]);
+
 /** Macros the std prelude binds in every module without a `use`. */
 export const rustStdMacros: ReadonlySet<string> = new Set([
   "vec",
@@ -249,6 +252,11 @@ export function rustTextIsStdUnwrappingType(text: string): boolean {
 
 export function rustTextIsStdPreludeVariant(text: string): boolean {
   return rustStdPreludeVariants.has(text);
+}
+
+/** A bare call the prelude answers without a `use`: a variant constructor or a prelude free function. */
+export function rustTextIsStdPreludeCallable(text: string): boolean {
+  return rustStdPreludeVariants.has(text) || rustStdPreludeFunctions.has(text);
 }
 
 export function rustTextIsStdMacro(text: string): boolean {

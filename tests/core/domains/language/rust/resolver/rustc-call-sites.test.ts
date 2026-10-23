@@ -390,8 +390,9 @@ describe("the miss classifier's external gate reads the driver (bd s3i8m T7)", (
     const t = namesake();
     const sites = [pushSite, call("v.frobnicate()", "v", "frobnicate", 10, 6), call("10.into()", "10", "into", 11, 7)];
     const resolver = await facade();
+    // RESIDUAL R5: an untyped `v.push(1)` whose lone namesake binds by name alone is std where the driver is silent.
     expect(sites.map((site) => classifyResolveMiss(site, ctxWith(t), resolver, t))).toEqual([
-      "missWithInProjectDef",
+      "externalSkipped",
       "noInProjectDef",
       "externalSkipped",
     ]);
@@ -458,9 +459,17 @@ describe("driver authority over the static chain (RESIDUAL R2)", () => {
   const resNamesake = () => table(def("src/decimal.rs", "unwrap", "Res#unwrap", 10, 14));
   const unwrapSite = call("x.unwrap()", "x", "unwrap", 9, 6);
 
-  it("keeps today's static edge where the driver has no row", async () => {
+  it("drops the name-only `x.unwrap()` edge where the driver has no row, as external (RESIDUAL R5)", async () => {
     const resolver = await warmedResolver({ callSites: stubIndex({}) });
-    expect(resolver.resolve(unwrapSite, ctxWith(resNamesake()))?.targetSymbolId).toBe("Res#unwrap");
+    const t = resNamesake();
+    expect(resolver.resolve(unwrapSite, ctxWith(t))).toBeNull();
+    expect(classifyResolveMiss(unwrapSite, ctxWith(t), resolver, t)).toBe("externalSkipped");
+  });
+
+  it("keeps a typed receiver's static edge where the driver has no row", async () => {
+    const resolver = await warmedResolver({ callSites: stubIndex({}) });
+    const typed: CallContext = { ...ctxWith(resNamesake()), localBindings: { x: [{ line: 8, type: "Res" }] } };
+    expect(resolver.resolve(unwrapSite, typed)?.targetSymbolId).toBe("Res#unwrap");
   });
 
   it("drops the static namesake edge of `x.unwrap()` where the driver names core's Option::unwrap", async () => {
@@ -474,9 +483,8 @@ describe("driver authority over the static chain (RESIDUAL R2)", () => {
   it("drops the static namesake edge of an `Ok(…)` bareCall where the driver names the prelude's Ok", async () => {
     const t = table(def("src/response.rs", "Ok", "Response#Ok", 4, 6));
     const okSite = call("Ok(v)", null, "Ok", 11, 4);
-    expect((await warmedResolver({ callSites: stubIndex({}) })).resolve(okSite, ctxWith(t))?.targetSymbolId).toBe(
-      "Response#Ok",
-    );
+    // RESIDUAL R5: with no driver row the prelude's `Ok` already wins over the name-only namesake.
+    expect((await warmedResolver({ callSites: stubIndex({}) })).resolve(okSite, ctxWith(t))).toBeNull();
     const resolver = await warmedResolver({ callSites: stubIndex({ "src/main.rs:11:4": PRELUDE_OK }) });
     expect(resolver.resolve(okSite, ctxWith(t))).toBeNull();
   });
