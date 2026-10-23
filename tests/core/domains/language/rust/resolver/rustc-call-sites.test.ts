@@ -795,6 +795,26 @@ describe("a definition a macro GENERATED (format 4 defExpansion) never falls bac
     });
   });
 
+  it("edges a project-generated impl of a project trait to the trait's method declaration, not the macro", async () => {
+    // tikv `function.create_state()` → `<AggrFnCount as AggrFunction>::create_state` @ `#[derive(AggrFunction)]`.
+    const t = table(
+      def("src/traits.rs", "ProjectTrait", "ProjectTrait", 1, 9, "interface"),
+      def("src/traits.rs", "m", "ProjectTrait::m", 3, 3),
+      def("src/other.rs", "m", "Other#m", 20, 22),
+      def("derive/src/lib.rs", "config", "config", 5, 30, "function"),
+    );
+    const generatedImpl: RustCallSiteDefinition = {
+      ...projectDerive(5),
+      name: "m",
+      implTrait: "ProjectTrait",
+    };
+    const resolver = await facade({ callSites: stubIndex({ "src/main.rs:9:6": generatedImpl }) });
+    expect(resolver.resolve(call("x.m()", "x", "m", 9, 6), ctxWith(t))).toEqual({
+      targetRelPath: "src/traits.rs",
+      targetSymbolId: "ProjectTrait::m",
+    });
+  });
+
   it("drops a workspace proc-macro derive whose function does not map, with no namesake guess", async () => {
     const resolver = await facade({ callSites: stubIndex({ "src/main.rs:8:8": projectDerive(90) }) });
     expect(resolver.resolve(updateSite, ctxWith(namesakes()))).toBeNull();

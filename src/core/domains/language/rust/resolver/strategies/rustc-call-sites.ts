@@ -6,6 +6,7 @@ import type {
   SymbolResolutionStrategy,
 } from "../../../../../contracts/types/language.js";
 import {
+  mapRustGeneratedTraitImplToDeclaration,
   mapRustGeneratingMacroToSymbol,
   mapScipDefinitionToSymbol,
   rustCallSiteIsDerivedImpl,
@@ -26,7 +27,8 @@ import { rustCallIsMacroInvocation, type ResolverConfig } from "./shared.js";
  * (RESIDUAL R4, counted per pass as `localCallee`). A definition a macro
  * GENERATED (format 4 `defExpansion`) has no source symbol of its name either:
  * a dependency macro's output DROPs as external, a project macro's callable is
- * the edge to that macro's own table symbol, or DROPs when it maps to none —
+ * the edge to the project trait method it implements, else to that macro's own
+ * table symbol, or DROPs when neither maps —
  * never a namesake (counted as `generated` / `generatedUnmapped`). Anything
  * else — no index, no position, no row, a macro invocation whose row is no
  * macro row, an unmapped definition — CONTINUEs,
@@ -132,8 +134,9 @@ function driverVerdict(definition: RustCallSiteDefinition, call: CallRef, ctx: C
   if (rustCallSiteIsDerivedImpl(definition) || definition.indirectCallee !== undefined) return DROP;
   if (decidedAsGenerated(definition)) {
     if (rustCallSiteIsForeignGenerated(definition)) return DROP;
-    const macroTarget = mapRustGeneratingMacroToSymbol(definition, ctx);
-    return macroTarget === null ? DROP : resolved(macroTarget);
+    const target =
+      mapRustGeneratedTraitImplToDeclaration(definition, ctx) ?? mapRustGeneratingMacroToSymbol(definition, ctx);
+    return target === null ? DROP : resolved(target);
   }
   const edgeTarget = mapScipDefinitionToSymbol(definition, call, ctx);
   if (edgeTarget !== null) return resolved(edgeTarget);

@@ -18,6 +18,7 @@ import type { RustCallSiteDefinition, RustScipDefinition, TypeRef } from "../../
 import { rustTextIsStdSmartPointer, rustTextIsStdType } from "../vocabulary/std-prelude.js";
 import { rustAnalyzerScipOf, rustcCallSitesOf } from "./resolve-environment.js";
 import { projectDeclaresType, rustStdSmartPointerTarget } from "./std-type-hops.js";
+import { rustTraitDeclarersOf } from "./strategies/rust-trait-self-method.js";
 import { rustReceiverChainType } from "./strategies/rust-type-receiver.js";
 import {
   rustCalleeShortNameCandidates,
@@ -256,6 +257,24 @@ export function mapScipDefinitionToSymbol(
     ? rustMacroShortNameCandidates(ctx, definition.name)
     : rustCalleeShortNameCandidates(ctx, definition.name);
   return narrowestSymbolContaining(candidates, definition.relPath, definition.line);
+}
+
+/**
+ * The project trait's declaration of the member a project macro GENERATED an
+ * impl of (`#[derive(AggrFunction)]` writing `impl AggrFunction for X { fn
+ * create_state }`): the trait method is the call's real target in source,
+ * ahead of the macro. Null without an impl trait, or unless exactly one
+ * project trait of that short name declares the member.
+ */
+export function mapRustGeneratedTraitImplToDeclaration(
+  definition: RustCallSiteDefinition,
+  ctx: CallContext,
+): SymbolResolutionTarget | null {
+  const trait = definition.implTrait;
+  if (trait === undefined || definition.defExpansion?.macroInProject !== true) return null;
+  const declarers = rustTraitDeclarersOf(definition.name, ctx).filter((declarer) => declarer.trait === trait);
+  if (declarers.length !== 1) return null;
+  return { targetRelPath: declarers[0].def.relPath, targetSymbolId: declarers[0].def.symbolId };
 }
 
 /**

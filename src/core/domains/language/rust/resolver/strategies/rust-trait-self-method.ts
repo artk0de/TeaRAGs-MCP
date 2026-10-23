@@ -88,14 +88,14 @@ function resolvedTo(def: SymbolDefinition): SymbolResolutionOutcome {
   return resolved({ targetRelPath: def.relPath, targetSymbolId: def.symbolId });
 }
 
-interface RustTraitDeclarer {
+export interface RustTraitDeclarer {
   /** The declaring trait's short name. */
   readonly trait: string;
   readonly def: SymbolDefinition;
 }
 
 /** Every project trait's declaration of `member` — a default `Tr#m` or a signature `Tr::m`. */
-function rustTraitDeclarersOf(member: string, ctx: CallContext): RustTraitDeclarer[] {
+export function rustTraitDeclarersOf(member: string, ctx: CallContext): RustTraitDeclarer[] {
   const traitDeclarers: RustTraitDeclarer[] = [];
   for (const def of lookupRustSymbolsByShortName(ctx, member)) {
     if (def.symbolKind !== "method") continue;

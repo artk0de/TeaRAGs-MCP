@@ -163,9 +163,9 @@ export const capability: LanguageCapability = {
   //   binding of a fn item resolves like any in-project callable row.
   // - format 4 `defExpansion` — a definition a macro generated never maps to a
   //   namesake: a dependency macro's output DROPs as external, a project
-  //   macro's callable is the edge to that macro's table symbol (`macro_rules!`
-  //   or the workspace proc-macro fn), else DROPs (`generated` /
-  //   `generatedUnmapped`).
+  //   macro's callable is the edge to the project trait method it implements,
+  //   else to that macro's table symbol (`macro_rules!` or the workspace
+  //   proc-macro fn), else DROPs (`generated` / `generatedUnmapped`).
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

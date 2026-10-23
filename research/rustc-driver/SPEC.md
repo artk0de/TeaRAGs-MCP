@@ -152,9 +152,10 @@ the line text: a proc macro has no ident span). All three are null for a foreign
 macro. A name token the user wrote (a macro argument, an attribute macro's
 input) keeps the root context and carries nothing. The Rust slot DROPs a foreign
 macro's definition as external (`bitflags!` `contains`, `thiserror`'s `from`),
-edges a project macro's callable to that macro's table symbol, and DROPs it when
-that symbol does not map — never a namesake; counted per pass as `generated` /
-`generatedUnmapped`.
+edges a project macro's callable to the project trait method it implements
+(`implTrait`, one project trait declaring the member), else to that macro's
+table symbol, and DROPs it when neither maps — never a namesake; counted per
+pass as `generated` / `generatedUnmapped`.
 
 ### Mapping to `RustScipDefinition` (adapter, no strategy change needed)
 
