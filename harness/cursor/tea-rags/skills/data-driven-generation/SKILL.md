@@ -272,7 +272,7 @@ after = baseline skipped. 6b GREEN — minimal implementation; call reuse-manife
 helpers, NEVER reimplement. 6c REFACTOR under green only. Move / merge / split
 of existing files → ONE `get_architecture_report` `restructure` hypothesis first
 (`move{files, toComponent}` + `addEdge`/`removeEdge` per retargeted import);
-`introduced` → other placement per that family's `repair/<family>.md`
+`introduced` → other placement per that family's `../../repair/<family>.md`
 `## Ops recipe`, re-simulate, then move.
 
 ### Step 7: VERIFY
@@ -297,7 +297,7 @@ of existing files → ONE `get_architecture_report` `restructure` hypothesis fir
    prescribing fewer never narrows it. Base: `changes: {}` (uncommitted) or
    `git merge-base HEAD main` — never sibling / integration branch; stack-below
    findings = owner's, cite the commit, no triage. Each family with a finding →
-   load its `repair/<family>.md` (cohesion → `splitCandidates.md`) only.
+   load its `../../repair/<family>.md` (cohesion → `splitCandidates.md`) only.
    - **Confirm first:** the finding's edge / symbol exists in the diff AND is
      the edge in its evidence → REAL (type-only import = edge). Looks-wrong ≠
      false positive.

@@ -13,7 +13,7 @@ Code search = tea-rags MCP tools, never the harness's built-in grep/glob/file se
 | usages of an identifier | `hybrid_search` (`metaOnly:true`, page by `offset`) |
 | symbol + intent | `hybrid_search` |
 | behaviour, no name | `semantic_search` only |
-| a name's fit | `get_naming_lexicon` |
+| a name's fit | `get_naming_lexicon(names:[{name,kind}])`, verdict = answer |
 | code like a chunk in hand | `find_similar(positiveIds:)` |
 | impact / callers / chain A→B | `get_callers` / `get_callees` / `trace_path` |
 | diff review | `review_changes` (naming verdicts = answer) |

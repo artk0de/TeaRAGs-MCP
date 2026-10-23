@@ -49,7 +49,7 @@ No `## Label maps` above → read
 - **Annotating a structural violation instead of escalating.** Candidate inside
   a component with an SDP / mainSequence / hubLike violation → escalate: tag
   Risk Type `structural-violation`, sort to top of its tier; fix cost reads
-  `repair/<family>.md` of that family only (enrich.md step 3).
+  `../../repair/<family>.md` of that family only (enrich.md step 3).
 
 Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 

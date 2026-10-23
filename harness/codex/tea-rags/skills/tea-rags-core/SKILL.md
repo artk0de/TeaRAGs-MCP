@@ -31,8 +31,8 @@ project.
 | literal text (TODO, phrase, regex) | text search (your client's Grep / `rg`)       |
 
 Text search = literal text only; never it, Glob or `cat`/`sed`/`grep` to locate
-or read code — identifiers (even `a|b`) are SYMBOL searches. Diff's names:
-`review_changes` verdicts = answer, nothing after.
+or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
+`names:[{name,kind}]`; a diff's → `review_changes` verdicts, nothing after.
 
 **Invariants.**
 

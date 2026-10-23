@@ -66,10 +66,10 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
   "unknown, inspect further"); `preExisting` + `remedy` → **cheap-preExisting**,
   quote `remedy` fields verbatim (source, from → to, names); `preExisting`, no
   `remedy` → **report-only** line, no fix (`mainSequence`: distanceBefore
-  already past threshold). Load `repair/<family>.md` of EVERY family present
-  (report-only too: `mainSequence.md` + `hubLike.md`), no others. FP exemption
-  needs a `compositionRoot` / `## Known false positives` flag, never bare "by
-  design". Classify + fix now, never defer.
+  already past threshold). Load `../../repair/<family>.md` of EVERY family
+  present (report-only too: `mainSequence.md` + `hubLike.md`), no others. FP
+  exemption needs a `compositionRoot` / `## Known false positives` flag, never
+  bare "by design". Classify + fix now, never defer.
 - **`island` / `compositionCycle` / `knot` with `composition: true`** =
   informational, not defects.
 
