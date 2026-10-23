@@ -3,7 +3,6 @@
     ".cargo_vcs_info.json": "fb97a1ed52b025db1da99d480341c15952a11fca336a39b2664fcd4e9d6a4a39",
     "Cargo.lock": "b3196e9f0e7e424ce106515e54e83abb34949f01e4a7742c1f2bc1ed7da7e9de",
     "Cargo.toml": "0b54ff8842b3e032518e982b7c624f648832d6cf280bc5e8a3fbdadfc5a73408",
-    "Cargo.toml.orig": "4458f9e172a86a87e8dc9b5b303898b4ad22d52d6473423f69ab90df298dcf73",
     "LICENSE-MIT": "cb5aedb296c5246d1f22e9099f925a65146f9f0d6b4eebba97fd27a6cdbbab2d",
     "README.md": "0b7e4cad5ef0cbb47dc1c1c34ff3b5d090aaba2cc3b3c5401539e5c4a22b7938",
     "benches/contains_token.rs": "20e765de27f0ad9bf549e250bdb67d73714d23bc10bb67be240a258dcf8b6ed7",

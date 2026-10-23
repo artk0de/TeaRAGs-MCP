@@ -119,8 +119,9 @@ with whatever toolchain it pins.
 
 What a run costs:
 
-- **First run.** tea-rags compiles the driver from its crate source into
-  `~/.tea-rags/rustc-driver/bin/` (about 30 s on an Apple-silicon laptop), then
+- **First run.** tea-rags compiles the driver from the crate source and
+  vendored dependencies shipped in the npm package, offline, into
+  `~/.tea-rags/rustc-driver/bin/` (20–30 s on an Apple-silicon laptop), then
   runs `cargo check` over the workspace. The check has its own target directory
   under `~/.tea-rags/rustc-driver/`, so dependencies are compiled once more even
   if your own `target/` is warm.
