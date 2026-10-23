@@ -267,6 +267,8 @@ describe("renderCodexHarness", () => {
     for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
       expect(rendered.get(path)).toMatch(/ONE file per command/);
       expect(rendered.get(path)).toMatch(/tokens truncated/);
+      // Codex T22 r16: five skills printed by one `python3 -c` loop (88 KB) dropped risk-assessment's contract.
+      expect(rendered.get(path)).toMatch(/any\s+tool\s+alike\s+\(`cat`,\s+`sed`,\s+`python3`,\s+a\s+loop\)/);
       // Codex T22 r3: `repair/leakingAbstraction.md` looked up under the skill folder, never found.
       expect(rendered.get(path)).toMatch(/plugin root/);
     }

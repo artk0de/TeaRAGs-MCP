@@ -8,12 +8,12 @@ description:
 
 # tea-rags core
 
-**Read ONE file per command** — never `cat` several: output past ~10k tokens
-loses its middle (`…N tokens truncated…`), and a rule you did not see is not a
-rule you may guess. Saw that marker → re-read the file in ranges (`sed -n`).
-Every skill you name in a plan → open its `SKILL.md` with its own command first;
-a plan from memory is not reading it. A skill path you did not open with a
-command in this turn is invalid in a plan — open it first.
+**Read ONE file per command**, any tool alike (`cat`, `sed`, `python3`, a loop):
+output past ~10k tokens loses its middle (`…N tokens truncated…`), and a rule
+you did not see is not a rule you may guess. Saw that marker → re-read the file
+in ranges (`sed -n`). Every skill you name in a plan → open its `SKILL.md` with
+its own command first; a plan from memory is not reading it. A skill path you
+did not open with a command in this turn is invalid in a plan — open it first.
 
 **Plan-only / describe-the-plan answers: every skill output contract applies
 NOW.** Decide from the facts given (strategy, verdict, name, class); print every
