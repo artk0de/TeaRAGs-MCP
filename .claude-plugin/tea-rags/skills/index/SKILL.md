@@ -2,8 +2,8 @@
 name: index
 description:
   Index/reindex codebase. First time — register alias + index in one command
-  (index-codebase --name). Already indexed — incremental reindex (only changed
-  files).
+  (index-codebase --name). Indexed — incremental reindex. Corrupt index →
+  force-reindex.
 argument-hint: [path to codebase]
 ---
 
@@ -17,12 +17,18 @@ Check registration, then index:
 
 ## Instructions
 
+0. **Broken / corrupt index** (user reports wrong, garbage, crooked data, "index
+   broke") → stop here, route `/tea-rags:force-reindex` (full rebuild, asks
+   confirmation). Incremental re-reads changed files only — corrupt unchanged
+   content stays. Never `forceReindex: true` from this skill.
+
 1. `path` from message / argument; absent → cwd. Linked git worktree
    (`git rev-parse --git-common-dir` ≠ `<path>/.git`) of registered repo → do
    NOT register or index; read tools already answer for that tree
-   (`tea-rags://guide/freshness`, linked worktree). Tell user. `--project
-   <alias>` reindex refreshes main checkout only, never worktree edits. Index
-   worktree as own project only if user insists (seeds separate project).
+   (`tea-rags://guide/freshness`, linked worktree). Tell user.
+   `--project <alias>` reindex refreshes main checkout only, never worktree
+   edits. Index worktree as own project only if user insists (seeds separate
+   project).
 
 2. Registered? `mcp__tea-rags__list_projects` → entry with `path` = target AND
    non-empty `name` (recovery auto-created entries have `name=""`).

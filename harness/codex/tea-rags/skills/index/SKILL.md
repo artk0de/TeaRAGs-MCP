@@ -2,8 +2,8 @@
 name: index
 description:
   "Index/reindex codebase. First time — register alias + index in one command
-  (index-codebase --name). Already indexed — incremental reindex (only changed
-  files)."
+  (index-codebase --name). Indexed — incremental reindex. Corrupt index →
+  force-reindex."
 ---
 
 # Index Codebase
@@ -15,6 +15,11 @@ Check registration, then index:
 - **Already indexed** → incremental reindex via MCP tool (changed files only)
 
 ## Instructions
+
+0. **Broken / corrupt index** (user reports wrong, garbage, crooked data, "index
+   broke") → stop here, route `$force-reindex` (full rebuild, asks
+   confirmation). Incremental re-reads changed files only — corrupt unchanged
+   content stays. Never `forceReindex: true` from this skill.
 
 1. `path` from message / argument; absent → cwd. Linked git worktree
    (`git rev-parse --git-common-dir` ≠ `<path>/.git`) of registered repo → do

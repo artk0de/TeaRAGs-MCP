@@ -87,8 +87,12 @@ Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
 | 8 IMPACT    | blastRadius of new code        | container fanIn                | `get_callers` — MANDATORY                   |
 
 - **Hotfix** (user gives exact location) = MODIFY, additionally skip STRATEGY
-  and the blame part of STYLE. REUSE still applies to introduced logic; the
-  lexicon still runs when the fix introduces a name.
+  and the blame part of STYLE — say so in one line. REUSE still applies to
+  introduced logic; the lexicon still runs when the fix introduces a name
+  (MODIFY row: `types` = symbol signature + local types, `anchors` = the symbol,
+  `names` = only the new names, no `concept`). VERIFY runs in full. Location +
+  fix named ("line 88 nil — reload X before send") = this skill, no clarifying
+  question; bug-hunt only when the cause is still unknown.
 - **Greenfield** = CREATE over empty area — TEMPLATE/STYLE searches degrade to
   empty naturally, don't pre-skip.
 - **REUSE never skipped in any mode** — shared infra exists even when feature is
@@ -178,8 +182,10 @@ god-module → do NOT grow it. Propose sibling module or extraction, surface
 choice to user. EXTEND: guard fires on the container.
 
 New file where a home module exists = structural N-th way. Placement converges
-same as implementation. Step 7 gate judges chosen placement; no pre-write
-simulation.
+same as implementation. New code (new file, new import, new edge) → Step 7 gate
+judges placement; no pre-write simulation. Task MOVES / merges / splits existing
+files → pre-write simulation BEFORE touching them (Step 6 reference): moving
+first and fixing after the gate = every importer re-touched twice.
 
 ### Step 4: REUSE — all modes
 
@@ -211,20 +217,46 @@ files. Naming (codegraph on): ONE `get_naming_lexicon` call before GENERATE —
 project's name for a value it already names; a holder that IS what you are about
 to write → back to Step 4, never rename and write a sibling.
 
+Every name you are about to write is a draft and goes into that call — user's
+drafts included (`row = find_vendor_envelope(id)` → `row` as `local`,
+`find_vendor_envelope` as `return`), the value types they hold into `types[]`.
+New class / module / interface →
+`{ name, kind: "type", path: <new file>, symbolKind, extends: <planned ancestor> }`
+— never name a type from neighbours without the call. `MISFIT` → take
+`suggestion`.
+
 ### Step 6: GENERATE — RED → GREEN → REFACTOR
 
 **Read [references/step-6-generate.md](./references/step-6-generate.md) before
 Step 6.** 6a RED via `$test-first` — **no production edit without a recorded RED
 block** (or its one-line named exception). 6b GREEN — minimal implementation;
 call reuse-manifest helpers, NEVER reimplement. 6c REFACTOR under green only.
+Move / merge / split of existing files → ONE `get_architecture_report`
+`restructure` hypothesis first (`move{files, toComponent}` +
+`addEdge`/`removeEdge` per retargeted import); `introduced` → other placement,
+re-simulate, then move.
 
 ### Step 7: VERIFY
 
 **Read [references/step-7-verify.md](./references/step-7-verify.md) before Step
-7 — never skipped.** Symbol risks (≤ 5, `criticalPath`), N-th-way
-`find_similar`, MODIFY baseline pins re-run, then **GATE `review_changes` before
-EVERY commit** + fix-at-write loop. Gate fails → no commit, no "done". Report
-quotes gate line verbatim:
+7 — never skipped, also on "tests green, finalize".** In order:
+
+1. Symbol risks — `find_symbol(symbol, rerank: "criticalPath", metaOnly: true)`
+   on called / changed symbols, ≤ 5, most central first; read
+   `rankingOverlay.chunk.<field>.label`. Callee `bugFixRate` critical → call it
+   defensively + name the test pinning the relied-on scenario (else report
+   unpinned). Not `get_callers`, not an existence sweep, not `dangerous`.
+2. N-th-way `find_similar` (`positiveCode` = generated code).
+3. MODIFY baseline pins re-run.
+4. **GATE `review_changes` before EVERY commit** + fix-at-write loop. Each
+   family with a finding → load its `repair/<family>.md` (cohesion →
+   `splitCandidates.md`) only. Own new code → repair; `preExisting` / cluster of
+   pre-existing symbols → one report line + bead suggestion, never refactored in
+   this diff, commit allowed. Accepted false positive = counter-evidence + FILED
+   detector issue + `FALSE-POSITIVE … — issue <id>` line; no issue → not
+   accepted.
+
+Gate fails → no commit, no "done". Report quotes gate line verbatim:
 `GATE review_changes: introduced=<n>, partial=<true|false>` (codegraph off →
 `architecture not judged`). **No gate line = task not done.**
 

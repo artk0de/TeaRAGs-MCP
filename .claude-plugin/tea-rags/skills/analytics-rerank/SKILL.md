@@ -40,8 +40,9 @@ Documentation search? (language: "markdown" OR documentation: "only")
 │
 └─ No → continue to preset selection
 
-Existing preset fits the analytics question?
-├─ Yes → use it. Read tea-rags://guide/presets for the full catalog with
+Existing preset fits the analytics question?  (cheat sheet below)
+├─ Yes → use it — even when you could hand-compose its signals. Preset =
+│         curated weights; custom never replaces a matching preset. Read tea-rags://guide/presets for the full catalog with
 │         weights and tools each preset is registered on.
 │
 └─ No → build custom weights. Read tea-rags://guide/signals for the
@@ -60,30 +61,33 @@ ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://guide/signals")
 ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://guide/signal-labels")
 ```
 
-`guide/presets` = full preset list with weights + tools. `guide/signals` =
-every weight key for `{custom: {...}}` mode. `guide/signal-labels` = how
-numeric overlay values map to labels (`healthy` / `concerning` / `critical`,
-etc.) per signal.
+`guide/presets` = full preset list with weights + tools. `guide/signals` = every
+weight key for `{custom: {...}}` mode. `guide/signal-labels` = how numeric
+overlay values map to labels (`healthy` / `concerning` / `critical`, etc.) per
+signal.
 
 ## Preset cheat sheet (when each is the right pick)
 
-Catalog has full list; this is routing tier.
+Catalog has full list; this is routing tier. Most specific row wins:
+security-sensitive path (auth, crypto, payments, permissions, sessions) in the
+question → `securityAudit`, even when it also says legacy / old / bug-fix
+(`techDebt` row = legacy WITHOUT a security path).
 
-| Question                                                 | Preset                                                                                    |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| "Where are the bug-prone areas in domain X?"             | `hotspots`                                                                                |
-| "Old + churny + bug-fixed legacy in domain X?"           | `techDebt`                                                                                |
-| "Single-author silos / bus factor in domain X?"          | `ownership`                                                                               |
-| "Review the recent changes in this area"                 | `codeReview` (with `maxAgeDays: 7`)                                                       |
-| "Old code in security-sensitive paths"                   | `securityAudit` (with `filter: { presets: "securityPaths" }`)                             |
-| "Recently modified, sprint-review style"                 | `recent`                                                                                  |
-| "Stable, low-bug template code"                          | `proven` / `stable`                                                                       |
-| "Refactor candidates by size+volatility+bug-fix history" | `refactoring`                                                                             |
-| "Bug-prone + volatile + high blast radius"               | `dangerous`                                                                               |
-| "Find candidates to decompose"                           | `decomposition`                                                                           |
-| "Blast radius before a change (real call edges)"         | `blastRadius` (codegraph on) — else custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }` |
-| "Structural backbone — high-fan-in hubs"                 | `architecturalHub` (codegraph)                                                            |
-| "Entry points / flow drivers of a scope"                 | `entryPoint` (codegraph)                                                                  |
+| Question                                                                        | Preset                                                                                    |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| "Where are the bug-prone areas in domain X?"                                    | `hotspots`                                                                                |
+| "Old + churny + bug-fixed legacy in domain X?"                                  | `techDebt`                                                                                |
+| "Single-author silos / bus factor in domain X?"                                 | `ownership`                                                                               |
+| "Review the recent changes in this area"                                        | `codeReview` (with `maxAgeDays: 7`)                                                       |
+| "Old / untouched / legacy code (± bug-fix history) in security-sensitive paths" | `securityAudit` — named path → `pathPattern`; else `filter: { presets: "securityPaths" }` |
+| "Recently modified, sprint-review style"                                        | `recent`                                                                                  |
+| "Stable, low-bug template code"                                                 | `proven` / `stable`                                                                       |
+| "Refactor candidates by size+volatility+bug-fix history"                        | `refactoring`                                                                             |
+| "Bug-prone + volatile + high blast radius"                                      | `dangerous`                                                                               |
+| "Find candidates to decompose"                                                  | `decomposition`                                                                           |
+| "Blast radius before a change (real call edges)"                                | `blastRadius` (codegraph on) — else custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }` |
+| "Structural backbone — high-fan-in hubs"                                        | `architecturalHub` (codegraph)                                                            |
+| "Entry points / flow drivers of a scope"                                        | `entryPoint` (codegraph)                                                                  |
 
 **Codegraph composites** (`blastRadius` / `architecturalHub` / `entryPoint`)
 rank on real call/import edges (`fanIn`, `isHub`, `fanOutPerLine`). Meaningful
@@ -170,26 +174,21 @@ Different from `ownership`. `recentActivityConcentration` = commit-window based
 review routing / "who's driving this area in the current sprint", not authority
 questions.
 
-### Security-sensitive legacy
+### Security-sensitive legacy → preset, not custom
+
+`securityAudit` already combines `age` + `pathRisk` + `bugFix` + `ownership`
+(`pathRisk` = structural signal for auth / crypto / … paths). Never hand-compose
+it. Age threshold stated by user ("untouched > 1 year") → time filter via
+filter-building (`modifiedBefore: <today − 365d>` — file-level, query-time; raw
+`git.file.ageDays` lags):
 
 ```jsonc
 {
-  "rerank": {
-    "custom": {
-      "age": 0.3,
-      "pathRisk": 0.3,
-      "bugFix": 0.2,
-      "ownership": 0.1,
-      "volatility": 0.1,
-    },
-  },
-  "pathPattern": "**/auth/**",
+  "rerank": "securityAudit",
+  "pathPattern": "src/auth/**",
+  "modifiedBefore": "<ISO date, today − 365 days>",
 }
 ```
-
-`pathRisk` = structural signal flagging security-sensitive paths (auth, crypto,
-etc.). Combined with age + bug-fix history, surfaces "old code in a critical
-path that still gets bug-fixed" — prime audit target.
 
 ## Reading the overlay back
 

@@ -14,12 +14,17 @@ description:
 
 ## Intent Classification (REQUIRED — pick ONE row before any tool call)
 
-| User intent contains                                | Strategy | Skip if                                                              |
-| --------------------------------------------------- | -------- | -------------------------------------------------------------------- |
-| "how does X work", "explain Y", "what does Z do"    | EXPLAIN  | active bug → bug-hunt                                                |
-| "where is X used", "find all X", "imports of X"     | TRACE    | structural-only → use find_symbol direct                             |
-| "before I refactor X", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans                               |
-| "best example of X", "antipatterns in Y"            | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text) |
+| User intent contains                                                                  | Strategy | Skip if                                                              |
+| ------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------- |
+| "how does X work", "explain Y", "what does Z do"                                      | EXPLAIN  | active bug or bug intent ("find bugs in X") → bug-hunt               |
+| "where is X used", "usages / call sites of X", "imports of X"                         | TRACE    | structural-only → use find_symbol direct                             |
+| "before I refactor X", "what should I know about Y"                                   | PRE-GEN  | already mid-refactor → executing-plans                               |
+| "best example of X", "antipatterns in Y", "find all implementations / instances of X" | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text) |
+
+**TRACE vs EXEMPLAR:** usages of ONE named symbol (who calls / imports / where
+used) = TRACE. Every implementation / instance / variant of a kind ("find all
+implementations of Provider", "all retry loops") = EXEMPLAR Collect → delegate
+pattern-search; never search it yourself.
 
 🛑 Unsure → ask user. NEVER assume strategy from partial signals.
 
@@ -29,11 +34,18 @@ $ARGUMENTS has risk signals ("risk surface", "risk zones", "code health",
 "assess risks", "problematic areas") → delegate `risk-assessment/SKILL.md`.
 Checked FIRST — overrides EXPLAIN/TRACE/PRE-GEN/EXEMPLAR keywords.
 
+## Change intent → rank_chunks codeReview
+
+"what changed recently", "recent changes in X", "what's new in X" →
+`rank_chunks rerank="codeReview" pathPattern=<scope>` (no query — ranks by
+recency signals). Never `git log` / `git diff`, never a text query. Checked
+right after risk intent.
+
 ## Codegraph intent (edge truth) → checked BEFORE content-matching table
 
 Graph-shape questions answered from real call/import edges — content matching
-can't derive them. Order: risk → this table → EXPLAIN/TRACE/PRE-GEN/EXEMPLAR.
-Top-to-bottom, first match wins.
+can't derive them. Order: risk → change → this table →
+EXPLAIN/TRACE/PRE-GEN/EXEMPLAR. Top-to-bottom, first match wins.
 
 | Priority | Intent contains                                                                  | Sub-pattern                                                                |
 | -------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -54,13 +66,14 @@ characters in symbol name. "what does X call?" / "who calls X?" = USAGE (row 2)
 even when X = `findCycles` / `CycleDetector`. Row 1 only on phrasing about the
 loop itself ("circular dependency", "dependency loop", "cycles in <scope>").
 
-**Codegraph availability:** sub-patterns need codegraph. Codegraph on = graph
-tools (`get_callers`, `trace_path`, …) in your tool list; unsure → read
-`tea-rags://project/<alias>/metrics?section=registry` (`codegraph on|off`).
-Graph tools absent = not registered, NOT empty result — never call absent tool
-to probe, never read absence as positive fact. Codegraph off → content-matching
-table: TRACE covers usage, EXPLAIN covers architecture. Each sub-pattern states
-own fallback.
+**Codegraph availability:** sub-patterns need codegraph. Decide from YOUR OWN
+tool list — no prime digest needed, never read the digest for it (subagents have
+none). Codegraph on = graph tools (`get_callers`, `trace_path`, …) in your tool
+list; unsure → read `tea-rags://project/<alias>/metrics?section=registry`
+(`codegraph on|off`). Graph tools absent = not registered, NOT empty result —
+never call absent tool to probe, never read absence as positive fact. Codegraph
+off → content-matching table: TRACE covers usage, EXPLAIN covers architecture.
+Each sub-pattern states own fallback.
 
 ## Pattern-search keyword groups (EXEMPLAR routing)
 
@@ -71,8 +84,8 @@ own fallback.
 | **Antipattern** | antipattern, smell, debt, violation, deprecated, fragile, risky, refactor, cleanup, too complex, duplicate, decompose       |
 | **Reference**   | best, correct, canonical, reference implementation, cleanest, template, pattern to follow, recommended way, good example    |
 
-**Exception:** EXPLAIN reference has specific pattern for intent (e.g. "What
-calls X?" with "all call sites") → EXPLAIN wins over generic Collect.
+**Exception:** "all call sites / all usages of X" names ONE symbol's usages →
+TRACE / codegraph row 2 wins over generic Collect.
 
 ---
 
@@ -88,11 +101,13 @@ query in original language for non-English docs.
 
 Apply tables above, first match:
 
-1. Risk intent → `risk-assessment/SKILL.md`.
+1. Risk intent → `risk-assessment/SKILL.md`. Change intent → `rank_chunks`
+   codeReview.
 2. Codegraph intent row → that sub-pattern (cycle / usage / entry-point /
    architecture / naming).
 3. EXEMPLAR → [references/exemplar-pattern.md](./references/exemplar-pattern.md)
-   (refactoring-scan for broad antipattern, pattern-search otherwise).
+   (refactoring-scan for broad antipattern, pattern-search otherwise) —
+   delegate, no own search first.
 4. PRE-GEN → [references/pre-gen-pattern.md](./references/pre-gen-pattern.md).
 5. EXPLAIN → Explore Flow below, format per
    [references/explain-pattern.md](./references/explain-pattern.md).
@@ -103,7 +118,9 @@ Apply tables above, first match:
 
 Extract `pathPattern` from $ARGUMENTS:
 
-**Explicit markers** — `in/inside/within/under/from <X>` → `**/<X>/**`
+**Explicit markers** — `in/inside/within/under/from <X>` → `**/<X>/**`. Named
+component ("the qdrant adapter", "ingest pipeline") = scope too → directory
+probe below. Scope found → EVERY breadth call carries that `pathPattern`.
 
 **Directory matching** — word looks like directory name:
 
@@ -156,12 +173,21 @@ ORIENT output = map for BREADTH, not the answer. Explicit "entry point" INTENT
 ### 2. BREADTH
 
 query=$ARGUMENTS. Behavior/intent → semantic_search; known symbol, need
-DEFINITION → find_symbol; known/bare name, need USAGES → hybrid_search.
+DEFINITION → find_symbol; known/bare name, need USAGES → hybrid_search; symbol
+name + behaviour words ("where hybrid_search handles BM25 scoring") →
+hybrid_search. Existence check ("does X exist") → `find_symbol` `metaOnly=true`.
 
-**Broad scope → split axes** per `../../rules/references/axis-splitting.md`
-(sources FIRST via `testFile: "exclude", documentation: "exclude"`; tests axis =
-expected behavior; docs axis = intent — hypothesis, behavioral claims verified
-in code). Point questions: no split.
+**Broad scope → split axes** per `../../rules/references/axis-splitting.md`.
+Three calls, axis = filter param (never `language` as axis proxy):
+
+1. sources FIRST — `testFile: "exclude", documentation: "exclude"`
+2. tests — `testFile: "only"` (expected behavior)
+3. docs — `documentation: "only"` (intent — hypothesis, behavioral claims
+   verified in code)
+
+Point question about tests ("is X tested?") → ONE call, `testFile: "only"`
+(hybrid_search / find_symbol), no split, no Glob. Other point questions: no
+split.
 
 No `filter:{presets}` by default — understanding needs breadth.
 

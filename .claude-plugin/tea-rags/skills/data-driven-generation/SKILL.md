@@ -24,8 +24,8 @@ hardcoded thresholds — strategies adapt per codebase.
 `path=<your working directory>` — `tea-rags://guide/freshness` "Addressing the
 Codebase".
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license
-`cat` / `grep` / `Read` over code — `tea-rags://guide/freshness`.
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license `cat`
+/ `grep` / `Read` over code — `tea-rags://guide/freshness`.
 
 **Area context required:** files, pathPattern, per-symbol overlay labels must be
 in conversation. Labels come from `find_symbol(rerank=<preset>, metaOnly=false)`
@@ -50,8 +50,8 @@ Labels live in `rankingOverlay.file.<signal>` and
 `overlayMask` are labelled — choose the preset by the labels you need; raw
 values under `payload.git.*` are never labelled.
 
-Label meanings: `tea-rags://guide/signal-labels`. Bands (thresholds) when a
-raw value needs a label → read
+Label meanings: `tea-rags://guide/signal-labels`. Bands (thresholds) when a raw
+value needs a label → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap`
 (ReadMcpResourceTool).
 
@@ -87,8 +87,12 @@ Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
 | 8 IMPACT    | blastRadius of new code        | container fanIn                | `get_callers` — MANDATORY                   |
 
 - **Hotfix** (user gives exact location) = MODIFY, additionally skip STRATEGY
-  and the blame part of STYLE. REUSE still applies to introduced logic; the
-  lexicon still runs when the fix introduces a name.
+  and the blame part of STYLE — say so in one line. REUSE still applies to
+  introduced logic; the lexicon still runs when the fix introduces a name
+  (MODIFY row: `types` = symbol signature + local types, `anchors` = the symbol,
+  `names` = only the new names, no `concept`). VERIFY runs in full. Location +
+  fix named ("line 88 nil — reload X before send") = this skill, no clarifying
+  question; bug-hunt only when the cause is still unknown.
 - **Greenfield** = CREATE over empty area — TEMPLATE/STYLE searches degrade to
   empty naturally, don't pre-skip.
 - **REUSE never skipped in any mode** — shared infra exists even when feature is
@@ -178,8 +182,10 @@ god-module → do NOT grow it. Propose sibling module or extraction, surface
 choice to user. EXTEND: guard fires on the container.
 
 New file where a home module exists = structural N-th way. Placement converges
-same as implementation. Step 7 gate judges chosen placement; no pre-write
-simulation.
+same as implementation. New code (new file, new import, new edge) → Step 7 gate
+judges placement; no pre-write simulation. Task MOVES / merges / splits existing
+files → pre-write simulation BEFORE touching them (Step 6 reference): moving
+first and fixing after the gate = every importer re-touched twice.
 
 ### Step 4: REUSE — all modes
 
@@ -192,9 +198,9 @@ simulation.
    (project already imports it widely — reuse sanctioned by practice). **ELSE**
    follow its approach, do NOT import — no new cross-boundary coupling. Boundary
    = actual import graph, not theory.
-   - Codegraph off (graph tools absent): gate on
-     `imports` signal + locality-only (L1/L2 → reuse, L3 → copy approach); note
-     gate ran on import-proxy.
+   - Codegraph off (graph tools absent): gate on `imports` signal +
+     locality-only (L1/L2 → reuse, L3 → copy approach); note gate ran on
+     import-proxy.
 4. Template's own imports pass gate automatically (Step 2).
 5. **Almost-fits:** helper passes gate but lacks a parameter/branch → extend it
    minimal-diff, do NOT write a sibling. Extending `popular`/`hub` helper → user
@@ -208,8 +214,16 @@ Output: **reuse manifest** (helpers to call) → Step 6.
 Step 5.** Style source per mode: CREATE → blame-owner table, EXTEND → container
 file, MODIFY → symbol itself. Session-context reuse — no re-fetch of unedited
 files. Naming (codegraph on): ONE `get_naming_lexicon` call before GENERATE —
-project's name for a value it already names; a holder that IS what you are
-about to write → back to Step 4, never rename and write a sibling.
+project's name for a value it already names; a holder that IS what you are about
+to write → back to Step 4, never rename and write a sibling.
+
+Every name you are about to write is a draft and goes into that call — user's
+drafts included (`row = find_vendor_envelope(id)` → `row` as `local`,
+`find_vendor_envelope` as `return`), the value types they hold into `types[]`.
+New class / module / interface →
+`{ name, kind: "type", path: <new file>, symbolKind, extends: <planned ancestor> }`
+— never name a type from neighbours without the call. `MISFIT` → take
+`suggestion`.
 
 ### Step 6: GENERATE — RED → GREEN → REFACTOR
 
@@ -217,17 +231,34 @@ about to write → back to Step 4, never rename and write a sibling.
 Step 6.** 6a RED via `tea-rags:test-first` — **no production edit without a
 recorded RED block** (or its one-line named exception). 6b GREEN — minimal
 implementation; call reuse-manifest helpers, NEVER reimplement. 6c REFACTOR
-under green only.
+under green only. Move / merge / split of existing files → ONE
+`get_architecture_report` `restructure` hypothesis first
+(`move{files, toComponent}` + `addEdge`/`removeEdge` per retargeted import);
+`introduced` → other placement, re-simulate, then move.
 
 ### Step 7: VERIFY
 
-**Read [references/step-7-verify.md](./references/step-7-verify.md) before
-Step 7 — never skipped.** Symbol risks (≤ 5, `criticalPath`), N-th-way
-`find_similar`, MODIFY baseline pins re-run, then **GATE `review_changes` before
-EVERY commit** + fix-at-write loop. Gate fails → no commit, no "done". Report
-quotes gate line verbatim: `GATE review_changes: introduced=<n>,
-partial=<true|false>` (codegraph off → `architecture not judged`). **No gate
-line = task not done.**
+**Read [references/step-7-verify.md](./references/step-7-verify.md) before Step
+7 — never skipped, also on "tests green, finalize".** In order:
+
+1. Symbol risks — `find_symbol(symbol, rerank: "criticalPath", metaOnly: true)`
+   on called / changed symbols, ≤ 5, most central first; read
+   `rankingOverlay.chunk.<field>.label`. Callee `bugFixRate` critical → call it
+   defensively + name the test pinning the relied-on scenario (else report
+   unpinned). Not `get_callers`, not an existence sweep, not `dangerous`.
+2. N-th-way `find_similar` (`positiveCode` = generated code).
+3. MODIFY baseline pins re-run.
+4. **GATE `review_changes` before EVERY commit** + fix-at-write loop. Each
+   family with a finding → load its `repair/<family>.md` (cohesion →
+   `splitCandidates.md`) only. Own new code → repair; `preExisting` / cluster of
+   pre-existing symbols → one report line + bead suggestion, never refactored in
+   this diff, commit allowed. Accepted false positive = counter-evidence + FILED
+   detector issue + `FALSE-POSITIVE … — issue <id>` line; no issue → not
+   accepted.
+
+Gate fails → no commit, no "done". Report quotes gate line verbatim:
+`GATE review_changes: introduced=<n>, partial=<true|false>` (codegraph off →
+`architecture not judged`). **No gate line = task not done.**
 
 ### Step 8: IMPACT
 
@@ -236,14 +267,14 @@ files are the index's (`tea-rags://guide/freshness` "Addressing the Codebase").
 
 Assess blast radius of change you just generated.
 
-- **Codegraph on** (graph tools registered): use the
-  `blastRadius` preset (`rerank="blastRadius"`, metaOnly=true) — real `fanIn` +
-  churn + bugFix, ranking reflects actual call/import edges, not raw-import
-  proxy. Warn on high-`fanIn` / `isHub` dependents.
-- **Codegraph off** (graph tools absent → `fanIn` signal absent):
-  fall back to custom weights `{ imports: 0.5, churn: 0.3, ownership: 0.2 }`,
-  metaOnly=true, note blast radius is approximate (import-proxy, not edge
-  truth). See `tea-rags://guide/navigation` "Graph navigation".
+- **Codegraph on** (graph tools registered): use the `blastRadius` preset
+  (`rerank="blastRadius"`, metaOnly=true) — real `fanIn` + churn + bugFix,
+  ranking reflects actual call/import edges, not raw-import proxy. Warn on
+  high-`fanIn` / `isHub` dependents.
+- **Codegraph off** (graph tools absent → `fanIn` signal absent): fall back to
+  custom weights `{ imports: 0.5, churn: 0.3, ownership: 0.2 }`, metaOnly=true,
+  note blast radius is approximate (import-proxy, not edge truth). See
+  `tea-rags://guide/navigation` "Graph navigation".
 - **MODIFY: `get_callers` on the modified symbol MANDATORY** — changed behavior
   propagates through real call edges; import proxy insufficient.
 

@@ -79,12 +79,15 @@ SKIP — no test chunks indexed for <project>. Possible reasons:
       see src/core/domains/language/<lang>/chunking/)
  (b) .contextignore excludes test directories
  (c) project has no tests
-Caller should fall back to language-neutral guidance without
-test-context enrichment.
+Caller fallback: file-level search (below), disclosed.
 ```
 
-Caller decides how to degrade (often: emit generic placeholder line in its
-output bundle, proceed without test data).
+**SKIP ≠ skip the lookup.** Caller degrades to ONE file-level call —
+`semantic_search` `testFile: "only"` + recipe's rerank (`fixture-lookup` →
+`rerank: "proven"`), no `chunkType` (Iron Rule 4) — and states it: "file-level
+fallback — DSL test chunks unavailable for this language". Silent fallback or
+dropping the pattern search = wrong. Caller with no search step (review bundle
+line) → emits its "unavailable (no DSL test chunks indexed)" line instead.
 
 ## Step 1 — Recipe routing
 
@@ -301,6 +304,15 @@ full describe-it path in `parentSymbolId` / `symbolId`.
 **Empty result:** `module has no test scenarios — undocumented contract`.
 
 ## Step 2 — Output to caller
+
+Every recipe ends in exactly one of three outcomes; every caller handles all
+three:
+
+| Outcome   | When                                 | Caller emits                                                                         |
+| --------- | ------------------------------------ | ------------------------------------------------------------------------------------ |
+| SKIP      | Step 0 preflight: no DSL test chunks | "unavailable (no DSL test chunks indexed)" or disclosed file-level fallback (Step 0) |
+| non-empty | search returned scopes               | recipe bundle (`tests-at-risk` → "Scenarios under risk:" list)                       |
+| empty     | preflight passed, no semantic match  | recipe's empty line — not SKIP                                                       |
 
 Return recipe's formatted output. Caller (dinopowers wrapper,
 `tea-rags://guide/decision-tree` direct user, another tea-rags skill) embeds

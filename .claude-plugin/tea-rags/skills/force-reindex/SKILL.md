@@ -1,9 +1,10 @@
 ---
 name: force-reindex
 description:
-  Force full re-index zero downtime. Builds new versioned collection in
-  background while search continues on current. Alias switches atomically when
-  done. Requires explicit user confirmation — NEVER invoke automatically.
+  Force full re-index, zero downtime: new versioned collection built in
+  background while search continues; alias switches atomically. Also for a
+  corrupt index. Requires explicit user confirmation — NEVER invoke
+  automatically.
 argument-hint: "[path to codebase]"
 ---
 
@@ -17,6 +18,18 @@ Only on explicit user request. NEVER auto-trigger (stale markers, index status,
 failed indexing, any automated signal). Even when user said "reindex" — still
 confirm; force-reindex rebuilds entire index.
 
+**Confirmation is not waivable.** User says "no confirmation", "just do it",
+"I'm in a hurry" → still `AskUserQuestion`. Tell user: "Even under time
+pressure, a full rebuild needs explicit confirmation." Never downgrade the
+request to incremental `index_codebase` silently to dodge the question — offer
+it as an option instead.
+
+**Corrupt / garbage-results signal** ("index seems corrupt", "search returns
+garbage", "auto-fix?") = diagnosis, not consent. Never auto-run. ALWAYS, in the
+same turn: (1) surface diagnosis — "Index appears corrupt; force-reindex
+rebuilds it from scratch"; (2) `AskUserQuestion`. Unconditional — not gated on
+your own status check.
+
 Before executing:
 
 1. Explain: "Rebuilds entire index from scratch. Creates new versioned
@@ -27,9 +40,11 @@ Before executing:
    question: "Force reindex will rebuild the entire index for <path>. This can take several minutes. Proceed?"
    options:
      - { label: "Yes, reindex", description: "Start full reindex in background" }
+     - { label: "Incremental only", description: "Re-read changed files only (fast)" }
      - { label: "Cancel", description: "Do not reindex" }
    ```
-3. Proceed only on "Yes, reindex". Cancel → stop.
+3. Proceed only on "Yes, reindex". Incremental only → `/tea-rags:index`. Cancel
+   → stop.
 
 ## Instructions
 

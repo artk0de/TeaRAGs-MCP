@@ -103,16 +103,18 @@ finding fields verbatim, counter-evidence. Report line:
 **Triage** every architecture / cohesion / incompleteChange / norms finding
 confirmed REAL:
 
-| Finding                   | Class             | Action                                                                               |
-| ------------------------- | ----------------- | ------------------------------------------------------------------------------------ |
-| no `preExisting`          | must-fix          | repair in this diff                                                                  |
-| `preExisting` + `remedy`  | cheap-preExisting | apply `remedy` (cheap by construction)                                               |
-| `change.nonLocal` entry   | must-fix          | introduced away from diff — repair like no `preExisting`                             |
-| `change.touchedActive`    | must-fix priority | edit hits live cascade (`tier` active/critical): repair or ask user                  |
-| `change.persisting` entry | report-only       | structural; one count line per family, no triage                                     |
-| norms `MISFIT`            | must-fix          | route via `expectedPath`; skip only if `exclusionsUnchecked` condition shown to hold |
-| norms `NEW_PATTERN`       | report-only       | one-line why                                                                         |
-| norms `UNJUDGED`          | report-only       | read `unjudgedReasonCounts` (pre-cap count per reason)                               |
+| Finding                    | Class             | Action                                                                                  |
+| -------------------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| no `preExisting`           | must-fix          | repair in this diff                                                                     |
+| `preExisting` + `remedy`   | cheap-preExisting | apply `remedy` (cheap by construction)                                                  |
+| `preExisting`, no `remedy` | report-only       | one line + bead suggestion; never refactor it in this diff; commit allowed              |
+| cohesion `splitCandidates` | per owner         | `splitCandidates.md`: cluster all-own-new → move it; touches pre-existing → line + bead |
+| `change.nonLocal` entry    | must-fix          | introduced away from diff — repair like no `preExisting`                                |
+| `change.touchedActive`     | must-fix priority | edit hits live cascade (`tier` active/critical): repair or ask user                     |
+| `change.persisting` entry  | report-only       | structural; one count line per family, no triage                                        |
+| norms `MISFIT`             | must-fix          | route via `expectedPath`; skip only if `exclusionsUnchecked` condition shown to hold    |
+| norms `NEW_PATTERN`        | report-only       | one-line why                                                                            |
+| norms `UNJUDGED`           | report-only       | read `unjudgedReasonCounts` (pre-cap count per reason)                                  |
 
 **Base** — `review_changes` base = `git merge-base HEAD main`, the branch's fork
 point on main. Never an integration branch, never a sibling `worktree-agent-*`

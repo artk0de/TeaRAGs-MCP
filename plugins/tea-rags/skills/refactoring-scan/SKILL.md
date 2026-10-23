@@ -7,6 +7,10 @@ user-invocable: false
 Multi-preset breadth-first scan for refactoring candidates. Explore invokes on
 broad-scope antipattern / refactoring intent (no specific entity).
 
+**Not here:** bug intent ("find bugs in X", "найди баги", "what's broken in X"),
+with or without a symptom → `bug-hunt` (named file / symbol = its scope).
+Refactoring candidates ≠ defects.
+
 **Trigger examples:**
 
 - "what to refactor in explore"
@@ -42,7 +46,8 @@ Decision tree **3 times**, one rerank preset each:
 
 - query ($ARGUMENTS) + pathPattern (scope extraction)
 - limit=10, metaOnly=false (content needed for ENRICH; 3 × 10 chunks fits)
-- stop conditions per preset
+- stop conditions per preset; between presets check the results against
+  `tea-rags://guide/pagination` (disambiguation + no-match detection)
 
 | Preset          | What it surfaces                                           |
 | --------------- | ---------------------------------------------------------- |

@@ -10,6 +10,15 @@ description:
 Two ways to constrain a tea-rags search beyond `query` + `pathPattern`. Pick the
 right mechanism — they compose.
 
+**Scope only — rerank is not here.** Request names weights, a preset, or "custom
+rerank" ("rank by high bugFix + ownership") → invoke `$analytics-rerank` for the
+`rerank` value. This skill builds the scope (`pathPattern`, typed sugar) in
+parallel. Never compose `rerank: { custom: … }` here.
+
+**Raw filter → read syntax FIRST.** Before writing any raw `filter` object (even
+one range) → read `tea-rags://guide/filters` (MCP resource read), unless its
+`# Qdrant Filter Syntax` is already in context. Never from memory.
+
 ## Implicit signals — when a filter is needed but the user didn't say "filter"
 
 Triggers in agent reasoning chain. If thinking any of these BEFORE composing a
@@ -250,7 +259,8 @@ OR-of-conditions across different fields, range on a non-typed numeric field.
 }
 ```
 
-Exact syntax + payload keys: guide above — never invent syntax or key names.
+Exact syntax + payload keys: `tea-rags://guide/filters`, read before this object
+is written — never invent syntax or key names.
 
 ### Codegraph filters (only when codegraph is active)
 

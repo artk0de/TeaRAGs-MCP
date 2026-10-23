@@ -62,9 +62,10 @@ prevented, not detected:
   envelopes from the e-signature vendor into tax documents") — never the draft
   name: a draft pulls in its own lexical neighbours.
 - `names[]` = drafts with `kind` (`local`/`param`/`field`/`return`) and `type`
-  when known. Type unknown but bound from a call →
-  `callee: { member, receiver? }`. A new class, module, interface, enum or
-  constant →
+  when known. Every draft — the user's included: a draft method/finder goes in
+  as `return`, the local it binds as `local`, their model type into `types[]`.
+  Type unknown but bound from a call → `callee: { member, receiver? }`. A new
+  class, module, interface, enum or constant →
   `{ name, kind: "type", path: <its file>, symbolKind: <class|module|interface|enum|type_alias|constant>, extends?: <planned ancestor> }`:
   the ancestor's family and the directory set the expected role suffix;
   `symbolKind` keeps interface/type_alias/enum out of a class directory's role,

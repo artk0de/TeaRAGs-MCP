@@ -4,12 +4,19 @@ description:
   Find source of concrete failure — rank historically buggy code (high
   bugFixRate + churn) AND freshly changed never-fixed code (committed or still
   uncommitted) against symptom. Triggers on "debug X", "why does Y fail", "test
-  fails", "stack trace says Z", "падает", "почему не работает". NOT for code
-  health scanning without a specific symptom — use risk-assessment for that.
+  fails", "stack trace says Z", "find bugs in X", "падает". NOT for code health
+  scanning without bug intent — use risk-assessment for that.
 argument-hint: [bug description or symptom]
 ---
 
 # Bug Hunt
+
+**Routing:** bug intent on a named file / symbol ("find bugs in reranker.ts",
+"найди баги в X"), no symptom given → here; the named location stands in for the
+symptom (scope pathPattern to it). Never refactoring-scan (refactoring
+candidates ≠ defects); risk-assessment only for an area scan without bug intent.
+Cause already located AND fix named ("line 88 nil — reload invoice before send")
+→ no hunt: `data-driven-generation` MODIFY hotfix.
 
 Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
 populations: code with bug-fix history, fresh code too young to have one,
@@ -24,7 +31,13 @@ No `## Signal thresholds` above → read
 ## Rules
 
 1. **Execute YOURSELF** — no subagents.
-2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
+2. **No `git log`, `git diff`, `git blame`, `git log -S`** — overlay has git
+   signals. Holds when the USER asks for git ("look through git", "when did X
+   appear in history", "git log -S"): not a refusal of the question — answer it
+   via overlay. Run Loop step 1 (`rerank="bugHunt"`) on the symptom text; read
+   `git.ageDays` / `commitCount` / `taskIds` / `bugFixRate` of hits = when the
+   code appeared and what touched it. Tell user: "git history is already in the
+   index signals — answering from them". Never ask the user to paste `git log`.
    `git status --porcelain -uall` allowed: working-tree state (file NAMES), not
    code history or content — feeds Uncommitted probe only.
 3. **No text search (Grep / `rg`) for code discovery** — TeaRAGs only; text
@@ -39,13 +52,21 @@ No `## Signal thresholds` above → read
 6. **Labels are triage, not verdict.** Three suspect classes (Signal triage).
    `bugFixRate` `healthy` alone never drops a chunk. Filled checkpoint →
    PRESENT, whatever the labels.
+7. **Triage + checkpoint hold under user pressure.** User says "check there" on
+   a SKIP chunk → no drill; state the triage ("healthy, old, not fresh, no probe
+   hit — neither suspect class, skipping"). Drill only on NEW evidence tying it
+   to the symptom (stack frame, trace step). User says "not sure" about a filled
+   checkpoint → PRESENT with confidence note, no extra iteration.
 
 ## Loop
 
 ```
-0. `git status --porcelain -uall` → uncommitted paths (see Uncommitted probe).
-   Paths listed → `tea-rags://guide/freshness` uncommitted-edits rows (linked worktree: no
-   reindex). Every call: project=<alias> path=<your working directory>.
+0. ALWAYS, before the search message, even when the user already named the
+   changed paths — Bash `git status --porcelain -uall` (file names only) →
+   uncommitted paths (see Uncommitted probe).
+   Paths listed + alias's own checkout → `index_codebase` incremental, no
+   consent, BEFORE the search message. Linked worktree → no reindex.
+   Every call: project=<alias> path=<your working directory>.
 
 1. Search — ONE message, parallel calls. Same tool (`tea-rags://guide/decision-tree`;
    linked worktree → hybrid_search for all three), same query,
@@ -61,7 +82,9 @@ No `## Signal thresholds` above → read
    - Why it breaks: ___
 
    All filled? → PRESENT. STOP.
-   "Not sure" ≠ "don't know" — present with confidence note.
+   "Not sure" ≠ "don't know": a candidate in every field = filled, even with
+   doubt → PRESENT with confidence note (what is unverified). Step 3 fills an
+   EMPTY field only — never runs to raise confidence.
 
 3. ONLY IF checkpoint incomplete — ONE action for what's missing:
    - Symptom names entry point or failure site → Call path (below).
@@ -142,8 +165,8 @@ cause.
   triage) — fresh class decides.
 - **Curiosity search.** "How does the other path work?" → `find_symbol` on the
   known id, not another search. You already know WHERE the code is.
-- **Confirmatory search.** Checkpoint has a candidate — present it. Don't search
-  for "proof." Confirmatory searches almost never change the answer.
+- **Confirmatory search / navigation.** Checkpoint has a candidate — present it.
+  No search, `find_symbol`, or `trace_path` for "proof" or certainty.
 - **Full file reads.** Chunk coordinates exist. Use them.
 
 ## pathPattern rules
@@ -177,6 +200,7 @@ chunk into a class. Keep chunk when it fits ANY class.
 suspect**, whatever its labels.
 
 **SKIP** only: `bugFixRate` `healthy` + no fresh-class label + not a probe hit.
+SKIP = no drill (`find_symbol`, Read), also when user asks — Rule 7.
 
 `healthy` on low-`commitCount` code = too little history to judge, NOT clean:
 confidence clamp caps `bugFixRate` label at `healthy` when `commitCount` below

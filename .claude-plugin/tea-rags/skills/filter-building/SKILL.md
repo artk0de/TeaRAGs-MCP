@@ -23,6 +23,15 @@ user-invocable: false
 Two ways to constrain a tea-rags search beyond `query` + `pathPattern`. Pick the
 right mechanism — they compose.
 
+**Scope only — rerank is not here.** Request names weights, a preset, or "custom
+rerank" ("rank by high bugFix + ownership") → invoke `tea-rags:analytics-rerank`
+for the `rerank` value. This skill builds the scope (`pathPattern`, typed sugar)
+in parallel. Never compose `rerank: { custom: … }` here.
+
+**Raw filter → read syntax FIRST.** Before writing any raw `filter` object (even
+one range) → read `tea-rags://guide/filters` (MCP resource read), unless its
+`# Qdrant Filter Syntax` is already in context. Never from memory.
+
 ## Implicit signals — when a filter is needed but the user didn't say "filter"
 
 Triggers in agent reasoning chain. If thinking any of these BEFORE composing a
@@ -99,10 +108,10 @@ suite's non-DSL members land in one `test_setup` chunk named after the class.
 For Python / Go / others, file-level `testFile: "only"` is the only option. Full
 per-language support: `tea-rags://guide/language-capability` (GENERATED — never
 restate it here). Test chunks absent if no `git.chunk.*` row of
-`tea-rags://project/<alias>/metrics?section=thresholds` has a `test ≥` value. Recipes depending on test
-chunks, see `tea-rags:tests-as-context` (Step 0 preflight handles this
-automatically). New language added → update this table in lock-step with the
-matching block in `tea-rags:tests-as-context` and
+`tea-rags://project/<alias>/metrics?section=thresholds` has a `test ≥` value.
+Recipes depending on test chunks, see `tea-rags:tests-as-context` (Step 0
+preflight handles this automatically). New language added → update this table in
+lock-step with the matching block in `tea-rags:tests-as-context` and
 `dinopowers:test-driven-development` — see
 `.claude/rules/test-spec-chunking.md`.
 
@@ -266,7 +275,8 @@ OR-of-conditions across different fields, range on a non-typed numeric field.
 }
 ```
 
-Exact syntax + payload keys: guide above — never invent syntax or key names.
+Exact syntax + payload keys: `tea-rags://guide/filters`, read before this object
+is written — never invent syntax or key names.
 
 ### Codegraph filters (only when codegraph is active)
 

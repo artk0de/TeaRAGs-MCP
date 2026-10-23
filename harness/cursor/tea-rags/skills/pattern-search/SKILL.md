@@ -91,7 +91,9 @@ chunks + churn, techDebt favors age.
 ### 1. SEED
 
 Apply `tea-rags://guide/decision-tree` decision tree to determine tool. Use
-strategy's rerank preset. Set limit by tool:
+strategy's rerank preset. Before EXPAND, check SEED against
+`tea-rags://guide/pagination` (disambiguation + no-match detection). Set limit
+by tool:
 
 - `rank_chunks`: limit=15
 - `semantic_search`: limit=10

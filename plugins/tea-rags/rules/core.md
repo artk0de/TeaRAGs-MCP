@@ -8,7 +8,8 @@ SubagentStart alias line, or `workingTree.project` of any answer; unknown →
 `collection=<name>` (+ `path` if it is your repo). `index_codebase`: `project`
 ONLY — its `path` registers a NEW project.
 
-**Routing** (first match wins; tea-rags tools are `mcp__tea-rags__<name>`):
+**Routing** (first match wins; a loaded skill's step overrides; tea-rags tools
+are `mcp__tea-rags__<name>`):
 
 | Need                               | Call                                          |
 | ---------------------------------- | --------------------------------------------- |
@@ -21,18 +22,16 @@ ONLY — its `path` registers a NEW project.
 | diff review                        | `review_changes`                              |
 | literal text (TODO, phrase, regex) | text search (your client's Grep / `rg`)       |
 
-Text search finds literal text only — never use it, Glob or Bash
-`cat`/`sed`/`grep` to locate or understand code (unless the user explicitly asks
-for a manual read). Identifiers are SYMBOL searches even with `|` — never text
-search.
+Text search = literal text only; never it, Glob or `cat`/`sed`/`grep` to locate
+or understand code — identifiers (even `a|b`) are SYMBOL searches.
 
 **Invariants.**
 
 - Never `Read` after `find_symbol` — method = full body; class / file / doc =
-  outline of ids → drill `find_symbol(symbol: <id>)`. After any search the next
-  call is `find_symbol`, not another search, not `Read`.
+  outline of ids → drill `find_symbol(symbol: <id>)`. After a search:
+  `find_symbol` next, not a re-search or `Read`.
 - `symbolId` ends `#partN` → fragment: `find_symbol(symbol: parentSymbolId)`
-  before judging it; parts of one symbol = one hit.
+  first; parts of one symbol = one hit.
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
   license leaving tea-rags. Row without `treeState` = current; `treeState` row →
   `find_symbol`.
@@ -40,9 +39,11 @@ search.
   0, a stale banner or unindexed edits → incremental `index_codebase(project=)`
   now, no consent; a drift `Run:` with `--force*` → ask, keep working. Linked
   worktree → overlay, never reindex.
-- Empty `get_callers` under low resolve rate (prime) ≠ no callers — cross-check
+- Empty `get_callers` under low resolve rate ≠ no callers — cross-check
   `hybrid_search`. Graph tools absent = codegraph off; never claim "no cycles".
-- Docs = hypothesis, code = evidence: verify a doc claim in code first.
+- Docs = hypothesis, code = evidence — verify in code.
+- User-named action ("read `x.ts`") → do it; user-suggested weaker method (git
+  log, skip enrichment) → keep the rule's, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`):
