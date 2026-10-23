@@ -69,7 +69,6 @@ import { RustExternalVocabulary } from "../vocabulary/external-call.js";
 import {
   rustCallSiteProvesExternal,
   rustCallSiteProvesIndirectCallee,
-  rustCallSiteProvesMonomorphizedDispatch,
   rustCallSiteProvesNoProjectCallable,
 } from "./call-site-resolution.js";
 import { RustResolveEnvironmentCache } from "./resolve-environment-cache.js";
@@ -231,14 +230,9 @@ export class RustCallResolver implements CallResolver {
   /**
    * The miss classifier's LAST gate (K11): the rustc driver proves the callee
    * is a closure, fn pointer or Fn-bound param (RESIDUAL R4), so the target is
-   * decided at run time — or the declaration of an external trait a project
-   * impl declares, whose impl monomorphization picks (R3c). Proof only — no
-   * driver row answers false.
+   * decided at run time. Proof only — no driver row answers false.
    */
   targetsUndecidable(call: CallRef, ctx: CallContext): boolean {
-    const environment = this.withEnvironment(ctx);
-    return (
-      rustCallSiteProvesIndirectCallee(call, environment) || rustCallSiteProvesMonomorphizedDispatch(call, environment)
-    );
+    return rustCallSiteProvesIndirectCallee(call, this.withEnvironment(ctx));
   }
 }

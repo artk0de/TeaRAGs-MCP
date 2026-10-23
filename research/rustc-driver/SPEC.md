@@ -159,16 +159,16 @@ pass as `generated` / `generatedUnmapped`.
 
 ### Mapping to `RustScipDefinition` (adapter, no strategy change needed)
 
-| `RustScipDefinition`           | from the driver row                                                                                                                                                                      |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `symbol`                       | `rustc ${calleeCrate} ${resolvedImpl ?? callee}` (stable, diagnostic only)                                                                                                               |
-| `package`                      | `calleeCrate`                                                                                                                                                                            |
-| `inProject`, `relPath`, `line` | `inProject && !implIsDerived`, `defRelPath`, `defLine`                                                                                                                                   |
-| `name`                         | last `::` segment of `callee` with generic args stripped                                                                                                                                 |
-| `kind`                         | `fn`/`assocFn` → `callable`; `ctor` → `type` (SCIP's enum-variant convention); else `other`                                                                                              |
-| `implTrait`                    | last segment of `traitPath` when `resolvedImpl` is set (trait impl dispatch)                                                                                                             |
-| `declaringTrait`               | last segment of `traitPath` when `resolvedImpl` is null (proves the trait, not the impl; R3c: external with no project impl, else undecidable when the trait is not a workspace crate's) |
-| `packageInProject`             | `calleeCrate` ∈ crate names the driver ran on (workspace members)                                                                                                                        |
+| `RustScipDefinition`           | from the driver row                                                                                                                                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `symbol`                       | `rustc ${calleeCrate} ${resolvedImpl ?? callee}` (stable, diagnostic only)                                                                                                                                |
+| `package`                      | `calleeCrate`                                                                                                                                                                                             |
+| `inProject`, `relPath`, `line` | `inProject && !implIsDerived`, `defRelPath`, `defLine`                                                                                                                                                    |
+| `name`                         | last `::` segment of `callee` with generic args stripped                                                                                                                                                  |
+| `kind`                         | `fn`/`assocFn` → `callable`; `ctor` → `type` (SCIP's enum-variant convention); else `other`                                                                                                               |
+| `implTrait`                    | last segment of `traitPath` when `resolvedImpl` is set (trait impl dispatch)                                                                                                                              |
+| `declaringTrait`               | last segment of `traitPath` when `resolvedImpl` is null (proves the trait, not the impl; a std / dependency trait is external at the miss gate, a workspace trait goes through the R3c project-impl gate) |
+| `packageInProject`             | `calleeCrate` ∈ crate names the driver ran on (workspace members)                                                                                                                                         |
 
 `mapScipDefinitionToSymbol` already turns `(relPath, line, name)` into a table
 symbol. The in-project symbolId is the chunk symbol whose definition span starts
@@ -430,15 +430,20 @@ T1 runs in parallel with T2–T5. T6 → T7 → T8 run sequentially.
    corpora stay static/SCIP-only.
 5. **Cold RSS on tikv/servo.** Bounded by `-j`, unmeasured here.
 6. **Generic-bound and `dyn` calls** resolve to the trait DECLARATION
-   (`resolvedImpl` null). That is correct: the impl is picked by
-   monomorphization, which `cargo check` never performs (compiler-builtin impls
-   such as tuple `Clone` answer the same way). It is not an in-project impl
-   edge. The R3c `declaringTrait` gate makes the row external when no project
-   impl of the trait declares the member. Owner decision 2026-10-23: when one
-   does and the trait is declared outside the workspace, the site is UNDECIDABLE
-   (`targetsUndecidable` → `unresolvable`, out of the resolve denominator, like
-   Python's K11 sites). For `Clone`, `AsRef`, `Iterator` or `Default` some
-   project impl always declares the member, so the old R3c rule kept every
-   generic call a miss on the strength of an unrelated type's impl. A workspace
-   trait's declaration row keeps the old behaviour, and no edge moves in either
-   case.
+   (`resolvedImpl` null), and compiler-builtin impls such as tuple `Clone`
+   answer the same way. That is correct, and it is not an in-project impl edge.
+   Owner decision 2026-10-23: when the trait is declared in std or a dependency
+   (not a workspace crate), the row is EXTERNAL, whether or not a project impl
+   of the trait declares the member. The compiler-named callee is the external
+   trait item; which impl runs is monomorphization dispatch, not the resolved
+   target. A call through a library interface in TS or Java is treated the same
+   way. Undecidable stays reserved for sites whose callee cannot be named (R4).
+   The old R3c gate kept such a row a miss whenever a project impl declared the
+   member, and for `Clone`, `AsRef`, `Iterator` or `Default` some unrelated
+   type's impl always does. The decision moves the miss gate
+   (`targetsExternalImport`) only. The chain keeps R3c's CONTINUE, because a
+   static pass that names the impl which runs is still a correct edge: tikv's
+   `TimeStamp::from(ts)` reaches its project `From` impl that way. Dropping
+   those rows instead lost 36 / 5 / 7 edges on tikv / servo / ripgrep. A
+   workspace trait's sourceless declaration keeps the R3c / R3d project-impl
+   gate at both points.

@@ -305,6 +305,37 @@ calling `.unwrap()`.
 
 The rate effect is small. The precision effect sits in cfg'd code only.
 
+### R3c — external-trait declaration rows are external (owner decision 2026-10-23)
+
+After R1–R5, 712 residual misses (tikv 492, servo 160, ripgrep 60) were driver
+rows at the DECLARATION member of a trait that std or a dependency declares:
+`Clone::clone` (~300), `AsRef::as_ref` (~180), `Iterator::next`,
+`Default::default`, `slog::Drain::log`, rocksdb `CompactionFilter*`, mozjs
+`Trace::trace`. These are generic-bound and `dyn` calls plus compiler-builtin
+impls (tuple `Clone`). The old R3c rule kept them misses because some project
+impl of the trait declares the member, and for these traits some unrelated
+type's impl always does.
+
+Decision: such a row is EXTERNAL. The compiler-named callee is the external
+trait item, and which impl runs is monomorphization dispatch, not the resolved
+target. Undecidable is reserved for callees that cannot be named (R4). The
+decision moves the miss gate (`targetsExternalImport`) and nothing else. The
+chain keeps R3c's CONTINUE, because a static pass that names the impl that runs
+(tikv `TimeStamp::from(ts)` → the project `From` impl) is a correct edge. A DROP
+variant lost 36 / 5 / 7 such edges. A workspace trait's sourceless declaration
+keeps the R3c / R3d project-impl gate.
+
+Measured with `--rustc-driver`, edge diff 0 lost / 0 gained on all three:
+
+| corpus  | before            | after             |
+| ------- | ----------------- | ----------------- |
+| tikv    | 0.980 77191/78759 | 0.986 77191/78267 |
+| servo   | 0.982 64400/65571 | 0.985 64400/65409 |
+| ripgrep | 0.986 6249/6340   | 0.995 6249/6280   |
+
+The remaining residual is cfg / silent-driver floor (`SILENT:*`), 41 / 115 / 1
+in-project callables, and servo's 11 workspace-trait rows.
+
 ### Not proposed
 
 - Building excluded crates (tikv `engine_tirocks`, servo `support/crown`): 393 /

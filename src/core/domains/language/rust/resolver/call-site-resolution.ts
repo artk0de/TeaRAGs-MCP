@@ -171,10 +171,24 @@ function rustProjectImplDeclaresTraitMember(
   });
 }
 
-/** Whether the rustc driver proves the call's target lives outside the project. */
+/**
+ * Whether the rustc driver proves the call's target lives outside the project
+ * — the miss classifier's reading. Beyond `rustCallSiteDefinitionIsExternal`,
+ * a std / dependency trait's DECLARATION member (a generic-bound or `dyn`
+ * call, a builtin impl) is external whatever the project implements: the
+ * compiler-named callee is the external trait item, and which impl runs is
+ * monomorphization dispatch, not the target (R3c, owner 2026-10-23). The chain
+ * keeps R3c's CONTINUE there, so a static edge to the impl that runs survives.
+ */
 export function rustCallSiteProvesExternal(call: CallRef, ctx: CallContext): boolean {
   const definition = rustcCallSiteDefinitionOf(call, ctx);
-  return definition !== null && rustCallSiteDefinitionIsExternal(definition, call, ctx);
+  if (definition === null) return false;
+  return rustCallSiteNamesExternalTraitItem(definition) || rustCallSiteDefinitionIsExternal(definition, call, ctx);
+}
+
+/** Whether the definition is the declaration member of a trait no workspace crate declares. */
+function rustCallSiteNamesExternalTraitItem(definition: RustCallSiteDefinition): boolean {
+  return definition.declaringTrait !== undefined && !definition.inProject && !definition.packageInProject;
 }
 
 /**
@@ -184,22 +198,6 @@ export function rustCallSiteProvesExternal(call: CallRef, ctx: CallContext): boo
  */
 export function rustCallSiteProvesIndirectCallee(call: CallRef, ctx: CallContext): boolean {
   return rustcCallSiteDefinitionOf(call, ctx)?.indirectCallee !== undefined;
-}
-
-/**
- * Whether the rustc driver proves the call's impl is chosen by
- * monomorphization: its row is the DECLARATION member of a trait a dependency
- * or std declares — a generic-bound or `dyn` call, or a compiler-builtin impl
- * (tuple `Clone`) — and a project impl of that trait declares the member, so
- * R3c keeps it from external. `cargo check` never monomorphizes, and the
- * project impl R3c found may be an unrelated type's: no static pass can name
- * the target. A workspace trait's declaration, a row naming the dispatched
- * impl, and no row answer false.
- */
-export function rustCallSiteProvesMonomorphizedDispatch(call: CallRef, ctx: CallContext): boolean {
-  const definition = rustcCallSiteDefinitionOf(call, ctx);
-  if (definition?.declaringTrait === undefined || definition.packageInProject) return false;
-  return !rustCallSiteDefinitionIsExternal(definition, call, ctx);
 }
 
 /**
