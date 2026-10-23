@@ -677,7 +677,8 @@ self-contained reference blocks move to `references/<topic>.md` (Agent Skills
 target: body < 500 lines); **(3) resources** — inline catalogs become a
 guide/metrics read; skills whose need is unconditional and ≤ 8KB inline it at
 load in Claude Code via
-`` !`tea-rags resource "tea-rags://project/{alias}/metrics?language=<lang>&section=<s>" --path "$PWD" || true` ``
+`` !`tea-rags resource "tea-rags://project/{alias}/metrics?section=<s>" --path "$PWD" || true` ``
+(no `language=` — unknown at load time, so every indexed language comes in)
 and ALSO keep the model-read line
 `Need thresholds → read tea-rags://project/<alias>/metrics?…` (other harnesses
 have no load-time shell); **(4) compress** to caveman `ultra` (bodies) / `full`
@@ -699,15 +700,19 @@ message body.
 - `skills/analytics-rerank/SKILL.md` — URIs `schema/*` → `guide/*`
 - `skills/pattern-search/SKILL.md` — model-read
   `project/<alias>/metrics?section=labelMap` when filtering by label
-- `skills/data-driven-generation/SKILL.md` — `## Workflow` steps →
-  `references/step-<n>-<name>.md`; labels/thresholds via metrics resource; keep
-  Steps 1–7 headers + gates in SKILL.md
+- `skills/data-driven-generation/SKILL.md` — the long `## Workflow` steps (5
+  STYLE, 6 GENERATE, 7 VERIFY) → `references/step-<n>-<name>.md`; short Steps
+  1–4 and 8 stay inline (read every run — a file per step costs a read each);
+  labels/thresholds via metrics resource; keep Steps 1–7 headers + gates in
+  SKILL.md
 - `skills/architecture-diagnostics/SKILL.md` — each `## Phase 3x` body →
-  `references/phase-3x.md`; SKILL.md ≤ 15KB; Phase 0 gate reads
-  `metrics?section=resolve`
+  `references/phase-3x-<name>.md`; Phase 1 response semantics, Phase 4
+  exclusions and the full anti-pattern list → `references/` too (3x alone left
+  ~24KB); SKILL.md ≤ 15KB; Phase 0 gate reads `metrics?section=resolve`
 - Plugin: tea-rags `plugin.json` minor bump (new reference files)
-- Test: `tests/hooks/agent-context-budgets.test.sh` add per-skill caps (SKILL.md
-  ≤ 20KB each; architecture-diagnostics ≤ 15KB);
+- Test: `tests/hooks/skill-size-budgets.test.sh` per-skill caps (tea-rags
+  SKILL.md ≤ 20KB each; architecture-diagnostics ≤ 15KB) — own file, since
+  Task 9 edits `agent-context-budgets.test.sh` in parallel;
   `tests/hooks/skill-resource-refs.test.sh` (every `tea-rags://` URI written in
   a skill is one the server registers — compare against
   `node build/cli/index.js resource --list` output)
