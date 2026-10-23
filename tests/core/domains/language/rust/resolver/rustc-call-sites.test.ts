@@ -870,7 +870,9 @@ describe("driver rows: mapping and the external proof (bd s3i8m.6 R3a)", () => {
     });
   });
 
-  it("DROPs a workspace impl of a derivable trait with no definition, CONTINUEs a non-derivable one", () => {
+  // Moved pin (W1): a non-derivable workspace definition with no project source position used to CONTINUE;
+  // it has no table symbol either (servo's build-script `codegen::` items), so it DROPs like any external.
+  it("DROPs a workspace definition with no project source position, derivable trait or not", () => {
     const unmarked = { ...DERIVED_CLONE, implIsDerived: undefined };
     const callSites = stubIndex({
       "src/main.rs:21:20": unmarked,
@@ -879,8 +881,44 @@ describe("driver rows: mapping and the external proof (bd s3i8m.6 R3a)", () => {
     });
     const ctx = ctxWith(table(), { callSites });
     expect(strategy.attempt(call("tally.clone()", "tally", "clone", 21, 20), ctx)).toEqual({ kind: "drop" });
-    expect(strategy.attempt(call("g.greet()", "g", "greet", 27, 6), ctx)).toEqual({ kind: "continue" });
-    expect(strategy.attempt(call("g.greet()", "g", "greet", 28, 6), ctx)).toEqual({ kind: "continue" });
+    expect(strategy.attempt(call("g.greet()", "g", "greet", 27, 6), ctx)).toEqual({ kind: "drop" });
+    expect(strategy.attempt(call("g.greet()", "g", "greet", 28, 6), ctx)).toEqual({ kind: "drop" });
+  });
+
+  describe("a workspace definition generated outside the indexed tree (servo `script_bindings::codegen::`)", () => {
+    const generated = (name: string, kind: RustCallSiteDefinition["kind"], declaringTrait?: string) => ({
+      symbol: `rustc script_bindings script_bindings::codegen::Generated::${name}`,
+      package: "script_bindings",
+      inProject: false,
+      name,
+      kind,
+      packageInProject: true,
+      ...(declaringTrait === undefined ? {} : { declaringTrait }),
+    });
+
+    it("counts an enum-variant constructor with a project namesake as externalSkipped", async () => {
+      const t = table(def("src/dom.rs", "String", "DOMString#String", 3, 5));
+      const site = call("Union::String(s)", "Union", "String", 40, 11);
+      const resolver = await facade({ callSites: stubIndex({ "src/main.rs:40:11": generated("String", "type") }) });
+      expect(classifyResolveMiss(site, ctxWith(t), resolver, t)).toBe("externalSkipped");
+    });
+
+    it("counts a generated callable with a project namesake as externalSkipped", async () => {
+      const t = table(def("src/dom.rs", "empty", "Options.empty", 3, 5));
+      const site = call("AudioNodeOptions::empty()", "AudioNodeOptions", "empty", 41, 22);
+      const resolver = await facade({ callSites: stubIndex({ "src/main.rs:41:22": generated("empty", "callable") }) });
+      expect(classifyResolveMiss(site, ctxWith(t), resolver, t)).toBe("externalSkipped");
+    });
+
+    it("keeps R3c for a generated trait's declaration member: a project impl keeps the site a miss", async () => {
+      const t = table(def("src/window.rs", "Document", "Window.Document", 3, 5));
+      const site = call("window.Document()", "window", "Document", 42, 11);
+      const callSites = stubIndex({ "src/main.rs:42:11": generated("Document", "callable", "WindowMethods") });
+      const resolver = await facade({ callSites });
+      const impls = { "src/window.rs": [traitImpl("Window", "WindowMethods", 2, 6)] };
+      expect(resolver.targetsExternalImport?.(site, ctxWith(t, {}, impls))).toBe(false);
+      expect(resolver.targetsExternalImport?.(site, ctxWith(t))).toBe(true);
+    });
   });
 });
 

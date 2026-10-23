@@ -26,23 +26,6 @@ import {
 } from "./strategies/shared.js";
 
 /**
- * Std traits `#[derive]` implements. A workspace-package method of one of
- * these with no definition occurrence is derive-generated code, not a symbol
- * the project wrote.
- */
-export const RUST_DERIVABLE_TRAITS: ReadonlySet<string> = new Set([
-  "Clone",
-  "Copy",
-  "Debug",
-  "Default",
-  "Hash",
-  "PartialEq",
-  "Eq",
-  "PartialOrd",
-  "Ord",
-]);
-
-/**
  * The definition the rustc driver records for the call's member token — the
  * type-checked callee (bd s3i8m T7); null without an index, a position or a row.
  */
@@ -73,10 +56,10 @@ export function rustCallSiteIsForeignGenerated(definition: RustCallSiteDefinitio
 
 /**
  * Whether the definition is provably outside the project's own code: std,
- * core, alloc or a dependency, a derive-generated impl in a workspace crate,
- * or a definition a dependency's macro generated there (format 4) — even
- * where its position falls on the project's `#[derive]` line. Any other
- * workspace symbol without a definition gets no verdict.
+ * core, alloc or a dependency, a workspace definition with no project source
+ * position (derive output, a build-script `OUT_DIR` item), or a definition a
+ * dependency's macro generated there (format 4) — even where its position
+ * falls on the project's `#[derive]` line.
  * An external trait's DECLARATION member proves the trait, not the impl the
  * call dispatches to: it is external only when no project impl of that trait
  * declares the member — a provided method nobody overrides (bd s3i8m.6 R3c).
@@ -92,16 +75,14 @@ export function rustCallSiteDefinitionIsExternal(
   if (definition.kind === "local" || rustCallSiteIsDerivedImpl(definition)) return false;
   if (rustCallSiteIsForeignGenerated(definition)) return true;
   if (definition.inProject) return false;
-  if (!definition.packageInProject) {
-    if (definition.declaringTrait === undefined) return true;
+  if (definition.declaringTrait !== undefined) {
     const selfType = rustProvenStdReceiverTypeName(call, definition.name, ctx);
     return !rustProjectImplDeclaresTraitMember(definition.declaringTrait, definition.name, ctx, selfType);
   }
-  return (
-    definition.kind === "callable" &&
-    definition.implTrait !== undefined &&
-    RUST_DERIVABLE_TRAITS.has(definition.implTrait)
-  );
+  // A dependency, or a workspace definition with no project source position: a
+  // build-script `OUT_DIR` item (servo's `script_bindings::codegen::`) or derive
+  // output — no table symbol is it, so no namesake may stand in.
+  return true;
 }
 
 /** Path roots that name the project's own module tree. */
