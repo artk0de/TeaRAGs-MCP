@@ -1075,6 +1075,14 @@ Runs before Task 19 and the Codex eval run (Task 14 Step 5).
   substituted. Builder-backed topics are excluded from the plain
   `AGENT_CONTEXT_GUIDES` loop (one registration per URI).
   `guide/language-capability`, `project/*`, `schema/*` aliases unchanged.
+  Landed keys: `meta-only-contract` (overview), `presets-sections`,
+  `signal-keys`, `git-fields` (filters), `label-tables` (signal-labels);
+  search-examples and indexing are pure prose. Exported `build*` keep their
+  signatures (barrel + `resources.test.ts` unchanged).
+- Modify: `.prettierignore` — the seven templates (source + `.claude-plugin/`
+  copy): Prettier's `proseWrap: always` reflow splits one-line examples the
+  tests parse, puts a blank line under list leads, and escapes snake_case
+  identifiers (`attr_*` → `attr*_`).
 - Test: `tests/mcp/resources/guides.test.ts` — every placeholder in every
   template has a renderer and is substituted (no `<!-- data:` left in any read);
   unknown placeholder key → test failure; each guide URI registered once;
@@ -1083,7 +1091,7 @@ Runs before Task 19 and the Codex eval run (Task 14 Step 5).
 - Regenerate: `npm run gen:plugins` (agent-context picks up the new guides;
   Codex / Cursor packages carry them where skills link them).
 
-- [ ] Steps: failing placeholder/registration tests → move prose (one guide per
+- [x] Steps: failing placeholder/registration tests → move prose (one guide per
       commit-sized step) → renderers → regenerate → all tests → commit.
 
 ### Task 19: dinopowers as its own Codex / Cursor plugin

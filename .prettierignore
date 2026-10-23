@@ -16,3 +16,16 @@ website/docs/**/*.md
 # 2.3 MB of JSON into pretty-printed lines would only bloat it and churn the
 # Swift walker's version-pin digest. Regenerate via scripts/gen-swift-sdk-vocabulary.ts.
 src/core/domains/language/swift/vocabulary/sdk-vocabulary.generated.json
+
+# Guide templates of the builder-backed tea-rags://guide/* resources: served
+# raw to agents with registry data substituted, and their line structure is
+# contract (one example per line, lists directly under their lead line).
+# proseWrap reflow breaks that and escapes snake_case identifiers (`attr*_`).
+# Covers the source and its .claude-plugin/ copy.
+**/tea-rags/rules/guides/overview.md
+**/tea-rags/rules/guides/presets.md
+**/tea-rags/rules/guides/signals.md
+**/tea-rags/rules/guides/filters.md
+**/tea-rags/rules/guides/signal-labels.md
+**/tea-rags/rules/guides/search-examples.md
+**/tea-rags/rules/guides/indexing.md
