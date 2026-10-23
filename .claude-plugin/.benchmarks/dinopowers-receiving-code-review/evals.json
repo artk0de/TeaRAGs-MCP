@@ -87,7 +87,7 @@
       "category": "tool-selection",
       "prompt": "Review: 'rename Method() to doMethod() in reranker.ts'. Analyze impact.",
       "expected": {
-        "mustCall": ["semantic_search with custom impact rerank"],
+        "mustCall": ["semantic_search with the impact rerank for the codegraph state: rerank \"blastRadius\" when codegraph is on (graph tools present), else custom {imports: 0.5, churn: 0.3, ownership: 0.2}; get_callers / find_symbol may follow the scan, never replace it"],
         "mustNotCall": [
           "grep -rn 'Method'",
           "hybrid_search",
@@ -140,7 +140,7 @@
       "expected": {
         "mustDo": [
           "Refuse grep substitute",
-          "Use semantic_search with custom rerank (grep miscounts comments/strings)"
+          "Run the Step 2 impact scan anyway: semantic_search with rerank \"blastRadius\" (codegraph on) or custom {imports: 0.5, churn: 0.3, ownership: 0.2} (codegraph off) — grep miscounts comments/strings and carries no churn/ownership signals"
         ],
         "mustNotDo": ["Comply with grep"]
       },

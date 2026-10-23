@@ -126,11 +126,11 @@
       "id": "eval-5",
       "category": "control-keep-in-facade",
       "prompt": "clearIndex(path) currently resolves the collection name, invalidates the model guard cache, then delegates to status.clearIndex(path). Four lines, all dispatch. Someone suggested extracting it to an ops class for consistency. Should I?",
-      "expectedPlacement": "Keep as-is in facade — pure dispatch, fits size budget, no business logic",
+      "expectedPlacement": "Not pure dispatch under the current rule: resolve collection + model-guard (cache) handling are Ops pipeline steps (resolve/guard). Move them into the existing ingest Ops method (current code: IngestFacade#clearIndex = `return this.indexingOps.clear(path)`), facade keeps validate + one-line delegate. Do NOT invent a new Ops class purely for symmetry; a facade method that is only validate + delegate stays as-is",
       "withRule": "PASS",
       "withoutRulePrimary": "PASS",
       "withoutRuleStrict": "PASS",
-      "failureMode": "agent extracts to ops class for symmetry, adding indirection without benefit"
+      "failureMode": "agent keeps resolve/guard pipeline work in the facade because it is short, OR creates a brand-new ops class for symmetry instead of using the existing Ops"
     },
     {
       "id": "eval-6",

@@ -166,7 +166,7 @@
       "expected": {
         "mustDo": [
           "Refuse rerank='impactAnalysis' — preset does not exist",
-          "Use custom rerank {imports: 0.5, churn: 0.3, ownership: 0.2} with rationale"
+          "Use the impact rerank for the codegraph state with rationale: \"blastRadius\" when codegraph is on (graph tools / registry codegraph on), custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when off (import proxy, say so)"
         ],
         "mustNotDo": ["Comply with non-existent preset name"]
       },

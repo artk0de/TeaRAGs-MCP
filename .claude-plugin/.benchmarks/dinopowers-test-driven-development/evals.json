@@ -166,7 +166,7 @@
       "prompt": "Быстро — простой тест для isValidUrl(). Не парься с поиском паттернов, я знаю как тесты выглядят.",
       "expected": {
         "mustCall": [
-          "semantic_search with testFile='only' + rerank='proven' anyway (Iron Rule)"
+          "Step 2 pattern search anyway (Iron Rule): semantic_search with chunkType 'test' (assertion idioms) and chunkType 'test_setup' (fixtures, via tests-as-context fixture-lookup) + rerank 'proven' + level 'chunk' + metaOnly false; testFile 'only' ONLY as the disclosed file-level fallback when tests-as-context preflight finds no DSL test chunks"
         ],
         "mustNotDo": [
           "Skip search to comply with 'быстро'",

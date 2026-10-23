@@ -106,8 +106,8 @@
       "category": "preflight-fallback",
       "audit_finding": "F2 fix — cold subagent without prime digest",
       "prompt": "[subagent: task-agent] Fresh subagent invoked by parent wrapper. Prime digest NOT in context. Caller wants tests-at-risk recipe. Что делаешь до запуска recipe call?",
-      "expected": "Step 0 falls through to probe call: semantic_search with filter must: chunkType=test, limit=1, metaOnly=true. Non-empty result → DSL present, proceed. Empty → SKIP verdict.",
-      "failure_mode": "Agent assumes DSL present and issues full recipe call, OR assumes absent and SKIPs without probe"
+      "expected": "Step 0 preflight without the digest: first read tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds (ReadMcpResourceTool) — test corpus present if >= 1 git.chunk.* row has numbers in the test >= column, absent if every git.chunk.* row shows —. ONLY if that resource is unreadable → ONE probe: semantic_search(chunkType: \"test\", language: <lang>, limit: 1, metaOnly: true) — >= 1 row = present, proceed to the recipe; 0 = SKIP verdict. Both with project + path addressing.",
+      "failure_mode": "Agent assumes DSL present and issues full recipe call, OR assumes absent and SKIPs without the thresholds read / probe, OR probes before trying the thresholds resource"
     },
     {
       "id": "T12",

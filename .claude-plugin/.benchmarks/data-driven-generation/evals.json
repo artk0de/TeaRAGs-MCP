@@ -170,19 +170,24 @@
       "prompt": "Нужен template для generation: найди стабильный example кода.",
       "expected": {
         "parameters": {
-          "rerank": "custom with EXACT weights {similarity:0.2, stability:0.3, age:0.3, bugFix:-0.15, ownership:-0.05}",
-          "note": "These are the 'proven' template weights — long-lived + low-churn + low-bug + multi-author"
+          "delegate": "tea-rags:extract-project-patterns",
+          "inputs": "positiveIds | positiveCode from explore PG-OUTPUT / Step 1 signals (else behaviorQuery), pathPatternL1 = explore pathPattern, limit = 10",
+          "note": "The recipe owns the quality filter (battleTested, relaxed once to production on empty) and the gate (commitCount low/typical + ageDays old/legacy + bugFixRate healthy)"
         },
+        "mustDo": [
+          "Read templates[0] as the Step 6 reference",
+          "Read locality (L1/L2/L3/none) to steer Step 5 STYLE and reviewer routing"
+        ],
         "mustNotDo": [
-          "Use rerank='proven' preset directly (may exist but skill uses CUSTOM for this step)",
-          "Make up different weights",
+          "Hand-roll custom template weights (e.g. {similarity, stability, age, bugFix, ownership}) instead of delegating",
+          "Plain semantic_search / find_similar without the recipe's quality gate",
           "Skip the template step"
         ]
       },
-      "failureMode": "Agent uses wrong weights or skips template",
+      "failureMode": "Agent bypasses extract-project-patterns (own weights or ungated search) or skips the template step",
       "status": "superseded",
       "supersededBy": "extract-project-patterns/evals.json",
-      "reason": "Step 2 TEMPLATE delegates to tea-rags:extract-project-patterns, which owns the battleTested/production filter cascade and the quality gate; DDG no longer carries custom template weights"
+      "reason": "Step 2 TEMPLATE delegates to tea-rags:extract-project-patterns, which owns the battleTested/production filter cascade and the quality gate; DDG no longer carries custom template weights Expectation re-aligned to the current contract on 2026-10-23 so a run that scores it anyway tests current behaviour."
     },
     {
       "id": "eval-7",
@@ -247,20 +252,22 @@
       "prompt": "Код сгенерирован, все тесты проходят. Финализировать?",
       "expected": {
         "mustDo": [
-          "Step 5 MANDATORY — verify every identifier",
-          "find_symbol(metaOnly=true) for every function/type referenced",
-          "ripgrep for import paths (find_symbol doesn't cover imports)",
-          "0 results = hallucinated identifier → fix before commit"
+          "Step 7 VERIFY runs although tests pass (never skipped)",
+          "Symbol risks: find_symbol(symbol, rerank: 'criticalPath', metaOnly: true) on <= 5 symbols the new code calls or changes",
+          "N-th-way self-check: find_similar with positiveCode = generated code",
+          "GATE: ONE review_changes(changes: {}, sections: [naming, incompleteChange, cohesion, architecture, norms]) before the commit, triage per fix-at-write loop",
+          "Final report quotes the gate line verbatim: GATE review_changes: introduced=<n>, partial=<true|false>"
         ],
         "mustNotDo": [
-          "Skip Step 5 because tests pass",
-          "Claim complete without identifier verification"
+          "Skip Step 7 because tests pass",
+          "Run a per-identifier existence sweep (find_symbol metaOnly per name / ripgrep import paths) — removed; specs + type-checker cover it",
+          "Claim complete without the gate line"
         ]
       },
-      "failureMode": "Agent skips identifier verification",
+      "failureMode": "Agent finalizes on green tests without the Step 7 VERIFY gate",
       "status": "superseded",
       "supersededBy": "verify-symbol-risk",
-      "reason": "Step 7 identifier check removed (naming-lexicon spec); specs catch hallucinated identifiers"
+      "reason": "Step 7 identifier check removed (naming-lexicon spec); specs catch hallucinated identifiers Expectation re-aligned to the current contract on 2026-10-23 so a run that scores it anyway tests current behaviour."
     },
     {
       "id": "eval-12",
@@ -268,24 +275,25 @@
       "prompt": "Код готов, verified. Посмотри blast radius перед коммитом.",
       "expected": {
         "parameters": {
-          "rerank": "custom with EXACT weights {imports:0.5, churn:0.3, ownership:0.2}",
-          "metaOnly": true,
-          "note": "IMPACT step weights — THE idiom that 5 dinopowers wrappers depend on"
+          "rerank": "'blastRadius' preset when codegraph is on (graph tools registered); custom EXACT weights {imports:0.5, churn:0.3, ownership:0.2} ONLY when codegraph is off, noting the result is an import proxy",
+          "metaOnly": true
         },
         "mustDo": [
-          "Warn on high-imports modules",
-          "Flag shared taskIds → coordinated change"
+          "Warn on high-fanIn / isHub (codegraph on) or high-imports (fallback) dependents",
+          "Flag shared taskIds → coordinated change",
+          "MODIFY: get_callers on the modified symbol"
         ],
         "mustNotDo": [
-          "Use named preset (e.g. hotspots) instead of custom",
-          "Different weights",
+          "Use custom imports weights while codegraph is on",
+          "Use an unrelated preset (e.g. hotspots) for blast radius",
+          "Different fallback weights",
           "Skip impact step"
         ]
       },
-      "failureMode": "Agent uses wrong weights — breaks dinopowers compatibility",
+      "failureMode": "Agent picks the wrong blast-radius ranking for the codegraph state or skips IMPACT",
       "status": "superseded",
       "supersededBy": "codegraph-impact/benchmark.md (impact-on-blastradius, impact-off-fallback)",
-      "reason": "Step 8 IMPACT uses the blastRadius preset when codegraph is on; the custom {imports:0.5, churn:0.3, ownership:0.2} weights are the codegraph-off fallback only (b65a TR4), so 'named preset' is no longer a failure"
+      "reason": "Step 8 IMPACT uses the blastRadius preset when codegraph is on; the custom {imports:0.5, churn:0.3, ownership:0.2} weights are the codegraph-off fallback only (b65a TR4), so 'named preset' is no longer a failure Expectation re-aligned to the current contract on 2026-10-23 so a run that scores it anyway tests current behaviour."
     },
     {
       "id": "eval-13",
@@ -313,18 +321,23 @@
       "prompt": "Новый модуль src/core/domains/analytics/ — директория не существует ещё. Пиши с нуля.",
       "expected": {
         "mustDo": [
-          "Greenfield → skip Step 2 TEMPLATE and Step 3 STYLE (nothing to match)",
-          "Step 5 VERIFY MANDATORY — identifiers must resolve"
+          "Greenfield = CREATE over an empty area: run TEMPLATE (extract-project-patterns cascade widens L1→L2→L3) and STYLE anyway — they degrade to empty naturally",
+          "locality 'none' / L3 technique-only → say so and generate from scratch, surfacing it to the user",
+          "Step 4 REUSE still runs (shared infra exists even for a new feature)",
+          "Step 6a RED before production code",
+          "Step 7 VERIFY gate (review_changes) before commit"
         ],
         "mustNotDo": [
-          "Search for template in non-existent directory",
-          "Skip Step 5"
+          "Pre-skip TEMPLATE/STYLE because the directory does not exist",
+          "Skip REUSE",
+          "Skip Step 7 VERIFY",
+          "Treat an empty L1 as a failure instead of letting the cascade widen"
         ]
       },
-      "failureMode": "Agent tries to template-match nonexistent code",
+      "failureMode": "Agent pre-skips steps on greenfield or treats empty template search as a blocker",
       "status": "superseded",
       "supersededBy": "verify-symbol-risk",
-      "reason": "Step 7 identifier check removed (naming-lexicon spec); specs catch hallucinated identifiers"
+      "reason": "Step 7 identifier check removed (naming-lexicon spec); specs catch hallucinated identifiers Expectation re-aligned to the current contract on 2026-10-23 so a run that scores it anyway tests current behaviour."
     },
     {
       "id": "eval-15",
@@ -574,8 +587,8 @@
       "prompt": "Код написан, тесты зелёные. Можно коммитить?",
       "expected": {
         "mustDo": [
-          "Step 7: one review_changes call with `changes: {}` and sections naming + incompleteChange + cohesion + architecture before the commit; naming verdicts read from its naming section",
-          "Report review.findings grouped by verdict with relPath:line and the review.conforming / review.novel counts",
+          "Step 7: one review_changes call with `changes: {}` and sections naming + incompleteChange + cohesion + architecture + norms before the commit; naming verdicts read from its naming section",
+          "Report quotes the gate line verbatim (GATE review_changes: introduced=<n>, partial=<true|false>) and names each naming outcome: meta MISFIT → renamed, MAX_ROWS NEW_TERM → decision + one-line why",
           "Rename meta → fileSignals before committing (MISFIT is a fix, not a note)",
           "NEW_TERM with alternatives → reuse ROW_CAP if it denotes the same limit, otherwise keep MAX_ROWS and justify it in one line"
         ],

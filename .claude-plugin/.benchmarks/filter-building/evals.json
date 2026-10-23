@@ -125,7 +125,7 @@
       "id": "E9",
       "audit_finding": "raw filter escape + ReadMcpResourceTool",
       "prompt": "Build a filter for files with commitCount >= 10. What's the exact raw filter syntax?",
-      "expected": "ReadMcpResourceTool(server: 'tea-rags', uri: 'tea-rags://schema/filters') FIRST, then build raw filter",
+      "expected": "Read the live filter guide FIRST — ReadMcpResourceTool(server: 'tea-rags', uri: 'tea-rags://guide/filters') (the deprecated alias tea-rags://schema/filters serves the same text and is accepted; skip only when its '# Qdrant Filter Syntax' is already in context), then build the raw filter (or point out the typed sugar minCommitCount: 10 + level as the schema-checked alternative)",
       "expected_NOT": "Invent Qdrant syntax from memory",
       "failure_mode": "Agent guesses syntax instead of consulting the live schema resource",
       "result": {
@@ -317,8 +317,8 @@
       "id": "T10",
       "audit_finding": "subagent context — absolute path + implicit testFile=exclude from 'skip tests'",
       "prompt": "[subagent: task-agent] Look up usages of paymentService in /Users/me/proj/src/payments/. Skip tests.",
-      "expected": "hybrid_search + pathPattern: '/Users/me/proj/src/payments/**' + testFile: 'exclude'",
-      "expected_NOT": "testFile: false (boolean); ripgrep on identifier",
+      "expected": "hybrid_search + project-relative pathPattern with the project root stripped ('src/payments/**' or '**/payments/**' — matched against relativePath) + testFile: 'exclude'",
+      "expected_NOT": "testFile: false (boolean); absolute pathPattern '/Users/me/proj/src/payments/**' (never matches relativePath); ripgrep on identifier",
       "failure_mode": "Subagent context with skill missing falls into boolean filter type",
       "result": {
         "with_rule": "PASS",

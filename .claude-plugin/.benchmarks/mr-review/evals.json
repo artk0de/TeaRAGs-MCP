@@ -1,7 +1,7 @@
 {
   "skill": "tea-rags:mr-review",
   "skillPath": ".claude-plugin/tea-rags/skills/mr-review/SKILL.md",
-  "objective": "Agent runs the mr-review phases as SKILL.md prescribes; this file starts with the D8 naming dimension. Local mode: one get_naming_lexicon call with `changes` (base = target branch, read at its merge-base with HEAD) reviews every name the diff's added hunks declare, findings grouped by verdict. External mode (MR branch not checked out): names[] built from the diff's added lines. MISFIT / NEW_TERM / COLLISION surface as findings with the suggestion, holder or existing declaration as evidence. Cases with status 'superseded' are kept as history and not scored.",
+  "objective": "Agent runs the mr-review phases as SKILL.md prescribes; this file starts with the D8 naming dimension. Local mode: one review_changes call with `changes` (base = target branch, read at its merge-base with HEAD) and sections [\"naming\"] reviews every name the diff's added hunks declare, findings grouped by verdict. External mode (MR branch not checked out): names[] built from the diff's added lines. MISFIT / NEW_TERM / COLLISION surface as findings with the suggestion, holder or existing declaration as evidence. Cases with status 'superseded' are kept as history and not scored.",
   "runs": [],
   "cases": [
     {
@@ -11,11 +11,12 @@
       "prompt": "Сделай ревью моей ветки.",
       "expected": {
         "mustDo": [
-          "Run D8: get_naming_lexicon with names[] = the identifiers the diff declares (row, find_vendor_envelope) scoped to the touched dirs",
-          "Turn MISFIT / NEW_TERM into a minor finding whose fix is the returned suggestion, citing the holder file as precedent",
+          "Run D8 as ONE review_changes(changes: { base: <target branch, e.g. main> }, sections: [\"naming\"]) call (project alias + path) — it judges every name the added hunks declare (row, find_vendor_envelope)",
+          "Turn MISFIT (and NEW_TERM only when alternatives/topTerms name the same concept) into a [minor] finding whose fix is the returned suggestion, citing the holder file as precedent",
           "Word the comment body in plain language (no MISFIT / lexicon / tool names)"
         ],
         "mustNotDo": [
+          "Hand-list the diff's identifiers into get_naming_lexicon names[] in local mode, or pass the removed get_naming_lexicon `changes` param",
           "Judge the names by taste or by grep / semantic_search on the draft name",
           "Report naming as 'not assessed' while codegraph is on"
         ]
@@ -23,7 +24,7 @@
       "failureMode": "Agent skips the naming dimension or flags names without project evidence",
       "status": "superseded",
       "supersededBy": "naming-diff-changes (local), naming-external-names (external)",
-      "reason": "get_naming_lexicon reviews a diff itself through `changes` (bd tea-rags-mcp-fdef2); hand-listing the diff's identifiers into names[] stays only for external mode, where the MR branch is not in the working tree"
+      "reason": "get_naming_lexicon reviews a diff itself through `changes` (bd tea-rags-mcp-fdef2); hand-listing the diff's identifiers into names[] stays only for external mode, where the MR branch is not in the working tree. Since then diff naming moved to review_changes sections:[naming] (get_naming_lexicon rejects `changes`). Expectation re-aligned to the current contract on 2026-10-23 so a run that scores it anyway tests current behaviour."
     },
     {
       "id": "naming-diff-changes",
@@ -32,13 +33,14 @@
       "prompt": "Сделай ревью моей ветки.",
       "expected": {
         "mustDo": [
-          "Run D8 as ONE get_naming_lexicon call with `changes: { base: <target branch, e.g. main> }` (the tool reads it at its merge-base with HEAD) (project alias), no hand-built names[]",
+          "Run D8 as ONE review_changes call with `changes: { base: <target branch, e.g. main> }` and sections: [\"naming\"] (the tool reads base at its merge-base with HEAD) (project alias + path), no hand-built names[]",
           "Report the naming findings grouped by verdict (MISFIT, COLLISION, NEW_TERM) with relPath:line from review.findings, and the review.conforming / review.novel counts as one summary line",
           "MISFIT → minor finding whose fix is the suggestion with the holder as precedent; COLLISION → finding naming the existing declaration's file",
           "Word comment bodies in plain language (no verdict codes, no tool names)"
         ],
         "mustNotDo": [
           "List the diff's identifiers by hand into names[] in local mode",
+          "Call get_naming_lexicon with `changes` (removed param — the tool rejects it)",
           "Judge the names by taste or by grep / semantic_search on the draft name",
           "Turn a NEW_TERM that carries no alternatives into a rename demand"
         ]
