@@ -7,6 +7,13 @@ TeaRAGs can be installed two ways: via the **setup plugin** (recommended for
 Claude Code users) or **manually** for CI, non-Claude MCP clients (Cursor, Roo
 Code, Continue, …), or air-gapped setups.
 
+:::tip Rust projects: install the compiler driver toolchain
+Without it, Rust call-graph edges are static-only (resolution rate 0.54-0.71
+instead of 0.98-0.99 on tikv, servo, ripgrep). One command, about 1.5 GB:
+`rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src`. Details:
+[Rust compiler driver](../usage/advanced/codegraph-enrichments.md#rust-compiler-driver).
+:::
+
 ## Option A — via the Setup Plugin (Claude Code, recommended)
 
 The `tea-rags-setup` plugin runs an interactive wizard that installs Node.js,

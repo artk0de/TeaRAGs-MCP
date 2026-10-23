@@ -99,6 +99,20 @@ carry no codegraph signals.
 
 ### Rust compiler driver
 
+For Rust projects, install the driver toolchain. Without it, Rust call edges are
+static-only, a lower bound that misses trait dispatch and macro-expanded calls.
+Measured call-resolution rate without and with the driver:
+
+| Corpus  | Without | With  |
+| ------- | ------- | ----- |
+| tikv    | 0.545   | 0.987 |
+| servo   | 0.542   | 0.985 |
+| ripgrep | 0.712   | 0.995 |
+
+```bash
+rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src
+```
+
 Rust call edges come from two sources. The static walker resolves what it can
 from the syntax tree; the rest is answered by the compiler. tea-rags ships its
 own rustc driver, `tea-rags-rustc-driver`, which runs `cargo check` over your

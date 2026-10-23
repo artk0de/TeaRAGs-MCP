@@ -139,7 +139,7 @@ describe("index_codebase — rustc driver line (s3i8m T9)", () => {
     const [{ text }] = (await handler({ path: "/repo" }, {})).content;
 
     expect(text.split("\n").filter((l) => l.startsWith("rustc driver:"))).toEqual([
-      "rustc driver: unavailable — get a toolchain",
+      "rustc driver: unavailable — Rust call edges are static-only (lower bound); get a toolchain",
     ]);
   });
 

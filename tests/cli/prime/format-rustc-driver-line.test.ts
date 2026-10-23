@@ -36,7 +36,7 @@ describe("formatPrime — rustc driver line (s3i8m T9)", () => {
 
   it("renders the unavailable and off variants", () => {
     expect(formatPrime(data({ rustcDriver: { outcome: "unavailable", hint: "get a toolchain" } }))).toContain(
-      "rustc driver: unavailable — get a toolchain",
+      "rustc driver: unavailable — Rust call edges are static-only (lower bound); get a toolchain",
     );
     expect(formatPrime(data({ rustcDriver: { outcome: "off" } }))).toContain(
       "rustc driver: off (CODEGRAPH_RUST_DRIVER=off)",
