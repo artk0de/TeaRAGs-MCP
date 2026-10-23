@@ -44,8 +44,6 @@
  *   6. bareSelfMethod (bare X() inside impl → enclosing-type probe)
  *   7. globalShortName (global short-name fallback)
  *   8. traitSelfMethod (trait-provided `self.m()`)
- *   9. rustAnalyzerScip (the rust-analyzer SCIP index's definition for the
- *      member token, mapped onto a table symbol — where the driver had no row)
  */
 
 import {
@@ -62,23 +60,21 @@ import {
 import type {
   DispatchResolverComponent,
   ManifestFilesReader,
-  RustAnalyzerScipSource,
   RustCallSiteSource,
   RustExternalSignatureSources,
   SymbolResolutionStrategy,
 } from "../../../../contracts/types/language.js";
 import { ConeDispatchResolver, resolveDispatchViaComponents, resolveViaChain } from "../../kernel/index.js";
 import { RustExternalVocabulary } from "../vocabulary/external-call.js";
-import { RustResolveEnvironmentCache } from "./resolve-environment-cache.js";
-import { withRustResolveEnvironment } from "./resolve-environment.js";
-import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
 import {
   rustCallSiteProvesExternal,
   rustCallSiteProvesIndirectCallee,
   rustCallSiteProvesNoProjectCallable,
-} from "./scip-resolution.js";
+} from "./call-site-resolution.js";
+import { RustResolveEnvironmentCache } from "./resolve-environment-cache.js";
+import { withRustResolveEnvironment } from "./resolve-environment.js";
+import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
 import {
-  RustAnalyzerScipSymbolResolutionStrategy,
   RustBareSelfMethodSymbolResolutionStrategy,
   rustCalleeShortNameCandidates,
   rustCallIsMacroInvocation,
@@ -109,24 +105,16 @@ export class RustCallResolver implements CallResolver {
    * and caches the external signature table (bd s3i8m.7). Both injected by
    * `LanguageFactory` — the resolver never walks the disk; absent, no crate
    * name is known and a bare path head is judged by the symbol table alone,
-   * and no external signature is known. `scipSource` acquires the
-   * rust-analyzer SCIP index before the pass (bd s3i8m.6 R2b); absent, none is.
-   * `callSiteSource` acquires the rustc call-site index the same way
-   * (bd s3i8m T6).
+   * and no external signature is known. `callSiteSource` acquires the rustc
+   * call-site index before the pass (bd s3i8m T6); absent, none is.
    */
   constructor(
     mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
     manifestFilesReader?: ManifestFilesReader,
     signatureSources?: RustExternalSignatureSources,
-    scipSource?: RustAnalyzerScipSource,
     callSiteSource?: RustCallSiteSource,
   ) {
-    this.environments = new RustResolveEnvironmentCache(
-      manifestFilesReader,
-      signatureSources,
-      scipSource,
-      callSiteSource,
-    );
+    this.environments = new RustResolveEnvironmentCache(manifestFilesReader, signatureSources, callSiteSource);
     const cfg: ResolverConfig = { mode };
     this.dispatchComponents = [new ConeDispatchResolver(new RustConeTypeLocator(cfg), 8)];
     this.callSites = new RustcCallSiteSymbolResolutionStrategy(cfg);
@@ -144,9 +132,6 @@ export class RustCallResolver implements CallResolver {
       new RustGlobalShortNameSymbolResolutionStrategy(cfg),
       // Last: a trait-provided `self.m()` answers only where every pass above stayed silent.
       new RustTraitSelfMethodSymbolResolutionStrategy(cfg),
-      // After every name pass: rust-analyzer's SCIP answer for the residual
-      // the driver left (bd s3i8m.6 R3a).
-      new RustAnalyzerScipSymbolResolutionStrategy(cfg),
     ];
   }
 
@@ -160,8 +145,8 @@ export class RustCallResolver implements CallResolver {
   }
 
   /**
-   * Awaited before `prepareResolvePass`: acquire the project's rust-analyzer
-   * SCIP index (bd s3i8m.6 R2b) and rustc call-site index (bd s3i8m T6).
+   * Awaited before `prepareResolvePass`: acquire the project's rustc call-site
+   * index (bd s3i8m T6).
    */
   async warmResolvePass(plan: SymbolResolutionPassPlan): Promise<void> {
     await this.environments.warm(plan);
@@ -169,26 +154,20 @@ export class RustCallResolver implements CallResolver {
 
   /** How the pass's compiler-index acquisitions settled; undefined before any ran. */
   diagnostics(): Record<string, unknown> | undefined {
-    const rustAnalyzerScip = this.environments.scipDiagnostics();
     const acquired = this.environments.callSiteDiagnostics();
     const inProjectUnmapped = this.callSites.unmappedInProjectCount();
     const localCallee = this.callSites.localCalleeCount();
     const generated = this.callSites.generatedCount();
     const generatedUnmapped = this.callSites.generatedUnmappedCount();
-    const rustcCallSites =
-      acquired === undefined
-        ? acquired
-        : {
-            ...acquired,
-            ...(inProjectUnmapped === 0 ? {} : { inProjectUnmapped }),
-            ...(localCallee === 0 ? {} : { localCallee }),
-            ...(generated === 0 ? {} : { generated }),
-            ...(generatedUnmapped === 0 ? {} : { generatedUnmapped }),
-          };
-    if (rustAnalyzerScip === undefined && rustcCallSites === undefined) return undefined;
+    if (acquired === undefined) return undefined;
     return {
-      ...(rustAnalyzerScip === undefined ? {} : { rustAnalyzerScip }),
-      ...(rustcCallSites === undefined ? {} : { rustcCallSites }),
+      rustcCallSites: {
+        ...acquired,
+        ...(inProjectUnmapped === 0 ? {} : { inProjectUnmapped }),
+        ...(localCallee === 0 ? {} : { localCallee }),
+        ...(generated === 0 ? {} : { generated }),
+        ...(generatedUnmapped === 0 ? {} : { generatedUnmapped }),
+      },
     };
   }
 
@@ -214,8 +193,8 @@ export class RustCallResolver implements CallResolver {
    * Every verdict is proof-based — a project namesake vetoes the std
    * reading, and absence of evidence is never a `true`.
    *
-   * The compiler's answer — the rustc driver's, else rust-analyzer's SCIP
-   * answer (bd s3i8m T7) — joins it only where the member has a project
+   * The compiler's answer — the rustc driver's (bd s3i8m T7) — joins it only
+   * where the member has a project
    * namesake (bd s3i8m.6 R3a): Rust has no later classifier gate, so the
    * conjunct moves exactly the rows that would be `missWithInProjectDef` and
    * leaves `noInProjectDef` and the vocabulary's own verdicts byte-identical.

@@ -101,9 +101,6 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
     for (const line of seedLines) lines.push(`  ${line}`);
   }
 
-  // The run's rust-analyzer install hint (bd s3i8m.6): one line, no block of its own.
-  if (status.rustAnalyzerHint) lines.push(`⚠ ${status.rustAnalyzerHint}`);
-
   // The rustc call-site driver line (bd s3i8m T9): ON by default, so every Rust run says how it settled.
   if (status.rustcDriver) lines.push(formatRustcDriverLine(status.rustcDriver));
 
@@ -269,10 +266,6 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
 
   if (status.worktreeSeed) {
     base.worktreeSeed = status.worktreeSeed;
-  }
-
-  if (status.rustAnalyzerHint) {
-    base.rustAnalyzerHint = status.rustAnalyzerHint;
   }
 
   if (status.rustcDriver) {

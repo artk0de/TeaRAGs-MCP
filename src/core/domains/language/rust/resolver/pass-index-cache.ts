@@ -1,7 +1,6 @@
 /**
- * A per-pass compiler index of the project a Rust pass resolves — the
- * rust-analyzer SCIP index (bd s3i8m.6 R2b) or the rustc call-site index
- * (bd s3i8m T6). `warm` — awaited before pass 2 — acquires it through an
+ * A per-pass compiler index of the project a Rust pass resolves — the rustc
+ * call-site index (bd s3i8m T6). `warm` — awaited before pass 2 — acquires it through an
  * injected port; `forRoot` hands it out synchronously to the resolve
  * environment. One acquisition per root is in flight at a time, so an earlier
  * kick-off and the pass-start warm share it.

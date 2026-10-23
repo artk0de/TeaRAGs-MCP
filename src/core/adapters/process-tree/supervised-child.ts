@@ -2,10 +2,9 @@
  * A child process run under a wall-clock and a process-tree resident-memory
  * budget. A breach kills the whole tree and is reported as data, never thrown.
  *
- * Shared by the long-running toolchain children of the Rust codegraph (the
- * rust-analyzer `scip` run and the rustc call-site driver). Every host effect
- * is injected (`SupervisedChildHost`); `spawnSupervisedChild` and
- * `sampleProcessTreeRssKb` bind them to node.
+ * Hosts the long-running toolchain child of the Rust codegraph (the rustc
+ * call-site driver). Every host effect is injected (`SupervisedChildHost`);
+ * `spawnSupervisedChild` and `sampleProcessTreeRssKb` bind them to node.
  */
 
 import { spawn as spawnChild, spawnSync } from "node:child_process";
@@ -33,7 +32,7 @@ export interface SupervisedChildHost {
 }
 
 export interface SupervisedChildBudget {
-  /** Names the child in breach details, e.g. `rust-analyzer scip`. */
+  /** Names the child in breach details, e.g. `tearags-rust-callsites`. */
   label: string;
   timeoutSec: number;
   maxRssMb: number;

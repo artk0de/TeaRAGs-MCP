@@ -147,7 +147,6 @@ vi.mock("../../src/bootstrap/config/index.js", async () => {
       vcs: { adapter: "git" },
       codegraph: {
         residual: { kevThreshold: 0.7, concurrency: 96, menuLimit: 40, minMenu: 4, retentionDays: 180 },
-        rustAnalyzer: { enabled: true, exec: false, timeoutSec: 900, maxRssMb: 4096 },
         rustDriver: { enabled: true, timeoutSec: 3600, maxRssMb: 12_288 },
       },
       qdrantTune: { deleteBatchSize: 500, deleteConcurrency: 8, deleteFlushTimeoutMs: 1000 },

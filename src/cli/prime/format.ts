@@ -162,12 +162,6 @@ function formatDigest(data: PrimeData, now: Date, debug: boolean): string {
     lines.push(...capabilityLines);
   }
 
-  // One line, no section of its own: the hint sits with the language tiers it qualifies.
-  if (data.rustAnalyzerHint) {
-    lines.push("");
-    lines.push(`⚠ ${data.rustAnalyzerHint}`);
-  }
-
   if (data.rustcDriver) {
     lines.push("");
     lines.push(formatRustcDriverLine(data.rustcDriver));

@@ -1,12 +1,11 @@
 /**
  * What the compiler says about one call site — the rustc call-site driver
- * (bd s3i8m T7) and the rust-analyzer SCIP index (bd s3i8m.6 R3): the
- * definition its member token names, whether that definition is the project's
- * own callable — and which table symbol it is — or provably outside the
- * project. Shared by the chain's two compiler strategies and the miss
- * classifier's external gate, so all read either source the same way; the gate
- * reads the driver first, then SCIP. Absence of evidence is never a verdict:
- * no index, no member position or no occurrence answers null.
+ * (bd s3i8m T7): the definition its member token names, whether that
+ * definition is the project's own callable — and which table symbol it is — or
+ * provably outside the project. Shared by the chain's compiler strategy and the
+ * miss classifier's gates, so both read the driver the same way. Absence of
+ * evidence is never a verdict: no index, no member position or no row answers
+ * null.
  */
 import type {
   CallContext,
@@ -14,9 +13,9 @@ import type {
   SymbolDefinition,
   SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
-import type { RustCallSiteDefinition, RustScipDefinition, TypeRef } from "../../../../contracts/types/language.js";
+import type { RustCallSiteDefinition, TypeRef } from "../../../../contracts/types/language.js";
 import { rustTextIsStdSmartPointer, rustTextIsStdType } from "../vocabulary/std-prelude.js";
-import { rustAnalyzerScipOf, rustcCallSitesOf } from "./resolve-environment.js";
+import { rustcCallSitesOf } from "./resolve-environment.js";
 import { projectDeclaresType, rustStdSmartPointerTarget } from "./std-type-hops.js";
 import { rustTraitDeclarersOf } from "./strategies/rust-trait-self-method.js";
 import { rustReceiverChainType } from "./strategies/rust-type-receiver.js";
@@ -43,33 +42,14 @@ export const RUST_DERIVABLE_TRAITS: ReadonlySet<string> = new Set([
   "Ord",
 ]);
 
-/** What a compiler index answers for the call's member token; null without an index, a position or an answer. */
-function definitionAtMember<D extends RustScipDefinition>(
-  index: { definitionAt: (relPath: string, line: number, utf16Col: number) => D | null } | undefined,
-  call: CallRef,
-  ctx: CallContext,
-): D | null {
+/**
+ * The definition the rustc driver records for the call's member token — the
+ * type-checked callee (bd s3i8m T7); null without an index, a position or a row.
+ */
+export function rustcCallSiteDefinitionOf(call: CallRef, ctx: CallContext): RustCallSiteDefinition | null {
+  const index = rustcCallSitesOf(ctx);
   if (index === undefined || call.memberStartLine === undefined || call.memberStartColumn === undefined) return null;
   return index.definitionAt(ctx.callerFile, call.memberStartLine, call.memberStartColumn);
-}
-
-/** The definition SCIP records for the call's member token; null without an index, a position or an occurrence. */
-export function rustScipDefinitionOf(call: CallRef, ctx: CallContext): RustScipDefinition | null {
-  return definitionAtMember(rustAnalyzerScipOf(ctx), call, ctx);
-}
-
-/** The definition the rustc driver records for the call's member token (bd s3i8m T7); null as for SCIP. */
-export function rustcCallSiteDefinitionOf(call: CallRef, ctx: CallContext): RustCallSiteDefinition | null {
-  return definitionAtMember(rustcCallSitesOf(ctx), call, ctx);
-}
-
-/**
- * The compiler's answer for the call's member token: the rustc driver's — the
- * type-checked callee — and SCIP's only where the driver has no row
- * (bd s3i8m T7). Where both answer and disagree, the driver wins.
- */
-function rustCallSiteDefinitionOf(call: CallRef, ctx: CallContext): RustCallSiteDefinition | null {
-  return rustcCallSiteDefinitionOf(call, ctx) ?? rustScipDefinitionOf(call, ctx);
 }
 
 /**
@@ -104,7 +84,7 @@ export function rustCallSiteIsForeignGenerated(definition: RustCallSiteDefinitio
  * that type counts (bd s3i8m.6 R3d): `usize::from(b)` dispatches to std's
  * `impl From<u8> for usize`, whatever `impl From<_> for X` the project writes.
  */
-export function rustScipDefinitionIsExternal(
+export function rustCallSiteDefinitionIsExternal(
   definition: RustCallSiteDefinition,
   call: CallRef,
   ctx: CallContext,
@@ -210,10 +190,10 @@ function rustProjectImplDeclaresTraitMember(
   });
 }
 
-/** Whether the compiler — the driver, else SCIP — proves the call's target lives outside the project. */
+/** Whether the rustc driver proves the call's target lives outside the project. */
 export function rustCallSiteProvesExternal(call: CallRef, ctx: CallContext): boolean {
-  const definition = rustCallSiteDefinitionOf(call, ctx);
-  return definition !== null && rustScipDefinitionIsExternal(definition, call, ctx);
+  const definition = rustcCallSiteDefinitionOf(call, ctx);
+  return definition !== null && rustCallSiteDefinitionIsExternal(definition, call, ctx);
 }
 
 /**
@@ -226,20 +206,20 @@ export function rustCallSiteProvesIndirectCallee(call: CallRef, ctx: CallContext
 }
 
 /**
- * Whether the compiler — the driver, else SCIP — proves no project callable is
+ * Whether the rustc driver proves no project callable is
  * the call's target although one may share its name: an in-project type or
  * local — a tuple-struct / tuple-variant constructor or a closure variable
  * (bd s3i8m.6 R3b) — or a derived impl (bd s3i8m T7).
  */
 export function rustCallSiteProvesNoProjectCallable(call: CallRef, ctx: CallContext): boolean {
-  const definition = rustCallSiteDefinitionOf(call, ctx);
+  const definition = rustcCallSiteDefinitionOf(call, ctx);
   if (definition === null) return false;
   if (rustCallSiteIsDerivedImpl(definition)) return true;
   return definition.inProject && (definition.kind === "type" || definition.kind === "local");
 }
 
 /**
- * The table symbol an in-project SCIP definition names: the callee-role (or,
+ * The table symbol an in-project driver definition names: the callee-role (or,
  * for a macro invocation, macro) candidates of the descriptor's name — never
  * the call's member, which a `use a as b` alias renames — declared in the
  * definition's file with a span containing its line; the narrowest wins. When
@@ -248,8 +228,8 @@ export function rustCallSiteProvesNoProjectCallable(call: CallRef, ctx: CallCont
  * one type compose the same id, and the table keeps it once with the first
  * window. Null for a non-callable definition, no such tableSymbol, or a tie.
  */
-export function mapScipDefinitionToSymbol(
-  definition: RustScipDefinition,
+export function mapRustCallSiteDefinitionToSymbol(
+  definition: RustCallSiteDefinition,
   call: CallRef,
   ctx: CallContext,
 ): SymbolResolutionTarget | null {

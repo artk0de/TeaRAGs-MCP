@@ -205,13 +205,6 @@ export interface App {
    */
   resolveLanguageCapabilities: (languages: readonly string[]) => Map<string, LanguageCapability>;
   /**
-   * The one-line rust-analyzer install hint for an index of `path` holding
-   * `languages`, or null: no Rust indexed, a binary found, the slot switched off
-   * (`CODEGRAPH_RUST_ANALYZER=0` / codegraph disabled), or the probe failed.
-   * Never throws — a missing hint is the safe answer (bd s3i8m.6).
-   */
-  resolveRustAnalyzerInstallHint: (input: { path: string; languages: readonly string[] }) => string | null;
-  /**
    * Whether a collection's build lease is live — the same predicate the orphan
    * report, the version cleanup and registry recovery honour (bd
    * tea-rags-mcp-9ovlp). The marker reader is caller-supplied: read-only CLI

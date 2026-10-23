@@ -74,7 +74,6 @@ describe("runPrime — registry-first codegraph enablement override", () => {
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
-        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: vi.fn().mockResolvedValue({ status: "indexed", collectionName: "code_x", chunksCount: 1 }),
         getIndexMetrics: vi.fn().mockResolvedValue({
           collection: "code_x",

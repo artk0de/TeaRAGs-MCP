@@ -306,7 +306,7 @@ export class GraphBuildFinalizer {
    */
   /**
    * Before the pass sizes itself, the resolvers acquire what they read from
-   * outside the process (bd s3i8m.6 R2b — Rust's rust-analyzer SCIP index).
+   * outside the process (bd s3i8m T6 — Rust's rustc call-site index).
    * Charged like {@link GraphBuildFinalizer.prepareResolvePass}: pass-2 wall
    * clock with a count of zero files.
    */

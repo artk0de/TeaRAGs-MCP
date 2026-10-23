@@ -1,10 +1,10 @@
 /**
  * Decodes the rustc call-site driver's NDJSON unit files into the call-site →
- * definition lookup the Rust chain's SCIP slot reads (bd s3i8m T5; contract and
+ * definition lookup the Rust chain's rustc slot reads (bd s3i8m T5; contract and
  * row mapping: research/rustc-driver/SPEC.md §3, macro spans §4).
  *
- * The answer is the `RustCallSiteIndex` port: the SCIP definition shape plus
- * `implIsDerived`, the one fact SCIP cannot carry.
+ * The answer is the `RustCallSiteIndex` port: the call-site definition shape,
+ * `implIsDerived` included.
  *
  * Rules:
  * - Rows are deduped on `(relPath, line, col, callee)` — units of one package

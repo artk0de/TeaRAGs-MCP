@@ -52,7 +52,6 @@ export type WorkingTreeGraphProviderConfig = Pick<
   | "ambiguousResolveMode"
   | "dbMemoryLimit"
   | "dbThreads"
-  | "rustAnalyzer"
   | "rustDriver"
 >;
 
@@ -237,19 +236,17 @@ export async function buildWorkingTreeGraph(
 /**
  * The provider config one tree build runs with: the index run's, bound to the
  * build's output and collection. The build runs under the working-tree wall
- * budget, and a timed-out child would orphan a multi-minute rust-analyzer, so
- * it reads the SCIP cache only (bd s3i8m.6 R2b), and the rustc driver serves its
- * previous run only — never a `cargo check` (bd s3i8m T8).
+ * budget, and a timed-out child would orphan a multi-minute `cargo check`, so
+ * the rustc driver serves its previous run only (bd s3i8m T8).
  */
 export function treeBuildProviderConfig(
   input: Pick<WorkingTreeGraphBuildInput, "providerConfig" | "outputRoot" | "physicalCollectionName">,
 ): CodegraphWorkerConfig {
-  const { rustAnalyzer, rustDriver } = input.providerConfig;
+  const { rustDriver } = input.providerConfig;
   return {
     ...input.providerConfig,
     rootDir: input.outputRoot,
     collectionName: input.physicalCollectionName,
-    ...(rustAnalyzer ? { rustAnalyzer: { ...rustAnalyzer, spawn: "never" } } : {}),
     ...(rustDriver ? { rustDriver: { ...rustDriver, spawn: "never" } } : {}),
   };
 }

@@ -405,14 +405,13 @@ describe("App interface", () => {
       findCoChanged: true,
       reviewChanges: true,
       resolveLanguageCapabilities: true,
-      resolveRustAnalyzerInstallHint: true,
       isCollectionBuildInFlight: true,
       reviewSectionIds: true,
       resolveBaseIndexEntry: true,
       createPathCollectionResolver: true,
       hasProvider: true,
     };
-    expect(Object.keys(_methods)).toHaveLength(42);
+    expect(Object.keys(_methods)).toHaveLength(41);
   });
 
   it("method return types are Promises (except getSchemaDescriptors)", () => {

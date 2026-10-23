@@ -122,11 +122,6 @@ export function buildRegistryEnvSnapshot(
   put("CODEGRAPH_DB_THREADS", codegraph.dbThreads);
   putList("CODEGRAPH_CUSTOM_EXCLUDE", codegraph.customExcludePatterns);
   put("CODEGRAPH_AMBIGUOUS_RESOLVE_MODE", codegraph.ambiguousResolveMode);
-  put("CODEGRAPH_RUST_ANALYZER", codegraph.rustAnalyzer.enabled);
-  put("CODEGRAPH_RUST_ANALYZER_EXEC", codegraph.rustAnalyzer.exec);
-  put("CODEGRAPH_RUST_ANALYZER_PATH", codegraph.rustAnalyzer.path);
-  put("CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC", codegraph.rustAnalyzer.timeoutSec);
-  put("CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB", codegraph.rustAnalyzer.maxRssMb);
   put("CODEGRAPH_RUST_DRIVER", codegraph.rustDriver.enabled);
   put("CODEGRAPH_RUST_DRIVER_PATH", codegraph.rustDriver.path);
   put("CODEGRAPH_RUST_DRIVER_JOBS", codegraph.rustDriver.jobs);

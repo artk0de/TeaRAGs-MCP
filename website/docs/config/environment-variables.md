@@ -134,15 +134,6 @@ project and replayed on later runs. See
 | `CODEGRAPH_DB_THREADS`              | DuckDB worker threads per project                                            | `2`        |
 | `CODEGRAPH_CUSTOM_EXCLUDE`          | Comma-separated `.gitignore`-shaped patterns to exclude from the graph        | _(empty)_  |
 | `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE`  | Short-name call resolution: `strict` (drop ambiguous) or `first` (pick first) | `strict`   |
-| `CODEGRAPH_RUST_ANALYZER`           | rust-analyzer as the last Rust resolution slot; on when a binary is found, `0` turns it off | `true`     |
-| `CODEGRAPH_RUST_ANALYZER_EXEC`      | Let rust-analyzer run build scripts and proc-macros — only for trusted code    | `false`    |
-| `CODEGRAPH_RUST_ANALYZER_PATH`      | Explicit rust-analyzer binary, tried before PATH, rustup, Homebrew and asdf   | _(unset)_  |
-| `CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC` | Wall-clock budget of one rust-analyzer run                                 | `900`      |
-| `CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB` | Resident-memory budget of one rust-analyzer run                             | `4096`     |
-
-A missing rust-analyzer never fails indexing; for an index that holds Rust the
-gap is reported as one line:
-`rust-analyzer not found — install with 'rustup component add rust-analyzer' (or 'brew install rust-analyzer'), or set CODEGRAPH_RUST_ANALYZER_PATH`.
 | `CODEGRAPH_TS_TYPECHECKER`          | TypeScript type checker for call resolution; `0` / `false` turns it off (see below) | on         |
 | `CODEGRAPH_RESIDUAL_KEV_URL`        | Kev base URL for residual call resolution; comma-separate several hosts (see [Kev setup](kev-setup)) | _(unset)_  |
 | `CODEGRAPH_RESIDUAL_KEV_THRESHOLD`  | Minimum Kev confidence for a pick to become an edge                          | `0.7`      |
@@ -152,6 +143,10 @@ gap is reported as one line:
 | `CODEGRAPH_RESIDUAL_MIN_MENU`      | Call sites with fewer candidates than this are neither asked nor given an edge | `1`        |
 | `CODEGRAPH_RESIDUAL_NONE_THRESHOLD` | Minimum confidence of a "none of these" answer for its site to count as external, out of the recall denominator | `0.8` |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | Cached verdicts unseen this many days are dropped                    | `180`      |
+
+The `CODEGRAPH_RUST_ANALYZER*` variables are no longer read: the rust-analyzer
+SCIP slot was removed, and the rustc call-site driver (`CODEGRAPH_RUST_DRIVER*`)
+is the Rust codegraph's one compiler source.
 
 **`CODEGRAPH_TS_TYPECHECKER`.** TypeScript call resolution builds a
 `ts.Program` and asks the type checker what a call's receiver is. Setting it to

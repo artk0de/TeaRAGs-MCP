@@ -252,7 +252,6 @@ vi.mock("../../src/bootstrap/config/index.js", async () => {
       vcs: { adapter: "git" },
       codegraph: {
         residual: { kevThreshold: 0.7, concurrency: 96, menuLimit: 40, minMenu: 4, retentionDays: 180 },
-        rustAnalyzer: { enabled: true, exec: false, timeoutSec: 900, maxRssMb: 4096 },
         rustDriver: { enabled: true, timeoutSec: 3600, maxRssMb: 12_288 },
       },
       qdrantTune: {
@@ -526,36 +525,12 @@ describe("wireCodegraph", () => {
           minMenu: 4,
           retentionDays: 180,
         },
-        rustAnalyzer: { enabled: true, exec: false, timeoutSec: 900, maxRssMb: 4096 },
         rustDriver: { enabled: true, timeoutSec: 3600, maxRssMb: 12_288 },
       },
     } as unknown as ReturnType<typeof getZodConfig>;
   }
 
-  // bd s3i8m.6 R2b — the resolving thread builds its rust-analyzer SCIP source
-  // from plain config; the enrichment worker may spawn, and the working-tree
-  // graph build carries the same slot (it narrows it to cache-only itself).
-  it("carries codegraph.rustAnalyzer to the worker, the main-thread deps and the tree build", () => {
-    const zod = zodConfigWithCodegraph();
-    const withPath = {
-      ...zod,
-      codegraph: {
-        ...zod.codegraph,
-        rustAnalyzer: { enabled: true, exec: true, path: "/opt/ra", timeoutSec: 60, maxRssMb: 2048 },
-      },
-    } as unknown as ReturnType<typeof getZodConfig>;
-    const expected = { enabled: true, exec: true, path: "/opt/ra", timeoutSec: 60, maxRssMb: 2048, spawn: "allowed" };
-
-    const ctx = wireCodegraph(makeConfig(), withPath, new CollectionRegistry("/tmp/factory-test-registry"));
-
-    expect((ctx?.deps.workerDescriptor?.serializableConfig as { rustAnalyzer?: unknown }).rustAnalyzer).toEqual(
-      expected,
-    );
-    expect(ctx?.deps.rustAnalyzer).toEqual(expected);
-    expect(ctx?.workingTreeGraphRuntime.providerConfig.rustAnalyzer).toEqual(expected);
-  });
-
-  // bd s3i8m T8 — the rustc call-site driver slot rides the same three paths.
+  // bd s3i8m T8 — the rustc call-site driver slot rides three paths.
   it("carries codegraph.rustDriver to the worker, the main-thread deps and the tree build", () => {
     const zod = zodConfigWithCodegraph();
     const withDriver = {

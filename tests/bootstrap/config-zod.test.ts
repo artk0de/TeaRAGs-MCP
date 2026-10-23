@@ -119,11 +119,6 @@ describe("parseAppConfigZod", () => {
       "CODEGRAPH_DB_THREADS",
       "CODEGRAPH_CUSTOM_EXCLUDE",
       "CODEGRAPH_AMBIGUOUS_RESOLVE_MODE",
-      "CODEGRAPH_RUST_ANALYZER",
-      "CODEGRAPH_RUST_ANALYZER_EXEC",
-      "CODEGRAPH_RUST_ANALYZER_PATH",
-      "CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC",
-      "CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB",
       "CODEGRAPH_RUST_DRIVER",
       "CODEGRAPH_RUST_DRIVER_PATH",
       "CODEGRAPH_RUST_DRIVER_JOBS",
@@ -174,31 +169,6 @@ describe("parseAppConfigZod", () => {
       expect(codegraph.dbMemoryLimitMax).toBe("8GB");
       // The base/idle limit is independent — MAX never leaks into it.
       expect(codegraph.dbMemoryLimit).toBe("2GB");
-    });
-
-    it("rust-analyzer defaults: on, no exec, 15 min wall, 4 GB RSS, no explicit path", async () => {
-      const { parseAppConfigZod } = await freshImport();
-      const { codegraph } = parseAppConfigZod();
-
-      expect(codegraph.rustAnalyzer).toEqual({ enabled: true, exec: false, timeoutSec: 900, maxRssMb: 4096 });
-    });
-
-    it("CODEGRAPH_RUST_ANALYZER_* override the rust-analyzer slot", async () => {
-      process.env.CODEGRAPH_RUST_ANALYZER = "0";
-      process.env.CODEGRAPH_RUST_ANALYZER_EXEC = "1";
-      process.env.CODEGRAPH_RUST_ANALYZER_PATH = "/opt/ra/rust-analyzer";
-      process.env.CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC = "60";
-      process.env.CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB = "2048";
-      const { parseAppConfigZod } = await freshImport();
-      const { codegraph } = parseAppConfigZod();
-
-      expect(codegraph.rustAnalyzer).toEqual({
-        enabled: false,
-        exec: true,
-        path: "/opt/ra/rust-analyzer",
-        timeoutSec: 60,
-        maxRssMb: 2048,
-      });
     });
 
     it("rustc driver defaults: on, 1 h wall, 12 GB RSS, jobs and path left to the runner", async () => {

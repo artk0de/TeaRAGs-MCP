@@ -95,11 +95,6 @@ describe("REGISTRY_ENV_GROUPS", () => {
       "CODEGRAPH_DB_THREADS",
       "CODEGRAPH_CUSTOM_EXCLUDE",
       "CODEGRAPH_AMBIGUOUS_RESOLVE_MODE",
-      "CODEGRAPH_RUST_ANALYZER",
-      "CODEGRAPH_RUST_ANALYZER_EXEC",
-      "CODEGRAPH_RUST_ANALYZER_PATH",
-      "CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC",
-      "CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB",
       "CODEGRAPH_RUST_DRIVER",
       "CODEGRAPH_RUST_DRIVER_PATH",
       "CODEGRAPH_RUST_DRIVER_JOBS",
@@ -202,12 +197,8 @@ describe("RegistryEnvGroup.consequence", () => {
     expect(byCanonical.get("EMBEDDING_MODEL")).toBe("chunk-set");
     expect(byCanonical.get("TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS")).toBe("enrichment:git");
     expect(byCanonical.get("CODEGRAPH_AMBIGUOUS_RESOLVE_MODE")).toBe("enrichment:codegraph");
-    // rust-analyzer (bd s3i8m.6): where the binary lives and its budgets are runtime;
-    // whether the slot runs and may execute build code decide the Rust edges.
-    expect(byCanonical.get("CODEGRAPH_RUST_ANALYZER_PATH")).toBe("runtime");
-    expect(byCanonical.get("CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC")).toBe("runtime");
-    expect(byCanonical.get("CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB")).toBe("runtime");
-    // rustc call-site driver (bd s3i8m T8): the same split.
+    // rustc call-site driver (bd s3i8m T8): where the driver lives, its parallelism and
+    // budgets are runtime; whether the slot runs decides the Rust edges.
     expect(byCanonical.get("CODEGRAPH_RUST_DRIVER_PATH")).toBe("runtime");
     expect(byCanonical.get("CODEGRAPH_RUST_DRIVER_JOBS")).toBe("runtime");
     expect(byCanonical.get("CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC")).toBe("runtime");
@@ -233,8 +224,6 @@ describe("RegistryEnvGroup.consequence", () => {
       "enrichment:codegraph CODEGRAPH_AMBIGUOUS_RESOLVE_MODE",
       "enrichment:codegraph CODEGRAPH_CUSTOM_EXCLUDE",
       "enrichment:codegraph CODEGRAPH_ENABLED",
-      "enrichment:codegraph CODEGRAPH_RUST_ANALYZER",
-      "enrichment:codegraph CODEGRAPH_RUST_ANALYZER_EXEC",
       "enrichment:codegraph CODEGRAPH_RUST_DRIVER",
       // Moves every window and age the git trajectory stamps (bd tea-rags-mcp-i6tkc).
       "enrichment:git TRAJECTORY_GIT_ANCHOR",

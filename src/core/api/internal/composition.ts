@@ -20,7 +20,6 @@ import {
   SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS,
   type PayloadFieldIndexSchema,
 } from "../../adapters/qdrant/schema-manager.js";
-import { processRustAnalyzerScipSource } from "../../adapters/rust-analyzer/index.js";
 import { processRustExternalSignatureSources } from "../../adapters/rust-signatures/index.js";
 import { processRustcCallSiteSource } from "../../adapters/rustc-driver/callsite-source.js";
 import {
@@ -356,9 +355,6 @@ export function createComposition(options: CompositionOptions = {}): Composition
     ambiguousResolveMode: options.codegraph?.ambiguousResolveMode,
     manifestFilesReader: readManifestFiles,
     rustExternalSignatureSources: processRustExternalSignatureSources(),
-    ...(options.codegraph?.rustAnalyzer?.enabled
-      ? { rustAnalyzerScipSource: processRustAnalyzerScipSource(options.codegraph.rustAnalyzer) }
-      : {}),
     ...(options.codegraph?.rustDriver?.enabled
       ? { rustcCallSiteSource: processRustcCallSiteSource(options.codegraph.rustDriver) }
       : {}),

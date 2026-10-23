@@ -201,8 +201,8 @@ export const FINALIZE_KEEPALIVE_INTERVAL_MS = 30_000;
 export class CompletionRunner {
   /**
    * Heartbeat for the run while one provider's finalize is in flight (bd
-   * s3i8m.6 R2b). Pass 2 applies nothing until it returns — a rust-analyzer
-   * SCIP acquisition can hold it for up to 15 min — so the apply-site
+   * s3i8m.6 R2b). Pass 2 applies nothing until it returns — a rustc call-site
+   * acquisition (`cargo check`) can hold it for minutes — so the apply-site
    * heartbeat goes silent and the run would read as stalled. Wired by the
    * coordinator, like `EnrichmentApplier.onApply`.
    */

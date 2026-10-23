@@ -234,7 +234,6 @@ describe("prime at a relocated project's path", () => {
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
-        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",
