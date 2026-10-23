@@ -34,7 +34,6 @@
  * `defaultRustAnalyzerScipRunnerDeps` binds them to node.
  */
 
-import { spawn as spawnChild, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   mkdirSync,
@@ -51,6 +50,15 @@ import { dirname, join } from "node:path";
 
 import type { ManifestFile, RustAnalyzerScipIndex, RustAnalyzerScipIndexData } from "../../contracts/types/language.js";
 import { readManifestFiles } from "../filesystem/dependency-manifests.js";
+import {
+  sampleProcessTreeRssKb,
+  spawnSupervisedChild,
+  superviseChild as superviseBudgetedChild,
+  supervisedChildInvocation,
+  systemSupervisorClock,
+  type SupervisedChild,
+  type SupervisedChildSpawnOptions,
+} from "../process-tree/supervised-child.js";
 import {
   readPinnedToolchainChannel,
   runRustAnalyzerHostCommand,
@@ -80,6 +88,8 @@ const HOST_COMMAND_TIMEOUT_MS = 10_000;
 const OUTPUT_TAIL_CHARS = 4096;
 const LATCH_FILE = "latch.json";
 const LATEST_FILE = "latest.json";
+/** `$0` of the watchdog shell the child runs under. */
+const SCIP_CHILD_NAME = "tea-rags-ra-scip";
 
 const OFFLINE_PATTERN =
   /--offline was specified|attempting to make an HTTP request|failed to download|unable to update registry|no matching package named|failed to get `[^`]+` as a dependency/i;
@@ -125,12 +135,7 @@ export interface RustAnalyzerScipRunOptions {
 }
 
 /** A running `rust-analyzer scip` child. */
-export interface RustAnalyzerScipChild {
-  readonly pid: number;
-  /** Kill the child and every process it started. */
-  killTree: () => void;
-  readonly exited: Promise<{ code: number | null; signal: string | null }>;
-}
+export type RustAnalyzerScipChild = SupervisedChild;
 
 /** One `.rs` file of the project as the content key sees it. */
 export interface RustSourceStamp {
@@ -387,7 +392,6 @@ async function superviseChild(
   args: readonly string[],
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<SupervisedRun> {
-  const started = deps.clock.now();
   let tail = "";
   let offline = false;
   let toolchainSkew = false;
@@ -398,40 +402,17 @@ async function superviseChild(
     toolchainSkew ||= TOOLCHAIN_SKEW_PATTERN.test(window);
     tail = (tail + chunk).slice(-OUTPUT_TAIL_CHARS);
   };
-  const child = deps.spawn(options.executable.path, args, { env, onOutput });
-  let breach: SupervisedRun["breach"];
-  let peakRssKb = 0;
-  const timeoutMs = options.timeoutSec * 1000;
-  const maxRssKb = options.maxRssMb * 1024;
-  const stop = deps.clock.every(RUST_ANALYZER_SCIP_POLL_MS, () => {
-    if (breach) return;
-    const elapsed = deps.clock.now() - started;
-    const rssKb = deps.sampleTreeRssKb(child.pid);
-    if (rssKb !== undefined) peakRssKb = Math.max(peakRssKb, rssKb);
-    if (elapsed >= timeoutMs) {
-      breach = { reason: "timeout", detail: `rust-analyzer scip ran past ${options.timeoutSec}s` };
-    } else if (rssKb !== undefined && rssKb > maxRssKb) {
-      breach = {
-        reason: "rss",
-        detail: `rust-analyzer scip tree reached ${Math.round(rssKb / 1024)} MB (budget ${options.maxRssMb} MB)`,
-      };
-    }
-    if (breach) child.killTree();
-  });
-  try {
-    const exit = await child.exited;
-    return {
-      exitCode: exit.code,
-      ...(breach ? { breach } : {}),
-      offline,
-      toolchainSkew,
-      outputTail: tail,
-      wallMs: deps.clock.now() - started,
-      peakRssKb,
-    };
-  } finally {
-    stop();
-  }
+  const run = await superviseBudgetedChild(
+    () => deps.spawn(options.executable.path, args, { env, onOutput }),
+    {
+      label: "rust-analyzer scip",
+      timeoutSec: options.timeoutSec,
+      maxRssMb: options.maxRssMb,
+      pollMs: RUST_ANALYZER_SCIP_POLL_MS,
+    },
+    deps,
+  );
+  return { ...run, offline, toolchainSkew, outputTail: tail };
 }
 
 function failureOf(supervisedRun: SupervisedRun, projectRoot: string): PersistedLatch {
@@ -499,15 +480,7 @@ export function defaultRustAnalyzerScipRunnerDeps(
     run: runRustAnalyzerHostCommand,
     spawn: spawnScipChild,
     sampleTreeRssKb: sampleProcessTreeRssKb,
-    clock: {
-      now: () => Date.now(),
-      every: (ms, tick) => {
-        const handle = setInterval(tick, ms);
-        return () => {
-          clearInterval(handle);
-        };
-      },
-    },
+    clock: systemSupervisorClock,
     fs: {
       readBytes: (path) => {
         try {
@@ -545,101 +518,21 @@ function writeTextAtomic(path: string, text: string): void {
   }
 }
 
-/**
- * The detached tree outlives the thread that spawned it: a terminated
- * enrichment worker fires no `exit` hook, and its wall-budget poller dies with
- * it. So the run is wrapped: `sh` starts the command in the background and a
- * watchdog blocks on the stdin pipe the host holds. EOF — the host thread or
- * process is gone, or the run settled and the host closed it — kills the whole
- * process group. fd 3 carries stdin past the background-job `/dev/null`
- * redirection; the watchdog's own output goes to `/dev/null` so it never holds
- * the host's pipes open.
- */
-const HOST_WATCHDOG_SCRIPT =
-  'exec 3<&0; (cat <&3 >/dev/null; kill -KILL 0) >/dev/null 2>&1 & "$@" </dev/null 3<&- & wait $!';
-
-/**
- * How the child is launched. POSIX: under the `/bin/sh` watchdog. Windows has no
- * `/bin/sh`: rust-analyzer runs directly, without the watchdog, so a terminated
- * host thread leaves the child to its wall budget.
- */
+/** How the `rust-analyzer scip` child is launched (see `supervisedChildInvocation`). */
 export function scipChildInvocation(
   platform: NodeJS.Platform,
   command: string,
   args: readonly string[],
 ): { command: string; args: readonly string[]; watchdog: boolean } {
-  if (platform === "win32") return { command, args, watchdog: false };
-  return {
-    command: "/bin/sh",
-    args: ["-c", HOST_WATCHDOG_SCRIPT, "tea-rags-ra-scip", command, ...args],
-    watchdog: true,
-  };
+  return supervisedChildInvocation(platform, command, args, SCIP_CHILD_NAME);
 }
 
 function spawnScipChild(
   command: string,
   args: readonly string[],
-  options: { env: Readonly<Record<string, string | undefined>>; onOutput: (chunk: string) => void },
+  options: SupervisedChildSpawnOptions,
 ): RustAnalyzerScipChild {
-  const invocation = scipChildInvocation(process.platform, command, args);
-  // Own process group, so the whole tree (cargo metadata, rustc probes) dies on a
-  // breach — and, run under HOST_WATCHDOG_SCRIPT, dies with the thread that
-  // spawned it.
-  const child = spawnChild(invocation.command, [...invocation.args], {
-    env: options.env,
-    detached: invocation.watchdog,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  child.stdin.on("error", () => undefined);
-  child.stdout.setEncoding("utf8").on("data", options.onOutput);
-  child.stderr.setEncoding("utf8").on("data", options.onOutput);
-  const exited = new Promise<{ code: number | null; signal: string | null }>((resolve) => {
-    child.once("error", (error) => {
-      options.onOutput(`spawn failed: ${error.message}\n`);
-      resolve({ code: null, signal: null });
-    });
-    child.once("close", (code, signal) => {
-      // Releases the watchdog, which then reaps whatever the run left in its group.
-      child.stdin.end();
-      resolve({ code, signal });
-    });
-  });
-  return {
-    pid: child.pid ?? -1,
-    exited,
-    killTree: () => {
-      try {
-        if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
-      } catch {
-        child.kill("SIGKILL");
-      }
-    },
-  };
-}
-
-/** `ps` over every process; sums the RSS of `rootPid` and all its descendants. */
-function sampleProcessTreeRssKb(rootPid: number): number | undefined {
-  if (rootPid <= 0) return undefined;
-  const result = spawnSync("ps", ["-A", "-o", "pid=,ppid=,rss="], { encoding: "utf8", timeout: 5000 });
-  if (result.status !== 0 || typeof result.stdout !== "string") return undefined;
-  const children = new Map<number, number[]>();
-  const rss = new Map<number, number>();
-  for (const line of result.stdout.split("\n")) {
-    const [pid, ppid, kb] = line.trim().split(/\s+/).map(Number);
-    if (pid === undefined || ppid === undefined || kb === undefined || Number.isNaN(kb)) continue;
-    rss.set(pid, kb);
-    const siblings = children.get(ppid) ?? [];
-    siblings.push(pid);
-    children.set(ppid, siblings);
-  }
-  if (!rss.has(rootPid)) return undefined;
-  let total = 0;
-  const queue = [rootPid];
-  for (let pid = queue.pop(); pid !== undefined; pid = queue.pop()) {
-    total += rss.get(pid) ?? 0;
-    queue.push(...(children.get(pid) ?? []));
-  }
-  return total;
+  return spawnSupervisedChild(command, args, options, SCIP_CHILD_NAME);
 }
 
 /** Every `.rs` file under the root, skipping `target/`, `node_modules/` and dot-directories. */

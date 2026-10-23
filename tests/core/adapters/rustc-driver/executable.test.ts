@@ -123,6 +123,18 @@ describe("discoverRustcDriver", () => {
     expect(discoverRustcDriver(d)).toBeNull();
   });
 
+  it("accepts rustc-dev shipping rustc_middle as an rmeta only (nightly-2026-05-01 layout)", () => {
+    const sysroot = "/r/toolchains/nightly-2026-05-01-aarch64-apple-darwin";
+    const d = deps({
+      rustupWhich: `${sysroot}/bin/rustc`,
+      dirs: {
+        [`${sysroot}/lib/rustlib`]: [HOST],
+        [`${sysroot}/lib/rustlib/${HOST}/lib`]: ["librustc_driver-1.dylib", "librustc_middle-58d2.rmeta"],
+      },
+    });
+    expect(discoverRustcDriver(d)).toMatchObject({ kind: "buildable", sysroot, host: HOST });
+  });
+
   it("falls back to the RUSTUP_HOME toolchains dir", () => {
     const tc = "/rh/toolchains";
     const sysroot = `${tc}/${PIN}-${HOST}`;
