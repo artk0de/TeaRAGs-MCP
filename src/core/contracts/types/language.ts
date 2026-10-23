@@ -36,6 +36,7 @@ import type {
   SymbolResolutionTarget,
 } from "./codegraph.js";
 import type { TestFileConvention } from "./file-classification.js";
+import type { IngestIgnoreContribution } from "./ingest-config.js";
 import type { ChunkSetBumpScopes } from "./rechunk.js";
 import type { SignalFloors } from "./trajectory.js";
 
@@ -1635,6 +1636,12 @@ export interface LanguageCapability {
    * language with no test-file convention (bash, markdown).
    */
   testFiles?: TestFileConvention;
+  /**
+   * What of this language's own build and vendoring output stays out of the
+   * index — aggregated by `languageIngestIgnoreContribution()` and injected into
+   * the ingest scanner. Absent for a language that leaves nothing behind.
+   */
+  ingestIgnore?: IngestIgnoreContribution;
   codegraph: {
     tier: CodegraphTier | TypingTieredCodegraph;
     tech: string;

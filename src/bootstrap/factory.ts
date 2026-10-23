@@ -70,6 +70,7 @@ import {
   initDebugLogger,
   InMemoryGlobalSymbolTable,
   InMemoryTemporalSymbolCommitBuffer,
+  languageIngestIgnoreContribution,
   LanguageVersionDriftMonitor,
   NamingLexiconOps,
   nativeLanguageCapabilities,
@@ -1327,7 +1328,7 @@ function createIngestFacade(
   return new IngestFacade({
     qdrant: shared.qdrant,
     embeddings: shared.embeddings,
-    config: config.ingestCode,
+    config: withLanguageIgnoreContributions(config.ingestCode),
     // kc93 + w2dlu: run-scoped blob reader from the GIT_ADAPTER-selected
     // adapter; es-git selection fail-louds here on first git blob read.
     blobReaderFactory: async (repoRoot: string) =>
@@ -2500,6 +2501,16 @@ export function createConfiguredServer(
 // ---------------------------------------------------------------------------
 
 /**
+ * `ingestCode` carrying the languages' own ignore contributions (Cargo's
+ * `target/`, `cargo vendor` crates, …). The scanner owns no language, so every
+ * scanner this root builds — ingest's walk and the working-tree admission —
+ * receives them from here, and the two agree on what is indexed.
+ */
+function withLanguageIgnoreContributions(ingestCode: AppConfig["ingestCode"]): AppConfig["ingestCode"] {
+  return { ...ingestCode, ignoreContributions: [languageIngestIgnoreContribution()] };
+}
+
+/**
  * The ingest admission rule for one working tree (bd tea-rags-mcp-xi2r9): the
  * same `FileScanner` ingest builds — extensions, built-in and project ignore
  * files, configured patterns — loaded at the tree's root, so the working-tree
@@ -2508,11 +2519,13 @@ export function createConfiguredServer(
 export function createWorkingTreeFileFilter(
   ingestCode: AppConfig["ingestCode"],
 ): (root: string) => Promise<(relativePath: string) => boolean> {
+  const { ignoreContributions } = withLanguageIgnoreContributions(ingestCode);
   return async (root) => {
     const scanner = new FileScanner({
       supportedExtensions: ingestCode.supportedExtensions,
       ignorePatterns: ingestCode.ignorePatterns,
       customIgnorePatterns: ingestCode.customIgnorePatterns,
+      ignoreContributions,
     });
     await scanner.loadIgnorePatterns(root);
     return (relativePath) => scanner.accepts(relativePath);

@@ -240,6 +240,7 @@ export abstract class BaseIndexingPipeline {
       supportedExtensions: overrides?.extensions || this.config.supportedExtensions,
       ignorePatterns: this.config.ignorePatterns,
       customIgnorePatterns: overrides?.customIgnorePatterns || this.config.customIgnorePatterns,
+      ignoreContributions: this.config.ignoreContributions,
     });
   }
 

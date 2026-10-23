@@ -1,4 +1,5 @@
 import type { TestFileConventions } from "../../../contracts/types/file-classification.js";
+import type { IngestIgnoreContribution } from "../../../contracts/types/ingest-config.js";
 import type { LanguageCapability } from "../../../contracts/types/language.js";
 import { installTestFileConventions } from "../../../primitives/paths/index.js";
 import { capability as bashCapability } from "../bash/capability.js";
@@ -11,6 +12,7 @@ import { capability as rubyCapability } from "../ruby/capability.js";
 import { capability as rustCapability } from "../rust/capability.js";
 import { capability as swiftCapability } from "../swift/capability.js";
 import { capability as typescriptCapability } from "../typescript/capability.js";
+import { aggregateIngestIgnoreContributions } from "./ingest-ignore.js";
 import { aggregateTestFileConventions } from "./test-files.js";
 
 /**
@@ -47,6 +49,17 @@ export function languageTestFileConventions(): TestFileConventions {
 }
 
 let aggregatedTestFileConventions: TestFileConventions | undefined;
+
+/**
+ * Every language's ingest ignore contribution, aggregated once — what the
+ * composition root hands every `FileScanner` it builds.
+ */
+export function languageIngestIgnoreContribution(): IngestIgnoreContribution {
+  aggregatedIngestIgnoreContribution ??= aggregateIngestIgnoreContributions(nativeLanguageCapabilities());
+  return aggregatedIngestIgnoreContribution;
+}
+
+let aggregatedIngestIgnoreContribution: IngestIgnoreContribution | undefined;
 
 // `primitives/paths/file-classification` owns no language's test shapes, and its
 // module-level readers (`classify`, scope detection, the codegraph exclusion)

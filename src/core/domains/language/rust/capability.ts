@@ -1,4 +1,5 @@
 import type { LanguageCapability } from "../../../contracts/types/language.js";
+import { ingestIgnore } from "./ingest-ignore.js";
 import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
@@ -25,6 +26,7 @@ export const capability: LanguageCapability = {
     tech: "attribute-based test scope chunking (#[cfg(test)] / #[test])",
   },
   testFiles,
+  ingestIgnore,
   codegraph: {
     tier: "moderate",
     tech: "10-strategy (rustc call-site driver first); trait dispatch; return/field chains (Self, generics, assoc-fn heads, aliases); call-result locals; crate impls",

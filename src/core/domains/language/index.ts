@@ -12,7 +12,11 @@
 export { ConeDispatchResolver, DefaultSymbolIdComposer, collectSymbols, resolveViaChain } from "./kernel/index.js";
 export { LanguageFactory } from "./factory.js";
 export { CrossRunParseCache } from "./cross-run-parse-cache.js";
-export { languageTestFileConventions, nativeLanguageCapabilities } from "./capability/native.js";
+export {
+  languageIngestIgnoreContribution,
+  languageTestFileConventions,
+  nativeLanguageCapabilities,
+} from "./capability/native.js";
 export { resolveLanguageCapabilities } from "./capability/resolve.js";
 export { resolveChunkSetBumpScopes, resolveLanguageCodeVersions } from "./capability/versions.js";
 export { GrammarPackageNotInstalledError, LanguageError, UnsupportedLanguageError } from "./errors.js";
