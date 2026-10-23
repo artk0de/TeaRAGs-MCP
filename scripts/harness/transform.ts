@@ -113,23 +113,30 @@ export function extractInjectionBlock(md: string): string {
  * 2. `ReadMcpResourceTool` / `ListMcpResourcesTool` → the dialect's resource tools;
  * 3. `mcp__tea-rags__<tool>` → bare `<tool>` (the harness may prefix or not);
  * 4. `Skill(tea-rags:<s>)`, `/tea-rags:<s>`, `tea-rags:<s>` → dialect mention, for known skills only;
- * 5. `dinopowers:<s>` / `superpowers:<s>` → bare `<s>` (Claude-only wrappers, named as the workflow);
+ * 5. `dinopowers:<s>` / `superpowers:<s>` → bare `<s>` (named as the workflow) — or, with `wrappers`
+ *    (the dinopowers package itself), `Skill(dinopowers:<s>)` / `dinopowers:<s>` → mention of
+ *    `dino-<s>` and `Skill(superpowers:<s>)` / `superpowers:<s>` → mention of `<s>`;
  * 6. Agent-tool passages → "spawn a subagent", `subagent_type:` lines dropped;
  * 7. `AskUserQuestion` → asking the user;
  * 8. `CLAUDE_PLUGIN_ROOT` / `CLAUDE_PROJECT_DIR` → dialect variables.
  */
-export function toHarnessText(md: string, dialect: HarnessDialect, skillNames: ReadonlySet<string>): string {
+export function toHarnessText(
+  md: string,
+  dialect: HarnessDialect,
+  skillNames: ReadonlySet<string>,
+  wrappers = false,
+): string {
   const mention = (name: string, fallback: string): string =>
     skillNames.has(name) ? dialect.skillMention(name) : fallback;
-  return dropLoadTimeBlocks(md)
+  const text = dropLoadTimeBlocks(md)
     .replace(/\bReadMcpResourceTool\b/g, dialect.readResourceTool)
     .replace(/\bListMcpResourcesTool\b/g, dialect.listResourcesTool)
     .replace(/\bmcp__tea-rags__(\w+)/g, "$1")
     .replace(/\bSkill\(\s*(?:skill:\s*)?"?tea-rags:([a-z0-9-]+)"?[^)]*\)/g, (whole, name: string) =>
       mention(name, whole),
     )
-    .replace(/(?<![\w/])\/?tea-rags:([a-z0-9-]+)(?![\w/-])/g, (whole, name: string) => mention(name, whole))
-    .replace(/\b(?:dinopowers|superpowers):([a-z0-9-]+)/g, "$1")
+    .replace(/(?<![\w/])\/?tea-rags:([a-z0-9-]+)(?![\w/-])/g, (whole, name: string) => mention(name, whole));
+  return (wrappers ? wrapperMentions(text, dialect) : text.replace(/\b(?:dinopowers|superpowers):([a-z0-9-]+)/g, "$1"))
     .replace(/\s*\(`?Agent`? tool\)/g, "")
     .replace(/^(\s*)`?Agent`? tool:/gm, "$1Spawn a subagent:")
     .replace(/\b(?:the )?`?Agent`? tool\b/g, "a subagent")
@@ -140,6 +147,23 @@ export function toHarnessText(md: string, dialect: HarnessDialect, skillNames: R
     .replace(/\$\{CLAUDE_PROJECT_DIR\}|\$CLAUDE_PROJECT_DIR\b/g, dialect.projectDirVar);
 }
 
+/** Name a dinopowers wrapper ships under outside Claude Code, clear of the superpowers skill it wraps. */
+export const WRAPPER_PREFIX = "dino-";
+
+/** Mention of the shipped wrapper (`dinopowers:<s>` → `dino-<s>`) or of the superpowers skill itself. */
+function wrapperMentions(md: string, dialect: HarnessDialect): string {
+  const target = (plugin: string, name: string): string =>
+    dialect.skillMention(plugin === "dinopowers" ? `${WRAPPER_PREFIX}${name}` : name);
+  return md
+    .replace(
+      /\bSkill\(\s*(?:skill:\s*)?"?(dinopowers|superpowers):([A-Za-z0-9-]+)"?[^)]*\)/g,
+      (_, plugin: string, name: string) => target(plugin, name),
+    )
+    .replace(/(?<![\w/])\/?(dinopowers|superpowers):([A-Za-z0-9-]+)/g, (_, plugin: string, name: string) =>
+      target(plugin, name),
+    );
+}
+
 export interface SkillOptions {
   /** Every skill the package ships — only these become mentions. */
   skillNames: ReadonlySet<string>;
@@ -147,6 +171,8 @@ export interface SkillOptions {
   name?: string;
   /** Overrides the source description (e.g. a short one for an internal skill). */
   description?: string;
+  /** Text of a dinopowers wrapper: wrapper and superpowers references become mentions (`toHarnessText` rule 5). */
+  wrappers?: boolean;
 }
 
 /**
@@ -160,7 +186,7 @@ export function toHarnessSkill(md: string, dialect: HarnessDialect, options: Ski
   if (!name) throw new Error("skill has no name in frontmatter and none was passed");
   const description = options.description ?? (fields.description || firstSentence(body));
   return (
-    renderFrontmatter(name, toHarnessText(description, dialect, options.skillNames)) +
-    toHarnessText(body, dialect, options.skillNames)
+    renderFrontmatter(name, toHarnessText(description, dialect, options.skillNames, options.wrappers)) +
+    toHarnessText(body, dialect, options.skillNames, options.wrappers)
   );
 }

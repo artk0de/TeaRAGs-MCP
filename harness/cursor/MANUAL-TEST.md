@@ -50,3 +50,8 @@ pass/fail, the tool calls seen and any deviation next to each check.
    `hybrid_search` / `get_callers`, not grep. If it greps, the rule did not
    reach it — record that; Cursor has no subagentStart injection to fall back
    on.
+8. **dinopowers routing** — with `dinopowers` installed, ask "brainstorm a cache
+   for get_index_status" in a fresh chat. Expect `/dino-brainstorming` to load
+   and chain into `/brainstorming` (superpowers); without superpowers installed,
+   expect the wrapper to stop and ask for the install. Record whether
+   `/brainstorming` and `/dino-brainstorming` both appear in the slash menu.

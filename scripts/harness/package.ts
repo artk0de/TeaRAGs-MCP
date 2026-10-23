@@ -16,6 +16,11 @@ export const PLUGINS_DIR = "plugins";
 /** Plugin source folder, relative to the repository root. */
 export const PLUGIN_SRC = `${PLUGINS_DIR}/tea-rags`;
 export const PLUGIN_NAME = "tea-rags";
+/** The wrapper plugin, shipped as its own package next to tea-rags in every harness marketplace. */
+export const DINOPOWERS_NAME = "dinopowers";
+export const DINOPOWERS_SRC = `${PLUGINS_DIR}/${DINOPOWERS_NAME}`;
+/** Package folders every harness renders, in marketplace order. */
+export const HARNESS_PACKAGES: readonly string[] = [PLUGIN_NAME, DINOPOWERS_NAME];
 
 export interface SourceSkill {
   name: string;
