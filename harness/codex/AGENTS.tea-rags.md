@@ -1,12 +1,12 @@
 # tea-rags core
 
-**Addressing.** Every read call (search, `find_symbol`, graph tools,
-`review_changes`, `get_naming_lexicon`): `project=<alias>` (which index) +
-`path=<your working directory>` (which tree). Alias: prime `## Project`,
-SubagentStart alias line, or `workingTree.project` of any answer; unknown →
-`path` alone, then pass the answer's alias. Only a raw collection name →
-`collection=<name>` (+ `path` if it is your repo). `index_codebase`: `project`
-ONLY — its `path` registers a NEW project.
+**Addressing.** Every read call (search, `find_symbol`, graph, `review_changes`,
+lexicon): `project=<alias>` (which index) + `path=<your working directory>`
+(which tree). Alias: prime `## Project`, SubagentStart alias, or
+`workingTree.project`; unknown → `path` alone, then pass the answer's alias. No
+working dir (script / CLI) → `project` alone. Only a raw collection name →
+`collection=<name>` (+ `path` if your repo). `index_codebase`: `project` ONLY —
+its `path` registers a NEW project.
 
 **Routing** (first match wins; a loaded skill's step overrides; tea-rags tools
 are `mcp__tea-rags__<name>`):
@@ -29,21 +29,22 @@ or understand code — identifiers (even `a|b`) are SYMBOL searches.
 
 - Never `Read` after `find_symbol` — method = full body; class / file / doc =
   outline of ids → drill `find_symbol(symbol: <id>)`. After a search:
-  `find_symbol` next, not a re-search or `Read`.
+  `find_symbol` next, not re-search / `Read`.
 - `symbolId` ends `#partN` → fragment: `find_symbol(symbol: parentSymbolId)`
-  first; parts of one symbol = one hit.
+  first; parts = one hit.
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
-  license leaving tea-rags. Row without `treeState` = current; `treeState` row →
+  license leaving tea-rags — ticket-named files too. Row without `treeState` =
+  current; `treeState` row = pre-edit copy (signals hold, text stale) →
   `find_symbol`.
-- Own checkout (your tree = the alias's registered path) with `changedFiles` >
-  0, a stale banner or unindexed edits → incremental `index_codebase(project=)`
-  now, no consent; a drift `Run:` with `--force*` → ask, keep working. Linked
-  worktree → overlay, never reindex.
-- Empty `get_callers` under low resolve rate ≠ no callers — cross-check
+- Own checkout (tree = alias's path), `changedFiles` > 0, stale banner or
+  unindexed edits → incremental `index_codebase(project=)` first, no consent,
+  plans too; drift `--force*` `Run:` → ask too, never instead. Linked worktree →
+  overlay, never reindex.
+- Empty `get_callers` at low resolve rate ≠ no callers — cross-check
   `hybrid_search`. Graph tools absent = codegraph off; never claim "no cycles".
-- Docs = hypothesis, code = evidence — verify in code.
-- User-named action ("read `x.ts`") → do it; user-suggested weaker method (git
-  log, skip enrichment) → keep the rule's, say why.
+- Docs = hypothesis; verify in code.
+- User-named action ("read `x.ts`") → do it; user's weaker method (git log, skip
+  enrichment) → keep the rule's, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`):
@@ -58,14 +59,16 @@ or understand code — identifiers (even `a|b`) are SYMBOL searches.
 - before choosing `rerank` → `presets` + `signals`; reading labels →
   `signal-labels`
 - trusting graph / AST on a non-primary language → `language-capability`
-- no prime digest in context → `tea-rags://project/<alias>/digest`
+- no prime digest → `tea-rags://project/<alias>/digest`
 - thresholds / labelMap → `tea-rags://project/<alias>/metrics?language=<lang>`
 
-**Destructive tools need explicit user consent:** `force_reindex`,
-`clear_index`, `delete_collection`, `delete_documents`, reindex with `--force` /
-`--force-enrichments`. Subagent: never reindex — report to the parent.
+**Destructive — explicit user consent:** `force_reindex`, `clear_index`,
+`delete_collection`, `delete_documents`, reindex with `--force` /
+`--force-enrichments`. Subagent: never reindex — report to parent.
 
 **Skills are not loaded for you.** A task a skill covers (`$name` /
-`$dino-<name>`) → open its `SKILL.md` BEFORE planning, then every reference file
-or `tea-rags://` resource it marks MANDATORY for your case; plan from that text,
-not from this core.
+`$dino-<name>`) → open its `SKILL.md` in this turn, BEFORE planning ("I would
+read the skill" is not reading it), then every reference file or `tea-rags://`
+resource it marks MANDATORY for your case. A skill that hands off to another
+skill (a `$dino-*` wrapper → `$bug-hunt`, `$explore`, `$data-driven-generation`
+…) → open that `SKILL.md` too. Plan from that text, not from this core.

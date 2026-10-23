@@ -249,6 +249,16 @@ describe("renderCodexHarness", () => {
       expect(rendered.get(path)).toMatch(/MANDATORY/);
     }
   });
+
+  // Codex T22: "I would read the skill" planned instead of read; a wrapper's hand-off target never opened.
+  it("tells the core to read the skill in the same turn, and the skill a wrapper hands off to", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+
+    for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
+      expect(rendered.get(path)).toMatch(/this turn/);
+      expect(rendered.get(path)).toMatch(/hands off to/);
+    }
+  });
 });
 
 describe("toCodexSkill — dinopowers wrappers", () => {

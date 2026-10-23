@@ -63,9 +63,12 @@ const CODEX_DIALECT: HarnessDialect = {
  */
 const CODEX_SKILL_LOADING = `
 **Skills are not loaded for you.** A task a skill covers (\`$name\` /
-\`$dino-<name>\`) → open its \`SKILL.md\` BEFORE planning, then every
-reference file or \`tea-rags://\` resource it marks MANDATORY for your case;
-plan from that text, not from this core.
+\`$dino-<name>\`) → open its \`SKILL.md\` in this turn, BEFORE planning ("I
+would read the skill" is not reading it), then every reference file or
+\`tea-rags://\` resource it marks MANDATORY for your case. A skill that hands off
+to another skill (a \`$dino-*\` wrapper → \`$bug-hunt\`, \`$explore\`,
+\`$data-driven-generation\` …) → open that \`SKILL.md\` too. Plan from that text,
+not from this core.
 `;
 
 /** A Claude Code SKILL.md in Codex's dialect (see `toHarnessText` for the rewrite list). */
