@@ -1,8 +1,7 @@
 /**
  * The `RustCallSiteSource` port bound to the host (bd s3i8m T8): the rustc
- * call-site runner behind the admission contract the rust-analyzer SCIP source
- * honours. Built in the thread that resolves, from plain config, the way
- * `processRustAnalyzerScipSource` is.
+ * call-site runner behind the domain's admission contract. Built in the thread
+ * that resolves, from plain config.
  *
  * One acquisition per project root is in flight at a time — two concurrent
  * `cargo check` runs would share one target directory — and an acquisition

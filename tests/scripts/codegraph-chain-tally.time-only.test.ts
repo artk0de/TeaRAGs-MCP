@@ -88,7 +88,6 @@ describe("parseArgs --rustc-driver (bd s3i8m T8)", () => {
     expect(opts.rustcDriver).toBe(true);
     expect(opts.rustcDriverTimeoutSec).toBe(600);
     expect(opts.rustcDriverMaxRssMb).toBe(4096);
-    expect(opts.rustAnalyzer).toBe(false);
   });
 });
 
@@ -139,39 +138,6 @@ describe("describeRustcDriverWarm (bd s3i8m T8)", () => {
     ).toBe(
       "RUSTC-DRIVER warm 1.00s · ok · units 3 · failed 0 · inProjectUnmapped 2 · localCallee 0 · generated 40 · generatedUnmapped 3",
     );
-  });
-});
-
-describe("parseArgs --rust-analyzer", () => {
-  it("is off by default and on only when named", () => {
-    expect(parseArgs([]).rustAnalyzer).toBe(false);
-    expect(parseArgs(["--lang", "rust", "--rust-analyzer"]).rustAnalyzer).toBe(true);
-  });
-});
-
-describe("parseArgs --rust-analyzer-exec and budget overrides", () => {
-  it("defaults to no-exec with no overrides", () => {
-    const opts = parseArgs(["--rust-analyzer"]);
-    expect(opts.rustAnalyzerExec).toBe(false);
-    expect(opts.rustAnalyzerTimeoutSec).toBeUndefined();
-    expect(opts.rustAnalyzerMaxRssMb).toBeUndefined();
-  });
-
-  it("exec implies rust-analyzer", () => {
-    const opts = parseArgs(["--rust-analyzer-exec"]);
-    expect(opts.rustAnalyzerExec).toBe(true);
-    expect(opts.rustAnalyzer).toBe(true);
-  });
-
-  it("parses numeric overrides", () => {
-    const opts = parseArgs(["--rust-analyzer-timeout-sec", "3600", "--rust-analyzer-max-rss-mb", "12288"]);
-    expect(opts.rustAnalyzerTimeoutSec).toBe(3600);
-    expect(opts.rustAnalyzerMaxRssMb).toBe(12288);
-  });
-
-  it("rejects a non-numeric or non-positive override", () => {
-    expect(() => parseArgs(["--rust-analyzer-timeout-sec", "abc"])).toThrow(/rust-analyzer-timeout-sec/);
-    expect(() => parseArgs(["--rust-analyzer-max-rss-mb", "0"])).toThrow(/rust-analyzer-max-rss-mb/);
   });
 });
 

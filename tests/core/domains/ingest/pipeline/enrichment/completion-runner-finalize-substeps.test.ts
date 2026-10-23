@@ -104,7 +104,7 @@ describe("fileFinalize sub-steps", () => {
   });
 
   // bd s3i8m.6 R2b — pass 2 applies nothing while a provider's finalize is
-  // pending (a rust-analyzer SCIP acquisition can hold it for minutes), so the
+  // pending (a rustc call-site acquisition can hold it for minutes), so the
   // runner keeps the run's heartbeat going until it settles, and stops after.
   it("ticks finalizeKeepalive while runFinalize is pending and stops once it settles", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });

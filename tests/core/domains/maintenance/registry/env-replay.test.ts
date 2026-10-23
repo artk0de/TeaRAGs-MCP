@@ -13,24 +13,24 @@ describe("replayRegistryEnv", () => {
     expect(target.TRAJECTORY_GIT_CHUNK_CONCURRENCY).toBe("5");
   });
 
-  it("replays the rust-analyzer flags a run recorded (bd s3i8m.6)", () => {
-    const target: Record<string, string> = { CODEGRAPH_RUST_ANALYZER_EXEC: "0" };
+  it("replays the rustc driver flags a run recorded (bd s3i8m T8)", () => {
+    const target: Record<string, string> = { CODEGRAPH_RUST_DRIVER_JOBS: "4" };
     replayRegistryEnv(
       {
-        CODEGRAPH_RUST_ANALYZER: "false",
-        CODEGRAPH_RUST_ANALYZER_EXEC: "true",
-        CODEGRAPH_RUST_ANALYZER_PATH: "/opt/ra/rust-analyzer",
-        CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC: "60",
-        CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB: "2048",
+        CODEGRAPH_RUST_DRIVER: "false",
+        CODEGRAPH_RUST_DRIVER_JOBS: "2",
+        CODEGRAPH_RUST_DRIVER_PATH: "/opt/drv/tearags-rust-callsites",
+        CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC: "60",
+        CODEGRAPH_RUST_DRIVER_MAX_RSS_MB: "2048",
       },
       target,
     );
     expect(target).toEqual({
-      CODEGRAPH_RUST_ANALYZER: "false",
-      CODEGRAPH_RUST_ANALYZER_EXEC: "0",
-      CODEGRAPH_RUST_ANALYZER_PATH: "/opt/ra/rust-analyzer",
-      CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC: "60",
-      CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB: "2048",
+      CODEGRAPH_RUST_DRIVER: "false",
+      CODEGRAPH_RUST_DRIVER_JOBS: "4",
+      CODEGRAPH_RUST_DRIVER_PATH: "/opt/drv/tearags-rust-callsites",
+      CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC: "60",
+      CODEGRAPH_RUST_DRIVER_MAX_RSS_MB: "2048",
     });
   });
 

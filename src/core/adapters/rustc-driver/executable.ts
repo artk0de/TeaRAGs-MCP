@@ -1,9 +1,8 @@
 /**
  * Which `tearags-rust-callsites` the Rust codegraph's rustc call-site slot runs,
- * or whether it can be built (research/rustc-driver/SPEC.md §8.2). Mirrors
- * `adapters/rust-analyzer/rust-analyzer-executable.ts`: a candidate is usable
- * only when RUNNING `<candidate> -V` answers a parseable banner whose pin is
- * the expected one — never by `existsSync` alone.
+ * or whether it can be built (research/rustc-driver/SPEC.md §8.2). A candidate
+ * is usable only when RUNNING `<candidate> -V` answers a parseable banner whose
+ * pin is the expected one — never by `existsSync` alone.
  *
  * Order (first usable wins):
  *   1. `CODEGRAPH_RUST_DRIVER_PATH` — this exact name, no alias.

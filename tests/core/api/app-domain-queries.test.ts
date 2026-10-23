@@ -96,29 +96,6 @@ describe("App.resolveLanguageCapabilities", () => {
   });
 });
 
-describe("App.resolveRustAnalyzerInstallHint", () => {
-  it("forwards the project path and languages to the injected lookup and returns its line", () => {
-    const lookup = vi.fn().mockReturnValue("install rust-analyzer");
-    const app = makeApp({ rustAnalyzerInstallHint: lookup });
-    expect(app.resolveRustAnalyzerInstallHint({ path: "/p", languages: ["rust"] })).toBe("install rust-analyzer");
-    expect(lookup).toHaveBeenCalledWith({ path: "/p", languages: ["rust"] });
-  });
-
-  it("answers null when no lookup is wired (codegraph or the rust-analyzer slot is off)", () => {
-    const app = makeApp();
-    expect(app.resolveRustAnalyzerInstallHint({ path: "/p", languages: ["rust"] })).toBeNull();
-  });
-
-  it("answers null, never throws, when the lookup throws", () => {
-    const app = makeApp({
-      rustAnalyzerInstallHint: () => {
-        throw new Error("probe exploded");
-      },
-    });
-    expect(app.resolveRustAnalyzerInstallHint({ path: "/p", languages: ["rust"] })).toBeNull();
-  });
-});
-
 describe("App.isCollectionBuildInFlight", () => {
   it("reports a fresh in-progress marker as a live build", async () => {
     const app = makeApp();

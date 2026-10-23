@@ -2,9 +2,8 @@
  * The rustc call-site driver as a Rust resolution source (bd s3i8m T6 + T7;
  * research/rustc-driver/SPEC.md §3, §8.5): the `RustCallSiteIndex` port reaches
  * the chain through the resolve environment (`rustcCallSitesOf`), the
- * `rustcCallSites` slot answers BEFORE the SCIP slot, and the miss classifier's
- * external gate reads the driver first, then SCIP — the same R3b/R3c/R3d rules
- * over either source. A derived impl is no project edge and no external call:
+ * `rustcCallSites` slot heads the chain, and the miss classifier's gates read
+ * the driver under the R3b/R3c/R3d rules. A derived impl is no project edge and no external call:
  * the row lands in `noInProjectDef`.
  */
 import { describe, expect, it } from "vitest";
@@ -18,21 +17,17 @@ import type {
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type {
   LanguageSymbolResolver,
-  RustAnalyzerScipIndex,
-  RustAnalyzerScipSource,
   RustCallSiteDefinition,
   RustCallSiteIndex,
   RustCallSiteSource,
-  RustScipDefinition,
 } from "../../../../../../src/core/contracts/types/language.js";
 import { LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
+import { rustImplSelfTypeName } from "../../../../../../src/core/domains/language/rust/resolver/call-site-resolution.js";
 import {
-  rustAnalyzerScipOf,
   rustcCallSitesOf,
   RustResolveEnvironment,
 } from "../../../../../../src/core/domains/language/rust/resolver/resolve-environment.js";
 import { RustCallResolver } from "../../../../../../src/core/domains/language/rust/resolver/rust-resolver.js";
-import { rustImplSelfTypeName } from "../../../../../../src/core/domains/language/rust/resolver/scip-resolution.js";
 import { RustcCallSiteSymbolResolutionStrategy } from "../../../../../../src/core/domains/language/rust/resolver/strategies/index.js";
 import { classifyResolveMiss } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -41,7 +36,7 @@ const ROOT = "/repo";
 const CALLER = "src/main.rs";
 
 /** A stub index answering `${relPath}:${line}:${col}` keys; records every question. */
-function stubIndex<D extends RustScipDefinition>(answers: Record<string, D>) {
+function stubIndex<D extends RustCallSiteDefinition>(answers: Record<string, D>) {
   const asked: string[] = [];
   return {
     identity: "stub",
@@ -58,7 +53,7 @@ function inProject(
   name: string,
   relPath: string,
   line: number,
-  kind: RustScipDefinition["kind"] = "callable",
+  kind: RustCallSiteDefinition["kind"] = "callable",
 ): RustCallSiteDefinition {
   return {
     symbol: `rustc mini ${name}`,
@@ -126,13 +121,11 @@ function table(...defs: SymbolDefinition[]): InMemoryGlobalSymbolTable {
 
 function ctxWith(
   t: InMemoryGlobalSymbolTable,
-  sources: { callSites?: RustCallSiteIndex; scip?: RustAnalyzerScipIndex } = {},
+  sources: { callSites?: RustCallSiteIndex } = {},
   typeDeclarations?: Record<string, TypeDeclarationFact[]>,
 ): CallContext {
   const environment =
-    sources.callSites === undefined && sources.scip === undefined
-      ? undefined
-      : new RustResolveEnvironment(undefined, undefined, sources.scip, sources.callSites);
+    sources.callSites === undefined ? undefined : new RustResolveEnvironment(undefined, undefined, sources.callSites);
   return {
     callerFile: CALLER,
     callerScope: [],
@@ -163,29 +156,19 @@ function callSiteSource(index: RustCallSiteIndex): RustCallSiteSource {
   return { acquire: async () => ({ kind: "indexed", index, cacheHit: true }) };
 }
 
-function scipSource(index: RustAnalyzerScipIndex): RustAnalyzerScipSource {
-  return { acquire: async () => ({ kind: "indexed", index, cacheHit: true, toolchainSkew: false }) };
-}
-
-async function warmedResolver(
-  sources: { callSites?: RustCallSiteIndex; scip?: RustAnalyzerScipIndex } = {},
-): Promise<RustCallResolver> {
+async function warmedResolver(sources: { callSites?: RustCallSiteIndex } = {}): Promise<RustCallResolver> {
   const resolver = new RustCallResolver(
     undefined,
     undefined,
     undefined,
-    sources.scip === undefined ? undefined : scipSource(sources.scip),
     sources.callSites === undefined ? undefined : callSiteSource(sources.callSites),
   );
   await resolver.warmResolvePass({ expectedFileCount: 1, projectRoot: ROOT });
   return resolver;
 }
 
-async function facade(
-  sources: { callSites?: RustCallSiteIndex; scip?: RustAnalyzerScipIndex } = {},
-): Promise<LanguageSymbolResolver> {
+async function facade(sources: { callSites?: RustCallSiteIndex } = {}): Promise<LanguageSymbolResolver> {
   const resolver = new LanguageFactory({
-    ...(sources.scip === undefined ? {} : { rustAnalyzerScipSource: scipSource(sources.scip) }),
     ...(sources.callSites === undefined ? {} : { rustcCallSiteSource: callSiteSource(sources.callSites) }),
   }).create("rust").resolver!;
   await resolver.warmResolvePass?.({ expectedFileCount: 1, projectRoot: ROOT });
@@ -195,12 +178,10 @@ async function facade(
 const strategy = new RustcCallSiteSymbolResolutionStrategy({ mode: "strict" });
 
 describe("rustcCallSitesOf — the resolve environment carries the driver index (bd s3i8m T6)", () => {
-  it("reads the driver index beside the SCIP index, and nothing off the Rust entry paths", () => {
+  it("reads the driver index, and nothing off the Rust entry paths", () => {
     const callSites = stubIndex({});
-    const scip = stubIndex({});
-    const ctx = ctxWith(table(), { callSites, scip });
+    const ctx = ctxWith(table(), { callSites });
     expect(rustcCallSitesOf(ctx)).toBe(callSites);
-    expect(rustAnalyzerScipOf(ctx)).toBe(scip);
     expect(rustcCallSitesOf(ctxWith(table()))).toBeUndefined();
   });
 
@@ -216,7 +197,7 @@ describe("rustcCallSitesOf — the resolve environment carries the driver index 
   });
 
   it("reports a latched acquisition and serves no index", async () => {
-    const resolver = new RustCallResolver(undefined, undefined, undefined, undefined, {
+    const resolver = new RustCallResolver(undefined, undefined, undefined, {
       acquire: async () => ({ kind: "latched", reason: "build", detail: "crate fx failed" }),
     });
     await resolver.warmResolvePass({ expectedFileCount: 1, projectRoot: ROOT });
@@ -226,7 +207,7 @@ describe("rustcCallSitesOf — the resolve environment carries the driver index 
   });
 
   it("forwards the run's units and failed crate targets for the status line (bd s3i8m T8)", async () => {
-    const resolver = new RustCallResolver(undefined, undefined, undefined, undefined, {
+    const resolver = new RustCallResolver(undefined, undefined, undefined, {
       acquire: async () => ({
         kind: "indexed",
         index: stubIndex({}),
@@ -244,7 +225,7 @@ describe("rustcCallSitesOf — the resolve environment carries the driver index 
 
   it("keeps unavailable (with its install hint) apart from disabled (bd s3i8m T8)", async () => {
     const skipped = async (acquisition: { kind: "skipped"; reason: "unavailable" | "disabled"; hint?: string }) => {
-      const resolver = new RustCallResolver(undefined, undefined, undefined, undefined, {
+      const resolver = new RustCallResolver(undefined, undefined, undefined, {
         acquire: async () => acquisition,
       });
       await resolver.warmResolvePass({ expectedFileCount: 1, projectRoot: ROOT });
@@ -259,7 +240,7 @@ describe("rustcCallSitesOf — the resolve environment carries the driver index 
   });
 
   it("forwards a latch's hint", async () => {
-    const resolver = new RustCallResolver(undefined, undefined, undefined, undefined, {
+    const resolver = new RustCallResolver(undefined, undefined, undefined, {
       acquire: async () => ({ kind: "latched", reason: "allUnitsFailed", detail: "E0463", hint: "cargo fetch" }),
     });
     await resolver.warmResolvePass({ expectedFileCount: 1, projectRoot: ROOT });
@@ -297,16 +278,14 @@ describe("RustcCallSiteSymbolResolutionStrategy (bd s3i8m T7)", () => {
     });
   });
 
-  it("CONTINUEs without a driver index, a member position, or a row — reading only the driver", () => {
-    const scip = stubIndex({ "src/main.rs:9:6": STD_PUSH });
+  it("CONTINUEs without a driver index, a member position, or a row", () => {
     const site = call("v.push(1)", "v", "push", 9, 6);
-    expect(strategy.attempt(site, ctxWith(table(), { scip }))).toEqual({ kind: "continue" });
+    expect(strategy.attempt(site, ctxWith(table()))).toEqual({ kind: "continue" });
     expect(strategy.attempt(site, ctxWith(table(), { callSites: stubIndex({}) }))).toEqual({ kind: "continue" });
     const noPosition: CallRef = { callText: "v.push(1)", receiver: "v", member: "push", startLine: 9, startColumn: 4 };
     expect(strategy.attempt(noPosition, ctxWith(table(), { callSites: stubIndex({}) }))).toEqual({
       kind: "continue",
     });
-    expect(scip.asked).toEqual([]);
   });
 
   it("CONTINUEs on an in-project definition no table symbol contains", () => {
@@ -335,51 +314,30 @@ describe("RustcCallSiteSymbolResolutionStrategy (bd s3i8m T7)", () => {
 });
 
 describe("RustCallResolver chain position of the driver slot (bd s3i8m T7)", () => {
-  // PIN-UPDATED (RESIDUAL R2): the driver slot moved to the head of the chain;
-  // SCIP stays the residual's slot after every name pass.
-  it("keeps the SCIP slot after every name pass", () => {
-    expect(new RustCallResolver().strategies.map((pass) => pass.name).slice(-2)).toEqual([
-      "traitSelfMethod",
-      "rustAnalyzerScip",
-    ]);
+  // PIN-UPDATED (T11): rust-analyzer SCIP is gone — the chain ends at the
+  // trait-provided `self.m()` pass, and the driver is its one compiler source.
+  it("ends the chain at traitSelfMethod, with no compiler slot after the name passes", () => {
+    expect(new RustCallResolver().strategies.map((pass) => pass.name).at(-1)).toBe("traitSelfMethod");
   });
 
-  it("still reaches SCIP when the driver has no row", async () => {
+  it("answers the driver's definition over a static namesake", async () => {
     const t = table(def("src/shape.rs", "bump", "Counter#bump", 6, 8), def("src/b.rs", "bump", "B#bump", 1, 3));
-    const callSites = stubIndex({});
-    const resolver = await warmedResolver({
-      callSites,
-      scip: stubIndex({ "src/main.rs:7:12": inProject("bump", "src/shape.rs", 6) }),
-    });
+    const callSites = stubIndex({ "src/main.rs:7:12": inProject("bump", "src/shape.rs", 6) });
+    const resolver = await warmedResolver({ callSites });
     expect(resolver.resolve(call("counter.bump(2)", "counter", "bump", 7, 12), ctxWith(t))?.targetSymbolId).toBe(
       "Counter#bump",
     );
     expect(callSites.asked).toEqual(["src/main.rs:7:12"]);
   });
 
-  it("answers before SCIP where both answer", async () => {
-    const t = table(def("src/shape.rs", "bump", "Counter#bump", 6, 8), def("src/b.rs", "bump", "B#bump", 1, 3));
-    const scip = stubIndex({ "src/main.rs:7:12": inProject("bump", "src/b.rs", 1) });
-    const resolver = await warmedResolver({
-      callSites: stubIndex({ "src/main.rs:7:12": inProject("bump", "src/shape.rs", 6) }),
-      scip,
-    });
-    expect(resolver.resolve(call("counter.bump(2)", "counter", "bump", 7, 12), ctxWith(t))?.targetSymbolId).toBe(
-      "Counter#bump",
-    );
-    expect(scip.asked).toEqual([]);
-  });
-
-  it("never asks SCIP after the driver DROPs a derived impl", async () => {
+  it("resolves nothing after the driver DROPs a derived impl", async () => {
     const t = table(def("src/shape.rs", "clone", "Shape#clone", 3, 5), def("src/b.rs", "clone", "B#clone", 1, 3));
-    const scip = stubIndex({ "src/main.rs:12:8": inProject("clone", "src/shape.rs", 3) });
-    const resolver = await warmedResolver({ callSites: stubIndex({ "src/main.rs:12:8": DERIVED_CLONE }), scip });
+    const resolver = await warmedResolver({ callSites: stubIndex({ "src/main.rs:12:8": DERIVED_CLONE }) });
     expect(resolver.resolve(call("t.clone()", "t", "clone", 12, 8), ctxWith(t))).toBeNull();
-    expect(scip.asked).toEqual([]);
   });
 });
 
-describe("the miss classifier's external gate reads the driver, then SCIP (bd s3i8m T7)", () => {
+describe("the miss classifier's external gate reads the driver (bd s3i8m T7)", () => {
   const namesake = () => table(def("src/stack.rs", "push", "Stack#push", 1, 3));
   const pushSite = call("v.push(1)", "v", "push", 9, 6);
 
@@ -388,31 +346,16 @@ describe("the miss classifier's external gate reads the driver, then SCIP (bd s3
     expect((await facade({ callSites })).targetsExternalImport?.(pushSite, ctxWith(namesake()))).toBe(true);
   });
 
-  it("lets the driver win over SCIP when they disagree", async () => {
-    const driverInProject = stubIndex({ "src/main.rs:9:6": inProject("push", "src/stack.rs", 1) });
-    const scipExternal = stubIndex({ "src/main.rs:9:6": STD_PUSH });
-    expect(
-      (await facade({ callSites: driverInProject, scip: scipExternal })).targetsExternalImport?.(
-        pushSite,
-        ctxWith(namesake()),
-      ),
-    ).toBe(false);
-
-    const driverExternal = stubIndex({ "src/main.rs:9:6": STD_PUSH });
-    const scipInProject = stubIndex({ "src/main.rs:9:6": inProject("push", "src/stack.rs", 1) });
-    expect(
-      (await facade({ callSites: driverExternal, scip: scipInProject })).targetsExternalImport?.(
-        pushSite,
-        ctxWith(namesake()),
-      ),
-    ).toBe(true);
+  it("is false on a driver-in-project site", async () => {
+    const callSites = stubIndex({ "src/main.rs:9:6": inProject("push", "src/stack.rs", 1) });
+    expect((await facade({ callSites })).targetsExternalImport?.(pushSite, ctxWith(namesake()))).toBe(false);
   });
 
-  it("falls back to SCIP where the driver has no row", async () => {
-    const scip = stubIndex({ "src/main.rs:9:6": STD_PUSH });
-    expect(
-      (await facade({ callSites: stubIndex({}), scip })).targetsExternalImport?.(pushSite, ctxWith(namesake())),
-    ).toBe(true);
+  it("is false on a driver-external site with no namesake — the row stays noInProjectDef", async () => {
+    const callSites = stubIndex({ "src/main.rs:9:6": STD_PUSH });
+    const resolver = await facade({ callSites });
+    expect(resolver.targetsExternalImport?.(pushSite, ctxWith(table()))).toBe(false);
+    expect(classifyResolveMiss(pushSite, ctxWith(table()), resolver, table())).toBe("noInProjectDef");
   });
 
   it("applies R3c to a driver answer: a project impl of the trait keeps the site in the denominator", async () => {
@@ -424,13 +367,10 @@ describe("the miss classifier's external gate reads the driver, then SCIP (bd s3
     ).toBe(false);
   });
 
-  it("buckets a derived impl as noInProjectDef — never external, never a miss — even against SCIP", async () => {
+  it("buckets a derived impl as noInProjectDef — never external, never a miss", async () => {
     const t = table(def("src/shape.rs", "clone", "Shape#clone", 3, 5));
     const site = call("t.clone()", "t", "clone", 12, 8);
-    const scipDerived = stubIndex({
-      "src/main.rs:12:8": { ...DERIVED_CLONE, implIsDerived: undefined } as RustScipDefinition,
-    });
-    const resolver = await facade({ callSites: stubIndex({ "src/main.rs:12:8": DERIVED_CLONE }), scip: scipDerived });
+    const resolver = await facade({ callSites: stubIndex({ "src/main.rs:12:8": DERIVED_CLONE }) });
     expect(resolver.targetsExternalImport?.(site, ctxWith(t))).toBe(false);
     expect(resolver.hasInProjectDefinition?.(site, ctxWith(t))).toBe(false);
     expect(classifyResolveMiss(site, ctxWith(t), resolver, t)).toBe("noInProjectDef");
@@ -879,5 +819,170 @@ describe("same-id windows (an inherent and a trait-impl method sharing one symbo
     expect(rustImplSelfTypeName("rustc mini mini::Store::<T>::get")).toBe("Store");
     expect(rustImplSelfTypeName("rustc core core::str::<impl str>::is_empty")).toBeNull();
     expect(rustImplSelfTypeName("rustc mini bump")).toBeNull();
+  });
+});
+
+// The classification rules the removed rust-analyzer SCIP slot pinned (bd s3i8m.6 R3a–R3d) now hold for the
+// driver's rows alone (T11): the same helpers decide, so every case keeps its driver equivalent here.
+describe("driver rows: mapping and the external proof (bd s3i8m.6 R3a)", () => {
+  it("maps by the definition's name, not the call's member, under a use-as alias", () => {
+    const t = table(def("src/shape.rs", "bump_free", "bump_free", 20, 22, "function"));
+    const callSites = stubIndex({ "src/main.rs:25:4": inProject("bump_free", "src/shape.rs", 20) });
+    expect(strategy.attempt(call("bf(2)", null, "bf", 25, 4), ctxWith(t, { callSites }))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/shape.rs", targetSymbolId: "bump_free" },
+    });
+  });
+
+  it("maps a macro invocation through the macro namespace only", () => {
+    const t = table(
+      def("src/main.rs", "twice", "twice", 13, 17, "macro"),
+      def("src/main.rs", "twice", "twice_fn", 13, 30, "function"),
+    );
+    const callSites = stubIndex({ "src/main.rs:26:4": inProject("twice", "src/main.rs", 13, "macro") });
+    expect(strategy.attempt(call("twice!()", null, "twice", 26, 4), ctxWith(t, { callSites }))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/main.rs", targetSymbolId: "twice" },
+    });
+  });
+
+  it("CONTINUEs on a direct local or an in-project type", () => {
+    const t = table(
+      def("src/shape.rs", "Boxed", "Wrap::Boxed", 17, 17, "class"),
+      def("src/shape.rs", "bump", "Counter#bump", 6, 8),
+    );
+    const callSites = stubIndex({
+      "src/main.rs:24:4": { ...inProject("", "src/main.rs", 23, "local"), symbol: "rustc local 3" },
+      "src/main.rs:22:26": inProject("Boxed", "src/shape.rs", 17, "type"),
+    });
+    const ctx = ctxWith(t, { callSites });
+    expect(strategy.attempt(call("f(1)", null, "f", 24, 4), ctx)).toEqual({ kind: "continue" });
+    expect(strategy.attempt(call("shape::Wrap::Boxed(3)", "shape::Wrap", "Boxed", 22, 26), ctx)).toEqual({
+      kind: "continue",
+    });
+  });
+
+  it("DROPs a workspace impl of a derivable trait with no definition, CONTINUEs a non-derivable one", () => {
+    const unmarked = { ...DERIVED_CLONE, implIsDerived: undefined };
+    const callSites = stubIndex({
+      "src/main.rs:21:20": unmarked,
+      "src/main.rs:27:6": { ...unmarked, name: "greet", implTrait: "Greeter" },
+      "src/main.rs:28:6": { ...unmarked, name: "greet", implTrait: undefined },
+    });
+    const ctx = ctxWith(table(), { callSites });
+    expect(strategy.attempt(call("tally.clone()", "tally", "clone", 21, 20), ctx)).toEqual({ kind: "drop" });
+    expect(strategy.attempt(call("g.greet()", "g", "greet", 27, 6), ctx)).toEqual({ kind: "continue" });
+    expect(strategy.attempt(call("g.greet()", "g", "greet", 28, 6), ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+describe("driver trait-declaration members prove external only without a project impl (bd s3i8m.6 R3c)", () => {
+  const FROM_SITE = "src/main.rs:31:14";
+  const MAP_SITE = "src/main.rs:32:9";
+  const callSites = () =>
+    stubIndex({ [FROM_SITE]: stdTraitMember("From", "from"), [MAP_SITE]: stdTraitMember("Iterator", "map") });
+  const fromSite = call("DOMString::from(x)", "DOMString", "from", 31, 14);
+  const mapSite = call("iter.map(f)", "iter", "map", 32, 9);
+  const domString = () => table(def("src/domstring.rs", "from", "DOMString.from", 11, 13));
+  const domStringImpl = { "src/domstring.rs": [traitImpl("DOMString", "From", 10, 14)] };
+
+  it("CONTINUEs when a project impl of the trait declares the member", () => {
+    expect(strategy.attempt(fromSite, ctxWith(domString(), { callSites: callSites() }, domStringImpl))).toEqual({
+      kind: "continue",
+    });
+  });
+
+  it("DROPs when no project impl of the trait declares the member", () => {
+    expect(strategy.attempt(fromSite, ctxWith(table(), { callSites: callSites() }, {}))).toEqual({ kind: "drop" });
+    // The namesake sits outside every `impl From for _` span — an inherent `from` proves nothing.
+    const outside = { "src/domstring.rs": [traitImpl("DOMString", "From", 20, 24)] };
+    expect(strategy.attempt(fromSite, ctxWith(domString(), { callSites: callSites() }, outside))).toEqual({
+      kind: "drop",
+    });
+    // An impl of ANOTHER trait declaring `from` is no impl of `From`.
+    const otherTrait = { "src/domstring.rs": [traitImpl("DOMString", "Into", 10, 14)] };
+    expect(strategy.attempt(fromSite, ctxWith(domString(), { callSites: callSites() }, otherTrait))).toEqual({
+      kind: "drop",
+    });
+  });
+
+  it("DROPs a provided trait method no project impl declares", () => {
+    const counter = table(def("src/counter.rs", "next", "Counter.next", 3, 5));
+    const iteratorImpl = { "src/counter.rs": [traitImpl("Counter", "Iterator", 2, 6)] };
+    expect(strategy.attempt(mapSite, ctxWith(counter, { callSites: callSites() }, iteratorImpl))).toEqual({
+      kind: "drop",
+    });
+  });
+
+  it("keeps the site in the denominator: targetsExternalImport is false on a project impl", async () => {
+    const resolver = await facade({ callSites: callSites() });
+    expect(resolver.targetsExternalImport?.(fromSite, ctxWith(domString(), {}, domStringImpl))).toBe(false);
+    expect(resolver.targetsExternalImport?.(fromSite, ctxWith(domString(), {}, {}))).toBe(true);
+  });
+});
+
+describe("driver trait-declaration members on a proven external receiver (bd s3i8m.6 R3d)", () => {
+  const TURBOFISH_SITE = "src/main.rs:43:20";
+  const CLONE_SITE = "src/main.rs:44:12";
+  const callSites = () =>
+    stubIndex({ [TURBOFISH_SITE]: stdTraitMember("From", "from"), [CLONE_SITE]: stdTraitMember("Clone", "clone") });
+  const vecFrom = call("Vec::<u8>::from(x)", "Vec::<u8>", "from", 43, 20);
+  const txClone = call("tx.clone()", "tx", "clone", 44, 12);
+  const domString = () => table(def("src/domstring.rs", "from", "DOMString.from", 11, 13));
+  const domStringImpl = { "src/domstring.rs": [traitImpl("DOMString", "From", 10, 14)] };
+  const shape = () => table(def("src/shape.rs", "clone", "Shape.clone", 3, 5));
+  const cloneImpl = { "src/shape.rs": [traitImpl("Shape", "Clone", 2, 6)] };
+
+  it("DROPs a turbofish std path receiver no project impl of the trait targets", () => {
+    expect(strategy.attempt(vecFrom, ctxWith(domString(), { callSites: callSites() }, domStringImpl))).toEqual({
+      kind: "drop",
+    });
+  });
+
+  it("DROPs a receiver typed to a std type no project impl of the trait targets", () => {
+    const ctx: CallContext = {
+      ...ctxWith(shape(), { callSites: callSites() }, cloneImpl),
+      localBindings: { tx: [{ line: 40, type: "std::sync::mpsc::Sender" }] },
+    };
+    expect(strategy.attempt(txClone, ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("keeps R3c's rule when the path spells the trait, not the receiver type", () => {
+    const ufcs = call("std::io::Write::write(&mut w, buf)", "std::io::Write", "write", 45, 25);
+    const writer = table(def("src/sink.rs", "write", "Sink.write", 3, 5));
+    const writeImpl = { "src/sink.rs": [traitImpl("Sink", "Write", 2, 6)] };
+    const ufcsIndex = stubIndex({ "src/main.rs:45:25": stdTraitMember("Write", "write") });
+    expect(strategy.attempt(ufcs, ctxWith(writer, { callSites: ufcsIndex }, writeImpl))).toEqual({
+      kind: "continue",
+    });
+  });
+
+  it("keeps R3c's rule on an untyped receiver", () => {
+    expect(strategy.attempt(txClone, ctxWith(shape(), { callSites: callSites() }, cloneImpl))).toEqual({
+      kind: "continue",
+    });
+  });
+});
+
+describe("RustCallResolver#hasInProjectDefinition with the driver (bd s3i8m.6 R3b)", () => {
+  it("is false when the driver proves the target a direct local", async () => {
+    const t = table(def("src/util.rs", "f", "f", 1, 3, "function"));
+    const resolver = await warmedResolver({
+      callSites: stubIndex({
+        "src/main.rs:24:4": { ...inProject("", "src/main.rs", 23, "local"), symbol: "rustc local 3" },
+      }),
+    });
+    expect(resolver.hasInProjectDefinition(call("f(1)", null, "f", 24, 4), ctxWith(t))).toBe(false);
+  });
+
+  it("keeps the table's answer for a callable, an external, no row and no index", async () => {
+    const t = table(def("src/stack.rs", "push", "Stack#push", 1, 3), def("src/util.rs", "f", "f", 1, 3, "function"));
+    const resolver = await warmedResolver({
+      callSites: stubIndex({ "src/main.rs:9:6": STD_PUSH, "src/main.rs:24:4": inProject("f", "src/util.rs", 1) }),
+    });
+    expect(resolver.hasInProjectDefinition(call("f(1)", null, "f", 24, 4), ctxWith(t))).toBe(true);
+    expect(resolver.hasInProjectDefinition(call("v.push(1)", "v", "push", 9, 6), ctxWith(t))).toBe(true);
+    expect(resolver.hasInProjectDefinition(call("v.push(1)", "v", "push", 40, 6), ctxWith(t))).toBe(true);
+    expect(new RustCallResolver().hasInProjectDefinition(call("f(1)", null, "f", 24, 4), ctxWith(t))).toBe(true);
   });
 });

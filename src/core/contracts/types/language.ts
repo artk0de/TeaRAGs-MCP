@@ -1238,121 +1238,40 @@ export interface RustExternalSignatureSources {
   readonly sizeCapBytes: number;
 }
 
-/** Where a rust-analyzer SCIP occurrence's symbol is defined (bd s3i8m.6). */
-export interface RustScipDefinition {
-  /** The SCIP symbol string (`rust-analyzer cargo std 1.88.0 vec/Vec#push().`); a local is `local <n>@<relPath>`. */
+/**
+ * Where the rustc call-site driver says one call site's callee is defined
+ * (bd s3i8m T6; row mapping: research/rustc-driver/SPEC.md §3).
+ */
+export interface RustCallSiteDefinition {
+  /** `rustc <crate> <resolved impl path, else callee path>`; an indirect local is `rustc local <kind> <name>`. */
   readonly symbol: string;
-  /** The SCIP package name of the symbol: `std`, `core`, `alloc`, a dependency or a workspace crate. */
+  /** The crate the callee is defined in: `std`, `core`, `alloc`, a dependency or a workspace crate. */
   readonly package: string;
-  /** True when the index holds the symbol's definition — the project's own code. */
+  /** True when the definition lies under the project root — the project's own code. */
   readonly inProject: boolean;
   /** Project-relative file of the definition; present iff `inProject`. */
   readonly relPath?: string;
   /** 1-based line of the definition; present iff `inProject`. */
   readonly line?: number;
-  /** The descriptor's last name, backticks stripped; `""` for a local. */
+  /** The callee's own name; `""` for a local. */
   readonly name: string;
-  /** `callable` = `().` suffix, `type` = `#` (enum variants too), `macro` = `!`, `local` = `local ` symbol, else `other`. */
+  /** What the callee is: a fn / method, a type (constructor), a macro, a local binding, else `other`. */
   readonly kind: "callable" | "type" | "macro" | "local" | "other";
-  /** The trait of `impl#[X][Trait]m().` — the second bracket; absent for an inherent or free symbol. */
+  /** The trait of the impl the callee is a member of; absent for an inherent or free callee. */
   readonly implTrait?: string;
   /**
-   * The trait of a trait-BODY member `<Trait>#m().` — the declaration, which
-   * proves the trait and not the impl a call dispatches to (bd s3i8m.6 R3c);
-   * absent for an `impl#` member, a free symbol and a non-callable.
+   * The trait of a trait-BODY member — the declaration, which proves the trait
+   * and not the impl a call dispatches to (bd s3i8m.6 R3c); absent for an impl
+   * member, a free callee and a non-callable.
    */
   readonly declaringTrait?: string;
-  /** True when ANY definition in the index belongs to the same package — a workspace crate, not a dependency. */
+  /** True when the callee's crate is a workspace crate, not a dependency. */
   readonly packageInProject: boolean;
-}
-
-/**
- * The JSON-safe form of a decoded rust-analyzer SCIP index — what the disk
- * cache stores and `RustAnalyzerScipIndex` answers from. Lines and columns are
- * SCIP's: 0-based lines, UTF-16 code-unit columns.
- */
-export interface RustAnalyzerScipIndexData {
-  /** Interned symbol strings; references and definitions point into it. */
-  readonly symbols: readonly string[];
-  /** relPath → flat `[line0, startCol, symbolIndex, ...]` triples, one per single-line REFERENCE occurrence. */
-  readonly references: Readonly<Record<string, readonly number[]>>;
-  /** symbolIndex (as a string key) → `[relPath, line0]` of its DEFINITION occurrence. */
-  readonly definitions: Readonly<Record<string, readonly [string, number]>>;
-}
-
-/**
- * Call-site → definition lookup over one rust-analyzer `scip` run of a project
- * (bd s3i8m.6). Built once per codegraph run; `null` when no reference
- * occurrence starts at the position.
- */
-export interface RustAnalyzerScipIndex {
-  /** `line` is 1-based; `utf16Col` is 0-based and names the START of the member token. */
-  definitionAt: (relPath: string, line: number, utf16Col: number) => RustScipDefinition | null;
-  /** Digest of the environment and content the index was produced from. */
-  readonly identity: string;
-}
-
-/**
- * How one acquisition of a project's rust-analyzer SCIP index settled
- * (bd s3i8m.6 R2b). `latched` is a persisted refusal (timeout, RSS, offline,
- * exit, toolchain skew) that stands until the environment changes; `skipped`
- * means nothing was attempted.
- */
-export type RustAnalyzerScipAcquisition =
-  | {
-      kind: "indexed";
-      index: RustAnalyzerScipIndex;
-      cacheHit: boolean;
-      toolchainSkew: boolean;
-      /** Measured only when the acquisition spawned rust-analyzer. */
-      wallMs?: number;
-      peakRssMb?: number;
-    }
-  | { kind: "latched"; reason: string; detail: string; hint?: string }
-  | { kind: "skipped"; reason: "disabled" | "noBinary" | "noBulkNoCache" };
-
-/**
- * Whether an acquisition that misses the content cache may spawn
- * rust-analyzer. Decided by the domain over the project's `.rs` files the
- * adapter walked (repo-relative), so the bulk policy stays out of the adapter.
- */
-export type RustAnalyzerScipAdmission = (projectRustRelPaths: readonly string[]) => "spawn" | "reuseOnly";
-
-/**
- * `codegraph.rustAnalyzer` as plain data, plus who may spawn: the working-tree
- * graph build runs under a short wall budget and must never start a
- * multi-minute child, so it reads the cache only (`spawn: "never"`).
- */
-export interface RustAnalyzerScipSourceConfig {
-  enabled: boolean;
-  exec: boolean;
-  path?: string;
-  timeoutSec: number;
-  maxRssMb: number;
-  spawn: "allowed" | "never";
-}
-
-/**
- * The port the Rust resolver acquires its rust-analyzer SCIP index through
- * (bd s3i8m.6 R2b). The composition layer injects the adapter through
- * `LanguageFactory`, as it does `RustExternalSignatureSources`.
- */
-export interface RustAnalyzerScipSource {
-  /** Never rejects. */
-  acquire: (request: {
-    projectRoot: string;
-    admission: RustAnalyzerScipAdmission;
-  }) => Promise<RustAnalyzerScipAcquisition>;
-}
-
-/**
- * Where the rustc call-site driver says one call site's callee is defined
- * (bd s3i8m T6; row mapping: research/rustc-driver/SPEC.md §3). The SCIP shape
- * plus the one fact SCIP cannot carry: the dispatched impl is
- * `#[automatically_derived]`. A derived impl is derive output, neither a table
- * symbol nor an external call — its site belongs to no in-project definition.
- */
-export interface RustCallSiteDefinition extends RustScipDefinition {
+  /**
+   * The dispatched impl is `#[automatically_derived]`: derive output, neither
+   * a table symbol nor an external call — its site belongs to no in-project
+   * definition.
+   */
   readonly implIsDerived?: boolean;
   /**
    * The callee is a local binding, param or field whose type is a closure, a
@@ -1455,7 +1374,7 @@ export interface RustCallSiteSourceConfig {
 /**
  * The port the Rust resolver acquires its rustc call-site index through
  * (bd s3i8m T6). The composition layer injects the adapter through
- * `LanguageFactory`, as it does `RustAnalyzerScipSource`.
+ * `LanguageFactory`, as it does `RustExternalSignatureSources`.
  */
 export interface RustCallSiteSource {
   /** Never rejects. */

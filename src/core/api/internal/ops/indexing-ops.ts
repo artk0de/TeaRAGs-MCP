@@ -17,7 +17,6 @@ import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
-import type { RustAnalyzerInstallHintLookup } from "../../../adapters/rust-analyzer/index.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { RustcDriverStatusRecord } from "../../../contracts/rustc-driver-status.js";
@@ -81,7 +80,6 @@ import type {
 } from "../../../types.js";
 import { isEnrichmentRecompute, rechunkSelectorOf } from "../../public/dto/index.js";
 import type { PathCollectionResolver } from "../collection-resolver.js";
-import { safeRustAnalyzerInstallHint } from "../rust-analyzer-install-hint.js";
 import { assertRequestedLanguagesPresent } from "./language-presence-guard.js";
 import { bindLanguagePresencePorts } from "./language-presence-ports.js";
 import { skippedCalibrationReport, skippedResidualReport, type ResidualResolvePort } from "./residual-resolve-port.js";
@@ -114,11 +112,6 @@ export interface IndexingOpsDeps {
   enrichment: EnrichmentCoordinator;
   snapshotDir: string;
   statsCache?: StatsCache;
-  /**
-   * rust-analyzer install-hint lookup (bd s3i8m.6), injected by bootstrap —
-   * domains and ops never import the adapter's discovery. Omitted → no hint.
-   */
-  rustAnalyzerInstallHint?: RustAnalyzerInstallHintLookup;
   allPayloadSignals?: PayloadSignalDescriptor[];
   statsAccumulators?: readonly StatsAccumulatorDescriptor[];
   reranker?: RerankerPort;
@@ -296,7 +289,6 @@ export class IndexingOps {
   private readonly enrichment: EnrichmentCoordinator;
   private readonly snapshotDir: string;
   private readonly statsCache?: StatsCache;
-  private readonly rustAnalyzerInstallHint?: RustAnalyzerInstallHintLookup;
   private readonly allPayloadSignals?: PayloadSignalDescriptor[];
   private readonly statsAccumulators: readonly StatsAccumulatorDescriptor[];
   private readonly reranker?: RerankerPort;
@@ -358,7 +350,6 @@ export class IndexingOps {
     this.enrichment = deps.enrichment;
     this.snapshotDir = deps.snapshotDir;
     this.statsCache = deps.statsCache;
-    this.rustAnalyzerInstallHint = deps.rustAnalyzerInstallHint;
     this.allPayloadSignals = deps.allPayloadSignals;
     this.statsAccumulators = deps.statsAccumulators ?? [];
     this.reranker = deps.reranker;
@@ -434,11 +425,7 @@ export class IndexingOps {
     const startedAtMs = Date.now();
     try {
       const ranStats = await this.runClaimed(path, options, progressCallback, enrichmentProgress);
-      const stats = await this.withRustcDriverStatus(
-        this.withRustAnalyzerHint(ranStats, path, collectionName),
-        collectionName,
-        startedAtMs,
-      );
+      const stats = await this.withRustcDriverStatus(ranStats, collectionName, startedAtMs);
       heldUntilEnrichmentSettles = true;
       const release = this.releaseCollectionWhenEnrichmentSettles(
         collectionName,
@@ -450,26 +437,6 @@ export class IndexingOps {
     } finally {
       if (!heldUntilEnrichmentSettles) await this.releaseCollectionForIndexing(collectionName);
     }
-  }
-
-  /**
-   * Attach the rust-analyzer install hint (bd s3i8m.6) to the run's stats, once.
-   * The languages come from the stats cache the run just refreshed; the hint
-   * needs only those and binary discovery, so it does not wait for enrichment.
-   * Advice about an optional binary: an absent lookup, an unreadable cache or a
-   * throwing probe all mean "no hint" and never touch the run's outcome.
-   */
-  private withRustAnalyzerHint(stats: IndexStats, path: string, collectionName: string): IndexStats {
-    if (!this.rustAnalyzerInstallHint) return stats;
-    let languages: string[];
-    try {
-      languages = Object.keys(this.statsCache?.load(collectionName)?.distributions.language ?? {});
-    } catch {
-      return stats;
-    }
-    if (languages.length === 0) return stats;
-    const hint = safeRustAnalyzerInstallHint(this.rustAnalyzerInstallHint, { path, languages });
-    return hint === null ? stats : { ...stats, rustAnalyzerHint: hint };
   }
 
   /**

@@ -29,7 +29,6 @@
  */
 
 import { readManifestFiles } from "../../../adapters/filesystem/dependency-manifests.js";
-import { processRustAnalyzerScipSource } from "../../../adapters/rust-analyzer/index.js";
 import { processRustExternalSignatureSources } from "../../../adapters/rust-signatures/index.js";
 import { processRustcCallSiteSource } from "../../../adapters/rustc-driver/callsite-source.js";
 import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-pool.js";
@@ -39,8 +38,6 @@ import type {
   LanguageCrossRunParseCache,
   LanguageFactoryDescriptor,
   ManifestFilesReader,
-  RustAnalyzerScipSource,
-  RustAnalyzerScipSourceConfig,
   RustCallSiteSource,
   RustCallSiteSourceConfig,
   RustExternalSignatureSources,
@@ -142,12 +139,6 @@ export interface CodegraphWorkerConfig {
   /** `CODEGRAPH_RESIDUAL_MENU_LIMIT` for the in-thread provider's resolution runner. */
   residualMenuLimit?: number;
   /**
-   * `codegraph.rustAnalyzer` plus who may spawn (bd s3i8m.6 R2b) — plain data,
-   * so the thread that resolves builds the SCIP source itself. Absent or
-   * disabled ⇒ no source, nothing spawned.
-   */
-  rustAnalyzer?: RustAnalyzerScipSourceConfig;
-  /**
    * `codegraph.rustDriver` plus who may spawn (bd s3i8m T8) — plain data, so
    * the thread that resolves builds the rustc call-site source itself. Absent
    * or disabled ⇒ no source, no `cargo check`.
@@ -175,7 +166,6 @@ interface LanguageModule {
     crossRunParseCache?: LanguageCrossRunParseCache;
     manifestFilesReader?: ManifestFilesReader;
     rustExternalSignatureSources?: RustExternalSignatureSources;
-    rustAnalyzerScipSource?: RustAnalyzerScipSource;
     rustcCallSiteSource?: RustCallSiteSource;
   }) => LanguageFactoryDescriptor;
   CrossRunParseCache: new () => LanguageCrossRunParseCache;
@@ -270,20 +260,13 @@ async function loadCodegraphPoolBuilder(poolFactoryModulePath: string): Promise<
 }
 
 /**
- * The Rust index sources the in-thread `LanguageFactory` receives: the
- * process-scoped rust-analyzer SCIP source and rustc call-site source, each
- * only when its slot is on.
+ * The Rust index source the in-thread `LanguageFactory` receives: the
+ * process-scoped rustc call-site source, only when the driver slot is on.
  */
-export function rustIndexSourcesOf(config: Pick<CodegraphWorkerConfig, "rustAnalyzer" | "rustDriver">): {
-  rustAnalyzerScipSource?: RustAnalyzerScipSource;
+export function rustIndexSourcesOf(config: Pick<CodegraphWorkerConfig, "rustDriver">): {
   rustcCallSiteSource?: RustCallSiteSource;
 } {
-  return {
-    ...(config.rustAnalyzer?.enabled
-      ? { rustAnalyzerScipSource: processRustAnalyzerScipSource(config.rustAnalyzer) }
-      : {}),
-    ...(config.rustDriver?.enabled ? { rustcCallSiteSource: processRustcCallSiteSource(config.rustDriver) } : {}),
-  };
+  return config.rustDriver?.enabled ? { rustcCallSiteSource: processRustcCallSiteSource(config.rustDriver) } : {};
 }
 
 /**
@@ -333,9 +316,8 @@ export async function createCodegraphProviderRuntime(
     ambiguousResolveMode: config.ambiguousResolveMode,
     manifestFilesReader: readManifestFiles,
     rustExternalSignatureSources: processRustExternalSignatureSources(),
-    // The rust-analyzer SCIP source and the rustc call-site source likewise
-    // (bd s3i8m.6 R2b, T8): built here, in the thread whose pass-2 awaits them,
-    // and only when their slot is on.
+    // The rustc call-site source likewise (bd s3i8m T8): built here, in the
+    // thread whose pass-2 awaits it, and only when its slot is on.
     ...rustIndexSourcesOf(config),
     ...(runtimeDeps.crossRunParseCache ? { crossRunParseCache: runtimeDeps.crossRunParseCache } : {}),
   });

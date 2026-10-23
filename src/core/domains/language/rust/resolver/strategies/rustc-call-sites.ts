@@ -6,14 +6,14 @@ import type {
   SymbolResolutionStrategy,
 } from "../../../../../contracts/types/language.js";
 import {
+  mapRustCallSiteDefinitionToSymbol,
   mapRustGeneratedTraitImplToDeclaration,
   mapRustGeneratingMacroToSymbol,
-  mapScipDefinitionToSymbol,
+  rustCallSiteDefinitionIsExternal,
   rustCallSiteIsDerivedImpl,
   rustCallSiteIsForeignGenerated,
   rustcCallSiteDefinitionOf,
-  rustScipDefinitionIsExternal,
-} from "../scip-resolution.js";
+} from "../call-site-resolution.js";
 import { rustCallIsMacroInvocation, type ResolverConfig } from "./shared.js";
 
 /**
@@ -138,7 +138,7 @@ function driverVerdict(definition: RustCallSiteDefinition, call: CallRef, ctx: C
       mapRustGeneratedTraitImplToDeclaration(definition, ctx) ?? mapRustGeneratingMacroToSymbol(definition, ctx);
     return target === null ? DROP : resolved(target);
   }
-  const edgeTarget = mapScipDefinitionToSymbol(definition, call, ctx);
+  const edgeTarget = mapRustCallSiteDefinitionToSymbol(definition, call, ctx);
   if (edgeTarget !== null) return resolved(edgeTarget);
-  return rustScipDefinitionIsExternal(definition, call, ctx) ? DROP : CONTINUE;
+  return rustCallSiteDefinitionIsExternal(definition, call, ctx) ? DROP : CONTINUE;
 }

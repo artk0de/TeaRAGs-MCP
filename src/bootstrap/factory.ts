@@ -28,7 +28,6 @@ import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import type { EmbeddingModelGuardPort } from "../core/adapters/qdrant/ports.js";
-import type { RustAnalyzerInstallHintLookup } from "../core/adapters/rust-analyzer/index.js";
 import { reapGitChildProcesses, VcsAdapterFactory } from "../core/adapters/vcs/index.js";
 import {
   buildFileChunkPoints,
@@ -126,11 +125,7 @@ import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/cont
 import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
 import type { EmbeddingConfig } from "../core/contracts/types/config.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
-import type {
-  LanguageFactoryDescriptor,
-  RustAnalyzerScipSourceConfig,
-  RustCallSiteSourceConfig,
-} from "../core/contracts/types/language.js";
+import type { LanguageFactoryDescriptor, RustCallSiteSourceConfig } from "../core/contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
 import type { WorkingTree } from "../core/contracts/types/working-tree.js";
@@ -163,7 +158,6 @@ import {
   RegistryCollectionEmbeddingsResolver,
   type PreparedCollectionEmbeddingBinding,
 } from "./registry-collection-embeddings-resolver.js";
-import { createRustAnalyzerInstallHintLookup } from "./rust-analyzer-install-hint.js";
 
 /**
  * TurboQuant migration progress poll cap. Bounded so a long background optimizer
@@ -928,7 +922,6 @@ export function wireCodegraph(
     // their resolver with the configured mode.
     ambiguousResolveMode: ambiguousMode,
     residualMenuLimit: codegraph.residual.menuLimit,
-    rustAnalyzer: codegraphWorkerConfig.rustAnalyzer,
     rustDriver: codegraphWorkerConfig.rustDriver,
     // Codegraph-layer exclusion (user-supplied patterns; generated + test
     // files are excluded unconditionally). The shape mirrors
@@ -980,7 +973,6 @@ export function wireCodegraph(
       ambiguousResolveMode: codegraphWorkerConfig.ambiguousResolveMode,
       dbMemoryLimit: codegraphWorkerConfig.dbMemoryLimit,
       dbThreads: codegraphWorkerConfig.dbThreads,
-      rustAnalyzer: codegraphWorkerConfig.rustAnalyzer,
       rustDriver: codegraphWorkerConfig.rustDriver,
     },
     // The verdicts an index run re-applies after its walk; the tree build
@@ -1206,7 +1198,6 @@ function buildCodegraphWorkerDescriptor(deps: {
     dbThreads: codegraph.dbThreads,
     ambiguousResolveMode: ambiguousMode,
     residualMenuLimit: codegraph.residual.menuLimit,
-    rustAnalyzer: rustAnalyzerScipSourceConfigOf(codegraph),
     rustDriver: rustCallSiteSourceConfigOf(codegraph),
     ...(temporal ? { temporal } : {}),
   };
@@ -1227,16 +1218,6 @@ function buildCodegraphWorkerDescriptor(deps: {
     serializableConfig: codegraphWorkerConfig,
   };
   return { codegraphWorkerConfig, workerDescriptor };
-}
-
-/**
- * `codegraph.rustAnalyzer` as the SCIP source config every resolving thread
- * builds from (bd s3i8m.6 R2b). Spawning is allowed here; the working-tree
- * graph build narrows it to cache-only itself.
- */
-function rustAnalyzerScipSourceConfigOf(codegraph: CodegraphZodConfig): RustAnalyzerScipSourceConfig {
-  const { enabled, exec, path, timeoutSec, maxRssMb } = codegraph.rustAnalyzer;
-  return { enabled, exec, ...(path ? { path } : {}), timeoutSec, maxRssMb, spawn: "allowed" };
 }
 
 /**
@@ -1324,14 +1305,6 @@ function activeEnrichmentProviders(
  * sizing, the tuning, and the env snapshot recorded back into the registry —
  * while `shared` supplies the handles that must stay process-wide.
  */
-/** The install-hint lookup as an optional dep entry — spread, so an off slot leaves the key absent. */
-function rustAnalyzerInstallHintDep(zodConfig: ReturnType<typeof getZodConfig>): {
-  rustAnalyzerInstallHint?: RustAnalyzerInstallHintLookup;
-} {
-  const lookup = createRustAnalyzerInstallHintLookup(zodConfig);
-  return lookup ? { rustAnalyzerInstallHint: lookup } : {};
-}
-
 function createIngestFacade(
   zodConfig: ReturnType<typeof getZodConfig>,
   config: AppConfig,
@@ -1377,9 +1350,6 @@ function createIngestFacade(
     modelGuard: shared.modelGuard,
     collectionRegistry: shared.collectionRegistry,
     driftReporter: shared.driftReporter,
-    // Per configuration, like the residual pass: a project whose env turns the
-    // rust-analyzer slot (or codegraph) off is never told to install it.
-    ...rustAnalyzerInstallHintDep(zodConfig),
     teaRagsVersion: pkg.version,
     // Per-language code versions of THIS build, stamped onto the registry entry
     // by the runs that actually rebuild a language layer (bd tea-rags-mcp-frwka).
@@ -1624,7 +1594,6 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     turboQuant: zodConfig.qdrantTune.turboQuant,
     modelGuard: infra.modelGuard,
-    ...rustAnalyzerInstallHintDep(zodConfig),
     graphFacade: codegraphContext?.graphFacade,
     tracePathOps,
     namingLexiconOps,

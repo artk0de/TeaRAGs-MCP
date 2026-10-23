@@ -652,7 +652,7 @@ export function rustCallSiteShape(node: AstNode): RustCallShape | null {
  * The member-name token of the call {@link rustCallSiteShape} describes (the
  * `macro` name, the field of `a.b()`, the last segment of `a::b()`, a bare
  * callee), or null when the shape is null. Its position is what a
- * rust-analyzer SCIP reference occurrence is keyed by, and the only thing that
+ * rustc call-site driver row is keyed by, and the only thing that
  * tells `A::new().build()` from the nested `A::new()` — they share a start.
  */
 export function rustCallMemberToken(node: AstNode): AstNode | null {

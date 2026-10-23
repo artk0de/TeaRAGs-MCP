@@ -188,7 +188,7 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
     expect(checkpointCalls).toBe(0);
   });
 
-  // bd s3i8m.6 R2b — the external acquisition (rust-analyzer SCIP) must settle
+  // bd s3i8m.6 R2b — the external acquisition (the rustc call-site index) must settle
   // before the pass sizes itself or reads its first spill line.
   it("awaits warmResolvePass before prepareResolvePass and before the first spill line", async () => {
     const events: string[] = [];

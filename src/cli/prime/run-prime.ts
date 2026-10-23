@@ -314,10 +314,6 @@ export async function runPrime(input: {
       // App method, not the retired barrel re-export (bd tea-rags-mcp-89k7k.9)
       // — Uniform Access through the wired App prime already holds.
       languageCapabilities: ctx.app.resolveLanguageCapabilities(Object.keys(metrics?.distributions?.language ?? {})),
-      rustAnalyzerHint: ctx.app.resolveRustAnalyzerInstallHint({
-        path,
-        languages: Object.keys(metrics?.distributions?.language ?? {}),
-      }),
       // What the last Rust resolve pass's driver did, as the codegraph run persisted it (bd s3i8m).
       rustcDriver: status.value.rustcDriver ?? null,
       drift: drift.status === "fulfilled" ? drift.value : null,

@@ -13,7 +13,6 @@ import type { AmbiguousResolveMode, TemporalSymbolCommitBuffer } from "../../../
 import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
-  RustAnalyzerScipSourceConfig,
   RustCallSiteSourceConfig,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
@@ -76,13 +75,11 @@ export interface CodegraphDeps {
   /** `CODEGRAPH_RESIDUAL_MENU_LIMIT`, spread into the symbols provider deps. */
   residualMenuLimit?: number;
   /**
-   * `codegraph.rustAnalyzer` (bd s3i8m.6 R2b): the composition root builds the
-   * main-thread `LanguageFactory`'s rust-analyzer SCIP source from it, as the
-   * enrichment worker does from `CodegraphWorkerConfig.rustAnalyzer`. Absent or
+   * `codegraph.rustDriver` (bd s3i8m T8): the composition root builds the
+   * main-thread `LanguageFactory`'s rustc call-site source from it, as the
+   * enrichment worker does from `CodegraphWorkerConfig.rustDriver`. Absent or
    * disabled ⇒ no source.
    */
-  rustAnalyzer?: RustAnalyzerScipSourceConfig;
-  /** `codegraph.rustDriver` (bd s3i8m T8): the rustc call-site source, built the same way. */
   rustDriver?: RustCallSiteSourceConfig;
   /**
    * Worker-pool descriptor built by the bootstrap composition root (which

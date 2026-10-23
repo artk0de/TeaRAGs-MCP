@@ -46,7 +46,6 @@ describe("runPrime — rustc driver line from the persisted status", () => {
     createAppContextMock.mockResolvedValue({
       app: {
         resolveLanguageCapabilities,
-        resolveRustAnalyzerInstallHint: () => null,
         getIndexStatus: vi.fn().mockResolvedValue({
           isIndexed: true,
           status: "indexed",

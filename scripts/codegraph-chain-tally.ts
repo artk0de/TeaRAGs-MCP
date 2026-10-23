@@ -76,7 +76,6 @@ import {
   collectDependencyManifestSources,
   readManifestFiles,
 } from "../src/core/adapters/filesystem/dependency-manifests.js";
-import { processRustAnalyzerScipSource } from "../src/core/adapters/rust-analyzer/scip-source.js";
 import { processRustExternalSignatureSources } from "../src/core/adapters/rust-signatures/index.js";
 import {
   acquireRustcCallSites,
@@ -98,8 +97,6 @@ import {
   type SymbolResolutionTarget,
 } from "../src/core/contracts/types/codegraph.js";
 import type {
-  RustAnalyzerScipAcquisition,
-  RustAnalyzerScipSource,
   RustCallSiteSource,
   RustExternalSignatureSources,
   RustExternalSourcesOfProject,
@@ -520,8 +517,6 @@ function newProductionRunState(root: string, factory: LanguageFactory): Codegrap
 }
 
 export interface RunResult {
-  /** Present only under `--rust-analyzer`. */
-  rustAnalyzerWarm?: RustAnalyzerWarm;
   /** Present only under `--rustc-driver`. */
   rustcDriverWarm?: RustcDriverWarm;
   /** Rust only: what the external signature sources located (bd s3i8m.7) — one report line. */
@@ -641,21 +636,9 @@ export interface ChainTallyRunOptions {
   /** Collect every `missWithInProjectDef` site for `--residual-rows` (bd tea-rags-mcp-s3i8m.1). */
   residualRows?: boolean;
   /**
-   * Hand the Rust resolver the rust-analyzer SCIP source (no-exec, schema
-   * defaults) and await `warmResolvePass()` before `prepareResolvePass()`,
-   * timing the warm separately (bd tea-rags-mcp-s3i8m.6 R3-3). Off by default.
-   */
-  rustAnalyzer?: boolean;
-  /** `--rust-analyzer-exec`: build scripts and proc macros run (trusted corpora only). */
-  rustAnalyzerExec?: boolean;
-  /** `--rust-analyzer-timeout-sec`: wall-clock budget override (default 900). */
-  rustAnalyzerTimeoutSec?: number;
-  /** `--rust-analyzer-max-rss-mb`: process-tree RSS budget override (default 4096). */
-  rustAnalyzerMaxRssMb?: number;
-  /**
    * Hand the Rust resolver the rustc call-site driver source (bd s3i8m T8) and
-   * await `warmResolvePass()` before `prepareResolvePass()`, as `--rust-analyzer`
-   * does for SCIP. Off by default.
+   * await `warmResolvePass()` before `prepareResolvePass()`, timing the warm
+   * separately. Off by default.
    */
   rustcDriver?: boolean;
   /** `--rustc-driver-timeout-sec`: wall-clock budget override (default 3600). */
@@ -688,15 +671,6 @@ export function describeRustcDriverWarm(warm: RustcDriverWarm): string {
     .map((key) => ` · ${key} ${warm[key]}`)
     .join("");
   return `RUSTC-DRIVER warm ${(warm.warmMs / 1000).toFixed(2)}s · ${warm.status} · units ${warm.units} · failed ${warm.failed}${counters}`;
-}
-
-/** `--rust-analyzer`: the warm's wall time and how the SCIP acquisition ended. */
-export interface RustAnalyzerWarm {
-  warmMs: number;
-  /** `indexed (cacheHit|fresh)` / `latched: <reason>` / `skipped: <reason>` / `not acquired`. */
-  outcome: string;
-  /** Whether the SCIP source ran with build scripts and proc macros (`exec`) or without (`no-exec`). */
-  mode: "exec" | "no-exec";
 }
 
 /**
@@ -780,27 +754,6 @@ function tallyKindStats(
   kindSamples.push(`${site.relPath}:${call.startLine} ${String(call.receiver)}.${call.member}`.replace(/\s+/g, " "));
 }
 
-/** The spawn-allowed source (schema defaults unless overridden), recording every acquisition it answers. */
-function recordingScipSource(
-  sink: RustAnalyzerScipAcquisition[],
-  budget: { exec?: boolean; timeoutSec?: number; maxRssMb?: number } = {},
-): RustAnalyzerScipSource {
-  const inner = processRustAnalyzerScipSource({
-    enabled: true,
-    exec: budget.exec === true,
-    timeoutSec: budget.timeoutSec ?? 900,
-    maxRssMb: budget.maxRssMb ?? 4096,
-    spawn: "allowed",
-  });
-  return {
-    acquire: async (request) => {
-      const acquisition = await inner.acquire(request);
-      sink.push(acquisition);
-      return acquisition;
-    },
-  };
-}
-
 /** The spawn-allowed rustc call-site source (schema defaults unless overridden), timing and recording every runner outcome. */
 function recordingRustcCallSiteSource(
   sink: { outcome: RustcCallSiteAcquisition; wallMs: number }[],
@@ -849,19 +802,6 @@ export function describeRustSignatures(sources: RustExternalSignatureSources, ro
   return `RUST-SIGNATURES table ${identity} · std ${found.std?.cacheKey ?? "absent"} · ${deps}`;
 }
 
-/** One line for the SCIP acquisition outcome (indexed / cacheHit / latched / skipped). */
-export function describeScipAcquisition(acquisition: RustAnalyzerScipAcquisition | undefined): string {
-  if (acquisition === undefined) return "not acquired";
-  switch (acquisition.kind) {
-    case "indexed":
-      return `indexed (${acquisition.cacheHit ? "cacheHit" : "fresh"})`;
-    case "latched":
-      return `latched: ${acquisition.reason}`;
-    case "skipped":
-      return `skipped: ${acquisition.reason}`;
-  }
-}
-
 export async function run(
   root: string,
   lang: string,
@@ -897,7 +837,6 @@ export async function run(
   // the python nor the java provider reads it, so the existing legs are unmoved.
   // The manifest walk is injected the way production's composition injects it,
   // or Go's module map reads no go.mod and every module-path import misses.
-  const scipAcquisitions: RustAnalyzerScipAcquisition[] = [];
   const driverAcquisitions: { outcome: RustcCallSiteAcquisition; wallMs: number }[] = [];
   // Production's composition always injects the external signature sources (bd s3i8m.7).
   const signatureSources = processRustExternalSignatureSources();
@@ -905,15 +844,6 @@ export async function run(
     repoRoot: root,
     manifestFilesReader: readManifestFiles,
     rustExternalSignatureSources: signatureSources,
-    ...(opts.rustAnalyzer === true
-      ? {
-          rustAnalyzerScipSource: recordingScipSource(scipAcquisitions, {
-            exec: opts.rustAnalyzerExec,
-            timeoutSec: opts.rustAnalyzerTimeoutSec,
-            maxRssMb: opts.rustAnalyzerMaxRssMb,
-          }),
-        }
-      : {}),
     ...(opts.rustcDriver === true
       ? {
           rustcCallSiteSource: recordingRustcCallSiteSource(driverAcquisitions, {
@@ -997,23 +927,15 @@ export async function run(
   // over every file the walk absorbed, then each resolver is told its volume.
   await runState.seal(async () => symbolTable);
   const runner = new CallEdgeResolutionRunner(factory, runState);
-  let rustAnalyzerWarm: RustAnalyzerWarm | undefined;
   let rustcDriverWarm: RustcDriverWarm | undefined;
-  // One warm acquires every injected index; its wall time is kept out of pass 2.
+  // One warm acquires the injected index; its wall time is kept out of pass 2.
   let warmMs = 0;
-  if (opts.rustAnalyzer === true || opts.rustcDriver === true) {
+  if (opts.rustcDriver === true) {
     const warmStart = performance.now();
     await runner.warmResolvePass();
     warmMs = performance.now() - warmStart;
+    rustcDriverWarm = rustcDriverWarmOf(driverAcquisitions[driverAcquisitions.length - 1]);
   }
-  if (opts.rustAnalyzer === true) {
-    rustAnalyzerWarm = {
-      warmMs,
-      outcome: describeScipAcquisition(scipAcquisitions[scipAcquisitions.length - 1]),
-      mode: opts.rustAnalyzerExec === true ? "exec" : "no-exec",
-    };
-  }
-  if (opts.rustcDriver === true) rustcDriverWarm = rustcDriverWarmOf(driverAcquisitions[driverAcquisitions.length - 1]);
   runner.prepareResolvePass();
 
   for (const extraction of scored) {
@@ -1080,7 +1002,7 @@ export async function run(
       }
     }
   }
-  // The SCIP warm is reported on its own line, not folded into pass 2.
+  // The driver warm is reported on its own line, not folded into pass 2.
   const pass2Ms = performance.now() - pass2Start - warmMs;
 
   let persisted: PersistedEdgeTally | undefined;
@@ -1143,7 +1065,6 @@ export async function run(
     edgeDump: edgeDump ?? undefined,
     residualRows: residualRows ?? undefined,
     timeOnly,
-    ...(rustAnalyzerWarm === undefined ? {} : { rustAnalyzerWarm }),
     ...(rustcDriverWarm === undefined ? {} : { rustcDriverWarm }),
     ...(lang === "rust" ? { rustSignatures: describeRustSignatures(signatureSources, root) } : {}),
     timing:
@@ -1180,11 +1101,6 @@ export function parseArgs(argv: readonly string[]) {
     quiet: argv.includes("--quiet"),
     dispatch: !argv.includes("--no-dispatch"),
     timeOnly: argv.includes("--time-only"),
-    // `--rust-analyzer-exec` implies `--rust-analyzer`: exec is a mode of that source.
-    rustAnalyzer: argv.includes("--rust-analyzer") || argv.includes("--rust-analyzer-exec"),
-    rustAnalyzerExec: argv.includes("--rust-analyzer-exec"),
-    rustAnalyzerTimeoutSec: readPositiveNumber("--rust-analyzer-timeout-sec", read("--rust-analyzer-timeout-sec")),
-    rustAnalyzerMaxRssMb: readPositiveNumber("--rust-analyzer-max-rss-mb", read("--rust-analyzer-max-rss-mb")),
     rustcDriver: argv.includes("--rustc-driver"),
     rustcDriverTimeoutSec: readPositiveNumber("--rustc-driver-timeout-sec", read("--rustc-driver-timeout-sec")),
     rustcDriverMaxRssMb: readPositiveNumber("--rustc-driver-max-rss-mb", read("--rustc-driver-max-rss-mb")),
@@ -1213,10 +1129,6 @@ async function main(): Promise<void> {
     persisted: opts.persisted,
     edgeDump: opts.dumpEdges !== null,
     residualRows: opts.residualRows !== null,
-    rustAnalyzer: opts.rustAnalyzer,
-    rustAnalyzerExec: opts.rustAnalyzerExec,
-    rustAnalyzerTimeoutSec: opts.rustAnalyzerTimeoutSec,
-    rustAnalyzerMaxRssMb: opts.rustAnalyzerMaxRssMb,
     rustcDriver: opts.rustcDriver,
     rustcDriverTimeoutSec: opts.rustcDriverTimeoutSec,
     rustcDriverMaxRssMb: opts.rustcDriverMaxRssMb,
@@ -1309,11 +1221,6 @@ async function main(): Promise<void> {
     );
   }
   if (result.rustSignatures !== undefined) out.push(result.rustSignatures);
-  if (result.rustAnalyzerWarm !== undefined) {
-    out.push(
-      `RUST-ANALYZER SCIP warm ${(result.rustAnalyzerWarm.warmMs / 1000).toFixed(2)}s · ${result.rustAnalyzerWarm.mode} · ${result.rustAnalyzerWarm.outcome}`,
-    );
-  }
   if (result.rustcDriverWarm !== undefined) out.push(describeRustcDriverWarm(result.rustcDriverWarm));
   process.stdout.write(`${out.join("\n")}\n`);
 

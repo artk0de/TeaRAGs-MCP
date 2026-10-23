@@ -267,23 +267,6 @@ export const codegraphResidualSchema = z.object({
 });
 
 /**
- * rust-analyzer as the last Rust resolution slot (bd s3i8m.6). A missing
- * binary never fails a run — the slot is absent and one install hint is shown.
- */
-export const codegraphRustAnalyzerSchema = z.object({
-  /** `CODEGRAPH_RUST_ANALYZER` — on when a binary is found; `0` turns the slot off. */
-  enabled: booleanFromEnvWithDefault(true),
-  /** `CODEGRAPH_RUST_ANALYZER_EXEC` — let build scripts and proc-macros run (trusted corpora only). */
-  exec: booleanFromEnvWithDefault(false),
-  /** `CODEGRAPH_RUST_ANALYZER_PATH` — explicit binary, tried before every other discovery tier. */
-  path: z.string().optional(),
-  /** `CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC` — wall budget of one rust-analyzer run. */
-  timeoutSec: intWithDefault(900),
-  /** `CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB` — resident-memory budget of one rust-analyzer run. */
-  maxRssMb: intWithDefault(4096),
-});
-
-/**
  * `codegraph.rustDriver` — the rustc call-site driver (bd s3i8m T8,
  * research/rustc-driver/SPEC.md §8.3). It IS `cargo check`, so build scripts
  * and proc macros run; on by default whenever discovery finds the driver or
@@ -375,8 +358,6 @@ export const codegraphSchema = z.object({
   ambiguousResolveMode: z.enum(["strict", "first"]).default("strict"),
   /** Model-assisted resolution of residual call sites. */
   residual: codegraphResidualSchema.prefault({}),
-  /** rust-analyzer as the last Rust resolution slot. */
-  rustAnalyzer: codegraphRustAnalyzerSchema.prefault({}),
   rustDriver: codegraphRustDriverSchema.prefault({}),
 });
 

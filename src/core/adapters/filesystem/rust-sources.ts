@@ -1,6 +1,5 @@
 /**
- * The `.rs` tree listing both Rust index runners key their caches on (the
- * rust-analyzer SCIP content key; the rustc call-site reuse stamps).
+ * The `.rs` tree listing the rustc call-site runner keys its reuse stamps on.
  */
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";

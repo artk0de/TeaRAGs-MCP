@@ -1133,7 +1133,7 @@ export class EnrichmentCoordinator {
       this.emitProgress(runState, event);
     };
     // Pass 2 applies nothing while a provider's finalize is pending (a
-    // rust-analyzer SCIP acquisition can take minutes), so the completion
+    // rustc call-site acquisition can take minutes), so the completion
     // runner keeps the same throttled heartbeat going meanwhile (bd s3i8m.6 R2b).
     runState.completion.finalizeKeepalive = (collectionName) => {
       this.maybeHeartbeat(collectionName, runState);

@@ -27,7 +27,7 @@ export const capability: LanguageCapability = {
   testFiles,
   codegraph: {
     tier: "moderate",
-    tech: "11-strategy (rustc first, SCIP last); trait dispatch; return/field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
+    tech: "10-strategy (rustc call-site driver first); trait dispatch; return/field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
     // Generic return substitution reads the declaring owner's genericParameters.
     resolverReadsTypeDeclarations: true,
     // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
@@ -170,6 +170,10 @@ export const capability: LanguageCapability = {
   //   to the file's one symbolId of that name owned by the impl's self type
   //   the compiler path names (an inherent and a trait-impl method of one type
   //   compose one id, and the table keeps its first window).
+  // - bd s3i8m T11 — the rust-analyzer SCIP engine is gone: the
+  //   `rustAnalyzerScip` pass, its source and `CODEGRAPH_RUST_ANALYZER*` are
+  //   removed, and the rustc driver is the one compiler source — the R3a–R3d
+  //   rules and the miss classifier's gates read its rows alone.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

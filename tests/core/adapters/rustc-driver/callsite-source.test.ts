@@ -1,6 +1,6 @@
 /**
  * The process-scoped `RustCallSiteSource` over the rustc call-site runner
- * (bd s3i8m T8): admission as the rust-analyzer SCIP source honours it, the
+ * (bd s3i8m T8): admission as the domain decides it, the
  * runner statuses mapped onto the port's acquisition variants, and one
  * acquisition per project root in flight.
  */

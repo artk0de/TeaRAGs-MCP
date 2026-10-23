@@ -1339,7 +1339,7 @@ export interface CallRef {
   /**
    * Position of the call's member-name token — the `b` of `a.b()`, the last
    * segment of `a::b()`, the name of `m!()` (bd s3i8m.6 R3-1): 1-based line,
-   * 0-based UTF-16 column. What a compiler-grade index (rust-analyzer SCIP)
+   * 0-based UTF-16 column. What a compiler-grade index (the rustc driver)
    * keys a reference by, and what tells a nested call from the call it sits
    * in when both start at one column. Optional: ABSENT means unknown.
    */

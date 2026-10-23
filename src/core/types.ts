@@ -157,12 +157,6 @@ export interface IndexStats {
   };
   /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
   worktreeSeed?: WorktreeSeedReport;
-  /**
-   * One-line rust-analyzer install hint (bd s3i8m.6): present only when the
-   * index holds Rust and no binary was found. Filled once per run by
-   * IndexingOps; the MCP tool and the CLI both render from this field.
-   */
-  rustAnalyzerHint?: string;
   /** How the rustc call-site driver settled for this run (bd s3i8m T9); rendered as one line. */
   rustcDriver?: RustcDriverStatus;
 }
@@ -601,8 +595,6 @@ export interface IndexStatus {
    * `IndexStats.worktreeSeed` so `--json` reports it.
    */
   worktreeSeed?: WorktreeSeedReport;
-  /** The run's rust-analyzer install hint, attached by the CLI worker from `IndexStats.rustAnalyzerHint`. */
-  rustAnalyzerHint?: string;
   /** How the rustc call-site driver settled for this run (bd s3i8m T9); rendered as one line. */
   rustcDriver?: RustcDriverStatus;
   /**
