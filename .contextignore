@@ -13,6 +13,10 @@ docs/**
 .beads/**
 logs/**
 benchmarks/**
+# Vendored third-party crates of native drivers (13 MB, ~1.2k files): not project
+# code; indexing them OOMed review_changes on a fresh worktree.
+native/*/vendor/**
+native/*/target/**
 package.json
 prompts.example.json
 README.md

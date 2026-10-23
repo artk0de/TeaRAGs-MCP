@@ -268,9 +268,12 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
 ### 8.3 Safety and budgets
 
 - The driver IS `cargo check`, so build scripts and proc macros RUN, and it has
-  no no-exec mode: unexpanded proc macros give no typeck results. Enabling it is
-  an explicit trust decision: `CODEGRAPH_RUST_DRIVER=on`, default off. This must
-  be surfaced the way `CODEGRAPH_RUST_ANALYZER_EXEC` was.
+  no no-exec mode: unexpanded proc macros give no typeck results. Owner decision
+  2026-10-23: ON BY DEFAULT whenever discovery (§8.2) finds the driver or the
+  pinned toolchain with `rustc-dev` — a Rust developer's workspace builds
+  anyway. `CODEGRAPH_RUST_DRIVER=off` disables it. The index output (MCP + CLI)
+  states that the driver ran `cargo check` (build scripts and proc macros
+  executed), and prints the install hint when no toolchain was found.
 - `CMAKE_POLICY_VERSION_MINIMUM=3.5` in the child env: CMake ≥4 refuses
   `cmake_minimum_required` < 3.5, which killed tikv's grpcio-sys / snappy-sys
   build scripts on this host (measured 2026-10-23).
