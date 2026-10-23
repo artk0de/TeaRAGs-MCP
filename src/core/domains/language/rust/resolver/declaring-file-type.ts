@@ -10,8 +10,10 @@ import {
   type RustImportBinding,
 } from "./strategies/shared.js";
 
-/** `use super::*;` / `use self::*;` — a glob of a prefix module the import parser leaves unread. */
-const RUST_BARE_GLOB_IMPORT = /^\s*(?:(?:pub(?:\([^)]*\))?\s+)?use\s+)?(?:super|self|crate)(?:::super)*::\*\s*;?\s*$/;
+/** Whether an import's text spells `name` as a path segment — the only way it can bind it explicitly. */
+function rustImportTextNames(importText: string, name: string): boolean {
+  return importText.split(/[^A-Za-z0-9_]+/).includes(name);
+}
 
 /**
  * Place a type `name` spelled in ANOTHER file's declaration — a callee's
@@ -63,8 +65,9 @@ export function rustDeclaringFileImportOf(
   const bound: { importText: string; binding: RustImportBinding }[] = [];
   for (const importText of importTexts) {
     const bindings = rustImportBindings(importText);
-    // A bare glob (`use super::*;` in every `mod tests`) binds no name explicitly.
-    if (bindings === null && RUST_BARE_GLOB_IMPORT.test(importText)) continue;
+    // An unread import that never spells the name (`use super::{X, *};` in a
+    // `mod tests`) cannot bind it explicitly; a glob never outranks a `use`.
+    if (bindings === null && !rustImportTextNames(importText, name)) continue;
     // An import the parser cannot read may bind the name: nothing is proven.
     if (bindings === null) return undefined;
     for (const binding of bindings) {

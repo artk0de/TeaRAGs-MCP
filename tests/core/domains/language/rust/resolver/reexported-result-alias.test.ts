@@ -218,6 +218,21 @@ describe.each([false, true])("Rust re-exported project Result alias (materialize
     expect(target("p.to_string()")).toBeUndefined();
   });
 
+  it("reads the alias past a grouped `use super::{X, *}` in the tests module (tikv decimal.rs:2931)", () => {
+    const target = fixture(
+      {
+        ...codec(reexported),
+        "src/codec/decimal.rs": decimal(
+          "mod tests {\n  use super::{Decimal, *};\n  fn run(s: &[u8]) {\n    let v = Decimal::from_bytes(s).unwrap().unwrap();\n  }\n}",
+        ),
+      },
+      "src/codec/decimal.rs",
+      materialized,
+    );
+    expect(target("Decimal::from_bytes(s).unwrap()", "tests.run")).toBeUndefined();
+    expect(target("Decimal::from_bytes(s).unwrap().unwrap()", "tests.run")).toBe("Res#unwrap");
+  });
+
   it("refuses an alias the re-export chain cannot place: no hop is typed, nothing binds by name", () => {
     const target = fixture(
       {
