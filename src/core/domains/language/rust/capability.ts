@@ -117,6 +117,10 @@ export const capability: LanguageCapability = {
   // - bd tea-rags-mcp-s3i8m (agreeing returns) — a member declared twice in a
   //   file with one return (inherent + trait impl) keeps its return type, and
   //   `-> Self::Target` reads the impl's concrete `type Target = X`.
+  // - bd tea-rags-mcp-s3i8m (generic constructors, alias bodies) — a generic
+  //   type's fact lists the inherent associated fns that return it and bind a
+  //   generic from an argument (`fn new(ptr: &T) -> Trusted<T>`), and a
+  //   `type X<T> = …` fact carries its aliased type.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

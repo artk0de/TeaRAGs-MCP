@@ -4,6 +4,7 @@ import {
   ChainTypeSymbolResolutionStrategy,
   propagateReceiverType,
   splitAtBracketDepthZero,
+  type NominalTypeRef,
   type ReceiverTypePorts,
   type ReceiverTypingPorts,
 } from "../../../kernel/index.js";
@@ -11,6 +12,7 @@ import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-const
 import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
 import { resolveRustNominalType, rustDeclaredMemberReturnType } from "../declared-return-type.js";
+import { rustPlaceTypeThroughDeclaringFile } from "../declaring-file-type.js";
 import { rustStdDerefTarget } from "../external-type-hops.js";
 import { rustPatternBindingType } from "../pattern-binding-type.js";
 import { createRustTypeMemberLookup, rustTypedMissIsProven } from "../rust-type-member-lookup.js";
@@ -21,6 +23,7 @@ import { lookupRustSymbolsByShortName, rustImportMatchesReceiver, type ResolverC
 /** Import roots that are never this project's code. */
 const STD_IMPORT_ROOT = /^(::)?(std|core|alloc)::/;
 const RUST_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*/;
+const RUST_IDENTIFIER_ONLY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** A slice / array binding spelling over a named element type: `[Key]`, `[crate::Key]`. */
 const RUST_SLICE_OF_NAMED_TYPE = /^\[([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)\]$/;
 
@@ -73,7 +76,7 @@ const RUST_RECEIVER_TYPE_PORTS: ReceiverTypePorts = {
     const constructor = constructorCallHead(receiver);
     return constructor === undefined
       ? { ...exact, form: "class" }
-      : rustDeclaredMemberReturnType({ ...exact, form: "class" }, constructor.assocFn, ctx);
+      : rustAssociatedCallResult({ ...exact, form: "class" }, constructor, atLine, ctx);
   },
   seedHead: () => undefined,
   memberTypeOf: rustDeclaredMemberReturnType,
@@ -117,7 +120,7 @@ const RUST_CLONE_CALL = /\.\s*clone\(\)$/;
 export function rustCallResultInitType(callResult: CallResultBinding, ctx: CallContext): TypeRef | undefined {
   const init = callResult.initExpression;
   if (init === undefined) return undefined;
-  const folded = rustExpressionType(init, callResult.line, ctx) ?? rustAssociatedCallType(init, ctx);
+  const folded = rustExpressionType(init, callResult.line, ctx) ?? rustAssociatedCallType(init, callResult.line, ctx);
   if (folded !== undefined) return folded;
   const source = rustValuePreservingSource(init);
   return source === undefined ? undefined : rustExpressionType(source, callResult.line, ctx);
@@ -141,13 +144,70 @@ export function rustValuePreservingSource(init: string): string | undefined {
  * constructor-named ones (`isRustConstructorAssocFn`); a `let` initializer
  * names its callee outright, so the declaration speaks for it.
  */
-function rustAssociatedCallType(init: string, ctx: CallContext): TypeRef | undefined {
+function rustAssociatedCallType(init: string, atLine: number, ctx: CallContext): TypeRef | undefined {
   const head = constructorCallHead(init);
   if (head === undefined) return undefined;
   const typeName = typeOfPathHead(head.type, ctx);
   if (typeName === null || !declaresInProjectType(typeName, ctx)) return undefined;
   const owner = resolveRustNominalType({ form: "class", name: typeName }, ctx);
-  return owner === undefined ? undefined : rustDeclaredMemberReturnType({ ...owner, form: "class" }, head.assocFn, ctx);
+  return owner === undefined ? undefined : rustAssociatedCallResult({ ...owner, form: "class" }, head, atLine, ctx);
+}
+
+/**
+ * `Type::assoc(args)`'s declared return. When the return is the owner itself
+ * with its generic arguments unfixed (`Trusted::new(ptr: &T) -> Trusted<T>`),
+ * the owner's generic constructor fact binds them from the arguments' types
+ * read at `atLine` (bd tea-rags-mcp-s3i8m): `Trusted::new(window)` with a
+ * placed `window: &Window` is `Trusted<Window>`. Every generic parameter must
+ * be bound by a placed project type, else the bare head stands, as before.
+ */
+function rustAssociatedCallResult(
+  owner: NominalTypeRef,
+  call: { readonly assocFn: string; readonly args: string },
+  atLine: number,
+  ctx: CallContext,
+): TypeRef | undefined {
+  const returned = rustDeclaredMemberReturnType(owner, call.assocFn, ctx);
+  if (returned?.form !== "instance" || returned.name !== owner.name || returned.args !== undefined) return returned;
+  const boundary = owner.name.indexOf(".rs::");
+  if (boundary < 0) return returned;
+  const fact = ctx.typeDeclarations?.[owner.name.slice(0, boundary + 3)]?.find(
+    (declaration) => declaration.typeId === owner.name.slice(boundary + 5) && !declaration.reopens,
+  );
+  const constructors = fact?.genericInitializers?.filter((constructor) => constructor.name === call.assocFn) ?? [];
+  if (fact?.genericParameters === undefined || constructors.length !== 1) return returned;
+  const argumentTexts = call.args.trim() === "" ? [] : splitAtBracketDepthZero(call.args, ",").map((a) => a.trim());
+  if (argumentTexts.at(-1) === "") argumentTexts.pop();
+  const { binds } = constructors[0];
+  if (argumentTexts.length !== binds.length) return returned;
+  const bound = new Map<string, TypeRef>();
+  for (const [index, parameter] of binds.entries()) {
+    if (parameter === null) continue;
+    const argumentText = argumentTexts[index].replace(/^&(?:mut\s+)?/, "").trim();
+    const argument = rustExpressionType(argumentText, atLine, ctx) ?? rustImportedLocalType(argumentText, atLine, ctx);
+    if (argument?.form !== "instance" || !argument.name.includes(".rs::")) return returned;
+    const earlier = bound.get(parameter);
+    if (earlier !== undefined && JSON.stringify(earlier) !== JSON.stringify(argument)) return returned;
+    bound.set(parameter, argument);
+  }
+  const typeArguments = fact.genericParameters.map((parameter) => bound.get(parameter));
+  return typeArguments.every((arg) => arg !== undefined) ? { ...returned, args: typeArguments } : returned;
+}
+
+/**
+ * A local whose annotation names a type the lexical read cannot place —
+ * `global: &GlobalScope` while `impl Trait for GlobalScope` blocks in other
+ * files share the name — placed through the caller file's own `use` imports
+ * (bd tea-rags-mcp-s3i8m). Only a plain, argument-free annotation.
+ */
+function rustImportedLocalType(name: string, atLine: number, ctx: CallContext): TypeRef | undefined {
+  if (!RUST_IDENTIFIER_ONLY.test(name)) return undefined;
+  const visible = rustVisibleReceiverBinding(name, atLine, ctx);
+  if (visible?.channel !== "local") return undefined;
+  const { typeRef } = visible.binding;
+  if (typeRef !== undefined && (typeRef.form !== "instance" || typeRef.args !== undefined)) return undefined;
+  const annotated = typeRef?.name ?? visible.binding.type;
+  return annotated.length === 0 ? undefined : rustPlaceTypeThroughDeclaringFile(annotated, ctx.callerFile, ctx);
 }
 
 /**
@@ -312,7 +372,7 @@ function rustGenericTypeHead(path: string): string | null {
  * so `Type::f(a)(b)` and `Type::f(a).x` are not one (mirrors Go's
  * `goBareCallHead`).
  */
-function constructorCallHead(receiver: string): { type: string; assocFn: string } | undefined {
+function constructorCallHead(receiver: string): { type: string; assocFn: string; args: string } | undefined {
   const head = RUST_IDENTIFIER.exec(receiver)?.[0];
   if (head === undefined) return undefined;
   let typeEnd = head.length;
@@ -342,7 +402,9 @@ function constructorCallHead(receiver: string): { type: string; assocFn: string 
     const ch = receiver[i];
     if (ch === "(") depth++;
     else if (ch === ")" && --depth === 0) {
-      return i === receiver.length - 1 ? { type: receiver.slice(0, typeEnd), assocFn } : undefined;
+      return i === receiver.length - 1
+        ? { type: receiver.slice(0, typeEnd), assocFn, args: receiver.slice(open + 1, i) }
+        : undefined;
     }
   }
   return undefined;

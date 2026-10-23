@@ -42,7 +42,12 @@ import { rustNameOf } from "./name-of.js";
 import { collectRustPatternBindings } from "./pattern-bindings.js";
 import { collectRustReturnTypes, rustDeclaredTypeRef } from "./return-types.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
-import { isRustLocalScopeBoundary, rustTypeDeclarationFactOf } from "./type-declarations.js";
+import {
+  isRustLocalScopeBoundary,
+  rustImplGenericConstructors,
+  rustTypeDeclarationFactOf,
+  type RustImplGenericConstructor,
+} from "./type-declarations.js";
 
 export interface RustExtractInput {
   tree: MaterializedTree;
@@ -150,8 +155,15 @@ function collectRustDeclarationReadings(root: AstNode, relPath: string): RustDec
   const out: RustSymbolKindReading[] = [];
   const typeDeclarations: TypeDeclarationFact[] = [];
   const classFieldTypesByClassKey = createIdentifierRecord<Record<string, string>>();
+  const constructorsByTypeId = new Map<string, RustImplGenericConstructor[]>();
   const visit = (node: AstNode, scope: readonly string[], local: boolean): void => {
     if (!local) {
+      const constructors = rustImplGenericConstructors(node);
+      const implName = constructors.length > 0 ? rustNameOf(node)?.name : undefined;
+      if (implName !== undefined) {
+        const typeId = [...scope, implName].join("::");
+        constructorsByTypeId.set(typeId, [...(constructorsByTypeId.get(typeId) ?? []), ...constructors]);
+      }
       const fact = rustTypeDeclarationFactOf(node, scope);
       if (fact !== null) {
         typeDeclarations.push(fact);
@@ -177,7 +189,33 @@ function collectRustDeclarationReadings(root: AstNode, relPath: string): RustDec
     for (const child of node.children) visit(child, childScope, childLocal);
   };
   visit(root, [], false);
-  return { readings: out, typeDeclarations, classFieldTypesByClassKey };
+  return {
+    readings: out,
+    typeDeclarations: typeDeclarations.map((fact) => withGenericConstructors(fact, constructorsByTypeId)),
+    classFieldTypesByClassKey,
+  };
+}
+
+/**
+ * A generic type's own fact with the generic constructors its file's inherent
+ * impls declare (bd tea-rags-mcp-s3i8m), each bound position named by the
+ * type's generic parameter. A name two impls declare is ambiguous and dropped.
+ */
+function withGenericConstructors(
+  fact: TypeDeclarationFact,
+  constructorsByTypeId: ReadonlyMap<string, readonly RustImplGenericConstructor[]>,
+): TypeDeclarationFact {
+  const parameters = fact.genericParameters;
+  const constructors = constructorsByTypeId.get(fact.typeId);
+  if (fact.reopens || parameters === undefined || constructors === undefined) return fact;
+  const genericInitializers = constructors
+    .filter((constructor) => constructors.filter((other) => other.name === constructor.name).length === 1)
+    .map((constructor) => ({
+      name: constructor.name,
+      labels: constructor.binds.map(() => null),
+      binds: constructor.binds.map((position) => (position === null ? null : (parameters[position] ?? null))),
+    }));
+  return genericInitializers.length === 0 ? fact : { ...fact, genericInitializers };
 }
 
 /** The kind of the first reading `chunk` was built from — first, as `collectSymbols` keeps the first node per id. */

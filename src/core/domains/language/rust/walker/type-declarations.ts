@@ -45,7 +45,7 @@ import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { TypeDeclarationFact } from "../../../../contracts/types/codegraph-extraction.js";
 import { rustDeclaredEnumVariantFields, rustDeclaredStructFields } from "./field-types.js";
 import { rustNameOf } from "./name-of.js";
-import { rustGenericParameters } from "./return-types.js";
+import { rustDeclaredTypeRef, rustGenericParameters } from "./return-types.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
 
 const DECLARATION_NODE_TYPES: ReadonlySet<string> = new Set([
@@ -93,6 +93,7 @@ export function rustTypeDeclarationFactOf(node: AstNode, scope: readonly string[
       fieldTypeArguments[`${variant}::${field}`] = typeArguments;
     }
   }
+  const aliasedType = node.type === "type_item" ? rustDeclaredTypeRef(node.childForFieldName("type")) : undefined;
   return {
     typeId: [...scope, name].join("::"),
     symbolKind,
@@ -102,7 +103,64 @@ export function rustTypeDeclarationFactOf(node: AstNode, scope: readonly string[
     ...(genericParameters.length > 0 ? { genericParameters } : {}),
     ...(Object.keys(genericFieldParameters).length > 0 ? { genericFieldParameters } : {}),
     ...(Object.keys(fieldTypeArguments).length > 0 ? { fieldTypeArguments } : {}),
+    ...(aliasedType === undefined ? {} : { aliasedType }),
   };
+}
+
+/** One associated fn of an inherent impl that builds its self type from a generic-typed argument. */
+export interface RustImplGenericConstructor {
+  readonly name: string;
+  /** Per parameter, the position of the self type's argument it binds, or `null`. */
+  readonly binds: readonly (number | null)[];
+}
+
+/**
+ * The associated fns of an inherent `impl<..> X<..>` that return the self type
+ * (`Self`, or `X<..>` spelled as the impl spells it) and take an argument typed
+ * as one of the self type's generic arguments, by value or behind `&` / `&mut`
+ * (bd tea-rags-mcp-s3i8m): `impl<T> Trusted<T> { fn new(ptr: &T) -> Trusted<T> }`
+ * → `{ name: "new", binds: [0] }`. A parameter typed any other way (`Vec<T>`)
+ * binds nothing; a fn generic shadowing the name binds nothing.
+ */
+export function rustImplGenericConstructors(node: AstNode): RustImplGenericConstructor[] {
+  if (node.type !== "impl_item" || node.childForFieldName("trait") !== null) return [];
+  const selfType = rustDeclaredTypeRef(node.childForFieldName("type"));
+  if (selfType?.form !== "instance" || selfType.args === undefined) return [];
+  const implParameters = rustGenericParameters(node);
+  const selfArguments = selfType.args;
+  const positionOf = (name: string): number =>
+    implParameters.includes(name)
+      ? selfArguments.findIndex((arg) => arg.form === "instance" && arg.args === undefined && arg.name === name)
+      : -1;
+  const constructors: RustImplGenericConstructor[] = [];
+  for (const item of node.childForFieldName("body")?.namedChildren ?? []) {
+    if (item.type !== "function_item") continue;
+    const name = item.childForFieldName("name")?.text;
+    const parameters = item.childForFieldName("parameters")?.namedChildren ?? [];
+    const returned = rustDeclaredTypeRef(item.childForFieldName("return_type"));
+    const returnsSelf =
+      returned?.form === "instance" &&
+      ((returned.name === "Self" && returned.args === undefined) ||
+        JSON.stringify(returned) === JSON.stringify(selfType));
+    if (name === undefined || !returnsSelf || parameters.some((p) => p.type === "self_parameter")) continue;
+    const fnGenerics = rustGenericParameters(item);
+    const binds = parameters
+      .filter((parameter) => parameter.type === "parameter")
+      .map((parameter) => {
+        const parameterType = rustDeclaredTypeRef(parameter.childForFieldName("type"));
+        if (
+          parameterType?.form !== "instance" ||
+          parameterType.args !== undefined ||
+          fnGenerics.includes(parameterType.name)
+        ) {
+          return null;
+        }
+        const position = positionOf(parameterType.name);
+        return position < 0 ? null : position;
+      });
+    if (binds.some((bind) => bind !== null)) constructors.push({ name, binds });
+  }
+  return constructors;
 }
 
 /** `impl Tr for X` as a re-opening of `X` — see the module doc. Null for an inherent impl. */

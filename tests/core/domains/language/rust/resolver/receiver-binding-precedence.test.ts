@@ -96,6 +96,14 @@ impl CmSketch {
 
 const target = (resolution: ReturnType<ReturnType<typeof fixture>["resolve"]>) => resolution?.targetSymbolId ?? null;
 
+// The production runner's edge for one call site — its context carries every
+// file's `use` imports, which a declaring-file placement reads.
+const edgeTarget = (f: ReturnType<typeof fixture>, callExpression: string): string | null => {
+  const edges = f.edges().filter((edge) => edge.callExpression === callExpression);
+  expect(edges.length).toBeLessThanOrEqual(1);
+  return edges.length === 0 ? null : `${edges[0].targetRelPath}::${edges[0].targetSymbolId}`;
+};
+
 // bd tea-rags-mcp-s3i8m — a receiver bound on two channels (localBindings and
 // callResultBindings) reads the binding declared LATER, and the constructor
 // heuristic `let x = T::new(..)` yields to `T::new`'s declared return.
@@ -314,3 +322,192 @@ describe.each([false, true])(
     });
   },
 );
+
+// Measured lost-edge guards (servo animation_manager / fetch): a parameter is
+// pinned `let trusted_x = Trusted::new(x)` and re-rooted in a closure as
+// `let x = trusted_x.root()`. Three facts carry the shadowing let's type:
+// `Trusted::new(ptr: &T) -> Trusted<T>` binds `T` from its argument, `root()`
+// returns the project alias `DomRoot<T> = Root<Dom<T>>`, and `Root<T>` derefs
+// through `<T as Deref>::Target`.
+const rootFile = `
+use std::ops::Deref;
+pub struct Dom<T> { ptr: *const T }
+impl<T> Deref for Dom<T> {
+    type Target = T;
+    fn deref(&self) -> &T { todo!() }
+}
+pub struct Root<T> { value: T }
+impl<T> Deref for Root<T>
+where
+    T: Deref,
+{
+    type Target = <T as Deref>::Target;
+    fn deref(&self) -> &Self::Target { todo!() }
+}
+pub type DomRoot<T> = Root<Dom<T>>;
+`;
+
+const refcountedFile = `
+use crate::root::DomRoot;
+pub struct Trusted<T> { ptr: *const T }
+impl<T> Trusted<T> {
+    pub fn new(ptr: &T) -> Trusted<T> { todo!() }
+    pub fn root(&self) -> DomRoot<T> { todo!() }
+}
+`;
+
+const windowFile = `
+pub struct Document;
+pub struct Window;
+impl Window { pub fn Document(&self) -> Document { todo!() } }
+pub struct Worker;
+impl Worker { pub fn Document(&self) -> Document { todo!() } }
+`;
+
+const trustedCaller = (parameter: string) => `
+use crate::refcounted::Trusted;
+use crate::window::{Window, Worker};
+fn run(window: ${parameter}) {
+    let trusted_window = Trusted::new(window);
+    let callback = Box::new(move || {
+        let window = trusted_window.root();
+        window.Document();
+    });
+}
+`;
+
+describe.each([false, true])("Rust re-rooted Trusted<T> receiver (materialized=%s)", (materialized) => {
+  const resolveDocument = (files: Record<string, string>) =>
+    edgeTarget(fixture(files, materialized), "window.Document()");
+  const corpus = (caller: string, overrides: Record<string, string> = {}) => ({
+    "src/root.rs": rootFile,
+    "src/refcounted.rs": refcountedFile,
+    "src/window.rs": windowFile,
+    "src/main.rs": caller,
+    ...overrides,
+  });
+
+  it("types the servo shape: Trusted::new(&Window).root() derefs to Window", () => {
+    expect(resolveDocument(corpus(trustedCaller("&Window")))).toBe("src/window.rs::Window#Document");
+  });
+
+  it("expands the alias even when an `impl DomRoot<T>` block shares its name (servo root.rs)", () => {
+    const aliasImpl = `${rootFile}impl<T> DomRoot<T> { pub fn as_traced(&self) {} }\n`;
+    expect(resolveDocument(corpus(trustedCaller("&Window"), { "src/root.rs": aliasImpl }))).toBe(
+      "src/window.rs::Window#Document",
+    );
+  });
+
+  it("places the argument's type through the caller's imports when a trait impl elsewhere shares its name (servo GlobalScope)", () => {
+    const helpers = "use crate::window::Window;\npub trait Helper {}\nimpl Helper for Window {}\n";
+    expect(resolveDocument(corpus(trustedCaller("&Window"), { "src/helpers.rs": helpers }))).toBe(
+      "src/window.rs::Window#Document",
+    );
+  });
+
+  it("keeps the type after the pin itself is re-bound by a clone (servo fetch.rs trusted_global)", () => {
+    const caller = trustedCaller("&Window").replace(
+      "        window.Document();\n",
+      "        let trusted_window = trusted_window.clone();\n        window.Document();\n",
+    );
+    expect(resolveDocument(corpus(caller))).toBe("src/window.rs::Window#Document");
+  });
+
+  it("binds the generic argument through `&mut T` too", () => {
+    const mutRefcounted = refcountedFile.replace("pub fn new(ptr: &T)", "pub fn new(ptr: &mut T)");
+    expect(resolveDocument(corpus(trustedCaller("&mut Window"), { "src/refcounted.rs": mutRefcounted }))).toBe(
+      "src/window.rs::Window#Document",
+    );
+  });
+
+  it("expands a project alias spelled in the declaring file (alias declared there)", () => {
+    const inline = `${rootFile}
+pub struct Trusted<T> { ptr: *const T }
+impl<T> Trusted<T> {
+    pub fn new(ptr: &T) -> Trusted<T> { todo!() }
+    pub fn root(&self) -> DomRoot<T> { todo!() }
+}
+`;
+    const caller = trustedCaller("&Window").replace("use crate::refcounted::Trusted;", "use crate::root::Trusted;");
+    const files = corpus(caller, { "src/root.rs": inline, "src/refcounted.rs": "pub struct Unused;\n" });
+    expect(resolveDocument(files)).toBe("src/window.rs::Window#Document");
+  });
+
+  it("derefs `Root<Dom<W>>` straight to W through `<T as Deref>::Target`, past Dom's own members", () => {
+    const domMember = rootFile.replace(
+      "pub struct Root<T>",
+      "impl<T> Dom<T> { pub fn Document(&self) {} }\npub struct Root<T>",
+    );
+    expect(resolveDocument(corpus(trustedCaller("&Window"), { "src/root.rs": domMember }))).toBe(
+      "src/window.rs::Window#Document",
+    );
+  });
+
+  it("leaves the re-rooted name untyped when the argument's type is unknown", () => {
+    const caller = trustedCaller("&Window").replace("Trusted::new(window)", "Trusted::new(make())");
+    expect(resolveDocument(corpus(caller))).toBeNull();
+  });
+
+  it("leaves it untyped when the constructor parameter is not the bare generic", () => {
+    const wrapped = refcountedFile.replace("pub fn new(ptr: &T)", "pub fn new(ptr: Vec<T>)");
+    expect(resolveDocument(corpus(trustedCaller("&Window"), { "src/refcounted.rs": wrapped }))).toBeNull();
+  });
+});
+
+// Measured lost-edge guard (servo layout/context.rs): `let image =
+// self.get_cached_image_for_url(..)?` shadows a parameter; the method returns
+// `Result<CachedImage, _>` where the declaring file imports `Image as
+// CachedImage`, so `?` must unwrap to the renamed import's type. The sole
+// project symbol named `Result` is another file's `impl MallocSizeOf for
+// Result<T, E>` block, which must not capture the std spelling.
+const mallocFile = `
+pub trait MallocSizeOf { fn size_of(&self) -> usize; }
+impl<T, E> MallocSizeOf for Result<T, E> { fn size_of(&self) -> usize { 0 } }
+`;
+
+const imageCacheFile = `
+pub struct Image;
+impl Image { pub fn metadata(&self) {} }
+`;
+
+const layoutContext = (init: string) => `
+use crate::image_cache::{Image as CachedImage};
+pub enum ResolveImageError { None }
+pub struct Style;
+impl Style { pub fn metadata(&self) {} }
+pub struct LayoutContext;
+impl LayoutContext {
+    fn get_cached_image_for_url(&self, url: u32) -> Result<CachedImage, ResolveImageError> { todo!() }
+    fn resolve(&self, image: &Style, url: u32) -> Result<(), ResolveImageError> {
+        let image = ${init};
+        image.metadata();
+        Ok(())
+    }
+}
+`;
+
+describe.each([false, true])("Rust `?`-unwrapped method result shadowing (materialized=%s)", (materialized) => {
+  const resolveMetadata = (init: string, declaringFile = layoutContext(init)) =>
+    edgeTarget(
+      fixture(
+        { "src/malloc.rs": mallocFile, "src/image_cache.rs": imageCacheFile, "src/main.rs": declaringFile },
+        materialized,
+      ),
+      "image.metadata()",
+    );
+
+  it("types the servo shape: `?` unwraps Result<CachedImage, _> to the renamed import", () => {
+    expect(resolveMetadata("self.get_cached_image_for_url(url)?")).toBe("src/image_cache.rs::Image#metadata");
+  });
+
+  it("does not type the shadowing let as the Result's payload without `?`", () => {
+    expect(resolveMetadata("self.get_cached_image_for_url(url)")).not.toBe("src/main.rs::Style#metadata");
+    expect(resolveMetadata("self.get_cached_image_for_url(url)")).not.toBe("src/image_cache.rs::Image#metadata");
+  });
+
+  it("keeps a project `Result` the declaring file declares itself", () => {
+    const init = "self.get_cached_image_for_url(url)?";
+    const ownResult = `${layoutContext(init)}pub struct Result<T, E>(T, E);\n`;
+    expect(resolveMetadata(init, ownResult)).toBeNull();
+  });
+});

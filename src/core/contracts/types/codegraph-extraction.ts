@@ -15,7 +15,7 @@ import type { CallableArgSource, DispatchRef, DispatchTable } from "./codegraph-
 import type { InheritanceEdgeDecl, StructuralContractDecl } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, ConstructedLocalLines, LocalBinding } from "./codegraph-local-binding.js";
 import type { AritySignature, KwargSignature, RelPath, SymbolDefinitionKind, SymbolId } from "./codegraph-symbols.js";
-import type { RubyTypeRef } from "./language.js";
+import type { RubyTypeRef, TypeRef } from "./language.js";
 
 /**
  * Per-file extraction emitted by the TypeScript walker (and, in slice 3,
@@ -792,9 +792,20 @@ export interface TypeDeclarationFact {
    * of its {@link genericParameters}: each one's argument labels in order
    * (`null` for `_`) and, per position, the generic parameter it binds or
    * `null` — `init(_ value: Value)` → `{ labels: [null], binds: ["Value"] }`
-   * (bd tea-rags-mcp-y99pg.26). Absent when none does.
+   * (bd tea-rags-mcp-y99pg.26). Absent when none does. Rust: the associated
+   * fns of an inherent impl that return the type itself, each with its
+   * {@link GenericInitializerFact.name} — `fn new(ptr: &T) -> Trusted<T>` →
+   * `{ name: "new", labels: [null], binds: ["T"] }` (bd tea-rags-mcp-s3i8m).
    */
   readonly genericInitializers?: readonly GenericInitializerFact[];
+  /**
+   * What a `type_alias` declaration stands for, in its own file's spelling,
+   * its {@link genericParameters} left as written: `pub type DomRoot<T> =
+   * Root<Dom<T>>` → `Root<Dom<T>>` (bd tea-rags-mcp-s3i8m). Set by the Rust
+   * walker; absent on every other kind and when the aliased type has no
+   * nominal spelling.
+   */
+  readonly aliasedType?: TypeRef;
   /**
    * For each method taking ONE function-typed parameter, the types that
    * function's parameters are declared with, by method name:
@@ -919,6 +930,8 @@ export interface SwiftFieldConstruction {
 
 /** One initializer of a generic type (`TypeDeclarationFact.genericInitializers`). */
 export interface GenericInitializerFact {
+  /** The initializer's own name where a language names it (Rust `new`); absent for Swift `init`. */
+  readonly name?: string;
   /** Argument labels in order, `null` for an unlabelled parameter. */
   readonly labels: readonly (string | null)[];
   /** Per position, the type's generic parameter that parameter is typed as, or `null`. */

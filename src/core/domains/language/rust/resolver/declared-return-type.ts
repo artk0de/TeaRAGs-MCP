@@ -1,7 +1,9 @@
-import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
+import type { CallContext, SymbolDefinition, TypeDeclarationFact } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { MemberReturnTypeResolver, type NominalTypeRef } from "../../kernel/index.js";
-import { rustPlaceTypeThroughDeclaringFile } from "./declaring-file-type.js";
+import { rustTextIsStdPreludeType } from "../vocabulary/std-prelude.js";
+import { rustDeclaringFileImportOf, rustPlaceTypeThroughDeclaringFile } from "./declaring-file-type.js";
 import { rustExternalMemberReturnType, rustStdDerefTarget } from "./external-type-hops.js";
 import { rustCrateRootOf, rustCrateTypeMembers, rustCrateUniqueType } from "./rust-crate-scope.js";
 import {
@@ -10,7 +12,7 @@ import {
   rustStdTypeRef,
   rustStdUnwrapType,
 } from "./std-type-hops.js";
-import { lookupRustSymbolsByShortName } from "./strategies/shared.js";
+import { lookupRustSymbolsByShortName, rustImportBindings } from "./strategies/shared.js";
 
 /** File-qualified nominal identity is kept inside the existing TypeRef channel, never a bare global namesake. */
 export function resolveRustNominalType(nominalType: TypeRef, ctx: CallContext): NominalTypeRef | undefined {
@@ -122,6 +124,13 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
       if (recv.name.startsWith("Self::")) return undefined;
       const parameter = declaration?.genericParameters?.indexOf(recv.name) ?? -1;
       if (parameter >= 0) return owner.args?.[parameter];
+      // `<T as Deref>::Target` (servo `impl<T: Deref> Deref for Root<T>`):
+      // the owner's argument for `T`, dereferenced once (bd tea-rags-mcp-s3i8m).
+      const projected = RUST_DEREF_TARGET_PROJECTION.exec(recv.name)?.[1];
+      if (projected !== undefined) {
+        const argument = owner.args?.[declaration?.genericParameters?.indexOf(projected) ?? -1];
+        return argument?.form === "instance" ? rustDerefTarget(argument, ctx) : undefined;
+      }
       // An argument nothing substitutes (an owner generic the receiver never
       // fixed: `-> &PeerStorage<EK, ER>` on a bare `Peer`) drops the argument
       // list and keeps the head typed — a member needing the argument then
@@ -138,7 +147,18 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
         return imported === undefined ? undefined : withArguments({ ...imported, form: recv.form });
       };
       const head = resolveRustNominalType({ form: recv.form, name: recv.name }, declaringCtx);
-      if (head === undefined) return rustStdTypeRef(recv.name, substituted, declaringCtx) ?? throughImports();
+      if (head === undefined) {
+        return (
+          rustStdTypeRef(recv.name, substituted, declaringCtx) ??
+          throughImports() ??
+          rustExpandProjectAlias(recv.name, substituted, target.relPath, ctx)
+        );
+      }
+      if (rustPreludeOverForeignImpl(recv.name, head, target.relPath, ctx)) {
+        return typeArguments === undefined || typeArguments.length === 0
+          ? { form: "instance", name: recv.name }
+          : { form: "instance", name: recv.name, args: typeArguments };
+      }
       const placed = withArguments(head);
       // Cross-file, a lexical read is safe only for a type the DECLARING file
       // declares in its own scope: a name it bound through `use` must not land
@@ -146,7 +166,9 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
       // main.rs's Product fabricated an edge before this constraint). Such a
       // name is placed through the declaring file's imports instead.
       if (target.relPath !== ctx.callerFile && !head.name.startsWith(`${target.relPath}::`)) {
-        return throughImports();
+        // An alias the declaring file imports (servo `use crate::root::DomRoot`)
+        // may share its name with an `impl DomRoot<T>` block elsewhere.
+        return throughImports() ?? rustExpandProjectAlias(recv.name, substituted, target.relPath, ctx);
       }
       return placed;
     };
@@ -155,6 +177,105 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
   ancestorsOf: () => [],
   ancestorReturnType: () => null,
 });
+
+/**
+ * Whether a std prelude spelling (`Result`, `Option`, …) the declaring file
+ * neither declares nor binds by `use` was placed only onto ANOTHER file's
+ * untagged `impl` block — servo's `impl MallocSizeOf for Result<T, E>` in
+ * `malloc_size_of/lib.rs`, the sole project symbol named `Result` (bd
+ * tea-rags-mcp-s3i8m). An impl block declares no type, so the spelling is
+ * std's own.
+ */
+function rustPreludeOverForeignImpl(
+  name: string,
+  head: NominalTypeRef,
+  declaringFile: string,
+  ctx: CallContext,
+): boolean {
+  if (!rustTextIsStdPreludeType(name) || head.name.startsWith(`${declaringFile}::`)) return false;
+  const boundary = head.name.indexOf(".rs::");
+  if (boundary < 0) return false;
+  const relPath = head.name.slice(0, boundary + 3);
+  const placed = ctx.symbolTable.lookup(head.name.slice(boundary + 5)).filter((def) => def.relPath === relPath);
+  if (placed.length === 0 || placed.some((def) => def.symbolKind !== undefined)) return false;
+  const bindsName = (identifierEntry(ctx.rustUseImportsByFile, declaringFile) ?? []).some(
+    (importText) => rustImportBindings(importText)?.some((binding) => binding.localName === name) ?? true,
+  );
+  return !bindsName;
+}
+
+/** `<T as Deref>::Target` with the projected parameter captured. */
+const RUST_DEREF_TARGET_PROJECTION =
+  /^<\s*([A-Za-z_][A-Za-z0-9_]*)\s+as\s+(?:(?:::)?(?:std|core)::ops::)?Deref\s*>::Target$/;
+const MAX_PROJECT_ALIAS_EXPANSIONS = 4;
+
+/**
+ * A project `type` alias spelled `name` in `declaringFile`, expanded with its
+ * generic parameters substituted by `typeArguments` (bd tea-rags-mcp-s3i8m):
+ * servo's `-> DomRoot<T>` with `pub type DomRoot<T> = Root<Dom<T>>` is
+ * `Root<Dom<T>>`. The alias is the declaring file's own or bound by one of
+ * its `use` imports; its body's names are placed in the ALIAS's file. Every
+ * argument must be known and every name placed, else `undefined`.
+ */
+function rustExpandProjectAlias(
+  name: string,
+  typeArguments: readonly (TypeRef | undefined)[] | undefined,
+  declaringFile: string,
+  ctx: CallContext,
+  expansions = 0,
+): TypeRef | undefined {
+  if (expansions >= MAX_PROJECT_ALIAS_EXPANSIONS || name.includes("::")) return undefined;
+  const alias = rustAliasDeclaration(name, declaringFile, ctx);
+  const aliasedType = alias?.fact.aliasedType;
+  if (alias === undefined || aliasedType === undefined) return undefined;
+  const { relPath, fact } = alias;
+  const parameters = fact.genericParameters ?? [];
+  const given = typeArguments ?? [];
+  if (given.length !== parameters.length || given.some((arg) => arg === undefined)) return undefined;
+  const aliasCtx = { ...ctx, callerFile: relPath, callerScope: fact.typeId.split("::").slice(0, -1) };
+  const expand = (recv: TypeRef): TypeRef | undefined => {
+    if (recv.form === "tuple") {
+      const elements = recv.elements.map(expand);
+      return elements.every((element) => element !== undefined) ? { form: "tuple", elements } : undefined;
+    }
+    if (recv.form !== "instance" && recv.form !== "class") return undefined;
+    const parameter = recv.args === undefined ? parameters.indexOf(recv.name) : -1;
+    if (parameter >= 0) return given[parameter];
+    const expandedArguments = recv.args?.map(expand);
+    if (expandedArguments?.some((arg) => arg === undefined)) return undefined;
+    const withArgs = (placed: NominalTypeRef): TypeRef =>
+      expandedArguments === undefined ? placed : { ...placed, form: recv.form, args: expandedArguments as TypeRef[] };
+    const head = resolveRustNominalType({ form: recv.form, name: recv.name }, aliasCtx);
+    if (head !== undefined) return head.name.startsWith(`${relPath}::`) ? withArgs(head) : undefined;
+    const imported = rustPlaceTypeThroughDeclaringFile(recv.name, relPath, ctx);
+    if (imported !== undefined) return withArgs({ ...imported, form: recv.form });
+    return (
+      rustStdTypeRef(recv.name, expandedArguments, aliasCtx) ??
+      rustExpandProjectAlias(recv.name, expandedArguments, relPath, ctx, expansions + 1)
+    );
+  };
+  return expand(aliasedType);
+}
+
+/** The type alias `name` denotes in `declaringFile`: declared there, or bound by one of its imports. */
+function rustAliasDeclaration(
+  name: string,
+  declaringFile: string,
+  ctx: CallContext,
+): { relPath: string; fact: TypeDeclarationFact } | undefined {
+  const aliasIn = (relPath: string, typeId: string): TypeDeclarationFact[] =>
+    (ctx.typeDeclarations?.[relPath] ?? []).filter(
+      (fact) => fact.typeId === typeId && fact.symbolKind === "type_alias" && !fact.reopens,
+    );
+  const own = aliasIn(declaringFile, name);
+  if (own.length > 0) return own.length === 1 ? { relPath: declaringFile, fact: own[0] } : undefined;
+  // A type alias carries no symbol: its file's declaration facts answer.
+  const imported = rustDeclaringFileImportOf(name, declaringFile, ctx);
+  const found = imported?.paths.flatMap((relPath) =>
+    aliasIn(relPath, imported.itemName).map((fact) => ({ relPath, fact })),
+  );
+  return found?.length === 1 ? found[0] : undefined;
+}
 
 export function rustDeclaredMemberReturnType(
   nominalType: TypeRef,

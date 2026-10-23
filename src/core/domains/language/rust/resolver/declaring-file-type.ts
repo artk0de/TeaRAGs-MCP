@@ -30,6 +30,31 @@ export function rustPlaceTypeThroughDeclaringFile(
   declaringFile: string,
   ctx: CallContext,
 ): NominalTypeRef | undefined {
+  const bound = rustDeclaringFileImportOf(name, declaringFile, ctx);
+  if (bound === undefined) return undefined;
+  const { importText, itemName, paths } = bound;
+  const typesNamed = (shortName: string): SymbolDefinition[] =>
+    lookupRustSymbolsByShortName(ctx, shortName).filter(
+      (def) => def.symbolKind === "class" || def.symbolKind === "enum",
+    );
+  const direct = typesNamed(itemName).filter((def) => paths.includes(def.relPath));
+  if (direct.length === 1) return { form: "instance", name: `${direct[0].relPath}::${direct[0].symbolId}` };
+  if (direct.length > 1) return undefined;
+  const { target } = rustFollowReexports(importText, name, declaringFile, ctx, typesNamed);
+  return target === null ? undefined : { form: "instance", name: `${target.targetRelPath}::${target.targetSymbolId}` };
+}
+
+/**
+ * The one non-glob, internal `use` of `declaringFile` that binds `name`: the
+ * item it names (`use a::B as C` names `B`) and the module files that may
+ * declare it. Undefined under the guards {@link rustPlaceTypeThroughDeclaringFile}
+ * documents.
+ */
+export function rustDeclaringFileImportOf(
+  name: string,
+  declaringFile: string,
+  ctx: CallContext,
+): { importText: string; itemName: string; paths: string[] } | undefined {
   const importTexts = identifierEntry(ctx.rustUseImportsByFile, declaringFile);
   if (importTexts === undefined || name.includes("::")) return undefined;
   const bound: { importText: string; binding: RustImportBinding }[] = [];
@@ -46,14 +71,5 @@ export function rustPlaceTypeThroughDeclaringFile(
   if (rustImportIsExternal(importText, { ...ctx, callerFile: declaringFile }, name)) return undefined;
   const itemName = binding.sourceName ?? binding.moduleSegments.at(-1);
   const paths = rustImportCandidatePaths(importText, name, declaringFile, ctx);
-  if (itemName === undefined || paths === null) return undefined;
-  const typesNamed = (shortName: string): SymbolDefinition[] =>
-    lookupRustSymbolsByShortName(ctx, shortName).filter(
-      (def) => def.symbolKind === "class" || def.symbolKind === "enum",
-    );
-  const direct = typesNamed(itemName).filter((def) => paths.includes(def.relPath));
-  if (direct.length === 1) return { form: "instance", name: `${direct[0].relPath}::${direct[0].symbolId}` };
-  if (direct.length > 1) return undefined;
-  const { target } = rustFollowReexports(importText, name, declaringFile, ctx, typesNamed);
-  return target === null ? undefined : { form: "instance", name: `${target.targetRelPath}::${target.targetSymbolId}` };
+  return itemName === undefined || paths === null ? undefined : { importText, itemName, paths };
 }
