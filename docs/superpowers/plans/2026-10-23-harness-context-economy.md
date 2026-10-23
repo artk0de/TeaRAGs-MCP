@@ -1011,10 +1011,16 @@ Task 14, so the Codex live test installs from the final layout.
   `.claude-plugin/dinopowers/**`, `.claude-plugin/tea-rags-setup/**`,
   `harness/**` (sources under `plugins/**` stay indexed).
 - Modify: `.gitattributes` — generated paths `merge=tea-rags-generated`.
-- Create: `scripts/git/merge-generated.sh` — merge driver: take ours, mark the
-  path for regeneration; `post-merge` / commit hook runs `npm run gen:plugins`
-  and stages the result. `package.json` `prepare` registers
-  `merge.tea-rags-generated.driver` in the clone's git config.
+- Create: `scripts/git/merge-generated.sh` — the driver itself is `true` (keep
+  ours, registered by `scripts/git/register-merge-drivers.sh`, which `prepare`
+  already runs; same shape as `version-pins`). The script is the hook side,
+  mirroring `repin-on-merge.sh`: `pre-merge-commit` marks, `post-merge` runs
+  `npm run gen:plugins` and folds the regenerated paths into the merge commit;
+  `pre-commit` regenerates and stages for a conflicted merge / cherry-pick. It
+  regenerates when the merged-in side changed `plugins/**` or a generated path —
+  not only when the driver ran: a driver fires only when both sides changed a
+  file, while a one-sided source change also leaves ours stale. `.gitattributes`
+  is the single list of generated paths (`git check-attr`).
 - Local command (source of truth for generation): `npm run gen:plugins` (Task
   17). Developers run it after editing `plugins/**` and may commit the output;
   CI never has its own generation logic, it only calls this script.
@@ -1025,9 +1031,10 @@ Task 14, so the Codex live test installs from the final layout.
   `.cursor-plugin/**`, `harness/**`, `src/mcp/resources/generated/**`. The
   packages land in the `chore(release)` commit next to the versions they carry,
   pushed with the existing `RELEASE_TOKEN` — no new secret, no bot workflow, no
-  loop (release already skips `chore(release)` heads). `prepareCmd` runs after
-  the version bump, so plugin manifests in the packages carry the released
-  version.
+  loop (release already skips `chore(release)` heads). Plugin manifests carry
+  the version from `plugins/<name>/.claude-plugin/plugin.json` (hand-bumped),
+  not the npm version — exec's prepare runs before `@semantic-release/npm` bumps
+  `package.json`, and nothing generated reads it.
 - Drift tests become render tests (user decision 2026-10-23, option 2 — release
   owns regeneration): `tests/scripts/gen-harness-{claude,codex,cursor}.test.ts`
   and the agent-context drift test stop comparing the committed tree with a
@@ -1040,7 +1047,9 @@ Task 14, so the Codex live test installs from the final layout.
   `src/mcp/resources/generated/agent-context.ts` is a compile input (server
   `instructions` + guides), and `release.yml` builds before semantic-release's
   `prepareCmd`, so without `prebuild` npm would publish a `build/` with a stale
-  core. Same for `type-check` (`pretype-check`) so CI type-checks current text.
+  core. No `pretype-check`: the module's types are fixed (`string`,
+  `Record<string, string>`), so its text never changes a type-check verdict, and
+  the pre-commit `type-check` would otherwise rewrite a tracked file.
 - No PR drift check: a PR that edits `plugins/**` without regenerating is valid
   — release regenerates. (A drift check would fail exactly those PRs.)
 - Create: `.claude/rules/plugin-sources.md` — edit only `plugins/**`; regenerate
@@ -1050,9 +1059,9 @@ Task 14, so the Codex live test installs from the final layout.
   → merge has no conflict in generated paths and output equals a fresh
   regenerate.
 
-- [ ] Steps: failing merge test → driver + hook → `.releaserc.json` (dry-run:
-      `npx semantic-release --dry-run --no-ci` shows the prepare step) → rule →
-      commit.
+- [ ] Steps: failing merge test → driver + hook → `.releaserc.json` (pinned by
+      `tests/scripts/release-regeneration.test.ts`: `semantic-release --dry-run`
+      needs the remote and tokens) → rule → commit.
 
 ### Task 19: dinopowers as its own Codex / Cursor plugin
 
