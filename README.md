@@ -342,17 +342,63 @@ Pull the code-embedding model:
 ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
 ```
 
-**Claude Code** — plugins plus a setup wizard that detects your hardware and
-tunes the pipeline:
+The repository is a plugin marketplace for Claude Code, Codex and Cursor. Each
+harness gets `tea-rags` (MCP server, skills, session hooks) and `dinopowers`
+(wrappers over [superpowers](https://github.com/obra/superpowers) — install
+superpowers first).
+
+<details>
+<summary><b>Claude Code</b> — plugins plus a setup wizard</summary>
+
+The wizard detects your hardware and tunes the pipeline:
 
 ```text
 /plugin marketplace add artk0de/TeaRAGs-MCP
 /plugin install tea-rags-setup@tea-rags
 /tea-rags-setup:install
 /plugin install tea-rags@tea-rags
+/plugin install dinopowers@tea-rags
 ```
 
-**Any MCP client** (Cursor, Roo Code, Continue, …):
+</details>
+
+<details>
+<summary><b>Codex CLI</b></summary>
+
+```bash
+npm install -g tea-rags
+codex plugin marketplace add artk0de/TeaRAGs-MCP --sparse .agents --sparse harness/codex
+# or from a local clone: codex plugin marketplace add <path to the clone>
+codex plugin add tea-rags@tea-rags
+codex plugin add dinopowers@tea-rags      # needs superpowers installed
+```
+
+Plugin hooks stay untrusted until reviewed: open `/hooks` once and trust the
+tea-rags and dinopowers hooks (SessionStart digest, SubagentStart block). For a
+plugin-less setup, append `harness/codex/AGENTS.tea-rags.md` to your
+`AGENTS.md`. Details: [`harness/codex/README.md`](harness/codex/README.md).
+
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+```bash
+npm install -g tea-rags
+mkdir -p ~/.cursor/plugins/local
+cp -R <path to the clone>/harness/cursor/tea-rags ~/.cursor/plugins/local/tea-rags
+cp -R <path to the clone>/harness/cursor/dinopowers ~/.cursor/plugins/local/dinopowers
+```
+
+Copy, do not symlink. Then **Reload Window**; enterprise workspaces need "Allow
+Local Plugin Imports". The root `.cursor-plugin/marketplace.json` serves the
+same packages to Cursor builds that add a git repository as a marketplace (not
+yet verified). Details: [`harness/cursor/README.md`](harness/cursor/README.md).
+
+</details>
+
+<details>
+<summary><b>Any other MCP client</b> (Roo Code, Continue, …)</summary>
 
 ```bash
 npm install -g tea-rags
@@ -368,6 +414,11 @@ npm install -g tea-rags
   }
 }
 ```
+
+The server's `instructions` carry the routing core; guides are MCP resources
+under `tea-rags://guide/*`.
+
+</details>
 
 Qdrant downloads and starts on first use. Cloud embeddings (OpenAI, Cohere,
 Voyage), an external Qdrant, and the built-in ONNX provider (beta) are covered
@@ -599,11 +650,13 @@ or syntax-blind fallback. Internal revisions only route index rebuilds.
 Every language above works the same way in every client — the client only
 decides how much of the tooling on top of the MCP server you get.
 
-| Client                                                  | MCP tools                                                | Routing guide (`tea-rags://schema/search-guide`) | Skills (`/tea-rags:*`) and `dinopowers` | Setup wizard                 |
-| ------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------ | --------------------------------------- | ---------------------------- |
-| **Claude Code**                                         | ✅ stdio                                                 | ✅ plus the plugin's routing rules               | ✅ plugins                              | ✅ `/tea-rags-setup:install` |
-| **Other stdio clients** (Cursor, Roo Code, Continue, …) | ✅ `tea-rags server`                                     | ✅ where the client reads MCP resources          | — plugins are Claude Code only          | — manual install             |
-| **HTTP clients**                                        | ✅ `tea-rags server --http` (Streamable HTTP, port 3000) | ✅ where the client reads MCP resources          | —                                       | — manual install             |
+| Client                                          | MCP tools                                                | Routing guide (`tea-rags://guide/*`)      | Skills (`/tea-rags:*`) and `dinopowers` | Setup wizard                 |
+| ----------------------------------------------- | -------------------------------------------------------- | ----------------------------------------- | --------------------------------------- | ---------------------------- |
+| **Claude Code**                                 | ✅ stdio                                                 | ✅ plus the plugin's routing rules        | ✅ plugins                              | ✅ `/tea-rags-setup:install` |
+| **Codex CLI**                                   | ✅ stdio                                                 | ✅ plus the plugin's core skill and hooks | ✅ plugins (`$name` skills)             | — manual install             |
+| **Cursor**                                      | ✅ stdio                                                 | ✅ plus the plugin's sessionStart digest  | ✅ plugins (`/name` skills)             | — manual install             |
+| **Other stdio clients** (Roo Code, Continue, …) | ✅ `tea-rags server`                                     | ✅ where the client reads MCP resources   | —                                       | — manual install             |
+| **HTTP clients**                                | ✅ `tea-rags server --http` (Streamable HTTP, port 3000) | ✅ where the client reads MCP resources   | —                                       | — manual install             |
 
 ### Embedding providers
 
