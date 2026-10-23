@@ -7,10 +7,35 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PASS=0; FAIL=0
 note() { if [ "$1" = 0 ]; then PASS=$((PASS+1)); echo "ok   - $2"; else FAIL=$((FAIL+1)); echo "FAIL - $2"; fi; }
 
-SUBAGENT_CAP=10000  # current block is 9,673 bytes; Task 9 drops this to 3000
+# Subagent block, measured WITH the alias line: `tea-rags` is stubbed to resolve a
+# long-ish alias so the prepended line counts against the cap.
+SUBAGENT_CAP=3000
+STUB_DIR="$(mktemp -d)"; trap 'rm -rf "$STUB_DIR"' EXIT
+printf '#!/bin/bash\necho tea-rags-mcp-alias\n' > "$STUB_DIR/tea-rags"; chmod +x "$STUB_DIR/tea-rags"
 INPUT='{"session_id":"s","hook_event_name":"SubagentStart","agent_type":"general-purpose"}'
-BLOCK="$(echo "$INPUT" | bash "$ROOT/.claude-plugin/tea-rags/scripts/enforce-tearags-search.sh" | jq -r '.hookSpecificOutput.additionalContext')"
-[ "$(printf %s "$BLOCK" | wc -c)" -le $SUBAGENT_CAP ]; note $? "subagent block ≤ $SUBAGENT_CAP bytes"
+BLOCK="$(echo "$INPUT" | CLAUDE_PROJECT_DIR=/repo PATH="$STUB_DIR:$PATH" bash "$ROOT/.claude-plugin/tea-rags/scripts/enforce-tearags-search.sh" | jq -r '.hookSpecificOutput.additionalContext')"
+printf %s "$BLOCK" | head -n 1 | grep -Fq '`tea-rags-mcp-alias`'; note $? "subagent block measured with the alias line"
+[ "$(printf %s "$BLOCK" | wc -c)" -le $SUBAGENT_CAP ]; note $? "subagent block incl. alias line ≤ $SUBAGENT_CAP bytes"
+# Harness-neutral: the Codex/Cursor transforms rewrite only `mcp__tea-rags__`, so the
+# block must not name Claude-only tools.
+! printf %s "$BLOCK" | grep -Eq 'mcp__ripgrep|Grep/Glob'; note $? "subagent block names no Claude-only search tools"
+
+# dinopowers main-session routing: injected once per session (SessionStart, re-fired
+# on compaction), never per prompt, never echoing the prompt.
+DP_ROUTING="$ROOT/.claude-plugin/dinopowers/scripts/inject-main-session-routing.sh"
+DP_PLUGIN="$ROOT/.claude-plugin/dinopowers/.claude-plugin/plugin.json"
+SS_INPUT='{"session_id":"s","hook_event_name":"SessionStart","source":"compact","prompt":"PROMPT-SENTINEL-42"}'
+SS_OUT="$(echo "$SS_INPUT" | bash "$DP_ROUTING" 2>/dev/null)"
+[ "$(echo "$SS_OUT" | jq -r '.hookSpecificOutput.hookEventName' 2>/dev/null)" = "SessionStart" ]
+note $? "main-session routing answers SessionStart"
+SS_CTX="$(echo "$SS_OUT" | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
+printf %s "$SS_CTX" | grep -Fq "dinopowers:brainstorming"; note $? "main-session routing carries the wrapper table"
+[ "$(printf %s "$SS_CTX" | wc -c)" -le 2500 ]; note $? "main-session routing ≤ 2500 bytes"
+! printf %s "$SS_OUT" | grep -Fq "PROMPT-SENTINEL-42"; note $? "main-session routing never echoes the prompt"
+[ "$(jq '[.hooks.SessionStart[]?.hooks[]?.command | select(test("inject-main-session-routing"))] | length' "$DP_PLUGIN")" = 1 ]
+note $? "dinopowers registers main-session routing on SessionStart"
+[ "$(jq '.hooks.UserPromptSubmit // [] | length' "$DP_PLUGIN")" = 0 ]
+note $? "dinopowers injects nothing per prompt (no UserPromptSubmit hook)"
 
 # SessionStart rules injection: one part, ≤ 8,000 bytes (the core; guides are served on demand).
 INJECT="$ROOT/.claude-plugin/tea-rags/scripts/inject-rules.sh"
