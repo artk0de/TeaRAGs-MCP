@@ -866,8 +866,37 @@ found.
 - [ ] **Step 4:** Record each check (pass/fail, tool calls seen, tokens if
       reported) in `LIVE-TEST.md`; fix failures in generator/skills/core,
       regenerate, re-run the failed check.
-- [ ] **Step 5:** Commit —
-      `test(scripts): Codex live test of the generated harness`
+- [ ] **Step 5:** Full eval run on Codex (user decision 2026-10-23). Runs after
+      Tasks 17–19, against the root marketplace install (Codex:
+      `codex plugin marketplace add <clone root>`; tea-rags + dinopowers +
+      superpowers installed in the scratch `CODEX_HOME`). Same suites and cases
+      as Task 12 (every `.claude-plugin/.benchmarks/<suite>` with runnable
+      cases, ~620 + dinopowers), same `/optimize-skill` Phase 4 protocol: -
+      Subject = Codex (`codex exec --json --ephemeral -C <repo>`, default Codex
+      model, recorded per run): ONE run per suite, all case prompts in one
+      prompt (id + prompt only), "describe the exact plan — skills (by `$name`),
+      tools in order with key params, resources read; execute nothing". Hooks
+      fire as installed (SessionStart digest, SubagentStart block) — this is the
+      real Codex context, no bundle injection. - Skills are the generated Codex
+      package (no load-time `!` blocks — the model-read lines must carry it);
+      resource reads may be executed (`read_mcp_resource` against the worktree
+      build) since they are reads. - Grader = Claude subagent (sonnet), strict
+      against `expected` + `failure_mode`, mapping Claude tool names to Codex
+      ones (`ReadMcpResourceTool` ≙ `read_mcp_resource`, `Skill(x)` ≙ `$x`,
+      `mcp__tea-rags__t` ≙ `t`); expectations that are Claude-only mechanics
+      (load-time inline, `AskUserQuestion`, `Agent` tool) graded on intent and
+      flagged. - A/B vs the Task 12 Claude rows: every case that passes on
+      Claude and fails on Codex is a Codex-harness regression → fix in
+      `scripts/harness/transform.ts`, the Codex dialect, or the source text
+      (never the eval), regenerate, re-run that suite only. - Persist:
+      `## 2026-10-2x — Codex run (Task 14)` section per suite benchmark.md +
+      summary in
+      `.claude-plugin/.benchmarks/harness-context-economy/benchmark.md` (Codex
+      vs Claude pass rate per suite, skills-list budget observed, model). -
+      Budget: ≤ 3 parallel suites; codex runs consume the user's Codex quota
+      (~45 runs) — approved 2026-10-23.
+- [ ] **Step 6:** Commit —
+      `test(scripts): Codex live test and full eval run of the generated harness`
 
 ### Task 15: Generate the Cursor package (no local Cursor — static validation)
 
