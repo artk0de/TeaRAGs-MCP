@@ -403,6 +403,30 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
     expect(h.spawns).toHaveLength(2);
   });
 
+  it("names the package of a failure cargo reported only on stderr (a build script that failed to run)", async () => {
+    const failed = [
+      {
+        package: "servo-capi-tests",
+        target: "build-script-build",
+        kind: ["custom-build"],
+        test: false,
+        firstError: "failed to run custom build command for `servo-capi-tests v0.0.1 (/ws/capi)`",
+      },
+    ];
+    const h = host({
+      scripts: [okScript({ runJson: okRun({ success: false, exitCode: 101, failed }), exitCode: 101 })],
+    });
+    const result = await acquire(h);
+    expect(result.status).toBe("partial");
+    expect(result.diagnostics.failedCrates).toEqual([
+      {
+        packageId: "servo-capi-tests",
+        target: "build-script-build",
+        firstError: "failed to run custom build command for `servo-capi-tests v0.0.1 (/ws/capi)`",
+      },
+    ]);
+  });
+
   it("latches an environment failure (every unit failed) per envKey and stops spawning", async () => {
     const failed = [{ packageId: "p", target: "app", kind: ["bin"], firstError: "E0514 incompatible rustc" }];
     const h = host({

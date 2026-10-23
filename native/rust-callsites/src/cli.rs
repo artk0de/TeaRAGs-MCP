@@ -6,7 +6,8 @@
 //!   (the user's `target/` is never used, so there is no default).
 //! - Runs `cargo check --message-format=json --kept_files-going <TEARAGS_CALLSITES_CARGO_ARGS>`
 //!   with the driver as `RUSTC_WORKSPACE_WRAPPER`; cargo's own stdout is consumed here,
-//!   its stderr passes through.
+//!   its stderr passes through (failures cargo reports only there, e.g. a build script that
+//!   failed to run, are parsed into `failed`).
 //! - Writes `<out>/run.json` from cargo's `compiler-artifact` messages (fresh units included)
 //!   and deletes every unit file in `<out>/units/` that no listed unit owns (GC for renamed or
 //!   removed targets and feature flips).
@@ -78,9 +79,36 @@ fn run_cargo_check() -> Result<ExitCode, String> {
             serde_json::to_string(&plugin_args).map_err(|e| e.to_string())?,
         )
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
+        .stderr(Stdio::piped());
     plugin.modify_cargo(&mut cmd, &plugin_args);
     let mut cargo = cmd.spawn().map_err(|e| format!("spawn cargo: {e}"))?;
+    // cargo's stderr still passes through byte for byte; only `error:` lines and the indented
+    // block under each are kept, for `stderr_failures` (warnings would grow it unbounded).
+    let cargo_stderr = cargo.stderr.take().expect("piped stderr");
+    let stderr_tee = std::thread::spawn(move || {
+        let mut error_lines = Vec::new();
+        let mut in_error = false;
+        let mut passthrough = std::io::stderr();
+        let mut reader = BufReader::new(cargo_stderr);
+        let mut buf = Vec::new();
+        while reader.read_until(b'\n', &mut buf).is_ok_and(|n| n > 0) {
+            let _ = passthrough.write_all(&buf);
+            let line = String::from_utf8_lossy(&buf)
+                .trim_end_matches(['\n', '\r'])
+                .to_owned();
+            buf.clear();
+            if line.starts_with("error") {
+                in_error = true;
+            } else if !(line.is_empty() || line.starts_with(' ') || line.starts_with("Caused by:"))
+            {
+                in_error = false;
+            }
+            if in_error {
+                error_lines.push(line);
+            }
+        }
+        error_lines
+    });
 
     let mut artifacts: Vec<Artifact> = Vec::new();
     let mut failed: BTreeMap<(String, String, bool), Value> = BTreeMap::new();
@@ -121,6 +149,18 @@ fn run_cargo_check() -> Result<ExitCode, String> {
         }
     }
     let cargo_status = cargo.wait().map_err(|e| e.to_string())?;
+    let stderr_lines = stderr_tee.join().unwrap_or_default();
+    let mut failed: Vec<Value> = failed.into_values().collect();
+    if !cargo_status.success() {
+        // A build script that failed to run has no compiler-message; `could not compile` only
+        // names what the JSON stream did not already attribute.
+        let attributed = !failed.is_empty();
+        failed.extend(
+            stderr_failures(&stderr_lines)
+                .into_iter()
+                .filter(|f| f["kind"] == json!(["custom-build"]) || !attributed),
+        );
+    }
 
     let (kept_units, deleted) =
         collect_garbage(&units_dir, &artifacts).map_err(|e| format!("unit GC: {e}"))?;
@@ -154,7 +194,7 @@ fn run_cargo_check() -> Result<ExitCode, String> {
         "exitCode": cargo_status.code(),
         "units": units,
         "missing": missing,
-        "failed": failed.into_values().collect::<Vec<_>>(),
+        "failed": failed,
         "deleted": deleted,
     });
     let run_path = out_dir.join("run.json");
@@ -169,10 +209,26 @@ fn run_cargo_check() -> Result<ExitCode, String> {
 }
 
 fn artifact_of(message: &Value, root: &Path) -> Option<Artifact> {
-    // The rmeta (check) or rlib; every unit has one under deps/ named lib<crate><extra>.
+    let target_name = message["target"]["name"].as_str().unwrap_or_default();
+    let is_build_script = message["target"]["kind"]
+        .as_array()
+        .is_some_and(|kinds| kinds.iter().any(|k| k == "custom-build"));
+    // Every unit but a build script has an rmeta (check) or rlib under deps/ named
+    // `lib<crate><extra>`. A build script is listed only by its hardlink
+    // `build/<package>-<hash>/<target>`; its crate is the target name with `_`
+    // (`build_script_build`) and its extra-filename `-<hash>` is that directory's suffix.
     let unit = message["filenames"].as_array()?.iter().find_map(|f| {
-        let stem = Path::new(f.as_str()?).file_stem()?.to_str()?;
-        stem.strip_prefix("lib").map(str::to_owned)
+        let path = Path::new(f.as_str()?);
+        let stem = path.file_stem()?.to_str()?;
+        if !is_build_script {
+            return stem.strip_prefix("lib").map(str::to_owned);
+        }
+        if stem != target_name {
+            return None;
+        }
+        let dir = path.parent()?.file_name()?.to_str()?;
+        let (_, hash) = dir.rsplit_once('-')?;
+        Some(format!("{}-{hash}", target_name.replace('-', "_")))
     })?;
     let manifest = message["manifest_path"].as_str().map(PathBuf::from);
     let in_workspace = manifest
@@ -184,14 +240,77 @@ fn artifact_of(message: &Value, root: &Path) -> Option<Artifact> {
             .as_str()
             .unwrap_or_default()
             .to_owned(),
-        target: message["target"]["name"]
-            .as_str()
-            .unwrap_or_default()
-            .to_owned(),
+        target: target_name.to_owned(),
         kind: message["target"]["kind"].clone(),
         test: message["profile"]["test"].as_bool().unwrap_or(false),
         fresh: message["fresh"].as_bool().unwrap_or(false),
         in_workspace,
+    })
+}
+
+const BUILD_SCRIPT_FAILED: &str = "error: failed to run custom build command for `";
+const COULD_NOT_COMPILE: &str = "error: could not compile `";
+
+/// `failed` entries for what cargo reports only as human text on stderr (no JSON
+/// `compiler-message`): a build script that failed to RUN, and `could not compile` lines.
+/// Best-effort: an unrecognised line yields nothing. Entries carry the package NAME (`package`),
+/// not a `packageId`, which cargo does not print.
+fn stderr_failures(stderr: &[String]) -> Vec<Value> {
+    let mut failures = Vec::new();
+    for (i, line) in stderr.iter().enumerate() {
+        if let Some(rest) = line.strip_prefix(BUILD_SCRIPT_FAILED) {
+            // `<name> v<version> (<path>)`
+            let Some(spec) = rest.split('`').next() else {
+                continue;
+            };
+            let package = spec.split_whitespace().next().unwrap_or_default();
+            let header = line.trim_start_matches("error: ");
+            failures.push(json!({
+                "package": package,
+                "target": "build-script-build",
+                "kind": ["custom-build"],
+                "test": false,
+                "firstError": match build_script_panic(&stderr[i + 1..]) {
+                    Some(panic) => format!("{header}: {panic}"),
+                    None => header.to_owned(),
+                },
+            }));
+        } else if let Some(rest) = line.strip_prefix(COULD_NOT_COMPILE) {
+            // `<name>` (<kind>[ test]|bin "<name>"...) due to N previous errors
+            let mut parts = rest.splitn(2, '`');
+            let package = parts.next().unwrap_or_default();
+            let target_desc = parts
+                .next()
+                .and_then(|r| r.split_once('(').and_then(|(_, r)| r.split_once(')')))
+                .map(|(desc, _)| desc)
+                .unwrap_or_default();
+            let mut words = target_desc.split_whitespace();
+            let kind = words.next().unwrap_or_default();
+            failures.push(json!({
+                "package": package,
+                "target": "",
+                "kind": if kind.is_empty() { json!([]) } else { json!([kind]) },
+                "test": words.any(|w| w == "test"),
+                "firstError": line.trim_start_matches("error: "),
+            }));
+        }
+    }
+    failures
+}
+
+/// The `panicked at <loc>: <message>` of a failed build script's captured stderr, read up to
+/// the next top-level (unindented) cargo line.
+fn build_script_panic(following_lines: &[String]) -> Option<String> {
+    let block: Vec<&str> = following_lines
+        .iter()
+        .take_while(|l| l.is_empty() || l.starts_with(' ') || l.starts_with("Caused by:"))
+        .map(|l| l.trim())
+        .collect();
+    let at = block.iter().position(|l| l.contains("panicked at"))?;
+    let message = block[at + 1..].iter().find(|l| !l.is_empty());
+    Some(match message {
+        Some(message) => format!("{} {message}", block[at]),
+        None => block[at].to_owned(),
     })
 }
 
@@ -244,4 +363,80 @@ fn collect_garbage(
         }
     }
     Ok((kept_units, deleted))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{artifact_of, stderr_failures};
+
+    fn lines(text: &str) -> Vec<String> {
+        text.lines().map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn build_script_artifact_unit_is_the_executable_stem() {
+        let message = json!({
+            "reason": "compiler-artifact",
+            "package_id": "path+file:///ws/app#fx_app@0.1.0",
+            "manifest_path": "/ws/app/Cargo.toml",
+            "target": {"name": "build-script-build", "kind": ["custom-build"]},
+            "profile": {"test": false},
+            // cargo lists only the hardlink; the hash sits in the directory name.
+            "filenames": ["/t/debug/build/fx-app-0b1c/build-script-build"],
+            "fresh": false
+        });
+        let artifact = artifact_of(&message, std::path::Path::new("/ws")).expect("artifact");
+        assert_eq!(artifact.unit, "build_script_build-0b1c");
+        assert_eq!(artifact.kind, json!(["custom-build"]));
+    }
+
+    #[test]
+    fn panicking_build_script_names_its_package() {
+        let stderr = lines(
+            "   Compiling fx_app v0.1.0 (/ws/app)\n\
+             error: failed to run custom build command for `servo-capi-tests v0.0.1 (/ws/capi/tests)`\n\
+             \n\
+             Caused by:\n  \
+               process didn't exit successfully: `/t/debug/build/x/build-script-build` (exit status: 101)\n  \
+               --- stderr\n  \
+               thread 'main' panicked at capi/tests/build.rs:3:5:\n  \
+               cbindgen failed\n\
+             warning: build failed, waiting for other jobs to finish...",
+        );
+        assert_eq!(
+            stderr_failures(&stderr),
+            vec![json!({
+                "package": "servo-capi-tests",
+                "target": "build-script-build",
+                "kind": ["custom-build"],
+                "test": false,
+                "firstError": "failed to run custom build command for `servo-capi-tests v0.0.1 \
+                               (/ws/capi/tests)`: thread 'main' panicked at \
+                               capi/tests/build.rs:3:5: cbindgen failed",
+            })]
+        );
+    }
+
+    #[test]
+    fn could_not_compile_names_its_package_and_target_kind() {
+        let stderr =
+            lines("error: could not compile `fx_core` (lib test) due to 2 previous errors");
+        assert_eq!(
+            stderr_failures(&stderr),
+            vec![json!({
+                "package": "fx_core",
+                "target": "",
+                "kind": ["lib"],
+                "test": true,
+                "firstError": "could not compile `fx_core` (lib test) due to 2 previous errors",
+            })]
+        );
+    }
+
+    #[test]
+    fn unrelated_stderr_yields_nothing() {
+        assert!(stderr_failures(&lines("warning: unused variable: `x`\nerror: oops")).is_empty());
+    }
 }
