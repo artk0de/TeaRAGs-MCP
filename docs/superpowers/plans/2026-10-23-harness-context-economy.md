@@ -963,6 +963,13 @@ test script.
 - [ ] **Step 5: Run** tests + `npx tsc --noEmit` — PASS.
 - [ ] **Step 6: Commit** —
       `feat(scripts): Cursor harness package generated from the plugin sources (manual test handed over)`
+- [x] **Step 7 (added): Live eval in Cursor** — Cursor CLI installed after all;
+      plugins copied from `harness/cursor` to `~/.cursor/plugins/local/`, eval
+      prompts of Task 14 run headless (`agent -p --model auto`). The free plan
+      allows only `auto` and stopped the run after 7 of 45 parts: 100/104
+      (96%), no Cursor-only failure. sessionStart timeout raised to 60 s (prime
+      cold start). Results: `## 2026-10-23 — Cursor run (Task 15)` in each
+      suite's `benchmark.md`.
 
 ---
 
