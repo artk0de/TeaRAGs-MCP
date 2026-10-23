@@ -38,7 +38,7 @@ const FLAG_DERIVED_IMPL = 2;
 const KINDS = ["callable", "type", "other"] as const;
 
 export interface RustcCallSiteDecodeOptions {
-  /** Crate names the driver ran on (workspace members). Crates of rows the driver saw in-project are added. */
+  /** Crate names the driver ran on (workspace members). Callee crates of in-project, trait-free rows are added. */
   readonly workspaceCrates?: Iterable<string>;
 }
 
@@ -70,7 +70,9 @@ export function decodeRustcCallSites(
     for (const line of lines(text)) {
       const row = parseRow(line);
       if (row === null) continue;
-      if (row.inProject) workspaceCrates.add(row.calleeCrate);
+      // A trait method resolved to a project impl names the TRAIT's crate (`std` for
+      // `io::Read::read`), so only a call with no trait proves its callee crate is ours.
+      if (row.inProject && row.traitPath === null) workspaceCrates.add(row.calleeCrate);
       if (row.origin !== "source" || row.col >= MAX_COLUMN) continue;
       const packed = pack(row, intern);
       let positions = byFile.get(row.relPath);

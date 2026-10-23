@@ -174,6 +174,28 @@ describe("decodeRustcCallSites", () => {
     expect(withCrates.definitionAt("src/main.rs", 10, 8)?.packageInProject).toBe(true);
   });
 
+  it("keeps a trait's crate external when its method resolves to a project impl", () => {
+    // `rdr.read(buf)` on a project `impl Read for CommandReader`: the callee is std's trait
+    // method, so `std` names the trait's crate, not a workspace one.
+    const traitCallToProjectImpl = row({
+      col: 1,
+      callee: "std::io::Read::read",
+      calleeCrate: "std",
+      traitPath: "std::io::Read",
+      resolvedImpl: "<process::CommandReader as std::io::Read>::read",
+    });
+    const inherentStdCall = row({
+      col: 2,
+      callee: "std::ffi::OsStr::is_empty",
+      calleeCrate: "std",
+      inProject: false,
+      defRelPath: null,
+      defLine: null,
+    });
+    const index = decode(traitCallToProjectImpl, inherentStdCall);
+    expect(index.definitionAt("src/main.rs", 10, 2)?.packageInProject).toBe(false);
+  });
+
   it("never serves origin macro rows", () => {
     const index = decode(row({ origin: "macro", macro: "vec" }));
     expect(index.definitionAt("src/main.rs", 10, 8)).toBeNull();
