@@ -1,0 +1,6 @@
+# The rustc_plugin pin. Must equal RUSTC_DRIVER_TOOLCHAIN_PIN in
+# src/core/adapters/rustc-driver/pin.ts (asserted by a unit test). Bump only together
+# with the rustc_plugin version, at most once per tea-rags minor release.
+[toolchain]
+channel = "nightly-2026-05-01"
+components = ["rust-src", "rustc-dev", "llvm-tools-preview"]

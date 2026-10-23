@@ -1,0 +1,6 @@
+{
+  "git": {
+    "sha1": "fdfd14e3802e035e5d0b70685541faec7e153518"
+  },
+  "path_in_vcs": "crates/rustc_plugin"
+}

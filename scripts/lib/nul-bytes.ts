@@ -77,8 +77,16 @@ const BINARY_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
  * favicon and logo); the list covers the formats a checkout plausibly adds.
  */
 export function isNulGuardedPath(path: string): boolean {
+  if (VENDORED_CRATE_PATH.test(path)) return false;
   return !BINARY_FILE_EXTENSIONS.has(extname(path).slice(1).toLowerCase());
 }
+
+/**
+ * Third-party crates `cargo vendor` copied into a native crate (`native/<crate>/vendor/`):
+ * byte-exact copies whose `.cargo-checksum.json` pins every file, so a NUL in one of their
+ * fixtures is content no escape can replace.
+ */
+const VENDORED_CRATE_PATH = /^native\/[^/]+\/vendor\//;
 
 /** Git's mode for a gitlink: its "blob" id names a commit of another repository. */
 const GITLINK_MODE = "160000";
