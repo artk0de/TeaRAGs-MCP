@@ -10,5 +10,5 @@ if [ -z "$CONTEXT" ]; then
   echo '{}'
   exit 0
 fi
-jq -n --arg context "$CONTEXT" '{ additional_context: $context }'
+jq -n --arg context "$CONTEXT" '{ additional_context: $context[0:10000] }' 2>/dev/null || echo '{}'
 exit 0

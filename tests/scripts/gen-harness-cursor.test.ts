@@ -1,4 +1,5 @@
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -161,7 +162,7 @@ describe("renderCursorHarness", () => {
     expect(Object.keys(hooks.hooks).filter((event) => !HOOK_EVENTS.has(event))).toEqual([]);
     expect(Object.keys(hooks.hooks)).toEqual(["sessionStart"]);
     const [{ command }] = hooks.hooks.sessionStart;
-    expect(command).toBe(`\${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh`);
+    expect(command).toBe(`bash "\${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh"`);
     expect(rendered.has("tea-rags/scripts/session-start.sh")).toBe(true);
   });
 
@@ -314,7 +315,7 @@ describe("renderCursorHarness — dinopowers package", () => {
     expect(hooks.version).toBe(1);
     expect(Object.keys(hooks.hooks)).toEqual(["sessionStart"]);
     const [{ command }] = hooks.hooks.sessionStart;
-    expect(command).toBe(`\${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh`);
+    expect(command).toBe(`bash "\${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh"`);
     const script = rendered.get("dinopowers/scripts/session-start.sh") ?? "";
     expect(script).toContain("additional_context");
     expect(script).not.toContain("CLAUDE_");
@@ -331,6 +332,105 @@ describe("renderCursorHarness — dinopowers package", () => {
       { name: "tea-rags", source: "./harness/cursor/tea-rags" },
       { name: "dinopowers", source: "./harness/cursor/dinopowers" },
     ]);
+  });
+});
+
+describe("renderCursorHarness — tea-rags sessionStart script", () => {
+  /** Cursor rejects a hook's additional_context longer than this (HookAdditionalContextTooLargeError). */
+  const CURSOR_CONTEXT_MAX_CHARS = 10_000;
+  let dir: string;
+  let script: string;
+  let pluginDir: string;
+
+  /** A fake `tea-rags` that records its arguments and prints `digestChars` characters. */
+  function fakeBin(name: string, digestChars = 40): string {
+    const binDir = join(dir, name);
+    mkdirSync(binDir, { recursive: true });
+    const bin = join(binDir, "tea-rags");
+    writeFileSync(
+      bin,
+      `#!/bin/bash\necho "$@" > "${join(binDir, "args")}"\nprintf 'D%.0s' $(seq 1 ${digestChars})\n`,
+    );
+    chmodSync(bin, 0o755);
+    return binDir;
+  }
+
+  function run(stdin: string, env: Record<string, string>): { context?: string; raw: string; status: number | null } {
+    const result = spawnSync("/bin/bash", [script], {
+      cwd: pluginDir,
+      input: stdin,
+      encoding: "utf8",
+      env: { HOME: dir, ...env, PATH: `${env.PATH ?? ""}:/usr/bin:/bin:/opt/homebrew/bin` },
+    });
+    const parsed = JSON.parse(result.stdout || "null") as { additional_context?: string } | null;
+    return { context: parsed?.additional_context, raw: result.stdout, status: result.status };
+  }
+
+  beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), "cursor-hook-"));
+    pluginDir = join(dir, "plugin");
+    mkdirSync(pluginDir);
+    script = join(pluginDir, "session-start.sh");
+    writeFileSync(script, (await renderCursorHarness(ROOT)).get("tea-rags/scripts/session-start.sh") ?? "");
+  });
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("primes CURSOR_PROJECT_DIR, not the plugin directory the hook runs in", () => {
+    const bin = fakeBin("a");
+    const out = run("{}", { PATH: bin, CURSOR_PROJECT_DIR: "/work/project" });
+
+    expect(out.context).toMatch(/^D+$/);
+    expect(readFileSync(join(bin, "args"), "utf8").trim()).toBe("prime /work/project");
+  });
+
+  it("falls back to the first workspace root on stdin", () => {
+    const bin = fakeBin("b");
+    run('{"workspace_roots":["/work/other"]}', { PATH: bin });
+
+    expect(readFileSync(join(bin, "args"), "utf8").trim()).toBe("prime /work/other");
+  });
+
+  it("answers {} without priming when no project directory is known", () => {
+    const bin = fakeBin("c");
+    const out = run("{}", { PATH: bin });
+
+    expect(out.status).toBe(0);
+    expect(JSON.parse(out.raw)).toEqual({});
+    expect(() => readFileSync(join(bin, "args"), "utf8")).toThrow();
+  });
+
+  it("finds tea-rags through TEA_RAGS_BIN when it is not on PATH", () => {
+    const bin = fakeBin("d");
+    const out = run("{}", { TEA_RAGS_BIN: join(bin, "tea-rags"), CURSOR_PROJECT_DIR: "/work/project" });
+
+    expect(out.context).toMatch(/^D+$/);
+  });
+
+  it("answers {} and exits 0 when no tea-rags binary is found", () => {
+    const out = run("{}", { CURSOR_PROJECT_DIR: "/work/project" });
+
+    expect(out.status).toBe(0);
+    expect(JSON.parse(out.raw)).toEqual({});
+  });
+
+  it("caps the digest at Cursor's additional_context limit", () => {
+    const bin = fakeBin("e", 12_000);
+    const out = run("{}", { PATH: bin, CURSOR_PROJECT_DIR: "/work/project" });
+
+    expect(out.context?.length).toBeGreaterThan(0);
+    expect(out.context?.length).toBeLessThanOrEqual(CURSOR_CONTEXT_MAX_CHARS);
+  });
+});
+
+describe("renderCursorHarness — live-test record", () => {
+  it("ships LIVE-TEST.md naming the Cursor and cursor-agent versions it was run with", async () => {
+    const live = (await renderCursorHarness(ROOT)).get("LIVE-TEST.md") ?? "";
+
+    expect(live).toContain("GENERATED by `scripts/gen-harness-cursor.ts`");
+    expect(live).toMatch(/cursor-agent\s+`\d{4}\.\d{2}\.\d{2}-[0-9a-f]+`/);
   });
 });
 
