@@ -72,7 +72,55 @@ export function rustExactMember(owner: NominalTypeRef, member: string, ctx: Call
   const separator = owner.form === "class" ? "." : "#";
   const matches = ctx.symbolTable.lookup(`${fq}${separator}${member}`).filter((def) => def.relPath === relPath);
   if (matches.length > 0) return matches.length === 1 ? matches[0] : undefined;
-  return rustCrateMember(relPath, fq, separator, member, ctx);
+  return (
+    rustAliasImplMember(owner, relPath, fq, separator, member, ctx) ??
+    rustCrateMember(relPath, fq, separator, member, ctx)
+  );
+}
+
+/**
+ * An impl block on a type alias is an impl on the aliased type: servo's
+ * `impl<T> DomRoot<T> { fn as_traced }` beside `pub type DomRoot<T> =
+ * Root<Dom<T>>` answers `as_traced` on a `Root<Dom<Document>>` the alias
+ * expanded to. The alias lives in the owner's file and expands to the owner's
+ * head; every argument it fixes (not one of its own parameters) must match
+ * the owner's argument head, so `Root<Other>` never borrows it. A sole
+ * candidate only.
+ */
+function rustAliasImplMember(
+  owner: NominalTypeRef,
+  relPath: string,
+  fq: string,
+  separator: "#" | ".",
+  member: string,
+  ctx: CallContext,
+): SymbolDefinition | undefined {
+  const shortName = (name: string): string => name.split("::").at(-1) ?? name;
+  const expandsToOwner = (aliased: TypeRef, parameters: readonly string[]): boolean => {
+    if (aliased.form !== "instance" && aliased.form !== "class") return false;
+    if (shortName(aliased.name) !== shortName(fq)) return false;
+    return (aliased.args ?? []).every((arg, index) => {
+      if (arg.form === "instance" && arg.args === undefined && parameters.includes(arg.name)) return true;
+      const given = owner.args?.[index];
+      return (
+        (arg.form === "instance" || arg.form === "class") &&
+        (given?.form === "instance" || given?.form === "class") &&
+        shortName(arg.name) === shortName(given.name)
+      );
+    });
+  };
+  const candidates = (ctx.typeDeclarations?.[relPath] ?? [])
+    .filter(
+      (fact) =>
+        fact.symbolKind === "type_alias" &&
+        !fact.reopens &&
+        fact.aliasedType !== undefined &&
+        expandsToOwner(fact.aliasedType, fact.genericParameters ?? []),
+    )
+    .flatMap((fact) =>
+      ctx.symbolTable.lookup(`${fact.typeId}${separator}${member}`).filter((def) => def.relPath === relPath),
+    );
+  return candidates.length === 1 ? candidates[0] : undefined;
 }
 
 /**
@@ -153,13 +201,24 @@ const RUST_MEMBER_RETURN_TYPES = new MemberReturnTypeResolver({
       const head = resolveRustNominalType({ form: recv.form, name: recv.name }, declaringCtx);
       // A same-name `impl From<..> for Result<T>` declares no type: a spelling
       // the declaring file binds by `use` names the imported item (tikv's
-      // re-exported `codec::Result` alias). Placed through it or refused.
+      // re-exported `codec::Result` alias). The read is additive — where it
+      // proves nothing new, the lexical read below stands, as before it existed:
+      // - an import that places nothing (servo's `use style::properties::
+      //   ComputedValues`, a foreign type the project extends by `impl Ext for T`);
+      // - a project type placed elsewhere that the declaring file's own impl
+      //   block extends (servo's `impl Node` in `node/focus.rs`): both readings
+      //   name one type, and only the lexical one keeps that block's members.
       if (
         head !== undefined &&
         rustPlacedOnImplBlockOnly(head, ctx) &&
         rustDeclaringFileImportOf(recv.name, target.relPath, ctx) !== undefined
       ) {
-        return throughImports() ?? rustExpandProjectAlias(recv.name, substituted, target.relPath, ctx);
+        const imported = throughImports() ?? rustExpandProjectAlias(recv.name, substituted, target.relPath, ctx);
+        const extendedHere =
+          (imported?.form === "instance" || imported?.form === "class") &&
+          imported.name.includes(".rs::") &&
+          head.name.startsWith(`${target.relPath}::`);
+        if (imported !== undefined && !extendedHere) return imported;
       }
       if (head === undefined) {
         return (

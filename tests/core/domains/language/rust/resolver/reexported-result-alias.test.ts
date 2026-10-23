@@ -246,3 +246,183 @@ describe.each([false, true])("Rust re-exported project Result alias (materialize
     expect(target("Decimal::from_bytes(s).unwrap().unwrap()")).toBeUndefined();
   });
 });
+
+/**
+ * servo layout `style_ext.rs`: `LayoutStyle::style(&self) -> &ComputedValues`
+ * names a type the file imports from the FOREIGN stylo crate
+ * (`use style::properties::ComputedValues;`), and the same file extends it
+ * with `impl ComputedValuesExt for ComputedValues`. The import-through read
+ * places nothing (no project item answers it), so it proves nothing: the lexical
+ * read onto the project impl block stands and `style.box_size()` keeps its
+ * edge (rustc: `<ComputedValues as ComputedValuesExt>::box_size`).
+ */
+describe.each([false, true])("Rust foreign type extended by a project impl block (materialized=%s)", (materialized) => {
+  const styleExt = `
+use style::properties::ComputedValues;
+pub(crate) trait ComputedValuesExt {
+  fn box_size(&self, writing_mode: u8) -> u8;
+}
+impl ComputedValuesExt for ComputedValues {
+  fn box_size(&self, writing_mode: u8) -> u8 { 0 }
+}
+pub(crate) enum LayoutStyle<'a> {
+  Default(&'a ComputedValues),
+}
+impl LayoutStyle<'_> {
+  pub(crate) fn style(&self) -> &ComputedValues {
+    match self {
+      Self::Default(style) => style,
+    }
+  }
+  pub(crate) fn sizes(&self, writing_mode: u8) -> u8 {
+    let style = self.style();
+    let box_size = style.box_size(writing_mode);
+    box_size
+  }
+}
+`;
+
+  it("keeps the impl-block member when the declaring file's import places nothing (servo style_ext.rs:1167)", () => {
+    const target = fixture(
+      {
+        "src/lib.rs": "pub mod style_ext;\n",
+        "src/style_ext.rs": styleExt,
+        // servo's `components/svg/model/style/`: a project DIRECTORY named
+        // `style` keeps `use style::..` from reading as external, so the
+        // declaring file's import is taken as a project binding it can't place.
+        "svg/model/style/mod.rs": "pub struct Sheet;\n",
+      },
+      "src/style_ext.rs",
+      materialized,
+    );
+    expect(target("style.box_size(writing_mode)", "LayoutStyle#sizes")).toBe("ComputedValues#box_size");
+  });
+
+  /**
+   * servo `node/focus.rs`: `FocusNavigationScopeOwner::node(&self) -> &Node`
+   * names the `Node` the file imports (`use crate::dom::Node`), and the same
+   * file extends it with an inherent `impl Node { fn
+   * containing_focus_navigation_scope_owner }`. Both readings name one type;
+   * the lexical one keeps that impl block's members in reach, which the
+   * imported `node.rs::Node` cannot when `Node` is not unique in the crate.
+   */
+  it("keeps the declaring file's inherent impl block when the import places the same project type elsewhere (servo focus.rs:967)", () => {
+    const target = fixture(
+      {
+        "script/lib.rs": "pub mod dom;\npub mod xpath;\n",
+        "script/dom/mod.rs": "pub mod node;\npub mod document;\npub use self::node::node::Node;\n",
+        "script/dom/node/mod.rs": "pub mod node;\npub mod focus;\n",
+        "script/dom/node/node.rs": "pub struct Node;\nimpl Node {\n  pub fn owner_doc(&self) -> u8 { 0 }\n}\n",
+        "script/dom/node/focus.rs": `
+use crate::dom::Node;
+pub enum Owner { Node(Node) }
+impl Owner {
+  pub fn node(&self) -> &Node { todo!() }
+}
+impl Node {
+  pub fn containing_owner(&self) -> Option<Owner> { None }
+}
+`,
+        "script/dom/document.rs": `
+use crate::dom::node::focus::Owner;
+pub struct Scope { owner: Owner }
+impl Scope {
+  fn run(&self) {
+    let containing_node = self.owner.node();
+    let o = containing_node.containing_owner();
+  }
+}
+`,
+        // A second `Node` in the crate: the crate-wide member read declines.
+        "script/xpath.rs": "pub struct Node;\n",
+      },
+      "script/dom/document.rs",
+      materialized,
+    );
+    expect(target("containing_node.containing_owner()", "Scope#run")).toBe("Node#containing_owner");
+  });
+});
+
+/**
+ * servo `script_bindings/root.rs`: `pub type DomRoot<T> = Root<Dom<T>>;` with
+ * `impl<T> DomRoot<T> { pub fn as_traced(&self) -> Dom<T> }`, reached through
+ * `script/dom/bindings/root.rs`'s glob re-export. Once the re-export is
+ * followed, `window.Document()` types as `Root<Dom<Document>>`; an impl block
+ * on the alias is an impl on that type, so `as_traced` stays answered
+ * (rustc: `Root::<Dom<T>>::as_traced`).
+ */
+const domRootFiles = (windowBody: string) => ({
+  "script/lib.rs": "pub mod dom;\npub mod sb;\n",
+  "script/sb/mod.rs": "pub mod root;\n",
+  "script/sb/root.rs": `
+use std::ops::Deref;
+pub struct Root<T> { value: T }
+impl<T> Deref for Root<T> where T: Deref {
+  type Target = <T as Deref>::Target;
+  fn deref(&self) -> &Self::Target { &self.value }
+}
+pub struct Dom<T> { ptr: *const T }
+impl<T> Deref for Dom<T> {
+  type Target = T;
+  fn deref(&self) -> &T { todo!() }
+}
+pub type DomRoot<T> = Root<Dom<T>>;
+impl<T> DomRoot<T> {
+  pub fn as_traced(&self) -> Dom<T> { todo!() }
+}
+`,
+  "script/dom/mod.rs": "pub mod bindings;\npub mod window;\npub mod observer;\n",
+  "script/dom/bindings/mod.rs": "pub mod root;\n",
+  "script/dom/bindings/root.rs": "pub(crate) use crate::sb::root::*;\n",
+  "script/dom/window.rs": `
+use crate::dom::bindings::root::DomRoot;
+pub struct Droppable;
+impl Droppable {
+  pub fn set_controller(&self) {}
+}
+// A namesake (servo's ReadableStreamBYOBRequest#set_controller): the name alone binds nothing.
+pub struct ByobRequest;
+impl ByobRequest {
+  pub fn set_controller(&self) {}
+}
+pub struct Document { pub droppable: Droppable }
+impl Document {
+  pub fn url(&self) -> u8 { 0 }
+}
+pub struct Window;
+impl Window {
+  pub fn Document(&self) -> DomRoot<Document> { todo!() }
+}
+${windowBody}
+`,
+  "script/dom/observer.rs": `
+use crate::dom::bindings::root::{Dom, DomRoot};
+use crate::dom::window::{Document, Window};
+fn run(window: &Window) {
+  let d = window.Document().as_traced();
+  let u = window.Document().url();
+}
+`,
+});
+
+describe.each([false, true])("Rust impl block on a re-exported type alias (materialized=%s)", (materialized) => {
+  it("answers a member the alias's impl block declares on the expanded type (servo intersectionobserver.rs:148)", () => {
+    const target = fixture(domRootFiles(""), "script/dom/observer.rs", materialized);
+    expect(target("window.Document().as_traced()")).toBe("DomRoot#as_traced");
+    // The deref chain through the expanded type still answers the pointee.
+    expect(target("window.Document().url()")).toBe("Document#url");
+  });
+
+  it("auto-derefs a field read through the expanded alias (servo eventsource.rs:638)", () => {
+    // `let event_source = EventSource::new(..)` (a `DomRoot<EventSource>`), then
+    // `event_source.droppable.set_controller(..)` in the struct's own file.
+    const target = fixture(
+      domRootFiles(
+        "fn run(window: &Window) {\n  let source = window.Document();\n  source.droppable.set_controller();\n}",
+      ),
+      "script/dom/window.rs",
+      materialized,
+    );
+    expect(target("source.droppable.set_controller()")).toBe("Droppable#set_controller");
+  });
+});

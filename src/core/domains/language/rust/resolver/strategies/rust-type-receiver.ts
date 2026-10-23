@@ -11,7 +11,7 @@ import {
 import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-constructor.js";
 import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
-import { resolveRustNominalType, rustDeclaredMemberReturnType } from "../declared-return-type.js";
+import { resolveRustNominalType, rustDeclaredMemberReturnType, rustDerefTarget } from "../declared-return-type.js";
 import { rustPlaceTypeThroughDeclaringFile } from "../declaring-file-type.js";
 import { rustExternalFieldType, rustStdDerefTarget } from "../external-type-hops.js";
 import { rustPatternBindingType } from "../pattern-binding-type.js";
@@ -256,7 +256,18 @@ function rustFieldHopType(recv: TypeRef, member: string, ctx: CallContext): Type
   const pointee = rustStdDerefTarget(recv, member, ctx, "field");
   const owner = pointee ?? recv;
   // A public field of a std/dependency struct reads the table (bd s3i8m.7 T3c).
-  return rustDeclaredFieldType(owner, member, ctx) ?? rustExternalFieldType(owner, member, ctx);
+  const ownField = rustDeclaredFieldType(owner, member, ctx) ?? rustExternalFieldType(owner, member, ctx);
+  if (ownField !== undefined) return ownField;
+  // A field access auto-derefs through a project smart pointer as a method
+  // call does: servo's `DomRoot<EventSource>` (`Root<Dom<EventSource>>` once
+  // the alias is expanded) reads `.droppable` on `EventSource`.
+  let current = owner.form === "instance" || owner.form === "class" ? rustDerefTarget(owner, ctx) : undefined;
+  for (let hop = 0; current !== undefined && hop < 3; hop++) {
+    const field = rustDeclaredFieldType(current, member, ctx);
+    if (field !== undefined) return field;
+    current = rustDerefTarget(current, ctx);
+  }
+  return undefined;
 }
 
 export function rustReceiverChainType(call: CallRef, ctx: CallContext): TypeRef | undefined {
