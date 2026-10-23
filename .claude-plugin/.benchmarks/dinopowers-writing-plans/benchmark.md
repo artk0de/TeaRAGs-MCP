@@ -176,3 +176,23 @@ No iteration needed.
 - Claude T22 for comparison: 15/15 (100%)
 - FAIL list:
   - ` eval-7 ` — FAIL ( still; Claude T22 PASS ) aggregation: one row per file + shared taskIds, but never names dominantAuthor/commitCount/ageDays/bugFixRate/taskIds fields 
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 15/15 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Notes: rerank now graded literally (blastRadius with codegraph on) — all cases comply. eval-12 listed the directory via semantic_search level="file" metaOnly and declined Glob/ls (the acceptable alternatives) — wrapper not triggered, PASS. eval-6 still runs Step 3.5 (patterns/lexicon) for the new module after the empty-scan report — extra, harmless.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 12/15 PASS (80.0%) (N/A excluded: 0).
+- Round-1 Codex: 14/15 (93.3%). Delta: -13.3 pp.
+- FAIL list:
+  - `eval-2` — rerank/metaOnly/limit 6 right, but pathPattern brace expansion never stated (only 'scoped to' the two files) [strict-literal]
+  - `eval-7` — one row per file + shared taskIds, but never names dominantAuthor/commitCount/ageDays/bugFixRate per file
+  - `eval-15` — get_naming_lexicon names+pathPattern, but concept+language elided ('…'), MISFIT->suggestion and NEW_TERM->project-term-if-same not stated

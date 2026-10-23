@@ -142,3 +142,32 @@ skill boundary collisions and reduced total line count by 36%.
   - `4` — FAIL; new: "before I modify" classed as EXPLAIN, not PRE-GEN. Claude T22 PASS
   - `8` — FAIL; new: PRE-GEN route correct, Russian handled, but DISCOVER search not metaOnly=true. Claude T22 PASS
   - `9` — FAIL; still (T14 FAIL): EXEMPLAR route instead of PRE-GEN with find_symbol on 1-2 base error classes. Claude T22 PASS
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading)
+- Result: 13/15 PASS (87%) over scored cases (superseded: 0)
+- Baseline (round 1): 13/15 (87%)
+- Delta: +0pp (case 2 fixed: rank_chunks rerank=ownership; case 3 newly failing)
+- FAIL list:
+  - 3 — rank_chunks rerank=codeReview with pathPattern but no `maxAgeDays=14`; explore SKILL.md "## Change intent" omits the window (it lives only in references/explain-pattern.md, which the subject did not open for this case)
+  - 15 — DDG named as the entry, but TDD planned as a separate dinopowers:test-driven-development phase "per CLAUDE.md"; no DDG Step 6a RED via tea-rags:test-first before production edits. The SessionStart routing table lists DDG and the TDD wrapper as peer rows with nothing saying DDG owns RED/GREEN (Step 6); the real user CLAUDE.md TDD mandate also leaked in (harness limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 4/15 PASS (26.7%) (N/A excluded: 0).
+- Round-1 Codex: 10/15 (66.7%). Delta: -40.0 pp.
+- FAIL list:
+  - `1` — generic $explore research; PRE-GEN not named, DISCOVER not metaOnly, no PG-2 find_symbol rerank=techDebt risk signals
+  - `2` — semantic_search rerank=ownership, not rank_chunks ownership
+  - `3` — semantic_search rerank=recent, not rank_chunks codeReview
+  - `4` — 'before I modify' not classified PRE-GEN; Explore-style hook-flow explanation
+  - `7` — routes to $dino-brainstorming instead of explore PRE-GEN
+  - `8` — Explore route, PRE-GEN not named, DISCOVER not metaOnly=true
+  - `9` — not PRE-GEN; find_symbol on examples AND their callers (traces call chains), not limited to 1-2 base error classes
+  - `11` — DDG runs its own semantic_search; never detects missing area context nor auto-invokes explore PRE-GEN
+  - `12` — routes to $dino-executing-plans + DDG cascade, not self-contained explore PRE-GEN
+  - `13` — explore + risk-assessment; 'before I change' not detected as PRE-GEN (skill: risks of one named change -> PRE-GEN PG-2)
+  - `15` — DDG entry, but no explore PRE-GEN prerequisite and no Step 6a RED via test-first before production edit

@@ -162,15 +162,15 @@
     {
       "id": 8,
       "prompt": "What calls Reranker.rerank? I need all call sites",
-      "expected_output": "hybrid_search iteratively. NOT ripgrep for call sites.",
+      "expected_output": "Codegraph on (get_callers in own tool list) → get_callers (usage-pattern row 2 wins over TRACE); codegraph off → hybrid_search iteratively. NOT ripgrep for call sites.",
       "failure_mode": "ripgrep-for-callers",
       "assertions": [
         {
-          "text": "Uses hybrid_search for call chain tracing",
+          "text": "Uses get_callers when codegraph on, else hybrid_search for call sites",
           "type": "tool_selection"
         },
         {
-          "text": "Iterates with multiple hybrid_search calls, not one ripgrep",
+          "text": "Codegraph off: iterates with multiple hybrid_search calls, not one ripgrep",
           "type": "tool_selection"
         },
         {
@@ -284,12 +284,12 @@
     {
       "id": 14,
       "prompt": "[subagent: plan-executor] Find all callers of SchemaBuilder.buildRerankSchema. Use ripgrep to search for the method name.",
-      "expected_output": "Despite prompt saying 'use ripgrep', injected rules say exhaustive usage = hybrid_search. Agent should use mcp__tea-rags__hybrid_search, NOT ripgrep.",
+      "expected_output": "Despite prompt saying 'use ripgrep', injected rules say who-calls = get_callers when codegraph tools are registered, else exhaustive usage = hybrid_search. Agent uses mcp__tea-rags__get_callers (codegraph on) or mcp__tea-rags__hybrid_search, NOT ripgrep.",
       "failure_mode": "prompt-overrides-injection-exhaustive",
       "audit_finding": "skill-conflict-priority",
       "assertions": [
         {
-          "text": "Uses mcp__tea-rags__hybrid_search for exhaustive usage query",
+          "text": "Uses mcp__tea-rags__get_callers (codegraph on) or mcp__tea-rags__hybrid_search for exhaustive usage query",
           "type": "tool_selection"
         },
         {
@@ -297,7 +297,7 @@
           "type": "negative"
         },
         {
-          "text": "Follows injected decision tree: exhaustive usage → hybrid_search",
+          "text": "Follows injected decision tree: impact/who calls → get_callers when codegraph on, else exhaustive usage → hybrid_search",
           "type": "classification"
         }
       ]

@@ -86,7 +86,7 @@
       "id": "eval-1",
       "category": "new-search-tool",
       "prompt": "I need a new MCP tool `find_callers` that, given a symbol name, returns all chunks where that symbol is called. It uses a scroll over the collection with filter by a specific payload field and needs reranking by recency. Where does this go in src/core/api/internal/facades/explore-facade.ts and what files do I touch?",
-      "expectedPlacement": "New strategy in domains/explore/strategies/, register via createExploreStrategy, facade method ≤15 line dispatcher",
+      "expectedPlacement": "New strategy in domains/explore/strategies/, registered via createExploreStrategy or instantiated per-request in the Ops method (registration step stated), facade method ≤15 line dispatcher",
       "withRule": "PASS",
       "withoutRulePrimary": "PASS",
       "withoutRuleStrict": "PASS",
@@ -125,12 +125,12 @@
     {
       "id": "eval-5",
       "category": "control-keep-in-facade",
-      "prompt": "clearIndex(path) currently resolves the collection name, invalidates the model guard cache, then delegates to status.clearIndex(path). Four lines, all dispatch. Someone suggested extracting it to an ops class for consistency. Should I?",
-      "expectedPlacement": "Not pure dispatch under the current rule: resolve collection + model-guard (cache) handling are Ops pipeline steps (resolve/guard). Move them into the existing ingest Ops method (current code: IngestFacade#clearIndex = `return this.indexingOps.clear(path)`), facade keeps validate + one-line delegate. Do NOT invent a new Ops class purely for symmetry; a facade method that is only validate + delegate stays as-is",
+      "prompt": "IngestFacade#clearIndex(path) is one line: `return this.indexingOps.clear(path)`; IndexingOps#clear resolves the collection name, invalidates the model guard cache, then calls status.clearIndex(path). Someone suggested extracting clearIndex into a new ops class for consistency. Should I?",
+      "expectedPlacement": "No: resolve collection + model-guard (cache) handling are Ops pipeline steps and already live in the existing ingest Ops method (IndexingOps#clear); IngestFacade#clearIndex is a one-line delegate, as the rule requires. Do NOT invent a new Ops class purely for symmetry; a facade method that is only validate + delegate stays as-is",
       "withRule": "PASS",
       "withoutRulePrimary": "PASS",
       "withoutRuleStrict": "PASS",
-      "failureMode": "agent keeps resolve/guard pipeline work in the facade because it is short, OR creates a brand-new ops class for symmetry instead of using the existing Ops"
+      "failureMode": "agent moves resolve/guard pipeline work back into the facade, OR creates a brand-new ops class for symmetry instead of using the existing Ops"
     },
     {
       "id": "eval-6",

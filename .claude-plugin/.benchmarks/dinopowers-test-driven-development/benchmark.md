@@ -214,3 +214,21 @@ unaware of the explicit per-task reindex mechanism. The prior
   - `eval-11` — FAIL; new (T14 PASS): Complies with rerank=hotspots (test-flakiness recipe, metaOnly=true) while correcting the premise; expected refuse hotspots and use proven.
   - `eval-12` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
   - `eval-15` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Result: 14/15 PASS (93%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 15/15 (100%)
+- Delta: -7pp
+- FAIL list:
+  - eval-7 — cross-language (Ruby hook, TS tests): searches the broader TS corpus and notes the language mismatch, but does not state the MUST "if corpus returns 0: fall back with explicit note" (Step 3 "Both queries 0 results" fallback not carried into the edge case).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 14/15 PASS (93.3%) (N/A excluded: 0).
+- Round-1 Codex: 6/15 (40.0%). Delta: +53.3 pp.
+- FAIL list:
+  - `eval-7` — search scoped to the Ruby dir instead of the broader corpus; no "cross-language — TS conventions may not apply to Ruby" note

@@ -135,3 +135,22 @@ trivial). Phase 4 verification: **10/10 PASS, +70pp from before-fix.**
 - Codex T14 rate: 92% (12/13)
 - Claude T22 rate: 100% (13/13)
 - FAIL list: none
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Result: 12/13 PASS (92%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 13/13 (100%)
+- Delta: -8pp
+- FAIL list:
+  - E6 — typo fix: subject skipped the wrapper entirely (SKILL.md Step 5 "Trivial" row: "Skip Step 5 AND skip wrapper entirely — direct Edit"); expected list's first step is Skill(dinopowers:executing-plans). Eval/skill conflict — E13 (same class) expects no wrapper.
+- Notes: E1 expected text still says "custom rerank" for the guard; subject skipped the guard (new file, SAFE) so not exercised.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 12/13 PASS (92%) (N/A excluded: 0).
+- Round-1 Codex: 13/13 (100%). Delta: -8 pp.
+- FAIL list:
+  - `E11` — DDG MODIFY + tests-at-risk + callers stated, but Step 4.5 template-lookup skip (MODIFY skips TEMPLATE) not stated

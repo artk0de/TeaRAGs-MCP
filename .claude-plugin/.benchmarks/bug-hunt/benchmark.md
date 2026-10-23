@@ -138,3 +138,22 @@ needed.
   - `eval-19` — FAIL; new: No fresh probe with brace pathPattern + modifiedAfter + rerank bugHunt (uses pathHint); does state no call graph. Claude T22 PASS
   - `eval-20` — FAIL; still: No `git status --porcelain -uall`, no incremental index_codebase before search (explicitly refuses to index "in evaluation"), no one-message historical+fresh+uncommitted probes. Claude T22 PASS
   - `eval-21` — FAIL; still: No `git status -uall` / per-file brace uncommitted probe; incremental index deferred. Claude T22 PASS
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strict-literal)
+- Result: 20/21 PASS (95%) over scored cases (superseded: 0)
+- Baseline (round 1, Task 22): 21/21 (100%)
+- Delta: -5pp
+- FAIL list:
+  - `eval-2` — result-in-hand case classed as prime suspect with file:line and "labels", but the PRESENT line does not state the relativeChurn observation the expected format requires
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 19/21 PASS (90.5%) (N/A excluded: 0).
+- Round-1 Codex: 7/21 (33.3%). Delta: +57.1 pp.
+- FAIL list:
+  - `eval-2` — PRIME SUSPECT presented with file:line + bugFixRate but no relativeChurn label / root-cause observation
+  - `eval-9` — literal-text search for the phrase, but no find_symbol step to understand the code around the hit

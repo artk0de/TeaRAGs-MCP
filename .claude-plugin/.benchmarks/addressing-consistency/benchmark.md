@@ -92,3 +92,18 @@ Schema strings are shorter than first drafted. The existing budgets were kept:
 - Claude T22 for comparison: 12/12 (100%)
 - FAIL list:
   - ` C10 ` — FAIL ( still; Claude T22 PASS ) asks caller for repo path instead of project-only addressing (model behaviour) 
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; full cases.md scenarios given to the subject)
+- Result: 12/12 PASS (100%) over 12 scored cases (superseded: 0)
+- Baseline (round 1): 12/12 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 12/12 PASS (100%) (N/A excluded: 0).
+- Round-1 Codex: 11/12 (91.7%). Delta: +8.3 pp.
+- FAIL list: none.

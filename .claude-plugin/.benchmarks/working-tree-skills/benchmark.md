@@ -432,3 +432,23 @@ listed in the `iteration-*/arm-*.md` answers.
   - `S12` — same, rows' staleness / not-evidence-of-correct-edit not stated — new
   - `S13` — 'Review my branch' routed to $dino-requesting-code-review not mr-review — new
   - `S14` — carried tree=/work/acme treated as usable for cwd .../feat-x — still
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strict-literal against assertions A1/A2 + expected)
+- Result: 16/16 PASS (100%) over scored cases. 0 superseded.
+- Baseline (round 1, Task 22): 16/16 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Note: S8 expected text says "no project"; the subject passes project=acme + path=<cwd> as the current core addressing rule requires. Graded on A1 (path = cwd, no project-only call) — the "no project" wording is stale vs core (S14 already accepts project per core addressing).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 13/16 PASS (81%) (N/A excluded: 0).
+- Round-1 Codex: 12/16 (75%). Delta: +6 pp.
+- FAIL list:
+  - `S3` — bug-hunt searches not stated with path=cwd; no parallel historical/fresh/uncommitted bugHunt probes (A1).
+  - `S4` — treeState row not read as pre-edit index copy (text/lines stale), still the uncommitted suspect (A2).
+  - `S12` — rows not called pre-edit copies (fanIn/churn valid, text/lines stale, not proof of correctness) (A2).

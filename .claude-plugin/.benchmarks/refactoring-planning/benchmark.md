@@ -99,3 +99,22 @@ regression.
   - ` recipe-sdp-inversion ` — FAIL ( new (T14 PASS); Claude T22 PASS ) never spells the ops (removeEdge / addFile abstract:true / 2x addEdge), foundation component src/core/contracts placement, or rationale = finding key; only "form candidate from recipe" (naming lexicon, plannedEdges, restructurePlan ok) 
   - ` large-repo-report-candidates-off ` — FAIL ( still (different reason: cap 15 + includeReportCandidates:false + not-ordered now OK); Claude T22 PASS ) rationale given as "quadratic judging cost" without citing bd tea-rags-mcp-vytjl / hour-long call 
   - ` task-carries-expected-delta-and-gate ` — FAIL ( new; Claude T22 PASS ) Task carries expected delta, but no quoted `GATE review_changes: introduced=<n>, partial=<bool>` line and execution contract (diverged -> Step 7 -> restructurePlan) not spelled out 
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading)
+- Result: 8/8 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 1): 8/8 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Notes: recipe-sdp-inversion names one get_naming_lexicon call over the drafted interface name without spelling the names[] payload — accepted (the check itself is stated).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 6/8 PASS (75.0%) (N/A excluded: 0).
+- Round-1 Codex: 5/8 (62.5%). Delta: +12.5 pp.
+- FAIL list:
+  - `recipe-sdp-inversion` — defers to recipe; never spells ops (removeEdge / addFile abstract:true / 2x addEdge), new-file placement under src/core/contracts, or rationale = finding key
+  - `large-repo-report-candidates-off` — includeReportCandidates:false + Not ordered right, but sends all 22 caller candidates (mustNotDo; cap ~15 critical-first) and no bd tea-rags-mcp-vytjl citation

@@ -118,3 +118,19 @@ Plugin bumps (patch, text-only): tea-rags 0.26.0 → 0.26.1, dinopowers 0.17.5 �
 - Claude T22 rate: 38% (5/13)
 - FAIL list: 
   - `12` — subagent OFF entry-point used rerank=onboarding, not relevance+chunkSize (entry-point-pattern.md l.34) — new
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly)
+- Result: 13/13 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 1): 5/13 (38%)
+- Delta: +62pp
+- FAIL list: none
+- Notes: per the suite's honest-v2 harness (per-ENV tool list), each case now carries a scenario line stating whether graph tools are registered; round 1 subjects used their own session tool list instead. All OFF cases detect OFF before any graph call, never claim DAG/no-path, and fall back without get_callees.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 13/13 PASS (100%) (N/A excluded: 0).
+- Round-1 Codex: 12/13 (92.3%). Delta: +7.7 pp.
+- FAIL list: none. Caveat: prompts sent to Codex used the old digest-signal wording, not the current tool-list wording in evals.json; graded on intent.

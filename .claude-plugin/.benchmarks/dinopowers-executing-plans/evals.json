@@ -120,7 +120,8 @@
       "prompt": "Guard for Task 5 returned: src/core/contracts/errors.ts has imports=89 (top 2% in result set), bugFixRate=45%. Proceed?",
       "expected": {
         "mustDo": [
-          "Compute verdict: UNSAFE (imports top 5% AND bugFixRate >= 40%)",
+          "Resolve the bare bugFixRate=45% to its label via the project labelMap (tea-rags://project/<alias>/metrics?section=labelMap; concerning >= p75, critical >= p95) before the verdict — no fixed percent cut",
+          "Compute verdict: UNSAFE when that label is concerning/critical (imports top 5% AND bugFixRate label concerning+); name both halves",
           "Pause execution — do NOT invoke superpowers:executing-plans",
           "Surface block + recommend split/review/tests-first"
         ],
@@ -250,7 +251,7 @@
       "expected": {
         "mustDo": [
           "Keep metaOnly=true on guard call",
-          "If user wants content, issue SEPARATE semantic_search with metaOnly=false AFTER guard verdict",
+          "If user wants content: SEPARATE call AFTER the guard verdict — find_symbol(relativePath:) outline then member bodies (core: depth after search → find_symbol); never flip the guard to metaOnly=false",
           "Verdict computation uses guard results, not content"
         ],
         "mustNotDo": [

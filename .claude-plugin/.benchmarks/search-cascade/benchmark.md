@@ -816,3 +816,22 @@ merges every part — the epic's target.
 - Claude T22 rate: 92% (11/12)
 - FAIL list: 
   - `12` — review_changes then hand-listed names[] to get_naming_lexicon — still
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading)
+- Result: 11/12 PASS (92%) over 12 scored cases (superseded: 0)
+- Baseline (round 1): 11/12 (92%)
+- Delta: +0pp (case 11 fixed: get_naming_lexicon with names[], no cross-check; case 12 newly failing)
+- FAIL list:
+  - 12 — review_changes(changes:{}, sections:["naming"]) correct, but plans a follow-up get_naming_lexicon(names[]) "if a finding needs a deeper verdict" — the not-route (lexicon after review_changes). guides/decision-tree.md naming branch (l.100-101) routes diff names to review_changes but never says its findings are the whole answer / no lexicon follow-up.
+- Notes: cases 3 and 7 graded on the primary route (hybrid_search / semantic_search); the optional find_symbol definition lookup (3) and post-hit find_symbol drill (7) are the cascade's depth step, not the forbidden route.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 11/12 PASS (92%) (N/A excluded: 0).
+- Round-1 Codex: 11/12 (92%). Delta: ±0 pp.
+- FAIL list:
+  - `12` — review_changes then hand-listed names[] into get_naming_lexicon (mustNot); naming section verdicts not used as the answer.

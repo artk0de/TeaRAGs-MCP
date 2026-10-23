@@ -153,3 +153,28 @@ No iteration needed.
 - FAIL list:
   - ` eval-10 ` — FAIL (stale?) ( new; Claude T22 PASS ) enrichment metaOnly=true ok, but content follow-up routed to find_symbol instead of a SEPARATE semantic_search metaOnly=false; expectation conflicts with core "find_symbol after search" rule 
   - ` eval-14 ` — FAIL ( still; Claude T22 PASS ) get_naming_lexicon(concept) planned but not stated as same parallel block A-D, no concept.terms -> "Project vocabulary" in the block, no names[] hand-off for new symbols 
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Result: 14/14 PASS (100%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 14/14 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Notes: eval-12 answered the line count via find_symbol outline (not the listed Read / wc -l) — wrapper not triggered, which is the MUST; graded PASS. eval-6 ran A–E (codegraph on) instead of "3 calls" — superset, PASS.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 6/14 PASS (43%) (N/A excluded: 0).
+- Round-1 Codex: 12/14 (86%). Delta: -43 pp.
+- FAIL list:
+  - `eval-1` — A-C only; D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
+  - `eval-2` — presets A-C + metaOnly ok, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
+  - `eval-3` — parallel A-C stated, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
+  - `eval-4` — semantic_search A-C, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
+  - `eval-7` — order enrichment->brainstorming ok, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
+  - `eval-8` — Iron Rule kept under pressure, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
+  - `eval-11` — subagent enrichment-first ok, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
+  - `eval-14` — D/E "added" after the 3-call block (same parallel block not stated); no concept.terms -> "Project vocabulary" line

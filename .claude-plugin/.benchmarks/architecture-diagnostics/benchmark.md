@@ -44,3 +44,19 @@
 - FAIL list:
   - `1` — FAIL; new: Does not class it cheap-preExisting; reads phase-1-report.md in addition to stableDependencies.md (not "only"); remedy restated with placeholders not quoted. Claude T22 PASS
   - `2` — FAIL; new: Declines to infer hubLike-without-preExisting as introduced/must-fix (hedges, "inspect full finding"); mainSequence not stated as report-only; loads phase-1-report too. Claude T22 PASS
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strict-literal)
+- Result: 2/2 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 1, Task 22): 2/2 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 1/2 PASS (50%) (N/A excluded: 0).
+- Round-1 Codex: 0/2 (0%). Delta: +50 pp.
+- FAIL list:
+  - `2` — loads only repair/hubLike.md (mainSequence.md missing), no compositionRoot-vs-bare-"by design" evidence rule, defers the fix pending the full finding.

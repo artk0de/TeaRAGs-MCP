@@ -82,3 +82,14 @@ exploration, and double test runs. After optimization, all operations use
 - Codex T14 rate: N/A (10/10)
 - Claude T22 rate: 90% (9/10)
 - FAIL list: none
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only; agent def + expand-coverage skill; graded strict-literal)
+- Result: 8/10 PASS (80%) over 10 scored cases (superseded 0)
+- Baseline (round 1, Task 22): 9/10 (90%)
+- Delta: -10pp
+- FAIL list:
+  - `eval-3` — plan runs baseline + verify coverage but states no targeted vitest run of the changed test files between them (expected MUST step); the skill's flow, which the subject treats as overriding the agent def, has no such step
+  - `eval-9` — plan follows the prompt and issues semantic_search ("untested error/empty/boundary paths") to map uncovered areas; expected explicitly rejects semantic_search for uncovered-area discovery (it cannot see coverage)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

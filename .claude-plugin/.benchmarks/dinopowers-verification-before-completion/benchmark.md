@@ -135,3 +135,22 @@ without-rule. Delta +87pp.
   - `eval-5` — HIGH-BLAST classified but no full-suite recommendation / no surfacing before verification — new
   - `eval-7` — UNVERIFIABLE conflated with new-file SAFE; no 'run full suite conservatively' — new
   - `eval-12` — refuses narrowing but does not surface full-suite rec nor wait for explicit override — still-class (Claude T22 also FAIL)
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 14/15 (93%)
+- Delta: +7pp
+- FAIL list: none
+- Notes: eval-12 now surfaces the HIGH-BLAST full-suite recommendation and waits for explicit override (round-1 FAIL fixed). eval-7 mentions an incremental reindex + single retry on the main checkout (from the freshness guide) — not a parameter change, graded PASS.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 13/15 PASS (86.7%) (N/A excluded: 0).
+- Round-1 Codex: 12/15 (80.0%). Delta: +6.7 pp.
+- FAIL list:
+  - `eval-11` — grep refused with "misses ranked imports signal" but without the "miscounts re-exports" half of the rationale
+  - `eval-12` — requires explicit override before narrowing, but no acknowledgment-of-risk clause

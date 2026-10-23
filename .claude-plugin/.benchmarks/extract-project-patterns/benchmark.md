@@ -142,3 +142,21 @@ preset hint correctly without help.
   - `Eval-7` — contract {templates:[],locality:'none',diagnostics:['no input']} not returned (new)
   - `Eval-8` — L2 not skipped for 1-semantic-segment L1 (new)
   - cause: plan from prompt only, skill rules (L2 derivation/skip/contract) not applied
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strict-literal)
+- Result: 8/8 PASS (100%) over scored cases. 0 superseded.
+- Baseline (round 1, Task 22): 8/8 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 6/8 PASS (75.0%) (N/A excluded: 0).
+- Round-1 Codex: 1/8 (12.5%). Delta: +62.5 pp.
+- FAIL list:
+  - `Eval-2-l1-starved-l2-hit` — miscounts semantic tail [explore,strategies,new-feature] as 1 segment, skips L2 instead of **/domains/explore/**, ends at L3
+  - `Eval-4-triple-fail-diagnostic` — L2 skip + per-level production relax correct, but omits diagnostic 'no battle-tested reference found; widened to production code'

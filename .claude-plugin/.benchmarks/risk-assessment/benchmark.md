@@ -235,3 +235,25 @@ separate work.
   - `4` — 'risky areas before refactor' routed to $dino-brainstorming + 3 searches, risk-assessment not run with pathPattern — new
   - `7` — adds 4th explicit rank_chunks rerank=ownership — still
   - `13` — structural-violation overlap annotated, not escalated/tagged/sorted, no repair/stableDependencies.md read — new
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading against the current evals.json)
+- Result: 13/14 PASS (93%) over scored cases (superseded: 0)
+- Baseline (round 1): 14/14 (100%; round 1 graded on intent)
+- Delta: -7pp
+- FAIL list:
+  - 4 — "Find risky areas before I refactor the trajectory module": went straight to risk-assessment and resolved `**/trajectory/**` in its own Phase 0; expected says explore PRE-GEN PG-2 delegates to risk-assessment WITH pathPattern and risk-assessment skips Phase 0. The expectation is stale/inconsistent: research-merge eval 1 states pre-gen-pattern.md no longer delegates to risk-assessment, while explore's Risk-intent route (resolve scope, then delegate so risk-assessment skips Phase 0) is not mentioned in risk-assessment SKILL.md. Resulting pathPattern identical.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 9/14 PASS (64%) (N/A excluded: 0).
+- Round-1 Codex: 11/14 (79%). Delta: -14 pp.
+- FAIL list:
+  - `3` — stratified two-pass scan present, pagination stop conditions not stated.
+  - `4` — risk-assessment invoked directly with its own Phase 0; no explore delegation WITH pathPattern / Phase-0 skip.
+  - `6` — 'file-focused risk list' instead of the Phase 5 risk map (tiers, File:Line, Risk Type, Key Signals labels, Tests, Summary).
+  - `9` — no Phase 5 risk map and no DDG handoff (pathPattern + per-symbol overlay labels).
+  - `12` — output not the Phase 5 risk map format.

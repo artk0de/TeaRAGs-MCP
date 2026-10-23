@@ -86,3 +86,22 @@ needed.
   - `eval-1` — FAIL; still (T14 FAIL; expectation noted STALE by Claude T12, now realigned): Unregistered branch lacks the "declined -> index_codebase path=" fallback; uses projectName param. Claude T22 PASS
   - `eval-2` — FAIL; still: No linked-worktree branch (do not register/index; read tools already answer), no declined fallback. Claude T22 PASS
   - `eval-10` — FAIL (stale?); same as Claude T22 FAIL: Asks for the `Run:` line instead of routing to force-reindex and stating incremental will not populate new fields; same hedge Claude T22 hit (drift message without Run: line)
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading per round-2 rules)
+- Result: 8/10 PASS (80%) over scored cases (superseded: 0)
+- Baseline (round 1): 9/10 (90%)
+- Delta: -10pp (eval-10 fixed; eval-5/eval-6 now fail under literal grading)
+- FAIL list:
+  - eval-5 — [QDRANT_UNAVAILABLE]: tells the user to run the hint and re-check status afterwards, but never states STOP + AskUserQuestion + wait for an explicit answer; degraded guide read only conditionally. guides/degraded.md carries the STOP/ask/wait rule for the embedding provider only (no Qdrant-outage line); index SKILL.md has no error-code handling at all.
+  - eval-6 — [OLLAMA_UNAVAILABLE]: reads the degraded guide but plans "tell the user to run ollama serve, then re-run status" — no explicit AskUserQuestion / wait for the user's answer, the MUST of degraded.md l.21-22.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 8/10 PASS (80%) (N/A excluded: 0).
+- Round-1 Codex: 7/10 (70%). Delta: +10.0 pp.
+- FAIL list:
+  - `eval-1` — confirmed first index via MCP index_codebase(path, name) instead of `tea-rags index-codebase <path> --name <alias>`.
+  - `eval-2` — no linked-worktree branch (do not register/index); confirmed route again not the CLI.

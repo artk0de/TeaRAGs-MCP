@@ -297,3 +297,45 @@ boundary against regression rather than measuring a delta.
   - ` step7-fix-round-reverted ` — FAIL ( still; Claude T22 PASS ) keeps round 1 and stacks a cycles repair on top ("prior SDP fix successful") instead of reverting the whole round 
   - ` tdd-refactor-baseline ` — FAIL ( still; Claude T22 PASS ) no GREEN baseline (tests-at-risk pins + helper tests) before the move; only architecture simulation, tests re-checked after 
   - ` tdd-bugfix-repro-first ` — FAIL ( still; Claude T22 PASS ) no green baseline run and no reproduction test failing on formatDuration(0)==="0s" before patching; goes bug-hunt -> minimal fix 
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strict-literal); run as 3 sequential subjects (21/21/20 cases)
+- Result: 58/62 PASS (94%) over 62 scored cases (5 superseded excluded: eval-6, eval-11, eval-12, eval-13, eval-14)
+- Baseline (round 1, Task 22): 62/62 (100%)
+- Delta: -6pp
+- FAIL list:
+  - `eval-9` — answer follows references/step-5-style.md (`silo` → "match dominant patterns closely, owner should review"; "match exactly" is the `deep-silo` row); expected demands "match EXACTLY" for silo — eval is stale vs the STYLE table
+  - `step7-fix-seeded-sdp-barrel` — Step 7 finding + remedy/repair stated, but no explicit re-run of review_changes ("finding gone, no new finding"); only "regress -> revert" implies it
+  - `step7-fix-seeded-layering-back-edge` — same: remedy/repair per repair/layeringBackEdge.md stated, re-run of review_changes not stated
+  - `step7-fix-seeded-hub-cut` — same: remedy/repair per repair/hubLike.md stated, re-run of review_changes not stated
+- Note: the three seeded FAILs are compression in the answers (references/step-7-verify.md §fix-at-write round loop states "Re-run the same review_changes + targeted tests"); the subject prompt capped answers at 3-10 lines per case.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 41/62 PASS (66.1%) (N/A excluded: 0). Parts: p1 21/25, p2 11/25, p3 9/12.
+- Round-1 Codex: 56/62 (90.3%). Delta: -24.2 pp.
+- FAIL list:
+  - `eval-2` — DEFENSIVE picked, strategies/defensive.md never loaded.
+  - `eval-9` — silo → "match closely" (follows current step-5-style.md; expectation "match exactly" is stale).
+  - `naming-codegraph-off` — no split of holders' symbolIds/paths into recurring words.
+  - `naming-type-draft` — MISFIT → take suggestion never stated; hedges toward keeping the draft.
+  - `session-reuse-edited` — reuse of other unedited in-context files not stated.
+  - `step7-fix-remedy-applied` — re-run with only incompleteChange+architecture sections.
+  - `step7-fix-preexisting-remedy` — refuses to apply the remedy of a preExisting+remedy finding.
+  - `step7-fix-preexisting-report` — no bead suggestion, commit-allowed not stated.
+  - `step7-fix-escalate-after-two` — stops but does not ask the user with fix / accept / bead options.
+  - `step7-fix-flap` — no before/after metric + threshold + edge report for the user to decide.
+  - `step7-fix-cohesion-own-vs-preexisting` — own cluster A move not committed; cluster B no bead.
+  - `step7-fix-cochange-verdict` — plugin.json not accepted as version manifest.
+  - `step7-fix-seeded-sdp-barrel` — no post-repair review_changes re-run.
+  - `step7-fix-seeded-layering-back-edge` — no post-repair review_changes re-run.
+  - `step7-fix-seeded-hub-cut` — no hubLike repair, no re-run, no before/after escalation.
+  - `step7-fix-stacked-base-unevidenced-acceptance` — base not `git merge-base HEAD main`; stack-below findings not dropped.
+  - `step7-confirm-looks-false-but-real` — edge-in-diff confirmation skipped.
+  - `tdd-red-before-code` — RED via dino-TDD; tea-rags:test-first never invoked.
+  - `tdd-modify-baseline-then-red` — new red test + pin edited after the change; no PIN-UPDATED with spec line.
+  - `gate-partial-not-pass` — no `files` batch re-runs until every file judged.
+  - `prewrite-sim-move-files` — re-simulation not driven by the repair file `## Ops recipe`.

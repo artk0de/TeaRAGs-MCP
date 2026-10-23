@@ -32,7 +32,7 @@
     {
       "id": 4,
       "prompt": "Find risky areas before I refactor the trajectory module",
-      "expected": "explore PG → PG-2 delegates to risk-assessment WITH pathPattern. risk-assessment SKIPS Phase 0.",
+      "expected": "Risk intent over an AREA ('risky areas before I refactor <module>'): via explore, its Risk-intent check delegates to risk-assessment WITH the resolved pathPattern and risk-assessment SKIPS Phase 0 (Shortcut); invoked directly, risk-assessment Phase 0 resolves the same pathPattern (e.g. **/trajectory/**). Not PRE-GEN PG-2 (that no longer delegates).",
       "audit_finding": [9],
       "baseline_grade": "FAIL",
       "before_grade": "FAIL",

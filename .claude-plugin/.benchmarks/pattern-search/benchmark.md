@@ -110,3 +110,22 @@ needed.
 - Claude T22 for comparison: 14/14 (100%)
 - FAIL list:
   - ` eval-6 ` — FAIL ( still; Claude T22 PASS ) states same-dir >80% keep-richer but omits the different-dirs ALWAYS-keep-both rule 
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading)
+- Result: 13/14 PASS (93%) over 14 scored cases (superseded: 0)
+- Baseline (round 1): 14/14 (100%)
+- Delta: -7pp
+- FAIL list:
+  - eval-14 — names "check SEED against the pagination guide (disambiguation + no-match detection)" but states none of the actions: no >70%-directory test → ask which area → re-SEED with pathPattern, no 2-of-3 warn / 3-of-3 report-no-match. Round 1 passed it as "weak pass"; strict literal grading fails it. pattern-search SKILL.md l.91 only names the guide and the two checks; the actions live in guides/pagination.md, which the subject cited without opening.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 12/14 PASS (86%) (N/A excluded: 0).
+- Round-1 Codex: 13/14 (93%). Delta: -7 pp.
+- FAIL list:
+  - `eval-2` — routed to refactoring-scan (3 rank presets); no EXPAND from problematic seeds (mustNotDo: skip EXPAND).
+  - `eval-14` — names pagination disambiguation/no-match check only; no thresholds or ask/re-SEED / warn / report-no-match actions.

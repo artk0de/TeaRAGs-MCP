@@ -36,3 +36,20 @@
 - FAIL list: 
   - `naming-diff-changes` — naming not reported grouped by verdict, no conforming/novel summary line, naming section only implicit — new (borderline)
   - `naming-external-names` — review_changes changes={base} on main checkout for external MR, no names[] from added lines — still
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strict-literal)
+- Result: 1/2 PASS (50%) over 2 scored cases (superseded 1)
+- Baseline (round 1, Task 22): 2/2 (100%)
+- Delta: -50pp
+- FAIL list:
+  - `naming-external-names` — names[] carries only `{name: row, kind: "variable"}`; expected row as `local` AND find_vendor_envelope as `return`; plan also does not state that comments say nothing about the local/external switch
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 1/2 PASS (50%) (N/A excluded: 0; naming-diff-misfit superseded).
+- Round-1 Codex: 0/2 (0%). Delta: +50 pp.
+- FAIL list:
+  - `naming-diff-changes` — review_changes with default sections instead of ONE call with sections:["naming"]; MISFIT not marked minor; no plain-language / no-verdict-code wording.

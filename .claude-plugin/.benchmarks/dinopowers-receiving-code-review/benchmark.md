@@ -80,3 +80,23 @@ fails at: data-backed pushback (3), scope enumeration (5), tool selection (1, 6,
 - Claude T22 for comparison: 14/14 (100%)
 - FAIL list:
   - ` eval-5 ` — FAIL ( still; Claude T22 PASS ) AGREE-WITH-SCOPE reached but no importer list / commitment to update all or justify partial; "no additional search needed" 
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Result: 14/14 PASS (100%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 14/14 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Notes: rerank graded literally (blastRadius, codegraph on) — compliant everywhere. eval-8/9/12 prompts name no target; subject keeps the Step 2 scan mandatory and asks one question for the target (or takes it from the thread) instead of agreeing/refusing — graded PASS.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 11/14 PASS (79%) (N/A excluded: 0).
+- Round-1 Codex: 13/14 (93%). Delta: -14 pp.
+- FAIL list:
+  - `eval-4` — AGREE-DIRECT stated, "single-commit change" action not stated
+  - `eval-13` — lexicon(names) called, but verdict rule (proposed MISFIT/NEW_TERM vs current CONFORMS -> push back with project term + holder) not stated
+  - `eval-14` — review_changes(base main, sections naming) ok, but per-finding rules (MISFIT apply / COLLISION / NEW_TERM / conforming stay) not stated

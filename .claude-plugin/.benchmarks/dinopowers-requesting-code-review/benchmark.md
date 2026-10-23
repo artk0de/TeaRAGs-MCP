@@ -62,3 +62,21 @@ from `receiving-code-review`: that computes a verdict; this builds metadata.
 - Claude T22 for comparison: 13/13 (100%)
 - FAIL list:
   - ` eval-3 ` — FAIL ( new (T14 PASS); Claude T22 PASS ) bundle omits "risk flags for reviewer attention" (has table, reviewers, coordinated-change); also no contributors column named 
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Result: 13/13 PASS (100%) over scored cases (superseded: 1 — eval-13, not given, not scored)
+- Round 1 (Task 22) rate: 13/13 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 11/13 PASS (84.6%) (N/A excluded: 0).
+- Round-1 Codex: 12/13 (92.3%). Delta: -7.7 pp.
+- FAIL list:
+  - `eval-3` — bundle sections named (owners/contributors, reviewers, task context, risk flags) but per-file table omits commits+age and taskIds columns
+  - `eval-14` — review_changes call + MISFIT/COLLISION/NEW_TERM handling right, but bundle findings not listed with relPath:line and novel count not given (only conforming 11)

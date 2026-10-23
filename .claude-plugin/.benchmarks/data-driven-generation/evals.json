@@ -224,7 +224,7 @@
       "prompt": "Template найден. file.dominantAuthorPct='silo'. Как адаптировать стиль?",
       "expected": {
         "mustDo": [
-          "Match style EXACTLY per STYLE table (silo → match exactly)",
+          "Match dominant patterns closely per STYLE table (silo → match closely; match exactly is deep-silo)",
           "Flag owner for review"
         ],
         "mustNotDo": [
@@ -813,7 +813,7 @@
         "mustDo": [
           "Inspect each partner (find_symbol outline/body)",
           "Edit the sections test in the same diff if it pins the section list (depends on the changed contract)",
-          "plugin.json: accept with evidence that it is a version manifest (known noise per repair/silentCoupling.md)"
+          "plugin.json: version manifest — known noise per repair/silentCoupling.md (detector drops manifests; bump follows the versioning rule), no coupling edit"
         ],
         "mustNotDo": ["Skip a partner silently"]
       },

@@ -224,3 +224,28 @@ docs-as-subject route lives only in cascade, not in the SKILL intent table.
   - `17` — FAIL; still (T14 FAIL): Defers to architecture-pattern.md; no explicit entryPoint ORIENT with testFile/documentation exclude before hubs. Claude T22 FAIL
   - `20` — FAIL; still (T14 FAIL): Routes to entry-point-pattern but no chunkSize/minFanOut+level:chunk small-utility mitigation stated. Claude T22 FAIL
   - `25` — FAIL; still (T14 FAIL): Reads digest resource to find alias; does not derive codegraph availability from own tool list; ORIENT-before-backbone not stated. Claude T22 PASS
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; 27 cases split into two subjects of 14 + 13, run sequentially)
+- Result: 25/27 PASS (93%) over scored cases (superseded: 0)
+- Baseline (round 1): 25/27 (93%)
+- Delta: +0pp
+- FAIL list:
+  - 17 — declared codegraph OFF because the main-session digest has no `codegraph.symbols` line, so no entryPoint ORIENT → architecturalHub (only a hypothetical "if on" branch)
+  - 20 — same OFF decision; answered with relevance + chunkSize heuristic instead of rerank=entryPoint + chunkSize post-filter + get_callees tail
+- Root cause (both): the rebuilt SessionStart digest (context-main.md) carries no `## Enrichment` / `codegraph.symbols` line at all, while explore SKILL.md "Codegraph availability" says a digest without that line is a STATED OFF that beats the tool list. With codegraph actually on, every main-session agent concludes OFF.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 20/27 PASS (74%) (N/A excluded: 0).
+- Round-1 Codex: 24/27 (89%). Delta: -15 pp.
+- FAIL list:
+  - `7` — EXEMPLAR collect workflow, never delegates to pattern-search.
+  - `8` — get_callers primary, hybrid_search only as codegraph-off fallback (eval expects iterative hybrid_search; usage-pattern.md says codegraph wins — eval stale).
+  - `14` — get_callers primary instead of hybrid_search for exhaustive usage (same eval/skill conflict as 8).
+  - `15` — behaviour query misclassified as EXEMPLAR collect; semantic_search never named.
+  - `17` — entryPoint ORIENT with filters, but no architecturalHub backbone step (row 4).
+  - `19` — codegraph off: avoids entryPoint, labels content-inferred, but never names rerank=onboarding.
+  - `25` — reads project digest instead of deciding codegraph from own tool list.

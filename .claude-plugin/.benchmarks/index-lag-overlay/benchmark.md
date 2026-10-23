@@ -133,3 +133,23 @@ These came from the incident case study and need code changes, not rule text.
   - `E6` — FAIL; new: Own checkout MARKER-COLD: find_symbol only, no incremental index_codebase.
   - `E7` — FAIL; new: No incremental index_codebase before test-convention search (declares no indexing); no explicit tests-as-context chunk search named.
   - `E14` — FAIL; new: Own checkout: no incremental index_codebase ("do not reindex in hypothetical read-only flow"); find_symbol + hybrid re-check correct.
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; full cases.md scenarios given to the subject)
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 1): 14/15 (93%)
+- Delta: +7pp
+- FAIL list: none (E1 fixed: incremental on own checkout, ticket files read via find_symbol relativePath, callers via hybrid_search, --force asked separately)
+- Notes: round 1 gave the subject one-line case summaries; round 2 gave the suite's cases.md (no expectations inside), the scenario text the suite was authored with.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 11/15 PASS (73.3%) (N/A excluded: 0).
+- Round-1 Codex: 11/15 (73.3%). Delta: ±0.0 pp.
+- FAIL list:
+  - `E1` — incremental index_codebase only hedged ("may still be appropriate"), not planned.
+  - `E6` — own checkout MARKER-COLD: find_symbol only, no incremental index_codebase.
+  - `E9` — no trace_path for the callback→sign-in chain (semantic_search + find_symbol only).
+  - `E14` — no incremental index_codebase on own checkout (floors [], changed files).

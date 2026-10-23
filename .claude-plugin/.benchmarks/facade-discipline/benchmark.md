@@ -245,3 +245,15 @@ Rule is deployed. Next work in this thread:
 - Codex T14 rate: N/A (12/12)
 - Claude T22 rate: 84% (16/19)
 - FAIL list: none
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only; graded strict-literal); scored all 19 cases (eval-1..12 + iteration cases 13..19)
+- Result: 16/19 PASS (84%) over 19 scored cases (superseded 0)
+- Baseline (round 1, Task 22): 16/19 (84%)
+- Delta: +0pp (eval-6, eval-16 now PASS; eval-1, eval-5 newly FAIL)
+- FAIL list:
+  - `eval-1` — new strategy planned (strategies/, union extended, barrel export, Ops dispatch) but no registration step is stated; expected names `createExploreStrategy` registration (rule §3 allows createExploreStrategy OR per-request instantiation — the eval is narrower than the rule)
+  - `eval-5` — extracts resolve/guard into `CollectionOps.clearIndex` ("add or reuse"); expected the existing ingest Ops method (`IngestFacade#clearIndex = this.indexingOps.clear(path)`); the prompt describes the old body (`status.clearIndex`), so the subject never looked at the current code
+  - `eval-12` — flags inline filter, Map grouping and hard-coded `driftWarning: null` (Ops finalize), but does not name `registry.buildMergedFilter` as the Ops-side filter merge
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

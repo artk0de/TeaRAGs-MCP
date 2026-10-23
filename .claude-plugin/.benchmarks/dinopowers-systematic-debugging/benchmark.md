@@ -171,3 +171,22 @@ No iteration needed.
 - FAIL list:
   - `eval-6` — FAIL; new: Plans to run bug-hunt probes again on a 0-suspect case, hedges instead of stating "no bug-prone zones ... likely recently-added untracked code or external dependency" and invoking systematic-debugging without suspect block. Claude T22 PASS
   - `eval-16` — FAIL; new: Cause sentence names StatsCache#load, not stats-cache.ts:<line> (file:line only in Fix). Claude T22 PASS
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Result: 16/17 PASS (94%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 17/17 (100%)
+- Delta: -6pp
+- FAIL list:
+  - eval-15 — find_similar(positiveIds=[chunk id]) planned correctly, but the MUST "Report any matches" is not stated (answer drifts into Step 5 report / DDG fix instead of reporting sibling occurrences).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 15/17 PASS (88.2%) (N/A excluded: 0).
+- Round-1 Codex: 15/17 (88.2%). Delta: ±0.0 pp.
+- FAIL list:
+  - `eval-7` — no Step 3 hypothesis-block extraction between bug-hunt and systematic-debugging
+  - `eval-12` — systematic-debugging invoked without the hypothesis block ("hand off" only)
