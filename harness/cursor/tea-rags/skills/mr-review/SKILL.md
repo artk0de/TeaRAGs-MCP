@@ -19,12 +19,9 @@ description:
 > resource tool, or the read fails), run
 > `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
 
-Signal-driven diff review: 9-dimension scan (blast radius, co-change twins,
-fragile zones, silo style, tests, doc invariants, cycles, naming, diff-review) →
-comments a reviewer can act on. Signals decide WHAT to flag; the comment states
-the fact in plain words and names a fix. Local mode = chat report. External mode
-= inline MR comments behind ONE draft-gate, agent-signed, `[minor]` prefix on
-style nits.
+9-dimension diff scan → actionable comments. Signals decide WHAT to flag;
+comment states fact in plain words + names fix. Local = chat report. External =
+inline MR comments behind ONE draft-gate, agent-signed, `[minor]` on style nits.
 
 ## Phase Order (MANDATORY — do not skip any phase)
 
@@ -42,24 +39,26 @@ style nits.
    acquisition (Phase 1) = sanctioned exception: review INPUT, not signals.
 3. **No built-in Search/Grep** — tea-rags tools per
    `tea-rags://guide/decision-tree`.
-4. **Evidence filter is hard.** Every finding rests on a signal value or
-   concrete code (symbol, line, sibling pattern). Can't cite → drop in Phase 4,
-   never soften into speculative nit. Evidence is the INTERNAL gate — how it is
-   worded for the reader is rule 6.
+4. **Evidence filter is hard.** Every finding rests on signal value or concrete
+   code (symbol, line, sibling pattern). Can't cite → drop in Phase 4, never
+   soften into speculative "maybe consider…" nit. Evidence = INTERNAL gate;
+   reader wording = rule 6.
 5. **Every posted comment carries a fix.** Observation + consequence +
-   suggestion. No actionable suggestion → demote to observation, never post.
-6. **Speak human, not signal.** Body states the FACT the signal stands for ("30+
-   modules import this"), never the signal itself. Banned in body: tool names,
-   payload keys (`git.*`, `codegraph.*`), preset/label jargon (`concerning`,
-   `deep-silo`), UUIDs, scores, dimension codes. Translation table:
+   suggestion. No actionable suggestion ("this file is fragile") → demote to
+   observation, never post.
+6. **Speak human, not signal.** Body states FACT the signal stands for ("30+
+   modules import this"), never signal itself. Banned in body: tool names
+   ("get_callers shows…", "tea-rags flags…"), payload keys (`git.*`,
+   `codegraph.*`), preset/label jargon (`concerning`, `deep-silo`), UUIDs,
+   scores, dimension codes. Translation table:
    `references/delivery-contract.md`.
-7. **Cite only reader-openable paths** — files tracked in the MR's repo. Agent
+7. **Cite only reader-openable paths** — files tracked in MR's repo. Agent
    session context (CLAUDE.md, `.claude/rules/**` incl. gitignored `.local/**`,
-   memory, prime, skills) is NEVER evidence in a comment.
-8. **Depth → `find_symbol`, never Read** — `symbol=<symbolId>` for a body,
-   `relativePath` for an outline (`tea-rags://guide/navigation` After-Search
-   Navigation).
-9. **External posting ALWAYS behind one whole-batch draft-gate confirm.**
+   memory, SessionStart digest, skills) is NEVER evidence in a comment.
+8. **Depth → `find_symbol`, never Read** — `symbol=<symbolId>` for body,
+   `relativePath` for outline.
+9. **External posting ALWAYS behind one whole-batch draft-gate confirm** —
+   circuit breaker, not decoration. Posted without it → restart Phase 5.
 10. **Never fake skipped dimension** — name it "not assessed" in summary.
 
 ## Flow
@@ -79,23 +78,14 @@ style nits.
 **Mode:** `$ARGUMENTS` contains URL → external. Else local.
 
 **Checkout:** local mode → cwd; external mode → local checkout of MR's repo
-(checkout REQUIRED). Every call passes `path=<checkout>`
-(`tea-rags://guide/decision-tree` "Addressing the Codebase"). Answer reports no
+(checkout REQUIRED). Every call passes `path=<checkout>`. Answer reports no
 index for that repository → STOP, print register + index instruction. Never scan
 unindexed repo.
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
-answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
-`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
-
-**Freshness:** external → `git fetch` target branch; index behind target →
-incremental `index_codebase project=<alias>`. Local →
-`tea-rags://guide/freshness` rows (linked worktree: no reindex — overlay reads
-the tree).
+**Freshness (gate — skipped → stale index misses recent base changes, signals
+lie):** external → `git fetch` target branch; index behind target → incremental
+`index_codebase project=<alias>`. Local → `tea-rags://guide/freshness` (lag ≠
+unusable, reindex triggers; linked worktree: no reindex — overlay reads tree).
 
 ## Phase 1: ACQUIRE
 
@@ -123,9 +113,8 @@ MR description = review intent — feeds D6 invariants.
    `codegraph.symbols.*` (payload never carries labels).
 
 Non-indexed touched files (new in MR, generated, docs) → `overlay: none`, still
-eligible for D6. Local mode: Row with `treeState` = pre-edit index copy, lines
-stale → `find_symbol` for current code (`tea-rags://guide/freshness` "Addressing
-the Codebase").
+eligible for D6; never fabricate overlay for them. Local mode: row with
+`treeState` = pre-edit index copy, lines stale → `find_symbol` for current code.
 
 ## Phase 3: SCAN
 
@@ -147,11 +136,12 @@ row).
 | naming        | new names off the project vocabulary                                     | `review_changes` `naming` section                                                                                                                                                                                                                                                                                                              |
 | diff-review   | incomplete changes, cohesion, diff-scoped architecture, dependency norms | `review_changes(changes:{base})` — default all, `sections` narrows; architecture: comment findings + `change.nonLocal` + `change.resolved`, never `change.persisting`; severity follows `tier` (critical > active > structural), `change.touchedActive` = high; norms: list every `MISFIT` (edge + `expectedPath`), note `exclusionsUnchecked` |
 
-Gating: prime lists `codegraph.symbols` → D1 + D7 + D8 run on the graph. Absent
-→ D7 and D8 "not assessed" (no substitute); D1 degrades to name-matched callers
-(`hybrid_search` symbol name + `find_symbol`) and every comment built on it says
-callers were found by name, not by call graph — a lower bound, never "these are
-all the callers". tests follows tests-as-context preflight.
+Gating: codegraph on (graph tools `get_callers` / `find_cycles` in tool list;
+unsure → `tea-rags://project/<alias>/metrics?section=registry`) → D1 + D7 + D8
+run on graph. Off → D7, D8 "not assessed" (no substitute; never "no cycles"); D1
+degrades to name-matched callers (`hybrid_search` symbol name + `find_symbol`),
+every comment on it says callers found by name, not call graph — lower bound,
+never "these are all the callers". tests follows tests-as-context preflight.
 
 Call budget: ≤30 tea-rags calls typical MR, ≤49 at every cap (playbook).
 Exceeded → narrow scope with user, never silently truncate coverage.
@@ -192,32 +182,14 @@ per-comment posted/failed status, failed retried once then surfaced in chat.
 Never post without the gate. Never claim posted without per-comment status. No
 mechanism → print contract in chat, mark "delivered locally".
 
-## Anti-patterns
+## Anti-patterns (not covered by Rules)
 
-- **Posting without draft-gate** → restart Phase 5. Gate is circuit breaker, not
-  decoration.
-- **Comment without citable evidence** → drop, don't soften into "maybe
-  consider…" nit.
-- **Comment reading as a signal dump** (`bugFixRate 48% concerning`, `fanIn 34`,
-  `D1+D3 overlap`) → reader sees telemetry, not review. State the fact in words.
-- **Diagnosis with no fix** ("this file is fragile") → either name what to do or
-  move it to observations.
-- **Citing agent-side context** (`.claude/rules/.local/*`, CLAUDE.md, memory,
-  prime) → reader cannot open it; it is not evidence in an MR.
-- **Naming the tooling in a comment** ("get_callers shows…", "tea-rags flags…")
-  → reviewer cares about the code, not how it was found.
-- **20 comments on one MR** → cap at 8, fold the rest into the summary. A wall
-  of nits gets dismissed whole.
+- **20 comments on one MR** → cap 8, fold rest into summary. Wall of nits gets
+  dismissed whole.
 - **One batched hybrid_search for all clusters' test coverage** → BM25 crowding
   fabricates "untested". Stratify per domain cluster (playbook D5).
 - **External mode: reviewing MR-branch state instead of diff-vs-indexed-base** →
-  skill reviews the diff like a human reviewer; no MR-branch checkout, no per-MR
-  reindex. (Local mode reads your tree via `path` — that is the diff.)
+  review diff like human reviewer; no MR-branch checkout, no per-MR reindex.
+  (Local mode reads your tree via `path` — that is the diff.)
 - **Hardcoding platform commands (glab/gh) into flow or comments** → delivery =
   agent's session mechanism; skill emits contract only.
-- **Claiming "no cycles" / "no hubs" / "no other callers" with codegraph off** →
-  cycles are "not assessed"; name-matched callers are a lower bound, say so.
-- **Skipping freshness gate** → stale-index review misses recent base changes,
-  signals lie.
-- **Fabricating overlay for `overlay: none` files** → new/unindexed files have
-  no signals; only D6 applies to them.

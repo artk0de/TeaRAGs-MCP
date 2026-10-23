@@ -15,36 +15,34 @@ description:
 RED phase. Output = recorded red, the gate GENERATE needs. No production code
 here.
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
-answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
-`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
+Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` > 0
+→ incremental `index_codebase`; subagent / linked worktree → never reindex. →
+`tea-rags://guide/freshness`.
 
 ## Iron Rules
 
-1. **Red before code.** No production edit until every new test ran and failed
-   for the right reason. Code written first → delete it, start from the test.
+1. **Red before code.** No production edit until every new test ran + failed for
+   right reason (bug fix: reproduction first). Code written first → delete,
+   start from test.
 2. **Right reason only.** Red = assertion failed, or behaviour/symbol under test
-   missing (not-implemented, method absent on an existing object). NOT red:
-   import / module-resolution error, compile / type error, syntax error, missing
-   fixture or setup file, test-runner config error, test not collected. Harness
-   failure → fix the TEST harness (import path, fixture, setup), re-run. Never
-   count it as red. CREATE, module / symbol not yet existing → declare it as a
-   stub (signature only, body throws not-implemented) so the run reaches the
-   assertion; the stub is scaffolding, not implementation.
-3. **Source verbatim.** Spec / plan / task gives test code → use it byte-exact
-   (adapt only the import path to the real module). Gives acceptance criteria →
-   one test per criterion, criterion wording in the test name. Neither → one
-   test per behaviour the task names.
-4. **Tests immutable after red.** GREEN changes code, never the test. Test
-   genuinely wrong (contradicts spec, asserts impossible) → report it to the
-   caller with the contradiction; never edit it silently to pass.
-5. **Cross-language.** Output names no runner, assertion library or package
+   missing (not-implemented, method absent on existing object). NOT red: import
+   / module-resolution, compile / type, syntax error, missing fixture / setup
+   file, runner config error, test not collected — e.g. `Cannot find module`,
+   `is not defined` at import, `SyntaxError`, `ENOENT` on fixture. Harness
+   failure → fix TEST harness (import path, fixture, setup), re-run; never count
+   as red. CREATE, module / symbol not yet existing → stub (signature only, body
+   throws not-implemented) so run reaches assertion; stub = scaffolding, not
+   implementation.
+3. **Source verbatim.** Spec / plan / task gives test code → byte-exact (adapt
+   only import path), never own variant. Gives acceptance criteria → one test
+   per criterion, criterion wording in test name. Neither → one test per
+   behaviour task names.
+4. **Tests immutable after red.** GREEN changes code, never test. Test genuinely
+   wrong (contradicts spec, asserts impossible) → report contradiction to
+   caller; never silently edit to pass.
+5. **Cross-language.** Output names no runner, assertion library, package
    manager — "run the tests for these files", "the project's standard test
-   command". Command comes from project context (scripts, Makefile, CI, README).
+   command". Command from project context (scripts, Makefile, CI, README).
 
 ## Step 0 — Mode
 
@@ -65,39 +63,37 @@ or `EXCEPTION config-docs — change touches only config / docs, no behaviour`.
 ## Step 1 — Baseline (MODIFY, refactor, bug fix)
 
 `/tests-as-context` recipe `tests-at-risk` (`affectedFiles` = target files,
-`intent` = change description). Run those scenarios + the target's own test file
+`intent` = change description). Run those scenarios + target's own test file
 BEFORE any edit.
 
 - All green → baseline recorded.
-- Already red before your edit → pre-existing failure: report it, do not fix it
-  silently, do not count it as your red.
-- Pin asserts the OLD behaviour this task explicitly changes → that pin becomes
-  a red test of the new behaviour (update its expectation to the spec, state
-  `PIN-UPDATED <test> — <spec line>`). Any other pin stays untouched.
-- SKIP verdict → note "behaviour unpinned", run the target's own tests only.
+- Red before your edit → pre-existing failure: report, don't fix silently, don't
+  count as your red.
+- Pin asserts OLD behaviour this task explicitly changes → becomes red test of
+  new behaviour (expectation → spec, state `PIN-UPDATED <test> — <spec line>`).
+  Other pins untouched.
+- SKIP verdict → note "behaviour unpinned", run target's own tests only.
 
-Refactor / move: baseline is the whole RED output. Done — go to caller.
+Refactor / move: baseline = whole RED output, no new test. Done → caller.
 
 ## Step 2 — Conventions
 
 Before writing a test:
 
-- `/tests-as-context` recipe `fixture-lookup` (`intent` = setup you need) →
-  reuse existing setup; never invent a mock the project already has. SKIP
-  verdict → proceed without.
-- Assertion idiom + file placement = the target's sibling test file (or nearest
-  test in the same directory): same describe/naming shape, same helpers. Reuse a
-  body already in context; else `find_symbol(relativePath=<test file>)`.
+- `/tests-as-context` recipe `fixture-lookup` (`intent` = setup needed) → reuse
+  existing setup; never invent mock project already has. SKIP → proceed without.
+- Assertion idiom + placement = target's sibling test file (or nearest test in
+  same dir): same describe/naming shape, helpers. Reuse body in context; else
+  `find_symbol(relativePath=<test file>)`.
 
 ## Step 3 — Write + run
 
-1. Write tests per Iron Rule 3, in the placement from Step 2.
-2. Run them (the project's standard test command, narrowed to these files).
-3. Classify each failure per Iron Rule 2. Harness failure → fix harness, re-run.
-   Max 3 harness re-runs, then report the blocker to the caller.
-4. A new test PASSES before any code → behaviour already exists or the test
-   asserts nothing: tighten the assertion or report "already implemented". Never
-   ship a test that was never red.
+1. Write tests per Iron Rule 3, placement from Step 2.
+2. Run (project's standard test command, narrowed to these files).
+3. Classify per Iron Rule 2. Harness failure → fix, re-run; max 3, then report
+   blocker to caller.
+4. New test PASSES before code → behaviour exists or test asserts nothing:
+   tighten assertion or report "already implemented". Never ship never-red test.
 
 ## Step 4 — Output to caller
 
@@ -111,13 +107,3 @@ EXCEPTION <kind> — <reason>             (only when Step 0 exception fired)
 
 Caller (data-driven-generation 6b GREEN) implements until every listed test and
 every baseline pin is green.
-
-## Red flags — STOP
-
-- Production file edited before RED block recorded.
-- "Red" whose failure line is `Cannot find module`, `is not defined` at import,
-  a type error, `SyntaxError`, `ENOENT` on a fixture → not red; fix harness.
-- Spec gave test code, you wrote your own variant.
-- Refactor / move, and you wrote a new test instead of running the baseline.
-- Bug fix, and code changed before the reproduction failed.
-- Test expectation changed during GREEN to match the code.

@@ -12,11 +12,10 @@ Run: `$SCRIPTS/install-tea-rags.sh <packageManager> <npmPath>`
     { label: "Update", description: "Update to latest version" }
   ]
   ```
-  If "Keep" → update progress, move to Step 4. If "Update" → run install script
-  again (it will do `npm install -g tea-rags@latest`).
+  "Keep" → update progress → Step 4. "Update" → re-run install script (does
+  `npm install -g tea-rags@latest`).
 - `installed` → update progress
-- `error` → check stderr for permission issues:
-  - If stderr contains "EACCES" or "permission denied" → AskUserQuestion:
+- `error` → stderr has "EACCES" or "permission denied" → AskUserQuestion:
     ```
     question: "npm install failed due to permissions. How to fix?"
     options: [
@@ -25,4 +24,4 @@ Run: `$SCRIPTS/install-tea-rags.sh <packageManager> <npmPath>`
       { label: "Skip", description: "I'll fix this myself and re-run setup" }
     ]
     ```
-  - Other errors → show stderr, suggest re-running `/tea-rags-setup:install`
+  Other errors → show stderr, suggest re-running `/tea-rags-setup:install`

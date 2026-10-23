@@ -4,11 +4,10 @@ Run: `$SCRIPTS/install-node.sh <versionManager>`
 
 **Interpret result:**
 
-- `already_done` → update progress, move to Step 3
-- `installed` → update nodePath in progress, move to Step 3
-- `manual_required` (exit code 2) → check `currentVersion` in result. If not
-  null, include in the message (e.g. "Node.js 24+ required, found v18.19.0").
-  Use AskUserQuestion:
+- `already_done` → update progress → Step 3
+- `installed` → update nodePath in progress → Step 3
+- `manual_required` (exit code 2) → `currentVersion` non-null → include in
+  message (e.g. "Node.js 24+ required, found v18.19.0"). AskUserQuestion:
   ```
   question: "Node.js 24+ is required{. Found vX.Y.Z — upgrade needed | but not installed}. How would you like to install it?"
   options: [
@@ -18,14 +17,11 @@ Run: `$SCRIPTS/install-node.sh <versionManager>`
   ]
   ```
 
-**If "Version manager"** → filter by platform using tables in `reference.md`,
-then AskUserQuestion with platform-specific options.
+**"Version manager"** → filter by platform via `reference.md` tables →
+AskUserQuestion w/ platform-specific options. Windows + `hasWinget` false →
+manual download URLs instead of winget commands.
 
-Note: if `hasWinget` is false on Windows, show manual download URLs instead of
-winget commands.
-
-After user picks a manager, suggest running via `!` prefix so it executes
-in-session. Example:
+User picks manager → suggest `!` prefix so it runs in-session. Example:
 
 "To install, type in the prompt: `! winget install CoreyButler.NVMforWindows`"
 
@@ -39,19 +35,16 @@ options: [
 ]
 ```
 
-After user confirms → re-run `$SCRIPTS/install-node.sh <chosenManager>` — this
-time the manager is available, so it installs Node automatically.
+Confirmed → re-run `$SCRIPTS/install-node.sh <chosenManager>` (manager now
+available → installs Node).
 
-**If "Direct install"** → show platform-specific instructions from
-`reference.md` "Direct Node.js Install" table.
+**"Direct install"** → platform instructions from `reference.md` "Direct
+Node.js Install" table. Confirmed → re-run detect-environment.sh for new paths,
+verify version >= 24.
 
-After user confirms → re-run detect-environment.sh to get new paths, verify
-version >= 24.
+**"Already installed"** → re-run detect-environment.sh, verify version >= 24.
 
-**If "Already installed"** → re-run detect-environment.sh, verify version >= 24.
-
-**CRITICAL: Do NOT proceed until Node >= 24 is confirmed.** If the old Node is
-still first in PATH after version manager install (e.g. system Node shadows the
-new one), re-run `$SCRIPTS/detect-environment.sh` to refresh paths. Only
-continue when `install-node.sh` returns `already_done` or `installed` with
+**CRITICAL: Do NOT proceed until Node >= 24 confirmed.** Old Node still first in
+PATH (system Node shadows new) → re-run `$SCRIPTS/detect-environment.sh`.
+Continue only when `install-node.sh` returns `already_done` or `installed` w/
 version >= 24.

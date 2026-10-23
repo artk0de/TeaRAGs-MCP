@@ -127,11 +127,11 @@ id — drop before drilling.
 
 ### Graph navigation — get_callers / get_callees / trace_path
 
-Requires codegraph. **Availability signal:** prime digest's `## Enrichment`
-section lists `codegraph.symbols` when codegraph active. When that line absent
+Requires codegraph. **Availability signal:** graph tools present in the tool list =
+codegraph on; unsure → `tea-rags://project/<alias>/metrics?section=registry`. Off →
 the graph tools (`get_callers`, `get_callees`, `find_cycles`, `trace_path`,
 `get_architecture_report`) are **not registered** — never appear in tool list.
-Off-signal is an _absent tool_, not an empty result; check prime first rather
+Off-signal is an _absent tool_, not an empty result; check the tool list first rather
 than calling a tool to discover it's missing. Precedence — start cheap, escalate
 only if needed:
 
@@ -173,7 +173,7 @@ TS/Java/Swift/Rust/Go: compiler-enforced. Ruby (`send`), Python (`_x`
 convention, only `__x` marked): hint, not guarantee. **Missing field = unknown**
 — never read as public.
 
-**When codegraph is off** (no `codegraph.symbols` in prime), route by intent to
+**When codegraph is off** (graph tools absent from the tool list), route by intent to
 a non-graph substitute — never read an absent/empty graph tool as positive fact
 (no "it's a DAG", no "path structurally impossible", no "architectural centre"):
 

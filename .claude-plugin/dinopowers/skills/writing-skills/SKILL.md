@@ -13,25 +13,24 @@ description:
 
 # dinopowers: writing-skills
 
-Wrapper over `superpowers:writing-skills`. Ensures new dinopowers skills inherit
+Wrapper over `superpowers:writing-skills`. New dinopowers skills inherit
 structural conventions + **correct tea-rags invocation patterns** from indexed
-SKILL.md corpus, not invented from scratch.
+SKILL.md corpus, not invented.
 
 ## Iron Rule
 
 **`mcp__tea-rags__semantic_search` MUST be called BEFORE
 `Skill(superpowers:writing-skills)`.**
 
-Correct tea-rags tool + correct parameters + correct ordering = entire point of
-wrapper. Core value of every dinopowers wrapper = correct tea-rags tool
-selection — this skill bootstraps correctness for all future wrappers.
+Core value of every dinopowers wrapper = correct tea-rags tool + params +
+ordering — this skill bootstraps that for all future wrappers.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
 ## Step 1 — Extract intent
 
-From user request identify three elements:
+From request identify:
 
 | Element                        | Example                          |
 | ------------------------------ | -------------------------------- |
@@ -39,11 +38,11 @@ From user request identify three elements:
 | **Object** — what it acts on   | "brainstorming", "test patterns" |
 | **Trigger** — when it fires    | "before code modification"       |
 
-Compose single-sentence intent. Becomes `query` in Step 2.
+Compose single-sentence intent → Step 2 `query`.
 
 ## Step 2 — Search existing skill patterns (tea-rags)
 
-Call `mcp__tea-rags__semantic_search` with these exact parameters:
+`mcp__tea-rags__semantic_search` with exactly:
 
 ```
 project:     <alias>                    ← `tea-rags://guide/freshness` "Addressing the Codebase"
@@ -66,17 +65,16 @@ Do NOT pass:
 
 - `rerank` preset — want pure semantic similarity; git bias (techDebt, hotspots,
   ownership) irrelevant for skill authoring
-- `filter` with git signals — SKILL.md git history doesn't inform pattern
-  matching
+- `filter` with git signals — SKILL.md history doesn't inform patterns
 - `testFile: "exclude"` or similar — SKILL.md files aren't tests
 
-If `semantic_search` returns 0 results or index empty: report
-`"no SKILL.md corpus indexed — falling back to direct superpowers:writing-skills"`
-and skip to Step 4 without pattern block. Do NOT fabricate patterns.
+0 results / empty index → report
+`"no SKILL.md corpus indexed — falling back to direct superpowers:writing-skills"`,
+Step 4 without pattern block. NEVER fabricate patterns.
 
 ## Step 3 — Extract pattern block
 
-From top-K results extract 3-5 concise bullets:
+From top-K extract 3-5 bullets (structural signal only, never raw results):
 
 - Frontmatter `description` phrasing convention (e.g. "Use when…" prefix)
 - Main section order (Overview → Iron Rule → Steps → Red Flags → Mistakes)
@@ -84,41 +82,28 @@ From top-K results extract 3-5 concise bullets:
 - Tool-invocation format (parameter tables vs inline code)
 - Presence/absence of Red-Flags / Common-Mistakes sections
 
-Do NOT paste raw search results into next step. Extract structural signal only.
-
 ## Step 4 — Invoke superpowers:writing-skills
 
-Invoke `Skill` tool with `superpowers:writing-skills`. Prepend pattern block
-from Step 3 as context. Phrase handoff as:
+Invoke `Skill` tool with `superpowers:writing-skills`. Prepend Step 3 block.
+Handoff:
 
 > "Use the structural pattern block as template. When your cycle would next
 > invoke `superpowers:writing-plans` / `superpowers:test-driven-development` (or
 > any wrapped `superpowers:Y`), invoke the `dinopowers:Y` wrapper instead — see
 > the Chaining rule section above."
 
-Let `superpowers:writing-skills` run its RED-GREEN-REFACTOR cycle — wrapper
-doesn't replace it, only enriches.
+Inner skill runs RED-GREEN-REFACTOR — wrapper enriches, not replaces.
 
 ## Red Flags — STOP and restart from Step 2
 
-- "I already know the SKILL.md format" → run Step 2 anyway
-- "tea-rags is slow, let me skip it" → run Step 2
+- "I already know the SKILL.md format" / "tea-rags slow, skip" → run Step 2
 - Used `hybrid_search` / `find_similar` / Grep on SKILL.md → redo with
   `semantic_search`
-- Called `superpowers:writing-skills` first, tea-rags after as "validation" →
-  wrong order, restart
-- Started writing the new SKILL.md without a pattern block → revert, restart
-- Let `superpowers:writing-skills` chain into a raw `superpowers:writing-plans`
-  / `superpowers:test-driven-development` without redirecting to the
-  `dinopowers:Y` wrapper → intercept and invoke the wrapper instead (see
-  Chaining rule)
-
-## Common Mistakes
-
-| Mistake                                                            | Reality                                                         |
-| ------------------------------------------------------------------ | --------------------------------------------------------------- |
-| Call `Skill(superpowers:writing-skills)` directly without tea-rags | New skill won't match project conventions. Defeats the wrapper. |
-| Use `hybrid_search` for SKILL.md discovery                         | Token-level ranking returns noise, not structural analogs       |
-| Set `rerank: "techDebt"` / `"hotspots"` / `"ownership"`            | SKILL.md churn/authors irrelevant to new skill authoring        |
-| Pass raw `semantic_search` results to `superpowers:writing-skills` | Too noisy. Extract 3-5 structural bullets first                 |
-| Fabricate a pattern block when index returns 0 results             | Lie. Fallback explicitly.                                       |
+- Set `rerank` (`techDebt` / `hotspots` / `ownership`) → redo without
+- `superpowers:writing-skills` first, tea-rags after as "validation" → wrong
+  order, restart
+- Writing new SKILL.md without pattern block → revert, restart
+- Raw `semantic_search` results passed to inner skill → extract 3-5 bullets
+- Inner skill chained raw `superpowers:writing-plans` /
+  `superpowers:test-driven-development` → intercept, invoke `dinopowers:Y`
+  (Chaining rule)

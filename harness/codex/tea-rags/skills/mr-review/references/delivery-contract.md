@@ -1,10 +1,8 @@
 # Delivery Contract — Phase 5 DELIVER
 
-Structured output of the review. Skill emits THIS — agent delivers it through
-whatever MR-platform mechanism the session exposes. Skill names NO commands.
-
-The reader is a developer opening a merge request, not an operator of this
-skill. Everything below optimizes for that reader.
+Structured review output. Skill emits THIS; agent delivers via whatever
+MR-platform mechanism session exposes. Skill names NO commands. Reader =
+developer opening MR, not operator of this skill — optimize for them.
 
 ## Contract shape
 
@@ -25,14 +23,13 @@ summary := { verdict, counts by severity, dimensions run/skipped + why,
 
 Hard limits: ONE point per comment, at most 3 sentences, at most ONE number.
 
-**No suggestion → not a comment.** A finding nobody can act on is an
-observation; it goes in the summary or nowhere. Phase 4 enforces this.
+**No suggestion → not a comment.** Unactionable finding = observation → summary
+or nowhere (Phase 4).
 
 ## Speak human, not signal
 
-Signals are how the review was DERIVED. They are not what the review SAYS. The
-reader never sees a payload key, a preset name, or a label — they see the fact
-the signal stands for.
+Signals = how review was DERIVED, not what it SAYS. Reader sees fact signal
+stands for — never payload key, preset name, label.
 
 | What the signal said (internal) | What the comment says                                            |
 | ------------------------------- | ---------------------------------------------------------------- |
@@ -51,7 +48,7 @@ the signal stands for.
 `semantic_search`, `find_cycles`), the words tea-rags / MCP / rerank / overlay /
 signal / preset / confidence, payload keys (`git.file.*`, `codegraph.*`), label
 words as jargon (`concerning`, `erratic`, `deep-silo`, `frequent`), chunk UUIDs,
-similarity scores, dimension codes (D1…D7).
+similarity scores, dimension codes (D1…D8).
 
 ## Cite only what the reader can open
 
@@ -61,7 +58,7 @@ Evidence must be checkable by someone who has this MR and nothing else:
   config, plus symbols and line numbers inside them.
 - **Forbidden** — anything that exists only in the reviewing agent's session:
   `CLAUDE.md`, `.claude/rules/**` (gitignored `.local/**` above all), agent
-  memory, prime output, skill files, local notes.
+  memory, SessionStart digest / prime output, skill files, local notes.
 
 Before a path enters a comment body:
 
@@ -70,18 +67,15 @@ git ls-files --error-unmatch <path>   # not tracked → drop the citation
 git check-ignore -q <path>            # ignored     → drop the citation
 ```
 
-Rule of thumb: if the reader would have to be running your agent to open it, it
-is not evidence. The point the citation supported may still hold — restate it
-from the code itself, or drop the finding.
+Reader would need your agent to open it → not evidence. Point may still hold —
+restate from code, or drop finding.
 
 ## Volume
 
-At most 8 inline comments per MR, at most 5 of them major. Two findings on the
-same symbol merge into one comment. Beyond the cap, remaining findings become
-one summary line each ("3 further minor nits: naming in X, missing doc on Y…"),
-never extra inline comments.
-
-A review that comments on everything gets read as noise and dismissed whole.
+≤8 inline comments per MR, ≤5 major. Two findings on one symbol → one comment.
+Beyond cap → one summary line each ("3 further minor nits: naming in X, missing
+doc on Y…"), never extra inline comments — comment-on-everything review gets
+dismissed whole.
 
 ## Comment conventions
 
@@ -152,7 +146,7 @@ finding was raised.
 | -------------------------------- | -------------------------------------------------------------------------------- |
 | Repo not in tea-rags registry    | Stop; print register + index instructions                                        |
 | Index stale vs target branch     | External: incremental `index_codebase`; local: `tea-rags://guide/freshness` rows |
-| Codegraph off                    | Blast radius → callers matched by name\*; cycles → "not assessed"                |
+| Codegraph off                    | Blast radius → callers matched by name\*; cycles, naming → "not assessed"        |
 | No DSL test chunks               | tests dimension falls back to `testFile: "only"` file-level                      |
 | No delivery mechanism in session | Print delivery contract in chat for manual posting                               |
 | Empty diff                       | Stop with explicit message                                                       |

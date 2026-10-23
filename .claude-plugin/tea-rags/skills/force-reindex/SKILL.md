@@ -9,38 +9,33 @@ argument-hint: "[path to codebase]"
 
 # Force Reindex (Background, Zero-Downtime)
 
-Runs `forceReindex` in background subagent. Search stays available throughout
-via collection aliases.
+`forceReindex` in background subagent. Search stays up via collection aliases.
 
 ## MANDATORY: Explicit User Confirmation
 
-**This skill MUST ONLY be invoked when the user explicitly requests it.** Agents
-MUST NOT auto-trigger force-reindex on stale markers, index status, or any
-automated signal.
+Only on explicit user request. NEVER auto-trigger (stale markers, index status,
+failed indexing, any automated signal). Even when user said "reindex" — still
+confirm; force-reindex rebuilds entire index.
 
-Before executing, MUST:
+Before executing:
 
-1. Explain what force-reindex does: "Rebuilds entire index from scratch. Creates
-   new versioned collection while current stays active. Takes several minutes
-   for large codebases."
-2. Ask for explicit confirmation using `AskUserQuestion`:
+1. Explain: "Rebuilds entire index from scratch. Creates new versioned
+   collection while current stays active. Takes several minutes for large
+   codebases."
+2. Ask via `AskUserQuestion`:
    ```
    question: "Force reindex will rebuild the entire index for <path>. This can take several minutes. Proceed?"
    options:
      - { label: "Yes, reindex", description: "Start full reindex in background" }
      - { label: "Cancel", description: "Do not reindex" }
    ```
-3. Only proceed if user selects "Yes, reindex".
+3. Proceed only on "Yes, reindex". Cancel → stop.
 
 ## Instructions
 
-1. **Confirm with user** (see above). If user cancels, stop.
-
-2. Extract `path` from user message or argument. If absent, use current working
-   directory.
-
-3. Dispatch **background subagent** with `run_in_background: true` (full reindex
-   takes minutes — background justified):
+1. Confirm (above).
+2. `path` from message / argument; absent → cwd.
+3. Dispatch **background subagent**, `run_in_background: true` (takes minutes):
 
 ```
 Agent tool:
@@ -55,18 +50,13 @@ Agent tool:
     ALWAYS include the duration field — users need to see how long indexing took.
 ```
 
-4. Tell the user: "Force reindex started in background. Search continues on the
+4. Tell user: "Force reindex started in background. Search continues on the
    current index — zero downtime. You'll be notified when the new index is
    ready."
-
-5. When background agent completes, report **full result** to user. Include all
-   metrics and duration — do not summarize or omit fields.
+5. Agent done → report **full result**: all metrics + duration, no omitted
+   fields.
 
 ## Do NOT
 
-- Call `index_codebase` with `forceReindex: true` in the foreground
-- Use this for incremental updates — use `/tea-rags:index` instead
-- **Invoke this skill automatically** — stale markers, failed indexing, or any
-  condition MUST NOT trigger force-reindex without user request
-- **Skip the confirmation step** — even if user said "reindex", still confirm;
-  force-reindex is destructive (rebuilds entire index)
+- `index_codebase` w/ `forceReindex: true` in foreground
+- Use for incremental updates → `/tea-rags:index`

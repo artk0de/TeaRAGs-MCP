@@ -14,28 +14,21 @@ argument-hint: [project path]
 
 Automated install + config of TeaRAGs MCP server.
 
-## How to use this skill
-
-1. Read step file for current step from `steps/`
-2. Read `reference.md` for lookup tables (recommendations, version managers, env
-   vars, defaults)
-3. Execute step
-4. Next step
+Per step: read `steps/<file>` → lookups in `reference.md` (recommendation
+tables, version managers, env vars, tune defaults) → execute → next step.
 
 ## Script Location
 
 All scripts in `${CLAUDE_PLUGIN_ROOT}/scripts/setup/`.
 
-**First: determine OS to select script set.**
+**First: OS → script set.** Run `uname -s`:
 
-Run `uname -s` (or via Bash tool)
+- "Darwin" / "Linux" → `unix/` scripts (`.sh`)
+- "MINGW" / "MSYS" / "CYGWIN" → `unix/` scripts (Git Bash)
+- PowerShell (Windows native) → `windows/` scripts (`.ps1`)
 
-- Output contains "Darwin" or "Linux" → use `unix/` scripts (`.sh`)
-- Output contains "MINGW", "MSYS", "CYGWIN" → use `unix/` scripts (Git Bash)
-- If PowerShell detected (Windows native) → use `windows/` scripts (`.ps1`)
-
-Store chosen prefix (e.g. `SCRIPTS="${CLAUDE_PLUGIN_ROOT}/scripts/setup/unix"`),
-use for all subsequent script calls.
+Store prefix (e.g. `SCRIPTS="${CLAUDE_PLUGIN_ROOT}/scripts/setup/unix"`), use
+for all script calls.
 
 ## Steps
 
@@ -55,27 +48,20 @@ use for all subsequent script calls.
 | 10   | `steps/step-10-verify.md`      | Verify setup                            |
 | 11   | `steps/step-11-freshness.md`   | Offer auto-update + worktree mode       |
 
-**Reference**: `reference.md` — recommendation tables, version manager options,
-env vars, tune defaults.
-
 ## Error Recovery
 
-If a script fails (exit code 1):
+Script fails (exit 1) → show stderr; progress file keeps last successful state;
+suggest re-running `/tea-rags-setup:install` (resumes from failed step).
 
-1. Show stderr error to user
-2. Progress file retains last successful state
-3. Suggest re-running `/tea-rags-setup:install` — resumes from failed step
+**Common issues:**
 
-**Common issues to check:**
-
-- **Network/proxy errors** (ECONNREFUSED, timeout, SSL): ask if behind corporate
-  proxy. If yes: "Set proxy before re-running:
+- **Network/proxy** (ECONNREFUSED, timeout, SSL): ask if behind corporate proxy.
+  Yes → "Set proxy before re-running:
   `export HTTP_PROXY=http://proxy:port HTTPS_PROXY=http://proxy:port`"
-- **Permission errors** (EACCES): suggest sudo or fix ownership
-- **"command not found" after install**: suggest restart terminal or source
-  shell profile (`source ~/.bashrc` / `source ~/.zshrc`)
-- **jq/curl missing**: scripts report explicitly — follow install instructions
-  in error message
+- **Permission** (EACCES): sudo or fix ownership
+- **"command not found" after install**: restart terminal or source profile
+  (`source ~/.bashrc` / `source ~/.zshrc`)
+- **jq/curl missing**: scripts say so — follow install instructions in error
 
 ## Do NOT
 
@@ -87,5 +73,5 @@ If a script fails (exit code 1):
   llama-server only
 - Proceed past a checkpoint without verification
 - Modify MCP config for other servers
-- Run indexing — that is `/tea-rags:index` after restart. (Step 9 registers
-  alias only — records path mapping, does NOT index.)
+- Run indexing — `/tea-rags:index` after restart. (Step 9 registers alias only,
+  does NOT index.)

@@ -14,40 +14,31 @@ description:
 
 # dinopowers: receiving-code-review
 
-Wrapper over `superpowers:receiving-code-review`. Agreement with review comment
-backed by impact data — accepting this comment affects 3 callers or 300? — not
-performative "yes" without verification.
+Wrapper over `superpowers:receiving-code-review`. Agreement backed by impact
+data — does accepting comment touch 3 callers or 300? — not performative "yes".
 
 ## Iron Rule
 
-**tea-rags impact analysis MUST run on the review-comment's target BEFORE
-agreeing to implement** — whenever comment names concrete symbol or file.
+**tea-rags impact analysis MUST run on comment's target BEFORE agreeing to
+implement** — whenever comment names concrete symbol or file.
 
-Correct tool (`semantic_search`) + correct impact rerank (`blastRadius` / custom
-fallback) (`imports: 0.5, churn: 0.3, ownership: 0.2`) + correct parameters
-(pathPattern scoping to target, `metaOnly: true`) + ordering (analysis BEFORE
-agreement) = core value.
+Value = right tool (`semantic_search`) + impact rerank (`blastRadius` / custom
+fallback `imports: 0.5, churn: 0.3, ownership: 0.2`) + params (pathPattern
+scoped to target, `metaOnly: true`) + order (analysis BEFORE agreement OR
+pushback).
 
-Comment stylistic-only (typo, spacing): skip wrapper, pass through to
-`superpowers:receiving-code-review`. Don't fabricate target. A naming comment
-("rename X to Y", "unclear name") is never stylistic-only — it runs Step 3b.
+Stylistic-only comment (typo, spacing) → skip wrapper, pass to
+`superpowers:receiving-code-review`. Never fabricate target. Naming comment
+("rename X to Y", "unclear name") NEVER stylistic-only → Step 3b.
 
-**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
-redirects superpowers:X. NEVER bypass wrapper.
+**Chaining rule:** [CHAINING.md](../../CHAINING.md) — every onward
+`superpowers:Y` → `dinopowers:Y`. NEVER bypass wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags://guide/freshness`. No background reindex hook. Linked worktree:
-overlay serves uncommitted edits — never reindex for them. Main checkout:
-incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call over
-uncommitted edits, or once answers show `changedFiles` > 0 (HEAD moved, branch
-switch) — no consent, also under drift `--force` (ask that separately). **Lag ≠
-unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never license
-Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without `treeState`
-= current; `treeState` row → `find_symbol` re-call.
+**Freshness:** [FRESHNESS.md](../../FRESHNESS.md) (owner
+`tea-rags://guide/freshness`). Lag ≠ unusable — never Bash `cat`/`grep`/`Read`
+over code; `treeState` row → `find_symbol`.
 
 ## Step 1 — Extract review target
-
-From review comment identify:
 
 | Element                                                       | Example                                                |
 | ------------------------------------------------------------- | ------------------------------------------------------ |
@@ -55,20 +46,16 @@ From review comment identify:
 | **Change type** — rename / refactor / move / extract / inline | "rename `group` to `aggregate`"                        |
 | **Scope** — local (same file) vs cross-cutting                | "rename exported symbol" = cross-cutting               |
 
-Compose:
+Compose `targetPathPattern` (e.g. `**/chunk-grouper.ts`, broader if
+cross-cutting) + `intent` (one sentence).
 
-- `targetPathPattern`: scoping pattern (e.g. `**/chunk-grouper.ts`, or broader
-  if cross-cutting)
-- `intent`: one-sentence framing of proposed change
-
-Comment stylistic-only: skip to Step 4 with verdict
-`PASS-THROUGH (non-structural)`. Don't invent structural implications.
+Stylistic-only → Step 4, verdict `PASS-THROUGH (non-structural)`. Never invent
+structural implications.
 
 ## Step 2 — Impact analysis call
 
-Issue ONE `mcp__tea-rags__semantic_search` — SAME idiom as
-`dinopowers:writing-plans` / `executing-plans` /
-`verification-before-completion`:
+ONE `mcp__tea-rags__semantic_search` — same idiom as `dinopowers:writing-plans`
+/ `executing-plans` / `verification-before-completion`:
 
 ```
 project:     <alias>                    ← `tea-rags://guide/freshness` "Addressing the Codebase"
@@ -92,19 +79,19 @@ Do NOT substitute:
 
 Do NOT pass:
 
-- `metaOnly: false` — verdict inputs are signals, not content
-- Different weights — must match project idiom
-- `filter` narrowing — pathPattern already scopes
+- `metaOnly: false` — verdict inputs = signals
+- different weights — must match project idiom
+- `filter` narrowing — pathPattern scopes already
 
-Results empty: verdict `UNVERIFIABLE (target not in index)`. Don't fabricate.
+Empty → verdict `UNVERIFIABLE (target not in index)`. Never fabricate.
 
 ## Step 3 — Compute agreement verdict
 
-Extract raw from payload (`imports` root, `git.file.commitCount`,
-`git.file.blameDominantAuthor` live-line owner); labels + non-essential signals
+Raw from payload: `imports` root, `git.file.commitCount`,
+`git.file.blameDominantAuthor` (live-line owner). Labels + non-essentials
 (`bugFixRate`, `recentDominantAuthor` recent committer) from
-`rankingOverlay.file.*` when the rerank surfaces them — metaOnly payload keeps
-git essential fields only.
+`rankingOverlay.file.*` when rerank surfaces them — metaOnly payload keeps git
+essentials only.
 
 Verdict ladder:
 
@@ -114,7 +101,7 @@ Verdict ladder:
 | `AGREE-DIRECT`     | imports ≤ 5 AND bugFixRate ≤ 20% | Agree; small blast radius; single-commit change                                                                                 |
 | `PUSHBACK`         | imports > 50 (massive blast)     | Respond with impact data: "renaming X affects N modules across M authors — propose alternative or narrower change first"        |
 
-Compose response block:
+Response block:
 
 ```
 ### Impact analysis for review comment: "<comment>"
@@ -129,75 +116,19 @@ Target: <symbol or file>
 Verdict: <AGREE-WITH-SCOPE | AGREE-DIRECT | PUSHBACK>
 ```
 
-## Step 3.5 — Trace the call route the change rides (optional, preferred when the comment names a call relationship)
+## Step 3.5 — Trace call route (codegraph; preferred when comment names call relationship)
 
-Step 2 gives **single-symbol** blast-radius number — importer count of target.
-When review comment names **relationship between two symbols** ("change how `X`
-calls `Y`", "this method should not reach `Z`", "route this through `W`
-instead"), change rides a **call route**, not one symbol. Promote single fanIn
-to actual PATH: call `mcp__tea-rags__trace_path` between the two named endpoints
-to SEE the route the change travels and which step is highest-impact chokepoint.
-**Requires codegraph** (prime shows `codegraph.symbols`); when off, `trace_path`
-not registered — stay with Step 2 single-symbol fanIn, note route view
+Comment names relationship between two symbols ("how `X` calls `Y`", "should not
+reach `Z`", "route through `W`") → change rides route, not one symbol. Run
+`trace_path(from, to, rerank)` per
+[references/call-route.md](references/call-route.md) — chokepoint + hop owners
+appended to impact block. Codegraph off → Step 2 fanIn only, note route view
 unavailable.
-
-```
-mcp__tea-rags__trace_path(
-  from="<caller symbol the comment names>",   # e.g. the X in "how X calls Y"
-  to="<callee symbol the comment names>",     # e.g. the Y, or the Z it "should not reach"
-  rerank="blastRadius"                          # rank each hop by fanIn / import impact
-)
-```
-
-Read the result like this:
-
-- **`dangerRanking[0]`** — highest-impact step ON route, not necessarily either
-  endpoint. Chokepoint the proposed change ripples through. "What does this
-  change touch" becomes concrete hop with measured fanIn instead of one number
-  on named symbol.
-- **`dangerOverlay`** per step — carries `imports` / churn for that hop, so a
-  quiet intermediate everything routes through surfaces instead of hiding
-  between the two named endpoints.
-- **Empty result** — check `namesakes` first (wrong `fromPath`/`toPath` pin →
-  fix the pin), and the floor rule (no `codegraph` floor + `changedFiles` > 0 →
-  edges in changed files are the index's — re-check). Only then: NO static call
-  path from `from` to `to`; review comment's premise ("X reaches Y") may be
-  **structurally false** — useful pushback input: change targets a route that
-  doesn't exist as reviewer imagines. Confirm before agreeing.
-
-Preset selection for the trace:
-
-| Situation                                                     | `rerank`      |
-| ------------------------------------------------------------- | ------------- |
-| "What does this change ripple through" — impact-ranked route  | `blastRadius` |
-| "Who else owns the steps I'd touch" — who to loop into the PR | `ownership`   |
-
-Use `rerank="ownership"` to see who owns each step on route — reviewer named two
-symbols, but change rides hops owned by others who should be looped into review.
-Bound search with `maxDepth` / `maxPaths` if graph deep or branchy.
-
-Append traced route under impact block from Step 3:
-
-```
-**Call route the change rides (<from> → <to>), danger-ranked:**
-- chokepoint: <dangerRanking[0] symbol> @ <file>:<line>
-  overlay: imports <N>, churn <Y>
-- also on route: <next step> @ <file>:<line>
-  owner (ownership preset): <blameDominantAuthor> — loop into review
-```
-
-Result empty: append
-`**Call route:** no static path <from> → <to> — the reviewer's "X reaches Y" premise may not hold; confirm before agreeing`.
-
-Danger-ranked route makes "what does this change ripple through" concrete: a
-chokepoint with measured fanIn and named owner is different conversation than a
-single import count on the symbol reviewer happened to name.
 
 ## Step 3a — Tests bound to the target
 
-When proposed change is rename / move / extract / signature change on a symbol,
-tests bound to current name or signature must be identified BEFORE agreeing.
-Invoke `Skill(tea-rags:tests-as-context)` with:
+Rename / move / extract / signature change → identify tests bound to current
+name/signature BEFORE agreeing. Invoke `Skill(tea-rags:tests-as-context)`:
 
 ```
 recipe: "tests-at-risk"
@@ -205,12 +136,9 @@ affectedFiles: [<file containing the target symbol>]   ← single-element array 
 intent: <intent from Step 1, e.g. "rename ChunkGrouper.group to aggregate">
 ```
 
-Recipe accepts single-element `affectedFiles` for symbol-scoped changes —
-internally uses `must_not relativePath any-of` filter, works identically for one
-or many paths.
-
-Recipe surfaces DSL leaf test chunks exercising the affected symbol. Append to
-impact block:
+Single-element `affectedFiles` OK (recipe's `must_not relativePath any-of`
+filter works for one or many). Recipe → DSL leaf test chunks exercising symbol.
+Append:
 
 ```
 **Tests bound to current name/signature:**
@@ -218,40 +146,41 @@ impact block:
 - <file>:<line> — <describe-it path>
 ```
 
-Recipe returned SKIP: append
-`**Tests bound:** unavailable (no DSL test chunks indexed)`. Recipe returned
-empty list: append
+SKIP → append `**Tests bound:** unavailable (no DSL test chunks indexed)`. Empty
+→ append
 `**Tests bound:** no obvious test bindings — the change may still affect untested paths`.
 
-Bound-test list raises cost of proposed change visibly: agreeing to a rename
-that breaks 6 named scenarios is different conversation than one with no test
-bindings. Phrasing stays runner-agnostic — list scenarios, never name a runner.
+Runner-agnostic — list scenarios, NEVER name runner.
 
 ## Step 3b — Naming comments (codegraph on)
 
 Rename / "unclear name" comment →
 `get_naming_lexicon(names=[{current}, {proposed}], language=<file's>, pathPattern=<targetPathPattern>)`
-— evidence never crosses languages. Proposed `CONFORMS` → agree on the name
-(unless it carries `alternatives` — the project's word for the same concept);
-proposed `MISFIT` → counter-propose its `suggestion` (holder as precedent);
-proposed `NEW_TERM` while current `CONFORMS` → push back with the project's
-term.
+— evidence never crosses languages.
 
-Comment on naming across the whole change, no identifier named ("names in this
-PR don't match the codebase") →
+- proposed `CONFORMS` → agree on name (unless it carries `alternatives` —
+  project's word for same concept)
+- proposed `MISFIT` → counter-propose its `suggestion` (holder as precedent)
+- proposed `NEW_TERM` while current `CONFORMS` → push back with project's term
+
+Naming across whole change, no identifier named ("names in this PR don't match
+the codebase") →
 `review_changes(changes={ base: <the PR's target branch> }, sections: ["naming"])`
-— one call over the names the diff adds (the tool reads the base at its
-merge-base with HEAD); never hand-list them into `names[]`. Findings =
-`review.findings`, each flat `{relPath, line, name, kind, type?, verdict, …}`.
-Answer per finding: `MISFIT` → apply `suggestion` (a type MISFIT with
-`role.evidence: "directory"` only when the type belongs to `role.examples`'
-family — else push back: location, not name); `COLLISION` → rename or justify
-against `existing`; `NEW_TERM` → keep with a justification or take an offered
-`alternatives` word; `genericName` → generic name, rename or justify. Conforming
-names stay; `review.novel` counts names with nothing to compare against — no
-action. Append the verdicts to the impact block — the naming verdict decides
-WHICH name, Step 2 decides the cost. Reading: `tea-rags:data-driven-generation`
-Step 5 "Naming (lexicon)".
+— one call over names diff adds (base read at merge-base with HEAD); never
+hand-list into `names[]`. Findings = `review.findings`, flat
+`{relPath, line, name, kind, type?, verdict, …}`. Per finding:
+
+- `MISFIT` → apply `suggestion`; type MISFIT with `role.evidence: "directory"`
+  only when type belongs to `role.examples`' family — else push back (location,
+  not name)
+- `COLLISION` → rename or justify against `existing`
+- `NEW_TERM` → keep with justification or take offered `alternatives` word
+- `genericName` → rename or justify
+- conforming stay; `review.novel` = nothing to compare, no action
+
+Append verdicts to impact block — naming verdict decides WHICH name, Step 2
+decides cost. Reading: `tea-rags:data-driven-generation` Step 5 "Naming
+(lexicon)".
 
 ## Step 4 — Invoke superpowers:receiving-code-review
 
@@ -266,33 +195,24 @@ block as context. Phrase handoff as:
 > `superpowers:verification-before-completion` (or any wrapped `superpowers:Y`),
 > invoke `dinopowers:Y` instead — see the Chaining rule section above."
 
-Let `superpowers:receiving-code-review` run standard rigorous-response cycle.
-Wrapper informs whether agreement safe and at what scope.
+`superpowers:receiving-code-review` runs standard rigorous cycle — wrapper
+informs whether agreement safe and at what scope.
 
-## Red Flags — STOP and restart from Step 2
+## Red Flags — STOP, restart from Step 2
 
-- "Comment is clear, I'll just do it" → if names symbol/file, run Step 2 anyway
-- "It's just a rename" → renames propagate through imports; always analyze
-- Substituted grep/git log → redo with semantic_search + Step 2 rerank
-- Wrong rerank for codegraph state → redo: `"blastRadius"` when prime
-  `## Enrichment` lists `codegraph.symbols`, else
-  `{imports: 0.5, churn: 0.3, ownership: 0.2}` (tea-rags analytics-rerank)
-- Agreed before Step 2 (performative yes) → revert, restart
-- Pushed back before Step 2 (defensive no) → revert, restart
-- Let `superpowers:receiving-code-review` chain into a raw
-  `superpowers:verification-before-completion` without redirecting to
-  `dinopowers:verification-before-completion` → intercept and invoke wrapper
-  instead (see Chaining rule)
-
-## Common Mistakes
-
-| Mistake                                                             | Reality                                                                                                                        |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Performative "good catch" agreement                                 | Rigorous agreement requires impact data. Run Step 2.                                                                           |
-| Blanket pushback without evidence                                   | Defensive no is as bad as performative yes. Data first.                                                                        |
-| Use `rerank: "codeReview"` preset because "this is code review"     | codeReview preset is for finding reviewable code, not impact of a change                                                       |
-| `find_similar` to assess rename blast radius                        | find_similar shows analogs, not callers. Use impact rerank.                                                                    |
-| Ignore `imports` when comment proposes a rename                     | Rename affects every importer. imports count = response effort                                                                 |
-| Agree then grep for callers during implementation                   | Wrong order — impact analysis informs whether to agree at all                                                                  |
-| Comment names "how X calls Y" but you only ran single-symbol Step 2 | The change rides a route. `trace_path(from=X, to=Y, rerank="blastRadius")` shows the chokepoint, not just one fanIn (Step 3.5) |
-| Loop in only the symbol's owner when the change crosses a route     | The hops between X and Y have other owners. `rerank="ownership"` on the route surfaces who else to loop in                     |
+- "Comment clear, just do it" / "just a rename" → names symbol/file → Step 2;
+  renames propagate through every importer (imports = response effort)
+- grep / git log / `find_similar` (analogs, not callers) substituted → redo with
+  semantic_search + Step 2 rerank
+- Wrong rerank for codegraph state → redo: `"blastRadius"` when codegraph on
+  (graph tools present), else `{imports: 0.5, churn: 0.3, ownership: 0.2}`
+  (tea-rags analytics-rerank). `"codeReview"` finds reviewable code, not change
+  impact
+- Agreed before Step 2 (performative "good catch") → revert, restart
+- Pushed back before Step 2 (defensive no, no evidence) → revert, restart
+- Agreed, then grep callers during implementation → wrong order; impact decides
+  whether to agree
+- Comment names "how X calls Y", only single-symbol Step 2 ran → Step 3.5
+  `trace_path` (chokepoint, hop owners to loop in)
+- Inner cycle chains raw `superpowers:verification-before-completion` →
+  intercept, invoke `dinopowers:verification-before-completion`

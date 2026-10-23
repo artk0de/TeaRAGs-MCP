@@ -1,50 +1,45 @@
 # USAGE Pattern
 
-Caller / callee intents answered with `get_callers` / `get_callees` edge truth
-(actual call edges from the codegraph DuckDB) instead of content matching.
-Higher precision than `hybrid_search` for "who calls X" — no false hits on
-comments, strings, or same-named-but-unrelated symbols.
+Caller / callee intents via `get_callers` / `get_callees` edge truth (codegraph
+call edges), not content matching. Beats `hybrid_search` for "who calls X" — no
+false hits on comments, strings, same-named unrelated symbols.
 
-## Step 1 — resolve the exact symbolId (MANDATORY)
+## Step 1 — resolve exact symbolId (MANDATORY)
 
-`get_callers` / `get_callees` match on an exact symbol id and fail silently
-(empty result) on a wrong one. Always resolve first:
-
-`find_symbol symbol=<name>` → pick the exact id. Convention: `Class#method`
-(instance), `Class.method` (static), `functionName` (top-level). A bare
-`find_symbol symbol=Foo` returns the class and all members — choose the precise
-member before calling get_callers/get_callees.
+`get_callers` / `get_callees` match exact id; wrong id → silent empty. Always
+resolve first: `find_symbol symbol=<name>` → pick exact id (`Class#method`
+instance, `Class.method` static, `functionName` top-level). Bare
+`find_symbol symbol=Foo` returns class + all members — choose precise member.
 
 ## Step 2 — route by direction
 
 - **"Who uses X?" / "who calls X?" / "callers of X"** →
-  `get_callers symbolId=<id>`. Returns the invoking symbols with
-  `call_expression` preview + `file:line`.
+  `get_callers symbolId=<id>` → invoking symbols + `call_expression` preview +
+  `file:line`.
 - **"What does X call?" / "callees of X" / "what does X use"** →
-  `get_callees symbolId=<id>`. Returns invoked symbols + `file:line`.
-- **"Who imports this file?" / "what does this file depend on?"** — the target
-  is a FILE, not a symbol: skip Step 1 and pass `relativePath=<path>`
-  (repo-relative) instead of `symbolId`. `get_callers` returns `importers[]`,
-  `get_callees` returns `imports[]`; each entry carries `importText` and
-  `callWeight` (resolved calls crossing the import, heaviest first; 0 = type /
-  constant / re-export only). An unknown path returns an empty list plus a
-  `message` — fix the path, don't report "nothing imports it".
+  `get_callees symbolId=<id>` → invoked symbols + `file:line`.
+- **"Who imports this file?" / "what does this file depend on?"** — target =
+  FILE: skip Step 1, pass `relativePath=<path>` (repo-relative) instead of
+  `symbolId`. `get_callers` → `importers[]`, `get_callees` → `imports[]`; each
+  with `importText` + `callWeight` (resolved calls across import, heaviest
+  first; 0 = type / constant / re-export only). Unknown path → empty list +
+  `message` — fix path, never report "nothing imports it".
 
-## Step 3 — multi-hop trace ("trace flow X → Y")
+## Step 3 — multi-hop ("trace flow X → Y")
 
-Iterative `get_callees` walk from X, **depth cap 3**, with a cycle guard (track
-visited symbol ids; never re-expand one). Stop on the first hop whose callee
-matches Y, or when depth is exhausted. Present the path:
-`X → A.run() → B.help() → Y`. If Y is never reached within depth 3, say so and
-show the frontier explored — do NOT silently widen the depth.
+`trace_path from=<X> to=<Y>` — all paths, one call (per core routing "chain
+A→B"). `namesakes` in answer / `paths: []` with `namesakes` → disambiguate via
+`fromPath` / `toPath` (exact relativePath from prior result), not absence of
+path. Model hops carry `p`; path `minP` = weakest link — say so. Present
+`X → A.run() → B.help() → Y`. Genuinely no path → say so; never pad with
+content-search guesses.
 
 ## Output
 
-Caller/callee list with the `call_expression` preview and `file:line` refs.
-Quote the call site, don't dump the whole calling function.
+Caller/callee list with `call_expression` preview + `file:line`. Quote call
+site, don't dump calling function.
 
-This pattern WINS over the TRACE pattern for usage queries when codegraph is
-available — TRACE's `hybrid_search` / `imports[]` route is the fallback when the
-project has no codegraph index (prime shows no `codegraph.symbols`, so
-`get_callers` / `get_callees` are not registered, not returning empty). Check
-prime first; don't call an absent tool to discover it is missing.
+Codegraph on → this pattern WINS over TRACE for usage. Codegraph off (graph
+tools absent from tool list — not registered, not empty) → TRACE's
+`hybrid_search` / `imports[]` route; don't call absent tool to discover it's
+missing.

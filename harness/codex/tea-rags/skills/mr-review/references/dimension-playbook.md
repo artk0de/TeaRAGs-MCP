@@ -1,25 +1,25 @@
 # Dimension Playbook — Phase 3 SCAN
 
-Exact call parameters + severity mapping per dimension. Consumed by
-`../SKILL.md` Phase 3. Parameter blocks byte-exact — never paraphrase into prose
-when executing.
+Exact call parameters + severity per dimension. Consumed by `../SKILL.md`
+Phase 3. Parameter blocks byte-exact — never paraphrase into prose when
+executing.
 
 Input: Phase 2 working set `{file, changedSymbols[], chunkUUIDs[], overlay}` per
 touched file. Output per dimension: findings
 `{dimension, file, line, severity, evidence, suggestion, draft body}`.
 
-`evidence` is internal — the signal value or code reference that justified the
-finding. `suggestion` is what the reader should DO; a finding without one is an
-observation, not a comment. `draft body` is already plain language: signal names
-and labels never survive into it (`delivery-contract.md` → "Speak human").
-
-Every dimension block below ends with `fix:` — the shape its suggestion takes.
+`evidence` internal — signal value or code reference justifying finding.
+`suggestion` = what reader should DO; none → observation, not comment.
+`draft body` already plain language, no signal names/labels
+(`delivery-contract.md` → "Speak human"). Each block ends with `fix:` — shape of
+its suggestion.
 
 Every call: `path=<checkout>` (SKILL Phase 0).
 
-Codegraph gating: prime `## Enrichment` lists `codegraph.symbols` → D1 + D7 + D8
-run on the graph. Absent → D7 and D8 skipped ("not assessed" in summary, no
-substitute); D1 runs in name-match mode (see its block). D5 follows
+Codegraph gating: graph tools (`get_callers`, `find_cycles`, …) in tool list
+(unsure → `tea-rags://project/<alias>/metrics?section=registry` shows
+`codegraph on|off`) → D1 + D7 + D8 run on graph. Off → D7, D8 skipped ("not
+assessed" in summary, no substitute); D1 name-match mode (its block). D5 follows
 tests-as-context preflight.
 
 ## D1 blast-radius (codegraph-gated, with name-match fallback)
@@ -210,21 +210,8 @@ fix: the suggested name citing the holder file (MISFIT); a distinct name, or a
 reason the homonym is intended, citing the existing file (COLLISION); the
 alternative term, when it denotes the same concept (NEW_TERM).
 
-## Phase 4 CLASSIFY rules (applied over all dimension findings)
-
-1. Dedup by file:line — keep highest severity; two findings on one symbol merge.
-2. Cross-dimension overlap on same file/symbol → escalate one level (fragile +
-   blast-radius → major; D5 pairing per its block).
-3. Evidence filter: finding without citable signal label or code reference →
-   DROP. Observations survive only into chat summary — never into posting
-   contract.
-4. Fix gate: no concrete suggestion → demote to observation.
-5. Source-visibility gate: cited path not tracked in the MR's repo → restate
-   from code or drop.
-6. Volume cap: ≤8 posted comments, ≤5 major; overflow → summary lines.
-7. Humanize: observation → consequence → suggestion, ≤3 sentences, ≤1 number, no
-   signal jargon.
-8. Output findings in delivery-contract shape — see `delivery-contract.md`.
+Phase 4 CLASSIFY rules (dedup, escalate, evidence/fix/visibility gates, cap,
+humanize): `../SKILL.md` Phase 4.
 
 ## Call budget
 

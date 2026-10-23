@@ -1,7 +1,7 @@
 # Step 11: Index Freshness — Auto-Update + Worktree Mode
 
 Two opt-in choices, both non-fatal. Alias from step 9. CLI not on PATH → print
-the commands for after terminal restart, continue.
+commands for after terminal restart, continue.
 
 ## 11a: Auto-update of the default branch
 
@@ -17,10 +17,11 @@ index." (Recommended: Yes)
   ```
 
   Target branch autodetects (origin/HEAD → main/master). Non-standard default
-  branch → add `--branch <name>`. Report the printed confirmation.
+  branch → add `--branch <name>`. Report printed confirmation.
 
-- No → skip. User can enable later; the prime digest shows the exact command
-  when the index goes stale.
+- No → skip. Enable later: SessionStart digest (or
+  `tea-rags://project/<alias>/digest`) prints exact command once index goes
+  stale.
 
 ## 11b: Worktree mode for parallel branches
 
@@ -32,8 +33,8 @@ expensive (millions of LOC), decline — the agent will simply reindex whatever
 branch is active." (Recommended: Yes for small/medium repos, No for huge
 monorepos)
 
-Record the choice in the project's `CLAUDE.local.md` (create if missing) so
-every agent session sees it:
+Record choice in project `CLAUDE.local.md` (create if missing) — every agent
+session sees it:
 
 - Yes →
 
@@ -57,4 +58,4 @@ every agent session sees it:
   branch — that is expected.
   ```
 
-Save both answers to progress; mark the step completed.
+Save both answers to progress; mark step completed.
