@@ -1083,15 +1083,15 @@ Runs before Task 19 and the Codex eval run (Task 14 Step 5).
   markdown template from `AGENT_CONTEXT_GUIDES[topic]` with every placeholder
   substituted. Builder-backed topics are excluded from the plain
   `AGENT_CONTEXT_GUIDES` loop (one registration per URI).
-  `guide/language-capability`, `project/*`, `schema/*` aliases unchanged.
-  Landed keys: `meta-only-contract` (overview), `presets-sections`,
-  `signal-keys`, `git-fields` (filters), `label-tables` (signal-labels);
-  search-examples and indexing are pure prose. Exported `build*` keep their
-  signatures (barrel + `resources.test.ts` unchanged).
+  `guide/language-capability`, `project/*`, `schema/*` aliases unchanged. Landed
+  keys: `meta-only-contract` (overview), `presets-sections`, `signal-keys`,
+  `git-fields` (filters), `label-tables` (signal-labels); search-examples and
+  indexing are pure prose. Exported `build*` keep their signatures (barrel +
+  `resources.test.ts` unchanged).
 - Modify: `.prettierignore` — the seven templates (source + `.claude-plugin/`
   copy): Prettier's `proseWrap: always` reflow splits one-line examples the
-  tests parse, puts a blank line under list leads, and escapes snake_case
-  identifiers (`attr_*` → `attr*_`).
+  tests parse, puts a blank line under list leads, and escapes snake*case
+  identifiers (`attr*_`→`attr_\_`).
 - Test: `tests/mcp/resources/guides.test.ts` — every placeholder in every
   template has a renderer and is substituted (no `<!-- data:` left in any read);
   unknown placeholder key → test failure; each guide URI registered once;
@@ -1137,14 +1137,61 @@ dinopowers 5,236 = 11,967 chars (`harness/codex/README.md`).
 **Open questions, answered by Task 14 (live Codex):**
 
 1. Name collision — dinopowers wrappers share names with superpowers skills
-   (`brainstorming`, `writing-plans`, …). Shipped as `dino-<name>`; check whether
-   Codex namespaces plugin skills, and drop the prefix if it does.
+   (`brainstorming`, `writing-plans`, …). Shipped as `dino-<name>`; check
+   whether Codex namespaces plugin skills, and drop the prefix if it does.
 2. Skills-list budget — tea-rags 6,731 + dinopowers 5,236 (+ superpowers' own) ≈
    2× the ~8,000-char list budget. Measure what Codex drops; fixes in order:
    `allow_implicit_invocation: false` on internal tea-rags skills, shorter
    dinopowers descriptions for the Codex dialect, then a per-harness cap test.
 
 ## Phase E — Landing
+
+### Task 21: Release bumps plugin versions; no hand bumps
+
+> User decision 2026-10-23: plugin versions are bumped by the release, never by
+> hand; any commit scoped to a plugin releases; regeneration runs only when
+> plugin sources changed.
+
+**Files:** `scripts/bump-plugin-versions.ts` (new),
+`tests/scripts/bump-plugin-versions.test.ts` (new), `.releaserc.json`,
+`tests/scripts/releaserc-bump.test.ts`, `.husky/pre-commit` (drop the plugin
+version block), `.claude/hooks/check-plugin-version.sh` +
+`tests/hooks/check-plugin-version.test.sh` (delete),
+`.claude/rules/plugin-versioning.md` (delete),
+`.claude/rules/plugin-sources.md`, `.claude/rules/commit-rules.md`,
+`CONTRIBUTING.md` (scope tables), `plugins/dinopowers/README.md` (versioning
+paragraph).
+
+- [ ] **Step 1 (TDD):** `bumpPluginVersions(root, sinceRef)` — for every
+      `plugins/<name>/` with a `.claude-plugin/plugin.json`:
+      `git diff     --name-status <sinceRef>..HEAD -- plugins/<name>/`; any `A`
+      (added) row → minor, other rows → patch, none → untouched; writes
+      `plugin.json`, returns `{name, from, to}[]`. The manifest's own version
+      line is ignored when deciding. No `sinceRef` (first release) → no bump.
+      Tests on a temp git repo.
+- [ ] **Step 2:** `.releaserc.json` exec `prepareCmd`:
+      `prepare-changelog.sh && tsx scripts/bump-plugin-versions.ts     ${lastRelease.gitTag} && (git diff --quiet ${lastRelease.gitTag} HEAD --     plugins/ || npm run gen:plugins)`
+      — regenerate only when plugin sources changed; bumped manifests are in
+      `plugins/**`, which the git assets already carry.
+- [ ] **Step 3:** release rules — scopes `plugin`, `skills`, `dinopowers`
+      release **patch** for every type (`feat`, `fix`, `improve`, `docs`,
+      `chore`, `refactor`, `perf`); exclude them from the `feat → minor` rule so
+      a plugin `feat` stays patch for the npm package. `releaserc-bump.test.ts`
+      pins it. `commit-rules.md` + `CONTRIBUTING.md`: new "Plugin" scope row.
+- [ ] **Step 4:** remove manual enforcement: `.husky/pre-commit` plugin-version
+      block, `check-plugin-version.sh` and its test, the `settings.local.json`
+      allow line (local, not tracked); delete `plugin-versioning.md`;
+      `plugin-sources.md` rule 3 → "Never bump `plugin.json` by hand — the
+      release does it; plugin commits use scope `plugin` / `skills` /
+      `dinopowers` so they release." Same sentence in
+      `plugins/dinopowers/README.md`.
+- [ ] **Step 5:** verify — hook tests, `npx vitest run tests/scripts`, tsc,
+      `npx semantic-release --dry-run --no-ci` is NOT run (needs tokens):
+      instead a test runs the `prepareCmd` against a temp repo with a fake tag.
+- [ ] **Step 6:** commits —
+      `feat(scripts): release bumps plugin versions from     changed sources`,
+      `chore(ci): plugin scopes release, regenerate only on     plugin changes`,
+      `docs(rules): drop manual plugin version bumps`.
 
 ### Task 16: Gates, docs, merge
 
