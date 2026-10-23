@@ -68,15 +68,15 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
      supplied finding, report the concrete repair action and verification
      output, not only what you would do. A finding with `preExisting` absent
      counts as introduced; a `preExisting: true` finding is excluded from
-     `introduced`. After each repair, print the gate line before and after.
-     Example: retarget the new leak's import from the internal file to the
-     component facade; then report
-     `GATE review_changes: introduced=1, partial=false` before repair and
-     `GATE review_changes: introduced=0, partial=false` after re-review. Keep
-     any pre-existing, remedy-free finding report-only. Count not supplied → run
-     the review, never infer it. Pass = `introduced=0, partial=false`. Codegraph
-     off → `GATE review_changes: architecture not judged (codegraph off)`. **No
-     gate line = task not done.**
+     `introduced`. A repaired finding → copy BOTH lines into the answer
+     literally, before-repair count then after-re-review count ("report the
+     updated gate result" does not count). Retargeted new leak:
+     `GATE review_changes: introduced=1, partial=false`
+     `GATE review_changes: introduced=0, partial=false` Keep any pre-existing,
+     remedy-free finding report-only. Count not supplied → run the review, never
+     infer it. Pass = `introduced=0, partial=false`. Codegraph off →
+     `GATE review_changes: architecture not judged (codegraph off)`. **No gate
+     line = task not done.**
 
 ### Fix-at-write loop
 

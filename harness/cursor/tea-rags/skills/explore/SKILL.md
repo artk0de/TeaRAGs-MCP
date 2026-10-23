@@ -249,9 +249,10 @@ query=$ARGUMENTS. Behavior/intent → semantic_search; known symbol, need
 DEFINITION → find_symbol; known/bare name, need USAGES → hybrid_search; symbol
 name + behaviour words ("where hybrid_search handles BM25 scoring") →
 hybrid_search. Existence check ("does X exist") → `find_symbol` `metaOnly=true`.
-Combined behaviour + "how does X reach Y" → `semantic_search` for the behaviour,
-then resolve endpoints and `trace_path` for the graph path; never leave the
-trace to the parent.
+Combined behaviour + "how does X reach Y" → steps in this order:
+`semantic_search` for the behaviour, `find_symbol` both endpoints, `trace_path`.
+Subagent: drift / reindex is a note to the parent, never a plan step in place of
+these calls.
 
 **Broad scope → split axes** per `../../references/axis-splitting.md`. Three
 calls, axis = filter param (never `language` as axis proxy):

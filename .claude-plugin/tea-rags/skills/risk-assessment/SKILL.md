@@ -16,10 +16,10 @@ argument-hint: "[scope — domain, subsystem, or 'whole project']"
 themselves (skeleton below, format: Phase 5): headings + header rows,
 `[planned; not run]` in cells not gathered yet. Prose, a column list or
 `Output:` alone is NOT the map. Plan-only → numbered steps 0, 1, 1b, 2 MERGE, 3
-EXPAND, 4, 5 of Phase Order, one each — Phase 0 never in a preamble. Hand-off
-only when the prompt mentions generation ("before implementing" / "generate"):
-resolved scope + per-symbol overlay labels, no extra block or scan. `Output:` =
-last line, verbatim:
+EXPAND, 4, 5 of Phase Order, one each — Phase 0 never in a preamble; steps 1/1b
+repeat `pathPattern` per call. Hand-off only when the prompt mentions generation
+("before implementing" / "generate"): resolved scope + per-symbol overlay
+labels, no extra block or scan. `Output:` = last line, verbatim:
 
 ```
 ## Critical
@@ -44,7 +44,7 @@ No `## Label maps` above → read
 1. Phase 1 — SCAN primary + stratified second preset (**both MUST run —
    single-preset maps are biased**); plan states Pagination stops
 2. Phase 1b — STRUCTURAL scan (**same parallel block as Phase 1 — structural
-   debt is git-blind, a big quiet method never reaches Phase 1**)
+   debt is git-blind**)
 3. Phase 2 — MERGE with negativeIds dedup (**NEVER manual filtering**)
 4. Phase 3 — EXPAND healthy-demoted candidates
 5. Phase 4 — ENRICH: tiers, fix cost, signal pairs (**single-signal reports

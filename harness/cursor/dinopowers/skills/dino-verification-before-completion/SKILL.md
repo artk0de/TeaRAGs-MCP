@@ -201,6 +201,9 @@ Apply Verdict Ladder per file. Aggregate:
 | src/adapters/qdrant/client.ts | 12 | 8 commits | MEDIUM-BLAST |
 | tests/explore/strategies.test.ts | 0 | 2 commits | LOW-BLAST |
 
+**Next action:** invoke `/verification-before-completion` now with
+this block — its own plan step, never verification planned inline instead.
+
 **Verify before claiming done:**
 - `errors.ts` imported by 47 modules → run the project's test suite covering all dependents
 - `client.ts` imported by 12 modules → run integration tests touching the qdrant adapter

@@ -174,7 +174,9 @@ grouping, local too:** naming findings grouped by verdict (MISFIT, COLLISION,
 NEW_TERM); every finding must include `review.findings[].relPath:line`; MISFIT
 and COLLISION marked `[minor]`; one summary line must give both
 `review.conforming` and `review.novel` counts (a count unavailable → say so on
-that line); bodies plain language, no verdict codes / tool names.
+that line). Verdict = group heading only; each finding line, literally:
+`<relPath>:<line> — [minor] <plain observation; consequence; fix = suggestion + holder>`
+(NEW_TERM: no `[minor]`). No verdict codes / tool names in finding lines.
 
 **External:** draft table (`file:line | severity | one-line body`) → ONE
 whole-batch confirmation → agent posts inline comments + summary via session's
