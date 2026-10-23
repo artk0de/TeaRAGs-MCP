@@ -828,6 +828,153 @@ describe("same-id windows (an inherent and a trait-impl method sharing one symbo
     expect(rustImplSelfTypeName("rustc core core::str::<impl str>::is_empty")).toBeNull();
     expect(rustImplSelfTypeName("rustc mini bump")).toBeNull();
   });
+
+  it("reads a reference, lowercase or scoped impl self type off the compiler path", () => {
+    expect(rustImplSelfTypeName("rustc codec <&[u8] as codec::RawDatumDecoder<T>>::decode")).toBe("[u8]");
+    expect(
+      rustImplSelfTypeName("rustc dom dom::event::<impl std::convert::From<dom::Cancelable> for bool>::from"),
+    ).toBe("bool");
+    expect(
+      rustImplSelfTypeName("rustc rs <std::sync::mpsc::SyncSender<msg::Cmd<S>> as transport::ProposalRouter<S>>::send"),
+    ).toBe("SyncSender");
+    expect(rustImplSelfTypeName("rustc tikv_alloc tikv_alloc::thread_allocate_exclusive_arena")).toBeNull();
+  });
+});
+
+describe("same-id windows on foreign, reference, primitive, aliased and module owners", () => {
+  const site = call("x.m()", "x", "m", 9, 6);
+  const FILE = "src/owned.rs";
+  const owned = (shortName: string, scope: string[], symbolId: string, startLine: number, endLine: number) => ({
+    ...def(FILE, shortName, symbolId, startLine, endLine),
+    scope,
+  });
+  const driverDef = (name: string, symbol: string, line: number): RustCallSiteDefinition => ({
+    ...inProject(name, FILE, line),
+    symbol,
+  });
+  const attempt = (
+    definition: RustCallSiteDefinition,
+    t: InMemoryGlobalSymbolTable,
+    typeDeclarations?: Record<string, TypeDeclarationFact[]>,
+  ) =>
+    strategy.attempt(site, ctxWith(t, { callSites: stubIndex({ "src/main.rs:9:6": definition }) }, typeDeclarations));
+  const resolvedTo = (targetSymbolId: string) => ({
+    kind: "resolved",
+    target: { targetRelPath: FILE, targetSymbolId },
+  });
+
+  it("maps an impl on a reference self type (`<&[u8] as Decoder>`) to the window owned by `&[u8]`", () => {
+    const t = table(
+      owned("decode", ["&[u8]"], "[u8]#decode", 10, 14),
+      owned("decode", ["Datum"], "Datum#decode", 20, 24),
+    );
+    const definition = driverDef("decode", "rustc codec <&[u8] as codec::RawDatumDecoder<f64>>::decode", 40);
+    expect(attempt(definition, t)).toEqual(resolvedTo("[u8]#decode"));
+  });
+
+  it("maps an impl on a lowercase primitive self type (`impl From<_> for bool`)", () => {
+    const t = table(
+      owned("from", ["bool"], "bool.from", 10, 14),
+      owned("from", ["Cancelable"], "Cancelable.from", 20, 24),
+    );
+    const definition = driverDef(
+      "from",
+      "rustc dom dom::event::<impl std::convert::From<dom::Composed> for bool>::from",
+      40,
+    );
+    expect(attempt(definition, t)).toEqual(resolvedTo("bool.from"));
+  });
+
+  it("matches a scoped table owner (`mpsc::SyncSender`) by its last path segment", () => {
+    const t = table(
+      owned("send", ["mpsc::SyncSender"], "SyncSender#send", 10, 14),
+      owned("send", ["RaftRouter"], "RaftRouter#send", 20, 24),
+    );
+    const definition = driverDef(
+      "send",
+      "rustc rs <std::sync::mpsc::SyncSender<msg::Cmd<S>> as transport::ProposalRouter<S>>::send",
+      40,
+    );
+    expect(attempt(definition, t)).toEqual(resolvedTo("SyncSender#send"));
+  });
+
+  it("follows a project type alias owner (`DateTime` = `Time`) to its target's window", () => {
+    const t = table(
+      owned("convert", ["Time"], "Time#convert", 10, 14),
+      owned("convert", ["Duration"], "Duration#convert", 20, 24),
+    );
+    const definition = driverDef(
+      "convert",
+      "rustc dt <dt::codec::data_type::DateTime as dt::codec::convert::ConvertTo<dt::Duration>>::convert",
+      40,
+    );
+    const alias: TypeDeclarationFact = {
+      typeId: "DateTime",
+      symbolKind: "type_alias",
+      line: 3,
+      reopens: false,
+      aliasedType: { form: "instance", name: "crate::codec::mysql::Time" },
+    };
+    expect(attempt(definition, t, { "src/data_type.rs": [alias] })).toEqual(resolvedTo("Time#convert"));
+    expect(attempt(definition, t)).toEqual({ kind: "continue" });
+  });
+
+  it("follows a `use … Time as DateTime` rename owner to the renamed type's window, unless renames disagree", () => {
+    const t = table(
+      owned("convert", ["Time"], "Time#convert", 10, 14),
+      owned("convert", ["Duration"], "Duration#convert", 20, 24),
+    );
+    const definition = driverDef(
+      "convert",
+      "rustc dt <dt::codec::data_type::DateTime as dt::codec::convert::ConvertTo<dt::Duration>>::convert",
+      40,
+    );
+    const withImports = (rustUseImportsByFile: Record<string, string[]>) =>
+      strategy.attempt(site, {
+        ...ctxWith(t, { callSites: stubIndex({ "src/main.rs:9:6": definition }) }),
+        rustUseImportsByFile,
+      });
+    expect(withImports({ "src/data_type.rs": ["pub use crate::codec::mysql::{Duration, Time as DateTime};"] })).toEqual(
+      resolvedTo("Time#convert"),
+    );
+    expect(
+      withImports({
+        "src/data_type.rs": ["pub use crate::codec::mysql::Time as DateTime;"],
+        "src/other.rs": ["use crate::codec::mysql::Duration as DateTime;"],
+      }),
+    ).toEqual({ kind: "continue" });
+  });
+
+  it("maps a module-owned cfg variant to the module window the path names", () => {
+    const t = table(
+      owned("current", ["imp"], "imp.current", 10, 14),
+      owned("current", ["other"], "other.current", 20, 24),
+    );
+    const definition = driverDef("current", "rustc tikv_util tikv_util::sys::cpu_time::imp::current", 40);
+    expect(attempt(definition, t)).toEqual(resolvedTo("imp.current"));
+  });
+
+  it("maps a module-owned cfg variant to the file's one symbolId of that name", () => {
+    const t = table(owned("arena", ["profiling"], "profiling.arena", 430, 467));
+    const definition = driverDef("arena", "rustc tikv_alloc tikv_alloc::arena", 671);
+    expect(attempt(definition, t)).toEqual(resolvedTo("profiling.arena"));
+  });
+
+  it("does not guess a module-owned definition among two symbolIds of that name", () => {
+    const t = table(owned("boost", ["linux"], "linux.boost", 10, 14), owned("boost", ["macos"], "macos.boost", 20, 24));
+    const definition = driverDef("boost", "rustc base base::threadboost::boost", 40);
+    expect(attempt(definition, t)).toEqual({ kind: "continue" });
+  });
+
+  it("still does not guess the file's one symbolId for a mismatched type owner", () => {
+    const t = table(owned("from", ["Cancelable"], "Cancelable.from", 10, 14));
+    const definition = driverDef(
+      "from",
+      "rustc dom dom::event::<impl std::convert::From<dom::Composed> for bool>::from",
+      40,
+    );
+    expect(attempt(definition, t)).toEqual({ kind: "continue" });
+  });
 });
 
 // The classification rules the removed rust-analyzer SCIP slot pinned (bd s3i8m.6 R3a–R3d) now hold for the
