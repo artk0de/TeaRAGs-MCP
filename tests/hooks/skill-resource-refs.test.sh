@@ -18,7 +18,7 @@ PATTERNS="$(printf '%s\n' "$LIST" | sed -E 's/\{\?[^}]*\}$//' | sort -u | while 
   printf '%s\n' "$u" | sed -E 's/[.]/\\./g; s/\{[a-z]+\}/[^\/?]+/g; s/^/^/; s/$/([?].*)?$/'
 done)"
 
-SKILLS="$ROOT/.claude-plugin/tea-rags/skills"
+SKILLS="$ROOT/plugins/tea-rags/skills"
 URIS="$(grep -rhoE 'tea-rags://[A-Za-z0-9_./{}<>?=,&-]+' "$SKILLS" | sed -E 's/[.,)`]+$//' | sort -u)"
 [ -n "$URIS" ]; note $? "skills reference tea-rags:// URIs"
 for u in $URIS; do

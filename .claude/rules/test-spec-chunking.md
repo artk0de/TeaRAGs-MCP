@@ -261,9 +261,9 @@ language → update ALL three in same commit:
 
 | File                                                                | What to update                                                          |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `.claude-plugin/dinopowers/skills/test-driven-development/SKILL.md` | Iron Rule fallback paragraph — supported-languages list                 |
-| `.claude-plugin/tea-rags/skills/tests-as-context/SKILL.md`          | Step 0 SKIP block — parenthesised list under "primary language has no…" |
-| `.claude-plugin/tea-rags/skills/filter-building/SKILL.md`           | chunkType section — supported-languages table                           |
+| `plugins/dinopowers/skills/test-driven-development/SKILL.md` | Iron Rule fallback paragraph — supported-languages list                 |
+| `plugins/tea-rags/skills/tests-as-context/SKILL.md`          | Step 0 SKIP block — parenthesised list under "primary language has no…" |
+| `plugins/tea-rags/skills/filter-building/SKILL.md`           | chunkType section — supported-languages table                           |
 
 Hook headers (`<lang>/test-scope-chunker.ts`, `<lang>/rspec-scope-chunker.ts`)
 also carry same pointer block in JSDoc — keep aligned. 3-skill update = part of

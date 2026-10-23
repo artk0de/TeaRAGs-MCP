@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-HOOK="$ROOT/.claude-plugin/tea-rags/scripts/inject-rules.sh"
-RULES="$ROOT/.claude-plugin/tea-rags/rules"
+HOOK="$ROOT/plugins/tea-rags/scripts/inject-rules.sh"
+RULES="$ROOT/plugins/tea-rags/rules"
 PASS=0; FAIL=0
 note() { if [ "$1" = 0 ]; then PASS=$((PASS+1)); echo "ok   - $2"; else FAIL=$((FAIL+1)); echo "FAIL - $2"; fi; }
 

@@ -983,21 +983,25 @@ Task 14, so the Codex live test installs from the final layout.
   `.claude-plugin/plugin.json`; `scripts/gen-plugins.ts` + `npm run gen:plugins`
   runs agent-context, Claude, Codex and Cursor generators in order.
 - Modify: `scripts/gen-agent-context.ts`,
-  `scripts/gen-harness-{codex,cursor}.ts`, `scripts/harness/package.ts`,
-  `scripts/gen-language-compatibility.ts` — read from `plugins/**`.
-- Create: root `.agents/plugins/marketplace.json` and the Cursor marketplace
-  manifest pointing at `harness/codex/*` / `harness/cursor/*`; root
-  `.claude-plugin/marketplace.json` keeps pointing at `.claude-plugin/<name>`.
+  `scripts/gen-harness-{codex,cursor}.ts`, `scripts/harness/package.ts` — read
+  from `plugins/**`. (`scripts/gen-language-compatibility.ts` reads no plugin
+  source — it splices `README.md` only — so it stays out of `gen:plugins`.)
+- Create: root `.agents/plugins/marketplace.json` (marketplace `tea-rags`,
+  replaces `harness/codex/.agents/`) and `.cursor-plugin/marketplace.json`, both
+  generated, pointing at `harness/codex/*` / `harness/cursor/*`; root
+  `.claude-plugin/marketplace.json` (hand-kept) keeps pointing at
+  `.claude-plugin/<name>`.
 - Modify: `tests/hooks/*.test.sh`, `tests/scripts/**` path constants; plugin
   version-bump hook (`check-plugin-version`) watches `plugins/<name>/**`.
 - Test: `tests/scripts/gen-harness-claude.test.ts` — drift (render = committed),
   idempotent, executable bits, every hook command path resolves inside the
   package.
 
-- [ ] Steps: failing drift test → move → generator → `npm run gen:plugins` → all
-      hook tests + `tests/scripts` green → install check
-      (`claude plugin marketplace add <repo>` resolves all three plugins) →
-      commit.
+- [x] Steps: failing drift test → move → generator → `npm run gen:plugins` → all
+      hook tests + `tests/scripts` green → install check (a test parses the
+      three root manifests and resolves every `source` to a directory holding
+      the harness's plugin manifest; `claude plugin marketplace add` is not run
+      — it edits the user's global config) → commit.
 
 ### Task 18: Index exclusion, merge driver, release regeneration, workflow rule
 

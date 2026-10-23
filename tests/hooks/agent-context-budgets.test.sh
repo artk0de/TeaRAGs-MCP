@@ -13,7 +13,7 @@ SUBAGENT_CAP=3000
 STUB_DIR="$(mktemp -d)"; trap 'rm -rf "$STUB_DIR"' EXIT
 printf '#!/bin/bash\necho tea-rags-mcp-alias\n' > "$STUB_DIR/tea-rags"; chmod +x "$STUB_DIR/tea-rags"
 INPUT='{"session_id":"s","hook_event_name":"SubagentStart","agent_type":"general-purpose"}'
-BLOCK="$(echo "$INPUT" | CLAUDE_PROJECT_DIR=/repo PATH="$STUB_DIR:$PATH" bash "$ROOT/.claude-plugin/tea-rags/scripts/enforce-tearags-search.sh" | jq -r '.hookSpecificOutput.additionalContext')"
+BLOCK="$(echo "$INPUT" | CLAUDE_PROJECT_DIR=/repo PATH="$STUB_DIR:$PATH" bash "$ROOT/plugins/tea-rags/scripts/enforce-tearags-search.sh" | jq -r '.hookSpecificOutput.additionalContext')"
 printf %s "$BLOCK" | head -n 1 | grep -Fq '`tea-rags-mcp-alias`'; note $? "subagent block measured with the alias line"
 [ "$(printf %s "$BLOCK" | wc -c)" -le $SUBAGENT_CAP ]; note $? "subagent block incl. alias line ≤ $SUBAGENT_CAP bytes"
 # Harness-neutral: the Codex/Cursor transforms rewrite only `mcp__tea-rags__`, so the
@@ -22,8 +22,8 @@ printf %s "$BLOCK" | head -n 1 | grep -Fq '`tea-rags-mcp-alias`'; note $? "subag
 
 # dinopowers main-session routing: injected once per session (SessionStart, re-fired
 # on compaction), never per prompt, never echoing the prompt.
-DP_ROUTING="$ROOT/.claude-plugin/dinopowers/scripts/inject-main-session-routing.sh"
-DP_PLUGIN="$ROOT/.claude-plugin/dinopowers/.claude-plugin/plugin.json"
+DP_ROUTING="$ROOT/plugins/dinopowers/scripts/inject-main-session-routing.sh"
+DP_PLUGIN="$ROOT/plugins/dinopowers/.claude-plugin/plugin.json"
 SS_INPUT='{"session_id":"s","hook_event_name":"SessionStart","source":"compact","prompt":"PROMPT-SENTINEL-42"}'
 SS_OUT="$(echo "$SS_INPUT" | bash "$DP_ROUTING" 2>/dev/null)"
 [ "$(echo "$SS_OUT" | jq -r '.hookSpecificOutput.hookEventName' 2>/dev/null)" = "SessionStart" ]
@@ -38,13 +38,13 @@ note $? "dinopowers registers main-session routing on SessionStart"
 note $? "dinopowers injects nothing per prompt (no UserPromptSubmit hook)"
 
 # SessionStart rules injection: one part, ≤ 8,000 bytes (the core; guides are served on demand).
-INJECT="$ROOT/.claude-plugin/tea-rags/scripts/inject-rules.sh"
+INJECT="$ROOT/plugins/tea-rags/scripts/inject-rules.sh"
 [ "$(bash "$INJECT" --count)" = 1 ]; note $? "rules injection is one part"
 [ "$(bash "$INJECT" --part 1 --parts 1 | wc -c)" -le 8000 ]; note $? "rules injection ≤ 8000 bytes"
 [ "$(bash "$INJECT" | wc -c)" -le 8000 ]; note $? "legacy no-arg rules dump ≤ 8000 bytes"
 # core.md doubles as server `instructions` (≤ 4,096) and Cursor's tea-rags-core.mdc
 # (≤ 4,096 incl. ~330 chars of wrapper), hence 3,700 chars.
-CORE="$ROOT/.claude-plugin/tea-rags/rules/core.md"
+CORE="$ROOT/plugins/tea-rags/rules/core.md"
 [ -f "$CORE" ] && [ "$(node -e 'console.log(require("fs").readFileSync(process.argv[1],"utf8").length)' "$CORE")" -le 3700 ]
 note $? "rules/core.md ≤ 3700 chars"
 
@@ -64,7 +64,7 @@ desc_len() {
     console.log(v.length)' "$1"
 }
 
-for f in "$ROOT"/.claude-plugin/*/skills/*/SKILL.md; do
+for f in "$ROOT"/plugins/*/skills/*/SKILL.md; do
   LEN="$(desc_len "$f")"
   [ "$LEN" -le 1024 ]; note $? "description ≤ 1024 chars: ${f#$ROOT/} ($LEN)"
 done

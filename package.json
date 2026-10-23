@@ -21,6 +21,8 @@
     "gen:harness-cursor": "tsx scripts/gen-harness-cursor.ts",
     "gen:lang-compat": "tsx scripts/gen-language-compatibility.ts",
     "gen:agent-context": "tsx scripts/gen-agent-context.ts",
+    "gen:plugins": "tsx scripts/gen-plugins.ts",
+    "gen:harness-claude": "tsx scripts/gen-harness-claude.ts",
     "gen:migration-sql": "tsx scripts/gen-migration-sql.ts",
     "pin:lang-versions": "tsx scripts/pin-language-versions.ts",
     "postinstall": "node scripts/postinstall.js",

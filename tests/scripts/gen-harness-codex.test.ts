@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   CODEX_HARNESS_DIR,
+  CODEX_MARKETPLACE_PATH,
   renderCodexHarness,
+  renderCodexMarketplace,
   SKILLS_LIST_BUDGET,
   toCodexSkill,
 } from "../../scripts/gen-harness-codex.js";
@@ -195,8 +197,9 @@ describe("renderCodexHarness", () => {
     const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
     expect(Object.keys(hooks).sort()).toEqual(["SessionStart", "SubagentStart"]);
     expect(JSON.stringify(hooks)).not.toContain("CLAUDE_");
-    const marketplace = JSON.parse(rendered.get(".agents/plugins/marketplace.json") ?? "");
-    expect(marketplace.plugins[0].source).toEqual({ source: "local", path: "./tea-rags" });
+    const marketplace = JSON.parse(await renderCodexMarketplace(ROOT));
+    expect(marketplace.plugins[0].source).toEqual({ source: "local", path: "./harness/codex/tea-rags" });
+    expect(readFileSync(join(ROOT, CODEX_MARKETPLACE_PATH), "utf8")).toBe(await renderCodexMarketplace(ROOT));
   });
 
   it("ships no dinopowers skill and keeps the skills list within budget", async () => {

@@ -16,11 +16,11 @@
  * three skill files that consumers read; when you ADD a new language
  * (or REMOVE one) you MUST update ALL of them in the same commit:
  *
- *   - .claude-plugin/dinopowers/skills/test-driven-development/SKILL.md
+ *   - plugins/dinopowers/skills/test-driven-development/SKILL.md
  *     (Iron Rule fallback paragraph — supported-languages list)
- *   - .claude-plugin/tea-rags/skills/tests-as-context/SKILL.md
+ *   - plugins/tea-rags/skills/tests-as-context/SKILL.md
  *     (Step 0 SKIP block — currently-supported parenthesis)
- *   - .claude-plugin/tea-rags/skills/filter-building/SKILL.md
+ *   - plugins/tea-rags/skills/filter-building/SKILL.md
  *     (chunkType section — supported-languages table)
  *
  * ── What the hook claims, and why it is the TYPE ─────────────────────

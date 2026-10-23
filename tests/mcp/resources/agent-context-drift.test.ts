@@ -7,7 +7,7 @@ import { renderAgentContextModule } from "../../../scripts/gen-agent-context.js"
 
 const ROOT = resolve(__dirname, "../../..");
 const MODULE_PATH = resolve(ROOT, "src/mcp/resources/generated/agent-context.ts");
-const RULES_DIR = resolve(ROOT, ".claude-plugin/tea-rags/rules");
+const RULES_DIR = resolve(ROOT, "plugins/tea-rags/rules");
 
 /**
  * Locks the committed agent-context module to the plugin markdown it is

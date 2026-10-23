@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { spliceReadme } from "../../../../../scripts/gen-language-compatibility.js";
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
 
-const RULE_PATH = ".claude-plugin/tea-rags/rules/language-compatibility.md";
+const RULE_PATH = "plugins/tea-rags/rules/language-compatibility.md";
 const README_PATH = "README.md";
 
 /**

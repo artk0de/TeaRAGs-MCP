@@ -8,7 +8,11 @@ pass/fail, the tool calls seen and any deviation next to each check.
 
 1. `npm run build`, then install the package per `README.md` (copy to
    `~/.cursor/plugins/local/tea-rags`, Reload Window). Point the installed
-   `mcp.json` at `<repo>/build/index.js` for a development build.
+   `mcp.json` at `<repo>/build/index.js` for a development build. Marketplace
+   route (UNVERIFIED — format from docs, never loaded): add the repository as a
+   marketplace; Cursor must read `.cursor-plugin/marketplace.json` at the
+   repository root and resolve `./harness/cursor/tea-rags`. Record whether it
+   lists `tea-rags` and installs the same files as the copy.
 2. Open the tea-rags repository (indexed alias `tea-rags`) as the workspace.
 3. CLI runs:
    `CURSOR_API_KEY=… cursor-agent -p --output-format stream-json --force --approve-mcps --workspace <repo> "<prompt>"`;

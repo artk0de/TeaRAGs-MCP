@@ -8,6 +8,8 @@ docs/**
 .claude/**
 .claude-plugin/**/*.sh
 .claude-plugin/**/*.ps1
+plugins/**/*.sh
+plugins/**/*.ps1
 .github/**
 .husky/**
 .beads/**

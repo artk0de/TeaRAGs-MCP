@@ -1,18 +1,20 @@
 ---
 paths:
-  - ".claude-plugin/**"
+  - "plugins/**"
 ---
 
 # Plugin Versioning (MANDATORY)
 
-**Every commit modifying `.claude-plugin/` files MUST bump the version in the
-affected plugin's `plugin.json`.**
+**Every commit modifying `plugins/<name>/` source files MUST bump the version in
+the affected plugin's source `plugin.json`.** `npm run gen:plugins` copies it
+into every generated package (`.claude-plugin/<name>/`, `harness/**`); generated
+packages carry no version of their own.
 
 Three plugins:
 
-- **tea-rags**: `.claude-plugin/tea-rags/.claude-plugin/plugin.json`
-- **tea-rags-setup**: `.claude-plugin/tea-rags-setup/.claude-plugin/plugin.json`
-- **dinopowers**: `.claude-plugin/dinopowers/.claude-plugin/plugin.json`
+- **tea-rags**: `plugins/tea-rags/.claude-plugin/plugin.json`
+- **tea-rags-setup**: `plugins/tea-rags-setup/.claude-plugin/plugin.json`
+- **dinopowers**: `plugins/dinopowers/.claude-plugin/plugin.json`
 
 Rules:
 
@@ -22,9 +24,9 @@ Rules:
 Check before committing:
 
 ```bash
-git diff --cached --name-only | grep '^\.claude-plugin/tea-rags/'
-git diff --cached --name-only | grep '^\.claude-plugin/tea-rags-setup/'
-git diff --cached --name-only | grep '^\.claude-plugin/dinopowers/'
+git diff --cached --name-only | grep '^plugins/tea-rags/'
+git diff --cached --name-only | grep '^plugins/tea-rags-setup/'
+git diff --cached --name-only | grep '^plugins/dinopowers/'
 ```
 
 Plugin files staged → bump that plugin's version BEFORE `git commit`. Multiple

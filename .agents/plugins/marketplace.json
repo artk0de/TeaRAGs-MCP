@@ -1,14 +1,14 @@
 {
-  "name": "tea-rags-local",
+  "name": "tea-rags",
   "interface": {
-    "displayName": "tea-rags (local)"
+    "displayName": "tea-rags"
   },
   "plugins": [
     {
       "name": "tea-rags",
       "source": {
         "source": "local",
-        "path": "./tea-rags"
+        "path": "./harness/codex/tea-rags"
       },
       "policy": {
         "installation": "AVAILABLE",
