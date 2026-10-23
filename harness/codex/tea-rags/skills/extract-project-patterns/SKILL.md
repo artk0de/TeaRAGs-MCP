@@ -2,7 +2,8 @@
 name: extract-project-patterns
 description:
   "Internal step invoked by $data-driven-generation. Agentic-only —
-  battle-tested project code as templates for code-gen."
+  battle-tested project code as templates for code-gen, not test patterns
+  (dinopowers TDD wrapper)."
 ---
 
 # extract-project-patterns

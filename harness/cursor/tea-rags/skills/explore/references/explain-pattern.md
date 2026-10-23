@@ -39,8 +39,9 @@ Structure EXPLAIN step by what was asked.
 - Build from SOURCES axis first (behavior truth). Tests = executable spec → cite
   for "should do". Docs = intent/hypothesis → cite for "why", NEVER sole
   evidence of behavior.
-- Behavioral claim from doc chunk → verify via find_symbol / hybrid_search
-  BEFORE it enters answer. Conflict → code wins, flag drift ("docs say X, code
-  does Y"). Full rule: `../../../references/axis-splitting.md`.
+- Behavioral claim from doc chunk → verify via a `documentation:"exclude"`
+  search + `find_symbol` BEFORE it enters answer. Conflict → code wins; answer
+  states the code value and names the drifted doc: "`<doc path>` says X, code
+  does Y at `file:line`". Full rule: `../../../references/axis-splitting.md`.
 
 Citations `file:line`. Quote 3-5 lines, don't dump functions.

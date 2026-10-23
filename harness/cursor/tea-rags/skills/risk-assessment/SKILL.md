@@ -30,12 +30,13 @@ No `## Label maps` above → read
    manual filtering**)
 5. Phase 4 — CLASSIFY into severity tiers, score fix cost
 6. Phase 5 — REPORT pair-diagnostics (**MUST surface signal pairs, single-signal
-   reports are misleading**). Output = the Phase 5 risk map, named in the plan:
-   Critical / High tables (Symbol, File:Line, Risk Type, Key Signals as labels,
-   Tests path|none|unverified), Structural risks (codegraph on), Summary — never
-   a free-form "risky files" list. Generation caller (DDG) → the scoped map IS
-   the hand-off (its `pathPattern`, File:Line, labels); no extra block, no extra
-   scan.
+   reports are misleading**). Output = Phase 5 risk map; plan spells its columns
+   literally ("the risk map" alone fails): Critical / High tables (Symbol,
+   File:Line, Risk Type, Key Signals as labels, Tests path|none|unverified),
+   Structural risks (codegraph on), Summary — never free-form "risky files".
+   Generation caller (DDG, "before implementing") → plan says: hand-off = this
+   map's `pathPattern` + per-symbol File:Line + overlay labels; no extra block,
+   no extra scan.
 
 ## Top Anti-patterns (read before scanning)
 
@@ -59,10 +60,10 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 
 ---
 
-Multi-dimensional risk scan via rank_chunks × 5 rerank presets (4 when codegraph
-off — criticalPath is codegraph-gated), cross-referenced by overlap count, plus
-a git-independent structural axis (2 presets) reported separately.
-Semantic/hybrid search resolves intent-based scopes.
+Risk scan via rank_chunks × 5 rerank presets (4 codegraph off — criticalPath is
+codegraph-gated), cross-referenced by overlap count, plus a git-independent
+structural axis (2 presets) reported separately. Semantic/hybrid search resolves
+intent-based scopes.
 
 ## Rules
 
@@ -78,12 +79,11 @@ answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
 never licenses leaving tea-rags".
 
-1. **Execute YOURSELF** — never dispatch a subagent for it; you ARE a subagent →
-   run it.
+1. **Execute YOURSELF** — never dispatch a subagent; you ARE one → run it.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
-3. **No built-in Search/Grep for code discovery** — use tea-rags tools only.
-4. **Search results contain code when metaOnly=false.** Evaluate from search
-   results BEFORE any Read or navigation.
+3. **No built-in Search/Grep for code discovery** — tea-rags tools only.
+4. **Search results contain code when metaOnly=false.** Evaluate them BEFORE any
+   Read or navigation.
 5. **Depth → `find_symbol`, never Read** (`tea-rags://guide/navigation`
    After-Search Navigation): full body `symbol=<symbolId>`, file outline
    `relativePath`, neighbour `navigation.prev/nextSymbolId`. Partial `Read` only

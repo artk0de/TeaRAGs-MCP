@@ -1,5 +1,8 @@
 # ENTRY-POINT Pattern
 
+Plan line 1 = codegraph state + source: THIS request states it → that; else
+`get_callers` in my tools → on, absent → off. Never from the digest.
+
 **Codegraph off** (explicit statement or tools absent) → relevance +
 `chunkSize`, flagged content-inferred; never `rerank="entryPoint"` / `minFanOut`
 / graph tools.

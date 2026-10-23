@@ -10,7 +10,7 @@ enrichment, then chains to superpowers internally.
 | Authoring an implementation plan with a file list | $dino-writing-plans |
 | Executing plan Tasks that modify files | $dino-executing-plans |
 | Debugging a concrete symptom (error, stack trace, test failure) | $dino-systematic-debugging |
-| Writing a failing test only — no production change in the task (TDD RED phase) | $dino-test-driven-development |
+| Writing a failing test only — no production change in the task (TDD RED phase); finding / extracting test patterns or conventions | $dino-test-driven-development |
 | Writing or changing production code outside a written plan (new function, behaviour change, perf rework) — DDG owns RED ($test-first, Step 6a) and GREEN; no separate TDD wrapper | $data-driven-generation |
 | Claiming work complete / before commit / before PR | $dino-verification-before-completion |
 | Agreeing/pushing back on a review comment that names a symbol | $dino-receiving-code-review |

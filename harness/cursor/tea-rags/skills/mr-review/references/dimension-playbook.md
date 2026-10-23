@@ -191,10 +191,11 @@ local vs external mode. MISFIT fix = the `suggestion`, `holder` as precedent.
 
 Local: ONE `review_changes(changes, sections: ["naming"])` call judges every
 name added hunks declare (values, types, constants) — no hand-listed drafts.
-Changed files excluded from evidence → already-indexed names cannot vouch for
-themselves. External: MR branch never checked out, working tree lacks its code →
-`names[]` from diff. `notJudged` > 0 → state unjudged file count, never "no
-naming issues".
+Name it in the plan even when verdicts are already in context — they come from
+that call. Changed files excluded from evidence → already-indexed names cannot
+vouch for themselves. External: MR branch never checked out, working tree lacks
+its code → `names[]` from diff. `notJudged` > 0 → state unjudged file count,
+never "no naming issues".
 
 Answer = `review` {base, checked, conforming, novel, findings, notJudged,
 truncated?}; each finding flat `{relPath, line, name, kind, type?, verdict, …}`.

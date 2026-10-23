@@ -38,10 +38,10 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
      constants, types); the section judges every name the added lines declare vs
      HEAD: `MISFIT` → rename to `suggestion` before commit; `COLLISION` →
      rename; `NEW_TERM` → soft: `alternatives` word only if same meaning, else
-     keep + one-line why (never default-rename); `genericName` → rename; `novel`
-     = no action. Skip naming when every added declaration was a Step 5 draft.
-     Tests not judged (`notJudged`). Never hand-list written names into
-     `names[]`.
+     keep + one-line why (never default-rename) — state the decision now (keep X
+     / use Y), never "needs a decision"; `genericName` → rename; `novel` = no
+     action. Skip naming when every added declaration was a Step 5 draft. Tests
+     not judged (`notJudged`). Never hand-list written names into `names[]`.
    - **incompleteChange** = co-change partners the change ignores
      (`support`/`confidence` attached) — a forgotten sibling edit is caught
      here, not in review. Partner verdict rule below.
@@ -182,7 +182,10 @@ context). Depends on the changed contract (test, doc, registry, mirror) → edit
 it in this diff. Else one line `not touched because <reason>` with a CHECKABLE
 reason citing the symbol: a named test that already pins the seam, or why the
 file cannot change with this edit. "Not needed" / "unrelated" without evidence =
-fail → edit it or ask.
+fail → edit it or ask. Partner is a version manifest
+(`.claude-plugin/**/plugin.json`, `package.json`, lockfile) → known noise per
+`silentCoupling.md` (detector drops manifests; the bump follows the versioning
+rule) — one line, no coupling edit.
 
 **Report:** gate line first, then per class — fixed (remedy / procedure),
 accepted (evidence), false positive (counter-evidence + issue), report-only

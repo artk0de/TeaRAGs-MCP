@@ -51,8 +51,8 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 - **Flat `violations` first.** N violations into one target = ONE defect.
 - **Nothing read ≠ clean.** `edgeCount: 0`, `built: false`, excluded counters,
   `facade-not-adopted`, absent `layerMap` = not judged / not asked — say so.
-- **SDP is component-level**, not file-level. Tolerance fixed — no caller knob.
-- **No risk signals here** (churn, bugFixRate) — other question; per-violation
+- **SDP is component-level**, not file-level. Tolerance fixed, no caller knob.
+- **No risk signals** (churn, bugFixRate) — other question; per-violation
   `maintenanceCost` = fix priority only.
 - **`preExisting: true`** = base already held it — real finding, not
   diff-introduced. **`remedy`** quoted verbatim, never paraphrased.
@@ -63,9 +63,10 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
   quote `remedy` fields verbatim (source, from → to, names); `preExisting`, no
   `remedy` → **report-only** line, no fix (`mainSequence`: distanceBefore
   already past threshold). Load `../../repair/<family>.md` of EVERY family
-  present (report-only too: `mainSequence.md` + `hubLike.md`), no others. FP
-  exemption needs a `compositionRoot` / `## Known false positives` flag, never
-  bare "by design". Classify + fix now, never defer.
+  present (report-only too: `mainSequence.md` + `hubLike.md`), no others. Every
+  must-fix line states the exemption rule: unfixed ONLY with a detector flag
+  (`compositionRoot`) / `## Known false positives` evidence — bare "by design"
+  is not evidence. Classify + fix now, never defer.
 - **`island` / `compositionCycle` / `knot` with `composition: true`** =
   informational, not defects.
 
@@ -128,11 +129,11 @@ back-reference (registry/lookup, DI, move knowledge to dependents) → every
 violation of group disappears at once.
 
 Confirm cycle (optional):
-`find_cycles(scope: "file", pathPattern: "<target>/**")`; which files carry it:
-`evidence.fileEdges` of the group's violations.
+`find_cycles(scope: "file", pathPattern: "<target>/**")`; files carrying it:
+`evidence.fileEdges` of group's violations.
 
-`cycleWithDependents: false`, count ≥ 3 → target too volatile for its role:
-split stable core (what dependents use) from volatile rest.
+`cycleWithDependents: false`, count ≥ 3 → target too volatile: split stable core
+(what dependents use) from volatile rest.
 
 ## Phase 3 — RESIDUAL VIOLATIONS
 
@@ -154,7 +155,7 @@ Groups with `violationCount: 1`: judge each by `evidence`.
 
 **MANDATORY: read the phase's reference before judging that detector's
 findings** — each carries field semantics plus its not-built / not-judged traps.
-Detector absent from response or zero findings → no read.
+Detector absent or zero findings → no read.
 
 | Phase | Judges              | Field                         | Reference                                                                       |
 | ----- | ------------------- | ----------------------------- | ------------------------------------------------------------------------------- |

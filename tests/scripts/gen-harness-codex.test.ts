@@ -271,6 +271,17 @@ describe("renderCodexHarness", () => {
       expect(rendered.get(path)).toMatch(/plugin root/);
     }
   });
+
+  // Codex T22 r5 E14/E15: incremental index then a bare graph retry; "explain retry logic" read as an agent retry.
+  it("tells the core that an incremental index is a prelude and how to re-check a lagging graph answer", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+
+    for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
+      expect(rendered.get(path)).toMatch(/prelude/);
+      expect(rendered.get(path)).toMatch(/re-check\s+changed-file\s+callers\s+via\s+`find_symbol`/);
+      expect(rendered.get(path)).toMatch(/never\s+a\s+bare\s+retry/);
+    }
+  });
 });
 
 describe("toCodexSkill — dinopowers wrappers", () => {

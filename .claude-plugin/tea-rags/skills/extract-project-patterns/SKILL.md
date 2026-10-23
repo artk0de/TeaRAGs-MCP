@@ -2,7 +2,8 @@
 name: extract-project-patterns
 user-invocable: false
 description:
-  Agentic-only — battle-tested project code as templates for code-gen. Read
+  Agentic-only — battle-tested project code as templates for code-gen, not
+  test patterns (dinopowers TDD wrapper). Read
   body before planning: locality cascade L1 = target subdomain → L2 = infra
   prefix + first semantic segment (skipped when semantic tail ≤ 1 segment) → L3
   = project; find_similar (behaviorQuery → semantic_search) + rerank proven +

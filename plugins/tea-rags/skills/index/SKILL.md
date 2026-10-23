@@ -8,7 +8,10 @@ argument-hint: [path to codebase]
 
 # Index Codebase
 
-Branches (plan names every one that can apply — path unknown = all of them):
+Branches (plan names every one that can apply — path unknown, or registration
+not yet checked via `list_projects`, = all of them; a digest alias is not a
+registration check). Every plan ends with step 5 — report the full result (all
+metrics + duration) — even when nothing ran:
 
 - **Linked git worktree** of a registered repo → do NOT register or index; read
   tools (`project` + `path=<worktree>`) already answer for that tree.
@@ -42,7 +45,8 @@ Branches (plan names every one that can apply — path unknown = all of them):
 1. `path` from message / argument; absent → cwd. Linked git worktree
    (`git rev-parse --git-common-dir` ≠ `<path>/.git`) of registered repo → do
    NOT register or index; read tools already answer for that tree
-   (`tea-rags://guide/freshness`, linked worktree). Tell user.
+   (`tea-rags://guide/freshness`, linked worktree). Tell user in those words:
+   read tools (`project` + `path=<worktree>`) already answer for this tree.
    `--project <alias>` reindex refreshes main checkout only, never worktree
    edits. Index worktree as own project only if user insists (seeds separate
    project).

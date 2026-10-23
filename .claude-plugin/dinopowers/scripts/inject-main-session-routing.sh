@@ -20,7 +20,7 @@ into superpowers itself; nothing skipped.
 | Write an implementation plan | Skill(dinopowers:writing-plans) |
 | Execute a written plan that edits files | Skill(dinopowers:executing-plans) |
 | Debug a bug, error, stack trace, test failure | Skill(dinopowers:systematic-debugging) |
-| Write a failing test only, no production change | Skill(dinopowers:test-driven-development) |
+| Write a failing test only, no production change; find / extract test patterns or conventions | Skill(dinopowers:test-driven-development) |
 | Verify before commit / PR / claiming done | Skill(dinopowers:verification-before-completion) |
 | Request a code review / open a PR | Skill(dinopowers:requesting-code-review) |
 | React to a review comment naming a symbol or file | Skill(dinopowers:receiving-code-review) |

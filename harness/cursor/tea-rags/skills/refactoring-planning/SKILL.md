@@ -89,9 +89,11 @@ only, never preload dir.
 - Recipe → ops verbatim shape: `removeEdge{from,to}`,
   `addFile{file,component, abstract: true}` for extracted interface,
   `addEdge{from,to}`, `move{…}`. Paths repo-relative base paths; new-file path
-  per recipe's path rule (never hard-coded dir). SDP inversion `A -> B` spelled:
-  `removeEdge{A,B}`, `addFile{<foundation>/…/<Iface>.ts, abstract: true}`,
-  `addEdge{A,iface}`, `addEdge{B,iface}` — rationale = finding key.
+  per recipe's path rule (never hard-coded dir). SDP inversion: A = finding's
+  `sourceRelPath`, B = its `toRelPath` — FILES, never the component dirs of the
+  finding key; spelled: `removeEdge{A,B}`,
+  `addFile{<foundation>/…/<Iface>.ts, abstract: true}`, `addEdge{A,iface}`,
+  `addEdge{B,iface}` — rationale = finding key.
 - Recipe says "no recipe, escalate" → no candidate; list under Escalated.
 - Names: ONE `get_naming_lexicon` call over all drafted new-file / type names.
   `MISFIT` / `COLLISION` → rename to suggestion; `NEW_TERM` → keep + one-line

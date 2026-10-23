@@ -33,9 +33,11 @@ file"). Never invent pathPattern to justify guard.
 
 **Plan = any written Task source**: plan file, OR tracker issue handed to an
 autonomous task-agent ("Execute beads issue X: write Y in path Z"). Issue = one
-Task → full step order below: guard → Step 5 DDG cascade (MUST for new code,
-esp. "match shape of A/B"; its tests = DDG 6a `$test-first`, no separate TDD
-skill) → chain. Never Read neighbours and copy by hand.
+Task → full step order below, each step named in your answer: guard ("guard SAFE
+— new file") → `$data-driven-generation` (MUST for new code, esp. "match shape
+of A/B") → its Step 6a `$test-first` writes the red tests (name `$test-first`;
+no separate TDD skill) → `$executing-plans`. Never Read neighbours and copy by
+hand.
 
 ## Mandatory Step Order (DO NOT SKIP)
 

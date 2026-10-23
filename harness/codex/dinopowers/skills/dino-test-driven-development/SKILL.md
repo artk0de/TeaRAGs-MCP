@@ -3,11 +3,13 @@ name: dino-test-driven-development
 description:
   'Write failing test BEFORE implementation, match project conventions from
   tea-rags search of existing test files (mocks, helpers, assertion style,
-  fixture conventions) so new test fits local norms. Triggers on "write a test",
-  "TDD", "напиши тест", "сначала тест", "failing test first", "RED phase",
-  "implement feature X", "add test for Y", "fix bug Z". NOT for projects with no
-  existing tests — fall back to $test-driven-development directly. Wraps
-  $test-driven-development with tea-rags test-pattern search.'
+  fixtures) so new test fits local norms. Triggers on "write a test", "TDD",
+  "напиши тест", "сначала тест", "failing test first", "RED phase", "implement
+  feature X", "add test for Y", "fix bug Z", "find test patterns for X", "test
+  conventions", "extract patterns from tests", "ищи test patterns", "извлеки
+  паттерны из тестов". NOT for projects with no existing tests — fall back to
+  $test-driven-development directly. Wraps $test-driven-development with
+  tea-rags test-pattern search.'
 ---
 
 # dinopowers: test-driven-development

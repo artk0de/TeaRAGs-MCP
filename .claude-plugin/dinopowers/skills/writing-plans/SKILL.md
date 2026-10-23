@@ -210,11 +210,10 @@ invoke `tea-rags:extract-project-patterns`:
 4. `locality = "none"` → attach diagnostic verbatim (no proven precedent).
 5. New symbol names the Task fixes (codegraph on) →
    `get_naming_lexicon(names=[{name, kind}], concept="<Task intent>", language="<file's>", pathPattern=pathPatternL1)`
-   — write every argument out, never `…` — before they enter plan; state both
-   rules: `MISFIT` → plan uses `suggestion`; `NEW_TERM` → a `topTerms` /
-   `concept.terms` word if same meaning, else Task carries one-line
-   justification. Reading: `tea-rags:data-driven-generation` Step 5 "Naming
-   (lexicon)".
+   — write every argument out, never `…` — before they enter plan; then write
+   this line into the Task verbatim (your answer shows it too):
+   `Naming: MISFIT → use suggestion; NEW_TERM → project term (topTerms / concept.terms) if same meaning, else one-line justification`.
+   Reading: `tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 6. New cross-component imports (codegraph on) → ONE
    `get_architecture_report(plannedEdges: [{source, target}])` per plan, all
    Tasks' edges: `MISFIT` → Task routes via `expectedPath` (established

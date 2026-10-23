@@ -112,6 +112,9 @@ read at merge-base with HEAD (target moving on adds nothing). Uncommitted work �
 omit (default `HEAD`). Worktree branch → pass `path=<worktree>` (alias alone
 reads main checkout).
 
+Findings already quoted in the task / context = what this call returns — still
+list the `review_changes` call in your sequence, then act on them.
+
 Settle naming before reviewer spends comment:
 
 - `MISFIT` → rename to `suggestion` before sending (or list under risk flags
@@ -123,10 +126,14 @@ Settle naming before reviewer spends comment:
 
 Answer under `review` {workTree, base, mergeBase, changedFiles, checked,
 conforming, novel, findings, notJudged, truncated?}; findings flat
-`{relPath, line, name, kind, type?, verdict, …}`. Bundle line: findings grouped
-by verdict with `relPath:line` + conforming AND novel counts (both numbers,
-always) (`novel` = nothing to compare, no action). Reading:
-`/data-driven-generation` Step 5 "Naming (lexicon)".
+`{relPath, line, name, kind, type?, verdict, …}`. Bundle line (copy this shape,
+every finding with `relPath:line`, both counts always):
+
+`Naming: MISFIT <name> (<relPath:line>) → <suggestion>; COLLISION <name> (<relPath:line>) vs <existing>; NEW_TERM <name> (<relPath:line>) — <why>; conforming <N>, novel <M>`
+
+Path or count not in the prompt → write `<relPath:line from review>` /
+`novel <from review>`, never drop the slot (`novel` = nothing to compare, no
+action). Reading: `/data-driven-generation` Step 5 "Naming (lexicon)".
 
 ## Step 3 — Build reviewer-context bundle
 

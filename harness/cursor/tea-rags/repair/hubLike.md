@@ -43,6 +43,9 @@ component the source already depends on, so efferent coupling does not grow.
 - The only fix is splitting the component.
 - Two repair rounds left the finding introduced.
 
+Escalation reports the metric before/after, the threshold and the diff edge that
+crossed it: efferent count vs cut, the new import.
+
 ## Ops recipe
 
 Split the hub's afferent surface, one cluster of consumers at a time. Cluster =

@@ -207,6 +207,11 @@ Rename / "unclear name" comment →
 - proposed `MISFIT` / `NEW_TERM` while current `CONFORMS` → push back: keep
   current name, cite project's term + its holder (file) as precedent
 
+Before results, write which row applies and its action. A shorter / abbreviated
+rename of a current name (`doc` for `tax_automation_document`) = row "proposed
+`MISFIT` / `NEW_TERM` while current `CONFORMS`": plan to push back, keeping the
+current name, citing the project term + its holder file.
+
 Naming across whole change, no identifier named ("names in this PR don't match
 the codebase") →
 `review_changes(changes={ base: <the PR's target branch> }, sections: ["naming"])`

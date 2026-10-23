@@ -78,3 +78,10 @@ its middle (`…N tokens truncated…`), and a rule you did not see is not a rul
 you may guess. Saw that marker → re-read the file in ranges (`sed -n`).
 `repair/<family>.md`, `rules/…` in any skill or reference = the plugin root (the
 folder holding `skills/`), never the skill's own folder.
+
+**Lag follow-ups.** Incremental `index_codebase` is a prelude, not the answer:
+the next step still serves the user's request (search / `$explore` over the code
+they asked about). Graph answer with `changedFiles` > 0 and no `codegraph` floor
+→ edges touching changed files are the index's: re-check changed-file callers
+via `find_symbol`, find missing ones via `hybrid_search` metaOnly — never a bare
+retry of the graph call.

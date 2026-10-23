@@ -46,8 +46,11 @@ A plan names these calls; "later" / "not in this run" never drops one.
 4. **Two-class triage, every hit and trace step:** historical (`critical` →
    prime; `concerning` + `relativeChurn` high → secondary) | fresh (burst;
    recent + high churn; recent on failing path; fresh-probe hit) | uncommitted
-   (probe hit). Neither → SKIP, also when user says "check there": "healthy,
-   old, not fresh, no probe hit — neither suspect class, skipping".
+   (probe hit matching symptom = **UNCOMMITTED SUSPECT** whatever its
+   `bugFixRate` / `ageDays` — those describe the committed version; plan says
+   it: PRESENT it under class `uncommitted`). Neither → SKIP, also when user
+   says "check there": "healthy, old, not fresh, no probe hit — neither suspect
+   class, skipping".
 5. **Checkpoint filled → PRESENT. STOP.** "Want to be sure" → refuse the
    confirmatory search: confirmatory searches almost never change the answer.
    "Not fully sure" → PRESENT with confidence note (what is unverified).

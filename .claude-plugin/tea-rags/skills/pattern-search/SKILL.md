@@ -78,9 +78,10 @@ chunks + churn, techDebt favors age.
 ```
 1. SEED — `tea-rags://guide/decision-tree` tool + strategy rerank + pathPattern
 2. EXPAND — find_similar from seed results (skip already-seen chunks)
-3. DEDUPLICATE — same dir + >80% overlap → keep richer-signals one; different
-   dirs → keep both
-4. GROUP — by module/directory
+3. DEDUPLICATE — state both branches in any dedup answer: same dir + >80%
+   overlap → keep richer-signals one; different dirs → ALWAYS keep both,
+   whatever the overlap
+4. GROUP — by top-level module directory (first 2 path segments after src/)
 5. OUTPUT — grouped list with file:line citations + overlay labels
 ```
 
@@ -104,9 +105,10 @@ Note chunk IDs from results for expansion step.
 - **Disambiguation:** top-10 split across 2+ unrelated directory groups, none
   > 70% → ask user which area, re-SEED with that `pathPattern`. Never pick one
   > silently, never EXPAND both.
-- **No-match:** score spread `(max−min)/max` < 0.06 · zero query-term overlap in
-  top-5 paths/symbols/content · top-10 scattered over > 7 dirs. 2 of 3 → warn
-  "may not be relevant"; 3 of 3 → report no match, do NOT EXPAND noise.
+- **No-match** (plan names all three signals + both thresholds): score spread
+  `(max−min)/max` < 0.06 · zero query-term overlap in top-5
+  paths/symbols/content · top-10 scattered over > 7 dirs. 2 of 3 → warn "may not
+  be relevant"; 3 of 3 → report no match, do NOT EXPAND noise.
 
 ### 2. EXPAND
 

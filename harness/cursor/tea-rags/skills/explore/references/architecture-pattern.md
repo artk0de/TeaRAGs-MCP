@@ -5,6 +5,17 @@ files many others depend on) via `architecturalHub` rerank over codegraph
 fan-graph signals → answer reflects real dependency centrality, not prose that
 says "architecture".
 
+Plan line 1 = codegraph state + source: THIS request states it → that; else
+`get_callers` in my tools → on, absent → off. Never from the digest.
+
+**Codegraph off** (explicit statement or graph tools absent) → skip Step 0 and
+Step 1: ORIENT `semantic_search rerank="onboarding"`, flagged content-inferred;
+never `rerank="entryPoint"` / `rerank="architecturalHub"` / graph tools (no
+fan-graph signals — they silently degrade to similarity). Say fan-in centrality
+unavailable; offer git imports/churn or relevance — never similarity top hit as
+"the architectural centre". Distinct from no-hubs case (codegraph on, flat
+scope).
+
 ## Step 0 — ORIENT (entry points first)
 
 Broad target (system / domain / directory) → ENTRY POINTS before hubs — hubs =
@@ -29,13 +40,6 @@ No `isHub=true` files (flat module) → preset degrades to similarity. Say "no
 architectural hubs in `<scope>`, falling back to relevance ranking" — never
 present top similarity hit as "the architectural centre". Optional confirm:
 `isHub=true` filter, zero results = no hubs.
-
-**Codegraph off** (graph tools absent from tool list): `architecturalHub` has no
-fan-graph signals, silently degrades to similarity. Say fan-in centrality
-unavailable; offer git imports/churn or relevance — never similarity top hit as
-"the architectural centre". Orientation then = ORIENT
-`semantic_search rerank="onboarding"` (SKILL.md §1), flagged content-inferred.
-Distinct from no-hubs case (codegraph on, scope flat).
 
 ## Tail-suggestion (drill into hub)
 

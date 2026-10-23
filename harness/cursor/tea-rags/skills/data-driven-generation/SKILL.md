@@ -18,9 +18,14 @@ description:
 > resource tool, or the read fails), run
 > `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
 
-Don't invent — find how it's solved HERE, repeat. Strategy from git signal
-labels, helpers via reuse gate, style from live code. Overlay labels — not
-hardcoded thresholds — strategies adapt per codebase.
+Don't invent — find how it's solved HERE, repeat: strategy from overlay labels
+(not thresholds), helpers via reuse gate, style from live code.
+
+**References MANDATORY when their step runs** — open the file, never work the
+step from this summary: Step 5 → `references/step-5-style.md`; Step 6 →
+`references/step-6-generate.md` + `/test-first`; Step 7 →
+`references/step-7-verify.md`; each finding family → its
+`../../repair/<family>.md` (Step 7 map).
 
 ## Prerequisites
 
@@ -31,43 +36,36 @@ Codebase".
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license `cat`
 / `grep` / `Read` over code — `tea-rags://guide/freshness`.
 
-**Area context required:** files, pathPattern, per-symbol overlay labels must be
-in conversation. Labels come from `find_symbol(rerank=<preset>, metaOnly=false)`
-on target symbols — explore PRE-GEN step PG-2 (SIGNAL LOOKUP). No full
-risk-assessment scan needed. Missing → STOP, say "area context missing", invoke
-`/explore` for target area FIRST (it runs PRE-GEN, returns context), then resume
-here — never your own `semantic_search` in its place. Explore output already in
-this conversation → use it.
+**Area context required:** files, pathPattern, per-symbol overlay labels in
+conversation. Labels from `find_symbol(rerank=<preset>, metaOnly=false)` on
+target symbols — explore PRE-GEN PG-2 (SIGNAL LOOKUP); no full risk-assessment
+scan. Missing → STOP, say "area context missing"; plan step 1, by name: invoke
+`/explore` (PRE-GEN) for target area, then resume — never own `semantic_search`
+in its place; approved brainstorm/design ≠ area context. Explore output already
+here → use it.
 
-**Session-context reuse:** outlines, symbol bodies and search hits already
-fetched in this conversation are the source of truth for their file until that
-file is edited. Before any search or `find_symbol`, check the conversation for
-the file; reuse what is there. Re-fetch ONLY a file edited after it was fetched
-(by you or a tool). State both halves: "re-fetch <edited symbol>; reuse
-in-context <other files>". Re-searching an unedited file spends tokens and adds
-nothing.
+**Session-context reuse:** outlines, bodies, search hits already fetched here =
+source of truth for their file until that file is edited. Before any search or
+`find_symbol`, check conversation for the file; reuse. Re-fetch ONLY a file
+edited after fetch (by you or a tool). State both halves: "re-fetch <edited
+symbol>; reuse in-context <other files>". Re-searching unedited file = waste.
 
 ## Reading Overlay Labels
 
-Labels live in `rankingOverlay.file.<signal>` and
-`rankingOverlay.chunk.<signal>`. Each labeled value:
-`{ value: N, label: "high" }` — in a result table (2+ rows) the columns
-`rankingOverlay.chunk.<signal>.value` / `.label`. Only fields in the preset's
-`overlayMask` are labelled — choose the preset by the labels you need; raw
-values under `payload.git.*` are never labelled.
-
-Label meanings: `tea-rags://guide/signal-labels`. Bands (thresholds) when a raw
-value needs a label → read
-`tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap`
+`rankingOverlay.file.<signal>` / `rankingOverlay.chunk.<signal>`, each
+`{ value: N, label: "high" }` — result table (2+ rows): columns
+`rankingOverlay.chunk.<signal>.value` / `.label`. Only preset's `overlayMask`
+fields labelled — choose preset by labels needed; raw `payload.git.*` never
+labelled. Meanings: `tea-rags://guide/signal-labels`. Raw value needs label →
+read `tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap`
 (FetchMcpResource).
 
 ---
 
 ## Step 0: MODE
 
-Runs after Prerequisites (area context present).
-
-`find_symbol(metaOnly=true)` on named target. Zero guessing:
+After Prerequisites. `find_symbol(metaOnly=true)` on named target, zero
+guessing:
 
 | Probe result                                       | Mode   |
 | -------------------------------------------------- | ------ |
@@ -75,7 +73,7 @@ Runs after Prerequisites (area context present).
 | Container exists, symbol new ("add method to Y")   | EXTEND |
 | Neither exists                                     | CREATE |
 
-Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
+Ambiguous → ask which mode (one question).
 
 **Step matrix** — mode selects steps + signal sources:
 
@@ -92,26 +90,23 @@ Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
 | 7 VERIFY    | symbol risks + N-th-way + gate | same                           | + re-run 6a baseline pins                   |
 | 8 IMPACT    | blastRadius of new code        | container fanIn                | `get_callers` — MANDATORY                   |
 
-- **Hotfix** (user gives exact location) = MODIFY, additionally skip STRATEGY
-  and the blame part of STYLE — say so in one line. REUSE still applies to
-  introduced logic; the lexicon still runs when the fix introduces a name
-  (MODIFY row: `types` = symbol signature + local types, `anchors` = the symbol,
-  `names` = only the new names, no `concept`). VERIFY runs in full. Location +
-  fix named ("line 88 nil — reload X before send") = this skill, no clarifying
-  question; bug-hunt only when the cause is still unknown.
-- **Bug fix** = MODIFY; cause unknown → `bug-hunt` locates it first, the fix
-  still runs 6a in order: baseline GREEN → reproduction test (asserts the
-  correct output, e.g. `formatDuration(0) === "0s"`) run RED on that assertion →
-  only then patch.
-- **Pure refactor / move** (no behaviour change) — outside this skill's scope
-  (no Steps 1–5), but this rule still binds: 6a baseline (`tests-at-risk` pins +
-  target's own tests) run GREEN BEFORE the first move, no new test; move (file
-  moves → pre-write simulation, Step 6); same tests re-run green, none edited;
-  Step 7 gate.
-- **Greenfield** = CREATE over empty area — TEMPLATE/STYLE searches degrade to
-  empty naturally, don't pre-skip.
-- **REUSE never skipped in any mode** — shared infra exists even when feature is
-  new.
+- **Hotfix** (exact location given) = MODIFY, skip STRATEGY + blame part of
+  STYLE — say so. REUSE still applies to introduced logic; lexicon runs when fix
+  introduces a name (MODIFY row: `types` = signature + local types, `anchors` =
+  the symbol, `names` = only new names, no `concept`). VERIFY in full.
+  Location + fix named ("line 88 nil — reload X before send") = this skill, no
+  clarifying question; bug-hunt only when cause unknown.
+- **Bug fix** = MODIFY; cause unknown → `bug-hunt` locates it first; fix still
+  runs 6a in order: baseline GREEN → reproduction test (asserts correct output,
+  e.g. `formatDuration(0) === "0s"`) RED on that assertion → only then patch.
+- **Pure refactor / move** (no behaviour change) — outside scope (no Steps 1–5),
+  but binds: 6a baseline (`tests-at-risk` pins + target's own tests) GREEN
+  BEFORE first move, no new test; move (file moves → pre-write simulation, Step
+  6); same tests re-run green, none edited; Step 7 gate.
+- **Greenfield** = CREATE over empty area — TEMPLATE/STYLE degrade to empty
+  naturally, don't pre-skip.
+- **REUSE never skipped in any mode** — shared infra exists even for new
+  features.
 - **RED never skipped** except a named `test-first` exception (no-tests language
   / config-docs only), stated in one line. Hotfix included.
 - **VERIFY never skipped. Ever.**
@@ -120,8 +115,14 @@ Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
 
 ### Step 1: STRATEGY SELECTION
 
-Signal source per mode (matrix row 1: area / container / symbol's own labels).
-Apply **hard rules** first:
+Signal source per mode (matrix row 1).
+
+**Custom strategies FIRST:** scan `.claude/skills/` for `strategy-*`, read each
+`## When`; matching custom condition wins, hard rules below not consulted — say
+this ordering when listing them (also for "which custom strategies exist?"
+before generation).
+
+**Hard rules** (no custom match):
 
 | Condition                                                  | Strategy      |
 | ---------------------------------------------------------- | ------------- |
@@ -130,218 +131,221 @@ Apply **hard rules** first:
 | file.ageDays "legacy" + chunk.commitCount "low"            | CONSERVATIVE  |
 | No match                                                   | STANDARD      |
 
-**Autonomous Judgment Protocol** — when no hard rule matches:
+**Autonomous Judgment Protocol** — no hard rule matches:
 
-1. **Decide** — choose closest strategy based on signal axes
-2. **Justify** — show labels, axes, specific actions
-3. **Ask if uncertain** — present dilemma with options
+1. **Decide** — NAME one strategy (DEFENSIVE / STABILIZATION / CONSERVATIVE /
+   STANDARD) in the reply, each given label mapped to its axis (Risk / Stability
+   / Confidence). "Closest strategy" without the name = Step 1 not done.
+2. **Justify** — labels, axes, specific actions.
+3. **Ask if uncertain** — dilemma with options.
 
-Signal axes:
+Axes: **Risk** grows bugFixRate healthy→concerning→critical, churnVolatility
+stable→erratic; **Stability** grows ageDays recent→legacy; **Confidence** falls
+with commitCount "low" (few data points).
 
-- **Risk** grows: bugFixRate healthy→concerning→critical, churnVolatility
-  stable→erratic
-- **Stability** grows: ageDays recent→legacy
-- **Confidence** falls: commitCount "low" = few data points
-
-**Load strategy (MANDATORY, name the file):** project skill `strategy-<mode>` in
-`.claude/skills/` → use it; else READ `strategies/<mode>.md` (DEFENSIVE →
-`strategies/defensive.md`) before Step 2. Strategy named, file not loaded = Step
-1 not done.
-
-**Custom strategy discovery:** Scan `.claude/skills/` for `strategy-*` skills.
-Read `## When` section. Custom conditions evaluated before hard rules.
+**Load strategy (MANDATORY, name the file):** custom `strategy-<mode>` skill →
+use it; else READ `strategies/<mode>.md` (DEFENSIVE → `strategies/defensive.md`)
+before Step 2. Strategy named, file not loaded = Step 1 not done.
 
 ### Step 2: TEMPLATE — CREATE / EXTEND
 
-Session-context reuse (Prerequisites): a candidate chunk, outline or body
-already in the conversation feeds `positiveIds` / `positiveCode` as is — no
-re-search of an unedited file.
+Chunk / outline / body already here → `positiveIds` / `positiveCode` as is, no
+re-search.
 
-Delegate to `/extract-project-patterns` with:
+Delegate to `/extract-project-patterns`:
 
 <!-- extract-project-patterns applies filter:{presets:"battleTested"} internally;
      on empty it relaxes to {presets:"production"} and annotates diagnostics -->
 
 - `positiveIds` | `positiveCode` = best verified chunk from explore PG-OUTPUT /
-  Step 1 signals (or set `behaviorQuery` if no chunk/code available)
+  Step 1 signals (else `behaviorQuery`)
 - `pathPatternL1` = pathPattern from explore PG-OUTPUT
 - `limit` = 10
 
-Read `templates[0]` as reference for Step 6 (GENERATE). Recipe owns the locality
-cascade (L1 = subdomain, L2 = first semantic segment (infra prefixes kept in
-glob, not counted), L3 = project) and the quality gate (commitCount
-low/typical + ageDays old/legacy + bugFixRate healthy; lone ideal on hub file
-also accepts; reject if bugFixRate critical or ageDays recent + commitCount
-low).
+`templates[0]` = reference for Step 6. Recipe owns locality cascade (L1 =
+subdomain, L2 = first semantic segment (infra prefixes kept in glob, not
+counted), L3 = project) + quality gate (commitCount low/typical + ageDays
+old/legacy + bugFixRate healthy; lone ideal on hub file also accepts; reject
+bugFixRate critical or ageDays recent + commitCount low).
 
-Read `locality` to inform Step 5 (STYLE):
+`locality` → Step 5: `L1` → template's `blameDominantAuthor` for style + review
+routing; `L2` → author reviews technique, not exact code; `L3` → technique only,
+verify architectural fit before adopting verbatim; `none` → no template,
+generate from scratch, tell user to scrutinize result.
 
-- `L1` → use template's `blameDominantAuthor` for style + review routing.
-- `L2` → `blameDominantAuthor` reviews technique, not exact code.
-- `L3` → `blameDominantAuthor` reviews technique only; verify architectural fit
-  before adopting verbatim.
-- `none` → no template; generate from scratch, surface to user so they
-  scrutinize result.
-
-**Template imports = pre-approved REUSE vocabulary.** What the template calls is
-proven in context — Step 4 gate passes them automatically.
+**Template imports = pre-approved REUSE vocabulary** — proven in context, Step 4
+gate passes them automatically.
 
 ### Step 3: PLACEMENT — CREATE (EXTEND: fixed = container)
 
-Home for new code, priority order:
-
-1. Target file named by user.
-2. Template's path as prior ("this kind of thing lives there").
-3. `semantic_search` by responsibility inside L1 pathPattern.
+Home for new code, priority: 1. target file named by user; 2. template's path as
+prior; 3. `semantic_search` by responsibility inside L1 pathPattern.
 
 **God-module guard:** candidate's `memberCount` / `moduleMethodCount` label =
-god-module → do NOT grow it. Propose sibling module or extraction, surface
-choice to user. EXTEND: guard fires on the container.
+god-module → do NOT grow it; propose sibling module or extraction, surface
+choice to user. EXTEND: guard fires on container.
 
-New file where a home module exists = structural N-th way. Placement converges
-same as implementation. New code (new file, new import, new edge) → Step 7 gate
-judges placement; no pre-write simulation. Task MOVES / merges / splits existing
-files → pre-write simulation BEFORE touching them (Step 6 reference): moving
-first and fixing after the gate = every importer re-touched twice.
+New file where home module exists = structural N-th way. New code (file, import,
+edge) → Step 7 gate judges placement, no pre-write simulation. Task MOVES /
+merges / splits existing files → pre-write simulation BEFORE touching them (Step
+6): moving first, fixing after gate = every importer re-touched twice.
 
 ### Step 4: REUSE — all modes
 
 1. Enumerate general-purpose blocks in about-to-write code: retry, validation,
-   caching, parsing, error wrapping, logging, serialization… Cap ≤5 searches,
+   caching, parsing, error wrapping, logging, serialization… ≤5 searches,
    `metaOnly: true`.
 2. Per block: `hybrid_search` / `find_symbol` for existing helper.
 3. **Gate — import helper IF** helper file in L1/L2 of target (locality per
-   `extract-project-patterns`) **OR** helper file `fanIn` label `popular`/`hub`
-   (project already imports it widely — reuse sanctioned by practice). **ELSE**
-   follow its approach, do NOT import — no new cross-boundary coupling. Boundary
-   = actual import graph, not theory.
-   - Codegraph off (graph tools absent): gate on `imports` signal +
-     locality-only (L1/L2 → reuse, L3 → copy approach); note gate ran on
-     import-proxy.
-4. Template's own imports pass gate automatically (Step 2).
-5. **Almost-fits:** helper passes gate but lacks a parameter/branch → extend it
-   minimal-diff, do NOT write a sibling. Extending `popular`/`hub` helper → user
+   `extract-project-patterns`) **OR** its `fanIn` label `popular`/`hub` .
+   **ELSE** follow its approach, do NOT import — no new cross-boundary coupling.
+   Boundary = actual import graph. Codegraph off → gate on `imports` signal +
+   locality only (L1/L2 reuse, L3 copy approach); note gate ran on import-proxy.
+4. Template's own imports pass gate automatically.
+5. **Almost-fits:** helper passes gate, lacks a parameter/branch → extend it
+   minimal-diff, never a sibling. Extending `popular`/`hub` helper → user
    confirmation MANDATORY before edit. Blast radius → Step 8.
 
 Output: **reuse manifest** (helpers to call) → Step 6.
 
 ### Step 5: STYLE
 
-**Read [references/step-5-style.md](./references/step-5-style.md) before
-Step 5.** Style source per mode: CREATE → blame-owner table, EXTEND → container
-file, MODIFY → symbol itself. Session-context reuse — no re-fetch of unedited
-files. Naming (codegraph on): ONE `get_naming_lexicon` call before GENERATE —
-project's name for a value it already names; a holder that IS what you are about
-to write → back to Step 4, never rename and write a sibling.
+**MANDATORY open [references/step-5-style.md](./references/step-5-style.md)
+before Step 5.** Style source: CREATE → blame-owner table, EXTEND → container
+file, MODIFY → symbol itself. No re-fetch of unedited files. Naming (codegraph
+on): ONE `get_naming_lexicon` call before GENERATE — project's name for a value
+it already names; holder that IS what you are about to write → back to Step 4,
+never rename and write a sibling.
 
 Every name you are about to write is a draft and goes into that call — user's
 drafts included (`row = find_vendor_envelope(id)` → `row` as `local`,
-`find_vendor_envelope` as `return`), the value types they hold into `types[]`.
-New class / module / interface →
+`find_vendor_envelope` as `return`), held value types into `types[]`. New class
+/ module / interface →
 `{ name, kind: "type", path: <new file>, symbolKind, extends: <planned ancestor> }`
-— never name a type from neighbours without the call. `MISFIT` → take
+— never name a type from neighbours without the call. CREATE of new
+type/service: `concept` = DESCRIPTION of what it does (never draft name) +
+`language` (required with concept); draft name → `names[]`. `MISFIT` → take
 `suggestion`, type MISFIT included (missing `role` suffix →
-`RubyConstReceiverPass` → `RubyConstReceiverStrategy`); keep the draft only when
-`role.evidence: "directory"` and the type is outside `role.examples`' family.
-Codegraph off (no `get_naming_lexicon`) → concept-only `semantic_search` per
-`references/step-5-style.md`; split the holders' symbolIds and paths into words,
-the recurring word = the project term; values named as the template's code names
-the same types.
+`RubyConstReceiverPass` → `RubyConstReceiverStrategy`); keep draft only when
+`role.evidence: "directory"` and type outside `role.examples`' family.
+`NEW_TERM` with project word in `topTerms` / `alternatives` (same meaning) →
+adopt it, say why. Codegraph off → concept-only `semantic_search` per the
+reference; split holders' symbolIds and paths into words, recurring word =
+project term; values named as template's code names the same types.
 
-Step 5 output = the CONCRETE final names, one line per draft:
-`<draft> → <name> (<shape>, <kind>)`, built from the dominant row of
-`byType[].kinds.<kind>` (highest `n`), in the casing those rows show:
+Step 5 output = CONCRETE final names, one line per draft:
+`<draft> → <name> (<shape>, <kind>)`, from dominant row of
+`byType[].kinds.<kind>` (highest `n`), in its casing:
 `row → tax_automation_document (EXACT, local)`,
 `find_vendor_envelope → find_tax_automation_document! (VERB_TYPE, return)`,
 `graph_db_client → client (TAIL, param — client n=40 beats graphDb n=12)`.
-"Project vocabulary" / "a name that describes the lookup" without the name =
-Step 5 not done.
+Concept new (no same-meaning term) → line
+`NEW_TERM <term> — <why no project term denotes this>`. "Project vocabulary" /
+"a name that describes the lookup" without the name = Step 5 not done.
 
 ### Step 6: GENERATE — RED → GREEN → REFACTOR
 
-**Read [references/step-6-generate.md](./references/step-6-generate.md) before
-Step 6.** 6a RED = invoke `/test-first` — DDG owns RED and GREEN; never
-`test-driven-development` / superpowers TDD as a separate phase. **No production
-edit without a recorded RED block** (or its one-line named exception). MODIFY /
-bug fix / refactor-move: `tests-at-risk` pins + target's own tests run GREEN
-BEFORE the first edit or move — then bug fix: reproduction red; behaviour change
-an existing pin asserts (old default) → that pin, updated to the spec value, IS
-the red: `PIN-UPDATED <test> — <spec line>`, other pins untouched, run red, then
-edit; refactor: no new test, same tests green after. Moving first and testing
-after = baseline skipped. 6b GREEN — minimal implementation; call reuse-manifest
-helpers, NEVER reimplement. 6c REFACTOR under green only. Move / merge / split
-of existing files → ONE `get_architecture_report` `restructure` hypothesis first
-(`move{files, toComponent}` + `addEdge`/`removeEdge` per retargeted import);
-`introduced` → other placement per that family's `../../repair/<family>.md`
-`## Ops recipe`, re-simulate, then move.
+**MANDATORY open
+[references/step-6-generate.md](./references/step-6-generate.md) before
+writing.** 6a RED = INVOKE `/test-first` (run it, not cite it) — DDG owns RED
+and GREEN; never `test-driven-development` / superpowers TDD as separate phase.
+**No production edit without a recorded RED block** (or its one-line named
+exception). RED block = each test RUN, failing for the RIGHT reason — assertion
+/ missing behaviour (stub); import, compile, syntax, missing-fixture failures
+are not red. Say it per test: `RED <test> — right reason: <assertion | stub>`.
+Plan-given test code goes in byte-exact. MODIFY / bug fix / refactor-move:
+`tests-at-risk` pins + target's own tests GREEN BEFORE first edit or move — then
+bug fix: reproduction red; behaviour change an existing pin asserts (old
+default) → that pin, updated to spec value, IS the red:
+`PIN-UPDATED <test> — <spec line>`, other pins untouched, run red, then edit;
+refactor: no new test, same tests green after. Moving first, testing after =
+baseline skipped. 6b GREEN — minimal; call reuse-manifest helpers, NEVER
+reimplement. 6c REFACTOR under green only.
+
+Move / merge / split of existing files → ONE `get_architecture_report`
+`restructure` hypothesis first (`move{files, toComponent}` +
+`addEdge`/`removeEdge` per retargeted import); `introduced` → open that family's
+`../../repair/<family>.md` `## Ops recipe`, pick its alternative placement,
+re-simulate, then move. Output line:
+`SIM restructure: introduced=<n> → <placement from ## Ops recipe> → re-simulated introduced=0`.
 
 ### Step 7: VERIFY
 
-**Read [references/step-7-verify.md](./references/step-7-verify.md) before Step
-7 — never skipped, also on "tests green, finalize".** In order:
+**MANDATORY open [references/step-7-verify.md](./references/step-7-verify.md)
+before Step 7 — never skipped, also on "tests green, finalize".** In order:
 
 1. Symbol risks — `find_symbol(symbol, rerank: "criticalPath", metaOnly: true)`
    on called / changed symbols, ≤ 5, most central first; read
-   `rankingOverlay.chunk.<field>.label`. Callee `bugFixRate` critical → call it
-   defensively + name the test pinning the relied-on scenario (else report
-   unpinned). Not `get_callers`, not an existence sweep, not `dangerous`.
-   Changed symbol `pageRank` critical / `fanIn` central → Step 8 `get_callers`
-   trigger.
+   `rankingOverlay.chunk.<field>.label`. Not `get_callers`, not existence sweep,
+   not `dangerous`. One line per symbol:
+   `RISK <symbol> <label> → defensive call: <guard>; pinned by <test> | UNPINNED`
+   (callee `bugFixRate` critical → call defensively, name pinning test). Changed
+   symbol `pageRank` critical / `fanIn` central → Step 8 `get_callers`.
 2. N-th-way `find_similar` (`positiveCode` = generated code).
 3. MODIFY (signature change included): `tests-at-risk` (`/tests-as-context`,
    `affectedFiles` = changed file) scenarios + 6a pins re-run green. No 6a
-   baseline recorded (edit made outside this flow) → run `tests-at-risk` now.
+   baseline (edit outside this flow) → run `tests-at-risk` now.
 4. **GATE `review_changes` before EVERY commit** + fix-at-write loop. ONE call,
    ALL five sections
    `["naming","incompleteChange","cohesion","architecture","norms"]` — a wrapper
    prescribing fewer never narrows it. Base: `changes: {}` (uncommitted) or
    `git merge-base HEAD main` — never sibling / integration branch; stack-below
-   findings = owner's, cite the commit, no triage. Each family with a finding →
-   load its `../../repair/<family>.md` (cohesion → `splitCandidates.md`) only.
-   - **Confirm first:** the finding's edge / symbol exists in the diff AND is
-     the edge in its evidence → REAL (type-only import = edge). Looks-wrong ≠
-     false positive.
-   - Triage: no `preExisting` → repair (`remedy` present → apply verbatim);
-     `preExisting` + `remedy` → apply the remedy; `preExisting`, no `remedy` /
-     pre-existing cohesion cluster → one report line + bead suggestion, never
-     refactored here, commit allowed; own new cohesion cluster → move it now.
-     Flap (≤ 0.02 over tolerance) = ordinary introduced: fix if cheap, else
-     report metric before/after, threshold, moving diff edge — user decides.
-     Co-change partner: inspect each — depends on the changed contract → edit in
-     this diff; else known-noise class shown to hold (version manifest per
-     `silentCoupling.md`) or checkable `not touched because` line.
-   - **After every repair: re-run the SAME `review_changes` + targeted tests,
-     state "target gone, no new finding".** ANY new finding or red test → round
-     regressed → revert the WHOLE round (even if target gone), different repair
-     next round; never fix the new finding on top. Round ≤ 2; must-fix left →
-     ask the user (finding, each round tried, why reverted; options fix this way
-     / accept with reason / bead), no commit until answered.
+   findings = owner's, cite commit, no triage.
+   - **Repair file map:** family = DETECTOR name on the finding, never section
+     name. Files: `leakingAbstraction` `hubLike` `cycles` `stableDependencies`
+     `layeringBackEdge` `mainSequence` `facadeContract` `silentCoupling`
+     `splitCandidates` (`.md`); incompleteChange → `silentCoupling.md`, cohesion
+     → `splitCandidates.md`. `repair/architecture.md` /
+     `repair/incompleteChange.md` do NOT exist. Finding given in task context =
+     present → open its file now; only families with a finding.
+   - **Confirm first:** finding's edge / symbol exists in diff AND is the edge
+     in its evidence → REAL (type-only import = edge). Looks-wrong ≠ false
+     positive.
+   - Triage — `preExisting` absent = must-fix → repair (`remedy` present → apply
+     verbatim); `preExisting` + `remedy` → apply remedy; `preExisting`, no
+     `remedy` / pre-existing cohesion cluster → one report line + bead
+     suggestion, never refactored here, commit allowed; own new cohesion cluster
+     → move it now. Flap (≤ 0.02 over tolerance) = ordinary introduced: fix if
+     cheap, else report metric before/after, threshold, moving diff edge — user
+     decides. Co-change partner: inspect each — depends on changed contract →
+     edit in this diff; else known-noise class shown to hold (version manifest
+     per `silentCoupling.md`) or checkable `not touched because` line.
+   - **After every repair: re-run SAME `review_changes` + targeted tests, state
+     "target gone, no new finding".** ANY new finding or red test → round
+     regressed → revert WHOLE round (even if target gone), different repair next
+     round; never fix new finding on top. Round ≤ 2; must-fix left → ask the
+     user (finding, each round tried, why reverted, metric before/after +
+     threshold + diff edge that crossed it — hubLike: efferent count vs cut, the
+     new import; options fix this way / accept with reason / bead), no commit
+     until answered.
    - `truncated` / `built: false` / skipped files = PARTIAL ≠ pass, even at zero
-     findings → re-run with `files: [...]` batches until every changed file is
+     findings → re-run with `files: [...]` batches until every changed file
      judged; `partial=true` until then.
    - Accepted false positive = counter-evidence + FILED detector issue +
      `FALSE-POSITIVE … — issue <id>` line; no issue → not accepted.
+   - Naming `NEW_TERM` → state decision now (keep X / use Y) + one-line why,
+     never "needs a decision"; `MISFIT` → rename before commit.
 
-Gate fails → no commit, no "done". Report quotes gate line verbatim:
+Gate fails → no commit, no "done". Copy gate line LITERALLY, prefix included —
+paraphrase ("gate is introduced=0, partial=false") = no gate line:
 `GATE review_changes: introduced=<n>, partial=<true|false>` (codegraph off →
-`architecture not judged`). **No gate line = task not done.**
+`architecture not judged`); `n` counts only non-`preExisting` findings. Repair
+round → line before AND after (`introduced=1` → `introduced=0`). **No gate line
+= task not done.**
 
 ### Step 8: IMPACT
 
-Edges: no `codegraph` floor while `changedFiles` > 0 → edges touching changed
-files are the index's (`tea-rags://guide/freshness` "Addressing the Codebase").
+No `codegraph` floor while `changedFiles` > 0 → edges touching changed files are
+the index's (`tea-rags://guide/freshness`).
 
-Assess blast radius of change you just generated.
+Blast radius of generated change:
 
-- **Codegraph on** (graph tools registered): use the `blastRadius` preset
-  (`rerank="blastRadius"`, metaOnly=true) — real `fanIn` + churn + bugFix,
-  ranking reflects actual call/import edges, not raw-import proxy. Warn on
+- **Codegraph on:** `rerank="blastRadius"`, metaOnly=true (real edges). Warn on
   high-`fanIn` / `isHub` dependents.
-- **Codegraph off** (graph tools absent → `fanIn` signal absent): fall back to
-  custom weights `{ imports: 0.5, churn: 0.3, ownership: 0.2 }`, metaOnly=true,
-  note blast radius is approximate (import-proxy, not edge truth). See
-  `tea-rags://guide/navigation` "Graph navigation".
-- **MODIFY: `get_callers` on the modified symbol MANDATORY** — changed behavior
-  propagates through real call edges; import proxy insufficient.
+- **Codegraph off** (`fanIn` absent): custom weights
+  `{ imports: 0.5, churn: 0.3, ownership: 0.2 }`, metaOnly=true, note
+  approximate (import-proxy) — `tea-rags://guide/navigation` "Graph navigation".
+- **MODIFY: `get_callers` on modified symbol MANDATORY** — import proxy
+  insufficient.
 
 Warn on high-impact modules. Flag shared taskIds → coordinated change.

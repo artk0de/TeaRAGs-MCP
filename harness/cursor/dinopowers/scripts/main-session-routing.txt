@@ -11,7 +11,7 @@ into superpowers itself; nothing skipped.
 | Write an implementation plan | /dino-writing-plans |
 | Execute a written plan that edits files | /dino-executing-plans |
 | Debug a bug, error, stack trace, test failure | /dino-systematic-debugging |
-| Write a failing test only, no production change | /dino-test-driven-development |
+| Write a failing test only, no production change; find / extract test patterns or conventions | /dino-test-driven-development |
 | Verify before commit / PR / claiming done | /dino-verification-before-completion |
 | Request a code review / open a PR | /dino-requesting-code-review |
 | React to a review comment naming a symbol or file | /dino-receiving-code-review |

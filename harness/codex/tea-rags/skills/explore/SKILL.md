@@ -79,9 +79,17 @@ EXPLAIN/TRACE/PRE-GEN/EXEMPLAR. Top-to-bottom, first match wins.
 | 4        | "архитектура", "structure", "backbone", "что центральное", "organized", "walk me through"                        | [references/architecture-pattern.md](./references/architecture-pattern.md) |
 | 5        | "как в проекте называют X", "what does the project call X", "is this name right"                                 | `get_naming_lexicon` — see below                                           |
 
-**Rows 1–4: open the row's reference BEFORE planning (MANDATORY)** — the calls
-carry filters the row name does not show. Plan/answer NAMES the calls below —
-"follow the reference's workflow" is not a plan.
+**Rows 1–4: open the row's reference with its own read command BEFORE planning
+(MANDATORY)** — naming it without opening it is a fail; the calls carry filters
+the row name does not show. Plan line 1 = codegraph state + its source (below).
+Plan/answer NAMES the calls below — "follow the reference's workflow" is not a
+plan.
+
+- **Row 1** (cycles, codegraph on): empty `find_cycles` IS the answer — say "no
+  cycles in `<scope>` → DAG" plainly; no hedge, no content-search fallback.
+- **Row 2** (callers/callees, codegraph on): call 1 = `find_symbol` → exact id,
+  even when the user typed `Class#method`; call 2 = `get_callers` /
+  `get_callees symbolId=<that id>`.
 
 - **Rows 3 + 4, call 1 = ORIENT:**
   `semantic_search rerank="entryPoint" pathPattern=<scope> testFile:"exclude" documentation:"exclude"`
@@ -108,12 +116,13 @@ even when X = `findCycles` / `CycleDetector`. Row 1 only on phrasing about the
 loop itself ("circular dependency", "dependency loop", "cycles in <scope>").
 
 **Codegraph availability:** sub-patterns need codegraph. An EXPLICIT statement
-wins: metrics `codegraph off` / `on`, or the user / task stating codegraph is
-disabled or enabled → that, even against your tool list. The digest never states
-it — no codegraph line there means nothing, never read it as OFF. No statement →
-decide from YOUR OWN tool list and say so ("`get_callers` in my tools →
-codegraph on") — no digest read needed for it: graph tools (`get_callers`,
-`trace_path`, …) present = on; unsure → read
+wins: metrics `codegraph off` / `on`, or THIS request stating codegraph is
+disabled or enabled → that, even against your tool list. A statement attached to
+an earlier request never carries over — re-decide per request. The digest never
+states it — no codegraph line there means nothing, never read it as OFF. No
+statement → decide from YOUR OWN tool list and say so ("`get_callers` in my
+tools → codegraph on") — no digest read needed for it: graph tools
+(`get_callers`, `trace_path`, …) present = on; unsure → read
 `tea-rags://project/<alias>/metrics?section=registry`. Graph tools absent = not
 registered, NOT empty result — never call absent tool to probe, never read
 absence as positive fact. Codegraph off → content-matching table: TRACE covers

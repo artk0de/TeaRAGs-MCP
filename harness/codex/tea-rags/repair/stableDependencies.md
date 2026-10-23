@@ -53,7 +53,9 @@ Otherwise escalate.
 
 ## Ops recipe
 
-Inversion for the code remedy: A (stable) must stop depending on B (unstable).
+Inversion for the code remedy: file A (`sourceRelPath`, stable side) must stop
+depending on file B (`toRelPath`, unstable side). Ops take these file paths,
+never the components in the finding key.
 
 - `removeEdge {from: A, to: B}`
 - `addFile {file: I, component: <foundation>, abstract: true}`

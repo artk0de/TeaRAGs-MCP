@@ -50,9 +50,11 @@ Step 7 gate catches same detectors after write, repair = one edge.
   `split{component,groups}` (+ `addEdge` / `removeEdge` per import move
   retargets). Delta `introduced` non-empty → other placement per
   `../../../repair/<family>.md` `## Ops recipe` (absent → `## Apply remedy`;
-  that family only), re-simulate. Move when `introduced` empty, or each left
-  entry meets Step 7 evidence rules. Edge ops move structural detectors only —
-  co-change families answer at Step 7 gate.
+  that family only), re-simulate; output
+  `SIM restructure: introduced=<n> → <placement from ## Ops recipe> → re-simulated introduced=0`.
+  Move when `introduced` empty, or each left entry meets Step 7 evidence rules.
+  Edge ops move structural detectors only — co-change families answer at Step 7
+  gate.
 - **Multi-step restructuring** (several remedies, order matters) →
   `tea-rags:refactoring-planning`, not this step.
 
