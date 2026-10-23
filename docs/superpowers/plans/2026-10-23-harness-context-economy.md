@@ -982,8 +982,23 @@ Task 14, so the Codex live test installs from the final layout.
   path for regeneration; `post-merge` / commit hook runs `npm run gen:plugins`
   and stages the result. `package.json` `prepare` registers
   `merge.tea-rags-generated.driver` in the clone's git config.
-- Modify: `.github/workflows/ci.yml` — job `plugins-drift`:
-  `npm run gen:plugins && git diff --exit-code`.
+- Create: `.github/workflows/plugins-generate.yml` — CI builds the harness
+  packages itself (user decision 2026-10-23: nobody regenerates by hand). On
+  `pull_request` (same-repo head) and `push` to `main`, `paths:` `plugins/**`,
+  `scripts/gen-*.ts`, `scripts/harness/**`, `src/mcp/resources/**`: `npm ci`,
+  `npm run gen:plugins`; any diff → commit
+  `chore(plugins): regenerate harness packages` as the bot and push to the same
+  branch. Push with a GitHub App / PAT token (secret `PLUGINS_BOT_TOKEN`), not
+  `GITHUB_TOKEN`: a `GITHUB_TOKEN` push starts no workflow, so the regenerated
+  PR head would carry no required checks. Loop guard: skip when the head commit
+  is the bot's `chore(plugins)` commit (same pattern as `release-bookkeeping`).
+  Fork PRs cannot be pushed to → job falls back to a drift check
+  (`git diff --exit-code`) with the regenerate command in the failure message.
+- Modify: `.github/workflows/ci.yml` — `plugins-drift` check on `main` push only
+  (a guard that the bot commit landed; never the regeneration path).
+- User action (blocks the push half): create the App / PAT with
+  `contents: write` on this repo and store it as `PLUGINS_BOT_TOKEN`; until it
+  exists the workflow runs the drift check only and says why.
 - Create: `.claude/rules/plugin-sources.md` — edit only `plugins/**`; regenerate
   with `npm run gen:plugins`; never hand-edit `.claude-plugin/<name>/**` or
   `harness/**`; version bumps go in `plugins/<name>/` manifest metadata.
