@@ -1127,12 +1127,19 @@ Task 14.
   renders, idempotent, links resolve, superpowers mention + install line present
   in every wrapper.
 
+**Delivered:** wrappers ship as `dino-<name>` (folder + frontmatter) in both
+harnesses; the missing-superpowers line lives in the source (`CHAINING.md`
+section + one line per wrapper SKILL.md), so Claude Code carries it too; shared
+rendering in `scripts/harness/dinopowers.ts`; routing tables rendered from the
+hook scripts into `scripts/*-routing.txt`. Codex list: tea-rags 6,731 +
+dinopowers 5,236 = 11,967 chars (`harness/codex/README.md`).
+
 **Open questions, answered by Task 14 (live Codex):**
 
 1. Name collision — dinopowers wrappers share names with superpowers skills
-   (`brainstorming`, `writing-plans`, …). Check whether Codex namespaces plugin
-   skills; if not, ship wrappers as `dino-<name>`.
-2. Skills-list budget — tea-rags 6,540 + dinopowers 5,366 (+ superpowers' own) ≈
+   (`brainstorming`, `writing-plans`, …). Shipped as `dino-<name>`; check whether
+   Codex namespaces plugin skills, and drop the prefix if it does.
+2. Skills-list budget — tea-rags 6,731 + dinopowers 5,236 (+ superpowers' own) ≈
    2× the ~8,000-char list budget. Measure what Codex drops; fixes in order:
    `allow_implicit_invocation: false` on internal tea-rags skills, shorter
    dinopowers descriptions for the Codex dialect, then a per-harness cap test.
