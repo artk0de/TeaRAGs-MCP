@@ -227,7 +227,7 @@ describe("computeRustCallsitesSourceHash", () => {
     // Computed by the crate's own Rust `source_hash` (build_support/source_hash.rs). Editing the
     // crate changes it: refresh from a fresh build's `-V` or by running that Rust function.
     expect(computeRustCallsitesSourceHash(crate, defaultRustcDriverSourceFs)).toBe(
-      "8ba92b45bfeaf5030c6b2a383e6a04bc1a5caa187e4f4efcff2c1e698cae7815",
+      "0a6e29a27eee354cca17e283c55dcd9807b927ff63d4150069592b231e8acc9b",
     );
   });
 

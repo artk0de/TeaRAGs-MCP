@@ -698,3 +698,144 @@ describe("local and indirect callee rows through the driver slot (research/rustc
     expect(resolver.diagnostics()).toEqual({ rustcCallSites: { outcome: "indexed", cacheHit: true } });
   });
 });
+
+describe("a definition a macro GENERATED (format 4 defExpansion) never falls back to a namesake", () => {
+  /** tikv `Error::from(err)` → `<errors::Error as From<grpcio::Error>>::from` @ the `#[derive(ThisError)]` line. */
+  const DEPENDENCY_DERIVE_FROM: RustCallSiteDefinition = {
+    ...inProject("from", "src/errors.rs", 21),
+    implTrait: "From",
+    defExpansion: { kind: "derive", macro: "Error", macroDefPath: "thiserror_impl::Error", macroInProject: false },
+  };
+  /** `BoxCmdObserver::new(…)` → a `pub fn new` inside the `macro_rules!` body at dispatcher.rs:224. */
+  const PROJECT_MACRO_RULES_NEW: RustCallSiteDefinition = {
+    ...inProject("new", "src/dispatcher.rs", 224),
+    defExpansion: {
+      kind: "bang",
+      macro: "impl_box_observer",
+      macroDefPath: "coprocessor::dispatcher::impl_box_observer",
+      macroInProject: true,
+      macroDefRelPath: "src/dispatcher.rs",
+      macroDefLine: 200,
+      macroDefName: "impl_box_observer",
+    },
+  };
+  /** `flags.contains(…)` on a `bitflags!` struct: external body, workspace crate. */
+  const DEPENDENCY_BITFLAGS_CONTAINS: RustCallSiteDefinition = {
+    symbol: "rustc api_version ValueMeta::contains",
+    package: "api_version",
+    inProject: false,
+    name: "contains",
+    kind: "callable",
+    packageInProject: true,
+    defExpansion: { kind: "bang", macro: "bitflags", macroDefPath: "bitflags::bitflags", macroInProject: false },
+  };
+  /** `cfg.update(change)` → `<BackupStreamConfig as OnlineConfig>::update` @ `#[derive(…, OnlineConfig)]`. */
+  const projectDerive = (macroDefLine: number): RustCallSiteDefinition => ({
+    ...inProject("update", "src/config.rs", 3141),
+    implTrait: "OnlineConfig",
+    defExpansion: {
+      kind: "derive",
+      macro: "OnlineConfig",
+      macroDefPath: "online_config_derive::OnlineConfig",
+      macroInProject: true,
+      macroDefRelPath: "derive/src/lib.rs",
+      macroDefLine,
+      macroDefName: "config",
+    },
+  });
+
+  const namesakes = () =>
+    table(
+      def("src/other.rs", "from", "Other#from", 3, 5),
+      def("src/other.rs", "new", "Other#new", 7, 9),
+      def("src/other.rs", "contains", "Other#contains", 11, 13),
+      def("src/other.rs", "update", "Other#update", 15, 17),
+      def("src/dispatcher.rs", "impl_box_observer", "impl_box_observer", 200, 240, "macro"),
+      def("derive/src/lib.rs", "config", "config", 5, 30, "function"),
+    );
+  const fromSite = call("Error::from(err)", "Error", "from", 5, 11);
+  const newSite = call("BoxCmdObserver::new(o)", "BoxCmdObserver", "new", 6, 20);
+  const containsSite = call("flags.contains(m)", "flags", "contains", 7, 10);
+  const updateSite = call("cfg.update(change)", "cfg", "update", 8, 8);
+  const callSites = stubIndex({
+    "src/main.rs:5:11": DEPENDENCY_DERIVE_FROM,
+    "src/main.rs:6:20": PROJECT_MACRO_RULES_NEW,
+    "src/main.rs:7:10": DEPENDENCY_BITFLAGS_CONTAINS,
+    "src/main.rs:8:8": projectDerive(5),
+  });
+
+  it("drops a dependency derive's `from` as external although the project declares a `from`", async () => {
+    const resolver = await facade({ callSites });
+    const t = namesakes();
+    expect(strategy.attempt(fromSite, ctxWith(t, { callSites })).kind).toBe("drop");
+    expect(resolver.resolve(fromSite, ctxWith(t))).toBeNull();
+    expect(classifyResolveMiss(fromSite, ctxWith(t), resolver, t)).toBe("externalSkipped");
+  });
+
+  it("drops a dependency `macro_rules!` method (bitflags `contains`) although the project declares one", async () => {
+    const resolver = await facade({ callSites });
+    const t = namesakes();
+    expect(resolver.resolve(containsSite, ctxWith(t))).toBeNull();
+    expect(classifyResolveMiss(containsSite, ctxWith(t), resolver, t)).toBe("externalSkipped");
+  });
+
+  it("edges a project `macro_rules!`-generated `new` to the macro symbol", async () => {
+    const resolver = await facade({ callSites });
+    expect(resolver.resolve(newSite, ctxWith(namesakes()))).toEqual({
+      targetRelPath: "src/dispatcher.rs",
+      targetSymbolId: "impl_box_observer",
+    });
+  });
+
+  it("edges a workspace proc-macro derive's method to the proc-macro function", async () => {
+    const resolver = await facade({ callSites });
+    expect(resolver.resolve(updateSite, ctxWith(namesakes()))).toEqual({
+      targetRelPath: "derive/src/lib.rs",
+      targetSymbolId: "config",
+    });
+  });
+
+  it("edges a project-generated impl of a project trait to the trait's method declaration, not the macro", async () => {
+    // tikv `function.create_state()` → `<AggrFnCount as AggrFunction>::create_state` @ `#[derive(AggrFunction)]`.
+    const t = table(
+      def("src/traits.rs", "ProjectTrait", "ProjectTrait", 1, 9, "interface"),
+      def("src/traits.rs", "m", "ProjectTrait::m", 3, 3),
+      def("src/other.rs", "m", "Other#m", 20, 22),
+      def("derive/src/lib.rs", "config", "config", 5, 30, "function"),
+    );
+    const generatedImpl: RustCallSiteDefinition = {
+      ...projectDerive(5),
+      name: "m",
+      implTrait: "ProjectTrait",
+    };
+    const resolver = await facade({ callSites: stubIndex({ "src/main.rs:9:6": generatedImpl }) });
+    expect(resolver.resolve(call("x.m()", "x", "m", 9, 6), ctxWith(t))).toEqual({
+      targetRelPath: "src/traits.rs",
+      targetSymbolId: "ProjectTrait::m",
+    });
+  });
+
+  it("drops a workspace proc-macro derive whose function does not map, with no namesake guess", async () => {
+    const resolver = await facade({ callSites: stubIndex({ "src/main.rs:8:8": projectDerive(90) }) });
+    expect(resolver.resolve(updateSite, ctxWith(namesakes()))).toBeNull();
+  });
+
+  it("still maps a hand-written in-project definition by its own name", async () => {
+    const plain = stubIndex({ "src/main.rs:6:20": inProject("new", "src/other.rs", 7) });
+    const resolver = await facade({ callSites: plain });
+    expect(resolver.resolve(newSite, ctxWith(namesakes()))?.targetSymbolId).toBe("Other#new");
+  });
+
+  it("counts generated sites per pass, and the in-project ones whose macro symbol did not map", async () => {
+    const counted = stubIndex({
+      "src/main.rs:5:11": DEPENDENCY_DERIVE_FROM,
+      "src/main.rs:6:20": PROJECT_MACRO_RULES_NEW,
+      "src/main.rs:8:8": projectDerive(90),
+    });
+    const resolver = await warmedResolver({ callSites: counted });
+    for (const site of [fromSite, newSite, updateSite, fromSite]) resolver.resolve(site, ctxWith(namesakes()));
+    expect(resolver.diagnostics()).toEqual({
+      rustcCallSites: { outcome: "indexed", cacheHit: true, generated: 3, generatedUnmapped: 1 },
+    });
+  });
+});

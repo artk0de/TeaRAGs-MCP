@@ -12,3 +12,20 @@ dependencies = [
 [[package]]
 name = "fx_core"
 version = "0.1.0"
+dependencies = [
+ "fx_dep_derive",
+ "fx_dep_macros",
+ "fx_derive",
+]
+
+[[package]]
+name = "fx_dep_derive"
+version = "0.1.0"
+
+[[package]]
+name = "fx_dep_macros"
+version = "0.1.0"
+
+[[package]]
+name = "fx_derive"
+version = "0.1.0"

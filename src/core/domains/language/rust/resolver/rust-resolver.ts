@@ -173,6 +173,8 @@ export class RustCallResolver implements CallResolver {
     const acquired = this.environments.callSiteDiagnostics();
     const inProjectUnmapped = this.callSites.unmappedInProjectCount();
     const localCallee = this.callSites.localCalleeCount();
+    const generated = this.callSites.generatedCount();
+    const generatedUnmapped = this.callSites.generatedUnmappedCount();
     const rustcCallSites =
       acquired === undefined
         ? acquired
@@ -180,6 +182,8 @@ export class RustCallResolver implements CallResolver {
             ...acquired,
             ...(inProjectUnmapped === 0 ? {} : { inProjectUnmapped }),
             ...(localCallee === 0 ? {} : { localCallee }),
+            ...(generated === 0 ? {} : { generated }),
+            ...(generatedUnmapped === 0 ? {} : { generatedUnmapped }),
           };
     if (rustAnalyzerScip === undefined && rustcCallSites === undefined) return undefined;
     return {

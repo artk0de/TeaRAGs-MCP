@@ -135,6 +135,28 @@ field name, `calleeCrate: null`, `defKind` `closure` / `fnPointer` / `fnParam`,
 them and the Rust facade's `targetsUndecidable` classifies the miss as
 `unresolvable`.
 
+Generated definitions (format 4, RESIDUAL.md R1 gate): when the callee's
+definition is a fn / assoc fn / ctor whose NAME token a macro expansion produced
+(`def_ident_span(..).from_expansion()`), the row carries
+`defExpansion: { kind, macro, macroDefPath, macroInProject, macroDefRelPath, macroDefLine, macroDefName }`
+— no source symbol of that name sits at `defLine` (a `#[derive]` line, a
+`macro_rules!` body). `kind` is `bang` / `derive` / `attr`, read off the
+outermost expansion whose call site is user text; the field is emitted only when
+that call site lies under the root (std's `int_impl!` writing `i64::abs` is just
+external) and never on an `implIsDerived` row. `macroInProject` says the macro's
+definition lies under the root (a project `macro_rules!` or a workspace
+proc-macro crate); then `macroDefRelPath` / `macroDefLine` locate it and
+`macroDefName` is the name declared there (`observer` for
+`macro_rules! observer`, the fn name for a `#[proc_macro_derive]` fn, read from
+the line text: a proc macro has no ident span). All three are null for a foreign
+macro. A name token the user wrote (a macro argument, an attribute macro's
+input) keeps the root context and carries nothing. The Rust slot DROPs a foreign
+macro's definition as external (`bitflags!` `contains`, `thiserror`'s `from`),
+edges a project macro's callable to the project trait method it implements
+(`implTrait`, one project trait declaring the member), else to that macro's
+table symbol, and DROPs it when neither maps — never a namesake; counted per
+pass as `generated` / `generatedUnmapped`.
+
 ### Mapping to `RustScipDefinition` (adapter, no strategy change needed)
 
 | `RustScipDefinition`           | from the driver row                                                                                                               |

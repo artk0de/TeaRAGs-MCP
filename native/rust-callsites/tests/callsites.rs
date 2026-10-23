@@ -100,8 +100,9 @@ fn run() -> &'static Run {
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&work);
-        let ws = work.join("ws");
-        copy_dir(&crate_root().join("tests/fixtures/workspace"), &ws);
+        // The whole fixtures tree: `deps/` holds crates OUTSIDE the workspace root.
+        copy_dir(&crate_root().join("tests/fixtures"), &work.join("fixtures"));
+        let ws = work.join("fixtures/workspace");
         let out_dir = work.join("out");
         let units = out_dir.join("units");
         fs::create_dir_all(&units).unwrap();
@@ -676,6 +677,88 @@ fn field_callee_sits_at_the_field_name_token() {
     );
 }
 
+/// The `defExpansion` of a definition a macro generated (format 4).
+fn def_expansion(kind: &str, name: &str, def_path: &str, def: Option<(&str, u64, &str)>) -> Value {
+    json!({
+        "kind": kind, "macro": name, "macroDefPath": def_path, "macroInProject": def.is_some(),
+        "macroDefRelPath": def.map(|d| d.0), "macroDefLine": def.map(|d| d.1),
+        "macroDefName": def.map(|d| d.2),
+    })
+}
+
+#[test]
+fn dependency_derive_definition_carries_its_expansion() {
+    let row = row_at("core/src/lib.rs", 141, 27);
+    assert_eq!(
+        row["resolvedImpl"],
+        "<Failure as std::convert::From<i64>>::from"
+    );
+    assert_eq!(row["implIsDerived"], false);
+    assert_eq!(
+        row["defExpansion"],
+        def_expansion("derive", "Fail", "fx_dep_derive::Fail", None)
+    );
+}
+
+#[test]
+fn workspace_proc_macro_derive_definition_names_the_macro_function() {
+    let row = row_at("core/src/lib.rs", 142, 28);
+    assert_eq!(row["callee"], "Settings::configure");
+    assert_eq!(
+        row["defExpansion"],
+        def_expansion(
+            "derive",
+            "Configurable",
+            "fx_derive::Configurable",
+            Some(("derive/src/lib.rs", 5, "derive_configurable"))
+        )
+    );
+}
+
+#[test]
+fn project_macro_rules_definition_names_the_macro() {
+    let row = row_at("core/src/lib.rs", 143, 32);
+    assert_eq!(row["callee"], "BoxObserver::new");
+    assert_eq!(row["defLine"], 129);
+    assert_eq!(
+        row["defExpansion"],
+        def_expansion(
+            "bang",
+            "observer",
+            "observer",
+            Some(("core/src/lib.rs", 125, "observer"))
+        )
+    );
+}
+
+#[test]
+fn dependency_macro_rules_definition_is_external_with_its_expansion() {
+    let row = row_at("core/src/lib.rs", 144, 22);
+    assert_eq!(row["callee"], "Meta::contains");
+    assert_eq!(row["calleeCrate"], "fx_core");
+    assert_eq!(row["inProject"], false);
+    assert_eq!(
+        row["defExpansion"],
+        def_expansion("bang", "flagset", "fx_dep_macros::flagset", None)
+    );
+}
+
+#[test]
+fn only_macro_generated_definitions_carry_an_expansion() {
+    let generated: BTreeSet<(u64, u64)> = run()
+        .rows
+        .iter()
+        .filter(|r| r.get("defExpansion").is_some())
+        .map(|r| (r["line"].as_u64().unwrap(), r["col"].as_u64().unwrap()))
+        .collect();
+    assert_eq!(
+        generated,
+        [(141, 27), (142, 28), (143, 32), (144, 22)]
+            .into_iter()
+            .collect()
+    );
+}
+
 #[test]
 fn every_row_has_exactly_the_contract_fields() {
     let expected: BTreeSet<&str> = [
@@ -720,6 +803,8 @@ fn every_row_has_exactly_the_contract_fields() {
         } else {
             &expected
         };
+        // `defExpansion` (format 4) is present only on a definition a macro generated.
+        let keys: BTreeSet<&str> = keys.into_iter().filter(|k| *k != "defExpansion").collect();
         assert_eq!(&keys, contract, "row {r}");
     }
 }
@@ -728,7 +813,7 @@ fn every_row_has_exactly_the_contract_fields() {
 fn run_json_lists_every_unit_and_stale_units_are_deleted() {
     let units_dir = run().out_dir.join("units");
     let run_json = &run().cold_run_json;
-    assert_eq!(run_json["format"], 3);
+    assert_eq!(run_json["format"], 4);
     assert_eq!(run_json["success"], true);
     assert_eq!(run_json["failed"], json!([]));
     assert_eq!(run_json["missing"], json!([]));
@@ -744,15 +829,19 @@ fn run_json_lists_every_unit_and_stale_units_are_deleted() {
         .filter(|n| n.ends_with(".ndjson"))
         .collect();
     assert_eq!(listed, on_disk);
-    // lib + test harness of fx_core, bin + test harness of fx_app.
-    assert_eq!(listed.len(), 4, "{listed:?}");
+    // lib + test harness of fx_core, bin + test harness of fx_app; fx_derive's check, test
+    // harness, and the host build fx_core's derive loads.
+    assert_eq!(listed.len(), 7, "{listed:?}");
     let crates: BTreeSet<&str> = run_json["units"]
         .as_array()
         .unwrap()
         .iter()
         .map(|u| u["crate"].as_str().unwrap())
         .collect();
-    assert_eq!(crates, ["fx_app", "fx_core"].into_iter().collect());
+    assert_eq!(
+        crates,
+        ["fx_app", "fx_core", "fx_derive"].into_iter().collect()
+    );
     assert!(!units_dir.join(format!("{STALE_UNIT}.ndjson")).exists());
     assert!(!units_dir.join(format!("{STALE_UNIT}.stats.json")).exists());
     assert_eq!(

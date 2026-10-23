@@ -114,5 +114,35 @@ pub fn shared_callback(cb: &Option<std::sync::Arc<dyn Fn(i64) -> i64>>) -> i64 {
     }
     0
 }
+
+// Definitions a macro expansion generates (format 4 `defExpansion`).
+#[derive(fx_dep_derive::Fail)]
+pub struct Failure(pub i64);
+
+#[derive(fx_derive::Configurable)]
+pub struct Settings;
+
+macro_rules! observer {
+    ($name:ident) => {
+        pub struct $name(pub i64);
+        impl $name {
+            pub fn new(v: i64) -> Self {
+                $name(v)
+            }
+        }
+    };
+}
+
+observer!(BoxObserver);
+
+fx_dep_macros::flagset!(Meta);
+
+pub fn generated() -> i64 {
+    let failure = Failure::from(7);
+    let settings = Settings.configure();
+    let observer = BoxObserver::new(3);
+    let hit = Meta(3).contains(1);
+    failure.0 + settings + observer.0 + hit as i64
+}
 // c2
 // c2

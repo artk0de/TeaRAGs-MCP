@@ -140,14 +140,22 @@ struct LineCache {
 }
 
 impl LineCache {
-    /// utf16 column of the `char_col`-th char of 1-based `line`.
-    fn utf16_col(&mut self, file: &Path, line: usize, char_col: usize) -> Option<usize> {
-        let entry = self.files.entry(file.to_path_buf()).or_insert_with(|| {
-            fs::read_to_string(file)
+    /// The text of 1-based `line` of the file at `path`, read once per file.
+    fn line(&mut self, path: &Path, line: usize) -> Option<&str> {
+        let file_lines = self.files.entry(path.to_path_buf()).or_insert_with(|| {
+            fs::read_to_string(path)
                 .ok()
                 .map(|t| t.split('\n').map(str::to_owned).collect())
         });
-        let text = entry.as_ref()?.get(line.checked_sub(1)?)?;
+        file_lines
+            .as_ref()?
+            .get(line.checked_sub(1)?)
+            .map(String::as_str)
+    }
+
+    /// utf16 column of the `char_col`-th char of 1-based `line`.
+    fn utf16_col(&mut self, path: &Path, line: usize, char_col: usize) -> Option<usize> {
+        let text = self.line(path, line)?;
         Some(text.chars().take(char_col).map(char::len_utf16).sum())
     }
 }
@@ -212,14 +220,30 @@ impl<'a, 'tcx> CallVisitor<'a, 'tcx> {
         *self.stats.entry(k).or_default() += 1;
     }
 
-    fn pos(&mut self, span: Span) -> Option<Pos> {
-        let sm = self.tcx.sess.source_map();
-        let loc = sm.lookup_char_pos(span.lo());
-        let local = match &loc.file.name {
+    /// The name a macro definition span names, read from the on-disk line text — a foreign
+    /// crate's source is not loaded into the source map, so a snippet cannot be asked for.
+    /// An ident span (`macro_rules! name`) starts at the name; a proc macro has only its
+    /// fn item's span (`pub fn derive_x(..)`), whose name follows the line's first `fn `.
+    fn macro_def_name_at(&mut self, span: Span) -> Option<String> {
+        let loc = self.tcx.sess.source_map().lookup_char_pos(span.lo());
+        let abs = self.abs_path(&loc.file.name)?;
+        let line = self.lines.line(&abs, loc.line)?;
+        let rest: String = line.chars().skip(loc.col.0).collect();
+        let name_start = rest.find("fn ").map_or(0, |i| i + 3);
+        let ident: String = rest[name_start..]
+            .chars()
+            .take_while(|c| *c == '_' || c.is_alphanumeric())
+            .collect();
+        (!ident.is_empty()).then_some(ident)
+    }
+
+    /// The canonical absolute path of a real source file, cached.
+    fn abs_path(&mut self, name: &FileName) -> Option<PathBuf> {
+        let local = match name {
             FileName::Real(real) => real.local_path()?.to_path_buf(),
             _ => return None,
         };
-        let abs = match self.lines.canon.get(&local) {
+        Some(match self.lines.canon.get(&local) {
             Some(a) => a.clone(),
             None => {
                 let joined = if local.is_absolute() {
@@ -231,7 +255,13 @@ impl<'a, 'tcx> CallVisitor<'a, 'tcx> {
                 self.lines.canon.insert(local, a.clone());
                 a
             }
-        };
+        })
+    }
+
+    fn pos(&mut self, span: Span) -> Option<Pos> {
+        let sm = self.tcx.sess.source_map();
+        let loc = sm.lookup_char_pos(span.lo());
+        let abs = self.abs_path(&loc.file.name)?;
         let col_utf16 = self.lines.utf16_col(&abs, loc.line, loc.col.0)?;
         let (rel_path, in_root) = match abs.strip_prefix(self.root) {
             Ok(rel) => (rel.to_string_lossy().into_owned(), true),
@@ -255,6 +285,68 @@ impl<'a, 'tcx> CallVisitor<'a, 'tcx> {
             DefKind::Const { .. } | DefKind::AssocConst { .. } => "const",
             _ => "other",
         }
+    }
+
+    /// The macro that GENERATED a callable's definition (format 4 `defExpansion`): its
+    /// name token was produced by an expansion, so no source symbol of that name sits at
+    /// the definition line. The outermost expansion whose call site is user text names
+    /// the macro: `kind`, invoked name, `def_path_str`, and — for a macro defined under
+    /// the root — its definition's position and ident (a proc macro's function name).
+    /// A name token the user wrote (a macro ARGUMENT, an attribute macro's input) keeps
+    /// the root context: that definition is real source and carries nothing.
+    fn def_expansion(&mut self, def_id: DefId) -> Option<serde_json::Value> {
+        let tcx = self.tcx;
+        if !matches!(
+            tcx.def_kind(def_id),
+            DefKind::Fn | DefKind::AssocFn | DefKind::Ctor(..)
+        ) {
+            return None;
+        }
+        let ident = tcx
+            .def_ident_span(def_id)
+            .unwrap_or_else(|| tcx.def_span(def_id));
+        if !ident.from_expansion() {
+            return None;
+        }
+        let (_, expn_data) = outermost_expansion(ident)?;
+        let ExpnKind::Macro(macro_kind, name) = expn_data.kind else {
+            self.bump("defExpansion.notMacro");
+            return None;
+        };
+        // Only an expansion the PROJECT invoked: std's `int_impl!` writing `i64::abs` is
+        // just an external definition.
+        if !self.pos(expn_data.call_site).is_some_and(|p| p.in_root) {
+            return None;
+        }
+        let Some(macro_def_id) = expn_data.macro_def_id else {
+            self.bump("defExpansion.macroNoDef");
+            return None;
+        };
+        let macro_ident = tcx
+            .def_ident_span(macro_def_id)
+            .unwrap_or_else(|| tcx.def_span(macro_def_id));
+        let macro_pos = self.pos(macro_ident).filter(|p| p.in_root);
+        let macro_def_name = macro_pos
+            .as_ref()
+            .and_then(|_| self.macro_def_name_at(macro_ident));
+        self.bump(if macro_pos.is_some() {
+            "defExpansion.projectMacro"
+        } else {
+            "defExpansion.foreignMacro"
+        });
+        Some(serde_json::json!({
+            "kind": match macro_kind {
+                MacroKind::Bang => "bang",
+                MacroKind::Derive => "derive",
+                MacroKind::Attr => "attr",
+            },
+            "macro": name.as_str().rsplit("::").next().unwrap_or_default(),
+            "macroDefPath": tcx.def_path_str(macro_def_id),
+            "macroInProject": macro_pos.is_some(),
+            "macroDefRelPath": macro_pos.as_ref().map(|p| p.rel_path.clone()),
+            "macroDefLine": macro_pos.as_ref().map(|p| p.line),
+            "macroDefName": macro_def_name,
+        }))
     }
 
     /// The row position of a callee name token: `(origin, macro, pos)`, or `None` (with the
@@ -354,7 +446,10 @@ impl<'a, 'tcx> CallVisitor<'a, 'tcx> {
         } else {
             "origin.source"
         });
-        let row = serde_json::json!({
+        let impl_is_derived = resolved
+            .and_then(|r| tcx.impl_of_assoc(r))
+            .is_some_and(|i| tcx.is_automatically_derived(i));
+        let mut row = serde_json::json!({
             "relPath": pos.rel_path,
             "line": pos.line,
             "col": pos.col_utf16,
@@ -367,13 +462,17 @@ impl<'a, 'tcx> CallVisitor<'a, 'tcx> {
             "traitPath": trait_path,
             "implSelfType": impl_self,
             "resolvedImpl": resolved.map(|r| tcx.def_path_str(r)),
-            "implIsDerived": resolved
-                .and_then(|r| tcx.impl_of_assoc(r))
-                .is_some_and(|i| tcx.is_automatically_derived(i)),
+            "implIsDerived": impl_is_derived,
             "inProject": in_project,
             "defRelPath": def_pos.as_ref().filter(|p| p.in_root).map(|p| p.rel_path.clone()),
             "defLine": def_pos.as_ref().filter(|p| p.in_root).map(|p| p.line),
         });
+        // A derived impl already says "derive output"; its expansion adds nothing.
+        if !impl_is_derived {
+            if let Some(expansion) = self.def_expansion(target) {
+                row["defExpansion"] = expansion;
+            }
+        }
         self.tick("us.rowStrings", t3);
         self.rows.push(row);
     }

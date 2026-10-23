@@ -123,6 +123,23 @@ describe("describeRustcDriverWarm (bd s3i8m T8)", () => {
       }),
     ).toBe("RUSTC-DRIVER warm 1.00s · ok · units 3 · failed 0 · inProjectUnmapped 0 · localCallee 12");
   });
+
+  it("appends the macro-generated definition sites and the unmapped project ones (format 4)", () => {
+    expect(
+      describeRustcDriverWarm({
+        warmMs: 1000,
+        status: "ok",
+        units: 3,
+        failed: 0,
+        inProjectUnmapped: 2,
+        localCallee: 0,
+        generated: 40,
+        generatedUnmapped: 3,
+      }),
+    ).toBe(
+      "RUSTC-DRIVER warm 1.00s · ok · units 3 · failed 0 · inProjectUnmapped 2 · localCallee 0 · generated 40 · generatedUnmapped 3",
+    );
+  });
 });
 
 describe("parseArgs --rust-analyzer", () => {

@@ -359,4 +359,60 @@ describe("decodeRustcCallSites", () => {
     );
     expect(index.definitionAt("src/main.rs", 5, 5)).toMatchObject({ name: "ok" });
   });
+
+  describe("defExpansion (format 4)", () => {
+    const projectBang = {
+      kind: "bang",
+      macro: "observer",
+      macroDefPath: "observer",
+      macroInProject: true,
+      macroDefRelPath: "src/store.rs",
+      macroDefLine: 20,
+      macroDefName: "observer",
+    };
+    const foreignDerive = {
+      kind: "derive",
+      macro: "Fail",
+      macroDefPath: "fx_dep_derive::Fail",
+      macroInProject: false,
+      macroDefRelPath: null,
+      macroDefLine: null,
+      macroDefName: null,
+    };
+    const generated = (over: Partial<Row>, defExpansion: unknown): string =>
+      JSON.stringify({ ...(JSON.parse(row(over)) as Row), defExpansion });
+
+    it("carries an in-project macro's expansion on the definition", () => {
+      const index = decode(generated({ callee: "BoxObserver::new" }, projectBang));
+      expect(index.definitionAt("src/main.rs", 10, 8)).toMatchObject({
+        inProject: true,
+        relPath: "src/store.rs",
+        name: "new",
+        defExpansion: projectBang,
+      });
+    });
+
+    it("drops the null position fields of a foreign macro's expansion", () => {
+      const index = decode(generated({ callee: "Meta::contains", inProject: false }, foreignDerive));
+      expect(index.definitionAt("src/main.rs", 10, 8)?.defExpansion).toEqual({
+        kind: "derive",
+        macro: "Fail",
+        macroDefPath: "fx_dep_derive::Fail",
+        macroInProject: false,
+      });
+    });
+
+    it("leaves a hand-written definition without defExpansion", () => {
+      expect(decode(row({})).definitionAt("src/main.rs", 10, 8)).not.toHaveProperty("defExpansion");
+    });
+
+    it("answers null when a generated and a hand-written row share one position", () => {
+      expect(decode(row({}), generated({}, projectBang)).definitionAt("src/main.rs", 10, 8)).toBeNull();
+    });
+
+    it("ignores a malformed expansion", () => {
+      const index = decode(generated({}, { kind: "weird", macro: 1 }));
+      expect(index.definitionAt("src/main.rs", 10, 8)).not.toHaveProperty("defExpansion");
+    });
+  });
 });

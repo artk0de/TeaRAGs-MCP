@@ -8,11 +8,17 @@
  * reads the driver first, then SCIP. Absence of evidence is never a verdict:
  * no index, no member position or no occurrence answers null.
  */
-import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../contracts/types/codegraph.js";
+import type {
+  CallContext,
+  CallRef,
+  SymbolDefinition,
+  SymbolResolutionTarget,
+} from "../../../../contracts/types/codegraph.js";
 import type { RustCallSiteDefinition, RustScipDefinition, TypeRef } from "../../../../contracts/types/language.js";
 import { rustTextIsStdSmartPointer, rustTextIsStdType } from "../vocabulary/std-prelude.js";
 import { rustAnalyzerScipOf, rustcCallSitesOf } from "./resolve-environment.js";
 import { projectDeclaresType, rustStdSmartPointerTarget } from "./std-type-hops.js";
+import { rustTraitDeclarersOf } from "./strategies/rust-trait-self-method.js";
 import { rustReceiverChainType } from "./strategies/rust-type-receiver.js";
 import {
   rustCalleeShortNameCandidates,
@@ -76,9 +82,21 @@ export function rustCallSiteIsDerivedImpl(definition: RustCallSiteDefinition): b
 }
 
 /**
+ * Whether a macro the project does not own — a dependency's proc macro or
+ * `macro_rules!` (`thiserror`, `bitflags!`) — generated the definition
+ * (format 4 `defExpansion`): dependency output written into a project crate,
+ * external like any dependency code, never a namesake's.
+ */
+export function rustCallSiteIsForeignGenerated(definition: RustCallSiteDefinition): boolean {
+  return definition.defExpansion?.macroInProject === false;
+}
+
+/**
  * Whether the definition is provably outside the project's own code: std,
- * core, alloc or a dependency, or a derive-generated impl in a workspace
- * crate. Any other workspace symbol without a definition gets no verdict.
+ * core, alloc or a dependency, a derive-generated impl in a workspace crate,
+ * or a definition a dependency's macro generated there (format 4) — even
+ * where its position falls on the project's `#[derive]` line. Any other
+ * workspace symbol without a definition gets no verdict.
  * An external trait's DECLARATION member proves the trait, not the impl the
  * call dispatches to: it is external only when no project impl of that trait
  * declares the member — a provided method nobody overrides (bd s3i8m.6 R3c).
@@ -91,7 +109,9 @@ export function rustScipDefinitionIsExternal(
   call: CallRef,
   ctx: CallContext,
 ): boolean {
-  if (definition.inProject || definition.kind === "local" || rustCallSiteIsDerivedImpl(definition)) return false;
+  if (definition.kind === "local" || rustCallSiteIsDerivedImpl(definition)) return false;
+  if (rustCallSiteIsForeignGenerated(definition)) return true;
+  if (definition.inProject) return false;
   if (!definition.packageInProject) {
     if (definition.declaringTrait === undefined) return true;
     const selfType = rustProvenStdReceiverTypeName(call, definition.name, ctx);
@@ -233,10 +253,57 @@ export function mapScipDefinitionToSymbol(
   const isMacro = rustCallIsMacroInvocation(call);
   if (!definition.inProject || definition.relPath === undefined || definition.line === undefined) return null;
   if (definition.kind !== (isMacro ? "macro" : "callable")) return null;
-  const { relPath, line } = definition;
-  const candidates = (
-    isMacro ? rustMacroShortNameCandidates(ctx, definition.name) : rustCalleeShortNameCandidates(ctx, definition.name)
-  ).filter(
+  const candidates = isMacro
+    ? rustMacroShortNameCandidates(ctx, definition.name)
+    : rustCalleeShortNameCandidates(ctx, definition.name);
+  return narrowestSymbolContaining(candidates, definition.relPath, definition.line);
+}
+
+/**
+ * The project trait's declaration of the member a project macro GENERATED an
+ * impl of (`#[derive(AggrFunction)]` writing `impl AggrFunction for X { fn
+ * create_state }`): the trait method is the call's real target in source,
+ * ahead of the macro. Null without an impl trait, or unless exactly one
+ * project trait of that short name declares the member.
+ */
+export function mapRustGeneratedTraitImplToDeclaration(
+  definition: RustCallSiteDefinition,
+  ctx: CallContext,
+): SymbolResolutionTarget | null {
+  const trait = definition.implTrait;
+  if (trait === undefined || definition.defExpansion?.macroInProject !== true) return null;
+  const declarers = rustTraitDeclarersOf(definition.name, ctx).filter((declarer) => declarer.trait === trait);
+  if (declarers.length !== 1) return null;
+  return { targetRelPath: declarers[0].def.relPath, targetSymbolId: declarers[0].def.symbolId };
+}
+
+/**
+ * The table symbol of the in-project macro that GENERATED a definition
+ * (format 4 `defExpansion`): the macro — a `macro_rules!` — or the function a
+ * workspace proc macro is, named as declared at its definition and containing
+ * that line; the narrowest wins. Null for a foreign macro, an expansion
+ * without a position, no containing symbol, or a tie.
+ */
+export function mapRustGeneratingMacroToSymbol(
+  definition: RustCallSiteDefinition,
+  ctx: CallContext,
+): SymbolResolutionTarget | null {
+  const expansion = definition.defExpansion;
+  if (expansion?.macroInProject !== true) return null;
+  const { macroDefRelPath, macroDefLine } = expansion;
+  if (macroDefRelPath === undefined || macroDefLine === undefined) return null;
+  const name = expansion.macroDefName ?? expansion.macro;
+  const candidates = [...rustMacroShortNameCandidates(ctx, name), ...rustCalleeShortNameCandidates(ctx, name)];
+  return narrowestSymbolContaining(candidates, macroDefRelPath, macroDefLine);
+}
+
+/** The one narrowest of `candidates` declared in `relPath` with a span containing `line`; null on none or a tie. */
+function narrowestSymbolContaining(
+  candidates: readonly SymbolDefinition[],
+  relPath: string,
+  line: number,
+): SymbolResolutionTarget | null {
+  const containing = candidates.filter(
     (tableSymbol) =>
       tableSymbol.relPath === relPath &&
       tableSymbol.startLine !== undefined &&
@@ -244,9 +311,9 @@ export function mapScipDefinitionToSymbol(
       tableSymbol.startLine <= line &&
       line <= tableSymbol.endLine,
   );
-  const span = (tableSymbol: (typeof candidates)[number]) => (tableSymbol.endLine ?? 0) - (tableSymbol.startLine ?? 0);
-  const narrowest = Math.min(...candidates.map(span));
-  const hits = candidates.filter((tableSymbol) => span(tableSymbol) === narrowest);
+  const span = (tableSymbol: SymbolDefinition) => (tableSymbol.endLine ?? 0) - (tableSymbol.startLine ?? 0);
+  const narrowest = Math.min(...containing.map(span));
+  const hits = containing.filter((tableSymbol) => span(tableSymbol) === narrowest);
   if (hits.length !== 1) return null;
   return { targetRelPath: relPath, targetSymbolId: hits[0].symbolId };
 }
