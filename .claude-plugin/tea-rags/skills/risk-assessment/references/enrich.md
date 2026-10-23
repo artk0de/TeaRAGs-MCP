@@ -86,7 +86,7 @@ extra calls.
 
 Sum → 0-2 `cheap`, 3-4 `moderate`, 5+ `expensive`.
 
-Structural violation present → read `../../repair/<family>.md`
+Structural violation present → read `../../../repair/<family>.md`
 (`stableDependencies`, `mainSequence`, `hubLike`; only families found, never the
 directory). A violation whose repair file has a `remedy`-style cheap path (edge
 edits only: retarget an import or restore one facade export) → `cheap`
