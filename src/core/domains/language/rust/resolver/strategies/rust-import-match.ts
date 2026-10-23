@@ -2,6 +2,7 @@ import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { capability } from "../../capability.js";
+import { rustDeclaresFreeFn, rustPlaceItemPath } from "../declaring-file-type.js";
 import {
   parseRustImportPath,
   rustCalleeShortNameCandidates,
@@ -59,6 +60,12 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
       return follow.open ? CONTINUE : DROP;
     }
     const { receiver } = call;
+    // A module path `tikv_util::mpsc::unbounded(..)` names its free fn
+    // outright: placed through the module system, else read as before.
+    if (receiver.includes("::")) {
+      const placed = rustPlaceItemPath(`${receiver}::${call.member}`, ctx.callerFile, ctx, rustDeclaresFreeFn);
+      if (placed !== undefined) return resolved(placed);
+    }
     const matchingImport = ctx.imports.find((imp) => parseRustImportPath(imp.importText, receiver)?.receiverMatches);
     if (matchingImport) {
       const candidatePaths = rustImportCandidatePaths(matchingImport.importText, receiver, ctx.callerFile, ctx);

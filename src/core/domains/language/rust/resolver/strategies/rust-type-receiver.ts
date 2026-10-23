@@ -12,7 +12,11 @@ import { isCapWordsType, isRustConstructorAssocFn } from "../../associated-const
 import { rustCallResultBindingOf, rustDeclaredCallResultType } from "../declared-call-result-type.js";
 import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
 import { resolveRustNominalType, rustDeclaredMemberReturnType, rustDerefTarget } from "../declared-return-type.js";
-import { rustPlaceTypeThroughDeclaringFile } from "../declaring-file-type.js";
+import {
+  rustDeclaresNominalType,
+  rustPlaceItemPath,
+  rustPlaceTypeThroughDeclaringFile,
+} from "../declaring-file-type.js";
 import { rustExternalFieldType, rustStdDerefTarget } from "../external-type-hops.js";
 import { rustPatternBindingType } from "../pattern-binding-type.js";
 import { createRustTypeMemberLookup, rustTypedMissIsProven } from "../rust-type-member-lookup.js";
@@ -64,7 +68,9 @@ const RUST_RECEIVER_TYPE_PORTS: ReceiverTypePorts = {
     // A pattern binding shadows the name: its fold answers, or nothing does.
     if (binding?.valueKind === "patternProjection") return rustPatternBindingType(binding, ctx, rustExpressionType);
     const local = binding?.typeRef ?? (binding?.type ? { form: "instance" as const, name: binding.type } : undefined);
-    if (local !== undefined) return resolveRustNominalType(local, ctx) ?? rustStdBindingType(local, ctx);
+    if (local !== undefined) {
+      return resolveRustNominalType(local, ctx) ?? rustStdBindingType(local, ctx) ?? rustPlaceLocalType(local, ctx);
+    }
     // A call-result `let` the declared/method arms cannot type folds its whole
     // initializer (`let d = Decimal::from_bytes(s).unwrap();`), as a shadowing one does.
     const produced =
@@ -157,7 +163,7 @@ function rustAssociatedCallType(init: string, atLine: number, ctx: CallContext):
   if (head === undefined) return undefined;
   const typeName = typeOfPathHead(head.type, ctx);
   if (typeName === null || !declaresInProjectType(typeName, ctx)) return undefined;
-  const owner = resolveRustNominalType({ form: "class", name: typeName }, ctx);
+  const owner = resolveRustNominalType({ form: "class", name: typeName }, ctx) ?? rustPlaceCallerType(typeName, ctx);
   return owner === undefined ? undefined : rustAssociatedCallResult({ ...owner, form: "class" }, head, atLine, ctx);
 }
 
@@ -338,8 +344,44 @@ function isTypeReceiverCall(call: CallRef): boolean {
 
 function rustNamedType(receiver: string, ctx: CallContext): TypeRef | undefined {
   const typeName = receiverTypeNameFromCall(receiver, ctx);
-  if (typeName === null || !declaresInProjectType(typeName, ctx)) return undefined;
-  return { form: "class", name: typeName };
+  if (typeName === null) {
+    // A qualified type path `a::b::T` / `crate::a::T` names its definition outright.
+    return RUST_QUALIFIED_PATH.test(receiver) ? rustPlaceCallerType(receiver, ctx) : undefined;
+  }
+  if (!declaresInProjectType(typeName, ctx)) return undefined;
+  // A name the lexical / sole-candidate read cannot place (namesakes in two
+  // modules) is placed through the caller's `use` imports and module tree.
+  const placed =
+    resolveRustNominalType({ form: "class", name: typeName }, ctx) === undefined
+      ? rustPlaceCallerType(typeName, ctx)
+      : undefined;
+  return placed ?? { form: "class", name: typeName };
+}
+
+/**
+ * A local's argument-free nominal type (`let c = RpcClient::new(..)` typed
+ * `RpcClient`, `c: pd_client::RpcClient`) the lexical read left unplaced,
+ * placed through the caller's module system.
+ */
+function rustPlaceLocalType(local: TypeRef, ctx: CallContext): TypeRef | undefined {
+  if (local.form !== "instance" || local.args !== undefined || local.name.includes(".rs::")) return undefined;
+  const placed = rustPlaceCallerType(local.name, ctx);
+  return placed === undefined ? undefined : { ...placed, form: "instance" };
+}
+
+/** A path of two or more plain segments: `pd_client::RpcClient`, `crate::store::Engine`. */
+const RUST_QUALIFIED_PATH = /^(?:::)?[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)+$/;
+
+/**
+ * A type spelled in the CALLER's file (a `Type::assoc` receiver, a `let`
+ * initializer's type head) placed through the caller's module system by
+ * {@link rustPlaceItemPath}. Undefined when the placement is undecidable.
+ */
+function rustPlaceCallerType(path: string, ctx: CallContext): NominalTypeRef | undefined {
+  const placed = rustPlaceItemPath(path, ctx.callerFile, ctx, rustDeclaresNominalType);
+  return placed === undefined
+    ? undefined
+    : { form: "class", name: `${placed.targetRelPath}::${placed.targetSymbolId}` };
 }
 
 function receiverTypeNameFromCall(receiver: string, ctx: CallContext): string | null {

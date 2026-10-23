@@ -673,9 +673,20 @@ export function rustFollowReexports(
   if (!parsed || ctx.moduleReexports === undefined) return { target: null, open: true };
   const ownerSegments = parsed.sourceName === null ? parsed.moduleSegments.slice(0, -1) : parsed.moduleSegments;
   const exportedName = parsed.sourceName === null ? (parsed.moduleSegments.at(-1) ?? receiver) : parsed.sourceName;
-  const ownerFiles = rustPathCandidatePaths(parsed, ownerSegments, fromFile, ctx).filter((relPath) =>
-    rustModuleFileKnown(relPath, ctx),
-  );
+  // `crate::X` / `super::X` re-exported by the prefix's own module: its root file.
+  const prefixRoot =
+    ownerSegments.length === 0 && parsed.prefix !== null
+      ? rustReexportSourcePaths(
+          parsed.prefix === "super"
+            ? Array.from({ length: parsed.superDepth }, () => "super").join("::")
+            : parsed.prefix,
+          fromFile,
+          ctx,
+        )
+      : undefined;
+  const ownerFiles = (
+    Array.isArray(prefixRoot) ? prefixRoot : rustPathCandidatePaths(parsed, ownerSegments, fromFile, ctx)
+  ).filter((relPath) => rustModuleFileKnown(relPath, ctx));
   // An inline `mod tests { pub use … }` has no file of its own: nothing proves absence.
   let open = ownerFiles.length === 0;
   const targets: SymbolResolutionTarget[] = [];
