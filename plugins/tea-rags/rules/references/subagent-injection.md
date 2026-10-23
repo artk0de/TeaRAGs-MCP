@@ -6,9 +6,9 @@ block to subagent prompt. Subagent never invokes this.
 ## Why parent must inject
 
 Subagents (incl. ones spawned by third-party skills) do NOT inherit rules,
-CLAUDE.md, `tea-rags://guide/decision-tree` → default to built-in Grep/Glob,
-bypass tea-rags. Missing block = silent low-recall text search, no warning.
-Inject unconditionally; block small + harmless for non-search tasks.
+CLAUDE.md, `tea-rags://guide/decision-tree` → default to their client's
+grep/glob, bypass tea-rags. Missing block = silent low-recall text search, no
+warning. Inject unconditionally; block small + harmless for non-search tasks.
 
 ## The block to inject
 
@@ -41,7 +41,7 @@ Code search = tea-rags MCP tools, never the harness's built-in grep/glob/file se
 | code like a chunk in hand | `find_similar(positiveIds:)` |
 | impact / callers / chain A→B | `get_callers` / `get_callees` / `trace_path` |
 | branch diff review | `review_changes` |
-| literal text: TODO, phrase, regex, import string | text search (ripgrep) |
+| literal text: TODO, phrase, regex, import string | text search (your client's Grep / `rg`) |
 
 Identifiers = SYMBOL searches even joined by `|` — never text search. Exists? → `find_symbol(metaOnly:true)`; empty → retry partial, then `hybrid_search`.
 

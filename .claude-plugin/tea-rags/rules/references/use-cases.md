@@ -47,7 +47,7 @@ entry in `signal-interpretation.md` for remediation.
 | Symbol has tests?         | find_symbol     | symbol + pathPattern for test dirs, metaOnly=true |
 | Symbol + semantic context | hybrid_search   | "PaymentService validate card expiration"         |
 | Bare symbol name          | find_symbol     | "batch_create" → direct lookup by symbolId        |
-| TODO/FIXME markers        | ripgrep MCP     | Exact string match, not hybrid                    |
+| TODO/FIXME markers        | text search     | Exact string match, not hybrid                    |
 
 ## Code context for generation
 
@@ -125,6 +125,7 @@ per-language support here.
 
 ## Outside tea-rags
 
-Literal text only (TODO/FIXME, phrase, regex, import-path string) → ripgrep MCP.
-File structure / call-sites / usages stay on tea-rags (`find_symbol`,
-`hybrid_search`, graph tools) — routing: `tea-rags://guide/decision-tree`.
+Literal text only (TODO/FIXME, phrase, regex, import-path string) → text search
+(your client's Grep / `rg`). File structure / call-sites / usages stay on
+tea-rags (`find_symbol`, `hybrid_search`, graph tools) — routing:
+`tea-rags://guide/decision-tree`.

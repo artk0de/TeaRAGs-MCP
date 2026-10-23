@@ -19,7 +19,7 @@ codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
    Built-in Search, Grep, Glob, `grep`, `rg`, `find` PROHIBITED for code
    discovery. Catch yourself reaching for grep/search — STOP, use
    `tea-rags://guide/decision-tree` decision tree. ONLY acceptable fallback:
-   ripgrep MCP, only after TeaRAGs tools returned no results, and only for
+   text search, only after TeaRAGs tools returned no results, and only for
    literal text (markers, phrases, regex). Identifiers (class/method/constant)
    never: empty `find_symbol` → partial name, then `hybrid_search`
    (`tea-rags://guide/decision-tree`).

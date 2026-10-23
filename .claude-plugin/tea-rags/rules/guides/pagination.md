@@ -22,11 +22,10 @@ After 3: report "could not find, here's the best match"
 ## Disambiguation (MANDATORY after every search)
 
 After EVERY search scan result paths for domain clustering. Top-10 split into 2+
-unrelated directory groups (e.g. `services/qbo/` vs `services/crm/`), none
-
-> 70% → MUST NOT silently pick one. Ask user: "Found results in two areas: [area
-> A] and [area B]. Which context?" Then re-search with `pathPattern` for chosen
-> area.
+unrelated directory groups (e.g. `services/qbo/` vs `services/crm/`), none over
+70% → MUST NOT silently pick one. Ask user: "Found results in two areas: [area
+A] and [area B]. Which context?" Then re-search with `pathPattern` for chosen
+area.
 
 ## Stop Conditions
 
@@ -66,7 +65,7 @@ Detect "no relevant results" via relative patterns in result set:
 
 **Decision:**
 
-- Any 2 of 3 triggered → warn: "results may not be relevant." Validate with
-  ripgrep before reasoning about them.
+- Any 2 of 3 triggered → warn: "results may not be relevant." Validate with text
+  search before reasoning about them.
 - All 3 triggered → treat as "no match." Report to user.
 - 0 or 1 triggered → proceed normally.

@@ -27,11 +27,12 @@ ONLY — its `path` registers a NEW project.
 | code like a chunk in hand          | `find_similar(positiveIds:)`                  |
 | impact / who calls / chain A→B     | `get_callers` / `get_callees` / `trace_path`  |
 | diff review                        | `review_changes`                              |
-| literal text (TODO, phrase, regex) | ripgrep MCP                                   |
+| literal text (TODO, phrase, regex) | text search (your client's Grep / `rg`)       |
 
-Never built-in Grep/Glob or Bash `cat`/`sed`/`grep`/`rg` over code (unless the
-user explicitly asks for a manual read). Identifiers are SYMBOL searches even
-with `|` — never ripgrep.
+Text search finds literal text only — never use it, Glob or Bash
+`cat`/`sed`/`grep` to locate or understand code (unless the user explicitly asks
+for a manual read). Identifiers are SYMBOL searches even with `|` — never text
+search.
 
 **Invariants.**
 

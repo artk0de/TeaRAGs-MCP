@@ -3,14 +3,15 @@
 ## Principles
 
 **Semantic First, Exact Second.** Code search starts with tea-rags
-(semantic_search, hybrid_search, find_symbol, find_similar). ripgrep only for
-literal text markers (TODO, FIXME, HACK, NOTE), import path strings, or fallback
-when tea-rags unavailable. Code identifiers (class/method/constant names) are
-SYMBOL searches — use hybrid_search (BM25 = exact-name match, score up to 1.0)
-or find_symbol, NEVER ripgrep, even if query has `|` alternation. Built-in
-Grep/Glob — never for code discovery.
+(semantic_search, hybrid_search, find_symbol, find_similar). Text search — your
+client's literal search tool (Grep, `rg`, a ripgrep MCP: whichever it has) —
+only for literal text markers (TODO, FIXME, HACK, NOTE), import path strings, or
+fallback when tea-rags unavailable. Code identifiers (class/method/constant
+names) are SYMBOL searches — use hybrid_search (BM25 = exact-name match, score
+up to 1.0) or find_symbol, NEVER text search, even if query has `|` alternation.
+Glob — never for code discovery.
 
-**MANDATORY:** ALWAYS prefer tea-rags and ripgrep MCP over built-in Search/Grep.
+**MANDATORY:** ALWAYS prefer tea-rags over text search for code.
 
 ## Tool Invocation Under Deferred Loading
 
@@ -24,7 +25,6 @@ Fully-qualified fetch names:
   `mcp__tea-rags__semantic_search`, `mcp__tea-rags__rank_chunks`,
   `mcp__tea-rags__find_similar`, `mcp__tea-rags__get_callers`,
   `mcp__tea-rags__trace_path`.
-- ripgrep is **`mcp__ripgrep__search`** (and `mcp__ripgrep__advanced-search`).
 
 Tool names appear bare below for readability — prepend the prefix when calling.
 
@@ -153,7 +153,7 @@ working directory as `path`; the hook supplies the repository's `project` alias
 
 ## Prohibited Patterns
 
-- **Built-in Grep for code discovery** — use tea-rags or ripgrep MCP
+- **Text search for code discovery** — use tea-rags
 - **Bash shell over code** (`cat` / `sed -n` / `head` / `grep` / `rg` /
   `git show <rev>:<file>`) to locate or understand code — same downgrade as Read
   / Grep; harness "use Bash" note does not override. Identifier → find_symbol /
@@ -172,11 +172,12 @@ working directory as `path`; the hook supplies the repository's `project` alias
   of slots. Always use language filter (see `rules/references/polyglot-rule.md`)
 - **semantic_search for "find all usages"** — use hybrid_search instead. BM25
   component provides full recall for exact symbol names
-- **ripgrep for symbol existence checks** — use find_symbol with metaOnly=true
-- **ripgrep for class/method/constant usage** (e.g.
+- **Text search for symbol existence checks** — use find_symbol with
+  metaOnly=true
+- **Text search for class/method/constant usage** (e.g.
   `classAncestors|classExtends` consumers) — these are SYMBOL searches; use
   hybrid_search (BM25) or find_symbol
-- **ripgrep fallback justified by a stale prime digest** — digest is a
+- **Text-search fallback justified by a stale prime digest** — digest is a
   start-of-session SNAPSHOT. Confirm a suspected embedding/index outage with a
   LIVE get_index_status before downgrading; find_symbol + hybrid_search BM25
   work with embedding down anyway
@@ -189,9 +190,9 @@ working directory as `path`; the hook supplies the repository's `project` alias
 - **Judging a name by grep or semantic_search on the draft name** — the draft
   pulls in its own lexical neighbours; use get_naming_lexicon (`names[]`); a
   diff → review_changes `naming` (never hand-list a diff's names)
-- **hybrid_search for TODO/FIXME/HACK markers** — use ripgrep MCP
+- **hybrid_search for TODO/FIXME/HACK markers** — use text search
 - **git log/diff for code history** — overlay already has git signals
-- **10+ ripgrep calls instead of reading a file** — just read it
+- **10+ text-search calls instead of reading a file** — just read it
 - **search_code directly** — ONLY used through /tea-rags:explore skill for
   user-facing exploration. Agents and subagents NEVER call search_code directly
 
@@ -199,13 +200,13 @@ working directory as `path`; the hook supplies the repository's `project` alias
 
 | Task                          | Primary                           | Fallback                                          |
 | ----------------------------- | --------------------------------- | ------------------------------------------------- |
-| Symbol definition             | find_symbol(symbol:)              | hybrid_search → ripgrep                           |
+| Symbol definition             | find_symbol(symbol:)              | hybrid_search → text search                       |
 | File structure                | find_symbol(relativePath:)        | Read (whole file)                                 |
 | Doc TOC                       | find_symbol(relativePath:)        | find_symbol(symbol: parentSymbolId)               |
-| All usages                    | hybrid_search + offset pagination | ripgrep (only if hybrid unavailable)              |
+| All usages                    | hybrid_search + offset pagination | text search (only if hybrid unavailable)          |
 | Behavioral discovery          | semantic_search                   | hybrid_search                                     |
 | Cross-layer                   | semantic_search × per language    | same                                              |
-| Exact text                    | ripgrep MCP                       | built-in Grep                                     |
+| Exact text                    | text search                       | —                                                 |
 | Call path A→B (codegraph on)  | trace_path                        | get_callees breadth-first (manual)                |
 | Call path A→B (codegraph off) | semantic_search / hybrid + manual | — (graph tools unavailable; see Graph navigation) |
 | Naming vocabulary / verdict   | get_naming_lexicon                | codegraph off: DDG Step 5 Naming concept recipe   |

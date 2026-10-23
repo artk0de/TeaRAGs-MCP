@@ -14,12 +14,12 @@ description:
 
 ## Intent Classification (REQUIRED — pick ONE row before any tool call)
 
-| User intent contains                                | Strategy | Skip if                                                          |
-| --------------------------------------------------- | -------- | ---------------------------------------------------------------- |
-| "how does X work", "explain Y", "what does Z do"    | EXPLAIN  | active bug → bug-hunt                                            |
-| "where is X used", "find all X", "imports of X"     | TRACE    | structural-only → use find_symbol direct                         |
-| "before I refactor X", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans                           |
-| "best example of X", "antipatterns in Y"            | EXEMPLAR | no rerank corpus → hybrid_search (ripgrep only for literal text) |
+| User intent contains                                | Strategy | Skip if                                                              |
+| --------------------------------------------------- | -------- | -------------------------------------------------------------------- |
+| "how does X work", "explain Y", "what does Z do"    | EXPLAIN  | active bug → bug-hunt                                                |
+| "where is X used", "find all X", "imports of X"     | TRACE    | structural-only → use find_symbol direct                             |
+| "before I refactor X", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans                               |
+| "best example of X", "antipatterns in Y"            | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text) |
 
 🛑 Unsure → ask user. NEVER assume strategy from partial signals.
 
@@ -77,7 +77,7 @@ calls X?" with "all call sites") → EXPLAIN wins over generic Collect.
 ---
 
 Flow: orientation (broad scope only) → breadth → depth → output by intent (human
-explanation OR pre-generation context). Search results complete — no ripgrep
+explanation OR pre-generation context). Search results complete — no text-search
 verification passes. Addressing + lag protocol: core rule +
 `tea-rags://guide/freshness`.
 

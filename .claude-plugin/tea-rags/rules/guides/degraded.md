@@ -3,7 +3,7 @@
 **Prime digest is a point-in-time SNAPSHOT, not live state.** Its
 `embedding: unavailable` line reflects infra health at session start, goes stale
 the moment ollama returns. NEVER treat stale digest as licence to fall back to
-ripgrep/Grep for code discovery. Before acting on suspected outage, confirm with
+text search for code discovery. Before acting on suspected outage, confirm with
 a LIVE `get_index_status` — its `Infrastructure:` footer reports current
 `Embedding (ollama): available | unavailable`. Act on the live read, not the
 snapshot.
@@ -14,16 +14,16 @@ from its BM25 leg alone — exact-name match (score up to 1.0) — and says so w
 a top-level `denseUnavailable: { reason }` (rows ranked lexically, no semantic
 ranking). `semantic_search` / `search_code` / `find_similar` with code have no
 other leg: they fail FAST with the provider's outage error (no recovery wait).
-Down embedding degrades behavioral/semantic recall — does NOT justify ripgrep
-for class/method/constant lookups.
+Down embedding degrades behavioral/semantic recall — does NOT justify text
+search for class/method/constant lookups.
 
 If a LIVE `get_index_status` reports embedding error, or any tea-rags semantic
 call fails with embedding/connection error — STOP, ask the user (via
 `AskUserQuestion`) to start `ollama serve` or repoint `EMBEDDING_URL`, WAIT for
-explicit answer before anything else. Do NOT silently downgrade to ripgrep /
-Grep / Read for code discovery — text search loses recall the user didn't agree
-to trade. Skip the prompt ONLY for tasks needing no semantic search (literal
+explicit answer before anything else. Do NOT silently downgrade to text search /
+Read for code discovery — text search loses recall the user didn't agree to
+trade. Skip the prompt ONLY for tasks needing no semantic search (literal
 TODO/FIXME scan, reading a known file by exact path, exact import-string lookup)
 — and for code-identifier lookups reach for `find_symbol` / `hybrid_search` BM25
-first (need no embedding), not ripgrep. See
+first (need no embedding), not text search. See
 `rules/references/runtime-introspection.md` for `infraHealth` diagnosis.

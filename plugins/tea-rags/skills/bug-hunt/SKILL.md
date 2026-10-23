@@ -27,8 +27,8 @@ No `## Signal thresholds` above → read
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
    `git status --porcelain -uall` allowed: working-tree state (file NAMES), not
    code history or content — feeds Uncommitted probe only.
-3. **No built-in Search/Grep for code discovery** — TeaRAGs + ripgrep MCP only
-   (ripgrep for literal text, identifiers never — `hybrid_search`).
+3. **No text search (Grep / `rg`) for code discovery** — TeaRAGs only; text
+   search for literal text, identifiers never — `hybrid_search`.
 4. **Search results contain code.** `metaOnly=false` (default) returns chunk
    content + startLine/endLine. Evaluate checkpoint from results BEFORE any Read
    or navigation.
@@ -69,8 +69,8 @@ No `## Signal thresholds` above → read
    Go to step 2.
 ```
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license
-`cat` / `grep` / `Read` over code — `tea-rags://guide/freshness`.
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license `cat`
+/ `grep` / `Read` over code — `tea-rags://guide/freshness`.
 
 ## Fresh probe
 
@@ -201,9 +201,8 @@ Edges: no `codegraph` floor while `changedFiles` > 0 → edges touching changed
 files are the index's (`tea-rags://guide/freshness` "Addressing the Codebase").
 
 **Requires codegraph** (graph tools registered; `## Codegraph resolve` = its
-resolve rate).
-Codegraph off → graph tools not registered — use Codegraph off below; never read
-an absent tool as a fact.
+resolve rate). Codegraph off → graph tools not registered — use Codegraph off
+below; never read an absent tool as a fact.
 
 **Endpoints:**
 

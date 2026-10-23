@@ -20,11 +20,11 @@ broad-scope antipattern / refactoring intent (no specific entity).
 2. **Tool choice + stop conditions from `tea-rags://guide/decision-tree`** —
    pass query + rerank + pathPattern, tree picks tool; gradient-drop /
    diminishing-returns / cross-preset rules, NO absolute score thresholds.
-3. **No built-in Search/Grep for code discovery** — tea-rags tools; ripgrep MCP
-   only for literal text (identifiers → `hybrid_search`).
+3. **No text search (Grep / `rg`) for code discovery** — tea-rags tools; text
+   search only for literal text (identifiers → `hybrid_search`).
 
-Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` >
-0 → incremental `index_codebase`; subagent / linked worktree → never reindex. →
+Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` > 0
+→ incremental `index_codebase`; subagent / linked worktree → never reindex. →
 `tea-rags://guide/freshness`.
 
 ## Flow
@@ -84,10 +84,11 @@ Cross-reference by `symbolId` (missing → `relativePath` + `startLine`).
 | **Naming**        | Misleading names, inconsistent conventions          |
 
 **Naming** = lexicon verdict, not taste (codegraph on = graph tools in tool
-list): `get_naming_lexicon(names=<Tier 1 identifiers>, language,
-pathPattern=<scope>)`, one call per language (evidence never crosses languages)
-→ `MISFIT` = Naming candidate, Action `rename to <suggestion>`; `CONFORMS` = not
-candidate. Codegraph off → Naming only w/ cited in-scope precedent. Extra seeds:
+list):
+`get_naming_lexicon(names=<Tier 1 identifiers>, language, pathPattern=<scope>)`,
+one call per language (evidence never crosses languages) → `MISFIT` = Naming
+candidate, Action `rename to <suggestion>`; `CONFORMS` = not candidate.
+Codegraph off → Naming only w/ cited in-scope precedent. Extra seeds:
 `get_ontology_report(pathPattern=<scope>, sections=["outliers","synonyms"])` —
 each outlier / synonym deviant = Naming candidate, Action
 `rename to <dominant.name>`.

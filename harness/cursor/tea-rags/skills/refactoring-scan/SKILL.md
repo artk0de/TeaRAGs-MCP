@@ -27,8 +27,8 @@ broad-scope antipattern / refactoring intent (no specific entity).
 2. **Tool choice + stop conditions from `tea-rags://guide/decision-tree`** —
    pass query + rerank + pathPattern, tree picks tool; gradient-drop /
    diminishing-returns / cross-preset rules, NO absolute score thresholds.
-3. **No built-in Search/Grep for code discovery** — tea-rags tools; ripgrep MCP
-   only for literal text (identifiers → `hybrid_search`).
+3. **No text search (Grep / `rg`) for code discovery** — tea-rags tools; text
+   search only for literal text (identifiers → `hybrid_search`).
 
 Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` > 0
 → incremental `index_codebase`; subagent / linked worktree → never reindex. →

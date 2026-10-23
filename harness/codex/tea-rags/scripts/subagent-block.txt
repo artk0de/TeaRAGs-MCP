@@ -16,7 +16,7 @@ Code search = tea-rags MCP tools, never the harness's built-in grep/glob/file se
 | code like a chunk in hand | `find_similar(positiveIds:)` |
 | impact / callers / chain A→B | `get_callers` / `get_callees` / `trace_path` |
 | branch diff review | `review_changes` |
-| literal text: TODO, phrase, regex, import string | text search (ripgrep) |
+| literal text: TODO, phrase, regex, import string | text search (your client's Grep / `rg`) |
 
 Identifiers = SYMBOL searches even joined by `|` — never text search. Exists? → `find_symbol(metaOnly:true)`; empty → retry partial, then `hybrid_search`.
 

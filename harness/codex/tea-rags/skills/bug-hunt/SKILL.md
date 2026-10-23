@@ -24,8 +24,8 @@ No `## Signal thresholds` above → read
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
    `git status --porcelain -uall` allowed: working-tree state (file NAMES), not
    code history or content — feeds Uncommitted probe only.
-3. **No built-in Search/Grep for code discovery** — TeaRAGs + ripgrep MCP only
-   (ripgrep for literal text, identifiers never — `hybrid_search`).
+3. **No text search (Grep / `rg`) for code discovery** — TeaRAGs only; text
+   search for literal text, identifiers never — `hybrid_search`.
 4. **Search results contain code.** `metaOnly=false` (default) returns chunk
    content + startLine/endLine. Evaluate checkpoint from results BEFORE any Read
    or navigation.

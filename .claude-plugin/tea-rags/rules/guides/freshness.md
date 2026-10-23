@@ -148,10 +148,10 @@ reindexes.
 You (or subagent) ran `Write`/`Edit` this turn and NEXT step searches
 _different_ question → index does not yet see edits. Run `index_codebase`
 (incremental) first. Skip when: zero files edited, continuing same
-implementation task without re-searching, or next step uses ripgrep only. Edits
-made outside this session count the same: `git status --porcelain -uall` listing
-paths you are about to search fires the uncommitted-edits row. Prime staleness
-is time-based and never sees them.
+implementation task without re-searching, or next step uses text search only.
+Edits made outside this session count the same: `git status --porcelain -uall`
+listing paths you are about to search fires the uncommitted-edits row. Prime
+staleness is time-based and never sees them.
 
 Applies to the alias's own checkout. Linked worktree → no reindex (overlay,
 above). `index_codebase` is only incremental entrypoint — older reindex
@@ -159,7 +159,7 @@ endpoints deprecated.
 
 ## Do NOT
 
-- Downgrade to ripgrep / Grep / Read / Bash shell reads because index stale,
+- Downgrade to text search / Read / Bash shell reads because index stale,
   lagging or drifted — trades away recall user did not agree to. Own checkout:
   incremental reindex, then search; anywhere: keep calling tea-rags.
 - Run `force_reindex` for stale-only or edited-only cases — incremental correct
