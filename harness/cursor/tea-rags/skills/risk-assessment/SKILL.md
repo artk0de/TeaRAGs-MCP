@@ -13,16 +13,22 @@ description:
 > resource tool, or the read fails), run
 > `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
 
-**Answer contract — reports AND plan-only answers.** Show the Phase 5 tiered map
-in its format (Critical/High tables: Symbol, File:Line, Risk Type, Key Signals,
-Tests; Structural when codegraph active; Summary), never a prose description of
-it. Plan-only → enumerate phases 0–5, none collapsed or omitted. Prompt mentions
-generation ("before implementing" / "generate") → line immediately BEFORE
-`Output:`, naming resolved scope + per-symbol overlay labels (no extra block, no
-extra scan): `Hand-off: pathPattern + per-symbol File:Line + labels`. `Output:`
-is ALWAYS the answer's last line, verbatim ("the risk map" does not count):
+**Answer contract — reports AND plan-only answers.** Print the Phase 5 tables
+themselves (skeleton below, full format in Phase 5): headings + header rows,
+`[planned; not run]` in cells not gathered yet. Prose, a column list or the
+`Output:` line alone is NOT the map. Plan-only → phases 0–5 as in Phase Order,
+one step each, none merged. Hand-off line only when the prompt mentions
+generation ("before implementing" / "generate"): resolved scope + per-symbol
+overlay labels, no extra block or scan. `Output:` = last line, verbatim:
 
 ```
+## Critical
+| # | Symbol | File:Line | Risk Type | Key Signals | Tests |
+## High
+| # | Symbol | File:Line | Risk Type | Key Signals | Tests |
+## Structural risks   (codegraph active)
+## Summary
+Hand-off: pathPattern + per-symbol File:Line + labels
 Output: Critical/High | Symbol | File:Line | Risk Type | Key Signals | Tests(path/none/unverified) + Structural + Summary
 ```
 
@@ -34,16 +40,16 @@ No `## Label maps` above → read
 
 🛑 STOP — read all phases before scanning.
 
-1. Phase 1 — SCAN with primary preset; plan states Phase 1 Pagination stops
-2. Phase 1b — STRUCTURAL scan (**MUST run in the same parallel block —
-   structural debt is git-blind, a big quiet method never reaches Phase 1**)
-3. Phase 2 — SCAN with stratified second preset (**MUST run, even if Phase 1
-   found enough hits — single-preset risk maps are biased**)
-4. Phase 3 — MERGE results with negativeIds dedup (**MUST use negativeIds, NEVER
-   manual filtering**)
-5. Phase 4 — CLASSIFY into severity tiers, score fix cost
-6. Phase 5 — REPORT pair-diagnostics (**MUST surface signal pairs, single-signal
-   reports are misleading**), ending with the lines at the top.
+0. Phase 0 — SCOPE → `pathPattern`
+1. Phase 1 — SCAN primary + stratified second preset (**both MUST run —
+   single-preset maps are biased**); plan states Pagination stops
+2. Phase 1b — STRUCTURAL scan (**same parallel block as Phase 1 — structural
+   debt is git-blind, a big quiet method never reaches Phase 1**)
+3. Phase 2 — MERGE with negativeIds dedup (**NEVER manual filtering**)
+4. Phase 3 — EXPAND healthy-demoted candidates
+5. Phase 4 — ENRICH: tiers, fix cost, signal pairs (**single-signal reports
+   mislead**)
+6. Phase 5 — OUTPUT: the skeleton at the top.
 
 ## Top Anti-patterns (read before scanning)
 

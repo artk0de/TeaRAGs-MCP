@@ -125,15 +125,15 @@ before generation).
 | file.ageDays "legacy" + chunk.commitCount "low"            | CONSERVATIVE          |
 | No match                                                   | Autonomous Judgment ↓ |
 
-**Autonomous Judgment Protocol** — no hard rule matches. Answer = each label →
-its axis → NAMED strategy (DEFENSIVE / STABILIZATION / CONSERVATIVE / STANDARD)
-→ why + actions; ask if uncertain. No name = Step 1 not done, code or not. Axes:
-**Risk** grows bugFixRate healthy→concerning→critical, churnVolatility
-stable→erratic; **Stability** grows ageDays recent→legacy; **Confidence** falls
-with commitCount "low". E.g.
+**Autonomous Judgment Protocol.** Answer = each label → its axis → NAMED
+strategy (DEFENSIVE/STABILIZATION/CONSERVATIVE/STANDARD) → why + actions. "X
+leaning Y" → end with ONE question to user naming both. No name = Step 1 not
+done, code or not. Axes: **Risk** grows bugFixRate healthy→concerning→critical,
+churnVolatility stable→erratic; **Stability** grows ageDays recent→legacy;
+**Confidence** falls with commitCount "low". E.g.
 `bugFixRate concerning, ageDays recent, commitCount typical` → Risk rising,
-Stability low, Confidence medium, no hard rule → STANDARD leaning STABILIZATION;
-DEFENSIVE needs `critical` + old.
+Stability low, Confidence medium → STANDARD leaning STABILIZATION; DEFENSIVE
+needs `critical` + old.
 
 **Load strategy (MANDATORY, name the file):** custom `strategy-<mode>` skill →
 use it; else READ `strategies/<mode>.md` (DEFENSIVE → `strategies/defensive.md`)

@@ -97,9 +97,10 @@ command in this turn is invalid in a plan — open it first.
 
 **Plan-only / describe-the-plan answers: every skill output contract applies
 NOW.** Decide from the facts given (strategy, verdict, name, class); print every
-literal line / template the skill requires; data not gathered yet →
-\`[planned; not run]\` in that slot, never "I would report it later". Describing
-compliance is not compliance.
+literal line and every template IN FULL — table headings + header rows, not a
+schema line or prose; data not gathered yet → \`[planned; not run]\` in each
+cell, never "I would report it later". A skill's "ask the user" fires in this
+answer. Describing compliance is not compliance.
 `;
 
 /** Puts \`prelude\` right after the body's H1 (or first, when there is none). */
