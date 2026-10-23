@@ -53,3 +53,32 @@ export function tabulateRecordArrays(value: unknown): unknown {
   if (!isPlainObject(value)) return value;
   return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, tabulateRecordArrays(inner)]));
 }
+
+function isColumnTable(value: Record<string, unknown>): value is ColumnTable & Record<string, unknown> {
+  const keys = Object.keys(value);
+  return keys.length === 2 && Array.isArray(value.columns) && Array.isArray(value.rows);
+}
+
+function recordOf(columns: string[], row: unknown[]): Record<string, unknown> {
+  const record: Record<string, unknown> = {};
+  columns.forEach((column, index) => {
+    const cell = row[index];
+    if (cell === null || cell === undefined) return;
+    const path = column.split(".");
+    let target = record;
+    for (const key of path.slice(0, -1)) {
+      target[key] ??= {};
+      target = target[key] as Record<string, unknown>;
+    }
+    target[path[path.length - 1]] = cell;
+  });
+  return record;
+}
+
+/** Inverse of tabulation for readers that want records: every ColumnTable, at any depth, back to its records. */
+export function foldColumnTables(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(foldColumnTables);
+  if (!isPlainObject(value)) return value;
+  if (isColumnTable(value)) return value.rows.map((row) => recordOf(value.columns, row));
+  return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, foldColumnTables(inner)]));
+}

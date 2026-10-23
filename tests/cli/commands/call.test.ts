@@ -278,6 +278,24 @@ describe("runCall — results and exit codes", () => {
     expect(first.payload.symbolId).toBe("Reranker#rerank");
   });
 
+  it("--format json prints the answer alone, its column tables folded back into records", async () => {
+    const records = [
+      { id: "p1", score: 1, payload: { symbolId: "Reranker#rerank", relativePath: "src/reranker.ts" } },
+      { id: "p2", score: 0.5, payload: { symbolId: "Reranker.create", relativePath: "src/reranker.ts" } },
+    ];
+    const h = harness(makeApp({ findSymbol: vi.fn().mockResolvedValue({ results: records }) }));
+
+    const code = await call(h, {
+      tool: "find_symbol",
+      params: '{"project":"tea-rags","symbol":"Reranker"}',
+      format: "json",
+    });
+
+    expect(code).toBe(0);
+    expect(h.stdout).toHaveLength(1);
+    expect((JSON.parse(h.stdout[0]) as { results: unknown }).results).toEqual(records);
+  });
+
   it("--json prints the full CallToolResult as one JSON document and nothing else", async () => {
     const h = harness(makeApp());
 

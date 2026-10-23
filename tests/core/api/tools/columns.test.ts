@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { tabulateRecordArrays, toColumns } from "../../../../src/core/api/tools/columns.js";
+import { foldColumnTables, tabulateRecordArrays, toColumns } from "../../../../src/core/api/tools/columns.js";
 import { resolvePresets } from "../../../../src/core/domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../../../src/core/domains/explore/reranker.js";
 import { gitPayloadSignalDescriptors } from "../../../../src/core/domains/trajectory/git/payload-signals.js";
@@ -109,5 +109,32 @@ describe("tabulateRecordArrays", () => {
         ["b", []],
       ],
     });
+  });
+});
+
+describe("foldColumnTables", () => {
+  it("folds every column table at any depth back into the records it was built from", () => {
+    const dto = {
+      total: 2,
+      callers: [
+        { sourceSymbolId: "A#run", edge: { kind: "exact", confidence: 1 } },
+        { sourceSymbolId: "B#run", tags: ["x", "y"] },
+      ],
+      meta: {
+        topAuthors: [
+          { name: "a", commits: 3 },
+          { name: "b", commits: 1 },
+        ],
+        note: "n",
+      },
+    };
+
+    expect(foldColumnTables(tabulateRecordArrays(dto))).toEqual(dto);
+  });
+
+  it("leaves a value that holds no table unchanged", () => {
+    const value = { results: [{ id: "a", score: 1 }], scalar: 3, list: [1, 2] };
+
+    expect(foldColumnTables(value)).toEqual(value);
   });
 });

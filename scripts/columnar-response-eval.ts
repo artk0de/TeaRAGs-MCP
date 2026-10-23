@@ -19,6 +19,8 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+import { foldColumnTables } from "../src/core/api/index.js";
+
 interface Case {
   id: string;
   call: string;
@@ -113,28 +115,6 @@ function required(name: string): string {
   return value;
 }
 
-/** Folds every `{ columns, rows }` back into records: dotted column = nested path, null = absent. */
-function toRecords(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(toRecords);
-  if (typeof value !== "object" || value === null) return value;
-  const obj = value as Record<string, unknown>;
-  if (Array.isArray(obj.columns) && Array.isArray(obj.rows) && Object.keys(obj).length === 2) {
-    const columns = obj.columns as string[];
-    return (obj.rows as unknown[][]).map((row) => {
-      const record: Record<string, unknown> = {};
-      columns.forEach((column, i) => {
-        if (row[i] === null || row[i] === undefined) return;
-        const keys = column.split(".");
-        let node = record;
-        for (const key of keys.slice(0, -1)) node = (node[key] ??= {}) as Record<string, unknown>;
-        node[keys.at(-1) as string] = toRecords(row[i]);
-      });
-      return record;
-    });
-  }
-  return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, toRecords(v)]));
-}
-
 function serverConfig(root: string) {
   return {
     command: "node",
@@ -160,7 +140,7 @@ async function computeTruth(root: string): Promise<Record<string, unknown>> {
       { timeout: 180_000 },
     );
     const text = (res.content as { type: string; text?: string }[]).map((c) => c.text ?? "").join("");
-    return toRecords(res.structuredContent ?? JSON.parse(text)) as Answer;
+    return foldColumnTables(res.structuredContent ?? JSON.parse(text)) as Answer;
   };
   const answers: Record<string, Answer> = {};
   for (const [key, [tool, args]] of Object.entries(suite.calls)) answers[key] = await call(tool, args);
