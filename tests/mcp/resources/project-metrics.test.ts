@@ -77,6 +77,15 @@ describe("tea-rags://project/{alias}/metrics template", () => {
     ["tea-rags://project/fixture/metrics", {}],
     ["tea-rags://project/fixture/metrics?language=ruby", { language: "ruby" }],
     ["tea-rags://project/fixture/metrics?section=thresholds,registry", { section: ["thresholds", "registry"] }],
+    [
+      "tea-rags://project/fixture/metrics?section=thresholds&language=ruby",
+      { language: "ruby", section: ["thresholds"] },
+    ],
+    ["tea-rags://project/fixture/metrics?section=thresholds&section=labelMap", { section: ["thresholds", "labelMap"] }],
+    [
+      "tea-rags://project/fixture/metrics?language=ruby&section=thresholds",
+      { language: "ruby", section: ["thresholds"] },
+    ],
   ])("reads %s with the query parameters it omits left at their defaults", async (uri, query) => {
     const server = new McpServer({ name: "tea-rags-test", version: "0.0.0" });
     registerAllResources(server, fixtureApp());
@@ -87,5 +96,15 @@ describe("tea-rags://project/{alias}/metrics template", () => {
     const text = "text" in first ? first.text : "";
 
     expect(text).toBe(formatProjectMetrics(fixtureData(), { section: [], ...query }));
+  });
+
+  it("advertises exactly one metrics template", async () => {
+    const server = new McpServer({ name: "tea-rags-test", version: "0.0.0" });
+    registerAllResources(server, fixtureApp());
+    session = await connectInProcessClient(server);
+
+    const templates = (await session.listResourceTemplates()).filter((t) => t.uriTemplate.includes("/metrics"));
+
+    expect(templates.map((t) => t.uriTemplate)).toEqual(["tea-rags://project/{alias}/metrics{?language,section}"]);
   });
 });
