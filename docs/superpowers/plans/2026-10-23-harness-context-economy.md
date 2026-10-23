@@ -1054,6 +1054,38 @@ Task 14, so the Codex live test installs from the final layout.
       `npx semantic-release --dry-run --no-ci` shows the prepare step) → rule →
       commit.
 
+### Task 20: Guide prose leaves `registry.ts` — markdown templates with data placeholders
+
+Single prose source for every agent-facing resource (user decision 2026-10-23).
+Runs before Task 19 and the Codex eval run (Task 14 Step 5).
+
+**Files:**
+
+- Create:
+  `plugins/tea-rags/rules/guides/{overview,presets,signals,filters,signal-labels,search-examples,indexing}.md`
+  — the hand-written prose now inside `buildOverview`, `buildPresetsDoc`,
+  `buildSignalsDoc`, `buildFiltersDoc`, `buildSignalLabelsGuide`,
+  `buildSearchGuide`, `buildIndexingGuide`, `buildParamReference` (caveman
+  ultra, meaning preserved). Every registry-derived block becomes a placeholder
+  line `<!-- data:<key> -->` (e.g. `presets-table`, `signal-keys`,
+  `filter-fields`, `label-thresholds-example`).
+- Modify: `src/mcp/resources/registry.ts` — builders keep ONLY data rendering:
+  `renderGuideData(key, app): string` per placeholder; a builder-backed guide =
+  markdown template from `AGENT_CONTEXT_GUIDES[topic]` with every placeholder
+  substituted. Builder-backed topics are excluded from the plain
+  `AGENT_CONTEXT_GUIDES` loop (one registration per URI).
+  `guide/language-capability`, `project/*`, `schema/*` aliases unchanged.
+- Test: `tests/mcp/resources/guides.test.ts` — every placeholder in every
+  template has a renderer and is substituted (no `<!-- data:` left in any read);
+  unknown placeholder key → test failure; each guide URI registered once;
+  listing ≤ 20; spot assertions that registry data (a preset name, a signal key,
+  a filter field) still appears in the rendered guide.
+- Regenerate: `npm run gen:plugins` (agent-context picks up the new guides;
+  Codex / Cursor packages carry them where skills link them).
+
+- [ ] Steps: failing placeholder/registration tests → move prose (one guide per
+      commit-sized step) → renderers → regenerate → all tests → commit.
+
 ### Task 19: dinopowers as its own Codex / Cursor plugin
 
 Separate plugin next to tea-rags in both harness marketplaces (user decision
