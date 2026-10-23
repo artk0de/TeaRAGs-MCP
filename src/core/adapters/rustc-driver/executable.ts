@@ -175,13 +175,16 @@ function* pinnedToolchainDirs(deps: RustcDriverDiscoveryDeps, toolchainsDir: str
   }
 }
 
-/** The host triple whose lib dir carries rustc-dev (`librustc_driver-*` + `rustc_middle-*.rlib`), or null. */
+/** The host triple whose lib dir carries rustc-dev (`librustc_driver-*` + `librustc_middle-*`), or null. */
 function rustcDevHost(deps: RustcDriverDiscoveryDeps, sysroot: string): string | null {
   const rustlib = join(sysroot, "lib", "rustlib");
   for (const host of deps.fs.listDir(rustlib)) {
     const libs = deps.fs.listDir(join(rustlib, host, "lib"));
     const hasDriver = libs.some((name) => name.startsWith("librustc_driver-"));
-    const hasMiddle = libs.some((name) => name.startsWith("librustc_middle-") && name.endsWith(".rlib"));
+    // rustc-dev ships rustc_middle as an rlib or, on recent nightlies, as an rmeta only.
+    const hasMiddle = libs.some(
+      (name) => name.startsWith("librustc_middle-") && (name.endsWith(".rlib") || name.endsWith(".rmeta")),
+    );
     if (hasDriver && hasMiddle) return host;
   }
   return null;
