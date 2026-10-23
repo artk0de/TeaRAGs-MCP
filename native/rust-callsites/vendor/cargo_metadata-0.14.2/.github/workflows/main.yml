@@ -6,11 +6,11 @@ jobs:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - name: Install rust
-        run: rustup update --no-self-update stable && rustup default stable
-      - name: Check formatting
-        run: cargo fmt -- --check
+    - uses: actions/checkout@v2
+    - name: Install rust
+      run: rustup update --no-self-update stable && rustup default stable
+    - name: Check formatting
+      run: cargo fmt -- --check
 
   test:
     name: Test
@@ -23,13 +23,13 @@ jobs:
           - rust: nightly
           - rust: 1.40.0
     steps:
-      - uses: actions/checkout@v2
-      - name: Install rust
-        run: rustup update --no-self-update ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
-      - name: Run tests
-        run: |
-          cargo build --verbose
-          cargo build --verbose --no-default-features
-          cargo test --verbose
-          cargo test --verbose --no-default-features
-          cargo test --verbose --all-features
+    - uses: actions/checkout@v2
+    - name: Install rust
+      run: rustup update --no-self-update ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+    - name: Run tests
+      run: |
+        cargo build --verbose
+        cargo build --verbose --no-default-features
+        cargo test --verbose
+        cargo test --verbose --no-default-features
+        cargo test --verbose --all-features

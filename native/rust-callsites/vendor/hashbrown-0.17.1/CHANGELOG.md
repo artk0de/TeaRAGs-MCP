@@ -3,8 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
@@ -19,13 +18,10 @@ and this project adheres to
 ### Added
 
 - Added `hash_table::OccupiedEntry::replace_entry_with` (#669)
-- Added
-  `hash_map::{OccupiedEntry::into_entry, VacantEntryRef::insert_entry_with_key}`
-  (#670)
+- Added `hash_map::{OccupiedEntry::into_entry, VacantEntryRef::insert_entry_with_key}` (#670)
 - Added `hash_table::UnsafeIter` (#667)
 - Added `iter` methods to various `HashTable` iterators (#667)
-- Added `HashMap::{replace_key,replace_key_unchecked,insert_with_key_unchecked}`
-  (#681)
+- Added `HashMap::{replace_key,replace_key_unchecked,insert_with_key_unchecked}` (#681)
 - Added `into_map` methods to all `HashMap` entry types (#686)
 - Added `into_table` methods to all `HashTable` entry types (#686)
 - Added `#[must_use]` to constructors (#697)
@@ -38,8 +34,7 @@ and this project adheres to
 
 ### Fixed
 
-- `HashTable:clone_from` now forwards to `RawTable::clone_from` instead of using
-  the default implementation (#668)
+- `HashTable:clone_from` now forwards to `RawTable::clone_from` instead of using the default implementation (#668)
 - Fixed potential UB in `RawTableInner::fallible_with_capacity` (#692)
 - Fixed incorrect length if a hasher panics during rehash (#710)
 
@@ -58,7 +53,7 @@ and this project adheres to
   deprecated. (#648)
 - Recognize and use over-sized allocations when using custom allocators. (#523)
 - Depend on `serde_core` instead of `serde`. (#649)
-- Optimized `collect` on rayon parallel iterators. (#652)
+- Optimized `collect` on rayon parallel iterators. (#652) 
 
 ## [0.16.0](https://github.com/rust-lang/hashbrown/compare/v0.15.5...v0.16.0) - 2025-08-28
 
@@ -82,8 +77,7 @@ and this project adheres to
 
 ### Changed
 
-- Removed optional dependency on compiler-builtins. This only affects building
-  as part of `std`.
+- Removed optional dependency on compiler-builtins. This only affects building as part of `std`.
 
 ## [0.15.3](https://github.com/rust-lang/hashbrown/compare/v0.15.2...v0.15.3) - 2025-04-29
 
@@ -96,11 +90,9 @@ and this project adheres to
 - Optimized insertion path by avoiding an unnecessary `match_empty` (#607)
 - Increased minimum table size for small types (#615)
 - Dropped FnMut trait bounds from `ExtractIf` data structures (#616)
-- Relaxed constraint in `hash_map::EntryRef` insertion methods `K: From<&Q>` to
-  &Q: `Into<K>` (#611)
+- Relaxed constraint in `hash_map::EntryRef` insertion methods `K: From<&Q>` to &Q: `Into<K>` (#611)
 - Added allocator template argument for `rustc_iter` (#605)
-- The `allocator-api2/nightly` feature is no longer enabled by
-  `hashbrown/nightly` (#606)
+- The `allocator-api2/nightly` feature is no longer enabled by `hashbrown/nightly` (#606)
 
 ## [v0.15.2] - 2024-11-14
 
@@ -126,8 +118,7 @@ that were previously only possible on the `raw` API.
 
 ### Added
 
-- Added `borsh` feature with `BorshSerialize` and `BorshDeserialize` impls.
-  (#525)
+- Added `borsh` feature with `BorshSerialize` and `BorshDeserialize` impls. (#525)
 - Added `Assign` impls for `HashSet` operators. (#529)
 - Added `Default` impls for iterator types. (#542)
 - Added `HashTable::iter_hash{,_mut}` methods. (#549)
@@ -150,18 +141,15 @@ that were previously only possible on the `raw` API.
 
 ### Fixed
 
-- Fixed typos, stray backticks in docs. (#558, #560)
+* Fixed typos, stray backticks in docs. (#558, #560)
 
 ### Removed
 
-- Raw entry API is now under `raw-entry` feature, to be eventually removed.
-  (#534, #555)
-- Raw table API has been made private and the `raw` feature is removed; in the
-  future, all code should be using the `HashTable` API instead. (#531, #546)
-- `rykv` feature was removed; this is now provided by the `rykv` crate instead.
-  (#554)
-- `HashSet::get_or_insert_owned` was removed in favor of `get_or_insert_with`.
-  (#555)
+- Raw entry API is now under `raw-entry` feature, to be eventually removed. (#534, #555)
+- Raw table API has been made private and the `raw` feature is removed;
+  in the future, all code should be using the `HashTable` API instead. (#531, #546)
+- `rykv` feature was removed; this is now provided by the `rykv` crate instead. (#554)
+- `HashSet::get_or_insert_owned` was removed in favor of `get_or_insert_with`. (#555)
 
 ## [v0.14.5] - 2024-04-28
 
@@ -187,8 +175,7 @@ This release was _yanked_ due to a breaking change.
 
 ### Added
 
-- `HashTable` type which provides a low-level but safe API with explicit
-  hashing. (#466)
+- `HashTable` type which provides a low-level but safe API with explicit hashing. (#466)
 
 ### Fixed
 
@@ -216,43 +203,38 @@ This release was _yanked_ due to a breaking change.
 
 ### Added
 
-- Support for `allocator-api2` crate for interfacing with custom allocators on
-  stable. (#417)
+- Support for `allocator-api2` crate
+  for interfacing with custom allocators on stable. (#417)
 - Optimized implementation for ARM using NEON instructions. (#430)
 - Support for rkyv serialization. (#432)
 - `Equivalent` trait to look up values without `Borrow`. (#345)
-- `Hash{Map,Set}::raw_table_mut` is added which returns a mutable reference.
-  (#404)
+- `Hash{Map,Set}::raw_table_mut` is added which returns a mutable reference. (#404)
 - Fast path for `clear` on empty tables. (#428)
 
 ### Changed
 
 - Optimized insertion to only perform a single lookup. (#277)
-- `DrainFilter` (`drain_filter`) has been renamed to `ExtractIf` and no longer
-  drops remaining elements when the iterator is dropped. #(374)
+- `DrainFilter` (`drain_filter`) has been renamed to `ExtractIf` and no longer drops remaining
+  elements when the iterator is dropped. #(374)
 - Bumped MSRV to 1.64.0. (#431)
 - `{Map,Set}::raw_table` now returns an immutable reference. (#404)
 - `VacantEntry` and `OccupiedEntry` now use the default hasher if none is
   specified in generics. (#389)
-- `RawTable::data_start` now returns a `NonNull` to match `RawTable::data_end`.
-  (#387)
+- `RawTable::data_start` now returns a `NonNull` to match `RawTable::data_end`. (#387)
 - `RawIter::{reflect_insert, reflect_remove}` are now unsafe. (#429)
-- `RawTable::find_potential` is renamed to `find_or_find_insert_slot` and
-  returns an `InsertSlot`. (#429)
+- `RawTable::find_potential` is renamed to `find_or_find_insert_slot` and returns an `InsertSlot`. (#429)
 - `RawTable::remove` now also returns an `InsertSlot`. (#429)
-- `InsertSlot` can be used to insert an element with `RawTable::insert_in_slot`.
-  (#429)
+- `InsertSlot` can be used to insert an element with `RawTable::insert_in_slot`. (#429)
 - `RawIterHash` no longer has a lifetime tied to that of the `RawTable`. (#427)
-- The trait bounds of `HashSet::raw_table` have been relaxed to not require
-  `Eq + Hash`. (#423)
+- The trait bounds of `HashSet::raw_table` have been relaxed to not require `Eq + Hash`. (#423)
 - `EntryRef::and_replace_entry_with` and `OccupiedEntryRef::replace_entry_with`
   were changed to give a `&K` instead of a `&Q` to the closure.
 
 ### Removed
 
-- Support for `bumpalo` as an allocator with custom wrapper. Use
-  `allocator-api2` feature in `bumpalo` to use it as an allocator for
-  `hashbrown` collections. (#417)
+- Support for `bumpalo` as an allocator with custom wrapper.
+  Use `allocator-api2` feature in `bumpalo` to use it as an allocator
+  for `hashbrown` collections. (#417)
 
 ## [v0.13.2] - 2023-01-12
 
@@ -277,8 +259,7 @@ This release was _yanked_ due to a breaking change.
 - Make `with_hasher_in` const. (#355)
 - The following methods have been removed from the `RawTable` API in favor of
   safer alternatives:
-  - `RawTable::erase_no_drop` => Use `RawTable::erase` or `RawTable::remove`
-    instead.
+  - `RawTable::erase_no_drop` => Use `RawTable::erase` or `RawTable::remove` instead.
   - `Bucket::read` => Use `RawTable::remove` instead.
   - `Bucket::drop` => Use `RawTable::erase` instead.
   - `Bucket::write` => Use `Bucket::as_mut` instead.
@@ -318,8 +299,7 @@ This release was _yanked_ due to a breaking change.
 
 ### Added
 
-- Added `From<[T; N]>` and `From<[(K, V); N]>` for `HashSet` and `HashMap`
-  respectively. (#297)
+- Added `From<[T; N]>` and `From<[(K, V); N]>` for `HashSet` and `HashMap` respectively. (#297)
 - Added an `allocator()` getter to HashMap and HashSet. (#257)
 - Added `insert_unique_unchecked` to `HashMap` and `HashSet`. (#293)
 - Added `into_keys` and `into_values` to HashMap. (#295)
@@ -349,8 +329,7 @@ This release was _yanked_ due to a breaking change.
 
 ### Fixed
 
-- Added missing allocator type parameter to `HashMap`'s and `HashSet`'s `Clone`
-  impls. (#252)
+- Added missing allocator type parameter to `HashMap`'s and `HashSet`'s `Clone` impls. (#252)
 
 ## [v0.11.1] - 2021-03-20
 
@@ -361,10 +340,8 @@ This release was _yanked_ due to a breaking change.
 ## [v0.11.0] - 2021-03-14
 
 ### Added
-
 - Added safe `try_insert_no_grow` method to `RawTable`. (#229)
-- Added support for `bumpalo` as an allocator without the `nightly` feature.
-  (#231)
+- Added support for `bumpalo` as an allocator without the `nightly` feature. (#231)
 - Implemented `Default` for `RawTable`. (#237)
 - Added new safe methods `RawTable::get_each_mut`, `HashMap::get_each_mut`, and
   `HashMap::get_each_key_value_mut`. (#239)
@@ -372,29 +349,21 @@ This release was _yanked_ due to a breaking change.
 - Added `try_insert` method to `HashMap`. (#247)
 
 ### Changed
-
 - The minimum Rust version has been bumped to 1.49.0. (#230)
-- Significantly improved compilation times by reducing the amount of generated
-  IR. (#205)
+- Significantly improved compilation times by reducing the amount of generated IR. (#205)
 
 ### Removed
-
-- We no longer re-export the unstable allocator items from the standard library,
-  nor the stable shims approximating the same. (#227)
-- Removed hasher specialization support from `aHash`, which was resulting in
-  inconsistent hashes being generated for a key. (#248)
+- We no longer re-export the unstable allocator items from the standard library, nor the stable shims approximating the same. (#227)
+- Removed hasher specialization support from `aHash`, which was resulting in inconsistent hashes being generated for a key. (#248)
 
 ### Fixed
-
 - Fixed union length comparison. (#228)
 
 ## ~~[v0.10.0] - 2021-01-16~~
 
-This release was _yanked_ due to inconsistent hashes being generated with the
-`nightly` feature. (#248)
+This release was _yanked_ due to inconsistent hashes being generated with the `nightly` feature. (#248)
 
 ### Changed
-
 - Parametrized `RawTable`, `HashSet` and `HashMap` over an allocator. (#133)
 - Improved branch prediction hints on stable. (#209)
 - Optimized hashing of primitive types with AHash using specialization. (#207)
@@ -403,7 +372,6 @@ This release was _yanked_ due to inconsistent hashes being generated with the
 ## [v0.9.1] - 2020-09-28
 
 ### Added
-
 - Added safe methods to `RawTable` (#202):
   - `get`: `find` and `as_ref`
   - `get_mut`: `find` and `as_mut`
@@ -412,64 +380,53 @@ This release was _yanked_ due to inconsistent hashes being generated with the
   - `erase_entry`: `find` and `erase`
 
 ### Changed
-
 - Removed `from_key_hashed_nocheck`'s `Q: Hash`. (#200)
 - Made `RawTable::drain` safe. (#201)
 
 ## [v0.9.0] - 2020-09-03
 
 ### Fixed
-
 - `drain_filter` now removes and yields items that do match the predicate,
-  rather than items that don't. This is a **breaking change** to match the
+  rather than items that don't.  This is a **breaking change** to match the
   behavior of the `drain_filter` methods in `std`. (#187)
 
 ### Added
-
-- Added `replace_entry_with` to `OccupiedEntry`, and `and_replace_entry_with` to
-  `Entry`. (#190)
+- Added `replace_entry_with` to `OccupiedEntry`, and `and_replace_entry_with` to `Entry`. (#190)
 - Implemented `FusedIterator` and `size_hint` for `DrainFilter`. (#188)
 
 ### Changed
-
-- The minimum Rust version has been bumped to 1.36 (due to `crossbeam`
-  dependency). (#193)
+- The minimum Rust version has been bumped to 1.36 (due to `crossbeam` dependency). (#193)
 - Updated `ahash` dependency to 0.4. (#198)
 - `HashMap::with_hasher` and `HashSet::with_hasher` are now `const fn`. (#195)
 - Removed `T: Hash + Eq` and `S: BuildHasher` bounds on `HashSet::new`,
-  `with_capacity`, `with_hasher`, and `with_capacity_and_hasher`. (#185)
+  `with_capacity`, `with_hasher`, and `with_capacity_and_hasher`.  (#185)
 
 ## [v0.8.2] - 2020-08-08
 
 ### Changed
-
 - Avoid closures to improve compile times. (#183)
 - Do not iterate to drop if empty. (#182)
 
 ## [v0.8.1] - 2020-07-16
 
 ### Added
-
 - Added `erase` and `remove` to `RawTable`. (#171)
 - Added `try_with_capacity` to `RawTable`. (#174)
-- Added methods that allow re-using a `RawIter` for `RawDrain`, `RawIntoIter`,
-  and `RawParIter`. (#175)
+- Added methods that allow re-using a `RawIter` for `RawDrain`,
+  `RawIntoIter`, and `RawParIter`. (#175)
 - Added `reflect_remove` and `reflect_insert` to `RawIter`. (#175)
 - Added a `drain_filter` function to `HashSet`. (#179)
 
 ### Changed
-
 - Deprecated `RawTable::erase_no_drop` in favor of `erase` and `remove`. (#176)
 - `insert_no_grow` is now exposed under the `"raw"` feature. (#180)
 
 ## [v0.8.0] - 2020-06-18
 
 ### Fixed
-
 - Marked `RawTable::par_iter` as `unsafe`. (#157)
 
 ### Changed
-
 - Reduced the size of `HashMap`. (#159)
 - No longer create tables with a capacity of 1 element. (#162)
 - Removed `K: Eq + Hash` bounds on `retain`. (#163)
@@ -477,44 +434,35 @@ This release was _yanked_ due to inconsistent hashes being generated with the
   - `extend_one` support on nightly.
   - `CollectionAllocErr` renamed to `TryReserveError`.
   - Added `HashSet::get_or_insert_owned`.
-  - `Default` for `HashSet` no longer requires `T: Eq + Hash` and
-    `S: BuildHasher`.
+  - `Default` for `HashSet` no longer requires `T: Eq + Hash` and `S: BuildHasher`.
 
 ## [v0.7.2] - 2020-04-27
 
 ### Added
-
 - Added `or_insert_with_key` to `Entry`. (#152)
 
 ### Fixed
-
 - Partially reverted `Clone` optimization which was unsound. (#154)
 
 ### Changed
-
-- Disabled use of `const-random` by default, which prevented reproducible
-  builds. (#155)
+- Disabled use of `const-random` by default, which prevented reproducible builds. (#155)
 - Optimized `repeat` function. (#150)
 - Use `NonNull` for buckets, which improves codegen for iterators. (#148)
 
 ## [v0.7.1] - 2020-03-16
 
 ### Added
-
 - Added `HashMap::get_key_value_mut`. (#145)
 
 ### Changed
-
 - Optimized `Clone` implementation. (#146)
 
 ## [v0.7.0] - 2020-01-31
 
 ### Added
-
 - Added a `drain_filter` function to `HashMap`. (#135)
 
 ### Changed
-
 - Updated `ahash` dependency to 0.3. (#141)
 - Optimized set union and intersection. (#130)
 - `raw_entry` can now be used without requiring `S: BuildHasher`. (#123)
@@ -523,128 +471,100 @@ This release was _yanked_ due to inconsistent hashes being generated with the
 ## [v0.6.3] - 2019-10-31
 
 ### Added
-
-- Added an `ahash-compile-time-rng` feature (enabled by default) which allows
-  disabling the `compile-time-rng` feature in `ahash` to work around a Cargo
-  bug. (#125)
+- Added an `ahash-compile-time-rng` feature (enabled by default) which allows disabling the
+  `compile-time-rng` feature in `ahash` to work around a Cargo bug. (#125)
 
 ## [v0.6.2] - 2019-10-23
 
 ### Added
-
-- Added an `inline-more` feature (enabled by default) which allows choosing a
-  tradeoff between runtime performance and compilation time. (#119)
+- Added an `inline-more` feature (enabled by default) which allows choosing a tradeoff between
+  runtime performance and compilation time. (#119)
 
 ## [v0.6.1] - 2019-10-04
 
 ### Added
-
 - Added `Entry::insert` and `RawEntryMut::insert`. (#118)
 
 ### Changed
-
 - `Group::static_empty` was changed from a `const` to a `static` (#116).
 
 ## [v0.6.0] - 2019-08-13
 
 ### Fixed
-
 - Fixed AHash accidentally depending on `std`. (#110)
 
 ### Changed
-
 - The minimum Rust version has been bumped to 1.32 (due to `rand` dependency).
 
 ## ~~[v0.5.1] - 2019-08-04~~
 
-This release was _yanked_ due to a breaking change for users of
-`no-default-features`.
+This release was _yanked_ due to a breaking change for users of `no-default-features`.
 
 ### Added
-
-- The experimental and unsafe `RawTable` API is available under the "raw"
-  feature. (#108)
+- The experimental and unsafe `RawTable` API is available under the "raw" feature. (#108)
 - Added entry-like methods for `HashSet`. (#98)
 
 ### Changed
-
 - Changed the default hasher from FxHash to AHash. (#97)
 - `hashbrown` is now fully `no_std` on recent Rust versions (1.36+). (#96)
 
 ### Fixed
-
-- We now avoid growing the table during insertions when it wasn't necessary.
-  (#106)
+- We now avoid growing the table during insertions when it wasn't necessary. (#106)
 - `RawOccupiedEntryMut` now properly implements `Send` and `Sync`. (#100)
 - Relaxed `lazy_static` version. (#92)
 
 ## [v0.5.0] - 2019-06-12
 
 ### Fixed
-
 - Resize with a more conservative amount of space after deletions. (#86)
 
 ### Changed
-
-- Exposed the Layout of the failed allocation in CollectionAllocErr::AllocErr.
-  (#89)
+- Exposed the Layout of the failed allocation in CollectionAllocErr::AllocErr. (#89)
 
 ## [v0.4.0] - 2019-05-30
 
 ### Fixed
-
 - Fixed `Send` trait bounds on `IterMut` not matching the libstd one. (#82)
 
 ## [v0.3.1] - 2019-05-30
 
 ### Fixed
-
 - Fixed incorrect use of slice in unsafe code. (#80)
 
 ## [v0.3.0] - 2019-04-23
 
 ### Changed
-
 - Changed shrink_to to not panic if min_capacity < capacity. (#67)
 
 ### Fixed
-
 - Worked around emscripten bug emscripten-core/emscripten-fastcomp#258. (#66)
 
 ## [v0.2.2] - 2019-04-16
 
 ### Fixed
-
 - Inlined non-nightly lowest_set_bit_nonzero. (#64)
 - Fixed build on latest nightly. (#65)
 
 ## [v0.2.1] - 2019-04-14
 
 ### Changed
-
 - Use for_each in map Extend and FromIterator. (#58)
 - Improved worst-case performance of HashSet.is_subset. (#61)
 
 ### Fixed
-
 - Removed incorrect debug_assert. (#60)
 
 ## [v0.2.0] - 2019-03-31
 
 ### Changed
-
 - The code has been updated to Rust 2018 edition. This means that the minimum
   Rust version has been bumped to 1.31 (2018 edition).
 
 ### Added
-
-- Added `insert_with_hasher` to the raw_entry API to allow `K: !(Hash + Eq)`.
-  (#54)
-- Added support for using hashbrown as the hash table implementation in libstd.
-  (#46)
+- Added `insert_with_hasher` to the raw_entry API to allow `K: !(Hash + Eq)`. (#54)
+- Added support for using hashbrown as the hash table implementation in libstd. (#46)
 
 ### Fixed
-
 - Fixed cargo build with minimal-versions. (#45)
 - Fixed `#[may_dangle]` attributes to match the libstd `HashMap`. (#46)
 - ZST keys and values are now handled properly. (#46)
@@ -652,61 +572,51 @@ This release was _yanked_ due to a breaking change for users of
 ## [v0.1.8] - 2019-01-14
 
 ### Added
-
 - Rayon parallel iterator support (#37)
 - `raw_entry` support (#31)
 - `#[may_dangle]` on nightly (#31)
 - `try_reserve` support (#31)
 
 ### Fixed
-
 - Fixed variance on `IterMut`. (#31)
 
 ## [v0.1.7] - 2018-12-05
 
 ### Fixed
-
 - Fixed non-SSE version of convert_special_to_empty_and_full_to_deleted. (#32)
 - Fixed overflow in rehash_in_place. (#33)
 
 ## [v0.1.6] - 2018-11-17
 
 ### Fixed
-
 - Fixed compile error on nightly. (#29)
 
 ## [v0.1.5] - 2018-11-08
 
 ### Fixed
-
 - Fixed subtraction overflow in generic::Group::match_byte. (#28)
 
 ## [v0.1.4] - 2018-11-04
 
 ### Fixed
-
 - Fixed a bug in the `erase_no_drop` implementation. (#26)
 
 ## [v0.1.3] - 2018-11-01
 
 ### Added
-
 - Serde support. (#14)
 
 ### Fixed
-
 - Make the compiler inline functions more aggressively. (#20)
 
 ## [v0.1.2] - 2018-10-31
 
 ### Fixed
-
 - `clear` segfaults when called on an empty table. (#13)
 
 ## [v0.1.1] - 2018-10-30
 
 ### Fixed
-
 - `erase_no_drop` optimization not triggering in the SSE2 implementation. (#3)
 - Missing `Send` and `Sync` for hash map and iterator types. (#7)
 - Bug when inserting into a table smaller than the group width. (#5)

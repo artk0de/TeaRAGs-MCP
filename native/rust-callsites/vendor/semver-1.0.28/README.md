@@ -1,4 +1,5 @@
-# semver
+semver
+======
 
 [<img alt="github" src="https://img.shields.io/badge/github-dtolnay/semver-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/dtolnay/semver)
 [<img alt="crates.io" src="https://img.shields.io/crates/v/semver.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/semver)
@@ -58,11 +59,10 @@ spec, this crate follows the implementation choices made by Cargo. If you are
 operating on version numbers from some other package ecosystem, you will want to
 use a different semver library which is appropriate to that ecosystem.
 
-The extent of Cargo's SemVer support is documented in the _[Specifying
-Dependencies]_ chapter of the Cargo reference.
+The extent of Cargo's SemVer support is documented in the *[Specifying
+Dependencies]* chapter of the Cargo reference.
 
-[Specifying Dependencies]:
-  https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html
+[Specifying Dependencies]: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html
 
 <br>
 

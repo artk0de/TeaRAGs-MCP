@@ -8,6 +8,10 @@ coverage/
 .worktrees/
 .claude/worktrees/
 
+# Vendored third-party crates: cargo verifies every file against
+# .cargo-checksum.json, so a reformat breaks `cargo build --offline`.
+native/*/vendor/
+
 # Docusaurus markdown uses admonition syntax (:::tip, :::warning, etc.)
 # that prettier collapses into a single line, breaking Docusaurus parsing.
 website/docs/**/*.md

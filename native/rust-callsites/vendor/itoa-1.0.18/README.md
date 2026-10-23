@@ -1,4 +1,5 @@
-# itoa
+itoa
+====
 
 [<img alt="github" src="https://img.shields.io/badge/github-dtolnay/itoa-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/dtolnay/itoa)
 [<img alt="crates.io" src="https://img.shields.io/crates/v/itoa.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/itoa)
@@ -11,10 +12,8 @@ penalty of going through [`core::fmt::Formatter`].
 
 See also [`zmij`] for printing floating point primitives.
 
-[libcore]:
-  https://github.com/rust-lang/rust/blob/1.92.0/library/core/src/fmt/num.rs#L190-L253
-[`core::fmt::Formatter`]:
-  https://doc.rust-lang.org/std/fmt/struct.Formatter.html
+[libcore]: https://github.com/rust-lang/rust/blob/1.92.0/library/core/src/fmt/num.rs#L190-L253
+[`core::fmt::Formatter`]: https://doc.rust-lang.org/std/fmt/struct.Formatter.html
 [`zmij`]: https://github.com/dtolnay/zmij
 
 ```toml

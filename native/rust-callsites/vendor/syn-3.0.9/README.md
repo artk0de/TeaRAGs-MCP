@@ -1,4 +1,5 @@
-# Parser for Rust source code
+Parser for Rust source code
+===========================
 
 [<img alt="github" src="https://img.shields.io/badge/github-dtolnay/syn-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/dtolnay/syn)
 [<img alt="crates.io" src="https://img.shields.io/crates/v/syn.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/syn)
@@ -45,7 +46,7 @@ contains some APIs that may be useful more generally.
 [`syn::DeriveInput`]: https://docs.rs/syn/3/syn/struct.DeriveInput.html
 [parser functions]: https://docs.rs/syn/3/syn/parse/index.html
 
-[_Release notes_](https://github.com/dtolnay/syn/releases)
+[*Release notes*](https://github.com/dtolnay/syn/releases)
 
 <br>
 
@@ -218,9 +219,8 @@ longer trigger or be less helpful than it used to be.
 ## Debugging
 
 When developing a procedural macro it can be helpful to look at what the
-generated code looks like. Use
-`cargo rustc -- -Zunstable-options -Zunpretty=expanded` or the [`cargo expand`]
-subcommand.
+generated code looks like. Use `cargo rustc -- -Zunstable-options
+-Zunpretty=expanded` or the [`cargo expand`] subcommand.
 
 [`cargo expand`]: https://github.com/dtolnay/cargo-expand
 
@@ -232,8 +232,7 @@ the name of the test file without the `.rs` extension.
 This write-up by Brandon W Maister discusses debugging in more detail:
 [Debugging Rust's new Custom Derive system][debugging].
 
-[debugging]:
-  https://quodlibetor.github.io/posts/debugging-rusts-new-custom-derive-system/
+[debugging]: https://quodlibetor.github.io/posts/debugging-rusts-new-custom-derive-system/
 
 <br>
 
@@ -243,22 +242,22 @@ Syn puts a lot of functionality behind optional features in order to optimize
 compile time for the most common use cases. The following features are
 available.
 
-- **`derive`** _(enabled by default)_ — Data structures for representing the
+- **`derive`** *(enabled by default)* — Data structures for representing the
   possible input to a derive macro, including structs and enums and types.
 - **`full`** — Data structures for representing the syntax tree of all valid
   Rust source code, including items and expressions.
-- **`parsing`** _(enabled by default)_ — Ability to parse input tokens into a
+- **`parsing`** *(enabled by default)* — Ability to parse input tokens into a
   syntax tree node of a chosen type.
-- **`printing`** _(enabled by default)_ — Ability to print a syntax tree node as
+- **`printing`** *(enabled by default)* — Ability to print a syntax tree node as
   tokens of Rust source code.
 - **`visit`** — Trait for traversing a syntax tree.
 - **`visit-mut`** — Trait for traversing and mutating in place a syntax tree.
 - **`fold`** — Trait for transforming an owned syntax tree.
-- **`clone-impls`** _(enabled by default)_ — Clone impls for all syntax tree
+- **`clone-impls`** *(enabled by default)* — Clone impls for all syntax tree
   types.
 - **`extra-traits`** — Debug, Eq, PartialEq, Hash impls for all syntax tree
   types.
-- **`proc-macro`** _(enabled by default)_ — Runtime dependency on the dynamic
+- **`proc-macro`** *(enabled by default)* — Runtime dependency on the dynamic
   library libproc_macro from rustc toolchain.
 
 <br>

@@ -99,9 +99,9 @@ a.struct[title="struct syn::token::Virtual"],
 a.struct[title="struct syn::token::Where"],
 a.struct[title="struct syn::token::While"],
 a.struct[title="struct syn::token::Yield"] {
-  display: inline-block;
-  color: transparent;
-  white-space: nowrap;
+	display: inline-block;
+	color: transparent;
+	white-space: nowrap;
 }
 
 a.struct[title="struct syn::token::Abstract"]::before,
@@ -205,429 +205,429 @@ a.struct[title="struct syn::token::Virtual"]::before,
 a.struct[title="struct syn::token::Where"]::before,
 a.struct[title="struct syn::token::While"]::before,
 a.struct[title="struct syn::token::Yield"]::before {
-  display: inline-block;
-  color: var(--type-link-color);
-  width: 0;
+	display: inline-block;
+	color: var(--type-link-color);
+	width: 0;
 }
 
 a.struct[title="struct syn::token::Abstract"]::before {
-  content: "Token![abstract]";
+	content: "Token![abstract]";
 }
 
 a.struct[title="struct syn::token::And"]::before {
-  content: "Token![&]";
+	content: "Token![&]";
 }
 
 a.struct[title="struct syn::token::AndAnd"]::before {
-  content: "Token![&&]";
+	content: "Token![&&]";
 }
 
 a.struct[title="struct syn::token::AndEq"]::before {
-  content: "Token![&=]";
+	content: "Token![&=]";
 }
 
 a.struct[title="struct syn::token::As"]::before {
-  content: "Token![as]";
+	content: "Token![as]";
 }
 
 a.struct[title="struct syn::token::Async"]::before {
-  content: "Token![async]";
+	content: "Token![async]";
 }
 
 a.struct[title="struct syn::token::At"]::before {
-  content: "Token![@]";
+	content: "Token![@]";
 }
 
 a.struct[title="struct syn::token::Auto"]::before {
-  content: "Token![auto]";
+	content: "Token![auto]";
 }
 
 a.struct[title="struct syn::token::Await"]::before {
-  content: "Token![await]";
+	content: "Token![await]";
 }
 
 a.struct[title="struct syn::token::Become"]::before {
-  content: "Token![become]";
+	content: "Token![become]";
 }
 
 a.struct[title="struct syn::token::Box"]::before {
-  content: "Token![box]";
+	content: "Token![box]";
 }
 
 a.struct[title="struct syn::token::Break"]::before {
-  content: "Token![break]";
+	content: "Token![break]";
 }
 
 a.struct[title="struct syn::token::Caret"]::before {
-  content: "Token![^]";
+	content: "Token![^]";
 }
 
 a.struct[title="struct syn::token::CaretEq"]::before {
-  content: "Token![^=]";
+	content: "Token![^=]";
 }
 
 a.struct[title="struct syn::token::Colon"]::before {
-  content: "Token![:]";
+	content: "Token![:]";
 }
 
 a.struct[title="struct syn::token::Comma"]::before {
-  content: "Token![,]";
+	content: "Token![,]";
 }
 
 a.struct[title="struct syn::token::Const"]::before {
-  content: "Token![const]";
+	content: "Token![const]";
 }
 
 a.struct[title="struct syn::token::Continue"]::before {
-  content: "Token![continue]";
+	content: "Token![continue]";
 }
 
 a.struct[title="struct syn::token::Crate"]::before {
-  content: "Token![crate]";
+	content: "Token![crate]";
 }
 
 a.struct[title="struct syn::token::Default"]::before {
-  content: "Token![default]";
+	content: "Token![default]";
 }
 
 a.struct[title="struct syn::token::Do"]::before {
-  content: "Token![do]";
+	content: "Token![do]";
 }
 
 a.struct[title="struct syn::token::Dollar"]::before {
-  content: "Token![$]";
+	content: "Token![$]";
 }
 
 a.struct[title="struct syn::token::Dot"]::before {
-  content: "Token![.]";
+	content: "Token![.]";
 }
 
 a.struct[title="struct syn::token::DotDot"]::before {
-  content: "Token![..]";
+	content: "Token![..]";
 }
 
 a.struct[title="struct syn::token::DotDotDot"]::before {
-  content: "Token![...]";
+	content: "Token![...]";
 }
 
 a.struct[title="struct syn::token::DotDotEq"]::before {
-  content: "Token![..=]";
+	content: "Token![..=]";
 }
 
 a.struct[title="struct syn::token::Dyn"]::before {
-  content: "Token![dyn]";
+	content: "Token![dyn]";
 }
 
 a.struct[title="struct syn::token::Else"]::before {
-  content: "Token![else]";
+	content: "Token![else]";
 }
 
 a.struct[title="struct syn::token::Enum"]::before {
-  content: "Token![enum]";
+	content: "Token![enum]";
 }
 
 a.struct[title="struct syn::token::Eq"]::before {
-  content: "Token![=]";
+	content: "Token![=]";
 }
 
 a.struct[title="struct syn::token::EqEq"]::before {
-  content: "Token![==]";
+	content: "Token![==]";
 }
 
 a.struct[title="struct syn::token::Extern"]::before {
-  content: "Token![extern]";
+	content: "Token![extern]";
 }
 
 a.struct[title="struct syn::token::FatArrow"]::before {
-  content: "Token![=>]";
+	content: "Token![=>]";
 }
 
 a.struct[title="struct syn::token::Final"]::before {
-  content: "Token![final]";
+	content: "Token![final]";
 }
 
 a.struct[title="struct syn::token::Fn"]::before {
-  content: "Token![fn]";
+	content: "Token![fn]";
 }
 
 a.struct[title="struct syn::token::For"]::before {
-  content: "Token![for]";
+	content: "Token![for]";
 }
 
 a.struct[title="struct syn::token::Ge"]::before {
-  content: "Token![>=]";
+	content: "Token![>=]";
 }
 
 a.struct[title="struct syn::token::Gt"]::before {
-  content: "Token![>]";
+	content: "Token![>]";
 }
 
 a.struct[title="struct syn::token::If"]::before {
-  content: "Token![if]";
+	content: "Token![if]";
 }
 
 a.struct[title="struct syn::token::Impl"]::before {
-  content: "Token![impl]";
+	content: "Token![impl]";
 }
 
 a.struct[title="struct syn::token::In"]::before {
-  content: "Token![in]";
+	content: "Token![in]";
 }
 
 a.struct[title="struct syn::token::LArrow"]::before {
-  content: "Token![<-]";
+	content: "Token![<-]";
 }
 
 a.struct[title="struct syn::token::Le"]::before {
-  content: "Token![<=]";
+	content: "Token![<=]";
 }
 
 a.struct[title="struct syn::token::Let"]::before {
-  content: "Token![let]";
+	content: "Token![let]";
 }
 
 a.struct[title="struct syn::token::Loop"]::before {
-  content: "Token![loop]";
+	content: "Token![loop]";
 }
 
 a.struct[title="struct syn::token::Lt"]::before {
-  content: "Token![<]";
+	content: "Token![<]";
 }
 
 a.struct[title="struct syn::token::Macro"]::before {
-  content: "Token![macro]";
+	content: "Token![macro]";
 }
 
 a.struct[title="struct syn::token::Match"]::before {
-  content: "Token![match]";
+	content: "Token![match]";
 }
 
 a.struct[title="struct syn::token::Minus"]::before {
-  content: "Token![-]";
+	content: "Token![-]";
 }
 
 a.struct[title="struct syn::token::MinusEq"]::before {
-  content: "Token![-=]";
+	content: "Token![-=]";
 }
 
 a.struct[title="struct syn::token::Mod"]::before {
-  content: "Token![mod]";
+	content: "Token![mod]";
 }
 
 a.struct[title="struct syn::token::Move"]::before {
-  content: "Token![move]";
+	content: "Token![move]";
 }
 
 a.struct[title="struct syn::token::Mut"]::before {
-  content: "Token![mut]";
+	content: "Token![mut]";
 }
 
 a.struct[title="struct syn::token::Ne"]::before {
-  content: "Token![!=]";
+	content: "Token![!=]";
 }
 
 a.struct[title="struct syn::token::Not"]::before {
-  content: "Token![!]";
+	content: "Token![!]";
 }
 
 a.struct[title="struct syn::token::Or"]::before {
-  content: "Token![|]";
+	content: "Token![|]";
 }
 
 a.struct[title="struct syn::token::OrEq"]::before {
-  content: "Token![|=]";
+	content: "Token![|=]";
 }
 
 a.struct[title="struct syn::token::OrOr"]::before {
-  content: "Token![||]";
+	content: "Token![||]";
 }
 
 a.struct[title="struct syn::token::Override"]::before {
-  content: "Token![override]";
+	content: "Token![override]";
 }
 
 a.struct[title="struct syn::token::PathSep"]::before {
-  content: "Token![::]";
+	content: "Token![::]";
 }
 
 a.struct[title="struct syn::token::Percent"]::before {
-  content: "Token![%]";
+	content: "Token![%]";
 }
 
 a.struct[title="struct syn::token::PercentEq"]::before {
-  content: "Token![%=]";
+	content: "Token![%=]";
 }
 
 a.struct[title="struct syn::token::Plus"]::before {
-  content: "Token![+]";
+	content: "Token![+]";
 }
 
 a.struct[title="struct syn::token::PlusEq"]::before {
-  content: "Token![+=]";
+	content: "Token![+=]";
 }
 
 a.struct[title="struct syn::token::Pound"]::before {
-  content: "Token![#]";
+	content: "Token![#]";
 }
 
 a.struct[title="struct syn::token::Priv"]::before {
-  content: "Token![priv]";
+	content: "Token![priv]";
 }
 
 a.struct[title="struct syn::token::Pub"]::before {
-  content: "Token![pub]";
+	content: "Token![pub]";
 }
 
 a.struct[title="struct syn::token::Question"]::before {
-  content: "Token![?]";
+	content: "Token![?]";
 }
 
 a.struct[title="struct syn::token::RArrow"]::before {
-  content: "Token![->]";
+	content: "Token![->]";
 }
 
 a.struct[title="struct syn::token::Raw"]::before {
-  content: "Token![raw]";
+	content: "Token![raw]";
 }
 
 a.struct[title="struct syn::token::Ref"]::before {
-  content: "Token![ref]";
+	content: "Token![ref]";
 }
 
 a.struct[title="struct syn::token::Return"]::before {
-  content: "Token![return]";
+	content: "Token![return]";
 }
 
 a.struct[title="struct syn::token::Safe"]::before {
-  content: "Token![safe]";
+	content: "Token![safe]";
 }
 
 a.struct[title="struct syn::token::SelfType"]::before {
-  content: "Token![Self]";
+	content: "Token![Self]";
 }
 
 a.struct[title="struct syn::token::SelfValue"]::before {
-  content: "Token![self]";
+	content: "Token![self]";
 }
 
 a.struct[title="struct syn::token::Semi"]::before {
-  content: "Token![;]";
+	content: "Token![;]";
 }
 
 a.struct[title="struct syn::token::Shl"]::before {
-  content: "Token![<<]";
+	content: "Token![<<]";
 }
 
 a.struct[title="struct syn::token::ShlEq"]::before {
-  content: "Token![<<=]";
+	content: "Token![<<=]";
 }
 
 a.struct[title="struct syn::token::Shr"]::before {
-  content: "Token![>>]";
+	content: "Token![>>]";
 }
 
 a.struct[title="struct syn::token::ShrEq"]::before {
-  content: "Token![>>=]";
+	content: "Token![>>=]";
 }
 
 a.struct[title="struct syn::token::Slash"]::before {
-  content: "Token![/]";
+	content: "Token![/]";
 }
 
 a.struct[title="struct syn::token::SlashEq"]::before {
-  content: "Token![/=]";
+	content: "Token![/=]";
 }
 
 a.struct[title="struct syn::token::Star"]::before {
-  content: "Token![*]";
+	content: "Token![*]";
 }
 
 a.struct[title="struct syn::token::StarEq"]::before {
-  content: "Token![*=]";
+	content: "Token![*=]";
 }
 
 a.struct[title="struct syn::token::Static"]::before {
-  content: "Token![static]";
+	content: "Token![static]";
 }
 
 a.struct[title="struct syn::token::Struct"]::before {
-  content: "Token![struct]";
+	content: "Token![struct]";
 }
 
 a.struct[title="struct syn::token::Super"]::before {
-  content: "Token![super]";
+	content: "Token![super]";
 }
 
 a.struct[title="struct syn::token::Tilde"]::before {
-  content: "Token![~]";
+	content: "Token![~]";
 }
 
 a.struct[title="struct syn::token::Trait"]::before {
-  content: "Token![trait]";
+	content: "Token![trait]";
 }
 
 a.struct[title="struct syn::token::Try"]::before {
-  content: "Token![try]";
+	content: "Token![try]";
 }
 
 a.struct[title="struct syn::token::Type"]::before {
-  content: "Token![type]";
+	content: "Token![type]";
 }
 
 a.struct[title="struct syn::token::Typeof"]::before {
-  content: "Token![typeof]";
+	content: "Token![typeof]";
 }
 
 a.struct[title="struct syn::token::Underscore"]::before {
-  content: "Token![_]";
-  font-size: calc(100% * 10 / 9);
+	content: "Token![_]";
+	font-size: calc(100% * 10 / 9);
 }
 
 a.struct[title="struct syn::token::Union"]::before {
-  content: "Token![union]";
+	content: "Token![union]";
 }
 
 a.struct[title="struct syn::token::Unsafe"]::before {
-  content: "Token![unsafe]";
+	content: "Token![unsafe]";
 }
 
 a.struct[title="struct syn::token::Unsized"]::before {
-  content: "Token![unsized]";
+	content: "Token![unsized]";
 }
 
 a.struct[title="struct syn::token::Use"]::before {
-  content: "Token![use]";
+	content: "Token![use]";
 }
 
 a.struct[title="struct syn::token::Virtual"]::before {
-  content: "Token![virtual]";
+	content: "Token![virtual]";
 }
 
 a.struct[title="struct syn::token::Where"]::before {
-  content: "Token![where]";
+	content: "Token![where]";
 }
 
 a.struct[title="struct syn::token::While"]::before {
-  content: "Token![while]";
+	content: "Token![while]";
 }
 
 a.struct[title="struct syn::token::Yield"]::before {
-  content: "Token![yield]";
+	content: "Token![yield]";
 }
 
 a.struct[title="struct syn::token::Underscore"] {
-  font-size: calc(100% * 9 / 10);
+	font-size: calc(100% * 9 / 10);
 }
 
 a.struct[title="struct syn::token::PercentEq"]::after,
 a.struct[title="struct syn::token::Question"]::after {
-  content: ".";
+	content: ".";
 }
 
 a.struct[title="struct syn::token::DotDotDot"]::after,
 a.struct[title="struct syn::token::FatArrow"]::after,
 a.struct[title="struct syn::token::Percent"]::after {
-  content: "..";
+	content: "..";
 }
 
 a.struct[title="struct syn::token::CaretEq"]::after,
@@ -637,7 +637,7 @@ a.struct[title="struct syn::token::MinusEq"]::after,
 a.struct[title="struct syn::token::PathSep"]::after,
 a.struct[title="struct syn::token::SelfValue"]::after,
 a.struct[title="struct syn::token::SlashEq"]::after {
-  content: "...";
+	content: "...";
 }
 
 a.struct[title="struct syn::token::AndAnd"]::after,
@@ -654,14 +654,14 @@ a.struct[title="struct syn::token::SelfType"]::after,
 a.struct[title="struct syn::token::Slash"]::after,
 a.struct[title="struct syn::token::StarEq"]::after,
 a.struct[title="struct syn::token::Tilde"]::after {
-  content: "....";
+	content: "....";
 }
 
 a.struct[title="struct syn::token::AndEq"]::after,
 a.struct[title="struct syn::token::Plus"]::after,
 a.struct[title="struct syn::token::Semi"]::after,
 a.struct[title="struct syn::token::Star"]::after {
-  content: ".....";
+	content: ".....";
 }
 
 a.struct[title="struct syn::token::And"]::after,
@@ -672,7 +672,7 @@ a.struct[title="struct syn::token::OrEq"]::after,
 a.struct[title="struct syn::token::OrOr"]::after,
 a.struct[title="struct syn::token::ShlEq"]::after,
 a.struct[title="struct syn::token::ShrEq"]::after {
-  content: "......";
+	content: "......";
 }
 
 a.struct[title="struct syn::token::At"]::after,
@@ -682,7 +682,7 @@ a.struct[title="struct syn::token::Lt"]::after,
 a.struct[title="struct syn::token::Or"]::after,
 a.struct[title="struct syn::token::Shl"]::after,
 a.struct[title="struct syn::token::Shr"]::after {
-  content: ".......";
+	content: ".......";
 }
 
 a.struct[title="struct syn::token::Abstract"]::after,
@@ -740,5 +740,5 @@ a.struct[title="struct syn::token::Virtual"]::after,
 a.struct[title="struct syn::token::Where"]::after,
 a.struct[title="struct syn::token::While"]::after,
 a.struct[title="struct syn::token::Yield"]::after {
-  content: "........";
+	content: "........";
 }

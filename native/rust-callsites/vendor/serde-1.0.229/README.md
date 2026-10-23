@@ -1,19 +1,15 @@
 # Serde &emsp; [![Build Status]][actions] [![Latest Version]][crates.io] [![serde msrv]][Rust 1.56] [![serde_derive msrv]][Rust 1.71]
 
-[Build Status]:
-  https://img.shields.io/github/actions/workflow/status/serde-rs/serde/ci.yml?branch=master
+[Build Status]: https://img.shields.io/github/actions/workflow/status/serde-rs/serde/ci.yml?branch=master
 [actions]: https://github.com/serde-rs/serde/actions?query=branch%3Amaster
 [Latest Version]: https://img.shields.io/crates/v/serde.svg
 [crates.io]: https://crates.io/crates/serde
-[serde msrv]:
-  https://img.shields.io/crates/msrv/serde.svg?label=serde%20msrv&color=lightgray
-[serde_derive msrv]:
-  https://img.shields.io/crates/msrv/serde_derive.svg?label=serde_derive%20msrv&color=lightgray
+[serde msrv]: https://img.shields.io/crates/msrv/serde.svg?label=serde%20msrv&color=lightgray
+[serde_derive msrv]: https://img.shields.io/crates/msrv/serde_derive.svg?label=serde_derive%20msrv&color=lightgray
 [Rust 1.56]: https://blog.rust-lang.org/2021/10/21/Rust-1.56.0/
 [Rust 1.71]: https://blog.rust-lang.org/2023/07/13/Rust-1.71.0/
 
-**Serde is a framework for *ser*ializing and *de*serializing Rust data
-structures efficiently and generically.**
+**Serde is a framework for *ser*ializing and *de*serializing Rust data structures efficiently and generically.**
 
 ---
 
@@ -91,12 +87,9 @@ asynchronous, consider the [\[rust\] tag on StackOverflow][stackoverflow], the
 repo but they tend not to get as many eyes as any of the above and may get
 closed without a response after some time.
 
-[#rust-questions]:
-  https://discord.com/channels/273534239310479360/274215136414400513
-[#rust-beginners]:
-  https://discord.com/channels/273534239310479360/273541522815713281
-[#rust-usage]:
-  https://discord.com/channels/442252698964721669/443150878111694848
+[#rust-questions]: https://discord.com/channels/273534239310479360/274215136414400513
+[#rust-beginners]: https://discord.com/channels/273534239310479360/273541522815713281
+[#rust-usage]: https://discord.com/channels/442252698964721669/443150878111694848
 [#beginners]: https://discord.com/channels/442252698964721669/448238009733742612
 [zulip]: https://rust-lang.zulipchat.com/#narrow/stream/122651-general
 [stackoverflow]: https://stackoverflow.com/questions/tagged/rust

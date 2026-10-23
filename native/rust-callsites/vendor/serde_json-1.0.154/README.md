@@ -1,13 +1,11 @@
 # Serde JSON &emsp; [![Build Status]][actions] [![Latest Version]][crates.io]
 
-[Build Status]:
-  https://img.shields.io/github/actions/workflow/status/serde-rs/json/ci.yml?branch=master
+[Build Status]: https://img.shields.io/github/actions/workflow/status/serde-rs/json/ci.yml?branch=master
 [actions]: https://github.com/serde-rs/json/actions?query=branch%3Amaster
 [Latest Version]: https://img.shields.io/crates/v/serde_json.svg
-[crates.io]: https://crates.io/crates/serde_json
+[crates.io]: https://crates.io/crates/serde\_json
 
-**Serde is a framework for *ser*ializing and *de*serializing Rust data
-structures efficiently and generically.**
+**Serde is a framework for *ser*ializing and *de*serializing Rust data structures efficiently and generically.**
 
 ---
 
@@ -29,28 +27,31 @@ transmit data objects consisting of key-value pairs.
 
 ```json
 {
-  "name": "John Doe",
-  "age": 43,
-  "address": {
-    "street": "10 Downing Street",
-    "city": "London"
-  },
-  "phones": ["+44 1234567", "+44 2345678"]
+    "name": "John Doe",
+    "age": 43,
+    "address": {
+        "street": "10 Downing Street",
+        "city": "London"
+    },
+    "phones": [
+        "+44 1234567",
+        "+44 2345678"
+    ]
 }
 ```
 
 There are three common ways that you might find yourself needing to work with
 JSON data in Rust.
 
-- **As text data.** An unprocessed string of JSON data that you receive on an
-  HTTP endpoint, read from a file, or prepare to send to a remote server.
-- **As an untyped or loosely typed representation.** Maybe you want to check
-  that some JSON data is valid before passing it on, but without knowing the
-  structure of what it contains. Or you want to do very basic manipulations like
-  insert a key in a particular spot.
-- **As a strongly typed Rust data structure.** When you expect all or most of
-  your data to conform to a particular structure and want to get real work done
-  without JSON's loosey-goosey nature tripping you up.
+ - **As text data.** An unprocessed string of JSON data that you receive on an
+   HTTP endpoint, read from a file, or prepare to send to a remote server.
+ - **As an untyped or loosely typed representation.** Maybe you want to check
+   that some JSON data is valid before passing it on, but without knowing the
+   structure of what it contains. Or you want to do very basic manipulations
+   like insert a key in a particular spot.
+ - **As a strongly typed Rust data structure.** When you expect all or most of
+   your data to conform to a particular structure and want to get real work done
+   without JSON's loosey-goosey nature tripping you up.
 
 Serde JSON provides efficient, flexible, safe ways of converting data between
 each of these representations.
@@ -123,8 +124,7 @@ without quotation marks involves converting from a JSON string to a Rust string
 with [`as_str()`] or avoiding the use of `Value` as described in the following
 section.
 
-[`as_str()`]:
-  https://docs.rs/serde_json/1/serde_json/enum.Value.html#method.as_str
+[`as_str()`]: https://docs.rs/serde_json/1/serde_json/enum.Value.html#method.as_str
 
 The `Value` representation is sufficient for very basic tasks but can be tedious
 to work with for anything more significant. Error handling is verbose to
@@ -197,8 +197,8 @@ representation. And the Rust compiler can check that when we write
 `p.phones[0]`, then `p.phones` is guaranteed to be a `Vec<String>` so indexing
 into it makes sense and produces a `String`.
 
-The necessary setup for using Serde's derive macros is explained on the _[Using
-derive]_ page of the Serde site.
+The necessary setup for using Serde's derive macros is explained on the *[Using
+derive]* page of the Serde site.
 
 [Using derive]: https://serde.rs/derive.html
 
@@ -272,8 +272,8 @@ text.
 A data structure can be converted to a JSON string by
 [`serde_json::to_string`][to_string]. There is also
 [`serde_json::to_vec`][to_vec] which serializes to a `Vec<u8>` and
-[`serde_json::to_writer`][to_writer] which serializes to any `io::Write` such as
-a File or a TCP stream.
+[`serde_json::to_writer`][to_writer] which serializes to any `io::Write`
+such as a File or a TCP stream.
 
 <div align="right">
 <a href="https://play.rust-lang.org/?edition=2018&gist=3472242a08ed2ff88a944f2a2283b0ee" target="_blank">
@@ -309,9 +309,8 @@ fn print_an_address() -> Result<()> {
 ```
 
 Any type that implements Serde's `Serialize` trait can be serialized this way.
-This includes built-in Rust standard library types like `Vec<T>` and
-`HashMap<K, V>`, as well as any structs or enums annotated with
-`#[derive(Serialize)]`.
+This includes built-in Rust standard library types like `Vec<T>` and `HashMap<K,
+V>`, as well as any structs or enums annotated with `#[derive(Serialize)]`.
 
 ## Performance
 
@@ -337,12 +336,9 @@ asynchronous, consider the [\[rust\] tag on StackOverflow][stackoverflow], the
 repo, but they tend not to get as many eyes as any of the above and may get
 closed without a response after some time.
 
-[#rust-questions]:
-  https://discord.com/channels/273534239310479360/274215136414400513
-[#rust-beginners]:
-  https://discord.com/channels/273534239310479360/273541522815713281
-[#rust-usage]:
-  https://discord.com/channels/442252698964721669/443150878111694848
+[#rust-questions]: https://discord.com/channels/273534239310479360/274215136414400513
+[#rust-beginners]: https://discord.com/channels/273534239310479360/273541522815713281
+[#rust-usage]: https://discord.com/channels/442252698964721669/443150878111694848
 [#beginners]: https://discord.com/channels/442252698964721669/448238009733742612
 [zulip]: https://rust-lang.zulipchat.com/#narrow/stream/122651-general
 [stackoverflow]: https://stackoverflow.com/questions/tagged/rust
@@ -364,6 +360,7 @@ For JSON support in Serde without a memory allocator, please see the
 [`serde-json-core`] crate.
 
 [`serde-json-core`]: https://github.com/rust-embedded-community/serde-json-core
+
 [value]: https://docs.rs/serde_json/1/serde_json/value/enum.Value.html
 [from_str]: https://docs.rs/serde_json/1/serde_json/de/fn.from_str.html
 [from_slice]: https://docs.rs/serde_json/1/serde_json/de/fn.from_slice.html

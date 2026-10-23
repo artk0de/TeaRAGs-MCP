@@ -7,11 +7,9 @@
 
 ## About
 
-Build up a parser for your format of choice with the building blocks provided by
-`winnow`.
+Build up a parser for your format of choice with the building blocks provided by `winnow`.
 
 For more details, see:
-
 - [Tutorial](https://docs.rs/winnow/latest/winnow/_tutorial/index.html)
 - [Special Topics](https://docs.rs/winnow/latest/winnow/_topic/index.html)
   - [Why winnow? How does it compare to ...?](https://docs.rs/winnow/latest/winnow/_topic/why/index.html)
@@ -20,9 +18,9 @@ For more details, see:
 
 # Contributors
 
-winnow is the fruit of the work of many contributors over the years, many thanks
-for your help! In particular, thanks to [Geal](https://github.com/Geal) for the
-original [`nom` crate](https://crates.io/crates/nom).
+winnow is the fruit of the work of many contributors over the years, many
+thanks for your help! In particular, thanks to [Geal](https://github.com/Geal)
+for the original [`nom` crate](https://crates.io/crates/nom).
 
 <a href="https://github.com/winnow-rs/winnow/graphs/contributors">
   <img src="https://contributors-img.web.app/image?repo=winnow-rs/winnow" />

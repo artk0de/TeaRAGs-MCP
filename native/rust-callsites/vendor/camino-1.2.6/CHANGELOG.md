@@ -1,20 +1,16 @@
 # Changelog
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- next-header -->
-
 ## Unreleased - ReleaseDate
 
 ## [1.2.6] - 2026-09-15
 
 ### Fixed
 
-- The `Utf8Path::ends_with` parameter is now called `child` to match
-  `std::path::Path::ends_with`. Thanks [hxperl](https://github.com/hxperl) for
-  your first contribution!
+- The `Utf8Path::ends_with` parameter is now called `child` to match `std::path::Path::ends_with`. Thanks [hxperl](https://github.com/hxperl) for your first contribution!
 
 ## [1.2.5] - 2026-07-28
 
@@ -28,8 +24,7 @@ Removed unnecessary files from the package.
 
 Methods to convert between `Box<Utf8Path>` and `Box<Path>`:
 
-- `From<Box<Utf8Path>> for Box<Path>` (as of release, not documented due to
-  [rust-lang/rust#158466](https://github.com/rust-lang/rust/pull/158466)).
+- `From<Box<Utf8Path>> for Box<Path>` (as of release, not documented due to [rust-lang/rust#158466](https://github.com/rust-lang/rust/pull/158466)).
 - `Utf8Path::into_std_boxed_path(self: Box<Self>)`
 - `Utf8Path::from_boxed_path(path: Box<Path>)`
 - `TryFrom<Box<Path>> for Box<Utf8Path>`
@@ -40,9 +35,7 @@ Thanks [nicopap](https://github.com/nicopap) for your first contribution!
 
 ### Performance improvements
 
-- `Utf8Path::hash` now delegates to `std::path::Path::hash`, resulting in
-  hashing requiring ~2x fewer instructions. Thanks
-  [stormslowly](https://github.com/stormslowly) for your first contribution!
+- `Utf8Path::hash` now delegates to `std::path::Path::hash`, resulting in hashing requiring ~2x fewer instructions. Thanks [stormslowly](https://github.com/stormslowly) for your first contribution!
 
 ## [1.2.2] - 2025-12-14
 
@@ -59,30 +52,24 @@ On Rust 1.91 and above:
 
 ### Fixed
 
-Replaced obsolete `doc_auto_cfg` with `doc_cfg`, to fix Rust nightly builds with
-the `doc_cfg` flag enabled.
+Replaced obsolete `doc_auto_cfg` with `doc_cfg`, to fix Rust nightly builds with the `doc_cfg` flag enabled.
 
 ## [1.2.0] - 2025-09-14
 
 ### Changed
 
 - MSRV updated to Rust 1.61 to support the switch to `serde_core`.
-- camino now depends on `serde_core` rather than `serde`. This allows camino's
-  compilation to be parallelized with `serde_derive`.
-- `serde` and `proptest` are no longer available as features. This is
-  technically a breaking change, but these features were already no-ops.
-  Instead, use `serde1` and `proptest1` respectively.
+- camino now depends on `serde_core` rather than `serde`. This allows camino's compilation to be parallelized with `serde_derive`.
+- `serde` and `proptest` are no longer available as features. This is technically a breaking change, but these features were already no-ops. Instead, use `serde1` and `proptest1` respectively.
 
 ## [1.1.12] - 2025-08-26
 
 ### Added
 
 - `Utf8PathBuf::from_os_string` and `Utf8Path::from_os_str` conversions.
-- `TryFrom<OsString> for Utf8PathBuf` and `TryFrom<&OsStr> for &Utf8Path`
-  conversions.
+- `TryFrom<OsString> for Utf8PathBuf` and `TryFrom<&OsStr> for &Utf8Path` conversions.
 
-Thanks to [BenjaminBrienen](https://github.com/BenjaminBrienen) for your first
-contribution!
+Thanks to [BenjaminBrienen](https://github.com/BenjaminBrienen) for your first contribution!
 
 ## [1.1.11] - 2025-08-17
 
@@ -94,25 +81,20 @@ contribution!
 
 ### Changed
 
-- Hand-write serde implementations, dropping the dependency on `serde_derive`.
-  Thanks to [Enselic](https://github.com/Enselic) for initiating the discussion
-  and for your first contribution!
+- Hand-write serde implementations, dropping the dependency on `serde_derive`. Thanks to [Enselic](https://github.com/Enselic) for initiating the discussion and for your first contribution!
 
 ## [1.1.9] - 2024-08-17
 
 ### Added
 
-- Top-level function `absolute_utf8` wraps `std::path::absolute`, converting
-  paths to UTF-8. Requires Rust 1.79 and above.
+- Top-level function `absolute_utf8` wraps `std::path::absolute`, converting paths to UTF-8.
+  Requires Rust 1.79 and above.
 
 ## [1.1.8] - 2024-08-15
 
 ### Changed
 
-- Use `OsStr::as_encoded_bytes` on Rust 1.74 and above, making conversions from
-  `OsStr` to `str` virtually free
-  ([#93](https://github.com/camino-rs/camino/pull/93)). Thanks
-  [@h-a-n-a](https://github.com/h-a-n-a) for your first contribution!
+- Use `OsStr::as_encoded_bytes` on Rust 1.74 and above, making conversions from `OsStr` to `str` virtually free ([#93](https://github.com/camino-rs/camino/pull/93)). Thanks [@h-a-n-a](https://github.com/h-a-n-a) for your first contribution!
 
 ## [1.1.7] - 2024-05-14
 
@@ -162,16 +144,10 @@ contribution!
 ### Added
 
 - New methods, mirroring those in recent versions of Rust:
-  - `Utf8Path::try_exists` checks whether a path exists. Note that while
-    `std::path::Path` only provides this method for Rust 1.58 and above,
-    `camino` backfills the method for all Rust versions it supports.
-  - `Utf8PathBuf::shrink_to` shrinks a `Utf8PathBuf` to a given size. This was
-    added in, and is gated on, Rust 1.56+.
-  - `Utf8PathBuf::try_reserve` and `Utf8PathBuf::try_reserve_exact` implement
-    fallible allocations. These were added in, and are gated on, Rust 1.63+.
-- A number of `#[must_use]` annotations to APIs, mirroring those added to `Path`
-  and `PathBuf` in recent versions of Rust. The minor version bump is due to
-  this change.
+  - `Utf8Path::try_exists` checks whether a path exists. Note that while `std::path::Path` only provides this method for Rust 1.58 and above, `camino` backfills the method for all Rust versions it supports.
+  - `Utf8PathBuf::shrink_to` shrinks a `Utf8PathBuf` to a given size. This was added in, and is gated on, Rust 1.56+.
+  - `Utf8PathBuf::try_reserve` and `Utf8PathBuf::try_reserve_exact` implement fallible allocations. These were added in, and are gated on, Rust 1.63+.
+- A number of `#[must_use]` annotations to APIs, mirroring those added to `Path` and `PathBuf` in recent versions of Rust. The minor version bump is due to this change.
 
 ## [1.0.9] - 2022-05-19
 
@@ -183,11 +159,9 @@ contribution!
 
 ### Added
 
-- New methods `canonicalize_utf8`, `read_link_utf8` and `read_dir_utf8` return
-  `Utf8PathBuf`s, erroring out if a resulting path is not valid UTF-8.
-- New feature `proptest1` introduces proptest `Arbitrary` impls for
-  `Utf8PathBuf` and `Box<Utf8Path>` ([#18], thanks
-  [mcronce](https://github.com/mcronce) for your first contribution!)
+- New methods `canonicalize_utf8`, `read_link_utf8` and `read_dir_utf8` return `Utf8PathBuf`s, erroring out if a resulting path is not valid UTF-8.
+- New feature `proptest1` introduces proptest `Arbitrary` impls for `Utf8PathBuf` and
+  `Box<Utf8Path>` ([#18], thanks [mcronce](https://github.com/mcronce) for your first contribution!)
 
 [#18]: https://github.com/camino-rs/camino/pull/18
 
@@ -195,16 +169,15 @@ contribution!
 
 ### Added
 
-- `Utf8Path::is_symlink` checks whether a path is a symlink. Note that while
-  `std::path::Path` only provides this method for version 1.58 and above,
-  `camino` backfills the method for all Rust versions it supports.
+- `Utf8Path::is_symlink` checks whether a path is a symlink. Note that while `std::path::Path` only
+  provides this method for version 1.58 and above, `camino` backfills the method for all Rust versions
+  it supports.
 
 ### Changed
 
-- Update repository links to new location
-  [camino-rs/camino](https://github.com/camino-rs/camino).
-- Update `structopt` example to clap 3's builtin derive feature. (camino
-  continues to work with structopt as before.)
+- Update repository links to new location [camino-rs/camino](https://github.com/camino-rs/camino).
+- Update `structopt` example to clap 3's builtin derive feature.
+  (camino continues to work with structopt as before.)
 
 ## [1.0.6] - 2022-01-16
 
@@ -214,9 +187,8 @@ contribution!
 
 ### Added
 
-- `Utf8PathBuf::into_std_path_buf` converts a `Utf8PathBuf` to a `PathBuf`;
-  equivalent to the `From<Utf8PathBuf> for PathBuf` impl, but may aid in type
-  inference.
+- `Utf8PathBuf::into_std_path_buf` converts a `Utf8PathBuf` to a `PathBuf`; equivalent to the
+  `From<Utf8PathBuf> for PathBuf` impl, but may aid in type inference.
 - `Utf8Path::as_std_path` converts a `Utf8Path` to a `Path`; equivalent to the
   `AsRef<&Path> for &Utf8Path` impl, but may aid in type inference.
 
@@ -224,8 +196,7 @@ contribution!
 
 ### Fixed
 
-- `Hash` impls for `Utf8PathBuf` and `Utf8Path` now match as required by the
-  `Borrow` contract ([#9]).
+- `Hash` impls for `Utf8PathBuf` and `Utf8Path` now match as required by the `Borrow` contract ([#9]).
 
 [#9]: https://github.com/camino-rs/camino/issues/9
 
@@ -233,10 +204,9 @@ contribution!
 
 ### Added
 
-- `TryFrom<PathBuf> for Utf8PathBuf` and `TryFrom<&Path> for &Utf8Path`, both of
-  which return new error types ([#6]).
-- `AsRef<Utf8Path>`, `AsRef<Path>`, `AsRef<str>` and `AsRef<OsStr>` impls for
-  `Utf8Components`, `Utf8Component` and `Iter`.
+- `TryFrom<PathBuf> for Utf8PathBuf` and `TryFrom<&Path> for &Utf8Path`, both of which return new error types ([#6]).
+- `AsRef<Utf8Path>`, `AsRef<Path>`, `AsRef<str>` and `AsRef<OsStr>` impls for `Utf8Components`, `Utf8Component` and
+  `Iter`.
 
 [#6]: https://github.com/camino-rs/camino/issues/6
 
@@ -244,11 +214,9 @@ contribution!
 
 ### Added
 
-- `From` impls for converting a `&Utf8Path` or a `Utf8PathBuf` into `Box<Path>`,
-  `Rc<Path>`, `Arc<Path>` and `Cow<'a, Path>`.
-- `PartialEq` and `PartialOrd` implementations comparing `Utf8Path` and
-  `Utf8PathBuf` with `Path`, `PathBuf` and its variants, and comparing `OsStr`,
-  `OsString` and its variants.
+- `From` impls for converting a `&Utf8Path` or a `Utf8PathBuf` into `Box<Path>`, `Rc<Path>`, `Arc<Path>` and `Cow<'a, Path>`.
+- `PartialEq` and `PartialOrd` implementations comparing `Utf8Path` and `Utf8PathBuf` with `Path`, `PathBuf` and its
+  variants, and comparing `OsStr`, `OsString` and its variants.
 
 ## [1.0.1] - 2021-02-25
 
@@ -262,7 +230,6 @@ contribution!
 Initial release.
 
 <!-- next-url -->
-
 [1.2.6]: https://github.com/camino-rs/camino/releases/tag/camino-1.2.6
 [1.2.5]: https://github.com/camino-rs/camino/releases/tag/camino-1.2.5
 [1.2.4]: https://github.com/camino-rs/camino/releases/tag/camino-1.2.4

@@ -17,12 +17,12 @@ as shown in the following build timings.
 
 <br>
 
-| When `serde_json` depends on `serde`                                                        |
-| ------------------------------------------------------------------------------------------- |
+| When `serde_json` depends on `serde` |
+|---|
 | <img src="https://github.com/user-attachments/assets/78dc179c-6ab1-4059-928c-1474b0d9d0bb"> |
 
 <br>
 
-| When `serde_json` depends on `serde_core`                                                   |
-| ------------------------------------------------------------------------------------------- |
+| When `serde_json` depends on `serde_core` |
+|---|
 | <img src="https://github.com/user-attachments/assets/6b6cff5e-3e45-4ac7-9db1-d99ee8b9f5f7"> |

@@ -1,4 +1,5 @@
-# Rust Quasi-Quoting
+Rust Quasi-Quoting
+==================
 
 [<img alt="github" src="https://img.shields.io/badge/github-dtolnay/quote-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/dtolnay/quote)
 [<img alt="crates.io" src="https://img.shields.io/crates/v/quote.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/quote)
@@ -16,7 +17,7 @@ tokens to hand back to the compiler to compile into the caller's crate.
 Quasi-quoting is a solution to one piece of that &mdash; producing tokens to
 return to the compiler.
 
-The idea of quasi-quoting is that we write _code_ that we treat as _data_.
+The idea of quasi-quoting is that we write *code* that we treat as *data*.
 Within the `quote!` macro, we can write what looks like code to our text editor
 or IDE. We get all the benefits of the editor's brace matching, syntax
 highlighting, indentation, and maybe autocompletion. But rather than compiling
@@ -33,7 +34,7 @@ macros.
 quote = "1.0"
 ```
 
-[_Release notes_](https://github.com/dtolnay/quote/releases)
+[*Release notes*](https://github.com/dtolnay/quote/releases)
 
 <br>
 
@@ -43,8 +44,7 @@ The quote crate provides a [`quote!`] macro within which you can write Rust code
 that gets packaged into a [`TokenStream`] and can be treated as data. You should
 think of `TokenStream` as representing a fragment of Rust source code.
 
-[`TokenStream`]:
-  https://docs.rs/proc-macro2/1.0/proc_macro2/struct.TokenStream.html
+[`TokenStream`]: https://docs.rs/proc-macro2/1.0/proc_macro2/struct.TokenStream.html
 
 Within the `quote!` macro, interpolation is done with `#var`. Any type
 implementing the [`quote::ToTokens`] trait can be interpolated. This includes
@@ -138,8 +138,8 @@ let tokens = quote! {
 
 ### Constructing identifiers
 
-Suppose we have an identifier `ident` which came from somewhere in a macro input
-and we need to modify it in some way for the macro output. Let's consider
+Suppose we have an identifier `ident` which came from somewhere in a macro
+input and we need to modify it in some way for the macro output. Let's consider
 prepending the identifier with an underscore.
 
 Simply interpolating the identifier next to an underscore will not have the
@@ -219,8 +219,7 @@ Any interpolated tokens preserve the `Span` information provided by their
 `ToTokens` implementation. Tokens that originate within a `quote!` invocation
 are spanned with [`Span::call_site()`].
 
-[`Span::call_site()`]:
-  https://docs.rs/proc-macro2/1.0/proc_macro2/struct.Span.html#method.call_site
+[`Span::call_site()`]: https://docs.rs/proc-macro2/1.0/proc_macro2/struct.Span.html#method.call_site
 
 A different span can be provided explicitly through the [`quote_spanned!`]
 macro.

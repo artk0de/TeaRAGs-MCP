@@ -1,4 +1,5 @@
-# Unicode ident
+Unicode ident
+=============
 
 [<img alt="github" src="https://img.shields.io/badge/github-dtolnay/unicode--ident-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/dtolnay/unicode-ident)
 [<img alt="crates.io" src="https://img.shields.io/crates/v/unicode-ident.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/unicode-ident)
@@ -24,30 +25,29 @@ implementations.
 
 - `unicode-ident` is this crate;
 - [`unicode-xid`] is a widely used crate run by the "unicode-rs" org;
-- `ucd-trie` and `fst` are two data structures supported by the [`ucd-generate`]
-  tool;
+- `ucd-trie` and `fst` are two data structures supported by the [`ucd-generate`] tool;
 - [`roaring`] is a Rust implementation of Roaring bitmap.
 
-The _static storage_ column shows the total size of `static` tables that the
+The *static storage* column shows the total size of `static` tables that the
 crate bakes into your binary, measured in 1000s of bytes.
 
 The remaining columns show the **cost per call** to evaluate whether a single
-`char` has the XID_Start or XID_Continue Unicode property, comparing across
+`char` has the XID\_Start or XID\_Continue Unicode property, comparing across
 different ratios of ASCII to non-ASCII codepoints in the input data.
 
 [`unicode-xid`]: https://github.com/unicode-rs/unicode-xid
 [`ucd-generate`]: https://github.com/BurntSushi/ucd-generate
 [`roaring`]: https://github.com/RoaringBitmap/roaring-rs
 
-|                     | static storage | 0% nonascii | 1%      | 10%     | 100% nonascii |
-| ------------------- | -------------- | ----------- | ------- | ------- | ------------- |
-| **`unicode-ident`** | 10.4 K         | 0.36 ns     | 0.37 ns | 0.37 ns | 0.43 ns       |
-| **`unicode-xid`**   | 12.2 K         | 1.63 ns     | 1.70 ns | 1.82 ns | 4.56 ns       |
-| **`ucd-trie`**      | 10.8 K         | 1.01 ns     | 0.73 ns | 0.97 ns | 1.09 ns       |
-| **`fst`**           | 149 K          | 22.0 ns     | 21.9 ns | 20.9 ns | 10.5 ns       |
-| **`roaring`**       | 66.1 K         | 1.91 ns     | 1.90 ns | 1.94 ns | 2.67 ns       |
+| | static storage | 0% nonascii | 1% | 10% | 100% nonascii |
+|---|---|---|---|---|---|
+| **`unicode-ident`** | 10.4 K | 0.36 ns | 0.37 ns | 0.37 ns | 0.43 ns |
+| **`unicode-xid`** | 12.2 K | 1.63 ns | 1.70 ns | 1.82 ns | 4.56 ns |
+| **`ucd-trie`** | 10.8 K | 1.01 ns | 0.73 ns | 0.97 ns | 1.09 ns |
+| **`fst`** | 149 K | 22.0 ns | 21.9 ns | 20.9 ns | 10.5 ns |
+| **`roaring`** | 66.1 K | 1.91 ns | 1.90 ns | 1.94 ns | 2.67 ns |
 
-Source code for the benchmark is provided in the _bench_ directory of this repo
+Source code for the benchmark is provided in the *bench* directory of this repo
 and may be repeated by running `cargo criterion`.
 
 <br>
@@ -192,10 +192,11 @@ The key differences are:
 - Uses a single 2-level trie, rather than 3 disjoint partitions of different
   depth each.
 - Uses significantly larger chunks: 512 bits rather than 64 bits.
-- Compresses the XID_Start and XID_Continue properties together simultaneously,
-  rather than duplicating identical trie leaf chunks across the two.
+- Compresses the XID\_Start and XID\_Continue properties together
+  simultaneously, rather than duplicating identical trie leaf chunks across the
+  two.
 
-The following diagram show the XID_Start and XID_Continue Unicode boolean
+The following diagram show the XID\_Start and XID\_Continue Unicode boolean
 properties in uncompressed form, in row-major order:
 
 <table>

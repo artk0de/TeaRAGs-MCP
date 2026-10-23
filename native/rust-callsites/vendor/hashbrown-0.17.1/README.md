@@ -9,8 +9,8 @@ This crate is a Rust port of Google's high-performance [SwissTable] hash map,
 adapted to make it a drop-in replacement for Rust's standard `HashMap` and
 `HashSet` types.
 
-The original C++ version of SwissTable can be found [here], and this [CppCon
-talk] gives an overview of how the algorithm works.
+The original C++ version of SwissTable can be found [here], and this
+[CppCon talk] gives an overview of how the algorithm works.
 
 Since Rust 1.36, the Rust standard library has adopted this implementation for
 `HashMap`, using its own default hasher (see
@@ -19,8 +19,7 @@ However you may still want to use this crate instead since it works in
 environments without `std`, such as embedded systems and kernels.
 
 [SwissTable]: https://abseil.io/blog/20180927-swisstables
-[here]:
-  https://github.com/abseil/abseil-cpp/blob/master/absl/container/internal/raw_hash_set.h
+[here]: https://github.com/abseil/abseil-cpp/blob/master/absl/container/internal/raw_hash_set.h
 [CppCon talk]: https://www.youtube.com/watch?v=ncHmEUmJZf4
 
 ## [Change log](CHANGELOG.md)
@@ -29,8 +28,8 @@ environments without `std`, such as embedded systems and kernels.
 
 - Drop-in replacement for the standard library `HashMap` and `HashSet` types.
 - Uses [foldhash](https://github.com/orlp/foldhash) as the default hasher, which
-  is much faster than SipHash. However, foldhash does _not provide the same
-  level of HashDoS resistance_ as SipHash, so if that is important to you, you
+  is much faster than SipHash. However, foldhash does *not provide the same
+  level of HashDoS resistance* as SipHash, so if that is important to you, you
   might want to consider using a different hasher.
 - Around 2x faster than the previous standard library `HashMap`.
 - Lower memory usage: only 1 byte of overhead per entry instead of 8.
@@ -78,9 +77,10 @@ This crate has the following Cargo features:
 
 Licensed under either of:
 
-- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
-  https://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or https://opensource.org/license/mit)
+ * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
+   https://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or
+   https://opensource.org/license/mit)
 
 at your option.
 

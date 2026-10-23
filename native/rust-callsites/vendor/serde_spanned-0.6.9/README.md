@@ -5,8 +5,8 @@
 
 A [serde]-compatible spanned Value
 
-This allows capturing the location, in bytes, for a value in the original parsed
-document for compatible deserializers.
+This allows capturing the location, in bytes, for a value in the original parsed document for
+compatible deserializers.
 
 [serde]: https://serde.rs/
 
@@ -14,15 +14,14 @@ document for compatible deserializers.
 
 Licensed under either of
 
-- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
-  <http://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or
-  <http://opensource.org/licenses/MIT>)
+* Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+* MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
 
 ### Contribution
 
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
-dual-licensed as above, without any additional terms or conditions.
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in the work by you, as defined in the Apache-2.0
+license, shall be dual-licensed as above, without any additional terms or
+conditions.
