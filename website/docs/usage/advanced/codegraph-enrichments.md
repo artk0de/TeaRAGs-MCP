@@ -127,8 +127,9 @@ What a run costs:
   if your own `target/` is warm.
 - **Later runs.** The driver binary is reused. When `Cargo.lock`, the manifests
   and the cargo arguments have not changed, the stored call sites are reused
-  and `cargo check` does not run at all; otherwise cargo rebuilds only the
-  units that changed.
+  and `cargo check` does not run at all, unless the last check left a crate
+  uncompiled and a `.rs` file in that crate has changed since (you fixed the
+  error); otherwise cargo rebuilds only the units that changed.
 
 Because it is `cargo check`, your project's build scripts and procedural macros
 execute, the same as in your editor. The check runs offline: run

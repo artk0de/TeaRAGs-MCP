@@ -362,6 +362,17 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
   re-spawns. A latch without the digest (written before it existed) reads as
   stale. The driver-build latch lives in `driver-build.ts`, keyed by pin +
   sourceHash, and is not source-stamped.
+- Reuse-only admission (an incremental pass below the bulk share) re-serves the
+  previous run without spawning, except when that run left crates without rows
+  and an edit since may have fixed them: `run.json` lists failed crates or
+  missing units, AND a `.rs` file was added, removed or re-stamped against
+  `sources.json` under a failed crate's directory (taken from its `path+file://`
+  package id, matched against the project root as given and canonicalized, since
+  cargo reports canonical paths). A failure that names no directory (a
+  stderr-only package name) or missing units accept any changed file; a failed
+  registry, git or out-of-root path crate never triggers. Then cargo runs, and
+  its fingerprints keep the healthy crates warm. A previous run with no failures
+  never spawns under reuse-only. No new state is persisted.
 
 ### 8.5 Adapter + strategy integration: REPLACE the SCIP slot (owner decision 2026-10-23)
 

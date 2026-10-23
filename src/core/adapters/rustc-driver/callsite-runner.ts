@@ -31,9 +31,18 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { availableParallelism, homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type {
@@ -184,6 +193,8 @@ export interface RustcCallSiteRunnerDeps extends SupervisedChildHost {
     remove: (path: string) => void;
     stat: (path: string) => { size: number; mtimeMs: number } | undefined;
     listRustSources: (projectRoot: string) => readonly RustSourceStamp[];
+    /** Canonical path (symlinks resolved), as cargo reports it in package ids; the input when unresolvable. */
+    realPath: (path: string) => string;
   };
   /** Every workspace `Cargo.toml` under the root. */
   readCargoManifests: (projectRoot: string) => readonly ManifestFile[];
@@ -287,7 +298,14 @@ async function acquire(
       },
     };
   }
-  if (reuseOnly()) return reusePreviousRun(deps, envKey, envDir, sources());
+  if (reuseOnly()) {
+    const driverRun = readRunJson(deps, envDir);
+    const recorded = readRecordedSources(deps, envDir);
+    const projectRoots = (): readonly string[] => [options.projectRoot, deps.fs.realPath(options.projectRoot)];
+    if (!driverRun || !recorded || !failedCratesTouched(driverRun, recorded, sources(), projectRoots)) {
+      return reusePreviousRun(deps, envKey, envDir, driverRun, recorded, sources());
+    }
+  }
   return runDriver(deps, options, driver, envKey, envDir, cargoArgs, sources());
 }
 
@@ -373,10 +391,10 @@ function reusePreviousRun(
   deps: RustcCallSiteRunnerDeps,
   envKey: string,
   envDir: string,
+  driverRun: DriverRun | undefined,
+  recorded: RecordedSources | undefined,
   stamps: readonly RustSourceStamp[],
 ): RustcCallSiteAcquisition {
-  const driverRun = readRunJson(deps, envDir);
-  const recorded = readRecordedSources(deps, envDir);
   if (!driverRun || !recorded || driverRun.units.length === 0) {
     return { status: "noCache", diagnostics: { ...emptyDiagnostics(), envKey } };
   }
@@ -409,6 +427,60 @@ function servedForUnchanged(
       return definition;
     },
   };
+}
+
+/**
+ * Whether the previous run left crates without rows that an edit since may have
+ * fixed, so a `reuseOnly` acquisition re-runs cargo instead of re-serving them.
+ * Needs a `.rs` file added, removed or re-stamped since that run, under the
+ * directory of a crate that failed (from its `path+file://` package id). A
+ * failure naming no directory (a stderr-only package name) or missing units
+ * accept any changed file. A failed crate outside the project (registry, git,
+ * or a path dependency outside the root) is fixed by no project edit.
+ */
+function failedCratesTouched(
+  driverRun: DriverRun,
+  recorded: RecordedSources,
+  stamps: readonly RustSourceStamp[],
+  projectRoots: () => readonly string[],
+): boolean {
+  if (driverRun.failed.length === 0 && driverRun.missing === 0) return false;
+  const changed = new Set(Object.keys(recorded));
+  for (const stamp of stamps) {
+    const was = recorded[stamp.relPath];
+    if (was?.[0] === stamp.size && was[1] === stamp.mtimeMs) changed.delete(stamp.relPath);
+    else changed.add(stamp.relPath);
+  }
+  if (changed.size === 0) return false;
+  if (driverRun.missing > 0) return true;
+  return driverRun.failed.some((crate) => {
+    const crateDir = projectCrateDir(crate.packageId, projectRoots());
+    if (crateDir === null) return true;
+    if (crateDir === undefined) return false;
+    return [...changed].some((relPath) => crateDir === "" || relPath.startsWith(`${crateDir}/`));
+  });
+}
+
+/**
+ * Project-relative directory of a `path+file://` package id (`""` = the root),
+ * under the first of `projectRoots` (as given, then canonical: cargo reports the
+ * canonical path) that contains it; `undefined` for a crate outside the project;
+ * `null` when the id names no directory.
+ */
+function projectCrateDir(packageId: string, projectRoots: readonly string[]): string | null | undefined {
+  if (!packageId.includes("+")) return null;
+  if (!packageId.startsWith("path+file://")) return undefined;
+  let absoluteDir: string;
+  try {
+    absoluteDir = fileURLToPath(packageId.slice("path+".length).split("#")[0] ?? "");
+  } catch {
+    return null;
+  }
+  for (const projectRoot of projectRoots) {
+    const relDir = relative(projectRoot, absoluteDir);
+    if (!relDir.startsWith("..") && !isAbsolute(relDir)) return relDir.split(sep).join("/");
+  }
+  return undefined;
 }
 
 function readRecordedSources(deps: RustcCallSiteRunnerDeps, envDir: string): RecordedSources | undefined {
@@ -691,6 +763,13 @@ export function defaultRustcCallSiteRunnerDeps(
         }
       },
       listRustSources,
+      realPath: (path) => {
+        try {
+          return realpathSync(path);
+        } catch {
+          return path;
+        }
+      },
     },
     readCargoManifests: (projectRoot) => readManifestFiles(projectRoot, (fileName) => fileName === "Cargo.toml"),
   };
