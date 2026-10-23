@@ -1200,6 +1200,28 @@ paragraph).
       `chore(ci): plugin scopes release, regenerate only on     plugin changes`,
       `docs(rules): drop manual plugin version bumps`.
 
+### Task 22: Evals to 100% on Claude and Codex
+
+Inventory of every Claude T12 / Codex T14 FAIL (159 rows, cause class + fix
+locus): skill-not-loaded 64 (Codex only; closed by the Codex core's
+"open SKILL.md before planning" line), rule-wording 41, stale-expectation 39,
+model-behaviour 14, routing-ambiguity 11, user-override-deference 5,
+tool-description 2.
+
+- [x] **Tool descriptions** — `get_naming_lexicon` / `review_changes`: a diff's
+      names are review_changes naming's, never hand-listed (search-cascade 12).
+- [x] **Core** — one rule for user instructions: a named action on a target is
+      done; a suggested weaker method is declined with a one-line reason.
+- [ ] **Stale expectations** — every `stale-expectation` eval rewritten to the
+      current contract (same intent, never deleted).
+- [ ] **Skill wording** — tea-rags, dinopowers, tea-rags-setup skills: each
+      failing case's governing rule made explicit (Iron Rule / Red Flags),
+      user-override cases say the rule holds and what to tell the user.
+      Descriptions do not grow (Codex skills-list budgets).
+- [ ] **Measure** — full Claude run (45 suites) and Codex natural run; repeat
+      until both are 100% over graded cases. Codex quota beyond the approved
+      runs needs the user's go.
+
 ### Task 16: Gates, docs, merge
 
 > Carry-over from Task 13: `harness/**` duplicates skill markdown — exclude it
