@@ -1,15 +1,14 @@
 # Polyglot Rule (MANDATORY)
 
-**Applies when:** codebase polyglot at session start (2+ languages each >10% of
-chunks).
+**Applies when:** codebase polyglot (2+ languages each >10% of chunks) —
+SessionStart digest `polyglot:` line (or `tea-rags://project/<alias>/digest`).
 
-**Problem:** Unfiltered semantic_search returns 100% dominant language. On
-Ruby(66%)+TypeScript(34%) codebase, TypeScript invisible without language
-filter.
+**Problem:** unfiltered semantic_search returns 100% dominant language —
+Ruby(66%)+TypeScript(34%) → TypeScript invisible without language filter.
 
-**Rule:** Every search call spanning languages MUST split into per-language
-calls. Applies to ALL skills — explore, bug-hunt, research, pattern-search,
-refactoring-scan, data-driven-generation.
+**Rule:** every search spanning languages MUST split into per-language calls.
+ALL skills (explore, bug-hunt, research, pattern-search, refactoring-scan,
+data-driven-generation).
 
 ```
 Is codebase polyglot? (detected at session start)

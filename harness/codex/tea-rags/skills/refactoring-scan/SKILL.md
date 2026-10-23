@@ -7,10 +7,10 @@ description:
 
 # Refactoring Scan
 
-Multi-preset breadth-first scan for refactoring candidates. Explore invokes when
-antipattern/refactoring intent broad-scope (no specific entity).
+Multi-preset breadth-first scan for refactoring candidates. Explore invokes on
+broad-scope antipattern / refactoring intent (no specific entity).
 
-**Examples that trigger this skill:**
+**Trigger examples:**
 
 - "what to refactor in explore"
 - "cleanup ingest domain"
@@ -20,22 +20,15 @@ antipattern/refactoring intent broad-scope (no specific entity).
 ## MANDATORY RULES
 
 1. **Execute YOURSELF** — no subagents.
-2. **Tool selection via `tea-rags://guide/decision-tree` decision tree** — don't
-   hard-code tool choice. Pass query + rerank + pathPattern to
-   `tea-rags://guide/decision-tree`; it determines tool.
-3. **Stop conditions from `tea-rags://guide/decision-tree`** — follow
-   gradient-drop / diminishing-returns / cross-preset rules. Do NOT use absolute
-   score thresholds.
-4. **No built-in Search/Grep for code discovery** — only TeaRAGs tools + ripgrep
-   MCP fallback for literal text (identifiers never — `hybrid_search`).
+2. **Tool choice + stop conditions from `tea-rags://guide/decision-tree`** —
+   pass query + rerank + pathPattern, tree picks tool; gradient-drop /
+   diminishing-returns / cross-preset rules, NO absolute score thresholds.
+3. **No built-in Search/Grep for code discovery** — tea-rags tools; ripgrep MCP
+   only for literal text (identifiers → `hybrid_search`).
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
-answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
-`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
+Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` > 0
+→ incremental `index_codebase`; subagent / linked worktree → never reindex. →
+`tea-rags://guide/freshness`.
 
 ## Flow
 
@@ -48,14 +41,11 @@ never licenses leaving tea-rags".
 
 ### 1. SCAN
 
-Run `tea-rags://guide/decision-tree` **3 times** with different rerank presets.
-For each:
+Decision tree **3 times**, one rerank preset each:
 
-- Pass query (from $ARGUMENTS) + pathPattern (from scope extraction) to
-  `tea-rags://guide/decision-tree` — it determines tool
-- limit=10, metaOnly=false (content needed for ENRICH classification; 3 × 10 =
-  30 chunks ≈ 30-60KB — fits in 1M context)
-- Apply `tea-rags://guide/decision-tree` stop conditions per-preset
+- query ($ARGUMENTS) + pathPattern (scope extraction)
+- limit=10, metaOnly=false (content needed for ENRICH; 3 × 10 chunks fits)
+- stop conditions per preset
 
 | Preset          | What it surfaces                                           |
 | --------------- | ---------------------------------------------------------- |
@@ -63,28 +53,20 @@ For each:
 | `decomposition` | Oversized functions/classes — split candidates             |
 | `hotspots`      | High churn + recent activity — stability risks             |
 
-#### Filter presets (apply to each scan call)
+#### Filter presets (each scan call)
 
-Pass `filter: { presets: "godMethods" }` on all three scan calls. This
-pre-filters the Qdrant population to behavioral god-method chunks before
-reranking, which raises signal-to-noise when the scope is behaviorally broad.
-When the scan is purely structural (no query, scope is already narrow), use
-`filter: { presets: "coreLogic" }` instead — it keeps only function/class chunks
-and discards noise (imports, comments, config).
+`filter: { presets: "godMethods" }` on all three (behavioral god-method chunks
+pre-rerank → better signal/noise). Purely structural scan (no query, narrow
+scope) → `filter: { presets: "coreLogic" }` (function/class chunks only).
+`{presets}` ANDs w/ `pathPattern`.
 
-`{presets}` AND-composes with any `pathPattern` already in the call — both
-constraints apply.
-
-**Empty-widen rule.** When a query is present AND all three `godMethods` scan
-results come back empty, re-run the three presets with
-`filter: { presets: "coreLogic" }` (broader population) and note the widening in
-output:
+**Empty-widen rule.** Query present AND all three `godMethods` scans empty →
+re-run three presets w/ `filter: { presets: "coreLogic" }`, note in output:
 `> strict filter (godMethods) returned no results — widened to coreLogic`.
 
 ### 2. MERGE
 
-Cross-reference all 3 presets' results by `symbolId` (or `relativePath` +
-`startLine` if symbolId missing).
+Cross-reference by `symbolId` (missing → `relativePath` + `startLine`).
 
 | Overlap | Tier   | Meaning                                    |
 | ------- | ------ | ------------------------------------------ |
@@ -94,10 +76,7 @@ Cross-reference all 3 presets' results by `symbolId` (or `relativePath` +
 
 ### 3. ENRICH
 
-For **Tier 1 candidates only** (skip Tier 2/3 enrichment):
-
-- Code content already in results (metaOnly=false). Use directly.
-- Classify refactoring type:
+**Tier 1 only.** Code already in results (metaOnly=false). Classify:
 
 | Type              | Indicator                                           |
 | ----------------- | --------------------------------------------------- |
@@ -107,14 +86,14 @@ For **Tier 1 candidates only** (skip Tier 2/3 enrichment):
 | **Complex logic** | Deep nesting, long condition chains                 |
 | **Naming**        | Misleading names, inconsistent conventions          |
 
-**Naming** is decided by the lexicon, not by taste (codegraph on):
-`get_naming_lexicon(names=<Tier 1 identifiers>, language, pathPattern=<scope>)`
-(one call per language — evidence never crosses languages) → `MISFIT` = Naming
-candidate, Action `rename to <suggestion>`; `CONFORMS` = not a candidate.
-Codegraph off → classify Naming only with a cited in-scope precedent. Rename
-candidates can also seed from
+**Naming** = lexicon verdict, not taste (codegraph on = graph tools in tool
+list):
+`get_naming_lexicon(names=<Tier 1 identifiers>, language, pathPattern=<scope>)`,
+one call per language (evidence never crosses languages) → `MISFIT` = Naming
+candidate, Action `rename to <suggestion>`; `CONFORMS` = not candidate.
+Codegraph off → Naming only w/ cited in-scope precedent. Extra seeds:
 `get_ontology_report(pathPattern=<scope>, sections=["outliers","synonyms"])` —
-each outlier / synonym deviant is a Naming candidate, Action
+each outlier / synonym deviant = Naming candidate, Action
 `rename to <dominant.name>`.
 
 ### 4. OUTPUT

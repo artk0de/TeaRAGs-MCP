@@ -1,31 +1,30 @@
 # PRE-GEN Pattern
 
-Triggered by Step 0 classification. Gathers actionable context for code
-generation — files, risk signals, overlay labels.
+From Step 0. Gathers actionable context for code generation — files, risk
+signals, overlay labels.
 
 ## PG-1. DISCOVER
 
-Find target area files. Select tool directly:
+Target area files:
 
-- **Behavior/intent query** → `semantic_search` (query=$ARGUMENTS,
-  metaOnly=true, limit=10, documentation="exclude")
-- **Known symbol** → `find_symbol` (symbol=<id>) for its definition; its
-  surrounding area → `hybrid_search` (query=$ARGUMENTS, metaOnly=true, limit=10,
+- **Behavior/intent** → `semantic_search` (query=$ARGUMENTS, metaOnly=true,
+  limit=10, documentation="exclude")
+- **Known symbol** → `find_symbol` (symbol=<id>) for definition; surrounding
+  area → `hybrid_search` (query=$ARGUMENTS, metaOnly=true, limit=10,
   documentation="exclude")
 
-Add `pathPattern` if module is known. Add `language` if polyglot codebase.
-`documentation="exclude"` prevents RFC/docs from taking result slots.
+Add `pathPattern` if module known, `language` if polyglot.
+`documentation="exclude"` keeps RFC/docs out of result slots.
 
-**Checkpoint:** Found target files (3-5 paths)?
+**Checkpoint:** 3-5 target paths found?
 
-- YES → extract pathPattern, proceed to PG-2
-- NO → reformulate query (narrower scope, different angle), retry once
+- YES → extract pathPattern → PG-2
+- NO → reformulate (narrower scope, other angle), retry once
 
 ## PG-2. SIGNAL LOOKUP
 
-For each key symbol from PG-1 (2-5 symbols), call `find_symbol` with rerank to
-get overlay labels. One call per symbol — find_symbol is instant (scroll, no
-embedding).
+Per key symbol from PG-1 (2-5), `find_symbol` with rerank for overlay labels.
+One call per symbol (instant, no embedding).
 
 ```
 find_symbol:
@@ -35,35 +34,31 @@ find_symbol:
   metaOnly: false             ← full raw payload: recent*, churnVolatility are non-essential
 ```
 
-Labels → `rankingOverlay.{file,chunk}.<field>.label`; raw values →
+Labels → `rankingOverlay.{file,chunk}.<field>.label`; raw →
 `payload.git.{file,chunk}.<field>` (never labelled).
 
-The overlay is preset-specific: `rankingOverlay` carries only the fields in the
-chosen preset's `overlayMask`. `techDebt` is used here because its mask covers
-the labelled PG-2 fields (ageDays, commitCount, bugFixRate, churnVolatility,
-blameDominantAuthorPct, recentDominantAuthorPct). Another preset silently drops
-some of them — `hotspots`, for example, has no `commitCount` label.
+Overlay = chosen preset's `overlayMask` only. `techDebt` covers all labelled
+PG-2 fields (ageDays, commitCount, bugFixRate, churnVolatility,
+blameDominantAuthorPct, recentDominantAuthorPct); other presets drop some
+(`hotspots` has no `commitCount` label).
 
-Extract per-symbol: bugFixRate, ageDays, churnVolatility, commitCount,
-blameDominantAuthor, blameDominantAuthorPct (live-line owner — used for silo
-detection and "who must approve") and recentDominantAuthor,
-recentDominantAuthorPct (recent committer — used for "who's loaded in"). These
-feed DDG strategy selection.
+Extract per symbol: bugFixRate, ageDays, churnVolatility, commitCount,
+blameDominantAuthor, blameDominantAuthorPct (live-line owner → silo, "who must
+approve"), recentDominantAuthor, recentDominantAuthorPct (recent committer →
+"who's loaded in"). Feed DDG strategy selection.
 
-**Interpretation:** when presenting overlay findings to the user (pre-gen
-context or explore), do not read single signals in isolation. Consult
-`references/signal-interpretation.md` for pair diagnostics — especially when
-churn, age, or ownership are high. Single-signal conclusions mislead (high churn
-≠ active development; mono ownership ≠ silo risk).
+**Interpretation:** never read single signals in isolation — pair diagnostics in
+`../../../references/signal-interpretation.md`, esp. high churn / age /
+ownership (high churn ≠ active development; mono ownership ≠ silo risk).
 
 ## PG-3. DEEP TRACE (optional)
 
-If specific symbols need structural understanding before generation:
+Symbols need structure before generation:
 
 - `find_symbol` for 1-2 key symbols (definition + imports)
-- Fallback: `hybrid_search` if find_symbol returns 0
+- 0 results → `hybrid_search`
 
-**Limit:** Do NOT trace call chains or dependency trees.
+**Limit:** do NOT trace call chains or dependency trees.
 
 ## PG-4. OUTPUT
 
@@ -82,4 +77,4 @@ Context for generation:
   - overlay labels: [per-symbol from PG-2]
 ```
 
-Output is self-contained. data-driven-generation reads overlay labels directly.
+Self-contained. data-driven-generation reads overlay labels directly.

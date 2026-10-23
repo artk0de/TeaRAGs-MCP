@@ -15,9 +15,8 @@ description:
 
 # extract-project-patterns
 
-Internal recipe for code-gen skills. Find battle-tested template in project for
-code you about to write, via three-level locality cascade. Invoked by parent
-skills; not users directly.
+Internal recipe for code-gen skills: battle-tested template for code about to
+be written, via three-level locality cascade.
 
 ## Inputs
 
@@ -37,18 +36,11 @@ present. Else return
 
 ## Recipe — three-level locality cascade
 
-**Addressing:** every call passes `project=<alias>` +
-`path=<your working directory>` — `tea-rags://guide/freshness` "Addressing the
-Codebase". Row with `treeState` = pre-edit copy → never a template; take its
-current body via `find_symbol`.
-
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
-answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
-`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
+Every call: `project=<alias>` + `path=<working dir>`. `treeState` row =
+pre-edit copy → never template; current body via `find_symbol`. Lag / drift ≠
+licence to leave tea-rags (core); own checkout `changedFiles` > 0 → incremental
+`index_codebase`, subagent / linked worktree → never reindex. →
+`tea-rags://guide/freshness`.
 
 ```
 L1 pathPattern = pathPatternL1                         (deepest subdomain)
@@ -78,46 +70,37 @@ Skip-vocabulary (infra/layer prefixes): `app`, `src`, `lib`, `core`, `packages`,
 
 **For each level in [L1, L2, L3]:**
 
-1. Call `find_similar` (or `semantic_search` / `hybrid_search` if only
-   `behaviorQuery` available) with:
+1. `find_similar` (only `behaviorQuery` → `semantic_search` / `hybrid_search`):
    - `rerank: "proven"` + `level: "chunk"` (proven is file-level; keep chunk
      results)
-   - `filter: { presets: "battleTested" }` — narrows to genuinely battle-tested
-     code; composes (AND) with any `pathPattern` / locality scoping
+   - `filter: { presets: "battleTested" }` — ANDs w/ `pathPattern`
    - `pathPattern: <level>` (omit for L3)
    - `limit: <input limit, default 10>`
    - inputs: `positiveIds` | `positiveCode` | `query: behaviorQuery`
 
-   **Relax-on-empty:** if the call returns 0 results, re-run once with
-   `filter: { presets: "production" }` (hygiene only; no battle-tested
-   guarantee) and record
+   **Relax-on-empty:** 0 results → re-run once w/
+   `filter: { presets: "production" }`, record
    `"no battle-tested reference found; widened to production code"` in
-   `diagnostics`. A reference is required — never return empty silently when a
-   relax is still possible.
+   `diagnostics`. Never return empty silently while relax possible.
 
-2. Apply quality gate over result overlay labels:
+2. Quality gate over overlay labels:
    - `ideal_count` = chunks where
      - `commitCount` label is `"low"` or `"typical"`, AND
      - `ageDays` label is `"old"` or `"legacy"`, AND
      - `bugFixRate` label is `"healthy"`
-   - If `ideal_count ≥ 2` → return top result + locality annotation. Stop.
+   - `ideal_count ≥ 2` → return top result + locality. Stop.
    - **Lone-ideal-hub**: `ideal_count == 1` AND lone ideal's
      `payload.codegraph.symbols.file.isHub == true` → level accepted,
-     `templates[0]` = lone ideal itself (NOT top-by-score). Stop. Why: hub =
-     usage-proof (fanIn > p95), corroborates single replication. No
-     `codegraph.symbols` in payload → branch inert, normal fall-through.
-3. Apply reject filter (regardless of gate pass):
-   - chunks where `bugFixRate` is `"critical"` OR (`ageDays` is `"recent"` AND
-     `commitCount` is `"low"`) excluded from returned top.
-4. If no qualifying chunk → next level.
+     `templates[0]` = lone ideal (NOT top-by-score). Stop. Hub = usage-proof
+     (fanIn > p95). No `codegraph.symbols` in payload → branch inert.
+3. Reject filter (always): exclude `bugFixRate` `"critical"` OR (`ageDays`
+   `"recent"` AND `commitCount` `"low"`).
+4. No qualifying chunk → next level.
 
-All three levels fail → return diagnostic
-`"no proven templates for <input> in this project"` so caller falls back
-(generate from scratch, ask user, etc.).
+All levels fail → diagnostic `"no proven templates for <input> in this project"`
+(caller falls back: scratch, ask user).
 
 ## Output
-
-Structured object for caller:
 
 ```
 {
@@ -136,34 +119,17 @@ Structured object for caller:
 }
 ```
 
-Caller reads `templates[0]` as reference; `locality` informs how to use
-template:
+Caller reads `templates[0]`; `locality` → usage:
 
-- `L1` → matches subdomain exactly. Use template's `blameDominantAuthor` for
-  style + review routing.
-- `L2` → template from sibling subdomain in same broader domain.
-  `blameDominantAuthor` reviews technique, not exact code.
-- `L3` → template from project at large. `blameDominantAuthor` reviews technique
-  only; verify architectural fit before adopting verbatim.
-- `none` → no template found. Caller generates from scratch and surfaces this to
-  user so they know to scrutinize result.
+- `L1` → exact subdomain. `blameDominantAuthor` → style + review routing.
+- `L2` → sibling subdomain. `blameDominantAuthor` reviews technique, not code.
+- `L3` → project-wide. Technique only; verify architectural fit before verbatim
+  adoption.
+- `none` → caller generates from scratch, tells user to scrutinize.
 
 ## Skip clause
 
-Return immediately empty templates if:
+Return empty templates immediately if:
 
-- None of `positiveIds` / `positiveCode` / `behaviorQuery` provided
-- Project has no git enrichment indexed (no overlay labels → quality gate cannot
-  run)
-
-## Invoked by
-
-- `tea-rags:data-driven-generation` Step 2 (TEMPLATE)
-- `dinopowers:writing-plans` (per code-generation / code-modification Task)
-- `dinopowers:executing-plans` (per Task during execute)
-
-## Eval coverage
-
-`/optimize-skill extract-project-patterns` runs baseline cases. Fixture file
-`evals/cases.json` added in follow-up PR (out of scope for initial recipe
-landing — see spec Component E).
+- none of `positiveIds` / `positiveCode` / `behaviorQuery`
+- no git enrichment indexed (no overlay labels → gate cannot run)

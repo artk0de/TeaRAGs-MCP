@@ -23,13 +23,9 @@ Diagnosis → simulated candidates → server-ordered steps → plan Tasks w/ ex
 delta. Server orders; agent builds candidates + plan. Execute YOURSELF, tea-rags
 tools only.
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
-answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
-`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
+Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` > 0
+→ incremental `index_codebase`; subagent / linked worktree → never reindex. →
+`tea-rags://guide/freshness`.
 
 ## Phase Order (MANDATORY)
 
@@ -55,9 +51,10 @@ never licenses leaving tea-rags".
 
 ## Phase 0 — GATE
 
-prime `## Enrichment` lists `codegraph.symbols`? No → "refactoring planning
-needs codegraph", stop. Any plan-mode answer `unavailable: "noCodegraph"` →
-stop, same line.
+Codegraph on = graph tools (`get_callers`, `trace_path`, …) in tool list; unsure
+→ `tea-rags://project/<alias>/metrics?section=registry` shows
+`codegraph on|off`. Off → "refactoring planning needs codegraph", stop. Any
+plan-mode answer `unavailable: "noCodegraph"` → stop, same line.
 
 ## Phase 1 — REPORT
 

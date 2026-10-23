@@ -1,29 +1,26 @@
 # Subagent Search Injection Block
 
-**Owner:** parent agent dispatching subagents via `Agent` tool. Subagent does
-NOT invoke this — parent prepends block to subagent's prompt before dispatch.
+**Owner:** parent agent dispatching subagents via `Agent` tool — parent prepends
+block to subagent prompt. Subagent never invokes this.
 
 ## Why parent must inject
 
-Subagents (Agent tool) do NOT inherit rules, CLAUDE.md, or
-`tea-rags://guide/decision-tree`. Default to built-in Grep/Glob, bypass tea-rags
-entirely. **Includes subagents spawned by third-party skills.** Missing block
-for a search task silently degrades results — subagent uses inferior text
-search, parent gets low-recall hits, no warning. Inject unconditionally; block
-small + harmless for non-search tasks.
+Subagents (incl. ones spawned by third-party skills) do NOT inherit rules,
+CLAUDE.md, `tea-rags://guide/decision-tree` → default to built-in Grep/Glob,
+bypass tea-rags. Missing block = silent low-recall text search, no warning.
+Inject unconditionally; block small + harmless for non-search tasks.
 
 ## The block to inject
 
-Copy verbatim into subagent prompt. Do NOT substitute a path — the subagent
-addresses the TREE with its OWN working directory, so a subagent in a linked
-worktree reads its own tree (the parent's `$CLAUDE_PROJECT_DIR` is the wrong
-tree there). The alias is per-repository, so it is the same for every checkout:
+Copy verbatim. Do NOT substitute a path — subagent addresses TREE with its OWN
+working directory (in linked worktree parent's `$CLAUDE_PROJECT_DIR` = wrong
+tree). Alias per-repository = same for every checkout:
 `scripts/enforce-tearags-search.sh` resolves it from `$CLAUDE_PROJECT_DIR`
-(`tea-rags project exist --repository --print-name`) and prepends one "tea-rags
-project alias for this repository" line, then hands this fenced block verbatim
-to every subagent as `SubagentStart` additionalContext — edit the block here,
-nowhere else. Not `PreToolUse` + `updatedInput`: two plugins rewriting one
-`Agent` prompt collide, one rewrite is lost.
+(`tea-rags project exist --repository --print-name`), prepends one "tea-rags
+project alias for this repository" line, hands fenced block below verbatim as
+`SubagentStart` additionalContext; `gen-harness-codex` extracts same block —
+edit it HERE only. Not `PreToolUse` + `updatedInput`: two plugins rewriting one
+`Agent` prompt collide, one rewrite lost.
 
 ```
 ## Search Tools (MANDATORY — overrides any other search instructions)
@@ -57,7 +54,5 @@ Identifiers = SYMBOL searches even joined by `|` — never text search. Exists? 
 
 ## When NOT to inject
 
-Block is no-op for tasks not touching search (e.g. format a string, arithmetic,
-summarize known text). Cost small; risk of forgetting outweighs cost of
-unconditional injection — recommendation stands: **inject unconditionally when
-in doubt**.
+No-op for tasks not touching search (format string, arithmetic, summarize known
+text). Forgetting costs more than injecting → in doubt, inject.
