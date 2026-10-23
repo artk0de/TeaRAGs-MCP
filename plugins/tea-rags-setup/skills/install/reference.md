@@ -28,6 +28,9 @@ LAN). No GPU host → rows above; Ollama default.
 
 - Any → "Separate llama-server per GPU, run by you on the GPU host (tea-rags
   prints the commands). ~2× Ollama throughput. Local llama-server as fallback."
+- darwin + arm64 (this Mac) → "Two llama-server instances on this Mac (Metal),
+  started at login. ~1.7× Ollama throughput. The wizard starts them after your
+  OK."
 
 ## ONNX Description by Platform + GPU
 
@@ -130,6 +133,7 @@ No `EMBEDDING_CONCURRENCY` fallback: unset → runtime tuner climbs concurrency 
 | `EMBEDDING_BASE_URL`                   | step 4L (llama-server)    |
 | `EMBEDDING_FALLBACK_URL`               | step 4L (if local tier)   |
 | `EMBEDDING_API_KEY`                    | step 4L (if `--api-key`)  |
+| `EMBEDDING_MODEL`                      | step 4L-local (non-jina)  |
 | `QDRANT_URL`                           | step 5 (omit if embedded) |
 | `EMBEDDING_BATCH_SIZE`                 | tuneValues                |
 | `EMBEDDING_CONCURRENCY`                | tuneValues                |

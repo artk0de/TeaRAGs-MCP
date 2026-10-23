@@ -53,6 +53,7 @@ Agent tool:
       EMBEDDING_BASE_URL=<embeddingBaseUrl — llama-server only>
       EMBEDDING_FALLBACK_URL=<embeddingFallbackUrl — llama-server, if set>
       EMBEDDING_API_KEY=<embeddingApiKey — llama-server, if set>
+      EMBEDDING_MODEL=<embeddingModel — llama-server, if set>
       QDRANT_URL=<value or omit if embedded>
       <all tuneValues keys>=<values>
       TRAJECTORY_GIT_ENABLED=<value>
