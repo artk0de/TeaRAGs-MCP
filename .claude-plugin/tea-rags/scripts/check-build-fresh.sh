@@ -6,7 +6,11 @@ ROOT="${TEA_RAGS_PACKAGE_ROOT:-}"
 if [ -z "$ROOT" ]; then
   BIN="$(command -v tea-rags 2>/dev/null)" || exit 0
   REAL="$(node -e 'console.log(require("fs").realpathSync(process.argv[1]))' "$BIN" 2>/dev/null)" || exit 0
-  ROOT="$(cd "$(dirname "$REAL")/.." 2>/dev/null && pwd)" || exit 0
+  # Bin points into build/ (build/cli/index.js) — walk up to the tea-rags package.json.
+  DIR="$(dirname "$REAL")"
+  while [ "$DIR" != "/" ] && ! grep -qs '"name": *"tea-rags"' "$DIR/package.json"; do DIR="$(dirname "$DIR")"; done
+  [ "$DIR" != "/" ] || exit 0
+  ROOT="$DIR"
 fi
 [ -d "$ROOT/.git" ] || [ -f "$ROOT/.git" ] || exit 0
 [ -f "$ROOT/build/index.js" ] || exit 0

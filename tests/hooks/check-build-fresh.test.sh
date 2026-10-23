@@ -17,6 +17,13 @@ OUT="$(TEA_RAGS_PACKAGE_ROOT="$TMP/pkg" bash "$HOOK" </dev/null)"; RC=$?
 [ $RC = 0 ]; note $? "exits 0"
 echo "$OUT" | grep -Fq "build is older than its source"; note $? "warns when build predates last src commit"
 
+# Autodetect: the global bin links to build/cli/index.js — walk up to the package root.
+echo '{"name":"tea-rags"}' > "$TMP/pkg/package.json"
+mkdir -p "$TMP/pkg/build/cli" "$TMP/bin"; echo '' > "$TMP/pkg/build/cli/index.js"
+ln -s "$TMP/pkg/build/cli/index.js" "$TMP/bin/tea-rags"
+OUT="$(PATH="$TMP/bin:$PATH" bash "$HOOK" </dev/null)"
+echo "$OUT" | grep -Fq "build is older than its source"; note $? "autodetects the package root through a bin linked into build/cli"
+
 touch -t 202610230000 "$TMP/pkg/build/index.js"
 [ -z "$(TEA_RAGS_PACKAGE_ROOT="$TMP/pkg" bash "$HOOK" </dev/null)" ]; note $? "silent when build is fresh"
 
