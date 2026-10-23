@@ -31,7 +31,7 @@ per changed symbol (cap 10):
   <id>: Class#method = instance method, Class.method = static — take it
         from the Phase 2 outline line, never retype it
 edges: no codegraph floor + changedFiles > 0 → callers in changed files are
-       the index's (search-cascade "Addressing the Codebase")
+       the index's (`tea-rags://guide/freshness` "Addressing the Codebase")
 overlay read: rankingOverlay.file.fanIn / transitiveImpact / isHub,
               rankingOverlay.chunk.fanIn (labels); raw values at
               payload.codegraph.symbols.{file,chunk}.* (pageRank there)

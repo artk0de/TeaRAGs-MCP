@@ -87,7 +87,7 @@ text to hooks and skills.** No new MCP tools.
    - guides) so the published `build/` carries them. A drift-guard test fails
      when the generated file and the markdown disagree (precedent:
      `scripts/gen-language-compatibility.ts` + `drift-guard.test.ts`).
-5. **Always-on core** (≤4,000 chars): addressing rule → tool routing table →
+5. **Always-on core** (≤3,700 chars): addressing rule → tool routing table →
    three invariants (never Read after find_symbol; lag never licenses leaving
    tea-rags; empty `get_callers` under low resolve ≠ absence) → "read
    `tea-rags://guide/<topic>` when <trigger>" catalog → destructive-tools line.

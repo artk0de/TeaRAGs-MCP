@@ -37,7 +37,8 @@ style nits.
 1. **Execute YOURSELF** — no subagents.
 2. **Git signals ONLY from overlay** — never `git log` / `git blame`. Diff
    acquisition (Phase 1) = sanctioned exception: review INPUT, not signals.
-3. **No built-in Search/Grep** — tea-rags tools per search-cascade.
+3. **No built-in Search/Grep** — tea-rags tools per
+   `tea-rags://guide/decision-tree`.
 4. **Evidence filter is hard.** Every finding rests on a signal value or
    concrete code (symbol, line, sibling pattern). Can't cite → drop in Phase 4,
    never soften into speculative nit. Evidence is the INTERNAL gate — how it is
@@ -53,7 +54,8 @@ style nits.
    session context (CLAUDE.md, `.claude/rules/**` incl. gitignored `.local/**`,
    memory, prime, skills) is NEVER evidence in a comment.
 8. **Depth → `find_symbol`, never Read** — `symbol=<symbolId>` for a body,
-   `relativePath` for an outline (search-cascade After-Search Navigation).
+   `relativePath` for an outline (`tea-rags://guide/navigation` After-Search
+   Navigation).
 9. **External posting ALWAYS behind one whole-batch draft-gate confirm.**
 10. **Never fake skipped dimension** — name it "not assessed" in summary.
 
@@ -74,21 +76,23 @@ style nits.
 **Mode:** `$ARGUMENTS` contains URL → external. Else local.
 
 **Checkout:** local mode → cwd; external mode → local checkout of MR's repo
-(checkout REQUIRED). Every call passes `path=<checkout>` (search-cascade
-"Addressing the Codebase"). Answer reports no index for that repository → STOP,
-print register + index instruction. Never scan unindexed repo.
+(checkout REQUIRED). Every call passes `path=<checkout>`
+(`tea-rags://guide/decision-tree` "Addressing the Codebase"). Answer reports no
+index for that repository → STOP, print register + index instruction. Never scan
+unindexed repo.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
 `index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
 **Freshness:** external → `git fetch` target branch; index behind target →
-incremental `index_codebase project=<alias>`. Local → `index-freshness` rows
-(linked worktree: no reindex — overlay reads the tree).
+incremental `index_codebase project=<alias>`. Local →
+`tea-rags://guide/freshness` rows (linked worktree: no reindex — overlay reads
+the tree).
 
 ## Phase 1: ACQUIRE
 
@@ -117,8 +121,8 @@ MR description = review intent — feeds D6 invariants.
 
 Non-indexed touched files (new in MR, generated, docs) → `overlay: none`, still
 eligible for D6. Local mode: Row with `treeState` = pre-edit index copy, lines
-stale → `find_symbol` for current code (search-cascade "Addressing the
-Codebase").
+stale → `find_symbol` for current code (`tea-rags://guide/freshness` "Addressing
+the Codebase").
 
 ## Phase 3: SCAN
 

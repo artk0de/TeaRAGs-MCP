@@ -50,8 +50,8 @@ function getOrThrow(caps: Map<string, LanguageCapability>, key: string): Languag
 }
 
 /**
- * Render the agent-facing `language-compatibility.md` rule from the capability
- * Map. Static product fact only — the measured `resolveSuccessRate` is never
+ * Render the agent-facing language-capability guide (`tea-rags://guide/language-capability`)
+ * from the capability Map. Static product fact only — the measured `resolveSuccessRate` is never
  * baked in (it is per-index state owned by prime).
  */
 export function renderRule(caps: Map<string, LanguageCapability>): string {
@@ -108,7 +108,7 @@ ${renderLanguageVersionPolicies(caps)}
   split between its statements into \`#partN\` chunks, each opening with the
   signature and enclosing block headers as context — one part is NOT the whole
   symbol; \`find_symbol(parentSymbolId)\` reassembles every part into one
-  trusted result. See \`search-cascade.md\` → After-Search Navigation.)
+  trusted result. See \`tea-rags://guide/navigation\`.)
 - **partial** — chunked by section / heading (Markdown). A section is coherent
   for docs; there are no code symbols to split.
 - **none** — CharacterChunker splits at blank lines and top-level statement

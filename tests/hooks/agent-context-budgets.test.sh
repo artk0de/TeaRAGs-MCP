@@ -12,6 +12,17 @@ INPUT='{"session_id":"s","hook_event_name":"SubagentStart","agent_type":"general
 BLOCK="$(echo "$INPUT" | bash "$ROOT/.claude-plugin/tea-rags/scripts/enforce-tearags-search.sh" | jq -r '.hookSpecificOutput.additionalContext')"
 [ "$(printf %s "$BLOCK" | wc -c)" -le $SUBAGENT_CAP ]; note $? "subagent block ≤ $SUBAGENT_CAP bytes"
 
+# SessionStart rules injection: one part, ≤ 8,000 bytes (the core; guides are served on demand).
+INJECT="$ROOT/.claude-plugin/tea-rags/scripts/inject-rules.sh"
+[ "$(bash "$INJECT" --count)" = 1 ]; note $? "rules injection is one part"
+[ "$(bash "$INJECT" --part 1 --parts 1 | wc -c)" -le 8000 ]; note $? "rules injection ≤ 8000 bytes"
+[ "$(bash "$INJECT" | wc -c)" -le 8000 ]; note $? "legacy no-arg rules dump ≤ 8000 bytes"
+# core.md doubles as server `instructions` (≤ 4,096) and Cursor's tea-rags-core.mdc
+# (≤ 4,096 incl. ~330 chars of wrapper), hence 3,700 chars.
+CORE="$ROOT/.claude-plugin/tea-rags/rules/core.md"
+[ -f "$CORE" ] && [ "$(node -e 'console.log(require("fs").readFileSync(process.argv[1],"utf8").length)' "$CORE")" -le 3700 ]
+note $? "rules/core.md ≤ 3700 chars"
+
 # Description = value of the top-level `description:` key: inline text, or an
 # indented block (plain, `>` / `|` folded) running to the next top-level key.
 desc_len() {

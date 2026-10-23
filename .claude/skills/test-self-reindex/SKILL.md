@@ -92,10 +92,10 @@ via Bash `timeout` param so hung enrichment doesn't lock session.)
 `index-codebase --name` — FULL `--force` rebuild re-exercising whole pipeline
 (the point of smoke test). NOT same as `tea-rags worktree create`, which CLONES
 existing index for plan-execution freshness (fast, no pipeline run — see
-`tea-rags/rules/index-freshness.md`). If you reach for `worktree create`
-instead, its source resolves via `registry.findByPath(cwd)`: run from registered
-project root OR pass `--from <alias>`; give `--path <abs-worktree>` and
-`--no-git` to attach to existing worktree dir.
+`tea-rags://guide/freshness`). If you reach for `worktree create` instead, its
+source resolves via `registry.findByPath(cwd)`: run from registered project root
+OR pass `--from <alias>`; give `--path <abs-worktree>` and `--no-git` to attach
+to existing worktree dir.
 
 ### Step 3 — Verify all four enrichment levels reach `healthy`
 

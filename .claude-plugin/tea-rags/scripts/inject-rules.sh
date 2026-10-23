@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # SessionStart hook (re-fires on compaction; PreCompact stdout never reaches the model):
-# put the search-cascade rule corpus into the
-# agent's context. The corpus is ~37KB and a hook's stdout stops being delivered
-# well before that — past roughly 16KB the harness writes it to a file and hands
-# the model a 2KB preview instead, so a single `cat` of the corpus reaches the
-# model as its first two kilobytes and nothing else.
+# put the always-on tea-rags core (`rules/core.md`, ≤ 3,700 chars) into the agent's
+# context. Everything else lives in `rules/guides/*.md`, served on demand as
+# `tea-rags://guide/<topic>` resources.
 #
-# The corpus is therefore emitted in parts, one hook command per `--part N`, each
-# below --max-bytes. Parts are packed on `## ` section boundaries so a rule is
-# never cut in half; a section larger than the budget is split by lines. Callers
-# declare how many slots they wired with --parts, and the last slot names any
-# rules that did not fit rather than dropping them silently.
+# A hook's stdout stops being delivered well before large sizes — past roughly
+# 16KB the harness writes it to a file and hands the model a 2KB preview — so the
+# splitter stays: output is emitted in parts, one hook command per `--part N`,
+# each below --max-bytes, packed on `## ` section boundaries (a section larger
+# than the budget is split by lines). Callers declare how many slots they wired
+# with --parts; the last slot names any rules that did not fit rather than
+# dropping them silently. The core fits one part.
 #
 # A hook must never fail the session: always exit 0.
 
@@ -18,8 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
 RULES_DIR="$PLUGIN_ROOT/rules"
 
-# Order is the reading order: the cascade first, the two it defers to after.
-RULE_FILES="search-cascade.md index-freshness.md language-compatibility.md"
+RULE_FILES="core.md"
 
 MAX_BYTES=10000
 PART=0

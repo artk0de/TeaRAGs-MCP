@@ -1,6 +1,7 @@
 # Search Use Cases
 
-By agent task. Each maps to Decision Tree branch in `search-cascade.md`.
+By agent task. Each maps to Decision Tree branch in
+`tea-rags://guide/decision-tree`.
 
 ## Discovery (don't know the naming)
 
@@ -144,8 +145,8 @@ chunks are indexed.
 Preflight: DSL test chunks absent if no `git.chunk.*` signal in prime digest
 shows a `test:` threshold row. Then fall back to file-level `testFile: "only"`
 with explicit "DSL test chunks unavailable" note. Which languages have a DSL
-test scope chunker: **`language-compatibility.md`** (GENERATED — Tests code
-chunking `high` = DSL scope preserved; `medium` / `low` / `none` = no DSL
+test scope chunker: `tea-rags://guide/language-capability` (GENERATED — Tests
+code chunking `high` = DSL scope preserved; `medium` / `low` / `none` = no DSL
 chunks). Never restate per-language support here.
 
 ## External tools (complement tea-rags)

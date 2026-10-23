@@ -30,14 +30,14 @@ do not fabricate an area.
 redirects superpowers:X. NEVER bypass wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
-worktree: overlay serves uncommitted edits — never reindex for them. Main
-checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
-over uncommitted edits, or once answers show `changedFiles` > 0 (HEAD moved,
-branch switch) — no consent, also under drift `--force` (ask that separately).
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never
-license Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without
-`treeState` = current; `treeState` row → `find_symbol` re-call.
+`tea-rags://guide/freshness`. No background reindex hook. Linked worktree:
+overlay serves uncommitted edits — never reindex for them. Main checkout:
+incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call over
+uncommitted edits, or once answers show `changedFiles` > 0 (HEAD moved, branch
+switch) — no consent, also under drift `--force` (ask that separately). **Lag ≠
+unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never license
+Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without `treeState`
+= current; `treeState` row → `find_symbol` re-call.
 
 ## Step 1 — Extract target area
 
@@ -73,7 +73,7 @@ tool call block), each with `metaOnly: true` (want signals, not content):
 Call D runs ONLY when codegraph active (prime `## Enrichment` lists
 `codegraph.symbols`). When that line absent, omit Call D — run A/B/C only, note
 structural backbone not assessed (do NOT substitute a similarity-ranked list as
-"the hubs"). See search-cascade "Graph navigation".
+"the hubs"). See `tea-rags://guide/navigation` "Graph navigation".
 
 **Call E — vocabulary (codegraph only, same parallel block):**
 `get_naming_lexicon(concept=<Step 1 query>, language, pathPattern)` →
@@ -83,7 +83,7 @@ structural backbone not assessed (do NOT substitute a similarity-ranked list as
 Exact parameters per call:
 
 ```
-project:     <alias>                    ← search-cascade "Addressing the Codebase"
+project:     <alias>                    ← `tea-rags://guide/freshness` "Addressing the Codebase"
 path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent sentence from Step 1>
 pathPattern: <pathPattern from Step 1>

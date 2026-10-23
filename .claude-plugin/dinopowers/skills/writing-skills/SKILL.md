@@ -46,7 +46,7 @@ Compose single-sentence intent. Becomes `query` in Step 2.
 Call `mcp__tea-rags__semantic_search` with these exact parameters:
 
 ```
-project:     <alias>                    ← search-cascade "Addressing the Codebase"
+project:     <alias>                    ← `tea-rags://guide/freshness` "Addressing the Codebase"
 path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent sentence from Step 1>
 pathPattern: "**/SKILL.md"

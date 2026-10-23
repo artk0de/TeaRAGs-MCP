@@ -21,15 +21,16 @@ hardcoded thresholds — strategies adapt per codebase.
 ## Prerequisites
 
 **Addressing:** every tea-rags call passes `project=<alias>` +
-`path=<your working directory>` — search-cascade "Addressing the Codebase".
+`path=<your working directory>` — `tea-rags://guide/freshness` "Addressing the
+Codebase".
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
 `index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
 **Area context required:** files, pathPattern, per-symbol overlay labels must be
 in conversation. Labels come from `find_symbol(rerank=<preset>, metaOnly=false)`
@@ -566,7 +567,7 @@ here, not as a second verification step.
 ### Step 8: IMPACT
 
 Edges: no `codegraph` floor while `changedFiles` > 0 → edges touching changed
-files are the index's (search-cascade "Addressing the Codebase").
+files are the index's (`tea-rags://guide/freshness` "Addressing the Codebase").
 
 Assess blast radius of change you just generated.
 
@@ -577,7 +578,7 @@ Assess blast radius of change you just generated.
 - **Codegraph off** (no `codegraph.symbols` in prime → `fanIn` signal absent):
   fall back to custom weights `{ imports: 0.5, churn: 0.3, ownership: 0.2 }`,
   metaOnly=true, note blast radius is approximate (import-proxy, not edge
-  truth). See search-cascade "Graph navigation".
+  truth). See `tea-rags://guide/navigation` "Graph navigation".
 - **MODIFY: `get_callers` on the modified symbol MANDATORY** — changed behavior
   propagates through real call edges; import proxy insufficient.
 

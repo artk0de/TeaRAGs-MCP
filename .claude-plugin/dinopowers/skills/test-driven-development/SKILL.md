@@ -39,11 +39,10 @@ supported: TypeScript + JavaScript (Vitest/Jest/Mocha), Ruby (RSpec), Swift
 (XCTest / swift-testing / Quick), Rust (#[cfg(test)] / #[test])** — see
 `src/core/domains/language/<lang>/chunking/` (`test-scope-chunker.ts`,
 `rspec-scope-chunker.ts`, `suite-recognition.ts`, `quick-scope-chunker.ts`);
-canonical per-language list:
-`.claude-plugin/tea-rags/rules/language-compatibility.md` (GENERATED)), fall
-back to single `mcp__tea-rags__semantic_search` with `testFile: "only"` +
-`rerank: "proven"` and state "file-level fallback — test chunks unavailable for
-this language".
+canonical per-language list: `tea-rags://guide/language-capability`
+(GENERATED)), fall back to single `mcp__tea-rags__semantic_search` with
+`testFile: "only"` + `rerank: "proven"` and state "file-level fallback — test
+chunks unavailable for this language".
 
 Swift's granularity depends on the framework. XCTest and swift-testing declare
 cases as methods, so a `chunkType: "test"` hit is one `func testX()` /
@@ -65,14 +64,14 @@ If first test in project (no existing tests): skip pattern search, invoke
 redirects superpowers:X. NEVER bypass the wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
-worktree: overlay serves uncommitted edits — never reindex for them. Main
-checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
-over uncommitted edits, or once answers show `changedFiles` > 0 (HEAD moved,
-branch switch) — no consent, also under drift `--force` (ask that separately).
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never
-license Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without
-`treeState` = current; `treeState` row → `find_symbol` re-call.
+`tea-rags://guide/freshness`. No background reindex hook. Linked worktree:
+overlay serves uncommitted edits — never reindex for them. Main checkout:
+incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call over
+uncommitted edits, or once answers show `changedFiles` > 0 (HEAD moved, branch
+switch) — no consent, also under drift `--force` (ask that separately). **Lag ≠
+unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never license
+Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without `treeState`
+= current; `treeState` row → `find_symbol` re-call.
 
 ## Step 1 — Frame the test intent
 
@@ -112,7 +111,7 @@ If recipe returns SKIP (DSL test chunks absent), fall back to ONE
 `mcp__tea-rags__semantic_search` call:
 
 ```
-project:     <alias>                    ← search-cascade "Addressing the Codebase"
+project:     <alias>                    ← `tea-rags://guide/freshness` "Addressing the Codebase"
 path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent from Step 1>
 pathPattern: <pathHint optional>

@@ -6,7 +6,6 @@ import { format, resolveConfig } from "prettier";
 
 import type { LanguageCapability } from "../src/core/contracts/types/language.js";
 import { renderReadme } from "../src/core/domains/language/capability/readme.js";
-import { renderRule } from "../src/core/domains/language/capability/rule.js";
 import { LanguageFactory } from "../src/core/domains/language/factory.js";
 
 const BEGIN = "<!-- BEGIN lang-compat -->";
@@ -14,19 +13,18 @@ const END = "<!-- END lang-compat -->";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+/** Agents read the matrix from `tea-rags://guide/language-capability`, rendered live — only the README is generated. */
 export interface GenPaths {
-  rulePath: string;
   readmePath: string;
 }
 
 const DEFAULT_PATHS: GenPaths = {
-  rulePath: resolve(here, "../.claude-plugin/tea-rags/rules/language-compatibility.md"),
   readmePath: resolve(here, "../README.md"),
 };
 
 /**
- * Format through Prettier with the project config so the committed artifacts
- * are byte-identical to what `lint-staged`'s `prettier --write` would produce —
+ * Format through Prettier with the project config so the committed README
+ * is byte-identical to what `lint-staged`'s `prettier --write` would produce —
  * the pre-commit hook is then a no-op and the drift-guard stays stable.
  */
 async function formatMarkdown(source: string, filepath: string): Promise<string> {
@@ -36,14 +34,6 @@ async function formatMarkdown(source: string, filepath: string): Promise<string>
 
 function caps(): Map<string, LanguageCapability> {
   return new LanguageFactory().capabilities();
-}
-
-/** Prettier-formatted rule-file content from the descriptors. */
-export async function renderRuleFile(
-  capabilities: Map<string, LanguageCapability> = caps(),
-  rulePath: string = DEFAULT_PATHS.rulePath,
-): Promise<string> {
-  return formatMarkdown(renderRule(capabilities), rulePath);
 }
 
 /**
@@ -66,14 +56,12 @@ export async function spliceReadme(
   return formatMarkdown(`${before}\n${renderReadme(capabilities)}\n${after}`, readmePath);
 }
 
-export async function writeArtifacts({ rulePath, readmePath }: GenPaths): Promise<void> {
-  const capabilities = caps();
-  writeFileSync(rulePath, await renderRuleFile(capabilities, rulePath), "utf8");
+export async function writeArtifacts({ readmePath }: GenPaths): Promise<void> {
   const readme = readFileSync(readmePath, "utf8");
-  writeFileSync(readmePath, await spliceReadme(readme, capabilities, readmePath), "utf8");
+  writeFileSync(readmePath, await spliceReadme(readme, caps(), readmePath), "utf8");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await writeArtifacts(DEFAULT_PATHS);
-  console.log("✓ language-compatibility.md + README block regenerated from capability descriptors.");
+  console.log("✓ README lang-compat block regenerated from capability descriptors.");
 }

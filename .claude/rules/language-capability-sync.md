@@ -15,7 +15,7 @@ capability tier. You MUST:
 2. Bump `versions` in the same descriptor if the change altered what that
    language PRODUCES for an already-indexed project (see below).
 3. Run `npm run gen:lang-compat` to regenerate
-   `.claude-plugin/tea-rags/rules/language-compatibility.md` and the README
+   `tea-rags://guide/language-capability` and the README
    `<!-- BEGIN/END lang-compat -->` spoiler block from the descriptors.
 4. Commit regenerated artifacts alongside your change.
 
