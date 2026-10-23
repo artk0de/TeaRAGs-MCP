@@ -358,13 +358,13 @@ describe("the miss classifier's external gate reads the driver (bd s3i8m T7)", (
     expect(classifyResolveMiss(pushSite, ctxWith(table()), resolver, table())).toBe("noInProjectDef");
   });
 
-  it("applies R3c to a driver answer: a project impl of the trait keeps the site in the denominator", async () => {
+  it("counts a std trait's declaration row external at the miss gate despite a project impl", async () => {
     const callSites = stubIndex({ "src/main.rs:30:9": stdTraitMember("Display", "fmt") });
     const t = table(def("src/shape.rs", "fmt", "Shape.fmt", 3, 5));
     const impls = { "src/shape.rs": [traitImpl("Shape", "Display", 2, 6)] };
     expect(
       (await facade({ callSites })).targetsExternalImport?.(call("s.fmt(f)", "s", "fmt", 30, 9), ctxWith(t, {}, impls)),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("buckets a derived impl as noInProjectDef — never external, never a miss", async () => {
@@ -1107,9 +1107,9 @@ describe("driver trait-declaration members prove external only without a project
     });
   });
 
-  it("keeps the site in the denominator: targetsExternalImport is false on a project impl", async () => {
+  it("counts the site external at the miss gate, project impl or not", async () => {
     const resolver = await facade({ callSites: callSites() });
-    expect(resolver.targetsExternalImport?.(fromSite, ctxWith(domString(), {}, domStringImpl))).toBe(false);
+    expect(resolver.targetsExternalImport?.(fromSite, ctxWith(domString(), {}, domStringImpl))).toBe(true);
     expect(resolver.targetsExternalImport?.(fromSite, ctxWith(domString(), {}, {}))).toBe(true);
   });
 });
@@ -1154,6 +1154,83 @@ describe("driver trait-declaration members on a proven external receiver (bd s3i
     expect(strategy.attempt(txClone, ctxWith(shape(), { callSites: callSites() }, cloneImpl))).toEqual({
       kind: "continue",
     });
+  });
+});
+
+describe("a std / dependency trait's declaration row is external at the miss gate (R3c, owner 2026-10-23)", () => {
+  const CLONE_SITE = "src/main.rs:50:8";
+  const cloneSite = call("t.clone()", "t", "clone", 50, 8);
+  const shape = () => table(def("src/shape.rs", "clone", "Shape.clone", 3, 5));
+  const cloneImpl = { "src/shape.rs": [traitImpl("Shape", "Clone", 2, 6)] };
+  const SLOG_LOG: RustCallSiteDefinition = {
+    symbol: "rustc slog slog::Drain::log",
+    package: "slog",
+    inProject: false,
+    name: "log",
+    kind: "callable",
+    declaringTrait: "Drain",
+    packageInProject: false,
+  };
+
+  it("buckets a std trait's declaration row a project impl declares as externalSkipped", async () => {
+    const callSites = stubIndex({ [CLONE_SITE]: stdTraitMember("Clone", "clone") });
+    const resolver = await facade({ callSites });
+    const ctx = ctxWith(shape(), {}, cloneImpl);
+    expect(resolver.targetsExternalImport?.(cloneSite, ctx)).toBe(true);
+    expect(resolver.targetsUndecidable?.(cloneSite, ctx)).toBe(false);
+    expect(classifyResolveMiss(cloneSite, ctx, resolver, shape())).toBe("externalSkipped");
+  });
+
+  it("leaves the chain's verdict alone: the row still CONTINUEs, so a static impl edge survives", () => {
+    const callSites = stubIndex({ [CLONE_SITE]: stdTraitMember("Clone", "clone") });
+    expect(strategy.attempt(cloneSite, ctxWith(shape(), { callSites }, cloneImpl))).toEqual({ kind: "continue" });
+  });
+
+  it("buckets a dependency trait's declaration row a project impl declares as externalSkipped", async () => {
+    const t = table(def("src/drain.rs", "log", "Filter.log", 3, 5));
+    const site = call("drain.log(r, v)", "drain", "log", 51, 10);
+    const resolver = await facade({ callSites: stubIndex({ "src/main.rs:51:10": SLOG_LOG }) });
+    const ctx = ctxWith(t, {}, { "src/drain.rs": [traitImpl("Filter", "Drain", 2, 6)] });
+    expect(classifyResolveMiss(site, ctx, resolver, t)).toBe("externalSkipped");
+  });
+
+  it("keeps a declaration row no project impl declares external", async () => {
+    const resolver = await facade({ callSites: stubIndex({ [CLONE_SITE]: stdTraitMember("Clone", "clone") }) });
+    expect(classifyResolveMiss(cloneSite, ctxWith(shape(), {}, {}), resolver, shape())).toBe("externalSkipped");
+  });
+
+  it("keeps a workspace trait's declaration row a miss — with or without a source position", async () => {
+    const t = table(def("src/window.rs", "Document", "Window.Document", 3, 5));
+    const site = call("window.Document()", "window", "Document", 52, 11);
+    const impls = { "src/window.rs": [traitImpl("Window", "WindowMethods", 2, 6)] };
+    const workspaceDecl = (located: boolean): RustCallSiteDefinition => ({
+      symbol: "rustc script_bindings script_bindings::codegen::WindowMethods::Document",
+      package: "script_bindings",
+      inProject: located,
+      ...(located ? { relPath: "src/bindings.rs", line: 40 } : {}),
+      name: "Document",
+      kind: "callable",
+      declaringTrait: "WindowMethods",
+      packageInProject: true,
+    });
+    for (const located of [false, true]) {
+      const resolver = await facade({ callSites: stubIndex({ "src/main.rs:52:11": workspaceDecl(located) }) });
+      expect(classifyResolveMiss(site, ctxWith(t, {}, impls), resolver, t)).toBe("missWithInProjectDef");
+    }
+  });
+
+  it("leaves a row naming the dispatched impl as before", async () => {
+    const senderClone: RustCallSiteDefinition = {
+      symbol: "rustc std <std::sync::mpsc::Sender<T> as std::clone::Clone>::clone",
+      package: "std",
+      inProject: false,
+      name: "clone",
+      kind: "callable",
+      implTrait: "Clone",
+      packageInProject: false,
+    };
+    const resolver = await facade({ callSites: stubIndex({ [CLONE_SITE]: senderClone }) });
+    expect(classifyResolveMiss(cloneSite, ctxWith(shape(), {}, cloneImpl), resolver, shape())).toBe("externalSkipped");
   });
 });
 
