@@ -9,7 +9,7 @@ import type { TypeRef } from "../../../../contracts/types/language.js";
 import { rustTextIsStdValueWrapper } from "../vocabulary/std-prelude.js";
 import { resolveRustNominalType } from "./declared-return-type.js";
 import { rustPlaceTypeThroughDeclaringFile } from "./declaring-file-type.js";
-import { rustExternalAssociatedCallType } from "./external-type-hops.js";
+import { rustExternalAssociatedCallType, rustExternalFreeCallType } from "./external-type-hops.js";
 import { rustStdTypeRef, rustStdUnwrapType } from "./std-type-hops.js";
 import {
   lookupRustSymbolsByShortName,
@@ -93,6 +93,8 @@ export function rustDeclaredCallResultType(
  * associated function, the argument text and the `?`s.
  */
 const RUST_PATH_CALL_INIT = /^(?:::)?((?:[A-Za-z_]\w*::)*[A-Z]\w*)(?:::<[^()]*>)?::([A-Za-z_]\w*)\((.*)\)(\?*)$/;
+/** `module::f::<..>(args)` or `f(args)` followed only by `?` tails: the spelling, the argument text and the `?`s. */
+const RUST_FREE_CALL_INIT = /^((?:::)?(?:[a-z_]\w*::)*[a-z_]\w*)(?:::<[^()]*>)?\((.*)\)(\?*)$/;
 const RUST_LOCAL_NAME = /^[a-z_]\w*$/;
 
 /**
@@ -103,7 +105,29 @@ const RUST_LOCAL_NAME = /^[a-z_]\w*$/;
  */
 function rustExternalPathCallResultType(binding: CallResultBinding, ctx: CallContext): TypeRef | undefined {
   const match = RUST_PATH_CALL_INIT.exec(binding.initExpression ?? "");
+  if (match === null) return rustExternalFreeCallResultType(binding, ctx);
+  return rustExternalAssociatedCallResultType(match, binding, ctx);
+}
+
+/**
+ * `tempfile::tempdir()?`, `channel()` (bd s3i8m.7 T-A2): an external free
+ * function's table return, each `?` unwrapping it.
+ */
+function rustExternalFreeCallResultType(binding: CallResultBinding, ctx: CallContext): TypeRef | undefined {
+  const match = RUST_FREE_CALL_INIT.exec(binding.initExpression ?? "");
   if (match === null) return undefined;
+  const [, spelling, argumentText, tries] = match;
+  if (!balancedParentheses(argumentText)) return undefined;
+  let produced = rustExternalFreeCallType(spelling, ctx);
+  for (let i = 0; i < tries.length && produced !== undefined; i++) produced = rustStdUnwrapType(produced, "?");
+  return produced;
+}
+
+function rustExternalAssociatedCallResultType(
+  match: RegExpExecArray,
+  binding: CallResultBinding,
+  ctx: CallContext,
+): TypeRef | undefined {
   const [, spelling, assoc, argumentText, tries] = match;
   if (!balancedParentheses(argumentText)) return undefined;
   let produced = rustExternalAssociatedCallType(spelling, assoc, ctx);
