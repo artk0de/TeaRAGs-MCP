@@ -20,12 +20,12 @@ antipattern/refactoring intent broad-scope (no specific entity).
 ## MANDATORY RULES
 
 1. **Execute YOURSELF** — no subagents.
-2. **Tool selection via search-cascade decision tree** — don't hard-code tool
-   choice. Pass query + rerank + pathPattern to search-cascade; it determines
-   tool.
-3. **Stop conditions from search-cascade** — follow gradient-drop /
-   diminishing-returns / cross-preset rules. Do NOT use absolute score
-   thresholds.
+2. **Tool selection via `tea-rags://guide/decision-tree` decision tree** — don't
+   hard-code tool choice. Pass query + rerank + pathPattern to
+   `tea-rags://guide/decision-tree`; it determines tool.
+3. **Stop conditions from `tea-rags://guide/decision-tree`** — follow
+   gradient-drop / diminishing-returns / cross-preset rules. Do NOT use absolute
+   score thresholds.
 4. **No built-in Search/Grep for code discovery** — only TeaRAGs tools + ripgrep
    MCP fallback for literal text (identifiers never — `hybrid_search`).
 
@@ -34,13 +34,13 @@ answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
 `index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
 ## Flow
 
 ```
-1. SCAN — 3 presets via search-cascade
+1. SCAN — 3 presets via `tea-rags://guide/decision-tree`
 2. MERGE — cross-reference by symbolId
 3. ENRICH — Tier 1: read code, classify
 4. OUTPUT — tiered table
@@ -48,13 +48,14 @@ leaving tea-rags".
 
 ### 1. SCAN
 
-Run search-cascade **3 times** with different rerank presets. For each:
+Run `tea-rags://guide/decision-tree` **3 times** with different rerank presets.
+For each:
 
 - Pass query (from $ARGUMENTS) + pathPattern (from scope extraction) to
-  search-cascade — it determines tool
+  `tea-rags://guide/decision-tree` — it determines tool
 - limit=10, metaOnly=false (content needed for ENRICH classification; 3 × 10 =
   30 chunks ≈ 30-60KB — fits in 1M context)
-- Apply search-cascade stop conditions per-preset
+- Apply `tea-rags://guide/decision-tree` stop conditions per-preset
 
 | Preset          | What it surfaces                                           |
 | --------------- | ---------------------------------------------------------- |

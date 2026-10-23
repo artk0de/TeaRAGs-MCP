@@ -96,12 +96,12 @@ Swift is BOTH rows: which one a file gets follows its framework, and a Quick
 suite's non-DSL members land in one `test_setup` chunk named after the class.
 
 For Python / Go / others, file-level `testFile: "only"` is the only option. Full
-per-language support: `.claude-plugin/tea-rags/rules/language-compatibility.md`
-(GENERATED — never restate it here). Detect availability via prime digest: test
-chunks absent if no `git.chunk.*` signal shows a `test:` threshold row. Recipes
-depending on test chunks, see `$tests-as-context` (Step 0 preflight handles this
-automatically). New language added → update this table in lock-step with the
-matching block in `$tests-as-context` and `test-driven-development` — see
+per-language support: `tea-rags://guide/language-capability` (GENERATED — never
+restate it here). Detect availability via prime digest: test chunks absent if no
+`git.chunk.*` signal shows a `test:` threshold row. Recipes depending on test
+chunks, see `$tests-as-context` (Step 0 preflight handles this automatically).
+New language added → update this table in lock-step with the matching block in
+`$tests-as-context` and `test-driven-development` — see
 `.claude/rules/test-spec-chunking.md`.
 
 ## Filter level vs result granularity

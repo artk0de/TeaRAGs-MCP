@@ -52,15 +52,16 @@ Test corpus **absent** if every `git.chunk.*` row shows `—` in `test ≥`, or 
 table has no `git.chunk.*` row at all.
 
 **Addressing (every recipe below):** `project: <alias>` +
-`path: <your working directory>` — search-cascade "Addressing the Codebase".
+`path: <your working directory>` — `tea-rags://guide/freshness` "Addressing the
+Codebase".
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
 `index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
 **Prime digest not in context (fresh subagent / cold session):** issue ONE cheap
 probe call to determine DSL availability without scanning digest:
@@ -312,9 +313,10 @@ full describe-it path in `parentSymbolId` / `symbolId`.
 
 ## Step 2 — Output to caller
 
-Return recipe's formatted output. Caller (dinopowers wrapper, search-cascade
-direct user, another tea-rags skill) embeds block in its own format — review
-bundle line, verification ladder annotation, debug context paragraph.
+Return recipe's formatted output. Caller (dinopowers wrapper,
+`tea-rags://guide/decision-tree` direct user, another tea-rags skill) embeds
+block in its own format — review bundle line, verification ladder annotation,
+debug context paragraph.
 
 This skill never invokes another `Skill(...)`. Leaf in call chain.
 
