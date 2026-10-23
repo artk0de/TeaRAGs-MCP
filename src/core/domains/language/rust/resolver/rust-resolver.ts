@@ -88,6 +88,7 @@ import {
   RustcCallSiteSymbolResolutionStrategy,
   RustGlobalShortNameSymbolResolutionStrategy,
   RustImportMatchSymbolResolutionStrategy,
+  RustLexicalScopeSymbolResolutionStrategy,
   RustLocalBindingSymbolResolutionStrategy,
   RustMacroInvocationSymbolResolutionStrategy,
   rustMacroShortNameCandidates,
@@ -134,6 +135,10 @@ export class RustCallResolver implements CallResolver {
       new RustSelfFieldSymbolResolutionStrategy(cfg),
       new RustLocalBindingSymbolResolutionStrategy(cfg),
       new RustTypeReceiverSymbolResolutionStrategy(cfg),
+      // Before importMatch / bareSelfMethod / globalShortName: an item of the
+      // enclosing scopes shadows every glob and every outer name; an explicit
+      // `use` of the name in scope it CONTINUES to importMatch.
+      new RustLexicalScopeSymbolResolutionStrategy(cfg),
       new RustImportMatchSymbolResolutionStrategy(cfg),
       new RustBareSelfMethodSymbolResolutionStrategy(cfg),
       new RustGlobalShortNameSymbolResolutionStrategy(cfg),

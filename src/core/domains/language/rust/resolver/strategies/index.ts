@@ -4,6 +4,7 @@ export { RustSelfFieldSymbolResolutionStrategy } from "./rust-self-field.js";
 export { RustLocalBindingSymbolResolutionStrategy } from "./rust-local-binding.js";
 export { RustTypeReceiverSymbolResolutionStrategy } from "./rust-type-receiver.js";
 export { RustImportMatchSymbolResolutionStrategy } from "./rust-import-match.js";
+export { RustLexicalScopeSymbolResolutionStrategy } from "./rust-lexical-scope.js";
 export { RustBareSelfMethodSymbolResolutionStrategy } from "./rust-bare-self-method.js";
 export { RustGlobalShortNameSymbolResolutionStrategy } from "./rust-global-short-name.js";
 export { RustTraitSelfMethodSymbolResolutionStrategy } from "./rust-trait-self-method.js";
