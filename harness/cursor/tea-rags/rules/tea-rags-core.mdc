@@ -43,11 +43,11 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
   license leaving tea-rags — ticket-named files too. No `treeState` = current;
   `treeState` row = pre-edit copy (signals hold, text stale) → `find_symbol`.
-- Own checkout (tree = alias's path), `changedFiles` > 0, stale banner or
-  unindexed edits → incremental `index_codebase(project=)` first, no consent,
-  plans too; drift `--force*` `Run:` → ask, never instead. Subagent: never ask
-  user or reindex — report needed reindex / `--force*` to parent. Linked
-  worktree → overlay only.
+- Subagent: never reindex (any kind) or ask the user — report to parent.
+  Otherwise own checkout (tree = alias's path), `changedFiles` > 0, stale banner
+  or unindexed edits → incremental `index_codebase(project=)` first, no consent,
+  plans too; drift `--force*` `Run:` → ask, never instead. Linked worktree →
+  overlay only.
 - Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`; edges at
   changed files → `find_symbol` its caller, then `hybrid_search(metaOnly)`, no
   graph retry. Graph tools absent = codegraph off → never claim "no cycles";

@@ -290,6 +290,21 @@ describe("renderCodexHarness", () => {
     }
   });
 
+  // Codex T22 introspection, all six suites: a plan-only answer described a future report instead of printing the contract.
+  it("tells the core, beside the read discipline, that output contracts apply now in plan-only answers", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+
+    for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
+      const body = (rendered.get(path) ?? "").replace(/^---\n[\s\S]*?\n---\n/, "");
+      const head = body.split("\n").slice(0, 16).join("\n");
+      expect(head).toMatch(/Plan-only\s+\/\s+describe-the-plan\s+answers/);
+      expect(head).toMatch(/every\s+skill\s+output\s+contract\s+applies\s+NOW/);
+      expect(head).toMatch(/`\[planned; not run\]`/);
+      expect(head).toMatch(/Describing\s+compliance\s+is\s+not\s+compliance\./);
+      expect(body.match(/Plan-only \/ describe-the-plan/g)).toHaveLength(1);
+    }
+  });
+
   // Codex T22 r5 E14/E15: incremental index then a bare graph retry; "explain retry logic" read as an agent retry.
   it("tells the core that an incremental index is a prelude and how to re-check a lagging graph answer", async () => {
     const rendered = await renderCodexHarness(ROOT);

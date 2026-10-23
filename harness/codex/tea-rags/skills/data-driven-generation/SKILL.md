@@ -9,8 +9,8 @@ description:
   X", "change behavior of Y", "напиши функцию", "добавь метод", "поправь метод",
   "измени поведение", "overlay labels → strategy?". NOT for discovery or
   exploration — use $explore for that. NOT for pure rename/extract; a file MOVE
-  still runs Step 6 restructure SIM + Step 7 gate. Activates ONCE the agent is
-  about to write or change code.'
+  still runs Step 6 restructure SIM + Step 7 gate. An overlay → strategy
+  question runs Step 1 and answers it, even with no code to write.'
 ---
 
 # Data-Driven Generation
@@ -28,8 +28,7 @@ step from this summary: Step 5 → `references/step-5-style.md`; Step 6 →
 ## Prerequisites
 
 **Addressing:** every tea-rags call passes `project=<alias>` +
-`path=<your working directory>` — `tea-rags://guide/freshness` "Addressing the
-Codebase".
+`path=<your working directory>` — `tea-rags://guide/freshness`.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license `cat`
 / `grep` / `Read` over code — `tea-rags://guide/freshness`.
@@ -128,12 +127,13 @@ before generation).
 
 **Autonomous Judgment Protocol** — no hard rule matches. Answer = each label →
 its axis → NAMED strategy (DEFENSIVE / STABILIZATION / CONSERVATIVE / STANDARD)
-→ why + actions; ask if uncertain. No name = Step 1 not done. Axes: **Risk**
-grows bugFixRate healthy→concerning→critical, churnVolatility stable→erratic;
-**Stability** grows ageDays recent→legacy; **Confidence** falls with commitCount
-"low". E.g. `bugFixRate concerning, ageDays recent, commitCount typical` → Risk
-rising, Stability low, Confidence medium, no hard rule → STANDARD leaning
-STABILIZATION; DEFENSIVE needs `critical` + old.
+→ why + actions; ask if uncertain. No name = Step 1 not done, code or not. Axes:
+**Risk** grows bugFixRate healthy→concerning→critical, churnVolatility
+stable→erratic; **Stability** grows ageDays recent→legacy; **Confidence** falls
+with commitCount "low". E.g.
+`bugFixRate concerning, ageDays recent, commitCount typical` → Risk rising,
+Stability low, Confidence medium, no hard rule → STANDARD leaning STABILIZATION;
+DEFENSIVE needs `critical` + old.
 
 **Load strategy (MANDATORY, name the file):** custom `strategy-<mode>` skill →
 use it; else READ `strategies/<mode>.md` (DEFENSIVE → `strategies/defensive.md`)

@@ -85,6 +85,8 @@ changed-file callers via \`find_symbol\`, find missing ones via
  * Leads the core, right under its H1: a multi-file \`cat\` truncates from the
  * middle, so the rule against it must sit where truncation never reaches.
  * Codex T22 r6: one run cat'ed 11 files and lost SKILL.md, another read nothing.
+ * The plan-only rule rides along: T22 introspection (all six suites) found plans
+ * describing a future report instead of printing the skill's output contract.
  */
 const CODEX_READ_DISCIPLINE = `**Read ONE file per command** — never \`cat\` several: output past ~10k tokens
 loses its middle (\`…N tokens truncated…\`), and a rule you did not see is not a
@@ -92,6 +94,12 @@ rule you may guess. Saw that marker → re-read the file in ranges (\`sed -n\`).
 Every skill you name in a plan → open its \`SKILL.md\` with its own command
 first; a plan from memory is not reading it. A skill path you did not open with a
 command in this turn is invalid in a plan — open it first.
+
+**Plan-only / describe-the-plan answers: every skill output contract applies
+NOW.** Decide from the facts given (strategy, verdict, name, class); print every
+literal line / template the skill requires; data not gathered yet →
+\`[planned; not run]\` in that slot, never "I would report it later". Describing
+compliance is not compliance.
 `;
 
 /** Puts \`prelude\` right after the body's H1 (or first, when there is none). */
