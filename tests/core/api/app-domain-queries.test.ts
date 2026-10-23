@@ -26,6 +26,7 @@ import { createApp, type AppDeps, type ExploreFacade, type IngestFacade } from "
 import { ProjectRegistryOps } from "../../../src/core/api/internal/ops/project-registry-ops.js";
 import type { Reranker } from "../../../src/core/domains/explore/reranker.js";
 import { UNSUPPORTED_FALLBACK } from "../../../src/core/domains/language/capability/fallback.js";
+import { renderRule } from "../../../src/core/domains/language/capability/rule.js";
 import { LanguageFactory } from "../../../src/core/domains/language/factory.js";
 import type { IndexDriftReporter } from "../../../src/core/domains/maintenance/drift/index.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/index.js";
@@ -92,6 +93,17 @@ describe("App.resolveLanguageCapabilities", () => {
     const app = makeApp();
     const resolved = app.resolveLanguageCapabilities(["typescript", "sql"]);
     expect([...resolved.keys()]).toEqual(["typescript", "sql"]);
+  });
+});
+
+describe("App.renderLanguageCapabilityGuide", () => {
+  it("renders the language-compatibility rule without its human-only tail", () => {
+    const guide = makeApp().renderLanguageCapabilityGuide();
+    const rule = renderRule(new LanguageFactory().capabilities());
+    expect(guide).toContain("## Matrix");
+    expect(guide).not.toContain("## For humans");
+    expect(rule.startsWith(guide)).toBe(true);
+    expect(rule.slice(guide.length)).toMatch(/^\n## For humans/);
   });
 });
 

@@ -55,8 +55,21 @@ function getOrThrow(caps: Map<string, LanguageCapability>, key: string): Languag
  * baked in (it is per-index state owned by prime).
  */
 export function renderRule(caps: Map<string, LanguageCapability>): string {
-  const rows = DISPLAY.map(([key, name]) => matrixRow(getOrThrow(caps, key), name)).join("\n");
   const forHumans = DISPLAY.map(([key, name]) => `- **${name}** — ${getOrThrow(caps, key).codegraph.tech}`).join("\n");
+
+  return `${renderLanguageCapabilityGuide(caps)}
+## For humans — resolution tech (not agent-actionable)
+
+${forHumans}
+`;
+}
+
+/**
+ * The agent-actionable part of {@link renderRule} — everything but the
+ * `## For humans` tail. Served as `tea-rags://guide/language-capability`.
+ */
+export function renderLanguageCapabilityGuide(caps: Map<string, LanguageCapability>): string {
+  const rows = DISPLAY.map(([key, name]) => matrixRow(getOrThrow(caps, key), name)).join("\n");
 
   return `# Language Compatibility
 
@@ -138,9 +151,5 @@ property.
 **Consequence:** when prime reports a low \`resolveSuccessRate\`, an empty
 \`get_callers\` is a resolution artifact, NOT "the symbol has no callers". Do not
 conclude absence from a graph the index says is incomplete.
-
-## For humans — resolution tech (not agent-actionable)
-
-${forHumans}
 `;
 }

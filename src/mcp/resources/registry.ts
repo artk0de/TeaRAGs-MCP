@@ -10,6 +10,7 @@ import {
   type PayloadSignalDescriptor,
   type PresetDescriptors,
 } from "../../core/api/public/index.js";
+import { AGENT_CONTEXT_CORE, AGENT_CONTEXT_GUIDES } from "./generated/agent-context.js";
 
 /**
  * The metaOnly response contract — stated once, here. Every search tool's
@@ -615,6 +616,137 @@ function parsePercentile(key: string): number {
   return parseInt(key.replace("p", ""), 10) || 0;
 }
 
+/** One static markdown resource: identity, listing text, and its renderer. */
+export interface MarkdownResource {
+  name: string;
+  uri: string;
+  title: string;
+  description: string;
+  render: () => string;
+}
+
+/** Register a static `text/markdown` resource whose body is `render()` at read time. */
+export function registerMarkdown(server: McpServer, resource: MarkdownResource): void {
+  const { name, uri, title, description, render } = resource;
+  server.registerResource(name, uri, { title, description, mimeType: "text/markdown" }, async (requested) => ({
+    contents: [{ uri: requested.href, mimeType: "text/markdown", text: render() }],
+  }));
+}
+
+/** Builder-backed guide; `schemaAlias` = the legacy `tea-rags://schema/*` name still served. */
+interface BuilderBackedGuide {
+  topic: string;
+  schemaAlias?: string;
+  title: string;
+  description: string;
+  render: () => string;
+}
+
+function builtGuides(app: App): BuilderBackedGuide[] {
+  return [
+    {
+      topic: "overview",
+      schemaAlias: "overview",
+      title: "Schema Overview",
+      description: "Resource catalog, tools quick reference, full param reference for tea-rags MCP",
+      render: () => buildOverview(),
+    },
+    {
+      topic: "presets",
+      schemaAlias: "presets",
+      title: "Rerank Presets",
+      description: "Detailed reference for rerank presets: descriptions, signals, available tools",
+      render: () => buildPresetsDoc(app.getSchemaDescriptors()),
+    },
+    {
+      topic: "signals",
+      schemaAlias: "signals",
+      title: "Custom Signals",
+      description: "All available weight signals for custom rerank mode with descriptions",
+      render: () => buildSignalsDoc(app.getSchemaDescriptors()),
+    },
+    {
+      topic: "filters",
+      schemaAlias: "filters",
+      title: "Filter Syntax",
+      description: "Qdrant filter operators, combining conditions, available fields, and threshold guidance",
+      render: () => buildFiltersDoc(app.getSchemaDescriptors().payloadSignals),
+    },
+    {
+      topic: "search-examples",
+      schemaAlias: "search-guide",
+      title: "Search Guide",
+      description: "Tool routing, use cases, and examples for all search tools",
+      render: () => buildSearchGuide(),
+    },
+    {
+      topic: "indexing",
+      schemaAlias: "indexing-guide",
+      title: "Indexing Guide",
+      description: "Indexing options, git metadata guide, and reindex workflow",
+      render: () => buildIndexingGuide(),
+    },
+    {
+      topic: "signal-labels",
+      schemaAlias: "signal-labels",
+      title: "Signal Labels",
+      description: "Human-readable label mappings for all numeric signals in ranking overlays",
+      render: () => buildSignalLabelsGuide(app.getSchemaDescriptors().payloadSignals),
+    },
+    {
+      topic: "language-capability",
+      title: "Language Capability",
+      description:
+        "Per-language trust ceiling: AST chunking, test chunking, codegraph tier. Scales + realized-trust note",
+      render: () => app.renderLanguageCapabilityGuide(),
+    },
+  ];
+}
+
+/** Title for a plugin-rule guide: its first `# ` heading, else the key. */
+function markdownTitle(markdown: string, fallback: string): string {
+  return /^# (.+)$/m.exec(markdown)?.[1]?.trim() ?? fallback;
+}
+
+/**
+ * `tea-rags://guide/*` — builder-backed guides, their deprecated
+ * `tea-rags://schema/*` aliases, and the plugin-rule guides generated into
+ * `AGENT_CONTEXT_GUIDES` (`guide/core` only when the core is non-empty).
+ */
+function registerGuides(server: McpServer, app: App): void {
+  for (const { topic, schemaAlias, title, description, render } of builtGuides(app)) {
+    const uri = `tea-rags://guide/${topic}`;
+    registerMarkdown(server, { name: `guide-${topic}`, uri, title, description, render });
+    if (schemaAlias) {
+      registerMarkdown(server, {
+        name: `schema-${schemaAlias}`,
+        uri: `tea-rags://schema/${schemaAlias}`,
+        title,
+        description: `Deprecated alias of ${uri}. ${description}`,
+        render,
+      });
+    }
+  }
+  if (AGENT_CONTEXT_CORE.length > 0) {
+    registerMarkdown(server, {
+      name: "guide-core",
+      uri: "tea-rags://guide/core",
+      title: markdownTitle(AGENT_CONTEXT_CORE, "core"),
+      description: "Always-on agent rules: search routing, addressing, freshness",
+      render: () => AGENT_CONTEXT_CORE,
+    });
+  }
+  for (const [key, markdown] of Object.entries(AGENT_CONTEXT_GUIDES)) {
+    registerMarkdown(server, {
+      name: `guide-${key}`,
+      uri: `tea-rags://guide/${key}`,
+      title: markdownTitle(markdown, key),
+      description: `Agent guide: ${key}. Read on demand`,
+      render: () => markdown,
+    });
+  }
+}
+
 /**
  * Register all MCP resources on the server
  */
@@ -643,22 +775,11 @@ export function registerAllResources(server: McpServer, app: App): void {
     },
   );
 
-  // Dynamic resource: individual collection info
+  // Template: individual collection info. Readable, not listed — one row per
+  // collection would flood `resources/list`.
   server.registerResource(
     "collection-info",
-    new ResourceTemplate("qdrant://collection/{name}", {
-      list: async () => {
-        const collections = await app.listCollections();
-        return {
-          resources: collections.map((name) => ({
-            uri: `qdrant://collection/${name}`,
-            name: `Collection: ${name}`,
-            description: `Details and statistics for collection "${name}"`,
-            mimeType: "application/json",
-          })),
-        };
-      },
-    }),
+    new ResourceTemplate("qdrant://collection/{name}", { list: undefined }),
     {
       title: "Collection Details",
       description: "Detailed information about a specific collection",
@@ -682,120 +803,6 @@ export function registerAllResources(server: McpServer, app: App): void {
     },
   );
 
-  // Static resource: schema overview
-  server.registerResource(
-    "schema-overview",
-    "tea-rags://schema/overview",
-    {
-      title: "Schema Overview",
-      description: "Resource catalog, tools quick reference, full param reference for tea-rags MCP",
-      mimeType: "text/markdown",
-    },
-    async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildOverview() }],
-    }),
-  );
-
-  // Static resource: rerank presets
-  server.registerResource(
-    "schema-presets",
-    "tea-rags://schema/presets",
-    {
-      title: "Rerank Presets",
-      description: "Detailed reference for rerank presets: descriptions, signals, available tools",
-      mimeType: "text/markdown",
-    },
-    async (uri) => {
-      const descriptors = app.getSchemaDescriptors();
-      return {
-        contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildPresetsDoc(descriptors) }],
-      };
-    },
-  );
-
-  // Static resource: custom signals
-  server.registerResource(
-    "schema-signals",
-    "tea-rags://schema/signals",
-    {
-      title: "Custom Signals",
-      description: "All available weight signals for custom rerank mode with descriptions",
-      mimeType: "text/markdown",
-    },
-    async (uri) => {
-      const descriptors = app.getSchemaDescriptors();
-      return {
-        contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildSignalsDoc(descriptors) }],
-      };
-    },
-  );
-
-  // Static resource: filter syntax
-  server.registerResource(
-    "schema-filters",
-    "tea-rags://schema/filters",
-    {
-      title: "Filter Syntax",
-      description: "Qdrant filter operators, combining conditions, available fields, and threshold guidance",
-      mimeType: "text/markdown",
-    },
-    async (uri) => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: "text/markdown",
-          text: buildFiltersDoc(app.getSchemaDescriptors().payloadSignals),
-        },
-      ],
-    }),
-  );
-
-  // Static resource: search guide
-  server.registerResource(
-    "schema-search-guide",
-    "tea-rags://schema/search-guide",
-    {
-      title: "Search Guide",
-      description: "Tool routing, use cases, and examples for all search tools",
-      mimeType: "text/markdown",
-    },
-    async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildSearchGuide() }],
-    }),
-  );
-
-  // Static resource: indexing guide
-  server.registerResource(
-    "schema-indexing-guide",
-    "tea-rags://schema/indexing-guide",
-    {
-      title: "Indexing Guide",
-      description: "Indexing options, git metadata guide, and reindex workflow",
-      mimeType: "text/markdown",
-    },
-    async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildIndexingGuide() }],
-    }),
-  );
-
-  // Static resource: signal labels
-  server.registerResource(
-    "schema-signal-labels",
-    "tea-rags://schema/signal-labels",
-    {
-      title: "Signal Labels",
-      description: "Human-readable label mappings for all numeric signals in ranking overlays",
-      mimeType: "text/markdown",
-    },
-    async (uri) => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: "text/markdown",
-          text: buildSignalLabelsGuide(app.getSchemaDescriptors().payloadSignals),
-        },
-      ],
-    }),
-  );
+  registerGuides(server, app);
 }
 /* v8 ignore stop */

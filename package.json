@@ -18,6 +18,7 @@
     "type-check:scripts": "tsc -p tsconfig.scripts.json",
     "type-check:tests": "tsc -p tsconfig.tests.json",
     "gen:lang-compat": "tsx scripts/gen-language-compatibility.ts",
+    "gen:agent-context": "tsx scripts/gen-agent-context.ts",
     "gen:migration-sql": "tsx scripts/gen-migration-sql.ts",
     "pin:lang-versions": "tsx scripts/pin-language-versions.ts",
     "postinstall": "node scripts/postinstall.js",
