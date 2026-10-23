@@ -77,7 +77,7 @@
       "failure_mode": "Calls get_callers as primary, waits for empty result, then reacts (reactive not proactive).",
       "assertions": [
         {
-          "text": "checks prime for codegraph availability before choosing the tool",
+          "text": "detects codegraph OFF (absent graph tools / prime) before choosing the tool",
           "passed": null
         },
         {

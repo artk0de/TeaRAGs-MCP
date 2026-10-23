@@ -75,7 +75,7 @@
       "audit_finding": "control — intent",
       "prompt": "How does confidence dampening work when reranking? Explain the mechanism.",
       "expected": "semantic_search",
-      "not": ["hybrid_search", "find_symbol"],
+      "not": ["hybrid_search as the PRIMARY search", "find_symbol as the PRIMARY search (a find_symbol depth step on a result's symbolId is allowed)"],
       "after_fix": "PASS",
       "before_fix": "PASS",
       "no_rule": "FAIL (hybrid_search)"

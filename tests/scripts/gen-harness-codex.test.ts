@@ -282,6 +282,10 @@ describe("renderCodexHarness", () => {
       expect(firstLines).toMatch(/Read\s+ONE\s+file\s+per\s+command/);
       expect(body).toMatch(/Every\s+skill\s+you\s+name\s+in\s+a\s+plan/);
       expect(body).toMatch(/a\s+plan\s+from\s+memory\s+is\s+not\s+reading\s+it/);
+      // Codex T22 r7: a plan cited skill paths it never opened.
+      expect(body).toMatch(
+        /A\s+skill\s+path\s+you\s+did\s+not\s+open\s+with\s+a\s+command\s+in\s+this\s+turn\s+is\s+invalid\s+in\s+a\s+plan\s+—\s+open\s+it\s+first\./,
+      );
       expect(body.match(/ONE file per command/g)).toHaveLength(1);
     }
   });

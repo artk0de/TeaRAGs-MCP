@@ -44,7 +44,9 @@ redirects $X. NEVER bypass the wrapper.
 **Requires superpowers:** `$writing-skills` unavailable → stop, ask the user to
 install superpowers (https://github.com/obra/superpowers; steps in
 [CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
-it as the full workflow.
+it as the full workflow. Available = `$writing-skills` / `$writing-skills` is in
+your skills list; superpowers is a separate plugin, never under the dinopowers
+dir — a missing file next to the wrapper is not "unavailable".
 
 ## Step 1 — Extract intent
 

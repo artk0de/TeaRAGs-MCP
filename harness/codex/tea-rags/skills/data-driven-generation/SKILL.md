@@ -8,8 +8,8 @@ description:
   function X", "add method to class Y", "write a helper for Z", "modify function
   X", "change behavior of Y", "напиши функцию", "добавь метод", "поправь метод",
   "измени поведение". NOT for discovery or exploration — use $explore for that.
-  NOT for pure refactor (rename, move, extract) — tests green before AND after
-  it. Activates ONCE the agent is about to write or change code.'
+  NOT for pure rename/extract; a file MOVE still runs Step 6 restructure SIM +
+  Step 7 gate. Activates ONCE the agent is about to write or change code.'
 ---
 
 # Data-Driven Generation
@@ -96,10 +96,10 @@ Ambiguous → ask which mode (one question).
 - **Bug fix** = MODIFY; cause unknown → `bug-hunt` locates it first; fix still
   runs 6a in order: baseline GREEN → reproduction test (asserts correct output,
   e.g. `formatDuration(0) === "0s"`) RED on that assertion → only then patch.
-- **Pure refactor / move** (no behaviour change) — outside scope (no Steps 1–5),
-  but binds: 6a baseline (`tests-at-risk` pins + target's own tests) GREEN
-  BEFORE first move, no new test; move (file moves → pre-write simulation, Step
-  6); same tests re-run green, none edited; Step 7 gate.
+- **Pure refactor / move** (no behaviour change) — Steps 1–5 skipped; still IN
+  scope: 6a baseline (`tests-at-risk` pins + target's own tests) GREEN BEFORE
+  first move, no new test; file move → Step 6 restructure SIM; same tests re-run
+  green, none edited; Step 7 gate.
 - **Greenfield** = CREATE over empty area — TEMPLATE/STYLE degrade to empty
   naturally, don't pre-skip.
 - **REUSE never skipped in any mode** — shared infra exists even for new
@@ -181,9 +181,8 @@ god-module → do NOT grow it; propose sibling module or extraction, surface
 choice to user. EXTEND: guard fires on container.
 
 New file where home module exists = structural N-th way. New code (file, import,
-edge) → Step 7 gate judges placement, no pre-write simulation. Task MOVES /
-merges / splits existing files → pre-write simulation BEFORE touching them (Step
-6): moving first, fixing after gate = every importer re-touched twice.
+edge) → Step 7 gate judges placement, no pre-write simulation. Moves / merges /
+splits of files → Step 6 restructure SIM BEFORE touching them.
 
 ### Step 4: REUSE — all modes
 
@@ -234,11 +233,11 @@ Step 5 output = CONCRETE final names, one line per draft:
 `row → tax_automation_document (EXACT, local)`,
 `find_vendor_envelope → find_tax_automation_document! (VERB_TYPE, return)`,
 `graph_db_client → client (TAIL, param — client n=40 beats graphDb n=12)`.
-Concept new (no same-meaning term) → line
-`NEW_TERM <term> — <why no project term denotes this>`. "Project vocabulary" /
-"a name that describes the lookup" without the name = Step 5 not done. Context
-already gives lexicon terms → emit the lines now, never "if the lexicon
-confirms".
+Concept new (no same-meaning term), also when context names its namespace/class
+→ line, prefix literal: `NEW_TERM <term> — <why no project term denotes this>`.
+"Project vocabulary" / "a name that describes the lookup" without the name =
+Step 5 not done. Context already gives lexicon terms → emit the lines now, never
+"if the lexicon confirms".
 
 ### Step 6: GENERATE — RED → GREEN → REFACTOR
 

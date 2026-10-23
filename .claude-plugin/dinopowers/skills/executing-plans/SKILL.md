@@ -66,7 +66,10 @@ or CHANGE behavior (MODIFY).
 **Requires superpowers:** `superpowers:executing-plans` unavailable → stop, ask
 the user to install superpowers (https://github.com/obra/superpowers; steps in
 [CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
-it as the full workflow.
+it as the full workflow. Available = `$executing-plans` /
+`superpowers:executing-plans` is in your skills list; superpowers is a separate
+plugin, never under the dinopowers dir — a missing file next to the wrapper is
+not "unavailable".
 
 **Freshness:** [FRESHNESS.md](../../FRESHNESS.md) (owner
 `tea-rags://guide/freshness`). Lag ≠ unusable — never Bash `cat`/`grep`/`Read`
@@ -254,13 +257,13 @@ Gate cleared (SAFE / CAUTION confirmed / UNSAFE overridden) → classify Task
 BEFORE `superpowers:executing-plans`. DDG picks own mode (CREATE / EXTEND /
 MODIFY) via `find_symbol` probe — wrapper decides only WHETHER to invoke.
 
-| Task intent                                                                                                  | Action                                                                                                                                    |
-| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **Generation**: new file, new function, new class, new method on existing class, rewrite-to-new-template     | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (CREATE / EXTEND)                                          |
-| **Modification**: change behavior of EXISTING symbol in place (bug fix, condition tweak, new branch, hotfix) | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (MODIFY); state "Step 4.5 skipped — MODIFY skips TEMPLATE" |
-| **Refactor only**: rename, move, extract, inline, reformat — no behavior change                              | Skip Step 5; new name → `get_naming_lexicon(names[])` BEFORE Edit, `MISFIT` → use `suggestion` (naming note)                              |
-| **Deletion**: remove file, remove function, prune dead code                                                  | Skip Step 5 — no generation                                                                                                               |
-| **Trivial**: typo, comment / log-message text, single-token swap, no behavior change                         | Skip Step 5 AND skip wrapper entirely — direct Edit                                                                                       |
+| Task intent                                                                                                  | Action                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Generation**: new file, new function, new class, new method on existing class, rewrite-to-new-template     | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (CREATE / EXTEND)                                                             |
+| **Modification**: change behavior of EXISTING symbol in place (bug fix, condition tweak, new branch, hotfix) | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (MODIFY); state "Step 4.5 skipped — MODIFY skips TEMPLATE"                    |
+| **Refactor only**: rename, move, extract, inline, reformat — no behavior change                              | Skip Step 5; new name → `get_naming_lexicon(names[])` BEFORE Edit, `MISFIT` → use `suggestion` (naming note); file move → still DDG Step 6 SIM + Step 7 gate |
+| **Deletion**: remove file, remove function, prune dead code                                                  | Skip Step 5 — no generation                                                                                                                                  |
+| **Trivial**: typo, comment / log-message text, single-token swap, no behavior change                         | Skip Step 5 AND skip wrapper entirely — direct Edit                                                                                                          |
 
 **Naming note (rename / extract, codegraph on):** new name →
 `get_naming_lexicon(names=[{name, kind, type?}], language, pathPattern)` (`kind`
@@ -327,8 +330,8 @@ must clear.
 - Generation Task: `Read sibling.ts` + `Write new.ts` without
   `Skill(tea-rags:data-driven-generation)` → revert (or pause before Edit),
   restart from Step 5
-- DDG for pure refactor (rename, move, extract) → over-trigger; refactor row =
-  SKIP
+- DDG Steps 1–5 for pure refactor (rename, move, extract) → over-trigger;
+  refactor row = SKIP Step 5 (file move → still DDG Step 6 SIM + Step 7 gate)
 - Bug fix / condition tweak edited in-context "DDG not needed" → Modification
   row; pause, invoke DDG (MODIFY: tests-at-risk + `get_callers`)
 - Alias without `path` inside worktree → wrong tree; redo with

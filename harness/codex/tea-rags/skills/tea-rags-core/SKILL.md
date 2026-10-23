@@ -12,14 +12,15 @@ description:
 loses its middle (`…N tokens truncated…`), and a rule you did not see is not a
 rule you may guess. Saw that marker → re-read the file in ranges (`sed -n`).
 Every skill you name in a plan → open its `SKILL.md` with its own command first;
-a plan from memory is not reading it.
+a plan from memory is not reading it. A skill path you did not open with a
+command in this turn is invalid in a plan — open it first.
 
 **Addressing.** Every read call (search, `find_symbol`, graph, review, lexicon):
 `project=<alias>` (which index) + `path=<your working directory>` (which tree).
 Alias: prime `## Project`, SubagentStart line or `workingTree.project`; unknown
-→ `path` alone, then the answer's. No working dir (script, CLI) → `project`
-alone. Raw collection name only → `collection=` (+ `path` if your repo).
-`index_codebase`: `project` ONLY — its `path` registers a NEW project.
+→ `path` alone. No working dir → `project` alone. Raw collection name →
+`collection=` (+ `path` if your repo). `index_codebase`: `project` ONLY (`path`
+= NEW project).
 
 **Routing** (first match wins; a loaded skill's step overrides; tools =
 `mcp__tea-rags__*`):
@@ -44,7 +45,7 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
 
 - Never `Read` after `find_symbol` — method = full body; class / file / doc =
   outline of ids → drill `find_symbol(symbol: <id>)`. After a search:
-  `find_symbol` next, not re-search / `Read`.
+  `find_symbol` next, not re-search/`Read`.
 - `symbolId` ends `#partN` → fragment: `find_symbol(symbol: parentSymbolId)`
   first; parts = one hit.
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
@@ -53,14 +54,15 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
   `find_symbol`.
 - Own checkout (tree = alias's path), `changedFiles` > 0, stale banner or
   unindexed edits → incremental `index_codebase(project=)` first, no consent,
-  plans too; drift `--force*` `Run:` → ask too, never instead. Linked worktree →
+  plans too; drift `--force*` `Run:` → ask, never instead. Linked worktree →
   overlay, never reindex.
-- Empty `get_callers` at low resolve rate ≠ no callers — cross-check
-  `hybrid_search`. Graph tools absent = codegraph off → never claim "no cycles";
-  on + empty `find_cycles` = DAG.
+- Empty `get_callers` at low resolve rate ≠ no callers → `hybrid_search`; edges
+  at changed files → `find_symbol` the caller there AND
+  `hybrid_search(metaOnly)`, no graph retry. Graph tools absent = codegraph off
+  → never claim "no cycles"; on + empty `find_cycles` = DAG.
 - Docs = hypothesis; verify in code.
-- User-named action ("read `x.ts`") → do it; user's weaker method (git log, skip
-  enrichment) → keep the rule's, say why.
+- User-named action ("read `x.ts`") → do it; user's weaker method → keep the
+  rule's, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`):

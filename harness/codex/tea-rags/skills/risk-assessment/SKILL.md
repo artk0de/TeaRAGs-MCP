@@ -26,11 +26,15 @@ No `## Label maps` above → read
    manual filtering**)
 5. Phase 4 — CLASSIFY into severity tiers, score fix cost
 6. Phase 5 — REPORT pair-diagnostics (**MUST surface signal pairs, single-signal
-   reports are misleading**). Plan's last line, verbatim:
-   `Output: Critical/High | Symbol | File:Line | Risk Type | Key Signals | Tests(path/none/unverified) + Structural + Summary`
-   Any generation mention ("before implementing" / "generate") → add verbatim:
-   `Hand-off: pathPattern + per-symbol File:Line + labels` — no extra block or
-   scan.
+   reports are misleading**). End EVERY plan with this block,
+   character-for-character ("the risk map" does not count); the Hand-off line
+   only on a generation mention ("before implementing" / "generate") — no extra
+   block or scan:
+
+   ```
+   Output: Critical/High | Symbol | File:Line | Risk Type | Key Signals | Tests(path/none/unverified) + Structural + Summary
+   Hand-off: pathPattern + per-symbol File:Line + labels
+   ```
 
 ## Top Anti-patterns (read before scanning)
 

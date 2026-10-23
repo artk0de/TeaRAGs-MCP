@@ -38,3 +38,7 @@ fails) → STOP and ask the user to install superpowers:
 
 NEVER run the wrapper's tea-rags enrichment alone and present it as the full
 workflow.
+
+Available = `$Y` / `superpowers:Y` is in your skills list. superpowers is a
+separate plugin, never under the dinopowers dir — a missing file next to the
+wrapper is not "unavailable".

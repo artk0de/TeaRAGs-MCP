@@ -53,7 +53,9 @@ redirects $X. NEVER bypass wrapper.
 **Requires superpowers:** `$writing-plans` unavailable → stop, ask the user to
 install superpowers (https://github.com/obra/superpowers; steps in
 [CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
-it as the full workflow.
+it as the full workflow. Available = `$writing-plans` / `$writing-plans` is in
+your skills list; superpowers is a separate plugin, never under the dinopowers
+dir — a missing file next to the wrapper is not "unavailable".
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) +
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never

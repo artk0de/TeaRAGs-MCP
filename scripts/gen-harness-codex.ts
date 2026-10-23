@@ -89,7 +89,8 @@ const CODEX_READ_DISCIPLINE = `**Read ONE file per command** — never \`cat\` s
 loses its middle (\`…N tokens truncated…\`), and a rule you did not see is not a
 rule you may guess. Saw that marker → re-read the file in ranges (\`sed -n\`).
 Every skill you name in a plan → open its \`SKILL.md\` with its own command
-first; a plan from memory is not reading it.
+first; a plan from memory is not reading it. A skill path you did not open with a
+command in this turn is invalid in a plan — open it first.
 `;
 
 /** Puts \`prelude\` right after the body's H1 (or first, when there is none). */
