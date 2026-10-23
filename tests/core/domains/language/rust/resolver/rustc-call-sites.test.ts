@@ -32,6 +32,7 @@ import {
   RustResolveEnvironment,
 } from "../../../../../../src/core/domains/language/rust/resolver/resolve-environment.js";
 import { RustCallResolver } from "../../../../../../src/core/domains/language/rust/resolver/rust-resolver.js";
+import { rustImplSelfTypeName } from "../../../../../../src/core/domains/language/rust/resolver/scip-resolution.js";
 import { RustcCallSiteSymbolResolutionStrategy } from "../../../../../../src/core/domains/language/rust/resolver/strategies/index.js";
 import { classifyResolveMiss } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -837,5 +838,46 @@ describe("a definition a macro GENERATED (format 4 defExpansion) never falls bac
     expect(resolver.diagnostics()).toEqual({
       rustcCallSites: { outcome: "indexed", cacheHit: true, generated: 3, generatedUnmapped: 1 },
     });
+  });
+});
+
+describe("same-id windows (an inherent and a trait-impl method sharing one symbolId)", () => {
+  // tikv `Either`: inherent `fn as_ref` (lines 3-6) and `impl AsRef<T> for Either { fn as_ref }`
+  // (line 20) both compose `Either#as_ref`; the table keeps the id once, with the first window.
+  const site = call("e.as_ref()", "e", "as_ref", 9, 6);
+  const ownedBy = (owner: string, symbolId: string, startLine: number, endLine: number): SymbolDefinition => ({
+    ...def("src/either.rs", "as_ref", symbolId, startLine, endLine),
+    scope: [owner],
+  });
+  const traitImplAsRef: RustCallSiteDefinition = {
+    ...inProject("as_ref", "src/either.rs", 20),
+    symbol: "rustc core <mini::Either<L, R> as std::convert::AsRef<T>>::as_ref",
+  };
+
+  it("maps a def outside the kept window to the file's one symbolId owned by the impl's self type", () => {
+    const t = table(ownedBy("Either", "Either#as_ref", 3, 6), ownedBy("Pair", "Pair#as_ref", 10, 12));
+    const callSites = stubIndex({ "src/main.rs:9:6": traitImplAsRef });
+    expect(strategy.attempt(site, ctxWith(t, { callSites }))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/either.rs", targetSymbolId: "Either#as_ref" },
+    });
+  });
+
+  it("does not guess when the compiler path names no owner the file declares the name under", () => {
+    const t = table(ownedBy("Pair", "Pair#as_ref", 10, 12));
+    const callSites = stubIndex({ "src/main.rs:9:6": traitImplAsRef });
+    expect(strategy.attempt(site, ctxWith(t, { callSites }))).toEqual({ kind: "continue" });
+  });
+
+  it("reads the impl self type off the compiler path", () => {
+    expect(rustImplSelfTypeName("rustc core <a::Either<L, R> as std::convert::AsRef<T>>::as_ref")).toBe("Either");
+    expect(
+      rustImplSelfTypeName(
+        "rustc core tikv_util::config::<impl std::convert::From<tikv_util::config::ReadableDuration> for online_config::ConfigValue>::from",
+      ),
+    ).toBe("ConfigValue");
+    expect(rustImplSelfTypeName("rustc mini mini::Store::<T>::get")).toBe("Store");
+    expect(rustImplSelfTypeName("rustc core core::str::<impl str>::is_empty")).toBeNull();
+    expect(rustImplSelfTypeName("rustc mini bump")).toBeNull();
   });
 });

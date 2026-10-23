@@ -166,6 +166,10 @@ export const capability: LanguageCapability = {
   //   macro's callable is the edge to the project trait method it implements,
   //   else to that macro's table symbol (`macro_rules!` or the workspace
   //   proc-macro fn), else DROPs (`generated` / `generatedUnmapped`).
+  // - same-id windows — an in-project driver def outside every table span maps
+  //   to the file's one symbolId of that name owned by the impl's self type
+  //   the compiler path names (an inherent and a trait-impl method of one type
+  //   compose one id, and the table keeps its first window).
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

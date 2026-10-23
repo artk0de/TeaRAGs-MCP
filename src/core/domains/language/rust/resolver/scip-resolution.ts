@@ -242,8 +242,11 @@ export function rustCallSiteProvesNoProjectCallable(call: CallRef, ctx: CallCont
  * The table symbol an in-project SCIP definition names: the callee-role (or,
  * for a macro invocation, macro) candidates of the descriptor's name — never
  * the call's member, which a `use a as b` alias renames — declared in the
- * definition's file with a span containing its line; the narrowest wins. Null
- * for a non-callable definition, no containing tableSymbol, or a tie.
+ * definition's file with a span containing its line; the narrowest wins. When
+ * no span contains it, the file's one symbolId of that name owned by the impl's
+ * self type the compiler named: an inherent method and a trait-impl method of
+ * one type compose the same id, and the table keeps it once with the first
+ * window. Null for a non-callable definition, no such tableSymbol, or a tie.
  */
 export function mapScipDefinitionToSymbol(
   definition: RustScipDefinition,
@@ -256,7 +259,45 @@ export function mapScipDefinitionToSymbol(
   const candidates = isMacro
     ? rustMacroShortNameCandidates(ctx, definition.name)
     : rustCalleeShortNameCandidates(ctx, definition.name);
-  return narrowestSymbolContaining(candidates, definition.relPath, definition.line);
+  return (
+    narrowestSymbolContaining(candidates, definition.relPath, definition.line) ??
+    sameIdWindowOwnedBy(candidates, definition.relPath, rustImplSelfTypeName(definition.symbol))
+  );
+}
+
+/**
+ * The one symbolId the file declares among the candidates whose owner is the
+ * impl's self type; null without an owner, for none, or for several.
+ */
+function sameIdWindowOwnedBy(
+  candidates: readonly SymbolDefinition[],
+  relPath: string,
+  owner: string | null,
+): SymbolResolutionTarget | null {
+  if (owner === null) return null;
+  const symbolIds = new Set(
+    candidates
+      .filter((tableSymbol) => tableSymbol.relPath === relPath && tableSymbol.scope.at(-1) === owner)
+      .map((tableSymbol) => tableSymbol.symbolId),
+  );
+  if (symbolIds.size !== 1) return null;
+  const [targetSymbolId] = symbolIds;
+  return { targetRelPath: relPath, targetSymbolId };
+}
+
+/**
+ * The self type's short name of the impl a compiler path names, generic
+ * arguments dropped: `<a::Either<L, R> as AsRef<T>>::as_ref` and
+ * `m::<impl From<D> for b::ConfigValue>::from` give `Either` / `ConfigValue`,
+ * `a::Store::<T>::get` gives `Store`. Null when the path names no owner.
+ */
+export function rustImplSelfTypeName(compilerPath: string): string | null {
+  const path = compilerPath.replace(/^rustc \S+ /, "");
+  const qualified = /^<(.+?) as .+>::[^:]+$/.exec(path);
+  const inherentBlock = /<impl .+ for (.+)>::[^:]+$/.exec(path);
+  const owner = qualified?.[1] ?? inherentBlock?.[1] ?? path.split("::").slice(0, -1).join("::");
+  const lastSegment = owner.replace(/<.*$/, "").replace(/::$/, "").split("::").at(-1) ?? "";
+  return /^[A-Z][A-Za-z0-9_]*$/.test(lastSegment) ? lastSegment : null;
 }
 
 /**
