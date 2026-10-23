@@ -1,12 +1,22 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { format, resolveConfig } from "prettier";
-
+import {
+  formatPackage,
+  internalDescription,
+  json,
+  linkedPluginFiles,
+  PLUGIN_NAME,
+  PLUGIN_SRC,
+  readManifest,
+  readSkills,
+  selectSkills,
+  walk,
+  writePackage,
+} from "./harness/package.js";
 import {
   extractInjectionBlock,
-  firstSentence,
   parseFrontmatter,
   renderFrontmatter,
   toHarnessSkill,
@@ -20,8 +30,6 @@ export const CODEX_HARNESS_DIR = "harness/codex";
 /** Cap on `name + description` summed over shipped skills (Codex default list budget: 8,000 chars). */
 export const SKILLS_LIST_BUDGET = 7_000;
 
-const PLUGIN_SRC = ".claude-plugin/tea-rags";
-const PLUGIN_NAME = "tea-rags";
 const MARKETPLACE_NAME = "tea-rags-local";
 const CORE_SKILL = "tea-rags-core";
 const CORE_DESCRIPTION =
@@ -34,119 +42,13 @@ const CODEX_DIALECT: HarnessDialect = {
   skillMention: (name) => `$${name}`,
   pluginRootVar: PLUGIN_ROOT_VAR,
   projectDirVar: "$PWD",
+  readResourceTool: "read_mcp_resource",
+  listResourcesTool: "list_mcp_resources",
 };
 
 /** A Claude Code SKILL.md in Codex's dialect (see `toHarnessText` for the rewrite list). */
 export function toCodexSkill(md: string, options: SkillOptions): string {
   return toHarnessSkill(md, CODEX_DIALECT, options);
-}
-
-interface SourceSkill {
-  name: string;
-  dir: string;
-  internal: boolean;
-  fields: Record<string, string>;
-  body: string;
-  /** SKILL.md + every Markdown file under the skill folder, joined — reference scan. */
-  text: string;
-}
-
-function walk(dir: string): string[] {
-  return readdirSync(dir)
-    .sort()
-    .flatMap((entry) => {
-      const full = join(dir, entry);
-      return statSync(full).isDirectory() ? walk(full) : [full];
-    });
-}
-
-function readSkills(root: string): SourceSkill[] {
-  const skillsDir = join(root, PLUGIN_SRC, "skills");
-  return readdirSync(skillsDir)
-    .sort()
-    .filter((name) => existsSync(join(skillsDir, name, "SKILL.md")))
-    .map((name) => {
-      const dir = join(skillsDir, name);
-      const { fields, body } = parseFrontmatter(readFileSync(join(dir, "SKILL.md"), "utf8"));
-      const text = walk(dir)
-        .filter((file) => file.endsWith(".md"))
-        .map((file) => readFileSync(file, "utf8"))
-        .join("\n");
-      return { name, dir, internal: fields["user-invocable"] === "false", fields, body, text };
-    });
-}
-
-function mentions(text: string, name: string): boolean {
-  return new RegExp(`(?<![\\w-])${name}(?![\\w-])`).test(text);
-}
-
-/**
- * Every user-invocable skill, plus each internal (`user-invocable: false`) skill
- * a shipped skill names — transitively, since the referencing skill calls it at
- * runtime. Internal skills get a short description naming their callers, so the
- * skills list stays within budget.
- */
-export function selectSkills(skills: SourceSkill[]): { skill: SourceSkill; callers: string[] }[] {
-  const shipped = new Set(skills.filter((skill) => !skill.internal).map((skill) => skill.name));
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const skill of skills) {
-      if (shipped.has(skill.name)) continue;
-      if (skills.some((other) => shipped.has(other.name) && mentions(other.text, skill.name))) {
-        shipped.add(skill.name);
-        grew = true;
-      }
-    }
-  }
-  return skills
-    .filter((skill) => shipped.has(skill.name))
-    .map((skill) => ({
-      skill,
-      callers: skills
-        .filter((other) => other.name !== skill.name && shipped.has(other.name) && mentions(other.text, skill.name))
-        .map((other) => other.name),
-    }));
-}
-
-function internalDescription(skill: SourceSkill, callers: string[]): string {
-  const purpose = firstSentence(skill.fields.description || skill.body);
-  return `Internal step invoked by ${callers.map(CODEX_DIALECT.skillMention).join(", ")}. ${purpose}`;
-}
-
-/**
- * Plugin files outside `skills/` that shipped Markdown links to by relative path
- * (`../../repair/<family>.md` → the whole `repair/` folder), transitively. They
- * keep their plugin-relative place, so the links resolve unchanged.
- */
-export function linkedPluginFiles(pluginRoot: string, seeds: string[]): string[] {
-  const skillsDir = join(pluginRoot, "skills");
-  const found = new Set<string>();
-  const queue = seeds.filter((file) => file.endsWith(".md"));
-  while (queue.length > 0) {
-    const from = queue.pop() as string;
-    for (const [link] of readFileSync(from, "utf8").matchAll(/(?:\.\.\/)+[\w./<>-]+/g)) {
-      const target = resolve(dirname(from), link.split("<")[0]);
-      const inside = relative(pluginRoot, target);
-      if (inside.startsWith("..") || !relative(skillsDir, target).startsWith("..") || !existsSync(target)) continue;
-      for (const file of statSync(target).isDirectory() ? walk(target) : [target]) {
-        if (found.has(file)) continue;
-        found.add(file);
-        if (file.endsWith(".md")) queue.push(file);
-      }
-    }
-  }
-  return [...found].sort();
-}
-
-async function formatted(root: string, path: string, content: string): Promise<string> {
-  const filepath = join(root, CODEX_HARNESS_DIR, path);
-  const config = await resolveConfig(filepath);
-  return format(content, { ...config, filepath });
-}
-
-function json(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 const SUBAGENT_SCRIPT = `#!/bin/bash
@@ -270,20 +172,17 @@ Agent-tool passages → "spawn a subagent"; \`AskUserQuestion\` → ask the user
  */
 export async function renderCodexHarness(root: string): Promise<Map<string, string>> {
   const pluginRoot = join(root, PLUGIN_SRC);
-  const manifest = JSON.parse(readFileSync(join(pluginRoot, ".claude-plugin/plugin.json"), "utf8")) as {
-    version: string;
-    description: string;
-  };
+  const manifest = readManifest(pluginRoot);
   const corePath = join(pluginRoot, "rules/core.md");
   const hasCore = existsSync(corePath);
-  const selected = selectSkills(readSkills(root));
+  const selected = selectSkills(readSkills(pluginRoot));
   const skillNames = new Set(selected.map(({ skill }) => skill.name));
   if (hasCore) skillNames.add(CORE_SKILL);
 
   const files = new Map<string, string>();
   const shipped: ShippedSkill[] = [];
   for (const { skill, callers } of selected) {
-    const description = skill.internal ? internalDescription(skill, callers) : undefined;
+    const description = skill.internal ? internalDescription(skill, callers, CODEX_DIALECT.skillMention) : undefined;
     for (const file of walk(skill.dir)) {
       const rel = relative(skill.dir, file);
       const source = readFileSync(file, "utf8");
@@ -365,25 +264,12 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
   );
   files.set("README.md", readme(manifest.version, shipped, hasCore));
 
-  const out = new Map<string, string>();
-  for (const [path, content] of [...files].sort(([a], [b]) => a.localeCompare(b))) {
-    out.set(path, /\.(md|json)$/.test(path) ? await formatted(root, path, content) : content);
-  }
-  return out;
+  return formatPackage(root, CODEX_HARNESS_DIR, files);
 }
 
 /** Replace `harness/codex/` with a fresh render; shell scripts made executable. */
 export async function writeCodexHarness(root: string): Promise<number> {
-  const rendered = await renderCodexHarness(root);
-  const dir = join(root, CODEX_HARNESS_DIR);
-  rmSync(dir, { recursive: true, force: true });
-  for (const [path, content] of rendered) {
-    const target = join(dir, path);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, content, "utf8");
-    if (path.endsWith(".sh")) chmodSync(target, 0o755);
-  }
-  return rendered.size;
+  return writePackage(root, CODEX_HARNESS_DIR, await renderCodexHarness(root));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

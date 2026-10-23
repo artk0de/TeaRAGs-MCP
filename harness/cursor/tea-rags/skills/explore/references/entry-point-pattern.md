@@ -1,0 +1,43 @@
+# ENTRY-POINT Pattern
+
+"Where does X start?" intents. Surfaces flow entry points (low fan-in, high
+fan-out — code that drives others but isn't driven) via the `entryPoint` rerank
+preset over codegraph fan-graph signals, not content matching.
+
+- **"Where does X start?" / "entry point" / "main flow" / "where does X begin"**
+  →
+  `semantic_search rerank="entryPoint" pathPattern=<scope> testFile:"exclude" documentation:"exclude"`
+  (broad target = sources axis by construction — see
+  `rules/references/axis-splitting.md`). Overlay shows `fanIn`, `fanOutPerLine`,
+  `chunkSize`. Top results are the drivers of the scope's flow.
+- Scope extraction found NO directory match for X → run UNSCOPED (no
+  pathPattern), honestly — never hardcode an alias. Unscoped + small-utility
+  bias below = worst-case input; apply the chunkSize/minFanOut post-filter
+  aggressively and say so.
+
+## Pitfall — small-utility bias
+
+`entryPoint` weights `fanIn` negatively (entry points are called by few). A
+zero-fan-in one-line utility can therefore rank top despite being noise.
+Mitigate by **post-filtering tiny chunks**: drop results whose `chunkSize` is
+below a small threshold (a few lines), or pass `minFanOut` + `level: "chunk"` so
+a real entry (which fans out into the flow) survives but a leaf utility doesn't.
+`level: "chunk"` mandatory: `minFanOut` defaults to FILE level (file's import
+count) — chunk level = symbol's own outgoing calls. Here `level` only re-scopes
+the filter; ranking + result shape unchanged (chunks). State the filter you
+applied.
+
+## Tail-suggestion (trace the flow)
+
+After naming the top entry, offer to trace its flow forward:
+`get_callees symbolId=<top-entry>` (resolve the exact id with `find_symbol`
+first — see [usage-pattern.md](./usage-pattern.md)). That turns "here's where it
+starts" into "here's what it does next", a natural drill-down chain.
+
+Honest fallback: if the scope is small or flat (no clear high-fan-out driver),
+say the ranking degraded to relevance — don't present a utility as "the entry
+point" with false confidence.
+
+**Codegraph off** (no `codegraph.symbols` in prime): `entryPoint` has no
+fan-graph signals at all — use relevance + `chunkSize` and flag results as
+content-inferred, not graph-confirmed entry points.

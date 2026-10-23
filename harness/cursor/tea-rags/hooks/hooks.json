@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh",
+        "timeout": 15
+      }
+    ]
+  }
+}
