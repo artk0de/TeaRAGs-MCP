@@ -1,5 +1,9 @@
 # Delivery Contract — Phase 5 DELIVER
 
+> **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
+> resource tool, or the read fails), run
+> `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
+
 Structured output of the review. Skill emits THIS — agent delivers it through
 whatever MR-platform mechanism the session exposes. Skill names NO commands.
 
@@ -148,14 +152,14 @@ finding was raised.
 
 ## Degradation matrix
 
-| Condition                        | Behavior                                                            |
-| -------------------------------- | ------------------------------------------------------------------- |
-| Repo not in tea-rags registry    | Stop; print register + index instructions                           |
-| Index stale vs target branch     | External: incremental `index_codebase`; local: index-freshness rows |
-| Codegraph off                    | Blast radius → callers matched by name\*; cycles → "not assessed"   |
-| No DSL test chunks               | tests dimension falls back to `testFile: "only"` file-level         |
-| No delivery mechanism in session | Print delivery contract in chat for manual posting                  |
-| Empty diff                       | Stop with explicit message                                          |
+| Condition                        | Behavior                                                                         |
+| -------------------------------- | -------------------------------------------------------------------------------- |
+| Repo not in tea-rags registry    | Stop; print register + index instructions                                        |
+| Index stale vs target branch     | External: incremental `index_codebase`; local: `tea-rags://guide/freshness` rows |
+| Codegraph off                    | Blast radius → callers matched by name\*; cycles → "not assessed"                |
+| No DSL test chunks               | tests dimension falls back to `testFile: "only"` file-level                      |
+| No delivery mechanism in session | Print delivery contract in chat for manual posting                               |
+| Empty diff                       | Stop with explicit message                                                       |
 
 \* Callers found by symbol name (`hybrid_search` + `find_symbol`), not by call
 graph. Every comment built that way says so and never claims the caller list is

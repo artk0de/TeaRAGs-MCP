@@ -8,6 +8,10 @@ description:
 
 # Index Codebase
 
+> **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
+> resource tool, or the read fails), run
+> `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
+
 Smart indexing — check registration first, then index:
 
 - **Not registered yet (first index)** → register the alias and index in one
@@ -20,10 +24,11 @@ Smart indexing — check registration first, then index:
 1. Extract `path` from user message or argument. If absent, use current working
    directory. Path is a linked git worktree (`git rev-parse --git-common-dir` ≠
    `<path>/.git`) of a registered repository → do NOT register or index it: read
-   tools already answer for that tree (index-freshness, linked worktree). Tell
-   the user so. A `--project <alias>` reindex refreshes the main checkout's own
-   staleness only — never the worktree's edits. Index the worktree as its own
-   project only when the user insists (seeds a separate project).
+   tools already answer for that tree (`tea-rags://guide/freshness`, linked
+   worktree). Tell the user so. A `--project <alias>` reindex refreshes the main
+   checkout's own staleness only — never the worktree's edits. Index the
+   worktree as its own project only when the user insists (seeds a separate
+   project).
 
 2. Check if path already registered: call `list_projects`, find entry whose
    `path` matches target AND whose `name` non-empty (recovery auto-created

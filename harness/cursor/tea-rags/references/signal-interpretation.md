@@ -1,5 +1,9 @@
 # Signal Interpretation
 
+> **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
+> resource tool, or the read fails), run
+> `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
+
 Read tea-rags ranking overlay architecturally. Single signals ambiguous —
 combinations reveal meaning.
 
@@ -76,7 +80,7 @@ both exist — `imports` counts import lines, `fanIn` counts actual graph edges.
 | cycle membership   | file/chunk | member of an SCC (`find_cycles`) — circular coupling      |
 
 Codegraph off → fall back to `imports` proxy, say structural centrality is
-approximate (see search-cascade "Graph navigation").
+approximate (see `tea-rags://guide/navigation` "Graph navigation").
 
 ## When to use `recent*` vs `blame*` (ownership-pair selection)
 

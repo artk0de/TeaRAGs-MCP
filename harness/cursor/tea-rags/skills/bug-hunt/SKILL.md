@@ -10,6 +10,10 @@ description:
 
 # Bug Hunt
 
+> **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
+> resource tool, or the read fails), run
+> `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
+
 Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
 populations: code with bug-fix history, fresh code too young to have one,
 uncommitted edits with no git signal yet.
@@ -25,10 +29,10 @@ uncommitted edits with no git signal yet.
 4. **Search results contain code.** `metaOnly=false` (default) returns chunk
    content + startLine/endLine. Evaluate checkpoint from results BEFORE any Read
    or navigation.
-5. **Depth → `find_symbol`, never Read** (search-cascade After-Search
-   Navigation): full body `symbol=<symbolId>`, file outline `relativePath`,
-   neighbour `navigation.prev/nextSymbolId`. Partial `Read` only for non-symbol
-   text (config, data). Never read full files.
+5. **Depth → `find_symbol`, never Read** (`tea-rags://guide/navigation`
+   After-Search Navigation): full body `symbol=<symbolId>`, file outline
+   `relativePath`, neighbour `navigation.prev/nextSymbolId`. Partial `Read` only
+   for non-symbol text (config, data). Never read full files.
 6. **Labels are triage, not verdict.** Three suspect classes (Signal triage).
    `bugFixRate` `healthy` alone never drops a chunk. Filled checkpoint →
    PRESENT, whatever the labels.
@@ -37,10 +41,10 @@ uncommitted edits with no git signal yet.
 
 ```
 0. `git status --porcelain -uall` → uncommitted paths (see Uncommitted probe).
-   Paths listed → index-freshness uncommitted-edits rows (linked worktree: no
+   Paths listed → `tea-rags://guide/freshness` uncommitted-edits rows (linked worktree: no
    reindex). Every call: project=<alias> path=<your working directory>.
 
-1. Search — ONE message, parallel calls. Same tool (search-cascade;
+1. Search — ONE message, parallel calls. Same tool (`tea-rags://guide/decision-tree`;
    linked worktree → hybrid_search for all three), same query,
    rerank="bugHunt", limit=10:
    a. Historical — scope pathPattern, no time filter.
@@ -58,7 +62,7 @@ uncommitted edits with no git signal yet.
 
 3. ONLY IF checkpoint incomplete — ONE action for what's missing:
    - Symptom names entry point or failure site → Call path (below).
-   - Otherwise search-cascade for tool selection.
+   - Otherwise `tea-rags://guide/decision-tree` for tool selection.
    Go to step 2.
 ```
 
@@ -67,8 +71,8 @@ answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
 `index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
 ## Fresh probe
 
@@ -117,9 +121,10 @@ pre-edit history. "Broke after my change" = edit not yet committed.
   `find_symbol project=<alias> path=<your working directory>` (current tree),
   never from the row or a `Read` of its line range.
 - Main checkout: probe reads INDEXED content → step 0 listed paths → reindex
-  BEFORE the search message (`index-freshness` uncommitted-edits row). Never
-  wait for prime stale — blind to working-tree edits. Reindex failed → say so;
-  zero hits ≠ clean. Linked worktree: no reindex — `treeState` rule above.
+  BEFORE the search message (`tea-rags://guide/freshness` uncommitted-edits
+  row). Never wait for prime stale — blind to working-tree edits. Reindex failed
+  → say so; zero hits ≠ clean. Linked worktree: no reindex — `treeState` rule
+  above.
 
 ## PRESENT
 
@@ -195,7 +200,7 @@ riskiest. Step with `ageDays` `recent` on that route = fresh suspect even at
 fixed yet.
 
 Edges: no `codegraph` floor while `changedFiles` > 0 → edges touching changed
-files are the index's (search-cascade "Addressing the Codebase").
+files are the index's (`tea-rags://guide/freshness` "Addressing the Codebase").
 
 **Requires codegraph** (prime `## Enrichment` lists `codegraph.symbols`).
 Codegraph off → graph tools not registered — use Codegraph off below; never read
@@ -213,7 +218,8 @@ an absent tool as a fact.
   Entry `find_symbol` cannot resolve (anonymous test block) → first named frame
   it calls.
 
-**Escalate cheap → full** (search-cascade Graph navigation precedence):
+**Escalate cheap → full** (`tea-rags://guide/navigation` Graph navigation
+precedence):
 
 1. **One endpoint known → one hop.**
    - `get_callers symbolId=<failure site>` — who feeds it. Suspect looks like a
@@ -247,7 +253,7 @@ an absent tool as a fact.
   true → more paths exist, pin endpoints before raising limits.
 - Namesake endpoints (component codebases: `BaseTable` in several files) → pin
   `fromPath` / `toPath` with the chunk's `relativePath`; semantics in
-  search-cascade Graph navigation.
+  `tea-rags://guide/navigation` Graph navigation.
 - **Empty `paths`: check `namesakes` FIRST.** Present → `fromPath`/`toPath`
   matched no candidate — fix the path (real candidates listed), not the suspect.
   Absent → no static call path — wrong entry, dynamic dispatch, or wrong
@@ -266,7 +272,8 @@ before trusting the loop.
 
 ### Codegraph off
 
-Route per search-cascade "When codegraph is off" table. Bug-hunt specifics:
+Route per `tea-rags://guide/navigation` "When codegraph is off" table. Bug-hunt
+specifics:
 
 - Stack trace frames = executed path. Fresh probe with `pathPattern` =
   brace-joined relativePaths of in-project frames (project root stripped) →

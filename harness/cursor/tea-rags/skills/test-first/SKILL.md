@@ -8,6 +8,10 @@ description:
 
 # test-first
 
+> **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
+> resource tool, or the read fails), run
+> `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
+
 RED phase. Output = recorded red, the gate GENERATE needs. No production code
 here.
 
@@ -16,8 +20,8 @@ answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
 `index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
 ## Iron Rules
 

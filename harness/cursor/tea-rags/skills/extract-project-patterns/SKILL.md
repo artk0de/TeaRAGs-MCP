@@ -8,6 +8,10 @@ description:
 
 # extract-project-patterns
 
+> **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
+> resource tool, or the read fails), run
+> `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
+
 Internal recipe for code-gen skills. Find battle-tested template in project for
 code you about to write, via three-level locality cascade. Invoked by parent
 skills; not users directly.
@@ -31,17 +35,17 @@ present. Else return
 ## Recipe — three-level locality cascade
 
 **Addressing:** every call passes `project=<alias>` +
-`path=<your working directory>` — search-cascade "Addressing the Codebase". Row
-with `treeState` = pre-edit copy → never a template; take its current body via
-`find_symbol`.
+`path=<your working directory>` — `tea-rags://guide/freshness` "Addressing the
+Codebase". Row with `treeState` = pre-edit copy → never a template; take its
+current body via `find_symbol`.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
 `index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
 ```
 L1 pathPattern = pathPatternL1                         (deepest subdomain)

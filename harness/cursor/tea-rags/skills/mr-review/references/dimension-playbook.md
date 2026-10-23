@@ -1,5 +1,9 @@
 # Dimension Playbook — Phase 3 SCAN
 
+> **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
+> resource tool, or the read fails), run
+> `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
+
 Exact call parameters + severity mapping per dimension. Consumed by
 `../SKILL.md` Phase 3. Parameter blocks byte-exact — never paraphrase into prose
 when executing.
@@ -31,7 +35,7 @@ per changed symbol (cap 10):
   <id>: Class#method = instance method, Class.method = static — take it
         from the Phase 2 outline line, never retype it
 edges: no codegraph floor + changedFiles > 0 → callers in changed files are
-       the index's (search-cascade "Addressing the Codebase")
+       the index's (`tea-rags://guide/freshness` "Addressing the Codebase")
 overlay read: rankingOverlay.file.fanIn / transitiveImpact / isHub,
               rankingOverlay.chunk.fanIn (labels); raw values at
               payload.codegraph.symbols.{file,chunk}.* (pageRank there)

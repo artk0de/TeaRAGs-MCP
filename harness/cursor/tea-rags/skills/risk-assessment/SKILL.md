@@ -9,6 +9,10 @@ description:
 
 # Risk Assessment
 
+> **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
+> resource tool, or the read fails), run
+> `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
+
 ## Phase Order (MANDATORY — do not skip any phase)
 
 🛑 STOP — read all phases before scanning.
@@ -55,27 +59,28 @@ Semantic/hybrid search resolves intent-based scopes.
 ## Rules
 
 **Addressing:** every call passes `project=<alias>` +
-`path=<your working directory>` — search-cascade "Addressing the Codebase".
+`path=<your working directory>` — `tea-rags://guide/freshness` "Addressing the
+Codebase".
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
 `index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
 1. **Execute YOURSELF** — no subagents.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
 3. **No built-in Search/Grep for code discovery** — use tea-rags tools only.
 4. **Search results contain code when metaOnly=false.** Evaluate from search
    results BEFORE any Read or navigation.
-5. **Depth → `find_symbol`, never Read** (search-cascade After-Search
-   Navigation): full body `symbol=<symbolId>`, file outline `relativePath`,
-   neighbour `navigation.prev/nextSymbolId`. Partial `Read` only for non-symbol
-   text (config, data). Never read full files. Row with `treeState` = pre-edit
-   index copy, lines stale → `find_symbol` for current code (search-cascade
-   "Addressing the Codebase").
+5. **Depth → `find_symbol`, never Read** (`tea-rags://guide/navigation`
+   After-Search Navigation): full body `symbol=<symbolId>`, file outline
+   `relativePath`, neighbour `navigation.prev/nextSymbolId`. Partial `Read` only
+   for non-symbol text (config, data). Never read full files. Row with
+   `treeState` = pre-edit index copy, lines stale → `find_symbol` for current
+   code (`tea-rags://guide/decision-tree` "Addressing the Codebase").
 6. **Minimize tool calls — but never batch across a ranking boundary.** Batch
    what shares a ranking space: all rank_chunks in one message (separate calls),
    all Critical UUIDs into one find_similar (vector math, order-free). Do NOT
@@ -382,7 +387,8 @@ to stratified `hybrid_search` when it does not.
 **3. Structural amplifier + cycles (codegraph axis).** ONLY when prime shows
 `codegraph.symbols` under `## Enrichment`. Line absent → graph tools not
 registered — skip, note structural risk not assessed (never claim "no cycles" /
-"no hubs"). See search-cascade "Graph navigation" for off-routing.
+"no hubs"). See `tea-rags://guide/navigation` "Graph navigation" for
+off-routing.
 
 - **Blast-radius amplifier (`architecturalHub`).** Run `rank_chunks`
   `rerank="architecturalHub"` scoped to same `pathPattern`, same
