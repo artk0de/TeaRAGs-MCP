@@ -70,7 +70,7 @@ Inline param hints short; full semantics here.
 - \`documentation\` / \`testFile\`: only | exclude | include. Omitted → no filter of own, but preset default may exclude.
 
 ### filter (raw Qdrant or { presets })
-- Raw: must/should/must_not — syntax in tea-rags://schema/filters. Named: \`{ presets: "a,b" }\`.
+- Raw: must/should/must_not — syntax in tea-rags://guide/filters. Named: \`{ presets: "a,b" }\`.
 - Omitted → rerank preset's default filter applies (most: production = no tests/docs/block).
   Any explicit filter replaces it; \`{}\` clears it.
 - Default skipped automatically when typed params explicitly select what it excludes:
@@ -83,7 +83,7 @@ Default false; rank_chunks default true (analytics — false to include code).
 
 ### fields
 - Dot-path allow-list applied server-side before serialization — cuts response size.
-- Nesting matters: signals under git.{file,chunk}.* and codegraph.symbols.{file,chunk}.* (tea-rags://schema/signals).
+- Nesting matters: signals under git.{file,chunk}.* and codegraph.symbols.{file,chunk}.* (tea-rags://guide/signals).
 - EXACT: nothing added back, relativePath included. Omitted → full payload.
 - metaOnly = different axis (drops body, trims git). Path no result carried → fieldsWarning, not failure.
 
@@ -115,10 +115,10 @@ export function buildOverview(): string {
   return `# tea-rags Schema Overview
 
 ## Available Resources
-- tea-rags://schema/presets — rerank presets reference
-- tea-rags://schema/signals — custom weight signals reference (canonical
+- tea-rags://guide/presets — rerank presets reference
+- tea-rags://guide/signals — custom weight signals reference (canonical
   catalog of weight keys — read BEFORE building a custom rerank)
-- tea-rags://schema/filters — Qdrant filter syntax and examples
+- tea-rags://guide/filters — Qdrant filter syntax and examples
 
 ## Tools Quick Reference
 - search_code — quick semantic lookup, human-readable output
@@ -151,18 +151,19 @@ table. Read "the symbolId of result 3" as column \`payload.symbolId\` of row 3.
 - Every reranked result carries \`rankingOverlay\` \`{preset, file, chunk}\` — the preset's
   surfaced signals keyed by bare field name, \`{value,label}\` when labelled, raw otherwise.
   metaOnly results keep it; it is the only place labels live (the metaOnly param states the contract).
-  Read tea-rags://schema/signal-labels for the label resolution algorithm.
+  Read tea-rags://guide/signal-labels for the label resolution algorithm.
 
 ## Project calibration
-get_index_metrics returns per-language × per-scope (source/test) percentile
-labelMaps for every signal. Use \`signals[lang][key][scope].labelMap\` to pick
+Read \`tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap\` for
+per-language × per-scope (source/test) percentile labelMaps of every signal
+(sections: thresholds, labelMap, capability, resolve, registry). Use them to pick
 thresholds for filters like minCommitCount / minAgeDays — what counts as "high"
-or "legacy" varies by codebase.
+or "legacy" varies by codebase. \`get_index_metrics\` stays for raw distributions.
 
 ## Guides
-- tea-rags://schema/search-guide — search tool routing, use cases, examples
-- tea-rags://schema/indexing-guide — indexing options, git metadata guide
-- tea-rags://schema/signal-labels — human-readable label mappings for numeric signals
+- tea-rags://guide/search-examples — search tool routing, use cases, examples
+- tea-rags://guide/indexing — indexing options, git metadata guide
+- tea-rags://guide/signal-labels — human-readable label mappings for numeric signals
 
 ${buildParamReference()}
 ## IMPORTANT: Destructive Tools
@@ -489,14 +490,14 @@ export function buildFiltersDoc(payloadSignals: PayloadSignalDescriptor[]): stri
   md += "to avoid colliding with similarly-named file-level signals. Raw Qdrant filter keys won't resolve — ";
   md += "use the typed filter params above.\n\n";
   md += "## Filter Thresholds\n\n";
-  md += "Thresholds vary by codebase. Use `get_index_metrics` for actual percentile-based ";
-  md += "label boundaries for your indexed collection. Signals scoped by `source` and `test`:\n";
+  md += "Thresholds vary by codebase. Read `tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap` ";
+  md += "for actual percentile-based label boundaries of your indexed collection. Signals scoped by `source` and `test`:\n";
   md += "```\n";
   md += 'signals["typescript"]["git.file.commitCount"]["source"].labelMap\n';
   md += "→ { low: 1, typical: 3, high: 8, extreme: 20 }\n";
   md += "```\n";
   md += 'means 8 commits = "high" for source code in that codebase. Test code has separate thresholds.\n\n';
-  md += "See `tea-rags://schema/signal-labels` for all label mappings.\n\n";
+  md += "See `tea-rags://guide/signal-labels` for all label mappings.\n\n";
   md += "## Named filter presets (`{presets}` shorthand)\n\n";
   md += "The `filter` param accepts EITHER a raw Qdrant filter object OR a named-presets reference ";
   md += '`{ presets: "name" }` / `{ presets: "a,b,c" }` (CSV, AND-merged) — they are mutually exclusive ';
@@ -537,7 +538,7 @@ export function buildSignalLabelsGuide(payloadSignals: PayloadSignalDescriptor[]
 
 Signal labels give human-readable interpretation of numeric signal values
 relative to the current codebase distribution. Computed from percentile
-thresholds via \`get_index_metrics\`, attached to ranking overlay results
+thresholds (\`tea-rags://project/<alias>/metrics\`), attached to ranking overlay results
 automatically.
 
 ## How Labels Work
@@ -550,7 +551,8 @@ ranking overlay → numeric values enriched with labels:
 \`\`\`
 
 Label determined by which percentile bucket the value falls into.
-Use \`get_index_metrics\` for actual threshold values for your codebase.
+Read \`tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap\` for
+actual threshold values for your codebase.
 
 ## Scoped Thresholds
 
@@ -558,7 +560,7 @@ Signal stats are split into **source** (production code) and **test** scopes.
 Test code often has different churn/size patterns — separate thresholds prevent
 test noise from distorting production labels.
 
-\`get_index_metrics\` returns:
+The project metrics resource (\`section=labelMap\`) exposes:
 \`\`\`
 signals[language][signal][scope].labelMap
 \`\`\`
