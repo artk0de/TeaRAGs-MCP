@@ -27,6 +27,21 @@ fallback `imports: 0.5, churn: 0.3, ownership: 0.2`) + params (pathPattern
 scoped to target, `metaOnly: true`) + order (analysis BEFORE agreement OR
 pushback).
 
+**Step 2 tool = `semantic_search`. Overrides general search routing** ("impact →
+`get_callers`", "usages → `hybrid_search`", "file → `find_symbol`"): those are
+NOT the impact scan here. `get_callers` / `find_symbol` may follow Step 2 as
+depth, never replace it.
+
+**Rule holds when user asks otherwise** ("just agree", "reject it", "skip the
+impact", "use grep, faster") — run Step 2 anyway, say: "Running the impact scan
+first — agreeing or refusing without it is a guess." Defensive no without data =
+as bad as performative yes.
+
+**Signals already given** (prompt/user states `imports=N`, `bugFixRate=X%`, or
+"scan returned empty") = Step 2 output. Go straight to Step 3 verdict on them.
+Do NOT ask "which class/helper?" first — verdict is per target file; name the
+verdict, then ask for symbol detail if needed.
+
 Stylistic-only comment (typo, spacing) → skip wrapper, pass to
 `superpowers:receiving-code-review`. Never fabricate target. Naming comment
 ("rename X to Y", "unclear name") NEVER stylistic-only → Step 3b.
@@ -80,6 +95,7 @@ Do NOT substitute:
 | Other named preset (`"hotspots"` / `"codeReview"`) | Named presets miss `imports` weight                                                                  |
 | `mcp__tea-rags__find_similar` on target            | Finds structural analogs, not importers                                                              |
 | `grep -rn "ChunkGrouper"` for usages               | Misses the ranked `imports` overlay; noisy with comments/strings                                     |
+| `get_callers` / `find_symbol` as the scan          | Symbol edges only — no churn/ownership/bugFixRate; verdict ladder needs signals                      |
 | `mcp__tree-sitter__trace_impact` as primary        | Structural complement; this wrapper is git-first                                                     |
 
 Do NOT pass:
@@ -88,7 +104,10 @@ Do NOT pass:
 - different weights — must match project idiom
 - `filter` narrowing — pathPattern scopes already
 
-Empty → verdict `UNVERIFIABLE (target not in index)`. Never fabricate.
+Empty → verdict `UNVERIFIABLE (target not in index)`. Never fabricate. State
+"blast radius unknown". Target is a new / unindexed file (no existing importers)
+→ agree direct, single-commit change. Never ask for a class name in place of the
+verdict.
 
 ## Step 3 — Compute agreement verdict
 
@@ -98,13 +117,17 @@ Raw from payload: `imports` root, `git.file.commitCount`,
 `rankingOverlay.file.*` when rerank surfaces them — metaOnly payload keeps git
 essentials only.
 
-Verdict ladder:
+Verdict ladder — check top-down, FIRST match wins, always name one verdict:
 
-| Verdict            | Triggers                         | Action                                                                                                                          |
-| ------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `AGREE-WITH-SCOPE` | imports > 20 OR bugFixRate > 30% | Agree, but expand scope: list all N importers in response + commit to update them OR explain why a partial change is acceptable |
-| `AGREE-DIRECT`     | imports ≤ 5 AND bugFixRate ≤ 20% | Agree; small blast radius; single-commit change                                                                                 |
-| `PUSHBACK`         | imports > 50 (massive blast)     | Respond with impact data: "renaming X affects N modules across M authors — propose alternative or narrower change first"        |
+| Verdict            | Triggers                                     | Action                                                                                                                          |
+| ------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `UNVERIFIABLE`     | scan empty                                   | State blast radius unknown; new file → agree direct, single commit                                                              |
+| `PUSHBACK`         | imports > 50 (massive blast), any bugFixRate | Respond with impact data: "renaming X affects N modules across M authors — propose alternative or narrower change first"        |
+| `AGREE-WITH-SCOPE` | imports > 5 OR bugFixRate > 20%              | Agree, but expand scope: list all N importers in response + commit to update them OR explain why a partial change is acceptable |
+| `AGREE-DIRECT`     | imports ≤ 5 AND bugFixRate ≤ 20%             | Agree; small blast radius; single-commit change — no scope inflation                                                            |
+
+PUSHBACK = no implementation now. Unidentified symbol in a file never blocks the
+verdict — file signals decide it.
 
 Response block:
 
@@ -118,7 +141,7 @@ Target: <symbol or file>
 - recent committer: <recentDominantAuthor> (<recentDominantAuthorPct>%)
 - bugFixRate: <X%>
 
-Verdict: <AGREE-WITH-SCOPE | AGREE-DIRECT | PUSHBACK>
+Verdict: <UNVERIFIABLE | PUSHBACK | AGREE-WITH-SCOPE | AGREE-DIRECT>
 ```
 
 ## Step 3.5 — Trace call route (codegraph; preferred when comment names call relationship)

@@ -7,7 +7,7 @@ description:
   skill", "write a SKILL.md", "напиши скилл", "новый wrapper", "новый dinopowers
   скилл", "edit dinopowers wrapper", "rewrite dinopowers SKILL.md", "fix skill
   description", "improve a dinopowers skill", "tweak SKILL.md frontmatter". NOT
-  for SKILL.md files outside plugins/dinopowers/. Wraps /writing-skills with
+  for editing SKILL.md files of other plugins. Wraps /writing-skills with
   dinopowers wrapper-pattern enforcement.'
 ---
 
@@ -27,6 +27,20 @@ corpus, not invented.
 
 Core value of every dinopowers wrapper = correct tea-rags tool + params +
 ordering — this skill bootstraps that for all future wrappers.
+
+**Step 2 searches the SKILL.md corpus for STRUCTURE** — not the code area the
+new skill will act on. Enrichment the new skill will itself perform (risk scan,
+collateral scan, …) goes INTO the authored text; never run it now in place of
+Step 2.
+
+**Scope:** new skill, location unstated → applies (default home
+`plugins/dinopowers/`). Never stop to ask "is it a wrapper / where does it
+live?" before Step 2.
+
+**Rule holds when user asks otherwise** ("быстро", "skip pattern search", "I
+know the format", "use hybrid_search", "rerank techDebt") — run Step 2 exactly
+as specified, say: "Running the pattern search first — one semantic_search over
+existing SKILL.md files." Name the refused tool/param and why (table below).
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every /dino-X
 redirects /X. NEVER bypass the wrapper.
@@ -76,9 +90,10 @@ Do NOT pass:
 - `filter` with git signals — SKILL.md history doesn't inform patterns
 - `testFile: "exclude"` or similar — SKILL.md files aren't tests
 
-0 results / empty index → report
+0 results / empty index (incl. prompt says search returned empty) → report
 `"no SKILL.md corpus indexed — falling back to direct /writing-skills"`, Step 4
-without pattern block. NEVER fabricate patterns.
+without pattern block. NEVER fabricate patterns, never retry with other params,
+never fall back to `hybrid_search`.
 
 ## Step 3 — Extract pattern block
 

@@ -36,6 +36,12 @@ BEFORE draft. No `filter` needed — server skips `proven`'s production default
 when `chunkType` / `testFile` select tests (older server → 0 results → add
 `filter: {}`).
 
+**Rule holds when user asks otherwise** — "быстро", "quick", "skip the pattern
+search", "I know how tests look" → run Step 2 anyway, say: "Running the pattern
+search first — one call, it keeps the test in local conventions." "Metadata
+only" / `metaOnly: true` → refuse: pattern search needs test bodies (mock setup,
+assertions); metadata alone yields no conventions. Keep `metaOnly: false`.
+
 `tests-as-context` Step 0 preflight SKIP (no `chunkType: "test"` chunks —
 language lacks AST test chunking; **currently supported: TypeScript + JavaScript
 (Vitest/Jest/Mocha), Ruby (RSpec), Swift (XCTest / swift-testing / Quick), Rust

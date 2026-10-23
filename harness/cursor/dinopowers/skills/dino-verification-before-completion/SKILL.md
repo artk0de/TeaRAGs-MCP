@@ -1,12 +1,12 @@
 ---
 name: dino-verification-before-completion
 description:
-  'Before claiming work is complete, run tea-rags imports/churn signals on
-  just-edited files to surface collateral-damage candidates (files whose
-  dependents could break), then run verification commands so success claims are
-  backed by evidence and blast-radius awareness. Triggers on "ready to commit",
-  "all done", "should be fixed now", "готово", "проверь перед commit", "все
-  работает". NOT for mid-work sanity checks without a completion claim. Wraps
+  'Before claiming work complete, scan tea-rags imports/churn on just-edited
+  files for collateral-damage candidates (files whose dependents could break),
+  then run verification commands so success claims rest on evidence. Triggers on
+  "ready to commit", "all done", "should be fixed now", "готово", "можно
+  коммитить", "commit and push", "проверь перед commit", "все работает". NOT for
+  mid-work sanity checks without a completion claim. Wraps
   /verification-before-completion with a tea-rags collateral-damage scan.'
 ---
 
@@ -33,6 +33,12 @@ high-`fanIn`/`imports` files with explicit "verify dependents".
 
 Only new files (no existing-file edits) → skip scan, verdict
 `SAFE (no existing-file edits)`. Never fabricate pathPattern.
+
+**Subagents run the scan themselves.** Task-agent / explore / any subagent
+claiming or verifying completion → scan FIRST (read-only `semantic_search`, no
+reindex), verdict per file, THEN `/verification-before-completion`. "Report to
+parent" covers reindex / drift remedies only — never hand the scan itself to the
+parent.
 
 **Codegraph on?** Graph tools (`get_callers`, `trace_path`, `review_changes`, …)
 in your tool list; unsure → read

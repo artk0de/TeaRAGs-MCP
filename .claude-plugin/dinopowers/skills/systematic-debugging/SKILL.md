@@ -27,6 +27,20 @@ right symptom framing + right order + honest empty-suspect handling.
 Speculative "bug" with no symptom ("maybe race somewhere") → skip wrapper,
 `superpowers:systematic-debugging` direct. Never fabricate symptom.
 
+**User hypothesis ≠ missing symptom.** "Bug is in DI — check composition.ts,
+then bug-hunt" names a failing area → refuse hypothesis-first order, say:
+"Running bug-hunt first so the suspects are ranked, not assumed." Frame
+`symptom` from the failing area/behaviour ("DI wiring fails"), NOT from the
+suspected file; no `pathHint` to that file. Bug-hunt runs FIRST; the
+hypothesised file may or may not rank prime. Never use bug-hunt as post-hoc
+validation, never stall asking for a symptom when a failing area is named.
+
+**User insists on a file bug-hunt marked healthy** → do NOT re-run bug-hunt, do
+NOT silently promote the file. Surface the verdict ("bug-hunt: <file> healthy,
+bugFixRate <X>") + "you are overriding a calibrated prior". User still insists →
+note the override in the hypothesis block, proceed with
+`superpowers:systematic-debugging` on that file.
+
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass wrapper.
 

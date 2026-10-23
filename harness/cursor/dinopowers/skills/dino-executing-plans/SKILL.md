@@ -1,14 +1,14 @@
 ---
 name: dino-executing-plans
 description:
-  'Execute written implementation plan whose Tasks edit code, per-Task
-  SAFE/CAUTION/UNSAFE git-signal verdict before edit AND data-driven cascade for
-  code-generation and behavior-modification Tasks (style from silo authors,
-  strategy+template from proven neighbors, callers + tests-at-risk on modify).
-  Triggers on "execute the plan", "start Task N", "выполни план", "начни
-  задачу", "run the plan", "implement the plan steps". NOT for one-off edits
-  without a written plan. Wraps /executing-plans with tea-rags git-signal
-  verdicts and /data-driven-generation cascade.'
+  'Execute written implementation plan or tracker issue whose Tasks edit code,
+  per-Task SAFE/CAUTION/UNSAFE git-signal verdict before edit AND data-driven
+  cascade for code-generation and behavior-modification Tasks (strategy+template
+  from proven neighbors, callers + tests-at-risk on modify). Triggers on
+  "execute the plan", "start Task N", "выполни план", "начни задачу", "run the
+  plan", "implement the plan steps". NOT for one-off edits without a written
+  plan. Wraps /executing-plans with tea-rags git-signal verdicts and
+  /data-driven-generation cascade.'
 ---
 
 # dinopowers: executing-plans
@@ -32,8 +32,14 @@ codegraph on, `{imports 0.5, churn 0.3, ownership 0.2}` fallback off) + params
 (brace-expanded `pathPattern` over Task-local files, `metaOnly: true`) + verdict
 ladder (SAFE / CAUTION / UNSAFE) + gating (CAUTION = confirm, UNSAFE = pause).
 
-Purely additive Task (new files only) → skip guard, say so. Never invent
-pathPattern to justify guard.
+Purely additive Task (new files only) → skip guard, say so ("guard SAFE — new
+file"). Never invent pathPattern to justify guard.
+
+**Plan = any written Task source**: plan file, OR tracker issue handed to an
+autonomous task-agent ("Execute beads issue X: write Y in path Z"). Issue = one
+Task → full step order below: guard → Step 5 DDG cascade (MUST for new code,
+esp. "match shape of A/B") → `/dino-test-driven-development` for its tests →
+chain. Never Read neighbours and copy by hand.
 
 ## Mandatory Step Order (DO NOT SKIP)
 
@@ -189,6 +195,12 @@ Branch on Task verdict BEFORE invoking `/executing-plans`:
 Guard block = circuit breaker, not documentation. NEVER silently downgrade
 (UNSAFE→CAUTION, CAUTION→SAFE) "to keep momentum"; surface true verdict, user
 may downgrade.
+
+**Pre-emptive "skip it" is NOT an override.** Deadline / "no time" / "пропусти
+UNSAFE" said before or alongside the verdict → still surface the block +
+recommendations and wait. Say: "Guard is UNSAFE for Task N — <signals>. Options:
+(a)/(b)/(c). Reply 'override Task N' to proceed anyway." Explicit override =
+user reply AFTER seeing the block, naming the Task.
 
 **Chaining reminder:** Task run may chain into `/test-driven-development`,
 `/verification-before-completion`, `/requesting-code-review`,

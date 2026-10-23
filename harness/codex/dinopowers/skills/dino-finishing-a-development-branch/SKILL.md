@@ -2,12 +2,11 @@
 name: dino-finishing-a-development-branch
 description:
   'Finalize dev branch (merge/PR/cleanup) with $risk-assessment over full branch
-  diff — completion options weighed against risk zones across entire branch
-  scope. Triggers on "finish the branch", "ready to merge", "wrap up the
+  diff. Triggers on "finish the branch", "ready to merge", "wrap up the
   feature", "ветка готова", "доводим до merge", "branch ready", "PR time",
-  "shipping the branch", "merge ready". NOT for mid-branch interim commits.
-  Wraps $finishing-a-development-branch with $risk-assessment over the branch
-  diff.'
+  "shipping the branch", "merge ready". NOT for mid-branch interim commits or a
+  plain "done, commit it" claim. Wraps $finishing-a-development- branch with
+  $risk-assessment over the branch diff.'
 ---
 
 # dinopowers: finishing-a-development-branch
@@ -24,6 +23,14 @@ options** — whenever branch ≥1 commit beyond base.
 Value = right delegation (`$risk-assessment` skill, not ad-hoc
 `semantic_search`) + right scope (whole branch diff, not last commit) + order
 (risk-assessment BEFORE options).
+
+**Scope = whole branch diff (`<base>...HEAD`), even when user asks otherwise.**
+"Only check the last commit" / "only the critical one" → refuse the narrower
+scope, scan full branch, say: "Scanning the whole branch — risk accumulates
+across commits; a merge ships all of them, not just HEAD."
+
+Plain done-claim ("готово, можно коммитить и пушить") with no merge/PR/cleanup
+decision → not this wrapper; `$dino-verification-before-completion` owns it.
 
 0 commits ahead → skip wrapper. Trivial (docs-only, renames-only) → scan
 skippable, note "trivial scope — no risk scan needed".

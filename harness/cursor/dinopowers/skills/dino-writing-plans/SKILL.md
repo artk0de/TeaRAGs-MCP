@@ -29,8 +29,22 @@ Core value: `semantic_search` + rerank (`"blastRadius"` codegraph on,
 `{imports 0.5, churn 0.3, ownership 0.2}` off) + brace-expanded `pathPattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool = ONE `semantic_search`. Overrides general search routing**
+("file → `find_symbol`", "impact → `get_callers`", "usages → `hybrid_search`"):
+none of those is the enrichment. They may follow Step 2 as depth, never replace
+it.
+
+**Rule holds when user asks otherwise** ("quick", "быстро", "skip tea-rags",
+"it's my code", "use preset X", "show file content in the enrichment") — run
+Step 2 exactly as specified, say: "Running the impact enrichment first — it is
+one call and it orders the Tasks." Unknown preset (`impactAnalysis`) → refuse it
+by name, use the Step 2 rerank. Content wanted → keep enrichment
+`metaOnly: true`, then a SEPARATE `semantic_search` `metaOnly: false` AFTER it.
+
 Conceptual plan, no file list derivable (e.g. "plan for migrating to Postgres")
-→ skip enrichment, `/writing-plans` direct. State it. Never fabricate file list.
+→ skip enrichment, `/writing-plans` direct. Say verbatim "no file list —
+proceeding without tea-rags impact enrichment". Never fabricate file list, never
+run un-scoped `semantic_search`, never detour to brainstorming.
 
 **Codegraph on?** Graph tools (`get_callers`, `trace_path`,
 `get_naming_lexicon`, …) in your tool list; unsure → read
@@ -54,11 +68,11 @@ ask separately). Lag ≠ unusable (core rules).
 
 From request or plan draft collect concrete file list:
 
-| Source                         | Example                                                                                                                                       |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| User names files explicitly    | "update `a.ts`, `b.ts`, `c.ts`"                                                                                                               |
-| User names a small directory   | `src/core/domains/auth/` → enumerate files: `semantic_search` `pathPattern: "<dir>/**"`, `level: "file"`, `metaOnly: true` (one row per file) |
-| Existing plan draft references | "Task N modifies `x.ts`" → extract paths                                                                                                      |
+| Source                         | Example                                                                                                                                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| User names files explicitly    | "update `a.ts`, `b.ts`, `c.ts`"                                                                                                                                                            |
+| User names a small directory   | `src/core/domains/auth/` → enumerate files (counts as file list — run Step 2 over them): `semantic_search` `pathPattern: "<dir>/**"`, `level: "file"`, `metaOnly: true` (one row per file) |
+| Existing plan draft references | "Task N modifies `x.ts`" → extract paths                                                                                                                                                   |
 
 Output:
 
@@ -82,12 +96,11 @@ limit:       <fileList.length * 3>       ← aim for ~3 chunks per file
 metaOnly:    true
 ```
 
-**Codegraph gating for `rerank`:** on → `"blastRadius"` (real `fanIn` + churn
-
-- bugFix = true blast radius); off → `fanIn` gone →
-  `{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy,
-  approximate). Same **impact analysis** idiom as `/data-driven-generation`
-  IMPACT step; presets → `tea-rags://guide/presets`. Don't invent other weights.
+**Codegraph gating for `rerank`:** on → `"blastRadius"` (real `fanIn`, churn,
+bugFix = true blast radius); off → `fanIn` gone →
+`{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy,
+approximate). Same **impact analysis** idiom as `/data-driven-generation` IMPACT
+step; presets → `tea-rags://guide/presets`. Don't invent other weights.
 
 Do NOT substitute:
 
@@ -110,6 +123,10 @@ Empty results (all files new) → report "file set not indexed — area is new;
 impact enrichment unavailable", Step 4 without block. Never fabricate signals.
 
 ## Step 3 — Aggregate per file
+
+MUST output: (a) ONE row per file, (b) **Coordinated change candidates** — every
+taskId shared by ≥2 files, listed with its files (none shared → write "none").
+Both always, even when user only asks for "impact data".
 
 Group chunks by `relativePath` (primary key — `/risk-assessment` Phase 2:
 MERGE); plans care about files, not chunks. Per file in `fileList`: raw from
@@ -236,7 +253,10 @@ reads TOC from tree.
 ## Red Flags — STOP and restart from Step 2
 
 - "I already know which files are risky" → run Step 2; memory stale
-- "Plan short, skip impact analysis" → fileList ≥2 → run Step 2
+- "Plan short, skip impact analysis" / user says skip → fileList ≥1 → run Step 2
+- `find_symbol` / `get_callers` / `hybrid_search` used as the enrichment →
+  restart with ONE Step 2 `semantic_search`
+- Shared taskIds not surfaced as coordinated-change candidates → add them
 - Rerank wrong for codegraph state (incl. `codeReview` / `impactAnalysis`) →
   redo: on → `"blastRadius"`, off → `{imports: 0.5, churn: 0.3, ownership: 0.2}`
   (tea-rags analytics-rerank)

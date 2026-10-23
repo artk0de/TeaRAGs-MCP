@@ -68,10 +68,14 @@ tool list; unsure → read `tea-rags://project/<alias>/metrics?section=registry`
 similarity-ranked list off as "the hubs"). → `tea-rags://guide/navigation`
 "Graph navigation".
 
-**Call E — vocabulary (codegraph only, same parallel block):**
+**Call E — vocabulary (codegraph only, same parallel block — MANDATORY when
+codegraph on; A–D without E = incomplete Step 2):**
 `get_naming_lexicon(concept=<Step 1 query>, language, pathPattern)` →
-`concept.terms` = words project already uses for area. Reading:
-`tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
+`concept.terms` = words project already uses for area. `concept` = change intent
+sentence, NEVER a draft symbol name. `language` = area's language from its path
+/ project stack; unsure → still run E, never skip it over a language-capability
+doubt. Output → "Project vocabulary" line in the block + handoff rule (names[]
+check). Reading: `tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 
 Exact parameters per call:
 
