@@ -46,3 +46,12 @@ case. In the taxdome sessions this showed up as calls that alternated between
 
 Schema strings are shorter than first drafted. The existing budgets were kept:
 20 words per param hint and 1536 bytes for the naming-lexicon input schema.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 11/12 PASS (92%)
+- Last recorded rate: 100% (12/12 after-fix, 2026-10-21; opus arm)
+- FAIL list: C12 - subject searched with path alone and used the raw collection only as a fallback; expected collection first (project from marker). Cause: core.md addressing paragraph has no collection row; it lives only in guides/freshness.md:20, not read.
+- Notes: Artifact mapped to core.md addressing paragraph + guides/freshness.md. Delta -8pp. Subject was sonnet (original used opus).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

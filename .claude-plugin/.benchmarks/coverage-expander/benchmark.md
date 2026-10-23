@@ -45,3 +45,15 @@ exploration, and double test runs. After optimization, all operations use
 | 8    | subagent | FAIL   | PASS  | 1-5        |
 | 9    | subagent | FAIL   | PASS  | 2, 3, 5    |
 | 10   | edge     | FAIL   | PASS  | —          |
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 7/10 PASS (70%)
+- Last recorded with-skill rate: 100%
+- Delta: -30pp
+- FAIL:
+  - `eval-3` — plan does baseline run + verify run (two coverage runs) where expectation demands a single run | STALE
+  - `eval-5` — plan uses baseline run + run 2 (+ possible run 3) where expectation demands a single coverage run | STALE
+  - `eval-9` — plan uses baseline run + verify run where expectation says single npm run test:coverage | STALE
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

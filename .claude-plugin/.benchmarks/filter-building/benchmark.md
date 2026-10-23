@@ -112,3 +112,15 @@ gap (typed sugar is canonical, level=file is mandatory for time fields).
   params), not tool correctness. Phase 8 integration eval not run — would catch
   cases where the typed sugar is rejected by tea-rags despite being
   shape-correct.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 23/26 PASS (88%)
+- Last recorded with-skill rate: 100%
+- Delta: -12pp
+- FAIL:
+  - `E9` — did not read tea-rags://schema/filters resource first; asserted syntax from memory ("guide already read") | REAL
+  - `E10` — composed the custom rerank weights itself instead of delegating to tea-rags:analytics-rerank | REAL
+  - `T10` — expected literal absolute pathPattern '/Users/me/proj/src/payments/**'; answer uses project-relative 'src/payments/**' (substance correct and consistent with E12, expectation contradicts E12) | STALE
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

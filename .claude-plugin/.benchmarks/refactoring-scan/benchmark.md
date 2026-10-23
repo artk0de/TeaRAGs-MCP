@@ -52,3 +52,14 @@ adds value specifically on:
 
 **Iteration 0:** 14/14 with-rule, 5/14 baseline (36%), delta +64pp. No fix
 needed.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 13/15 PASS (87%)
+- Last recorded with-skill rate: 100%
+- Delta: -13pp
+- FAIL:
+  - `eval-6` — answer truncated after header; no Tier 1/2 tables or Tier 3 count-only | REAL
+  - `eval-14` — no post-search-validation (no-match detection + disambiguation) between presets | STALE
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

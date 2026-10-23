@@ -170,3 +170,12 @@ believe the index is auto-fresh after a commit. T2 (the only baseline FAIL)
 shows the baseline, lacking the skill, thinks the index just lags after GREEN —
 unaware of the explicit per-task reindex mechanism. The prior
 `worktree-auto-reindex-evals.json` is SUPERSEDED.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 15/15 PASS (100%) (intent-graded; evals say testFile='only', current SKILL.md uses chunkType 'test' + tests-as-context; eval-6 skips the search because the prompt states no tests exist)
+- Last recorded rate: 15/15 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

@@ -84,3 +84,12 @@ These came from the incident case study and need code changes, not rule text.
 - The `workingTree` marker could carry an explicit "overlay serving" hint.
 - Auto-update was not configured for taxdome (`tea-rags auto-update status`
   reports `disabled`). That is why lag accumulated across a branch switch.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 11/15 PASS (73%)
+- Last recorded rate: 100% (15/15 full-rules after, 2026-10-21)
+- FAIL list: E1 (no incremental index_codebase on own checkout, no AskUserQuestion for --force), E7 (same), E15 (stale banner: skipped incremental index_codebase), E13 (user said just read the file by hand; subject refused and used find_symbol instead of Read/user override)
+- Notes: Artifact mapped to core.md + guides/freshness.md. Root cause: core.md line ~57 says only 'Subagent: never reindex'; the own-checkout incremental-without-consent rule (guides/freshness.md:58,83,135) did not reach the subject's plan. Delta -27pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

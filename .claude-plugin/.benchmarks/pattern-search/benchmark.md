@@ -55,3 +55,12 @@ output conventions.
 
 **Iteration 0:** 14/14 with-rule, 3/14 baseline (21%), delta +79pp. No fix
 needed.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 13/14 PASS (93%)
+- Last recorded rate: 100% (14/14 with-rule, iteration 0)
+- FAIL list: eval-14 (after SEED, before EXPAND: subject noted chunk ids/seen paths but omitted the post-search validation step - no-match detection + disambiguation). Cause: pattern-search SKILL.md has no validation step; that content now lives in rules/guides/navigation.md and the subject did not read it for this case.
+- Notes: Delta -7pp. Subject read tea-rags://guide/decision-tree.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

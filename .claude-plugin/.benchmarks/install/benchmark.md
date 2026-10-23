@@ -55,3 +55,20 @@ Delta:        0pp (skill no longer harms — matches baseline)
 | 8    | [subagent] task-agent, Node v20  | FAIL (22+)              | PASS  |
 | 9    | [subagent] explore, ONNX Windows | FAIL (npx)              | PASS  |
 | 10   | Node 24 + tea-rags already done  | FAIL (npx)              | PASS  |
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 2/10 PASS (20%)
+- Last recorded with-skill rate: 100%
+- Delta: -80pp
+- FAIL:
+  - `1` — plan never states the MCP command is 'tea-rags server' (not npx) | REAL
+  - `2` — no MCP command 'tea-rags server'; embedded postinstall 'tea-rags --version' not mentioned | REAL
+  - `3` — no MCP command 'tea-rags server' (24+ and re-detect are met) | REAL
+  - `4` — no postinstall 'tea-rags --version', no 'npm install -g tea-rags' error message, no MCP command | REAL
+  - `6` — no MCP command 'tea-rags server' (step sequence is covered only via "tail as usual") | REAL
+  - `7` — MCP command 'tea-rags server' not stated (only QDRANT_URL in step 8) | REAL
+  - `9` — no MCP command 'tea-rags server'; it declines to run the wizard (ONNX recommendation itself is correct) | REAL
+  - `10` — no MCP command 'tea-rags server' (skip to step 4 is met) | REAL
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

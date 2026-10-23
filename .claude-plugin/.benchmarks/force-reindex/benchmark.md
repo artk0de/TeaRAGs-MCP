@@ -58,3 +58,13 @@ redundant. The eval set flags exactly that risk.
 
 **Iteration 0:** 10/10 with-rule, 8/10 baseline (80%), delta +20pp. No fix
 needed — delta reflects the skill's narrow unique contribution.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 9/10 PASS (90%)
+- Last recorded with-skill rate: 100%
+- Delta: -10pp
+- FAIL:
+  - `eval-10` — AskUserQuestion "Force-reindex to fix?" is only conditional on the user still wanting the rebuild, and the plan does not clearly surface the corrupt-index diagnosis; it mostly proposes read-only diagnosis | REAL
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

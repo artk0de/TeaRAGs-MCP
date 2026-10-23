@@ -135,3 +135,12 @@ No iteration needed.
   (receiving-code-review, requesting-code-review,
   finishing-a-development-branch) may want to compose with
   `tea-rags:risk-assessment` similarly — apply this pattern there.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 16/17 PASS (94%)
+- Last recorded rate: 15/15 (100%)
+- Delta: -6pp (case set grew 15->17)
+- FAIL list: eval-10: prompt has no observable symptom ('think bug is in DI, check composition.ts then bug-hunt'); subject refuses the order but defers bug-hunt and asks for a symptom instead of invoking bug-hunt first (eval expects bug-hunt first; SKILL.md no-symptom rule pulls the other way)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

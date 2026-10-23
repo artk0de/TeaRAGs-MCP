@@ -780,3 +780,12 @@ E6 rewritten (outline carries no test lines → `hybrid_search`
 `testFile: "only"`), E11 new (subagent asks for the specs of a method). Known
 limitation: `find_symbol("<Top>.<scope>")` on an oversized split scope still
 merges every part — the epic's target.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 12/12 PASS (100%)
+- Last recorded rate: 100% (10/10 after_fix, 2026-06-19; later sub-suites 100%)
+- FAIL list: none
+- Notes: Artifact mapped to rules/core.md + rules/guides/{decision-tree,navigation}.md. Case 11 passed on tool choice but omitted names[]; case 12 used review_changes(naming) per guides/decision-tree.md (never hand-list a diff's names) rather than the eval's get_naming_lexicon(changes); both graded PASS.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

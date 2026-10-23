@@ -174,3 +174,12 @@ Block size: 8404 → 8440 (0.40.3) → 8630 bytes (0.40.4).
 | Iteration 13 | 17/17 | 100% | WT17 decided by the new branch; remaining notes are pre-existing ambiguities, none fail |
 
 Answers: `workspace/iteration-{12,13}-answers.md`.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 17/17 PASS (100%)
+- Last recorded rate: 100% (17/17, iteration 13)
+- FAIL list: none
+- Notes: Artifact mapped to context-subagent.md (SubagentStart block) + guides/freshness.md. Subject passed project=tea-rags (real alias in context) alongside path=cwd; accepted as the current addressing contract (project + path). Delta 0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

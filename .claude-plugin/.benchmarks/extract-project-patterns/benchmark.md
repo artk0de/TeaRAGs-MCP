@@ -98,3 +98,14 @@ preset hint correctly without help.
 - Future regression checks should re-run the with-rule subagent against this
   `evals.json` after any SKILL.md text change and assert ≥ 100% (or document the
   regression).
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 6/8 PASS (75%)
+- Last recorded with-skill rate: 100%
+- Delta: -25pp
+- FAIL:
+  - `Eval-4-triple-fail-diagnostic` — adds relax-to-production re-calls, so more than two find_similar calls total | STALE
+  - `Eval-5-shallow-l1-skip-l2` — runs L2 instead of skipping it when L1 has 2 segments; follows a "<=1" rule not "<=2" | STALE
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

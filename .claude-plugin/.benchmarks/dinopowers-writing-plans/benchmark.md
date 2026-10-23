@@ -117,3 +117,12 @@ No iteration needed.
   `limit: N*3`. Phase 8 should test with 50+ file plans — may need chunking
   (first N files → call 1; remaining → call 2) while still aggregating by
   `relativePath`.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 15/15 PASS (100%) (intent-graded; evals still say custom rerank {imports,churn,ownership} but current SKILL.md prescribes rerank 'blastRadius'; subject followed SKILL.md. Strict literal grading would FAIL 1,2,3,4,9,10,11,14 on that stale rerank text)
+- Last recorded rate: 14/14 (100%)
+- Delta: 0pp
+- FAIL list: none (stale-expectation note above)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

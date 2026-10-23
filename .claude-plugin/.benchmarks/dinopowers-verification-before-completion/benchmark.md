@@ -95,3 +95,12 @@ without-rule. Delta +87pp.
   tracking. If the agent's state doesn't match the actual working tree (e.g.
   stash-pop between sessions), the `editedFiles` list drifts. Consider requiring
   explicit agent self-report of changes instead of git inspection.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 15/15 PASS (100%) (intent-graded; rerank 'blastRadius' vs stale custom weights in evals; eval-12 borderline: subject proposes tests-at-risk targeted run instead of full suite but states errors/ tests alone don't clear HIGH-BLAST and labels result 'unverified for dependents')
+- Last recorded rate: 15/15 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

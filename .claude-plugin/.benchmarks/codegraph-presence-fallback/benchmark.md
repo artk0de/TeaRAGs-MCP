@@ -82,3 +82,12 @@ Plugin bumps (patch, text-only): tea-rags 0.26.0 → 0.26.1, dinopowers 0.17.5 �
   by weaker-model robustness (subagents may run on haiku), which this Opus-only
   eval cannot fully measure.
 - Eval tests INSTRUCTION CLARITY (tool selection plan), not live tool execution.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 13/13 PASS (100%)
+- Last recorded rate: 100% (13/13 with_rule_fixed, honest-v2)
+- FAIL list: none
+- Notes: Artifact mapped to context-main.md/context-subagent.md + guides/navigation.md 'When codegraph is off' + tea-rags:explore/bug-hunt skills. Delta 0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

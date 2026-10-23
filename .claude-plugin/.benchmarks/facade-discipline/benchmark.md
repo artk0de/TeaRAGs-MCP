@@ -209,3 +209,12 @@ Rule is deployed. Next work in this thread:
   grading (committed)
 - `.claude-plugin/.benchmarks/facade-discipline/workspace/` — gitignored
   iteration data (skill-snapshot + iteration-1)
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 11/12 PASS (92%)
+- Last recorded rate: 100% (12/12 with-rule, iteration 1)
+- FAIL list: eval-5 (control: keep a pure 4-line dispatch in the facade; subject moved resolve + model-guard invalidation into CollectionOps citing the responsibility table). Note: eval-6 (validator location) graded PASS because the current rule text itself puts validators at the bottom of the facade file, contradicting the eval's api/errors.ts expectation (stale eval).
+- Notes: Rule artifact .claude/rules/facade-discipline.md was NOT changed by this epic, so eval-5 reflects a rule/eval tension (iteration-3 'every facade method delegates to Ops' wording vs the control), not a regression from the context change. Subject sonnet.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

@@ -121,3 +121,14 @@ skill adds value in **three failure modes**:
   correct names. Not run in this iteration.
 - **No multi-turn simulation** — single-prompt eval; conversational drift not
   measured.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 10/12 PASS (83%)
+- Last recorded with-skill rate: 100%
+- Delta: -17pp
+- FAIL:
+  - `T7` — Plan uses preset blastRadius as primary; custom {imports:0.5,churn:0.3,ownership:0.2} only as graph-absent fallback | STALE
+  - `T12` — Uses custom {age,bugFix,similarity,churn} weights instead of rerank 'securityAudit' (pathPattern and ageDays>=365 filter were fine) | REAL
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

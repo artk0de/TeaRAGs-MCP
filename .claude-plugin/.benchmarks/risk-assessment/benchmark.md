@@ -193,3 +193,12 @@ may not surface disambiguator signals (`imports`, `blockPenalty`, `authors`),
 forcing agent to run multiple presets OR build custom rerank every time to see
 them. This is a trajectory/git preset change (not a skill change) and tracked as
 separate work.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 14/14 PASS (100%)
+- Last recorded rate: 100% (after fix; latest dated results section)
+- FAIL list: none
+- Notes: Several evals.json expectations are stale (e.g. 3 presets vs the skill's current 5-preset scan + structural pair); graded on intent: routed to tea-rags:risk-assessment, correct Phase 0 scoping, rank_chunks scan, SDP escalation for case 13, no escalation for compositionRoot in case 14. Delta 0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

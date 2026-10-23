@@ -103,3 +103,12 @@ skill boundary collisions and reduced total line count by 36%.
 13. Pre-checks duplicate cascade → removed
 14. post-search-validation in every skill → moved to search-cascade
 15. pathPattern rules duplicated → base rule in cascade, extraction in skills
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 15/15 PASS (100%)
+- Last recorded rate: 100% (15/15 after_fix)
+- FAIL list: none
+- Notes: Cases 2/3 (ownership / recent changes) were planned as direct semantic_search/rank_chunks rerank=ownership|recent without invoking tea-rags:explore (graded PASS on behaviour: right preset, no git blame/log); the eval expected the explore flow. Delta 0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

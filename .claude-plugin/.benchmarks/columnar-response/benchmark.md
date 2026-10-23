@@ -135,3 +135,9 @@ ARMS="row=/tmp/base,columnar=$PWD" TREE=$PWD RUNS=3 CONC=4 \
 
 `CASES=<id,id>` limits the run to some cases; `OUT=<dir>` moves the results
 (default `results/` beside this file, not committed).
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Result: no runnable cases. The 12 cases in `cases.json` (36/36 recorded on both arms) need live tea-rags calls and answer extraction from real columnar responses; the Task 12 runner protocol is plan-only (no tool execution), so nothing was run.
+- Last recorded with-skill rate: 100% (36/36). Delta: n/a.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

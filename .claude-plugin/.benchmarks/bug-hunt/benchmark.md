@@ -79,3 +79,12 @@ needed.
   counter-pressure language.
 - **Pressure cases all fail baseline**: skill is strong here. Monitor for
   regression if Rules section is edited.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 21/21 PASS (100%)
+- Last recorded rate: 100% (15/15 with-rule, 2026-04-20; suite now 21 cases)
+- FAIL list: none
+- Notes: Subject routed via dinopowers:systematic-debugging -> tea-rags:bug-hunt. Some evals.json expectations are stale vs current tooling (eval-5/7 expect Read, eval-11 chunkId); graded on intent (find_symbol drill, find_similar positiveIds accepted). Delta 0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

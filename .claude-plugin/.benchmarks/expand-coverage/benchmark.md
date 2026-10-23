@@ -113,3 +113,12 @@ asks back or reads src), not independently graded.
 Phase-2/4 evals graded INSTRUCTION QUALITY (tool-selection plans), not live tool
 execution — one subagent per run, all 14 cases in one prompt, blind to
 `expected`. Grading done by the parent against `evals.json`.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 15/15 PASS (100%)
+- Last recorded with-skill rate: 100%
+- Delta: +0pp
+- FAIL: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

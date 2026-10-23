@@ -96,3 +96,12 @@ contract).
   fallback path is always taken. Verified 2026-04-20: index has SKILL.md chunks
   (top score 0.51 for pattern query). Re-verify after any indexing pipeline
   changes.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 12/12 PASS (100%)
+- Last recorded rate: 12/12 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

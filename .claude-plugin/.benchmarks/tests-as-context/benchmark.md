@@ -133,3 +133,15 @@ safety contract holds end-to-end.
 5. For any FAIL in with-rule: iterate per Phase 5 (max 3 iterations).
 6. Re-write this benchmark.md with actual numbers; persist iteration outputs to
    `.benchmarks/tests-as-context/workspace/iteration-N/` (gitignored).
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 9/12 PASS (75%)
+- Last recorded with-skill rate: none recorded
+- Delta: n/a (no prior with-skill run)
+- FAIL:
+  - `T9` — no testFile:only + proven fallback with disclosure; answer explicitly refuses the fallback | REAL
+  - `T11` — no probe call (semantic_search chunkType=test limit=1 metaOnly); reads digest/thresholds instead | STALE
+  - `T12` — did not read the wrapper section; does not state the three outcomes (non-empty bundle branch missing) | REAL
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

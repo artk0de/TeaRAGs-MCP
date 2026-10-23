@@ -170,3 +170,12 @@ codegraph-gated preset with codegraph off (19).
 (`project:`) not mentioned in SKILL for subagent contexts; scope extraction
 names no allowed tool; "pick deepest" scope rule inverts on end-to-end phrasing;
 docs-as-subject route lives only in cascade, not in the SKILL intent table.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 27/27 PASS (100%)
+- Last recorded rate: 100% (10/10 iteration 4 post-fix; iterations 1-3 100%)
+- FAIL list: none
+- Notes: Cases 1/8/14 (usage listing) went find_symbol + get_callers (codegraph ON) instead of the eval's hybrid_search; accepted on the search-cascade case 3 precedent (hybrid_search OR get_callers), failure modes (ripgrep, Grep, Glob) not hit. Subject read explore SKILL.md + references + tea-rags://guide/navigation. Delta 0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

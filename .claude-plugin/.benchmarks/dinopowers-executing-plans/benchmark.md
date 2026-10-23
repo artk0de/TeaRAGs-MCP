@@ -225,3 +225,12 @@ execution eval) supersedes `evals/explicit-worktree-lifecycle-evals.json`;
 `../dinopowers-executing-plans-v2/evals.json` gained E11-E13 (MODIFY routing +
 trivial-text control). **Not yet measured** — no with/without-rule run; X1 is
 user-gated (live incremental index on a clone).
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 16/16 PASS (100%) (intent-graded; same stale rerank text: evals say custom weights, SKILL.md prescribes 'blastRadius')
+- Last recorded rate: 15/15 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

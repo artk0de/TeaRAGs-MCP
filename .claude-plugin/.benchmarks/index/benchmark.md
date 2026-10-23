@@ -44,3 +44,17 @@ correctly. Skill adds value specifically on:
 
 **Iteration 0:** 10/10 with-rule, 5/10 baseline (50%), delta +50pp. No fix
 needed.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 5/10 PASS (50%)
+- Last recorded with-skill rate: 100%
+- Delta: -50pp
+- FAIL:
+  - `eval-1` — main flow uses project alias or CLI index-codebase --name; index_codebase with path only on decline, not the required call | STALE
+  - `eval-2` — plan calls index_codebase with project alias or CLI --name, not index_codebase with path=cwd | STALE
+  - `eval-5` — no explicit [CODE] parse; user is asked to start Qdrant, agent never executes the fix after confirm | STALE
+  - `eval-6` — user is asked to start ollama serve; agent never executes the fix after confirm | STALE
+  - `eval-8` — default flow is incremental index_codebase; routing to force-reindex only conditional on drift or bad data | REAL
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

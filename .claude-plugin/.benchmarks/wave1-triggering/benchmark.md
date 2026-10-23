@@ -118,3 +118,12 @@ Total: +139 / -99 lines in description blocks.
 - `evals.json` — full 30-case eval set with assertions and per-iteration results
 - `workspace/skill-snapshot/before/` — frozen copies of pre-fix descriptions
 - `workspace/skill-snapshot/after/` — frozen copies of post-fix descriptions
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 30/30 PASS (100%); confidence HIGH 27 / MED 3 / LOW 0
+- Last recorded rate: 100% (30/30, all HIGH, NEW descriptions)
+- FAIL list: none
+- Notes: Subject saw frontmatter (name+description) of all 29 plugin skills under tea-rags, dinopowers, tea-rags-setup plus the 11 repo .claude/skills (project:*) to keep the original universe, plus context-main.md. MED cases: 12 (force-reindex), 15 (systematic-debugging, Russian CI test failure), 18 (verification-before-completion). Subject sonnet (original target model claude-opus-4-7). Delta 0pp on pass rate; confidence mix 30 HIGH -> 27 HIGH / 3 MED.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

@@ -90,3 +90,12 @@ optimize-skill cycles.
 - `writing-skills` SKILL.md previously lacked a Step 4 handoff blockquote; this
   fix added one with the redirect phrasing. Worth a future pass to harmonize its
   handoff format with the other 9 wrappers.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 8/8 PASS (100%)
+- Last recorded rate: no pass-rate recorded (structural grep check 10/10 PASS)
+- Delta: n/a
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

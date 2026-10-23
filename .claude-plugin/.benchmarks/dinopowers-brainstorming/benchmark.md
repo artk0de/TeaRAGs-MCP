@@ -115,3 +115,12 @@ No iteration needed.
   `metaOnly: false` call AFTER enrichment for content", but the SKILL.md doesn't
   show HOW to phrase this follow-up. Consider adding a concrete example if Phase
   8 reveals agents still collapse the two calls.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 14/14 PASS (100%) (graded on intent: skill now prescribes A/B/C/D/E block incl. get_naming_lexicon, older evals say '3 semantic_search'; subject followed current SKILL.md)
+- Last recorded rate: 13/13 (100%) 2026-04-20
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

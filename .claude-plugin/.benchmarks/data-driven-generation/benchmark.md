@@ -232,3 +232,17 @@ Before-change failures:
 `prewrite-sim-in-file-edit` passed both arms: neither arm calls
 `get_architecture_report` for an in-file edit, so it pins the trigger's cost
 boundary against regression rather than measuring a delta.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 62/67 PASS (93%)
+- Last recorded with-skill rate: 100%
+- Delta: -7pp
+- FAIL:
+  - `eval-6` — delegates to extract-project-patterns, never states the exact custom weights {similarity:0.2, stability:0.3, age:0.3, bugFix:-0.15, ownership:-0.05} | STALE
+  - `eval-11` — no identifier verification (find_symbol per identifier + ripgrep imports, 0 results = hallucination); uses Step 7 VERIFY/gate instead | STALE
+  - `eval-12` — primary path is rerank=blastRadius preset; exact custom {imports:0.5,churn:0.3,ownership:0.2} only as codegraph-off fallback | STALE
+  - `eval-14` — does not skip TEMPLATE/STYLE for greenfield; runs extract-project-patterns on the nonexistent dir (cascading to L2/L3) | STALE
+  - `naming-review-before-commit` — plan never says to report review.findings grouped by verdict with relPath:line plus review.conforming/novel counts (only the gate line and ad-hoc per-name notes); everything else met | STALE
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

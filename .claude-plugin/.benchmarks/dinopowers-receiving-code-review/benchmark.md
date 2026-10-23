@@ -35,3 +35,12 @@ performative agreement with data-backed response.
 +67pp. Baseline: pass-through nits (evals 2, 4, 7, 11) come naturally. Agent
 fails at: data-backed pushback (3), scope enumeration (5), tool selection (1, 6,
 10), pressure resistance (8, 9, 12).
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 14/14 PASS (100%) (intent-graded; cases 8/9/12 name no target: subject resolves target from PR context then runs the scan, else asks one question, no fabrication; rerank 'blastRadius' vs stale custom text)
+- Last recorded rate: 12/12 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

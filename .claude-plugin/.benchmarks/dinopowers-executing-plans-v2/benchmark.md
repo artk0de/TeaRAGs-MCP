@@ -100,3 +100,12 @@ trivial). Phase 4 verification: **10/10 PASS, +70pp from before-fix.**
 - `workspace/iteration-1/` — placeholder (subagent outputs captured inline in
   this conversation; no per-iteration directories needed for tool-selection-only
   eval)
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 13/13 PASS (100%)
+- Last recorded rate: 10/10 (100%) iteration 1
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

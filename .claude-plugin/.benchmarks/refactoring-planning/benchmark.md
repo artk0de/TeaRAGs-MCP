@@ -60,3 +60,12 @@ regression.
   `large-repo-report-candidates-off` need revisiting.
 - `divergence-replans` overrides DDG's two-round escalation with a re-plan. If
   DDG Step 7 escalation wording changes, re-run this case.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 8/8 PASS (100%)
+- Last recorded with-skill rate: 100%
+- Delta: +0pp
+- FAIL: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

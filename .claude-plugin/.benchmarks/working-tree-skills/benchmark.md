@@ -393,3 +393,12 @@ outline ids are valid `find_similar` positives, and whether `rankingOverlay`
 labels survive on tree-served rows. The last two depend on server behaviour this
 wave does not define, so documenting them would mean inventing facts. They are
 listed in the `iteration-*/arm-*.md` answers.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 16/16 PASS (100%)
+- Last recorded rate: 100% (16/16 skill-only arm, final)
+- FAIL list: none
+- Notes: Subject invoked the matching tea-rags/dinopowers SKILL.md per case (read from the worktree) plus context-main.md. Delta 0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

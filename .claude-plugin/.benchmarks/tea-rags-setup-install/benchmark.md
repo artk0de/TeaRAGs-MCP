@@ -78,3 +78,12 @@ problem. With-rule is at the 100% target; no iteration needed.
 - `evals.json` — 11 cases + per-case results.
 - `workspace/iteration-1/grades.txt` — raw grading.
 - `workspace/skill-snapshot/install/` — frozen skill copy at eval time.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 11/11 PASS (100%)
+- Last recorded with-skill rate: 100%
+- Delta: +0pp
+- FAIL: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

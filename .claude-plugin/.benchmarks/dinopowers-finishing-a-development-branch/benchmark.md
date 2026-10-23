@@ -107,3 +107,12 @@ did it"), so the no-skill baseline scores high precisely because it has no wrong
 instruction to follow — the regeneration fixes a wrong-steer. The skill's unique
 contribution is the cleanup-hook backstop awareness (F6, the only baseline
 FAIL). The prior `worktree-auto-reindex-evals.json` is SUPERSEDED.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 13/13 PASS (100%)
+- Last recorded rate: 13/13 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

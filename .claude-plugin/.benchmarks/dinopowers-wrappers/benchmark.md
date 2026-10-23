@@ -151,3 +151,12 @@ mention of `superpowers:*`. Adding the realistic context dropped score to 40%,
 exposing the actual failure mode. Lesson: skill-router evals **must** simulate
 the agent's full context (global rules + plugin rules + hook injections), not
 just the description list.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 15/15 PASS (100%)
+- Last recorded rate: 15/15 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
