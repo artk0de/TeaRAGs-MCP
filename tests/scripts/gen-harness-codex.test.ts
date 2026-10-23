@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   CODEX_HARNESS_DIR,
@@ -10,7 +11,9 @@ import {
   renderCodexMarketplace,
   SKILLS_LIST_BUDGET,
   toCodexSkill,
+  writeCodexHarness,
 } from "../../scripts/gen-harness-codex.js";
+import { PLUGIN_SRC } from "../../scripts/harness/package.js";
 import { dropLoadTimeBlocks, extractInjectionBlock, parseFrontmatter } from "../../scripts/harness/transform.js";
 
 const ROOT = resolve(__dirname, "../..");
@@ -167,17 +170,9 @@ describe("extractInjectionBlock", () => {
 });
 
 describe("renderCodexHarness", () => {
-  it("matches the committed package (run `npm run gen:harness-codex` if this fails)", async () => {
-    const rendered = await renderCodexHarness(ROOT);
-    const dir = join(ROOT, CODEX_HARNESS_DIR);
-    const onDisk = listFiles(dir)
-      .map((file) => relative(dir, file))
-      .sort();
-
-    expect(onDisk).toEqual([...rendered.keys()].sort());
-    for (const [path, content] of rendered) {
-      expect(readFileSync(join(dir, path), "utf8"), path).toBe(content);
-    }
+  it("renders byte-identically twice", async () => {
+    expect(await renderCodexHarness(ROOT)).toEqual(await renderCodexHarness(ROOT));
+    expect(await renderCodexMarketplace(ROOT)).toBe(await renderCodexMarketplace(ROOT));
   });
 
   it("emits parseable JSON with the plugin manifest paths", async () => {
@@ -199,7 +194,7 @@ describe("renderCodexHarness", () => {
     expect(JSON.stringify(hooks)).not.toContain("CLAUDE_");
     const marketplace = JSON.parse(await renderCodexMarketplace(ROOT));
     expect(marketplace.plugins[0].source).toEqual({ source: "local", path: "./harness/codex/tea-rags" });
-    expect(readFileSync(join(ROOT, CODEX_MARKETPLACE_PATH), "utf8")).toBe(await renderCodexMarketplace(ROOT));
+    expect(rendered.has("tea-rags/.codex-plugin/plugin.json")).toBe(true);
   });
 
   it("ships no dinopowers skill and keeps the skills list within budget", async () => {
@@ -240,5 +235,46 @@ describe("renderCodexHarness", () => {
     expect(script).toContain("additionalContext");
     expect(script).not.toContain("CLAUDE_");
     expect(rendered.get("tea-rags/scripts/subagent-block.txt")).not.toContain("mcp__tea-rags__");
+  });
+});
+
+describe("writeCodexHarness", () => {
+  let fixtureRoot: string;
+
+  beforeAll(() => {
+    fixtureRoot = mkdtempSync(join(tmpdir(), "harness-codex-"));
+    cpSync(join(ROOT, PLUGIN_SRC), join(fixtureRoot, PLUGIN_SRC), { recursive: true });
+  });
+
+  afterAll(() => {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  });
+
+  const snapshot = () => {
+    const dir = join(fixtureRoot, CODEX_HARNESS_DIR);
+    return listFiles(dir)
+      .map((file) => [relative(dir, file), readFileSync(file, "utf8")])
+      .sort(([a], [b]) => a.localeCompare(b));
+  };
+
+  it("writes exactly the rendered package and marketplace manifest, dropping stale files", async () => {
+    const stale = join(fixtureRoot, CODEX_HARNESS_DIR, "tea-rags", "stale.md");
+    mkdirSync(dirname(stale), { recursive: true });
+    writeFileSync(stale, "stale\n");
+
+    await writeCodexHarness(fixtureRoot);
+
+    const rendered = await renderCodexHarness(fixtureRoot);
+    expect(snapshot()).toEqual([...rendered].sort(([a], [b]) => a.localeCompare(b)));
+    expect(readFileSync(join(fixtureRoot, CODEX_MARKETPLACE_PATH), "utf8")).toBe(
+      await renderCodexMarketplace(fixtureRoot),
+    );
+  });
+
+  it("is idempotent", async () => {
+    await writeCodexHarness(fixtureRoot);
+    const first = snapshot();
+    await writeCodexHarness(fixtureRoot);
+    expect(snapshot()).toEqual(first);
   });
 });

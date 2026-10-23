@@ -137,8 +137,8 @@ export function json(value: unknown): string {
 
 /**
  * The package sorted by path, `.md` / `.json` / `.mdc` files Prettier-formatted
- * with the config that applies at their committed place, so a drift guard
- * compares bytes.
+ * with the config that applies at their committed place, so the render is
+ * byte-identical to what lint-staged would leave there.
  */
 export async function formatPackage(
   root: string,

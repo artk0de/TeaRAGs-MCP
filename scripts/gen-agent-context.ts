@@ -36,8 +36,8 @@ function readGuides(rulesDir: string): [string, string][] {
 /**
  * The `agent-context.ts` module for `rulesDir` — `core.md` and `guides/*.md` as
  * string constants, Prettier-formatted with the project config so the committed
- * file is byte-identical to what `lint-staged` would write and the drift guard
- * stays stable. Absent `core.md` → empty core; absent `guides/` → no guides.
+ * file is byte-identical to what `lint-staged` would write and a regeneration
+ * leaves no diff. Absent `core.md` → empty core; absent `guides/` → no guides.
  */
 export async function renderAgentContextModule(
   rulesDir: string = DEFAULT_PATHS.rulesDir,
