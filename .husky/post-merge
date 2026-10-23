@@ -8,6 +8,8 @@
 # version pins and fold them into the merge commit. No-op otherwise
 # (fast-forward, squash, pull without a merge commit).
 sh scripts/git/repin-on-merge.sh --post-merge || exit 1
+# Same merge: regenerate the plugin packages from the merged plugins/** sources.
+sh scripts/git/merge-generated.sh --post-merge || exit 1
 
 # Run existing hook first
 if [ -x "" ]; then

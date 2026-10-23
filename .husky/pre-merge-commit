@@ -5,3 +5,6 @@
 # is useless — git has already written the merge tree when this hook runs.
 # Conflicted merges finish through `git commit`, which re-pins in pre-commit.
 sh scripts/git/repin-on-merge.sh --mark-merge
+
+# Same for the generated plugin packages (scripts/git/merge-generated.sh).
+sh scripts/git/merge-generated.sh --mark-merge

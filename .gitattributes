@@ -5,3 +5,15 @@
 # Derived artifact: keep ours on conflict, re-pinned inside the merge commit
 # (scripts/git/register-merge-drivers.sh + scripts/git/repin-on-merge.sh)
 tests/core/domains/language/capability/version-pins.json merge=version-pins
+
+# Generated from plugins/** by `npm run gen:plugins` — never hand-edited. Keep
+# ours on conflict, regenerated inside the merge commit
+# (scripts/git/register-merge-drivers.sh + scripts/git/merge-generated.sh).
+# .claude-plugin/marketplace.json is hand-kept and stays out of this list.
+.claude-plugin/tea-rags/** merge=tea-rags-generated
+.claude-plugin/dinopowers/** merge=tea-rags-generated
+.claude-plugin/tea-rags-setup/** merge=tea-rags-generated
+.agents/plugins/marketplace.json merge=tea-rags-generated
+.cursor-plugin/marketplace.json merge=tea-rags-generated
+harness/** merge=tea-rags-generated
+src/mcp/resources/generated/** merge=tea-rags-generated
