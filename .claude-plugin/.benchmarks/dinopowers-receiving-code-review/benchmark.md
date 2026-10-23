@@ -100,3 +100,24 @@ fails at: data-backed pushback (3), scope enumeration (5), tool selection (1, 6,
   - `eval-4` — AGREE-DIRECT stated, "single-commit change" action not stated
   - `eval-13` — lexicon(names) called, but verdict rule (proposed MISFIT/NEW_TERM vs current CONFORMS -> push back with project term + holder) not stated
   - `eval-14` — review_changes(base main, sections naming) ok, but per-finding rules (MISFIT apply / COLLISION / NEW_TERM / conforming stay) not stated
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 11/14 PASS (79%) over scored cases (superseded: 0)
+- Round 2 rate: 100% — delta: -21 pp
+- FAIL list:
+  - eval-1: FAIL — plans hybrid_search (fallback importer listing in Step 5), which is in mustNotCall | eval stale: SKILL.md Step 3 "Verdict name alone = incomplete" explicitly allows `get_callers` / `hybrid_search metaOnly:true` to fetch AGREE-WITH-SCOPE importers after Step 2
+  - eval-6: FAIL — plans hybrid_search cross-check of importers (Step 4), which is in mustNotCall | eval stale: SKILL.md Step 3 "Verdict name alone = incomplete" allows `hybrid_search metaOnly:true` for importer fetch after Step 2 scan
+  - eval-10: FAIL — refuses grep but declares "not a review comment, Iron Rule not triggered" and routes to find_symbol/get_callers/hybrid_search; Step 2 semantic_search+blastRadius only conditional, not run anyway
+- Notes: eval-1/eval-6 FAILs are eval-stale (mustNotCall hybrid_search vs SKILL.md Step 3 'Verdict name alone = incomplete', which allows hybrid_search metaOnly importer fetch after Step 2). eval-10 is a real FAIL (Iron Rule scope).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 13/14 PASS (92.9%) (N/A excluded: 0).
+- Round-2 Codex: 11/14 (78.6%). Delta: +14.3 pp.
+- FAIL list:
+  - `eval-13` — lexicon called for both names, but the "proposed MISFIT/NEW_TERM while current CONFORMS → push back with project term + holder" rule is not stated.

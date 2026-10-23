@@ -90,7 +90,7 @@
         ],
         "mustNotCall": [
           "mcp__tree-sitter__modification_guard",
-          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__hybrid_search as the impact-guard substitute (core-prescribed cross-check after an empty get_callers is allowed)",
           "mcp__tea-rags__find_similar",
           "mcp__tea-rags__find_symbol alone",
           "Read + git blame"

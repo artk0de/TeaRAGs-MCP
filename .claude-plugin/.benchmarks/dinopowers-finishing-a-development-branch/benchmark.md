@@ -157,3 +157,22 @@ FAIL). The prior `worktree-auto-reindex-evals.json` is SUPERSEDED.
 - Round-1 Codex: 13/13 (100%). Delta: -8 pp.
 - FAIL list:
   - `eval-8` — re-runs the scan instead; no "address-critical-first" recommendation, Critical list not surfaced
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 13/13 PASS (100%) over scored cases (superseded: 0)
+- Round 2 rate: 100% — delta: +0 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 10/13 PASS (76.9%) (N/A excluded: 0).
+- Round-2 Codex: 12/13 (92.3%). Delta: -15.4 pp.
+- FAIL list:
+  - `eval-6` — docs-only skip stated, but no TRIVIAL-SCOPE verdict and no direct finishing-a-development-branch invocation.
+  - `eval-7` — unindexed note + tests/human review, but no finishing-a-development-branch invocation carrying the note.
+  - `eval-12` — subagent refuses the wrapper (misreads risk-assessment "no subagents" / no-reindex); neither risk-assessment nor finishing runs.

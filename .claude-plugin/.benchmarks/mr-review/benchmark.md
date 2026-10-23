@@ -53,3 +53,21 @@
 - Round-1 Codex: 0/2 (0%). Delta: +50 pp.
 - FAIL list:
   - `naming-diff-changes` — review_changes with default sections instead of ONE call with sections:["naming"]; MISFIT not marked minor; no plain-language / no-verdict-code wording.
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; no per-case length cap; graded strict-literal against the current evals.json)
+- Result: 2/2 PASS (100%) over 2 scored cases (superseded 1)
+- Baseline (round 2, Task 22): 50% (1/2)
+- Delta: +50pp
+- FAIL list: none
+- Note: `naming-external-names` now passes — names[] carries row as `local` and find_vendor_envelope as `return`, scoped to the touched dir; no mode talk in comments.
+- Context: new SessionStart core+digest / SubagentStart block (rebuilt from live hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 1/2 PASS (50.0%) (N/A excluded: 0).
+- Round-2 Codex: 1/2 (50.0%). Delta: ±0.0 pp.
+- FAIL list:
+  - `naming-diff-changes` — one review_changes(changes:{base:main}, sections:["naming"]) OK, but report grouped by severity not verdict, no relPath:line, MISFIT not marked minor w/ suggestion+holder fix, no plain-language/no-verdict-code wording

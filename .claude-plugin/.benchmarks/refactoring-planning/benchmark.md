@@ -118,3 +118,21 @@ regression.
 - FAIL list:
   - `recipe-sdp-inversion` — defers to recipe; never spells ops (removeEdge / addFile abstract:true / 2x addEdge), new-file placement under src/core/contracts, or rationale = finding key
   - `large-repo-report-candidates-off` — includeReportCandidates:false + Not ordered right, but sends all 22 caller candidates (mustNotDo; cap ~15 critical-first) and no bd tea-rags-mcp-vytjl citation
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 8/8 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 2): 8/8 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Notes: recipe-sdp-inversion now spells the lexicon payload (`get_naming_lexicon(names=[<drafted interface / file name>])`), closing the round-2 leniency note.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 7/8 PASS (87.5%) (N/A excluded: 0).
+- Round-2 Codex: 6/8 (75.0%). Delta: +12.5 pp.
+- FAIL list:
+  - `recipe-sdp-inversion` — lexicon, placement under src/core/contracts, rationale = finding key, restructurePlan all ok, but ops use component dirs (removeEdge worktree→footprint, addEdge <component>→interface) instead of provisioner.ts / footprint-store.ts file edges

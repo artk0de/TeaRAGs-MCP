@@ -287,7 +287,7 @@
       "skill": "dinopowers:brainstorming",
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "Let's brainstorm how to make the working-tree chunk cache survive process restarts.",
-      "expected": "parallel semantic_search block with path=<cwd>, no project",
+      "expected": "parallel semantic_search block with path=<cwd> (+ project=<alias> per core addressing)",
       "assertions": ["A1"],
       "audit_finding": "F1",
       "results": {

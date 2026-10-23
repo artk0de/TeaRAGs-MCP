@@ -23,7 +23,7 @@
         "mustNotCall": [
           "review request before tea-rags",
           "git blame per file",
-          "hybrid_search",
+          "hybrid_search as the bundle query (hybrid_search cross-check after an empty get_callers is allowed)",
           "find_similar"
         ]
       }
@@ -71,7 +71,7 @@
           "rerank='ownership' alone (misses imports+churn+taskIds in one call)",
           "rerank='codeReview' (misses imports)",
           "git blame",
-          "hybrid_search"
+          "hybrid_search as the bundle query (hybrid_search cross-check after an empty get_callers is allowed)"
         ]
       }
     },

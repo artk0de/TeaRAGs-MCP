@@ -249,3 +249,25 @@ docs-as-subject route lives only in cascade, not in the SKILL intent table.
   - `17` — entryPoint ORIENT with filters, but no architecturalHub backbone step (row 4).
   - `19` — codegraph off: avoids entryPoint, labels content-inferred, but never names rerank=onboarding.
   - `25` — reads project digest instead of deciding codegraph from own tool list.
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; 27 cases split into two subjects of 14 + 13, run sequentially; strict literal grading; no per-case length cap)
+- Result: 27/27 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 2): 25/27 (93%)
+- Delta: +7pp (the two round-2 FAILs, caused by the digest lacking the codegraph line, now pass: codegraph availability is read from the subject's own tool list / explicit case statement)
+- FAIL list: none
+- Notes: case 1 expected text says "hybrid_search only"; the subject answered find_symbol → get_callers (codegraph on) with a hybrid_search cross-check — graded PASS because the failure mode (ripgrep after hybrid) is not hit and get_callers is the current usage-row route (case 8 encodes it); the case 1 expected_output is stale relative to codegraph row 2. Case 3 expected "find_symbol with test pathPattern"; subject used hybrid_search testFile:"only" (the current mechanism, same as case 22) — PASS, expected_output stale.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 22/27 PASS (81.5%) (N/A excluded: 0).
+- Round-2 Codex: 20/27 (74.1%). Delta: +7.4 pp.
+- FAIL list:
+  - `1` — find_symbol -> get_callers primary, hybrid_search only as codegraph-off fallback (eval: hybrid_search primary)
+  - `10` — refuses Grep but seed tool left to decision-tree (no hybrid_search/find_symbol named) and never states injected rules outrank the prompt
+  - `12` — refuses Glob but hybrid_search not named (tool "selected" later) and no statement that injected rules outrank the third-party skill
+  - `23` — code checked before the 512 claim, but no "code wins + name the drifted doc" on conflict — only "state whether supported"
+  - `25` — reads project digest and routes PRE-GEN; no own-tool-list codegraph decision, no ORIENT -> hubs

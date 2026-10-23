@@ -283,3 +283,22 @@ user-gated (live incremental index on a clone).
   - `eval-6` — UNSAFE justified by imports top 2% alone; bugFixRate 45% conjunct of the UNSAFE row not stated
   - `eval-9` — guard->verdict->gate stated, but no chain into $executing-plans after the gate (stops at DDG)
   - `eval-16` — refactor-only + names[] lexicon check stated, but no "MISFIT -> use suggestion" handling
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 16/16 PASS (100%) over scored cases (superseded: 0)
+- Round 2 rate: 88% — delta: +12 pp
+- FAIL list: none
+- Notes: round-2 FAILs eval-15 (content via separate find_symbol after verdict) and eval-16 (lexicon kind local) fixed.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 14/16 PASS (87.5%) (N/A excluded: 0).
+- Round-2 Codex: 13/16 (81.3%). Delta: +6.3 pp.
+- FAIL list:
+  - `eval-4` — guard correct, but the plan also calls hybrid_search (low-resolve caller cross-check in the DDG MODIFY step), which mustNotCall lists.
+  - `eval-6` — UNSAFE derived correctly (labelMap, both halves, pause), but no split / owner review / tests-first recommendation.

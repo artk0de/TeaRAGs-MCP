@@ -835,3 +835,22 @@ merges every part — the epic's target.
 - Round-1 Codex: 11/12 (92%). Delta: ±0 pp.
 - FAIL list:
   - `12` — review_changes then hand-listed names[] into get_naming_lexicon (mustNot); naming section verdicts not used as the answer.
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 9/12 PASS (75%) over scored cases (superseded: 0)
+- Baseline (round 2): 11/12 (92%)
+- Delta: -17pp (regressions: 7, 11; 12 still failing)
+- FAIL list:
+  - 7 — semantic_search is the primary route, but the plan adds an optional second-angle `hybrid_search(query="confidence dampening rerank")` — a not-route for this case. The core "Breadth → re-run semantic_search / hybrid_search with a NEW query" wording licenses it.
+  - 11 — get_naming_lexicon called without `names`/`types` (vague "scoped if parameters allow"), then a hybrid_search cross-check (not-route). The rebuilt core routing table (rules/core.md "Routing") has no naming row, so the subject never reached guides/decision-tree.md's naming branch (l.104: get_naming_lexicon with names/types).
+  - 12 — review_changes(changes:{}, sections:["naming"]) correct, but then "supplement with get_naming_lexicon" + find_symbol/hybrid_search — the not-route. decision-tree.md l.110 says review.findings are the answer with no lexicon follow-up, but the core routing row "diff review → review_changes" says nothing about naming, and the subject did not open the decision-tree guide.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 12/12 PASS (100.0%) (N/A excluded: 0).
+- Round-2 Codex: 11/12 (91.7%). Delta: +8.3 pp.
+- FAIL list: none.

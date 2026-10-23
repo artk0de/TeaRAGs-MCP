@@ -154,3 +154,19 @@ without-rule. Delta +87pp.
 - FAIL list:
   - `eval-11` — grep refused with "misses ranked imports signal" but without the "miscounts re-exports" half of the rationale
   - `eval-12` — requires explicit override before narrowing, but no acknowledgment-of-risk clause
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Round 2 rate: 100% — delta: +0 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 15/15 PASS (100%) (N/A excluded: 0).
+- Round-2 Codex: 13/15 (86.7%). Delta: +13.3 pp.
+- FAIL list: none.

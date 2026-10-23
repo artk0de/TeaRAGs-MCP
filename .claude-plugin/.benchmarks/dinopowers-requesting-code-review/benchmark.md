@@ -80,3 +80,24 @@ from `receiving-code-review`: that computes a verdict; this builds metadata.
 - FAIL list:
   - `eval-3` — bundle sections named (owners/contributors, reviewers, task context, risk flags) but per-file table omits commits+age and taskIds columns
   - `eval-14` — review_changes call + MISFIT/COLLISION/NEW_TERM handling right, but bundle findings not listed with relPath:line and novel count not given (only conforming 11)
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 11/13 PASS (85%) over scored cases (superseded: 1)
+- Round 2 rate: 100% — delta: -15 pp
+- FAIL list:
+  - eval-1: FAIL — mustNotCall 'hybrid_search' hit: plan inherits the common-preamble Step 2.5 conditional "cross-check with hybrid_search(metaOnly) if resolve rate low" | eval stale: context-main.md (line 46, "Empty get_callers at low resolve rate ≠ no callers — cross-check hybrid_search") now mandates that caller cross-check; the eval's ban targets hybrid_search as the bundle query, not the Step 2.5 caller fallback
+  - eval-4: FAIL — mustNotCall 'hybrid_search' hit: "Steps 2.5/2.6/3a as common" pulls in the conditional hybrid_search caller cross-check | eval stale: same as eval-1 (context-main.md line 46 cross-check rule vs. eval's blanket hybrid_search ban)
+- Notes: Both FAILs eval-stale: blanket mustNotCall hybrid_search vs context-main.md caller cross-check rule ('Empty get_callers at low resolve rate != no callers - cross-check hybrid_search'); the eval targets hybrid_search as the bundle query. Superseded eval-13 not given/scored.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 11/13 PASS (84.6%) (N/A excluded: 0).
+- Round-2 Codex: 11/13 (84.6%). Delta: ±0.0 pp.
+- FAIL list:
+  - `eval-3` — lists data fields only; no per-file table, suggested reviewers, coordinated-change context or risk flags.
+  - `eval-14` — skips the Step 2.6 review_changes call (treats findings as supplied); findings not grouped by verdict with relPath:line.

@@ -452,3 +452,21 @@ listed in the `iteration-*/arm-*.md` answers.
   - `S3` — bug-hunt searches not stated with path=cwd; no parallel historical/fresh/uncommitted bugHunt probes (A1).
   - `S4` — treeState row not read as pre-edit index copy (text/lines stale), still the uncommitted suspect (A2).
   - `S12` — rows not called pre-edit copies (fanIn/churn valid, text/lines stale, not proof of correctness) (A2).
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; no per-case length cap; graded strict-literal against the current evals.json) against assertions A1/A2 + expected
+- Result: 16/16 PASS (100%) over 16 scored cases (superseded 0)
+- Baseline (round 2, Task 22): 100% (16/16)
+- Delta: +0pp
+- FAIL list: none
+- Note: S8 expected text still says "no project"; the subject passes project=acme + path=<cwd> per core addressing — graded on A1 (stale wording, as in round 2).
+- Context: new SessionStart core+digest / SubagentStart block (rebuilt from live hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 15/16 PASS (93.8%) (N/A excluded: 0).
+- Round-2 Codex: 13/16 (81.2%). Delta: +12.5 pp.
+- FAIL list:
+  - `S12` — no reindex + path=cwd ok, but A2 missing: rows not called pre-edit index copies (fanIn/churn valid, text/lines stale, not evidence the edit is correct)

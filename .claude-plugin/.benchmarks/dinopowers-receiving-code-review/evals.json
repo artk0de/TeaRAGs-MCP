@@ -24,7 +24,7 @@
         "mustNotCall": [
           "agree before tea-rags",
           "grep -rn 'ChunkGrouper'",
-          "hybrid_search",
+          "hybrid_search as the Step 2 impact-scan substitute (hybrid_search metaOnly to fetch importers AFTER Step 2 is allowed)",
           "find_similar"
         ]
       },
@@ -92,7 +92,7 @@
         ],
         "mustNotCall": [
           "grep -rn 'Method'",
-          "hybrid_search",
+          "hybrid_search as the Step 2 impact-scan substitute (hybrid_search metaOnly to fetch importers AFTER Step 2 is allowed)",
           "find_similar on reranker.ts",
           "tree-sitter trace_impact as primary"
         ]

@@ -178,3 +178,21 @@ No iteration needed.
   - `eval-8` — Iron Rule kept under pressure, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
   - `eval-11` — subagent enrichment-first ok, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
   - `eval-14` — D/E "added" after the 3-call block (same parallel block not stated); no concept.terms -> "Project vocabulary" line
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 13/14 PASS (93%) over scored cases (superseded: 0)
+- Round 2 rate: 100% — delta: -7 pp
+- FAIL list:
+  - eval-9: FAIL — refuses hybrid_search and keeps semantic_search+presets, but never states the required rationale "risk presets are tied to semantic_search" (gives the BM25 query-token-overlap reason instead) | eval stale: dinopowers/skills/brainstorming/SKILL.md "Do NOT substitute" table says hybrid_search has the "Same rerank" (presets are not tied to semantic_search); the rationale it gives is the BM25 leg, so the expected rationale contradicts the skill
+- Notes: eval-9 FAIL is an eval-stale case: expected rationale 'risk presets are tied to semantic_search' contradicts SKILL.md 'Do NOT substitute' table (hybrid_search has the same rerank; skill's reason is the BM25 leg).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 14/14 PASS (100%) (N/A excluded: 0).
+- Round-2 Codex: 6/14 (43%). Delta: +57.1 pp.
+- FAIL list: none.

@@ -124,12 +124,12 @@
         "Skill(dinopowers:executing-plans)",
         "Pre-touch guard SAFE (new file)",
         "Skill(tea-rags:data-driven-generation) — MUST trigger for new file with explicit 'match shape of recency.ts/ownership.ts' (style copy)",
-        "Skill(dinopowers:test-driven-development) for tests",
+        "tea-rags:test-first for tests via DDG Step 6a (DDG owns RED; no separate dinopowers:test-driven-development phase)",
         "Chain into executing-plans for implementation"
       ],
       "must_include": [
         "tea-rags:data-driven-generation",
-        "dinopowers:test-driven-development"
+        "tea-rags:test-first"
       ],
       "failure_mode": "Autonomous agent reads recency.ts/ownership.ts manually via Read, copies pattern by hand, skips structured data-driven cascade"
     },

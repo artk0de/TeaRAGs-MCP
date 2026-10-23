@@ -105,3 +105,21 @@ needed.
 - FAIL list:
   - `eval-1` — confirmed first index via MCP index_codebase(path, name) instead of `tea-rags index-codebase <path> --name <alias>`.
   - `eval-2` — no linked-worktree branch (do not register/index); confirmed route again not the CLI.
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 10/10 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 2): 8/10 (80%)
+- Delta: +20pp (eval-5 / eval-6 fixed: both now STOP, AskUserQuestion with the Hint, WAIT for the explicit answer, never run the fix unasked, then a LIVE get_index_status retry; eval-6 additionally reads guide/degraded and keeps find_symbol / hybrid_search BM25 usable)
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 8/10 PASS (80.0%) (N/A excluded: 0).
+- Round-2 Codex: 8/10 (80.0%). Delta: +0.0 pp.
+- FAIL list:
+  - `eval-2` — cwd default + list_projects + CLI --name route ok, but no linked-worktree branch (do not register/index; read tools already answer)
+  - `eval-9` — labels the status question "Навык: $tea-rags:index" (mustNotTrigger index skill); get_index_status itself correct

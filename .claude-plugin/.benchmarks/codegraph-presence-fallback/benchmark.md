@@ -134,3 +134,24 @@ Plugin bumps (patch, text-only): tea-rags 0.26.0 → 0.26.1, dinopowers 0.17.5 �
 - Result: 13/13 PASS (100%) (N/A excluded: 0).
 - Round-1 Codex: 12/13 (92.3%). Delta: +7.7 pp.
 - FAIL list: none. Caveat: prompts sent to Codex used the old digest-signal wording, not the current tool-list wording in evals.json; graded on intent.
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 13/13 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 2): 13/13 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Notes: cases carried the evals' own `[environment: codegraph on|off — ...]` prefix verbatim; no extra tool-list line added.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 9/13 PASS (69.2%) (N/A excluded: 0).
+- Round-2 Codex: 13/13 (100.0%). Delta: -30.8 pp.
+- FAIL list:
+  - `3` — codegraph OFF: leads with find_symbol → get_callers; hybrid_search only as low-resolve cross-check, no name-match caveat
+  - `4` — codegraph OFF: plans trace_path(from,to) as the route; no OFF detection, no "no static path tool" caveat
+  - `11` — Russian cycle intent recognised but plan says "Call find_cycles(...)" before noting it is unavailable — not E1 behaviour (OFF detected before choosing the tool)
+  - `12` — subagent runs semantic_search rerank=entryPoint + minFanOut (fan-graph preset) instead of relevance + chunkSize heuristic — failure mode

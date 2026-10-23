@@ -257,3 +257,25 @@ separate work.
   - `6` — 'file-focused risk list' instead of the Phase 5 risk map (tiers, File:Line, Risk Type, Key Signals labels, Tests, Summary).
   - `9` — no Phase 5 risk map and no DDG handoff (pathPattern + per-symbol overlay labels).
   - `12` — output not the Phase 5 risk map format.
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading against the current evals.json; no per-case length cap)
+- Result: 13/14 PASS (93%) over scored cases (superseded: 0)
+- Baseline (round 2): 13/14 (93%)
+- Delta: +0pp (case 4 fixed — direct invocation with Phase 0 resolving **/trajectory/** now matches the re-aligned expectation; case 6 newly failing)
+- FAIL list:
+  - 6 — "riskiest files data-driven-generation should be careful with": full flow + Phase 5 map correct, but appends a separate "hand-off block (pathPattern per Critical/High cluster + per-symbol overlay labels, PRE-GEN PG-4 shape)" — the expectation's explicit failure mode (an invented extra block beyond the Phase 5 map). Cause: risk-assessment SKILL.md Steps item 6 (l.35-37) "Generation caller ... → hand off `pathPattern` + per-symbol overlay labels from the map (PRE-GEN PG-4 shape)" — contradicts eval 6 and is endorsed by eval 9; either the SKILL line or eval 6 must change.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 9/14 PASS (64.3%) (N/A excluded: 0).
+- Round-2 Codex: 9/14 (64.3%). Delta: ±0.0 pp.
+- FAIL list:
+  - `4` — direct risk-assessment w/ **/trajectory/** OK, but also runs explore PRE-GEN route (eval: not PRE-GEN)
+  - `6` — "risky files and symbols with paired signals" — no Phase 5 risk map (Critical/High tables, File:Line, Risk Type, Key Signals labels, Tests, Summary)
+  - `9` — risk intent + reranker scope + DDG handoff OK, but Phase 5 risk map with File:Line + label signals not stated
+  - `12` — pathPattern on scan calls OK, output "risk map and structural debt" — not the Phase 5 format (tiers, File:Line, Key Signals, Tests, Summary)
+  - `14` — hedges: "only a matching Critical/High candidate would be elevated" while the High candidate sits in the flagged component; never states compositionRoot excludes escalation / no structural-violation tag

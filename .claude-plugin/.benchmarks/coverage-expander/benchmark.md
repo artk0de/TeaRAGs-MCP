@@ -93,3 +93,14 @@ exploration, and double test runs. After optimization, all operations use
   - `eval-3` — plan runs baseline + verify coverage but states no targeted vitest run of the changed test files between them (expected MUST step); the skill's flow, which the subject treats as overriding the agent def, has no such step
   - `eval-9` — plan follows the prompt and issues semantic_search ("untested error/empty/boundary paths") to map uncovered areas; expected explicitly rejects semantic_search for uncovered-area discovery (it cannot see coverage)
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; no per-case length cap; graded strict-literal against the current evals.json); agent def + expand-coverage skill
+- Result: 9/10 PASS (90%) over 10 scored cases (superseded 0)
+- Baseline (round 2, Task 22): 80% (8/10)
+- Delta: +10pp
+- FAIL list:
+  - `eval-5` — named 0%-coverage file treated as "prime target" but the plan still runs the Step 2 project-wide jq worst-offender ranking ("I confirm via the jq/summary") instead of targeting the named file directly; expand-coverage SKILL.md Step 2 has no named-target branch
+- Note: eval-3 (targeted vitest run between baseline and verify) and eval-9 (semantic_search rejected for uncovered-area discovery) now pass.
+- Context: new SessionStart core+digest / SubagentStart block (rebuilt from live hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook text present in subject context but declared void (limitation).

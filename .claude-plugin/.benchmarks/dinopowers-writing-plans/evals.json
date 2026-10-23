@@ -42,7 +42,7 @@
           "3 separate semantic_search calls per file",
           "rerank='codeReview' / 'hotspots' / 'impactAnalysis' / any named preset other than 'blastRadius' (and 'blastRadius' itself when codegraph off)",
           "mcp__tea-rags__hybrid_search",
-          "mcp__tea-rags__find_similar"
+          "mcp__tea-rags__find_similar as the Step 2 enrichment substitute (find_similar inside the extract-project-patterns cascade is allowed)"
         ]
       },
       "failureMode": "Agent issues per-file calls or picks a rerank that does not match the codegraph state (blastRadius on / custom impact weights off)"
@@ -79,9 +79,9 @@
           "mcp__tea-rags__semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off)"
         ],
         "mustNotCall": [
-          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__hybrid_search as the Step 2 substitute (allowed as depth after Step 2)",
           "mcp__tea-rags__find_similar",
-          "mcp__tea-rags__find_symbol",
+          "mcp__tea-rags__find_symbol as the Step 2 substitute (allowed as depth after Step 2)",
           "Built-in Glob + git blame for signals"
         ]
       },
@@ -216,7 +216,7 @@
       "expected": {
         "mustDo": [
           "Keep metaOnly=true on enrichment call (signals only)",
-          "If user wants content, issue SEPARATE semantic_search with metaOnly=false AFTER enrichment"
+          "If user wants content, fetch it AFTER enrichment via find_symbol (relativePath outline → member bodies, core depth rule)"
         ],
         "mustNotDo": ["Set metaOnly=false on enrichment call"]
       },

@@ -60,3 +60,20 @@
 - Round-1 Codex: 0/2 (0%). Delta: +50 pp.
 - FAIL list:
   - `2` — loads only repair/hubLike.md (mainSequence.md missing), no compositionRoot-vs-bare-"by design" evidence rule, defers the fix pending the full finding.
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 2/2 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 2): 2/2 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 1/2 PASS (50.0%) (N/A excluded: 0).
+- Round-2 Codex: 1/2 (50.0%). Delta: ±0.0 pp.
+- FAIL list:
+  - `2` — mainSequence report-only + hubLike must-fix + both repair files OK, but never states compositionRoot flag = evidence / bare "by design" not; defers the fix if "specifics" lacking

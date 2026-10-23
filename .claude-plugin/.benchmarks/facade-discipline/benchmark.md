@@ -257,3 +257,13 @@ Rule is deployed. Next work in this thread:
   - `eval-5` — extracts resolve/guard into `CollectionOps.clearIndex` ("add or reuse"); expected the existing ingest Ops method (`IngestFacade#clearIndex = this.indexingOps.clear(path)`); the prompt describes the old body (`status.clearIndex`), so the subject never looked at the current code
   - `eval-12` — flags inline filter, Map grouping and hard-coded `driftWarning: null` (Ops finalize), but does not name `registry.buildMergedFilter` as the Ops-side filter merge
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; no per-case length cap; graded strict-literal against the current evals.json)
+- Result: 19/19 PASS (100%) over 19 scored cases (eval-1..12 + iteration 13..19; superseded 0)
+- Baseline (round 2, Task 22): 84% (16/19)
+- Delta: +16pp
+- FAIL list: none
+- Note: eval-1 (per-request instantiation in the Ops method stated as the registration choice), eval-5 (existing IndexingOps#clear, no new Ops class) and eval-12 (registry.buildMergedFilter + driftWarning as Ops finalize) now pass.
+- Context: new SessionStart core+digest / SubagentStart block (rebuilt from live hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook text present in subject context but declared void (limitation).

@@ -196,3 +196,25 @@ No iteration needed.
   - `eval-2` — rerank/metaOnly/limit 6 right, but pathPattern brace expansion never stated (only 'scoped to' the two files) [strict-literal]
   - `eval-7` — one row per file + shared taskIds, but never names dominantAuthor/commitCount/ageDays/bugFixRate per file
   - `eval-15` — get_naming_lexicon names+pathPattern, but concept+language elided ('…'), MISFIT->suggestion and NEW_TERM->project-term-if-same not stated
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 13/15 PASS (87%) over scored cases (superseded: 0)
+- Round 2 rate: 100% — delta: -13 pp
+- FAIL list:
+  - eval-1: FAIL — answer explicitly calls find_similar (extract-project-patterns cascade in Step 3.5), which expected lists in mustNotCall | eval stale: current SKILL.md Step 3.5 mandates tea-rags:extract-project-patterns (find_similar/semantic_search per level) for code-modification Tasks; expected's find_similar ban predates Step 3.5 and was meant for the enrichment call only
+  - eval-4: FAIL — answer adds a hybrid_search cross-check (after get_callers) which expected lists in mustNotCall | eval stale: SKILL.md "Iron Rule" now says find_symbol/get_callers/hybrid_search "may follow Step 2 as depth, never replace it"; expected bans them outright
+- Notes: Both FAILs are eval-stale: mustNotCall lists (eval-1 find_similar, eval-4 hybrid_search/get_callers) predate SKILL.md Step 3.5 (extract-project-patterns cascade) and the Iron Rule 'may follow Step 2 as depth' clause. Graded literally against expected.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 12/15 PASS (80.0%) (N/A excluded: 0).
+- Round-2 Codex: 12/15 (80.0%). Delta: ±0.0 pp.
+- FAIL list:
+  - `eval-7` — per-file columns named, but no aggregation by relativePath (one row per file) and no keep-empty-files rule.
+  - `eval-10` — refuses impactAnalysis and picks blastRadius/custom, but does not call the custom fallback an import proxy.
+  - `eval-14` — metaOnly=true kept, but content fetched via find_symbol instead of the required separate semantic_search metaOnly=false.

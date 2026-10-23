@@ -153,3 +153,25 @@ These came from the incident case study and need code changes, not rule text.
   - `E6` — own checkout MARKER-COLD: find_symbol only, no incremental index_codebase.
   - `E9` — no trace_path for the callback→sign-in chain (semantic_search + find_symbol only).
   - `E14` — no incremental index_codebase on own checkout (floors [], changed files).
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; the cases.md shared fixture preamble (MARKER-COLD / DRIFT-FORCE, no expectations) given verbatim; strict literal grading; no per-case length cap)
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 2): 15/15 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 9/15 PASS (60.0%) (N/A excluded: 0).
+- Round-2 Codex: 11/15 (73.3%). Delta: -13.3 pp.
+- FAIL list:
+  - `E1` — incremental index_codebase only mentioned in reasoning, first action is find_symbol; no AskUserQuestion for the --force drift (just "would not run it")
+  - `E7` — no incremental index_codebase action, no --force consent question, no tests-as-context / test-chunk semantic_search (find_symbol + hybrid_search only)
+  - `E8` — find_symbol + get_callers, no reindex, but drift remedy not reported to parent (only "parent owns freshness")
+  - `E9` — find_symbol + get_callers + hybrid; no semantic_search/explore, no trace_path, no drift report to parent
+  - `E14` — hybrid_search re-check only; explicitly "no reindex" on own checkout with changed file; no find_symbol re-check
+  - `E15` — own checkout changedFiles 12: explicitly skips incremental index_codebase ("does not trigger reindex"); find_symbol only, no semantic_search/explore

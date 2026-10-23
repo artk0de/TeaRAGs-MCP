@@ -190,3 +190,21 @@ No iteration needed.
 - FAIL list:
   - `eval-7` — no Step 3 hypothesis-block extraction between bug-hunt and systematic-debugging
   - `eval-12` — systematic-debugging invoked without the hypothesis block ("hand off" only)
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 16/17 PASS (94%) over scored cases (superseded: 0)
+- Round 2 rate: 94% — delta: +0 pp
+- FAIL list:
+  - eval-15: FAIL — find_similar is seeded from a chunk id it fetches again through find_symbol (outline + symbol lookup); it never says to reuse the chunk id from the bug-hunt result
+- Notes: eval-15 still FAIL but for a new reason (round 2: no 'report matches'; round 3: seeds find_similar from a chunk id re-resolved via find_symbol instead of the bug-hunt result id). Partly eval ambiguity: the prompt carries only file:line, no chunk id.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 17/17 PASS (100%) (N/A excluded: 0).
+- Round-2 Codex: 15/17 (88.2%). Delta: +11.8 pp.
+- FAIL list: none.

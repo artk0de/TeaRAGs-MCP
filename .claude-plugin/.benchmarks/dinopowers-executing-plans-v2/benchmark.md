@@ -154,3 +154,29 @@ trivial). Phase 4 verification: **10/10 PASS, +70pp from before-fix.**
 - Round-1 Codex: 13/13 (100%). Delta: -8 pp.
 - FAIL list:
   - `E11` — DDG MODIFY + tests-at-risk + callers stated, but Step 4.5 template-lookup skip (MODIFY skips TEMPLATE) not stated
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 8/13 PASS (62%) over scored cases (superseded: 0)
+- Round 2 rate: 92% — delta: -30 pp
+- FAIL list:
+  - E2: FAIL — answer never states the Skill(dinopowers:executing-plans) invocation (only walks its Steps 1-5 implicitly); guard/DDG/chain otherwise correct
+  - E4: FAIL — answer never states the Skill(dinopowers:executing-plans) invocation; rest (guard SAFE new file, DDG, TDD, chain) correct
+  - E5: FAIL — answer never states the Skill(dinopowers:executing-plans) invocation; guard semantic_search, DDG skip, chain otherwise correct
+  - E7: FAIL — answer never states the Skill(dinopowers:executing-plans) invocation; guard, no-DDG, import check, delete otherwise correct
+  - E10: FAIL — answer never states the Skill(dinopowers:executing-plans) invocation triggered by 'выполни план' (expected item 1); guard semantic_search + DDG present
+- Notes: All 5 FAILs are the same omission: answers walk wrapper Steps 1-5 without stating the Skill(dinopowers:executing-plans) call (round-2 answers stated it 9x) - likely subject variance, but the skill's Mandatory Step Order starts at Step 2.0 with no explicit 'invoke wrapper' step. Round-2 FAIL E6 (typo -> wrapper) now PASS.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 9/13 PASS (69.2%) (N/A excluded: 0).
+- Round-2 Codex: 12/13 (92.3%). Delta: -23.1 pp.
+- FAIL list:
+  - `E6` — typo Task runs the pre-touch guard and chains executing-plans instead of the Trivial-row skip + direct Edit.
+  - `E9` — tests via $test-first; required dinopowers:test-driven-development absent.
+  - `E11` — DDG MODIFY + tests-at-risk, but no get_callers on Paginator#nextOffset and no "Step 4.5 skipped — MODIFY skips TEMPLATE".
+  - `E12` — DDG MODIFY, but callers of shouldRetry never surfaced.

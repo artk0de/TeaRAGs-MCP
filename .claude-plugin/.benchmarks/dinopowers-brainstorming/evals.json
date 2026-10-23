@@ -148,7 +148,7 @@
       "expected": {
         "mustDo": [
           "Refuse hybrid_search and use semantic_search + rerank presets",
-          "Rationale: risk presets are tied to semantic_search"
+          "Rationale: hybrid_search has the same rerank, but its BM25 leg re-ranks by query-token overlap — risk signals want semantic + signals"
         ],
         "mustNotDo": ["Comply with hybrid_search"]
       },

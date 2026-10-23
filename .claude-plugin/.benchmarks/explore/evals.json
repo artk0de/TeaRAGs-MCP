@@ -39,11 +39,11 @@
     {
       "id": 1,
       "prompt": "Where is buildMergedFilter used?",
-      "expected_output": "hybrid_search only. NO ripgrep 'for verification' or 'completeness'.",
+      "expected_output": "get_callers when codegraph on (graph tools present), hybrid_search when off. NO ripgrep 'for verification' or 'completeness'.",
       "failure_mode": "ripgrep-after-hybrid",
       "assertions": [
         {
-          "text": "Uses hybrid_search as primary tool",
+          "text": "Uses get_callers (codegraph on) or hybrid_search (codegraph off) as primary tool",
           "type": "tool_selection"
         },
         {

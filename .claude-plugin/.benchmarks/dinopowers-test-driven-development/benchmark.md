@@ -232,3 +232,26 @@ unaware of the explicit per-task reindex mechanism. The prior
 - Round-1 Codex: 6/15 (40.0%). Delta: +53.3 pp.
 - FAIL list:
   - `eval-7` — search scoped to the Ruby dir instead of the broader corpus; no "cross-language — TS conventions may not apply to Ruby" note
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 13/15 PASS (87%) over scored cases (superseded: 0)
+- Round 2 rate: 93% — delta: -6 pp
+- FAIL list:
+  - eval-12: FAIL — answer replaces Step 4 with a text draft for the parent ("Step 4 cannot write files") and never states invoking Skill(superpowers:test-driven-development) SECOND
+  - eval-15: FAIL — answer rejects find_similar but omits that find_similar is acceptable as a supplementary call AFTER the primary search with the impl file's symbolId
+- Notes: Round-2 FAIL eval-7 (cross-language fallback note) now PASS. New FAILs eval-12 (read-only explore subagent drops the superpowers TDD chain) and eval-15 (supplementary find_similar allowance not stated).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 11/15 PASS (73.3%) (N/A excluded: 0).
+- Round-2 Codex: 14/15 (93.3%). Delta: -20.0 pp.
+- FAIL list:
+  - `eval-4` — complies with metaOnly=true (declares the wrapper not needed) instead of refusing.
+  - `eval-7` — whole-corpus search + cross-language note, but no "0 results → fallback note" outcome.
+  - `eval-8` — delegates to extract-project-patterns / re-search; no 4–6 bullet cap, no per-convention source citation.
+  - `eval-9` — search then write test; "extract pattern block" step missing from the order.

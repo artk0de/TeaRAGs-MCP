@@ -171,3 +171,23 @@ skill boundary collisions and reduced total line count by 36%.
   - `12` — routes to $dino-executing-plans + DDG cascade, not self-contained explore PRE-GEN
   - `13` — explore + risk-assessment; 'before I change' not detected as PRE-GEN (skill: risks of one named change -> PRE-GEN PG-2)
   - `15` — DDG entry, but no explore PRE-GEN prerequisite and no Step 6a RED via test-first before production edit
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 2): 13/15 (87%)
+- Delta: +13pp (case 3 fixed: rank_chunks codeReview now carries maxAgeDays=14; case 15 fixed: DDG is the entry, explore PRE-GEN on "area context missing", Step 6a RED via tea-rags:test-first before 6b GREEN, no separate TDD phase)
+- FAIL list: none
+- Notes: case 14 (subagent, no skill access) graded PASS on the expected_output's "use MCP tools directly" branch: subject named the missing skill access, applied the SubagentStart rules directly and reported to the parent; it did not separately suggest that the parent inject context.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 12/15 PASS (80.0%) (N/A excluded: 0).
+- Round-2 Codex: 4/15 (26.7%). Delta: +53.3 pp.
+- FAIL list:
+  - `8` — PRE-GEN + metaOnly OK, but "Keep the query in Russian" — no translation to English
+  - `11` — "don't restart or replace it with $explore" — DDG runs own semantic_search; no missing-context detection / explore PRE-GEN auto-invoke
+  - `15` — DDG entry + test-first before impl, but no explore PRE-GEN context step and no recorded RED gate before production edit

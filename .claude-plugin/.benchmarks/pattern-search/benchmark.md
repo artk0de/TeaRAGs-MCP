@@ -129,3 +129,22 @@ needed.
 - FAIL list:
   - `eval-2` — routed to refactoring-scan (3 rank presets); no EXPAND from problematic seeds (mustNotDo: skip EXPAND).
   - `eval-14` — names pagination disambiguation/no-match check only; no thresholds or ask/re-SEED / warn / report-no-match actions.
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 14/14 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 2): 13/14 (93%)
+- Delta: +7pp (eval-14 fixed: SEED validation now spells both checks — disambiguation >70% → ask + re-SEED with pathPattern, never EXPAND both; no-match spread/overlap/clustering, 2 of 3 warn, 3 of 3 report no match without EXPAND)
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 11/14 PASS (78.6%) (N/A excluded: 0).
+- Round-2 Codex: 12/14 (85.7%). Delta: -7.1 pp.
+- FAIL list:
+  - `eval-6` — same dir >80% → keep richer-signals one, but never states the different-directories → always keep both rule
+  - `eval-7` — groups "by module/directory" with file:line + description + overlay labels, but not by top-level module = first 2 segments after src/
+  - `eval-14` — only "check for disambiguation and no-match conditions" via pagination; no thresholds (2+ dir groups / none >70% → ask + re-SEED pathPattern; 2-of-3 warn / 3-of-3 report no match)

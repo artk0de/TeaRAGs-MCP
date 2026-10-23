@@ -157,3 +157,37 @@ needed.
 - FAIL list:
   - `eval-2` — PRIME SUSPECT presented with file:line + bugFixRate but no relativeChurn label / root-cause observation
   - `eval-9` — literal-text search for the phrase, but no find_symbol step to understand the code around the hit
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; no per-case length cap; graded strict-literal against the current evals.json)
+- Result: 21/21 PASS (100%) over 21 scored cases (superseded 0)
+- Baseline (round 2, Task 22): 95% (20/21)
+- Delta: +5pp
+- FAIL list: none
+- Note: `eval-2` now passes — PRESENT line states relativeChurn as "unverified (not in the supplied result)" alongside file:line + bugFixRate.
+- Context: new SessionStart core+digest / SubagentStart block (rebuilt from live hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 4/21 PASS (19.0%) (N/A excluded: 0).
+- Round-2 Codex: 19/21 (90.5%). Delta: -71.5 pp.
+- FAIL list:
+  - `eval-1` — no git status -uall step 0, no incremental index, no limit=10, no fresh probe (modifiedAfter) / uncommitted probe in one message
+  - `eval-2` — re-runs $bug-hunt ("only if fresh results confirm") instead of PRIME SUSPECT + PRESENT
+  - `eval-3` — re-investigates healthy/old/non-probe uuid.ts on user push instead of SKIP with explanation
+  - `eval-4` — one search scoped to the three zones; no explicit refusal of per-zone search, no fresh probe discovery set
+  - `eval-5` — find_symbol outline -> body OK, but "Curiosity search" rationale not cited
+  - `eval-6` — may re-run bug-hunt; no refusal + PRESENT. STOP., confirmatory-search rule not cited
+  - `eval-7` — complies with whole-file read ("выполнить запрошенное чтение целиком")
+  - `eval-8` — runs git log -S
+  - `eval-10` — pathPattern {**/batch_create.rb,**/jobs/create.rb} — not exact relativePaths
+  - `eval-12` — dispatches Task subagent as user asked
+  - `eval-13` — no PRESENT with confidence note; continues systematic-debugging iterations
+  - `eval-16` — does not skip on healthy, but no FRESH SUSPECT class / PRESENT with class fresh; trace_path rerank=recent
+  - `eval-17` — trace_path to <suspect> not QuotaPolicy#check; no two-class triage of every step / fresh-step rule
+  - `eval-18` — starts with bug-hunt search; get_callers later, no find_symbol(caller, rerank=bugHunt)
+  - `eval-19` — no brace frame-path fresh probe w/ modifiedAfter; no plain "no static path tool" statement
+  - `eval-20` — no git status -uall, conditional reindex, no 3-probe message, no UNCOMMITTED SUSPECT/PRESENT class
+  - `eval-21` — no git status -uall per-file listing, no per-file brace uncommitted probe

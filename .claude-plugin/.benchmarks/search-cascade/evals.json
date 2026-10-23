@@ -113,7 +113,7 @@
     {
       "id": 11,
       "audit_finding": "naming intent routing",
-      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available).",
+      "context": "Graph tools incl. get_naming_lexicon are in your tool list (codegraph on).",
       "prompt": "Is `row` a good name for a TaxAutomationDocument local here, or what does this project call it?",
       "expected": "get_naming_lexicon(names / types)",
       "not": ["semantic_search", "hybrid_search", "ripgrep"]
@@ -121,7 +121,7 @@
     {
       "id": 12,
       "audit_finding": "naming review of a diff",
-      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Uncommitted changes add several locals, a class and a constant across 4 files.",
+      "context": "Graph tools incl. get_naming_lexicon are in your tool list (codegraph on). Uncommitted changes add several locals, a class and a constant across 4 files.",
       "prompt": "Check whether the names in my uncommitted changes fit the project's vocabulary.",
       "expected": "review_changes(changes: {}) — naming section (default sections, or sections: [\"naming\"]); its verdicts are the answer",
       "not": [
