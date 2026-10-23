@@ -39,8 +39,10 @@
  *   6. bareSelfMethod (bare X() inside impl → enclosing-type probe)
  *   7. globalShortName (global short-name fallback)
  *   8. traitSelfMethod (trait-provided `self.m()`)
- *   9. rustAnalyzerScip (the rust-analyzer SCIP index's definition for the
- *      member token, mapped onto a table symbol — the residual only)
+ *   9. rustcCallSites (the rustc driver's type-checked callee for the member
+ *      token, mapped onto a table symbol — the residual only)
+ *  10. rustAnalyzerScip (the rust-analyzer SCIP index's definition for the
+ *      member token, mapped onto a table symbol — where the driver had no row)
  */
 
 import {
@@ -56,6 +58,7 @@ import type {
   DispatchResolverComponent,
   ManifestFilesReader,
   RustAnalyzerScipSource,
+  RustCallSiteSource,
   RustExternalSignatureSources,
   SymbolResolutionStrategy,
 } from "../../../../contracts/types/language.js";
@@ -64,12 +67,13 @@ import { RustExternalVocabulary } from "../vocabulary/external-call.js";
 import { RustResolveEnvironmentCache } from "./resolve-environment-cache.js";
 import { withRustResolveEnvironment } from "./resolve-environment.js";
 import { RustConeTypeLocator } from "./rust-cone-type-locator.js";
-import { rustScipProvesExternal, rustScipProvesInProjectNonCallable } from "./scip-resolution.js";
+import { rustCallSiteProvesExternal, rustCallSiteProvesNoProjectCallable } from "./scip-resolution.js";
 import {
   RustAnalyzerScipSymbolResolutionStrategy,
   RustBareSelfMethodSymbolResolutionStrategy,
   rustCalleeShortNameCandidates,
   rustCallIsMacroInvocation,
+  RustcCallSiteSymbolResolutionStrategy,
   RustGlobalShortNameSymbolResolutionStrategy,
   RustImportMatchSymbolResolutionStrategy,
   RustLocalBindingSymbolResolutionStrategy,
@@ -97,14 +101,22 @@ export class RustCallResolver implements CallResolver {
    * name is known and a bare path head is judged by the symbol table alone,
    * and no external signature is known. `scipSource` acquires the
    * rust-analyzer SCIP index before the pass (bd s3i8m.6 R2b); absent, none is.
+   * `callSiteSource` acquires the rustc call-site index the same way
+   * (bd s3i8m T6).
    */
   constructor(
     mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
     manifestFilesReader?: ManifestFilesReader,
     signatureSources?: RustExternalSignatureSources,
     scipSource?: RustAnalyzerScipSource,
+    callSiteSource?: RustCallSiteSource,
   ) {
-    this.environments = new RustResolveEnvironmentCache(manifestFilesReader, signatureSources, scipSource);
+    this.environments = new RustResolveEnvironmentCache(
+      manifestFilesReader,
+      signatureSources,
+      scipSource,
+      callSiteSource,
+    );
     const cfg: ResolverConfig = { mode };
     this.dispatchComponents = [new ConeDispatchResolver(new RustConeTypeLocator(cfg), 8)];
     this.strategies = [
@@ -118,7 +130,10 @@ export class RustCallResolver implements CallResolver {
       new RustGlobalShortNameSymbolResolutionStrategy(cfg),
       // Last: a trait-provided `self.m()` answers only where every pass above stayed silent.
       new RustTraitSelfMethodSymbolResolutionStrategy(cfg),
-      // After every name pass: rust-analyzer's own answer for the residual (bd s3i8m.6 R3a).
+      // After every name pass: the compiler's answer for the residual — the
+      // rustc driver's type-checked callee first (bd s3i8m T7), then
+      // rust-analyzer's SCIP answer where the driver has no row (bd s3i8m.6 R3a).
+      new RustcCallSiteSymbolResolutionStrategy(cfg),
       new RustAnalyzerScipSymbolResolutionStrategy(cfg),
     ];
   }
@@ -131,15 +146,23 @@ export class RustCallResolver implements CallResolver {
     this.environments.reload(plan.projectRoot);
   }
 
-  /** Awaited before `prepareResolvePass`: acquire the project's rust-analyzer SCIP index (bd s3i8m.6 R2b). */
+  /**
+   * Awaited before `prepareResolvePass`: acquire the project's rust-analyzer
+   * SCIP index (bd s3i8m.6 R2b) and rustc call-site index (bd s3i8m T6).
+   */
   async warmResolvePass(plan: SymbolResolutionPassPlan): Promise<void> {
     await this.environments.warm(plan);
   }
 
-  /** How the pass's rust-analyzer SCIP acquisition settled; undefined before one ran. */
+  /** How the pass's compiler-index acquisitions settled; undefined before any ran. */
   diagnostics(): Record<string, unknown> | undefined {
     const rustAnalyzerScip = this.environments.scipDiagnostics();
-    return rustAnalyzerScip === undefined ? undefined : { rustAnalyzerScip };
+    const rustcCallSites = this.environments.callSiteDiagnostics();
+    if (rustAnalyzerScip === undefined && rustcCallSites === undefined) return undefined;
+    return {
+      ...(rustAnalyzerScip === undefined ? {} : { rustAnalyzerScip }),
+      ...(rustcCallSites === undefined ? {} : { rustcCallSites }),
+    };
   }
 
   /** The caller's ctx carrying this run's resolve environment — the one entry every Rust helper reads it from. */
@@ -161,7 +184,8 @@ export class RustCallResolver implements CallResolver {
    * Every verdict is proof-based — a project namesake vetoes the std
    * reading, and absence of evidence is never a `true`.
    *
-   * rust-analyzer's SCIP answer joins it only where the member has a project
+   * The compiler's answer — the rustc driver's, else rust-analyzer's SCIP
+   * answer (bd s3i8m T7) — joins it only where the member has a project
    * namesake (bd s3i8m.6 R3a): Rust has no later classifier gate, so the
    * conjunct moves exactly the rows that would be `missWithInProjectDef` and
    * leaves `noInProjectDef` and the vocabulary's own verdicts byte-identical.
@@ -169,7 +193,7 @@ export class RustCallResolver implements CallResolver {
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
     const environment = this.withEnvironment(ctx);
     if (this.external.targetsExternal(call, environment)) return true;
-    return rustScipProvesExternal(call, environment) && this.hasInProjectDefinition(call, environment);
+    return rustCallSiteProvesExternal(call, environment) && this.hasInProjectDefinition(call, environment);
   }
 
   /**
@@ -186,7 +210,8 @@ export class RustCallResolver implements CallResolver {
       ? rustMacroShortNameCandidates(ctx, call.member)
       : rustCalleeShortNameCandidates(ctx, call.member);
     if (candidates.length === 0) return false;
-    // A SCIP-proven in-project type or local is no namesake's edge (bd s3i8m.6 R3b).
-    return !rustScipProvesInProjectNonCallable(call, this.withEnvironment(ctx));
+    // A compiler-proven in-project type or local (bd s3i8m.6 R3b) or derived
+    // impl (bd s3i8m T7) is no namesake's edge.
+    return !rustCallSiteProvesNoProjectCallable(call, this.withEnvironment(ctx));
   }
 }

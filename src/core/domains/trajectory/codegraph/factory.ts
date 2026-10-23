@@ -40,6 +40,7 @@ import type {
   ManifestFilesReader,
   RustAnalyzerScipSource,
   RustAnalyzerScipSourceConfig,
+  RustCallSiteSource,
   RustExternalSignatureSources,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
@@ -167,6 +168,7 @@ interface LanguageModule {
     manifestFilesReader?: ManifestFilesReader;
     rustExternalSignatureSources?: RustExternalSignatureSources;
     rustAnalyzerScipSource?: RustAnalyzerScipSource;
+    rustcCallSiteSource?: RustCallSiteSource;
   }) => LanguageFactoryDescriptor;
   CrossRunParseCache: new () => LanguageCrossRunParseCache;
   DefaultSymbolIdComposer: new () => SymbolIdComposer;
@@ -311,6 +313,9 @@ export async function createCodegraphProviderRuntime(
     ...(config.rustAnalyzer?.enabled
       ? { rustAnalyzerScipSource: processRustAnalyzerScipSource(config.rustAnalyzer) }
       : {}),
+    // The rustc call-site source (bd s3i8m T6) joins here as `rustcCallSiteSource`
+    // once the driver runner (`adapters/rustc-driver`) exposes a process-scoped
+    // `RustCallSiteSource`; absent, the chain is the SCIP slot's alone.
     ...(runtimeDeps.crossRunParseCache ? { crossRunParseCache: runtimeDeps.crossRunParseCache } : {}),
   });
   const composer = new lang.DefaultSymbolIdComposer();

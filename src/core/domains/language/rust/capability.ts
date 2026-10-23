@@ -27,7 +27,7 @@ export const capability: LanguageCapability = {
   testFiles,
   codegraph: {
     tier: "moderate",
-    tech: "10-strategy (last: rust-analyzer SCIP); trait dispatch; return/field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
+    tech: "11-strategy (last: rustc driver + SCIP); trait dispatch; return/field chains (Self, owner generics); same-file bare-call result locals; crate-scoped impls",
     // Generic return substitution reads the declaring owner's genericParameters.
     resolverReadsTypeDeclarations: true,
     // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
@@ -144,6 +144,10 @@ export const capability: LanguageCapability = {
   //   type's fact lists the inherent associated fns that return it and bind a
   //   generic from an argument (`fn new(ptr: &T) -> Trusted<T>`), and a
   //   `type X<T> = …` fact carries its aliased type.
+  // - bd tea-rags-mcp-s3i8m T6/T7 — a `rustcCallSites` pass before
+  //   `rustAnalyzerScip` answers the residual from the rustc driver's
+  //   type-checked callee; the external gate and R3b–R3d read the driver
+  //   first, then SCIP; a derived impl is noInProjectDef, never external.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

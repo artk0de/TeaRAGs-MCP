@@ -1,13 +1,18 @@
 /**
  * What the Rust resolver knows about the project beyond its symbol table, for
  * one pass: the workspace crate map (bd tea-rags-mcp-sjego) and the external
- * signature table (bd s3i8m.7), and the rust-analyzer SCIP index (bd s3i8m.6).
+ * signature table (bd s3i8m.7), the rust-analyzer SCIP index (bd s3i8m.6) and the
+ * rustc call-site index (bd s3i8m T6).
  * Carried on `CallContext.languageConfig` as one record;
- * `rustWorkspaceCratesOf` / `rustExternalSignaturesOf` / `rustAnalyzerScipOf`
- * are its only readers.
+ * `rustWorkspaceCratesOf` / `rustExternalSignaturesOf` / `rustAnalyzerScipOf` /
+ * `rustcCallSitesOf` are its only readers.
  */
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
-import type { RustAnalyzerScipIndex, RustExternalSignatureTable } from "../../../../contracts/types/language.js";
+import type {
+  RustAnalyzerScipIndex,
+  RustCallSiteIndex,
+  RustExternalSignatureTable,
+} from "../../../../contracts/types/language.js";
 import type { RustWorkspaceCrateMap } from "./workspace-crates.js";
 
 export class RustResolveEnvironment {
@@ -15,6 +20,7 @@ export class RustResolveEnvironment {
     readonly crates: RustWorkspaceCrateMap | undefined,
     readonly signatures: RustExternalSignatureTable | undefined,
     readonly scip: RustAnalyzerScipIndex | undefined = undefined,
+    readonly callSites: RustCallSiteIndex | undefined = undefined,
   ) {}
 }
 
@@ -39,4 +45,9 @@ export function rustExternalSignaturesOf(ctx: CallContext): RustExternalSignatur
 /** The rust-analyzer SCIP index the Rust resolver injected (bd s3i8m.6 R2b) — `undefined` off its entry paths or when none was acquired. */
 export function rustAnalyzerScipOf(ctx: CallContext): RustAnalyzerScipIndex | undefined {
   return ctx.languageConfig instanceof RustResolveEnvironment ? ctx.languageConfig.scip : undefined;
+}
+
+/** The rustc call-site index the Rust resolver injected (bd s3i8m T6) — `undefined` off its entry paths or when none was acquired. */
+export function rustcCallSitesOf(ctx: CallContext): RustCallSiteIndex | undefined {
+  return ctx.languageConfig instanceof RustResolveEnvironment ? ctx.languageConfig.callSites : undefined;
 }

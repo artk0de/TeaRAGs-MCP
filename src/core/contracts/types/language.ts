@@ -1346,6 +1346,56 @@ export interface RustAnalyzerScipSource {
 }
 
 /**
+ * Where the rustc call-site driver says one call site's callee is defined
+ * (bd s3i8m T6; row mapping: research/rustc-driver/SPEC.md §3). The SCIP shape
+ * plus the one fact SCIP cannot carry: the dispatched impl is
+ * `#[automatically_derived]`. A derived impl is derive output, neither a table
+ * symbol nor an external call — its site belongs to no in-project definition.
+ */
+export interface RustCallSiteDefinition extends RustScipDefinition {
+  readonly implIsDerived?: boolean;
+}
+
+/**
+ * Call-site → definition lookup over one rustc driver run of a project
+ * (bd s3i8m T6). `null` when the driver emitted no source row at the position
+ * (not opted in, a crate that failed under the pin, cfg-disabled code, a
+ * macro-produced token, two units disagreeing).
+ */
+export interface RustCallSiteIndex {
+  /** `line` is 1-based; `utf16Col` is 0-based and names the START of the callee name token. */
+  definitionAt: (relPath: string, line: number, utf16Col: number) => RustCallSiteDefinition | null;
+  /** The runner's envKey + units digest. */
+  readonly identity: string;
+}
+
+/**
+ * How one acquisition of a project's rustc call-site index settled. `latched`
+ * is a persisted refusal (build failure, budget, toolchain) that stands until
+ * the environment changes; `skipped` means nothing was attempted.
+ */
+export type RustCallSiteAcquisition =
+  | { kind: "indexed"; index: RustCallSiteIndex; cacheHit: boolean; wallMs?: number }
+  | { kind: "latched"; reason: string; detail: string; hint?: string }
+  | { kind: "skipped"; reason: string };
+
+/**
+ * Whether an acquisition that misses its cache may run the driver, decided by
+ * the domain over the project's `.rs` files the adapter walked (repo-relative).
+ */
+export type RustCallSiteAdmission = (projectRustRelPaths: readonly string[]) => "spawn" | "reuseOnly";
+
+/**
+ * The port the Rust resolver acquires its rustc call-site index through
+ * (bd s3i8m T6). The composition layer injects the adapter through
+ * `LanguageFactory`, as it does `RustAnalyzerScipSource`.
+ */
+export interface RustCallSiteSource {
+  /** Never rejects. */
+  acquire: (request: { projectRoot: string; admission: RustCallSiteAdmission }) => Promise<RustCallSiteAcquisition>;
+}
+
+/**
  * One schema table and the instance-accessor names its columns synthesize on the
  * owning model. The COLUMN→accessor expansion (reader / writer / query
  * predicate, the implicit primary key, timestamps) is the language's own
