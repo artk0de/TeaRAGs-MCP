@@ -34,8 +34,14 @@ import { availableParallelism, homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { ManifestFile, RustAnalyzerScipIndex } from "../../contracts/types/language.js";
+import type {
+  ManifestFile,
+  RustCallSiteAdmission,
+  RustCallSiteDefinition,
+  RustCallSiteIndex,
+} from "../../contracts/types/language.js";
 import { readManifestFiles } from "../filesystem/dependency-manifests.js";
+import { listRustSources, type RustSourceStamp } from "../filesystem/rust-sources.js";
 import {
   sampleProcessTreeRssKb,
   spawnSupervisedChild,
@@ -84,12 +90,26 @@ const HOST_COMMAND_TIMEOUT_MS = 10_000;
 const OUTPUT_TAIL_CHARS = 4096;
 const LATCH_FILE = "latch.json";
 const RUN_FILE = "run.json";
+/** The `.rs` stamps the run that wrote `run.json` started from; what a reuse is judged against. */
+const SOURCES_FILE = "sources.json";
 const CHILD_NAME = "tea-rags-rustc-callsites";
 const DISABLED_VALUE = /^(off|0|false|no)$/i;
 const OFFLINE_PATTERN =
   /--offline was specified|attempting to make an HTTP request|failed to download|unable to update registry|no matching package named/i;
 
-export type RustcCallSiteAcquisitionStatus = "ok" | "partial" | "unavailable" | "disabled" | "failed";
+/**
+ * `reused`: admission refused a spawn and the previous run's units were served
+ * for the files whose stamp still matches. `noCache`: admission refused a spawn
+ * and there was no previous run to serve.
+ */
+export type RustcCallSiteAcquisitionStatus =
+  | "ok"
+  | "partial"
+  | "reused"
+  | "noCache"
+  | "unavailable"
+  | "disabled"
+  | "failed";
 
 /** Environment failures persisted per envKey. */
 export type RustcCallSiteLatchReason = "driverBuild" | "allUnitsFailed";
@@ -124,8 +144,8 @@ export interface RustcCallSiteDiagnostics {
 
 export interface RustcCallSiteAcquisition {
   status: RustcCallSiteAcquisitionStatus;
-  /** Present for `ok` and `partial`. */
-  index?: RustAnalyzerScipIndex;
+  /** Present for `ok`, `partial` and `reused`. */
+  index?: RustCallSiteIndex;
   diagnostics: RustcCallSiteDiagnostics;
 }
 
@@ -136,6 +156,12 @@ export interface RustcCallSiteRunOptions {
   cargoArgs?: string;
   timeoutSec?: number;
   maxRssMb?: number;
+  /**
+   * Whether this acquisition may run cargo, decided over the project's `.rs`
+   * files. `reuseOnly` never builds the driver nor spawns it: the previous
+   * run is served for unchanged files, else `noCache`. Absent = spawn.
+   */
+  admission?: RustCallSiteAdmission;
 }
 
 export interface RustcCallSiteRunnerDeps extends SupervisedChildHost {
@@ -155,6 +181,7 @@ export interface RustcCallSiteRunnerDeps extends SupervisedChildHost {
     writeTextAtomic: (path: string, text: string) => void;
     remove: (path: string) => void;
     stat: (path: string) => { size: number; mtimeMs: number } | undefined;
+    listRustSources: (projectRoot: string) => readonly RustSourceStamp[];
   };
   /** Every workspace `Cargo.toml` under the root. */
   readCargoManifests: (projectRoot: string) => readonly ManifestFile[];
@@ -212,8 +239,16 @@ async function acquire(
   });
   if (!discovery) return unavailable();
 
+  let stamps: readonly RustSourceStamp[] | undefined;
+  const sources = (): readonly RustSourceStamp[] => (stamps ??= deps.fs.listRustSources(options.projectRoot));
+  let decision: boolean | undefined;
+  const reuseOnly = (): boolean =>
+    (decision ??= options.admission?.(sources().map((stamp) => stamp.relPath)) === "reuseOnly");
+
   let driver: ResolvedDriver;
   if (discovery.kind === "buildable") {
+    // Building the driver is a cargo build: never under reuseOnly. No built driver ⇒ no earlier run.
+    if (reuseOnly()) return { status: "noCache", diagnostics: emptyDiagnostics() };
     const built = await deps.buildDriver(discovery);
     if (!built.ok) {
       return {
@@ -248,7 +283,8 @@ async function acquire(
       },
     };
   }
-  return runDriver(deps, options, driver, envKey, envDir, cargoArgs);
+  if (reuseOnly()) return reusePreviousRun(deps, envKey, envDir, sources());
+  return runDriver(deps, options, driver, envKey, envDir, cargoArgs, sources());
 }
 
 async function runDriver(
@@ -258,6 +294,7 @@ async function runDriver(
   envKey: string,
   envDir: string,
   cargoArgs: string,
+  stamps: readonly RustSourceStamp[],
 ): Promise<RustcCallSiteAcquisition> {
   const targetDir = join(envDir, "target");
   const env = childEnv(deps, driver, envDir, targetDir, cargoArgs);
@@ -270,8 +307,10 @@ async function runDriver(
     const onOutput = (chunk: string): void => {
       tail = (tail + chunk).slice(-OUTPUT_TAIL_CHARS);
     };
-    // A run.json left by an earlier run must not be mistaken for this one's.
+    // A run.json left by an earlier run must not be mistaken for this one's,
+    // nor its sources.json paired with this one's run.json.
     deps.fs.remove(join(envDir, RUN_FILE));
+    deps.fs.remove(join(envDir, SOURCES_FILE));
     const supervised = await superviseChild(
       () => deps.spawn(driver.binaryPath, [], { env, onOutput, cwd: options.projectRoot }),
       {
@@ -309,7 +348,73 @@ async function runDriver(
         },
       };
     }
+    const recorded: RecordedSources = Object.fromEntries(
+      stamps.map((stamp) => [stamp.relPath, [stamp.size, stamp.mtimeMs]]),
+    );
+    deps.fs.writeTextAtomic(join(envDir, SOURCES_FILE), JSON.stringify(recorded));
     return decodedAcquisition(deps, envKey, envDir, driverRun, diagnostics);
+  }
+}
+
+/** relPath → `[size, mtimeMs]` of every `.rs` file the run started from. */
+type RecordedSources = Record<string, readonly [number, number]>;
+
+/**
+ * The previous run of this environment, served for the files whose stamp
+ * still matches: a site in a changed file, and a definition located in one,
+ * answer null. No previous run ⇒ `noCache`. Spawns nothing.
+ */
+function reusePreviousRun(
+  deps: RustcCallSiteRunnerDeps,
+  envKey: string,
+  envDir: string,
+  stamps: readonly RustSourceStamp[],
+): RustcCallSiteAcquisition {
+  const driverRun = readRunJson(deps, envDir);
+  const recorded = readRecordedSources(deps, envDir);
+  if (!driverRun || !recorded || driverRun.units.length === 0) {
+    return { status: "noCache", diagnostics: { ...emptyDiagnostics(), envKey } };
+  }
+  const decoded = decodedAcquisition(deps, envKey, envDir, driverRun, { ...emptyDiagnostics(), envKey });
+  if (!decoded.index) return { status: "noCache", diagnostics: decoded.diagnostics };
+  const current = new Map(stamps.map((stamp) => [stamp.relPath, stamp]));
+  const unchanged = (relPath: string): boolean => {
+    const was = recorded[relPath];
+    const now = current.get(relPath);
+    return was !== undefined && was[0] === now?.size && was[1] === now.mtimeMs;
+  };
+  const contentKey = sha256(JSON.stringify(stamps.map((stamp) => [stamp.relPath, stamp.size, stamp.mtimeMs]).sort()));
+  return {
+    status: "reused",
+    index: servedForUnchanged(decoded.index, unchanged, `${decoded.index.identity}~${contentKey}`),
+    diagnostics: decoded.diagnostics,
+  };
+}
+
+function servedForUnchanged(
+  index: RustCallSiteIndex,
+  unchanged: (relPath: string) => boolean,
+  identity: string,
+): RustCallSiteIndex {
+  return {
+    identity,
+    definitionAt: (relPath, line, utf16Col): RustCallSiteDefinition | null => {
+      if (!unchanged(relPath)) return null;
+      const definition = index.definitionAt(relPath, line, utf16Col);
+      if (definition?.relPath !== undefined && !unchanged(definition.relPath)) return null;
+      return definition;
+    },
+  };
+}
+
+function readRecordedSources(deps: RustcCallSiteRunnerDeps, envDir: string): RecordedSources | undefined {
+  const text = deps.fs.readText(join(envDir, SOURCES_FILE));
+  if (text === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return typeof parsed === "object" && parsed !== null ? (parsed as RecordedSources) : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -557,6 +662,7 @@ export function defaultRustcCallSiteRunnerDeps(
           return undefined;
         }
       },
+      listRustSources,
     },
     readCargoManifests: (projectRoot) => readManifestFiles(projectRoot, (fileName) => fileName === "Cargo.toml"),
   };

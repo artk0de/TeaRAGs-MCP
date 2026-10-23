@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  describeRustcDriverWarm,
   describeRustSignatures,
   formatKindStatsBlock,
   formatTimingBlock,
@@ -63,6 +64,45 @@ describe("scoredExtensionsFor", () => {
 
   it("throws rather than scoring nothing for an unwalked language", () => {
     expect(() => scoredExtensionsFor("cobol")).toThrow(/cobol/);
+  });
+});
+
+describe("parseArgs --rustc-driver (bd s3i8m T8)", () => {
+  it("is off by default, with no budget overrides", () => {
+    const opts = parseArgs([]);
+    expect(opts.rustcDriver).toBe(false);
+    expect(opts.rustcDriverTimeoutSec).toBeUndefined();
+    expect(opts.rustcDriverMaxRssMb).toBeUndefined();
+  });
+
+  it("turns on when named and reads the budget overrides", () => {
+    const opts = parseArgs([
+      "--lang",
+      "rust",
+      "--rustc-driver",
+      "--rustc-driver-timeout-sec",
+      "600",
+      "--rustc-driver-max-rss-mb",
+      "4096",
+    ]);
+    expect(opts.rustcDriver).toBe(true);
+    expect(opts.rustcDriverTimeoutSec).toBe(600);
+    expect(opts.rustcDriverMaxRssMb).toBe(4096);
+    expect(opts.rustAnalyzer).toBe(false);
+  });
+});
+
+describe("describeRustcDriverWarm (bd s3i8m T8)", () => {
+  it("prints the warm time, the runner status, units and failed crates on one line", () => {
+    expect(describeRustcDriverWarm({ warmMs: 12_345, status: "partial", units: 40, failed: 2 })).toBe(
+      "RUSTC-DRIVER warm 12.35s · partial · units 40 · failed 2",
+    );
+  });
+
+  it("says not acquired when the source never answered", () => {
+    expect(describeRustcDriverWarm({ warmMs: 0, status: "not acquired", units: 0, failed: 0 })).toBe(
+      "RUSTC-DRIVER warm 0.00s · not acquired · units 0 · failed 0",
+    );
   });
 });
 

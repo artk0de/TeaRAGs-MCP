@@ -77,6 +77,7 @@ function wireWithConfiguredCeiling() {
         retentionDays: 180,
       },
       rustAnalyzer: { enabled: true, exec: false, timeoutSec: 900, maxRssMb: 4096 },
+      rustDriver: { enabled: true, timeoutSec: 3600, maxRssMb: 12_288 },
     },
   } as unknown as ReturnType<typeof getZodConfig>;
   const config = { paths: { appData: rootDir } } as unknown as AppConfig;

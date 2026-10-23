@@ -148,6 +148,9 @@ export const capability: LanguageCapability = {
   //   `rustAnalyzerScip` answers the residual from the rustc driver's
   //   type-checked callee; the external gate and R3b–R3d read the driver
   //   first, then SCIP; a derived impl is noInProjectDef, never external.
+  // - bd tea-rags-mcp-s3i8m T8 — the composition wires the rustc driver
+  //   source (on by default); its acquisition diagnostics carry units,
+  //   failed crate targets, latch detail and the unavailable/disabled split.
   versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`

@@ -17,6 +17,14 @@ export interface RustCallSiteDiagnostics {
   reason?: string;
   cacheHit?: boolean;
   wallMs?: number;
+  /** `indexed`: unit files the index was decoded from. */
+  units?: number;
+  /** `indexed`: crate targets that failed to compile under the pin. */
+  failedCrates?: readonly string[];
+  /** `latched`: what failed. */
+  detail?: string;
+  /** `latched` / `skipped: unavailable`: what the user can do. */
+  hint?: string;
 }
 
 export class RustCallSiteIndexCache {
@@ -50,10 +58,22 @@ export class RustCallSiteIndexCache {
           outcome: "indexed",
           cacheHit: acquisition.cacheHit,
           ...(acquisition.wallMs === undefined ? {} : { wallMs: acquisition.wallMs }),
+          ...(acquisition.units === undefined ? {} : { units: acquisition.units }),
+          ...(acquisition.failedCrates === undefined ? {} : { failedCrates: acquisition.failedCrates }),
         };
       case "latched":
+        return {
+          outcome: "latched",
+          reason: acquisition.reason,
+          detail: acquisition.detail,
+          ...(acquisition.hint === undefined ? {} : { hint: acquisition.hint }),
+        };
       case "skipped":
-        return { outcome: acquisition.kind, reason: acquisition.reason };
+        return {
+          outcome: "skipped",
+          reason: acquisition.reason,
+          ...(acquisition.hint === undefined ? {} : { hint: acquisition.hint }),
+        };
     }
   }
 }

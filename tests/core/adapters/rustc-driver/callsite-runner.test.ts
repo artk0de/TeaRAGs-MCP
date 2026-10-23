@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import type { RustSourceStamp } from "../../../../src/core/adapters/filesystem/rust-sources.js";
 import type { SupervisedChild } from "../../../../src/core/adapters/process-tree/supervised-child.js";
 import {
   acquireRustcCallSites,
@@ -18,6 +19,7 @@ import {
   type RustcDriverDiscovery,
 } from "../../../../src/core/adapters/rustc-driver/executable.js";
 import { RUSTC_DRIVER_TOOLCHAIN_PIN } from "../../../../src/core/adapters/rustc-driver/pin.js";
+import type { RustCallSiteAdmission } from "../../../../src/core/contracts/types/language.js";
 
 const PIN = "nightly-2026-05-01";
 const HASH = "h1";
@@ -105,8 +107,14 @@ function host(
     files?: Record<string, string>;
     rustcVV?: string;
     cpuCount?: number;
+    sources?: RustSourceStamp[];
   } = {},
 ) {
+  let sources = init.sources ?? [
+    { relPath: "app/src/main.rs", size: 100, mtimeMs: 1 },
+    { relPath: "core/src/lib.rs", size: 200, mtimeMs: 1 },
+  ];
+  let listings = 0;
   const texts = new Map<string, string>(
     Object.entries(init.files ?? { [`${ROOT}/Cargo.lock`]: "lock-v1", [`${ROOT}/README.md`]: "readme" }),
   );
@@ -194,6 +202,10 @@ function host(
         for (const key of [...texts.keys()]) if (key === path || key.startsWith(`${path}/`)) texts.delete(key);
       },
       stat: (path) => stamps.get(path),
+      listRustSources: () => {
+        listings += 1;
+        return sources;
+      },
     },
     readCargoManifests: () =>
       [...texts.entries()]
@@ -214,6 +226,10 @@ function host(
     kills,
     discoverCalls: () => discoverCalls,
     builds: () => builds,
+    listings: () => listings,
+    setSources: (next: RustSourceStamp[]) => {
+      sources = next;
+    },
     /** Advance the clock and fire the budget poll. */
     advance: (ms: number) => {
       now += ms;
@@ -222,8 +238,10 @@ function host(
   };
 }
 
-const acquire = async (h: ReturnType<typeof host>, options: { cargoArgs?: string; timeoutSec?: number } = {}) =>
-  acquireRustcCallSites(h.deps, { projectRoot: ROOT, ...options });
+const acquire = async (
+  h: ReturnType<typeof host>,
+  options: { cargoArgs?: string; timeoutSec?: number; admission?: RustCallSiteAdmission } = {},
+) => acquireRustcCallSites(h.deps, { projectRoot: ROOT, ...options });
 
 const envKeyOf = (spawn: SpawnCall | undefined): string => {
   const out = spawn?.env.TEARAGS_CALLSITES_OUT ?? "";
@@ -453,6 +471,91 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
     expect(h.spawns).toHaveLength(2);
     expect(result.status).toBe("partial");
     expect(result.diagnostics.missingUnits).toBe(1);
+  });
+});
+
+describe("acquireRustcCallSites — admission (reuseOnly never spawns cargo)", () => {
+  const reuseOnly: RustCallSiteAdmission = () => "reuseOnly";
+
+  it("asks admission with the project's .rs files and runs the driver on spawn", async () => {
+    const h = host();
+    const seen: (readonly string[])[] = [];
+    const result = await acquire(h, {
+      admission: (paths) => {
+        seen.push(paths);
+        return "spawn";
+      },
+    });
+    expect(seen).toEqual([["app/src/main.rs", "core/src/lib.rs"]]);
+    expect(h.spawns).toHaveLength(1);
+    expect(result.status).toBe("ok");
+  });
+
+  it("answers noCache without spawning or building when no earlier run exists", async () => {
+    const h = host();
+    const result = await acquire(h, { admission: reuseOnly });
+    expect(result.status).toBe("noCache");
+    expect(h.spawns).toHaveLength(0);
+    expect(result.index).toBeUndefined();
+  });
+
+  it("never builds a buildable driver under reuseOnly", async () => {
+    const h = host({
+      discovery: { kind: "buildable", tier: "rustup", sysroot: SYSROOT, host: "aarch64-apple-darwin" },
+    });
+    const result = await acquire(h, { admission: reuseOnly });
+    expect(result.status).toBe("noCache");
+    expect(h.builds()).toBe(0);
+    expect(h.spawns).toHaveLength(0);
+  });
+
+  it("serves the earlier run's units without spawning when no source changed", async () => {
+    const h = host();
+    const first = await acquire(h);
+    const reused = await acquire(h, { admission: reuseOnly });
+    expect(h.spawns).toHaveLength(1);
+    expect(reused.status).toBe("reused");
+    expect(reused.diagnostics.ranCargoCheck).toBe(false);
+    expect(reused.index?.definitionAt("app/src/main.rs", 21, 19)).toMatchObject({
+      relPath: "core/src/lib.rs",
+      line: 24,
+    });
+    expect(reused.index?.identity).not.toBe(first.index?.identity);
+  });
+
+  it("answers null for a site in a changed file and for a definition located in one", async () => {
+    const h = host();
+    await acquire(h);
+    h.setSources([
+      { relPath: "app/src/main.rs", size: 100, mtimeMs: 1 },
+      { relPath: "core/src/lib.rs", size: 201, mtimeMs: 2 },
+    ]);
+    const viaChangedDefinition = await acquire(h, { admission: reuseOnly });
+    expect(viaChangedDefinition.status).toBe("reused");
+    expect(viaChangedDefinition.index?.definitionAt("app/src/main.rs", 21, 19)).toBeNull();
+
+    h.setSources([
+      { relPath: "app/src/main.rs", size: 101, mtimeMs: 2 },
+      { relPath: "core/src/lib.rs", size: 200, mtimeMs: 1 },
+    ]);
+    const inChangedFile = await acquire(h, { admission: reuseOnly });
+    expect(inChangedFile.index?.definitionAt("app/src/main.rs", 21, 19)).toBeNull();
+    expect(h.spawns).toHaveLength(1);
+  });
+
+  it("does not serve a run whose spawn failed afterwards", async () => {
+    const h = host({ scripts: [okScript(), okScript({ runJson: undefined, exitCode: 101 })] });
+    await acquire(h);
+    expect((await acquire(h)).status).toBe("failed");
+    expect((await acquire(h, { admission: reuseOnly })).status).toBe("noCache");
+  });
+
+  it("answers a persisted latch under reuseOnly too", async () => {
+    const h = host({ scripts: [okScript({ runJson: okRun({ success: false, units: [] }), units: {} })] });
+    await acquire(h);
+    const result = await acquire(h, { admission: reuseOnly });
+    expect(result.status).toBe("failed");
+    expect(result.diagnostics.latched?.reason).toBe("allUnitsFailed");
   });
 });
 

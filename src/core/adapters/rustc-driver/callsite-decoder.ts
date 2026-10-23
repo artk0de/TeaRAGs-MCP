@@ -3,8 +3,8 @@
  * definition lookup the Rust chain's SCIP slot reads (bd s3i8m T5; contract and
  * row mapping: research/rustc-driver/SPEC.md §3, macro spans §4).
  *
- * The answer reuses `RustAnalyzerScipIndex` / `RustScipDefinition`, so no
- * strategy changes: a dedicated port is a later task.
+ * The answer is the `RustCallSiteIndex` port: the SCIP definition shape plus
+ * `implIsDerived`, the one fact SCIP cannot carry.
  *
  * Rules:
  * - Rows are deduped on `(relPath, line, col, callee)` — units of one package
@@ -15,16 +15,15 @@
  *   same callee resolved differently by two units) are ambiguous: the position
  *   answers null rather than picking one.
  * - A derived impl (`implIsDerived`) answers `inProject: false` with the
- *   package still a workspace crate, which hits the existing derivable-trait
- *   external rule.
+ *   package still a workspace crate, and carries `implIsDerived: true`.
  * - Malformed lines are skipped; decoding never throws.
  *
  * Memory: tikv emits ~425k rows. Strings are interned once, each served row is
  * eight integers in one flat array, and each file keeps one `Map` from
- * position key to row offset. The `RustScipDefinition` is built on lookup.
+ * position key to row offset. The `RustCallSiteDefinition` is built on lookup.
  */
 
-import type { RustAnalyzerScipIndex, RustScipDefinition } from "../../contracts/types/language.js";
+import type { RustCallSiteDefinition, RustCallSiteIndex } from "../../contracts/types/language.js";
 
 /** Columns at or past this are never keyed (a minified line); one safe integer then keys line + column. */
 const MAX_COLUMN = 0x100000;
@@ -34,6 +33,7 @@ const NONE = -1;
 /** Ints per row in the flat store: callee, crate, resolvedImpl, traitPath, defRelPath, defLine, flags, kind. */
 const STRIDE = 8;
 const FLAG_IN_PROJECT = 1;
+const FLAG_DERIVED_IMPL = 2;
 
 const KINDS = ["callable", "type", "other"] as const;
 
@@ -50,7 +50,7 @@ export function decodeRustcCallSites(
   unitTexts: Iterable<string>,
   identity: string,
   options: RustcCallSiteDecodeOptions = {},
-): RustAnalyzerScipIndex {
+): RustCallSiteIndex {
   const strings: string[] = [];
   const stringIndex = new Map<string, number>();
   const intern = (value: string): number => {
@@ -168,7 +168,7 @@ function pack(row: ParsedRow, intern: (value: string) => number): number[] {
     row.traitPath === null ? NONE : intern(row.traitPath),
     served && row.defRelPath !== null ? intern(row.defRelPath) : NONE,
     served ? (row.defLine ?? 0) : 0,
-    served ? FLAG_IN_PROJECT : 0,
+    (served ? FLAG_IN_PROJECT : 0) | (row.implIsDerived ? FLAG_DERIVED_IMPL : 0),
     kind,
   ];
 }
@@ -183,7 +183,7 @@ function describe(
   offset: number,
   strings: readonly string[],
   workspaceCrates: ReadonlySet<string>,
-): RustScipDefinition {
+): RustCallSiteDefinition {
   const at = (field: number): number => rows[offset + field] ?? NONE;
   const text = (field: number): string | undefined => (at(field) === NONE ? undefined : strings[at(field)]);
   const callee = text(0) ?? "";
@@ -198,6 +198,7 @@ function describe(
     packageInProject: workspaceCrates.has(calleeCrate),
     ...(traitName !== undefined && resolvedImpl !== undefined ? { implTrait: traitName } : {}),
     ...(traitName !== undefined && resolvedImpl === undefined ? { declaringTrait: traitName } : {}),
+    ...((at(6) & FLAG_DERIVED_IMPL) === 0 ? {} : { implIsDerived: true }),
   };
   if ((at(6) & FLAG_IN_PROJECT) === 0) return { ...base, inProject: false };
   return { ...base, inProject: true, relPath: text(4) ?? "", line: at(5) };

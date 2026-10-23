@@ -124,6 +124,11 @@ describe("parseAppConfigZod", () => {
       "CODEGRAPH_RUST_ANALYZER_PATH",
       "CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC",
       "CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB",
+      "CODEGRAPH_RUST_DRIVER",
+      "CODEGRAPH_RUST_DRIVER_PATH",
+      "CODEGRAPH_RUST_DRIVER_JOBS",
+      "CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC",
+      "CODEGRAPH_RUST_DRIVER_MAX_RSS_MB",
     ];
     for (const key of keysToDelete) {
       delete process.env[key];
@@ -192,6 +197,31 @@ describe("parseAppConfigZod", () => {
         exec: true,
         path: "/opt/ra/rust-analyzer",
         timeoutSec: 60,
+        maxRssMb: 2048,
+      });
+    });
+
+    it("rustc driver defaults: on, 1 h wall, 12 GB RSS, jobs and path left to the runner", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { codegraph } = parseAppConfigZod();
+
+      expect(codegraph.rustDriver).toEqual({ enabled: true, timeoutSec: 3600, maxRssMb: 12_288 });
+    });
+
+    it("CODEGRAPH_RUST_DRIVER_* override the rustc driver slot", async () => {
+      process.env.CODEGRAPH_RUST_DRIVER = "off";
+      process.env.CODEGRAPH_RUST_DRIVER_PATH = "/opt/drv/tearags-rust-callsites";
+      process.env.CODEGRAPH_RUST_DRIVER_JOBS = "3";
+      process.env.CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC = "600";
+      process.env.CODEGRAPH_RUST_DRIVER_MAX_RSS_MB = "2048";
+      const { parseAppConfigZod } = await freshImport();
+      const { codegraph } = parseAppConfigZod();
+
+      expect(codegraph.rustDriver).toEqual({
+        enabled: false,
+        path: "/opt/drv/tearags-rust-callsites",
+        jobs: 3,
+        timeoutSec: 600,
         maxRssMb: 2048,
       });
     });

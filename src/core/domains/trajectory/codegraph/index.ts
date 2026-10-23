@@ -14,6 +14,7 @@ import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
   RustAnalyzerScipSourceConfig,
+  RustCallSiteSourceConfig,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
@@ -81,6 +82,8 @@ export interface CodegraphDeps {
    * disabled ⇒ no source.
    */
   rustAnalyzer?: RustAnalyzerScipSourceConfig;
+  /** `codegraph.rustDriver` (bd s3i8m T8): the rustc call-site source, built the same way. */
+  rustDriver?: RustCallSiteSourceConfig;
   /**
    * Worker-pool descriptor built by the bootstrap composition root (which
    * alone knows the absolute compiled-JS worker module path + daemon socket).
