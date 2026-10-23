@@ -7,7 +7,7 @@ Structure EXPLAIN step by what was asked.
   boundaries.
 - **"Where is X used?"** → hybrid_search (BM25 = full recall on exact names,
   dense = context). Paginate with offset until all usages found
-  (`../../../rules/references/pagination.md`).
+  (`tea-rags://guide/pagination`).
 - **"How is X different from Y?"** → contrastive decomposition:
   1. ONE hybrid_search for shared concept (e.g. "preloading" for lazy_preload vs
      includes) — BM25 catches both names, dense catches context

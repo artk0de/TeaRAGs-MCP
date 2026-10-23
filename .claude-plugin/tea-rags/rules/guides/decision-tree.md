@@ -237,7 +237,7 @@ For detailed guidance on specific topics, read these when needed:
   polyglot codebases
 - `rules/references/axis-splitting.md` — sources/tests/docs axis roles +
   per-axis splitting for broad exploration
-- `rules/references/pagination.md` — pagination, reformulation, stop conditions,
+- `tea-rags://guide/pagination` — pagination, reformulation, stop conditions,
   no-match detection, disambiguation
 - `rules/references/signal-interpretation.md` — pair diagnostics for overlay
   signals

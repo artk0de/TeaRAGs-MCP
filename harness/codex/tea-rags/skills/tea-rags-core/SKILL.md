@@ -12,8 +12,9 @@ description:
 `review_changes`, `get_naming_lexicon`): `project=<alias>` (which index) +
 `path=<your working directory>` (which tree). Alias: prime `## Project`,
 SubagentStart alias line, or `workingTree.project` of any answer; unknown →
-`path` alone, then pass the answer's alias. `index_codebase`: `project` ONLY —
-its `path` registers a NEW project.
+`path` alone, then pass the answer's alias. Only a raw collection name →
+`collection=<name>` (+ `path` if it is your repo). `index_codebase`: `project`
+ONLY — its `path` registers a NEW project.
 
 **Routing** (first match wins; tea-rags tools are `mcp__tea-rags__<name>`):
 
@@ -28,8 +29,9 @@ its `path` registers a NEW project.
 | diff review                        | `review_changes`                              |
 | literal text (TODO, phrase, regex) | ripgrep MCP                                   |
 
-Never built-in Grep/Glob or Bash `cat`/`sed`/`grep`/`rg` over code. Identifiers
-are SYMBOL searches even with `|` — never ripgrep.
+Never built-in Grep/Glob or Bash `cat`/`sed`/`grep`/`rg` over code (unless the
+user explicitly asks for a manual read). Identifiers are SYMBOL searches even
+with `|` — never ripgrep.
 
 **Invariants.**
 
@@ -41,6 +43,10 @@ are SYMBOL searches even with `|` — never ripgrep.
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
   license leaving tea-rags. Row without `treeState` = current; `treeState` row →
   `find_symbol`.
+- Own checkout (your tree = the alias's registered path) with `changedFiles` >
+  0, a stale banner or unindexed edits → incremental `index_codebase(project=)`
+  now, no consent; a drift `Run:` with `--force*` → ask, keep working. Linked
+  worktree → overlay, never reindex.
 - Empty `get_callers` under low resolve rate (prime) ≠ no callers — cross-check
   `hybrid_search`. Graph tools absent = codegraph off; never claim "no cycles".
 - Docs = hypothesis, code = evidence: verify a doc claim in code first.
@@ -48,7 +54,8 @@ are SYMBOL searches even with `|` — never ripgrep.
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`):
 
-- after any search, before answering → `navigation`
+- after any search, before answering → `navigation`; 0 hits, too many, ambiguous
+  name, when to stop → `pagination`
 - picking a tool or skill, prohibited patterns, fallbacks → `decision-tree`
 - stale banner, drift, `treeState`, `degraded`, edited files, linked worktree →
   `freshness`
