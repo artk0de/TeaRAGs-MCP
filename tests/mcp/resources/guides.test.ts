@@ -7,7 +7,7 @@ import type { App } from "../../../src/core/api/public/index.js";
 import { renderLanguageCapabilityGuide } from "../../../src/core/domains/language/capability/rule.js";
 import { nativeLanguageCapabilities } from "../../../src/core/domains/language/index.js";
 import { AGENT_CONTEXT_CORE, AGENT_CONTEXT_GUIDES } from "../../../src/mcp/resources/generated/agent-context.js";
-import { registerAllResources } from "../../../src/mcp/resources/index.js";
+import { registerAllResources, renderGuideTemplate } from "../../../src/mcp/resources/index.js";
 
 const descriptors: PresetDescriptors = {
   presetNames: { semantic_search: ["relevance"] },
@@ -27,6 +27,8 @@ const descriptors: PresetDescriptors = {
     },
   ],
 };
+
+const TEMPLATE_TOPICS = ["overview", "presets", "signals", "filters", "search-examples", "indexing", "signal-labels"];
 
 const collections = Array.from({ length: 46 }, (_, i) => `code_${i}`);
 
@@ -124,6 +126,45 @@ describe("tea-rags://guide/* resources", () => {
     for (const key of Object.keys(AGENT_CONTEXT_GUIDES)) {
       expect(uris).toContain(`tea-rags://guide/${key}`);
     }
+  });
+
+  it("registers each guide URI once", async () => {
+    const uris = (await (await connect()).listResources()).map((r) => r.uri);
+    expect(uris.length).toBe(new Set(uris).size);
+  });
+
+  it("takes builder-backed prose from the plugin guide templates, every data placeholder substituted", async () => {
+    const s = await connect();
+    for (const topic of TEMPLATE_TOPICS) {
+      const template = AGENT_CONTEXT_GUIDES[topic];
+      expect(template, topic).toBeDefined();
+      const text = await textOf(s, `tea-rags://guide/${topic}`);
+      expect(text.split("\n")[0]).toBe(template.split("\n")[0]);
+      expect(text).not.toContain("<!-- data:");
+    }
+    for (const key of Object.keys(AGENT_CONTEXT_GUIDES)) {
+      expect(await textOf(s, `tea-rags://guide/${key}`)).not.toContain("<!-- data:");
+    }
+  });
+
+  it("fills the template placeholders with registry data", async () => {
+    const s = await connect();
+    const presets = await textOf(s, "tea-rags://guide/presets");
+    expect(presets).toContain("## relevance");
+    expect(presets).toContain("Pure similarity");
+    expect(await textOf(s, "tea-rags://guide/signals")).toContain("- **similarity**: Semantic similarity score");
+    expect(await textOf(s, "tea-rags://guide/filters")).toContain(
+      "File-level (`git.file.*`): commitCount, firstCreatedAt",
+    );
+    expect(await textOf(s, "tea-rags://guide/signal-labels")).toContain(
+      "| `git.file.commitCount` | p25: low, p50: typical, p75: high, p95: extreme |",
+    );
+  });
+
+  it("fails on a template placeholder with no renderer", () => {
+    expect(() => renderGuideTemplate("# T\n\n<!-- data:no-such-key -->\n", {})).toThrow(/no-such-key/);
+    expect(renderGuideTemplate("# T\n\n<!-- data:k -->\n\nrest\n", { k: () => "v" })).toBe("# T\n\nv\n\nrest\n");
+    expect(renderGuideTemplate("# T\n\n<!-- data:k -->\n\nrest\n", { k: () => "" })).toBe("# T\n\nrest\n");
   });
 
   it("still reads a collection through the qdrant://collection/{name} template", async () => {
