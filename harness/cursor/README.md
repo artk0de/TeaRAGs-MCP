@@ -15,8 +15,11 @@ regenerates this package and commits it.
 - `tea-rags/mcp.json` — stdio server `tea-rags server` (explicit `type`,
   required for plugins).
 - `tea-rags/hooks/hooks.json` — `sessionStart` →
-  `${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh`, which prints
-  `{ "additional_context": "<tea-rags prime output>" }`. No `subagentStart` /
+  `bash "${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh"`, which prints
+  `{ "additional_context": "<tea-rags prime output>" }` (capped at Cursor's
+  10000 chars) for `CURSOR_PROJECT_DIR` (else stdin `workspace_roots[0]`; plugin
+  hooks run in the plugin directory, so never `$PWD`). `tea-rags` comes from
+  `TEA_RAGS_BIN`, `PATH` or the usual global bin folders. No `subagentStart` /
   `preCompact` hooks: Cursor cannot inject context there.
 - `tea-rags/skills/` — the tea-rags skills (17): every user-invocable one plus
   each internal skill a shipped skill names.
@@ -47,7 +50,9 @@ cp -R <repo>/harness/cursor/tea-rags ~/.cursor/plugins/local/tea-rags   # copy, 
 
 Then Reload Window. Enterprise workspaces need "Allow Local Plugin Imports".
 Development build instead of the global binary: in the installed `mcp.json` set
-`"command": "node", "args": ["<repo>/build/index.js"]`.
+`"command": "node", "args": ["<repo>/build/index.js"]`. The hook and the
+terminal resource fallback still call `tea-rags` — point `TEA_RAGS_BIN` / `PATH`
+at a build that has the `resource` command.
 
 ## Transform rules
 

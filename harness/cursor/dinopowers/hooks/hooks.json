@@ -3,7 +3,7 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh",
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh\"",
         "timeout": 10
       }
     ]
