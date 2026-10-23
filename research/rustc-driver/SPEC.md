@@ -354,7 +354,14 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
   exposed like `RustAnalyzerScipIndex.identity` so downstream caches key on it.
 - Latch: environment failures (pin missing rustc-dev, build of the driver fails,
   every unit fails) are persisted per envKey. A budget breach is not persisted,
-  and a per-crate compile failure is recorded in `run.json`, not latched.
+  and a per-crate compile failure is recorded in `run.json`, not latched. envKey
+  does not hash the Rust sources, so an every-unit-failed latch records the
+  digest of the `.rs` stamps (`[relPath, size, mtimeMs]`, as in `sources.json`)
+  it failed on. It holds only while that digest matches, so a fixed source error
+  re-runs cargo once; an unchanged broken tree stays latched and never
+  re-spawns. A latch without the digest (written before it existed) reads as
+  stale. The driver-build latch lives in `driver-build.ts`, keyed by pin +
+  sourceHash, and is not source-stamped.
 
 ### 8.5 Adapter + strategy integration: REPLACE the SCIP slot (owner decision 2026-10-23)
 

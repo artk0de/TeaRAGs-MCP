@@ -21,7 +21,9 @@
  *
  * Latch lattice: an environment failure (the driver cannot be built, or every
  * unit failed) is persisted per envKey and answered without spawning until the
- * environment changes; a budget breach is not persisted; a per-crate compile
+ * environment changes; an every-unit-failed latch also records the digest of
+ * the `.rs` stamps it failed on and lapses once any source changes (a fixed
+ * compile error must not stay latched); a budget breach is not persisted; a per-crate compile
  * failure is reported (`failedCrates`) and not persisted. Units cargo reports
  * but no unit file covers (`missing`) trigger ONE retry with a fresh target dir.
  *
@@ -208,6 +210,8 @@ interface PersistedLatch {
   reason: RustcCallSiteLatchReason;
   detail: string;
   hint?: string;
+  /** `allUnitsFailed` only: `sourcesDigest` of the stamps the run failed on. */
+  sources?: string;
 }
 
 /** Acquire the call-site index of `options.projectRoot`. Never throws. */
@@ -271,7 +275,7 @@ async function acquire(
   const envKey = environmentKey(deps, options.projectRoot, driver, banner.stdout.trim(), cargoArgs);
   const envDir = join(deps.dataDir, "rustc-driver", envKey);
 
-  const latch = readLatch(deps, envDir);
+  const latch = readLatch(deps, envDir, sources);
   if (latch) {
     return {
       status: "failed",
@@ -311,6 +315,7 @@ async function runDriver(
     // nor its sources.json paired with this one's run.json.
     deps.fs.remove(join(envDir, RUN_FILE));
     deps.fs.remove(join(envDir, SOURCES_FILE));
+    deps.fs.remove(join(envDir, LATCH_FILE));
     const supervised = await superviseChild(
       () => deps.spawn(driver.binaryPath, [], { env, onOutput, cwd: options.projectRoot }),
       {
@@ -336,7 +341,7 @@ async function runDriver(
       continue;
     }
     if (driverRun.units.length === 0 && !driverRun.success) {
-      const latched = allUnitsFailedLatch(driverRun, tail, options.projectRoot);
+      const latched = allUnitsFailedLatch(driverRun, tail, options.projectRoot, stamps);
       deps.fs.writeTextAtomic(join(envDir, LATCH_FILE), JSON.stringify(latched));
       return {
         status: "failed",
@@ -383,10 +388,9 @@ function reusePreviousRun(
     const now = current.get(relPath);
     return was !== undefined && was[0] === now?.size && was[1] === now.mtimeMs;
   };
-  const contentKey = sha256(JSON.stringify(stamps.map((stamp) => [stamp.relPath, stamp.size, stamp.mtimeMs]).sort()));
   return {
     status: "reused",
-    index: servedForUnchanged(decoded.index, unchanged, `${decoded.index.identity}~${contentKey}`),
+    index: servedForUnchanged(decoded.index, unchanged, `${decoded.index.identity}~${sourcesDigest(stamps)}`),
     diagnostics: decoded.diagnostics,
   };
 }
@@ -451,11 +455,22 @@ function decodedAcquisition(
   };
 }
 
-function allUnitsFailedLatch(driverRun: DriverRun, tail: string, projectRoot: string): PersistedLatch {
+function allUnitsFailedLatch(
+  driverRun: DriverRun,
+  tail: string,
+  projectRoot: string,
+  stamps: readonly RustSourceStamp[],
+): PersistedLatch {
   const detail = driverRun.failed[0]?.firstError ?? `no unit compiled: ${lastLines(tail)}`;
+  const sources = sourcesDigest(stamps);
   return OFFLINE_PATTERN.test(tail)
-    ? { reason: "allUnitsFailed", detail, hint: rustcDriverOfflineHint(projectRoot) }
-    : { reason: "allUnitsFailed", detail };
+    ? { reason: "allUnitsFailed", detail, hint: rustcDriverOfflineHint(projectRoot), sources }
+    : { reason: "allUnitsFailed", detail, sources };
+}
+
+/** Order-independent digest of the `.rs` stamps (relPath, size, mtimeMs). */
+function sourcesDigest(stamps: readonly RustSourceStamp[]): string {
+  return sha256(JSON.stringify(stamps.map((stamp) => [stamp.relPath, stamp.size, stamp.mtimeMs]).sort()));
 }
 
 /** The command that makes the offline `cargo check` find every dependency. */
@@ -551,10 +566,20 @@ function readRunJson(deps: RustcCallSiteRunnerDeps, envDir: string): DriverRun |
   };
 }
 
-function readLatch(deps: RustcCallSiteRunnerDeps, envDir: string): PersistedLatch | undefined {
+/**
+ * The persisted latch, if it still holds. An `allUnitsFailed` latch holds only
+ * while the `.rs` stamps match the ones it failed on (a latch written before
+ * stamps were recorded never matches); `sources` is listed only when a latch exists.
+ */
+function readLatch(
+  deps: RustcCallSiteRunnerDeps,
+  envDir: string,
+  sources: () => readonly RustSourceStamp[],
+): PersistedLatch | undefined {
   const parsed = parseJson(deps.fs.readText(join(envDir, LATCH_FILE)));
   if (!isRecord(parsed) || typeof parsed.detail !== "string") return undefined;
   if (parsed.reason !== "driverBuild" && parsed.reason !== "allUnitsFailed") return undefined;
+  if (parsed.reason === "allUnitsFailed" && parsed.sources !== sourcesDigest(sources())) return undefined;
   return {
     reason: parsed.reason,
     detail: parsed.detail,
