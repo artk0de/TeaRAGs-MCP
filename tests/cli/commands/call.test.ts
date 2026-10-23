@@ -84,6 +84,9 @@ function harness(app: App, opts: { stdin?: string } = {}): Harness {
       return {
         listTools: async () => inner.listTools(),
         callTool: async (name, args) => inner.callTool(name, args),
+        readResource: async (uri) => inner.readResource(uri),
+        listResources: async () => inner.listResources(),
+        listResourceTemplates: async () => inner.listResourceTemplates(),
         close: async () => {
           closed = true;
           await inner.close();
