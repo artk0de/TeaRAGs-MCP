@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  computeRustCallsitesSourceHash,
+  computeRustcDriverSourceHash,
   defaultRustcDriverSourceFs,
   ensureRustcDriverBuilt,
   type RustcDriverBuildDeps,
@@ -17,11 +17,11 @@ const PIN = "nightly-2026-05-01";
 const HASH = "h1";
 const SYSROOT = "/tc/nightly-2026-05-01-aarch64-apple-darwin";
 const DATA = "/data";
-const CRATE = "/pkg/native/rust-callsites";
+const CRATE = "/pkg/native/tea-rags-rustc-driver";
 const BIN_DIR = `${DATA}/rustc-driver/bin/${PIN}-${HASH}`;
 const LATCH = `${DATA}/rustc-driver/bin/${PIN}-${HASH}.latch.json`;
-const CLI = "tearags-rust-callsites";
-const WRAPPER = "tearags-rust-callsites-driver";
+const CLI = "tea-rags-rustc-driver";
+const WRAPPER = "tea-rags-rustc-driver-wrapper";
 const banner = (hash = HASH, pin = PIN): string => `0.1.0 ${pin} ${hash}\n`;
 
 type RunOptions = { env: Record<string, string | undefined>; cwd: string; timeoutMs: number };
@@ -221,13 +221,13 @@ describe("ensureRustcDriverBuilt", () => {
   });
 });
 
-describe("computeRustCallsitesSourceHash", () => {
+describe("computeRustcDriverSourceHash", () => {
   it("reproduces the hash the driver binary printed in its -V banner for this crate source", () => {
-    const crate = join(dirname(fileURLToPath(import.meta.url)), "../../../../native/rust-callsites");
+    const crate = join(dirname(fileURLToPath(import.meta.url)), "../../../../native/tea-rags-rustc-driver");
     // Computed by the crate's own Rust `source_hash` (build_support/source_hash.rs). Editing the
     // crate changes it: refresh from a fresh build's `-V` or by running that Rust function.
-    expect(computeRustCallsitesSourceHash(crate, defaultRustcDriverSourceFs)).toBe(
-      "43e75f57a48f0345cb29bd495a4f018d89deb2b2d5574b460d98a8dd7f06380d",
+    expect(computeRustcDriverSourceHash(crate, defaultRustcDriverSourceFs)).toBe(
+      "c2c0ba5247cf99bd21550ea966002c9ab57d28766125cf81ea379238d4e950be",
     );
   });
 
@@ -263,6 +263,6 @@ describe("computeRustCallsitesSourceHash", () => {
     const expected = createHash("sha256")
       .update(sorted.map(([p, c]) => `${p}\0${c.length}\0${c}`).join(""))
       .digest("hex");
-    expect(computeRustCallsitesSourceHash("/c", fs)).toBe(expected);
+    expect(computeRustcDriverSourceHash("/c", fs)).toBe(expected);
   });
 });

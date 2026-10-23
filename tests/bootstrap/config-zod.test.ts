@@ -180,7 +180,7 @@ describe("parseAppConfigZod", () => {
 
     it("CODEGRAPH_RUST_DRIVER_* override the rustc driver slot", async () => {
       process.env.CODEGRAPH_RUST_DRIVER = "off";
-      process.env.CODEGRAPH_RUST_DRIVER_PATH = "/opt/drv/tearags-rust-callsites";
+      process.env.CODEGRAPH_RUST_DRIVER_PATH = "/opt/drv/tea-rags-rustc-driver";
       process.env.CODEGRAPH_RUST_DRIVER_JOBS = "3";
       process.env.CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC = "600";
       process.env.CODEGRAPH_RUST_DRIVER_MAX_RSS_MB = "2048";
@@ -189,7 +189,7 @@ describe("parseAppConfigZod", () => {
 
       expect(codegraph.rustDriver).toEqual({
         enabled: false,
-        path: "/opt/drv/tearags-rust-callsites",
+        path: "/opt/drv/tea-rags-rustc-driver",
         jobs: 3,
         timeoutSec: 600,
         maxRssMb: 2048,

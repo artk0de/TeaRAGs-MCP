@@ -143,6 +143,20 @@ project and replayed on later runs. See
 | `CODEGRAPH_RESIDUAL_MIN_MENU`      | Call sites with fewer candidates than this are neither asked nor given an edge | `1`        |
 | `CODEGRAPH_RESIDUAL_NONE_THRESHOLD` | Minimum confidence of a "none of these" answer for its site to count as external, out of the recall denominator | `0.8` |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | Cached verdicts unseen this many days are dropped                    | `180`      |
+| `CODEGRAPH_RUST_DRIVER`             | Rust compiler call-site driver; `off` (also `0` / `false` / `no`) turns it off (see below) | on         |
+| `CODEGRAPH_RUST_DRIVER_PATH`        | Prebuilt `tea-rags-rustc-driver` binary, tried before every other discovery step | _(unset)_  |
+| `CODEGRAPH_RUST_DRIVER_JOBS`        | Parallel rustc processes of one driver run (`CARGO_BUILD_JOBS`)             | `max(1, cores / 2)` |
+| `CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC` | Wall-clock budget of one driver run, in seconds                              | `3600`     |
+| `CODEGRAPH_RUST_DRIVER_MAX_RSS_MB`  | Resident-memory budget of the driver's whole process tree, in MB             | `12288`    |
+
+**`CODEGRAPH_RUST_DRIVER`.** Rust call resolution asks the compiler itself
+what each call site resolves to; see
+[Rust compiler driver](/usage/advanced/codegraph-enrichments#rust-compiler-driver)
+for the toolchain it needs and what it costs. Turning it off changes the Rust
+call edges an index holds: the value is recorded per project, a change is
+reported as env drift, and it needs `--force-enrichments codegraph`. The other
+four `CODEGRAPH_RUST_DRIVER_*` variables are runtime settings: they change how
+the driver runs, not which edges it produces, and need no recompute.
 
 The `CODEGRAPH_RUST_ANALYZER*` variables are no longer read: the rust-analyzer
 SCIP slot was removed, and the rustc call-site driver (`CODEGRAPH_RUST_DRIVER*`)

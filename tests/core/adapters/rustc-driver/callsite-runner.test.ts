@@ -26,7 +26,7 @@ const HASH = "h1";
 const DATA = "/data";
 const ROOT = "/ws";
 const SYSROOT = "/tc/nightly-2026-05-01-aarch64-apple-darwin";
-const DRIVER = "/bin/tearags-rust-callsites";
+const DRIVER = "/bin/tea-rags-rustc-driver";
 const BANNER = `0.1.0 ${PIN} ${HASH}`;
 
 const binary: RustcDriverDiscovery = {
@@ -60,7 +60,7 @@ const row = (over: Record<string, unknown> = {}): string =>
   });
 
 interface DriverScript {
-  /** run.json written into TEARAGS_CALLSITES_OUT; absent = none written. */
+  /** run.json written into TEA_RAGS_RUSTC_DRIVER_OUT; absent = none written. */
   runJson?: Record<string, unknown>;
   /** unit file name → NDJSON text, written under `<out>/units/`. */
   units?: Record<string, string>;
@@ -146,8 +146,8 @@ function host(
           ok: true,
           built: true,
           binDir: "/data/rustc-driver/bin/x",
-          binaryPath: "/data/rustc-driver/bin/x/tearags-rust-callsites",
-          wrapperPath: "/data/rustc-driver/bin/x/tearags-rust-callsites-driver",
+          binaryPath: "/data/rustc-driver/bin/x/tea-rags-rustc-driver",
+          wrapperPath: "/data/rustc-driver/bin/x/tea-rags-rustc-driver-wrapper",
         }
       );
     },
@@ -160,7 +160,7 @@ function host(
     spawn: (command, args, options): SupervisedChild => {
       spawns.push({ command, args, env: options.env, cwd: options.cwd });
       const script = scripts.shift() ?? okScript();
-      const out = options.env.TEARAGS_CALLSITES_OUT ?? "";
+      const out = options.env.TEA_RAGS_RUSTC_DRIVER_OUT ?? "";
       for (const [name, text] of Object.entries(script.units ?? {})) {
         texts.set(`${out}/units/${name}`, text);
         stamps.set(`${out}/units/${name}`, { size: text.length, mtimeMs: mtime++ });
@@ -244,7 +244,7 @@ const acquire = async (
 ) => acquireRustcCallSites(h.deps, { projectRoot: ROOT, ...options });
 
 const envKeyOf = (spawn: SpawnCall | undefined): string => {
-  const out = spawn?.env.TEARAGS_CALLSITES_OUT ?? "";
+  const out = spawn?.env.TEA_RAGS_RUSTC_DRIVER_OUT ?? "";
   return out.slice(`${DATA}/rustc-driver/`.length);
 };
 
@@ -288,8 +288,8 @@ describe("acquireRustcCallSites — child environment", () => {
       SYSROOT,
       PATH: `${SYSROOT}/bin:/usr/bin`,
       CARGO_TARGET_DIR: `${DATA}/rustc-driver/${envKey}/target`,
-      TEARAGS_CALLSITES_OUT: `${DATA}/rustc-driver/${envKey}`,
-      TEARAGS_CALLSITES_CARGO_ARGS: "--workspace --all-targets",
+      TEA_RAGS_RUSTC_DRIVER_OUT: `${DATA}/rustc-driver/${envKey}`,
+      TEA_RAGS_RUSTC_DRIVER_CARGO_ARGS: "--workspace --all-targets",
       CARGO_NET_OFFLINE: "true",
       CMAKE_POLICY_VERSION_MINIMUM: "3.5",
       CARGO_BUILD_JOBS: "4",
@@ -326,7 +326,7 @@ describe("acquireRustcCallSites — child environment", () => {
     const h = host({ discovery: buildable });
     const result = await acquire(h);
     expect(h.builds()).toBe(1);
-    expect(h.spawns[0]?.command).toBe("/data/rustc-driver/bin/x/tearags-rust-callsites");
+    expect(h.spawns[0]?.command).toBe("/data/rustc-driver/bin/x/tea-rags-rustc-driver");
     expect(h.spawns[0]?.env.SYSROOT).toBe(SYSROOT);
     expect(result.status).toBe("ok");
   });
@@ -587,7 +587,7 @@ describe("acquireRustcCallSites — admission (reuseOnly never spawns cargo)", (
 // Real driver, gated on the pinned toolchain (with rustc-dev) being installed.
 // ---------------------------------------------------------------------------
 
-const CRATE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../native/rust-callsites");
+const CRATE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../native/tea-rags-rustc-driver");
 const realDeps = defaultRustcCallSiteRunnerDeps({
   ...process.env,
   TEA_RAGS_DATA_DIR: join(tmpdir(), "tea-rags-rustc-driver-it"),

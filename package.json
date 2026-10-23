@@ -14,8 +14,9 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage --maxWorkers=50%",
     "test:providers": "node scripts/verify-providers.js",
-    "build:rust-callsites": "native/rust-callsites/cargo-pinned.sh build --release --offline",
-    "test:rust-callsites": "native/rust-callsites/cargo-pinned.sh test --offline",
+    "build:rustc-driver": "native/tea-rags-rustc-driver/cargo-pinned.sh build --release --offline",
+    "test:rustc-driver": "native/tea-rags-rustc-driver/cargo-pinned.sh test --offline",
+    "vendor:rustc-driver": "tsx scripts/vendor-rustc-driver.ts",
     "type-check": "tsc --noEmit",
     "type-check:scripts": "tsc -p tsconfig.scripts.json",
     "type-check:tests": "tsc -p tsconfig.tests.json",
@@ -58,7 +59,10 @@
     "scripts/postinstall.js",
     "scripts/install-fish-completion.js",
     "prompts.json",
-    ".qdrant-required-version"
+    ".qdrant-required-version",
+    "native/tea-rags-rustc-driver/",
+    "!native/tea-rags-rustc-driver/target/",
+    "!native/tea-rags-rustc-driver/tests/"
   ],
   "publishConfig": {
     "provenance": true

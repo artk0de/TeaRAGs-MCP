@@ -14,12 +14,12 @@ import { RUSTC_DRIVER_TOOLCHAIN_PIN } from "../../../../src/core/adapters/rustc-
 const ROOT = join(import.meta.dirname, "../../../../");
 
 function crateToolchainChannel(): string | undefined {
-  const toml = readFileSync(join(ROOT, "native/rust-callsites/rust-toolchain.toml"), "utf-8");
+  const toml = readFileSync(join(ROOT, "native/tea-rags-rustc-driver/rust-toolchain.toml"), "utf-8");
   return /^channel\s*=\s*"([^"]+)"/m.exec(toml)?.[1];
 }
 
 describe("RUSTC_DRIVER_TOOLCHAIN_PIN", () => {
-  it("equals the channel native/rust-callsites/rust-toolchain.toml pins", () => {
+  it("equals the channel native/tea-rags-rustc-driver/rust-toolchain.toml pins", () => {
     expect(RUSTC_DRIVER_TOOLCHAIN_PIN).toBe(crateToolchainChannel());
   });
 

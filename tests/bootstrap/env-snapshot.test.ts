@@ -165,11 +165,11 @@ describe("buildRegistryEnvSnapshot", () => {
     cfg.codegraph = codegraphSchema.parse({
       dbPath: "/tmp/cg",
       customExcludePatterns: "vendor/**,generated/**",
-      rustDriver: { path: "/opt/drv/tearags-rust-callsites", jobs: "3" },
+      rustDriver: { path: "/opt/drv/tea-rags-rustc-driver", jobs: "3" },
     });
     cfg.qdrantTune = qdrantTuneSchema.parse({ maxResidentMemoryPercent: "80", searchMaxBatchsize: "64" });
     const set = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());
-    expect(set.CODEGRAPH_RUST_DRIVER_PATH).toBe("/opt/drv/tearags-rust-callsites");
+    expect(set.CODEGRAPH_RUST_DRIVER_PATH).toBe("/opt/drv/tea-rags-rustc-driver");
     expect(set.CODEGRAPH_RUST_DRIVER_JOBS).toBe("3");
     expect(set.EMBEDDING_DIMENSIONS).toBe("768");
     expect(set.EMBEDDING_TUNE_MIN_BATCH_SIZE).toBe("8");
@@ -217,7 +217,7 @@ describe("buildRegistryEnvSnapshot", () => {
     cfg.codegraph = codegraphSchema.parse({
       dbPath: "/tmp/cg",
       customExcludePatterns: "vendor/**",
-      rustDriver: { path: "/opt/drv/tearags-rust-callsites", jobs: "2" },
+      rustDriver: { path: "/opt/drv/tea-rags-rustc-driver", jobs: "2" },
       residual: {
         kevUrls: "http://gpu:8090",
         kevSessionUrl: "http://gpu:8008",

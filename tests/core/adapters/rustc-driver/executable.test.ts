@@ -11,7 +11,7 @@ const HOME = "/home/u";
 const PIN = "nightly-2026-05-01";
 const HASH = "abc123";
 const HOST = "aarch64-apple-darwin";
-const BIN = "tearags-rust-callsites";
+const BIN = "tea-rags-rustc-driver";
 const banner = (pin = PIN) => `${BIN} 0.1.0 ${pin} ${HASH}\n`;
 const ok = (stdout: string): RustcDriverCommandOutcome => ({ kind: "ok", stdout });
 

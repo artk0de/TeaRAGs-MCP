@@ -284,13 +284,13 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
 
 ### 8.1 Where the driver lives and how it is built
 
-- Source: `native/rust-callsites/` in the npm package (the crate from the spike,
-  renamed), with dependencies **vendored** (`cargo vendor`) so the build is
-  offline. The crate's `rust-toolchain.toml` names the pin, and
+- Source: `native/tea-rags-rustc-driver/` in the npm package (the crate from the
+  spike, renamed), with dependencies **vendored** (`cargo vendor`) so the build
+  is offline. The crate's `rust-toolchain.toml` names the pin, and
   `src/core/adapters/rustc-driver/pin.ts` holds the same string; a unit test
   asserts they match.
-- Binaries: `tearags-rust-callsites` (cargo-side CLI, from `cli_main`) and
-  `tearags-rust-callsites-driver` (`RUSTC_WORKSPACE_WRAPPER`).
+- Binaries: `tea-rags-rustc-driver` (cargo-side CLI, from `cli_main`) and
+  `tea-rags-rustc-driver-wrapper` (`RUSTC_WORKSPACE_WRAPPER`).
 - Built on first use, not at `npm install`: `cargo build --release --offline`
   with the pinned toolchain into
   `~/.tea-rags/rustc-driver/bin/<pin>-<sourceHash>/`. 22 s measured. The rpath
@@ -300,9 +300,9 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
 
 ### 8.2 Discovery (mirrors `rust-analyzer-executable.ts`; never fails indexing)
 
-1. `CODEGRAPH_RUST_DRIVER_PATH`: a prebuilt `tearags-rust-callsites`, probed
-   with `-V` (prints `<version> <pin>`), rejected when the pin differs.
-2. `tearags-rust-callsites` on `PATH`, same probe.
+1. `CODEGRAPH_RUST_DRIVER_PATH`: a prebuilt `tea-rags-rustc-driver`, probed with
+   `-V` (prints `<version> <pin>`), rejected when the pin differs.
+2. `tea-rags-rustc-driver` on `PATH`, same probe.
 3. The data-dir build cache `~/.tea-rags/rustc-driver/bin/<pin>-<sourceHash>/`.
 4. Build from the bundled source when the pinned toolchain is available with
    `rustc-dev`. Locate it with `rustup which --toolchain <pin> rustc`, then
@@ -402,7 +402,7 @@ ends at the static strategies and the user gets the install / build hint.
 
 | #   | Task                                                                                                                                                                                                                                                                                          | Class                                                     | Tests first                                                                                                                                                                                            |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| T1  | Port the spike crate to `native/rust-callsites/` (rename, vendor deps, `-V` banner with pin + source hash, `--message-format=json` unit list → `run.json`, unit-file GC, `implIsDerived`, drop rules)                                                                                         | design-bound (opus)                                       | a Rust integration test over a fixture workspace (the spike fixture): exact rows for UFCS, `dyn`, generic-bound, derived `Clone`, `macro_rules!`, non-ASCII column, `?` dropped                        |
+| T1  | Port the spike crate to `native/tea-rags-rustc-driver/` (rename, vendor deps, `-V` banner with pin + source hash, `--message-format=json` unit list → `run.json`, unit-file GC, `implIsDerived`, drop rules)                                                                                  | design-bound (opus)                                       | a Rust integration test over a fixture workspace (the spike fixture): exact rows for UFCS, `dyn`, generic-bound, derived `Clone`, `macro_rules!`, non-ASCII column, `?` dropped                        |
 | T2  | `adapters/rustc-driver/executable.ts`: discovery tiers of §8.2 + rustc-dev probe + install hint                                                                                                                                                                                               | mechanical (sonnet), mirror `rust-analyzer-executable.ts` | injected `deps.run` / fs fakes per tier, pin-mismatch rejection, Homebrew-only host → null + hint                                                                                                      |
 | T3  | `adapters/rustc-driver/driver-build.ts`: first-use build into the data dir, offline, latch on failure                                                                                                                                                                                         | mechanical                                                | fake spawn: build once, reuse by sourceHash, failure → latch                                                                                                                                           |
 | T4  | `adapters/rustc-driver/callsite-runner.ts`: supervised spawn (env forcing of §2, budgets, `-j`), envKey, `run.json`/GC, latch lattice                                                                                                                                                         | design-bound                                              | env assembled exactly (`RUSTUP_TOOLCHAIN`/`RUSTC`/`SYSROOT`/`CARGO_TARGET_DIR`/`CARGO_NET_OFFLINE`), user `target/` never referenced, envKey changes on Cargo.lock/pin/args, budget breach not latched |

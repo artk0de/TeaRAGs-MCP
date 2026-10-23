@@ -1,12 +1,12 @@
 /**
- * Which `tearags-rust-callsites` the Rust codegraph's rustc call-site slot runs,
+ * Which `tea-rags-rustc-driver` the Rust codegraph's rustc call-site slot runs,
  * or whether it can be built (research/rustc-driver/SPEC.md §8.2). A candidate
  * is usable only when RUNNING `<candidate> -V` answers a parseable banner whose
  * pin is the expected one — never by `existsSync` alone.
  *
  * Order (first usable wins):
  *   1. `CODEGRAPH_RUST_DRIVER_PATH` — this exact name, no alias.
- *   2. `tearags-rust-callsites` on PATH.
+ *   2. `tea-rags-rustc-driver` on PATH.
  *   3. The data-dir build cache `${dataDir}/rustc-driver/bin/<pin>-<sourceHash>/`.
  *   4. "buildable": the pinned toolchain is installed WITH rustc-dev —
  *      `rustup which --toolchain <pin> rustc`, then
@@ -31,7 +31,7 @@ export const RUSTC_DRIVER_PATH_ENV = "CODEGRAPH_RUST_DRIVER_PATH";
 /** `-V` probe window per candidate. */
 export const RUSTC_DRIVER_VERSION_TIMEOUT_MS = 5000;
 
-const BINARY = "tearags-rust-callsites";
+const BINARY = "tea-rags-rustc-driver";
 
 /** Which discovery tier produced the answer. */
 export type RustcDriverDiscoveryTier = "env" | "path" | "cache" | "rustup" | "asdf";

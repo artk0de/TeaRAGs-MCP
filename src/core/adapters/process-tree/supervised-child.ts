@@ -32,7 +32,7 @@ export interface SupervisedChildHost {
 }
 
 export interface SupervisedChildBudget {
-  /** Names the child in breach details, e.g. `tearags-rust-callsites`. */
+  /** Names the child in breach details, e.g. `tea-rags-rustc-driver`. */
   label: string;
   timeoutSec: number;
   maxRssMb: number;

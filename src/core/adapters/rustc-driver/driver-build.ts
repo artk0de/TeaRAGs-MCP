@@ -40,8 +40,8 @@ const VERIFY_TIMEOUT_MS = 5000;
 /** Output kept for the build log. */
 const MAX_LOG_CHARS = 1_000_000;
 
-export const RUSTC_DRIVER_CLI_BINARY = "tearags-rust-callsites";
-export const RUSTC_DRIVER_WRAPPER_BINARY = "tearags-rust-callsites-driver";
+export const RUSTC_DRIVER_CLI_BINARY = "tea-rags-rustc-driver";
+export const RUSTC_DRIVER_WRAPPER_BINARY = "tea-rags-rustc-driver-wrapper";
 
 export type RustcDriverBuildFailureReason =
   | "latched"
@@ -56,9 +56,9 @@ export interface RustcDriverBuilt {
   /** True when this call ran cargo; false when the directory already existed. */
   built: boolean;
   binDir: string;
-  /** The cargo-side CLI (`tearags-rust-callsites`). */
+  /** The cargo-side CLI (`tea-rags-rustc-driver`). */
   binaryPath: string;
-  /** The `RUSTC_WORKSPACE_WRAPPER` (`tearags-rust-callsites-driver`). */
+  /** The `RUSTC_WORKSPACE_WRAPPER` (`tea-rags-rustc-driver-wrapper`). */
   wrapperPath: string;
 }
 
@@ -95,7 +95,7 @@ interface RustcDriverSpawnOptions {
 }
 
 export interface RustcDriverBuildDeps {
-  /** `native/rust-callsites` of the installed package. */
+  /** `native/tea-rags-rustc-driver` of the installed package. */
   crateDir: string;
   pin: string;
   sourceHash: string;
@@ -308,7 +308,7 @@ function safeRemove(deps: RustcDriverBuildDeps, path: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// sourceHash — byte-for-byte mirror of native/rust-callsites/build_support/source_hash.rs
+// sourceHash — byte-for-byte mirror of native/tea-rags-rustc-driver/build_support/source_hash.rs
 // ---------------------------------------------------------------------------
 
 const SOURCE_HASH_FILES = ["Cargo.toml", "Cargo.lock", "build.rs", "rust-toolchain.toml"] as const;
@@ -325,7 +325,7 @@ export interface RustcDriverSourceFs {
  * `rust-toolchain.toml` plus every file under `build_support/` and `src/`, sorted bytewise by
  * `/`-separated relative path, each hashed as `<path>\0<length>\0<bytes>`.
  */
-export function computeRustCallsitesSourceHash(crateDir: string, fs: RustcDriverSourceFs): string {
+export function computeRustcDriverSourceHash(crateDir: string, fs: RustcDriverSourceFs): string {
   const inputs: string[] = [...SOURCE_HASH_FILES];
   for (const dir of SOURCE_HASH_DIRS) collectFiles(fs, crateDir, dir, inputs);
   inputs.sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));

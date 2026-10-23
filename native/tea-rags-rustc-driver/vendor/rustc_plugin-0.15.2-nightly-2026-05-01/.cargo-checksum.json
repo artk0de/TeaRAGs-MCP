@@ -1,0 +1,16 @@
+{
+  "files": {
+    ".cargo_vcs_info.json": "eff79a3d356b6a30309c35c494ade79c87e4e65098f29e4713e79ec83abcc218",
+    "Cargo.lock": "f4d5ac684ff1fff2ff806c4ef319f2f3ba8d566707807b3fe77361cd6c04be1d",
+    "Cargo.toml": "8cdbb7bdf5337f9daedd6feecfc036a844c4a9049fdaa0625ff41ea7fba02bb3",
+    "build.rs": "35818312242005ce8418a8ac359b4df63cbd9343868f88d52c179051310f4ea6",
+    "rust-toolchain.toml": "89a20b2ae1a1d586458d46cd6ca692c32eea0194d6bef50c93a2d1a5fcbf35c8",
+    "src/build.rs": "01b573b3c757c849f6dc8122d1d229e6e90d2dad4c18a5a9610c3cc9c8aee113",
+    "src/cli.rs": "443a531f3675ffb2461bec802852ae42bd01a07f9b38959242df7241caec3d53",
+    "src/driver.rs": "21d049dc13661ed68bfc585605ee10b002894e073c57cc798adbe90e538b5819",
+    "src/lib.rs": "c5b25e6b50913360b31cda13200c7690e2de2d42f0b490edffc4f61260e12df0",
+    "src/plugin.rs": "d5b38d73edadf13068268a7720730cae16383bc19692f8c580135c3728b6daba",
+    "tests/test_example.rs": "53a6b01b27edfb9df3275a44d81c9e58e7467d8467f343bcb4386d18927b2916"
+  },
+  "package": "a9a531c11120bc5361eed63d769b216aee7c8a4923da7fc5e21b01e6ec4ad9a6"
+}
