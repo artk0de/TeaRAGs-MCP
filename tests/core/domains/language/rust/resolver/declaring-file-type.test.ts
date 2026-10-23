@@ -187,11 +187,6 @@ pub fn make_peer() -> Peer { todo!() }
   it.each([
     ["an external import", "use external::TempDir;", "pub struct TempDir;\nimpl TempDir { pub fn path(&self) {} }"],
     ["a glob import", "use crate::tests::*;", "pub struct TempDir;\nimpl TempDir { pub fn path(&self) {} }"],
-    [
-      "more than one candidate",
-      "use crate::tests::TempDir;",
-      "pub struct TempDir;\nimpl TempDir { pub fn path(&self) {} }\nmod inner { pub struct TempDir; impl TempDir { pub fn path(&self) {} } }",
-    ],
   ])("declines a return bound by %s", (_label, importLine, testsFile) => {
     const f = fixture(
       {
@@ -210,6 +205,30 @@ pub fn tmpdir() -> TempDir { todo!() }
       materialized,
     );
     expect(f.resolve("td.path()")).toBeNull();
+  });
+
+  // Moved pin: `crate::tests::TempDir` names the module's top-level item; the
+  // inline `mod inner` namesake is `crate::tests::inner::TempDir`, a different
+  // path, so the module-system placement is no longer ambiguous.
+  it("places a return bound by more than one candidate onto the item the path names", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `use crate::dir::tmpdir;
+fn run() {
+  let td = tmpdir();
+  td.path();
+}
+`,
+        "src/dir.rs": `use crate::tests::TempDir;
+pub fn tmpdir() -> TempDir { todo!() }
+`,
+        "src/tests.rs":
+          "pub struct TempDir;\nimpl TempDir { pub fn path(&self) {} }\nmod inner { pub struct TempDir; impl TempDir { pub fn path(&self) {} } }",
+        ...namesakes,
+      },
+      materialized,
+    );
+    expect(f.resolve("td.path()")).toEqual({ targetRelPath: "src/tests.rs", targetSymbolId: "TempDir#path" });
   });
 
   it("lets a typed miss on a placed type continue when a project trait declares the member", () => {

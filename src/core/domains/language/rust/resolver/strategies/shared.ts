@@ -19,6 +19,7 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import { capability } from "../../capability.js";
 import { rustTextIsStdPathHead } from "../../vocabulary/std-prelude.js";
+import { rustItemPathPlacementEnabled, rustNoteItemPathPlacement } from "../item-path-placement-switch.js";
 import { rustWorkspaceCratesOf } from "../workspace-crates.js";
 
 export interface ResolverConfig {
@@ -673,9 +674,22 @@ export function rustFollowReexports(
   if (!parsed || ctx.moduleReexports === undefined) return { target: null, open: true };
   const ownerSegments = parsed.sourceName === null ? parsed.moduleSegments.slice(0, -1) : parsed.moduleSegments;
   const exportedName = parsed.sourceName === null ? (parsed.moduleSegments.at(-1) ?? receiver) : parsed.sourceName;
-  const ownerFiles = rustPathCandidatePaths(parsed, ownerSegments, fromFile, ctx).filter((relPath) =>
-    rustModuleFileKnown(relPath, ctx),
-  );
+  // `crate::X` / `super::X` re-exported by the prefix's own module: its root
+  // file. Part of item-path placement, so switched and counted with it.
+  const prefixRoot =
+    ownerSegments.length === 0 && parsed.prefix !== null && rustItemPathPlacementEnabled()
+      ? rustReexportSourcePaths(
+          parsed.prefix === "super"
+            ? Array.from({ length: parsed.superDepth }, () => "super").join("::")
+            : parsed.prefix,
+          fromFile,
+          ctx,
+        )
+      : undefined;
+  if (Array.isArray(prefixRoot)) rustNoteItemPathPlacement();
+  const ownerFiles = (
+    Array.isArray(prefixRoot) ? prefixRoot : rustPathCandidatePaths(parsed, ownerSegments, fromFile, ctx)
+  ).filter((relPath) => rustModuleFileKnown(relPath, ctx));
   // An inline `mod tests { pub use … }` has no file of its own: nothing proves absence.
   let open = ownerFiles.length === 0;
   const targets: SymbolResolutionTarget[] = [];
