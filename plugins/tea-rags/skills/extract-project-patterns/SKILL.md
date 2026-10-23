@@ -1,0 +1,135 @@
+---
+name: extract-project-patterns
+user-invocable: false
+description:
+  Agentic-only enrichment skill — surface battle-tested reference code from
+  project as templates for generation / modification. Three-level locality
+  cascade (target subdomain → domain → project), quality gate by overlay labels
+  + project-wide proven rerank preset. Returns ranked list of reference chunks +
+  locality annotation (L1 / L2 / L3 / none). Invoked by
+  `tea-rags:data-driven-generation` Step 2 (TEMPLATE),
+  `dinopowers:writing-plans` (per code-gen Task), `dinopowers:executing-plans`
+  (per Task during execute). Skipped when no `positiveIds` / `positiveCode` and
+  no `behaviorQuery` available.
+---
+
+# extract-project-patterns
+
+Internal recipe for code-gen skills: battle-tested template for code about to
+be written, via three-level locality cascade.
+
+## Inputs
+
+Caller passes:
+
+| Input           | Required | Notes                                                       |
+| --------------- | -------- | ----------------------------------------------------------- |
+| `positiveIds`   | one-of   | Chunk IDs from prior cascade results                        |
+| `positiveCode`  | one-of   | Raw code snippet(s) (embedded on the fly by `find_similar`) |
+| `behaviorQuery` | one-of   | NL query if no chunk/code is available                      |
+| `pathPatternL1` | yes      | From explore PG-OUTPUT (deepest subdomain target)           |
+| `limit`         | no       | Default 10                                                  |
+
+At least one of `positiveIds` / `positiveCode` / `behaviorQuery` MUST be
+present. Else return
+`{ templates: [], locality: "none", diagnostics: ["no input"] }`.
+
+## Recipe — three-level locality cascade
+
+Every call: `project=<alias>` + `path=<working dir>`. `treeState` row =
+pre-edit copy → never template; current body via `find_symbol`. Lag / drift ≠
+licence to leave tea-rags (core); own checkout `changedFiles` > 0 → incremental
+`index_codebase`, subagent / linked worktree → never reindex. →
+`tea-rags://guide/freshness`.
+
+```
+L1 pathPattern = pathPatternL1                         (deepest subdomain)
+L2 pathPattern = infra prefix + first semantic segment (broader domain)
+L3 pathPattern = null                                  (project-wide)
+```
+
+**L2 derivation.** Split L1 segments: leading run from skip-vocabulary = infra
+prefix (NOT counted, KEPT in glob); rest = semantic tail. L2 = glob cut after
+first semantic segment. Semantic tail ≤ 1 segment → L2 = L1, skip L2 step
+entirely.
+
+Skip-vocabulary (infra/layer prefixes): `app`, `src`, `lib`, `core`, `packages`,
+`internal`, `domains`; Rails layers: `services`, `models`, `controllers`,
+`jobs`, `workers`, `mailers`, `concerns`, `graphql`, `serializers`,
+`presenters`, `decorators`, `operations`, `interactors`, `policies`.
+
+- L1 = `**/domains/trajectory/git/rerank/derived-signals/**` → prefix
+  `[domains]`, semantic `[trajectory, git, rerank, derived-signals]` → L2 =
+  `**/domains/trajectory/**`.
+- L1 = `**/app/services/crm/accounts/**` → prefix `[app, services]`, semantic
+  `[crm, accounts]` → L2 = `**/app/services/crm/**` (NOT `**/app/services/**` —
+  layer-wide L2 = degenerate L3).
+- L1 = `**/app/services/billing/**` → semantic `[billing]`, 1 segment → skip L2.
+- L1 = `**/language/ruby/chunking/**` → no prefix, semantic
+  `[language, ruby, chunking]` → L2 = `**/language/**`.
+
+**For each level in [L1, L2, L3]:**
+
+1. `find_similar` (only `behaviorQuery` → `semantic_search` / `hybrid_search`):
+   - `rerank: "proven"` + `level: "chunk"` (proven is file-level; keep chunk
+     results)
+   - `filter: { presets: "battleTested" }` — ANDs w/ `pathPattern`
+   - `pathPattern: <level>` (omit for L3)
+   - `limit: <input limit, default 10>`
+   - inputs: `positiveIds` | `positiveCode` | `query: behaviorQuery`
+
+   **Relax-on-empty:** 0 results → re-run once w/
+   `filter: { presets: "production" }`, record
+   `"no battle-tested reference found; widened to production code"` in
+   `diagnostics`. Never return empty silently while relax possible.
+
+2. Quality gate over overlay labels:
+   - `ideal_count` = chunks where
+     - `commitCount` label is `"low"` or `"typical"`, AND
+     - `ageDays` label is `"old"` or `"legacy"`, AND
+     - `bugFixRate` label is `"healthy"`
+   - `ideal_count ≥ 2` → return top result + locality. Stop.
+   - **Lone-ideal-hub**: `ideal_count == 1` AND lone ideal's
+     `payload.codegraph.symbols.file.isHub == true` → level accepted,
+     `templates[0]` = lone ideal (NOT top-by-score). Stop. Hub = usage-proof
+     (fanIn > p95). No `codegraph.symbols` in payload → branch inert.
+3. Reject filter (always): exclude `bugFixRate` `"critical"` OR (`ageDays`
+   `"recent"` AND `commitCount` `"low"`).
+4. No qualifying chunk → next level.
+
+All levels fail → diagnostic `"no proven templates for <input> in this project"`
+(caller falls back: scratch, ask user).
+
+## Output
+
+```
+{
+  templates: [
+    {
+      chunkId,
+      path,
+      level: "L1" | "L2" | "L3",
+      labels: { commitCount, ageDays, bugFixRate, blameContributorCount, ... },
+      blameDominantAuthor,
+    },
+    ...
+  ],
+  locality: "L1" | "L2" | "L3" | "none",
+  diagnostics: [<per-level fail reasons>],
+}
+```
+
+Caller reads `templates[0]`; `locality` → usage:
+
+- `L1` → exact subdomain. `blameDominantAuthor` → style + review routing.
+- `L2` → sibling subdomain. `blameDominantAuthor` reviews technique, not code.
+- `L3` → project-wide. Technique only; verify architectural fit before verbatim
+  adoption.
+- `none` → caller generates from scratch, tells user to scrutinize.
+
+## Skip clause
+
+Return empty templates immediately if:
+
+- none of `positiveIds` / `positiveCode` / `behaviorQuery`
+- no git enrichment indexed (no overlay labels → gate cannot run)

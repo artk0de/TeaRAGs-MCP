@@ -1,6 +1,6 @@
 ---
 paths:
-  - ".claude-plugin/**"
+  - "plugins/**"
   - "src/mcp/resources/**"
   - "src/mcp/tools/**"
   - "src/cli/prime/**"
@@ -20,8 +20,8 @@ bolt onto first file you open.
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | **prime / digest**     | **Live runtime STATE** — index status, staleness, drift, infra health, thresholds / labelMap, polyglot set, version       | `src/cli/prime/**` → `tea-rags prime`; `tea-rags://project/<alias>/digest` + `/metrics`                               | SessionStart hook; resource on demand                                |
 | **MCP tool schema**    | **Call CONTRACT** — params, enums, defaults, addressing, pagination shape, per-tool description                           | `src/mcp/tools/**` (handler descriptions) + `src/core/api/internal/infra/schema-builder.ts` (generated Zod)           | at tool-call time                                                    |
-| **resources + guides** | **REFERENCE + on-demand POLICY** — preset / signal / filter catalogs; navigation, decision tree, freshness, degraded mode | `src/mcp/resources/registry.ts` (builders) + `.claude-plugin/tea-rags/rules/guides/*.md` → `tea-rags://guide/<topic>` | on demand (`ReadMcpResource` / `tea-rags resource <uri>`)            |
-| **core**               | **Always-on POLICY** — addressing, routing table, invariants, guide-trigger catalog, destructive-tool consent             | `.claude-plugin/tea-rags/rules/core.md` (≤ 3,700 chars)                                                               | server `instructions` + SessionStart (`inject-rules.sh`), every turn |
+| **resources + guides** | **REFERENCE + on-demand POLICY** — preset / signal / filter catalogs; navigation, decision tree, freshness, degraded mode | `src/mcp/resources/registry.ts` (builders) + `plugins/tea-rags/rules/guides/*.md` → `tea-rags://guide/<topic>` | on demand (`ReadMcpResource` / `tea-rags resource <uri>`)            |
+| **core**               | **Always-on POLICY** — addressing, routing table, invariants, guide-trigger catalog, destructive-tool consent             | `plugins/tea-rags/rules/core.md` (≤ 3,700 chars)                                                               | server `instructions` + SessionStart (`inject-rules.sh`), every turn |
 
 Guides and core are compiled into `src/mcp/resources/generated/agent-context.ts`
 by `npm run gen:agent-context` (drift test fails otherwise).
@@ -34,8 +34,8 @@ by `npm run gen:agent-context` (drift test fails otherwise).
 | A current numeric/state fact about an index or infra                 | **prime / digest** | `src/cli/prime/**` / `src/mcp/resources/project/**` — never hard-code state into a rule      |
 | What a tool accepts / what one param means                           | **tool schema**    | the tool's `description` in `src/mcp/tools/**` (schema is generated)                         |
 | The complete enumeration of presets / signals / filters / index opts | **resources**      | the builder behind `tea-rags://guide/*` in `src/mcp/resources/`                              |
-| Situational policy: how to navigate, recover, reindex, pick a tool   | **guide**          | `.claude-plugin/tea-rags/rules/guides/<topic>.md` + a trigger line in `core.md` if new topic |
-| A rule every turn needs regardless of situation                      | **core**           | `.claude-plugin/tea-rags/rules/core.md` — only if it fits the 3,700-char budget              |
+| Situational policy: how to navigate, recover, reindex, pick a tool   | **guide**          | `plugins/tea-rags/rules/guides/<topic>.md` + a trigger line in `core.md` if new topic |
+| A rule every turn needs regardless of situation                      | **core**           | `plugins/tea-rags/rules/core.md` — only if it fits the 3,700-char budget              |
 
 After any rules edit: `npm run gen:agent-context`, `npm run gen:harness-codex`,
 `npm run gen:harness-cursor`; bump plugin version (new file → minor).
@@ -76,14 +76,14 @@ view. Wrong layer = drift.
 
 Reindex-behavior knowledge ("stale index → `index_codebase` incremental; schema
 drift → `force_reindex` with consent") = **situational policy**, so placed in
-guide `.claude-plugin/tea-rags/rules/guides/freshness.md`
+guide `plugins/tea-rags/rules/guides/freshness.md`
 (`tea-rags://guide/freshness`) — keyed off **prime** layer's banners, not
 duplicating prime's live numbers. That is the routing this rule prescribes.
 
 ## Cross-reference
 
 - How consuming agent READS resource catalog + infra diagnosis:
-  `.claude-plugin/tea-rags/rules/references/runtime-introspection.md`
+  `plugins/tea-rags/rules/references/runtime-introspection.md`
 - Where to add code components (DI wiring): `.claude/rules/wiring.md`
-- Plugin version bump on `.claude-plugin/**` edits:
+- Plugin version bump on `plugins/**` edits:
   `.claude/rules/plugin-versioning.md`

@@ -37,7 +37,7 @@ write() { mkdir -p "$REPO/$(dirname "$1")"; printf '%s\n' "$2" > "$REPO/$1"; }
 stage() { write "$1" "${2:-x}"; git -C "$REPO" add -- "$1"; }
 # A plugin is a directory that carries a manifest; give it one without bumping it.
 plant_manifest() {
-  write ".claude-plugin/$1/.claude-plugin/plugin.json" '{"version":"0.1.0"}'
+  write "plugins/$1/.claude-plugin/plugin.json" '{"version":"0.1.0"}'
   git -C "$REPO" add -A
   git -C "$REPO" commit -qm "plant $1"
 }
@@ -58,16 +58,16 @@ denied()   { [ "$STATUS" = 0 ] && [ ! -s "$ERR" ] && [ "$(decision)" = "deny" ];
 #    the manifest of the plugin that actually moved
 fresh_repo
 plant_manifest tea-rags
-stage ".claude-plugin/tea-rags/rules/search-cascade.md" "changed"
+stage "plugins/tea-rags/rules/search-cascade.md" "changed"
 run_hook "$COMMIT_CALL"
-denied && reason | grep -Fq ".claude-plugin/tea-rags/.claude-plugin/plugin.json"
+denied && reason | grep -Fq "plugins/tea-rags/.claude-plugin/plugin.json"
 note $? "plugin .md without the manifest is denied, naming that plugin's manifest"
 
 # 2. the same edit with the manifest staged passes
 fresh_repo
 plant_manifest tea-rags
-stage ".claude-plugin/tea-rags/rules/search-cascade.md" "changed"
-stage ".claude-plugin/tea-rags/.claude-plugin/plugin.json" '{"version":"0.2.0"}'
+stage "plugins/tea-rags/rules/search-cascade.md" "changed"
+stage "plugins/tea-rags/.claude-plugin/plugin.json" '{"version":"0.2.0"}'
 run_hook "$COMMIT_CALL"
 allowed
 note $? "plugin .md staged together with the manifest is allowed"
@@ -75,7 +75,7 @@ note $? "plugin .md staged together with the manifest is allowed"
 # 3. a brand-new rule file asks for a MINOR bump
 fresh_repo
 plant_manifest tea-rags
-stage ".claude-plugin/tea-rags/rules/brand-new.md" "new rule"
+stage "plugins/tea-rags/rules/brand-new.md" "new rule"
 run_hook "$COMMIT_CALL"
 denied && reason | grep -q "MINOR"
 note $? "a new rule file asks for a MINOR bump"
@@ -83,9 +83,9 @@ note $? "a new rule file asks for a MINOR bump"
 # 4. editing a file that already exists asks for a PATCH bump
 fresh_repo
 plant_manifest tea-rags
-write ".claude-plugin/tea-rags/rules/search-cascade.md" "original"
+write "plugins/tea-rags/rules/search-cascade.md" "original"
 git -C "$REPO" add -A && git -C "$REPO" commit -qm base
-stage ".claude-plugin/tea-rags/rules/search-cascade.md" "edited"
+stage "plugins/tea-rags/rules/search-cascade.md" "edited"
 run_hook "$COMMIT_CALL"
 denied && reason | grep -q "PATCH"
 note $? "editing an existing rule asks for a PATCH bump"
@@ -95,37 +95,48 @@ note $? "editing an existing rule asks for a PATCH bump"
 fresh_repo
 plant_manifest tea-rags
 plant_manifest dinopowers
-stage ".claude-plugin/dinopowers/skills/brainstorming/SKILL.md" "changed"
-stage ".claude-plugin/tea-rags/.claude-plugin/plugin.json" '{"version":"0.2.0"}'
+stage "plugins/dinopowers/skills/brainstorming/SKILL.md" "changed"
+stage "plugins/tea-rags/.claude-plugin/plugin.json" '{"version":"0.2.0"}'
 run_hook "$COMMIT_CALL"
-denied && reason | grep -Fq ".claude-plugin/dinopowers/.claude-plugin/plugin.json"
+denied && reason | grep -Fq "plugins/dinopowers/.claude-plugin/plugin.json"
 note $? "a sibling plugin is checked against its own manifest"
 
 # 6. one commit touching two plugins owes two bumps, and the refusal says both
 fresh_repo
 plant_manifest tea-rags
 plant_manifest dinopowers
-stage ".claude-plugin/tea-rags/rules/search-cascade.md" "changed"
-stage ".claude-plugin/dinopowers/rules/wrapper.md" "changed"
+stage "plugins/tea-rags/rules/search-cascade.md" "changed"
+stage "plugins/dinopowers/rules/wrapper.md" "changed"
 run_hook "$COMMIT_CALL"
 denied \
-  && reason | grep -Fq ".claude-plugin/tea-rags/.claude-plugin/plugin.json" \
-  && reason | grep -Fq ".claude-plugin/dinopowers/.claude-plugin/plugin.json"
+  && reason | grep -Fq "plugins/tea-rags/.claude-plugin/plugin.json" \
+  && reason | grep -Fq "plugins/dinopowers/.claude-plugin/plugin.json"
 note $? "two plugins pending in one commit are both named"
 
-# 7. a manifest-less directory under .claude-plugin/ is not a plugin — the
-#    43 tracked .md files under .claude-plugin/.benchmarks/ have no version to bump
+# 7. a manifest-less directory under plugins/ is not a plugin
 fresh_repo
 plant_manifest tea-rags
-stage ".claude-plugin/.benchmarks/coverage-expander/benchmark.md" "measured"
+stage "plugins/notes/readme.md" "measured"
 run_hook "$COMMIT_CALL"
 allowed
 note $? "a directory with no manifest is not treated as a plugin"
 
+# 7b. the generated Claude Code package and the benchmarks under .claude-plugin/
+#     carry no source: the bump belongs to plugins/<name>/ only
+fresh_repo
+plant_manifest tea-rags
+write ".claude-plugin/tea-rags/.claude-plugin/plugin.json" '{"version":"0.1.0"}'
+git -C "$REPO" add -A && git -C "$REPO" commit -qm generated
+stage ".claude-plugin/tea-rags/rules/search-cascade.md" "regenerated"
+stage ".claude-plugin/.benchmarks/coverage-expander/benchmark.md" "measured"
+run_hook "$COMMIT_CALL"
+allowed
+note $? "generated .claude-plugin/<name>/ and .benchmarks/ files are not plugin sources"
+
 # 8. a merge commit carries the bump in the branch it merges, not in the merge
 fresh_repo
 plant_manifest tea-rags
-stage ".claude-plugin/tea-rags/rules/search-cascade.md" "changed"
+stage "plugins/tea-rags/rules/search-cascade.md" "changed"
 git -C "$REPO" rev-parse HEAD > "$REPO/.git/MERGE_HEAD"
 run_hook "$COMMIT_CALL"
 allowed
@@ -135,11 +146,11 @@ rm -f "$REPO/.git/MERGE_HEAD"
 # 9. deleting a rule is a plugin change like any other
 fresh_repo
 plant_manifest tea-rags
-write ".claude-plugin/tea-rags/rules/doomed.md" "original"
+write "plugins/tea-rags/rules/doomed.md" "original"
 git -C "$REPO" add -A && git -C "$REPO" commit -qm base
-git -C "$REPO" rm -q -- ".claude-plugin/tea-rags/rules/doomed.md"
+git -C "$REPO" rm -q -- "plugins/tea-rags/rules/doomed.md"
 run_hook "$COMMIT_CALL"
-denied && reason | grep -Fq ".claude-plugin/tea-rags/.claude-plugin/plugin.json"
+denied && reason | grep -Fq "plugins/tea-rags/.claude-plugin/plugin.json"
 note $? "a staged deletion still asks for a bump"
 
 # 10. markdown outside the plugins is none of the hook's business
@@ -148,12 +159,12 @@ plant_manifest tea-rags
 stage "docs/whatever.md" "changed"
 run_hook "$COMMIT_CALL"
 allowed
-note $? "markdown outside .claude-plugin/ is ignored"
+note $? "markdown outside plugins/ is ignored"
 
 # 11. the hook only speaks for commits
 fresh_repo
 plant_manifest tea-rags
-stage ".claude-plugin/tea-rags/rules/search-cascade.md" "changed"
+stage "plugins/tea-rags/rules/search-cascade.md" "changed"
 run_hook '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
 allowed
 note $? "a non-commit tool call is ignored"

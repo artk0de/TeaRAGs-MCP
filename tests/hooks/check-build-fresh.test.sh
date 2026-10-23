@@ -2,8 +2,8 @@
 # tests/hooks/check-build-fresh.test.sh
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-HOOK="$ROOT/.claude-plugin/tea-rags/scripts/check-build-fresh.sh"
-PLUGIN="$ROOT/.claude-plugin/tea-rags/.claude-plugin/plugin.json"
+HOOK="$ROOT/plugins/tea-rags/scripts/check-build-fresh.sh"
+PLUGIN="$ROOT/plugins/tea-rags/.claude-plugin/plugin.json"
 PASS=0; FAIL=0
 note() { if [ "$1" = 0 ]; then PASS=$((PASS+1)); echo "ok   - $2"; else FAIL=$((FAIL+1)); echo "FAIL - $2"; fi; }
 

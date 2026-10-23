@@ -3,9 +3,9 @@ paths:
   - "src/**"
   - "tests/**"
   - "scripts/**"
-  - ".claude-plugin/**/*.ts"
-  - ".claude-plugin/**/*.mjs"
-  - ".claude-plugin/**/*.sh"
+  - "plugins/**/*.ts"
+  - "plugins/**/*.mjs"
+  - "plugins/**/*.sh"
 ---
 
 # All code is written through data-driven-generation (MANDATORY)
@@ -29,7 +29,7 @@ still runs before the commit and its findings are repaired.
 - DDG Step 7 (VERIFY) is a gate, not optional. `review_changes` runs before
   every commit and acts on the findings: introduced architecture findings are
   repaired (the per-family procedure lives in
-  `.claude-plugin/tea-rags/repair/<family>.md`, loaded only for a family that
+  `plugins/tea-rags/repair/<family>.md`, loaded only for a family that
   has a finding), pre-existing ones are repaired only when cheap, false
   positives are accepted only with evidence (a detector flag or a cited rule)
   plus a filed detector bead. A PARTIAL review is not a pass. After two repair

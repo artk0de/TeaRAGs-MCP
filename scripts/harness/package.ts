@@ -1,7 +1,7 @@
 /**
- * Harness-neutral package plumbing: reads the Claude Code plugin sources,
- * picks the skills a harness package ships, and writes a rendered package.
- * Shared by `scripts/gen-harness-codex.ts` and `scripts/gen-harness-cursor.ts`.
+ * Harness-neutral package plumbing: reads the plugin sources under `plugins/`
+ * (written in the Claude Code dialect), picks the skills a harness package ships,
+ * and writes a rendered package. Shared by every `scripts/gen-harness-*.ts`.
  */
 
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -11,8 +11,10 @@ import { format, resolveConfig } from "prettier";
 
 import { firstSentence, parseFrontmatter } from "./transform.js";
 
+/** Folder holding every plugin source, relative to the repository root. */
+export const PLUGINS_DIR = "plugins";
 /** Plugin source folder, relative to the repository root. */
-export const PLUGIN_SRC = ".claude-plugin/tea-rags";
+export const PLUGIN_SRC = `${PLUGINS_DIR}/tea-rags`;
 export const PLUGIN_NAME = "tea-rags";
 
 export interface SourceSkill {
@@ -168,4 +170,16 @@ export function writePackage(root: string, packageDir: string, rendered: Map<str
     if (path.endsWith(".sh")) chmodSync(target, 0o755);
   }
   return rendered.size;
+}
+
+/** A repository-root file (a marketplace manifest), Prettier-formatted like the committed one. */
+export async function formatRootFile(root: string, path: string, content: string): Promise<string> {
+  return (await formatPackage(root, ".", new Map([[path, content]]))).get(path) as string;
+}
+
+/** Write a repository-root file, creating its folder. */
+export function writeRootFile(root: string, path: string, content: string): void {
+  const target = join(root, path);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, content, "utf8");
 }

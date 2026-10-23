@@ -25,7 +25,7 @@ into superpowers itself; nothing skipped.
 | Request a code review / open a PR | Skill(dinopowers:requesting-code-review) |
 | React to a review comment naming a symbol or file | Skill(dinopowers:receiving-code-review) |
 | Finalize a dev branch (merge / PR / cleanup) | Skill(dinopowers:finishing-a-development-branch) |
-| Author a SKILL.md in .claude-plugin/dinopowers/ | Skill(dinopowers:writing-skills) |
+| Author a SKILL.md in plugins/dinopowers/ | Skill(dinopowers:writing-skills) |
 
 Ignore ONLY when: user names the superpowers version explicitly; intent matches no
 row (typo fix, listing, git log); the wrapper's SKILL.md says to fall back."
