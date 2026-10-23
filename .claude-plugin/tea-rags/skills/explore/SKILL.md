@@ -252,8 +252,8 @@ Three calls, axis = filter param (never `language` as axis proxy):
 
 1. sources FIRST — `testFile: "exclude", documentation: "exclude"`
 2. tests — `testFile: "only"` (expected behavior)
-3. docs — `documentation: "only"` (intent — hypothesis, behavioral claims
-   verified in code)
+3. docs — `documentation: "only"` (hypothesis; conflict → answer gives the code
+   value + names the drifted doc)
 
 Point question about tests ("is X tested?") → ONE call, `testFile: "only"`
 (hybrid_search / find_symbol), no split, no Glob. Other point questions: no

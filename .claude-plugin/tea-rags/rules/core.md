@@ -2,25 +2,25 @@
 
 **Addressing.** Every read call (search, `find_symbol`, graph, review, lexicon):
 `project=<alias>` (which index) + `path=<your working directory>` (which tree).
-Alias: prime `## Project`, SubagentStart alias, or `workingTree.project`;
-unknown → `path` alone, then the answer's alias. No working dir (script, CLI) →
-`project` alone. Only raw collection name → `collection=<name>` (+ `path` if
-your repo). `index_codebase`: `project` ONLY — its `path` registers a NEW
-project.
+Alias: prime `## Project`, SubagentStart line or `workingTree.project`; unknown
+→ `path` alone, then the answer's. No working dir (script, CLI) → `project`
+alone. Raw collection name only → `collection=` (+ `path` if your repo).
+`index_codebase`: `project` ONLY — its `path` registers a NEW project.
 
 **Routing** (first match wins; a loaded skill's step overrides; tools =
-`mcp__tea-rags__<name>`):
+`mcp__tea-rags__*`):
 
-| Need                               | Call                                          |
-| ---------------------------------- | --------------------------------------------- |
-| one file: outline / doc TOC        | `find_symbol(relativePath:)`                  |
-| known symbol: body / class outline | `find_symbol(symbol:)` (`Class#inst`, `C.st`) |
-| usages of an identifier            | `hybrid_search` (`metaOnly`, `offset`)        |
-| behaviour / intent, no name        | `semantic_search` only (no `hybrid_search`)   |
-| code like a chunk in hand          | `find_similar(positiveIds:)`                  |
-| impact / who calls / A reaches B   | `get_callers` / `get_callees` / `trace_path`  |
-| diff review; a name's fit          | `review_changes` / `get_naming_lexicon`       |
-| literal text (TODO, phrase, regex) | text search (your client's Grep / `rg`)       |
+| Need                       | Call                                           |
+| -------------------------- | ---------------------------------------------- |
+| file: outline / doc TOC    | `find_symbol(relativePath:)`                   |
+| known symbol: body/outline | `find_symbol(symbol:)` (`Class#inst`, `C.st`)  |
+| usages of an identifier    | `hybrid_search` (`metaOnly`, `offset`)         |
+| behaviour/intent, no name  | `semantic_search` only (no `hybrid_search`)    |
+| code like a chunk in hand  | `find_similar(positiveIds:)`                   |
+| who calls X / impact       | `find_symbol` id → `get_callers`/`get_callees` |
+| chain A→B                  | `find_symbol` ids → `trace_path`               |
+| diff review; a name's fit  | `review_changes` / `get_naming_lexicon`        |
+| literal: TODO/phrase/regex | text search (your client's Grep / `rg`)        |
 
 Text search = literal text only; never it, Glob or `cat`/`sed`/`grep` to locate
 or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
@@ -42,7 +42,8 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
   plans too; drift `--force*` `Run:` → ask too, never instead. Linked worktree →
   overlay, never reindex.
 - Empty `get_callers` at low resolve rate ≠ no callers — cross-check
-  `hybrid_search`. Graph tools absent = codegraph off; never claim "no cycles".
+  `hybrid_search`. Graph tools absent = codegraph off → never claim "no cycles";
+  on + empty `find_cycles` = DAG.
 - Docs = hypothesis; verify in code.
 - User-named action ("read `x.ts`") → do it; user's weaker method (git log, skip
   enrichment) → keep the rule's, say why.
@@ -52,7 +53,7 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
 
 - after any search, before answering → `navigation`; 0 hits, too many, ambiguous
   name, when to stop → `pagination`
-- picking a tool or skill, prohibited patterns, fallbacks → `decision-tree`
+- picking a skill, prohibited patterns, fallbacks → `decision-tree`
 - stale banner, drift, `treeState`, `degraded`, edited files, linked worktree →
   `freshness`
 - embedding / qdrant error, `denseUnavailable` → `degraded`
@@ -60,8 +61,7 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
 - before choosing `rerank` → `presets` + `signals`; reading labels →
   `signal-labels`
 - graph / AST on a non-primary language → `language-capability`
-- no prime digest → `tea-rags://project/<alias>/digest`
-- labelMap → `tea-rags://project/<alias>/metrics`
+- no prime digest / labelMap → `tea-rags://project/<alias>/digest` / `…/metrics`
 
 **Destructive — explicit user consent:** `force_reindex`, `clear_index`,
 `delete_*`, `--force*` reindex. Subagent: never reindex — report to parent.

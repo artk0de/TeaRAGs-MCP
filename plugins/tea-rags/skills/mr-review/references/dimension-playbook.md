@@ -182,8 +182,12 @@ severity: MISFIT → minor; COLLISION → minor; NEW_TERM → minor only when
           CONFORMS → nothing
 ```
 
-Comment bodies: plain language — no verdict codes, no tool names, nothing about
-local vs external mode. MISFIT fix = the `suggestion`, `holder` as precedent.
+Plan names, verbatim:
+`D8 bodies: plain words, no MISFIT/COLLISION/NEW_TERM, no tool names`.
+
+Comment bodies and the summary comment: plain language — no verdict codes, no
+tool names, nothing about local vs external mode. MISFIT fix = the `suggestion`,
+`holder` as precedent.
 
 Local: ONE `review_changes(changes, sections: ["naming"])` call judges every
 name added hunks declare (values, types, constants) — no hand-listed drafts.

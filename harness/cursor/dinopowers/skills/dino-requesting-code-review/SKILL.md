@@ -126,8 +126,9 @@ Settle naming before reviewer spends comment:
 
 Answer under `review` {workTree, base, mergeBase, changedFiles, checked,
 conforming, novel, findings, notJudged, truncated?}; findings flat
-`{relPath, line, name, kind, type?, verdict, …}`. Bundle line (copy this shape,
-every finding with `relPath:line`, both counts always):
+`{relPath, line, name, kind, type?, verdict, …}`. Your answer prints this line,
+filled from the findings you hold (plan-only too), every finding with
+`relPath:line`, both counts always:
 
 `Naming: MISFIT <name> (<relPath:line>) → <suggestion>; COLLISION <name> (<relPath:line>) vs <existing>; NEW_TERM <name> (<relPath:line>) — <why>; conforming <N>, novel <M>`
 

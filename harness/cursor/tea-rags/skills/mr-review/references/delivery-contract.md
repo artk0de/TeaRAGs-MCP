@@ -17,6 +17,9 @@ summary := { verdict, counts by severity, dimensions run/skipped + why,
              observations list }
 ```
 
+`why` = the reason a dimension is not assessed; never the review mode or which
+tool judged it.
+
 ## Comment body — three parts, in this order
 
 1. **Observation** — what the change does that drew attention, in plain

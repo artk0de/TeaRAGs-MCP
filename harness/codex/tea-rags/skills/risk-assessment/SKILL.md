@@ -26,13 +26,11 @@ No `## Label maps` above → read
    manual filtering**)
 5. Phase 4 — CLASSIFY into severity tiers, score fix cost
 6. Phase 5 — REPORT pair-diagnostics (**MUST surface signal pairs, single-signal
-   reports are misleading**). Output = Phase 5 risk map; plan spells its columns
-   literally ("the risk map" alone fails): Critical / High tables (Symbol,
-   File:Line, Risk Type, Key Signals as labels, Tests path|none|unverified),
-   Structural risks (codegraph on), Summary — never free-form "risky files".
-   Generation caller (DDG, "before implementing") → plan says: hand-off = this
-   map's `pathPattern` + per-symbol File:Line + overlay labels; no extra block,
-   no extra scan.
+   reports are misleading**). Plan's last line, verbatim:
+   `Output: Critical/High | Symbol | File:Line | Risk Type | Key Signals | Tests(path/none/unverified) + Structural + Summary`
+   Any generation mention ("before implementing" / "generate") → add verbatim:
+   `Hand-off: pathPattern + per-symbol File:Line + labels` — no extra block or
+   scan.
 
 ## Top Anti-patterns (read before scanning)
 

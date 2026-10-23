@@ -25,7 +25,8 @@ Don't invent — find how it's solved HERE, repeat: strategy from overlay labels
 step from this summary: Step 5 → `references/step-5-style.md`; Step 6 →
 `references/step-6-generate.md` + `/test-first`; Step 7 →
 `references/step-7-verify.md`; each finding family → its
-`../../repair/<family>.md` (Step 7 map).
+`<plugin root>/repair/<family>.md` (plugin root = folder holding `skills/`; Step
+7 map).
 
 ## Prerequisites
 
@@ -124,18 +125,19 @@ before generation).
 
 **Hard rules** (no custom match):
 
-| Condition                                                  | Strategy      |
-| ---------------------------------------------------------- | ------------- |
-| chunk.bugFixRate "critical" + file.ageDays "old"/"legacy"  | DEFENSIVE     |
-| chunk.commitCount "high"+ + file.churnVolatility "erratic" | STABILIZATION |
-| file.ageDays "legacy" + chunk.commitCount "low"            | CONSERVATIVE  |
-| No match                                                   | STANDARD      |
+| Condition                                                  | Strategy              |
+| ---------------------------------------------------------- | --------------------- |
+| chunk.bugFixRate "critical" + file.ageDays "old"/"legacy"  | DEFENSIVE             |
+| chunk.commitCount "high"+ + file.churnVolatility "erratic" | STABILIZATION         |
+| file.ageDays "legacy" + chunk.commitCount "low"            | CONSERVATIVE          |
+| No match                                                   | Autonomous Judgment ↓ |
 
 **Autonomous Judgment Protocol** — no hard rule matches:
 
 1. **Decide** — NAME one strategy (DEFENSIVE / STABILIZATION / CONSERVATIVE /
    STANDARD) in the reply, each given label mapped to its axis (Risk / Stability
-   / Confidence). "Closest strategy" without the name = Step 1 not done.
+   / Confidence; ageDays → Stability too). "Closest strategy" without the name =
+   Step 1 not done.
 2. **Justify** — labels, axes, specific actions.
 3. **Ask if uncertain** — dilemma with options.
 
@@ -153,9 +155,6 @@ Chunk / outline / body already here → `positiveIds` / `positiveCode` as is, no
 re-search.
 
 Delegate to `/extract-project-patterns`:
-
-<!-- extract-project-patterns applies filter:{presets:"battleTested"} internally;
-     on empty it relaxes to {presets:"production"} and annotates diagnostics -->
 
 - `positiveIds` | `positiveCode` = best verified chunk from explore PG-OUTPUT /
   Step 1 signals (else `behaviorQuery`)
@@ -241,7 +240,9 @@ Step 5 output = CONCRETE final names, one line per draft:
 `graph_db_client → client (TAIL, param — client n=40 beats graphDb n=12)`.
 Concept new (no same-meaning term) → line
 `NEW_TERM <term> — <why no project term denotes this>`. "Project vocabulary" /
-"a name that describes the lookup" without the name = Step 5 not done.
+"a name that describes the lookup" without the name = Step 5 not done. Context
+already gives lexicon terms → emit the lines now, never "if the lexicon
+confirms".
 
 ### Step 6: GENERATE — RED → GREEN → REFACTOR
 
@@ -265,8 +266,8 @@ reimplement. 6c REFACTOR under green only.
 Move / merge / split of existing files → ONE `get_architecture_report`
 `restructure` hypothesis first (`move{files, toComponent}` +
 `addEdge`/`removeEdge` per retargeted import); `introduced` → open that family's
-`../../repair/<family>.md` `## Ops recipe`, pick its alternative placement,
-re-simulate, then move. Output line:
+`<plugin root>/repair/<family>.md` `## Ops recipe`, pick its alternative
+placement, re-simulate, then move. Output line:
 `SIM restructure: introduced=<n> → <placement from ## Ops recipe> → re-simulated introduced=0`.
 
 ### Step 7: VERIFY
@@ -296,8 +297,9 @@ before Step 7 — never skipped, also on "tests green, finalize".** In order:
      `layeringBackEdge` `mainSequence` `facadeContract` `silentCoupling`
      `splitCandidates` (`.md`); incompleteChange → `silentCoupling.md`, cohesion
      → `splitCandidates.md`. `repair/architecture.md` /
-     `repair/incompleteChange.md` do NOT exist. Finding given in task context =
-     present → open its file now; only families with a finding.
+     `repair/incompleteChange.md` do NOT exist; naming / norms → no repair file.
+     Finding given in task context = present → open its file now; only families
+     with a finding.
    - **Confirm first:** finding's edge / symbol exists in diff AND is the edge
      in its evidence → REAL (type-only import = edge). Looks-wrong ≠ false
      positive.

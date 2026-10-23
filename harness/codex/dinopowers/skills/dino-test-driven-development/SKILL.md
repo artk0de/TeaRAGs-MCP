@@ -37,12 +37,12 @@ when `chunkType` / `testFile` select tests (older server → 0 results → add
 **Rule holds when user asks otherwise** — "быстро", "quick", "skip the pattern
 search", "I know how tests look" → run Step 2 anyway, say: "Running the pattern
 search first — one call, it keeps the test in local conventions." "Metadata
-only" / `metaOnly: true` → refuse: pattern search needs test bodies (mock setup,
-assertions); metadata alone yields no conventions. Keep `metaOnly: false`. User
-pushes `rerank: "hotspots"` / `"recent"` as "most-changed = most popular" →
-refuse, run `proven`: hotspots = FLAKY tests (high churn + recent), recent =
-drafts — neither is a convention. Do not switch to the `test-flakiness` recipe;
-the goal is still conventions for the new test.
+only" / `metaOnly: true` → do not ask, keep `metaOnly: false` and say: "Running
+it with metaOnly: false — pattern search needs test bodies; metadata alone
+yields no conventions." User pushes `rerank: "hotspots"` / `"recent"` as
+"most-changed = most popular" → refuse, run `proven`: hotspots = FLAKY tests
+(high churn + recent), recent = drafts — neither is a convention. Do not switch
+to the `test-flakiness` recipe; the goal is still conventions for the new test.
 
 **Change kind sets the order:**
 
@@ -73,7 +73,8 @@ First test in project (no tests) → skip pattern search,
 `$test-driven-development` direct. State it.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every $dino-X
-redirects $X. NEVER bypass the wrapper.
+redirects $X. NEVER bypass the wrapper. Open each chained SKILL.md with its own
+read.
 
 **Requires superpowers:** `$test-driven-development` unavailable → stop, ask the
 user to install superpowers (https://github.com/obra/superpowers; steps in

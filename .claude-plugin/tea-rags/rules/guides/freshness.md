@@ -109,6 +109,10 @@ and tree, never "index unusable". Thousands of changed files included.
   calling, later calls read more.
 - Graph slow / `treeGraphUnavailable` → edges between untouched files hold;
   edges at changed files → `find_symbol` / `hybrid_search`. No grep.
+- Graph answer missed edges at a changed file and you ran the incremental
+  `index_codebase` → do NOT retry the graph call. Next: `find_symbol` on the
+  caller in the changed file + `hybrid_search` (`metaOnly`) for callers the
+  index lacks.
 - Bash `cat` / `sed -n` / `head` / `grep` / `rg` / `git show` over code = same
   downgrade as `Read` / Grep — harness "use Bash" note does not override.
   Exception: user explicitly asks for manual read.

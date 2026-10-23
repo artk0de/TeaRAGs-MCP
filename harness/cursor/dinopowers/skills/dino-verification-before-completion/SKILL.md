@@ -90,7 +90,8 @@ override acknowledging the risk (untested dependents may break) — reply
 'override, I accept the risk'." Deadline in the request ≠ that override.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every /dino-X
-redirects /X. NEVER bypass the wrapper.
+redirects /X. NEVER bypass the wrapper. Open each chained SKILL.md with its own
+read.
 
 **Requires superpowers:** `/verification-before-completion` unavailable → stop,
 ask the user to install superpowers (https://github.com/obra/superpowers; steps

@@ -272,6 +272,20 @@ describe("renderCodexHarness", () => {
     }
   });
 
+  // Codex T22 r6 DDG: one `cat` of 11 files truncated SKILL.md away; another run read nothing and planned from memory.
+  it("opens the core with the read discipline so truncation never drops it", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+
+    for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
+      const body = (rendered.get(path) ?? "").replace(/^---\n[\s\S]*?\n---\n/, "");
+      const firstLines = body.split("\n").slice(0, 8).join("\n");
+      expect(firstLines).toMatch(/Read\s+ONE\s+file\s+per\s+command/);
+      expect(body).toMatch(/Every\s+skill\s+you\s+name\s+in\s+a\s+plan/);
+      expect(body).toMatch(/a\s+plan\s+from\s+memory\s+is\s+not\s+reading\s+it/);
+      expect(body.match(/ONE file per command/g)).toHaveLength(1);
+    }
+  });
+
   // Codex T22 r5 E14/E15: incremental index then a bare graph retry; "explain retry logic" read as an agent retry.
   it("tells the core that an incremental index is a prelude and how to re-check a lagging graph answer", async () => {
     const rendered = await renderCodexHarness(ROOT);

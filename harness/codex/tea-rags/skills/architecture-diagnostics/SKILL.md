@@ -64,9 +64,9 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
   `remedy` → **report-only** line, no fix (`mainSequence`: distanceBefore
   already past threshold). Load `../../repair/<family>.md` of EVERY family
   present (report-only too: `mainSequence.md` + `hubLike.md`), no others. Every
-  must-fix line states the exemption rule: unfixed ONLY with a detector flag
-  (`compositionRoot`) / `## Known false positives` evidence — bare "by design"
-  is not evidence. Classify + fix now, never defer.
+  must-fix line states the exemption rule: unfixed ONLY with `compositionRoot`
+  (detector flag) / `## Known false positives` evidence — bare "by design" is
+  not evidence. Classify + fix now, never defer.
 - **`island` / `compositionCycle` / `knot` with `composition: true`** =
   informational, not defects.
 

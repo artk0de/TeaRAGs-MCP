@@ -16,8 +16,9 @@ not yet checked via `list_projects`, = all of them; a digest alias is not a
 registration check). Every plan ends with step 5 — report the full result (all
 metrics + duration) — even when nothing ran:
 
-- **Linked git worktree** of a registered repo → do NOT register or index; read
-  tools (`project` + `path=<worktree>`) already answer for that tree.
+- **Linked git worktree** of a registered repo → no register / index; say: "Not
+  indexing: read tools (project + path=<worktree>) already answer for this
+  tree."
 - **Not registered (first index)** → ask once, then register alias + index in
   one SHELL command: `tea-rags index-codebase <path> --name <alias>` — the CLI,
   NOT the MCP tool (`index_codebase` has no `name` param). **Declined** →
@@ -48,11 +49,11 @@ metrics + duration) — even when nothing ran:
 1. `path` from message / argument; absent → cwd. Linked git worktree
    (`git rev-parse --git-common-dir` ≠ `<path>/.git`) of registered repo → do
    NOT register or index; read tools already answer for that tree
-   (`tea-rags://guide/freshness`, linked worktree). Tell user in those words:
-   read tools (`project` + `path=<worktree>`) already answer for this tree.
-   `--project <alias>` reindex refreshes main checkout only, never worktree
-   edits. Index worktree as own project only if user insists (seeds separate
-   project).
+   (`tea-rags://guide/freshness`, linked worktree). Say literally: "Not
+   indexing: read tools (project + path=<worktree>) already answer for this
+   tree." `--project <alias>` reindex refreshes main checkout only, never
+   worktree edits. Index worktree as own project only if user insists (seeds
+   separate project).
 
 2. Registered? `list_projects` → entry with `path` = target AND non-empty `name`
    (recovery auto-created entries have `name=""`).

@@ -87,7 +87,8 @@ override acknowledging the risk (untested dependents may break) — reply
 'override, I accept the risk'." Deadline in the request ≠ that override.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
-redirects superpowers:X. NEVER bypass the wrapper.
+redirects superpowers:X. NEVER bypass the wrapper. Open each chained SKILL.md
+with its own read.
 
 **Requires superpowers:** `superpowers:verification-before-completion`
 unavailable → stop, ask the user to install superpowers

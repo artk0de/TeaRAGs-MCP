@@ -4,8 +4,8 @@ description:
   Author implementation plan; Affected Files section enriched per-file imports,
   churn, ownership, bugFixRate, taskIds from tea-rags — task decomposition
   reflects real impact+risk. Triggers on "write a plan", "draft implementation
-  plan", "напиши план", "распиши задачи по файлам", "plan the refactor". NOT for
-  plans with no named files or code area to enrich. Wraps
+  plan", "draft sub-plan", "напиши план", "распиши задачи по файлам", "plan the
+  refactor". NOT for plans with no named files or code area to enrich. Wraps
   superpowers:writing-plans with per-file tea-rags signal enrichment.
 ---
 
@@ -70,6 +70,7 @@ From request or plan draft collect concrete file list:
 | User names files explicitly    | "update `a.ts`, `b.ts`, `c.ts`"                                                                                                                                                            |
 | User names a small directory   | `src/core/domains/auth/` → enumerate files (counts as file list — run Step 2 over them): `semantic_search` `pathPattern: "<dir>/**"`, `level: "file"`, `metaOnly: true` (one row per file) |
 | Existing plan draft references | "Task N modifies `x.ts`" → extract paths                                                                                                                                                   |
+| Bare filenames                 | glob each in the Step 2 brace pattern (`{**/a.ts,**/b.ts}`); no resolve calls (`find_symbol` / `hybrid_search`) before Step 2                                                              |
 
 Output:
 

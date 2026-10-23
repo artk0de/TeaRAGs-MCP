@@ -7,7 +7,8 @@ description:
   from proven neighbors, callers + tests-at-risk on modify). Triggers on
   "execute the plan", "start Task N", "выполни план", "начни задачу", "run the
   plan", "implement the plan steps". NOT for one-off edits without a written
-  plan. Wraps superpowers:executing-plans with tea-rags git-signal verdicts and
+  plan, NOT a step that drafts a (sub-)plan (→ dinopowers:writing-plans). Wraps
+  superpowers:executing-plans with tea-rags git-signal verdicts and
   tea-rags:data-driven-generation cascade.
 ---
 
@@ -57,9 +58,10 @@ Never Read neighbours and copy by hand.
 Step 2.0 → guard reads `main`'s tree → verdict on code branch already changed.
 
 **Chaining rule:** [CHAINING.md](../../CHAINING.md) — every onward
-`superpowers:Y` → `dinopowers:Y`. NEVER bypass wrapper. Plus cross-plugin
-`tea-rags:data-driven-generation` (Step 5) — not a redirect, an extra MANDATORY
-step for Tasks that GENERATE code or CHANGE behavior (MODIFY).
+`superpowers:Y` → `dinopowers:Y`. NEVER bypass wrapper. Open each chained
+SKILL.md with its own read. Plus cross-plugin `tea-rags:data-driven-generation`
+(Step 5) — not a redirect, an extra MANDATORY step for Tasks that GENERATE code
+or CHANGE behavior (MODIFY).
 
 **Requires superpowers:** `superpowers:executing-plans` unavailable → stop, ask
 the user to install superpowers (https://github.com/obra/superpowers; steps in

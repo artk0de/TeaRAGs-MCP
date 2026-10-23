@@ -68,13 +68,9 @@ would read the skill" is not reading it), then every reference file or
 \`tea-rags://\` resource it marks MANDATORY for your case. A skill that hands off
 to another skill (a \`$dino-*\` wrapper → \`$bug-hunt\`, \`$explore\`,
 \`$data-driven-generation\` …) → open that \`SKILL.md\` too. Plan from that text,
-not from this core.
-
-Read ONE file per command — never \`cat\` several: output past ~10k tokens loses
-its middle (\`…N tokens truncated…\`), and a rule you did not see is not a rule
-you may guess. Saw that marker → re-read the file in ranges (\`sed -n\`).
-\`repair/<family>.md\`, \`rules/…\` in any skill or reference = the plugin root
-(the folder holding \`skills/\`), never the skill's own folder.
+not from this core. \`repair/<family>.md\`, \`rules/…\` in any skill or
+reference = the plugin root (the folder holding \`skills/\`), never the skill's
+own folder.
 
 **Lag follow-ups.** Incremental \`index_codebase\` is a prelude, not the answer:
 the next step still serves the user's request (search / \`$explore\` over the
@@ -83,6 +79,25 @@ code they asked about). Graph answer with \`changedFiles\` > 0 and no
 changed-file callers via \`find_symbol\`, find missing ones via
 \`hybrid_search\` metaOnly — never a bare retry of the graph call.
 `;
+
+/**
+ * Leads the core, right under its H1: a multi-file \`cat\` truncates from the
+ * middle, so the rule against it must sit where truncation never reaches.
+ * Codex T22 r6: one run cat'ed 11 files and lost SKILL.md, another read nothing.
+ */
+const CODEX_READ_DISCIPLINE = `**Read ONE file per command** — never \`cat\` several: output past ~10k tokens
+loses its middle (\`…N tokens truncated…\`), and a rule you did not see is not a
+rule you may guess. Saw that marker → re-read the file in ranges (\`sed -n\`).
+Every skill you name in a plan → open its \`SKILL.md\` with its own command
+first; a plan from memory is not reading it.
+`;
+
+/** Puts \`prelude\` right after the body's H1 (or first, when there is none). */
+function withCodexPrelude(body: string, prelude: string): string {
+  const heading = /^# [^\n]*\n+/.exec(body);
+  if (!heading) return `${prelude}\n${body}`;
+  return `${heading[0]}${prelude}\n${body.slice(heading[0].length)}`;
+}
 
 /** A Claude Code SKILL.md in Codex's dialect (see `toHarnessText` for the rewrite list). */
 export function toCodexSkill(md: string, options: SkillOptions): string {
@@ -339,8 +354,10 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
 
   if (hasCore) {
     const core =
-      toHarnessText(parseFrontmatter(readFileSync(corePath, "utf8")).body, CODEX_DIALECT, skillNames) +
-      CODEX_SKILL_LOADING;
+      withCodexPrelude(
+        toHarnessText(parseFrontmatter(readFileSync(corePath, "utf8")).body, CODEX_DIALECT, skillNames),
+        CODEX_READ_DISCIPLINE,
+      ) + CODEX_SKILL_LOADING;
     files.set(`${PLUGIN_NAME}/skills/${CORE_SKILL}/SKILL.md`, renderFrontmatter(CORE_SKILL, CORE_DESCRIPTION) + core);
     files.set("AGENTS.tea-rags.md", core);
     shipped.unshift({ name: CORE_SKILL, description: CORE_DESCRIPTION });

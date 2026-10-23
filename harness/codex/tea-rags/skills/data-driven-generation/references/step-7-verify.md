@@ -154,9 +154,9 @@ judged", never a clean pass.
   itself (`excludedFlapCount`).
 
 **Repair file:** per family with a must-fix or cheap finding, load exactly
-`../../../repair/<family>.md` (incompleteChange → `silentCoupling.md`, cohesion
-→ `splitCandidates.md`). ONLY families that have a finding — never preload the
-directory.
+`<plugin root>/repair/<family>.md` (incompleteChange → `silentCoupling.md`,
+cohesion → `splitCandidates.md`). ONLY families that have a finding — never
+preload the directory.
 
 **Round** (≤ 2):
 
