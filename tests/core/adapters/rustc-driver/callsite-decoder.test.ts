@@ -143,6 +143,20 @@ describe("decodeRustcCallSites", () => {
     expect(def?.packageInProject).toBe(true);
   });
 
+  it("flags a derived impl row with implIsDerived and leaves a hand-written impl unflagged", () => {
+    const index = decode(
+      row({ resolvedImpl: "<fx_core::Point as std::clone::Clone>::clone", implIsDerived: true }),
+      row({ line: 11, resolvedImpl: "<fx_core::Point as std::fmt::Debug>::fmt" }),
+    );
+    expect(index.definitionAt("src/main.rs", 10, 8)?.implIsDerived).toBe(true);
+    expect(index.definitionAt("src/main.rs", 11, 8)?.implIsDerived).toBeUndefined();
+  });
+
+  it("answers null when a derived and a hand-written row share one position", () => {
+    const index = decode(row({ implIsDerived: true }), row({}));
+    expect(index.definitionAt("src/main.rs", 10, 8)).toBeNull();
+  });
+
   it("maps ctor to type and other defKinds to other", () => {
     const index = decode(
       row({ col: 1, defKind: "ctor", callKind: "path", callee: "std::option::Option::<T>::Some" }),

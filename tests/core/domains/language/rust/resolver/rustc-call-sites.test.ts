@@ -219,7 +219,52 @@ describe("rustcCallSitesOf — the resolve environment carries the driver index 
       acquire: async () => ({ kind: "latched", reason: "build", detail: "crate fx failed" }),
     });
     await resolver.warmResolvePass({ expectedFileCount: 1, projectRoot: ROOT });
-    expect(resolver.diagnostics()).toEqual({ rustcCallSites: { outcome: "latched", reason: "build" } });
+    expect(resolver.diagnostics()).toEqual({
+      rustcCallSites: { outcome: "latched", reason: "build", detail: "crate fx failed" },
+    });
+  });
+
+  it("forwards the run's units and failed crate targets for the status line (bd s3i8m T8)", async () => {
+    const resolver = new RustCallResolver(undefined, undefined, undefined, undefined, {
+      acquire: async () => ({
+        kind: "indexed",
+        index: stubIndex({}),
+        cacheHit: false,
+        wallMs: 9000,
+        units: 12,
+        failedCrates: ["fx_bench"],
+      }),
+    });
+    await resolver.warmResolvePass({ expectedFileCount: 1, projectRoot: ROOT });
+    expect(resolver.diagnostics()).toEqual({
+      rustcCallSites: { outcome: "indexed", cacheHit: false, wallMs: 9000, units: 12, failedCrates: ["fx_bench"] },
+    });
+  });
+
+  it("keeps unavailable (with its install hint) apart from disabled (bd s3i8m T8)", async () => {
+    const skipped = async (acquisition: { kind: "skipped"; reason: "unavailable" | "disabled"; hint?: string }) => {
+      const resolver = new RustCallResolver(undefined, undefined, undefined, undefined, {
+        acquire: async () => acquisition,
+      });
+      await resolver.warmResolvePass({ expectedFileCount: 1, projectRoot: ROOT });
+      return resolver.diagnostics();
+    };
+    expect(await skipped({ kind: "skipped", reason: "unavailable", hint: "rustup toolchain install …" })).toEqual({
+      rustcCallSites: { outcome: "skipped", reason: "unavailable", hint: "rustup toolchain install …" },
+    });
+    expect(await skipped({ kind: "skipped", reason: "disabled" })).toEqual({
+      rustcCallSites: { outcome: "skipped", reason: "disabled" },
+    });
+  });
+
+  it("forwards a latch's hint", async () => {
+    const resolver = new RustCallResolver(undefined, undefined, undefined, undefined, {
+      acquire: async () => ({ kind: "latched", reason: "allUnitsFailed", detail: "E0463", hint: "cargo fetch" }),
+    });
+    await resolver.warmResolvePass({ expectedFileCount: 1, projectRoot: ROOT });
+    expect(resolver.diagnostics()).toEqual({
+      rustcCallSites: { outcome: "latched", reason: "allUnitsFailed", detail: "E0463", hint: "cargo fetch" },
+    });
   });
 });
 

@@ -35,21 +35,13 @@
  */
 
 import { createHash } from "node:crypto";
-import {
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { ManifestFile, RustAnalyzerScipIndex, RustAnalyzerScipIndexData } from "../../contracts/types/language.js";
 import { readManifestFiles } from "../filesystem/dependency-manifests.js";
+import { listRustSources, type RustSourceStamp } from "../filesystem/rust-sources.js";
 import {
   sampleProcessTreeRssKb,
   spawnSupervisedChild,
@@ -138,11 +130,7 @@ export interface RustAnalyzerScipRunOptions {
 export type RustAnalyzerScipChild = SupervisedChild;
 
 /** One `.rs` file of the project as the content key sees it. */
-export interface RustSourceStamp {
-  relPath: string;
-  size: number;
-  mtimeMs: number;
-}
+export type { RustSourceStamp };
 
 export interface RustAnalyzerScipRunnerDeps {
   env: Readonly<Record<string, string | undefined>>;
@@ -467,9 +455,6 @@ function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-/** Directories never holding project sources the content key should see. */
-const SKIPPED_SOURCE_DIRS = new Set(["target", "node_modules"]);
-
 /** Runner bound to the real host. */
 export function defaultRustAnalyzerScipRunnerDeps(
   env: Readonly<Record<string, string | undefined>> = process.env,
@@ -533,32 +518,4 @@ function spawnScipChild(
   options: SupervisedChildSpawnOptions,
 ): RustAnalyzerScipChild {
   return spawnSupervisedChild(command, args, options, SCIP_CHILD_NAME);
-}
-
-/** Every `.rs` file under the root, skipping `target/`, `node_modules/` and dot-directories. */
-function listRustSources(projectRoot: string): RustSourceStamp[] {
-  const stamps: RustSourceStamp[] = [];
-  const walk = (dir: string, relDir: string): void => {
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const relPath = relDir ? `${relDir}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        if (!entry.name.startsWith(".") && !SKIPPED_SOURCE_DIRS.has(entry.name)) walk(join(dir, entry.name), relPath);
-      } else if (entry.isFile() && entry.name.endsWith(".rs")) {
-        try {
-          const stat = statSync(join(dir, entry.name));
-          stamps.push({ relPath, size: stat.size, mtimeMs: stat.mtimeMs });
-        } catch {
-          // vanished between listing and stat: not part of the tree
-        }
-      }
-    }
-  };
-  walk(projectRoot, "");
-  return stamps;
 }

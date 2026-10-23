@@ -253,6 +253,7 @@ vi.mock("../../src/bootstrap/config/index.js", async () => {
       codegraph: {
         residual: { kevThreshold: 0.7, concurrency: 96, menuLimit: 40, minMenu: 4, retentionDays: 180 },
         rustAnalyzer: { enabled: true, exec: false, timeoutSec: 900, maxRssMb: 4096 },
+        rustDriver: { enabled: true, timeoutSec: 3600, maxRssMb: 12_288 },
       },
       qdrantTune: {
         deleteBatchSize: 500,
@@ -526,6 +527,7 @@ describe("wireCodegraph", () => {
           retentionDays: 180,
         },
         rustAnalyzer: { enabled: true, exec: false, timeoutSec: 900, maxRssMb: 4096 },
+        rustDriver: { enabled: true, timeoutSec: 3600, maxRssMb: 12_288 },
       },
     } as unknown as ReturnType<typeof getZodConfig>;
   }
@@ -551,6 +553,25 @@ describe("wireCodegraph", () => {
     );
     expect(ctx?.deps.rustAnalyzer).toEqual(expected);
     expect(ctx?.workingTreeGraphRuntime.providerConfig.rustAnalyzer).toEqual(expected);
+  });
+
+  // bd s3i8m T8 — the rustc call-site driver slot rides the same three paths.
+  it("carries codegraph.rustDriver to the worker, the main-thread deps and the tree build", () => {
+    const zod = zodConfigWithCodegraph();
+    const withDriver = {
+      ...zod,
+      codegraph: {
+        ...zod.codegraph,
+        rustDriver: { enabled: true, path: "/opt/drv", jobs: 2, timeoutSec: 600, maxRssMb: 2048 },
+      },
+    } as unknown as ReturnType<typeof getZodConfig>;
+    const expected = { enabled: true, path: "/opt/drv", jobs: 2, timeoutSec: 600, maxRssMb: 2048, spawn: "allowed" };
+
+    const ctx = wireCodegraph(makeConfig(), withDriver, new CollectionRegistry("/tmp/factory-test-registry"));
+
+    expect((ctx?.deps.workerDescriptor?.serializableConfig as { rustDriver?: unknown }).rustDriver).toEqual(expected);
+    expect(ctx?.deps.rustDriver).toEqual(expected);
+    expect(ctx?.workingTreeGraphRuntime.providerConfig.rustDriver).toEqual(expected);
   });
 
   it("always passes a daemonSocketPath into the pool (daemon is the default write path)", () => {

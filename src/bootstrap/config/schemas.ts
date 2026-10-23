@@ -283,6 +283,28 @@ export const codegraphRustAnalyzerSchema = z.object({
   maxRssMb: intWithDefault(4096),
 });
 
+/**
+ * `codegraph.rustDriver` — the rustc call-site driver (bd s3i8m T8,
+ * research/rustc-driver/SPEC.md §8.3). It IS `cargo check`, so build scripts
+ * and proc macros run; on by default whenever discovery finds the driver or
+ * the pinned toolchain with rustc-dev.
+ */
+export const codegraphRustDriverSchema = z.object({
+  /** `CODEGRAPH_RUST_DRIVER` — `off` (also `0` / `false` / `no`) turns the slot off. */
+  enabled: z
+    .string()
+    .optional()
+    .transform((value) => !/^(off|0|false|no)$/i.test(value?.trim() ?? "")),
+  /** `CODEGRAPH_RUST_DRIVER_PATH` — explicit driver binary, tried before every other discovery tier. */
+  path: z.string().optional(),
+  /** `CODEGRAPH_RUST_DRIVER_JOBS` — parallel rustc processes; unset = `max(1, cores / 2)`. */
+  jobs: z.coerce.number().int().positive().optional(),
+  /** `CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC` — wall budget of one driver run. */
+  timeoutSec: intWithDefault(3600),
+  /** `CODEGRAPH_RUST_DRIVER_MAX_RSS_MB` — process-tree resident-memory budget of one driver run. */
+  maxRssMb: intWithDefault(12_288),
+});
+
 export const codegraphSchema = z.object({
   /**
    * Master switch for the codegraph trajectory family. On by default; opt
@@ -355,6 +377,7 @@ export const codegraphSchema = z.object({
   residual: codegraphResidualSchema.prefault({}),
   /** rust-analyzer as the last Rust resolution slot. */
   rustAnalyzer: codegraphRustAnalyzerSchema.prefault({}),
+  rustDriver: codegraphRustDriverSchema.prefault({}),
 });
 
 export const qdrantTuneSchema = z.object({

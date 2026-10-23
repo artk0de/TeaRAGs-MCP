@@ -89,6 +89,9 @@ describe("buildRegistryEnvSnapshot", () => {
       CODEGRAPH_RUST_ANALYZER_EXEC: "false",
       CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC: "900",
       CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB: "4096",
+      CODEGRAPH_RUST_DRIVER: "true",
+      CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC: "3600",
+      CODEGRAPH_RUST_DRIVER_MAX_RSS_MB: "12288",
       EMBEDDING_TUNE_BATCH_TIMEOUT_MS: "2000",
       EMBEDDING_TUNE_RETRY_ATTEMPTS: "3",
       EMBEDDING_TUNE_RETRY_DELAY_MS: "1000",
@@ -150,6 +153,8 @@ describe("buildRegistryEnvSnapshot", () => {
       "CODEGRAPH_DB_PATH",
       "CODEGRAPH_CUSTOM_EXCLUDE",
       "CODEGRAPH_RUST_ANALYZER_PATH",
+      "CODEGRAPH_RUST_DRIVER_PATH",
+      "CODEGRAPH_RUST_DRIVER_JOBS",
       "QDRANT_MAX_RESIDENT_MEMORY_PERCENT",
       "QDRANT_SEARCH_MAX_BATCHSIZE",
     ]) {
@@ -166,9 +171,12 @@ describe("buildRegistryEnvSnapshot", () => {
       dbPath: "/tmp/cg",
       customExcludePatterns: "vendor/**,generated/**",
       rustAnalyzer: { path: "/opt/ra/rust-analyzer" },
+      rustDriver: { path: "/opt/drv/tearags-rust-callsites", jobs: "3" },
     });
     cfg.qdrantTune = qdrantTuneSchema.parse({ maxResidentMemoryPercent: "80", searchMaxBatchsize: "64" });
     const set = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());
+    expect(set.CODEGRAPH_RUST_DRIVER_PATH).toBe("/opt/drv/tearags-rust-callsites");
+    expect(set.CODEGRAPH_RUST_DRIVER_JOBS).toBe("3");
     expect(set.EMBEDDING_DIMENSIONS).toBe("768");
     expect(set.EMBEDDING_TUNE_MIN_BATCH_SIZE).toBe("8");
     expect(set.EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE).toBe("600");
@@ -217,6 +225,7 @@ describe("buildRegistryEnvSnapshot", () => {
       dbPath: "/tmp/cg",
       customExcludePatterns: "vendor/**",
       rustAnalyzer: { path: "/opt/ra/rust-analyzer" },
+      rustDriver: { path: "/opt/drv/tearags-rust-callsites", jobs: "2" },
       residual: {
         kevUrls: "http://gpu:8090",
         kevSessionUrl: "http://gpu:8008",

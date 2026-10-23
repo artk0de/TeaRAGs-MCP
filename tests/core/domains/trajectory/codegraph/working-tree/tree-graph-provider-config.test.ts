@@ -39,4 +39,15 @@ describe("treeBuildProviderConfig (bd s3i8m.6 R2b)", () => {
 
     expect(config.rustAnalyzer).toEqual({ ...rustAnalyzer, spawn: "never" });
   });
+
+  it("forces spawn: never on the rustc driver slot too (bd s3i8m T8): no cargo check under the wall budget", () => {
+    const rustDriver = { enabled: true, timeoutSec: 3600, maxRssMb: 12_288, spawn: "allowed" as const };
+    const config = treeBuildProviderConfig({
+      providerConfig: { ...BASE, rustDriver },
+      outputRoot: "/out",
+      physicalCollectionName: PHYSICAL,
+    });
+
+    expect(config.rustDriver).toEqual({ ...rustDriver, spawn: "never" });
+  });
 });

@@ -174,6 +174,13 @@ function buildEnvInputs(env: EnvReader) {
       timeoutSec: env("CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC"),
       maxRssMb: env("CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB"),
     },
+    rustDriver: {
+      enabled: env("CODEGRAPH_RUST_DRIVER"),
+      path: env("CODEGRAPH_RUST_DRIVER_PATH"),
+      jobs: env("CODEGRAPH_RUST_DRIVER_JOBS"),
+      timeoutSec: env("CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC"),
+      maxRssMb: env("CODEGRAPH_RUST_DRIVER_MAX_RSS_MB"),
+    },
     residual: {
       kevUrls: env("CODEGRAPH_RESIDUAL_KEV_URL"),
       kevThreshold: env("CODEGRAPH_RESIDUAL_KEV_THRESHOLD"),

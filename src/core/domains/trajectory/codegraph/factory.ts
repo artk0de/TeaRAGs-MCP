@@ -31,6 +31,7 @@
 import { readManifestFiles } from "../../../adapters/filesystem/dependency-manifests.js";
 import { processRustAnalyzerScipSource } from "../../../adapters/rust-analyzer/index.js";
 import { processRustExternalSignatureSources } from "../../../adapters/rust-signatures/index.js";
+import { processRustcCallSiteSource } from "../../../adapters/rustc-driver/callsite-source.js";
 import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
 import type {
@@ -41,6 +42,7 @@ import type {
   RustAnalyzerScipSource,
   RustAnalyzerScipSourceConfig,
   RustCallSiteSource,
+  RustCallSiteSourceConfig,
   RustExternalSignatureSources,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
@@ -145,6 +147,12 @@ export interface CodegraphWorkerConfig {
    * disabled ⇒ no source, nothing spawned.
    */
   rustAnalyzer?: RustAnalyzerScipSourceConfig;
+  /**
+   * `codegraph.rustDriver` plus who may spawn (bd s3i8m T8) — plain data, so
+   * the thread that resolves builds the rustc call-site source itself. Absent
+   * or disabled ⇒ no source, no `cargo check`.
+   */
+  rustDriver?: RustCallSiteSourceConfig;
   /**
    * Co-change build config for the temporal sub-graph (bd tea-rags-mcp-x4rpp) —
    * plain data, so the pinned worker rebuilds the SAME completion hook the
@@ -262,6 +270,23 @@ async function loadCodegraphPoolBuilder(poolFactoryModulePath: string): Promise<
 }
 
 /**
+ * The Rust index sources the in-thread `LanguageFactory` receives: the
+ * process-scoped rust-analyzer SCIP source and rustc call-site source, each
+ * only when its slot is on.
+ */
+export function rustIndexSourcesOf(config: Pick<CodegraphWorkerConfig, "rustAnalyzer" | "rustDriver">): {
+  rustAnalyzerScipSource?: RustAnalyzerScipSource;
+  rustcCallSiteSource?: RustCallSiteSource;
+} {
+  return {
+    ...(config.rustAnalyzer?.enabled
+      ? { rustAnalyzerScipSource: processRustAnalyzerScipSource(config.rustAnalyzer) }
+      : {}),
+    ...(config.rustDriver?.enabled ? { rustcCallSiteSource: processRustcCallSiteSource(config.rustDriver) } : {}),
+  };
+}
+
+/**
  * Build a `CodegraphEnrichmentProvider` runtime from a structured-clone-safe
  * config — the rebuild seam the enrichment worker (through the bootstrap
  * module's `createCodegraphEnrichmentProvider`) and the working-tree graph
@@ -308,14 +333,10 @@ export async function createCodegraphProviderRuntime(
     ambiguousResolveMode: config.ambiguousResolveMode,
     manifestFilesReader: readManifestFiles,
     rustExternalSignatureSources: processRustExternalSignatureSources(),
-    // The rust-analyzer SCIP source likewise (bd s3i8m.6 R2b): built here, in
-    // the thread whose pass-2 awaits it, and only when the slot is on.
-    ...(config.rustAnalyzer?.enabled
-      ? { rustAnalyzerScipSource: processRustAnalyzerScipSource(config.rustAnalyzer) }
-      : {}),
-    // The rustc call-site source (bd s3i8m T6) joins here as `rustcCallSiteSource`
-    // once the driver runner (`adapters/rustc-driver`) exposes a process-scoped
-    // `RustCallSiteSource`; absent, the chain is the SCIP slot's alone.
+    // The rust-analyzer SCIP source and the rustc call-site source likewise
+    // (bd s3i8m.6 R2b, T8): built here, in the thread whose pass-2 awaits them,
+    // and only when their slot is on.
+    ...rustIndexSourcesOf(config),
     ...(runtimeDeps.crossRunParseCache ? { crossRunParseCache: runtimeDeps.crossRunParseCache } : {}),
   });
   const composer = new lang.DefaultSymbolIdComposer();

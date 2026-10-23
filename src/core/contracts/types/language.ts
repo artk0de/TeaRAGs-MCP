@@ -1375,15 +1375,49 @@ export interface RustCallSiteIndex {
  * the environment changes; `skipped` means nothing was attempted.
  */
 export type RustCallSiteAcquisition =
-  | { kind: "indexed"; index: RustCallSiteIndex; cacheHit: boolean; wallMs?: number }
+  | {
+      kind: "indexed";
+      index: RustCallSiteIndex;
+      cacheHit: boolean;
+      wallMs?: number;
+      /** Unit files the index was decoded from. */
+      units?: number;
+      /** Crate targets that failed to compile under the pin; their sites answer null. */
+      failedCrates?: readonly string[];
+    }
   | { kind: "latched"; reason: string; detail: string; hint?: string }
-  | { kind: "skipped"; reason: string };
+  | {
+      kind: "skipped";
+      /**
+       * `disabled` = switched off (`CODEGRAPH_RUST_DRIVER=off`); `unavailable` =
+       * no driver and no pinned toolchain with rustc-dev (`hint` says how to
+       * install one); `noBulkNoCache` = admission refused a run and no earlier
+       * run exists.
+       */
+      reason: "disabled" | "unavailable" | "noBulkNoCache";
+      hint?: string;
+    };
 
 /**
  * Whether an acquisition that misses its cache may run the driver, decided by
  * the domain over the project's `.rs` files the adapter walked (repo-relative).
  */
 export type RustCallSiteAdmission = (projectRustRelPaths: readonly string[]) => "spawn" | "reuseOnly";
+
+/**
+ * `codegraph.rustDriver` as plain data, plus who may spawn: the working-tree
+ * graph build runs under a short wall budget and must never start `cargo
+ * check`, so it serves the previous run only (`spawn: "never"`).
+ */
+export interface RustCallSiteSourceConfig {
+  enabled: boolean;
+  path?: string;
+  /** Parallel rustc processes; absent = the runner's `max(1, cores / 2)`. */
+  jobs?: number;
+  timeoutSec: number;
+  maxRssMb: number;
+  spawn: "allowed" | "never";
+}
 
 /**
  * The port the Rust resolver acquires its rustc call-site index through
