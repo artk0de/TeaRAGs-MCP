@@ -255,3 +255,21 @@ unaware of the explicit per-task reindex mechanism. The prior
   - `eval-7` — whole-corpus search + cross-language note, but no "0 results → fallback note" outcome.
   - `eval-8` — delegates to extract-project-patterns / re-search; no 4–6 bullet cap, no per-convention source citation.
   - `eval-9` — search then write test; "extract pattern block" step missing from the order.
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Round 3 rate: 87% — delta: +13 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 13/15 PASS (86.7%) (N/A excluded: 0).
+- Round-3 Codex: 11/15 (73.3%). Delta: +13.3 pp.
+- FAIL list:
+  - `eval-4` — complies with metaOnly=true ("return metadata only") instead of refusing — pattern search needs bodies
+  - `eval-8` — routes to extract-project-patterns/find_similar re-search instead of 4-6 cited convention bullets (cap 6)

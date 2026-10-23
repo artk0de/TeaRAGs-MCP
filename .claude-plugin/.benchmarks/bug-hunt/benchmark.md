@@ -191,3 +191,20 @@ needed.
   - `eval-19` — no brace frame-path fresh probe w/ modifiedAfter; no plain "no static path tool" statement
   - `eval-20` — no git status -uall, conditional reindex, no 3-probe message, no UNCOMMITTED SUSPECT/PRESENT class
   - `eval-21` — no git status -uall per-file listing, no per-file brace uncommitted probe
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 20/21 PASS (95.2%) (N/A excluded: 0).
+- Round-3 Codex: 4/21 (19.0%). Delta: +76.2 pp.
+- FAIL list:
+  - `eval-20` — status/index/3-probe message OK, but never classes the uncommitted hit UNCOMMITTED SUSPECT regardless of labels nor PRESENT class 'uncommitted'
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; no per-case length cap; graded strict-literal against the current evals.json)
+- Result: 21/21 PASS (100%) over 21 scored cases (superseded 0)
+- Baseline (round 3): 21/21 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13 / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).

@@ -136,3 +136,11 @@ regression.
 - Round-2 Codex: 6/8 (75.0%). Delta: +12.5 pp.
 - FAIL list:
   - `recipe-sdp-inversion` — lexicon, placement under src/core/contracts, rationale = finding key, restructurePlan all ok, but ops use component dirs (removeEdge worktree→footprint, addEdge <component>→interface) instead of provisioner.ts / footprint-store.ts file edges
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 7/8 PASS (87.5%) (N/A excluded: 0).
+- Round-3 Codex: 7/8 (87.5%). Delta: ±0.0 pp.
+- FAIL list:
+  - `recipe-sdp-inversion` — inversion described at component level (no removeEdge provisioner.ts->footprint-store.ts / addEdge file->interface ops, no abstract:true), rationale = finding key not set

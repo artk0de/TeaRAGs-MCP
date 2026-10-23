@@ -271,3 +271,33 @@ docs-as-subject route lives only in cascade, not in the SKILL intent table.
   - `12` — refuses Glob but hybrid_search not named (tool "selected" later) and no statement that injected rules outrank the third-party skill
   - `23` — code checked before the 512 claim, but no "code wins + name the drifted doc" on conflict — only "state whether supported"
   - `25` — reads project digest and routes PRE-GEN; no own-tool-list codegraph decision, no ORIENT -> hubs
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 14/27 PASS (51.9%) (N/A excluded: 0).
+- Round-3 Codex: 22/27 (81.5%). Delta: -29.6 pp.
+- FAIL list:
+  - `1` — hybrid_search only, never checks codegraph state; get_callers (codegraph on) not considered
+  - `5` — "what changed recently" -> semantic_search rerank=relevance instead of rank_chunks rerank=codeReview (SKILL.md "Change intent -> rank_chunks codeReview") (regression vs R3)
+  - `7` — Collect intent searched directly (hybrid_search + find_similar) instead of delegating to $pattern-search (regression vs R3)
+  - `8` — hybrid_search primary for "what calls"; get_callers only as conditional afterthought (regression vs R3)
+  - `11` — symbol + behaviour words -> semantic_search instead of hybrid_search (regression vs R3)
+  - `13` — find_symbol existence check without metaOnly=true (regression vs R3)
+  - `17` — no ORIENT (semantic_search rerank=entryPoint, testFile/documentation exclude) — find_symbol directory outline instead (regression vs R3)
+  - `19` — rerank=relevance instead of ORIENT rerank=onboarding; no content-inferred flag (regression vs R3)
+  - `20` — "where does indexing start" -> relevance search; no rerank=entryPoint + chunkSize mitigation (regression vs R3)
+  - `21` — one merged query instead of three per-axis calls (sources/tests/docs) (regression vs R3)
+  - `22` — hybrid_search without testFile:"only" (regression vs R3)
+  - `23` — checks code for 512 but no docs-excluded search and no drift flag naming the doc on conflict
+  - `25` — reads digest instead of own tool list; no ORIENT before backbone
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; 27 cases split into two subjects of 14 + 13, run sequentially; strict literal grading; no per-case length cap)
+- Result: 27/27 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 3): 27/27 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Stale expectation wording (graded on the current skill text, as in round 3): case 3 expects "find_symbol with test pathPattern" but explain-pattern.md "Is X tested?" prescribes hybrid_search testFile:"only" (the subject's route); case 20 "chunkSize post-filter" — the subject used the equivalent minFanOut + level:"chunk" mitigation that entry-point-pattern.md offers as the alternative; case 25 "get_callees walk" — architecture-pattern.md (after Step 1) offers get_callers on the top hub, which the subject planned.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13 / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).

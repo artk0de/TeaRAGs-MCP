@@ -104,3 +104,12 @@ exploration, and double test runs. After optimization, all operations use
   - `eval-5` — named 0%-coverage file treated as "prime target" but the plan still runs the Step 2 project-wide jq worst-offender ranking ("I confirm via the jq/summary") instead of targeting the named file directly; expand-coverage SKILL.md Step 2 has no named-target branch
 - Note: eval-3 (targeted vitest run between baseline and verify) and eval-9 (semantic_search rejected for uncovered-area discovery) now pass.
 - Context: new SessionStart core+digest / SubagentStart block (rebuilt from live hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; no per-case length cap; graded strict-literal against the current evals.json); agent def + expand-coverage skill
+- Result: 10/10 PASS (100%) over 10 scored cases (superseded 0)
+- Baseline (round 3): 9/10 (90%)
+- Delta: +10pp (eval-5 fixed — named target taken directly, jq ranking skipped)
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13 / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).

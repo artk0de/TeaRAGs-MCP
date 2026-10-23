@@ -191,3 +191,12 @@ skill boundary collisions and reduced total line count by 36%.
   - `8` — PRE-GEN + metaOnly OK, but "Keep the query in Russian" — no translation to English
   - `11` — "don't restart or replace it with $explore" — DDG runs own semantic_search; no missing-context detection / explore PRE-GEN auto-invoke
   - `15` — DDG entry + test-first before impl, but no explore PRE-GEN context step and no recorded RED gate before production edit
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 13/15 PASS (86.7%) (N/A excluded: 0).
+- Round-3 Codex: 12/15 (80.0%). Delta: +6.7 pp.
+- FAIL list:
+  - `8` — Russian query used as primary — not translated to English (English only "if corpus primarily English")
+  - `15` — explore -> DDG strategy/template OK, but Step 6a RED via tea-rags:test-first / "no production edit before recorded RED" not stated

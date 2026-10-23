@@ -71,3 +71,11 @@
 - Round-2 Codex: 1/2 (50.0%). Delta: ±0.0 pp.
 - FAIL list:
   - `naming-diff-changes` — one review_changes(changes:{base:main}, sections:["naming"]) OK, but report grouped by severity not verdict, no relPath:line, MISFIT not marked minor w/ suggestion+holder fix, no plain-language/no-verdict-code wording
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 1/2 PASS (50.0%) (N/A excluded: 0).
+- Round-3 Codex: 1/2 (50.0%). Delta: ±0.0 pp.
+- FAIL list:
+  - `naming-diff-changes` — separate review_changes sections=["naming"] OK, but no conforming/novel summary line, no relPath:line, COLLISION not tied to existing declaration's file, plain-language comment rule absent

@@ -155,3 +155,25 @@ Plugin bumps (patch, text-only): tea-rags 0.26.0 → 0.26.1, dinopowers 0.17.5 �
   - `4` — codegraph OFF: plans trace_path(from,to) as the route; no OFF detection, no "no static path tool" caveat
   - `11` — Russian cycle intent recognised but plan says "Call find_cycles(...)" before noting it is unavailable — not E1 behaviour (OFF detected before choosing the tool)
   - `12` — subagent runs semantic_search rerank=entryPoint + minFanOut (fan-graph preset) instead of relevance + chunkSize heuristic — failure mode
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 8/13 PASS (61.5%) (N/A excluded: 0).
+- Round-3 Codex: 9/13 (69.2%). Delta: -7.7 pp.
+- FAIL list:
+  - `5` — still plans rerank="architecturalHub" (conditional); no "fan-in/hub centrality unavailable" + labelled git/relevance substitute (regression vs R3)
+  - `8` — calls get_callers on the raw name — no find_symbol id resolution first (regression vs R3)
+  - `10` — hedges ("would be consistent with"), never states empty find_cycles with codegraph ON = genuine "no cycles / DAG" (regression vs R3)
+  - `12` — semantic_search without the relevance + chunkSize heuristic named; caveat only on reachability
+  - `13` — get_callers without find_symbol resolution (path pin instead of exact id) (regression vs R3)
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 13/13 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 3): 13/13 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Notes: cases carried the evals' own `[environment: codegraph on|off — ...]` prefix verbatim; no extra tool-list line added. Case 13 adds a hybrid_search cross-check after get_callers (Ruby, no realized resolve rate) — primary route is graph edges, graded PASS.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13 / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).

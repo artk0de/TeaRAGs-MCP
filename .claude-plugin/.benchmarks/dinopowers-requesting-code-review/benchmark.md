@@ -101,3 +101,20 @@ from `receiving-code-review`: that computes a verdict; this builds metadata.
 - FAIL list:
   - `eval-3` — lists data fields only; no per-file table, suggested reviewers, coordinated-change context or risk flags.
   - `eval-14` — skips the Step 2.6 review_changes call (treats findings as supplied); findings not grouped by verdict with relPath:line.
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 12/13 PASS (92.3%) (N/A excluded: 0).
+- Round-3 Codex: 11/13 (84.6%). Delta: +7.7 pp.
+- FAIL list:
+  - `eval-14` — skips the Step 2.6 review_changes {base: main} sections ["naming"] call (treats findings as supplied); findings not listed with relPath:line
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Result: 13/13 PASS (100%) over scored cases (superseded: 1)
+- Round 3 rate: 85% — delta: +15 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

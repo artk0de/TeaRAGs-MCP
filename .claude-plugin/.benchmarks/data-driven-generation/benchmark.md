@@ -378,3 +378,26 @@ boundary against regression rather than measuring a delta.
   - `step7-fix-seeded-hub-cut` — no hubLike remedy/repair commitment, no before/after metric + escalate fallback
   - `gate-partial-not-pass` — treats as partial + files batches, but gate line partial=true until covered not stated
   - `gate-preexisting-split` — repairs (2), cycle report-only, but gate line introduced=1 -> 0 after repair not stated
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 46/62 PASS (74.2%) (N/A excluded: 0).
+- Round-3 Codex: 40/62 (64.5%). Delta: +9.7 pp.
+- FAIL list:
+  - `eval-1` — no /tea-rags:explore first on src/adapters/qdrant/ — goes straight to find_symbol probe + strategy (regression vs R3)
+  - `eval-3` — rejects STABILIZATION claiming hard rule needs "extreme" — SKILL.md:125 says "high"+ + erratic (regression vs R3)
+  - `eval-5` — autonomous judgment invoked but no strategy actually chosen
+  - `eval-15` — scans strategy-* + ## When, never states custom conditions run before hard rules
+  - `naming-concept-new-term` — language "typescript" for a Ruby project (context says Ruby); Organizer adoption only conditional
+  - `naming-new-term-justified` — keeps new term but no "NEW_TERM <term> — why" output line
+  - `verify-symbol-risk` — uses supplied Gateway#charge risk but never runs find_symbol(criticalPath) on the other called symbol Ledger#post
+  - `session-reuse-unedited` — says reuse in-context copy, then still plans find_symbol(symbol="Reranker") re-probe
+  - `step7-fix-remedy-applied` — misreads the remedy as already applied; no must-fix class, no leakingAbstraction.md, remedy never applied
+  - `step7-fix-cochange-verdict` — plugin.json not identified as version-manifest known noise per repair/silentCoupling.md
+  - `step7-fix-seeded-hub-cut` — repair + escalation, but no before/after metric report on the fallback
+  - `tdd-red-before-code` — routes via dino-tdd/test-driven-development, never invokes $test-first; red-for-the-right-reason not stated (regression vs R3)
+  - `tdd-spec-test-verbatim` — keeps test verbatim but no red run before implementing applyFloor (tests run after implementation) (regression vs R3)
+  - `gate-partial-not-pass` — treats as partial + files batches, but gate line partial=true until covered not stated
+  - `gate-preexisting-split` — repairs (2), cycle report-only, but no leakingAbstraction.md/facade retarget and no introduced=1 -> 0 gate line
+  - `prewrite-sim-move-files` — no get_architecture_report restructure move{files,toComponent} before moving (regression vs R3)

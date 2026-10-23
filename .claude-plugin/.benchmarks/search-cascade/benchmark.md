@@ -854,3 +854,14 @@ merges every part — the epic's target.
 - Result: 12/12 PASS (100.0%) (N/A excluded: 0).
 - Round-2 Codex: 11/12 (91.7%). Delta: +8.3 pp.
 - FAIL list: none.
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 11/12 PASS (92%) over scored cases (superseded: 0)
+- Baseline (round 3): 9/12 (75%)
+- Delta: +17pp (7 and 12 fixed; 11 still failing)
+- FAIL list:
+  - 11 — get_naming_lexicon is the route, but called with "query/term `row` + domain, following the tool's own parameter schema" — `names` / `types` never stated (MUST in expected); a conditional hybrid_search follow-up when the lexicon is thin. The core Routing row ("a name's fit → get_naming_lexicon") names the tool but not its `names[]`/`types` inputs; that shape lives only in guides/decision-tree.md / search-examples.md, which the core does not send this case to.
+- Notes: case 3 adds an optional find_symbol(metaOnly) to locate the definition and exclude it from the usage tally — not the usage route, graded PASS; conditional-on-empty fallbacks (cases 1, 2, 8, 10) graded PASS.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13 / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).

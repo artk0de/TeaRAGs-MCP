@@ -148,3 +148,13 @@ needed.
   - `eval-6` — same dir >80% → keep richer-signals one, but never states the different-directories → always keep both rule
   - `eval-7` — groups "by module/directory" with file:line + description + overlay labels, but not by top-level module = first 2 segments after src/
   - `eval-14` — only "check for disambiguation and no-match conditions" via pagination; no thresholds (2+ dir groups / none >70% → ask + re-SEED pathPattern; 2-of-3 warn / 3-of-3 report no match)
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 11/14 PASS (78.6%) (N/A excluded: 0).
+- Round-3 Codex: 11/14 (78.6%). Delta: ±0.0 pp.
+- FAIL list:
+  - `eval-6` — same-dir >80% -> keep richer applied, but "different directories -> always keep both" never stated
+  - `eval-7` — groups "by module/directory" without the top-level-module rule (first 2 segments after src/)
+  - `eval-14` — disambiguation (>70% split -> ask) stated, but No-Match Detection (2 of 3 warn / 3 of 3 report no match) missing

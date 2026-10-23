@@ -208,3 +208,12 @@ No iteration needed.
 - Result: 17/17 PASS (100%) (N/A excluded: 0).
 - Round-2 Codex: 15/17 (88.2%). Delta: +11.8 pp.
 - FAIL list: none.
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Result: 17/17 PASS (100%) over scored cases (superseded: 0)
+- Round 3 rate: 94% — delta: +6 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

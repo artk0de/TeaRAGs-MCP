@@ -175,3 +175,12 @@ These came from the incident case study and need code changes, not rule text.
   - `E9` — find_symbol + get_callers + hybrid; no semantic_search/explore, no trace_path, no drift report to parent
   - `E14` — hybrid_search re-check only; explicitly "no reindex" on own checkout with changed file; no find_symbol re-check
   - `E15` — own checkout changedFiles 12: explicitly skips incremental index_codebase ("does not trigger reindex"); find_symbol only, no semantic_search/explore
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 13/15 PASS (86.7%) (N/A excluded: 0).
+- Round-3 Codex: 9/15 (60.0%). Delta: +26.7 pp.
+- FAIL list:
+  - `E14` — hybrid_search + find_symbol re-check, but no incremental index_codebase on own checkout with a changed file
+  - `E15` — incremental OK, but the read is left vague ("the relevant tea-rags read") — no semantic_search / $explore for "explain retry logic"

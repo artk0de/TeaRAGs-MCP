@@ -302,3 +302,20 @@ user-gated (live incremental index on a clone).
 - FAIL list:
   - `eval-4` — guard correct, but the plan also calls hybrid_search (low-resolve caller cross-check in the DDG MODIFY step), which mustNotCall lists.
   - `eval-6` — UNSAFE derived correctly (labelMap, both halves, pause), but no split / owner review / tests-first recommendation.
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Result: 16/16 PASS (100%) over scored cases (superseded: 0)
+- Round 3 rate: 100% — delta: +0 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 15/16 PASS (93.8%) (N/A excluded: 0).
+- Round-3 Codex: 14/16 (87.5%). Delta: +6.2 pp.
+- FAIL list:
+  - `eval-10` — skips the guard on "не парься" by misapplying the trivial-edit exception to a 2-line Task change (regression vs R3)

@@ -77,3 +77,12 @@
 - Round-2 Codex: 1/2 (50.0%). Delta: ±0.0 pp.
 - FAIL list:
   - `2` — mainSequence report-only + hubLike must-fix + both repair files OK, but never states compositionRoot flag = evidence / bare "by design" not; defers the fix if "specifics" lacking
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 0/2 PASS (0.0%) (N/A excluded: 0).
+- Round-3 Codex: 1/2 (50.0%). Delta: -50.0 pp.
+- FAIL list:
+  - `1` — classification cheap-preExisting + verbatim remedy fields OK, but repair/stableDependencies.md never loaded — looked for skills/architecture-diagnostics/repair/ (absent), reported "not present" (regression vs R3)
+  - `2` — report-only / must-fix split OK, but compositionRoot-as-evidence vs bare "by design" never stated; repair/mainSequence.md + hubLike.md not loaded (wrong path)

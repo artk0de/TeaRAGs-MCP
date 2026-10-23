@@ -123,3 +123,21 @@ needed.
 - FAIL list:
   - `eval-2` — cwd default + list_projects + CLI --name route ok, but no linked-worktree branch (do not register/index; read tools already answer)
   - `eval-9` — labels the status question "Навык: $tea-rags:index" (mustNotTrigger index skill); get_index_status itself correct
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 8/10 PASS (80.0%) (N/A excluded: 0).
+- Round-3 Codex: 8/10 (80.0%). Delta: ±0.0 pp.
+- FAIL list:
+  - `eval-1` — registration check + alias offer + CLI --name OK, but no declined -> index_codebase(path) branch and no full-result (metrics + duration) report (regression vs R3)
+  - `eval-2` — cwd default + linked-worktree "don't index" OK, but no declined branch and no "read tools already answer for that tree" to the user
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 10/10 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 3): 10/10 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13 / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).

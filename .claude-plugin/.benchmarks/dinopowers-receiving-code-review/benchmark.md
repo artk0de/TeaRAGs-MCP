@@ -121,3 +121,20 @@ fails at: data-backed pushback (3), scope enumeration (5), tool selection (1, 6,
 - Round-2 Codex: 11/14 (78.6%). Delta: +14.3 pp.
 - FAIL list:
   - `eval-13` — lexicon called for both names, but the "proposed MISFIT/NEW_TERM while current CONFORMS → push back with project term + holder" rule is not stated.
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 13/14 PASS (92.9%) (N/A excluded: 0).
+- Round-3 Codex: 13/14 (92.9%). Delta: ±0.0 pp.
+- FAIL list:
+  - `eval-13` — Step 3b lexicon call made, but the "proposed MISFIT/NEW_TERM vs current CONFORMS -> push back with project term + holder" rule not applied
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Result: 14/14 PASS (100%) over scored cases (superseded: 0)
+- Round 3 rate: 79% — delta: +21 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

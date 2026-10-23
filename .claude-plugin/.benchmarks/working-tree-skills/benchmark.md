@@ -470,3 +470,11 @@ listed in the `iteration-*/arm-*.md` answers.
 - Round-2 Codex: 13/16 (81.2%). Delta: +12.5 pp.
 - FAIL list:
   - `S12` — no reindex + path=cwd ok, but A2 missing: rows not called pre-edit index copies (fanIn/churn valid, text/lines stale, not evidence the edit is correct)
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 15/16 PASS (93.8%) (N/A excluded: 0).
+- Round-3 Codex: 15/16 (93.8%). Delta: ±0.0 pp.
+- FAIL list:
+  - `S12` — path=<cwd> + no reindex OK, but A2 missing: rows not called pre-edit copies whose dependents' fanIn/churn stay valid and that are no evidence the edit is correct

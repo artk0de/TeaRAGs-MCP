@@ -180,3 +180,20 @@ trivial). Phase 4 verification: **10/10 PASS, +70pp from before-fix.**
   - `E9` — tests via $test-first; required dinopowers:test-driven-development absent.
   - `E11` — DDG MODIFY + tests-at-risk, but no get_callers on Paginator#nextOffset and no "Step 4.5 skipped — MODIFY skips TEMPLATE".
   - `E12` — DDG MODIFY, but callers of shouldRetry never surfaced.
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Result: 13/13 PASS (100%) over scored cases (superseded: 0)
+- Round 3 rate: 62% — delta: +38 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 12/13 PASS (92.3%) (N/A excluded: 0).
+- Round-3 Codex: 9/13 (69.2%). Delta: +23.1 pp.
+- FAIL list:
+  - `E9` — DDG named but tea-rags:test-first (DDG 6a) never named — "RED" only

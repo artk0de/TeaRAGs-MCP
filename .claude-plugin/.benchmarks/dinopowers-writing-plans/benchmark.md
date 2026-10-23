@@ -218,3 +218,21 @@ No iteration needed.
   - `eval-7` — per-file columns named, but no aggregation by relativePath (one row per file) and no keep-empty-files rule.
   - `eval-10` — refuses impactAnalysis and picks blastRadius/custom, but does not call the custom fallback an import proxy.
   - `eval-14` — metaOnly=true kept, but content fetched via find_symbol instead of the required separate semantic_search metaOnly=false.
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Round 3 rate: 87% — delta: +13 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 13/15 PASS (86.7%) (N/A excluded: 0).
+- Round-3 Codex: 12/15 (80.0%). Delta: +6.7 pp.
+- FAIL list:
+  - `eval-10` — refuses impactAnalysis, codegraph-state rerank, but custom fallback not called an import proxy
+  - `eval-15` — get_naming_lexicon without concept/language/pathPatternL1; MISFIT -> suggestion / NEW_TERM -> project term or justification not stated (regression vs R3)

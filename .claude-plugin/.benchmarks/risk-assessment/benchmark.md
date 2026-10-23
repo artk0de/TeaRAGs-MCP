@@ -279,3 +279,23 @@ separate work.
   - `9` — risk intent + reranker scope + DDG handoff OK, but Phase 5 risk map with File:Line + label signals not stated
   - `12` — pathPattern on scan calls OK, output "risk map and structural debt" — not the Phase 5 format (tiers, File:Line, Key Signals, Tests, Summary)
   - `14` — hedges: "only a matching Critical/High candidate would be elevated" while the High candidate sits in the flagged component; never states compositionRoot excludes escalation / no structural-violation tag
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading against the current evals.json; no per-case length cap)
+- Result: 14/14 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 3): 13/14 (93%)
+- Delta: +7pp (case 6 fixed — "the scoped map IS the hand-off (pathPattern, File:Line, labels); no extra block, no extra scan")
+- FAIL list: none
+- Notes: case 10 routed straight to risk-assessment (not via explore), as in round 3 — graded PASS (failure mode pattern-search not hit).
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13 / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 11/14 PASS (78.6%) (N/A excluded: 0).
+- Round-3 Codex: 9/14 (64.3%). Delta: +14.3 pp.
+- FAIL list:
+  - `6` — no Phase 5 risk map (Critical/High tables, File:Line, Risk Type, Key Signals labels, Tests column, Summary); hands DDG a pathPattern block the contract excludes
+  - `9` — risk-assessment scoped OK, but Phase 5 map with File:Line + labels and the DDG handoff (pathPattern + per-symbol labels) not stated
+  - `12` — pathPattern on every scan OK, output only "fragile areas" — not the Phase 5 risk map format
