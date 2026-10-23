@@ -284,7 +284,10 @@ fn run() {
     expect(f.edges().filter((edge) => edge.targetSymbolId === "Product#finish")).toEqual([]);
   });
 
-  it("refuses wildcard imports rather than guessing a same-file callee", () => {
+  // Moved pin: an item the module declares outranks every glob-imported name
+  // (Rust reference, "Use declarations": glob imports are shadowed by items),
+  // so `use external::*;` never hides the same-file `fn make`.
+  it("reads a same-file callee through a wildcard import, which never shadows a declared item", () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -298,7 +301,7 @@ fn run() {
       },
       materialized,
     );
-    expect(f.resolve("value.finish()")).toBeNull();
+    expect(f.resolve("value.finish()")).toMatchObject(productFinish);
   });
 
   it.each([

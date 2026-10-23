@@ -22,6 +22,7 @@ import { resolveLocalBinding, type CallContext, type CallRef } from "../../../..
 import { rustTextIsStdMethodName } from "../vocabulary/std-method-names.js";
 import { rustTextIsStdPreludeCallable } from "../vocabulary/std-prelude.js";
 import { rustcCallSiteDefinitionOf } from "./call-site-resolution.js";
+import { rustStdTerminalTargetsExternal } from "./external-type-hops.js";
 import { rustReceiverChainType } from "./strategies/rust-type-receiver.js";
 import {
   parseRustImportPath,
@@ -58,5 +59,7 @@ function receiverStdNameBindsByNameOnly(call: CallRef, ctx: CallContext): boolea
   if (ctx.imports.some((imp) => parseRustImportPath(imp.importText, head)?.receiverMatches)) return false;
   const binding = resolveLocalBinding(ctx.localBindings, head, call.startLine, call.startColumn);
   if (binding !== undefined && (binding.typeRef !== undefined || binding.type.length > 0)) return false;
-  return rustReceiverChainType(call, ctx) === undefined;
+  // A receiver the fold types as a std type is evidence FOR std, not for the namesake.
+  const folded = rustReceiverChainType(call, ctx);
+  return folded === undefined || rustStdTerminalTargetsExternal(folded, call.member, ctx);
 }

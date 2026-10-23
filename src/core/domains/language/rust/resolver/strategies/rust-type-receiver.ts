@@ -65,10 +65,18 @@ const RUST_RECEIVER_TYPE_PORTS: ReceiverTypePorts = {
     if (binding?.valueKind === "patternProjection") return rustPatternBindingType(binding, ctx, rustExpressionType);
     const local = binding?.typeRef ?? (binding?.type ? { form: "instance" as const, name: binding.type } : undefined);
     if (local !== undefined) return resolveRustNominalType(local, ctx) ?? rustStdBindingType(local, ctx);
+    // A call-result `let` the declared/method arms cannot type folds its whole
+    // initializer (`let d = Decimal::from_bytes(s).unwrap();`), as a shadowing one does.
     const produced =
-      rustDeclaredCallResultType(receiver, atLine, ctx) ?? rustMethodCallResultType(receiver, atLine, ctx);
+      visible?.channel === "callResult"
+        ? rustShadowingCallResultType(receiver, atLine, ctx, visible.binding)
+        : (rustDeclaredCallResultType(receiver, atLine, ctx) ?? rustMethodCallResultType(receiver, atLine, ctx));
     if (produced !== undefined) return produced;
     if (receiver === "self") return rustLexicalSelfType(ctx);
+    // A chain head `Type::assoc(..)` reads the declared return of ANY associated
+    // fn the in-project type declares (`Decimal::from_bytes(s)`), as a `let` init does.
+    const associated = rustAssociatedCallType(receiver, atLine, ctx);
+    if (associated !== undefined) return associated;
     const named = rustNamedType(receiver, ctx);
     if (named === undefined) return undefined;
     const exact = resolveRustNominalType(named, ctx);
