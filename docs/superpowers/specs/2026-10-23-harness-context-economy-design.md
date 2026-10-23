@@ -111,6 +111,20 @@ text to hooks and skills.** No new MCP tools.
     fragments for `[mcp_servers.tea-rags]` and `[[hooks.SessionStart]]` /
     `[[hooks.SubagentStart]]`. Live-tested in the local Codex against the
     worktree build.
+11. **One source, every package generated.** Plugin sources (skills, rules,
+    references, hook scripts, manifest metadata) live in `plugins/<name>/`,
+    written in the Claude Code dialect. `npm run gen:plugins` emits every
+    harness package from it: `.claude-plugin/<name>/` (Claude dialect — copy
+    plus manifest), `harness/codex/`, `harness/cursor/`. Generated output stays
+    committed, so the repository remains a marketplace for each harness: root
+    `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json` and
+    the Cursor marketplace manifest point at the generated packages. Generated
+    paths are listed in `.contextignore` (no duplicate chunks in the index). A
+    git merge driver declared in `.gitattributes` and registered by the
+    `prepare` script resolves conflicts in generated paths by regenerating from
+    the merged sources; a CI job runs `gen:plugins` and fails on any diff.
+    `.claude/rules/plugin-sources.md` states the workflow: edit only
+    `plugins/**`, regenerate, never hand-edit generated output.
 
 ## Budgets (enforced by tests)
 

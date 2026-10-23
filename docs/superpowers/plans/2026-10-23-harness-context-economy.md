@@ -571,8 +571,8 @@ Run `npm run gen:agent-context` (empty core + no guides at this point is valid).
 **Files:**
 
 - Create: `.claude-plugin/tea-rags/rules/core.md` (≤ 3,700 chars — server
-  `instructions` cap 4,096 and Cursor's `tea-rags-core.mdc` cap 4,096 incl.
-  ~330 chars of wrapper; the spec's core outline)
+  `instructions` cap 4,096 and Cursor's `tea-rags-core.mdc` cap 4,096 incl. ~330
+  chars of wrapper; the spec's core outline)
 - Create:
   `.claude-plugin/tea-rags/rules/guides/{navigation,decision-tree,freshness,degraded}.md`
   (bodies moved out of `search-cascade.md` / `index-freshness.md`, caveman
@@ -678,8 +678,8 @@ target: body < 500 lines); **(3) resources** — inline catalogs become a
 guide/metrics read; skills whose need is unconditional and ≤ 8KB inline it at
 load in Claude Code via
 `` !`tea-rags resource "tea-rags://project/{alias}/metrics?section=<s>" --path "$PWD" || true` ``
-(no `language=` — unknown at load time, so every indexed language comes in)
-and ALSO keep the model-read line
+(no `language=` — unknown at load time, so every indexed language comes in) and
+ALSO keep the model-read line
 `Need thresholds → read tea-rags://project/<alias>/metrics?…` (other harnesses
 have no load-time shell); **(4) compress** to caveman `ultra` (bodies) / `full`
 (descriptions). Before/after bytes recorded per skill in the task's commit
@@ -711,8 +711,8 @@ message body.
   ~24KB); SKILL.md ≤ 15KB; Phase 0 gate reads `metrics?section=resolve`
 - Plugin: tea-rags `plugin.json` minor bump (new reference files)
 - Test: `tests/hooks/skill-size-budgets.test.sh` per-skill caps (tea-rags
-  SKILL.md ≤ 20KB each; architecture-diagnostics ≤ 15KB) — own file, since
-  Task 9 edits `agent-context-budgets.test.sh` in parallel;
+  SKILL.md ≤ 20KB each; architecture-diagnostics ≤ 15KB) — own file, since Task
+  9 edits `agent-context-budgets.test.sh` in parallel;
   `tests/hooks/skill-resource-refs.test.sh` (every `tea-rags://` URI written in
   a skill is one the server registers — compare against
   `node build/cli/index.js resource --list` output)
@@ -936,6 +936,62 @@ test script.
       `feat(scripts): Cursor harness package generated from the plugin sources (manual test handed over)`
 
 ---
+
+## Phase D2 — One source for every plugin package (spec Decision 11)
+
+Runs after Task 12 (the eval runners read `.claude-plugin/**` paths) and before
+Task 14, so the Codex live test installs from the final layout.
+
+### Task 17: Move sources to `plugins/`; generate the Claude Code package
+
+**Files:**
+
+- Move: `.claude-plugin/{tea-rags,dinopowers,tea-rags-setup}/**` →
+  `plugins/{tea-rags,dinopowers,tea-rags-setup}/**` (`git mv`, history kept).
+  `.claude-plugin/.benchmarks/` stays (eval artifacts, not plugin content).
+- Create: `scripts/gen-harness-claude.ts` — Claude dialect: verbatim copy of
+  skills / rules / references / scripts (executable bits kept) + rendered
+  `.claude-plugin/plugin.json`; `scripts/gen-plugins.ts` + `npm run gen:plugins`
+  runs agent-context, Claude, Codex and Cursor generators in order.
+- Modify: `scripts/gen-agent-context.ts`,
+  `scripts/gen-harness-{codex,cursor}.ts`, `scripts/harness/package.ts`,
+  `scripts/gen-language-compatibility.ts` — read from `plugins/**`.
+- Create: root `.agents/plugins/marketplace.json` and the Cursor marketplace
+  manifest pointing at `harness/codex/*` / `harness/cursor/*`; root
+  `.claude-plugin/marketplace.json` keeps pointing at `.claude-plugin/<name>`.
+- Modify: `tests/hooks/*.test.sh`, `tests/scripts/**` path constants; plugin
+  version-bump hook (`check-plugin-version`) watches `plugins/<name>/**`.
+- Test: `tests/scripts/gen-harness-claude.test.ts` — drift (render = committed),
+  idempotent, executable bits, every hook command path resolves inside the
+  package.
+
+- [ ] Steps: failing drift test → move → generator → `npm run gen:plugins` → all
+      hook tests + `tests/scripts` green → install check
+      (`claude plugin marketplace add <repo>` resolves all three plugins) →
+      commit.
+
+### Task 18: Index exclusion, merge driver, CI drift job, workflow rule
+
+**Files:**
+
+- Modify: `.contextignore` — add `.claude-plugin/tea-rags/**`,
+  `.claude-plugin/dinopowers/**`, `.claude-plugin/tea-rags-setup/**`,
+  `harness/**` (sources under `plugins/**` stay indexed).
+- Modify: `.gitattributes` — generated paths `merge=tea-rags-generated`.
+- Create: `scripts/git/merge-generated.sh` — merge driver: take ours, mark the
+  path for regeneration; `post-merge` / commit hook runs `npm run gen:plugins`
+  and stages the result. `package.json` `prepare` registers
+  `merge.tea-rags-generated.driver` in the clone's git config.
+- Modify: `.github/workflows/ci.yml` — job `plugins-drift`:
+  `npm run gen:plugins && git diff --exit-code`.
+- Create: `.claude/rules/plugin-sources.md` — edit only `plugins/**`; regenerate
+  with `npm run gen:plugins`; never hand-edit `.claude-plugin/<name>/**` or
+  `harness/**`; version bumps go in `plugins/<name>/` manifest metadata.
+- Test: `tests/hooks/merge-generated.test.sh` — two branches editing one source
+  → merge has no conflict in generated paths and output equals a fresh
+  regenerate.
+
+- [ ] Steps: failing merge test → driver + hook → CI job → rule → commit.
 
 ## Phase E — Landing
 
