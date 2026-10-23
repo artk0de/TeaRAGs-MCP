@@ -5,17 +5,23 @@
  * FileScanner - Discovers code files in a directory while respecting ignore patterns
  */
 
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import ignore, { type Ignore } from "ignore";
 
+import type { IgnoredDirectoryMarker } from "../../../contracts/types/ingest-config.js";
 import type { ScannerConfig } from "../../../types.js";
-import { BUILTIN_IGNORE_PATTERNS } from "./ignore-defaults.js";
+import { BUILTIN_IGNORE_PATTERNS, BUILTIN_IGNORED_DIRECTORY_MARKERS } from "./ignore-defaults.js";
 
 export class FileScanner {
   private ig: Ignore = ignore();
   private readonly supportedExts: Set<string>;
+  /** Root the markers are probed under — set by `loadIgnorePatterns`. */
+  private markerRoot: string | undefined;
+  private directoryMarkers: readonly IgnoredDirectoryMarker[] = BUILTIN_IGNORED_DIRECTORY_MARKERS;
+  /** Repo-relative POSIX directory → whether it holds a full marker set; shared by the walk and `accepts`. */
+  private readonly markedDirectoryVerdicts = new Map<string, boolean>();
 
   constructor(private readonly config: ScannerConfig) {
     this.supportedExts = new Set(config.supportedExtensions);
@@ -30,7 +36,8 @@ export class FileScanner {
    *
    * Order:
    *   1. BUILTIN_IGNORE_PATTERNS (universal framework artefacts, minified
-   *      bundles, language caches — see ignore-defaults.ts).
+   *      bundles, language caches — see ignore-defaults.ts), then the
+   *      patterns of `config.ignoreContributions` (the languages' own).
    *   2. Project ignore files (.gitignore / .dockerignore / .npmignore /
    *      .contextignore / .contextignore.local), in declared order.
    *   3. config.ignorePatterns / config.customIgnorePatterns from bootstrap.
@@ -38,6 +45,11 @@ export class FileScanner {
    * Users can re-include any baseline pattern via explicit `!pattern`
    * negation in their own .contextignore — the `ignore` package honors
    * later negations.
+   *
+   * Directories recognised by their contents — {@link BUILTIN_IGNORED_DIRECTORY_MARKERS}
+   * plus every contribution's `markedDirectories` — are probed under
+   * `rootPath`, which is never itself pruned. A pattern cannot express them, so
+   * a `!pattern` does not re-include them.
    */
   async loadIgnorePatterns(rootPath: string): Promise<void> {
     this.ig = ignore();
@@ -46,6 +58,16 @@ export class FileScanner {
     // caches (__pycache__/, .venv/) out of the index regardless of whether
     // the project ships a .contextignore covering them.
     this.ig.add(BUILTIN_IGNORE_PATTERNS);
+    const contributions = this.config.ignoreContributions ?? [];
+    for (const contribution of contributions) {
+      if (contribution.patterns && contribution.patterns.length > 0) this.ig.add([...contribution.patterns]);
+    }
+    this.markerRoot = resolve(rootPath);
+    this.directoryMarkers = [
+      ...BUILTIN_IGNORED_DIRECTORY_MARKERS,
+      ...contributions.flatMap((contribution) => contribution.markedDirectories ?? []),
+    ];
+    this.markedDirectoryVerdicts.clear();
     const ignoreFiles = [".gitignore", ".dockerignore", ".npmignore", ".contextignore", ".contextignore.local"];
 
     for (const ignoreFile of ignoreFiles) {
@@ -97,12 +119,17 @@ export class FileScanner {
    * accepts, and the working-tree overlay asks it about single paths. The
    * `ignore` matcher tests every ancestor as a trailing-slash directory probe
    * (`dir/`) before the file itself, so a pruned directory rejects its files
-   * here exactly as `walkDirectory` prunes it. Call after `loadIgnorePatterns`.
+   * here exactly as `walkDirectory` prunes it. A directory pruned by its
+   * contents (a marker set) rejects its files the same way: every ancestor is
+   * probed against the markers the walk checks before descending. Call after
+   * `loadIgnorePatterns`.
    */
   accepts(relativePath: string): boolean {
     const posixPath = relativePath.split(sep).join("/");
     if (posixPath.length === 0 || isAbsolute(posixPath) || posixPath.split("/").includes("..")) return false;
-    return this.supportedExts.has(extname(posixPath)) && !this.ig.ignores(posixPath);
+    return (
+      this.supportedExts.has(extname(posixPath)) && !this.ig.ignores(posixPath) && !this.hasMarkedAncestor(posixPath)
+    );
   }
 
   /**
@@ -150,6 +177,7 @@ export class FileScanner {
         }
 
         if (isDirectory) {
+          if (this.isMarkedDirectory(relativePath.split(sep).join("/"))) continue;
           await this.walkDirectory(fullPath, rootPath, files);
         } else if (entry.isFile() && this.accepts(relativePath)) {
           files.push(fullPath);
@@ -158,6 +186,32 @@ export class FileScanner {
     } catch (_error) {
       // Skip directories that can't be read (permission errors, etc.)
     }
+  }
+
+  /** Whether a proper ancestor directory of the repo-relative POSIX `posixPath` is marked. */
+  private hasMarkedAncestor(posixPath: string): boolean {
+    const segments = posixPath.split("/");
+    for (let depth = 1; depth < segments.length; depth++) {
+      if (this.isMarkedDirectory(segments.slice(0, depth).join("/"))) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether the repo-relative POSIX directory holds every entry of some marker
+   * set. The root (`""`) never is; before `loadIgnorePatterns` nothing is.
+   */
+  private isMarkedDirectory(relativeDirectory: string): boolean {
+    if (this.markerRoot === undefined || relativeDirectory.length === 0) return false;
+    let verdict = this.markedDirectoryVerdicts.get(relativeDirectory);
+    if (verdict === undefined) {
+      const absoluteDir = join(this.markerRoot, relativeDirectory);
+      verdict = this.directoryMarkers.some((marker) =>
+        marker.entries.every((markerEntry) => existsSync(join(absoluteDir, markerEntry))),
+      );
+      this.markedDirectoryVerdicts.set(relativeDirectory, verdict);
+    }
+    return verdict;
   }
 
   /**

@@ -1125,6 +1125,7 @@ export class IndexingOps {
         absolutePath,
         ignorePatterns: this.config.ignorePatterns,
         customIgnorePatterns: this.config.customIgnorePatterns,
+        ignoreContributions: this.config.ignoreContributions,
       }),
       { scopeToTree: !recompute },
     );

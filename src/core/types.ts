@@ -13,6 +13,7 @@
 import type { RustcDriverStatus } from "./contracts/rustc-driver-status.js";
 import type { ResidualPassReport } from "./contracts/types/codegraph-residual.js";
 import type { EnrichmentHealthMap } from "./contracts/types/enrichment.js";
+import type { IngestIgnoreContribution } from "./contracts/types/ingest-config.js";
 import type { ProviderRunMetrics } from "./contracts/types/provider.js";
 import type { RechunkTestFileScope } from "./contracts/types/rechunk.js";
 import type { EmbeddingProducerStarvation, EmbeddingThroughputOptimum } from "./contracts/types/registry.js";
@@ -43,6 +44,8 @@ export interface ScannerConfig {
   supportedExtensions: string[];
   ignorePatterns: string[];
   customIgnorePatterns?: string[];
+  /** Per-owner contributions (the languages' aggregate) — see `IngestIgnoreContribution`. */
+  ignoreContributions?: readonly IngestIgnoreContribution[];
 }
 
 export interface ChunkerConfig {

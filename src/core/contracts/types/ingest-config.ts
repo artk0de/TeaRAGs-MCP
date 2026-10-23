@@ -9,6 +9,31 @@
  * boundary.
  */
 
+/**
+ * A directory recognised by what it holds rather than by its name: the
+ * directory is pruned, subtree included, when EVERY one of `entries` exists in
+ * it. An entry is a path relative to that directory (`resources/testharness.js`
+ * names a nested file). The scanned root itself is never pruned — indexing an
+ * upstream checkout on purpose stays possible.
+ */
+export interface IgnoredDirectoryMarker {
+  /** Why such a directory stays out of the index — read by humans, never matched. */
+  readonly reason: string;
+  readonly entries: readonly string[];
+}
+
+/**
+ * What one owner keeps out of the ingest index: `.gitignore`-syntax `patterns`
+ * applied after the builtin ones, and `markedDirectories` recognised by their
+ * contents. A language declares its own on `LanguageCapability.ingestIgnore`;
+ * the composition root hands the aggregate to the scanner, which owns no
+ * language.
+ */
+export interface IngestIgnoreContribution {
+  readonly patterns?: readonly string[];
+  readonly markedDirectories?: readonly IgnoredDirectoryMarker[];
+}
+
 /** Config for indexing pipelines (BaseIndexingPipeline, IndexPipeline, ReindexPipeline). */
 export interface IngestCodeConfig {
   // Chunking
@@ -19,6 +44,12 @@ export interface IngestCodeConfig {
   supportedExtensions: string[];
   ignorePatterns: string[];
   customIgnorePatterns?: string[];
+  /**
+   * Per-owner ignore contributions — the languages' aggregate, filled by the
+   * composition root. Every `FileScanner` built from this config receives it,
+   * so a walk and a single-path admission judge one rule.
+   */
+  ignoreContributions?: readonly IngestIgnoreContribution[];
 
   // Indexing
   maxChunksPerFile?: number;
