@@ -80,6 +80,7 @@ import { processRustExternalSignatureSources } from "../src/core/adapters/rust-s
 import {
   acquireRustcCallSites,
   defaultRustcCallSiteRunnerDeps,
+  RUSTC_DRIVER_DEFAULT_CARGO_ARGS,
   RUSTC_DRIVER_DEFAULT_MAX_RSS_MB,
   RUSTC_DRIVER_DEFAULT_TIMEOUT_SEC,
   type RustcCallSiteAcquisition,
@@ -645,6 +646,8 @@ export interface ChainTallyRunOptions {
   rustcDriverTimeoutSec?: number;
   /** `--rustc-driver-max-rss-mb`: process-tree RSS budget override (default 12288). */
   rustcDriverMaxRssMb?: number;
+  /** `--rustc-driver-cargo-args`: cargo arguments, verbatim (default `RUSTC_DRIVER_DEFAULT_CARGO_ARGS`). */
+  rustcDriverCargoArgs?: string;
 }
 
 /** `--rustc-driver`: the driver acquisition's wall time and how the runner settled. */
@@ -662,6 +665,8 @@ export interface RustcDriverWarm {
   generated?: number;
   /** Of those, project-macro rows whose macro mapped to no table symbol (dropped); absent = none counted. */
   generatedUnmapped?: number;
+  /** The cargo arguments the driver ran with (the override, else the runner default); absent = not recorded. */
+  cargoArgs?: string;
 }
 
 /** The one `RUSTC-DRIVER` report line. */
@@ -670,7 +675,8 @@ export function describeRustcDriverWarm(warm: RustcDriverWarm): string {
     .filter((key) => warm[key] !== undefined)
     .map((key) => ` · ${key} ${warm[key]}`)
     .join("");
-  return `RUSTC-DRIVER warm ${(warm.warmMs / 1000).toFixed(2)}s · ${warm.status} · units ${warm.units} · failed ${warm.failed}${counters}`;
+  const cargo = warm.cargoArgs === undefined ? "" : ` · cargo-args "${warm.cargoArgs}"`;
+  return `RUSTC-DRIVER warm ${(warm.warmMs / 1000).toFixed(2)}s · ${warm.status} · units ${warm.units} · failed ${warm.failed}${counters}${cargo}`;
 }
 
 /**
@@ -757,7 +763,7 @@ function tallyKindStats(
 /** The spawn-allowed rustc call-site source (schema defaults unless overridden), timing and recording every runner outcome. */
 function recordingRustcCallSiteSource(
   sink: { outcome: RustcCallSiteAcquisition; wallMs: number }[],
-  budget: { timeoutSec?: number; maxRssMb?: number } = {},
+  budget: { timeoutSec?: number; maxRssMb?: number; cargoArgs?: string } = {},
 ): RustCallSiteSource {
   let runnerDeps: RustcCallSiteRunnerDeps | undefined;
   return createRustcCallSiteSource(
@@ -770,7 +776,10 @@ function recordingRustcCallSiteSource(
     {
       acquire: async (options) => {
         const start = performance.now();
-        const outcome = await acquireRustcCallSites((runnerDeps ??= defaultRustcCallSiteRunnerDeps()), options);
+        const outcome = await acquireRustcCallSites((runnerDeps ??= defaultRustcCallSiteRunnerDeps()), {
+          ...options,
+          ...(budget.cargoArgs === undefined ? {} : { cargoArgs: budget.cargoArgs }),
+        });
         sink.push({ outcome, wallMs: performance.now() - start });
         return outcome;
       },
@@ -849,6 +858,7 @@ export async function run(
           rustcCallSiteSource: recordingRustcCallSiteSource(driverAcquisitions, {
             timeoutSec: opts.rustcDriverTimeoutSec,
             maxRssMb: opts.rustcDriverMaxRssMb,
+            cargoArgs: opts.rustcDriverCargoArgs,
           }),
         }
       : {}),
@@ -934,7 +944,10 @@ export async function run(
     const warmStart = performance.now();
     await runner.warmResolvePass();
     warmMs = performance.now() - warmStart;
-    rustcDriverWarm = rustcDriverWarmOf(driverAcquisitions[driverAcquisitions.length - 1]);
+    rustcDriverWarm = {
+      ...rustcDriverWarmOf(driverAcquisitions[driverAcquisitions.length - 1]),
+      cargoArgs: opts.rustcDriverCargoArgs ?? RUSTC_DRIVER_DEFAULT_CARGO_ARGS,
+    };
   }
   runner.prepareResolvePass();
 
@@ -1084,6 +1097,17 @@ function readPositiveNumber(flag: string, raw: string | undefined): number | und
   return value;
 }
 
+/** `--rustc-driver-cargo-args` value, verbatim; only meaningful with `--rustc-driver`, anything else throws. */
+function readRustcDriverCargoArgs(argv: readonly string[]): string | undefined {
+  const flag = "--rustc-driver-cargo-args";
+  const index = argv.indexOf(flag);
+  if (index < 0) return undefined;
+  if (!argv.includes("--rustc-driver")) throw new Error(`${flag} requires --rustc-driver`);
+  const value = argv[index + 1];
+  if (value === undefined || value.trim() === "") throw new Error(`${flag} expects a non-empty argument string`);
+  return value;
+}
+
 export function parseArgs(argv: readonly string[]) {
   const read = (flag: string): string | undefined => {
     const index = argv.indexOf(flag);
@@ -1104,6 +1128,7 @@ export function parseArgs(argv: readonly string[]) {
     rustcDriver: argv.includes("--rustc-driver"),
     rustcDriverTimeoutSec: readPositiveNumber("--rustc-driver-timeout-sec", read("--rustc-driver-timeout-sec")),
     rustcDriverMaxRssMb: readPositiveNumber("--rustc-driver-max-rss-mb", read("--rustc-driver-max-rss-mb")),
+    rustcDriverCargoArgs: readRustcDriverCargoArgs(argv),
     kindStats: argv.includes("--kind-stats"),
     persisted: argv.includes("--persisted"),
     // `--time-only` implies `--timing`: a mode whose only purpose is the numbers
@@ -1132,6 +1157,7 @@ async function main(): Promise<void> {
     rustcDriver: opts.rustcDriver,
     rustcDriverTimeoutSec: opts.rustcDriverTimeoutSec,
     rustcDriverMaxRssMb: opts.rustcDriverMaxRssMb,
+    rustcDriverCargoArgs: opts.rustcDriverCargoArgs,
   });
   // The chain A/B scores only the sites production runs the exact chain on; a
   // dispatch-table site has no chain answer to count as "unresolved".

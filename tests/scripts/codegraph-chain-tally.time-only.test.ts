@@ -91,10 +91,35 @@ describe("parseArgs --rustc-driver (bd s3i8m T8)", () => {
   });
 });
 
+describe("parseArgs --rustc-driver-cargo-args", () => {
+  it("is undefined by default", () => {
+    expect(parseArgs([]).rustcDriverCargoArgs).toBeUndefined();
+  });
+
+  it("reads the value verbatim alongside --rustc-driver", () => {
+    const opts = parseArgs(["--rustc-driver", "--rustc-driver-cargo-args", "-p ripgrep --lib"]);
+    expect(opts.rustcDriverCargoArgs).toBe("-p ripgrep --lib");
+  });
+
+  it("is a usage error without --rustc-driver", () => {
+    expect(() => parseArgs(["--rustc-driver-cargo-args", "--lib"])).toThrow(/requires --rustc-driver/);
+  });
+
+  it("is a usage error with an empty value", () => {
+    expect(() => parseArgs(["--rustc-driver", "--rustc-driver-cargo-args"])).toThrow(/non-empty/);
+  });
+});
+
 describe("describeRustcDriverWarm (bd s3i8m T8)", () => {
   it("prints the warm time, the runner status, units and failed crates on one line", () => {
     expect(describeRustcDriverWarm({ warmMs: 12_345, status: "partial", units: 40, failed: 2 })).toBe(
       "RUSTC-DRIVER warm 12.35s · partial · units 40 · failed 2",
+    );
+  });
+
+  it("records the cargo arguments the driver ran with", () => {
+    expect(describeRustcDriverWarm({ warmMs: 1000, status: "ok", units: 3, failed: 0, cargoArgs: "--lib" })).toBe(
+      'RUSTC-DRIVER warm 1.00s · ok · units 3 · failed 0 · cargo-args "--lib"',
     );
   });
 
