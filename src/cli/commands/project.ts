@@ -42,11 +42,29 @@ function findRepositoryEntry(registry: CollectionRegistry, path: string): Collec
   }
 }
 
-export function runProjectExist(args: ProjectExistArgs): void {
-  const registry = new CollectionRegistry(resolveDataDir(), {
+/** The user's project registry (`TEA_RAGS_DATA_DIR`, default `~/.tea-rags`). */
+export function createCollectionRegistry(): CollectionRegistry {
+  return new CollectionRegistry(resolveDataDir(), {
     envCodeDefaults: () => resolveRegistryEnvCodeDefaults(resolveDomainEnvCodeDefaults()),
     codegraphDataProbe: collectionHoldsCodegraphData,
   });
+}
+
+/**
+ * The registered alias `project`, else the alias `project exist --path <path>
+ * --repository` answers with (`path` defaults to the cwd). Null when nothing
+ * registered matches.
+ */
+export function resolveProjectAlias(input: { path?: string; project?: string }): string | null {
+  const registry = createCollectionRegistry();
+  const entry = input.project
+    ? registry.findByName(input.project)
+    : findRepositoryEntry(registry, resolve(input.path ?? process.cwd()));
+  return entry?.name ?? null;
+}
+
+export function runProjectExist(args: ProjectExistArgs): void {
+  const registry = createCollectionRegistry();
   const lookupByPath = (path: string): CollectionEntry | null =>
     args.repository ? findRepositoryEntry(registry, path) : registry.findByPath(path);
   const entry = args.path ? lookupByPath(resolve(args.path)) : registry.findByName(args.name ?? "");

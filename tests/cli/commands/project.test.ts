@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import yargs from "yargs";
 
-import { projectCommand, runProjectExist, type ProjectExistArgs } from "../../../src/cli/commands/project.js";
+import {
+  projectCommand,
+  resolveProjectAlias,
+  runProjectExist,
+  type ProjectExistArgs,
+} from "../../../src/cli/commands/project.js";
 import {
   createGitWorkingTreeFixture,
   prebuildGitWorkingTreeFixture,
@@ -317,6 +322,24 @@ describe("CLI 'project exist --repository'", { timeout: 60_000 }, () => {
     mkdirSync(sub, { recursive: true });
 
     expect(run({ path: sub, repository: true, printName: true })).toEqual({ code: 0, out: "repo\n" });
+  });
+
+  it("resolveProjectAlias answers a linked worktree with the repository's alias", () => {
+    expect(resolveProjectAlias({ path: fixture.seeded.worktrees.feature })).toBe("repo");
+  });
+
+  it("resolveProjectAlias returns a registered --project alias and null for an unknown one", () => {
+    expect(resolveProjectAlias({ project: "repo" })).toBe("repo");
+    expect(resolveProjectAlias({ project: "nope" })).toBeNull();
+  });
+
+  it("resolveProjectAlias returns null for a path outside any registered repository", () => {
+    const outside = mkdtempSync(join(tmpdir(), "tr-outside-"));
+    try {
+      expect(resolveProjectAlias({ path: outside })).toBeNull();
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("prints the base repository's alias for a linked worktree", () => {

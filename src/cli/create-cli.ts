@@ -11,6 +11,7 @@ import { projectCommand } from "./commands/project.js";
 import { projectsCommand } from "./commands/projects.js";
 import { qdrantCommand } from "./commands/qdrant.js";
 import { resolveCodegraphResidualCommand } from "./commands/resolve-codegraph-residual.js";
+import { resourceCommand } from "./commands/resource.js";
 import { serverCommand } from "./commands/server.js";
 import { tuneCommand } from "./commands/tune.js";
 import { updateCommand } from "./commands/update.js";
@@ -27,6 +28,7 @@ export function createCli(argv?: string[]): ReturnType<typeof yargs> {
     .scriptName("tea-rags")
     .command(serverCommand)
     .command(callCommand)
+    .command(resourceCommand)
     .command(tuneCommand)
     .command(primeCommand)
     .command(updateCommand)
