@@ -1010,6 +1010,86 @@ describe("driver trait-declaration members on a proven external receiver (bd s3i
   });
 });
 
+describe("driver trait-declaration members of an external trait a project impl declares are undecidable (R3c)", () => {
+  const CLONE_SITE = "src/main.rs:50:8";
+  const cloneSite = call("t.clone()", "t", "clone", 50, 8);
+  const shape = () => table(def("src/shape.rs", "clone", "Shape.clone", 3, 5));
+  const cloneImpl = { "src/shape.rs": [traitImpl("Shape", "Clone", 2, 6)] };
+  const SLOG_LOG: RustCallSiteDefinition = {
+    symbol: "rustc slog slog::Drain::log",
+    package: "slog",
+    inProject: false,
+    name: "log",
+    kind: "callable",
+    declaringTrait: "Drain",
+    packageInProject: false,
+  };
+
+  it("buckets a std trait's declaration row as unresolvable, never a miss, never external, no edge", async () => {
+    const callSites = stubIndex({ [CLONE_SITE]: stdTraitMember("Clone", "clone") });
+    const resolver = await facade({ callSites });
+    const ctx = ctxWith(shape(), {}, cloneImpl);
+    expect(resolver.targetsExternalImport?.(cloneSite, ctx)).toBe(false);
+    expect(resolver.targetsUndecidable?.(cloneSite, ctx)).toBe(true);
+    expect(classifyResolveMiss(cloneSite, ctx, resolver, shape())).toBe("unresolvable");
+    // The chain is untouched: the row still CONTINUEs to the static passes.
+    expect(strategy.attempt(cloneSite, ctxWith(shape(), { callSites }, cloneImpl))).toEqual({ kind: "continue" });
+  });
+
+  it("buckets a dependency trait's declaration row as unresolvable", async () => {
+    const t = table(def("src/drain.rs", "log", "Filter.log", 3, 5));
+    const site = call("drain.log(r, v)", "drain", "log", 51, 10);
+    const resolver = await facade({ callSites: stubIndex({ "src/main.rs:51:10": SLOG_LOG }) });
+    const ctx = ctxWith(t, {}, { "src/drain.rs": [traitImpl("Filter", "Drain", 2, 6)] });
+    expect(classifyResolveMiss(site, ctx, resolver, t)).toBe("unresolvable");
+  });
+
+  it("keeps a declaration row no project impl declares external: every impl it can reach is outside", async () => {
+    const callSites = stubIndex({ [CLONE_SITE]: stdTraitMember("Clone", "clone") });
+    const resolver = await facade({ callSites });
+    const ctx = ctxWith(shape(), {}, {});
+    expect(resolver.targetsUndecidable?.(cloneSite, ctx)).toBe(false);
+    expect(classifyResolveMiss(cloneSite, ctx, resolver, shape())).toBe("externalSkipped");
+  });
+
+  it("keeps a workspace trait's declaration row a miss — with or without a source position", async () => {
+    const t = table(def("src/window.rs", "Document", "Window.Document", 3, 5));
+    const site = call("window.Document()", "window", "Document", 52, 11);
+    const impls = { "src/window.rs": [traitImpl("Window", "WindowMethods", 2, 6)] };
+    const workspaceDecl = (located: boolean): RustCallSiteDefinition => ({
+      symbol: "rustc script_bindings script_bindings::codegen::WindowMethods::Document",
+      package: "script_bindings",
+      inProject: located,
+      ...(located ? { relPath: "src/bindings.rs", line: 40 } : {}),
+      name: "Document",
+      kind: "callable",
+      declaringTrait: "WindowMethods",
+      packageInProject: true,
+    });
+    for (const located of [false, true]) {
+      const resolver = await facade({ callSites: stubIndex({ "src/main.rs:52:11": workspaceDecl(located) }) });
+      expect(resolver.targetsUndecidable?.(site, ctxWith(t, {}, impls))).toBe(false);
+      expect(classifyResolveMiss(site, ctxWith(t, {}, impls), resolver, t)).toBe("missWithInProjectDef");
+    }
+  });
+
+  it("leaves a row naming the dispatched impl as before", async () => {
+    const senderClone: RustCallSiteDefinition = {
+      symbol: "rustc std <std::sync::mpsc::Sender<T> as std::clone::Clone>::clone",
+      package: "std",
+      inProject: false,
+      name: "clone",
+      kind: "callable",
+      implTrait: "Clone",
+      packageInProject: false,
+    };
+    const resolver = await facade({ callSites: stubIndex({ [CLONE_SITE]: senderClone }) });
+    const ctx = ctxWith(shape(), {}, cloneImpl);
+    expect(resolver.targetsUndecidable?.(cloneSite, ctx)).toBe(false);
+    expect(classifyResolveMiss(cloneSite, ctx, resolver, shape())).toBe("externalSkipped");
+  });
+});
+
 describe("RustCallResolver#hasInProjectDefinition with the driver (bd s3i8m.6 R3b)", () => {
   it("is false when the driver proves the target a direct local", async () => {
     const t = table(def("src/util.rs", "f", "f", 1, 3, "function"));

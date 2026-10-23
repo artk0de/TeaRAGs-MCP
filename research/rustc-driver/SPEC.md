@@ -159,16 +159,16 @@ pass as `generated` / `generatedUnmapped`.
 
 ### Mapping to `RustScipDefinition` (adapter, no strategy change needed)
 
-| `RustScipDefinition`           | from the driver row                                                                                                               |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| `symbol`                       | `rustc ${calleeCrate} ${resolvedImpl ?? callee}` (stable, diagnostic only)                                                        |
-| `package`                      | `calleeCrate`                                                                                                                     |
-| `inProject`, `relPath`, `line` | `inProject && !implIsDerived`, `defRelPath`, `defLine`                                                                            |
-| `name`                         | last `::` segment of `callee` with generic args stripped                                                                          |
-| `kind`                         | `fn`/`assocFn` → `callable`; `ctor` → `type` (SCIP's enum-variant convention); else `other`                                       |
-| `implTrait`                    | last segment of `traitPath` when `resolvedImpl` is set (trait impl dispatch)                                                      |
-| `declaringTrait`               | last segment of `traitPath` when `resolvedImpl` is null (proves the trait, not the impl; the R3c external gate applies unchanged) |
-| `packageInProject`             | `calleeCrate` ∈ crate names the driver ran on (workspace members)                                                                 |
+| `RustScipDefinition`           | from the driver row                                                                                                                                                                      |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `symbol`                       | `rustc ${calleeCrate} ${resolvedImpl ?? callee}` (stable, diagnostic only)                                                                                                               |
+| `package`                      | `calleeCrate`                                                                                                                                                                            |
+| `inProject`, `relPath`, `line` | `inProject && !implIsDerived`, `defRelPath`, `defLine`                                                                                                                                   |
+| `name`                         | last `::` segment of `callee` with generic args stripped                                                                                                                                 |
+| `kind`                         | `fn`/`assocFn` → `callable`; `ctor` → `type` (SCIP's enum-variant convention); else `other`                                                                                              |
+| `implTrait`                    | last segment of `traitPath` when `resolvedImpl` is set (trait impl dispatch)                                                                                                             |
+| `declaringTrait`               | last segment of `traitPath` when `resolvedImpl` is null (proves the trait, not the impl; R3c: external with no project impl, else undecidable when the trait is not a workspace crate's) |
+| `packageInProject`             | `calleeCrate` ∈ crate names the driver ran on (workspace members)                                                                                                                        |
 
 `mapScipDefinitionToSymbol` already turns `(relPath, line, name)` into a table
 symbol. The in-project symbolId is the chunk symbol whose definition span starts
@@ -430,5 +430,15 @@ T1 runs in parallel with T2–T5. T6 → T7 → T8 run sequentially.
    corpora stay static/SCIP-only.
 5. **Cold RSS on tikv/servo.** Bounded by `-j`, unmeasured here.
 6. **Generic-bound and `dyn` calls** resolve to the trait DECLARATION
-   (`resolvedImpl` null). That is correct, and the existing R3c `declaringTrait`
-   gate handles it. It is not an in-project impl edge.
+   (`resolvedImpl` null). That is correct: the impl is picked by
+   monomorphization, which `cargo check` never performs (compiler-builtin impls
+   such as tuple `Clone` answer the same way). It is not an in-project impl
+   edge. The R3c `declaringTrait` gate makes the row external when no project
+   impl of the trait declares the member. Owner decision 2026-10-23: when one
+   does and the trait is declared outside the workspace, the site is UNDECIDABLE
+   (`targetsUndecidable` → `unresolvable`, out of the resolve denominator, like
+   Python's K11 sites). For `Clone`, `AsRef`, `Iterator` or `Default` some
+   project impl always declares the member, so the old R3c rule kept every
+   generic call a miss on the strength of an unrelated type's impl. A workspace
+   trait's declaration row keeps the old behaviour, and no edge moves in either
+   case.

@@ -174,6 +174,11 @@ export const capability: LanguageCapability = {
   //   `rustAnalyzerScip` pass, its source and `CODEGRAPH_RUST_ANALYZER*` are
   //   removed, and the rustc driver is the one compiler source — the R3a–R3d
   //   rules and the miss classifier's gates read its rows alone.
+  // - R3c undecidable — a driver row at a std / dependency trait's
+  //   DECLARATION member that a project impl of the trait declares (a generic
+  //   or `dyn` call, a builtin impl) is decided by monomorphization, which
+  //   `cargo check` never runs: `targetsUndecidable` moves the miss to
+  //   `unresolvable`; no edge moves. A workspace trait's row stays a miss.
   // - RESIDUAL R5 — where the driver has no row, a std-prelude name with no
   //   receiver-type evidence (`x.unwrap()` on an untyped receiver, a bare
   //   `Ok(v)` / `drop(x)` no `use` binds) is not bound to a project namesake
