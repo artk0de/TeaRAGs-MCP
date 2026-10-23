@@ -223,6 +223,11 @@ echo "# pass=$PASS fail=$FAIL"; [ $FAIL = 0 ]
 
 - Produces:
   - `InProcessToolSession.readResource(uri: string): Promise<ReadResourceResult>`
+  - Delivered (7d25bc095): `listResourceTemplates(): Promise<ResourceTemplate[]>`
+    too; `runResource(input: RunResourceArgs): Promise<number>` with optional
+    `list`, `out`, `errOut`; alias via `resolveProjectAlias` in
+    `src/cli/commands/project.ts`; registry env replayed like `call`; CLI entry
+    is `build/cli/index.js` (`build/index.js` is the stdio server).
   - `InProcessToolSession.listResources(): Promise<Resource[]>` (follows
     `nextCursor`, like `listTools`)
   - CLI: `tea-rags resource <uri> [--path <dir>] [--project <alias>] [--json]`;
@@ -509,7 +514,7 @@ Run `npm run gen:agent-context` (empty core + no guides at this point is valid).
 - [ ] **Step 3: Implement**; keep `process.exit(0)` in the handler.
 - [ ] **Step 4: Run** `npx vitest run tests/cli` + `npx tsc --noEmit` — PASS.
       Then
-      `npm run build && node build/index.js prime /Users/artk0re/Dev/Job/taxdome | wc -c`
+      `npm run build && node build/cli/index.js prime /Users/artk0re/Dev/Job/taxdome | wc -c`
       — expect ≤ 2,700.
 - [ ] **Step 5: Commit** —
       `improve(explore): prime prints the slim project digest; --full keeps thresholds for humans`
@@ -677,7 +682,7 @@ message body.
   ≤ 20KB each; architecture-diagnostics ≤ 15KB);
   `tests/hooks/skill-resource-refs.test.sh` (every `tea-rags://` URI written in
   a skill is one the server registers — compare against
-  `node build/index.js resource --list` output)
+  `node build/cli/index.js resource --list` output)
 
 - [ ] **Step 1: Write the two tests** — run → FAIL (sizes; `schema/*` still
       referenced is allowed until a later deprecation release, but unknown URIs
@@ -735,12 +740,27 @@ always-on bytes before/after, per-suite pass rates).
 
 **Files:**
 
+Facts (sourced, with open items): `docs/superpowers/specs/2026-10-23-harness-facts.md`
+§A. Codex plugins bundle skills, MCP servers and hooks — NOT AGENTS.md; hook
+commands get `PLUGIN_ROOT`; plugin hooks need trust (`/hooks`) or
+`--dangerously-bypass-hook-trust`; the skills list gets ~2% of context (8,000
+chars default), so the package ships a curated skill set with short
+descriptions.
+
+**Files:**
+
 - Create: `scripts/gen-harness-codex.ts`
-- Create (generated): `harness/codex/tea-rags/.codex-plugin/plugin.json`,
+- Create (generated): `harness/codex/tea-rags/.codex-plugin/plugin.json`
+  (`name`, `version`, `description`, `skills: "./skills/"`,
+  `mcpServers: "./.mcp.json"`, `hooks: "./hooks/hooks.json"`),
+  `harness/codex/tea-rags/.mcp.json`, `harness/codex/tea-rags/hooks/hooks.json`,
   `harness/codex/tea-rags/skills/<skill>/SKILL.md` (+ `references/`),
-  `harness/codex/AGENTS.tea-rags.md`, `harness/codex/config.tea-rags.toml`,
-  `harness/codex/README.md`
-- Test: `tests/scripts/gen-harness-codex.test.ts` (drift guard + transforms)
+  `harness/codex/tea-rags/skills/tea-rags-core/SKILL.md` (the core as an
+  always-relevant skill), `harness/codex/AGENTS.tea-rags.md` (core snippet for
+  the user's AGENTS.md), `harness/codex/marketplace.json` (local marketplace
+  entry), `harness/codex/README.md` (install steps + facts excerpt)
+- Test: `tests/scripts/gen-harness-codex.test.ts` (drift guard + transforms +
+  skills-list budget)
 
 **Interfaces:**
 
@@ -749,28 +769,27 @@ always-on bytes before/after, per-suite pass rates).
   - Skill transform rules (pure function `toCodexSkill(md: string): string`):
     drop `` !`…` `` load-time blocks (keep the model-read line beside them);
     `ReadMcpResourceTool(server: "tea-rags", uri: X)` →
-    `read_mcp_resource(uri: X)`; `mcp__tea-rags__<tool>` → `tea-rags.<tool>`
-    (verify the exact Codex tool-name form in Step 1); `Skill(tea-rags:<s>)` /
-    `/tea-rags:<s>` → `$<s>` skill mention (verify form in Step 1); `Agent` tool
-    / `subagent_type` passages → Codex subagent wording (verify);
-    `AskUserQuestion` → "ask the user".
-  - `AGENTS.tea-rags.md` = core text verbatim.
-  - `config.tea-rags.toml`:
-    `[mcp_servers.tea-rags] command = "tea-rags", args = ["server"]` (dev
-    variant commented:
-    `command = "node", args = ["<repo>/build/index.js", "server"]`),
-    `[[hooks.SessionStart]]` → `tea-rags prime "$PWD"`,
-    `[[hooks.SubagentStart]]` → the subagent block script (only if Step 1
-    confirms Codex SubagentStart + additionalContext).
+    `read_mcp_resource(server: "tea-rags", uri: X)`; `mcp__tea-rags__<tool>` →
+    bare `<tool>` (Codex may or may not prefix; bare names read either way);
+    `Skill(tea-rags:<s>)` / `/tea-rags:<s>` → `$<s>`; `Agent` tool /
+    `subagent_type` passages → "spawn a subagent"; `AskUserQuestion` → "ask the
+    user". Frontmatter keeps `name` + `description` only.
+  - Curated skill set: tea-rags user-facing skills only (dinopowers wrappers
+    chain into superpowers, which Codex does not ship — excluded); total of
+    `name + description` across shipped skills ≤ 7,000 chars (test-enforced).
+  - `.mcp.json`: `{ "mcpServers": { "tea-rags": { "type": "stdio", "command":
+    "tea-rags", "args": ["server"], "default_tools_approval_mode": "approve" } } }`
+    (field names per facts §A.3; dev override documented in README:
+    `command: "node", args: ["<repo>/build/index.js"]`).
+  - `hooks/hooks.json`: SessionStart → `tea-rags prime "$PWD"` (plain stdout is
+    context; ≤ 2,500-token cap is met by the slim digest); SubagentStart →
+    `${PLUGIN_ROOT}/scripts/subagent-block.sh` (copied from the Claude plugin
+    hook, emitting `hookSpecificOutput.additionalContext`).
 
-- [ ] **Step 1: Research, then pin the facts in `harness/codex/README.md`** —
-      from the Codex docs (learn.chatgpt.com Codex: plugins, skills, hooks, MCP,
-      AGENTS.md) and the local install (`codex --help`, `codex mcp --help`, a
-      curated plugin under `~/.codex/plugins/cache/`): plugin manifest fields
-      (does a plugin carry `mcpServers` / `hooks`?), skill frontmatter, how a
-      skill is invoked by name, MCP tool naming seen by the model, resource
-      tools' names, hook event names + output fields + caps. Each fact with its
-      source URL or local path.
+- [ ] **Step 1: Pin the facts in `harness/codex/README.md`** — copy the
+      relevant §A facts with sources; re-verify locally the two open items the
+      generator depends on: `codex plugin --help` (marketplace add / plugin add
+      commands) and whether `.mcp.json` server entries need `type`.
 - [ ] **Step 2: Failing test** — transforms on a fixture skill (each rule
       above) + drift guard (`renderCodexHarness(root)` equals committed files).
 - [ ] **Step 3: Implement** generator; `npm run gen:harness-codex`.
@@ -784,14 +803,17 @@ always-on bytes before/after, per-suite pass rates).
 found.
 
 - [ ] **Step 1:** `npm run build` in the worktree (bare, no link).
-- [ ] **Step 2:** Install into a scratch `CODEX_HOME` copy (never edit
-      `~/.codex/config.toml` in place): `cp -R ~/.codex /tmp/codex-home-tr`
-      minus `sessions/`, append `config.tea-rags.toml` with the dev MCP variant
-      pointing at the worktree build, install the plugin dir per Step 1 facts,
-      put `AGENTS.tea-rags.md` content in the scratch `AGENTS.md`.
+- [ ] **Step 2:** Install into a scratch `CODEX_HOME` (never edit
+      `~/.codex/config.toml` in place): copy `~/.codex/{auth.json,config.toml}`
+      into `/tmp/codex-home-tr`, register the generated plugin through a local
+      marketplace (`codex plugin marketplace add <harness/codex>` then
+      `codex plugin add tea-rags@<marketplace>`, per README), switch its
+      `.mcp.json` to the dev variant pointing at the worktree build, put
+      `AGENTS.tea-rags.md` in the scratch `AGENTS.md`.
 - [ ] **Step 3:** Run scripted checks with
-      `CODEX_HOME=/tmp/codex-home-tr codex exec --json` in
-      `/Users/artk0re/Dev/Tools/tea-rags-mcp` (indexed alias `tea-rags`):
+      `CODEX_HOME=/tmp/codex-home-tr codex exec --json --ephemeral --dangerously-bypass-hook-trust -C /Users/artk0re/Dev/Tools/tea-rags-mcp "<prompt>"`
+      (indexed alias `tea-rags`); assert on `item.completed` events of type
+      `mcp_tool_call` (`server`, `tool`, `arguments`) and on shell items. Checks:
   1. "Quote the first heading of tea-rags://guide/navigation" → expect a
      `read_mcp_resource` call and `# ` heading text.
   2. "Where is registerAllResources defined? Show its body." → expect
@@ -833,27 +855,28 @@ test script.
 - Consumes: the transform core from Task 13, `rules/core.md`.
 - Produces:
   - `plugin.json`: `name: "tea-rags"`, `version` = tea-rags plugin version,
-    `description`, `author`, `rules`, `skills`, `hooks`, `mcpServers` per
-    https://cursor.com/docs/reference/plugins.
-  - `hooks.json`:
-    `{ "version": 1, "hooks": { "sessionStart": [{ "command": "tea-rags prime \"$CURSOR_PROJECT_DIR\"" }] } }`
-    whose output is wrapped as `{ "additional_context": … }` by a tiny
-    `scripts/session-start.sh` (sessionStart is fire-and-forget; the core's "no
-    digest → read `tea-rags://project/<alias>/digest`" line covers a missed
-    delivery). No `subagentStart` / `preCompact` injection (Cursor cannot inject
-    there).
-  - `mcp.json`: `tea-rags` server, `command: "tea-rags", args: ["server"]`.
-  - Skill transform: Codex rules minus Codex-specific names; MCP tool and
-    resource tool naming per Step 1.
+    `description`, `author`, `keywords` (default folders `rules/`, `skills/`,
+    `hooks/hooks.json`, `mcp.json` are auto-discovered — facts §B.1).
+  - `hooks/hooks.json`:
+    `{ "version": 1, "hooks": { "sessionStart": [{ "command": "${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh" }] } }`;
+    the script prints `{ "additional_context": "<tea-rags prime output>" }`
+    (sessionStart is fire-and-forget; the core's "no digest → …" line covers a
+    missed delivery). No `subagentStart` / `preCompact` injection (Cursor cannot
+    inject there).
+  - `mcp.json`: `{ "mcpServers": { "tea-rags": { "type": "stdio", "command":
+    "tea-rags", "args": ["server"] } } }`.
+  - **Resources are unreliable in Cursor** (not documented; staff reported them
+    partly disabled — facts §B.6). The core `.mdc` therefore names BOTH routes
+    for every guide/metrics read: the resource URI, and the terminal fallback
+    `tea-rags resource "<uri>" --path "$PWD"` (the CLI mirror, Task 3). Same
+    substitution applies inside transformed skills.
+  - Skill transform: Codex rules (no `$` mentions — Cursor uses `/skill-name`),
+    `name` must equal the folder name; frontmatter `name`, `description`.
 
-- [ ] **Step 1: Research and pin facts in `harness/cursor/README.md`** — plugin
-      manifest fields, rules `.mdc` frontmatter, skills format and invocation,
-      hooks.json events/output fields (`sessionStart.additional_context`), how
-      hook commands resolve plugin-relative paths, MCP config in a plugin
-      (`${CURSOR_PLUGIN_ROOT}`), model-side resource tool names
-      (`listMcpResources` / `readMcpResource` observed in cursor-agent; IDE
-      unverified). Each fact with its source URL; unverifiable facts marked
-      `UNVERIFIED`.
+- [ ] **Step 1: Pin the facts in `harness/cursor/README.md`** — copy §B facts
+      with sources from `docs/superpowers/specs/2026-10-23-harness-facts.md`;
+      install path `~/.cursor/plugins/local/tea-rags` (second-hand — marked
+      UNVERIFIED).
 - [ ] **Step 2: Failing test** — drift guard; `plugin.json` has only spec
       fields; `.mdc` frontmatter has `alwaysApply: true`; core `.mdc` ≤ 4,096
       chars; every hook event is in Cursor's documented list.
