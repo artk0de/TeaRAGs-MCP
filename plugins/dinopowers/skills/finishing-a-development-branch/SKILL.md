@@ -110,6 +110,11 @@ risk-assessment unavailable; relying on test suite + human review".
 From PRESENT output extract: Critical (count + file:line + classification), High
 (count + list), untested among Critical/High, one-sentence recommendation.
 
+**Risk-assessment result already in hand** (user / prompt states it, e.g. "3
+Critical, all untested") = Step 2 output — NEVER re-run the scan. Decide now:
+any untested Critical → `address-critical-first` + Critical file:line list;
+never `ready-to-merge`.
+
 ```
 ### Branch completion scan: <branchName>
 

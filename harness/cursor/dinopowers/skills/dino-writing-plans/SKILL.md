@@ -96,6 +96,10 @@ limit:       <fileList.length * 3>       ← aim for ~3 chunks per file
 metaOnly:    true
 ```
 
+Describing the call (plan-only / subagent report) → write `pathPattern`
+literally as the brace string (`"{src/a.ts,src/b.ts}"`), never "scoped to the
+files".
+
 **Codegraph gating for `rerank`:** on → `"blastRadius"` (real `fanIn`, churn,
 bugFix = true blast radius); off → `fanIn` gone →
 `{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy,
@@ -129,7 +133,8 @@ MUST output: (a) ONE row per file with exactly these columns, named:
 `bugFixRate`, `taskIds` — "impact row" without the five names = incomplete; (b)
 **Coordinated change candidates** — every taskId shared by ≥2 files, listed with
 its files (none shared → write "none"). Both always, even when user only asks
-for "impact data".
+for "impact data" — and when only describing the plan, name the five columns
+verbatim ("one impact row per file" alone = incomplete).
 
 Group chunks by `relativePath` (primary key — `/risk-assessment` Phase 2:
 MERGE); plans care about files, not chunks. Per file in `fileList`: raw from
@@ -206,9 +211,10 @@ invoke `/extract-project-patterns`:
 
 4. `locality = "none"` → attach diagnostic verbatim (no proven precedent).
 5. New symbol names the Task fixes (codegraph on) →
-   `get_naming_lexicon(names, concept+language, pathPattern=pathPatternL1)`
-   before they enter plan: `MISFIT` → plan uses `suggestion`; `NEW_TERM` → a
-   `topTerms` / `concept.terms` word if same meaning, else Task carries one-line
+   `get_naming_lexicon(names=[{name, kind}], concept="<Task intent>", language="<file's>", pathPattern=pathPatternL1)`
+   — write every argument out, never `…` — before they enter plan; state both
+   rules: `MISFIT` → plan uses `suggestion`; `NEW_TERM` → a `topTerms` /
+   `concept.terms` word if same meaning, else Task carries one-line
    justification. Reading: `/data-driven-generation` Step 5 "Naming (lexicon)".
 6. New cross-component imports (codegraph on) → ONE
    `get_architecture_report(plannedEdges: [{source, target}])` per plan, all

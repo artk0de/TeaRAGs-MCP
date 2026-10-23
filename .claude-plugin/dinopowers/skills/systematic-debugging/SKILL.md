@@ -41,6 +41,11 @@ bugFixRate <X>") + "you are overriding a calibrated prior". User still insists �
 note the override in the hypothesis block, proceed with
 `superpowers:systematic-debugging` on that file.
 
+**Order — state all three, subagents included:** (1) `Skill(tea-rags:bug-hunt)`
+with framed symptom → (2) Step 3 hypothesis block built from its PRESENT output
+→ (3) `Skill(superpowers:systematic-debugging)` with that block PREPENDED. "Hand
+off" / "continue after triage" without naming the block = Step 3 skipped.
+
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass wrapper.
 

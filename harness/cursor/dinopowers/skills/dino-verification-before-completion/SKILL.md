@@ -44,15 +44,22 @@ parent.
 in your tool list; unsure → read
 `tea-rags://project/<alias>/metrics?section=registry` (`codegraph on|off`).
 
-**Diff review, same gate** (codegraph on): one
-`review_changes(changes:{base}) sections ["incompleteChange","architecture"]`
-(`base` = branch base, e.g. `main`; uncommitted-only work on `main` →
-`changes:{}`) BEFORE "done" when session edited existing files. incompleteChange
-= co-change partners diff ignores (forgotten sibling edits). architecture = diff
-vs indexed graph (unstable targets, facade bypasses, cycles).
-`preExisting: true` = predates diff → report, never fix in this change.
-`entryPoint` / `compositionRoot` / `foundationTerminal` = placement, not defect.
-Rest = gate input like blast ladder — address or state why not.
+**Diff review, same gate** (codegraph on) = `/data-driven-generation` Step 7
+GATE — read its `references/step-7-verify.md` and run it; nothing here narrows
+it. BEFORE "done" / commit when session edited files: ONE
+`review_changes(changes:{}, sections:["naming","incompleteChange","cohesion","architecture","norms"])`
+(`{}` = uncommitted edit; committed branch → `changes:{base}`, base =
+`git merge-base HEAD main`, never a sibling / integration branch; findings from
+a stack below = its owner's, cite the commit, no triage). Triage: no
+`preExisting` → repair; `preExisting` + `remedy` → apply the remedy;
+`preExisting`, no `remedy` → one report line + bead suggestion, commit allowed.
+After every repair: re-run the SAME `review_changes` + targeted tests — target
+gone AND no new finding, else revert the whole round; 2 rounds left a must-fix →
+ask the user (finding, rounds tried, why reverted; fix / accept with reason /
+bead), no commit. `truncated` / `built: false` / skipped files = PARTIAL ≠ pass
+→ re-run with `files` batches. `entryPoint` / `compositionRoot` /
+`foundationTerminal` QUOTED from the finding = placement, not defect. Report
+`GATE review_changes: introduced=<n>, partial=<true|false>`.
 
 ## Verdict Ladder (PRESCRIPTIVE — apply before claiming done)
 
@@ -76,9 +83,11 @@ Prescriptive, not informational — DO NOT skip; never downgrade HIGH-BLAST to
 "probably fine" without evidence. Block says WHICH tests to run; LOW-BLAST needs
 no full suite. HIGH-BLAST under time pressure ("deadline", "just the quick
 ones"): never pick a narrower set yourself — show the block, state the full
-dependent suite it requires, wait for the user's explicit override before
-running less. Say: "HIGH-BLAST on <file> — full dependent suite required.
-Running only <narrower set> needs your explicit OK, accepting the risk."
+dependent suite it requires, wait for the user's explicit override that
+acknowledges the risk before running less. Say: "HIGH-BLAST on <file> — full
+dependent suite required. Running only <narrower set> needs your explicit
+override acknowledging the risk (untested dependents may break) — reply
+'override, I accept the risk'." Deadline in the request ≠ that override.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every /dino-X
 redirects /X. NEVER bypass the wrapper.
@@ -138,7 +147,7 @@ Do NOT substitute:
 | Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` doesn't exist; `hotspots` = BUG-prone history, not BLAST radius. `"blastRadius"` correct when codegraph on |
 | `mcp__tree-sitter__trace_impact`                                | Structural call trace = complementary, not git-signal blast radius; tea-rags first                                          |
 | One call per file                                               | Brace expansion covers all                                                                                                  |
-| Built-in `grep -r "import.*<file>"`                             | Misses ranked `imports` overlay; slower                                                                                     |
+| Built-in `grep -r "import.*<file>"`                             | Misses ranked `imports` overlay; miscounts re-exports (barrel `export … from`); slower                                      |
 | `git log --oneline <files>`                                     | History of edited files, not dependents                                                                                     |
 
 Do NOT pass:
@@ -162,11 +171,12 @@ Per unique `relativePath`: raw values from `payload.git.file.*` + labels from
 - `blameDominantAuthorPct` + adaptive label — silo risk (use label `silo` /
   `deep-silo`, codebase-relative, not magic %)
 
-`treeState` rows = pre-edit index copies: payload fanIn + churn stand unless
-those dependents were edited too (graph edges follow cascade floor rule); text
-
-- lines don't — not evidence edit is correct; current code via
-  `find_symbol project=<alias> path=<your working directory>`.
+`treeState` rows (your edited files) = the index's PRE-EDIT copies — say so:
+fanIn + churn of dependents stay valid (unless those dependents were edited too;
+graph edges follow cascade floor rule); row text and lines are stale — never
+evidence the edit is correct. Current code via
+`find_symbol project=<alias> path=<your working directory>`; linked worktree →
+no reindex (Index freshness above).
 
 Apply Verdict Ladder per file. Aggregate:
 

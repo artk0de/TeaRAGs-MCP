@@ -24,8 +24,8 @@ enrichment, then chains to superpowers internally.
 | Authoring an implementation plan with a file list | Skill(dinopowers:writing-plans) |
 | Executing plan Tasks that modify files | Skill(dinopowers:executing-plans) |
 | Debugging a concrete symptom (error, stack trace, test failure) | Skill(dinopowers:systematic-debugging) |
-| Writing a new failing test (TDD RED phase) | Skill(dinopowers:test-driven-development) |
-| Writing or changing production code outside a written plan (new function, behaviour change, perf rework) | Skill(tea-rags:data-driven-generation) |
+| Writing a failing test only — no production change in the task (TDD RED phase) | Skill(dinopowers:test-driven-development) |
+| Writing or changing production code outside a written plan (new function, behaviour change, perf rework) — DDG owns RED (tea-rags:test-first, Step 6a) and GREEN; no separate TDD wrapper | Skill(tea-rags:data-driven-generation) |
 | Claiming work complete / before commit / before PR | Skill(dinopowers:verification-before-completion) |
 | Agreeing/pushing back on a review comment that names a symbol | Skill(dinopowers:receiving-code-review) |
 | Composing a code review request with a diff | Skill(dinopowers:requesting-code-review) |

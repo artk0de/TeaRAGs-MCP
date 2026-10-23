@@ -135,7 +135,9 @@ Do NOT substitute:
 
 Do NOT pass:
 
-- `metaOnly: false` — verdict inputs, not content
+- `metaOnly: false` — verdict inputs, not content. User wants the code too →
+  separate call AFTER the verdict: `find_symbol(relativePath:)` outline, then
+  member bodies; never flip the guard
 - wrong rerank for codegraph state — must match `dinopowers:writing-plans` +
   `tea-rags:data-driven-generation` IMPACT step (cross-skill comparability)
 - `filter` narrowing — `pathPattern` scopes; filters hide signal
@@ -173,7 +175,12 @@ re-run. Stated rank (`top 12%`) feeds the blast row directly; stated label words
 (`shared`, `silo`, `concerning`) are labels; ONE trigger suffices — missing
 signals never block it. No trigger stated (low imports, 0% bugFix, `shared`) →
 SAFE, proceed without pausing; commit count alone never triggers. Example: top
-12% → CAUTION + "Proceed with Task 2?"; imports=2, 0%, shared → SAFE.
+12% → CAUTION + "Proceed with Task 2?"; imports=2, 0%, shared → SAFE. UNSAFE
+blast row = conjunction — verdict line names BOTH halves:
+`imports top 2% AND bugFixRate concerning → UNSAFE`; blast top 5% alone =
+CAUTION. A bare percent (`bugFixRate=45%`, no label) → its label from
+`tea-rags://project/<alias>/metrics?section=labelMap` (`concerning` ≥ p75,
+`critical` ≥ p95) BEFORE the verdict; never a fixed cut like 40%.
 
 Task verdict = worst per-file (UNSAFE > CAUTION > SAFE). Guard block:
 
@@ -240,20 +247,22 @@ Gate cleared (SAFE / CAUTION confirmed / UNSAFE overridden) → classify Task
 BEFORE `superpowers:executing-plans`. DDG picks own mode (CREATE / EXTEND /
 MODIFY) via `find_symbol` probe — wrapper decides only WHETHER to invoke.
 
-| Task intent                                                                                                  | Action                                                                                           |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| **Generation**: new file, new function, new class, new method on existing class, rewrite-to-new-template     | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (CREATE / EXTEND) |
-| **Modification**: change behavior of EXISTING symbol in place (bug fix, condition tweak, new branch, hotfix) | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (MODIFY)          |
-| **Refactor only**: rename, move, extract, inline, reformat — no behavior change                              | Skip Step 5 — DDG out of scope for pure refactor; see naming note below                          |
-| **Deletion**: remove file, remove function, prune dead code                                                  | Skip Step 5 — no generation                                                                      |
-| **Trivial**: typo, comment / log-message text, single-token swap, no behavior change                         | Skip Step 5 AND skip wrapper entirely — direct Edit                                              |
+| Task intent                                                                                                  | Action                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Generation**: new file, new function, new class, new method on existing class, rewrite-to-new-template     | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (CREATE / EXTEND)                                          |
+| **Modification**: change behavior of EXISTING symbol in place (bug fix, condition tweak, new branch, hotfix) | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (MODIFY); state "Step 4.5 skipped — MODIFY skips TEMPLATE" |
+| **Refactor only**: rename, move, extract, inline, reformat — no behavior change                              | Skip Step 5; new name → `get_naming_lexicon(names[])` BEFORE Edit, `MISFIT` → use `suggestion` (naming note)                              |
+| **Deletion**: remove file, remove function, prune dead code                                                  | Skip Step 5 — no generation                                                                                                               |
+| **Trivial**: typo, comment / log-message text, single-token swap, no behavior change                         | Skip Step 5 AND skip wrapper entirely — direct Edit                                                                                       |
 
 **Naming note (rename / extract, codegraph on):** new name →
-`get_naming_lexicon(names=[{name, kind, type?}], language, pathPattern)` before
-Edit (`language` = edited file's; evidence never crosses languages). `MISFIT` →
-`suggestion`; `NEW_TERM` → `topTerms` word if same meaning; `NO_CONVENTION` →
-`prefer.exact` or name like `prefer.analogous`. Plan-fixed names checked too.
-Reading: `tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
+`get_naming_lexicon(names=[{name, kind, type?}], language, pathPattern)` (`kind`
+∈ `param` | `local` | `field` | `constant` | `return` | `type` — never
+`variable`) before Edit (`language` = edited file's; evidence never crosses
+languages). `MISFIT` → `suggestion`; `NEW_TERM` → `topTerms` word if same
+meaning; `NO_CONVENTION` → `prefer.exact` or name like `prefer.analogous`.
+Plan-fixed names checked too. Reading: `tea-rags:data-driven-generation` Step 5
+"Naming (lexicon)".
 
 Why MANDATORY — in-context edit / sibling `Read` misses what DDG owns:
 
@@ -281,9 +290,11 @@ Step 5 returns (strategy + template + style) → THEN
 `Skill(dinopowers:test-driven-development)`).
 
 **Order:** addressing (2.0) → guard (2) → gate (4) → cascade (5) →
-executing-plans. Skipping Step 5 on generation/modification = same severity as
-skipping guard on existing file. Guard SAFE resolves blast-radius gate only —
-Step 5 separate gate, both must clear.
+`Skill(superpowers:executing-plans)` — DDG return ≠ done; name the chain into
+executing-plans as the last step of every Task, subagent runs included. Skipping
+Step 5 on generation/modification = same severity as skipping guard on existing
+file. Guard SAFE resolves blast-radius gate only — Step 5 separate gate, both
+must clear.
 
 ## Red Flags — STOP, restart from Step 2
 

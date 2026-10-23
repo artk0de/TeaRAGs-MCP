@@ -120,9 +120,9 @@ Settle naming before reviewer spends comment:
 Answer under `review` {workTree, base, mergeBase, changedFiles, checked,
 conforming, novel, findings, notJudged, truncated?}; findings flat
 `{relPath, line, name, kind, type?, verdict, …}`. Bundle line: findings grouped
-by verdict with `relPath:line` + conforming and novel counts (`novel` = nothing
-to compare, no action). Reading: `tea-rags:data-driven-generation` Step 5
-"Naming (lexicon)".
+by verdict with `relPath:line` + conforming AND novel counts (both numbers,
+always) (`novel` = nothing to compare, no action). Reading:
+`tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 
 ## Step 3 — Build reviewer-context bundle
 
@@ -145,9 +145,10 @@ Reviewers by `blame*`; fast turnaround by `recent*`.
 
 Bundle goes INTO request, not a verdict. Metadata only — no raw diff, no raw git
 log. **Four sections, ALWAYS all four, named as below** (no data for one → write
-"none", never drop it): (1) per-file table with Owner AND Contributors columns,
-(2) suggested reviewers, (3) coordinated change context (taskIds), (4) risk
-flags for reviewer attention (bugFixRate / churn / silo per file):
+"none", never drop it): (1) per-file table with ALL five columns — File, Owner,
+Contributors, Commits (age), Related tickets (taskIds; none → "—", never drop
+the column), (2) suggested reviewers, (3) coordinated change context (taskIds),
+(4) risk flags for reviewer attention (bugFixRate / churn / silo per file):
 
 ```
 ### Reviewer context bundle
@@ -168,6 +169,10 @@ flags for reviewer attention (bugFixRate / churn / silo per file):
 **Risk flags for reviewer attention:**
 - `src/a.ts` has bugFixRate=35% (high) — scrutinize new logic
 - `src/e.ts` has been touched 47 times in 90 days — stability concern
+
+**Naming (Step 2.6, codegraph on):** MISFIT `row` (src/a.ts:12) → renamed
+`<suggestion>`; COLLISION `Commit` (src/c.ts:3) vs `<existing>` — justify;
+NEW_TERM `<name>` (src/d.ts:40) — <justification>; conforming 11, novel 2
 ```
 
 Bundle > 20 lines → per-file table top 10 by `imports`, note "N more files

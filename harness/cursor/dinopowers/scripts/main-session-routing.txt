@@ -6,12 +6,12 @@ into superpowers itself; nothing skipped.
 
 | User asks to... | Invoke |
 |---|---|
-| Write / change production code outside a written plan | /data-driven-generation |
+| Write / change production code outside a written plan (it owns RED + GREEN) | /data-driven-generation |
 | Brainstorm / design / refactor a feature in a code area | /dino-brainstorming |
 | Write an implementation plan | /dino-writing-plans |
 | Execute a written plan that edits files | /dino-executing-plans |
 | Debug a bug, error, stack trace, test failure | /dino-systematic-debugging |
-| Write a failing test / start TDD | /dino-test-driven-development |
+| Write a failing test only, no production change | /dino-test-driven-development |
 | Verify before commit / PR / claiming done | /dino-verification-before-completion |
 | Request a code review / open a PR | /dino-requesting-code-review |
 | React to a review comment naming a symbol or file | /dino-receiving-code-review |

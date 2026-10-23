@@ -3,10 +3,10 @@ name: dino-brainstorming
 description:
   'Brainstorm code change seeing risk, ownership, tech-debt signals from
   tea-rags first — creative exploration grounded in actual state of affected
-  area. Triggers on "brainstorm X", "design feature", "refactor Y", "let''s
-  discuss", "давай обсудим", "как перестроить", "что может сломаться". NOT for
-  trivial edits or stylistic questions with no code area to enrich. Wraps
-  /brainstorming with tea-rags risk-signal enrichment step.'
+  area. Triggers on "brainstorm X", "design feature", "redesign Y", "let''s
+  discuss", "давай обсудим", "как перестроить", "что может сломаться". NOT
+  research before refactor (→ explore PRE-GEN), NOT trivial edits with no code
+  area. Wraps /brainstorming with tea-rags risk signals.'
 ---
 
 # dinopowers: brainstorming
@@ -54,10 +54,18 @@ intent).
 No area mentioned/derivable → Step 4, empty enrichment. Report "no area
 identifiable — proceeding without tea-rags enrichment".
 
-## Step 2 — Three tea-rags enrichment calls (five with codegraph)
+## Step 2 — Codegraph decision, then ONE parallel block (A–E on / A–C off)
 
-`semantic_search` calls **in parallel** (one tool block), each `metaOnly: true`
-(signals, not content):
+**2.0 — decide codegraph state FIRST, state it in output before the block:**
+graph tools (`get_callers`, `trace_path`, …) in your tool list → write
+"codegraph on (graph tools in my list) → A–E"; absent → "codegraph off → A–C,
+backbone + vocabulary not assessed". Unsure → metrics `codegraph on|off`
+(below). SessionStart digest never states it — silence ≠ off. No stated decision
+= Step 2 not started.
+
+Then ALL calls **in parallel** (one tool block — D + E in the SAME block as A–C,
+never appended after): A–D `semantic_search`, each `metaOnly: true` (signals,
+not content); E `get_naming_lexicon`:
 
 | Call           | `rerank` preset                     | Why                                                                                                                                 |
 | -------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -178,6 +186,8 @@ as context. Phrase handoff as:
 - `hybrid_search` / `find_similar` / `find_symbol` substituted → redo with
   `semantic_search` + preset
 - Calls sequential → reissue parallel
+- Block issued without stated codegraph decision, or graph tools in list but
+  only A–C → add D + E in the same block, restate
 - `/brainstorming` first, tea-rags after as "validation" → wrong order, restart
 - `metaOnly: false` "to see content" → restart with `metaOnly: true`
 - Raw `results[]` JSON in handoff → extract 3 entries per lens

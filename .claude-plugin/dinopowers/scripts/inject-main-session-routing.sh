@@ -15,12 +15,12 @@ into superpowers itself; nothing skipped.
 
 | User asks to... | Invoke |
 |---|---|
-| Write / change production code outside a written plan | Skill(tea-rags:data-driven-generation) |
+| Write / change production code outside a written plan (it owns RED + GREEN) | Skill(tea-rags:data-driven-generation) |
 | Brainstorm / design / refactor a feature in a code area | Skill(dinopowers:brainstorming) |
 | Write an implementation plan | Skill(dinopowers:writing-plans) |
 | Execute a written plan that edits files | Skill(dinopowers:executing-plans) |
 | Debug a bug, error, stack trace, test failure | Skill(dinopowers:systematic-debugging) |
-| Write a failing test / start TDD | Skill(dinopowers:test-driven-development) |
+| Write a failing test only, no production change | Skill(dinopowers:test-driven-development) |
 | Verify before commit / PR / claiming done | Skill(dinopowers:verification-before-completion) |
 | Request a code review / open a PR | Skill(dinopowers:requesting-code-review) |
 | React to a review comment naming a symbol or file | Skill(dinopowers:receiving-code-review) |

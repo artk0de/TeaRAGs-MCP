@@ -152,6 +152,7 @@ Target: <symbol or file>
 - bugFixRate: <X%>
 
 Verdict: <UNVERIFIABLE | PUSHBACK | AGREE-WITH-SCOPE | AGREE-DIRECT>
+Action: <AGREE-DIRECT: single-commit change, no scope inflation | other verdicts: their row's action>
 Scope (AGREE-WITH-SCOPE): importers <list of N> · commitment <update all N | partial: why>
 ```
 
@@ -199,8 +200,10 @@ Rename / "unclear name" comment →
 
 - proposed `CONFORMS` → agree on name (unless it carries `alternatives` —
   project's word for same concept)
-- proposed `MISFIT` → counter-propose its `suggestion` (holder as precedent)
-- proposed `NEW_TERM` while current `CONFORMS` → push back with project's term
+- proposed `MISFIT`, current not `CONFORMS` → counter-propose its `suggestion`
+  (holder as precedent)
+- proposed `MISFIT` / `NEW_TERM` while current `CONFORMS` → push back: keep
+  current name, cite project's term + its holder (file) as precedent
 
 Naming across whole change, no identifier named ("names in this PR don't match
 the codebase") →
@@ -216,6 +219,9 @@ hand-list into `names[]`. Findings = `review.findings`, flat
 - `NEW_TERM` → keep with justification or take offered `alternatives` word
 - `genericName` → rename or justify
 - conforming stay; `review.novel` = nothing to compare, no action
+
+Reply states the rule per name / finding, one line each:
+`<name> (relPath:line): <verdict> → <action>` — verdict alone ≠ answer.
 
 Append verdicts to impact block — naming verdict decides WHICH name, Step 2
 decides cost. Reading: `/data-driven-generation` Step 5 "Naming (lexicon)".

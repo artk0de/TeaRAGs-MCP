@@ -103,7 +103,11 @@ Compose:
 
 - `intent`: concise sentence (e.g. "ChunkGrouper groups overlapping chunks by
   startLine")
-- `pathHint`: optional pathPattern for test area (from implementation path)
+- `pathHint`: optional pathPattern for test area (from implementation path).
+  Target language has no sibling tests there (Ruby file in TS-tested project) →
+  NO `pathHint` — search whole corpus, then state the outcome: 0 → fallback
+  note; only other-language tests → "cross-language — <lang> conventions may not
+  apply to <target lang>"
 
 ## Step 2 — Search proven test patterns (split queries)
 
@@ -230,6 +234,10 @@ replaces.
 - `rerank: "recent"` "for latest conventions" → `proven`; recent = drafts.
   `hotspots` = FLAKY tests (high churn + recent)
 - `find_similar` on implementation symbol → production code, not tests
+- Test language has no sibling tests (Ruby file, TS-only test corpus) → search
+  broader corpus anyway, then state BOTH outcomes: 0 results → fallback note
+  (below); only other-language tests → "cross-language — <lang> conventions may
+  not apply to <target lang>"
 - Raw test code to `/test-driven-development` → extract ≤6 bullets
 - Drafted failing test before Step 2 → revert, restart Step 2
 - Inner skill chained raw `/verification-before-completion` → intercept, invoke

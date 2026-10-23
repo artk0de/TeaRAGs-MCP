@@ -44,6 +44,11 @@ bugFixRate <X>") + "you are overriding a calibrated prior". User still insists �
 note the override in the hypothesis block, proceed with `/systematic-debugging`
 on that file.
 
+**Order — state all three, subagents included:** (1) `/bug-hunt` with framed
+symptom → (2) Step 3 hypothesis block built from its PRESENT output → (3)
+`/systematic-debugging` with that block PREPENDED. "Hand off" / "continue after
+triage" without naming the block = Step 3 skipped.
+
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every /dino-X
 redirects /X. NEVER bypass wrapper.
 
