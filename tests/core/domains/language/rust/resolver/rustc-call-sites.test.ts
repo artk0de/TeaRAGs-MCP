@@ -455,3 +455,43 @@ describe("the miss classifier's external gate reads the driver, then SCIP (bd s3
     ]);
   });
 });
+
+describe("macroInvocation rows through the driver slot (research/rustc-driver/RESIDUAL.md R3)", () => {
+  /** `write!` as the decoder serves a `macroInvocation` row of `std::write`. */
+  const STD_WRITE: RustCallSiteDefinition = {
+    symbol: "rustc core std::write",
+    package: "core",
+    inProject: false,
+    name: "write",
+    kind: "macro",
+    packageInProject: false,
+  };
+  const writeSite = call('write!(f, "x")', null, "write", 9, 4);
+
+  it("resolves an in-project macro_rules invocation to the macro's table symbol", () => {
+    const t = table(
+      def("src/log.rs", "my_log", "my_log", 4, 8, "macro"),
+      def("src/log.rs", "my_log", "Logger#my_log", 12, 14),
+    );
+    const callSites = stubIndex({ "src/main.rs:9:4": inProject("my_log", "src/log.rs", 4, "macro") });
+    expect(strategy.attempt(call('my_log!("x")', null, "my_log", 9, 4), ctxWith(t, { callSites }))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/log.rs", targetSymbolId: "my_log" },
+    });
+  });
+
+  it("DROPs `write!(f, …)` as external although the project declares `fn write`", () => {
+    const t = table(def("src/io.rs", "write", "Sink#write", 3, 6));
+    const callSites = stubIndex({ "src/main.rs:9:4": STD_WRITE });
+    expect(strategy.attempt(writeSite, ctxWith(t, { callSites }))).toEqual({ kind: "drop" });
+  });
+
+  it("moves a std macro whose name a project macro_rules shares out of the residual", async () => {
+    const t = table(def("src/doc/help.rs", "write", "write", 19, 24, "macro"));
+    const without = await facade();
+    expect(classifyResolveMiss(writeSite, ctxWith(t), without, t)).toBe("missWithInProjectDef");
+    const resolver = await facade({ callSites: stubIndex({ "src/main.rs:9:4": STD_WRITE }) });
+    expect(resolver.resolve(writeSite, ctxWith(t))).toBeNull();
+    expect(classifyResolveMiss(writeSite, ctxWith(t), resolver, t)).toBe("externalSkipped");
+  });
+});

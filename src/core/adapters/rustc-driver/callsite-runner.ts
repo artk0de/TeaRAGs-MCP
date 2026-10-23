@@ -85,7 +85,7 @@ export const RUSTC_DRIVER_DEFAULT_MAX_RSS_MB = 12_288;
 export const RUSTC_DRIVER_POLL_MS = 2000;
 
 /** The `run.json` / unit-file layout the runner reads (the crate's `CALLSITES_FORMAT`). */
-const CALLSITES_FORMAT = 1;
+const CALLSITES_FORMAT = 2;
 const HOST_COMMAND_TIMEOUT_MS = 10_000;
 const OUTPUT_TAIL_CHARS = 4096;
 const LATCH_FILE = "latch.json";

@@ -171,12 +171,52 @@ fn run() -> &'static Run {
     })
 }
 
+const MACRO_INVOCATION: &str = "macroInvocation";
+
+/// Call-site rows (`source` / `macro`) on a line; macro-invocation rows are pinned apart.
 fn rows_at(rel_path: &str, line: u64) -> Vec<&'static Value> {
     run()
         .rows
         .iter()
-        .filter(|r| r["relPath"] == rel_path && r["line"] == line)
+        .filter(|r| {
+            r["relPath"] == rel_path && r["line"] == line && r["origin"] != MACRO_INVOCATION
+        })
         .collect()
+}
+
+fn invocations() -> impl Iterator<Item = &'static Value> {
+    run()
+        .rows
+        .iter()
+        .filter(|r| r["origin"] == MACRO_INVOCATION)
+}
+
+fn invocation_at(rel_path: &str, line: u64, col: u64) -> &'static Value {
+    let hits: Vec<_> = invocations()
+        .filter(|r| r["relPath"] == rel_path && r["line"] == line && r["col"] == col)
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected exactly one macro invocation at {rel_path}:{line}:{col}, got {hits:#?}"
+    );
+    hits[0]
+}
+
+fn invocation(
+    rel: &str,
+    line: u64,
+    col: u64,
+    name: &str,
+    def_path: &str,
+    krate: &str,
+    def: Option<(&str, u64)>,
+) -> Value {
+    json!({
+        "relPath": rel, "line": line, "col": col, "origin": MACRO_INVOCATION, "macro": name,
+        "macroDefPath": def_path, "calleeCrate": krate, "inProject": def.is_some(),
+        "defRelPath": def.map(|d| d.0), "defLine": def.map(|d| d.1),
+    })
 }
 
 fn row_at(rel_path: &str, line: u64, col: u64) -> &'static Value {
@@ -392,6 +432,97 @@ fn macro_rules_body_call_is_origin_macro_at_the_macro_name() {
 }
 
 #[test]
+fn local_macro_rules_invocation_names_its_definition() {
+    // A local crate's def path prints unprefixed (`helper`, `total`), so does its macro.
+    let def = Some(("core/src/lib.rs", 60));
+    assert_eq!(
+        invocation_at("core/src/lib.rs", 72, 4),
+        &invocation("core/src/lib.rs", 72, 4, "my_log", "my_log", "fx_core", def)
+    );
+    assert_eq!(
+        invocation_at("core/src/lib.rs", 56, 4),
+        &invocation(
+            "core/src/lib.rs",
+            56,
+            4,
+            "twice",
+            "twice",
+            "fx_core",
+            Some(("core/src/lib.rs", 45))
+        )
+    );
+}
+
+#[test]
+fn cross_crate_path_invocation_sits_at_the_macro_name_token() {
+    assert_eq!(
+        invocation_at("app/src/main.rs", 32, 13),
+        &invocation(
+            "app/src/main.rs",
+            32,
+            13,
+            "my_log",
+            "fx_core::my_log",
+            "fx_core",
+            Some(("core/src/lib.rs", 60))
+        )
+    );
+}
+
+#[test]
+fn std_macro_invocations_are_external() {
+    let external = |line, col, name: &str| {
+        invocation(
+            "core/src/lib.rs",
+            line,
+            col,
+            name,
+            &format!("std::{name}"),
+            "core",
+            None,
+        )
+    };
+    assert_eq!(
+        invocation_at("core/src/lib.rs", 71, 14),
+        &external(71, 14, "matches")
+    );
+    assert_eq!(
+        invocation_at("core/src/lib.rs", 73, 9),
+        &external(73, 9, "write")
+    );
+    // `std::matches!` is core's macro re-exported by std: the definition, not the re-export.
+    assert_eq!(
+        invocation_at("core/src/lib.rs", 73, 30),
+        &external(73, 30, "matches")
+    );
+}
+
+#[test]
+fn macro_invocations_inside_expansions_are_not_rows() {
+    // `my_log!` expands to `format!` (body line 62), `write!` to `format_args!`: neither is a
+    // site the user wrote. The `format!` the user wrote in `Store::describe` is one.
+    let nested: Vec<_> = invocations()
+        .filter(|r| r["macro"] == "format_args" || (r["macro"] == "format" && r["line"] != 6))
+        .collect();
+    assert!(nested.is_empty(), "nested invocations emitted: {nested:#?}");
+    assert_eq!(
+        invocation_at("core/src/lib.rs", 6, 8)["macroDefPath"],
+        "std::format"
+    );
+    let mut sites = BTreeSet::new();
+    for r in invocations() {
+        assert!(
+            sites.insert((
+                r["relPath"].to_string(),
+                r["line"].to_string(),
+                r["col"].to_string()
+            )),
+            "two invocation rows at one site: {r}"
+        );
+    }
+}
+
+#[test]
 fn macro_argument_call_is_origin_source() {
     let expected = with(
         site(
@@ -496,10 +627,29 @@ fn every_row_has_exactly_the_contract_fields() {
     ]
     .into_iter()
     .collect();
+    let invocation_fields: BTreeSet<&str> = [
+        "relPath",
+        "line",
+        "col",
+        "origin",
+        "macro",
+        "macroDefPath",
+        "calleeCrate",
+        "inProject",
+        "defRelPath",
+        "defLine",
+    ]
+    .into_iter()
+    .collect();
     assert!(!run().rows.is_empty());
     for r in &run().rows {
         let keys: BTreeSet<&str> = r.as_object().unwrap().keys().map(String::as_str).collect();
-        assert_eq!(keys, expected, "row {r}");
+        let contract = if r["origin"] == MACRO_INVOCATION {
+            &invocation_fields
+        } else {
+            &expected
+        };
+        assert_eq!(&keys, contract, "row {r}");
     }
 }
 
@@ -507,7 +657,7 @@ fn every_row_has_exactly_the_contract_fields() {
 fn run_json_lists_every_unit_and_stale_units_are_deleted() {
     let units_dir = run().out_dir.join("units");
     let run_json = &run().cold_run_json;
-    assert_eq!(run_json["format"], 1);
+    assert_eq!(run_json["format"], 2);
     assert_eq!(run_json["success"], true);
     assert_eq!(run_json["failed"], json!([]));
     assert_eq!(run_json["missing"], json!([]));

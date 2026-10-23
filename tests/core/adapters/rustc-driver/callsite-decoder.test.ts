@@ -201,6 +201,69 @@ describe("decodeRustcCallSites", () => {
     expect(index.definitionAt("src/main.rs", 10, 8)).toBeNull();
   });
 
+  describe("macroInvocation rows (research/rustc-driver/RESIDUAL.md R3)", () => {
+    const invocation = (over: Record<string, unknown>): string =>
+      JSON.stringify({
+        relPath: "src/main.rs",
+        line: 10,
+        col: 8,
+        origin: "macroInvocation",
+        macro: "write",
+        macroDefPath: "std::write",
+        calleeCrate: "core",
+        inProject: false,
+        defRelPath: null,
+        defLine: null,
+        ...over,
+      });
+
+    it("serves an in-project macro_rules invocation as an in-project macro definition", () => {
+      const index = decode(
+        invocation({
+          macro: "my_log",
+          macroDefPath: "fx_core::my_log",
+          calleeCrate: "fx_core",
+          inProject: true,
+          defRelPath: "src/log.rs",
+          defLine: 4,
+        }),
+      );
+      expect(index.definitionAt("src/main.rs", 10, 8)).toEqual({
+        symbol: "rustc fx_core fx_core::my_log",
+        package: "fx_core",
+        inProject: true,
+        relPath: "src/log.rs",
+        line: 4,
+        name: "my_log",
+        kind: "macro",
+        packageInProject: true,
+      });
+    });
+
+    it("serves a std or dependency macro as an external macro definition", () => {
+      const index = decode(invocation({}));
+      expect(index.definitionAt("src/main.rs", 10, 8)).toEqual({
+        symbol: "rustc core std::write",
+        package: "core",
+        inProject: false,
+        name: "write",
+        kind: "macro",
+        packageInProject: false,
+      });
+    });
+
+    it("keeps origin macro rows at the same name token unserved", () => {
+      const bodyCall = row({ origin: "macro", macro: "write", callee: "std::fmt::Write::write_fmt", inProject: false });
+      const index = decode(bodyCall, invocation({}), bodyCall);
+      expect(index.definitionAt("src/main.rs", 10, 8)).toMatchObject({ name: "write", kind: "macro" });
+    });
+
+    it("skips an invocation row without a macro def path", () => {
+      const index = decode(invocation({ macroDefPath: null }));
+      expect(index.definitionAt("src/main.rs", 10, 8)).toBeNull();
+    });
+  });
+
   it("dedupes identical rows from overlapping units", () => {
     const line = row({});
     const index = decodeRustcCallSites([line, `${line}\n${line}`], "i");

@@ -27,5 +27,9 @@ fn main() -> Result<(), String> {
     eprintln!("{}", strs.join(","));
     Ok(())
 }
+
+pub fn log_from_app() -> usize {
+    fx_core::my_log!("app {}", 1)
+}
 // c1
 // c1
