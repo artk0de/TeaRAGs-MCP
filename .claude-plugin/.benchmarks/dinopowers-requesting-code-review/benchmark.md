@@ -35,3 +35,11 @@ from `receiving-code-review`: that computes a verdict; this builds metadata.
 - Delta: 0pp
 - FAIL list: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 14/14 PASS (100%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 14/14 (100%)
+- CODEX-ONLY: none
+- Both-fail count: 0

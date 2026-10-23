@@ -144,3 +144,12 @@ No iteration needed.
 - Delta: -6pp (case set grew 15->17)
 - FAIL list: eval-10: prompt has no observable symptom ('think bug is in DI, check composition.ts then bug-hunt'); subject refuses the order but defers bug-hunt and asks for a symptom instead of invoking bug-hunt first (eval expects bug-hunt first; SKILL.md no-symptom rule pulls the other way)
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 16/17 PASS (94%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 16/17 (94%).
+- CODEX-ONLY (harness regression candidates):
+  - `eval-11` — re-runs bug-hunt on app.ts and hedges 'healthy is not conclusive' instead of surfacing the healthy verdict / calibrated-prior override notice [model behaviour]
+- Both-fail count: 0.

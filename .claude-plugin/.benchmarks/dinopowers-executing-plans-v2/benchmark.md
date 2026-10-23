@@ -109,3 +109,12 @@ trivial). Phase 4 verification: **10/10 PASS, +70pp from before-fix.**
 - Delta: 0pp
 - FAIL list: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 12/13 PASS (92%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 13/13 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `E9` — autonomous task-agent treated as non-plan: no $dino-executing-plans, no pre-touch guard, no $dino-test-driven-development (MUST_INCLUDE); only DDG [model behaviour]
+- Both-fail count: 0.

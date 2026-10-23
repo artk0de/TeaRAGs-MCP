@@ -127,3 +127,11 @@ Total: +139 / -99 lines in description blocks.
 - FAIL list: none
 - Notes: Subject saw frontmatter (name+description) of all 29 plugin skills under tea-rags, dinopowers, tea-rags-setup plus the 11 repo .claude/skills (project:*) to keep the original universe, plus context-main.md. MED cases: 12 (force-reindex), 15 (systematic-debugging, Russian CI test failure), 18 (verification-before-completion). Subject sonnet (original target model claude-opus-4-7). Delta 0pp on pass rate; confidence mix 30 HIGH -> 27 HIGH / 3 MED.
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 19/20 PASS (95%) over graded cases (N/A excluded: 10)
+- Claude T12 rate for comparison: 30/30 (100%)
+- CODEX-ONLY: case 18 (Russian 'готово, можно коммитить и пушить' routed to dino-finishing-a-development-branch instead of dino-verification-before-completion - model behaviour; Claude also marked it MED confidence)
+- Both-fail count: 0

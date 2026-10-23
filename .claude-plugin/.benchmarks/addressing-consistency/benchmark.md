@@ -55,3 +55,22 @@ Schema strings are shorter than first drafted. The existing budgets were kept:
 - FAIL list: C12 - subject searched with path alone and used the raw collection only as a fallback; expected collection first (project from marker). Cause: core.md addressing paragraph has no collection row; it lives only in guides/freshness.md:20, not read.
 - Notes: Artifact mapped to core.md addressing paragraph + guides/freshness.md. Delta -8pp. Subject was sonnet (original used opus).
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 10/12 PASS (83%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 11/12 (92%)
+- CODEX-ONLY: C9 (index_codebase told to omit path for unregistered repo; core 'project only' over-generalised - model behaviour), C10 (asks user for path instead of project-only addressing - model behaviour)
+- Both-fail count: 0
+
+## 2026-10-23 — Cursor run (Task 15)
+
+- Subject: Cursor CLI 2026.10.22, model auto (free plan), plan-only, plugins from harness/cursor (tea-rags + dinopowers), sessionStart hook digest; no superpowers, no subagentStart injection.
+- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45 parts.
+- Result: 11/12 PASS (92%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 11/12 (92%).
+- Codex T14 for comparison: 10/12 (83%).
+- FAIL: C10 (asks user for path instead of project-only addressing; vs-claude, Codex also failed).
+- CURSOR-ONLY: none.
+- Both-fail count (all): 0.

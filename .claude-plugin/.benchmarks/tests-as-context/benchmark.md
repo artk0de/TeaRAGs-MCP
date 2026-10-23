@@ -145,3 +145,11 @@ safety contract holds end-to-end.
   - `T11` — no probe call (semantic_search chunkType=test limit=1 metaOnly); reads digest/thresholds instead | STALE
   - `T12` — did not read the wrapper section; does not state the three outcomes (non-empty bundle branch missing) | REAL
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 12/12 PASS (100%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 9/12 (75%).
+- CODEX-ONLY: none.
+- Both-fail count: 0.

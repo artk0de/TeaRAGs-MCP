@@ -126,3 +126,35 @@ No iteration needed.
 - Delta: 0pp
 - FAIL list: none (stale-expectation note above)
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 2/15 PASS (13%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 15/15 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `eval-1` — no ONE brace-expanded semantic_search impact enrichment (blastRadius) before $writing-plans; used find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed) [skill body not applied / model behaviour]
+  - `eval-2` — no ONE brace-expanded semantic_search impact enrichment (blastRadius) before $writing-plans; used find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed) [skill body not applied / model behaviour]
+  - `eval-3` — no ONE brace-expanded semantic_search impact enrichment (blastRadius) before $writing-plans; used find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed) [skill body not applied / model behaviour]
+  - `eval-4` — no ONE brace-expanded semantic_search impact enrichment (blastRadius) before $writing-plans; used find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed) [skill body not applied / model behaviour]
+  - `eval-6` — no ONE brace-expanded semantic_search impact enrichment (blastRadius) before $writing-plans; used find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed) [skill body not applied / model behaviour]
+  - `eval-7` — no per-file aggregation table (dominantAuthor/commitCount/ageDays/bugFixRate/taskIds) or shared-taskId coordinated-change candidates; no enrichment call [model behaviour]
+  - `eval-8` — no ONE brace-expanded semantic_search impact enrichment (blastRadius) before $writing-plans; used find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed) [skill body not applied / model behaviour]
+  - `eval-9` — no ONE brace-expanded semantic_search impact enrichment (blastRadius) before $writing-plans; used find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed) [skill body not applied / model behaviour]
+  - `eval-10` — no ONE brace-expanded semantic_search impact enrichment (blastRadius) before $writing-plans; used find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed) [skill body not applied / model behaviour]
+  - `eval-11` — no ONE brace-expanded semantic_search impact enrichment (blastRadius) before $writing-plans; used find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed) [skill body not applied / model behaviour]
+  - `eval-14` — no ONE brace-expanded semantic_search impact enrichment (blastRadius) before $writing-plans; used find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed) [skill body not applied / model behaviour]
+  - `eval-5` — no-file-list edge: invoked $dino-brainstorming and ran an un-pathPattern'd semantic_search instead of reporting 'no file list' and going to $writing-plans directly [model behaviour]
+  - `eval-15` — Task name VendorEnvelopeFetcher never checked: get_naming_lexicon called for 'scope' without names=[...] and no MISFIT/NEW_TERM verdict before fixing the name [model behaviour]
+- Both-fail count: 0.
+
+## 2026-10-23 — Cursor run (Task 15)
+
+- Subject: Cursor CLI (`agent` 2026.10.22-27dcf5f), model `auto`, plugins from harness/cursor (tea-rags + dinopowers), sessionStart hook digest, plan-only.
+- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45 parts.
+- Result: 14/15 PASS (93%) over 15 graded cases (N/A excluded: 0)
+- Claude T12 for comparison: 15/15 (100%); Codex T14: 2/15 (13%)
+- CURSOR-ONLY: none
+- Both-fail (all) count: 0
+- FAIL list: eval-9 (vs-claude) - Skips Step 2-3 enrichment on user "не парься с tea-rags" ("user override beats Iron Rule"); expected enrichment under pressure. Codex also FAIL.
+- Notes: Intent-graded: rerank "blastRadius" accepted instead of stale custom {imports,churn,ownership} (same as Claude T12); [no-superpowers] on chaining into writing-plans.

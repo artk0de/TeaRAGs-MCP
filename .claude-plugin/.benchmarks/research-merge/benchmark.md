@@ -112,3 +112,11 @@ skill boundary collisions and reduced total line count by 36%.
 - FAIL list: none
 - Notes: Cases 2/3 (ownership / recent changes) were planned as direct semantic_search/rank_chunks rerank=ownership|recent without invoking tea-rags:explore (graded PASS on behaviour: right preset, no git blame/log); the eval expected the explore flow. Delta 0pp.
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 14/15 PASS (93%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 15/15 (100%)
+- CODEX-ONLY: case 9 (routes 'research error-handling patterns before adding an error type' to EXEMPLAR/proven pattern search instead of PRE-GEN flow with find_symbol deep trace - model routing behaviour)
+- Both-fail count: 0

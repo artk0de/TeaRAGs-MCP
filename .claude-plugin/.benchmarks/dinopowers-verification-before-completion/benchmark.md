@@ -104,3 +104,13 @@ without-rule. Delta +87pp.
 - Delta: 0pp
 - FAIL list: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 13/15 PASS (87%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 15/15 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `eval-8` — subagent defers the collateral-damage scan to the parent instead of running the semantic_search scan first [model behaviour / SubagentStart misread]
+  - `eval-13` — same: subagent offloads the scan to the parent, no scan before completion [model behaviour / SubagentStart misread]
+- Both-fail count: 0.

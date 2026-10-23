@@ -109,3 +109,12 @@ preset hint correctly without help.
   - `Eval-4-triple-fail-diagnostic` — adds relax-to-production re-calls, so more than two find_similar calls total | STALE
   - `Eval-5-shallow-l1-skip-l2` — runs L2 instead of skipping it when L1 has 2 segments; follows a "<=1" rule not "<=2" | STALE
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core
+- Result: 6/8 PASS (75%) over 8 graded cases (N/A: 0)
+- Claude T12 for comparison: 6/8 (75%)
+- Both-fail: 2 (Eval-4-triple-fail-diagnostic, Eval-5-shallow-l1-skip-l2)
+- CODEX-ONLY (0):
+  - none

@@ -87,3 +87,11 @@ problem. With-rule is at the 100% target; no iteration needed.
 - Delta: +0pp
 - FAIL: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: N/A — all 11 cases not graded: tea-rags-setup is not shipped to Codex (answers confirm: 'skill not available'). Graded 0 (N/A 11).
+- Claude T12 for comparison: 11/11 (100%).
+- CODEX-ONLY: none.
+- Both-fail count: 0.

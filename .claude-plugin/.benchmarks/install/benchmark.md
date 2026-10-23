@@ -72,3 +72,11 @@ Delta:        0pp (skill no longer harms — matches baseline)
   - `9` — no MCP command 'tea-rags server'; it declines to run the wizard (ONNX recommendation itself is correct) | REAL
   - `10` — no MCP command 'tea-rags server' (skip to step 4 is met) | REAL
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: not graded - 10/10 N/A (tea-rags-setup:install is not shipped to Codex)
+- Claude T12 rate for comparison: 2/10 (20%)
+- CODEX-ONLY: none
+- Both-fail count: 0

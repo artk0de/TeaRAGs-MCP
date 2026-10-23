@@ -93,3 +93,21 @@ These came from the incident case study and need code changes, not rule text.
 - FAIL list: E1 (no incremental index_codebase on own checkout, no AskUserQuestion for --force), E7 (same), E15 (stale banner: skipped incremental index_codebase), E13 (user said just read the file by hand; subject refused and used find_symbol instead of Read/user override)
 - Notes: Artifact mapped to core.md + guides/freshness.md. Root cause: core.md line ~57 says only 'Subagent: never reindex'; the own-checkout incremental-without-consent rule (guides/freshness.md:58,83,135) did not reach the subject's plan. Delta -27pp.
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 15/15 PASS (100%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 11/15 (73%).
+- CODEX-ONLY: none.
+- Both-fail count: 0.
+
+## 2026-10-23 — Cursor run (Task 15)
+
+- Subject: Cursor CLI 2026.10.22, model auto (free plan), plan-only, plugins from harness/cursor (tea-rags + dinopowers), sessionStart hook digest; no superpowers, no subagentStart injection.
+- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45 parts.
+- Result: 15/15 PASS (100%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 11/15 (73%).
+- Codex T14 for comparison: 15/15 (100%).
+- CURSOR-ONLY: none.
+- Both-fail count (all): 0.

@@ -124,3 +124,12 @@ No iteration needed.
 - Delta: 0pp
 - FAIL list: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 13/14 PASS (93%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 14/14 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `eval-14` — no Project vocabulary (concept.terms) in enrichment block and no names[] hand-off; get_naming_lexicon called without concept=<intent> and with a language-capability hedge [model behaviour]
+- Both-fail count: 0.

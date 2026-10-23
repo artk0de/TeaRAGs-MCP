@@ -64,3 +64,31 @@ needed.
 - FAIL list: eval-14 (after SEED, before EXPAND: subject noted chunk ids/seen paths but omitted the post-search validation step - no-match detection + disambiguation). Cause: pattern-search SKILL.md has no validation step; that content now lives in rules/guides/navigation.md and the subject did not read it for this case.
 - Notes: Delta -7pp. Subject read tea-rags://guide/decision-tree.
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core
+- Result: 4/14 PASS (29%) over 14 graded cases (N/A: 0)
+- Claude T12 for comparison: 13/14 (93%)
+- Both-fail: 0
+- CODEX-ONLY (10):
+  - `eval-1` — no rerank=relevance/metaOnly=false, EXPAND only "if gaps" not from each seed; pattern-search SKILL.md deferred, not read
+  - `eval-2` — no techDebt/refactoring rerank, EXPAND optional
+  - `eval-3` — no custom proven weights, EXPAND "only if needed" not from single best seed
+  - `eval-4` — no relevance rerank, no cross-domain pathPattern-exclusion semantic_search
+  - `eval-5` — skips EXPAND (violates Rule 4 always-expand)
+  - `eval-6` — drops chunk without richer-signals comparison and omits the different-dir keep-both rule
+  - `eval-7` — no group-by-module, no overlay labels in output
+  - `eval-10` — would delegate to a subagent; expected refusal (Rule 1 execute yourself)
+  - `eval-11` — no warning-sign marker prefix named
+  - `eval-12` — no check-mark marker named for best example
+
+## 2026-10-23 — Cursor run (Task 15)
+
+- Subject: Cursor CLI (`agent` 2026.10.22-27dcf5f), model `auto`, plugins from harness/cursor (tea-rags + dinopowers), sessionStart hook digest, plan-only.
+- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45 parts.
+- Result: 13/14 PASS (93%) over 14 graded cases (N/A excluded: 0)
+- Claude T12 for comparison: 13/14 (93%); Codex T14: 4/14 (29%)
+- CURSOR-ONLY: none
+- Both-fail (all) count: 0
+- FAIL list: eval-14 (vs-codex) - Notes chunk IDs and asks on 2+ unrelated clusters (disambiguation) but no no-match detection step; Claude also FAIL, Codex PASS.

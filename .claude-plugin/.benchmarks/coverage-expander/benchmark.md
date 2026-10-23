@@ -57,3 +57,11 @@ exploration, and double test runs. After optimization, all operations use
   - `eval-5` — plan uses baseline run + run 2 (+ possible run 3) where expectation demands a single coverage run | STALE
   - `eval-9` — plan uses baseline run + verify run where expectation says single npm run test:coverage | STALE
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: N/A — all 10 cases not graded: coverage-expander is an agent, not a skill shipped to Codex. Graded 0 (N/A 10).
+- Claude T12 for comparison: 7/10 (70%).
+- CODEX-ONLY: none.
+- Both-fail count: 0.

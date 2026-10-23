@@ -116,3 +116,11 @@ FAIL). The prior `worktree-auto-reindex-evals.json` is SUPERSEDED.
 - Delta: 0pp
 - FAIL list: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 12/13 PASS (92%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 13/13 (100%)
+- CODEX-ONLY: eval-11 (scopes risk-assessment to last commit as asked instead of refusing and scanning the full branch - model behaviour, wrong-scope pressure)
+- Both-fail count: 0

@@ -132,3 +132,11 @@ skill adds value in **three failure modes**:
   - `T7` — Plan uses preset blastRadius as primary; custom {imports:0.5,churn:0.3,ownership:0.2} only as graph-absent fallback | STALE
   - `T12` — Uses custom {age,bugFix,similarity,churn} weights instead of rerank 'securityAudit' (pathPattern and ageDays>=365 filter were fine) | REAL
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 10/12 PASS (83%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 10/12 (83%)
+- CODEX-ONLY: none
+- Both-fail count: 2

@@ -246,3 +246,31 @@ boundary against regression rather than measuring a delta.
   - `eval-14` — does not skip TEMPLATE/STYLE for greenfield; runs extract-project-patterns on the nonexistent dir (cascading to L2/L3) | STALE
   - `naming-review-before-commit` — plan never says to report review.findings grouped by verdict with relPath:line plus review.conforming/novel counts (only the gate line and ad-hoc per-name notes); everything else met | STALE
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core
+- Result: 42/67 PASS (63%) over 67 graded cases (N/A: 0)
+- Claude T12 for comparison: 62/67 (93%)
+- Both-fail: 5 (eval-6, eval-11, eval-12, eval-14, naming-review-before-commit)
+- CODEX-ONLY (20):
+  - `eval-4` — CONSERVATIVE hard rule (legacy+low) not applied; reasons labels insufficient, no strategy selected
+  - `eval-5` — no autonomous-judgment decision, no justification by axes, no user question; defers strategy
+  - `eval-15` — no scan of project strategy-* skills / ## When sections; lists only built-in strategies
+  - `naming-type-misfit` — get_naming_lexicon call omits types[TaxAutomationDocument] and finder rename (find_tax_automation_document!); only local rename
+  - `naming-camelcase-language` — picks graphDbClient instead of dominant TAIL param name `client`
+  - `naming-modify-scope` — no Step 7 VERIFY, no strategy/blame skip stated, lexicon call without types/anchors; adds a clarifying question
+  - `verify-symbol-risk` — no find_symbol rerank=criticalPath on called symbols, no defensive-call/test-pin check, no N-th-way find_similar; uses get_callers
+  - `verify-central-modified` — get_callers present but no tests-at-risk for the MODIFY
+  - `naming-type-draft` — class draft never passed as {name,kind:type,path,extends}; names the class from neighbours, no MISFIT suggestion
+  - `step7-fix-remedy-applied` — routes to verification wrapper; no repair/leakingAbstraction.md load, no sections list, no targeted tests step
+  - `step7-fix-preexisting-remedy` — skips the cheap pre-existing fix although a remedy is present (explicit mustNotDo)
+  - `step7-fix-preexisting-report` — no bead suggestion for the pre-existing finding
+  - `step7-fix-round-reverted` — stacks a cycle repair on the regressed round instead of reverting round 1
+  - `step7-fix-cohesion-own-vs-preexisting` — no repair/splitCandidates.md, does not move own cluster A, no bead for cluster B
+  - `step7-fix-stacked-base-unevidenced-acceptance` — reviews against "the supplied base" instead of re-basing on git merge-base HEAD main
+  - `tdd-red-before-code` — test-first not invoked; does not state running tests to record red for the right reason
+  - `tdd-refactor-baseline` — moves helper first; no GREEN baseline of tests-at-risk before the move
+  - `tdd-bugfix-repro-first` — no green baseline run of existing formatDuration tests before the repro
+  - `prewrite-sim-new-file-new-component` — plans a pre-write structure/dependency simulation for a new file (should skip, rely on Step 7 gate)
+  - `prewrite-sim-move-files` — moves files blind, no get_architecture_report move hypothesis beforehand

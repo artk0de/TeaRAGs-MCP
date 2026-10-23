@@ -202,3 +202,16 @@ separate work.
 - FAIL list: none
 - Notes: Several evals.json expectations are stale (e.g. 3 presets vs the skill's current 5-preset scan + structural pair); graded on intent: routed to tea-rags:risk-assessment, correct Phase 0 scoping, rank_chunks scan, SDP escalation for case 13, no escalation for compositionRoot in case 14. Delta 0pp.
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 9/14 PASS (64%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 14/14 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `6` — Phase 5 machine-readable context (pathPattern, riskFiles, overlayLabels) not planned [model behaviour]
+  - `7` — adds a 4th rerank=ownership rank_chunks call instead of reading ownership from overlay [model behaviour]
+  - `9` — no machine-readable output for generation handoff (Phase 5 context) planned [model behaviour]
+  - `12` — no structured context output for the plan executor (Phase 5) planned [model behaviour]
+  - `13` — no Phase 4 structural-violation escalation/tagging of the overlapping candidate; 'keep separate' instead; no repair/stableDependencies read [model behaviour]
+- Both-fail count: 0.

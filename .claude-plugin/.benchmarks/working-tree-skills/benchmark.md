@@ -402,3 +402,12 @@ listed in the `iteration-*/arm-*.md` answers.
 - FAIL list: none
 - Notes: Subject invoked the matching tea-rags/dinopowers SKILL.md per case (read from the worktree) plus context-main.md. Delta 0pp.
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 15/16 PASS (94%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 16/16 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `S14` — treats carried workingTree.tree='/work/acme' as usable though cwd is the linked worktree .../feat-x (wrong tree); should discard rows and re-call with path=cwd, no project [model behaviour]
+- Both-fail count: 0.

@@ -218,3 +218,11 @@ Rule is deployed. Next work in this thread:
 - FAIL list: eval-5 (control: keep a pure 4-line dispatch in the facade; subject moved resolve + model-guard invalidation into CollectionOps citing the responsibility table). Note: eval-6 (validator location) graded PASS because the current rule text itself puts validators at the bottom of the facade file, contradicting the eval's api/errors.ts expectation (stale eval).
 - Notes: Rule artifact .claude/rules/facade-discipline.md was NOT changed by this epic, so eval-5 reflects a rule/eval tension (iteration-3 'every facade method delegates to Ops' wording vs the control), not a regression from the context change. Subject sonnet.
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: not graded - 12/12 N/A (the subject is the repo-local rule .claude/rules/facade-discipline.md, not shipped to Codex: no AGENTS.md in the repo, not in any Codex package). Strict reading would be 0/12 with cause "rule not delivered".
+- Claude T12 rate for comparison: 11/12 (92%)
+- CODEX-ONLY: none (N/A)
+- Both-fail count: 0

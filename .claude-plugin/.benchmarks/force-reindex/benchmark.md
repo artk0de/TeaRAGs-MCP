@@ -68,3 +68,12 @@ needed — delta reflects the skill's narrow unique contribution.
 - FAIL:
   - `eval-10` — AskUserQuestion "Force-reindex to fix?" is only conditional on the user still wanting the rebuild, and the plan does not clearly surface the corrupt-index diagnosis; it mostly proposes read-only diagnosis | REAL
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core
+- Result: 8/10 PASS (80%) over 10 graded cases (N/A: 0)
+- Claude T12 for comparison: 9/10 (90%)
+- Both-fail: 1 (eval-10)
+- CODEX-ONLY (1):
+  - `eval-4` — reads "reindex" as incremental and runs index_codebase without any confirmation question; expected the destructive-op confirmation under time pressure (model behaviour)

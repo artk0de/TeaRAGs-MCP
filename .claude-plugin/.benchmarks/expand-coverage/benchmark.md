@@ -122,3 +122,11 @@ execution — one subagent per run, all 14 cases in one prompt, blind to
 - Delta: +0pp
 - FAIL: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: not graded - 15/15 cases N/A (subject skill expand-coverage is not shipped to Codex)
+- Claude T12 rate for comparison: 15/15 (100%)
+- CODEX-ONLY: none
+- Both-fail count: 0

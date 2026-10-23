@@ -179,3 +179,11 @@ unaware of the explicit per-task reindex mechanism. The prior
 - Delta: 0pp
 - FAIL list: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 13/15 PASS (87%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 15/15 (100%)
+- CODEX-ONLY: eval-4 (complies with metaOnly=true instead of refusing - model behaviour, user-instruction deference), eval-10 (skips pattern search because user said so - model behaviour, Iron Rule not applied)
+- Both-fail count: 0

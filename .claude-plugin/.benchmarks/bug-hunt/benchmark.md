@@ -88,3 +88,22 @@ needed.
 - FAIL list: none
 - Notes: Subject routed via dinopowers:systematic-debugging -> tea-rags:bug-hunt. Some evals.json expectations are stale vs current tooling (eval-5/7 expect Read, eval-11 chunkId); graded on intent (find_symbol drill, find_similar positiveIds accepted). Delta 0pp.
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 10/21 PASS (48%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 21/21 (100%)
+- CODEX-ONLY: eval-1,20,21 (no git status -uall / incremental index_codebase named; subject prompt forbade shell - harness artifact + model vagueness); eval-2,3,13 (re-investigates instead of PRESENT/SKIP - triage-ladder not applied, model behaviour); eval-4 (no refusal of per-zone request); eval-8 (refuses git history but also refuses overlay alternative, asks user for git output); eval-10 (slash inside brace pathPattern); eval-17,18 (dangerRanking[0] focus / no find_symbol rerank bugHunt - skill-reference not read)
+- Both-fail count: 11
+
+## 2026-10-23 — Cursor run (Task 15)
+
+- Subject: Cursor CLI (`agent` 2026.10.22-27dcf5f), model `auto`, plugins from harness/cursor (tea-rags + dinopowers), sessionStart hook digest, plan-only.
+- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45 parts.
+- Result: 20/21 PASS (95%) over 21 graded cases (N/A excluded: 0)
+- Claude T12 for comparison: 21/21 (100%); Codex T14: 10/21 (48%)
+- CURSOR-ONLY: none
+- Both-fail (all) count: 0
+- FAIL list: eval-8 (vs-claude) - Plans `git log -S`/`--grep` as asked; mustNotDo git log (use overlay + bugHunt) hit. Codex also FAIL.
+- Notes: eval-9 graded PASS on intent (ripgrep MCP for a literal string per decision-tree, built-in Grep refused); eval-5/7/11 graded on intent (find_symbol / find_similar positiveIds), same convention as Claude T12.

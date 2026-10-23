@@ -124,3 +124,11 @@ gap (typed sugar is canonical, level=file is mandatory for time fields).
   - `E10` — composed the custom rerank weights itself instead of delegating to tea-rags:analytics-rerank | REAL
   - `T10` — expected literal absolute pathPattern '/Users/me/proj/src/payments/**'; answer uses project-relative 'src/payments/**' (substance correct and consistent with E12, expectation contradicts E12) | STALE
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 14/14 PASS (100%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 12/14 on E-cases (suite benchmark: 23/26 incl. analytics T-cases; fails E9, E10)
+- CODEX-ONLY: none
+- Both-fail count: 0

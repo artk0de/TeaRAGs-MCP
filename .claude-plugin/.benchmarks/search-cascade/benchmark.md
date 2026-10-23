@@ -789,3 +789,12 @@ merges every part — the epic's target.
 - FAIL list: none
 - Notes: Artifact mapped to rules/core.md + rules/guides/{decision-tree,navigation}.md. Case 11 passed on tool choice but omitted names[]; case 12 used review_changes(naming) per guides/decision-tree.md (never hand-list a diff's names) rather than the eval's get_naming_lexicon(changes); both graded PASS.
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 11/12 PASS (92%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 12/12 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `12` — hand-lists names[] to get_naming_lexicon after plain review_changes (no sections:[naming]/changes form) [model behaviour]
+- Both-fail count: 0.

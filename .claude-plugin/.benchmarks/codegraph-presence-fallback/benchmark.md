@@ -91,3 +91,11 @@ Plugin bumps (patch, text-only): tea-rags 0.26.0 → 0.26.1, dinopowers 0.17.5 �
 - FAIL list: none
 - Notes: Artifact mapped to context-main.md/context-subagent.md + guides/navigation.md 'When codegraph is off' + tea-rags:explore/bug-hunt skills. Delta 0pp.
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 13/13 PASS (100%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 13/13 (100%)
+- CODEX-ONLY: none
+- Both-fail count: 0

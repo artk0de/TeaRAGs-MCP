@@ -179,3 +179,29 @@ docs-as-subject route lives only in cascade, not in the SKILL intent table.
 - FAIL list: none
 - Notes: Cases 1/8/14 (usage listing) went find_symbol + get_callers (codegraph ON) instead of the eval's hybrid_search; accepted on the search-cascade case 3 precedent (hybrid_search OR get_callers), failure modes (ripgrep, Grep, Glob) not hit. Subject read explore SKILL.md + references + tea-rags://guide/navigation. Delta 0pp.
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 19/27 PASS (70%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 27/27 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `5` — 'what changed recently' answered with hybrid_search instead of rank_chunks rerank=codeReview [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `7` — no delegation to pattern-search (Collect intent); searched directly with hybrid_search [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `11` — semantic_search used as primary instead of hybrid_search for symbol+context (borderline; no Grep fallback) [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `17` — no Step 0 ORIENT (rerank=entryPoint, testFile/documentation exclude) before breadth; plain find_symbol/semantic_search; architecture-pattern reference not read [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `19` — codegraph OFF orientation: plain semantic_search, no rerank=onboarding and no explicit content-inferred flag [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `20` — entry-point question: plain semantic_search, no rerank=entryPoint / chunkSize post-filter / entry-point-pattern [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `21` — axis split present but sources axis lacks testFile:exclude+documentation:exclude (uses language filters), so axes not cleanly separated [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `25` — no Step 0 ORIENT (entryPoint) before pipeline walk; codegraph availability not derived from own tool list [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
+- Both-fail count: 0.
+
+## 2026-10-23 — Cursor run (Task 15)
+
+- Subject: Cursor CLI 2026.10.22, model auto (free plan), plan-only, plugins from harness/cursor (tea-rags + dinopowers), sessionStart hook digest; no superpowers, no subagentStart injection.
+- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45 parts.
+- Result: 25/25 PASS (100%) over graded cases (N/A excluded: 0). Only explore-p1 ran (ids 1-25); explore-p2 (ids 26-27) not run.
+- Claude T12 for comparison: 27/27 (100%) suite-wide; over p1 ids 25/25 (no FAILs).
+- Codex T14 for comparison: 19/27 (70%) suite-wide; over p1 ids 17/25 (68%) (FAIL 5,7,11,17,19,20,21,25).
+- CURSOR-ONLY: none.
+- Both-fail count (all): 0.
