@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# SessionStart/PreCompact hook: put the search-cascade rule corpus into the
+# SessionStart hook (re-fires on compaction; PreCompact stdout never reaches the model):
+# put the search-cascade rule corpus into the
 # agent's context. The corpus is ~37KB and a hook's stdout stops being delivered
 # well before that — past roughly 16KB the harness writes it to a file and hands
 # the model a 2KB preview instead, so a single `cat` of the corpus reaches the
