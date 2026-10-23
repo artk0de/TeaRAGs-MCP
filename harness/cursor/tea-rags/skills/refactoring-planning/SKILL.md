@@ -89,7 +89,9 @@ only, never preload dir.
 - Recipe → ops verbatim shape: `removeEdge{from,to}`,
   `addFile{file,component, abstract: true}` for extracted interface,
   `addEdge{from,to}`, `move{…}`. Paths repo-relative base paths; new-file path
-  per recipe's path rule (never hard-coded dir).
+  per recipe's path rule (never hard-coded dir). SDP inversion `A -> B` spelled:
+  `removeEdge{A,B}`, `addFile{<foundation>/…/<Iface>.ts, abstract: true}`,
+  `addEdge{A,iface}`, `addEdge{B,iface}` — rationale = finding key.
 - Recipe says "no recipe, escalate" → no candidate; list under Escalated.
 - Names: ONE `get_naming_lexicon` call over all drafted new-file / type names.
   `MISFIT` / `COLLISION` → rename to suggestion; `NEW_TERM` → keep + one-line
@@ -119,7 +121,8 @@ plan / restructure call this session.
 
 1. R = 0 → one call, own candidates, flag irrelevant.
 2. R > 0, no per-judge measurement yet → first call
-   `includeReportCandidates: false` (always safe). It yields S + per-judge.
+   `includeReportCandidates: false` (always safe), ≤ 15 own candidates (critical
+   first; rest Deferred — never all of them). It yields S + per-judge.
 3. Estimate (S + 2)·(K + R)·perJudge + factsMs. ≤ ~2 min (one MCP call) →
    re-call same candidates, `includeReportCandidates` omitted (true); that plan
    supersedes. Over → large repo: keep the `false` plan, say verbatim (bd id
@@ -129,7 +132,8 @@ plan / restructure call this session.
    silently.
 
 Large repo = estimate over budget; N ≥ ~10k judged files with dozens of R → skip
-the estimate, go `false` directly.
+the estimate, go `false` directly — still ≤ 15 candidates, and say why citing bd
+tea-rags-mcp-vytjl.
 
 Read response: `steps[]` (order = plan order; `delta` vs prefix, `byTier`,
 `touchedFiles`, `blastRadius`), `tradeOffs[]` (introduce critical/active — never

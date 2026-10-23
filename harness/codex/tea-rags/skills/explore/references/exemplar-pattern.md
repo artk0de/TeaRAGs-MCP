@@ -10,14 +10,16 @@ that owns search, output, formatting end-to-end.
 
 Step 0 keyword classifier picks group (SKILL.md keyword table). Then:
 
-- **Antipattern + broad scope (no specific entity)** → read + follow
-  `refactoring-scan/SKILL.md`
-- **All other matches** (Antipattern with named entity, Reference, Collect,
-  Spread) → read + follow `pattern-search/SKILL.md`
+- **Antipattern + broad scope (no specific entity, no named pattern —
+  "antipatterns in src/")** → read + follow `refactoring-scan/SKILL.md`
+- **All other matches** (Antipattern with named entity OR named pattern — "sync
+  I/O in hot path", "N+1" — Reference, Collect, Spread) → read + follow
+  `pattern-search/SKILL.md`
 
 ## Rules
 
-- Delegated skill handles everything.
+- Delegated skill handles everything. Answer names it (`pattern-search` /
+  `refactoring-scan`) + its strategy; no own `hybrid_search` plan.
 - Do NOT search yourself before or after delegating.
 - Do NOT add explore-style EXPLAIN summary on top.
 

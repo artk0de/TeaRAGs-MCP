@@ -61,6 +61,10 @@ Skip-vocabulary (infra/layer prefixes): `app`, `src`, `lib`, `core`, `packages`,
   `[crm, accounts]` → L2 = `**/app/services/crm/**` (NOT `**/app/services/**` —
   layer-wide L2 = degenerate L3).
 - L1 = `**/app/services/billing/**` → semantic `[billing]`, 1 segment → skip L2.
+- L1 = `**/domains/explore/strategies/new-feature/**` → prefix `[domains]`,
+  semantic `[explore, strategies, new-feature]` = 3 segments → L2 =
+  `**/domains/explore/**`. Count tail segments one by one; never skip L2 on a
+  tail ≥ 2.
 - L1 = `**/domains/explore/**` / `**/some-new-area/**` → semantic tail 1 segment
   → skip L2: cascade L1 → L3, never a parent glob.
 - L1 = `**/chunker/hooks/**` → no prefix, semantic `[chunker, hooks]` → L2 =
@@ -97,8 +101,10 @@ Skip-vocabulary (infra/layer prefixes): `app`, `src`, `lib`, `core`, `packages`,
    `"recent"` AND `commitCount` `"low"`).
 4. No qualifying chunk → next level.
 
-All levels fail → diagnostic `"no proven templates for <input> in this project"`
-(caller falls back: scratch, ask user).
+All levels fail → `diagnostics` carries BOTH lines, verbatim:
+`"no battle-tested reference found; widened to production code"` (every relax
+that ran) + `"no proven templates for <input> in this project"`;
+`locality: "none"` (caller falls back: scratch, ask user).
 
 ## Output
 

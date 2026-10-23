@@ -94,9 +94,7 @@ chunks + churn, techDebt favors age.
 ### 1. SEED
 
 Apply `tea-rags://guide/decision-tree` decision tree to determine tool. Use
-strategy's rerank preset. Before EXPAND, check SEED against
-`tea-rags://guide/pagination` (disambiguation + no-match detection). Set limit
-by tool:
+strategy's rerank preset. Set limit by tool:
 
 - `rank_chunks`: limit=15
 - `semantic_search`: limit=10
@@ -107,6 +105,15 @@ Parameters always include: `metaOnly=false`, rerank from strategy table. Add
 `pathPattern` if scoped.
 
 Note chunk IDs from results for expansion step.
+
+**Validate SEED before EXPAND (MANDATORY — `tea-rags://guide/pagination`):**
+
+- **Disambiguation:** top-10 split across 2+ unrelated directory groups, none
+  > 70% → ask user which area, re-SEED with that `pathPattern`. Never pick one
+  > silently, never EXPAND both.
+- **No-match:** score spread `(max−min)/max` < 0.06 · zero query-term overlap in
+  top-5 paths/symbols/content · top-10 scattered over > 7 dirs. 2 of 3 → warn
+  "may not be relevant"; 3 of 3 → report no match, do NOT EXPAND noise.
 
 ### 2. EXPAND
 

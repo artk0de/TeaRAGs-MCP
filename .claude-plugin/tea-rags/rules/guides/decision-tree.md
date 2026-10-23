@@ -56,13 +56,21 @@ Already have search results for this area?
 └─ No (need to search)
 
 Intent matches a skill? (check FIRST — skills handle tool selection internally)
-├─ Explore/understand/investigate/research code → /tea-rags:explore
+├─ Explore/understand/investigate/research code → /tea-rags:explore — open its
+│   SKILL.md, state its Step 0 strategy first. Decisive calls:
+│   ├─ pre-change ("before I modify/refactor X", "research X first", plan step
+│   │   "Research X before implementing Y", risks of ONE named change) → PRE-GEN:
+│   │   semantic_search metaOnly=true limit=10 → find_symbol rerank="techDebt" per
+│   │   2–5 key symbols → find_symbol on 1–2 base symbols, never call chains.
+│   │   Self-contained — not brainstorming / executing-plans / DDG / risk-assessment
+│   ├─ "what changed recently in X" → rank_chunks rerank="codeReview" maxAgeDays=14
+│   └─ "who owns / knows X" → rank_chunks rerank="ownership" (never semantic_search)
 ├─ Bug hunting ("why does X fail") → /tea-rags:bug-hunt
 ├─ Code generation/modification → /tea-rags:data-driven-generation
 ├─ One analytics question one preset / recipe answers ("bug-prone areas in X",
 │   "looks stable but breaks", "who drives X lately", "old auth code")
 │   → /tea-rags:analytics-rerank (single call, not a scan)
-├─ Risk/health assessment (multi-preset scan, tiers) → /tea-rags:risk-assessment
+├─ Risk/health of an AREA (multi-preset scan, tiers) → /tea-rags:risk-assessment
 ├─ Layout / dependency direction / SDP → /tea-rags:architecture-diagnostics
 ├─ Plan a refactoring (ordered, simulated fix steps) → /tea-rags:refactoring-planning
 ├─ Review a diff / MR ("what does my change break") → `review_changes(changes:{base})`
@@ -98,7 +106,9 @@ Has query?
    │     One name / rename → `names[]` (`{name, kind, type?}` — never a bare
    │     call with only project/path); its verdict IS the answer — no
    │     hybrid_search / semantic_search cross-check. Names a diff introduces →
-   │     review_changes ({} = uncommitted, { base } = branch) → `review.findings`
+   │     review_changes ({} = uncommitted, { base } = branch), naming section →
+   │     `review.findings` ARE the answer — no get_naming_lexicon follow-up,
+   │     never hand-list the diff's names into `names[]`
    │
    ├─ Audit naming consistency / find ontology collisions project-wide
    │   → get_ontology_report (codegraph on; synonyms, homonyms, outliers, collisions)

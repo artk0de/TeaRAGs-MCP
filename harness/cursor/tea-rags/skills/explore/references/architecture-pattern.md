@@ -33,8 +33,9 @@ present top similarity hit as "the architectural centre". Optional confirm:
 **Codegraph off** (graph tools absent from tool list): `architecturalHub` has no
 fan-graph signals, silently degrades to similarity. Say fan-in centrality
 unavailable; offer git imports/churn or relevance — never similarity top hit as
-"the architectural centre". Distinct from no-hubs case (codegraph on, scope
-flat).
+"the architectural centre". Orientation then = ORIENT
+`semantic_search rerank="onboarding"` (SKILL.md §1), flagged content-inferred.
+Distinct from no-hubs case (codegraph on, scope flat).
 
 ## Tail-suggestion (drill into hub)
 

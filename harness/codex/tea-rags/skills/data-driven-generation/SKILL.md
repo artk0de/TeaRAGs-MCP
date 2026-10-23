@@ -30,15 +30,17 @@ Codebase".
 **Area context required:** files, pathPattern, per-symbol overlay labels must be
 in conversation. Labels come from `find_symbol(rerank=<preset>, metaOnly=false)`
 on target symbols — explore PRE-GEN step PG-2 (SIGNAL LOOKUP). No full
-risk-assessment scan needed. If missing, invoke `$explore` for target area —
-explore detects pre-generation intent, gathers context automatically. If explore
-output already exists this conversation, use it.
+risk-assessment scan needed. Missing → STOP, say "area context missing", invoke
+`$explore` for target area FIRST (it runs PRE-GEN, returns context), then resume
+here — never your own `semantic_search` in its place. Explore output already in
+this conversation → use it.
 
 **Session-context reuse:** outlines, symbol bodies and search hits already
 fetched in this conversation are the source of truth for their file until that
 file is edited. Before any search or `find_symbol`, check the conversation for
 the file; reuse what is there. Re-fetch ONLY a file edited after it was fetched
-(by you or a tool). Re-searching an unedited file spends tokens and adds
+(by you or a tool). State both halves: "re-fetch <edited symbol>; reuse
+in-context <other files>". Re-searching an unedited file spends tokens and adds
 nothing.
 
 ## Reading Overlay Labels
@@ -137,8 +139,10 @@ Signal axes:
 - **Stability** grows: ageDays recent→legacy
 - **Confidence** falls: commitCount "low" = few data points
 
-**Load strategy:** Check for project skill `strategy-<mode>` in
-`.claude/skills/`. If found → use it. If not → read `strategies/<mode>.md`.
+**Load strategy (MANDATORY, name the file):** project skill `strategy-<mode>` in
+`.claude/skills/` → use it; else READ `strategies/<mode>.md` (DEFENSIVE →
+`strategies/defensive.md`) before Step 2. Strategy named, file not loaded = Step
+1 not done.
 
 **Custom strategy discovery:** Scan `.claude/skills/` for `strategy-*` skills.
 Read `## When` section. Custom conditions evaluated before hard rules.
@@ -232,7 +236,13 @@ drafts included (`row = find_vendor_envelope(id)` → `row` as `local`,
 New class / module / interface →
 `{ name, kind: "type", path: <new file>, symbolKind, extends: <planned ancestor> }`
 — never name a type from neighbours without the call. `MISFIT` → take
-`suggestion`.
+`suggestion`, type MISFIT included (missing `role` suffix →
+`RubyConstReceiverPass` → `RubyConstReceiverStrategy`); keep the draft only when
+`role.evidence: "directory"` and the type is outside `role.examples`' family.
+Codegraph off (no `get_naming_lexicon`) → concept-only `semantic_search` per
+`references/step-5-style.md`; split the holders' symbolIds and paths into words,
+the recurring word = the project term; values named as the template's code names
+the same types.
 
 Step 5 output = the CONCRETE final names, one line per draft:
 `<draft> → <name> (<shape>, <kind>)`, built from the dominant row of
@@ -246,16 +256,20 @@ Step 5 not done.
 ### Step 6: GENERATE — RED → GREEN → REFACTOR
 
 **Read [references/step-6-generate.md](./references/step-6-generate.md) before
-Step 6.** 6a RED via `$test-first` — **no production edit without a recorded RED
-block** (or its one-line named exception). MODIFY / bug fix / refactor-move:
-`tests-at-risk` pins + target's own tests run GREEN BEFORE the first edit or
-move — then bug fix: reproduction red; refactor: no new test, same tests green
-after. Moving first and testing after = baseline skipped. 6b GREEN — minimal
-implementation; call reuse-manifest helpers, NEVER reimplement. 6c REFACTOR
-under green only. Move / merge / split of existing files → ONE
-`get_architecture_report` `restructure` hypothesis first
+Step 6.** 6a RED = invoke `$test-first` — DDG owns RED and GREEN; never
+`test-driven-development` / superpowers TDD as a separate phase. **No production
+edit without a recorded RED block** (or its one-line named exception). MODIFY /
+bug fix / refactor-move: `tests-at-risk` pins + target's own tests run GREEN
+BEFORE the first edit or move — then bug fix: reproduction red; behaviour change
+an existing pin asserts (old default) → that pin, updated to the spec value, IS
+the red: `PIN-UPDATED <test> — <spec line>`, other pins untouched, run red, then
+edit; refactor: no new test, same tests green after. Moving first and testing
+after = baseline skipped. 6b GREEN — minimal implementation; call reuse-manifest
+helpers, NEVER reimplement. 6c REFACTOR under green only. Move / merge / split
+of existing files → ONE `get_architecture_report` `restructure` hypothesis first
 (`move{files, toComponent}` + `addEdge`/`removeEdge` per retargeted import);
-`introduced` → other placement, re-simulate, then move.
+`introduced` → other placement per that family's `repair/<family>.md`
+`## Ops recipe`, re-simulate, then move.
 
 ### Step 7: VERIFY
 
@@ -273,16 +287,36 @@ under green only. Move / merge / split of existing files → ONE
 3. MODIFY (signature change included): `tests-at-risk` (`$tests-as-context`,
    `affectedFiles` = changed file) scenarios + 6a pins re-run green. No 6a
    baseline recorded (edit made outside this flow) → run `tests-at-risk` now.
-4. **GATE `review_changes` before EVERY commit** + fix-at-write loop. Each
-   family with a finding → load its `repair/<family>.md` (cohesion →
-   `splitCandidates.md`) only. Repair round ≤ 2: re-run shows ANY new finding or
-   red test → round regressed → revert the WHOLE round (even if its target
-   finding is gone), try a different repair as the next round. Never keep the
-   round and fix the new finding on top. Own new code → repair; `preExisting` /
-   cluster of pre-existing symbols → one report line + bead suggestion, never
-   refactored in this diff, commit allowed. Accepted false positive =
-   counter-evidence + FILED detector issue + `FALSE-POSITIVE … — issue <id>`
-   line; no issue → not accepted.
+4. **GATE `review_changes` before EVERY commit** + fix-at-write loop. ONE call,
+   ALL five sections
+   `["naming","incompleteChange","cohesion","architecture","norms"]` — a wrapper
+   prescribing fewer never narrows it. Base: `changes: {}` (uncommitted) or
+   `git merge-base HEAD main` — never sibling / integration branch; stack-below
+   findings = owner's, cite the commit, no triage. Each family with a finding →
+   load its `repair/<family>.md` (cohesion → `splitCandidates.md`) only.
+   - **Confirm first:** the finding's edge / symbol exists in the diff AND is
+     the edge in its evidence → REAL (type-only import = edge). Looks-wrong ≠
+     false positive.
+   - Triage: no `preExisting` → repair (`remedy` present → apply verbatim);
+     `preExisting` + `remedy` → apply the remedy; `preExisting`, no `remedy` /
+     pre-existing cohesion cluster → one report line + bead suggestion, never
+     refactored here, commit allowed; own new cohesion cluster → move it now.
+     Flap (≤ 0.02 over tolerance) = ordinary introduced: fix if cheap, else
+     report metric before/after, threshold, moving diff edge — user decides.
+     Co-change partner: inspect each — depends on the changed contract → edit in
+     this diff; else known-noise class shown to hold (version manifest per
+     `silentCoupling.md`) or checkable `not touched because` line.
+   - **After every repair: re-run the SAME `review_changes` + targeted tests,
+     state "target gone, no new finding".** ANY new finding or red test → round
+     regressed → revert the WHOLE round (even if target gone), different repair
+     next round; never fix the new finding on top. Round ≤ 2; must-fix left →
+     ask the user (finding, each round tried, why reverted; options fix this way
+     / accept with reason / bead), no commit until answered.
+   - `truncated` / `built: false` / skipped files = PARTIAL ≠ pass, even at zero
+     findings → re-run with `files: [...]` batches until every changed file is
+     judged; `partial=true` until then.
+   - Accepted false positive = counter-evidence + FILED detector issue +
+     `FALSE-POSITIVE … — issue <id>` line; no issue → not accepted.
 
 Gate fails → no commit, no "done". Report quotes gate line verbatim:
 `GATE review_changes: introduced=<n>, partial=<true|false>` (codegraph off →

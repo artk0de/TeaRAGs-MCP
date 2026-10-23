@@ -21,9 +21,11 @@ candidates ≠ defects); risk-assessment only for an area scan without bug inten
 Cause already located AND fix named ("line 88 nil — reload invoice before send")
 → no hunt: `data-driven-generation` MODIFY hotfix. Search result already carries
 labels ("qdrant-client.ts:142 `bugFixRate` critical — proceed?") → here: triage
-and PRESENT, not a review question. Reached via a wrapper
-(`dino-systematic-debugging`: `symptom` + `pathHint`) → run THIS Loop in full;
-`pathHint` = scope pathPattern, never a substitute for step 0 or the probes.
+and PRESENT (file:line, class, `bugFixRate` + `relativeChurn` — absent → say
+unverified — and one-sentence why), not a review question, no confirm search.
+Reached via a wrapper (`dino-systematic-debugging`: `symptom` + `pathHint`) →
+run THIS Loop in full; `pathHint` = scope pathPattern, never a substitute for
+step 0 or the probes.
 
 Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
 populations: code with bug-fix history, fresh code too young to have one,
@@ -38,7 +40,8 @@ A plan names these calls; "later" / "not in this run" never drops one.
 2. **Step 0 before any search:** Bash `git status --porcelain -uall`. Paths
    listed + alias's own checkout → `index_codebase` incremental (project only),
    no consent, BEFORE the search message. Linked worktree → no reindex.
-3. **ONE message, parallel** — same tool, query, `rerank="bugHunt"`, limit=10:
+3. **ONE message, parallel** — same tool, query, `rerank="bugHunt"`, limit=10,
+   every call `path=<your working directory>` (+ `project`), stated in plan:
    historical (scope) + fresh (`modifiedAfter=<window start>`) + uncommitted
    (pathPattern = step-0 paths, brace-joined). Nothing else. User asks per-zone
    queries ("adapters, pipeline, tests") → refuse: one query finds the area;
@@ -53,7 +56,10 @@ A plan names these calls; "later" / "not in this run" never drops one.
    "Not fully sure" → PRESENT with confidence note (what is unverified).
 6. **Chunk in hand → `find_symbol`** (symbolId body / relativePath outline /
    prev-next id), never Read of a code file — also on "read the whole file".
-   Chunk coordinates exist. Use them.
+   Chunk coordinates exist. Use them. Literal-text hit (rg on an error phrase) →
+   same: `find_symbol` outline/body of the hit, never cat/Read. Row with
+   `treeState` = index's PRE-EDIT copy (text + lines stale, signals hold) — say
+   so; still the uncommitted suspect; next `find_symbol(path=<cwd>)`.
 7. **Call path** (codegraph on): only failure site known → `get_callers` first,
    then `find_symbol(symbol=<caller>, rerank="bugHunt")` per caller for labels.
    Both ends known → `find_symbol` resolves ids, then
@@ -360,5 +366,6 @@ the query drive discovery; the overlay surfaces risk signals after the fact.
 
 ## After root cause found
 
-Pattern found → `find_similar` from chunk ID for copy-paste bugs in other files.
-Fix needed → `/data-driven-generation`.
+Pattern found → `find_similar(positiveIds=[<chunk id>])` for copy-paste bugs in
+other files; report every match as `file:line` + same-bug yes/no, or "no similar
+copies found" — never skip the report. Fix needed → `/data-driven-generation`.

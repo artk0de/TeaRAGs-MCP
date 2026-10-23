@@ -17,7 +17,7 @@ No `## Label maps` above → read
 
 🛑 STOP — read all phases before scanning.
 
-1. Phase 1 — SCAN with primary preset
+1. Phase 1 — SCAN with primary preset; plan states Phase 1 Pagination stops
 2. Phase 1b — STRUCTURAL scan (**MUST run in the same parallel block —
    structural debt is git-blind, a big quiet method never reaches Phase 1**)
 3. Phase 2 — SCAN with stratified second preset (**MUST run, even if Phase 1
@@ -26,14 +26,15 @@ No `## Label maps` above → read
    manual filtering**)
 5. Phase 4 — CLASSIFY into severity tiers, score fix cost
 6. Phase 5 — REPORT pair-diagnostics (**MUST surface signal pairs, single-signal
-   reports are misleading**)
+   reports are misleading**). Output = the Phase 5 risk map, named in the plan:
+   Critical / High tables (Symbol, File:Line, Risk Type, Key Signals as labels,
+   Tests path|none|unverified), Structural risks (codegraph on), Summary — never
+   a free-form "risky files" list. Generation caller ("context before
+   generating", DDG) → hand off `pathPattern` + per-symbol overlay labels from
+   the map (PRE-GEN PG-4 shape); no extra scan.
 
 ## Top Anti-patterns (read before scanning)
 
-- **Using bug-hunt for risk assessment.** bug-hunt finds ONE root cause. This
-  skill scans the risk surface.
-- **Single unfiltered scan for broad scope.** Dominant-churn domain takes 100%
-  of slots. Always run stratified second scan with `!**/dominant/**`.
 - **Scanning tests and docs as risk.** Dimension presets pick a risk profile,
   not a code population — tests are often half the corpus and churn hardest.
   Every Phase 1/1b call carries `testFile: "exclude"` +
@@ -41,11 +42,6 @@ No `## Label maps` above → read
 - **One batched hybrid_search for test coverage.** BM25 collapses onto the
   domain with the biggest test files; every other candidate returns empty and
   gets reported "untested". Stratify by domain — see Phase 4 step 2.
-- **Classifying from a single signal.** "High churn" alone implies no class.
-  Check companion signals (`imports`, `bugFixRate`, `ageDays`, `blockPenalty`)
-  before picking a label. See `../../rules/references/signal-interpretation.md`.
-- **Folding structural debt into overlap tiers.** Size is not risk. Structural
-  hits get their own section, annotated with risk, never a tier slot.
 - **Extra scan for a named dimension.** "hotspots and ownership in X" = the same
   5 presets (4 codegraph off), scoped. Ownership / bus factor surfaces via
   `dangerous` (single-owner) + overlay `blameContributorCount` — never a
@@ -192,11 +188,8 @@ Omit the two exclusions and test + doc chunks compete for the 10 slots on equal
 footing — on a typical index tests alone are ~half the corpus, and test churn
 outranks production churn because tests change with every feature.
 
-**Do NOT substitute `filter: { presets: "production,<dimension>" }`.** That
-preset also drops `chunkType: "block"`, which kills barrel files, config objects
-and top-level constant blocks — legitimate candidates (a barrel re-export with
-`fanIn: 11` is a hub). Explicit `testFile` + `documentation` exclude the same
-tests and docs without the block casualty.
+**Do NOT substitute `filter: { presets: "production,<dimension>" }`** — drops
+block chunks (barrels, config); why: references/anti-patterns.md.
 
 **Empty dimension result = clean.** Filter preset narrows to that dimension's
 problem population (`godMethods` = oversized methods only) → zero results = "no

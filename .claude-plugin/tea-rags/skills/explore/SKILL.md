@@ -22,14 +22,23 @@ argument-hint: [what to explore — feature, module, or question]
 | "before I refactor/modify/change X", "I need to add X", "перед тем как менять", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans                               |
 | "best example of X", "antipatterns in Y", "find all implementations / instances of X"                        | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text) |
 
+**State it first (MANDATORY):** answer/plan opens with `Strategy: <row>` (or
+risk / change / ownership / codegraph row) + the matched phrase — routing on
+surface keywords without this line = wrong.
+
 **PRE-GEN wins** over EXPLAIN / EXEMPLAR words when a pre-change signal is
 present: "understand X before I modify it", "research the error patterns — I
-need to add a new error type" = PRE-GEN, not EXPLAIN / EXEMPLAR.
+need to add a new error type", "about to refactor X, research first", plan step
+"Research X before implementing Y" = PRE-GEN, not EXPLAIN / EXEMPLAR /
+brainstorming / executing-plans; output self-contained, never auto-invokes DDG.
+"How does X work + risks before I change it" → PRE-GEN subsumes both.
 
 **TRACE vs EXEMPLAR:** usages of ONE named symbol (who calls / imports / where
 used) = TRACE. Every implementation / instance / variant of a kind ("find all
-implementations of Provider", "all retry loops") = EXEMPLAR Collect → delegate
-pattern-search; never search it yourself.
+implementations of Provider", "every subclass of X") = EXEMPLAR Collect →
+delegate pattern-search; never search it yourself. Behaviour words without
+all/every ("search for retry logic and error recovery") = BREADTH
+`semantic_search`, not EXEMPLAR.
 
 🛑 Unsure → ask user. NEVER assume strategy from partial signals.
 
@@ -46,9 +55,9 @@ the scoring") → PRE-GEN PG-2 signals.
 ## Change intent → rank_chunks codeReview
 
 "what changed recently", "recent changes in X", "what's new in X" →
-`rank_chunks rerank="codeReview" pathPattern=<scope>` (no query — ranks by
-recency signals). Never `git log` / `git diff`, never a text query. Checked
-right after risk intent.
+`rank_chunks rerank="codeReview" pathPattern=<scope> maxAgeDays=14` (no query —
+ranks by recency signals; window always set). Never `git log` / `git diff`,
+never a text query. Checked right after risk intent.
 
 ## Ownership intent → rank_chunks ownership
 
@@ -63,13 +72,13 @@ Graph-shape questions answered from real call/import edges — content matching
 can't derive them. Order: risk → change → ownership → this table →
 EXPLAIN/TRACE/PRE-GEN/EXEMPLAR. Top-to-bottom, first match wins.
 
-| Priority | Intent contains                                                                  | Sub-pattern                                                                |
-| -------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| 1        | "циклы", "cycle", "circular dependency", "dependency loop"                       | [references/cycle-pattern.md](./references/cycle-pattern.md)               |
-| 2        | "кто использует/вызывает X", "callers of X", "callees of X", "trace flow"        | [references/usage-pattern.md](./references/usage-pattern.md)               |
-| 3        | "где начинается", "entry point", "main flow", "входная точка", "where X starts"  | [references/entry-point-pattern.md](./references/entry-point-pattern.md)   |
-| 4        | "архитектура", "structure", "backbone", "что центральное", "how X is organized"  | [references/architecture-pattern.md](./references/architecture-pattern.md) |
-| 5        | "как в проекте называют X", "what does the project call X", "is this name right" | `get_naming_lexicon` — see below                                           |
+| Priority | Intent contains                                                                                                  | Sub-pattern                                                                |
+| -------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1        | "циклы", "cycle", "circular dependency", "dependency loop"                                                       | [references/cycle-pattern.md](./references/cycle-pattern.md)               |
+| 2        | "кто использует/вызывает X", "callers of X", "callees of X", "trace flow", "how does X reach Y" (→ `trace_path`) | [references/usage-pattern.md](./references/usage-pattern.md)               |
+| 3        | "где начинается", "entry point", "main flow", "входная точка", "where X starts"                                  | [references/entry-point-pattern.md](./references/entry-point-pattern.md)   |
+| 4        | "архитектура", "structure", "backbone", "что центральное", "organized", "walk me through"                        | [references/architecture-pattern.md](./references/architecture-pattern.md) |
+| 5        | "как в проекте называют X", "what does the project call X", "is this name right"                                 | `get_naming_lexicon` — see below                                           |
 
 **Rows 1–4: open the row's reference BEFORE planning (MANDATORY)** — the calls
 carry filters the row name does not show. Plan/answer NAMES the calls below —
@@ -87,7 +96,10 @@ carry filters the row name does not show. Plan/answer NAMES the calls below —
 
 **Naming (row 5):** `get_naming_lexicon(concept+language | types | names)` —
 `concept` for "what do we call X", `types` for "how are values of T named",
-`names[]` for verdict. Answer = dominant shape + top names/terms with holders;
+`names[]` for verdict. Names in a diff ("do my uncommitted names fit?") →
+`review_changes(changes:{} | {base}, sections:["naming"])` — its findings ARE
+the answer; no `get_naming_lexicon` follow-up, never hand-list the diff's names
+into `names[]`. Answer = dominant shape + top names/terms with holders;
 reading + codegraph-off fallback: `../data-driven-generation/SKILL.md` Step 5
 "Naming (lexicon)".
 
@@ -96,18 +108,21 @@ characters in symbol name. "what does X call?" / "who calls X?" = USAGE (row 2)
 even when X = `findCycles` / `CycleDetector`. Row 1 only on phrasing about the
 loop itself ("circular dependency", "dependency loop", "cycles in <scope>").
 
-**Codegraph availability:** sub-patterns need codegraph. A STATED environment
-wins: prime / digest without a `codegraph.symbols` line, or metrics
-`codegraph off` → OFF, even if graph tools appear in your list. No such
-statement (subagent, no digest) → decide from YOUR OWN tool list and say so
-("`get_callers` in my tools → codegraph on") — no digest read needed for it:
-graph tools (`get_callers`, `trace_path`, …) present = on; unsure → read
+**Codegraph availability:** sub-patterns need codegraph. An EXPLICIT statement
+wins: metrics `codegraph off` / `on`, or the user / task stating codegraph is
+disabled or enabled → that, even against your tool list. The digest never states
+it — no codegraph line there means nothing, never read it as OFF. No statement →
+decide from YOUR OWN tool list and say so ("`get_callers` in my tools →
+codegraph on") — no digest read needed for it: graph tools (`get_callers`,
+`trace_path`, …) present = on; unsure → read
 `tea-rags://project/<alias>/metrics?section=registry`. Graph tools absent = not
 registered, NOT empty result — never call absent tool to probe, never read
 absence as positive fact. Codegraph off → content-matching table: TRACE covers
-usage, EXPLAIN covers architecture; entry points = relevance + `chunkSize`
-heuristic (never `onboarding` / `entryPoint`), flagged content-inferred. Each
-sub-pattern states own fallback.
+usage, EXPLAIN covers architecture. Broad orientation / structure ("introduce
+me", row 4) → ORIENT `rerank="onboarding"`; "where X starts" (row 3) →
+relevance + `chunkSize` heuristic. Both flagged content-inferred; never
+`entryPoint` / `architecturalHub` / graph tools. Each sub-pattern states own
+fallback.
 
 ## Pattern-search keyword groups (EXEMPLAR routing)
 
@@ -140,8 +155,10 @@ Apply tables above, first match:
 2. Codegraph intent row → that sub-pattern (cycle / usage / entry-point /
    architecture / naming).
 3. EXEMPLAR → [references/exemplar-pattern.md](./references/exemplar-pattern.md)
-   (refactoring-scan for broad antipattern, pattern-search otherwise) —
-   delegate, no own search first.
+   — delegate, no own search first. Broad antipattern = area health, NO named
+   pattern ("antipatterns in src/") → refactoring-scan. A NAMED pattern ("sync
+   I/O in hot path", "N+1") → pattern-search Antipattern (SEED techDebt →
+   EXPAND), even unscoped. Collect / Spread / Reference → pattern-search.
 4. PRE-GEN → [references/pre-gen-pattern.md](./references/pre-gen-pattern.md),
    calls named in the plan: PG-1 DISCOVER `semantic_search` (known symbol →
    `find_symbol` + `hybrid_search`)

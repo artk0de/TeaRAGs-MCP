@@ -17,12 +17,19 @@ Branches (plan names every one that can apply — path unknown = all of them):
 - **Linked git worktree** of a registered repo → do NOT register or index; read
   tools (`project` + `path=<worktree>`) already answer for that tree.
 - **Not registered (first index)** → ask once, then register alias + index in
-  one command: `tea-rags index-codebase <path> --name <alias>`. **Declined** →
+  one SHELL command: `tea-rags index-codebase <path> --name <alias>` — the CLI,
+  NOT the MCP tool (`index_codebase` has no `name` param). **Declined** →
   `index_codebase(path=<path>)`, no alias.
 - **Already indexed** → incremental `index_codebase(project=<alias>)` (changed
   files only).
 - **Corrupt index / payload-schema drift** → `/force-reindex`, never
   incremental.
+- **Infra error** (`[QDRANT_UNAVAILABLE]`, `[OLLAMA_UNAVAILABLE]`, embedding /
+  connection error from any call) → STOP: read the code + `Hint` (the fix, e.g.
+  `docker-compose up` / `ollama serve`), ask the user (ask the user) to apply
+  it, WAIT for the explicit answer. Never run the fix unasked, never index
+  anyway. After the answer → LIVE `get_index_status` retry. Ollama down ≠
+  `find_symbol` / `hybrid_search` BM25 down (`tea-rags://guide/degraded`).
 
 ## Instructions
 
@@ -54,9 +61,9 @@ Branches (plan names every one that can apply — path unknown = all of them):
    - Ask once: "Index and register this codebase as project `<alias>`?
      (recommended — lets MCP tools address it by name instead of path.)" Offer
      alias override.
-   - Confirmed → `tea-rags index-codebase <path> --name <alias>`.
-     `[INPUT_PROJECT_NAME_NOT_UNIQUE]` → suggest numeric suffix (`<alias>-2`),
-     retry once.
+   - Confirmed → shell `tea-rags index-codebase <path> --name <alias>` (CLI;
+     never `index_codebase(name=…)`). `[INPUT_PROJECT_NAME_NOT_UNIQUE]` →
+     suggest numeric suffix (`<alias>-2`), retry once.
    - Declined → `index_codebase` (`path`); user registers later w/
      `tea-rags projects register --path <path> --name <alias>`.
 

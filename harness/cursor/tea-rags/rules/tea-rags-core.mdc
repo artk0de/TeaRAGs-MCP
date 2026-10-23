@@ -7,16 +7,16 @@ alwaysApply: true
 
 > **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no resource tool, or the read fails), run `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
 
-**Addressing.** Every read call (search, `find_symbol`, graph, `review_changes`,
-lexicon): `project=<alias>` (which index) + `path=<your working directory>`
-(which tree). Alias: prime `## Project`, SubagentStart alias, or
-`workingTree.project`; unknown → `path` alone, then pass the answer's alias. No
-working dir (script / CLI) → `project` alone. Only a raw collection name →
-`collection=<name>` (+ `path` if your repo). `index_codebase`: `project` ONLY —
-its `path` registers a NEW project.
+**Addressing.** Every read call (search, `find_symbol`, graph, review, lexicon):
+`project=<alias>` (which index) + `path=<your working directory>` (which tree).
+Alias: prime `## Project`, SubagentStart alias, or `workingTree.project`;
+unknown → `path` alone, then the answer's alias. No working dir (script, CLI) →
+`project` alone. Only raw collection name → `collection=<name>` (+ `path` if
+your repo). `index_codebase`: `project` ONLY — its `path` registers a NEW
+project.
 
-**Routing** (first match wins; a loaded skill's step overrides; tea-rags tools
-are `mcp__tea-rags__<name>`):
+**Routing** (first match wins; a loaded skill's step overrides; tools =
+`mcp__tea-rags__<name>`):
 
 | Need                               | Call                                          |
 | ---------------------------------- | --------------------------------------------- |
@@ -25,12 +25,12 @@ are `mcp__tea-rags__<name>`):
 | usages of an identifier            | `hybrid_search` (`metaOnly`, `offset`)        |
 | behaviour / intent, no name        | `semantic_search`                             |
 | code like a chunk in hand          | `find_similar(positiveIds:)`                  |
-| impact / who calls / chain A→B     | `get_callers` / `get_callees` / `trace_path`  |
+| impact / who calls / A reaches B   | `get_callers` / `get_callees` / `trace_path`  |
 | diff review                        | `review_changes`                              |
 | literal text (TODO, phrase, regex) | text search (your client's Grep / `rg`)       |
 
 Text search = literal text only; never it, Glob or `cat`/`sed`/`grep` to locate
-or understand code — identifiers (even `a|b`) are SYMBOL searches.
+or read code — identifiers (even `a|b`) are SYMBOL searches.
 
 **Invariants.**
 
@@ -65,7 +65,7 @@ or understand code — identifiers (even `a|b`) are SYMBOL searches.
 - before a raw `filter:` → `filters`
 - before choosing `rerank` → `presets` + `signals`; reading labels →
   `signal-labels`
-- trusting graph / AST on a non-primary language → `language-capability`
+- graph / AST on a non-primary language → `language-capability`
 - no prime digest → `tea-rags://project/<alias>/digest`
 - thresholds / labelMap → `tea-rags://project/<alias>/metrics?language=<lang>`
 

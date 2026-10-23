@@ -176,13 +176,18 @@ local:    review_changes changes={ base: <target branch, e.g. main> },
           (tool reads base at its merge-base with HEAD — no git merge-base)
           (on main, uncommitted only → changes={})
 external: get_naming_lexicon names=[<declarations on the diff's added lines:
-                             {name, kind, type?}; a type: {name, kind: "type",
-                             path, extends?}>]
+                             {name, kind, type?}; kind = param | local | field
+                             | constant | return | type — `row = find_x(id)` →
+                             row: local, find_x: return; a type: {name,
+                             kind: "type", path, extends?}>]
                              pathPattern=<touched-dirs glob> language=<lang>
 severity: MISFIT → minor; COLLISION → minor; NEW_TERM → minor only when
           topTerms or alternatives hold a term for the same concept;
           CONFORMS → nothing
 ```
+
+Comment bodies: plain language — no verdict codes, no tool names, nothing about
+local vs external mode. MISFIT fix = the `suggestion`, `holder` as precedent.
 
 Local: ONE `review_changes(changes, sections: ["naming"])` call judges every
 name added hunks declare (values, types, constants) — no hand-listed drafts.

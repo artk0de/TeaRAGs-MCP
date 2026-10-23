@@ -165,7 +165,8 @@ directory.
    `toRelPath`; `addExport` → add that one export line of `names` to
    `facadeRelPath`. `restoreExport`: re-export `names` from `facadeRelPath`.
    Else the repair file's `## No remedy` procedure. Else accept by evidence.
-2. Re-run the same `review_changes` + targeted tests.
+2. Re-run the same `review_changes` + targeted tests — MANDATORY after every
+   repair, also a seeded / remedy one; report it: `target gone, no new finding`.
 3. Re-run shows ANY new finding (even with the target finding gone) or a red
    test → the round regressed → revert the WHOLE round, then a different repair
    is the next round. Never keep the round and repair its new finding on top;

@@ -27,3 +27,9 @@ TODO/FIXME scan, reading a known file by exact path, exact import-string lookup)
 — and for code-identifier lookups reach for `find_symbol` / `hybrid_search` BM25
 first (need no embedding), not text search. See
 `rules/references/runtime-introspection.md` for `infraHealth` diagnosis.
+
+**Qdrant down** (`[QDRANT_UNAVAILABLE]`, vector-store connection error) — same
+protocol: STOP, `AskUserQuestion` to start Qdrant per the error's `Hint`
+(`docker-compose up`), WAIT for the explicit answer, then retry a LIVE
+`get_index_status`. Never run the Hint yourself unasked, never index anyway,
+never fall back to text search — every tea-rags read needs Qdrant.
