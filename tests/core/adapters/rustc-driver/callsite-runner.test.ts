@@ -206,6 +206,7 @@ function host(
         listings += 1;
         return sources;
       },
+      realPath: (path) => path,
     },
     readCargoManifests: () =>
       [...texts.entries()]
@@ -444,6 +445,88 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
     expect(h.spawns).toHaveLength(1);
   });
 
+  const allFailedScript = (): DriverScript =>
+    okScript({
+      runJson: okRun({
+        success: false,
+        exitCode: 101,
+        units: [],
+        failed: [{ packageId: "p", target: "app", kind: ["lib"], firstError: "E0308 mismatched types" }],
+      }),
+      units: {},
+      exitCode: 101,
+    });
+
+  it("keeps an allUnitsFailed latch while the Rust sources are unchanged", async () => {
+    const h = host({ scripts: [allFailedScript()] });
+    await acquire(h);
+    h.setSources([
+      { relPath: "app/src/main.rs", size: 100, mtimeMs: 1 },
+      { relPath: "core/src/lib.rs", size: 200, mtimeMs: 1 },
+    ]);
+    const again = await acquire(h);
+    expect(again.status).toBe("failed");
+    expect(again.diagnostics.latched?.reason).toBe("allUnitsFailed");
+    expect(again.diagnostics.ranCargoCheck).toBe(false);
+    expect(h.spawns).toHaveLength(1);
+  });
+
+  it("re-runs cargo once a Rust source's size or mtime changed under an allUnitsFailed latch", async () => {
+    const h = host({ scripts: [allFailedScript(), allFailedScript()] });
+    await acquire(h);
+    h.setSources([
+      { relPath: "app/src/main.rs", size: 100, mtimeMs: 1 },
+      { relPath: "core/src/lib.rs", size: 200, mtimeMs: 7 },
+    ]);
+    const afterTouch = await acquire(h);
+    expect(afterTouch.diagnostics.ranCargoCheck).toBe(true);
+    expect(h.spawns).toHaveLength(2);
+    h.setSources([
+      { relPath: "app/src/main.rs", size: 100, mtimeMs: 1 },
+      { relPath: "core/src/lib.rs", size: 199, mtimeMs: 7 },
+    ]);
+    await acquire(h);
+    expect(h.spawns).toHaveLength(3);
+  });
+
+  it("answers ok after the fixed sources compile and does not latch again", async () => {
+    const h = host({ scripts: [allFailedScript(), okScript()] });
+    await acquire(h);
+    h.setSources([
+      { relPath: "app/src/main.rs", size: 100, mtimeMs: 1 },
+      { relPath: "core/src/lib.rs", size: 180, mtimeMs: 9 },
+    ]);
+    const fixed = await acquire(h);
+    expect(fixed.status).toBe("ok");
+    expect(fixed.diagnostics.latched).toBeUndefined();
+    expect(h.texts.has(`${DATA}/rustc-driver/${envKeyOf(h.spawns[1])}/latch.json`)).toBe(false);
+    const next = await acquire(h);
+    expect(next.status).toBe("ok");
+    expect(h.spawns).toHaveLength(3);
+  });
+
+  it("treats an allUnitsFailed latch written without source stamps as stale", async () => {
+    const h = host();
+    await acquire(h);
+    const envDir = `${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}`;
+    h.texts.set(`${envDir}/latch.json`, JSON.stringify({ reason: "allUnitsFailed", detail: "old" }));
+    const result = await acquire(h);
+    expect(result.status).toBe("ok");
+    expect(h.spawns).toHaveLength(2);
+  });
+
+  it("keeps a driverBuild latch regardless of source changes", async () => {
+    const h = host();
+    await acquire(h);
+    const envDir = `${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}`;
+    h.texts.set(`${envDir}/latch.json`, JSON.stringify({ reason: "driverBuild", detail: "cargo build exited 101" }));
+    h.setSources([{ relPath: "app/src/main.rs", size: 5, mtimeMs: 42 }]);
+    const result = await acquire(h);
+    expect(result.status).toBe("failed");
+    expect(result.diagnostics.latched).toMatchObject({ reason: "driverBuild" });
+    expect(h.spawns).toHaveLength(1);
+  });
+
   it("latches a failed driver build and spawns nothing", async () => {
     const buildable: RustcDriverDiscovery = {
       kind: "buildable",
@@ -580,6 +663,84 @@ describe("acquireRustcCallSites — admission (reuseOnly never spawns cargo)", (
     const result = await acquire(h, { admission: reuseOnly });
     expect(result.status).toBe("failed");
     expect(result.diagnostics.latched?.reason).toBe("allUnitsFailed");
+  });
+
+  const coreFailed = {
+    packageId: "path+file:///ws/core#fx_core@0.1.0",
+    target: "fx_core",
+    kind: ["lib"],
+    firstError: "E0308 mismatched types",
+  };
+  const partialScript = (failed: Record<string, unknown>[] = [coreFailed]): DriverScript =>
+    okScript({
+      runJson: okRun({ success: false, exitCode: 101, units: [{ file: "app-1.ndjson", crate: "app" }], failed }),
+      units: { "app-1.ndjson": row() },
+      exitCode: 101,
+    });
+  const touchedCore = [
+    { relPath: "app/src/main.rs", size: 100, mtimeMs: 1 },
+    { relPath: "core/src/lib.rs", size: 190, mtimeMs: 5 },
+  ];
+
+  it("re-runs cargo under reuseOnly when a source of a crate that failed last run changed", async () => {
+    const h = host({ scripts: [partialScript(), okScript()] });
+    expect((await acquire(h)).status).toBe("partial");
+    h.setSources(touchedCore);
+    const rerun = await acquire(h, { admission: reuseOnly });
+    expect(h.spawns).toHaveLength(2);
+    expect(rerun.status).toBe("ok");
+    expect(rerun.diagnostics.ranCargoCheck).toBe(true);
+  });
+
+  it("matches a failed crate cargo names under the canonical path of a symlinked project root", async () => {
+    const canonical = { ...coreFailed, packageId: "path+file:///private/ws/core#fx_core@0.1.0" };
+    const h = host({ scripts: [partialScript([canonical]), okScript()] });
+    h.deps.fs.realPath = (path) => (path === ROOT ? "/private/ws" : path);
+    await acquire(h);
+    h.setSources(touchedCore);
+    await acquire(h, { admission: reuseOnly });
+    expect(h.spawns).toHaveLength(2);
+  });
+
+  it("reuses a partial run under reuseOnly when no source changed", async () => {
+    const h = host({ scripts: [partialScript()] });
+    await acquire(h);
+    const reused = await acquire(h, { admission: reuseOnly });
+    expect(reused.status).toBe("reused");
+    expect(h.spawns).toHaveLength(1);
+  });
+
+  it("reuses a partial run under reuseOnly when only sources outside the failed crates changed", async () => {
+    const h = host({ scripts: [partialScript()] });
+    await acquire(h);
+    h.setSources([
+      { relPath: "app/src/main.rs", size: 101, mtimeMs: 5 },
+      { relPath: "core/src/lib.rs", size: 200, mtimeMs: 1 },
+    ]);
+    const reused = await acquire(h, { admission: reuseOnly });
+    expect(reused.status).toBe("reused");
+    expect(h.spawns).toHaveLength(1);
+  });
+
+  it("re-runs cargo under reuseOnly when a failure names no crate dir and any source changed", async () => {
+    const stderrOnly = { package: "fx_core", target: "build-script-build", kind: ["custom-build"], firstError: "x" };
+    const h = host({ scripts: [partialScript([stderrOnly]), okScript()] });
+    await acquire(h);
+    h.setSources([
+      { relPath: "app/src/main.rs", size: 101, mtimeMs: 5 },
+      { relPath: "core/src/lib.rs", size: 200, mtimeMs: 1 },
+    ]);
+    await acquire(h, { admission: reuseOnly });
+    expect(h.spawns).toHaveLength(2);
+  });
+
+  it("never spawns under reuseOnly after an ok run, even when a source changed", async () => {
+    const h = host();
+    expect((await acquire(h)).status).toBe("ok");
+    h.setSources(touchedCore);
+    const reused = await acquire(h, { admission: reuseOnly });
+    expect(reused.status).toBe("reused");
+    expect(h.spawns).toHaveLength(1);
   });
 });
 

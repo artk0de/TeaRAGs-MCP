@@ -127,8 +127,9 @@ What a run costs:
   if your own `target/` is warm.
 - **Later runs.** The driver binary is reused. When `Cargo.lock`, the manifests
   and the cargo arguments have not changed, the stored call sites are reused
-  and `cargo check` does not run at all; otherwise cargo rebuilds only the
-  units that changed.
+  and `cargo check` does not run at all, unless the last check left a crate
+  uncompiled and a `.rs` file in that crate has changed since (you fixed the
+  error); otherwise cargo rebuilds only the units that changed.
 
 Because it is `cargo check`, your project's build scripts and procedural macros
 execute, the same as in your editor. The check runs offline: run
@@ -143,7 +144,7 @@ The index run reports the driver in one status line:
 | `indexed`     | The driver ran (or its cached result was reused); lists units, failed crates and wall time    |
 | `unavailable` | Neither a driver binary nor the pinned toolchain was found; the line carries the install command |
 | `off`         | Switched off with `CODEGRAPH_RUST_DRIVER=off`                                                  |
-| `latched`     | The driver build or every crate's check failed; not retried until the inputs change            |
+| `latched`     | The driver build or every crate's check failed; not retried until the inputs change (for a failed check, editing any `.rs` file counts) |
 | `skipped`     | The project was not checked this run; the line gives the reason                               |
 
 Without the driver, Rust still gets the walker's edges; only the

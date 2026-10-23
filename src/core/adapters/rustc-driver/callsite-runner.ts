@@ -21,7 +21,9 @@
  *
  * Latch lattice: an environment failure (the driver cannot be built, or every
  * unit failed) is persisted per envKey and answered without spawning until the
- * environment changes; a budget breach is not persisted; a per-crate compile
+ * environment changes; an every-unit-failed latch also records the digest of
+ * the `.rs` stamps it failed on and lapses once any source changes (a fixed
+ * compile error must not stay latched); a budget breach is not persisted; a per-crate compile
  * failure is reported (`failedCrates`) and not persisted. Units cargo reports
  * but no unit file covers (`missing`) trigger ONE retry with a fresh target dir.
  *
@@ -29,9 +31,18 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { availableParallelism, homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type {
@@ -182,6 +193,8 @@ export interface RustcCallSiteRunnerDeps extends SupervisedChildHost {
     remove: (path: string) => void;
     stat: (path: string) => { size: number; mtimeMs: number } | undefined;
     listRustSources: (projectRoot: string) => readonly RustSourceStamp[];
+    /** Canonical path (symlinks resolved), as cargo reports it in package ids; the input when unresolvable. */
+    realPath: (path: string) => string;
   };
   /** Every workspace `Cargo.toml` under the root. */
   readCargoManifests: (projectRoot: string) => readonly ManifestFile[];
@@ -208,6 +221,8 @@ interface PersistedLatch {
   reason: RustcCallSiteLatchReason;
   detail: string;
   hint?: string;
+  /** `allUnitsFailed` only: `sourcesDigest` of the stamps the run failed on. */
+  sources?: string;
 }
 
 /** Acquire the call-site index of `options.projectRoot`. Never throws. */
@@ -271,7 +286,7 @@ async function acquire(
   const envKey = environmentKey(deps, options.projectRoot, driver, banner.stdout.trim(), cargoArgs);
   const envDir = join(deps.dataDir, "rustc-driver", envKey);
 
-  const latch = readLatch(deps, envDir);
+  const latch = readLatch(deps, envDir, sources);
   if (latch) {
     return {
       status: "failed",
@@ -283,7 +298,14 @@ async function acquire(
       },
     };
   }
-  if (reuseOnly()) return reusePreviousRun(deps, envKey, envDir, sources());
+  if (reuseOnly()) {
+    const driverRun = readRunJson(deps, envDir);
+    const recorded = readRecordedSources(deps, envDir);
+    const projectRoots = (): readonly string[] => [options.projectRoot, deps.fs.realPath(options.projectRoot)];
+    if (!driverRun || !recorded || !failedCratesTouched(driverRun, recorded, sources(), projectRoots)) {
+      return reusePreviousRun(deps, envKey, envDir, driverRun, recorded, sources());
+    }
+  }
   return runDriver(deps, options, driver, envKey, envDir, cargoArgs, sources());
 }
 
@@ -311,6 +333,7 @@ async function runDriver(
     // nor its sources.json paired with this one's run.json.
     deps.fs.remove(join(envDir, RUN_FILE));
     deps.fs.remove(join(envDir, SOURCES_FILE));
+    deps.fs.remove(join(envDir, LATCH_FILE));
     const supervised = await superviseChild(
       () => deps.spawn(driver.binaryPath, [], { env, onOutput, cwd: options.projectRoot }),
       {
@@ -336,7 +359,7 @@ async function runDriver(
       continue;
     }
     if (driverRun.units.length === 0 && !driverRun.success) {
-      const latched = allUnitsFailedLatch(driverRun, tail, options.projectRoot);
+      const latched = allUnitsFailedLatch(driverRun, tail, options.projectRoot, stamps);
       deps.fs.writeTextAtomic(join(envDir, LATCH_FILE), JSON.stringify(latched));
       return {
         status: "failed",
@@ -368,10 +391,10 @@ function reusePreviousRun(
   deps: RustcCallSiteRunnerDeps,
   envKey: string,
   envDir: string,
+  driverRun: DriverRun | undefined,
+  recorded: RecordedSources | undefined,
   stamps: readonly RustSourceStamp[],
 ): RustcCallSiteAcquisition {
-  const driverRun = readRunJson(deps, envDir);
-  const recorded = readRecordedSources(deps, envDir);
   if (!driverRun || !recorded || driverRun.units.length === 0) {
     return { status: "noCache", diagnostics: { ...emptyDiagnostics(), envKey } };
   }
@@ -383,10 +406,9 @@ function reusePreviousRun(
     const now = current.get(relPath);
     return was !== undefined && was[0] === now?.size && was[1] === now.mtimeMs;
   };
-  const contentKey = sha256(JSON.stringify(stamps.map((stamp) => [stamp.relPath, stamp.size, stamp.mtimeMs]).sort()));
   return {
     status: "reused",
-    index: servedForUnchanged(decoded.index, unchanged, `${decoded.index.identity}~${contentKey}`),
+    index: servedForUnchanged(decoded.index, unchanged, `${decoded.index.identity}~${sourcesDigest(stamps)}`),
     diagnostics: decoded.diagnostics,
   };
 }
@@ -405,6 +427,60 @@ function servedForUnchanged(
       return definition;
     },
   };
+}
+
+/**
+ * Whether the previous run left crates without rows that an edit since may have
+ * fixed, so a `reuseOnly` acquisition re-runs cargo instead of re-serving them.
+ * Needs a `.rs` file added, removed or re-stamped since that run, under the
+ * directory of a crate that failed (from its `path+file://` package id). A
+ * failure naming no directory (a stderr-only package name) or missing units
+ * accept any changed file. A failed crate outside the project (registry, git,
+ * or a path dependency outside the root) is fixed by no project edit.
+ */
+function failedCratesTouched(
+  driverRun: DriverRun,
+  recorded: RecordedSources,
+  stamps: readonly RustSourceStamp[],
+  projectRoots: () => readonly string[],
+): boolean {
+  if (driverRun.failed.length === 0 && driverRun.missing === 0) return false;
+  const changed = new Set(Object.keys(recorded));
+  for (const stamp of stamps) {
+    const was = recorded[stamp.relPath];
+    if (was?.[0] === stamp.size && was[1] === stamp.mtimeMs) changed.delete(stamp.relPath);
+    else changed.add(stamp.relPath);
+  }
+  if (changed.size === 0) return false;
+  if (driverRun.missing > 0) return true;
+  return driverRun.failed.some((crate) => {
+    const crateDir = projectCrateDir(crate.packageId, projectRoots());
+    if (crateDir === null) return true;
+    if (crateDir === undefined) return false;
+    return [...changed].some((relPath) => crateDir === "" || relPath.startsWith(`${crateDir}/`));
+  });
+}
+
+/**
+ * Project-relative directory of a `path+file://` package id (`""` = the root),
+ * under the first of `projectRoots` (as given, then canonical: cargo reports the
+ * canonical path) that contains it; `undefined` for a crate outside the project;
+ * `null` when the id names no directory.
+ */
+function projectCrateDir(packageId: string, projectRoots: readonly string[]): string | null | undefined {
+  if (!packageId.includes("+")) return null;
+  if (!packageId.startsWith("path+file://")) return undefined;
+  let absoluteDir: string;
+  try {
+    absoluteDir = fileURLToPath(packageId.slice("path+".length).split("#")[0] ?? "");
+  } catch {
+    return null;
+  }
+  for (const projectRoot of projectRoots) {
+    const relDir = relative(projectRoot, absoluteDir);
+    if (!relDir.startsWith("..") && !isAbsolute(relDir)) return relDir.split(sep).join("/");
+  }
+  return undefined;
 }
 
 function readRecordedSources(deps: RustcCallSiteRunnerDeps, envDir: string): RecordedSources | undefined {
@@ -451,11 +527,22 @@ function decodedAcquisition(
   };
 }
 
-function allUnitsFailedLatch(driverRun: DriverRun, tail: string, projectRoot: string): PersistedLatch {
+function allUnitsFailedLatch(
+  driverRun: DriverRun,
+  tail: string,
+  projectRoot: string,
+  stamps: readonly RustSourceStamp[],
+): PersistedLatch {
   const detail = driverRun.failed[0]?.firstError ?? `no unit compiled: ${lastLines(tail)}`;
+  const sources = sourcesDigest(stamps);
   return OFFLINE_PATTERN.test(tail)
-    ? { reason: "allUnitsFailed", detail, hint: rustcDriverOfflineHint(projectRoot) }
-    : { reason: "allUnitsFailed", detail };
+    ? { reason: "allUnitsFailed", detail, hint: rustcDriverOfflineHint(projectRoot), sources }
+    : { reason: "allUnitsFailed", detail, sources };
+}
+
+/** Order-independent digest of the `.rs` stamps (relPath, size, mtimeMs). */
+function sourcesDigest(stamps: readonly RustSourceStamp[]): string {
+  return sha256(JSON.stringify(stamps.map((stamp) => [stamp.relPath, stamp.size, stamp.mtimeMs]).sort()));
 }
 
 /** The command that makes the offline `cargo check` find every dependency. */
@@ -551,10 +638,20 @@ function readRunJson(deps: RustcCallSiteRunnerDeps, envDir: string): DriverRun |
   };
 }
 
-function readLatch(deps: RustcCallSiteRunnerDeps, envDir: string): PersistedLatch | undefined {
+/**
+ * The persisted latch, if it still holds. An `allUnitsFailed` latch holds only
+ * while the `.rs` stamps match the ones it failed on (a latch written before
+ * stamps were recorded never matches); `sources` is listed only when a latch exists.
+ */
+function readLatch(
+  deps: RustcCallSiteRunnerDeps,
+  envDir: string,
+  sources: () => readonly RustSourceStamp[],
+): PersistedLatch | undefined {
   const parsed = parseJson(deps.fs.readText(join(envDir, LATCH_FILE)));
   if (!isRecord(parsed) || typeof parsed.detail !== "string") return undefined;
   if (parsed.reason !== "driverBuild" && parsed.reason !== "allUnitsFailed") return undefined;
+  if (parsed.reason === "allUnitsFailed" && parsed.sources !== sourcesDigest(sources())) return undefined;
   return {
     reason: parsed.reason,
     detail: parsed.detail,
@@ -666,6 +763,13 @@ export function defaultRustcCallSiteRunnerDeps(
         }
       },
       listRustSources,
+      realPath: (path) => {
+        try {
+          return realpathSync(path);
+        } catch {
+          return path;
+        }
+      },
     },
     readCargoManifests: (projectRoot) => readManifestFiles(projectRoot, (fileName) => fileName === "Cargo.toml"),
   };
