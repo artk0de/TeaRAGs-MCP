@@ -1,3 +1,4 @@
+import type { RustcDriverStatusRecord } from "../../../../contracts/rustc-driver-status.js";
 import type {
   CodegraphStorageCompactionOutcome,
   CodegraphStorageMaintenance,
@@ -77,6 +78,14 @@ export class DaemonStorageMaintenanceProxy implements Omit<CodegraphStorageMaint
 
   async getEdgeKindDistribution(): Promise<EdgeKindCount[]> {
     return (await this.ops.call("getEdgeKindDistribution", {})) as EdgeKindCount[];
+  }
+
+  async recordRustcDriverStatus(record: RustcDriverStatusRecord): Promise<void> {
+    await this.ops.call("recordRustcDriverStatus", { record });
+  }
+
+  async getRustcDriverStatus(): Promise<RustcDriverStatusRecord | null> {
+    return (await this.ops.call("getRustcDriverStatus", {})) as RustcDriverStatusRecord | null;
   }
 
   /**

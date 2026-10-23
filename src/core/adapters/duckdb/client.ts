@@ -41,6 +41,7 @@
  * part of any storage sub-interface.
  */
 
+import type { RustcDriverStatusRecord } from "../../contracts/rustc-driver-status.js";
 import type {
   AmbiguousCallerSite,
   AnchorIdentifierTypeRow,
@@ -669,5 +670,13 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async getEdgeKindDistribution(): Promise<EdgeKindCount[]> {
     return this.maintenance.getEdgeKindDistribution();
+  }
+
+  async recordRustcDriverStatus(record: RustcDriverStatusRecord): Promise<void> {
+    return this.maintenance.recordRustcDriverStatus(record);
+  }
+
+  async getRustcDriverStatus(): Promise<RustcDriverStatusRecord | null> {
+    return this.maintenance.getRustcDriverStatus();
   }
 }

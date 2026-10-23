@@ -4,6 +4,7 @@
  * `hasData` probe, and the resolve-run stats `DuckDbRunStatsStore` owns.
  */
 
+import type { RustcDriverStatusRecord } from "../../contracts/rustc-driver-status.js";
 import type {
   CodegraphStorageCompactionOutcome,
   CodegraphStorageMaintenance,
@@ -85,5 +86,13 @@ export class DuckDbStorageMaintenance implements CodegraphStorageMaintenance {
 
   async getEdgeKindDistribution(): Promise<EdgeKindCount[]> {
     return this.runStats.getEdgeKindDistribution();
+  }
+
+  async recordRustcDriverStatus(record: RustcDriverStatusRecord): Promise<void> {
+    return this.runStats.recordRustcDriverStatus(record);
+  }
+
+  async getRustcDriverStatus(): Promise<RustcDriverStatusRecord | null> {
+    return this.runStats.getRustcDriverStatus();
   }
 }

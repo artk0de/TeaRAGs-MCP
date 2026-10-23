@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatRustcDriverLine } from "../../../src/core/contracts/rustc-driver-status.js";
+import { formatRustcDriverLine, rustcDriverStatusOf } from "../../../src/core/contracts/rustc-driver-status.js";
 
 const INSTALL_HINT =
   "rustc call-site driver unavailable — install with 'rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src' (≈1.5 GB), or set CODEGRAPH_RUST_DRIVER_PATH";
@@ -75,5 +75,61 @@ describe("formatRustcDriverLine", () => {
     expect(formatRustcDriverLine({ outcome: "skipped", reason: "reuseOnly" })).toBe(
       "rustc driver: skipped — reuseOnly",
     );
+  });
+});
+
+describe("rustcDriverStatusOf", () => {
+  it("is absent when no Rust resolve pass reported a call-site acquisition", () => {
+    expect(rustcDriverStatusOf({})).toBeUndefined();
+    expect(rustcDriverStatusOf({ typescript: { program: "reused" } })).toBeUndefined();
+    expect(rustcDriverStatusOf({ rust: { rustAnalyzerScip: { outcome: "indexed" } } })).toBeUndefined();
+  });
+
+  it("maps an indexed acquisition with its cache, units, failed crates and wall time", () => {
+    expect(
+      rustcDriverStatusOf({
+        rust: {
+          rustcCallSites: {
+            outcome: "indexed",
+            cacheHit: false,
+            wallMs: 648_000,
+            units: 412,
+            failedCrates: ["servo-capi-tests"],
+          },
+        },
+      }),
+    ).toEqual({ outcome: "indexed", cacheHit: false, wallMs: 648_000, units: 412, failedCrates: ["servo-capi-tests"] });
+  });
+
+  it("maps a latch with its reason, detail and hint", () => {
+    expect(
+      rustcDriverStatusOf({
+        rust: {
+          rustcCallSites: { outcome: "latched", reason: "allUnitsFailed", detail: "E0463", hint: "cargo fetch" },
+        },
+      }),
+    ).toEqual({ outcome: "latched", reason: "allUnitsFailed", detail: "E0463", hint: "cargo fetch" });
+  });
+
+  it("maps the switched-off skip to off, the toolchain-less skip to unavailable with its hint", () => {
+    expect(rustcDriverStatusOf({ rust: { rustcCallSites: { outcome: "skipped", reason: "disabled" } } })).toEqual({
+      outcome: "off",
+    });
+    expect(
+      rustcDriverStatusOf({
+        rust: { rustcCallSites: { outcome: "skipped", reason: "unavailable", hint: INSTALL_HINT } },
+      }),
+    ).toEqual({ outcome: "unavailable", hint: INSTALL_HINT });
+  });
+
+  it("keeps any other skip as skipped with its reason", () => {
+    expect(rustcDriverStatusOf({ rust: { rustcCallSites: { outcome: "skipped", reason: "noBulkNoCache" } } })).toEqual({
+      outcome: "skipped",
+      reason: "noBulkNoCache",
+    });
+  });
+
+  it("is absent for an outcome it does not know", () => {
+    expect(rustcDriverStatusOf({ rust: { rustcCallSites: { outcome: "exploded" } } })).toBeUndefined();
   });
 });
