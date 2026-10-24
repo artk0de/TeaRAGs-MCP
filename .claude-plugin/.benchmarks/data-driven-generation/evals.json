@@ -1182,7 +1182,7 @@
         "mustDo": [
           "Repair finding (2) per repair/leakingAbstraction.md (retarget to the component facade) or accept only with quoted evidence plus a filed detector bead",
           "Leave finding (1) as not the agent's to fix (preExisting: true; cheap repair optional, never blocks the gate)",
-          "Gate line counts only (2): introduced=1 before repair, introduced=0 after"
+          "Gate line counts only (2): `introduced=1` before repair; after the repair, a re-review gate line before commit (`introduced=0` once re-reviewed; a plan may print it as the expected result or as `introduced=<n>` with \"must be 0 to commit\")"
         ],
         "mustNotDo": [
           "Commit with finding (2) unrepaired and unaccepted",

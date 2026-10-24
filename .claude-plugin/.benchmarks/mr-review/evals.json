@@ -34,7 +34,7 @@
       "expected": {
         "mustDo": [
           "Run D8 as ONE review_changes call with `changes: { base: <target branch, e.g. main> }` and sections: [\"naming\"] (the tool reads base at its merge-base with HEAD) (project alias + path), no hand-built names[]",
-          "Report the naming findings grouped by verdict (MISFIT, COLLISION, NEW_TERM) with relPath:line from review.findings, and the review.conforming / review.novel counts as one summary line",
+          "Report the naming findings grouped by verdict (MISFIT, COLLISION, NEW_TERM) with relPath:line from review.findings, and the review.conforming / review.novel counts as one summary line (a count the review answer does not give \u2192 n/a, never invented)",
           "MISFIT → minor finding whose fix is the suggestion with the holder as precedent; COLLISION → finding naming the existing declaration's file",
           "Word comment bodies in plain language (no verdict codes, no tool names)"
         ],
