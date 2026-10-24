@@ -87,28 +87,35 @@ first (need no embedding), not ripgrep. See
 
 ## Addressing the Codebase (every tea-rags call)
 
-Every tea-rags tool touching a collection accepts THREE addressing params:
+**Every read call: `project="<alias>"` + `path="<your working directory>"`.**
+One rule, every checkout, every read tool — search, `find_symbol`, graph tools,
+`review_changes`, `get_naming_lexicon`, analytics. No "which checkout am I in"
+decision.
 
-1. **`path="<your working directory>"`** — sufficient alone on EVERY read tool:
-   search (`semantic_search` / `hybrid_search` / `rank_chunks` /
-   `find_similar`), `find_symbol`, graph tools (`get_callers` / `get_callees` /
-   `trace_path` / `find_cycles` / `get_architecture_report`), `review_changes`,
-   `get_naming_lexicon`, analytics presets. Any dir inside a checkout. Addresses
-   the TREE you stand in; the index resolves from the same repository (no alias
-   needed). **Preferred in a linked worktree** — the only param that reads the
-   worktree's own code. Subagent in a worktree → same `path`, full toolset.
-2. **`project="<alias>"`** — no cwd context (scripts, CLI); in any checkout
-   `path` is the default. Survives path moves, pulls registered qdrantUrl +
-   embeddingModel. Alone it reads the alias's checkout — from a worktree that is
-   the WRONG tree. Aliases: `list_projects`, prime digest `## Project`.
-3. **`collection="<qdrant-name>"`** — when you already hold a Qdrant collection
-   name (e.g. from `list_collections`).
+- **`project` = WHICH INDEX.** Pass always. Alias: prime `## Project` `name:`,
+  the SubagentStart line "tea-rags project alias for this repository", or
+  `workingTree.project` of any answer. Survives path moves, pulls registered
+  qdrantUrl + embeddingModel. Alone → tree = alias's registered checkout in its
+  current state (any branch, uncommitted edits) — WRONG tree from a linked
+  worktree.
+- **`path` = WHICH TREE.** Your working directory: branch checkout, linked
+  worktree, any dir inside. Main checkout → same as registry, harmless; linked
+  worktree → the only way to read its own code. Must be the same repository as
+  `project`.
+- **`collection="<qdrant-name>"`** — only when you hold a raw collection name
+  and no alias (e.g. `list_collections`); add `path` when it is your repository.
+- Alias unknown (unregistered repo, alias not in prime / hook / marker) → `path`
+  alone still works (index resolves from the same repository); take
+  `workingTree.project` from the answer and pass it from then on.
+- **`index_codebase` is the exception:** `project` ONLY. Its `path` = first-time
+  registration of a NEW root; from a linked worktree it seeds a separate project
+  — never use it to reindex an alias.
 
-Index resolution priority: `collection > project > path`. With `project` /
-`collection` AND `path`, the index comes from the former and the tree from
-`path` (must be the same repository).
+Index resolution priority: `collection > project > path`; the tree comes from
+`path` when given, else the alias's registered checkout.
 
-**Read the `workingTree` marker on every answer:** `tree` = tree it read;
+**Read the `workingTree` marker on every answer:** `project` = alias of the
+index that answered (pass it on later calls); `tree` = tree it read;
 `changedFiles` / `deletedFiles` = distance from `indexedCommit` (`0` = measured
 clean); `floors` = layers read from the tree — `chunks` (find_symbol / outline,
 rank_chunks rows), `sparse` (hybrid_search BM25), `dense` (semantic_search /
@@ -127,7 +134,7 @@ files are the index's (`degraded` says why): trust edges between untouched
 files, re-check changed ones via `find_symbol` / `hybrid_search`. `degraded` →
 its `remedy` under index-freshness consent (subagent: report it to the parent,
 never reindex). `tree` ≠ the tree you addressed (your working directory, or the
-checkout a skill names) → wrong tree, re-call with that `path`.
+checkout a skill names) → wrong tree, re-call with `project` + that `path`.
 
 **Lag ≠ unusable (MANDATORY).** Counts above, `floors: []` and drift = distance
 index↔tree, never licence to leave tea-rags — thousands of changed files
@@ -151,6 +158,11 @@ ask: _need full body / file structure / a neighbor / doc sections?_ If yes —
 next call is `find_symbol`, NOT another search, NOT `Read`. `find_symbol` is
 instant (no embedding), returns merged definitions, file outlines, or doc TOCs
 from the same index.
+
+**Results are a table** `{ columns, rows }` from two results on (one result: a
+plain record list; record arrays in text tools too): `result.X` below = column
+`payload.X` of that row; overlay = column `rankingOverlay.chunk.<signal>.label`;
+null = absent. Shape: `tea-rags://schema/overview` `## Response shape`.
 
 | After search returns…                       | If you need…                            | Next call                                                                                                                                 |
 | ------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -434,8 +446,9 @@ Before dispatching a subagent via the `Agent` tool, prepend the search-tool
 injection block to the subagent's prompt — subagents do NOT inherit rules or
 search-cascade. Full block + owner / when-NOT-to-inject rules live in
 `references/subagent-injection.md`. Inject unconditionally; harmless for
-non-search tasks. Never inject a fixed `path` / `project` — the subagent
-addresses tea-rags with its own working directory.
+non-search tasks. Never inject a fixed `path` — the subagent passes its own
+working directory as `path`; the hook supplies the repository's `project` alias
+(same for every checkout).
 
 ## Prohibited Patterns
 

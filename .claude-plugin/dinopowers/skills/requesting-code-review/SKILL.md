@@ -67,7 +67,8 @@ Issue ONE `mcp__tea-rags__semantic_search` — SAME idiom as
 `dinopowers:writing-plans`:
 
 ```
-path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
+project:     <alias>                    ← search-cascade "Addressing the Codebase"
+path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent from Step 1>
 pathPattern: "{diffFile1,diffFile2,...}"   ← brace expansion
 rerank:      "blastRadius"               ← codegraph on; else { custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }

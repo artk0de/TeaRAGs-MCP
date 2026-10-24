@@ -9,7 +9,7 @@ conditions below (signals from **prime** digest layer); reindex when one fires.
 | Prime banner `⚠ Index is stale (last updated Nd ago)`                                                                                              | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
 | Files created/modified this session (`Write`/`Edit`, incl. by a subagent — parent reindexes), not yet indexed — **alias's own checkout**           | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
 | Uncommitted edits the index has not seen (`git status` lists paths), before searching them — **alias's own checkout**                              | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
-| Same two rows in a **linked worktree** (your working directory is not the alias's checkout path — `list_projects` / prime `## Project`)            | **none** — read tools overlay the tree (`path=<your working directory>`); never reindex for the tree's own edits                                                                                                                                   | —                          |
+| Same two rows in a **linked worktree** (your working directory is not the alias's checkout path — `list_projects` / prime `## Project`)            | **none** — read tools overlay the tree (`project` + `path=<your working directory>`); never reindex for the tree's own edits                                                                                                                       | —                          |
 | Prime `## Drift` whose `Run:` line is the plain incremental (no flag)                                                                              | `tea-rags index-codebase --project <alias>` — exactly that line                                                                                                                                                                                    | no — reindex silently      |
 | Prime `## Drift` whose `Run:` line carries `--force-enrichments` or `--force`                                                                      | the `Run:` command the section names                                                                                                                                                                                                               | **YES — explicit consent** |
 | **Alias's own checkout** answer with `workingTree.changedFiles` > 0 (HEAD moved, branch switch, pull) — **also when Drift `Run:` needs `--force`** | `index_codebase` (incremental) NOW — closes content lag, not drift; ask for the `Run:` line separately, keep working in tea-rags meanwhile. Subagent: report to parent, never reindex                                                              | no — reindex silently      |
@@ -17,14 +17,15 @@ conditions below (signals from **prime** digest layer); reindex when one fires.
 
 ## Linked worktree — overlay, not reindex
 
-Read tools answer for the tree at `path=<your working directory>` against the
-repository's index — floors and `treeState` reading: search-cascade "Addressing
-the Codebase". Main-checkout reindex cannot see worktree edits;
-`index_codebase path=<worktree>` seeds a separate project. Both wrong → never
-reindex for the tree's own edits — `pendingFiles` (not yet warm, a later call
-reads more) and `indexOnlyFiles` (no AST chunking, served from the index)
-included. `degraded` → its `remedy` under the consent rows above. Main checkout
-keeps the reindex rows above: dense vectors of changed files lag otherwise.
+Read tools called with `project` + `path=<your working directory>` answer for
+that tree against the repository's index — floors and `treeState` reading:
+search-cascade "Addressing the Codebase". Main-checkout reindex cannot see
+worktree edits; `index_codebase path=<worktree>` seeds a separate project. Both
+wrong → never reindex for the tree's own edits — `pendingFiles` (not yet warm, a
+later call reads more) and `indexOnlyFiles` (no AST chunking, served from the
+index) included. `degraded` → its `remedy` under the consent rows above. Main
+checkout keeps the reindex rows above: dense vectors of changed files lag
+otherwise.
 
 ## Lag never licenses leaving tea-rags
 

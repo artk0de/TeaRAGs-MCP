@@ -34,9 +34,13 @@ function buildParamReference(): string {
 Inline param hints short; full semantics here.
 
 ### Addressing (every project-aware tool)
-- \`project\` [RECOMMENDED] — registry alias; survives path moves, pulls qdrantUrl / embeddingModel from entry.
-- \`collection\` — raw Qdrant name. \`path\` — codebase path, auto-resolves.
-- Resolution priority: collection > project > path. Give one.
+- \`project\` — which INDEX: registry alias (pulls qdrantUrl / embeddingModel from entry). Pass on every call.
+  Alone → tree = the alias's registered checkout (its current state, any branch).
+- \`path\` — which WORKING TREE: your working directory (branch checkout / linked worktree). Pass WITH project;
+  required to read a linked worktree or other checkout. Alone → index resolved via same repo.
+- \`collection\` — raw Qdrant name, lowest-level handle; prefer project + path.
+- Resolution priority: collection > project > path.
+- index_codebase: \`project\` = registered alias to (re)index; \`path\` = first-time registration of a NEW root only.
 
 ### level (semantic_search, hybrid_search, rank_chunks, find_similar)
 - 'chunk' = rank chunks (functions, classes, blocks) — decomposition, hotspots.
@@ -122,6 +126,13 @@ export function buildOverview(): string {
 - find_similar — find code similar to examples; negative-only inputs + strategy="best_score" → anti-pattern detection
 - find_symbol — symbol definition by name OR file outline/doc TOC by relativePath (no embedding);
   pass a rerank preset for a single-call diagnostic (definition + rankingOverlay)
+
+## Response shape
+Search tools return \`results\` as a table \`{ columns, rows }\` from two results on (one
+result or none: a plain list of records): one row per result, cell i belongs to columns[i]. A column name is the result path — \`payload.symbolId\`,
+\`payload.relativePath\`, \`rankingOverlay.chunk.bugFixRate.label\`; null = absent. Text tools
+(graph, review_changes, …) are compact JSON where every array of 2+ records is the same
+table. Read "the symbolId of result 3" as column \`payload.symbolId\` of row 3.
 
 ## Observability hooks
 - get_index_status returns an \`infraHealth\` block: qdrant url/status/optimizer,

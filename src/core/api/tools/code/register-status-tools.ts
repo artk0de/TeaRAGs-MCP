@@ -12,7 +12,7 @@ import {
   type IndexStatus,
   type OptimizerRecoveryTarget,
 } from "../../public/index.js";
-import { formatMcpText, formatWorkingTreeMarker } from "../format.js";
+import { formatMcpResponse, formatMcpText, formatWorkingTreeMarker } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import * as schemas from "../schemas.js";
 import { resolvePathFromProject } from "./shared.js";
@@ -130,9 +130,7 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
     async ({ path: pathArg, project }) => {
       const path = await resolvePathFromProject({ path: pathArg, project }, app);
       const metrics = await app.getIndexMetrics(path);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(metrics, null, 2) }],
-      };
+      return formatMcpResponse(metrics);
     },
   );
 }

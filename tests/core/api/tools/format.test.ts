@@ -94,8 +94,28 @@ describe("formatMcpResponse — strict-JSON-safe boundary", () => {
     expect(parsed.violations[0]?.evidence.importText).toBe(`a${BS}b${VT}c${RS}d${CR}e`);
   });
 
-  it("should keep clean data byte-identical to plain stringify output", () => {
+  it("should keep clean data byte-identical to compact stringify output", () => {
     const data = reportWithEvidence("import { X } from './x.js'");
-    expect(formatMcpResponse(data).content[0]?.text).toBe(JSON.stringify(data, null, 2));
+    expect(formatMcpResponse(data).content[0]?.text).toBe(JSON.stringify(data));
+  });
+
+  it("should emit an array of two or more records as a column table", () => {
+    const data = {
+      relativePath: "src/a.ts",
+      importers: [{ relativePath: "b.ts" }, { relativePath: "c.ts", weight: 2 }],
+    };
+
+    expect(formatMcpResponse(data).content[0]?.text).toBe(
+      '{"relativePath":"src/a.ts","importers":{"columns":["relativePath","weight"],"rows":[["b.ts",null],["c.ts",2]]}}',
+    );
+  });
+
+  it("should keep a raw control char inside a table cell strict-parseable", () => {
+    const data = { importers: [{ importText: `a${VT}b` }, { importText: "c" }] };
+
+    const parsed = parseStrict(formatMcpResponse(data).content[0]?.text ?? "") as {
+      importers: { rows: string[][] };
+    };
+    expect(parsed.importers.rows[0]?.[0]).toBe(`a${VT}b`);
   });
 });

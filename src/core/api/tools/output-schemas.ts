@@ -36,7 +36,7 @@ const SearchResultPayloadSchema = z
   );
 
 /** Mirrors SearchResult (api/public/dto/explore.ts) — the only item shape search tools return. */
-const SearchResultItemSchema = z.object({
+export const SearchResultItemSchema = z.object({
   id: z.union([z.string(), z.number()]).describe("Chunk ID"),
   score: z.number().describe("Relevance score"),
   payload: SearchResultPayloadSchema.optional(),
@@ -47,6 +47,19 @@ const SearchResultItemSchema = z.object({
     .describe("Index row of a file your working tree changed or deleted; content may be stale"),
 });
 
+/** Search results as ColumnTable (columns.ts); each row is one SearchResultItemSchema record. */
+export const ColumnTableSchema = z
+  .object({
+    columns: z.array(z.string()),
+    rows: z.array(z.array(z.unknown())),
+  })
+  .describe(
+    "One row per result; cell i belongs to columns[i]. Dotted column = payload path " +
+      "(payload.relativePath, rankingOverlay.chunk.bugFixRate.label). null = absent. " +
+      "Columns: id, score, payload.* (raw values; content omitted when metaOnly), " +
+      "rankingOverlay.{file,chunk}.* (labels), treeState (modified|deleted: index copy of a file your tree changed, may be stale).",
+  );
+
 const SearchConfidenceSchema = z.object({
   value: z.number().describe("0-1: score magnitude vs this collection's own similarity scale + path clustering"),
   label: z.string().describe("high | medium | low"),
@@ -54,7 +67,9 @@ const SearchConfidenceSchema = z.object({
 
 /** Shared output schema for semantic_search, hybrid_search, rank_chunks, find_similar */
 export const SearchResultOutputSchema = {
-  results: z.array(SearchResultItemSchema).describe("Search results with explained metadata"),
+  results: z
+    .union([ColumnTableSchema, z.array(SearchResultItemSchema)])
+    .describe("Two or more results: the table. Zero or one: a plain list of result records."),
   level: z.enum(["chunk", "file"]).optional().describe("Effective signal level used for scoring"),
   confidence: SearchConfidenceSchema.optional().describe(
     "Match quality, collection-relative. low = query likely has no match in project. " +
@@ -98,6 +113,7 @@ export const SearchResultOutputSchema = {
       changedFiles: z.number(),
       deletedFiles: z.number(),
       floors: z.array(z.enum(["chunks", "sparse", "dense", "codegraph"])),
+      project: z.string().optional(),
       degraded: z.object({ reason: z.string(), remedy: z.string() }).optional(),
       indexOnlyFiles: z.number().optional(),
       pendingFiles: z.number().optional(),
@@ -108,7 +124,7 @@ export const SearchResultOutputSchema = {
     })
     .optional()
     .describe(
-      "Tree read vs index commit. changedFiles 0 = measured clean; floors = rows reflect tree " +
+      "Tree read vs index commit. project = registry alias of the answering index (pass it as project next call); changedFiles 0 = measured clean; floors = rows reflect tree " +
         "(dense = tree rows ranked by own vectors; codegraph = graph-tool answer, or a returned changed-file row, from the tree's graph); " +
         "degraded = run remedy; indexOnlyFiles = changed non-code files whose rows are the index's (treeState); " +
         "pendingFiles = changed code files still warming, answered from the index this call (treeState); " +

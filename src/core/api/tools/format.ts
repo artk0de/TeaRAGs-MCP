@@ -4,6 +4,7 @@
  */
 
 import type { WorkingTreeMarker, WorkingTreeState } from "../public/dto/working-tree.js";
+import { tabulateRecordArrays } from "./columns.js";
 
 export interface McpToolResult {
   [key: string]: unknown;
@@ -11,8 +12,9 @@ export interface McpToolResult {
   isError?: boolean;
 }
 
+/** Compact JSON; every array of two or more records goes out as a ColumnTable. */
 export function formatMcpResponse(data: unknown): McpToolResult {
-  return { content: [{ type: "text", text: makeStrictJsonSafe(JSON.stringify(data, null, 2)) }] };
+  return { content: [{ type: "text", text: makeStrictJsonSafe(JSON.stringify(tabulateRecordArrays(data))) }] };
 }
 
 export function formatMcpText(text: string): McpToolResult {
@@ -143,8 +145,9 @@ export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
     ...(marker.pendingFiles ? [`${marker.pendingFiles} pending`] : []),
   ];
   const changedFromIndex = fromIndex.length > 0 ? ` (${fromIndex.join(", ")})` : "";
+  const project = marker.project ? ` · project ${marker.project}` : "";
   const line =
-    `workingTree: ${marker.tree} · index @${sha(marker.indexedCommit)} · tree @${sha(marker.treeCommit)}` +
+    `workingTree: ${marker.tree}${project} · index @${sha(marker.indexedCommit)} · tree @${sha(marker.treeCommit)}` +
     ` · changed ${marker.changedFiles}${changedFromIndex} · deleted ${marker.deletedFiles} · floors ${floors}${treeGraph}${dense}${git}`;
   return marker.degraded ? `${line} · degraded: ${marker.degraded.reason} → ${marker.degraded.remedy}` : line;
 }

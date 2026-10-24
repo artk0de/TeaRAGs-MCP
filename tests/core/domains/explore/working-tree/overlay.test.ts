@@ -101,6 +101,7 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
       changedFiles: 0,
       deletedFiles: 0,
       floors: [],
+      project: "proj",
     });
     expect(view.touchedPaths.size).toBe(0);
     expect(view.deletedPaths.size).toBe(0);
@@ -118,6 +119,36 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
     expect(view.marker.degraded).toBeUndefined();
     expect([...view.touchedPaths].sort()).toEqual(["src/index.ts", "src/keep.ts", "src/new.ts"]);
     expect([...view.deletedPaths]).toEqual(["src/index.ts"]);
+  });
+
+  // bd tea-rags-mcp-iqx9x: a caller that addressed the tree by path alone
+  // learns which `project` to pass next from the marker itself.
+  describe("the answering index's registry alias", () => {
+    it("should name the alias when a path-only request reads the registered checkout", async () => {
+      record({ indexedCommit, indexedDirty: false });
+
+      const view = await overlayWith().view(
+        { root: fixture.mainRoot, baseIndex: { collectionName: COLLECTION, root: fixture.mainRoot } },
+        undefined,
+      );
+
+      expect(view.marker.project).toBe("proj");
+    });
+
+    it("should name the base repository's alias when a path-only request reads a linked worktree", async () => {
+      record({ indexedCommit, indexedDirty: false });
+
+      const view = await overlayWith().view(workingTree(), undefined);
+
+      expect(view.marker.tree).toBe(tree);
+      expect(view.marker.project).toBe("proj");
+    });
+
+    it("should carry no project when the answering index has no registered alias", async () => {
+      const view = await overlayWith().view(workingTree(), undefined);
+
+      expect(view.marker).not.toHaveProperty("project");
+    });
   });
 
   describe("an index built from a dirty tree (live P1-1)", () => {

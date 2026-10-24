@@ -49,6 +49,13 @@ export interface WorkingTreeMarker {
   changedFiles: number;
   deletedFiles: number;
   floors: WorkingTreeFloor[];
+  /**
+   * Registry alias of the index that answered (bd tea-rags-mcp-iqx9x) — the
+   * `project` a caller that addressed the tree by path alone passes next. A
+   * linked worktree names its base repository's alias. Absent when the index
+   * has no registered alias (a raw collection or an unregistered path).
+   */
+  project?: string;
   degraded?: { reason: string; remedy: string };
   /**
    * Changed files the overlay does not re-read — ingest chunks them without an

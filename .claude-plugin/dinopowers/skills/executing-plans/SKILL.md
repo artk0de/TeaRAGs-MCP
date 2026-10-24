@@ -36,8 +36,8 @@ call.
 ## Mandatory Step Order (DO NOT SKIP)
 
 1. **Step 2.0** — addressing, EVERY Task: every tea-rags read call passes
-   `path=<your working directory>`. No clone, no reindex for the tree's own
-   edits.
+   `project=<alias>` + `path=<your working directory>`. No clone, no reindex for
+   the tree's own edits.
 2. Step 2 — git-signal SAFE/CAUTION/UNSAFE verdict per Task before any edit
 3. Step 4 — verdict-gating: STOP and ask user if any UNSAFE
 4. **MUST** Step 5 — Code-Gen Cascade for generation AND behavior-modification
@@ -99,10 +99,11 @@ If `taskFileList` empty (pure new-file creation): skip to Step 4 with verdict
 ## Step 2.0 — Addressing (EVERY Task)
 
 1. **Address the tree.** Step 2 guard + every tea-rags read call of this Task
-   (and every skill it invokes) pass `path=<your working directory>` — never an
-   alias alone (tea-rags search-cascade "Addressing the Codebase"). Linked
-   worktree → reads its own tree against the repository's index, any delta size;
-   no clone, no reindex for the tree's own edits (index-freshness).
+   (and every skill it invokes) pass `project=<alias>` +
+   `path=<your working directory>` (tea-rags search-cascade "Addressing the
+   Codebase"). Linked worktree → reads its own tree against the repository's
+   index, any delta size; no clone, no reindex for the tree's own edits
+   (index-freshness).
 2. **Read the `workingTree` marker.** `pendingFiles` → those files' rows are the
    index's; re-call for current code. `indexOnlyFiles` → non-code rows are the
    index's. Neither triggers a reindex. `degraded` → its `remedy` under
@@ -118,7 +119,8 @@ Issue ONE `mcp__tea-rags__semantic_search` call — SAME idiom as
 `dinopowers:writing-plans` Step 2:
 
 ```
-path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
+project:     <alias>                    ← search-cascade "Addressing the Codebase"
+path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <taskIntent from Step 1>
 pathPattern: "{taskFile1,taskFile2,...}"   ← brace expansion
 rerank:      "blastRadius"               ← codegraph on; OFF fallback below
@@ -157,8 +159,9 @@ Results empty (files brand-new, not yet in git): verdict defaults to
 ## Step 3 — Compute verdict per file, aggregate to Task verdict
 
 For each unique `relativePath` in results, read labels from
-`rankingOverlay.file.*` (`{value,label}`; kept under metaOnly), raw values from
-`payload.git.file.*` (essential fields only under metaOnly):
+`rankingOverlay.file.*` (`{value,label}`, in a result table the columns
+`rankingOverlay.file.<signal>.value` / `.label`; kept under metaOnly), raw
+values from `payload.git.file.*` (essential fields only under metaOnly):
 
 - `commitCount` — churn magnitude
 - `bugFixRate` — historical quality (percent of commits tagged as fix/bug);
@@ -344,7 +347,7 @@ existing-file Task.
   pattern, DDG not needed" → wrong: Modification row. Pause before Edit, invoke
   DDG (MODIFY: tests-at-risk + `get_callers`).
 - Guard addressed an alias without `path` inside a worktree → wrong tree; redo
-  with `path=<your working directory>`.
+  with `project=<alias>` + `path=<your working directory>`.
 - Reindexed (or cloned) for the worktree's own uncommitted edits, or for
   `pendingFiles` → unneeded; overlay already reads the tree.
 

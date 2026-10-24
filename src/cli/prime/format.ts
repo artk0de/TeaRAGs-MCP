@@ -78,11 +78,6 @@ function formatDigest(data: PrimeData, now: Date, debug: boolean): string {
     if (registryParams) {
       lines.push(registryParams);
     }
-    if (data.projectName) {
-      lines.push(
-        `[hint] Use \`project: "${data.projectName}"\` as the preferred parameter in MCP tool calls (over path / collection).`,
-      );
-    }
   }
 
   if (data.status.status !== "indexed") {
@@ -397,24 +392,43 @@ function formatUnlabeledModelSites(resolve: CodegraphResolve): string | null {
   return `${unlabeled} model-resolved sites predate migration 055 — in no receiver-kind row; a reindex labels them`;
 }
 
-function formatThresholdsSection(
-  language: string,
-  signals: Record<string, Record<string, { labelMap: Record<string, number>; format?: "percent" | "percent100" }>>,
-): string[] {
-  const lines = [`## Signal thresholds — ${language}`, ""];
-  // One line per signal (source + test on the same line) to keep the digest
-  // resident-cheap. Exact label names are preserved — they must match the
-  // labels rendered in a ranking overlay for the agent to map them to a band.
+type SignalScope = { labelMap: Record<string, number>; format?: "percent" | "percent100" };
+
+function formatThresholdsSection(language: string, signals: Record<string, Record<string, SignalScope>>): string[] {
+  // One table row per signal keeps the digest resident-cheap: label names once,
+  // then bounds. Exact label names are preserved — they must match the labels
+  // rendered in a ranking overlay for the agent to map them to a band.
+  const lines = [
+    `## Signal thresholds — ${language}`,
+    "",
+    'Bands low→high; numbers = lower bound of each band from the 2nd on (1st band = below the 2nd). test "=src" = same as source.',
+    "| signal | bands | source ≥ | test ≥ |",
+    "|---|---|---|---|",
+  ];
   for (const [signalName, scopes] of Object.entries(signals)) {
-    const source = scopes.source ? formatLabelMap(scopes.source.labelMap, scopes.source.format) : "—";
-    const testRaw = scopes.test ? formatLabelMap(scopes.test.labelMap, scopes.test.format) : "—";
-    // Lossless back-ref: when test bands are byte-identical to source, collapse
-    // to "=src" instead of repeating the full band list (common for signals
-    // whose source/test percentiles coincide, e.g. blameDominantAuthorPct).
-    const test = testRaw === source && source !== "—" ? "=src" : testRaw;
-    lines.push(`- **${signalName}** — source: ${source} · test: ${test}`);
+    const labels = Object.keys((scopes.source ?? scopes.test)?.labelMap ?? {});
+    const source = scopes.source ? formatBandBounds(scopes.source) : "—";
+    lines.push(
+      `| ${signalName} | ${labels.join("/")} | ${source} | ${formatTestBounds(scopes.test, labels, source)} |`,
+    );
   }
   return lines;
+}
+
+/** Lower bounds of the 2nd band on; a lone band catches every value. */
+function formatBandBounds(scope: SignalScope): string {
+  const bounds = Object.values(scope.labelMap).slice(1);
+  if (bounds.length === 0) return "any";
+  return bounds.map((threshold) => formatThreshold(threshold, scope.format)).join(" / ");
+}
+
+// Test bands share the row's label column only when their labels match; a
+// different label set keeps the full `label <x / label ≥y` form, lossless.
+function formatTestBounds(test: SignalScope | undefined, labels: string[], source: string): string {
+  if (!test) return "—";
+  if (Object.keys(test.labelMap).join("/") !== labels.join("/")) return formatLabelMap(test.labelMap, test.format);
+  const bounds = formatBandBounds(test);
+  return bounds === source && source !== "—" ? "=src" : bounds;
 }
 
 // A threshold is the LOWEST value that reaches its band, not the highest the

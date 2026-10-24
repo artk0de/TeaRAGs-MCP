@@ -130,3 +130,23 @@ describe("formatDenseUnavailable", () => {
     );
   });
 });
+
+/** The answering index's alias (bd tea-rags-mcp-iqx9x): the `project` a path-only caller passes next. */
+describe("formatWorkingTreeMarker — answering alias", () => {
+  it("should name the project right after the tree", () => {
+    const text = formatWorkingTreeMarker({
+      tree: "/repo/wt",
+      indexedCommit: "0123456789abcdef0123456789abcdef01234567",
+      treeCommit: "fedcba9876543210fedcba9876543210fedcba98",
+      indexedDirty: false,
+      changedFiles: 0,
+      deletedFiles: 0,
+      floors: [],
+      project: "proj",
+    });
+
+    expect(text).toBe(
+      "workingTree: /repo/wt · project proj · index @0123456 · tree @fedcba9 · changed 0 · deleted 0 · floors none",
+    );
+  });
+});

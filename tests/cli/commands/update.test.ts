@@ -2,7 +2,7 @@ import EventEmitter from "node:events";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runUpdateCommand, updateCommand } from "../../../src/cli/commands/update.js";
+import { runUpdateCommand, updateCommand, type RunUpdateDeps } from "../../../src/cli/commands/update.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { available, unavailable, upToDate } from "../../../src/cli/update-check/types.js";
 
@@ -56,6 +56,38 @@ function makeSpawn(behavior: { exitCode?: number | null; errorEvent?: Error }) {
   });
 }
 
+interface FakeClaudeRun {
+  code: number | null;
+  stdout: string;
+  missing: boolean;
+}
+
+function claudeResult(json: object, code = 0): FakeClaudeRun {
+  return { code, stdout: `${JSON.stringify(json)}\n`, missing: false };
+}
+
+/** Answers each `claude …` invocation by its joined argument line; unknown lines fail. */
+function makeRunClaude(answers: Record<string, FakeClaudeRun>) {
+  return vi.fn(async (args: string[]) => answers[args.join(" ")] ?? { code: 1, stdout: "", missing: false });
+}
+
+const claudeMissing = vi.fn(async () => ({ code: null, stdout: "", missing: true }));
+
+const PLUGIN_LIST = "plugin list --json";
+const MARKETPLACE_UPDATE = "plugin marketplace update tea-rags --json";
+
+function installedPlugins(...ids: string[]): FakeClaudeRun {
+  return {
+    code: 0,
+    stdout: JSON.stringify(ids.map((id) => ({ id, version: "0.1.0", scope: "user" }))),
+    missing: false,
+  };
+}
+
+function printed(mock: ReturnType<typeof vi.fn>): string {
+  return mock.mock.calls.map((c) => String(c[0])).join("");
+}
+
 describe("runUpdateCommand", () => {
   it("prints up-to-date message and exits 0", async () => {
     await runUpdateCommand({
@@ -73,6 +105,7 @@ describe("runUpdateCommand", () => {
     await runUpdateCommand({
       service: makeService(available("1.23.1", "1.24.0")),
       spawn,
+      runClaude: claudeMissing,
       exit: exitMock,
     });
     // Wait for setImmediate to flush the exit event.
@@ -149,6 +182,190 @@ describe("runUpdateCommand", () => {
       stderrMock.mock.calls.some((c) => String(c[0]).includes("Failed to spawn npm: EACCES: permission denied")),
     ).toBe(true);
     expect(exitMock).toHaveBeenCalledWith(1);
+  });
+});
+
+describe("runUpdateCommand — Claude Code plugin sync", () => {
+  async function update(runClaude: RunUpdateDeps["runClaude"], npmExitCode = 0): Promise<void> {
+    await runUpdateCommand({
+      service: makeService(available("1.23.1", "1.24.0")),
+      spawn: makeSpawn({ exitCode: npmExitCode }),
+      runClaude,
+      exit: exitMock,
+    });
+    await vi.waitFor(() => {
+      expect(exitMock).toHaveBeenCalled();
+    });
+  }
+
+  it("refreshes the marketplace and updates every installed tea-rags plugin, never with -y", async () => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: installedPlugins(
+        "tea-rags@tea-rags",
+        "dinopowers@tea-rags",
+        "superpowers@claude-plugins-official",
+      ),
+      [MARKETPLACE_UPDATE]: claudeResult({ command: "marketplace-update", outcome: "ok" }),
+      "plugin update tea-rags@tea-rags --json": claudeResult({
+        command: "update",
+        outcome: "ok",
+        pluginId: "tea-rags@tea-rags",
+        oldVersion: "0.44.7",
+        newVersion: "0.44.11",
+      }),
+      "plugin update dinopowers@tea-rags --json": claudeResult({
+        command: "update",
+        outcome: "ok",
+        pluginId: "dinopowers@tea-rags",
+        oldVersion: "0.22.6",
+        newVersion: "0.22.6",
+      }),
+    });
+
+    await update(runClaude);
+
+    expect(runClaude.mock.calls.map((c) => c[0].join(" "))).toEqual([
+      PLUGIN_LIST,
+      MARKETPLACE_UPDATE,
+      "plugin update tea-rags@tea-rags --json",
+      "plugin update dinopowers@tea-rags --json",
+    ]);
+    expect(runClaude.mock.calls.flatMap((c) => c[0])).not.toContain("-y");
+    const out = printed(stdoutMock);
+    expect(out).toContain("tea-rags@tea-rags 0.44.7 → 0.44.11");
+    expect(out).not.toContain("dinopowers@tea-rags 0.22.6 →");
+    expect(out.trimEnd().endsWith("Restart Claude Code to load the updated plugins.")).toBe(true);
+    expect(exitMock).toHaveBeenCalledWith(0);
+  });
+
+  it("prints one line and stops when the claude CLI is not installed", async () => {
+    const runClaude = vi.fn(async () => ({ code: null, stdout: "", missing: true }));
+
+    await update(runClaude);
+
+    expect(runClaude).toHaveBeenCalledTimes(1);
+    expect(printed(stdoutMock)).toContain("claude CLI not found — Claude Code plugins not synced.");
+    expect(exitMock).toHaveBeenCalledWith(0);
+  });
+
+  it("stays silent and skips the marketplace when no tea-rags plugin is installed", async () => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: installedPlugins("superpowers@claude-plugins-official"),
+    });
+
+    await update(runClaude);
+
+    expect(runClaude.mock.calls.map((c) => c[0].join(" "))).toEqual([PLUGIN_LIST]);
+    expect(printed(stdoutMock)).not.toMatch(/plugin/i);
+    expect(exitMock).toHaveBeenCalledWith(0);
+  });
+
+  it("reports a failed plugin update, still updates the others and exits 0", async () => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: installedPlugins("tea-rags@tea-rags", "dinopowers@tea-rags"),
+      [MARKETPLACE_UPDATE]: claudeResult({ command: "marketplace-update", outcome: "ok" }),
+      "plugin update tea-rags@tea-rags --json": claudeResult(
+        { command: "update", outcome: "failed", pluginId: "tea-rags@tea-rags", message: "network unreachable" },
+        1,
+      ),
+      "plugin update dinopowers@tea-rags --json": claudeResult({
+        command: "update",
+        outcome: "ok",
+        pluginId: "dinopowers@tea-rags",
+        oldVersion: "0.22.4",
+        newVersion: "0.22.6",
+      }),
+    });
+
+    await update(runClaude);
+
+    expect(printed(stderrMock)).toContain("tea-rags@tea-rags: network unreachable");
+    expect(printed(stdoutMock)).toContain("dinopowers@tea-rags 0.22.4 → 0.22.6");
+    expect(exitMock).toHaveBeenCalledWith(0);
+  });
+
+  it("shows a marketplace-declared command for confirmation instead of accepting it", async () => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: installedPlugins("tea-rags@tea-rags"),
+      [MARKETPLACE_UPDATE]: claudeResult({ command: "marketplace-update", outcome: "ok" }),
+      "plugin update tea-rags@tea-rags --json": claudeResult(
+        {
+          command: "update",
+          outcome: "refused",
+          pluginId: "tea-rags@tea-rags",
+          shownCommand: { kind: "entry_helper", command: "./fetch-archive.sh", sha256: "abc123" },
+        },
+        1,
+      ),
+    });
+
+    await update(runClaude);
+
+    expect(runClaude.mock.calls.flatMap((c) => c[0])).not.toContain("--accept-command");
+    const out = printed(stdoutMock);
+    expect(out).toContain("./fetch-archive.sh");
+    expect(out).toContain("claude plugin update tea-rags@tea-rags --accept-command abc123");
+    expect(out).not.toContain("Restart Claude Code");
+    expect(exitMock).toHaveBeenCalledWith(0);
+  });
+
+  describe("default claude runner (spawned through deps.spawn)", () => {
+    /** npm exits 0; `claude` either fails to spawn or writes `stdout` and closes. */
+    function routedSpawn(claude: { errorEvent?: NodeJS.ErrnoException; stdout?: string }) {
+      return vi.fn().mockImplementation((command: string) => {
+        const child = new EventEmitter() as EventEmitter & { stdout?: EventEmitter };
+        child.stdout = new EventEmitter();
+        setImmediate(() => {
+          if (command === "npm") {
+            child.emit("exit", 0);
+            return;
+          }
+          if (claude.errorEvent) {
+            child.emit("error", claude.errorEvent);
+            return;
+          }
+          child.stdout?.emit("data", Buffer.from(claude.stdout ?? ""));
+          child.emit("close", 0);
+        });
+        return child;
+      });
+    }
+
+    it("maps a claude spawn ENOENT to the not-installed line", async () => {
+      const enoent = Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" });
+      const spawn = routedSpawn({ errorEvent: enoent });
+
+      await runUpdateCommand({ service: makeService(available("1.23.1", "1.24.0")), spawn, exit: exitMock });
+      await vi.waitFor(() => {
+        expect(exitMock).toHaveBeenCalled();
+      });
+
+      expect(spawn).toHaveBeenCalledWith("claude", ["plugin", "list", "--json"], expect.anything());
+      expect(printed(stdoutMock)).toContain("claude CLI not found — Claude Code plugins not synced.");
+      expect(exitMock).toHaveBeenCalledWith(0);
+    });
+
+    it("reads the plugin list from the spawned claude stdout", async () => {
+      const spawn = routedSpawn({ stdout: "[]" });
+
+      await runUpdateCommand({ service: makeService(available("1.23.1", "1.24.0")), spawn, exit: exitMock });
+      await vi.waitFor(() => {
+        expect(exitMock).toHaveBeenCalled();
+      });
+
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(printed(stdoutMock)).not.toMatch(/plugin/i);
+      expect(exitMock).toHaveBeenCalledWith(0);
+    });
+  });
+
+  it("does not sync when npm install fails, and exits with npm's code", async () => {
+    const runClaude = makeRunClaude({});
+
+    await update(runClaude, 7);
+
+    expect(runClaude).not.toHaveBeenCalled();
+    expect(exitMock).toHaveBeenCalledWith(7);
   });
 });
 

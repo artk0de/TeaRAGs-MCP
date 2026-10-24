@@ -1,0 +1,137 @@
+{
+  "skill": "tea-rags addressing contract across MCP schema, prime hint, workingTree marker, SubagentStart hook, search-cascade / index-freshness / FRESHNESS, 14 skills",
+  "fix_name": "addressing-consistency",
+  "bead": "tea-rags-mcp-1v7n3",
+  "date": "2026-10-21",
+  "contract": "project = WHICH INDEX, passed on every call (schema-optional for now); path = WHICH TREE (your working directory: branch checkout / linked worktree); project alone -> alias's registered checkout in its current state; index_codebase: project only (path = first-time registration of a NEW root).",
+  "harness": {
+    "method": "optimize-skill Phase 2 tool-selection eval: one opus subagent per arm, 12 cases (cases.md), agent states exact addressing params, executes nothing.",
+    "before_texts": "schema [RECOMMENDED] project + 'Prefer over project in worktrees' path; prime hint 'project preferred over path'; search-cascade 'path is the default in any checkout, never project alone'; subagent block 'no project needed'.",
+    "after_texts": "workspace/skill-snapshot/after/ — new schema strings, prime hint, search-cascade Addressing, subagent block with hook alias line, workingTree.project."
+  },
+  "audit_findings": [
+    {
+      "id": "B1",
+      "description": "Three layers contradict: schema + prime say project preferred; search-cascade + skills say path default, never project alone. Agents pick per context -> inconsistent calls."
+    },
+    {
+      "id": "B2",
+      "description": "Subagents never learn the alias (block says 'no project needed'; hook injects nothing)."
+    },
+    {
+      "id": "B3",
+      "description": "Answers do not name the index alias, so a path-only caller cannot switch to project."
+    },
+    {
+      "id": "B4",
+      "description": "`tea-rags project exist --path` matches the registry path exactly; a linked worktree or subdirectory misses, so tooling cannot resolve the alias from a cwd."
+    }
+  ],
+  "eval_cases": [
+    {
+      "id": "C1",
+      "prompt": "main checkout on another branch + uncommitted edits; body of Invoice#total",
+      "expected": "project=acme + path=/work/acme",
+      "finding": "B1",
+      "before": "FAIL (path only)",
+      "after": "PASS (+ incremental reindex, own checkout lag)"
+    },
+    {
+      "id": "C2",
+      "prompt": "linked worktree; usages of PriceCalculator",
+      "expected": "project=acme + path=<worktree>",
+      "finding": "B1",
+      "before": "FAIL (path only)",
+      "after": "PASS"
+    },
+    {
+      "id": "C3",
+      "prompt": "subagent task-agent in worktree; callers of Pricing#apply",
+      "expected": "project=acme (hook line) + path=<cwd>",
+      "finding": "B2",
+      "before": "FAIL (path only, block says no project)",
+      "after": "PASS"
+    },
+    {
+      "id": "C4",
+      "prompt": "main checkout edits; refresh index",
+      "expected": "index_codebase project=acme, no path",
+      "finding": "control",
+      "before": "PASS",
+      "after": "PASS"
+    },
+    {
+      "id": "C5",
+      "prompt": "linked worktree edits; reindex?",
+      "expected": "no index_codebase",
+      "finding": "control",
+      "before": "PASS",
+      "after": "PASS"
+    },
+    {
+      "id": "C6",
+      "prompt": "path-only answer carried workingTree.project=acme; next call",
+      "expected": "project=acme + path=<worktree>",
+      "finding": "B3",
+      "before": "FAIL (kept path only)",
+      "after": "PASS"
+    },
+    {
+      "id": "C7",
+      "prompt": "project-only answer read /work/acme from a worktree",
+      "expected": "re-call project=acme + path=<worktree>",
+      "finding": "B1",
+      "before": "PARTIAL (drop project or keep — undecided)",
+      "after": "PASS"
+    },
+    {
+      "id": "C8",
+      "prompt": "review_changes in main checkout",
+      "expected": "project=acme + path=/work/acme",
+      "finding": "B1",
+      "before": "FAIL (path only)",
+      "after": "PASS"
+    },
+    {
+      "id": "C9",
+      "prompt": "unregistered repo first index",
+      "expected": "index_codebase path=/work/newrepo",
+      "finding": "control",
+      "before": "PASS",
+      "after": "PASS"
+    },
+    {
+      "id": "C10",
+      "prompt": "script / CLI, no cwd",
+      "expected": "project only",
+      "finding": "control",
+      "before": "PASS",
+      "after": "PASS"
+    },
+    {
+      "id": "C11",
+      "prompt": "subagent explore in main checkout",
+      "expected": "project=acme + path=/work/acme",
+      "finding": "B2",
+      "before": "FAIL (path only)",
+      "after": "PASS"
+    },
+    {
+      "id": "C12",
+      "prompt": "only a raw collection name",
+      "expected": "collection (then project from marker)",
+      "finding": "control",
+      "before": "PASS",
+      "after": "PASS"
+    }
+  ],
+  "summary": {
+    "before": "5/12 (42%) against the new contract",
+    "after": "12/12 (100%)"
+  },
+  "code_changes_verified": {
+    "workingTree.project": "WorkingTreeOverlay#measure; output schema keeps the field; text formatter renders it (tests: overlay.test.ts, format-working-tree.test.ts, output-schemas.test.ts)",
+    "project exist --repository": "resolves through resolveBaseIndexEntry; live: worktree path -> tea-rags, /tmp -> exit 1",
+    "hook": "alias line prepended when resolvable, block byte-identical otherwise (tests/hooks/subagent-context.test.sh 17/17)"
+  }
+}

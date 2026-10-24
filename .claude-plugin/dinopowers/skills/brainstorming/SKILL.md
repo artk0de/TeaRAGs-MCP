@@ -83,7 +83,8 @@ structural backbone not assessed (do NOT substitute a similarity-ranked list as
 Exact parameters per call:
 
 ```
-path:        <your working directory>   ← tea-rags search-cascade "Addressing the Codebase"; never project alone
+project:     <alias>                    ← search-cascade "Addressing the Codebase"
+path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent sentence from Step 1>
 pathPattern: <pathPattern from Step 1>
 rerank:      "hotspots" | "ownership" | "techDebt" | "architecturalHub"

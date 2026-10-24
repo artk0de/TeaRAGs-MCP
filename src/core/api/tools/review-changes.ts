@@ -23,7 +23,7 @@ import {
   type ReviewSectionId,
 } from "../public/index.js";
 import { collectionPathFields } from "./codegraph.js";
-import { formatMcpText, type McpToolResult } from "./format.js";
+import { formatMcpResponse, type McpToolResult } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
 
 const REVIEW_CHANGES_DESCRIPTION =
@@ -117,6 +117,6 @@ export function registerReviewChangesTool(server: McpServer, deps: { app: App; r
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async (request: unknown): Promise<McpToolResult> =>
-      formatMcpText(JSON.stringify(await deps.app.reviewChanges(request as ReviewChangesRequest), null, 2)),
+      formatMcpResponse(await deps.app.reviewChanges(request as ReviewChangesRequest)),
   );
 }

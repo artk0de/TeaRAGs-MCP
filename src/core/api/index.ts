@@ -264,4 +264,5 @@ export { IndexingAlreadyInProgressError } from "../domains/ingest/errors/index.j
 // MCP tool registration surface — the facade bootstrap imports; deep imports
 // of tools/ from outside api would be a facade bypass.
 export { registerAllTools } from "./tools/index.js";
+export { foldColumnTables } from "./tools/columns.js";
 export type { HealthProbes } from "./tools/middleware/error-handler.js";
