@@ -21,6 +21,18 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|shell|exec_command)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/one-file-read.sh",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

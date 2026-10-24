@@ -191,7 +191,7 @@ describe("renderCodexHarness", () => {
       args: ["server"],
     });
     const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
-    expect(Object.keys(hooks).sort()).toEqual(["SessionStart", "SubagentStart"]);
+    expect(Object.keys(hooks).sort()).toEqual(["PreToolUse", "SessionStart", "SubagentStart"]);
     expect(JSON.stringify(hooks)).not.toContain("CLAUDE_");
     // A cold `tea-rags prime` boots the server (measured 12–26 s); `project exist` ~4 s.
     expect(hooks.SessionStart[0].hooks[0].timeout).toBeGreaterThanOrEqual(60);
@@ -239,6 +239,23 @@ describe("renderCodexHarness", () => {
     expect(script).toContain("additionalContext");
     expect(script).not.toContain("CLAUDE_");
     expect(rendered.get("tea-rags/scripts/subagent-block.txt")).not.toContain("mcp__tea-rags__");
+  });
+
+  it("ships a PreToolUse hook that rejects shell commands printing more than one .md file", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
+
+    expect(hooks.PreToolUse).toEqual([
+      {
+        matcher: "^(Bash|shell|exec_command)$",
+        hooks: [{ type: "command", command: `\${PLUGIN_ROOT}/scripts/one-file-read.sh`, timeout: 10 }],
+      },
+    ]);
+    const script = rendered.get("tea-rags/scripts/one-file-read.sh") ?? "";
+    expect(script).toMatch(/^#!\/bin\/bash\n/);
+    expect(script).toContain("ONE file per command");
+    expect(script).toContain("exit 2");
+    expect(script).not.toContain("CLAUDE_");
   });
 
   it("tells the core to open a skill's SKILL.md and its mandatory references before planning", async () => {

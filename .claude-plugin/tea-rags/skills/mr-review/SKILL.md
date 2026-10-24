@@ -171,14 +171,23 @@ Contract shape + conventions + degradation:
 
 **Local:** chat report — findings by severity (major first), observations,
 dimensions-skipped notes. No posting. **D8 naming overrides the severity
-grouping, local too:** naming findings grouped by verdict (MISFIT, COLLISION,
-NEW_TERM); every finding must include `review.findings[].relPath:line`; MISFIT
-and COLLISION marked `[minor]`; then one summary line, literally
-`conforming: <n>; novel: <n>` (counts from the review answer; a count it lacks →
-`n/a`). Verdict = group heading only; each finding line, literally:
-`<relPath>:<line> — [minor] <plain observation; consequence; fix = suggestion + holder>`
-(NEW_TERM: no `[minor]`). No verdict codes / tool names in finding lines; the
-summary never names the review mode.
+grouping, local too:** emit exactly this block, copied, one finding per line:
+
+```
+### Naming
+MISFIT
+- <relPath>:<line> — [minor] <plain observation; consequence; fix = suggestion, as in <holder>>
+COLLISION
+- <relPath>:<line> — [minor] <plain observation; names the existing declaration's file>
+NEW_TERM
+- <relPath>:<line> — <plain observation; a rename only when alternatives exist>
+conforming: <n>; novel: <n>
+```
+
+The verdict word appears only as the group heading, never in a finding line (no
+tool names either). `<relPath>:<line>` comes from `review.findings[]`; a count
+or line number the review answer lacks → `n/a`. The summary never names the
+review mode.
 
 **External:** draft table (`file:line | severity | one-line body`) → ONE
 whole-batch confirmation → agent posts inline comments + summary via session's

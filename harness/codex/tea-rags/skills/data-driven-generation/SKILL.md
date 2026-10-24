@@ -59,8 +59,7 @@ Meanings: `tea-rags://guide/signal-labels`. Raw value needs label → read
 
 ## Step 0: MODE
 
-After Prerequisites. `find_symbol(metaOnly=true)` on named target, zero
-guessing:
+`find_symbol(metaOnly=true)` on named target, zero guessing:
 
 | Probe result                                       | Mode   |
 | -------------------------------------------------- | ------ |
@@ -175,8 +174,7 @@ god-module → do NOT grow it; propose sibling module or extraction, surface
 choice to user. EXTEND: guard fires on container.
 
 New file where home module exists = structural N-th way. New code (file, import,
-edge) → Step 7 gate judges placement, no pre-write simulation. Moves / merges /
-splits of files → Step 6 restructure SIM BEFORE touching them.
+edge) → Step 7 gate judges placement, no pre-write simulation.
 
 ### Step 4: REUSE — all modes
 
@@ -185,7 +183,7 @@ splits of files → Step 6 restructure SIM BEFORE touching them.
    `metaOnly: true`.
 2. Per block: `hybrid_search` / `find_symbol` for existing helper.
 3. **Gate — import helper IF** helper file in L1/L2 of target (locality per
-   `extract-project-patterns`) **OR** its `fanIn` label `popular`/`hub` .
+   `extract-project-patterns`) **OR** its `fanIn` label `popular`/`hub`.
    **ELSE** follow its approach, do NOT import — no new cross-boundary coupling.
    Boundary = actual import graph. Codegraph off → gate on `imports` signal +
    locality only (L1/L2 reuse, L3 copy approach); note gate ran on import-proxy.
@@ -200,10 +198,10 @@ Output: **reuse manifest** (helpers to call) → Step 6.
 
 **MANDATORY open [references/step-5-style.md](./references/step-5-style.md)
 before Step 5.** Style source: CREATE → blame-owner table, EXTEND → container
-file, MODIFY → symbol itself. No re-fetch of unedited files. Naming (codegraph
-on): ONE `get_naming_lexicon` call before GENERATE — project's name for a value
-it already names; holder that IS what you are about to write → back to Step 4,
-never rename and write a sibling.
+file, MODIFY → symbol itself. Naming (codegraph on): ONE `get_naming_lexicon`
+call before GENERATE — project's name for a value it already names; holder that
+IS what you are about to write → back to Step 4, never rename and write a
+sibling.
 
 Every name you are about to write is a draft and goes into that call — user's
 drafts included (`row = find_vendor_envelope(id)` → `row` as `local`,
@@ -228,13 +226,12 @@ Step 5 output = CONCRETE final names, one line per draft:
 `row → tax_automation_document (EXACT, local)`,
 `find_vendor_envelope → find_tax_automation_document! (VERB_TYPE, return)`,
 `graph_db_client → client (TAIL, param — client n=40 beats graphDb n=12)`.
-Concept new (no same-meaning term), also when context names its namespace/class
-→ line, prefix literal: `NEW_TERM <term> — <why no project term denotes this>`.
-"Project vocabulary" / "a name that describes the lookup" without the name =
-Step 5 not done. Context already gives the lexicon and shows no same-meaning
-term → decide now and print the literal
-`NEW_TERM <term> — <why no project term denotes this>` line in the answer. Do
-not make it conditional or describe the line without emitting it.
+Concept new (no same-meaning term, even when context names its namespace/class
+or gives the lexicon) → pick the term now; print BOTH slots filled:
+`NEW_TERM Debouncer — no project term denotes coalescing bursts into one call`.
+A line still showing `<term>`, conditional, or described not printed = not the
+line. "Project vocabulary" / "a name that describes the lookup" without the name
+= Step 5 not done.
 
 ### Step 6: GENERATE — RED → GREEN → REFACTOR
 
@@ -305,13 +302,16 @@ before Step 7 — never skipped, also on "tests green, finalize".** In order:
      edit in this diff; else known-noise class shown to hold (version manifest
      per `silentCoupling.md`) or checkable `not touched because` line.
    - **After every repair: re-run SAME `review_changes` + targeted tests, state
-     "target gone, no new finding".** ANY new finding or red test → round
-     regressed → revert WHOLE round (even if target gone), different repair next
-     round; never fix new finding on top. Round ≤ 2; must-fix left → ask the
-     user (finding, each round tried, why reverted, metric before/after +
-     threshold + diff edge that crossed it — hubLike: efferent count vs cut, the
-     new import; options fix this way / accept with reason / bead), no commit
-     until answered.
+     "target gone, no new finding", print BOTH lines:**
+     `GATE review_changes: introduced=<before>, partial=<…>`, then the re-review
+     line (plan-only: `introduced=0` expected for a supplied finding you
+     repaired, else `introduced=<n>` + "must be 0 to commit"). Prose "re-run the
+     gate" ≠ the line. ANY new finding or red test → round regressed → revert
+     WHOLE round (even if target gone), different repair next round; never fix
+     new finding on top. Round ≤ 2; must-fix left → ask the user (finding, each
+     round tried, why reverted, metric before/after + threshold + diff edge that
+     crossed it — hubLike: efferent count vs cut, the new import; options fix
+     this way / accept with reason / bead), no commit until answered.
    - `truncated` / `built: false` / skipped files = PARTIAL ≠ pass, even at zero
      findings → re-run with `files: [...]` batches until every changed file
      judged; `partial=true` until then.
@@ -324,8 +324,7 @@ Gate fails → no commit, no "done". Copy gate line LITERALLY, prefix included �
 paraphrase ("gate is introduced=0, partial=false") = no gate line:
 `GATE review_changes: introduced=<n>, partial=<true|false>` (codegraph off →
 `architecture not judged`); `n` counts only non-`preExisting` findings. Repair
-round → line before AND after (`introduced=1` → `introduced=0`). **No gate line
-= task not done.**
+round → both lines (item 4). **No gate line = task not done.**
 
 ### Step 8: IMPACT
 

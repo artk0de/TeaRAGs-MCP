@@ -4,7 +4,9 @@ description:
   Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
   debt) into tiers. Use to evaluate risks, assess code health, find zones
   needing attention — NOT one-preset asks like bug-prone areas
-  (analytics-rerank), NOT bug symptoms (bug-hunt)
+  (analytics-rerank), NOT bug symptoms (bug-hunt). Answer: phases 0–5,
+  Critical/High tables (Symbol, File:Line, Risk Type, Key Signals, Tests), final
+  Output: line
 argument-hint: "[scope — domain, subsystem, or 'whole project']"
 ---
 
