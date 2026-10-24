@@ -16,10 +16,10 @@ its own command first; a plan from memory is not reading it. A skill path you
 did not open with a command in this turn is invalid in a plan — open it first.
 
 **Plan-only / describe-the-plan answers: every skill output contract applies
-NOW.** Decide from the facts given (strategy, verdict, name, class); print every
-literal line and every template IN FULL — table headings + header rows, not a
-schema line or prose; data not gathered yet → `[planned; not run]` in each cell,
-never "I would report it later". A skill's "ask the user" fires in this answer.
+NOW.** Print every literal line and every template IN FULL (table headings +
+header rows, never a schema line). `[planned; not run]` only for tool results
+not gathered yet; a value derivable from the prompt (pathPattern, a repaired
+finding's counts) is written out. A skill's "ask the user" fires in this answer.
 Describing compliance is not compliance.
 
 **Addressing.** Every read call (search, symbol, graph, review, lexicon):
@@ -58,7 +58,7 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
   license leaving tea-rags — ticket-named files too. No `treeState` = current;
   `treeState` row = pre-edit copy (signals hold, text stale) → `find_symbol`.
-- Subagent: never reindex (any kind) or ask the user — report to parent.
+- Subagent: no reindex at all, no user question — parent note, not a step.
   Otherwise own checkout (tree = alias's path), `changedFiles` > 0, stale banner
   or unindexed edits → incremental `index_codebase(project=)` first, no consent,
   plans too; drift `--force*` `Run:` → ask, never instead. Linked worktree →

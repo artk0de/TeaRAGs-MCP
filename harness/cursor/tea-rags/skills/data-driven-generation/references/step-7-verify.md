@@ -60,8 +60,8 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
      every finding is listed; (iii) triage table must-fix rows repaired.
    - `preExisting: true` = not yours: cheap repair optional (triage table),
      never blocks gate.
-   - **Gate line** — real counts, never placeholders; final report quotes the
-     last run verbatim:
+   - **Gate line** — ALWAYS printed as the literal line, never prose; final
+     report quotes the last run verbatim:
      `GATE review_changes: introduced=<n>, partial=<true|false>` (`n` =
      introduced left unrepaired and not accepted; `preExisting: true` excluded,
      reported apart) + one `FALSE-POSITIVE …` line per accepted entry. For a
@@ -74,7 +74,10 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
      `GATE review_changes: introduced=1, partial=false`
      `GATE review_changes: introduced=0, partial=false` Keep any pre-existing,
      remedy-free finding report-only. Count not supplied → run the review, never
-     infer it. Pass = `introduced=0, partial=false`. Codegraph off →
+     infer it. Plan-only: count known → the number (a supplied finding you
+     repaired → `introduced=0`); unknown → keep `<n>` / `<true|false>` as
+     written — never `[planned; not run]`. Pass = `introduced=0, partial=false`.
+     Codegraph off →
      `GATE review_changes: architecture not judged (codegraph off)`. **No gate
      line = task not done.**
 

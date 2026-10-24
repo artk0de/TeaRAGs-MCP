@@ -43,7 +43,7 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
   license leaving tea-rags — ticket-named files too. No `treeState` = current;
   `treeState` row = pre-edit copy (signals hold, text stale) → `find_symbol`.
-- Subagent: never reindex (any kind) or ask the user — report to parent.
+- Subagent: no reindex at all, no user question — parent note, not a step.
   Otherwise own checkout (tree = alias's path), `changedFiles` > 0, stale banner
   or unindexed edits → incremental `index_codebase(project=)` first, no consent,
   plans too; drift `--force*` `Run:` → ask, never instead. Linked worktree →

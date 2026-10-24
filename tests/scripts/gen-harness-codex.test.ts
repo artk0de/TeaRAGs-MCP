@@ -302,6 +302,9 @@ describe("renderCodexHarness", () => {
       expect(head).toMatch(/Plan-only\s+\/\s+describe-the-plan\s+answers/);
       expect(head).toMatch(/every\s+skill\s+output\s+contract\s+applies\s+NOW/);
       expect(head).toMatch(/`\[planned; not run\]`/);
+      // Codex T22 r18: the placeholder spread to values the prompt already fixes (pathPattern, a repaired finding's count).
+      expect(head).toMatch(/only\s+for\s+tool\s+results\s+not\s+gathered\s+yet/);
+      expect(head).toMatch(/derivable\s+from\s+the\s+prompt/);
       expect(head).toMatch(/Describing\s+compliance\s+is\s+not\s+compliance\./);
       expect(body.match(/Plan-only \/ describe-the-plan/g)).toHaveLength(1);
     }

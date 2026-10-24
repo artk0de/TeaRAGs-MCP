@@ -46,4 +46,7 @@ Available = `$Y` / `superpowers:Y` is in your skills list, or its installed
 skill with `Skill(superpowers:Y)` after completing the wrapper's required
 enrichment. Treat it as unavailable only when neither check succeeds or the
 invocation fails. superpowers is a separate plugin, never under the dinopowers
-dir — a missing file next to the wrapper is not "unavailable".
+dir — a missing file next to the wrapper is not "unavailable". Not in the list →
+look for its installed `SKILL.md` in the plugin cache (Codex:
+`$CODEX_HOME/plugins/cache/*/superpowers/*/skills/<Y>/`, default `~/.codex`)
+before calling it unavailable.

@@ -97,10 +97,9 @@ first; a plan from memory is not reading it. A skill path you did not open with 
 command in this turn is invalid in a plan — open it first.
 
 **Plan-only / describe-the-plan answers: every skill output contract applies
-NOW.** Decide from the facts given (strategy, verdict, name, class); print every
-literal line and every template IN FULL — table headings + header rows, not a
-schema line or prose; data not gathered yet → \`[planned; not run]\` in each
-cell, never "I would report it later". A skill's "ask the user" fires in this
+NOW.** Print every literal line and every template IN FULL (table headings + header rows, never a schema line). \`[planned; not run]\` only for tool results not
+gathered yet; a value derivable from the prompt (pathPattern,
+a repaired finding's counts) is written out. A skill's "ask the user" fires in this
 answer. Describing compliance is not compliance.
 `;
 
