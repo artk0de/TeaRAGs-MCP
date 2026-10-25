@@ -62,16 +62,37 @@ skill text.
 
 Evidence = Codex eval round of plan Task 22 (`T22 r<round>`).
 
-| #   | Practice                                                                                                                                                  | Evidence                                      |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 1   | Output contract sits next to the step that writes it. Give literal lines to copy with slots, not descriptions ("describing compliance is not compliance") | (T22 r5, r11, r19: literal lines / skeletons) |
-| 2   | Exception rule sits beside the routing row it modifies, says replace vs extend. No competing routing layers                                               | (T22 r20: E9 routing table vs BREADTH)        |
-| 3   | Plan-only answer still owes every output contract; `[planned; not run]` only for tool results not gathered                                                | (T22 r11, r18)                                |
-| 4   | Mandatory reference read named at the decision point; distant "MANDATORY" link is skipped                                                                 | (T22 r5: mandatory opens)                     |
-| 5   | One file per read command                                                                                                                                 | (T22 r17-r19; `one-file-read.sh`)             |
-| 6   | Neutral examples only; never paste an eval case's input/answer into a skill                                                                               | (eval-5 contamination)                        |
-| 7   | Raise a size cap when needed; never trim behaviour-carrying text to fit                                                                                   | (r20 regressions)                             |
-| 8   | Eval graders grade by expectation text only; no "strictness reference" from past rounds                                                                   | (T22 r19: 6/16 → 11/16 on regrade)            |
+Root problem: Codex runs the SAME text to different outcomes across sessions
+(gate-preexisting-split: PASS r22, FAIL r23, text unchanged). Text present ≠
+text followed. Every rule below removes a fork; emphasis (MUST, bold) removes
+none.
+
+| #   | Practice                                                                                                                                                                          | Evidence                                               |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| 1   | Output contract sits next to the step that writes it. Give literal lines to copy with slots, not descriptions ("describing compliance is not compliance")                         | (T22 r5, r11, r19: literal lines / skeletons)          |
+| 2   | Exception rule sits beside the routing row it modifies, says replace vs extend. No competing routing layers                                                                       | (T22 r20: E9 routing table vs BREADTH)                 |
+| 3   | Plan-only answer still owes every output contract; `[planned; not run]` only for tool results not gathered                                                                        | (T22 r11, r18)                                         |
+| 4   | Mandatory reference read named at the decision point; distant "MANDATORY" link is skipped                                                                                         | (T22 r5: mandatory opens)                              |
+| 5   | One file per read command                                                                                                                                                         | (T22 r17-r19; `one-file-read.sh`)                      |
+| 6   | Neutral examples only; never paste an eval case's input/answer into a skill                                                                                                       | (eval-5 contamination)                                 |
+| 7   | Raise a size cap when needed; never trim behaviour-carrying text to fit                                                                                                           | (r20 regressions)                                      |
+| 8   | Eval graders grade by expectation text only; no "strictness reference" from past rounds                                                                                           | (T22 r19: 6/16 → 11/16 on regrade)                     |
+| 9   | One canonical definition per output rule. Copies across SKILL.md / reference / wrapper, each with its own sub-branches, print on some runs only                                   | (T22 r23: gate-preexisting-split; Step 7 answer block) |
+| 10  | Codex copies the skeleton line, treats prose elsewhere as optional: a must-appear item is a literal skeleton line                                                                 | (T22 r23: risk 3 pagination stops)                     |
+| 11  | Every check gets its own literal output line; a silent check next to printed ones is dropped                                                                                      | (T22 r23: verify-symbol-risk find_similar)             |
+| 12  | A literal line names when it prints ("the review held NOW, first"); a described state ("partial=true until…") is never printed                                                    | (T22 r23: gate-partial-not-pass)                       |
+| 13  | Branch choice by words visible in the prompt (path / container word / component name), never by category labels the model guesses (domain vs concept)                             | (T22 r23: risk 2)                                      |
+| 14  | Example values in a branch become the default answer when the prompt shares a word: placeholders (`**/<dir>/**`), never real names                                                | (T22 r23: risk 2 `**/enrichment/**`)                   |
+| 15  | A missing observation never picks a branch ("tool not seen → off"); require positive evidence + a plan line naming its source                                                     | (T22 r23: explore 25)                                  |
+| 16  | Specialised vs general call: say "adds" or "replaces" beside the rule; "beats X" reads as "skip X"                                                                                | (T22 r23: index-lag E5)                                |
+| 17  | A prelude names the call after it and forbids stopping ("index, then the answering call"); consent = literal step (`step 2 AskUserQuestion`), not "ask separately"                | (T22 r23: E7, E15)                                     |
+| 18  | Fallback branch = complete procedure (call, filter, literal answer line), placed BEFORE the main branch; a one-line stub gets the main branch's framing                           | (T22 r23: codegraph-presence 12)                       |
+| 19  | Conditional reference load ("open when step N runs") is a fork plan-only answers always take: decision tables live in SKILL.md or open in the answering turn                      | (T22 r23: DDG eval-9/10)                               |
+| 20  | Routing carve-outs live where routing is decided: the frontmatter description and the competitor's NOT-clause, not the target's body. Scope line uses the body's own definition   | (T22 r23: naming-modify-scope, v2 E7)                  |
+| 21  | A broad rule ("new file → DDG") captures specialised work unless the exception is a row in the SAME decision table                                                                | (T22 r23: writing-skills eval-6)                       |
+| 22  | Internal recipe: handoff signature (input names) in the description's first sentence + "you are the callee" atop the body; else a prompt naming the caller runs the caller's flow | (T22 r23: working-tree S7)                             |
+| 23  | Exclusion in the routing row itself: a "tools = mcp**tea-rags**\*" header + generic "text search" row sent FIXME to a tea-rags tool                                               | (T22 r23: search-cascade 8)                            |
+| 24  | A case passing only next to certain neighbours leans on their context: the prompt alone lacks the trigger → fix the case (or core routing), not the skill description             | (T22 r23: verification eval-11)                        |
 
 ## 4. Per-harness pitfalls
 
