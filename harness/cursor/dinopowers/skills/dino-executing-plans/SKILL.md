@@ -274,8 +274,15 @@ BEFORE `/executing-plans`. DDG picks own mode (CREATE / EXTEND / MODIFY) via
   any Edit/Write (CREATE / EXTEND)
 - **Modification** (change behavior of EXISTING symbol in place: bug fix,
   condition tweak, new branch, hotfix) → **MUST** `/data-driven-generation`
-  BEFORE any Edit/Write (MODIFY); state "Step 4.5 skipped — MODIFY skips
-  TEMPLATE"
+  BEFORE any Edit/Write (MODIFY). The plan prints these three lines, slots
+  filled, in this order:
+
+  ```
+  Step 4.5 skipped — MODIFY skips TEMPLATE
+  DDG MODIFY duties: tests-at-risk (/tests-as-context, green baseline before the Edit) + get_callers <Class#method> (DDG step 8 IMPACT — callers relying on the old contract surface before commit)
+  Then /executing-plans for Task <N>
+  ```
+
 - **Skill authoring** (Task writes / rewrites a `SKILL.md`) → NO DDG:
   `/dino-writing-skills` — its `**/SKILL.md` `semantic_search` first, then
   `/writing-skills`, Write last (non-dinopowers SKILL.md → `/writing-skills`)
@@ -299,10 +306,9 @@ Plan-fixed names checked too. Reading: `/data-driven-generation` Step 5 "Naming
 
 Why MANDATORY — in-context edit / sibling `Read` misses what DDG owns:
 
-- **Modification (MODIFY):** tests-at-risk (`/tests-as-context` → run tests
-  pinning current behavior, note unpinned); `get_callers` on modified symbol
-  (callers relying on old contract surface BEFORE commit); symbol-own style +
-  strategy (DEFENSIVE on `bugFixRate` critical; hotfix = MODIFY minus
+- **Modification (MODIFY):** the duties line above (tests pinning current
+  behavior run first, unpinned noted; callers on the old contract); symbol-own
+  style + strategy (DEFENSIVE on `bugFixRate` critical; hotfix = MODIFY minus
   STRATEGY/STYLE — DDG decides); REUSE existing helper for new branch/guard.
 - **Generation:** strategy ladder (DEFENSIVE buggy / STABILIZATION high-churn /
   CONSERVATIVE legacy / STANDARD); template via `proven` preset (not arbitrary

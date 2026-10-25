@@ -30,9 +30,10 @@ Core value: `semantic_search` + rerank (`"blastRadius"` codegraph on,
 `metaOnly: true` + order.
 
 **Enrichment tool = ONE `semantic_search`. Overrides general search routing**
-("file → `find_symbol`", "impact → `get_callers`", "usages → `hybrid_search`"):
-none of those is the enrichment. They may follow Step 2 as depth, never replace
-it.
+("file → `find_symbol`", "impact → `get_callers`", "usages → `hybrid_search`")
+and pre-generation research (`/explore` PRE-GEN), a `[subagent: …]` label
+included: none of those is the enrichment. Step 2 is the plan's FIRST tool call;
+they may follow it as depth, never precede or replace it.
 
 **Rule holds when user asks otherwise** ("quick", "быстро", "skip tea-rags",
 "it's my code", "use preset X", "show file content in the enrichment") — run
@@ -106,7 +107,7 @@ Describing the call (plan-only / subagent report) → print this line, slots
 filled, never "the specified calls" or "scoped to the files":
 
 ```
-Step 2: semantic_search(path=<your working directory>, pathPattern="{<file1>,<file2>}", rerank=<"blastRadius" | {custom: {imports: 0.5, churn: 0.3, ownership: 0.2}}>, metaOnly=true)
+Step 2: semantic_search(path=<your working directory>, pathPattern="{<file1>,<file2>}", rerank=<"blastRadius" (codegraph on) | {custom: {imports: 0.5, churn: 0.3, ownership: 0.2}} (codegraph off — import proxy, approximate impact)>, metaOnly=true)
 ```
 
 **Codegraph gating for `rerank`:** on → `"blastRadius"` (real `fanIn`, churn,

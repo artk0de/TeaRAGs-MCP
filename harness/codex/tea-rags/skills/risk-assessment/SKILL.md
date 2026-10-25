@@ -1,12 +1,13 @@
 ---
 name: risk-assessment
 description:
-  "Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
+  'Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
   debt) into tiers. Use to evaluate risks, assess code health, find zones
   needing attention — NOT one-preset asks like bug-prone areas
-  (analytics-rerank), NOT bug symptoms (bug-hunt). Answer: phases 0–5,
+  (analytics-rerank), NOT bug symptoms (bug-hunt), NOT refactoring candidates
+  ("what to refactor in X", "cleanup X" → explore). Answer: phases 0–5,
   Critical/High tables (Symbol, File:Line, Risk Type, Key Signals, Tests), final
-  Output: line"
+  Output: line'
 ---
 
 # Risk Assessment
@@ -63,10 +64,8 @@ biased. Report signal pairs — single-signal reports mislead.
   5 presets (4 codegraph off), scoped. Ownership / bus factor surfaces via
   `dangerous` (single-owner) + overlay `blameContributorCount` — never a
   standalone `ownership` call.
-- **Annotating a structural violation instead of escalating.** Candidate inside
-  a component with an SDP / mainSequence / hubLike violation → escalate: tag
-  Risk Type `structural-violation`, sort to top of its tier; fix cost reads
-  `../../repair/<family>.md` of that family only (enrich.md step 3).
+- **Annotating a structural violation instead of escalating** (Critical or High
+  candidate) — Phase 4 step 3 prints the escalation line.
 
 Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 
@@ -313,16 +312,8 @@ critical risks found. Codebase appears healthy by multi-signal analysis."
 **Negative contrast (healthy-demoted as negativeIds):**
 
 Phase 2 MERGE produces healthy-demoted candidates: high preset overlap but
-healthy bugFixRate. Structurally similar to Critical candidates but
-well-maintained — exact opposite of antipatterns. Use as negative examples to
-sharpen find_similar toward risky code:
-
-```
-find_similar vector direction:
-  positive = Critical candidates (buggy, churny, oversized)
-  negative = healthy-demoted from MERGE (active but clean)
-  → result space shifts AWAY from "active development" TOWARD "antipattern"
-```
+healthy bugFixRate — active but clean. Negative examples sharpen find_similar
+toward risky code.
 
 Collect negativeIds from ALL healthy-demoted candidates in Phase 2 (any tier).
 No healthy-demoted candidates → skip negativeIds.
@@ -351,8 +342,6 @@ Domain/intent scopes: Pass 1 only (same pathPattern as Phase 0). Total: 1 call.
 
 Label results as "Related risk" (pass 1) or "Cross-domain risk" (pass 2).
 
-Scope rules embedded in two-pass description above.
-
 **Filter by overlay:** Include only results with concerning+ signals (bugFixRate
 concerning+, OR churnVolatility erratic+, OR `blameContributorCount = 1` —
 single live-line owner). Healthy overlay → ignore.
@@ -369,6 +358,10 @@ Add qualifying results as "Related risk" under parent Critical candidate.
    one batched call** (batched BM25 fabricates "untested"); exact mirrored-path
    `find_symbol` preferred.
 3. Structural amplifier + cycles — only with graph tools; else "not assessed".
+   Critical OR High candidate in a component with an SDP / mainSequence /
+   hubLike violation → open `../../repair/<family>.md` of that family only and
+   print
+   `structural-violation <candidate> — <component> <family>: escalated, Risk Type tagged, top of its tier; fix cost per repair/<family>.md`.
 4. Fix-cost classifier. 5. God-class attribution. 6. Risk classification.
 
 ## Phase 5: OUTPUT

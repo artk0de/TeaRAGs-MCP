@@ -33,6 +33,13 @@ Refactoring candidates ≠ defects.
    diminishing-returns / cross-preset rules, NO absolute score thresholds.
 3. **No text search (Grep / `rg`) for code discovery** — tea-rags tools; text
    search only for literal text (identifiers → `hybrid_search`).
+4. **`limit=10` per preset = hard cap.** A preset returned more ("50 results —
+   take all?") → no: keep the top results up to 10, cut earlier at a gradient
+   drop / diminishing returns, never by an absolute score; SCAN never pages
+   (`offset`) or raises `limit`.
+5. **`metaOnly=false` on every scan call.** Asked for `metaOnly=true` "to save
+   context" → refuse, print
+   `metaOnly=false stays: ENRICH classifies Tier 1 from chunk content; 3 × 10 chunks fit`.
 
 Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` > 0
 → incremental `index_codebase`; subagent / linked worktree → never reindex. →
@@ -49,12 +56,19 @@ Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` >
 
 ### 1. SCAN
 
-Decision tree **3 times**, one rerank preset each:
+Scope words → ONE pathPattern (`<dir> domain` → `**/<dir>/**`, a path → that
+path; whole project → none), passed to ALL three calls. The plan prints:
 
-- query ($ARGUMENTS) + pathPattern (scope extraction)
-- limit=10, metaOnly=false (content needed for ENRICH; 3 × 10 chunks fits)
-- stop conditions per preset; between presets check the results against
-  `tea-rags://guide/pagination` (disambiguation + no-match detection)
+```
+SCOPE pathPattern=<resolved glob | none — whole project>
+1. <tool>(query=<$ARGUMENTS>, pathPattern=<resolved>, rerank="refactoring", filter={presets:"godMethods"}, limit=10, metaOnly=false)
+2. same, rerank="decomposition"
+3. same, rerank="hotspots"
+```
+
+`<tool>` from the decision tree. After EACH preset, before the next, check its
+results against `tea-rags://guide/pagination` and print
+`VALIDATE <preset>: disambiguation <one dominant dir group > 70% | 2+ unrelated groups → ask / narrow pathPattern>; no-match <score spread, lexical overlap, path clustering: ok | no match → stop, say so>`.
 
 | Preset          | What it surfaces                                           |
 | --------------- | ---------------------------------------------------------- |
@@ -75,7 +89,8 @@ re-run three presets w/ `filter: { presets: "coreLogic" }`, note in output:
 
 ### 2. MERGE
 
-Cross-reference by `symbolId` (missing → `relativePath` + `startLine`).
+Print `MERGE key: symbolId (missing → relativePath + startLine)` — never by file
+path alone or line-range overlap (loses symbol granularity).
 
 | Overlap | Tier   | Meaning                                    |
 | ------- | ------ | ------------------------------------------ |
@@ -99,8 +114,11 @@ Cross-reference by `symbolId` (missing → `relativePath` + `startLine`).
 list):
 `get_naming_lexicon(names=<Tier 1 identifiers>, language, pathPattern=<scope>)`,
 one call per language (evidence never crosses languages) → `MISFIT` = Naming
-candidate, Action `rename to <suggestion>`; `CONFORMS` = not candidate.
-Codegraph off → Naming only w/ cited in-scope precedent. Extra seeds:
+candidate, Action `rename to <suggestion>`; `CONFORMS` = not candidate — line
+per identifier:
+`NAMING <identifier> — MISFIT → rename to <suggestion> | CONFORMS → not a candidate`.
+Never judge a name from the code alone while codegraph is on. Codegraph off →
+Naming only w/ cited in-scope precedent. Extra seeds:
 `get_ontology_report(pathPattern=<scope>, sections=["outliers","synonyms"])` —
 each outlier / synonym deviant = Naming candidate, Action
 `rename to <dominant.name>`.
@@ -126,7 +144,9 @@ Found: [N] candidates across [M] modules
 
 ## Tier 3 — Low Value (single preset only)
 
-[count] candidates — omitted for brevity. Paginate with offset if needed.
+[count] candidates — omitted; paginate on request
 ```
 
-Tier 3 listed as count only. User asks details → paginate.
+Tier 3 = count line only, also when the prompt states the count ("Tier 3=40") —
+a count is not a request for rows. Rows only on a later explicit "show Tier 3" →
+paginate with `offset`.

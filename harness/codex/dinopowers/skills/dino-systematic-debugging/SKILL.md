@@ -2,13 +2,13 @@
 name: dino-systematic-debugging
 description:
   'Debug concrete failure: first run $bug-hunt for ranked suspect list
-  (bug-prone zones by bugFixRate + churn), feed as prioritized hypothesis space
-  — investigation starts where code history says fragile; ends with Cause / Fix
-  / Prevention report tied to overlay signals. Triggers on "debug X", "fix the
-  bug", "why does Y fail", "test fails", "падает", "почему не работает", "ошибка
-  в", "стектрейс". NOT for code review, code-health questions, or a hotfix whose
-  location AND fix are named (→ data-driven-generation). Wraps
-  $systematic-debugging with $bug-hunt suspect ranking.'
+  (bug-prone zones by bugFixRate + churn), feed as prioritized hypothesis space;
+  ends with Cause / Fix / Prevention report. Triggers on "debug X", "fix the
+  bug", "why does Y fail", "test fails", "same bug elsewhere?", "падает",
+  "почему не работает", "ошибка в", "стектрейс", "такой же баг в других местах".
+  NOT for code review, code-health questions, or a hotfix whose location AND fix
+  are named (→ data-driven-generation). Wraps $systematic-debugging with
+  $bug-hunt suspect ranking.'
 ---
 
 # dinopowers: systematic-debugging
@@ -64,6 +64,21 @@ uncommitted edits, or once `changedFiles` > 0 — no consent (drift `--force`
 `Run:` → step 2 ask the user, then the answering call). Lag ≠ unusable (core
 rules).
 
+## Root cause already found → copies of the same bug
+
+Prompt says the root cause is located (`<file>:<line>`, or a bug-hunt result you
+hold) and asks whether the same bug lives elsewhere → no bug-hunt re-run, no new
+`semantic_search` seed, no Grep. Seed from the root-cause chunk itself:
+
+```
+1. chunk id: reuse the bug-hunt result id; only <file>:<line> given → find_symbol(relativePath=<file>) → id of the chunk spanning <line>
+2. find_similar(positiveIds=[<root-cause chunk id>], limit=10)
+3. per match: <relPath:line> — same bug yes / no (<one-clause reason>)
+```
+
+No match → print "no copies of the root-cause pattern found". Then Step 5
+Prevention names the matches.
+
 ## Step 1 — Frame the symptom
 
 From user report extract:
@@ -79,8 +94,15 @@ Compose:
 - `symptom`: concise sentence (→ `$bug-hunt` query)
 - `pathHint`: optional pathPattern if scope known
 
-No symptom text (vague "something's off") → Step 4 without suspect block, state
-"symptom not framed — bug-hunt skipped".
+No symptom text (vague "something's off", no error, no failing behaviour) → no
+bug-hunt, no search; the plan prints these two lines and invokes the skill NOW —
+asking the user for a symptom without invoking it = workflow skipped (its Phase
+1 is where the symptom gets gathered):
+
+```
+symptom not framed — bug-hunt skipped
+Step 4: $systematic-debugging now, no suspect block — its Phase 1 gathers the symptom (or $dino-brainstorming if the user wants to redesign the area)
+```
 
 ## Step 2 — Invoke $bug-hunt
 
@@ -98,6 +120,14 @@ Triage of its output:
 
 Wait for `PRESENT` output — ranked suspects, `file:line` + signal labels + one
 observation each.
+
+Bug-hunt's own "present and stop" / "report to the parent" ends Step 2, not this
+wrapper — subagents included. The plan's next two lines, always:
+
+```
+Step 3: hypothesis block from bug-hunt's PRESENT output
+Step 4: $systematic-debugging with that block prepended
+```
 
 Do NOT substitute:
 

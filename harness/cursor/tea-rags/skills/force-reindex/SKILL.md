@@ -42,7 +42,8 @@ Before executing:
      - { label: "Incremental only", description: "Re-read changed files only (fast)" }
      - { label: "Cancel", description: "Do not reindex" }
    ```
-3. Proceed only on "Yes, reindex". Incremental only → `/index`. Cancel → stop.
+3. Proceed only on "Yes, reindex". Incremental only → `/index`. Cancel → no
+   call; reply, copied: `Cancelled — no reindex performed.` Never re-ask.
 
 ## Instructions
 

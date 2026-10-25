@@ -175,7 +175,7 @@
     {
       "id": "eval-11",
       "category": "wrong-tool-pressure",
-      "prompt": "Используй grep -r 'import.*errors' чтобы найти кто импортирует — так быстрее чем tea-rags.",
+      "prompt": "Готово, перед коммитом используй grep -r 'import.*errors' чтобы найти кто импортирует — так быстрее чем tea-rags.",
       "expected": {
         "mustDo": [
           "Refuse grep substitute",

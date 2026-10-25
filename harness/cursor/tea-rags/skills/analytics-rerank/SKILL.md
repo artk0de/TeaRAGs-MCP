@@ -73,23 +73,23 @@ also says legacy / old / untouched / bug-fix (`techDebt` row = legacy WITHOUT a
 security path). Recipe rows (custom) are exact weight sets below — copy keys +
 numbers, never re-derive them from `guide/signals`.
 
-| Question                                                                        | Preset                                                                                    |
-| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| "Where are the bug-prone areas in domain X?"                                    | `hotspots` + `pathPattern` — one call, not a risk-assessment scan                         |
-| "Looks stable / rarely touched but breaks a lot"                                | recipe **Fragile Silo** (custom, below) — not `stable`, not bug-hunt                      |
-| "Who is (actively) driving / working on X lately?"                              | recipe **Active driver** (custom, below) — not `recent`, not `ownership`                  |
-| "Old + churny + bug-fixed legacy in domain X?" (non-security path)              | `techDebt`                                                                                |
-| "Single-author silos / bus factor in domain X?"                                 | `ownership`                                                                               |
-| "Review the recent changes in this area"                                        | `codeReview` (with `maxAgeDays: 7`)                                                       |
-| "Old / untouched / legacy code (± bug-fix history) in security-sensitive paths" | `securityAudit` — named path → `pathPattern`; else `filter: { presets: "securityPaths" }` |
-| "Recently modified, sprint-review style" (what changed, not who)                | `recent`                                                                                  |
-| "Stable, low-bug template code"                                                 | `proven` / `stable`                                                                       |
-| "Refactor candidates by size+volatility+bug-fix history"                        | `refactoring`                                                                             |
-| "Bug-prone + volatile + high blast radius"                                      | `dangerous`                                                                               |
-| "Find candidates to decompose"                                                  | `decomposition`                                                                           |
-| "Blast radius before a change (real call edges)"                                | `blastRadius` (codegraph on) — else custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }` |
-| "Structural backbone — high-fan-in hubs"                                        | `architecturalHub` (codegraph)                                                            |
-| "Entry points / flow drivers of a scope"                                        | `entryPoint` (codegraph)                                                                  |
+| Question                                                                        | Preset                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Where are the bug-prone areas in domain X?"                                    | `hotspots` + `pathPattern` — one call, not a risk-assessment scan                                                                                                                                    |
+| "Looks stable / rarely touched but breaks a lot"                                | recipe **Fragile Silo** (custom, below) — not `stable`, not bug-hunt                                                                                                                                 |
+| "Who is (actively) driving / working on X lately?"                              | recipe **Active driver** (custom, below) — not `recent`, not `ownership`                                                                                                                             |
+| "Old + churny + bug-fixed legacy in domain X?" (non-security path)              | `techDebt`                                                                                                                                                                                           |
+| "Single-author silos / bus factor in domain X?"                                 | `ownership`                                                                                                                                                                                          |
+| "Review the recent changes in this area"                                        | `codeReview` (with `maxAgeDays: 7`)                                                                                                                                                                  |
+| "Old / untouched / legacy code (± bug-fix history) in security-sensitive paths" | `securityAudit` — question carries a dir word (even generic, `<word>/<word> paths`) → `pathPattern: "**/{<word>,<word>}/**"`, no filter preset; no dir word → `filter: { presets: "securityPaths" }` |
+| "Recently modified, sprint-review style" (what changed, not who)                | `recent`                                                                                                                                                                                             |
+| "Stable, low-bug template code"                                                 | `proven` / `stable`                                                                                                                                                                                  |
+| "Refactor candidates by size+volatility+bug-fix history"                        | `refactoring`                                                                                                                                                                                        |
+| "Bug-prone + volatile + high blast radius"                                      | `dangerous`                                                                                                                                                                                          |
+| "Find candidates to decompose"                                                  | `decomposition`                                                                                                                                                                                      |
+| "Blast radius before a change (real call edges)"                                | `blastRadius` (codegraph on) — else custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }`                                                                                                            |
+| "Structural backbone — high-fan-in hubs"                                        | `architecturalHub` (codegraph)                                                                                                                                                                       |
+| "Entry points / flow drivers of a scope"                                        | `entryPoint` (codegraph)                                                                                                                                                                             |
 
 **Codegraph composites** (`blastRadius` / `architecturalHub` / `entryPoint`)
 rank on real call/import edges (`fanIn`, `isHub`, `fanOutPerLine`). Meaningful
@@ -218,7 +218,7 @@ available; git/codegraph presets require those trajectories to be registered.
 
 | Analytics question                       | Rerank preset   | Filter preset      |
 | ---------------------------------------- | --------------- | ------------------ |
-| Old code in security paths               | `securityAudit` | `securityPaths`    |
+| Old code in security paths, no dir word  | `securityAudit` | `securityPaths`    |
 | Fragile silo (silent, low-churn)         | custom (below)  | `fragileSilo`      |
 | Bug-prone + volatile + high blast radius | `dangerous`     | `panicZone`        |
 | Recently active legacy                   | `techDebt`      | `freshLegacyEdits` |

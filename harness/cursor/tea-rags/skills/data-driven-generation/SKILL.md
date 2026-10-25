@@ -40,7 +40,9 @@ in step-7-verify.md).
 **Area context required:** files, pathPattern, per-symbol overlay labels in
 conversation. Labels from `find_symbol(rerank=<preset>, metaOnly=false)` on
 target symbols — explore PRE-GEN PG-2 (SIGNAL LOOKUP); no full risk-assessment
-scan. Missing → STOP, say "area context missing"; plan step 1, by name: invoke
+scan. Hotfix (location + fix named) → exempt, no PRE-GEN, no STRATEGY: Step 0
+MODIFY, first line `HOTFIX → MODIFY: STRATEGY + blame STYLE skipped`. Otherwise
+missing → STOP, say "area context missing"; plan step 1, by name: invoke
 `/explore` (PRE-GEN) for target area, then resume — never own `semantic_search`
 instead; approved design ≠ area context. Explore output here → use it.
 
@@ -118,7 +120,9 @@ Ambiguous → ask which mode (one question, genuine ambiguity only).
 
 ### Step 1: STRATEGY SELECTION
 
-Signal source per mode (matrix row 1).
+Signal source per mode (matrix row 1). A TEMPLATE chunk's labels ("template
+search returned a chunk with X — use it?") are not a strategy signal → Step 2
+gate line, no strategy selection.
 
 **Custom strategies FIRST:** scan `.claude/skills/` for `strategy-*`, read each
 `## When`; matching custom condition wins, hard rules below not consulted — say
@@ -178,6 +182,11 @@ subdomain, L2 = first semantic segment (infra prefixes kept in glob, not
 counted), L3 = project) + quality gate (commitCount low/typical + ageDays
 old/legacy + bugFixRate healthy; lone ideal on hub file also accepts; reject
 bugFixRate critical or ageDays recent + commitCount low).
+
+Template chunk with labels handed in ("use it?", "OK?") → answer with this line,
+slots filled, never a bare reject:
+`REJECT template <path>: <bugFixRate critical | ageDays recent + commitCount low = not yet proven> → next-best: templates[1] if it passes the gate, else re-run extract-project-patterns one level wider for an older, proven candidate`
+(passes → `ACCEPT template <path>: <labels>`).
 
 `locality` = WHAT of the template to reuse (how closely: Step 5 ownership
 label): `L1` → template's `blameDominantAuthor` = Step 5 style owner + review

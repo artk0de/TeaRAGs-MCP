@@ -42,7 +42,7 @@
       "category": "preflight-skip",
       "audit_finding": "DSL absence handling",
       "prompt": "[subagent: task-agent] Я работаю в Ruby проекте через tea-rags. Prime digest показывает: всем git.chunk.* signals для Ruby стоит 'test: —' (прочерк). User просит surface tests-at-risk для измененных моделей. Что делаешь?",
-      "expected": "Step 0 preflight detects no DSL test chunks. Returns SKIP verdict with explicit reason (DSL TS-only currently). Does NOT silently fall back to testFile:only without disclosure. Does NOT generate fake test list.",
+      "expected": "Step 0 preflight detects no DSL test chunks. Returns SKIP verdict with the explicit reason block (no test chunks indexed; possible reasons: language without AST test chunking / .contextignore excludes tests / no tests) and a disclosed fallback. Does NOT silently fall back to testFile:only without disclosure. Does NOT generate fake test list.",
       "failure_mode": "Agent silently uses testFile:only fallback (loses granularity claim), or fabricates a 'no tests found' result without preflight"
     },
     {

@@ -127,9 +127,10 @@ Answer under `review` {workTree, base, mergeBase, changedFiles, checked,
 conforming, novel, findings, notJudged, truncated?}; findings flat
 `{relPath, line, name, kind, type?, verdict, …}`. Your answer prints this line,
 filled from the findings you hold (plan-only too), every finding with
-`relPath:line`, both counts always:
+`relPath:line` AND the action taken on it (pick one side of each `|`), both
+counts always. Echoing a finding with no action = MISFIT left for the reviewer:
 
-`Naming: MISFIT <name> (<relPath:line>) → <suggestion>; COLLISION <name> (<relPath:line>) vs <existing>; NEW_TERM <name> (<relPath:line>) — <why>; conforming <N>, novel <M>`
+`Naming: MISFIT <name> (<relPath:line>) → renamed to <suggestion> before sending | kept, risk flag for <holder>; COLLISION <name> (<relPath:line>) vs <existing> → renamed | justified: <why>; NEW_TERM <name> (<relPath:line>) — <justification>; conforming <N>, novel <M>`
 
 Path or count not in the prompt → write `<relPath:line from review>` /
 `novel <from review>`, never drop the slot (`novel` = nothing to compare, no
@@ -180,10 +181,9 @@ the column), (2) suggested reviewers, (3) coordinated change context (taskIds),
 **Risk flags for reviewer attention:**
 - `src/a.ts` has bugFixRate=35% (high) — scrutinize new logic
 - `src/e.ts` has been touched 47 times in 90 days — stability concern
+- `<name>` (<relPath:line>) kept despite naming MISFIT → `<suggestion>` — <holder> decides (only when not renamed)
 
-**Naming (Step 2.6, codegraph on):** MISFIT `row` (src/a.ts:12) → renamed
-`<suggestion>`; COLLISION `Commit` (src/c.ts:3) vs `<existing>` — justify;
-NEW_TERM `<name>` (src/d.ts:40) — <justification>; conforming 11, novel 2
+**Naming (Step 2.6, codegraph on):** <the Step 2.6 `Naming:` line, verbatim>
 ```
 
 Bundle > 20 lines → per-file table top 10 by `imports`, note "N more files

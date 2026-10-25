@@ -16,6 +16,8 @@ INTRODUCED <family> <edge|symbol> — repair: <concrete operation>      (per non
 FALSE-POSITIVE <family> <edge> — counter-evidence: <quoted hunk | find_symbol absence> — issue <id | [planned; not run] filing call>   (per accepted false positive, replaces its INTRODUCED line)
 REMEDY-APPLIED <family> <edge|symbol> — preExisting, server remedy applied: <remedy operation>   (per preExisting WITH remedy — never optional)
 REPORT-ONLY <family> <edge|symbol> — preExisting, left unchanged — bead: <suggested title naming the finding>   (per preExisting, no remedy)
+PARTNER <path> — edited in this diff: <contract it depends on> | not touched because <checkable reason citing a symbol>   (per incompleteChange / silentCoupling partner)
+PARTNER <manifest path> — version manifest: known noise per repair/silentCoupling.md (detector drops manifests; bump follows the versioning rule), no coupling edit   (per plugin.json / package.json / lockfile partner)
 GATE review_changes: introduced=<INTRODUCED lines>, partial=<true|false>
 RE-REVIEW same review_changes + targeted tests: target gone, no new finding
 GATE review_changes: introduced=0, partial=false
@@ -232,9 +234,8 @@ it in this diff. Else one line `not touched because <reason>` with a CHECKABLE
 reason citing the symbol: a named test that already pins the seam, or why the
 file cannot change with this edit. "Not needed" / "unrelated" without evidence =
 fail → edit it or ask. Partner is a version manifest
-(`.claude-plugin/**/plugin.json`, `package.json`, lockfile) → known noise per
-`silentCoupling.md` (detector drops manifests; the bump follows the versioning
-rule) — one line, no coupling edit.
+(`.claude-plugin/**/plugin.json`, `package.json`, lockfile) → its manifest
+`PARTNER` line from the answer block, verbatim.
 
 **Report:** the answer block, then per class — fixed (remedy / procedure),
 accepted (evidence), false positive (counter-evidence + issue), report-only

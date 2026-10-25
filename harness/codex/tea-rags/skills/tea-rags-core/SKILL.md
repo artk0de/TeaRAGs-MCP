@@ -55,8 +55,8 @@ a diff's → `review_changes` verdicts, nothing after.
 - `symbolId` ends `#partN` = fragment → `find_symbol(symbol: parentSymbolId)`;
   parts = one hit.
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
-  license leaving tea-rags — ticket-named files too. No `treeState` = current;
-  `treeState` row = pre-edit copy (text stale) → `find_symbol`.
+  license leaving tea-rags — ticket files → `find_symbol`. No `treeState` =
+  current; `treeState` row = pre-edit copy (text stale) → `find_symbol`.
 - Subagent: no reindex, no user question (parent note). Otherwise own checkout
   (tree = alias's path), `changedFiles` > 0, stale banner or unindexed edits →
   step 1 incremental `index_codebase(project=)`, no consent; drift `--force*`

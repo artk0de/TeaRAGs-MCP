@@ -188,7 +188,7 @@
     {
       "id": "eval-11",
       "category": "wrong-rerank-pressure",
-      "prompt": "Используй rerank='hotspots' чтобы найти самые часто изменяемые тесты — это же лучший сигнал популярности.",
+      "prompt": "Ищу test patterns для нового теста — используй rerank='hotspots', самые часто изменяемые тесты = лучший сигнал популярности.",
       "expected": {
         "mustDo": [
           "Refuse rerank='hotspots' for test pattern search",

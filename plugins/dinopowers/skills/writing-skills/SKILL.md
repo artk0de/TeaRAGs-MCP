@@ -4,10 +4,10 @@ description:
   Author/rewrite SKILL.md inside plugins/dinopowers/, enforce wrapper pattern
   (tea-rags enrichment step then chain into superpowers:*) + description style
   to win against parent skills. Triggers on "add dinopowers:X", "create a
-  wrapper skill", "write a SKILL.md", "напиши скилл", "новый wrapper", "новый
-  dinopowers скилл", "edit dinopowers wrapper", "rewrite dinopowers SKILL.md",
-  "fix skill description", "improve a dinopowers skill", "tweak SKILL.md
-  frontmatter". NOT for editing SKILL.md files of other plugins. Wraps
+  wrapper skill", "напиши скилл", "новый dinopowers скилл", "edit dinopowers
+  wrapper", "rewrite dinopowers SKILL.md", "fix skill description", "improve a
+  dinopowers skill", "tweak SKILL.md frontmatter". NOT other plugins' SKILL.md,
+  NOT a word / typo swap in any SKILL.md (→ direct Edit, no skill). Wraps
   superpowers:writing-skills with dinopowers wrapper-pattern enforcement.
 ---
 

@@ -23,9 +23,12 @@ Cause already located AND fix named ("line 88 nil — reload invoice before send
 labels ("qdrant-client.ts:142 `bugFixRate` critical — proceed?") → here: triage
 and PRESENT (file:line, class, `bugFixRate` + `relativeChurn` — absent → say
 unverified — and one-sentence why), not a review question, no confirm search.
-Reached via a wrapper (`dino-systematic-debugging`: `symptom` + `pathHint`) →
-run THIS Loop in full; `pathHint` = scope pathPattern, never a substitute for
-step 0 or the probes.
+Suspect already named by an earlier search (labels or not) + "not sure" / "want
+to be sure" → no hunt, also via a wrapper: PRESENT it with the two literal lines
+of Non-negotiable 5; no step 0, no probes, no question to the user. Reached via
+a wrapper (`dino-systematic-debugging`: `symptom` + `pathHint`) → run THIS Loop
+in full; `pathHint` = scope pathPattern, never a substitute for step 0 or the
+probes.
 
 Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
 populations: code with bug-fix history, fresh code too young to have one,
@@ -61,22 +64,32 @@ A plan names these calls; "later" / "not in this run" never drops one.
    it: PRESENT it under class `uncommitted`). Neither → SKIP, also when user
    says "check there": "healthy, old, not fresh, no probe hit — neither suspect
    class, skipping".
-5. **Checkpoint filled → PRESENT. STOP.** "Want to be sure" → refuse the
-   confirmatory search: confirmatory searches almost never change the answer.
-   "Not fully sure" → PRESENT with confidence note (what is unverified).
+5. **Checkpoint filled → PRESENT. STOP.** "Want to be sure" / "not fully sure" →
+   no search, no extra iteration; the answer prints both lines:
+
+   ```
+   No confirmatory search: confirmatory searches almost never change the answer.
+   Confidence note: <what is unverified> — "not sure" ≠ "don't know"; presenting the suspect as is.
+   ```
+
 6. **Chunk in hand → `find_symbol`** (symbolId body / relativePath outline /
    prev-next id), never Read of a code file — also on "read the whole file".
    Chunk coordinates exist. Use them. Literal-text hit (rg on an error phrase) →
-   same: `find_symbol` outline/body of the hit, never cat/Read. Row with
-   `treeState` = index's PRE-EDIT copy (text + lines stale, signals hold) — say
-   so; still the uncommitted suspect; next `find_symbol(path=<cwd>)`.
-7. **Call path** (codegraph on): only failure site known → `get_callers` first,
-   then `find_symbol(symbol=<caller>, rerank="bugHunt")` per caller for labels.
-   Both ends known → `find_symbol` resolves ids, then
-   `trace_path(from, to, rerank="bugHunt")`, triage EVERY step (recent step =
-   fresh suspect even at `healthy`). Codegraph off + stack trace → fresh probe
-   `pathPattern={<frame paths>}` + `modifiedAfter` + `rerank="bugHunt"`; say "no
-   static path tool".
+   the plan prints the next line too, never cat/Read:
+   `then find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(symbol=<enclosing symbolId>) body`.
+   Row with `treeState` = index's PRE-EDIT copy (text + lines stale, signals
+   hold) — say so; still the uncommitted suspect; next
+   `find_symbol(path=<cwd>)`.
+7. **Call path** (codegraph on). Stack trace / symptom names an entry AND the
+   failure site (outermost frame = from, failing frame = to) → this branch
+   first, never `get_callers`: `find_symbol` resolves both ids, then the plan
+   prints `trace_path(from=<entry id>, to=<failure id>, rerank="bugHunt")` with
+   the frame ids filled; triage EVERY step's `dangerOverlay` (recent step =
+   fresh suspect even at `healthy` and behind an old `dangerRanking[0]`). Only
+   the failure site known → `get_callers` first, then
+   `find_symbol(symbol=<caller>, rerank="bugHunt")` per caller for labels.
+   Codegraph off + stack trace → fresh probe `pathPattern={<frame paths>}` +
+   `modifiedAfter` + `rerank="bugHunt"`; say "no static path tool".
 
 No `## Signal thresholds` above → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds,resolve`

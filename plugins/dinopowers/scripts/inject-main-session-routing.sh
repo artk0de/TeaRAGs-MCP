@@ -29,7 +29,8 @@ into superpowers itself; nothing skipped.
 | Author a SKILL.md in plugins/dinopowers/ | Skill(dinopowers:writing-skills) |
 
 Ignore ONLY when: user names the superpowers version explicitly; intent matches no
-row (typo fix, listing, git log); the wrapper's SKILL.md says to fall back."
+row (typo or one-word fix — in a SKILL.md too: direct Edit, no writing-skills;
+listing, git log); the wrapper's SKILL.md says to fall back."
 
 jq -n --arg context "$CONTEXT" '{
   hookSpecificOutput: {

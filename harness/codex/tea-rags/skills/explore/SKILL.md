@@ -14,12 +14,12 @@ description:
 
 ## Intent Classification (REQUIRED — pick ONE row before any tool call)
 
-| User intent contains                                                                                         | Strategy | Skip if                                                              |
-| ------------------------------------------------------------------------------------------------------------ | -------- | -------------------------------------------------------------------- |
-| "how does X work", "explain Y", "what does Z do"                                                             | EXPLAIN  | active bug or bug intent ("find bugs in X") → bug-hunt               |
-| "where is X used", "usages / call sites of X", "imports of X"                                                | TRACE    | structural-only → use find_symbol direct                             |
-| "before I refactor/modify/change X", "I need to add X", "перед тем как менять", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans                               |
-| "best example of X", "antipatterns in Y", "find all implementations / instances of X"                        | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text) |
+| User intent contains                                                                                         | Strategy | Skip if                                                                            |
+| ------------------------------------------------------------------------------------------------------------ | -------- | ---------------------------------------------------------------------------------- |
+| "how does X work", "explain Y", "what does Z do"                                                             | EXPLAIN  | active bug or bug intent ("find bugs in X") → bug-hunt                             |
+| "where is X used", "usages / call sites of X", "imports of X"                                                | TRACE    | codegraph on → codegraph row 2 (get_callers); structural-only → find_symbol direct |
+| "before I refactor/modify/change X", "I need to add X", "перед тем как менять", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans                                             |
+| "best example of X", "antipatterns in Y", "find all implementations / instances of X"                        | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text)               |
 
 **State it first (MANDATORY):** answer/plan opens with `Strategy: <row>` (or
 risk / change / ownership / codegraph row) + the matched phrase — routing on
@@ -33,11 +33,11 @@ brainstorming / executing-plans; output self-contained, never auto-invokes DDG.
 "How does X work + risks before I change it" → PRE-GEN subsumes both.
 
 **TRACE vs EXEMPLAR:** usages of ONE named symbol (who calls / imports / where
-used) = TRACE. Every implementation / instance / variant of a kind ("find all
-implementations of Provider", "every subclass of X") = EXEMPLAR Collect →
-delegate pattern-search; never search it yourself. Behaviour words without
-all/every ("search for retry logic and error recovery") = BREADTH
-`semantic_search`, not EXEMPLAR.
+used) = TRACE (codegraph on → codegraph row 2). Every implementation / instance
+/ variant of a kind ("find all implementations of Provider", "every subclass of
+X") = EXEMPLAR Collect → delegate pattern-search; never search it yourself.
+Behaviour words without all/every ("search for retry logic and error recovery")
+= BREADTH `semantic_search`, not EXEMPLAR.
 
 🛑 Unsure → ask user. NEVER assume strategy from partial signals.
 
@@ -71,13 +71,13 @@ Graph-shape questions answered from real call/import edges — content matching
 can't derive them. Order: risk → change → ownership → this table →
 EXPLAIN/TRACE/PRE-GEN/EXEMPLAR. Top-to-bottom, first match wins.
 
-| Priority | Intent contains                                                                                                  | Sub-pattern                                                                |
-| -------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| 1        | "циклы", "cycle", "circular dependency", "dependency loop"                                                       | [references/cycle-pattern.md](./references/cycle-pattern.md)               |
-| 2        | "кто использует/вызывает X", "callers of X", "callees of X", "trace flow", "how does X reach Y" (→ `trace_path`) | [references/usage-pattern.md](./references/usage-pattern.md)               |
-| 3        | "где начинается", "entry point", "main flow", "входная точка", "where X starts"                                  | [references/entry-point-pattern.md](./references/entry-point-pattern.md)   |
-| 4        | "архитектура", "structure", "backbone", "что центральное", "organized", "walk me through"                        | [references/architecture-pattern.md](./references/architecture-pattern.md) |
-| 5        | "как в проекте называют X", "what does the project call X", "is this name right"                                 | `get_naming_lexicon` — see below                                           |
+| Priority | Intent contains                                                                                                                                   | Sub-pattern                                                                |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1        | "циклы", "cycle", "circular dependency", "dependency loop"                                                                                        | [references/cycle-pattern.md](./references/cycle-pattern.md)               |
+| 2        | "кто использует/вызывает X", "where is X used", "who uses X", "callers of X", "callees of X", "trace flow", "how does X reach Y" (→ `trace_path`) | [references/usage-pattern.md](./references/usage-pattern.md)               |
+| 3        | "где начинается", "entry point", "main flow", "входная точка", "where X starts"                                                                   | [references/entry-point-pattern.md](./references/entry-point-pattern.md)   |
+| 4        | "архитектура", "structure", "backbone", "что центральное", "organized", "walk me through"                                                         | [references/architecture-pattern.md](./references/architecture-pattern.md) |
+| 5        | "как в проекте называют X", "what does the project call X", "is this name right"                                                                  | `get_naming_lexicon` — see below                                           |
 
 **Rows 1–4: open the row's reference with its own read command BEFORE planning
 (MANDATORY)** — naming it without opening it is a fail; the calls carry filters
@@ -89,11 +89,11 @@ plan.
   cycles in `<scope>` → DAG" plainly; no hedge, no content-search fallback.
 - **Row 2** (callers/callees, codegraph on): call 1 = `find_symbol` → exact id,
   even when the user typed `Class#method`; call 2 = `get_callers` /
-  `get_callees symbolId=<that id>`; "every / all callers" → call 3 =
-  `hybrid_search metaOnly:true` on the name (adds recall, never replaces 2).
-  "How does X reach Y": endpoints named as symbols → `find_symbol` each, then
-  `trace_path`; endpoints described in words ("OAuth callback", "sign-in") →
-  call 1 = `semantic_search` for that behaviour, call 2 =
+  `get_callees symbolId=<that id>`; "every / all callers" / "where is X used" →
+  call 3 = `hybrid_search metaOnly:true` on the name (adds recall, never
+  replaces 2). "How does X reach Y": endpoints named as symbols → `find_symbol`
+  each, then `trace_path`; endpoints described in words ("OAuth callback",
+  "sign-in") → call 1 = `semantic_search` for that behaviour, call 2 =
   `trace_path from/to=<symbolIds from its hits>`. A phrase is never a
   `find_symbol symbol=`.
 
@@ -103,13 +103,18 @@ plan.
   (`minFanOut` alone = file import count) or drop tiny-`chunkSize` rows.
 - **Row 3** ("where X starts"): ORIENT result IS the answer → `get_callees` from
   top entry.
-- **Row 4** (structure / organized / walk me through): ORIENT FIRST, then
-  `rerank="architecturalHub"` (same filters) backbone → `find_symbol` depth.
-  Hubs before entries = wrong order.
+- **Row 4** (structure / organized / walk me through / end to end): ORIENT
+  FIRST, then `rerank="architecturalHub"` (same filters) backbone, then
+  `get_callees symbolId=<top entry id>` walk through the hubs, then
+  `find_symbol` depth. Hubs before entries = wrong order.
 
-**Naming (row 5):** `get_naming_lexicon(concept+language | types | names)` —
-`concept` for "what do we call X", `types` for "how are values of T named",
-`names[]` for verdict. Names in a diff ("do my uncommitted names fit?") →
+**Naming (row 5):** `get_naming_lexicon(concept+language | types | names)`.
+Checked first: the question quotes a candidate name (`<name>` — "is `<name>` a
+good name", even with "or what do we call it") →
+`names:[{name: "<name>", kind, type?: "<T>"}]` — its verdict + alternatives
+answer both halves; never `concept`. No candidate name: `types` for "how are
+values of T named", `concept` for "what do we call X". Names in a diff ("do my
+uncommitted names fit?") →
 `review_changes(changes:{} | {base}, sections:["naming"])` — its findings ARE
 the answer; no `get_naming_lexicon` follow-up, never hand-list the diff's names
 into `names[]`. Answer = dominant shape + top names/terms with holders;
@@ -267,8 +272,10 @@ Three calls, axis = filter param (never `language` as axis proxy):
 3. docs — `documentation: "only"` (hypothesis; conflict → answer gives the code
    value + names the drifted doc)
 
-Point question about tests ("is X tested?") → ONE call, `testFile: "only"`
-(hybrid_search / find_symbol), no split, no Glob. Other point questions: no
+Point question about tests ("is X tested?", "tests covering `<file>`") → ONE
+call, no split, no Glob:
+`hybrid_search(query="<module name + exported symbol names of X>", testFile:"only", metaOnly:true)`
+— names, never a sentence; not `semantic_search`. Other point questions: no
 split.
 
 No `filter:{presets}` by default — understanding needs breadth.

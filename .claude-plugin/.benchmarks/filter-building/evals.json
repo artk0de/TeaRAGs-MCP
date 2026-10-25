@@ -28,7 +28,7 @@
       "id": "E1",
       "audit_finding": "typed-sugar selection for modifiedAfter (file-level at any level)",
       "prompt": "In the payments domain, find code modified after 2026-03-01 for sprint review.",
-      "expected": "semantic_search/hybrid_search with modifiedAfter + pathPattern: '**/payments/**' (no level needed)",
+      "expected": "rank_chunks rerank:'codeReview' or semantic_search/hybrid_search, with modifiedAfter + pathPattern: '**/payments/**' (no level needed)",
       "expected_NOT": "raw filter on git.file.modifiedAt or git.file.ageDays; level: 'file' added for modifiedAfter (regroups results into files); ripgrep",
       "expectation_change": "9mwny: modifiedAfter/modifiedBefore always filter git.file.lastModifiedAt at any level, and level 'file' regroups results into files — the old 'omits level=file' failure mode no longer exists. Result below predates the change — not re-run.",
       "failure_mode": "Agent adds level=file for a time filter (results regrouped into files) or falls back to a raw ageDays range",

@@ -57,6 +57,14 @@ tea-rags search, this skill applies — translate the SCOPE into typed sugar:
 | "in /full/abs/path/" (subagent context)             | `pathPattern: "<path from project root>/**"`     |
 | "exclude vendor / generated / migrations"           | `pathPattern: "!**/vendor/**"` (no typed sugar)  |
 
+**Person name (`author` / `recentAuthor` / `contributor`) — exact match only.**
+User gives a short or first name → resolve it before the filtered call: call 1 =
+`rank_chunks(rerank="ownership", pathPattern=<scope>, metaOnly=true)`, read the
+full spelling from `git.file.recentAuthors` / `git.file.blameAuthors`; call 2
+carries it. Plan line, copied:
+`<author|recentAuthor|contributor>: "<exact git name of <short name>, from call 1>"`.
+Passing the short name as typed = silent empty result.
+
 **Rule of thumb:** user almost never says "filter". They name a SCOPE — domain,
 language, author, time window, ticket, prod-vs-test. Translate the scope into
 the right typed sugar; never leave it ambient ("query alone will sort it out").

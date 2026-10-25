@@ -18,7 +18,9 @@ decision.
   worktree → the only way to read its own code. Must be the same repository as
   `project`.
 - **`collection="<qdrant-name>"`** — only when you hold a raw collection name
-  and no alias (e.g. `list_collections`); add `path` when it is your repository.
+  and no alias (e.g. `list_collections`): first call `collection` alone; every
+  later call `project=<workingTree.project of that answer>` + `path`, no
+  `collection`.
 - Alias unknown (unregistered repo, alias not in prime / hook / marker) → `path`
   alone still works (index resolves from the same repository); take
   `workingTree.project` from the answer and pass it from then on.
@@ -30,16 +32,17 @@ Index resolution priority: `collection > project > path`; the tree comes from
 `path` when given, else the alias's registered checkout.
 
 **Read the `workingTree` marker on every answer:** `project` = alias of the
-index that answered (pass it on later calls); `tree` = tree it read;
-`changedFiles` / `deletedFiles` = distance from `indexedCommit` (`0` = measured
-clean); `floors` = layers read from the tree — `chunks` (find_symbol / outline,
-rank_chunks rows), `sparse` (hybrid_search BM25), `dense` (semantic_search /
-find_similar / hybrid vector ranking of changed files), `codegraph` (graph
-tools' edges). A row or edge no floor covers reflects the index;
-`denseUnavailable` / `treeGraphUnavailable` name why a layer fell back to it;
-`gitUnavailable` counts changed-file rows whose git signals are still computing
-— they rank without that history this call, re-call later. `pendingFiles` =
-re-read files not yet warm: their rows are the index's
+index that answered (pass it on later calls); `tree` = tree it read (a check
+only: every next call, re-checks included, keeps `path=<your working directory>`
+— never `path=<answer's tree>`); `changedFiles` / `deletedFiles` = distance from
+`indexedCommit` (`0` = measured clean); `floors` = layers read from the tree —
+`chunks` (find_symbol / outline, rank_chunks rows), `sparse` (hybrid_search
+BM25), `dense` (semantic_search / find_similar / hybrid vector ranking of
+changed files), `codegraph` (graph tools' edges). A row or edge no floor covers
+reflects the index; `denseUnavailable` / `treeGraphUnavailable` name why a layer
+fell back to it; `gitUnavailable` counts changed-file rows whose git signals are
+still computing — they rank without that history this call, re-call later.
+`pendingFiles` = re-read files not yet warm: their rows are the index's
 (`treeState: "modified"`), a later call reads more of the tree — re-call for
 current code; never a reindex trigger by itself. `indexOnlyFiles` = changed
 files with no AST chunking (json / yaml / sql / toml …): never re-read, rows are

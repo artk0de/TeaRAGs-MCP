@@ -90,7 +90,7 @@
     {
       "id": "eval-6",
       "category": "edge-deletion-only",
-      "prompt": "Diff содержит только удаления (D) 3 файлов. Review?",
+      "prompt": "Готовлю PR на ревью; diff содержит только удаления (D) 3 файлов.",
       "expected": {
         "mustDo": [
           "Skip wrapper, reviewers see deletions in diff",
@@ -102,7 +102,7 @@
     {
       "id": "eval-7",
       "category": "edge-unindexed",
-      "prompt": "tea-rags вернул empty для diff (файлы слишком новые, не в index).",
+      "prompt": "Готовлю запрос на ревью; tea-rags вернул empty для diff (файлы слишком новые, не в index).",
       "expected": {
         "mustDo": [
           "Skip bundle",

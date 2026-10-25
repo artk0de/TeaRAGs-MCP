@@ -62,6 +62,14 @@ backbone + vocabulary not assessed". Unsure → metrics `codegraph on|off`
 (below). SessionStart digest never states it — silence ≠ off. No stated decision
 = Step 2 not started.
 
+Plan-only with the state not given in the prompt → print BOTH lines, each branch
+complete (the off line is never implied by the on line):
+
+```
+codegraph on (graph tools in my list) → A–E in one block
+codegraph off → A–C in one block; backbone + vocabulary not assessed
+```
+
 Then ALL calls **in parallel** (one tool block — D + E in the SAME block as A–C,
 never appended after): A–D `mcp__tea-rags__semantic_search`, each
 `metaOnly: true` (signals, not content); E `get_naming_lexicon`:

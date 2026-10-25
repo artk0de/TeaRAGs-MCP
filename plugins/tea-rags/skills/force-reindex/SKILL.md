@@ -44,7 +44,7 @@ Before executing:
      - { label: "Cancel", description: "Do not reindex" }
    ```
 3. Proceed only on "Yes, reindex". Incremental only → `/tea-rags:index`. Cancel
-   → stop.
+   → no call; reply, copied: `Cancelled — no reindex performed.` Never re-ask.
 
 ## Instructions
 

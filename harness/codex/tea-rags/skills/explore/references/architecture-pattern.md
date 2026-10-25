@@ -35,6 +35,12 @@ import count); state filter applied.
   (broad target = sources axis — `../../../rules/references/axis-splitting.md`).
   Overlay: `isHub`, `fanIn`, `fanOutPerLine`. Ranked hub list = backbone.
 
+## Step 2 — flow walk (codegraph on)
+
+`get_callees symbolId=<top entry id from Step 0>` (exact id via `find_symbol`
+first), repeated on each callee that is a Step 1 hub → the path from entry
+through the backbone. Then `find_symbol` depth on the walked symbols.
+
 ## Honest fallback (no hubs in scope)
 
 No `isHub=true` files (flat module) → preset degrades to similarity. Say "no
