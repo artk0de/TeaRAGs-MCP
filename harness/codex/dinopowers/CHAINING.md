@@ -35,9 +35,11 @@ superpowers. Availability check — in this order, plan-only included:
    character budget, and superpowers often falls off it. Read its installed file
    with ONE command — Codex:
    `ls $CODEX_HOME/plugins/cache/*/superpowers/*/skills/<Y>/SKILL.md` (default
-   `~/.codex`), then read that file. superpowers is a separate plugin, never
-   under the dinopowers dir. Found → available; invoke `$Y` after the wrapper's
-   required enrichment.
+   `~/.codex`) — run that glob as written: the plugin sits one level down, under
+   a marketplace dir (`cache/<marketplace>/superpowers/<version>/`), so a bare
+   `ls cache` never shows it. Then read that file. superpowers is a separate
+   plugin, never under the dinopowers dir. Found → available; invoke `$Y` after
+   the wrapper's required enrichment.
 3. Only when step 2's read fails (or the invocation fails) → unavailable: STOP
    and ask the user to install superpowers:
 
