@@ -101,6 +101,9 @@ none.
 | 30  | A skill description's trigger list is a routing layer: "fix bug Z" in a test wrapper sends production fixes there; scope NOT-clauses route them back                                                       | (T22 r25: dinopowers TDD vs DDG)                                      |
 | 31  | Wrapping skill prose with textwrap: `break_on_hyphens=False`, or `tea-rags` splits at the hyphen                                                                                                           | (T22 r25: lane B)                                                     |
 | 32  | Name a routed skill by its installed file, resolved at hook run time: from `$name` alone Codex guesses a path (parent plugin, no `dino-` prefix), the read fails and the session answers without the skill | (T22 r26: DDG p6 0/5, every SKILL.md read missed)                     |
+| 33  | A rule lives where the model actually reads in that flow: index-lag cases read core only, so a guide-only line never fires. Check the session log for which files were opened                              | (T22 r28-r30: E11 drift consent)                                      |
+| 34  | No cross-references inside a step ("→ step 1"): restate the action ("own-checkout incremental"); Codex skips the unresolved reference                                                                      | (T22 r30-r31: E14)                                                    |
+| 35  | Exception before the stop branch: "identifier lookup → find_symbol now" placed after "STOP, ask, WAIT" never fires                                                                                         | (T22 r28-r29: E12)                                                    |
 
 ## 4. Per-harness pitfalls
 
