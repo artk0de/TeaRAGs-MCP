@@ -19,7 +19,7 @@ echo "$OUT" | grep -Fq "build is older than its source"; note $? "warns when bui
 
 # Autodetect: the global bin links to build/cli/index.js — walk up to the package root.
 echo '{"name":"tea-rags"}' > "$TMP/pkg/package.json"
-mkdir -p "$TMP/pkg/build/cli" "$TMP/bin"; echo '' > "$TMP/pkg/build/cli/index.js"
+mkdir -p "$TMP/pkg/build/cli" "$TMP/bin"; echo '' > "$TMP/pkg/build/cli/index.js"; chmod +x "$TMP/pkg/build/cli/index.js"
 ln -s "$TMP/pkg/build/cli/index.js" "$TMP/bin/tea-rags"
 OUT="$(PATH="$TMP/bin:$PATH" bash "$HOOK" </dev/null)"
 echo "$OUT" | grep -Fq "build is older than its source"; note $? "autodetects the package root through a bin linked into build/cli"
