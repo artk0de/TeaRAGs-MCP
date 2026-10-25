@@ -20,11 +20,16 @@ Cause already located AND fix named ("line 88 nil — reload invoice before send
 labels ("qdrant-client.ts:142 `bugFixRate` critical — proceed?") → here: triage
 and PRESENT (file:line, class, `bugFixRate` + `relativeChurn` — absent → say
 unverified — and one-sentence why), not a review question, no confirm search.
-Suspect already named by an earlier search (labels or not) + "not sure" / "want
-to be sure" → no hunt, also via a wrapper: PRESENT it with the two literal lines
-of Non-negotiable 5; no step 0, no probes, no question to the user. Reached via
-a wrapper (`dino-systematic-debugging`: `symptom` + `pathHint`) → run THIS Loop
-in full; `pathHint` = scope pathPattern, never a substitute for step 0 or the
+User names suspect files and asks a targeted / scoped search over them → run it
+now, ONE call:
+`hybrid_search(query=<symptom or file topic>, pathPattern="{<dir>/<file A>,<dir>/<file B>}", rerank="bugHunt")`
+— each file its exact relativePath inside the braces, written in full (no
+placeholder left in the answer); not a confirmatory search, no refusal. Suspect
+already named by an earlier search (labels or not) + "not sure" / "want to be
+sure" → no hunt, also via a wrapper: PRESENT it with the two literal lines of
+Non-negotiable 5; no step 0, no probes, no question to the user. Reached via a
+wrapper (`dino-systematic-debugging`: `symptom` + `pathHint`) → run THIS Loop in
+full; `pathHint` = scope pathPattern, never a substitute for step 0 or the
 probes.
 
 Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
@@ -220,8 +225,9 @@ cause.
 
 - **Extra parallel searches in discovery.** Historical + fresh probe (+
   uncommitted probe when `git status` lists paths) IS the discovery — no other
-  query variant. ONE query finds the area. Returns batch_create AND jobs/create
-  — both suspects already found.
+  query variant. ONE query finds the area: returns `<file A>` AND `<file B>` —
+  both suspects found. User-asked targeted search over named files ≠ extra
+  search: run it (one brace-pathPattern call).
 - **SKIP on `healthy` alone.** Young code label-capped at `healthy` (Signal
   triage) — fresh class decides.
 - **Curiosity search.** "How does the other path work?" → `find_symbol` on the
@@ -234,9 +240,9 @@ cause.
 
 Use exact `relativePath` values from search results joined with braces:
 
-- GOOD: `{app/services/batch_create.rb,app/services/jobs/create.rb}`
-- BAD: `**/services/{batch_create,jobs/create}**` (`**` glued to a name acts as
-  `*` → also matches `batch_create_old.rb`)
+- GOOD: `{app/services/order_import.rb,app/services/orders/create.rb}`
+- BAD: `**/services/{order_import,orders/create}**` (`**` glued to a name acts
+  as `*` → also matches `order_import_old.rb`)
 
 ## Signal triage
 

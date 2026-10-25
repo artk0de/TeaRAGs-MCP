@@ -17,6 +17,12 @@ decision.
   worktree, any dir inside. Main checkout → same as registry, harmless; linked
   worktree → the only way to read its own code. Must be the same repository as
   `project`.
+- **Linked worktree — decided from the path, never left open.** Working
+  directory under `.claude/worktrees/`, `.git` a file, or `workingTree.tree` ≠
+  alias's registered path → linked worktree: overlay only, never
+  `index_codebase` of the alias. Print
+  `linked worktree (<which test>) — overlay, no reindex`. None holds → own
+  checkout.
 - **`collection="<qdrant-name>"`** — only when you hold a raw collection name
   and no alias (e.g. `list_collections`): first call `collection` alone; every
   later call `project=<workingTree.project of that answer>` + `path`, no
@@ -49,19 +55,23 @@ files with no AST chunking (json / yaml / sql / toml …): never re-read, rows a
 the index's (`treeState: "modified"`); current text → `Read` the file. Graph
 answer with `changedFiles` > 0 and no `codegraph` floor → edges touching changed
 files are the index's (`degraded` says why): trust edges between untouched
-files, re-check changed ones via `find_symbol` / `hybrid_search`. `degraded` →
-its `remedy` under the consent rows of "Reindex triggers" (subagent: report it
-to the parent, never reindex). `tree` ≠ the tree you addressed (your working
-directory, or the checkout a skill names) → wrong tree, re-call with `project` +
-that `path`.
+files, re-check changed ones via `find_symbol` / `hybrid_search` (`metaOnly`),
+`path=<your working directory>`; linked worktree → that re-check is the whole
+fix, no reindex. `degraded` → its `remedy` under the consent rows of "Reindex
+triggers" (subagent: report it to the parent, never reindex). `tree` ≠ the tree
+you addressed (your working directory, or the checkout a skill names) → wrong
+tree, re-call with `project` + that `path`.
 
 **Lag ≠ unusable (MANDATORY).** Counts above, `floors: []` and drift = distance
 index↔tree, never licence to leave tea-rags — thousands of changed files
-included. Row without `treeState` = file unchanged in your tree = current. Own
-checkout with `changedFiles` > 0 → incremental `index_codebase` now, no consent
-(drift `--force` `Run:` → step 2 AskUserQuestion, never awaited; print
-`Drift --force: not run — consent asked; reads continue on the current index`).
-Full protocol: "Lag never licenses leaving tea-rags" below.
+included. Row without `treeState` = current (file unchanged, or a floor read it
+from your tree). Linked worktree / subagent → no reindex. Own checkout with
+`changedFiles` > 0 → incremental `index_codebase` now, no consent (drift
+`--force` `Run:` → step 2 AskUserQuestion, never awaited; print
+`Drift --force: not run — consent asked; reads continue on the current index`);
+step 3 `find_symbol` on user-named files/symbols, callers
+`hybrid_search(metaOnly)`, before any skill's enrichment block. Full protocol:
+"Lag never licenses leaving tea-rags" below.
 
 **`treeState: "modified" | "deleted"`** on a row = index copy of a file your
 tree changed or deleted, served only when no tree floor covered it (e.g.
@@ -82,7 +92,7 @@ conditions below (signals from **prime** digest layer); reindex when one fires.
 | Prime banner `⚠ Index is stale (last updated Nd ago)`                                                                                              | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
 | Files created/modified this session (`Write`/`Edit`, incl. by a subagent — parent reindexes), not yet indexed — **alias's own checkout**           | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
 | Uncommitted edits the index has not seen (`git status` lists paths), before searching them — **alias's own checkout**                              | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
-| Same two rows in a **linked worktree** (your working directory is not the alias's checkout path — `list_projects` / prime `## Project`)            | **none** — read tools overlay the tree (`project` + `path=<your working directory>`); never reindex for the tree's own edits                                                                                                                       | —                          |
+| Same two rows in a **linked worktree** (working directory under `.claude/worktrees/`, `.git` a file, or not the alias's checkout path)             | **none** — read tools overlay the tree (`project` + `path=<your working directory>`); never reindex for the tree's own edits                                                                                                                       | —                          |
 | Prime `## Drift` whose `Run:` line is the plain incremental (no flag)                                                                              | `tea-rags index-codebase --project <alias>` — exactly that line                                                                                                                                                                                    | no — reindex silently      |
 | Prime `## Drift` whose `Run:` line carries `--force-enrichments` or `--force`                                                                      | the `Run:` command the section names                                                                                                                                                                                                               | **YES — explicit consent** |
 | **Alias's own checkout** answer with `workingTree.changedFiles` > 0 (HEAD moved, branch switch, pull) — **also when Drift `Run:` needs `--force`** | `index_codebase` (incremental) NOW — closes content lag, not drift; ask for the `Run:` line separately, keep working in tea-rags meanwhile. Subagent: report to parent, never reindex                                                              | no — reindex silently      |
@@ -105,7 +115,12 @@ Marker counts (`changedFiles`, `deletedFiles`, `pendingFiles`, `floors: []`,
 `denseUnavailable`, `treeGraphUnavailable`) and drift = DISTANCE between index
 and tree, never "index unusable". Thousands of changed files included.
 
-- Row without `treeState` → file unchanged in your tree → row current. Use it.
+- Row from a file your tree changed or added, no `treeState` → a floor read it
+  from your tree: `dense` = semantic_search / find_similar / hybrid vector rank,
+  `sparse` = hybrid_search BM25, `chunks` = find_symbol / rank_chunks. Row
+  current. Quote `floors` exactly as the answer lists them, then print
+  `current — <floor> floor covers it`.
+- Row without `treeState` from an unchanged file → row current. Use it.
 - Row with `treeState` / file in `pendingFiles` → `find_symbol` (re-call; reads
   tree once warm). `indexOnlyFiles` only → `Read`.
 - `floors: []` on first calls = overlay warming, not failure. Own checkout →

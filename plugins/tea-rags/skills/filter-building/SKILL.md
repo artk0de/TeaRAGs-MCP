@@ -37,25 +37,25 @@ one range) → read `tea-rags://guide/filters` (MCP resource read), unless its
 Triggers in agent reasoning chain. If thinking any of these BEFORE composing a
 tea-rags search, this skill applies — translate the SCOPE into typed sugar:
 
-| User said... (paraphrased)                          | Filter to add                                    |
-| --------------------------------------------------- | ------------------------------------------------ |
-| "in the X domain / module / area"                   | `pathPattern: "**/X/**"`                         |
-| "tests of X" / "test coverage of X"                 | `testFile: "only"` (+ symbolId or query)         |
-| "production code for X" / "actual implementation"   | `testFile: "exclude"`                            |
-| "Ruby / TypeScript / Python code"                   | `language: "<lang>"` (NOT pathPattern `**/*.rb`) |
-| "modified recently" / "changed this week"           | `modifiedAfter: <ISO>` (no `level` needed)       |
-| "old code" / "legacy" / "untouched for a while"     | `modifiedBefore: <ISO>` (no `level` needed)      |
-| "what's new" / "fresh additions" / "sprint review"  | `modifiedAfter: <ISO>` (no `level` needed)       |
-| "Alice's code" (lines she owns)                     | `author: "Alice Smith"` (exact blame name)       |
-| "what did Alice work on" / "Alice's recent work"    | `recentAuthor` (name/email) + `modifiedAfter`    |
-| "everything Alice touched" / files she committed to | `contributor: "Alice Smith"` (exact name)        |
-| "related to ticket JIRA-X" / "for issue #N"         | `taskId: "JIRA-X"`                               |
-| "drop one-off scripts" / "real code, not snippets"  | `minCommitCount: 5`+                             |
-| "docs about X" / "what's documented"                | `documentation: "only"`                          |
-| "code, not docs"                                    | `documentation: "exclude"`                       |
-| "AuthService class" (specific class)                | `symbolId: "AuthService"` OR `hybrid_search`     |
-| "in /full/abs/path/" (subagent context)             | `pathPattern: "<path from project root>/**"`     |
-| "exclude vendor / generated / migrations"           | `pathPattern: "!**/vendor/**"` (no typed sugar)  |
+| User said... (paraphrased)                          | Filter to add                                     |
+| --------------------------------------------------- | ------------------------------------------------- |
+| "in the X domain / module / area"                   | `pathPattern: "**/X/**"`                          |
+| "tests of X" / "test coverage of X"                 | `hybrid_search` + `testFile: "only"`, no symbolId |
+| "production code for X" / "actual implementation"   | `testFile: "exclude"`                             |
+| "Ruby / TypeScript / Python code"                   | `language: "<lang>"` (NOT pathPattern `**/*.rb`)  |
+| "modified recently" / "changed this week"           | `modifiedAfter: <ISO>` (no `level` needed)        |
+| "old code" / "legacy" / "untouched for a while"     | `modifiedBefore: <ISO>` (no `level` needed)       |
+| "what's new" / "fresh additions" / "sprint review"  | `modifiedAfter: <ISO>` (no `level` needed)        |
+| "Alice's code" (lines she owns)                     | `author: "Alice Smith"` (exact blame name)        |
+| "what did Alice work on" / "Alice's recent work"    | `recentAuthor` (name/email) + `modifiedAfter`     |
+| "everything Alice touched" / files she committed to | `contributor: "Alice Smith"` (exact name)         |
+| "related to ticket JIRA-X" / "for issue #N"         | `taskId: "JIRA-X"`                                |
+| "drop one-off scripts" / "real code, not snippets"  | `minCommitCount: 5`+                              |
+| "docs about X" / "what's documented"                | `documentation: "only"`                           |
+| "code, not docs"                                    | `documentation: "exclude"`                        |
+| "AuthService class" (not its tests)                 | `symbolId: "AuthService"` OR `hybrid_search`      |
+| "in /full/abs/path/" (subagent context)             | `pathPattern: "<path from project root>/**"`      |
+| "exclude vendor / generated / migrations"           | `pathPattern: "!**/vendor/**"` (no typed sugar)   |
 
 **Person name (`author` / `recentAuthor` / `contributor`) — exact match only.**
 User gives a short or first name → resolve it before the filtered call: call 1 =

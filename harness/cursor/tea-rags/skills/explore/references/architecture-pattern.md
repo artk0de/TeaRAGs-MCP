@@ -30,9 +30,9 @@ import count); state filter applied.
 ## Step 1 — backbone (hubs)
 
 - **"Architecture of X?" / "structure of Y" / "what's central" / "backbone" /
-  "show me how X is organized"** →
+  "show me how X is organized" / "end to end"** →
   `semantic_search rerank="architecturalHub" pathPattern=<scope> testFile:"exclude" documentation:"exclude"`
-  (broad target = sources axis — `../../../references/axis-splitting.md`).
+  — sources only, no tests / docs axis split; Step 2 follows, never skipped.
   Overlay: `isHub`, `fanIn`, `fanOutPerLine`. Ranked hub list = backbone.
 
 ## Step 2 — flow walk (codegraph on)

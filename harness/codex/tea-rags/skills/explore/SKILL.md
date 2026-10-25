@@ -14,12 +14,16 @@ description:
 
 ## Intent Classification (REQUIRED — pick ONE row before any tool call)
 
-| User intent contains                                                                                         | Strategy | Skip if                                                                            |
-| ------------------------------------------------------------------------------------------------------------ | -------- | ---------------------------------------------------------------------------------- |
-| "how does X work", "explain Y", "what does Z do"                                                             | EXPLAIN  | active bug or bug intent ("find bugs in X") → bug-hunt                             |
-| "where is X used", "usages / call sites of X", "imports of X"                                                | TRACE    | codegraph on → codegraph row 2 (get_callers); structural-only → find_symbol direct |
-| "before I refactor/modify/change X", "I need to add X", "перед тем как менять", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans                                             |
-| "best example of X", "antipatterns in Y", "find all implementations / instances of X"                        | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text)               |
+Checked first, before this table: structure phrasing ("organized", "end to end",
+"structure", "architecture", "backbone", "walk me through") → codegraph row 4
+below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
+
+| User intent contains                                                                                         | Strategy | Skip if                                                                                      |
+| ------------------------------------------------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------- |
+| "how does X work", "explain Y", "what does Z do"                                                             | EXPLAIN  | active bug or bug intent ("find bugs in X") → bug-hunt; structure phrasing → codegraph row 4 |
+| "where is X used", "usages / call sites of X", "imports of X"                                                | TRACE    | codegraph on → codegraph row 2 (get_callers); structural-only → find_symbol direct           |
+| "before I refactor/modify/change X", "I need to add X", "перед тем как менять", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans                                                       |
+| "best example of X", "antipatterns in Y", "find all implementations / instances of X"                        | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text)                         |
 
 **State it first (MANDATORY):** answer/plan opens with `Strategy: <row>` (or
 risk / change / ownership / codegraph row) + the matched phrase — routing on
@@ -76,7 +80,7 @@ EXPLAIN/TRACE/PRE-GEN/EXEMPLAR. Top-to-bottom, first match wins.
 | 1        | "циклы", "cycle", "circular dependency", "dependency loop"                                                                                        | [references/cycle-pattern.md](./references/cycle-pattern.md)               |
 | 2        | "кто использует/вызывает X", "where is X used", "who uses X", "callers of X", "callees of X", "trace flow", "how does X reach Y" (→ `trace_path`) | [references/usage-pattern.md](./references/usage-pattern.md)               |
 | 3        | "где начинается", "entry point", "main flow", "входная точка", "where X starts"                                                                   | [references/entry-point-pattern.md](./references/entry-point-pattern.md)   |
-| 4        | "архитектура", "structure", "backbone", "что центральное", "organized", "walk me through"                                                         | [references/architecture-pattern.md](./references/architecture-pattern.md) |
+| 4        | "архитектура", "structure", "backbone", "что центральное", "organized", "end to end", "walk me through"                                           | [references/architecture-pattern.md](./references/architecture-pattern.md) |
 | 5        | "как в проекте называют X", "what does the project call X", "is this name right"                                                                  | `get_naming_lexicon` — see below                                           |
 
 **Rows 1–4: open the row's reference with its own read command BEFORE planning
@@ -106,7 +110,8 @@ plan.
 - **Row 4** (structure / organized / walk me through / end to end): ORIENT
   FIRST, then `rerank="architecturalHub"` (same filters) backbone, then
   `get_callees symbolId=<top entry id>` walk through the hubs, then
-  `find_symbol` depth. Hubs before entries = wrong order.
+  `find_symbol` depth. Sources only — no tests / docs axis searches. Hubs before
+  entries = wrong order.
 
 **Naming (row 5):** `get_naming_lexicon(concept+language | types | names)`.
 Checked first: the question quotes a candidate name (`<name>` — "is `<name>` a

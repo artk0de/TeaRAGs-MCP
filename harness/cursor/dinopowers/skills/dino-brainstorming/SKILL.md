@@ -52,7 +52,14 @@ over code; `treeState` row → `find_symbol`.
 
 Compose `pathPattern` (e.g. `**/auth/**`,
 `src/core/domains/ingest/**/chunker/**`) + `query` (one sentence, change
-intent).
+intent). Area named by a word, no directory given ("the auth flow", "cache
+layer") → glob of that word, `**/<word>/**` (`**/auth/**`, `**/cache/**`) — set
+on EVERY enrichment call; pathPattern unset while an area is named = un-scoped
+enrichment, wrong. Print it:
+
+```
+area "<named area>" → pathPattern="**/<word>/**"
+```
 
 No area mentioned/derivable → Step 4, empty enrichment. Report "no area
 identifiable — proceeding without tea-rags enrichment".

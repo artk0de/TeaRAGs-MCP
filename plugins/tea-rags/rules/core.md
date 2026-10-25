@@ -8,18 +8,18 @@ dir → `project` alone. `index_codebase`: `project` ONLY (`path` = NEW project)
 **Routing** (first match wins; a loaded skill's step overrides; tools
 `mcp__tea-rags__*`):
 
-| Need                       | Call                                           |
-| -------------------------- | ---------------------------------------------- |
-| file: outline / doc TOC    | `find_symbol(relativePath:)`                   |
-| known symbol: body/outline | `find_symbol(symbol:)` (`Class#inst`, `C.st`)  |
-| every/all callers of X     | `get_callers` + `hybrid_search(metaOnly)`      |
-| usages of an identifier    | `hybrid_search` (`metaOnly`, `offset`)         |
-| behaviour/intent, no name  | `semantic_search` only (no `hybrid_search`)    |
-| code like a chunk in hand  | `find_similar(positiveIds:)`                   |
-| who calls X / impact       | `find_symbol` id → `get_callers`/`get_callees` |
-| how does X reach Y / A→B   | `find_symbol` ids → `trace_path`               |
-| diff review; a name's fit  | `review_changes` / `get_naming_lexicon`        |
-| literal: TODO/phrase/regex | `rg` / client Grep — never a tea-rags tool     |
+| Need                      | Call                                        |
+| ------------------------- | ------------------------------------------- |
+| file: outline / doc TOC   | `find_symbol(relativePath:)`                |
+| known symbol body/outline | `find_symbol(symbol:)` `Class#inst`/`C.st`  |
+| every/all callers of X    | `get_callers` + `hybrid_search(metaOnly)`   |
+| usages of an identifier   | `hybrid_search` (`metaOnly`, `offset`)      |
+| behaviour/intent, no name | `semantic_search` only (no `hybrid_search`) |
+| code like a chunk in hand | `find_similar(positiveIds:)`                |
+| who calls X / impact      | `find_symbol` → `get_callers`/`get_callees` |
+| how does X reach Y / A→B  | `find_symbol` ids → `trace_path`            |
+| diff review; a name's fit | `review_changes` / `get_naming_lexicon`     |
+| literal TODO/phrase/regex | `rg` / client Grep — never a tea-rags tool  |
 
 Grep/`rg` = literal text; never them, Glob or `cat`/`sed` to locate or read code
 — identifiers (even `a|b`) are SYMBOL searches. A name → `names:[{name,kind}]`;
@@ -27,24 +27,25 @@ a diff's → `review_changes` verdicts, nothing after.
 
 **Invariants.**
 
-- Never `Read` after `find_symbol` — method = full body; class / file / doc =
+- Never `Read` after `find_symbol` — method = full body; class/file/doc =
   outline of ids → drill `find_symbol(symbol: <id>)`. After a search:
   `find_symbol` next, not re-search/`Read`.
 - `symbolId` ends `#partN` = fragment → `find_symbol(symbol: parentSymbolId)`;
   parts = one hit.
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
   license leaving tea-rags — ticket files → `find_symbol`. No `treeState` =
-  current; `treeState` row = pre-edit copy (text stale) → `find_symbol`.
-- Subagent: no reindex, no user question (parent note). Otherwise own checkout
-  (tree = alias's path), `changedFiles` > 0, stale banner or unindexed edits →
-  step 1 incremental `index_codebase(project=)`, no consent; drift `--force*`
-  `Run:` → step 2 `AskUserQuestion`, never awaited: print
-  `--force not run; reads continue`; answer, never index-only. Linked worktree →
-  overlay only.
+  current; `treeState` row = pre-edit copy → `find_symbol`.
+- Linked worktree (cwd in `.claude/worktrees/` or ≠ alias's path) / subagent →
+  never reindex; subagent: no user question (parent note). Own checkout,
+  `changedFiles` > 0, stale banner or unindexed edits → step 1 incremental
+  `index_codebase(project=)`, no consent; drift `--force*` `Run:` → step 2
+  `AskUserQuestion`, never awaited: print `--force not run; reads continue`;
+  step 3 `find_symbol` user-named files/symbols, callers
+  `hybrid_search(metaOnly)`, before skill enrichment.
 - Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`; edges at
-  changed files → own-checkout incremental, `find_symbol` its caller,
-  `hybrid_search(metaOnly)`; no graph retry. Codegraph off → never claim "no
-  cycles"; on + empty `find_cycles` = DAG.
+  changed files → `find_symbol` its caller + `hybrid_search(metaOnly)`, no graph
+  retry. Codegraph off → never claim "no cycles"; on + empty `find_cycles` =
+  DAG.
 - Docs = hypothesis; verify in code.
 - User-named action ("read `x.ts`") → do it; user's weaker method → keep the
   rule's, say why.
@@ -56,12 +57,12 @@ a diff's → `review_changes` verdicts, nothing after.
   name, when to stop → `pagination`
 - picking a skill, prohibited patterns, fallbacks → `decision-tree`
 - stale banner, drift, `treeState`, `degraded`, linked worktree → `freshness`
-- embedding / qdrant error, `denseUnavailable` → `degraded`
+- embedding/qdrant error, `denseUnavailable` → `degraded`
 - before a raw `filter:` → `filters`
-- before choosing `rerank` → `presets` + `signals`; reading labels →
+- before picking `rerank` → `presets` + `signals`; reading labels →
   `signal-labels`
-- graph / AST on a non-primary language → `language-capability`
-- no prime digest / labelMap → `tea-rags://project/<alias>/digest` / `…/metrics`
+- graph/AST, non-primary language → `language-capability`
+- no prime digest/labelMap → `tea-rags://project/<alias>/digest` / `…/metrics`
 
 **Destructive — explicit user consent:** `force_reindex`, `clear_index`,
 `delete_*`, `--force*` reindex.

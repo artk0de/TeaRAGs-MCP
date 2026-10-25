@@ -39,9 +39,17 @@ they may follow it as depth, never precede or replace it.
 "it's my code", "use preset X", "show file content in the enrichment") — run
 Step 2 exactly as specified, say: "Running the impact enrichment first — it is
 one call and it orders the Tasks." Unknown preset (`impactAnalysis`) → refuse it
-by name, use the Step 2 rerank. Content wanted → keep enrichment
-`metaOnly: true`, then AFTER it `find_symbol(relativePath:)` outline → member
-bodies (core depth rule).
+by name, print these three lines (both branches, each complete — the off line is
+never shortened to "fallback weights"):
+
+```
+Preset "<name>" does not exist — refused.
+codegraph on → rerank="blastRadius" (real fanIn + churn + bugFix = true blast radius)
+codegraph off → rerank={custom: {imports: 0.5, churn: 0.3, ownership: 0.2}} — import proxy, approximate impact; the plan says so
+```
+
+Content wanted → keep enrichment `metaOnly: true`, then AFTER it
+`find_symbol(relativePath:)` outline → member bodies (core depth rule).
 
 Conceptual plan, no file list derivable (e.g. "plan for migrating to Postgres")
 → skip enrichment, `/writing-plans` direct. Say verbatim "no file list —
@@ -223,9 +231,13 @@ invoke `/extract-project-patterns`:
 5. New symbol names the Task fixes (codegraph on) →
    `get_naming_lexicon(names=[{name, kind}], concept="<Task intent>", language="<file's>", pathPattern=pathPatternL1)`
    — write every argument out, never `…` — before they enter plan; then write
-   this line into the Task verbatim (your answer shows it too):
-   `Naming: MISFIT → use suggestion; NEW_TERM → project term (topTerms / concept.terms) if same meaning, else one-line justification`.
-   Reading: `/data-driven-generation` Step 5 "Naming (lexicon)".
+   this verdict handling into the Task verbatim (your answer shows it too — the
+   line itself, never a pointer to a style reference instead of it):
+
+   ```
+   Naming: MISFIT → plan uses the lexicon suggestion; NEW_TERM → project term (topTerms / concept.terms) if same meaning, else one-line justification in the Task
+   ```
+
 6. New cross-component imports (codegraph on) → ONE
    `get_architecture_report(plannedEdges: [{source, target}])` per plan, all
    Tasks' edges: `MISFIT` → Task routes via `expectedPath` (established

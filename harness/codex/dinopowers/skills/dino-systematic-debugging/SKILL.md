@@ -94,6 +94,15 @@ Compose:
 - `symptom`: concise sentence (→ `$bug-hunt` query)
 - `pathHint`: optional pathPattern if scope known
 
+Speculative "maybe <defect> in <area>?" / "let's think" — no error, no failing
+behaviour, an area named → not debugging; no bug-hunt. Print these two lines,
+then invoke the skill:
+
+```
+speculative, no symptom — bug-hunt skipped
+Step 4: $dino-brainstorming, area "<named area>" → pathPattern="**/<area word>/**" on every enrichment call
+```
+
 No symptom text (vague "something's off", no error, no failing behaviour) → no
 bug-hunt, no search; the plan prints these two lines and invokes the skill NOW —
 asking the user for a symptom without invoking it = workflow skipped (its Phase
@@ -321,6 +330,6 @@ Rules:
 | Error message as first hypothesis, no bug-hunt          | Flat search. Bug-hunt narrows to bug-prone zones first.                                                                                                                                      |
 | bug-hunt AFTER hypotheses ("to validate")               | Wrong order — seeds, not validates.                                                                                                                                                          |
 | Ignore "healthy" skip                                   | Calibrated-out by bug-hunt; looking there = overriding trusted prior.                                                                                                                        |
-| Speculative "maybe race" question                       | Brainstorming (`$dino-brainstorming`), not debugging.                                                                                                                                        |
+| Speculative "maybe race" question                       | Brainstorming (`$dino-brainstorming`, pathPattern scoped to the named area), not debugging.                                                                                                  |
 | Hand-walk `get_callers` / `get_callees` entry → suspect | `trace_path(from, to, rerank="bugHunt")` — whole chain, danger-ranked, one call.                                                                                                             |
 | Empty `trace_path` = "tool failed"                      | Codegraph on: empty after `namesakes` + floor checks = no static path → drop hypothesis. Codegraph off: `trace_path` absent (not empty) = NO evidence; keep hypothesis, verify via suspects. |

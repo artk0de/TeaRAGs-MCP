@@ -73,11 +73,14 @@ signal.
 ## Preset cheat sheet (when each is the right pick)
 
 Catalog has full list; this is routing tier — it beats the catalog and the guide
-resources. Most specific row wins: security-sensitive path (auth, crypto,
-payments, permissions, sessions) in the question → `securityAudit`, even when it
-also says legacy / old / untouched / bug-fix (`techDebt` row = legacy WITHOUT a
-security path). Recipe rows (custom) are exact weight sets below — copy keys +
-numbers, never re-derive them from `guide/signals`.
+resources. Ask words pick the row, a path word never does. First: "looks stable
+/ rarely touched but breaks a lot" → recipe **Fragile Silo**, even in a
+security-sensitive path — that path → `pathPattern: "**/<dir>/**"` beside the
+recipe, never `securityAudit`. Then most specific row wins: security-sensitive
+path (auth, crypto, payments, permissions, sessions) + legacy / old / untouched
+/ bug-fix ask → `securityAudit` (`techDebt` row = legacy WITHOUT a security
+path). Recipe rows (custom) are exact weight sets below — copy keys + numbers,
+never re-derive them from `guide/signals`.
 
 | Question                                                                        | Preset                                                                                                                                                                                               |
 | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

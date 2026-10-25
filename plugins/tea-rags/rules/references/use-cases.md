@@ -46,7 +46,7 @@ entry in `signal-interpretation.md` for remediation.
 | Symbol exists?            | find_symbol     | metaOnly=true, 0 results = doesn't exist          |
 | Symbol has tests?         | find_symbol     | symbol + pathPattern for test dirs, metaOnly=true |
 | Symbol + semantic context | hybrid_search   | "PaymentService validate card expiration"         |
-| Bare symbol name          | find_symbol     | "batch_create" → direct lookup by symbolId        |
+| Bare symbol name          | find_symbol     | "order_import" → direct lookup by symbolId        |
 | TODO/FIXME markers        | text search     | Exact string match, not hybrid                    |
 
 ## Code context for generation
