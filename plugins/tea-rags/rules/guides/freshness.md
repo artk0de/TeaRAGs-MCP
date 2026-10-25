@@ -64,20 +64,28 @@ tree, re-call with `project` + that `path`.
 **Lag ≠ unusable (MANDATORY).** Counts above, `floors: []` and drift = distance
 index↔tree, never licence to leave tea-rags — thousands of changed files
 included. Row without `treeState` = current (file unchanged, or a floor read it
-from your tree). Linked worktree / subagent → no reindex. Own checkout with
-`changedFiles` > 0 → incremental `index_codebase` now, no consent. Drift `Run:`
-with `--force*`, any `changedFiles` → `AskUserQuestion`, never awaited; print
-`--force not run; reads continue`. Always: `find_symbol` on user-named
-files/symbols, callers `hybrid_search(metaOnly)`, before any skill's enrichment
-block. Full protocol: "Lag never licenses leaving tea-rags" below.
+from your tree). First match: (1) subagent → never `index_codebase`, never
+`AskUserQuestion` — drift, `--force` `Run:` line, `degraded` remedy go into the
+report to the parent. Main session: (2) linked worktree → no reindex; own
+checkout behind (`changedFiles` > 0, stale banner, unindexed edits, or the
+session already knows the index is behind) → incremental `index_codebase` first,
+no consent, even when no marker is in hand. (3) Drift `Run:` with `--force*`,
+any `changedFiles` (0 included) → its own question
+`AskUserQuestion: run <Run: line>?` (never folded into another question, never
+awaited); print `--force not run; reads continue`, then the next read. Asked
+"run --force?" → answer no, not without consent; ask; keep working. A loaded
+skill's steps run in their order — lag never moves a `find_symbol` ahead of a
+skill's first step. Full protocol: "Lag never licenses leaving tea-rags" below.
 
 **`treeState: "modified" | "deleted"`** on a row = index copy of a file your
 tree changed or deleted, served only when no tree floor covered it (e.g.
 `denseUnavailable`, `pendingFiles`, `indexOnlyFiles`) = **pre-edit copy**:
 file-level signals (fanIn of dependents, churn, bugFixRate) still valid, text
 and lines stale — never evidence the edit is correct. Current code →
-`find_symbol` (chunks floor), not the row; `pendingFiles` row → re-call later;
-`indexOnlyFiles` file → `Read` it (no tree floor ever covers it).
+`find_symbol` (chunks floor), not the row. Name the reason in the answer:
+`denseUnavailable` → vector ranking fell back to the index; `pendingFiles` → not
+read yet. `pendingFiles` row → re-call later; `indexOnlyFiles` file → `Read` it
+(no tree floor ever covers it).
 
 ## Reindex triggers
 

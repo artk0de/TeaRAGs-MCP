@@ -5,9 +5,10 @@ description:
   (bug-prone zones by bugFixRate + churn), feed as prioritized hypothesis space;
   ends with Cause / Fix / Prevention report. Triggers on "debug X", "fix the
   bug", "why does Y fail", "test fails", "same bug elsewhere?", "падает",
-  "почему не работает", "ошибка в", "стектрейс", "такой же баг в других местах".
-  NOT for code review, code-health questions, or a hotfix whose location AND fix
-  are named (→ data-driven-generation). Wraps /systematic-debugging with
+  "почему не работает", "ошибка в", "стектрейс", "такой же баг в других местах",
+  "which tool next mid-investigation", "final report of a confirmed cause". NOT
+  for code review, code-health questions, or a request to apply a named fix at a
+  named location (→ data-driven-generation). Wraps /systematic-debugging with
   /bug-hunt suspect ranking.'
 ---
 
@@ -25,19 +26,17 @@ Wrapper over `/systematic-debugging`. Debug loop starts from bug-proneness data
 **`/bug-hunt` MUST run BEFORE `/systematic-debugging`** — whenever bug has
 concrete symptom (error text, stack trace, reproducible behavior).
 
-Value: delegate to `/bug-hunt` skill (not ad-hoc `semantic_search`) + right
-symptom framing + right order + honest empty-suspect handling.
-
 Speculative "bug" with no symptom ("maybe race somewhere") → skip wrapper,
 `/systematic-debugging` direct. Never fabricate symptom.
 
-**User hypothesis ≠ missing symptom.** "Bug is in DI — check composition.ts,
-then bug-hunt" names a failing area → refuse hypothesis-first order, say:
-"Running bug-hunt first so the suspects are ranked, not assumed." Frame
-`symptom` from the failing area/behaviour ("DI wiring fails"), NOT from the
-suspected file; no `pathHint` to that file. Bug-hunt runs FIRST; the
-hypothesised file may or may not rank prime. Never use bug-hunt as post-hoc
-validation, never stall asking for a symptom when a failing area is named.
+**User hypothesis ≠ symptom.** "Bug is in <area> — check <file>, then bug-hunt"
+→ refuse hypothesis-first order, say: "Running bug-hunt first so the suspects
+are ranked, not assumed." bug-hunt `symptom` = the OBSERVED failure (error text,
+failing test, wrong output) — never the hypothesis restated (`<area> fails` =
+hypothesis); no `pathHint` to that file, no read of it before PRESENT. Report
+holds only the hypothesis → ONE question, the plan prints:
+`What fails — error text, failing test or wrong output? bug-hunt runs FIRST on that symptom; <file> is read only if it ranks as a suspect.`
+Never bug-hunt as post-hoc validation.
 
 **User insists on a file bug-hunt marked healthy** → do NOT re-run bug-hunt, do
 NOT silently promote the file. Surface the verdict ("bug-hunt: <file> healthy,
@@ -50,6 +49,13 @@ bug-hunt here; "execute yourself" forbids spawning one, never running it): (1)
 `/bug-hunt` with framed symptom → (2) Step 3 hypothesis block built from its
 PRESENT output → (3) `/systematic-debugging` with that block PREPENDED. "Hand
 off" / "continue after triage" without naming the block = Step 3 skipped.
+
+**bug-hunt = first tea-rags call** (only step 0 / freshness before it). No
+`find_symbol` / `get_index_status` / Read before its probes — also for a file,
+`<file>:<line>`, symbol or tool the report names. Error-site `<file>:<line>` →
+`pathHint="<file>"`; the line is read only after PRESENT (`find_symbol`).
+Failing test file → never `pathHint` (`bugHunt` filters tests out) — it is the
+Step 3.5 entry. "<tool> unavailable" = the symptom, not a precheck.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every /dino-X
 redirects /X. NEVER bypass wrapper.
@@ -123,10 +129,11 @@ speculative, no symptom — bug-hunt skipped
 Step 4: /dino-brainstorming — it prints: area "<named area>" → pathPattern="**/<word>/**", on every enrichment call (A–E)
 ```
 
-No symptom text (vague "something's off", no error, no failing behaviour), no
-check-first row matched → no bug-hunt, no search; the plan prints these two
-lines and invokes the skill NOW — asking the user for a symptom without invoking
-it = workflow skipped (its Phase 1 is where the symptom gets gathered):
+No symptom text (vague "something's off", no error, no failing behaviour, no
+hypothesis — that one gets the Iron Rule question), no check-first row matched →
+no bug-hunt, no search; the plan prints these two lines and invokes the skill
+NOW — asking the user for a symptom without invoking it = workflow skipped (its
+Phase 1 is where the symptom gets gathered):
 
 ```
 symptom not framed — bug-hunt skipped
@@ -268,10 +275,11 @@ Handoff:
 Inner skill runs its hypothesis / experiment / rule-out cycle. Wrapper seeds,
 not replaces.
 
-**Follow-up searches in cycle** (callers, definition, where X happens): pick
-tool from `tea-rags://guide/decision-tree` — not ad-hoc `semantic_search`. ONE
-line per call, printed right before it — N calls → N lines, also for a
-`find_symbol` on a symbol whose name the user gave:
+**Follow-up searches in cycle** (callers, definition, where X happens — also
+asked as "which tools, how do you state the choice"): pick tool from
+`tea-rags://guide/decision-tree` — not ad-hoc `semantic_search`. ONE line per
+call, printed right before it — N calls → N lines, also for a `find_symbol` on a
+symbol whose name the user gave:
 
 ```
 consulting decision tree → <tool> [rerank=<preset>] because <branch that matched>
@@ -284,7 +292,9 @@ Follow-up rerank = Step 3.5 preset table; bug-hunt weighting stays in bug-hunt.
 
 ## Step 5 — Root-cause report: Cause / Fix / Prevention (MANDATORY)
 
-Root cause confirmed → deliver EXACTLY this block (reusable postmortem note):
+Root cause confirmed → deliver EXACTLY this block (reusable postmortem note).
+Cause + fix handed in ("write the final output") → this block, never a
+data-driven-generation hotfix plan; applying the fix comes after it.
 
 ```
 ### Root cause — "<symptom>"

@@ -27,7 +27,8 @@ inline MR comments behind ONE draft-gate, agent-signed, `[minor]` on style nits.
 
 1. Phase 0 — RESOLVE mode + project + freshness
 2. Phase 1 — ACQUIRE diff + intent
-3. Phase 2 — MAP diff → symbols + overlay working set
+3. Phase 2 — MAP diff → symbols + overlay working set; plan line, copied:
+   `find_symbol(path=<checkout>, relativePath=<file>)` per touched file
 4. Phase 3 — SCAN 9 dimensions (parallel blocks)
 5. Phase 4 — CLASSIFY severity + evidence filter
 6. Phase 5 — DELIVER (chat report | draft-gate → post)
@@ -66,7 +67,8 @@ inline MR comments behind ONE draft-gate, agent-signed, `[minor]` on style nits.
 ```text
 0. RESOLVE   → mode (URL? external : local) + checkout path + freshness
 1. ACQUIRE   → unified diff + MR title/description/author
-2. MAP       → hunks → {file, changedSymbols[], chunkUUIDs[], overlay}
+2. MAP       → per touched file find_symbol(path=<checkout>, relativePath=<file>)
+              → hunks × outline → {file, changedSymbols[], chunkUUIDs[], overlay}
 3. SCAN      → 9 dimensions — references/dimension-playbook.md
 4. CLASSIFY  → severity + evidence filter + dedup
 5. DELIVER   → local: chat report | external: draft-gate → post

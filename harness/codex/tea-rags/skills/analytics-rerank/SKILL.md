@@ -75,34 +75,38 @@ never re-derive them from `guide/signals`.
 
 **Area binding (every row):** ask names an area ("in <area>", "in the <area>
 module / pipeline / service / domain") → the call carries
-`pathPattern: "**/<area>/**"` (area word, container noun dropped). Never omit it
-on the guess that the word may not be a dir name; `pathPattern` is scope, not
-the hard `filter` the inventory rule below forbids. Plan line, copied:
+`pathPattern: "**/<area>/**"` (area word, container noun dropped); ask writes a
+slash path (`lib/crypto/`) → `pathPattern: "lib/crypto/**"` as written, never
+braces. Never omit it on the guess that the word may not be a dir name;
+`pathPattern` is scope, not the hard `filter` the inventory rule below forbids.
+Plan line, copied:
 `semantic_search(query=<ask>, rerank=<row>, pathPattern="**/<area>/**")`.
 
-| Question                                                                        | Preset                                                                                                                                                                                               |
-| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Where are the bug-prone areas in domain X?"                                    | `hotspots` + `pathPattern` — one call, not a risk-assessment scan                                                                                                                                    |
-| "Looks stable / rarely touched but breaks a lot"                                | recipe **Fragile Silo** (custom, below) — even in a security-sensitive path (path → `pathPattern`); never `securityAudit`, not `stable`, not bug-hunt                                                |
-| "Who is (actively) driving / working on X lately?"                              | recipe **Active driver** (custom, below) — not `recent`, not `ownership`                                                                                                                             |
-| "Tech debt / old + churny + bug-fixed legacy in X?" (non-security path)         | `techDebt` + `pathPattern: "**/<X>/**"`                                                                                                                                                              |
-| "Single-author silos / bus factor in domain X?"                                 | `ownership`                                                                                                                                                                                          |
-| "Review the recent changes in this area"                                        | `codeReview` (with `maxAgeDays: 7`)                                                                                                                                                                  |
-| "Old / untouched / legacy code (± bug-fix history) in security-sensitive paths" | `securityAudit` — question carries a dir word (even generic, `<word>/<word> paths`) → `pathPattern: "**/{<word>,<word>}/**"`, no filter preset; no dir word → `filter: { presets: "securityPaths" }` |
-| "Recently modified, sprint-review style" (what changed, not who)                | `recent`                                                                                                                                                                                             |
-| "Stable, low-bug template / reference implementation of X"                      | `proven` (preset; never custom weights)                                                                                                                                                              |
-| "Refactor candidates by size+volatility+bug-fix history"                        | `refactoring`                                                                                                                                                                                        |
-| "Bug-prone + volatile + high blast radius"                                      | `dangerous`                                                                                                                                                                                          |
-| "Find candidates to decompose"                                                  | `decomposition`                                                                                                                                                                                      |
-| "Blast radius before a change (real call edges)"                                | `blastRadius` (codegraph on) — else custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }`                                                                                                            |
-| "Structural backbone — high-fan-in hubs"                                        | `architecturalHub` (codegraph)                                                                                                                                                                       |
-| "Entry points / flow drivers of a scope"                                        | `entryPoint` (codegraph)                                                                                                                                                                             |
+| Question                                                                        | Preset                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Where are the bug-prone areas in domain X?"                                    | `hotspots` + `pathPattern` — one call, not a risk-assessment scan                                                                                                                                                                                                                                                                                                     |
+| "Looks stable / rarely touched but breaks a lot"                                | recipe **Fragile Silo** (custom, below) — even in a security-sensitive path (path → `pathPattern`); never `securityAudit`, not `stable`, not bug-hunt                                                                                                                                                                                                                 |
+| "Who is (actively) driving / working on X lately?"                              | recipe **Active driver** (custom, below) — not `recent`, not `ownership`                                                                                                                                                                                                                                                                                              |
+| "Tech debt / old + churny + bug-fixed legacy in X?" (non-security path)         | `techDebt` + `pathPattern: "**/<X>/**"`                                                                                                                                                                                                                                                                                                                               |
+| "Single-author silos / bus factor in domain X?"                                 | `ownership`                                                                                                                                                                                                                                                                                                                                                           |
+| "Review the recent changes in this area"                                        | `codeReview` (with `maxAgeDays: 7`)                                                                                                                                                                                                                                                                                                                                   |
+| "Old / untouched / legacy code (± bug-fix history) in security-sensitive paths" | `securityAudit` — dir path written with a trailing slash or a prefix (`lib/crypto/`) → that path verbatim, `pathPattern: "lib/crypto/**"`, never split into braces; bare alternative dir words (`<word>/<word> paths`, no trailing slash) → `pathPattern: "**/{<word>,<word>}/**"`; no filter preset either way; no dir word → `filter: { presets: "securityPaths" }` |
+| "Recently modified, sprint-review style" (what changed, not who)                | `recent`                                                                                                                                                                                                                                                                                                                                                              |
+| "Stable, low-bug template / reference implementation of X"                      | `proven` (preset; never custom weights)                                                                                                                                                                                                                                                                                                                               |
+| "Refactor candidates by size+volatility+bug-fix history"                        | `refactoring`                                                                                                                                                                                                                                                                                                                                                         |
+| "Bug-prone + volatile + high blast radius"                                      | `dangerous`                                                                                                                                                                                                                                                                                                                                                           |
+| "Find candidates to decompose"                                                  | `decomposition`                                                                                                                                                                                                                                                                                                                                                       |
+| "Blast radius before a change (real call edges)"                                | `blastRadius` + `metaOnly: true` (codegraph on) — else custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }` + `metaOnly: true`; both calls carry `metaOnly`                                                                                                                                                                                                          |
+| "Structural backbone — high-fan-in hubs"                                        | `architecturalHub` (codegraph)                                                                                                                                                                                                                                                                                                                                        |
+| "Entry points / flow drivers of a scope"                                        | `entryPoint` (codegraph)                                                                                                                                                                                                                                                                                                                                              |
 
 **Codegraph composites** (`blastRadius` / `architecturalHub` / `entryPoint`)
 rank on real call/import edges (`fanIn`, `isHub`, `fanOutPerLine`). Meaningful
 only when graph tools are registered (codegraph on); codegraph off → they
 degrade to similarity — fall back to `imports`-proxy custom weights, say
-centrality is approximate. See `tea-rags://guide/navigation` "Graph navigation".
+centrality is approximate. Blast-radius plan line, copied:
+`semantic_search(query=<ask>, rerank="blastRadius", metaOnly=true)`. See
+`tea-rags://guide/navigation` "Graph navigation".
 
 ## Custom weight recipes
 
@@ -161,7 +165,8 @@ AND it keeps changing"). `ownership` surfaces single-owner high-impact files —
 knowledge silo with reach.
 
 **Prefer the `blastRadius` preset when codegraph is on:** ranks on real `fanIn`
-(actual call/import edges) + churn + bugFix, not the raw `imports`-line proxy.
+(actual call/import edges) + churn + bugFix, not the raw `imports`-line proxy —
+`{ "rerank": "blastRadius", "metaOnly": true }`, `metaOnly` on this call too.
 Use this custom recipe only as the codegraph-off fallback (result then
 approximate — import-proxy, not edge truth).
 
@@ -195,7 +200,7 @@ filter-building (`modifiedBefore: <today − 365d>` — file-level, query-time; 
 ```jsonc
 {
   "rerank": "securityAudit",
-  "pathPattern": "**/<dir>/**",
+  "pathPattern": "**/<dir>/**", // ask wrote a slash path (`lib/crypto/`) → "lib/crypto/**" verbatim, no braces
   "modifiedBefore": "<ISO date, today − 365 days>",
 }
 ```

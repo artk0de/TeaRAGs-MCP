@@ -32,7 +32,10 @@ compose `rerank: { custom: … }` here.
 
 **Raw filter → read syntax FIRST.** Before writing any raw `filter` object (even
 one range) → read `tea-rags://guide/filters` (MCP resource read), unless its
-`# Qdrant Filter Syntax` is already in context. Never from memory.
+`# Qdrant Filter Syntax` is already in context. Never from memory. Ask for "raw"
+/ "exact syntax" / a raw object (even one field + range) → plan line 1, copied:
+`ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://guide/filters")`; the
+object comes after it. Examples in this skill are shape only, not the read.
 
 ## Implicit signals — when a filter is needed but the user didn't say "filter"
 

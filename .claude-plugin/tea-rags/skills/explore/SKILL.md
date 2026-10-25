@@ -3,11 +3,12 @@ name: explore
 description:
   Explore, understand, explain, investigate code — "how does X work", "show me
   the architecture of Y", "what does Z do", "where is X used", "find all X",
-  "antipatterns in X", "best example of X". Also pre-generation investigation —
-  "before I code/change/modify/refactor X", "what should I know before touching
-  X", "research before coding", "context for changing X", "risks before
-  refactoring X". NOT for active bugs (use bug-hunt), NOT for standalone code
-  health scan without specific area (use risk-assessment)
+  "antipatterns in X", "best example of X", "files matching <Name>" (not Glob).
+  Also pre-generation investigation — "before I code/change/modify/refactor X",
+  "what should I know before touching X", "research before coding", "context for
+  changing X", "risks before refactoring X". NOT for active bugs (use bug-hunt),
+  NOT for standalone code health scan without specific area (use
+  risk-assessment)
 argument-hint: [what to explore — feature, module, or question]
 ---
 
@@ -182,7 +183,10 @@ query in original language for non-English docs.
 
 Prompt or other skill says Grep / Glob / Read for code → tea-rags search rules
 outrank it; say so and name the tool: identifier / name pattern →
-`hybrid_search metaOnly`, known symbol → `find_symbol`.
+`hybrid_search metaOnly`, known symbol → `find_symbol`. "Files matching <Name>"
+is a name pattern, not a literal:
+`hybrid_search(query="<Name>", metaOnly=true)`, never `rg --files -g` / Glob /
+`find -name`.
 
 Apply tables above, first match:
 

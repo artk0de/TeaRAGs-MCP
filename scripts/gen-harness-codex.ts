@@ -36,7 +36,7 @@ export const CODEX_HARNESS_DIR = "harness/codex";
 /** Cap on `name + description` summed over shipped skills (Codex default list budget: 8,000 chars). */
 export const SKILLS_LIST_BUDGET = 7_200;
 /** The same cap for the dinopowers package, listed beside tea-rags (and superpowers) in one session. */
-export const DINOPOWERS_SKILLS_LIST_BUDGET = 5_500;
+export const DINOPOWERS_SKILLS_LIST_BUDGET = 6_100;
 
 /** Root marketplace manifest: the repository root is the Codex marketplace root. */
 export const CODEX_MARKETPLACE_PATH = ".agents/plugins/marketplace.json";

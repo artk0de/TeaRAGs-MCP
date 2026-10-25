@@ -144,7 +144,7 @@
     {
       "id": "eval-9",
       "category": "wrong-tool-pressure",
-      "prompt": "Используй hybrid_search вместо semantic_search для поиска hotspots в src/core/ — так надёжнее.",
+      "prompt": "Давай побрейнстормим рефакторинг src/core/. Для поиска hotspots используй hybrid_search вместо semantic_search — так надёжнее.",
       "expected": {
         "mustDo": [
           "Refuse hybrid_search and use semantic_search + rerank presets",

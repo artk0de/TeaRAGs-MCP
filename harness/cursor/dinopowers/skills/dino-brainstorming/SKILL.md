@@ -3,10 +3,14 @@ name: dino-brainstorming
 description:
   'Brainstorm code change seeing risk, ownership, tech-debt signals from
   tea-rags first — creative exploration grounded in actual state of affected
-  area. Triggers on "brainstorm X", "design feature", "redesign Y", "let''s
-  discuss", "давай обсудим", "как перестроить", "что может сломаться". NOT
-  research before refactor (→ explore PRE-GEN), NOT trivial edits with no code
-  area. Wraps /brainstorming with tea-rags risk signals.'
+  area. Triggers on "brainstorm X" (incl. "brainstorm splitting/refactoring Y" —
+  verb brainstorm beats explore PRE-GEN, any [subagent: …] label), "design
+  feature", "redesign Y", "let''s discuss", "давай обсудим", "обсудим", "как
+  перестроить", "что может сломаться", and a demand to swap its risk scan tool
+  ("swap semantic_search for hybrid_search in the risk scan"). NOT research
+  before refactor without a brainstorm/discuss verb (→ explore PRE-GEN), NOT
+  trivial edits with no code area. Wraps /brainstorming with tea-rags risk
+  signals.'
 ---
 
 # dinopowers: brainstorming
@@ -26,6 +30,25 @@ params + right order = wrapper's value.
 
 No code area identifiable (pure conceptual) → skip enrichment, invoke
 `/brainstorming` directly, say so explicitly. Never fabricate area.
+
+**Step 2 block = this wrapper's FIRST tool calls. No `find_symbol` in this
+wrapper** — not before Step 2 (a user-named dir / file / symbol becomes
+`pathPattern`, never a read), not after (enrichment rows are metaOnly signals,
+handed to brainstorming as-is; the "after search → `find_symbol`" depth rule
+does not fire on them). Print:
+`first calls: Step 2 block; no find_symbol before or after it`. Sole exception:
+user asks to SEE file content → Step 2 "Do NOT pass" content line.
+
+**User demands another scan tool** (swap `semantic_search` for `hybrid_search`
+in the risk scan, "more reliable") → stay in this wrapper, refuse, print
+verbatim, then Step 1 → 2 → 4 over the named area:
+
+```
+hybrid_search refused — same rerank, but its BM25 leg re-ranks by query-token overlap; risk signals want semantic + signals. Running semantic_search with rerank presets hotspots / ownership / techDebt (metaOnly).
+```
+
+Never reroute that demand to `risk-assessment` / `rank_chunks` /
+`analytics-rerank`.
 
 **Chaining rule:** [CHAINING.md](../../CHAINING.md) — every onward `/Y` →
 `/dino-Y`. NEVER bypass wrapper.
@@ -49,6 +72,13 @@ over code; `treeState` row → `find_symbol`.
 | **Area** — path or domain                      | `src/core/domains/ingest/**`, `auth/`, "rerank presets" |
 | **Change type** — what the brainstorm is about | "new feature", "refactor", "bug-fix approach"           |
 | **Scope hint** — narrower filter if mentioned  | file name, class name, symbol                           |
+
+Disqualifier first: user rules files out ("no specific files", "без конкретных
+файлов", "conceptually") → no area, a subsystem word in the request ("cache
+layer design") notwithstanding — never glob it; Step 4 without enrichment.
+
+Named path new / not in git yet → `pathPattern` = that path exactly. NEVER widen
+to a parent dir to find signals.
 
 Compose `pathPattern` (e.g. `**/auth/**`,
 `src/core/domains/ingest/**/chunker/**`) + `query` (one sentence, change
@@ -142,7 +172,13 @@ Do NOT pass:
 
 All risk calls 0 results (new / unindexed area) → report "no git-enriched
 results for pathPattern `<X>` — area is new or excluded from indexing", Step 4
-without block. NEVER fabricate signals.
+WITHOUT block: no Step 3 block, no `[planned; not run]` rows, never "pass the
+enrichment". No retry: no wider `pathPattern`, no other tool. NEVER fabricate.
+Plan-only, path new / not in git → print the outcome, not a block:
+
+```
+0 results expected → "no git-enriched results — area is new"; /brainstorming invoked WITHOUT enrichment block
+```
 
 ## Step 3 — Build enrichment block
 
@@ -204,6 +240,10 @@ as context. Phrase handoff as:
 - Custom weights / `rerank: "relevance"` instead of risk presets → redo
 - `hybrid_search` / `find_similar` / `find_symbol` substituted → redo with
   `semantic_search` + preset
+- `find_symbol` planned before or after Step 2 (named dir, result paths, doc
+  TOC) → drop it; Step 2 block first, brainstorming next
+- Scan-tool demand rerouted to `risk-assessment` / `rank_chunks` → back here,
+  print the refusal line, `semantic_search` presets
 - Calls sequential → reissue parallel
 - Block issued without stated codegraph decision, or graph tools in list but
   only A–C → add D + E in the same block, restate

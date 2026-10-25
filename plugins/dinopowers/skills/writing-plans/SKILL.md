@@ -3,9 +3,12 @@ name: writing-plans
 description:
   Author implementation plan; Affected Files section enriched per-file imports,
   churn, ownership, bugFixRate, taskIds from tea-rags — task decomposition
-  reflects real impact+risk. Triggers on "write a plan", "draft implementation
-  plan", "draft sub-plan", "напиши план", "распиши задачи по файлам", "plan the
-  refactor". NOT for plans with no named files or code area to enrich. Wraps
+  reflects real impact+risk. Triggers on "write a plan", "draft a plan",
+  "draft implementation plan", "draft sub-plan", "напиши план", "допиши план",
+  "add a Task to the plan", "распиши задачи по файлам", "plan the refactor". A
+  plan request beats explore PRE-GEN (any [subagent: …] label) and
+  data-driven-generation (a Task that creates a class stays a plan Task). NOT
+  for plans with no named files or code area to enrich. Wraps
   superpowers:writing-plans with per-file tea-rags signal enrichment.
 ---
 
@@ -47,10 +50,11 @@ codegraph off → rerank={custom: {imports: 0.5, churn: 0.3, ownership: 0.2}} �
 Content wanted → keep enrichment `metaOnly: true`, then AFTER it
 `find_symbol(relativePath:)` outline → member bodies (core depth rule).
 
-Conceptual plan, no file list derivable (e.g. "plan for migrating to Postgres")
-→ skip enrichment, `superpowers:writing-plans` direct. Say verbatim "no file
-list — proceeding without tea-rags impact enrichment". Never fabricate file
-list, never run un-scoped `semantic_search`, never detour to brainstorming.
+Conceptual plan, no file list derivable (e.g. "plan for migrating to Postgres",
+"no specific files", "без конкретных файлов") → skip enrichment,
+`superpowers:writing-plans` direct. Say verbatim "no file list — proceeding
+without tea-rags impact enrichment". Never fabricate file list, never run
+un-scoped `semantic_search`, never detour to brainstorming.
 
 **Codegraph on?** Graph tools (`get_callers`, `trace_path`,
 `get_naming_lexicon`, …) in your tool list; unsure → read
@@ -140,7 +144,14 @@ Do NOT pass:
   hide signal
 
 Empty results (all files new) → report "file set not indexed — area is new;
-impact enrichment unavailable", Step 4 without block. Never fabricate signals.
+impact enrichment unavailable", Step 4 WITHOUT block: no Step 3 table, no
+`— (new)` rows, no retry with another rerank. Never fabricate signals.
+Plan-only, every named file new (dir not in git yet) → print the outcome, not a
+table:
+
+```
+0 results expected → "file set not indexed — area is new"; superpowers:writing-plans invoked WITHOUT enrichment block
+```
 
 ## Step 3 — Aggregate per file
 
@@ -199,10 +210,17 @@ Enrichment block:
 - ...
 ```
 
-Cap table at fileList size. File without git data (new) → row `— (new)`. NEVER
-drop row silently.
+Cap table at fileList size. File without git data (new) while others have data →
+row `— (new)`; ALL files without data → no table (Step 2 empty rule). NEVER drop
+row silently.
 
 ## Step 3.5 — Per-Task proven-template enrichment (code-generation Tasks)
+
+A plan Task that creates a class / function (e.g. "extend the plan: Task N adds
+a new helper class") is plan authoring, not code generation now: run THIS step
+here, items 2 + 5 included. Never reroute it to
+`tea-rags:data-driven-generation` or `tea-rags:explore` PRE-GEN — those run per
+Task later, inside `dinopowers:executing-plans`.
 
 Per Task in draft (or unit to become a Task) whose title/description mentions
 code gen/modification — keywords "implement", "add", "create", "new", "write",
@@ -287,6 +305,8 @@ wholesale re-Read. Edited plan → hashes moved → main checkout: incremental
 - "Plan short, skip impact analysis" / user says skip → fileList ≥1 → run Step 2
 - `find_symbol` / `get_callers` / `hybrid_search` used as the enrichment →
   restart with ONE Step 2 `semantic_search`
+- Plan request routed to `explore` PRE-GEN / `data-driven-generation` → back
+  here: Step 2 first call, Step 3.5 per-Task (Naming line verbatim)
 - Shared taskIds not surfaced as coordinated-change candidates → add them
 - Rerank wrong for codegraph state (incl. `codeReview` / `impactAnalysis`) →
   redo: on → `"blastRadius"`, off → `{imports: 0.5, churn: 0.3, ownership: 0.2}`

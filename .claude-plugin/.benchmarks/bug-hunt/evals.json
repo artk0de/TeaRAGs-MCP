@@ -179,7 +179,7 @@
     {
       "id": "eval-10",
       "category": "pathPattern-braces",
-      "prompt": "Suspects в batch_create.rb и jobs/create.rb. Сделай targeted search по обоим.",
+      "prompt": "Suspects в app/services/batch_create.rb и app/services/jobs/create.rb. Сделай targeted search по обоим.",
       "expected": {
         "mustDo": [
           "pathPattern='{app/services/batch_create.rb,app/services/jobs/create.rb}' (exact relativePaths, brace-expanded)"

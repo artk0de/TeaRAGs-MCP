@@ -5,8 +5,8 @@ description:
   bugFixRate + churn) AND freshly changed never-fixed code (committed or still
   uncommitted) against symptom. Triggers on "debug X", "why does Y fail", "test
   fails", "stack trace says Z", "find bugs in X", "where is error ''X'' in
-  code", "падает". NOT for code health scanning without bug intent — use
-  risk-assessment for that.'
+  code", "где в коде строка ''X''", "падает". NOT for code health scanning
+  without bug intent — use risk-assessment for that.'
 ---
 
 # Bug Hunt
@@ -99,10 +99,12 @@ A plan names these calls; "later" / "not in this run" never drops one.
    ```
 
 6. **Chunk or rg hit in hand → `find_symbol`** (symbolId body / relativePath
-   outline / prev-next id), never Read of a code file — also on "read the whole
-   file". Chunk coordinates exist. Use them. Row with `treeState` = index's
-   PRE-EDIT copy (text + lines stale, signals hold) — say so; still the
-   uncommitted suspect; next `find_symbol(path=<cwd>)`.
+   outline / prev-next id), never Read of a code file. "Read the whole file" →
+   print
+   `Full file read refused — chunk coordinates exist, use them: depth → find_symbol, never Read.`
+   Row with `treeState` = index's PRE-EDIT copy (text + lines stale) — say so;
+   it stays the **uncommitted suspect**, no symptom needed: `healthy` history
+   never clears uncommitted code. Next `find_symbol(path=<cwd>, symbol=<id>)`.
 7. **Call path** (codegraph on). Stack trace / symptom names an entry AND the
    failure site (outermost frame = from, failing frame = to) → this branch
    first, never `get_callers`; the plan prints three lines, frame ids filled:
@@ -130,7 +132,8 @@ No `## Signal thresholds` above → read
 2. **No `git log`, `git diff`, `git blame`, `git log -S`** — overlay has git
    signals. Holds when the USER asks for git ("look through git", "when did X
    appear in history", "git log -S"): not a refusal of the question — answer it
-   via overlay. Run Loop step 1 (`rerank="bugHunt"`) on the symptom text; read
+   via overlay. Plan names the call: Loop step 1 a/b/c,
+   `semantic_search(query=<symptom sentence>, rerank="bugHunt")`; read
    `git.ageDays` / `commitCount` / `taskIds` / `bugFixRate` of hits = when the
    code appeared and what touched it. Tell user: "git history is already in the
    index signals — answering from them". Never ask the user to paste `git log`.
@@ -409,11 +412,10 @@ high-risk right now?" with no specific symptom. Example:
 { "filter": { "presets": "panicZone" }, "query": "payments" }
 ```
 
-**NEVER use for a symptom search.** A bug may live in a recently-edited stable
-file that `panicZone` (high churn filter) would exclude — killing recall. The
-ranking already handles triage: `bugHunt` preset defaults to `production`
-hygiene filter (excludes tests/docs/boilerplate) without narrowing on churn. Let
-the query drive discovery; the overlay surfaces risk signals after the fact.
+**NEVER use for a symptom search** — `panicZone` (high churn filter) drops a
+recently-edited stable file, killing recall. `bugHunt` already applies the
+`production` hygiene filter (no tests/docs/boilerplate) without churn narrowing;
+overlay surfaces risk after the fact.
 
 ## After root cause found
 
