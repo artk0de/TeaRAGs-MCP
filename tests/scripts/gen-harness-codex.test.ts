@@ -1,5 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -200,6 +210,44 @@ describe("renderCodexHarness", () => {
     const marketplace = JSON.parse(await renderCodexMarketplace(ROOT));
     expect(marketplace.plugins[0].source).toEqual({ source: "local", path: "./harness/codex/tea-rags" });
     expect(rendered.has("tea-rags/.codex-plugin/plugin.json")).toBe(true);
+  });
+
+  it("SessionStart hands core and the prime digest to the session; core alone without the CLI", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
+    const command: string = hooks.SessionStart[0].hooks[0].command;
+    expect(command).toBe("${PLUGIN_ROOT}/scripts/session-start.sh");
+
+    const pluginRoot = mkdtempSync(join(tmpdir(), "codex-tea-rags-"));
+    const bin = mkdtempSync(join(tmpdir(), "codex-bin-"));
+    try {
+      mkdirSync(join(pluginRoot, "scripts"));
+      for (const [path, content] of rendered) {
+        if (!path.startsWith("tea-rags/scripts/")) continue;
+        writeFileSync(join(pluginRoot, path.replace(/^tea-rags\//, "")), content, { flag: "w" });
+      }
+      writeFileSync(join(bin, "tea-rags"), '#!/bin/bash\necho "PRIME-DIGEST for $2"\n', { mode: 0o755 });
+      const script = join(pluginRoot, "scripts", "session-start.sh");
+      const run = (path: string): string =>
+        JSON.parse(
+          execFileSync("bash", [script], {
+            env: { ...process.env, PWD: undefined, PLUGIN_ROOT: pluginRoot, PATH: path },
+            cwd: bin,
+            input: "{}",
+          }).toString(),
+        ).hookSpecificOutput.additionalContext;
+
+      const withCli = run(`${bin}:/usr/bin:/bin`);
+      expect(withCli).toContain("# tea-rags core");
+      expect(withCli).toContain(`PRIME-DIGEST for ${realpathSync(bin)}`);
+
+      const withoutCli = run("/usr/bin:/bin");
+      expect(withoutCli).toContain("# tea-rags core");
+      expect(withoutCli).not.toContain("PRIME-DIGEST");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+      rmSync(bin, { recursive: true, force: true });
+    }
   });
 
   it("ships no dinopowers skill and keeps the skills list within budget", async () => {

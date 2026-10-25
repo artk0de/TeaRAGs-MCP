@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tea-rags prime \"$PWD\"",
+            "command": "${PLUGIN_ROOT}/scripts/session-start.sh",
             "timeout": 60
           }
         ]
